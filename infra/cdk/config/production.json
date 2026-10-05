@@ -2,18 +2,35 @@
   "region": "us-east-1",
   "githubRepository": "satvikOS/Foundry-Ascent",
   "githubBranch": "main",
-  "homeTenant": { "slug": "ain", "name": "Ain Foundry" },
+  "homeTenant": {
+    "slug": "ain",
+    "name": "Ain Foundry"
+  },
   "owner": {
     "displayName": "Platform Owner",
     "accessCodePrefix": "T9302",
     "accessCodeHash": "scrypt$N=32768,r=8,p=1$3EVOFO9pqROC_L4H7mo98g$RtIal90yLMyXBPUP_M2t51rYP2irq5D3k3DB6iweVY8"
   },
   "models": {
-    "primary": "openai.gpt-6-luna",
-    "fallback": "amazon.nova-2-lite-v1:0",
-    "embeddings": "amazon.titan-embed-text-v2:0"
+    "primary": "us.amazon.nova-2-lite-v1:0",
+    "fallback": "global.amazon.nova-2-lite-v1:0",
+    "embeddings": "amazon.titan-embed-text-v2:0",
+    "luna": {
+      "modelId": "openai.gpt-6-luna",
+      "enabled": false,
+      "note": "Listed for this account but invocation returns 401 'not available for this account' (account-level gating by AWS, verified 2026-10-05). Set enabled=true after AWS grants access; Luna then becomes primary with Nova 2 Lite as fallback."
+    }
   },
-  "aurora": { "minCapacityAcu": 0, "maxCapacityAcu": 2, "autoPauseMinutes": 10, "engineVersion": "16.13" },
-  "api": { "reservedConcurrency": 10, "memoryMb": 1024, "timeoutSeconds": 60 },
+  "aurora": {
+    "minCapacityAcu": 0,
+    "maxCapacityAcu": 2,
+    "autoPauseMinutes": 10,
+    "engineVersion": "16.13"
+  },
+  "api": {
+    "reservedConcurrency": 10,
+    "memoryMb": 1024,
+    "timeoutSeconds": 60
+  },
   "logRetentionDays": 30
 }
