@@ -23,9 +23,11 @@ Region `us-east-1`, account taken from the deploying credentials. Every IAM role
   automatically: only when a provider exists **and** this stack does not already manage it (first deploys
   create it, later deploys keep whichever mode they had, and CloudFormation is never asked to delete a
   provider it manages). Set the context by hand only for a local `cdk deploy`.
-- Role `FoundryAscent-GitHubDeploy` (1 h sessions). Trust: `aud = sts.amazonaws.com` and `sub` like
-  `repo:satvikOS/Foundry-Ascent:ref:refs/heads/main` or `repo:satvikOS/Foundry-Ascent:environment:production`.
-  Permissions: `sts:AssumeRole`/`sts:TagSession` on `cdk-hnb659fds-*` roles, read-only CloudFormation on
+- Role `FoundryAscent-GitHubDeploy` (1 h sessions). Trust (`StringEquals`): `aud = sts.amazonaws.com` and
+  `sub = repo:satvikOS/Foundry-Ascent:environment:production` (no branch subject: only jobs in the
+  `production` environment, whose deployment-branch rule allows `main` only).
+  Permissions: `sts:AssumeRole`/`sts:TagSession` on the CDK deploy, file-publishing, image-publishing and
+  lookup roles (`cdk-hnb659fds-<kind>-<account>-<region>`, never the execution role), read-only CloudFormation on
   `FoundryAscent-*` and `CDKToolkit`, `logs:FilterLogEvents`/`GetLogEvents` on `/aws/lambda/FoundryAscent*`,
   `ce:GetCostAndUsage`. Everything else happens through the CDK bootstrap roles.
 - Outputs: `GitHubDeployRoleArn`, `GitHubOidcProviderArn`.
@@ -157,10 +159,11 @@ config change plus a normal deploy.
 
 ## Prerequisites
 
-1. **Bootstrap** (once, account administrator → stage 0): run the **Platform - bootstrap** workflow
-   (`.github/workflows/platform-bootstrap.yml`). It publishes `FoundryAscent-Boundary` and bootstraps
-   `CDKToolkit` in `us-east-1` with the boundary on the CloudFormation execution role and the AWS-managed
-   S3 key. Without the boundary policy every role creation is denied.
+1. **Bootstrap** (once, account administrator in AWS CloudShell): `infra/iam/apply-bootstrap-access.sh`
+   publishes `FoundryAscent-Boundary`, then `infra/iam/cdk-bootstrap.sh` bootstraps `CDKToolkit` in
+   `us-east-1` with the boundary on the CloudFormation execution role and the AWS-managed S3 key. Without
+   the boundary policy every role creation is denied. The CI identity cannot bootstrap
+   ([`infra/iam/README.md`](../iam/README.md)).
 2. Node ≥ 22 (Lambdas run Node 24), pnpm 10, dependencies installed at the repository root. No Docker:
    bundling runs the workspace's esbuild locally.
 3. Build inputs for a deployable synth: `apps/api/src/handlers/{api,worker,migrate}.ts` and

@@ -54,29 +54,58 @@ export const API_VIEWER_REQUEST_CODE = `function handler(event) {
 }
 `;
 
-export const CONTENT_SECURITY_POLICY = [
-  "default-src 'self'",
-  "script-src 'self'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
-  "font-src 'self' data:",
-  "connect-src 'self' https://*.s3.amazonaws.com https://*.s3.us-east-1.amazonaws.com",
-  "frame-ancestors 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-  "object-src 'none'",
-].join('; ');
+/**
+ * Origin the browser uploads documents to: the presigned PUT URLs the API signs (apps/api
+ * s3-object-store.ts, AWS SDK v3 defaults) address the documents bucket's virtual-hosted, regional
+ * endpoint `https://<bucket>.s3.<region>.amazonaws.com`. The bucket name may be a token (it comes from
+ * the Data stack); CloudFront does not parse the policy until deploy time.
+ */
+export function documentsUploadOrigin(bucketName: string, region: string): string {
+  return `https://${bucketName}.s3.${region}.amazonaws.com`;
+}
+
+/**
+ * The SPA's Content-Security-Policy. `connect-src` allows the app's own origin and exactly one other: the
+ * documents bucket. A wildcard such as `https://*.s3.amazonaws.com` would let injected script send data to
+ * any bucket in the world.
+ */
+export function contentSecurityPolicy(uploadOrigin: string): string {
+  return [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self' data:",
+    `connect-src 'self' ${uploadOrigin}`,
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "object-src 'none'",
+  ].join('; ');
+}
 
 export const PERMISSIONS_POLICY = 'camera=(), microphone=(), geolocation=()';
 
 /** Two years, the HSTS preload list minimum is one. */
 export const HSTS_MAX_AGE = Duration.days(730);
 
-export function createSecurityHeadersPolicy(scope: Construct, id: string): cloudfront.ResponseHeadersPolicy {
+export interface SecurityHeadersProps {
+  /** The only cross-origin `connect-src` (see `documentsUploadOrigin`). */
+  readonly uploadOrigin: string;
+}
+
+export function createSecurityHeadersPolicy(
+  scope: Construct,
+  id: string,
+  props: SecurityHeadersProps,
+): cloudfront.ResponseHeadersPolicy {
   return new cloudfront.ResponseHeadersPolicy(scope, id, {
     comment: 'Foundry Ascent security headers (CSP, HSTS, frame denial)',
     securityHeadersBehavior: {
-      contentSecurityPolicy: { contentSecurityPolicy: CONTENT_SECURITY_POLICY, override: true },
+      contentSecurityPolicy: {
+        contentSecurityPolicy: contentSecurityPolicy(props.uploadOrigin),
+        override: true,
+      },
       strictTransportSecurity: {
         accessControlMaxAge: HSTS_MAX_AGE,
         includeSubdomains: true,

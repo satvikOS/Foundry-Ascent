@@ -21,6 +21,8 @@ export interface LambdaContract {
   readonly environment: Readonly<Record<'common' | LambdaRole, readonly string[]>>;
   readonly edgeHeaders: { readonly viewerIp: string; readonly viewerHost: string };
   readonly api: { readonly dbResumeBudgetSeconds: number; readonly sseKeepAliveSeconds: number };
+  /** JSON body of the daily maintenance message the schedule sends to the jobs queue. */
+  readonly worker: { readonly dailyMaintenanceMessage: string };
 }
 
 export const LAMBDA_CONTRACT_FILE = join(REPO_ROOT, 'apps', 'api', 'lambda-contract.json');
@@ -60,6 +62,15 @@ export function parseLambdaContract(raw: unknown): LambdaContract {
   const environment = obj(root.environment, '$.environment');
   const edgeHeaders = obj(root.edgeHeaders, '$.edgeHeaders');
   const api = obj(root.api, '$.api');
+  const worker = obj(root.worker, '$.worker');
+  const maintenance = obj(worker.dailyMaintenanceMessage, '$.worker.dailyMaintenanceMessage');
+  if (
+    maintenance.type !== 'maintenance' ||
+    maintenance.task !== 'daily' ||
+    Object.keys(maintenance).length !== 2
+  ) {
+    fail('$.worker.dailyMaintenanceMessage', 'must be exactly {"type":"maintenance","task":"daily"}');
+  }
   if (bundling.platform !== 'node') fail('$.bundling.platform', 'must be "node"');
   if (bundling.format !== 'esm') fail('$.bundling.format', 'must be "esm"');
   const [target] = strings([bundling.target], '$.bundling.target', /^node\d+$/, 1);
@@ -85,6 +96,7 @@ export function parseLambdaContract(raw: unknown): LambdaContract {
       dbResumeBudgetSeconds: int(api.dbResumeBudgetSeconds, '$.api.dbResumeBudgetSeconds', 1, 50),
       sseKeepAliveSeconds: int(api.sseKeepAliveSeconds, '$.api.sseKeepAliveSeconds', 1, 30),
     },
+    worker: { dailyMaintenanceMessage: JSON.stringify({ type: 'maintenance', task: 'daily' }) },
   };
 }
 

@@ -14,13 +14,23 @@ import { acknowledge, wildcardResource } from '../lib/nag.js';
 export const GITHUB_OIDC_HOST = 'token.actions.githubusercontent.com';
 export const GITHUB_OIDC_AUDIENCE = 'sts.amazonaws.com';
 const CDK_QUALIFIER = 'hnb659fds';
+/** The bootstrap roles the CDK CLI assumes (never the CloudFormation execution role). */
+export const CDK_CLI_ROLES = [
+  'deploy-role',
+  'file-publishing-role',
+  'image-publishing-role',
+  'lookup-role',
+] as const;
 
 export interface FoundationStackProps extends StackProps {
   /** `owner/repo`, e.g. `satvikOS/Foundry-Ascent`. */
   readonly githubRepository: string;
-  /** Branch allowed to deploy (`main`). */
+  /**
+   * Branch that deploys (`main`). Informational: the trust policy pins the GitHub environment, whose
+   * deployment-branch rule (repository settings) limits it to this branch.
+   */
   readonly githubBranch: string;
-  /** GitHub environment allowed to deploy (`production`). */
+  /** GitHub environment allowed to deploy (`production`): the only subject the deploy role trusts. */
   readonly githubEnvironment: string;
   /**
    * ARN of an existing `token.actions.githubusercontent.com` provider. An account can hold only one
@@ -29,14 +39,21 @@ export interface FoundationStackProps extends StackProps {
   readonly existingOidcProviderArn?: string;
 }
 
-/** `sub` claims allowed to assume the deploy role. */
-export function githubSubjects(
-  props: Pick<FoundationStackProps, 'githubRepository' | 'githubBranch' | 'githubEnvironment'>,
-): string[] {
-  return [
-    `repo:${props.githubRepository}:ref:refs/heads/${props.githubBranch}`,
-    `repo:${props.githubRepository}:environment:${props.githubEnvironment}`,
-  ];
+/**
+ * The one `sub` claim allowed to assume the deploy role: a job of this repository that runs in the deploy
+ * environment. GitHub issues `repo:<owner>/<repo>:environment:<name>` to every job that declares
+ * `environment:`, so the environment's protection rules (required reviewers, deployment branches) gate AWS
+ * access. A branch subject (`ref:refs/heads/main`) is deliberately NOT trusted: any workflow on that branch
+ * without the environment, including one added by a later commit, could otherwise assume the role.
+ *
+ * `job_workflow_ref` (pinning the role to `.github/workflows/deploy.yml`) is not added: IAM's support for
+ * that claim as a condition key could not be verified for this change, and an unsupported key in a
+ * StringEquals condition would lock every deploy out.
+ */
+export function githubSubject(
+  props: Pick<FoundationStackProps, 'githubRepository' | 'githubEnvironment'>,
+): string {
+  return `repo:${props.githubRepository}:environment:${props.githubEnvironment}`;
 }
 
 export class FoundationStack extends Stack {
@@ -55,20 +72,24 @@ export class FoundationStack extends Stack {
 
     this.deployRole = new iam.Role(this, 'GitHubDeployRole', {
       roleName: NAMES.githubDeployRole,
-      description: `GitHub Actions deploys for ${props.githubRepository} (OIDC; ${props.githubBranch} branch and ${props.githubEnvironment} environment only)`,
+      description: `GitHub Actions deploys for ${props.githubRepository} (OIDC; ${props.githubEnvironment} environment only)`,
       maxSessionDuration: Duration.hours(1),
       assumedBy: new iam.WebIdentityPrincipal(provider.oidcProviderArn, {
-        StringEquals: { [`${GITHUB_OIDC_HOST}:aud`]: GITHUB_OIDC_AUDIENCE },
-        StringLike: { [`${GITHUB_OIDC_HOST}:sub`]: githubSubjects(props) },
+        StringEquals: {
+          [`${GITHUB_OIDC_HOST}:aud`]: GITHUB_OIDC_AUDIENCE,
+          [`${GITHUB_OIDC_HOST}:sub`]: githubSubject(props),
+        },
       }),
     });
 
-    const cdkRoles = this.formatArn({
-      service: 'iam',
-      region: '',
-      resource: 'role',
-      resourceName: `cdk-${CDK_QUALIFIER}-*`,
-    });
+    const cdkRoles = CDK_CLI_ROLES.map((kind) =>
+      this.formatArn({
+        service: 'iam',
+        region: '',
+        resource: 'role',
+        resourceName: `cdk-${CDK_QUALIFIER}-${kind}-${this.account}-${this.region}`,
+      }),
+    );
     const platformStacks = [`${STACK_PREFIX}-*`, 'CDKToolkit'].map((name) =>
       this.formatArn({ service: 'cloudformation', resource: 'stack', resourceName: `${name}/*` }),
     );
@@ -85,7 +106,7 @@ export class FoundationStack extends Stack {
           sid: 'AssumeCdkBootstrapRoles',
           // TagSession: the CDK CLI may pass session tags when it assumes the bootstrap roles.
           actions: ['sts:AssumeRole', 'sts:TagSession'],
-          resources: [cdkRoles],
+          resources: cdkRoles,
         }),
         new iam.PolicyStatement({
           sid: 'ReadPlatformStacks',
@@ -124,11 +145,6 @@ export class FoundationStack extends Stack {
 
     acknowledge(
       policy,
-      {
-        id: wildcardResource(this, cdkRoles),
-        reason:
-          'The CDK CLI assumes the bootstrap deploy, file-publishing, image-publishing and lookup roles, which share the cdk-hnb659fds- prefix; their own trust policies and the boundary limit what each can do.',
-      },
       ...platformStacks.map((stackArn) => ({
         id: wildcardResource(this, stackArn),
         reason:

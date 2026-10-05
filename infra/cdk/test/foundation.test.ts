@@ -1,6 +1,6 @@
 import { Match } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
-import { githubSubjects } from '../src/stacks/foundation-stack.js';
+import { githubSubject } from '../src/stacks/foundation-stack.js';
 import { defaultSynth, resourcesOfType, synthesize } from './helpers.js';
 
 describe('FoundryAscent-Foundation', () => {
@@ -15,7 +15,7 @@ describe('FoundryAscent-Foundation', () => {
     });
   });
 
-  it('trusts only main and the production environment of satvikOS/Foundry-Ascent, for one hour', () => {
+  it('trusts only the production environment of satvikOS/Foundry-Ascent (exact sub and aud), for one hour', () => {
     const roles = resourcesOfType(template, 'AWS::IAM::Role');
     expect(roles).toHaveLength(1);
     const [, role] = roles[0] ?? ['', {}];
@@ -29,12 +29,10 @@ describe('FoundryAscent-Foundation', () => {
           Action: 'sts:AssumeRoleWithWebIdentity',
           Principal: { Federated: { Ref: expect.stringMatching(/^GitHubOidcProvider/) as unknown } },
           Condition: {
-            StringEquals: { 'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com' },
-            StringLike: {
-              'token.actions.githubusercontent.com:sub': [
-                'repo:satvikOS/Foundry-Ascent:ref:refs/heads/main',
+            StringEquals: {
+              'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com',
+              'token.actions.githubusercontent.com:sub':
                 'repo:satvikOS/Foundry-Ascent:environment:production',
-              ],
             },
           },
         },
@@ -50,9 +48,20 @@ describe('FoundryAscent-Foundation', () => {
             Sid: 'AssumeCdkBootstrapRoles',
             Effect: 'Allow',
             Action: ['sts:AssumeRole', 'sts:TagSession'],
-            Resource: {
-              'Fn::Join': ['', ['arn:aws:iam::', { Ref: 'AWS::AccountId' }, ':role/cdk-hnb659fds-*']],
-            },
+            Resource: ['deploy-role', 'file-publishing-role', 'image-publishing-role', 'lookup-role'].map(
+              (kind) => ({
+                'Fn::Join': [
+                  '',
+                  [
+                    'arn:aws:iam::',
+                    { Ref: 'AWS::AccountId' },
+                    `:role/cdk-hnb659fds-${kind}-`,
+                    { Ref: 'AWS::AccountId' },
+                    '-us-east-1',
+                  ],
+                ],
+              }),
+            ),
           },
           Match.objectLike({
             Sid: 'ReadPlatformStacks',
@@ -87,10 +96,13 @@ describe('FoundryAscent-Foundation', () => {
     template.hasOutput('GitHubDeployRoleArn', { Value: { 'Fn::GetAtt': [Match.anyValue(), 'Arn'] } });
   });
 
-  it('derives the subjects from the configured repository and branch', () => {
-    expect(
-      githubSubjects({ githubRepository: 'acme/repo', githubBranch: 'release', githubEnvironment: 'prod' }),
-    ).toEqual(['repo:acme/repo:ref:refs/heads/release', 'repo:acme/repo:environment:prod']);
+  it('derives the only trusted subject from the repository and the environment (never a branch)', () => {
+    expect(githubSubject({ githubRepository: 'acme/repo', githubEnvironment: 'prod' })).toBe(
+      'repo:acme/repo:environment:prod',
+    );
+    // Regression: a branch subject (any workflow on main, with or without the environment) is not trusted.
+    expect(JSON.stringify(template.toJSON())).not.toContain(':ref:refs/heads/');
+    expect(JSON.stringify(template.toJSON())).not.toContain('StringLike');
   });
 });
 

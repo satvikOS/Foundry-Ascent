@@ -1,6 +1,6 @@
 import { Match } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
-import { CONTENT_SECURITY_POLICY } from '../src/constructs/edge.js';
+import { contentSecurityPolicy, documentsUploadOrigin } from '../src/constructs/edge.js';
 import { ESM_REQUIRE_SHIM } from '../src/constructs/platform-function.js';
 import {
   API_DB_RESUME_BUDGET_SECONDS,
@@ -348,7 +348,7 @@ describe('FoundryAscent-App', () => {
       template.hasResourceProperties('AWS::CloudFront::ResponseHeadersPolicy', {
         ResponseHeadersPolicyConfig: Match.objectLike({
           SecurityHeadersConfig: {
-            ContentSecurityPolicy: { ContentSecurityPolicy: CONTENT_SECURITY_POLICY, Override: true },
+            ContentSecurityPolicy: { ContentSecurityPolicy: Match.anyValue(), Override: true },
             StrictTransportSecurity: {
               AccessControlMaxAgeSec: 63_072_000,
               IncludeSubdomains: true,
@@ -370,11 +370,31 @@ describe('FoundryAscent-App', () => {
           },
         }),
       });
-      expect(CONTENT_SECURITY_POLICY).toBe(
+      expect(contentSecurityPolicy(documentsUploadOrigin('docs-bucket', 'us-east-1'))).toBe(
         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; " +
-          "font-src 'self' data:; connect-src 'self' https://*.s3.amazonaws.com https://*.s3.us-east-1.amazonaws.com; " +
+          "font-src 'self' data:; connect-src 'self' https://docs-bucket.s3.us-east-1.amazonaws.com; " +
           "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
       );
+    });
+
+    it('pins connect-src to the documents bucket endpoint the presigned uploads use (no S3 wildcard)', () => {
+      const [[, policy] = ['', {}]] = resourcesOfType(template, 'AWS::CloudFront::ResponseHeadersPolicy');
+      const config = policy.ResponseHeadersPolicyConfig as Props;
+      const csp = ((config.SecurityHeadersConfig as Props).ContentSecurityPolicy as Props)
+        .ContentSecurityPolicy;
+      // The bucket name comes from the Data stack through the existing weak reference (no new export).
+      const bucketRef = {
+        'Fn::GetStackOutput': {
+          OutputName: expect.stringMatching(/^PublishOutputRefDocumentsBucket/) as unknown,
+          Region: 'us-east-1',
+          StackName: 'FoundryAscent-Data',
+        },
+      };
+      expect(csp).toEqual({ 'Fn::Join': ['', [expect.any(String), bucketRef, expect.any(String)]] });
+      const [, parts] = (csp as { 'Fn::Join': [string, [string, unknown, string]] })['Fn::Join'];
+      const rendered = `${parts[0]}<bucket>${parts[2]}`;
+      expect(rendered).toContain("connect-src 'self' https://<bucket>.s3.us-east-1.amazonaws.com;");
+      expect(rendered).not.toContain('*');
     });
 
     it('runs both edge functions on cloudfront-js-2.0', () => {
@@ -419,8 +439,9 @@ describe('FoundryAscent-App', () => {
       expect(deployments).toHaveLength(2);
       const assets = deployments.find((d) => d.id.startsWith('DeploySiteAssets'));
       const shell = deployments.find((d) => d.id.startsWith('DeploySiteShell'));
+      // Older hashed assets stay: a cached index.html may still reference them (regression: R3).
       expect(assets).toMatchObject({
-        Prune: true,
+        Prune: false,
         Exclude: ['*'],
         Include: ['assets/*'],
         SystemMetadata: { 'cache-control': 'public, max-age=31536000, immutable' },
@@ -435,6 +456,49 @@ describe('FoundryAscent-App', () => {
         DistributionPaths: ['/*'],
       });
       expect(all[shell?.id ?? '']?.DependsOn).toEqual(expect.arrayContaining([assets?.id]));
+      // Both wait for the distribution (CSP and behaviours) before publishing a new build.
+      const distributionId = resourcesOfType(template, 'AWS::CloudFront::Distribution')[0]?.[0];
+      expect(distributionId).toBeDefined();
+      for (const deployment of [assets, shell]) {
+        expect(all[deployment?.id ?? '']?.DependsOn).toEqual(expect.arrayContaining([distributionId]));
+      }
+    });
+  });
+
+  describe('daily maintenance', () => {
+    it('sends the maintenance message to the jobs queue once a day through EventBridge Scheduler', () => {
+      template.resourceCountIs('AWS::Scheduler::Schedule', 1);
+      template.hasResourceProperties('AWS::Scheduler::Schedule', {
+        ScheduleExpression: 'rate(1 day)',
+        State: 'ENABLED',
+        Target: Match.objectLike({
+          Arn: {
+            'Fn::GetStackOutput': Match.objectLike({
+              OutputName: Match.stringLikeRegexp('^PublishOutputFnGetAttJobsQueue'),
+              StackName: 'FoundryAscent-Data',
+            }),
+          },
+          Input: JSON.stringify({ type: 'maintenance', task: 'daily' }),
+        }),
+      });
+    });
+
+    it('grants the schedule role sqs:SendMessage on the jobs queue only, without touching the Data stack', () => {
+      const [[roleId, role] = ['', {}]] = resourcesOfType(template, 'AWS::IAM::Role').filter(([id]) =>
+        id.startsWith('SchedulerRoleForTarget'),
+      );
+      expect(JSON.stringify(role.AssumeRolePolicyDocument)).toContain('scheduler.amazonaws.com');
+      expect(role.PermissionsBoundary).toBeDefined();
+      const policies = resourcesOfType(template, 'AWS::IAM::Policy').filter(([, p]) =>
+        JSON.stringify(p.Roles).includes(roleId),
+      );
+      expect(policies).toHaveLength(1);
+      expect((policies[0]?.[1].PolicyDocument as Props).Statement).toEqual([
+        expect.objectContaining({ Action: 'sqs:SendMessage', Effect: 'Allow' }),
+      ]);
+      // A rule's SQS target would need a queue policy statement in the Data stack.
+      expect(JSON.stringify(synth.templates.data.toJSON())).not.toContain('scheduler.amazonaws.com');
+      expect(JSON.stringify(synth.templates.data.toJSON())).not.toContain('events.amazonaws.com');
     });
   });
 

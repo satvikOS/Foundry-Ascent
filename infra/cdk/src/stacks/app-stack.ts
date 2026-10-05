@@ -21,6 +21,8 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import type * as rds from 'aws-cdk-lib/aws-rds';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
+import * as scheduler from 'aws-cdk-lib/aws-scheduler';
+import * as schedulerTargets from 'aws-cdk-lib/aws-scheduler-targets';
 import type * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import type * as sqs from 'aws-cdk-lib/aws-sqs';
@@ -30,6 +32,7 @@ import type { PlatformConfig } from '../config.js';
 import {
   API_VIEWER_REQUEST_CODE,
   createSecurityHeadersPolicy,
+  documentsUploadOrigin,
   createViewerRequestFunction,
   SPA_REWRITE_CODE,
 } from '../constructs/edge.js';
@@ -46,7 +49,7 @@ import {
   NAMES,
   WORKER_TIMEOUT_SECONDS,
 } from '../lib/constants.js';
-import { environmentNames, type LambdaRole } from '../lib/lambda-contract.js';
+import { environmentNames, LAMBDA_CONTRACT, type LambdaRole } from '../lib/lambda-contract.js';
 import { migrationsChecksum } from '../lib/migrations.js';
 import { retentionDays } from '../lib/logs.js';
 import {
@@ -101,6 +104,8 @@ export class AppStack extends Stack {
   readonly distribution: cloudfront.Distribution;
   readonly siteBucket: s3.Bucket;
   readonly alarmTopic: sns.Topic;
+  /** Daily maintenance schedule (EventBridge Scheduler -> jobs queue -> worker). */
+  readonly dailyMaintenance: scheduler.Schedule;
 
   constructor(scope: Construct, id: string, props: AppStackProps) {
     super(scope, id, props);
@@ -309,6 +314,22 @@ export class AppStack extends Stack {
       }),
     );
 
+    // ---- Daily maintenance -----------------------------------------------------------------------------------
+    // Once a day the worker ends ephemeral sessions idle for 24 h and redacts the turns of ended ephemeral
+    // sessions (apps/api/src/jobs/worker.ts, maintenance job). EventBridge Scheduler rather than an
+    // EventBridge rule: a rule's SQS target needs a statement in the queue's resource policy, which lives in
+    // the Data stack; the schedule instead uses its own role in this stack, granted sqs:SendMessage on the
+    // queue only. Free tier: 30 invocations a month.
+    this.dailyMaintenance = new scheduler.Schedule(this, 'DailyMaintenance', {
+      description: 'Foundry Ascent daily maintenance (ephemeral session expiry and redaction)',
+      schedule: scheduler.ScheduleExpression.rate(Duration.days(1)),
+      target: new schedulerTargets.SqsSendMessage(props.jobsQueue, {
+        input: scheduler.ScheduleTargetInput.fromText(LAMBDA_CONTRACT.worker.dailyMaintenanceMessage),
+        retryAttempts: 5,
+        maxEventAge: Duration.hours(1),
+      }),
+    });
+
     // ---- Migrations custom resource -----------------------------------------------------------------------
     const providerLogGroup = new logs.LogGroup(this, 'MigrateProviderLogs', {
       retention: logRetention,
@@ -365,7 +386,9 @@ export class AppStack extends Stack {
     });
 
     // ---- CloudFront -------------------------------------------------------------------------------------------
-    const securityHeaders = createSecurityHeadersPolicy(this, 'SecurityHeaders');
+    const securityHeaders = createSecurityHeadersPolicy(this, 'SecurityHeaders', {
+      uploadOrigin: documentsUploadOrigin(props.documentsBucket.bucketName, this.region),
+    });
     const spaRewrite = createViewerRequestFunction(
       this,
       'SpaRewriteFunction',
@@ -475,12 +498,14 @@ export class AppStack extends Stack {
       removalPolicy: RemovalPolicy.DESTROY,
     });
     const siteSource = s3deploy.Source.asset(assets.webDist);
+    // Assets are never pruned: an older index.html still cached by a browser or by CloudFront (until the
+    // shell's invalidation completes) references the previous build's hashed files, which must stay.
     const deployAssets = new s3deploy.BucketDeployment(this, 'DeploySiteAssets', {
       sources: [siteSource],
       destinationBucket: this.siteBucket,
       exclude: ['*'],
       include: ['assets/*'],
-      prune: true,
+      prune: false,
       cacheControl: [s3deploy.CacheControl.fromString(IMMUTABLE_CACHE)],
       memoryLimit: 512,
       logGroup: deploymentLogs,
@@ -498,8 +523,12 @@ export class AppStack extends Stack {
       logGroup: deploymentLogs,
       outputObjectKeys: false,
     });
-    // Publish the new SPA only after migrations succeeded, like the functions; shell after assets.
+    // Publish the new SPA only after migrations succeeded, like the functions; shell after assets. Both wait
+    // for the distribution update (security headers such as the CSP, behaviours), so a new build is never
+    // served under the previous distribution configuration.
     deployAssets.node.addDependency(migrations);
+    deployAssets.node.addDependency(this.distribution);
+    deployShell.node.addDependency(this.distribution);
     deployShell.node.addDependency(deployAssets);
 
     // Both deployments share one singleton handler (aws-cdk-lib managed); acknowledge its findings once.

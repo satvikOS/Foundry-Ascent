@@ -813,8 +813,45 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
       },
       "Type": "AWS::IAM::Policy",
     },
+    "DailyMaintenance8A50FC87": {
+      "Properties": {
+        "Description": "Foundry Ascent daily maintenance (ephemeral session expiry and redaction)",
+        "FlexibleTimeWindow": {
+          "Mode": "OFF",
+        },
+        "ScheduleExpression": "rate(1 day)",
+        "ScheduleExpressionTimezone": "Etc/UTC",
+        "State": "ENABLED",
+        "Target": {
+          "Arn": {
+            "Fn::GetStackOutput": {
+              "OutputName": "PublishOutputFnGetAttJobsQueue86ED6666Arn08E9A495",
+              "Region": "us-east-1",
+              "StackName": "FoundryAscent-Data",
+            },
+          },
+          "Input": "{"type":"maintenance","task":"daily"}",
+          "RetryPolicy": {
+            "MaximumEventAgeInSeconds": 3600,
+            "MaximumRetryAttempts": 5,
+          },
+          "RoleArn": {
+            "Fn::GetAtt": [
+              "SchedulerRoleForTargetce9946D198F908",
+              "Arn",
+            ],
+          },
+          "SqsParameters": {},
+        },
+      },
+      "Type": "AWS::Scheduler::Schedule",
+    },
     "DeploySiteAssetsAwsCliLayerF1B8AB27": {
       "DependsOn": [
+        "DistributionOrigin1S3OriginAccessControlEB606076",
+        "DistributionOrigin2FunctionUrlOriginAccessControlAC8EE0B1",
+        "DistributionOrigin2InvokeFromApiForFoundryAscentAppDistributionOrigin2824E45B15BE08013",
+        "Distribution830FAC52",
         "Migrations",
       ],
       "Properties": {
@@ -831,6 +868,10 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
     "DeploySiteAssetsCustomResource512MiB7E3A24C1": {
       "DeletionPolicy": "Delete",
       "DependsOn": [
+        "DistributionOrigin1S3OriginAccessControlEB606076",
+        "DistributionOrigin2FunctionUrlOriginAccessControlAC8EE0B1",
+        "DistributionOrigin2InvokeFromApiForFoundryAscentAppDistributionOrigin2824E45B15BE08013",
+        "Distribution830FAC52",
         "Migrations",
       ],
       "Properties": {
@@ -844,7 +885,7 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
           "assets/*",
         ],
         "OutputObjectKeys": false,
-        "Prune": true,
+        "Prune": false,
         "ServiceToken": {
           "Fn::GetAtt": [
             "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C512MiB6723FB92",
@@ -871,6 +912,10 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
       "DependsOn": [
         "DeploySiteAssetsAwsCliLayerF1B8AB27",
         "DeploySiteAssetsCustomResource512MiB7E3A24C1",
+        "DistributionOrigin1S3OriginAccessControlEB606076",
+        "DistributionOrigin2FunctionUrlOriginAccessControlAC8EE0B1",
+        "DistributionOrigin2InvokeFromApiForFoundryAscentAppDistributionOrigin2824E45B15BE08013",
+        "Distribution830FAC52",
       ],
       "Properties": {
         "Content": {
@@ -888,6 +933,10 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
       "DependsOn": [
         "DeploySiteAssetsAwsCliLayerF1B8AB27",
         "DeploySiteAssetsCustomResource512MiB7E3A24C1",
+        "DistributionOrigin1S3OriginAccessControlEB606076",
+        "DistributionOrigin2FunctionUrlOriginAccessControlAC8EE0B1",
+        "DistributionOrigin2InvokeFromApiForFoundryAscentAppDistributionOrigin2824E45B15BE08013",
+        "Distribution830FAC52",
       ],
       "Properties": {
         "DestinationBucketName": {
@@ -1474,6 +1523,81 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
       "Type": "Custom::FoundryMigrations",
       "UpdateReplacePolicy": "Delete",
     },
+    "SchedulerRoleForTargetce9946D198F908": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Condition": {
+                "StringEquals": {
+                  "aws:SourceAccount": {
+                    "Ref": "AWS::AccountId",
+                  },
+                  "aws:SourceArn": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "arn:aws:scheduler:us-east-1:",
+                        {
+                          "Ref": "AWS::AccountId",
+                        },
+                        ":schedule-group/default",
+                      ],
+                    ],
+                  },
+                },
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "scheduler.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PermissionsBoundary": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:aws:iam::",
+              {
+                "Ref": "AWS::AccountId",
+              },
+              ":policy/FoundryAscent-Boundary",
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "SchedulerRoleForTargetce9946DefaultPolicy030781ED": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:SendMessage",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetStackOutput": {
+                  "OutputName": "PublishOutputFnGetAttJobsQueue86ED6666Arn08E9A495",
+                  "Region": "us-east-1",
+                  "StackName": "FoundryAscent-Data",
+                },
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "SchedulerRoleForTargetce9946DefaultPolicy030781ED",
+        "Roles": [
+          {
+            "Ref": "SchedulerRoleForTargetce9946D198F908",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
     "SecurityHeadersE66B69D3": {
       "Properties": {
         "ResponseHeadersPolicyConfig": {
@@ -1490,7 +1614,22 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
           "Name": "FoundryAscentAppSecurityHeaders5AF0E367",
           "SecurityHeadersConfig": {
             "ContentSecurityPolicy": {
-              "ContentSecurityPolicy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://*.s3.amazonaws.com https://*.s3.us-east-1.amazonaws.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
+              "ContentSecurityPolicy": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://",
+                    {
+                      "Fn::GetStackOutput": {
+                        "OutputName": "PublishOutputRefDocumentsBucket9EC9DEB9D4188A2E",
+                        "Region": "us-east-1",
+                        "StackName": "FoundryAscent-Data",
+                      },
+                    },
+                    ".s3.us-east-1.amazonaws.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
+                  ],
+                ],
+              },
               "Override": true,
             },
             "ContentTypeOptions": {
@@ -3269,18 +3408,72 @@ exports[`template snapshots > FoundryAscent-Foundation 1`] = `
                 "sts:TagSession",
               ],
               "Effect": "Allow",
-              "Resource": {
-                "Fn::Join": [
-                  "",
-                  [
-                    "arn:aws:iam::",
-                    {
-                      "Ref": "AWS::AccountId",
-                    },
-                    ":role/cdk-hnb659fds-*",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:iam::",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":role/cdk-hnb659fds-deploy-role-",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      "-us-east-1",
+                    ],
                   ],
-                ],
-              },
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:iam::",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":role/cdk-hnb659fds-file-publishing-role-",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      "-us-east-1",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:iam::",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":role/cdk-hnb659fds-image-publishing-role-",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      "-us-east-1",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:iam::",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":role/cdk-hnb659fds-lookup-role-",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      "-us-east-1",
+                    ],
+                  ],
+                },
+              ],
               "Sid": "AssumeCdkBootstrapRoles",
             },
             {
@@ -3375,12 +3568,7 @@ exports[`template snapshots > FoundryAscent-Foundation 1`] = `
               "Condition": {
                 "StringEquals": {
                   "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-                },
-                "StringLike": {
-                  "token.actions.githubusercontent.com:sub": [
-                    "repo:satvikOS/Foundry-Ascent:ref:refs/heads/main",
-                    "repo:satvikOS/Foundry-Ascent:environment:production",
-                  ],
+                  "token.actions.githubusercontent.com:sub": "repo:satvikOS/Foundry-Ascent:environment:production",
                 },
               },
               "Effect": "Allow",
@@ -3393,7 +3581,7 @@ exports[`template snapshots > FoundryAscent-Foundation 1`] = `
           ],
           "Version": "2012-10-17",
         },
-        "Description": "GitHub Actions deploys for satvikOS/Foundry-Ascent (OIDC; main branch and production environment only)",
+        "Description": "GitHub Actions deploys for satvikOS/Foundry-Ascent (OIDC; production environment only)",
         "MaxSessionDuration": 3600,
         "PermissionsBoundary": {
           "Fn::Join": [
