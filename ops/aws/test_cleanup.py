@@ -23,7 +23,11 @@ class Recorder:
 
     def get_paginator(self, op: str) -> Any:
         paginator = MagicMock()
-        paginator.paginate.side_effect = lambda **_: iter(self.pages.get(op, [{}]))
+        pages = self.pages.get(op, [{}])
+        if isinstance(pages, Exception):
+            paginator.paginate.side_effect = pages  # raised like a failing AWS call
+        else:
+            paginator.paginate.side_effect = lambda **_: iter(pages)
         return paginator
 
     def __getattr__(self, name: str) -> Any:
@@ -160,3 +164,114 @@ def test_iam_users_are_never_modified() -> None:
     cleaner.iam()
     assert iam.mutations == []
     assert all(o.result == "skipped" for o in cleaner.report.outcomes if o.service == "iam")
+
+
+def test_guard_refuses_protected_targets_even_if_a_step_filter_misses() -> None:
+    """Mutator.call() is the second line of defence: legacy-cleanup.json allows deletes on '*'."""
+    m = c.Mutator("apply", c.Report("apply"), protected_ids={"vpc-platform", "E2PLATFORMDIST"})
+    client = Recorder()
+    secret_arn = "arn:aws:secretsmanager:us-east-1:111122223333:secret:foundry-ascent/aurora-admin-AbCdEf"
+    blocked = [
+        ("delete_stack", {"StackName": "CDKToolkit"}),
+        ("delete_stack", {"StackName": "FoundryAscent-Data"}),
+        ("delete_role", {"RoleName": "cdk-hnb659fds-deploy-role-111122223333-us-east-1"}),
+        ("delete_role", {"RoleName": "FoundryAscent-GitHubDeploy"}),
+        ("delete_role", {"RoleName": "OrganizationAccountAccessRole"}),
+        ("delete_role", {"RoleName": "AWSReservedSSO_Admin_0123456789abcdef"}),
+        ("delete_policy", {"PolicyArn": "arn:aws:iam::111122223333:policy/FoundryAscent-Boundary"}),
+        ("delete_open_id_connect_provider",
+         {"OpenIDConnectProviderArn": "arn:aws:iam::111122223333:oidc-provider/token.actions.githubusercontent.com"}),
+        ("delete_bucket", {"Bucket": "cdk-hnb659fds-assets-111122223333-us-east-1"}),
+        ("delete_bucket", {"Bucket": "foundryascent-data-documentsbucket1a2b3c"}),
+        ("delete_repository", {"repositoryName": "cdk-hnb659fds-container-assets-111122223333-us-east-1"}),
+        ("delete_parameters", {"Names": ["/legacy/a", "/cdk-bootstrap/hnb659fds/version"]}),
+        ("delete_parameters", {"Names": ["/foundry-ascent/config"]}),
+        ("delete_secret", {"SecretId": secret_arn}),
+        ("delete_vpc", {"VpcId": "vpc-platform"}),
+        ("delete_distribution", {"Id": "E2PLATFORMDIST", "IfMatch": "E1"}),
+    ]
+    for op, kwargs in blocked:
+        assert m.call(client, op, service="x", region="us-east-1", resource="legacy-looking", **kwargs) is None
+    assert client.mutations == []
+    assert len(m.report.outcomes) == len(blocked)
+    assert all(o.result == "skipped" for o in m.report.outcomes)
+    # A genuinely legacy target still goes through.
+    m.call(client, "delete_role", service="iam", region="global", resource="old-role", RoleName="old-role")
+    assert client.mutations == [("delete_role", {"RoleName": "old-role"})]
+
+
+def test_github_oidc_provider_is_never_deleted() -> None:
+    iam = Recorder(
+        reads={"list_open_id_connect_providers": {"OpenIDConnectProviderList": [
+            {"Arn": "arn:aws:iam::111122223333:oidc-provider/token.actions.githubusercontent.com"},
+            {"Arn": "arn:aws:iam::111122223333:oidc-provider/legacy.example.com"},
+        ]}},
+        pages={"list_roles": [{"Roles": []}], "list_policies": [{"Policies": []}], "list_users": [{"Users": []}]},
+    )
+    cleaner = make_cleaner("apply", {"iam": iam})
+    cleaner.iam()
+    assert iam.mutations == [("delete_open_id_connect_provider",
+                              {"OpenIDConnectProviderArn": "arn:aws:iam::111122223333:oidc-provider/legacy.example.com"})]
+
+
+def test_unlisted_protected_stacks_block_region_and_global_changes() -> None:
+    from botocore.exceptions import ClientError
+
+    denied = ClientError({"Error": {"Code": "AccessDenied", "Message": "no"}}, "ListStacks")
+    cfn = Recorder(pages={"list_stacks": denied})
+    lam = Recorder(pages={"list_event_source_mappings": [{}],
+                          "list_functions": [{"Functions": [{"FunctionName": "legacy-fn", "FunctionArn": "arn:fn"}]}]})
+    iam = Recorder(
+        reads={"list_open_id_connect_providers": {"OpenIDConnectProviderList": []}},
+        pages={"list_roles": [{"Roles": [{"RoleName": "old-role", "Path": "/", "Arn": "arn:r"}]}],
+               "list_policies": [{"Policies": []}], "list_users": [{"Users": []}]},
+    )
+    cleaner = make_cleaner("apply", {"cloudformation": cfn, "lambda": lam, "iam": iam})
+    cleaner.collect_protected(["us-east-1"])
+    assert cleaner.unverified_regions == {"us-east-1"}
+    cleaner.lambdas("us-east-1")
+    cleaner.iam()
+    assert lam.mutations == [] and iam.mutations == []
+    assert any(o.action == "list_protected_stacks" and o.result == "failed" for o in cleaner.report.outcomes)
+
+
+def test_region_not_enabled_is_not_unverified() -> None:
+    from botocore.exceptions import ClientError
+
+    cfn = Recorder(pages={"list_stacks": ClientError({"Error": {"Code": "OptInRequired"}}, "ListStacks")})
+    cleaner = make_cleaner("apply", {"cloudformation": cfn})
+    cleaner.collect_protected(["ap-east-1"])
+    assert cleaner.unverified_regions == set()
+
+
+def test_ecs_services_go_through_the_mutator() -> None:
+    pages = {"list_clusters": [{"clusterArns": ["arn:aws:ecs:us-east-1:1:cluster/legacy"]}],
+             "list_services": [{"serviceArns": ["arn:aws:ecs:us-east-1:1:service/legacy/web"]}]}
+    plan_ecs = Recorder(pages=pages)
+    make_cleaner("plan", {"ecs": plan_ecs}).ecs("us-east-1")
+    assert plan_ecs.mutations == []
+    ecs = Recorder(pages=pages)
+    make_cleaner("apply", {"ecs": ecs}).ecs("us-east-1")
+    assert [op for op, _ in ecs.mutations] == ["update_service", "delete_service", "delete_cluster"]
+    assert ecs.mutations[1][1] == {"cluster": "arn:aws:ecs:us-east-1:1:cluster/legacy",
+                                   "service": "arn:aws:ecs:us-east-1:1:service/legacy/web", "force": True}
+
+
+def test_snapshots_of_platform_databases_are_kept() -> None:
+    rds = Recorder(pages={
+        "describe_db_instances": [{}], "describe_db_clusters": [{}], "describe_db_snapshots": [{}],
+        "describe_db_cluster_snapshots": [{"DBClusterSnapshots": [
+            {"DBClusterSnapshotIdentifier": "pre-migration", "DBClusterIdentifier": "foundryascent-data-cluster1"},
+            {"DBClusterSnapshotIdentifier": "old-snap", "DBClusterIdentifier": "legacy-db"},
+        ]}],
+    })
+    cleaner = make_cleaner("apply", {"rds": rds})
+    cleaner.rds("us-east-1")
+    assert rds.mutations == [("delete_db_cluster_snapshot", {"DBClusterSnapshotIdentifier": "old-snap"})]
+
+
+def test_account_ids_are_redacted_from_the_report() -> None:
+    report = c.Report("plan")
+    report.add("s3", "us-east-1", "aws-cloudtrail-logs-111122223333-abc", "delete_bucket", "failed",
+               "AccessDenied on arn:aws:s3:::x 111122223333")
+    assert "111122223333" not in str(report.outcomes)

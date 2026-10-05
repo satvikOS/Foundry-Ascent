@@ -11,6 +11,7 @@ logs may be public, so it:
 
 from __future__ import annotations
 
+import argparse
 import datetime as dt
 import os
 import sys
@@ -359,7 +360,9 @@ def cost(session: boto3.Session) -> None:
         print(f"  total ≈ {round(sum(r['usd'] for r in data), 2)}")
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    # No options; parsing first makes --help work without credentials or any AWS call.
+    argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter).parse_args(argv)
     session = boto3.Session()
     sts = session.client("sts", region_name="us-east-1", config=CFG)
     ident = sts.get_caller_identity()

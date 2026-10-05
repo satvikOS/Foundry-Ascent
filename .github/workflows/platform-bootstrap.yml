@@ -1,0 +1,157 @@
+name: Platform - bootstrap (stage 0 to CDK ready)
+
+# Manually triggered and idempotent (safe to re-run):
+#   1. publishes the FoundryAscent-Boundary permissions boundary (create, or new default version),
+#   2. bootstraps CDK in us-east-1 (stack CDKToolkit). The CloudFormation execution role gets
+#      AdministratorAccess capped by FoundryAscent-Boundary, the CDK-recommended pattern,
+#   3. prints the CDKToolkit status and outputs.
+# Runs as the stage-0 IAM user. Every AWS call is covered by infra/iam/policies/bootstrap-operator.json;
+# see docs/ops/cdk-bootstrap-permissions.md. The repository is public: the account ID is masked
+# before anything prints it, and step summaries never contain it.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: platform-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AWS_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+      CDK_DISABLE_CLI_TELEMETRY: 'true'
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - run: pip install --quiet -r ops/aws/requirements.txt
+
+      - name: Publish permissions boundary FoundryAscent-Boundary
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: >-
+          python ops/aws/upsert_policy.py
+          --name FoundryAscent-Boundary
+          --file infra/iam/policies/permissions-boundary.json
+          --description 'Foundry Ascent permissions boundary for every platform role'
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Resolve AWS account ID (masked)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          ACCOUNT_ID="$(python -c 'import boto3; print(boto3.client("sts").get_caller_identity()["Account"])')"
+          if [[ ! "${ACCOUNT_ID}" =~ ^[0-9]{12}$ ]]; then
+            echo "::error::sts:GetCallerIdentity did not return a 12-digit account ID"
+            exit 1
+          fi
+          echo "::add-mask::${ACCOUNT_ID}"
+          echo "ACCOUNT_ID=${ACCOUNT_ID}" >> "$GITHUB_ENV"
+
+      # Flags verified against aws-cdk 2.1144.0 (lib/cli/parse-command-line-arguments.js).
+      # --bootstrap-kms-key-id AWS_MANAGED_KEY pins SSE-KMS with the AWS-managed aws/s3 key, so a
+      # customer KMS key ($1/month, and kms:CreateKey is not granted) is never created.
+      # --no-previous-parameters is deliberately NOT passed: parameters that are not given would fall
+      # back to template defaults on re-runs.
+      - name: CDK bootstrap (CDKToolkit, us-east-1)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          npx --yes aws-cdk@2.1144.0 bootstrap "aws://${ACCOUNT_ID}/us-east-1" \
+            --cloudformation-execution-policies arn:aws:iam::aws:policy/AdministratorAccess \
+            --custom-permissions-boundary FoundryAscent-Boundary \
+            --bootstrap-kms-key-id AWS_MANAGED_KEY \
+            --termination-protection \
+            --tags project=foundry-ascent
+
+      - name: CDKToolkit status and outputs (account ID masked)
+        if: ${{ !cancelled() }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        shell: python
+        run: |
+          import os
+          import sys
+
+          import boto3
+          from botocore.config import Config
+          from botocore.exceptions import BotoCoreError, ClientError
+
+          cfg = Config(retries={"max_attempts": 6, "mode": "adaptive"}, connect_timeout=10, read_timeout=30)
+          account = os.environ.get("ACCOUNT_ID", "")
+          try:
+              if not account:
+                  account = boto3.client("sts", config=cfg).get_caller_identity()["Account"]
+          except (BotoCoreError, ClientError) as exc:
+              print(f"! sts:GetCallerIdentity: {type(exc).__name__}")
+          if account:
+              print(f"::add-mask::{account}", flush=True)
+
+
+          def m(value):
+              text = str(value)
+              return text.replace(account, "*" * len(account)) if account else text
+
+
+          cfn = boto3.client("cloudformation", config=cfg)
+          try:
+              stack = cfn.describe_stacks(StackName="CDKToolkit")["Stacks"][0]
+          except ClientError as exc:
+              err = exc.response.get("Error", {})
+              print(f"! cloudformation:DescribeStacks CDKToolkit: {err.get('Code')}: {m(err.get('Message', ''))}")
+              sys.exit(1)
+          except BotoCoreError as exc:
+              print(f"! cloudformation:DescribeStacks CDKToolkit: {type(exc).__name__}")
+              sys.exit(1)
+
+          status = stack["StackStatus"]
+          params = {p["ParameterKey"]: p.get("ParameterValue", "") for p in stack.get("Parameters", [])}
+          lines = [
+              f"Stack: {stack['StackName']}",
+              f"Status: {status}" + (f" ({m(stack['StackStatusReason'])})" if stack.get("StackStatusReason") else ""),
+              f"Termination protection: {stack.get('EnableTerminationProtection', False)}",
+              "Tags: " + (", ".join(f"{t['Key']}={t['Value']}" for t in stack.get("Tags", [])) or "-"),
+              "Parameters:",
+          ]
+          for key in ("Qualifier", "CloudFormationExecutionPolicies", "InputPermissionsBoundary",
+                      "FileAssetsBucketKmsKeyId", "PublicAccessBlockConfiguration", "TrustedAccounts"):
+              lines.append(f"  {key} = {m(params.get(key, '-')) or '-'}")
+          lines.append("Outputs:")
+          for out in sorted(stack.get("Outputs", []), key=lambda o: o["OutputKey"]):
+              lines.append(f"  {out['OutputKey']} = {m(out.get('OutputValue', ''))}")
+          print("\n".join(lines))
+
+          healthy = status in {"CREATE_COMPLETE", "UPDATE_COMPLETE", "IMPORT_COMPLETE"}
+          if not healthy:
+              print("Recent failure events:")
+              try:
+                  events = cfn.describe_stack_events(StackName=stack["StackId"]).get("StackEvents", [])
+              except (BotoCoreError, ClientError) as exc:
+                  events = []
+                  print(f"  ! cloudformation:DescribeStackEvents: {type(exc).__name__}")
+              for ev in [e for e in events if e.get("ResourceStatus", "").endswith("_FAILED")][:15]:
+                  print(f"  {ev['LogicalResourceId']} ({ev.get('ResourceType', '-')}): {ev['ResourceStatus']}: "
+                        f"{m(ev.get('ResourceStatusReason', ''))}")
+
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              # Job summaries are not covered by ::add-mask::, so everything here goes through m().
+              with open(summary, "a", encoding="utf-8") as fh:
+                  fh.write("### CDKToolkit (us-east-1)\n\n```\n" + m("\n".join(lines)) + "\n```\n")
+          sys.exit(0 if healthy else 1)

@@ -1,0 +1,37 @@
+name: Ops - verify AWS access
+
+# Manually triggered check that the stage-0 CI identity (IAM user Foundry-Ascent) has every permission in
+# infra/iam/required-actions.json (iam:SimulatePrincipalPolicy) and can reach the Bedrock models.
+# Mutates nothing. Cost per run: a few model calls of at most 16 output tokens, one 1024-dim embedding and
+# one Cost Explorer request (USD 0.01). Logs are public: the account id is masked and redacted, and no
+# model output is printed.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ops-aws-verify-access
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - run: pip install --quiet -r ops/aws/requirements.txt
+
+      - name: Verify access
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_REGION: us-east-1
+        run: python ops/aws/verify_access.py

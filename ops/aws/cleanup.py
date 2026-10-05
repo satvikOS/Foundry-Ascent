@@ -10,6 +10,13 @@ Usage:
 Safety properties (covered by ops/aws/test_cleanup.py):
   * Every mutating call goes through Mutator.call(), which refuses unless --mode apply.
   * Foundry Ascent and CDK bootstrap resources are protected by name and by stack membership.
+    infra/iam/policies/legacy-cleanup.json allows deletes on "*", so IAM is not a safety net here:
+    besides each step's own filter, Mutator.call() re-checks every target against the protected set
+    (FoundryAscent/foundry-ascent/cdk-hnb659fds names, CDKToolkit, cdk-* roles, buckets and ECR
+    repositories, /cdk-bootstrap/ and /foundry-ascent/ parameters, the GitHub OIDC provider,
+    OrganizationAccountAccessRole, AWS-reserved roles, physical resources of protected stacks).
+  * If the protected stacks of a region cannot be listed, nothing in that region (S3 buckets included)
+    is changed, and no global IAM, CloudFront or Route 53 resource is changed either.
   * IAM users and groups are never modified. AWS-managed KMS keys, service-linked roles,
     the default VPC, registered domains and AWS-owned backup vaults are never touched.
   * KMS keys and Secrets Manager secrets are *scheduled* for deletion with a 7-day window:
@@ -24,6 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from collections.abc import Callable, Iterable
@@ -48,8 +56,30 @@ PROTECTED_PARAM_PREFIXES = ("/cdk-bootstrap/", "/foundry-ascent/")
 PROTECTED_SECRET_PREFIXES = ("foundry-ascent/",)
 PROTECTED_LOG_PREFIXES = ("/aws/lambda/FoundryAscent", "/foundry-ascent/", "/aws/rds/cluster/foundryascent")
 PROTECTED_KMS_ALIAS_PREFIXES = ("alias/foundry-ascent", "alias/aws/")
+GITHUB_OIDC_HOST = "token.actions.githubusercontent.com"
 S3_DIRECT_DELETE_LIMIT = 20_000
 READ_ONLY_PREFIXES = ("list_", "describe_", "get_", "head_")
+NOT_ENABLED = {"UnrecognizedClientException", "InvalidClientTokenId", "AuthFailure", "OptInRequired"}
+ACCOUNT_ID_RE = re.compile(r"(?<!\d)\d{12}(?!\d)")
+
+# Second line of defence, applied by Mutator.call() to the resource label and to every top-level string
+# (or list of strings) parameter of a mutating call, whatever step issued it.
+GUARD_MARKERS = ("foundryascent", "foundry-ascent", "cdk-hnb659fds", "cdktoolkit")  # case-insensitive substrings
+GUARD_PATH_PREFIXES = ("/cdk-bootstrap/", "/foundry-ascent/")
+GUARD_PARAM_PREFIXES: dict[str, tuple[str, ...]] = {
+    "StackName": PROTECTED_STACK_PREFIXES,
+    "RoleName": PROTECTED_ROLE_PREFIXES + ("AWSServiceRoleFor", "AWSReservedSSO_"),
+    "Bucket": PROTECTED_BUCKET_PREFIXES,
+    "repositoryName": PROTECTED_ECR_PREFIXES,
+    "Name": PROTECTED_PARAM_PREFIXES,
+    "Names": PROTECTED_PARAM_PREFIXES,
+    "SecretId": PROTECTED_SECRET_PREFIXES,
+}
+
+
+def redact(text: object) -> str:
+    """Hide anything shaped like an AWS account id (step summaries are not covered by ::add-mask::)."""
+    return ACCOUNT_ID_RE.sub("***", str(text))
 
 
 @dataclass
@@ -68,6 +98,7 @@ class Report:
     outcomes: list[Outcome] = field(default_factory=list)
 
     def add(self, service: str, region: str, resource: str, action: str, result: str, detail: str = "") -> None:
+        resource, detail = redact(resource), redact(detail)
         self.outcomes.append(Outcome(service, region, resource, action, result, detail))
         print(f"{result.upper():8} {service:15} {region:15} {resource} -> {action}" + (f" ({detail})" if detail else ""),
               flush=True)
@@ -76,14 +107,46 @@ class Report:
 class Mutator:
     """Single choke point for every state-changing AWS call."""
 
-    def __init__(self, mode: str, report: Report) -> None:
+    def __init__(self, mode: str, report: Report, protected_ids: set[str] | None = None,
+                 unverified_regions: set[str] | None = None) -> None:
         self.apply = mode == "apply"
         self.report = report
+        # Shared with Cleaner (same set objects), so later additions are seen here.
+        self.protected_ids = protected_ids if protected_ids is not None else set()
+        self.unverified_regions = unverified_regions if unverified_regions is not None else set()
+
+    def refusal(self, region: str, resource: str, params: dict[str, Any]) -> str | None:
+        """Why this call must not run, or None. Independent of each step's own filter."""
+        if region in self.unverified_regions or (region == "global" and self.unverified_regions):
+            return "protected stacks could not be listed in " + ", ".join(sorted(self.unverified_regions))
+        values = [resource]
+        for key, value in params.items():
+            for item in value if isinstance(value, list) else [value]:
+                if not isinstance(item, str):
+                    continue
+                if starts(item, GUARD_PARAM_PREFIXES.get(key, ())):
+                    return f"protected {key}"
+                values.append(item)
+        for value in values:
+            lowered = value.lower()
+            if value in self.protected_ids:
+                return "protected: belongs to a CDKToolkit/FoundryAscent stack"
+            if (any(m in lowered for m in GUARD_MARKERS) or lowered.startswith(GUARD_PATH_PREFIXES)
+                    or lowered.endswith(GITHUB_OIDC_HOST) or value in PROTECTED_ROLE_NAMES):
+                return "protected name"
+        return None
 
     def call(self, client: Any, operation: str, *, service: str, region: str, resource: str,
-             reason: str = "", **kwargs: Any) -> Any:
+             reason: str = "", params: dict[str, Any] | None = None, **kwargs: Any) -> Any:
+        """Run (apply) or record (plan) one mutating call. ``params`` carries API parameters whose names
+        clash with this method's keywords (for example ECS ``service``)."""
         if operation.startswith(READ_ONLY_PREFIXES):
             raise ValueError(f"{operation} is read-only; call the client directly")
+        kwargs = {**(params or {}), **kwargs}
+        blocked = self.refusal(region, resource, kwargs)
+        if blocked:
+            self.report.add(service, region, resource, operation, "skipped", blocked)
+            return None
         if not self.apply:
             self.report.add(service, region, resource, operation, "planned", reason)
             return None
@@ -115,7 +178,7 @@ def read(report: Report, service: str, region: str, fn: Callable[[], Any], defau
         return fn()
     except ClientError as exc:
         code = exc.response.get("Error", {}).get("Code", "ClientError")
-        if code not in {"UnrecognizedClientException", "InvalidClientTokenId", "AuthFailure", "OptInRequired"}:
+        if code not in NOT_ENABLED:
             report.add(service, region, "*", "read", "skipped", code)
         return default
     except (BotoCoreError, KeyError) as exc:
@@ -127,9 +190,10 @@ class Cleaner:
     def __init__(self, session: boto3.Session, mode: str, include_mail_zones: bool) -> None:
         self.session = session
         self.report = Report(mode)
-        self.m = Mutator(mode, self.report)
         self.include_mail_zones = include_mail_zones
         self.protected_ids: set[str] = set()
+        self.unverified_regions: set[str] = set()  # regions whose protected stacks could not be listed
+        self.m = Mutator(mode, self.report, self.protected_ids, self.unverified_regions)
 
     def client(self, service: str, region: str | None = None) -> Any:
         return self.session.client(service, region_name=region, config=CFG)
@@ -137,22 +201,39 @@ class Cleaner:
     # -- protection -------------------------------------------------------------------------------
 
     def collect_protected(self, regions: list[str]) -> None:
+        """Record the physical ids of CDKToolkit/FoundryAscent* stacks. Fails closed: a region whose stacks
+        cannot be listed is marked unverified, and Mutator.call() then refuses every change there."""
         for region in regions:
             cfn = self.client("cloudformation", region)
-            stacks = read(self.report, "cloudformation", region,
-                          lambda cfn=cfn: list(paginate(cfn, "list_stacks", "StackSummaries")), [])
-            for s in stacks:
-                if s["StackStatus"] == "DELETE_COMPLETE" or not starts(s["StackName"], PROTECTED_STACK_PREFIXES):
+            try:
+                for s in paginate(cfn, "list_stacks", "StackSummaries"):
+                    if s["StackStatus"] == "DELETE_COMPLETE" or not starts(s["StackName"], PROTECTED_STACK_PREFIXES):
+                        continue
+                    for r in paginate(cfn, "list_stack_resources", "StackResourceSummaries",
+                                      StackName=s.get("StackId") or s["StackName"]):
+                        self.protected_ids.add(r.get("PhysicalResourceId") or "")
+            except ClientError as exc:
+                code = exc.response.get("Error", {}).get("Code", "ClientError")
+                if code in NOT_ENABLED:  # region not enabled for this account: nothing can exist there
                     continue
-                resources = read(self.report, "cloudformation", region,
-                                 lambda cfn=cfn, n=s["StackName"]: list(
-                                     paginate(cfn, "list_stack_resources", "StackResourceSummaries", StackName=n)), [])
-                self.protected_ids.update(r.get("PhysicalResourceId", "") for r in resources)
+                self.unverified_regions.add(region)
+                self.report.add("cloudformation", region, "*", "list_protected_stacks", "failed",
+                                f"{code}; nothing in this region and no global resource will be changed")
+            except (BotoCoreError, KeyError) as exc:
+                self.unverified_regions.add(region)
+                self.report.add("cloudformation", region, "*", "list_protected_stacks", "failed",
+                                f"{type(exc).__name__}; nothing in this region and no global resource will be changed")
         self.protected_ids.discard("")
         print(f"Protected physical resources from CDKToolkit/FoundryAscent stacks: {len(self.protected_ids)}")
+        if self.unverified_regions:
+            print(f"Protection unverified (changes refused): {', '.join(sorted(self.unverified_regions))}")
 
     def is_protected(self, *identifiers: str | None) -> bool:
         return any(i and i in self.protected_ids for i in identifiers)
+
+    def guarded(self, region: str, name: str) -> bool:
+        """True when Mutator's guard would refuse this name; used to keep batch calls free of protected items."""
+        return self.m.refusal(region, name, {}) is not None
 
     # -- regional ---------------------------------------------------------------------------------
 
@@ -163,12 +244,12 @@ class Cleaner:
         targets = [s["StackName"] for s in stacks
                    if s["StackStatus"] not in ("DELETE_COMPLETE", "DELETE_IN_PROGRESS")
                    and not s.get("ParentId") and not starts(s["StackName"], PROTECTED_STACK_PREFIXES)]
-        for name in targets:
-            self.m.call(cfn, "delete_stack", service="cloudformation", region=region, resource=name,
-                        reason="legacy stack", StackName=name)
-        if self.m.apply and targets:
+        deleting = [name for name in targets
+                    if self.m.call(cfn, "delete_stack", service="cloudformation", region=region, resource=name,
+                                   reason="legacy stack", StackName=name) is not None]
+        if deleting:  # only stacks whose DeleteStack was actually sent (apply mode, not refused, no error)
             deadline = time.monotonic() + 600
-            for name in targets:
+            for name in deleting:
                 remaining = max(30, int(deadline - time.monotonic()))
                 try:
                     cfn.get_waiter("stack_delete_complete").wait(
@@ -286,7 +367,10 @@ class Cleaner:
             self.m.call(ec2, "delete_snapshot", service="ec2", region=region, resource=s["SnapshotId"],
                         SnapshotId=s["SnapshotId"])
         for vpc in read(self.report, "ec2", region, lambda: ec2.describe_vpcs().get("Vpcs", []), []):
-            if vpc.get("IsDefault") or self.is_protected(vpc["VpcId"]):
+            if vpc.get("IsDefault"):
+                self.protected_ids.add(vpc["VpcId"])  # the guard then refuses any call naming it
+                continue
+            if self.is_protected(vpc["VpcId"]):
                 continue
             self._teardown_vpc(ec2, region, vpc["VpcId"])
 
@@ -367,10 +451,16 @@ class Cleaner:
                         DBClusterIdentifier=ident, SkipFinalSnapshot=True)
         for s in read(self.report, "rds", region, lambda: list(paginate(
                 rds, "describe_db_snapshots", "DBSnapshots", SnapshotType="manual")), []):
+            source = s.get("DBInstanceIdentifier", "")
+            if source.startswith("foundryascent") or self.is_protected(source):
+                continue  # snapshots of platform databases are kept
             self.m.call(rds, "delete_db_snapshot", service="rds", region=region, resource=s["DBSnapshotIdentifier"],
                         DBSnapshotIdentifier=s["DBSnapshotIdentifier"])
         for s in read(self.report, "rds", region, lambda: list(paginate(
                 rds, "describe_db_cluster_snapshots", "DBClusterSnapshots", SnapshotType="manual")), []):
+            source = s.get("DBClusterIdentifier", "")
+            if source.startswith("foundryascent") or self.is_protected(source):
+                continue
             self.m.call(rds, "delete_db_cluster_snapshot", service="rds", region=region,
                         resource=s["DBClusterSnapshotIdentifier"], DBClusterSnapshotIdentifier=s["DBClusterSnapshotIdentifier"])
 
@@ -394,17 +484,12 @@ class Cleaner:
                         cluster=cluster)
 
     def _ecs_delete_service(self, ecs: Any, region: str, cluster: str, svc: str) -> None:
-        # "service" is both a Mutator keyword and an ECS parameter, so pass it explicitly.
+        # "service" is both a Mutator keyword and an ECS parameter, so it travels in params.
         name = svc.rsplit("/", 1)[-1]
-        if not self.m.apply:
-            self.report.add("ecs", region, name, "delete_service", "planned", "scale to 0, force delete")
-            return
-        try:
-            ecs.update_service(cluster=cluster, service=svc, desiredCount=0)
-            ecs.delete_service(cluster=cluster, service=svc, force=True)
-            self.report.add("ecs", region, name, "delete_service", "done")
-        except ClientError as exc:
-            self.report.add("ecs", region, name, "delete_service", "failed", exc.response["Error"]["Code"])
+        self.m.call(ecs, "update_service", service="ecs", region=region, resource=name, reason="scale to 0",
+                    params={"cluster": cluster, "service": svc, "desiredCount": 0})
+        self.m.call(ecs, "delete_service", service="ecs", region=region, resource=name, reason="force delete",
+                    params={"cluster": cluster, "service": svc, "force": True})
 
     def logs_and_alarms(self, region: str) -> None:
         logs = self.client("logs", region)
@@ -416,13 +501,14 @@ class Cleaner:
         cw = self.client("cloudwatch", region)
         alarms = [a["AlarmName"] for a in read(self.report, "cloudwatch", region,
                                                 lambda: list(paginate(cw, "describe_alarms", "MetricAlarms")), [])
-                  if not starts(a["AlarmName"], PROTECTED_STACK_PREFIXES) and not self.is_protected(a["AlarmName"])]
+                  if not starts(a["AlarmName"], PROTECTED_STACK_PREFIXES) and not self.is_protected(a["AlarmName"])
+                  and not self.guarded(region, a["AlarmName"])]
         for i in range(0, len(alarms), 100):
             self.m.call(cw, "delete_alarms", service="cloudwatch", region=region, resource=f"{len(alarms[i:i + 100])} alarms",
                         AlarmNames=alarms[i:i + 100])
         dashboards = [d["DashboardName"] for d in read(self.report, "cloudwatch", region,
                                                         lambda: list(paginate(cw, "list_dashboards", "DashboardEntries")), [])
-                      if not starts(d["DashboardName"], PROTECTED_STACK_PREFIXES)]
+                      if not starts(d["DashboardName"], PROTECTED_STACK_PREFIXES) and not self.guarded(region, d["DashboardName"])]
         if dashboards:
             self.m.call(cw, "delete_dashboards", service="cloudwatch", region=region, resource=f"{len(dashboards)} dashboards",
                         DashboardNames=dashboards)
@@ -479,7 +565,8 @@ class Cleaner:
         ssm = self.client("ssm", region)
         names = [p["Name"] for p in read(self.report, "ssm", region,
                                          lambda: list(paginate(ssm, "describe_parameters", "Parameters")), [])
-                 if not starts(p["Name"], PROTECTED_PARAM_PREFIXES) and not self.is_protected(p["Name"])]
+                 if not starts(p["Name"], PROTECTED_PARAM_PREFIXES) and not self.is_protected(p["Name"])
+                 and not self.guarded(region, p["Name"])]
         for i in range(0, len(names), 10):
             self.m.call(ssm, "delete_parameters", service="ssm", region=region, resource=f"{len(names[i:i + 10])} parameters",
                         Names=names[i:i + 10])
@@ -632,6 +719,10 @@ class Cleaner:
                                 PolicyArn=p["Arn"], VersionId=v["VersionId"])
             self.m.call(iam, "delete_policy", service="iam", region="global", resource=p["PolicyName"], PolicyArn=p["Arn"])
         for o in read(self.report, "iam", "global", lambda: iam.list_open_id_connect_providers().get("OpenIDConnectProviderList", []), []):
+            if o["Arn"].endswith(f"oidc-provider/{GITHUB_OIDC_HOST}"):
+                self.report.add("iam", "global", GITHUB_OIDC_HOST, "delete_open_id_connect_provider", "skipped",
+                                "GitHub OIDC provider (stage 1 deploy identity)")
+                continue
             if self.is_protected(o["Arn"]):
                 continue
             self.m.call(iam, "delete_open_id_connect_provider", service="iam", region="global",
@@ -656,7 +747,7 @@ def main(argv: list[str] | None = None) -> int:
     ident = session.client("sts", region_name="us-east-1", config=CFG).get_caller_identity()
     if IN_GITHUB:
         print(f"::add-mask::{ident['Account']}", flush=True)
-    print(f"Mode: {args.mode} | caller: {ident['Arn']}")
+    print(f"Mode: {args.mode} | caller: {redact(ident['Arn'])}")
 
     cleaner = Cleaner(session, args.mode, args.include_mail_zones)
     if args.regions == "all":

@@ -1,0 +1,603 @@
+{
+  "description": "Every IAM action the stage-0 CI identity (IAM user Foundry-Ascent) needs, with representative resource ARNs. ops/aws/verify_access.py simulates each action against each resource with iam:SimulatePrincipalPolicy; a required entry that is not 'allowed' fails the run. Placeholders: {account} = caller account id (never printed), {region} = platform region (us-east-1). Literal regions are cross-region inference destinations. Resource '*' marks actions without resource-level scoping and legacy resources whose names are not known in advance. Optional 'policy' (a customer-managed policy name): the entry applies only while that policy is attached directly to the calling IAM user (iam:ListAttachedUserPolicies). Once it is detached (FoundryAscent-LegacyCleanup is detached after the legacy cleanup), the entry is skipped instead of failing; if attachment cannot be determined, the entry is checked as declared.",
+  "cdk_qualifier": "hnb659fds",
+  "entries": [
+    {
+      "purpose": "Caller identity",
+      "actions": ["sts:GetCallerIdentity"],
+      "resources": ["*"],
+      "required": true
+    },
+    {
+      "purpose": "Self-introspection and access verification (verify_access.py)",
+      "actions": [
+        "iam:GetUser",
+        "iam:ListAttachedUserPolicies",
+        "iam:ListUserPolicies",
+        "iam:ListAccessKeys",
+        "iam:SimulatePrincipalPolicy"
+      ],
+      "resources": ["arn:aws:iam::{account}:user/Foundry-Ascent"],
+      "required": true
+    },
+    {
+      "purpose": "CDK bootstrap: CloudFormation change sets on stack CDKToolkit",
+      "actions": [
+        "cloudformation:DescribeStacks",
+        "cloudformation:GetTemplate",
+        "cloudformation:CreateChangeSet",
+        "cloudformation:DescribeChangeSet",
+        "cloudformation:ExecuteChangeSet",
+        "cloudformation:DeleteChangeSet",
+        "cloudformation:DescribeStackEvents",
+        "cloudformation:UpdateTerminationProtection"
+      ],
+      "resources": ["arn:aws:cloudformation:{region}:{account}:stack/CDKToolkit/00000000-0000-0000-0000-000000000000"],
+      "required": true
+    },
+    {
+      "purpose": "CDK bootstrap: IAM roles created by the bootstrap template (CloudFormation uses the caller's permissions, incl. rollback)",
+      "actions": [
+        "iam:CreateRole",
+        "iam:GetRole",
+        "iam:DeleteRole",
+        "iam:TagRole",
+        "iam:UntagRole",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:PutRolePolicy",
+        "iam:GetRolePolicy",
+        "iam:DeleteRolePolicy",
+        "iam:AttachRolePolicy",
+        "iam:DetachRolePolicy",
+        "iam:ListRolePolicies",
+        "iam:ListAttachedRolePolicies",
+        "iam:PutRolePermissionsBoundary"
+      ],
+      "resources": [
+        "arn:aws:iam::{account}:role/cdk-hnb659fds-deploy-role-{account}-{region}",
+        "arn:aws:iam::{account}:role/cdk-hnb659fds-file-publishing-role-{account}-{region}",
+        "arn:aws:iam::{account}:role/cdk-hnb659fds-image-publishing-role-{account}-{region}",
+        "arn:aws:iam::{account}:role/cdk-hnb659fds-lookup-role-{account}-{region}",
+        "arn:aws:iam::{account}:role/cdk-hnb659fds-cfn-exec-role-{account}-{region}"
+      ],
+      "required": true
+    },
+    {
+      "purpose": "CDK bootstrap: S3 file-asset staging bucket",
+      "actions": [
+        "s3:CreateBucket",
+        "s3:DeleteBucket",
+        "s3:ListBucket",
+        "s3:GetBucketLocation",
+        "s3:PutBucketPolicy",
+        "s3:GetBucketPolicy",
+        "s3:DeleteBucketPolicy",
+        "s3:PutEncryptionConfiguration",
+        "s3:GetEncryptionConfiguration",
+        "s3:PutBucketVersioning",
+        "s3:GetBucketVersioning",
+        "s3:PutBucketPublicAccessBlock",
+        "s3:GetBucketPublicAccessBlock",
+        "s3:PutLifecycleConfiguration",
+        "s3:GetLifecycleConfiguration",
+        "s3:PutBucketTagging",
+        "s3:GetBucketTagging"
+      ],
+      "resources": ["arn:aws:s3:::cdk-hnb659fds-assets-{account}-{region}"],
+      "required": true
+    },
+    {
+      "purpose": "CDK bootstrap: ECR container-asset repository",
+      "actions": [
+        "ecr:CreateRepository",
+        "ecr:DeleteRepository",
+        "ecr:DescribeRepositories",
+        "ecr:SetRepositoryPolicy",
+        "ecr:GetRepositoryPolicy",
+        "ecr:PutLifecyclePolicy",
+        "ecr:GetLifecyclePolicy",
+        "ecr:PutImageTagMutability",
+        "ecr:PutImageScanningConfiguration",
+        "ecr:TagResource",
+        "ecr:ListTagsForResource"
+      ],
+      "resources": ["arn:aws:ecr:{region}:{account}:repository/cdk-hnb659fds-container-assets-{account}-{region}"],
+      "required": true
+    },
+    {
+      "purpose": "CDK bootstrap: SSM version parameter",
+      "actions": [
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+        "ssm:PutParameter",
+        "ssm:DeleteParameter",
+        "ssm:AddTagsToResource",
+        "ssm:ListTagsForResource"
+      ],
+      "resources": ["arn:aws:ssm:{region}:{account}:parameter/cdk-bootstrap/hnb659fds/version"],
+      "required": true
+    },
+    {
+      "purpose": "CDK CLI: assume bootstrap roles for deploy, asset publishing and context lookups",
+      "actions": ["sts:AssumeRole"],
+      "resources": [
+        "arn:aws:iam::{account}:role/cdk-hnb659fds-deploy-role-{account}-{region}",
+        "arn:aws:iam::{account}:role/cdk-hnb659fds-file-publishing-role-{account}-{region}",
+        "arn:aws:iam::{account}:role/cdk-hnb659fds-image-publishing-role-{account}-{region}",
+        "arn:aws:iam::{account}:role/cdk-hnb659fds-lookup-role-{account}-{region}"
+      ],
+      "required": true
+    },
+    {
+      "purpose": "CDK CLI: session tags when assuming bootstrap roles (only if configured)",
+      "actions": ["sts:TagSession"],
+      "resources": ["arn:aws:iam::{account}:role/cdk-hnb659fds-deploy-role-{account}-{region}"],
+      "required": false
+    },
+    {
+      "purpose": "Permissions boundary managed policy FoundryAscent-Boundary",
+      "actions": [
+        "iam:CreatePolicy",
+        "iam:GetPolicy",
+        "iam:GetPolicyVersion",
+        "iam:ListPolicyVersions",
+        "iam:CreatePolicyVersion",
+        "iam:DeletePolicyVersion",
+        "iam:SetDefaultPolicyVersion",
+        "iam:TagPolicy",
+        "iam:ListEntitiesForPolicy"
+      ],
+      "resources": ["arn:aws:iam::{account}:policy/FoundryAscent-Boundary"],
+      "required": true
+    },
+    {
+      "purpose": "GitHub OIDC provider token.actions.githubusercontent.com",
+      "actions": [
+        "iam:CreateOpenIDConnectProvider",
+        "iam:GetOpenIDConnectProvider",
+        "iam:UpdateOpenIDConnectProviderThumbprint",
+        "iam:AddClientIDToOpenIDConnectProvider",
+        "iam:TagOpenIDConnectProvider"
+      ],
+      "resources": ["arn:aws:iam::{account}:oidc-provider/token.actions.githubusercontent.com"],
+      "required": true
+    },
+    {
+      "purpose": "GitHub OIDC provider: idempotency lookup",
+      "actions": ["iam:ListOpenIDConnectProviders"],
+      "resources": ["*"],
+      "required": true
+    },
+    {
+      "purpose": "Stage-1 deploy role FoundryAscent-GitHubDeploy (OIDC trust, capped by FoundryAscent-Boundary)",
+      "actions": [
+        "iam:CreateRole",
+        "iam:GetRole",
+        "iam:UpdateRole",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:TagRole",
+        "iam:PutRolePolicy",
+        "iam:GetRolePolicy",
+        "iam:DeleteRolePolicy",
+        "iam:AttachRolePolicy",
+        "iam:DetachRolePolicy",
+        "iam:ListRolePolicies",
+        "iam:ListAttachedRolePolicies",
+        "iam:PutRolePermissionsBoundary"
+      ],
+      "resources": ["arn:aws:iam::{account}:role/FoundryAscent-GitHubDeploy"],
+      "required": true
+    },
+    {
+      "purpose": "FoundryAscent* stacks managed directly by the stage-0 identity (normally via the CDK deploy role)",
+      "actions": [
+        "cloudformation:DescribeStacks",
+        "cloudformation:GetTemplate",
+        "cloudformation:CreateChangeSet",
+        "cloudformation:DescribeChangeSet",
+        "cloudformation:ExecuteChangeSet",
+        "cloudformation:DeleteChangeSet",
+        "cloudformation:DescribeStackEvents",
+        "cloudformation:DeleteStack"
+      ],
+      "resources": ["arn:aws:cloudformation:{region}:{account}:stack/FoundryAscent-Example/00000000-0000-0000-0000-000000000000"],
+      "required": false
+    },
+    {
+      "purpose": "Bedrock smoke tests: model catalogue and inference profiles",
+      "actions": ["bedrock:ListFoundationModels", "bedrock:ListInferenceProfiles"],
+      "resources": ["*"],
+      "required": true
+    },
+    {
+      "purpose": "Bedrock smoke tests: model and profile details",
+      "actions": ["bedrock:GetFoundationModel"],
+      "resources": [
+        "arn:aws:bedrock:{region}::foundation-model/amazon.nova-2-lite-v1:0",
+        "arn:aws:bedrock:{region}::foundation-model/amazon.titan-embed-text-v2:0"
+      ],
+      "required": true
+    },
+    {
+      "purpose": "Bedrock smoke tests: inference profile details",
+      "actions": ["bedrock:GetInferenceProfile"],
+      "resources": [
+        "arn:aws:bedrock:{region}:{account}:inference-profile/us.amazon.nova-2-lite-v1:0",
+        "arn:aws:bedrock:{region}:{account}:inference-profile/global.amazon.nova-2-lite-v1:0"
+      ],
+      "required": true
+    },
+    {
+      "purpose": "Fallback reasoning: Amazon Nova 2 Lite via Converse / ConverseStream (base id and us./global. profiles)",
+      "actions": ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
+      "resources": [
+        "arn:aws:bedrock:{region}::foundation-model/amazon.nova-2-lite-v1:0",
+        "arn:aws:bedrock:{region}:{account}:inference-profile/us.amazon.nova-2-lite-v1:0",
+        "arn:aws:bedrock:us-east-2::foundation-model/amazon.nova-2-lite-v1:0",
+        "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-2-lite-v1:0",
+        "arn:aws:bedrock:{region}:{account}:inference-profile/global.amazon.nova-2-lite-v1:0",
+        "arn:aws:bedrock:::foundation-model/amazon.nova-2-lite-v1:0"
+      ],
+      "required": true
+    },
+    {
+      "purpose": "Embeddings: Amazon Titan Text Embeddings V2 via InvokeModel",
+      "actions": ["bedrock:InvokeModel"],
+      "resources": ["arn:aws:bedrock:{region}::foundation-model/amazon.titan-embed-text-v2:0"],
+      "required": true
+    },
+    {
+      "purpose": "Primary reasoning: OpenAI GPT-6 Luna on bedrock-mantle (chat completions / responses, model list)",
+      "actions": ["bedrock-mantle:CreateInference", "bedrock-mantle:ListModels"],
+      "resources": ["*"],
+      "required": true
+    },
+    {
+      "purpose": "FinOps: Cost Explorer read (requires IAM access to billing data, activated by the root user)",
+      "actions": ["ce:GetCostAndUsage", "ce:GetCostForecast", "ce:GetDimensionValues"],
+      "resources": ["*"],
+      "required": false
+    },
+    {
+      "purpose": "FinOps: monthly AWS Budget guardrail (requires IAM access to billing data)",
+      "actions": ["budgets:ViewBudget", "budgets:ModifyBudget"],
+      "resources": ["arn:aws:budgets::{account}:budget/FoundryAscent-Monthly"],
+      "required": false
+    },
+    {
+      "purpose": "Self-retirement after stage 1: detach stage-0 policies and delete the access key",
+      "actions": ["iam:DetachUserPolicy", "iam:DeleteAccessKey"],
+      "resources": ["arn:aws:iam::{account}:user/Foundry-Ascent"],
+      "required": true
+    },
+    {
+      "purpose": "Legacy inventory: account-wide discovery",
+      "actions": ["tag:GetResources", "ec2:DescribeRegions", "cloudformation:ListStacks", "cloudformation:ListStackResources"],
+      "resources": ["*"],
+      "required": true,
+      "policy": "FoundryAscent-LegacyCleanup"
+    },
+    {
+      "purpose": "Legacy inventory: KMS keys and secrets",
+      "actions": [
+        "kms:ListKeys",
+        "kms:ListAliases",
+        "kms:DescribeKey",
+        "secretsmanager:ListSecrets",
+        "secretsmanager:DescribeSecret"
+      ],
+      "resources": ["*"],
+      "required": true,
+      "policy": "FoundryAscent-LegacyCleanup"
+    },
+    {
+      "purpose": "Legacy inventory: S3 buckets",
+      "actions": [
+        "s3:ListAllMyBuckets",
+        "s3:GetBucketLocation",
+        "s3:ListBucket",
+        "s3:ListBucketVersions",
+        "s3:GetBucketVersioning",
+        "s3:GetBucketTagging"
+      ],
+      "resources": ["*"],
+      "required": true,
+      "policy": "FoundryAscent-LegacyCleanup"
+    },
+    {
+      "purpose": "Legacy inventory: DNS, CDN and certificates",
+      "actions": [
+        "route53:ListHostedZones",
+        "route53:GetHostedZone",
+        "route53:ListResourceRecordSets",
+        "route53domains:ListDomains",
+        "route53domains:GetDomainDetail",
+        "cloudfront:ListDistributions",
+        "cloudfront:GetDistributionConfig",
+        "acm:ListCertificates",
+        "acm:DescribeCertificate"
+      ],
+      "resources": ["*"],
+      "required": true,
+      "policy": "FoundryAscent-LegacyCleanup"
+    },
+    {
+      "purpose": "Legacy inventory: compute, containers and networking",
+      "actions": [
+        "ec2:DescribeInstances",
+        "ec2:DescribeVolumes",
+        "ec2:DescribeAddresses",
+        "ec2:DescribeNatGateways",
+        "ec2:DescribeVpcs",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeRouteTables",
+        "ec2:DescribeInternetGateways",
+        "ec2:DescribeSecurityGroups",
+        "ec2:DescribeNetworkInterfaces",
+        "ec2:DescribeSnapshots",
+        "ec2:DescribeImages",
+        "elasticloadbalancing:DescribeLoadBalancers",
+        "elasticloadbalancing:DescribeTargetGroups",
+        "ecr:DescribeRepositories",
+        "ecr:ListImages",
+        "ecs:ListClusters",
+        "ecs:ListServices",
+        "ecs:DescribeServices",
+        "ecs:ListTaskDefinitions",
+        "apprunner:ListServices"
+      ],
+      "resources": ["*"],
+      "required": true,
+      "policy": "FoundryAscent-LegacyCleanup"
+    },
+    {
+      "purpose": "Legacy inventory: serverless, APIs and messaging",
+      "actions": [
+        "lambda:ListFunctions",
+        "lambda:GetFunction",
+        "apigateway:GET",
+        "states:ListStateMachines",
+        "events:ListRules",
+        "events:ListTargetsByRule",
+        "scheduler:ListSchedules",
+        "scheduler:ListScheduleGroups",
+        "amplify:ListApps",
+        "sns:ListTopics",
+        "sns:GetTopicAttributes",
+        "sqs:ListQueues",
+        "sqs:GetQueueAttributes"
+      ],
+      "resources": ["*"],
+      "required": true,
+      "policy": "FoundryAscent-LegacyCleanup"
+    },
+    {
+      "purpose": "Legacy inventory: databases, search and backups",
+      "actions": [
+        "dynamodb:ListTables",
+        "dynamodb:DescribeTable",
+        "rds:DescribeDBInstances",
+        "rds:DescribeDBClusters",
+        "rds:DescribeDBSnapshots",
+        "rds:DescribeDBClusterSnapshots",
+        "elasticache:DescribeCacheClusters",
+        "elasticache:DescribeServerlessCaches",
+        "es:ListDomainNames",
+        "es:DescribeDomain",
+        "backup:ListBackupVaults",
+        "backup:ListBackupPlans",
+        "backup:ListRecoveryPointsByBackupVault"
+      ],
+      "resources": ["*"],
+      "required": true,
+      "policy": "FoundryAscent-LegacyCleanup"
+    },
+    {
+      "purpose": "Legacy inventory: identity",
+      "actions": [
+        "iam:ListUsers",
+        "iam:ListAccessKeys",
+        "iam:ListGroups",
+        "iam:ListRoles",
+        "iam:GetRole",
+        "iam:ListRolePolicies",
+        "iam:ListAttachedRolePolicies",
+        "iam:ListInstanceProfiles",
+        "iam:ListInstanceProfilesForRole",
+        "iam:ListPolicies",
+        "iam:GetPolicy",
+        "iam:ListPolicyVersions",
+        "iam:ListOpenIDConnectProviders",
+        "cognito-idp:ListUserPools",
+        "cognito-idp:DescribeUserPool"
+      ],
+      "resources": ["*"],
+      "required": true,
+      "policy": "FoundryAscent-LegacyCleanup"
+    },
+    {
+      "purpose": "Legacy inventory: observability, parameters and ML",
+      "actions": [
+        "logs:DescribeLogGroups",
+        "cloudwatch:DescribeAlarms",
+        "cloudwatch:ListDashboards",
+        "ssm:DescribeParameters",
+        "sagemaker:ListEndpoints",
+        "sagemaker:ListEndpointConfigs",
+        "sagemaker:ListModels",
+        "sagemaker:ListNotebookInstances"
+      ],
+      "resources": ["*"],
+      "required": true,
+      "policy": "FoundryAscent-LegacyCleanup"
+    },
+    {
+      "purpose": "Legacy cleanup: KMS keys and secrets",
+      "actions": [
+        "kms:DisableKey",
+        "kms:ScheduleKeyDeletion",
+        "kms:CancelKeyDeletion",
+        "kms:DeleteAlias",
+        "secretsmanager:DeleteSecret",
+        "secretsmanager:RestoreSecret"
+      ],
+      "resources": ["*"],
+      "required": true,
+      "policy": "FoundryAscent-LegacyCleanup"
+    },
+    {
+      "purpose": "Legacy cleanup: S3 buckets (suspend versioning, expire, empty, delete)",
+      "actions": [
+        "s3:PutBucketVersioning",
+        "s3:PutLifecycleConfiguration",
+        "s3:DeleteObject",
+        "s3:DeleteObjectVersion",
+        "s3:DeleteBucket"
+      ],
+      "resources": ["*"],
+      "required": true,
+      "policy": "FoundryAscent-LegacyCleanup"
+    },
+    {
+      "purpose": "Legacy cleanup: DNS, CDN and certificates",
+      "actions": [
+        "route53:ChangeResourceRecordSets",
+        "route53:DeleteHostedZone",
+        "cloudfront:UpdateDistribution",
+        "cloudfront:DeleteDistribution",
+        "cloudfront:DeleteOriginAccessControl",
+        "cloudfront:DeleteCloudFrontOriginAccessIdentity",
+        "acm:DeleteCertificate"
+      ],
+      "resources": ["*"],
+      "required": true,
+      "policy": "FoundryAscent-LegacyCleanup"
+    },
+    {
+      "purpose": "Legacy cleanup: compute, containers and networking",
+      "actions": [
+        "ec2:TerminateInstances",
+        "ec2:DetachVolume",
+        "ec2:DeleteVolume",
+        "ec2:DisassociateAddress",
+        "ec2:ReleaseAddress",
+        "ec2:DeleteNatGateway",
+        "ec2:DetachInternetGateway",
+        "ec2:DeleteInternetGateway",
+        "ec2:DisassociateRouteTable",
+        "ec2:DeleteRouteTable",
+        "ec2:DeleteSubnet",
+        "ec2:DeleteSecurityGroup",
+        "ec2:DeleteNetworkInterface",
+        "ec2:DeleteVpc",
+        "ec2:DeregisterImage",
+        "ec2:DeleteSnapshot",
+        "elasticloadbalancing:DeleteLoadBalancer",
+        "elasticloadbalancing:DeleteTargetGroup",
+        "ecs:UpdateService",
+        "ecs:DeleteService",
+        "ecs:DeregisterTaskDefinition",
+        "ecs:DeleteCluster",
+        "ecr:BatchDeleteImage",
+        "ecr:DeleteRepository",
+        "apprunner:DeleteService"
+      ],
+      "resources": ["*"],
+      "required": true,
+      "policy": "FoundryAscent-LegacyCleanup"
+    },
+    {
+      "purpose": "Legacy cleanup: serverless, APIs, stacks and messaging",
+      "actions": [
+        "lambda:DeleteFunction",
+        "lambda:DeleteLayerVersion",
+        "lambda:DeleteEventSourceMapping",
+        "apigateway:DELETE",
+        "cloudformation:DeleteStack",
+        "states:DeleteStateMachine",
+        "events:RemoveTargets",
+        "events:DeleteRule",
+        "scheduler:DeleteSchedule",
+        "amplify:DeleteApp",
+        "sns:DeleteTopic",
+        "sqs:DeleteQueue"
+      ],
+      "resources": ["*"],
+      "required": true,
+      "policy": "FoundryAscent-LegacyCleanup"
+    },
+    {
+      "purpose": "Legacy cleanup: databases, search and backups",
+      "actions": [
+        "dynamodb:UpdateTable",
+        "dynamodb:DeleteTable",
+        "rds:ModifyDBInstance",
+        "rds:ModifyDBCluster",
+        "rds:DeleteDBInstance",
+        "rds:DeleteDBCluster",
+        "rds:DeleteDBSnapshot",
+        "rds:DeleteDBClusterSnapshot",
+        "elasticache:DeleteCacheCluster",
+        "elasticache:DeleteReplicationGroup",
+        "elasticache:DeleteServerlessCache",
+        "es:DeleteDomain",
+        "backup:DeleteRecoveryPoint",
+        "backup:DeleteBackupPlan",
+        "backup:DeleteBackupVault"
+      ],
+      "resources": ["*"],
+      "required": true,
+      "policy": "FoundryAscent-LegacyCleanup"
+    },
+    {
+      "purpose": "Legacy cleanup: identity (roles, policies, instance profiles, OIDC, Cognito)",
+      "actions": [
+        "iam:DetachRolePolicy",
+        "iam:DeleteRolePolicy",
+        "iam:RemoveRoleFromInstanceProfile",
+        "iam:DeleteInstanceProfile",
+        "iam:DeleteRole",
+        "iam:DeletePolicyVersion",
+        "iam:DeletePolicy",
+        "iam:DeleteOpenIDConnectProvider",
+        "cognito-idp:UpdateUserPool",
+        "cognito-idp:DeleteUserPoolDomain",
+        "cognito-idp:DeleteUserPool"
+      ],
+      "resources": ["*"],
+      "required": true,
+      "policy": "FoundryAscent-LegacyCleanup"
+    },
+    {
+      "purpose": "Legacy cleanup: observability, parameters and ML",
+      "actions": [
+        "logs:DeleteLogGroup",
+        "cloudwatch:DeleteAlarms",
+        "cloudwatch:DeleteDashboards",
+        "ssm:DeleteParameter",
+        "ssm:DeleteParameters",
+        "sagemaker:DeleteEndpoint",
+        "sagemaker:DeleteEndpointConfig",
+        "sagemaker:DeleteModel",
+        "sagemaker:StopNotebookInstance",
+        "sagemaker:DeleteNotebookInstance"
+      ],
+      "resources": ["*"],
+      "required": true,
+      "policy": "FoundryAscent-LegacyCleanup"
+    },
+    {
+      "purpose": "Legacy cleanup: edge-case prerequisites not granted by legacy-cleanup.json (informational)",
+      "actions": [
+        "route53domains:DisableDomainAutoRenew",
+        "ec2:RevokeSecurityGroupIngress",
+        "ec2:RevokeSecurityGroupEgress",
+        "s3:DeleteBucketPolicy",
+        "scheduler:DeleteScheduleGroup"
+      ],
+      "resources": ["*"],
+      "required": false,
+      "policy": "FoundryAscent-LegacyCleanup"
+    }
+  ]
+}
