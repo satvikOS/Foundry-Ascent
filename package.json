@@ -1,0 +1,36 @@
+{
+  "name": "foundry-ascent",
+  "private": true,
+  "description": "Foundry Ascent — persistent, evidence-grounded, human-led venture coaching platform",
+  "license": "UNLICENSED",
+  "type": "module",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @foundry/api --filter @foundry/web dev",
+    "build": "pnpm -r --if-present build",
+    "lint": "eslint . --max-warnings 0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "test:db": "pnpm --filter @foundry/db --filter @foundry/core test:db",
+    "db:reset": "pnpm --filter @foundry/db db:reset",
+    "synth": "pnpm --filter @foundry/infra synth"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.0",
+    "eslint": "^10.12.0",
+    "eslint-config-prettier": "^10.1.0",
+    "globals": "^16.0.0",
+    "prettier": "^3.9.9",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.71.0",
+    "vitest": "^5.0.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  }
+}
