@@ -280,12 +280,28 @@ class Cleaner:
         cfn = self.client("cloudformation", region)
         stacks = read(self.report, "cloudformation", region,
                       lambda: list(paginate(cfn, "list_stacks", "StackSummaries")), [])
-        targets = [s["StackName"] for s in stacks
-                   if s["StackStatus"] not in ("DELETE_COMPLETE", "DELETE_IN_PROGRESS")
-                   and not s.get("ParentId") and not starts(s["StackName"], PROTECTED_STACK_PREFIXES)]
-        deleting = [name for name in targets
-                    if self.m.call(cfn, "delete_stack", service="cloudformation", region=region, resource=name,
-                                   reason="legacy stack", StackName=name) is not None]
+        candidates = [s for s in stacks
+                      if s["StackStatus"] not in ("DELETE_COMPLETE", "DELETE_IN_PROGRESS")
+                      and not s.get("ParentId") and not starts(s["StackName"], PROTECTED_STACK_PREFIXES)]
+        deleting: list[str] = []
+        for s in candidates:
+            name, extra = s["StackName"], {}
+            if s["StackStatus"] == "DELETE_FAILED":
+                # Retry, retaining only the resources CloudFormation could not delete; the per-service steps
+                # below then remove those physical resources directly (or report why they cannot).
+                stack_ref = s.get("StackId") or name
+                failed = [r for r in read(self.report, "cloudformation", region, lambda n=stack_ref: list(
+                    paginate(cfn, "list_stack_resources", "StackResourceSummaries", StackName=n)), [])
+                    if r.get("ResourceStatus") == "DELETE_FAILED"]
+                for r in failed:
+                    self.report.add("cloudformation", region, f"{name}/{r['LogicalResourceId']} ({r['ResourceType']})",
+                                    "delete_failed_resource", "skipped",
+                                    (r.get("ResourceStatusReason") or "")[:160] + " — retained, removed by service step")
+                extra = {"RetainResources": [r["LogicalResourceId"] for r in failed]} if failed else {}
+            if self.m.call(cfn, "delete_stack", service="cloudformation", region=region, resource=name,
+                           reason="legacy stack" + (" (retry, retaining failed resources)" if extra else ""),
+                           StackName=name, **extra) is not None:
+                deleting.append(name)
         if deleting:  # only stacks whose DeleteStack was actually sent (apply mode, not refused, no error)
             deadline = time.monotonic() + 600
             for name in deleting:
