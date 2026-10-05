@@ -1,0 +1,136 @@
+name: Security
+
+# Secret scanning on every push and pull request (blocking), plus dependency vulnerability reports for
+# the npm workspace and the Python tooling (non-blocking: they annotate the run and write a job summary,
+# because a new upstream advisory must not stop an unrelated fix from shipping; triage is weekly).
+# CodeQL lives in codeql.yml.
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '41 5 * * 1' # Mondays 05:41 UTC: advisories published since the last change
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  gitleaks:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read # list the commits of a pull request
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # v3 is v2 on the Node 24 runtime (Node 20 actions no longer run on GitHub-hosted runners).
+      # Rules: gitleaks defaults plus the repository's .gitleaks.toml (access-code rule and allowlist),
+      # which gitleaks picks up from the repository root.
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_VERSION: 8.30.1 # pinned scanner version (the action's default is older)
+          # Required only if the repository moves to an organization account.
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+          GITLEAKS_ENABLE_COMMENTS: 'false'
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: 'true'
+          GITLEAKS_ENABLE_SUMMARY: 'true'
+
+  npm-audit:
+    name: npm dependency audit (production, high+)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      # Reads pnpm-lock.yaml only; nothing is installed or executed.
+      - name: pnpm audit --prod --audit-level high
+        run: |
+          set +e
+          pnpm audit --prod --audit-level high > "${RUNNER_TEMP}/pnpm-audit.txt" 2>&1
+          status=$?
+          set -e
+          cat "${RUNNER_TEMP}/pnpm-audit.txt"
+          {
+            echo "### pnpm audit (production dependencies, high and critical)"
+            echo
+            if [ "${status}" -eq 0 ]; then
+              echo "No high or critical advisories."
+            else
+              echo "Advisories found (exit ${status}). Triage: upgrade, override in package.json, or record an accepted risk."
+              echo
+              echo '```'
+              head -c 60000 "${RUNNER_TEMP}/pnpm-audit.txt"
+              echo '```'
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
+          if [ "${status}" -ne 0 ]; then
+            echo "::warning title=pnpm audit::High or critical advisories in production dependencies; see the job summary."
+          fi
+
+  pip-audit:
+    name: Python dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - run: python -m pip install pip-audit==2.10.1
+
+      - name: pip-audit (ops/aws, evals)
+        run: |
+          args=()
+          for file in ops/aws/requirements.txt evals/requirements.txt; do
+            if [ -f "${file}" ]; then args+=(-r "${file}"); fi
+          done
+          if [ "${#args[@]}" -eq 0 ]; then
+            echo "::warning::No Python requirements files found"
+            exit 0
+          fi
+          set +e
+          pip-audit "${args[@]}" --progress-spinner off --desc on --format markdown \
+            > "${RUNNER_TEMP}/pip-audit.md" 2> "${RUNNER_TEMP}/pip-audit.err"
+          status=$?
+          set -e
+          cat "${RUNNER_TEMP}/pip-audit.err" "${RUNNER_TEMP}/pip-audit.md"
+          {
+            echo "### pip-audit (${args[*]})"
+            echo
+            if [ "${status}" -eq 0 ]; then
+              echo "No known vulnerabilities."
+            else
+              head -c 60000 "${RUNNER_TEMP}/pip-audit.md"
+              tail -n 20 "${RUNNER_TEMP}/pip-audit.err"
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
+          if [ "${status}" -ne 0 ]; then
+            echo "::warning title=pip-audit::Known vulnerabilities (or an audit error) in Python dependencies; see the job summary."
+          fi

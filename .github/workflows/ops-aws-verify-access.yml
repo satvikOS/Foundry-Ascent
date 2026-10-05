@@ -4,7 +4,9 @@ name: Ops - verify AWS access
 # infra/iam/required-actions.json (iam:SimulatePrincipalPolicy) and can reach the Bedrock models.
 # Mutates nothing. Cost per run: a few model calls of at most 16 output tokens, one 1024-dim embedding and
 # one Cost Explorer request (USD 0.01). Logs are public: the account id is masked and redacted, and no
-# model output is printed.
+# model output is printed. GPT-6 Luna probes only warn while models.luna.enabled is false in
+# infra/cdk/config/production.json (AWS gates Luna for the account; ADR-0014). Actions are pinned to commit
+# SHAs (Node 24).
 on:
   workflow_dispatch:
 
@@ -20,9 +22,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
 

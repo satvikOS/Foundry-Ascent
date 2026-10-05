@@ -1,0 +1,23 @@
+# gitleaks configuration: the default rule set plus a Foundry Ascent access-code rule, and an allowlist for
+# public identifiers the generic rule mistakes for keys. gitleaks reads this file from the repository root;
+# used by .github/workflows/security.yml and by a local `gitleaks git` / `gitleaks dir` run.
+# Keep allowlist entries narrow: a test fixture that needs an access code must use one of the placeholders.
+title = "Foundry Ascent"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "foundry-access-code"
+description = "Foundry Ascent access code. Real codes are bearer credentials: never commit one."
+regex = '''\bFA-[0-9A-HJKMNP-TV-Z]{5}(?:-[0-9A-HJKMNP-TV-Z]{5}){3}\b'''
+keywords = ["fa-"]
+
+[[rules.allowlists]]
+description = "Documented placeholders; fixtures must use one of these"
+regexes = ['''^FA-(?:AAAAA-BBBBB-CCCCC-DDDDD|ABCDE-FGHJK-MNPQR-STVWX|00000-00000-00000-00000|XXXXX-XXXXX-XXXXX-XXXXX|ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ)$''']
+
+[allowlist]
+description = "Public identifiers and constants, not secrets"
+regexes = ['''^0123456789ABCDEFGHJKMNPQRSTVWXYZ$''', '''^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$''', '''^Max-Age=\d+$''', '''^scrypt\$N=\d+,r=\d+,p=\d+\$[A-Za-z0-9_-]+\$[A-Za-z0-9_-]+$''']
+paths = ['''(?:^|/)pnpm-lock\.yaml$''', '''^docs/blueprints/''']

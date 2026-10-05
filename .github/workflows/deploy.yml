@@ -1,0 +1,331 @@
+name: Deploy
+
+# Ships main to production after CI passes on it (system design §12). Also runnable by hand: without
+# input it redeploys the tip of main; with `sha` it redeploys an older main commit (rollback, see
+# docs/runbooks/deploy-and-rollback.md).
+#
+# AWS access is staged (infra/iam/README.md, ADR-0016):
+#   stage 1: repository variable AWS_DEPLOY_ROLE_ARN set -> GitHub OIDC, role FoundryAscent-GitHubDeploy
+#   stage 0: variable unset -> secrets AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (IAM user Foundry-Ascent)
+# The repository is public: the account id is masked before any AWS call can print it, the job summary
+# contains only the site URL and the commit, and stack outputs are never uploaded.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Full commit SHA on main to deploy (empty = current tip of main)
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+  id-token: write
+
+# One group for every workflow that changes CloudFormation stacks in the account (this one,
+# platform-deploy-data.yml and platform-bootstrap.yml), so two deployments never overlap: a new run waits
+# for the one in progress. GitHub keeps at most one waiting run per group; a newer one replaces it.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  gate:
+    name: Select commit
+    # workflow_run fires for every CI completion on a branch named main, including pull requests from
+    # forks whose head branch is called main: only same-repository pushes that passed CI may deploy.
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.select.outputs.sha }}
+      deploy: ${{ steps.select.outputs.deploy }}
+    env:
+      EVENT_NAME: ${{ github.event_name }}
+      REQUESTED_SHA: >-
+        ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.sha || github.sha }}
+    steps:
+      - name: Validate requested commit
+        run: |
+          # The value is not echoed: a dispatch input must never reach the log as a workflow command.
+          if [[ ! "${REQUESTED_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The commit to deploy must be a full 40-character lowercase commit SHA."
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check the commit is on main and still current
+        id: select
+        run: |
+          tip="$(git rev-parse HEAD)"
+          if ! git merge-base --is-ancestor "${REQUESTED_SHA}" "${tip}"; then
+            echo "::error::${REQUESTED_SHA} is not on main. Only commits on main can be deployed."
+            exit 1
+          fi
+          deploy=true
+          # CI runs of consecutive pushes can finish out of order. An automatic deploy only ships the tip
+          # of main; the newer commit's own CI run deploys it. Manual runs may deploy older commits.
+          if [ "${EVENT_NAME}" = "workflow_run" ] && [ "${REQUESTED_SHA}" != "${tip}" ]; then
+            echo "::notice::main moved on to ${tip:0:12}; its CI run will deploy it. Skipping ${REQUESTED_SHA:0:12}."
+            deploy=false
+          fi
+          echo "sha=${REQUESTED_SHA}" >> "${GITHUB_OUTPUT}"
+          echo "deploy=${deploy}" >> "${GITHUB_OUTPUT}"
+
+  deploy:
+    name: Deploy to production
+    needs: gate
+    if: needs.gate.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment:
+      name: production
+      url: ${{ steps.stack.outputs.site-url }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+      CDK_DISABLE_CLI_TELEMETRY: 'true'
+      DEPLOY_SHA: ${{ needs.gate.outputs.sha }}
+      DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      # No dependency cache in a job that holds cloud credentials (cache-poisoning hardening).
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - run: pnpm install --frozen-lockfile
+
+      # The SPA is static and reads nothing from the build environment (no VITE_* variables).
+      - run: pnpm --filter @foundry/web build
+
+      - name: Check AWS credentials are configured
+        env:
+          HAS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY_ID != '' && secrets.AWS_SECRET_ACCESS_KEY != '' }}
+        run: |
+          if [ -n "${DEPLOY_ROLE_ARN}" ]; then
+            echo "AWS access: GitHub OIDC (stage 1)"
+          elif [ "${HAS_ACCESS_KEY}" = "true" ]; then
+            echo "AWS access: stage-0 access key (set repository variable AWS_DEPLOY_ROLE_ARN to switch to OIDC)"
+          else
+            echo "::error::No AWS credentials. Set repository variable AWS_DEPLOY_ROLE_ARN (stage 1) or secrets AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY (stage 0); see infra/iam/README.md."
+            exit 1
+          fi
+
+      - name: AWS credentials (stage 1, GitHub OIDC)
+        if: vars.AWS_DEPLOY_ROLE_ARN != ''
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: foundry-ascent-deploy-${{ github.run_id }}
+          role-duration-seconds: 3600
+          aws-region: us-east-1
+          mask-aws-account-id: true
+
+      - name: AWS credentials (stage 0, access key)
+        if: vars.AWS_DEPLOY_ROLE_ARN == ''
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+          mask-aws-account-id: true
+
+      # Belt and braces on top of mask-aws-account-id: CDK prints stack ARNs and outputs.
+      - name: Mask account id
+        run: |
+          account="$(aws sts get-caller-identity --query Account --output text)"
+          if [[ ! "${account}" =~ ^[0-9]{12}$ ]]; then
+            echo "::error::sts:GetCallerIdentity did not return a 12-digit account id"
+            exit 1
+          fi
+          echo "::add-mask::${account}"
+
+      - name: Verify CDK bootstrap (CDKToolkit, us-east-1)
+        run: |
+          if ! status="$(aws cloudformation describe-stacks --stack-name CDKToolkit \
+            --query 'Stacks[0].StackStatus' --output text 2>"${RUNNER_TEMP}/cdktoolkit.err")"; then
+            reason="$(tr -s '\r\n' '  ' < "${RUNNER_TEMP}/cdktoolkit.err" | head -c 300)"
+            echo "::error title=CDK bootstrap missing::Stack CDKToolkit could not be read in us-east-1 (${reason}). Run the 'Platform - bootstrap (stage 0 to CDK ready)' workflow (.github/workflows/platform-bootstrap.yml) once, then re-run this deploy."
+            exit 1
+          fi
+          case "${status}" in
+            CREATE_COMPLETE | UPDATE_COMPLETE | IMPORT_COMPLETE)
+              echo "CDKToolkit: ${status}" ;;
+            UPDATE_ROLLBACK_COMPLETE)
+              echo "::warning::CDKToolkit is ${status} (last bootstrap update rolled back; previous version is usable). Re-run the platform-bootstrap workflow." ;;
+            *)
+              echo "::error title=CDK bootstrap unhealthy::CDKToolkit is ${status}. Fix it with the 'Platform - bootstrap (stage 0 to CDK ready)' workflow (.github/workflows/platform-bootstrap.yml) before deploying."
+              exit 1 ;;
+          esac
+
+      # The Foundation stack creates the GitHub OIDC provider (iam.OidcProviderNative, CloudFormation type
+      # AWS::IAM::OIDCProvider) unless context githubOidcProviderArn imports an existing one, and an account
+      # holds only one provider per URL. Decide which, every run:
+      #   * Foundation already manages the provider  -> no context (keep managing it). Passing the ARN here
+      #     would drop the resource from the template and CloudFormation would DELETE the provider, cutting
+      #     off every OIDC deploy, this one included.
+      #   * a provider exists outside the stack      -> --context githubOidcProviderArn=<arn> (import).
+      #   * no provider                               -> no context (Foundation creates it; first deploy).
+      - name: Resolve GitHub OIDC provider (create, keep or import)
+        id: oidc
+        env:
+          FOUNDATION_STACK: FoundryAscent-Foundation
+          OIDC_HOST: token.actions.githubusercontent.com
+          OIDC_RESOURCE_TYPE: AWS::IAM::OIDCProvider
+          USING_OIDC: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' }}
+          # Throttling is retried by the CLI; any error that remains stops the deploy.
+          AWS_RETRY_MODE: standard
+          AWS_MAX_ATTEMPTS: '6'
+        run: |
+          err="${RUNNER_TEMP}/oidc.err"
+          arn_re="^arn:aws:iam::[0-9]{12}:oidc-provider/${OIDC_HOST//./\\.}\$"
+          one_line() { tr -s '\r\n\t' '   ' < "${err}" | head -c 300; }
+
+          # a) Providers in the account. The stage-0 user may list them (bootstrap-operator policy). The
+          #    stage-1 deploy role may not (least privilege: the Foundation stack grants it no IAM reads), so
+          #    under OIDC an AccessDenied falls back to the provider's fixed ARN: it must exist, because STS
+          #    has just accepted a GitHub token for a role that trusts it, and its ARN depends only on the
+          #    account and the host. Any other failure stops the deploy rather than guess.
+          existing=""
+          if providers="$(aws iam list-open-id-connect-providers \
+            --query 'OpenIDConnectProviderList[].Arn' --output text 2>"${err}")"; then
+            existing="$(tr -s '[:blank:]' '\n' <<< "${providers}" | grep -E "${arn_re}" | head -n 1 || true)"
+            source="listed"
+          elif [ "${USING_OIDC}" = "true" ] && grep -q 'AccessDenied' "${err}"; then
+            account="$(aws sts get-caller-identity --query Account --output text)"
+            existing="arn:aws:iam::${account}:oidc-provider/${OIDC_HOST}"
+            source="derived (iam:ListOpenIDConnectProviders is not granted to the OIDC deploy role)"
+          else
+            echo "::error title=OIDC provider lookup failed::iam:ListOpenIDConnectProviders failed ($(one_line)). The stage-0 user needs it (infra/iam/policies/bootstrap-operator.json)."
+            exit 1
+          fi
+
+          # b) Does FoundryAscent-Foundation exist, and does it itself contain the provider resource?
+          managed=""
+          if resources="$(aws cloudformation describe-stack-resources --stack-name "${FOUNDATION_STACK}" \
+            --query "StackResources[?ResourceType=='${OIDC_RESOURCE_TYPE}' && ResourceStatus!='DELETE_COMPLETE'].PhysicalResourceId" \
+            --output text 2>"${err}")"; then
+            if [ -n "${resources}" ] && [ "${resources}" != "None" ]; then managed="${resources}"; fi
+            stack="exists"
+          elif grep -q 'does not exist' "${err}"; then
+            stack="does not exist"
+          else
+            echo "::error title=Foundation stack lookup failed::cloudformation:DescribeStackResources ${FOUNDATION_STACK} failed ($(one_line))."
+            exit 1
+          fi
+
+          # c) Import only a provider that exists and is not managed by the Foundation stack.
+          provider_arn=""
+          if [ -n "${managed}" ]; then
+            mode="managed by ${FOUNDATION_STACK} (kept)"
+          elif [ -n "${existing}" ]; then
+            if [[ ! "${existing}" =~ ${arn_re} ]]; then
+              echo "::error::Unexpected OIDC provider ARN format"
+              exit 1
+            fi
+            provider_arn="${existing}"
+            mode="existing provider imported (githubOidcProviderArn)"
+          else
+            mode="none in the account: ${FOUNDATION_STACK} creates it"
+          fi
+          # The ARN contains the (masked) account id: it is passed on, never printed.
+          echo "OIDC provider for ${OIDC_HOST}: ${mode}. Provider list: ${source}; ${FOUNDATION_STACK}: ${stack}."
+          {
+            echo "provider-arn=${provider_arn}"
+            echo "mode=${mode}"
+          } >> "${GITHUB_OUTPUT}"
+
+      # Foundation -> Data -> App. The migrate custom resource applies migrations before any new
+      # function code or SPA goes live; a failure rolls the App stack back (CloudFormation default).
+      - name: cdk deploy --all
+        id: deploy
+        working-directory: infra/cdk
+        env:
+          FA_SYNTH_STUB_ASSETS: '0'
+          OIDC_PROVIDER_ARN: ${{ steps.oidc.outputs.provider-arn }}
+        run: |
+          args=(
+            deploy --all
+            --require-approval never
+            --context "appVersion=${DEPLOY_SHA}"
+            --outputs-file "${RUNNER_TEMP}/cdk-outputs.json"
+            --progress events
+          )
+          if [ -n "${OIDC_PROVIDER_ARN}" ]; then
+            args+=(--context "githubOidcProviderArn=${OIDC_PROVIDER_ARN}")
+          fi
+          pnpm exec cdk "${args[@]}"
+
+      - name: Read stack outputs
+        id: stack
+        run: |
+          site_url="$(jq -r '."FoundryAscent-App".SiteUrl // empty' "${RUNNER_TEMP}/cdk-outputs.json")"
+          if [[ ! "${site_url}" =~ ^https://[A-Za-z0-9.-]+$ ]]; then
+            echo "::error::FoundryAscent-App did not report a SiteUrl output"
+            exit 1
+          fi
+          echo "site-url=${site_url}" >> "${GITHUB_OUTPUT}"
+
+      - name: Smoke test
+        id: smoke
+        env:
+          SITE_URL: ${{ steps.stack.outputs.site-url }}
+          SMOKE_EXPECT_VERSION: ${{ needs.gate.outputs.sha }}
+        run: |
+          SMOKE_TENANT_SLUG="$(jq -r '.homeTenant.slug' infra/cdk/config/production.json)"
+          export SMOKE_TENANT_SLUG
+          node scripts/smoke.mjs "${SITE_URL}"
+
+      - name: Job summary
+        if: always()
+        env:
+          SITE_URL: ${{ steps.stack.outputs.site-url }}
+          DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+          OIDC_MODE: ${{ steps.oidc.outputs.mode }}
+          ACCESS_STAGE: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' && 'GitHub OIDC (stage 1)' || 'access key (stage 0)' }}
+        run: |
+          # Step summaries are not covered by ::add-mask::; only non-sensitive values are written here.
+          {
+            echo "### Foundry Ascent production deploy"
+            echo
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| Site | ${SITE_URL:-not available} |"
+            echo "| Commit | \`${DEPLOY_SHA:0:12}\` |"
+            echo "| cdk deploy | ${DEPLOY_OUTCOME:-skipped} |"
+            echo "| Smoke test | ${SMOKE_OUTCOME:-skipped} |"
+            echo "| AWS access | ${ACCESS_STAGE} |"
+            echo "| GitHub OIDC provider | ${OIDC_MODE:-not resolved} |"
+          } >> "${GITHUB_STEP_SUMMARY}"

@@ -1,0 +1,20 @@
+# Code owners review every change to main (branch protection: "Require review from Code Owners").
+# Later, more specific lines win; keep the sensitive paths explicit so new owners can be added per area.
+
+*                       @satvikOS
+
+# Delivery pipeline, cloud permissions and infrastructure
+/.github/               @satvikOS
+/infra/                 @satvikOS
+/ops/                   @satvikOS
+
+# Trust boundaries: schema + RLS, authorization, AI policy and validators, shared contracts
+/packages/db/migrations/  @satvikOS
+/packages/core/           @satvikOS
+/packages/ai/             @satvikOS
+/packages/contracts/      @satvikOS
+
+# Decisions and operating procedures
+/docs/architecture/     @satvikOS
+/docs/runbooks/         @satvikOS
+/SECURITY.md            @satvikOS

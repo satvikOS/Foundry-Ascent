@@ -1,0 +1,78 @@
+# Weekly, grouped dependency updates. Every update PR runs the full CI gate (ci.yml) before review.
+# Cooldowns delay brand-new releases a few days so a compromised or yanked version is usually caught
+# upstream before it reaches a PR (supply-chain hardening); security updates are not delayed.
+version: 2
+updates:
+  # pnpm workspace (root package.json + pnpm-lock.yaml cover apps/*, packages/*, infra/cdk).
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Etc/UTC
+    open-pull-requests-limit: 10
+    cooldown:
+      default-days: 3
+      semver-major-days: 14
+    commit-message:
+      prefix: deps
+    ignore:
+      # Deliberate migrations, decided in an ADR or a dedicated PR.
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
+      - dependency-name: '@types/node' # tracks the minimum supported local Node (22), not Lambda's 24
+        update-types: [version-update:semver-major]
+    groups:
+      aws-sdk:
+        patterns: ['@aws-sdk/*', '@aws-crypto/*', '@smithy/*']
+      aws-cdk:
+        patterns: [aws-cdk, aws-cdk-lib, constructs, cdk-nag]
+      react:
+        patterns: [react, react-dom, '@types/react', '@types/react-dom']
+      tanstack:
+        patterns: ['@tanstack/*']
+      build:
+        patterns: [vite, '@vitejs/*', tailwindcss, '@tailwindcss/*', esbuild, tsx]
+      lint-and-format:
+        patterns: [eslint, '@eslint/*', typescript-eslint, eslint-config-prettier, globals, prettier]
+      testing:
+        patterns: [vitest, '@vitest/*', '@playwright/test', '@axe-core/*', '@testing-library/*', jsdom]
+      minor-and-patch:
+        patterns: ['*']
+        update-types: [minor, patch]
+
+  # Workflow actions are pinned to commit SHAs; Dependabot updates the SHA and the version comment.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 3
+    commit-message:
+      prefix: ci
+    groups:
+      github-actions:
+        patterns: ['*']
+
+  # Python ops tooling and the evaluation harness.
+  - package-ecosystem: pip
+    directories: [/ops/aws, /evals]
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 3
+      semver-major-days: 14
+    commit-message:
+      prefix: deps
+    groups:
+      python:
+        patterns: ['*']

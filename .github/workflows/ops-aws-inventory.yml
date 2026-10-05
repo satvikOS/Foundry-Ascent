@@ -1,6 +1,9 @@
 name: Ops - AWS inventory (read-only)
 
 # Manually triggered FinOps / hygiene report. Never mutates AWS resources.
+# Runs as the stage-0 IAM user. The repository is public: inventory.py masks the account id (::add-mask::)
+# before it prints anything. The access key reaches only the step that calls AWS. Actions are pinned to
+# commit SHAs (Node 24).
 on:
   workflow_dispatch:
 
@@ -16,7 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Report which AWS secret names are configured (values never printed)
         env:
@@ -36,7 +41,7 @@ jobs:
             if [ -n "${!var}" ]; then echo "secret ${name}: set"; else echo "secret ${name}: not set"; fi
           done
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
 

@@ -1,19 +1,27 @@
 name: Platform - deploy data stack
 
 # Creates or updates FoundryAscent-Data (isolated VPC, Aurora Serverless v2, documents bucket, jobs queue)
-# on its own. Aurora takes ~15 minutes to create, so this can run ahead of the first full release.
+# on its own. Aurora takes ~15 minutes to create, so this can run ahead of the first full release (it did:
+# the Data stack was deployed first, see docs/runbooks/deploy-and-rollback.md).
 #
 # The App stack (Lambdas, CloudFront, SPA) is never deployed here: it ships only from the full deploy
 # workflow, which builds the real handlers and web bundle. Synthesis below uses FA_SYNTH_STUB_ASSETS=1
 # because the Data stack's template contains no App assets, and `--exclusively` limits the deploy to it.
+#
+# Runs as the stage-0 IAM user (secrets AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY); after stage 1 the
+# Deploy workflow updates this stack with the rest. The repository is public: the account id is masked
+# before anything can print an ARN. The access key is passed only to the steps that call AWS, never to
+# dependency installation, and this job uses no dependency cache. Actions are pinned to commit SHAs.
 on:
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# Shared with deploy.yml (and platform-bootstrap.yml): two CloudFormation deployments to this account never
+# overlap; a run waits for the one in progress.
 concurrency:
-  group: platform-deploy
+  group: deploy-production
   cancel-in-progress: false
 
 jobs:
@@ -21,31 +29,42 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_DEFAULT_REGION: us-east-1
       AWS_REGION: us-east-1
+      CDK_DISABLE_CLI_TELEMETRY: 'true'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # Public repository: keep the account id out of the logs before anything prints an ARN.
       - name: Mask account id
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
           account="$(aws sts get-caller-identity --query Account --output text)"
+          if [[ ! "${account}" =~ ^[0-9]{12}$ ]]; then
+            echo "::error::sts:GetCallerIdentity did not return a 12-digit account id"
+            exit 1
+          fi
           echo "::add-mask::${account}"
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
-      - uses: actions/setup-node@v5
+      # No dependency cache in a job that holds cloud credentials (cache-poisoning hardening).
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version-file: .nvmrc
-          cache: pnpm
+          package-manager-cache: false
 
       - run: pnpm install --frozen-lockfile --filter @foundry/infra
 
       - name: Deploy FoundryAscent-Data
         working-directory: infra/cdk
         env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           FA_SYNTH_STUB_ASSETS: '1'
         run: >-
           pnpm exec cdk deploy FoundryAscent-Data
