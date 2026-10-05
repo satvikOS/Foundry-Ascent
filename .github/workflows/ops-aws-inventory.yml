@@ -1,0 +1,50 @@
+name: Ops - AWS inventory (read-only)
+
+# Manually triggered FinOps / hygiene report. Never mutates AWS resources.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ops-aws-inventory
+  cancel-in-progress: false
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Report which AWS secret names are configured (values never printed)
+        env:
+          S_AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          S_AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          S_AWS_REGION: ${{ secrets.AWS_REGION }}
+          S_AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          S_AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+          S_AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
+          S_AWS_SECRET_KEY: ${{ secrets.AWS_SECRET_KEY }}
+          S_AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+          S_AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+        run: |
+          for name in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION AWS_DEFAULT_REGION AWS_ACCOUNT_ID \
+                      AWS_ACCESS_KEY AWS_SECRET_KEY AWS_SESSION_TOKEN AWS_ROLE_ARN; do
+            var="S_${name}"
+            if [ -n "${!var}" ]; then echo "secret ${name}: set"; else echo "secret ${name}: not set"; fi
+          done
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - run: pip install --quiet -r ops/aws/requirements.txt
+
+      - name: Inventory
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID || secrets.AWS_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY || secrets.AWS_SECRET_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION || secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
+        run: python ops/aws/inventory.py
