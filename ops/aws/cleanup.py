@@ -194,6 +194,8 @@ class Cleaner:
         self.include_mail_zones = include_mail_zones
         self.protected_ids: set[str] = set()
         self.unverified_regions: set[str] = set()  # regions whose protected stacks could not be listed
+        self.kept_domains: set[str] = set()  # mail domains whose zones are kept
+        self.kept_targets: set[str] = set()  # DNS targets those domains point at
         self.m = Mutator(mode, self.report, self.protected_ids, self.unverified_regions)
 
     def client(self, service: str, region: str | None = None) -> Any:
@@ -228,6 +230,42 @@ class Cleaner:
         print(f"Protected physical resources from CDKToolkit/FoundryAscent stacks: {len(self.protected_ids)}")
         if self.unverified_regions:
             print(f"Protection unverified (changes refused): {', '.join(sorted(self.unverified_regions))}")
+
+    def collect_kept_domains(self) -> None:
+        """Hosted zones kept because they carry mail (MX) records — and everything those domains point at.
+
+        Deleting the zone is opt-in (--include-mail-zones), but the site behind such a domain is just as live,
+        so CloudFront distributions, Amplify apps, API Gateway domains, certificates and buckets that serve a
+        kept domain are protected too."""
+        if self.include_mail_zones:
+            return
+        r53 = self.client("route53")
+        for z in read(self.report, "route53", "global", lambda: list(paginate(r53, "list_hosted_zones", "HostedZones")), []):
+            records = read(self.report, "route53", "global", lambda i=z["Id"]: list(
+                paginate(r53, "list_resource_record_sets", "ResourceRecordSets", HostedZoneId=i)), [])
+            if not any(r["Type"] == "MX" for r in records):
+                continue
+            self.kept_domains.add(z["Name"].rstrip(".").lower())
+            for r in records:
+                alias = (r.get("AliasTarget") or {}).get("DNSName")
+                if alias:
+                    self.kept_targets.add(alias.rstrip(".").lower().removeprefix("dualstack."))
+                for value in r.get("ResourceRecords", []):
+                    self.kept_targets.add(value["Value"].rstrip(".").strip('"').lower())
+        if self.kept_domains:
+            print(f"Kept mail domains (and what they serve): {', '.join(sorted(self.kept_domains))}; "
+                  f"{len(self.kept_targets)} record targets protected")
+
+    def serves_kept_domain(self, *names: str | None) -> bool:
+        for raw in names:
+            if not raw:
+                continue
+            name = raw.rstrip(".").lower()
+            if name in self.kept_targets or any(t.endswith("." + name) or name in t.split(".") for t in self.kept_targets):
+                return True
+            if any(name == d or name.endswith("." + d) for d in self.kept_domains):
+                return True
+        return False
 
     def is_protected(self, *identifiers: str | None) -> bool:
         return any(i and i in self.protected_ids for i in identifiers)
@@ -308,6 +346,9 @@ class Cleaner:
             self.m.call(rest, "delete_rest_api", service="apigateway", region=region, resource=api["name"],
                         restApiId=api["id"])
         for d in read(self.report, "apigateway", region, lambda: list(paginate(rest, "get_domain_names", "items")), []):
+            if self.serves_kept_domain(d["domainName"], d.get("regionalDomainName"), d.get("distributionDomainName")):
+                self.report.add("apigateway", region, d["domainName"], "delete_domain_name", "skipped", "serves a kept mail domain")
+                continue
             self.m.call(rest, "delete_domain_name", service="apigateway", region=region, resource=d["domainName"],
                         domainName=d["domainName"])
         v2 = self.client("apigatewayv2", region)
@@ -316,6 +357,10 @@ class Cleaner:
                 continue
             self.m.call(v2, "delete_api", service="apigatewayv2", region=region, resource=api["Name"], ApiId=api["ApiId"])
         for d in read(self.report, "apigatewayv2", region, lambda: v2.get_domain_names().get("Items", []), []):
+            targets = [c.get("ApiGatewayDomainName") for c in d.get("DomainNameConfigurations", [])]
+            if self.serves_kept_domain(d["DomainName"], *targets):
+                self.report.add("apigatewayv2", region, d["DomainName"], "delete_domain_name", "skipped", "serves a kept mail domain")
+                continue
             self.m.call(v2, "delete_domain_name", service="apigatewayv2", region=region, resource=d["DomainName"],
                         DomainName=d["DomainName"])
 
@@ -549,6 +594,12 @@ class Cleaner:
                         Name=s["Name"], GroupName=s.get("GroupName", "default"))
         amp = self.client("amplify", region)
         for app in read(self.report, "amplify", region, lambda: amp.list_apps().get("apps", []), []):
+            custom = [a["domainName"] for a in read(self.report, "amplify", region, lambda a=app: amp.list_domain_associations(
+                appId=a["appId"]).get("domainAssociations", []), [])]
+            if self.serves_kept_domain(app.get("defaultDomain"), *custom):
+                self.report.add("amplify", region, app["name"], "delete_app", "skipped",
+                                f"serves a kept mail domain ({', '.join(custom) or app.get('defaultDomain')})")
+                continue
             self.m.call(amp, "delete_app", service="amplify", region=region, resource=app["name"], appId=app["appId"])
         cog = self.client("cognito-idp", region)
         for pool in read(self.report, "cognito-idp", region,
@@ -573,7 +624,7 @@ class Cleaner:
                         Names=names[i:i + 10])
         acm = self.client("acm", region)
         for c in read(self.report, "acm", region, lambda: list(paginate(acm, "list_certificates", "CertificateSummaryList")), []):
-            if c.get("InUse") or self.is_protected(c["CertificateArn"]):
+            if c.get("InUse") or self.is_protected(c["CertificateArn"]) or self.serves_kept_domain(c["DomainName"]):
                 continue
             self.m.call(acm, "delete_certificate", service="acm", region=region, resource=c["DomainName"],
                         CertificateArn=c["CertificateArn"])
@@ -605,6 +656,9 @@ class Cleaner:
         for b in read(self.report, "s3", "global", lambda: s3.list_buckets().get("Buckets", []), []):
             name = b["Name"]
             if starts(name, PROTECTED_BUCKET_PREFIXES) or self.is_protected(name):
+                continue
+            if self.serves_kept_domain(name) or any(t.startswith(name + ".s3") for t in self.kept_targets):
+                self.report.add("s3", "global", name, "delete_bucket", "skipped", "serves a kept mail domain")
                 continue
             region = read(self.report, "s3", "global",
                           lambda n=name: s3.get_bucket_location(Bucket=n).get("LocationConstraint") or "us-east-1", "us-east-1")
@@ -668,18 +722,23 @@ class Cleaner:
         for page in read(self.report, "cloudfront", "global", lambda: list(cf.get_paginator("list_distributions").paginate()), []):
             dists.extend(page.get("DistributionList", {}).get("Items", []) or [])
         for d in dists:
+            aliases = (d.get("Aliases") or {}).get("Items") or []
+            label = d["DomainName"] + (f" [{', '.join(aliases)}]" if aliases else "")
             if self.is_protected(d["Id"]):
+                continue
+            if self.serves_kept_domain(d["DomainName"], *aliases):
+                self.report.add("cloudfront", "global", label, "delete_distribution", "skipped", "serves a kept mail domain")
                 continue
             cfg = read(self.report, "cloudfront", "global", lambda i=d["Id"]: cf.get_distribution_config(Id=i), None)
             if not cfg:
                 continue
             if cfg["DistributionConfig"]["Enabled"]:
                 cfg["DistributionConfig"]["Enabled"] = False
-                self.m.call(cf, "update_distribution", service="cloudfront", region="global", resource=d["DomainName"],
+                self.m.call(cf, "update_distribution", service="cloudfront", region="global", resource=label,
                             reason="disable now; delete on a later run once Deployed", Id=d["Id"], IfMatch=cfg["ETag"],
                             DistributionConfig=cfg["DistributionConfig"])
             elif d["Status"] == "Deployed":
-                self.m.call(cf, "delete_distribution", service="cloudfront", region="global", resource=d["DomainName"],
+                self.m.call(cf, "delete_distribution", service="cloudfront", region="global", resource=label,
                             Id=d["Id"], IfMatch=cfg["ETag"])
             else:
                 self.report.add("cloudfront", "global", d["DomainName"], "delete_distribution", "skipped",
@@ -759,6 +818,7 @@ def main(argv: list[str] | None = None) -> int:
         regions = [r.strip() for r in args.regions.split(",") if r.strip()]
 
     cleaner.collect_protected(regions)
+    cleaner.collect_kept_domains()
     for region in regions:
         cleaner.cloudformation(region)
     for region in regions:

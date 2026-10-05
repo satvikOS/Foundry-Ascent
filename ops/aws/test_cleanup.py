@@ -275,3 +275,29 @@ def test_account_ids_are_redacted_from_the_report() -> None:
     report.add("s3", "us-east-1", "aws-cloudtrail-logs-111122223333-abc", "delete_bucket", "failed",
                "AccessDenied on arn:aws:s3:::x 111122223333")
     assert "111122223333" not in str(report.outcomes)
+
+
+def test_resources_serving_a_kept_mail_domain_are_protected() -> None:
+    r53 = Recorder(pages={
+        "list_hosted_zones": [{"HostedZones": [{"Id": "/hostedzone/Z9", "Name": "startup.net."}]}],
+        "list_resource_record_sets": [{"ResourceRecordSets": [
+            {"Name": "startup.net.", "Type": "MX", "ResourceRecords": [{"Value": "1 smtp.google.com."}]},
+            {"Name": "startup.net.", "Type": "A", "AliasTarget": {"DNSName": "d111.cloudfront.net."}},
+            {"Name": "www.startup.net.", "Type": "CNAME", "ResourceRecords": [{"Value": "www.startup.net.s3-website-us-east-1.amazonaws.com"}]},
+        ]}],
+    })
+    cf = Recorder(
+        reads={"get_distribution_config": {"ETag": "E1", "DistributionConfig": {"Enabled": True}}},
+        pages={"list_distributions": [{"DistributionList": {"Items": [
+            {"Id": "A", "DomainName": "d111.cloudfront.net", "Status": "Deployed"},
+            {"Id": "B", "DomainName": "d222.cloudfront.net", "Status": "Deployed", "Aliases": {"Items": ["app.startup.net"]}},
+            {"Id": "C", "DomainName": "d333.cloudfront.net", "Status": "Deployed"},
+        ]}}]},
+    )
+    s3 = Recorder(reads={"list_buckets": {"Buckets": [{"Name": "www.startup.net"}]}})
+    cleaner = make_cleaner("apply", {"route53": r53, "cloudfront": cf, "s3": s3})
+    cleaner.collect_kept_domains()
+    cleaner.cloudfront()
+    cleaner.s3()
+    assert [m[1]["Id"] for m in cf.mutations] == ["C"]
+    assert s3.mutations == []
