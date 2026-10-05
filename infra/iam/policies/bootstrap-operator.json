@@ -1,0 +1,178 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "Identity",
+      "Effect": "Allow",
+      "Action": ["sts:GetCallerIdentity"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "SelfIntrospectionAndRetirement",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetUser",
+        "iam:ListAttachedUserPolicies",
+        "iam:ListUserPolicies",
+        "iam:ListAccessKeys",
+        "iam:SimulatePrincipalPolicy",
+        "iam:DetachUserPolicy",
+        "iam:DeleteAccessKey"
+      ],
+      "Resource": "arn:aws:iam::*:user/Foundry-Ascent"
+    },
+    {
+      "Sid": "PolicySimulationContext",
+      "Effect": "Allow",
+      "Action": ["iam:GetContextKeysForPrincipalPolicy"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "CdkAndPlatformStacks",
+      "Effect": "Allow",
+      "Action": "cloudformation:*",
+      "Resource": [
+        "arn:aws:cloudformation:us-east-1:*:stack/CDKToolkit/*",
+        "arn:aws:cloudformation:us-east-1:*:stack/FoundryAscent*/*"
+      ]
+    },
+    {
+      "Sid": "CloudFormationRead",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:Describe*",
+        "cloudformation:List*",
+        "cloudformation:Get*",
+        "cloudformation:ValidateTemplate"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "BootstrapAndPlatformRoles",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole",
+        "iam:DeleteRole",
+        "iam:GetRole",
+        "iam:UpdateRole",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:TagRole",
+        "iam:UntagRole",
+        "iam:ListRoleTags",
+        "iam:PutRolePolicy",
+        "iam:GetRolePolicy",
+        "iam:DeleteRolePolicy",
+        "iam:AttachRolePolicy",
+        "iam:DetachRolePolicy",
+        "iam:ListRolePolicies",
+        "iam:ListAttachedRolePolicies",
+        "iam:PutRolePermissionsBoundary",
+        "iam:PassRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::*:role/cdk-*",
+        "arn:aws:iam::*:role/FoundryAscent*"
+      ]
+    },
+    {
+      "Sid": "PlatformManagedPolicies",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreatePolicy",
+        "iam:GetPolicy",
+        "iam:GetPolicyVersion",
+        "iam:ListPolicyVersions",
+        "iam:CreatePolicyVersion",
+        "iam:DeletePolicyVersion",
+        "iam:SetDefaultPolicyVersion",
+        "iam:TagPolicy",
+        "iam:ListEntitiesForPolicy"
+      ],
+      "Resource": "arn:aws:iam::*:policy/FoundryAscent*"
+    },
+    {
+      "Sid": "GitHubOidcProvider",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateOpenIDConnectProvider",
+        "iam:GetOpenIDConnectProvider",
+        "iam:UpdateOpenIDConnectProviderThumbprint",
+        "iam:AddClientIDToOpenIDConnectProvider",
+        "iam:TagOpenIDConnectProvider",
+        "iam:DeleteOpenIDConnectProvider"
+      ],
+      "Resource": "arn:aws:iam::*:oidc-provider/token.actions.githubusercontent.com"
+    },
+    {
+      "Sid": "ListOidcProviders",
+      "Effect": "Allow",
+      "Action": ["iam:ListOpenIDConnectProviders"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AssumeCdkRoles",
+      "Effect": "Allow",
+      "Action": ["sts:AssumeRole", "sts:TagSession"],
+      "Resource": "arn:aws:iam::*:role/cdk-*"
+    },
+    {
+      "Sid": "CdkStagingBucket",
+      "Effect": "Allow",
+      "Action": "s3:*",
+      "Resource": ["arn:aws:s3:::cdk-*", "arn:aws:s3:::cdk-*/*"]
+    },
+    {
+      "Sid": "CdkContainerRepository",
+      "Effect": "Allow",
+      "Action": "ecr:*",
+      "Resource": "arn:aws:ecr:us-east-1:*:repository/cdk-*"
+    },
+    {
+      "Sid": "EcrAuthToken",
+      "Effect": "Allow",
+      "Action": ["ecr:GetAuthorizationToken"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "CdkBootstrapVersionParameter",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+        "ssm:PutParameter",
+        "ssm:DeleteParameter",
+        "ssm:AddTagsToResource",
+        "ssm:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:ssm:us-east-1:*:parameter/cdk-bootstrap/*"
+    },
+    {
+      "Sid": "ModelAccessSmokeTests",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock-mantle:CreateInference",
+        "bedrock-mantle:List*",
+        "bedrock-mantle:Get*",
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream",
+        "bedrock:ListFoundationModels",
+        "bedrock:GetFoundationModel",
+        "bedrock:ListInferenceProfiles",
+        "bedrock:GetInferenceProfile"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "FinOpsReadAndBudgets",
+      "Effect": "Allow",
+      "Action": [
+        "ce:GetCostAndUsage",
+        "ce:GetCostForecast",
+        "ce:GetDimensionValues",
+        "budgets:ViewBudget",
+        "budgets:ModifyBudget"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

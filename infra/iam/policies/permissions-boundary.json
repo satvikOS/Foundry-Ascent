@@ -1,0 +1,99 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ExplicitAllowAll",
+      "Effect": "Allow",
+      "Action": "*",
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyPrincipalsWithoutThisBoundary",
+      "Effect": "Deny",
+      "Action": [
+        "iam:CreateUser",
+        "iam:CreateRole",
+        "iam:PutRolePermissionsBoundary",
+        "iam:PutUserPermissionsBoundary"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotLike": {
+          "iam:PermissionsBoundary": "arn:aws:iam::*:policy/FoundryAscent-Boundary"
+        }
+      }
+    },
+    {
+      "Sid": "DenyBoundaryAlteration",
+      "Effect": "Deny",
+      "Action": [
+        "iam:CreatePolicyVersion",
+        "iam:DeletePolicy",
+        "iam:DeletePolicyVersion",
+        "iam:SetDefaultPolicyVersion"
+      ],
+      "Resource": "arn:aws:iam::*:policy/FoundryAscent-Boundary"
+    },
+    {
+      "Sid": "DenyBoundaryRemoval",
+      "Effect": "Deny",
+      "Action": [
+        "iam:DeleteUserPermissionsBoundary",
+        "iam:DeleteRolePermissionsBoundary"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyLongLivedCredentials",
+      "Effect": "Deny",
+      "Action": [
+        "iam:CreateAccessKey",
+        "iam:CreateLoginProfile",
+        "iam:UpdateLoginProfile"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "CostGuardrails",
+      "Effect": "Deny",
+      "Action": [
+        "kms:CreateKey",
+        "ec2:RunInstances",
+        "ec2:CreateNatGateway",
+        "ec2:AllocateAddress",
+        "ec2:CreateVpcEndpoint",
+        "ec2:CreateCapacityReservation",
+        "ec2:PurchaseReservedInstancesOffering",
+        "rds:CreateDBProxy",
+        "rds:PurchaseReservedDBInstancesOffering",
+        "elasticache:Create*",
+        "es:CreateDomain",
+        "aoss:CreateCollection",
+        "redshift:Create*",
+        "redshift-serverless:Create*",
+        "sagemaker:CreateEndpoint",
+        "sagemaker:CreateNotebookInstance",
+        "bedrock:CreateProvisionedModelThroughput",
+        "bedrock:CreateModelCustomizationJob",
+        "lambda:PutProvisionedConcurrencyConfig",
+        "kinesis:CreateStream",
+        "eks:CreateCluster",
+        "wafv2:CreateWebACL",
+        "route53domains:RegisterDomain",
+        "savingsplans:CreateSavingsPlan"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ServerlessDatabasesOnly",
+      "Effect": "Deny",
+      "Action": ["rds:CreateDBInstance"],
+      "Resource": "*",
+      "Condition": {
+        "StringNotEquals": {
+          "rds:DatabaseClass": "db.serverless"
+        }
+      }
+    }
+  ]
+}
