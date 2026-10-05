@@ -1,6 +1,7 @@
 import { type TurnStreamEvent } from '@foundry/contracts';
 import {
   DomainError,
+  turnErrorEvent,
   type Orchestrator,
   type RunTurnOutcome,
   RunTurnInput,
@@ -167,13 +168,7 @@ export async function handleTurnRequest(
       const error = new DomainError('internal', 'Something went wrong while answering. Please try again.', {
         reason: 'orchestrator_rejected',
       });
-      channel.push({
-        event: 'turn.error',
-        turnId: acceptedTurnId,
-        code: error.code,
-        message: error.message,
-        retryable: true,
-      });
+      channel.push({ ...turnErrorEvent(acceptedTurnId, error, requestId), retryable: true });
       return {
         status: acceptedTurnId === null ? 'rejected' : 'failed',
         turnId: acceptedTurnId,

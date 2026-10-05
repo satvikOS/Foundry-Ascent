@@ -6,7 +6,9 @@
 --    UPDATE. These SECURITY DEFINER functions re-check the same predicates as the UPDATE policies.
 -- 2. Escalation routing. Program leads hold an UPDATE policy on escalations but no SELECT policy (they see
 --    queue metadata through app.escalation_queue()), so a direct UPDATE matches no rows.
---    app.route_escalation re-checks role, tenant and the founder's sharing consent.
+--    app.route_escalation re-checks role, tenant, the founder's sharing consent, the state (waiting for
+--    assignment, or re-routing a routed/acknowledged one) and that the assignee is an active EIR or program
+--    lead of the tenant (the same people GET /program/assignees lists).
 -- 3. Audit chain determinism. The chained hash covers the event time rendered as text, which depends on
 --    the session TimeZone and DateStyle; both are pinned on the writer and on the verifier.
 -- 4. idempotency_keys.request_hash detects reuse of a key with a different request. Deleting memory or a
@@ -103,12 +105,16 @@ BEGIN
   IF NOT FOUND THEN
     RETURN false;
   END IF;
-  IF e.sharing_consent_at IS NULL OR e.status NOT IN ('awaiting_consent', 'routed', 'acknowledged') THEN
+  IF e.sharing_consent_at IS NULL OR e.status NOT IN ('awaiting_assignment', 'routed', 'acknowledged') THEN
     RAISE EXCEPTION 'escalation is not routable in its current state' USING ERRCODE = '55000';
   END IF;
+  -- Packets only go to the tenant's EIRs and program staff, never to another venture's members.
   IF NOT EXISTS (SELECT 1 FROM principals pr
-                 WHERE pr.id = p_assignee AND pr.tenant_id = e.tenant_id AND pr.status = 'active') THEN
-    RAISE EXCEPTION 'assignee must be an active principal of the tenant' USING ERRCODE = '23503';
+                 WHERE pr.id = p_assignee AND pr.tenant_id = e.tenant_id AND pr.status = 'active'
+                   AND EXISTS (SELECT 1 FROM role_grants g
+                               WHERE g.principal_id = pr.id AND g.tenant_id = e.tenant_id
+                                 AND g.role IN ('eir', 'program_lead') AND g.revoked_at IS NULL)) THEN
+    RAISE EXCEPTION 'assignee must be an active EIR or program lead of the tenant' USING ERRCODE = '23503';
   END IF;
   UPDATE escalations
      SET assignee_principal_id = p_assignee, due_at = p_due, status = 'routed', updated_at = now()

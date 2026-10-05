@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ConfigError, loadConfig, parseConfig } from '../src/config.js';
 import { migrationsChecksum } from '../src/lib/migrations.js';
+import { PLACEHOLDER_OWNER } from './helpers.js';
 
 const valid = (): Record<string, unknown> => ({
   region: 'us-east-1',
@@ -12,9 +13,9 @@ const valid = (): Record<string, unknown> => ({
   homeTenant: { slug: 'ain', name: 'Ain Foundry' },
   owner: {
     displayName: 'Platform Owner',
-    accessCodePrefix: 'T9302',
-    accessCodeHash:
-      'scrypt$N=32768,r=8,p=1$3EVOFO9pqROC_L4H7mo98g$RtIal90yLMyXBPUP_M2t51rYP2irq5D3k3DB6iweVY8',
+    // Placeholder owner (FA-ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ); the real values live only in config/production.json.
+    accessCodePrefix: PLACEHOLDER_OWNER.prefix,
+    accessCodeHash: PLACEHOLDER_OWNER.hash,
   },
   models: {
     primary: 'us.amazon.nova-2-lite-v1:0',
@@ -65,7 +66,10 @@ describe('config', () => {
 
   it('accepts the documented shape', () => {
     const config = parseConfig(valid());
-    expect(config.owner.accessCodePrefix).toBe('T9302');
+    expect(config.owner).toMatchObject({
+      accessCodePrefix: PLACEHOLDER_OWNER.prefix,
+      accessCodeHash: PLACEHOLDER_OWNER.hash,
+    });
     expect(config.models.luna).toEqual({ modelId: 'openai.gpt-6-luna', enabled: false });
   });
 

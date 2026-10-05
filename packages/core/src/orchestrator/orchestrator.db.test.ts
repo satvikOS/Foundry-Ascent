@@ -1,8 +1,8 @@
 import { CoachResponse, TurnStreamEvent, type TurnView } from '@foundry/contracts';
-import { auditRepo, p, personasRepo, settingsRepo, usageRepo } from '@foundry/db';
+import { auditRepo, p, personasRepo, settingsRepo, turnsRepo, usageRepo } from '@foundry/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { type RequestContext } from '../context.js';
+import { toDbContext, type RequestContext } from '../context.js';
 import { type Core } from '../core.js';
 import { createCoreHarness, type CoreHarness } from '../testing/harness.js';
 import { type RunTurnInput, type RunTurnOutcome } from './run-turn.js';
@@ -179,6 +179,51 @@ describe('turn pipeline', () => {
     expect(detail.turns[0]).toMatchObject({ status: 'blocked' });
     expect(detail.turns[0]?.validator?.notes).toContain('no_model_call');
     expect(await auditActions(last.turnId)).toContain('turn.crisis_support');
+
+    // A reload shows the same humane support message and the drafted request (never extra founder text).
+    expect(detail.turns[0]?.blocked).toEqual({
+      reason: 'crisis_support',
+      supportMessage: last.supportMessage,
+      escalationId: last.escalationId,
+    });
+    expect(JSON.stringify(detail.turns[0]?.blocked)).not.toMatch(/alive|ending my life/i);
+
+    // Replaying the same message (same ordinal and text) re-emits the same blocked event.
+    const replay = await runTurn(h.core, maya, session.id, {
+      text: "Honestly I don't want to be alive anymore, I keep thinking about ending my life.",
+      expectedOrdinal: 1,
+    });
+    expect(replay.outcome).toMatchObject({ status: 'blocked', replayed: true });
+    expect(replay.events.at(-1)).toEqual(last);
+  });
+
+  it('replaying a message whose turn is still pending asks the client to retry after a delay', async () => {
+    const session = await h.core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+    const text = 'Which interview notes should we revisit first?';
+    const pending = await h.t.db.withContext(toDbContext(maya), (tx) =>
+      turnsRepo.createTurn(tx, {
+        tenantId: maya.tenantId,
+        ventureId: h.ventures.quietquad.id,
+        sessionId: session.id,
+        authorId: maya.principalId,
+        mode: 'coach',
+        founderText: text,
+      }),
+    );
+    const before = h.gateway.calls.length;
+    const { events, outcome } = await runTurn(h.core, maya, session.id, { text, expectedOrdinal: 1 });
+    expect(h.gateway.calls.length).toBe(before);
+    expect(outcome).toMatchObject({ status: 'failed', replayed: true, turnId: pending.id });
+    expect(events.map((e) => e.event)).toEqual(['turn.accepted', 'turn.error']);
+    expect(events.at(-1)).toEqual({
+      event: 'turn.error',
+      turnId: pending.id,
+      code: 'conflict',
+      message: 'This message is still being answered. Please wait.',
+      retryable: true,
+      retryAfterSeconds: 5,
+      requestId: maya.requestId,
+    });
   });
 
   it('forces a P1 escalation for high-risk topics and samples the turn for EIR review', async () => {
@@ -247,6 +292,7 @@ describe('cross-venture isolation', () => {
     expect(stored?.status).toBe('blocked');
     expect(JSON.stringify(stored?.response)).not.toMatch(/benchtally/i);
     expect(stored?.validator?.crossVentureViolation).toBe(true);
+    expect(stored?.blocked).toEqual({ reason: 'cross_venture', supportMessage: null, escalationId: null });
     // Blocked turns never propose memory.
     const memory = await h.core.memory.list(maya, h.ventures.quietquad.id, { status: 'proposed' });
     expect(memory.some((m) => m.sourceRefs.some((r) => r.id === stored?.id))).toBe(false);
@@ -319,7 +365,12 @@ describe('gates', () => {
       });
       expect(outcome).toMatchObject({ status: 'rejected', turnId: null });
       expect(events).toEqual([
-        expect.objectContaining({ event: 'turn.error', code: 'ai_disabled', turnId: null }),
+        expect.objectContaining({
+          event: 'turn.error',
+          code: 'ai_disabled',
+          turnId: null,
+          requestId: maya.requestId,
+        }),
       ]);
       // Crisis support is deterministic (no model call), so the AI kill switch never blocks it.
       const crisis = await runTurn(h.core, maya, session.id, { text: 'I want to kill myself tonight.' });
@@ -403,7 +454,13 @@ describe('gates', () => {
       text: 'What should we test next?',
     });
     expect(outcome.status).toBe('failed');
-    expect(events.at(-1)).toMatchObject({ event: 'turn.error', code: 'model_unavailable', retryable: true });
+    expect(events.at(-1)).toMatchObject({
+      event: 'turn.error',
+      code: 'model_unavailable',
+      retryable: true,
+      retryAfterSeconds: 5,
+      requestId: maya.requestId,
+    });
     const detail = await h.core.sessions.get(maya, session.id);
     expect(detail.turns[0]?.status).toBe('failed');
   });

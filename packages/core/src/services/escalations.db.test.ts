@@ -127,11 +127,25 @@ describe('escalation consent gate', () => {
       action: 'approve_sharing',
       sharedMemoryIds: [],
     });
-    expect(shared).toMatchObject({ status: 'awaiting_consent', assignee: null });
+    // Consented with nobody assigned: it waits in the program team's routing queue.
+    expect(shared).toMatchObject({ status: 'awaiting_assignment', assignee: null });
     expect(shared.sharingConsentAt).not.toBeNull();
     const item = (await h.core.program.escalationQueue(lead)).find((e) => e.id === created.id);
-    expect(item).toMatchObject({ shared: true });
+    expect(item).toMatchObject({ shared: true, status: 'awaiting_assignment', assigneeId: null });
     expect(Object.keys(EscalationQueueItem.parse(item))).not.toContain('packet');
+    // Sharing is decided once; the shared packet is no longer editable.
+    await expect(
+      h.core.escalations.act(maya, created.id, { action: 'approve_sharing', sharedMemoryIds: [] }),
+    ).rejects.toMatchObject({ code: 'conflict' });
+    await expect(
+      h.core.escalations.act(maya, created.id, { action: 'edit', packet: { founderQuestion: 'Changed' } }),
+    ).rejects.toMatchObject({ code: 'conflict' });
+    // The routing dialog offers exactly the people routing accepts.
+    const assignees = await h.core.program.listAssignees(lead);
+    expect(assignees.map((a) => a.principal.id)).toEqual(
+      expect.arrayContaining([h.people.eirRuth, h.people.eirCorin, h.people.lead]),
+    );
+    expect(assignees.map((a) => a.principal.id)).not.toContain(h.people.jonah);
 
     // Never to another venture's founder.
     await expect(
@@ -150,6 +164,48 @@ describe('escalation consent gate', () => {
       status: 'declined',
       resolution: { summary: 'Needs the legal clinic.', nextSteps: [] },
     });
+    // A declined escalation is closed: it stays visible in the queue but cannot be routed again.
+    await expect(
+      h.core.program.routeEscalation(lead, created.id, { assigneeId: h.people.eirCorin }),
+    ).rejects.toMatchObject({ code: 'conflict', reason: 'invalid_transition' });
+  });
+
+  it('a founder can withdraw while waiting for assignment; closed escalations cannot be routed', async () => {
+    const created = await h.core.escalations.create(maya, ventureId, {
+      category: 'conflict_harassment',
+      priority: 'P2',
+      requestedRole: 'program_lead',
+      founderQuestion: 'How do we handle a co-founder dispute about equity?',
+    });
+    const shared = await h.core.escalations.act(maya, created.id, {
+      action: 'approve_sharing',
+      sharedMemoryIds: [],
+    });
+    expect(shared.status).toBe('awaiting_assignment');
+    // Nobody is assigned yet, so nobody can acknowledge it.
+    await expect(h.core.escalations.act(ruth, created.id, { action: 'acknowledge' })).rejects.toMatchObject({
+      code: 'not_found',
+    });
+    const withdrawn = await h.core.escalations.act(maya, created.id, { action: 'withdraw' });
+    expect(withdrawn.status).toBe('withdrawn');
+    // Withdrawn escalations leave the program queue altogether.
+    await expect(
+      h.core.program.routeEscalation(lead, created.id, { assigneeId: h.people.eirRuth }),
+    ).rejects.toMatchObject({ code: 'not_found' });
+  });
+
+  it('only program leads and platform admins list escalation assignees', async () => {
+    const assignees = await h.core.program.listAssignees(lead);
+    for (const a of assignees) {
+      expect(a.roles.length).toBeGreaterThan(0);
+      expect(['eir', 'program_lead']).toEqual(expect.arrayContaining(a.roles));
+    }
+    expect(assignees.find((a) => a.principal.id === h.people.eirRuth)?.expertiseTags.length).toBeGreaterThan(
+      0,
+    );
+    for (const who of [maya, ruth, corin]) {
+      await expect(h.core.program.listAssignees(who)).rejects.toMatchObject({ code: 'forbidden' });
+    }
   });
 
   it('founders edit and withdraw drafts; edits keep the AI-generated label', async () => {

@@ -12,6 +12,7 @@
     "test": "vitest run --dir src --exclude \"**/*.db.test.ts\"",
     "test:db": "vitest run --dir src \"db.test\"",
     "db:reset": "tsx src/scripts/reset-local.ts",
+    "owner-code": "tsx src/scripts/owner-code.ts",
     "gen:migrations": "tsx src/scripts/gen-migrations.ts",
     "check:migrations": "tsx src/scripts/gen-migrations.ts --check"
   },

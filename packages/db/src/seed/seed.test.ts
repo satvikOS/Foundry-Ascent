@@ -18,6 +18,13 @@ import { GUIDE_DOCTRINE, GUIDE_STYLE } from './doctrine.js';
 import { seedId, uuidV5, ventureCanary } from './ids.js';
 import { SEED_RESOURCES } from './resources.js';
 import { seedConfigFromEnv } from './seed.js';
+
+/** The documented placeholder owner code (allowlisted in .gitleaks.toml) and its `hashAccessCode` hash. */
+const PLACEHOLDER_OWNER = {
+  code: 'FA-ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ',
+  prefix: 'ZZZZZ',
+  hash: 'scrypt$N=32768,r=8,p=1$1rQEaLtP6xXYa2w9RLSQPA$nq0yVFlGythrlPEc6VOv_fVNtMurA6r0Jigi8sUc9Cg',
+} as const;
 import { SEED_EIRS, SEED_FOUNDERS, SEED_PROGRAM_LEAD, buildSeedVentures } from './ventures.js';
 
 describe('deterministic ids and canaries', () => {
@@ -135,6 +142,12 @@ describe('seed content', () => {
     }
   });
 
+  it('uses a placeholder owner fixture whose hash really is the placeholder code’s', async () => {
+    expect(accessCodePrefix(PLACEHOLDER_OWNER.code)).toBe(PLACEHOLDER_OWNER.prefix);
+    expect(isAccessCodeHash(PLACEHOLDER_OWNER.hash)).toBe(true);
+    expect(await verifyAccessCode(PLACEHOLDER_OWNER.code, PLACEHOLDER_OWNER.hash)).toBe(true);
+  });
+
   it('reads the seed configuration from the runtime environment', () => {
     expect(seedConfigFromEnv({})).toEqual({ homeTenant: { slug: 'ain', name: 'Ain Foundry' }, owner: null });
     expect(
@@ -142,10 +155,14 @@ describe('seed content', () => {
         HOME_TENANT_SLUG: 'ain',
         HOME_TENANT_NAME: 'Ain Foundry',
         OWNER_DISPLAY_NAME: 'Platform Owner',
-        OWNER_ACCESS_CODE_PREFIX: 'T9302',
-        OWNER_ACCESS_CODE_HASH: 'scrypt$x',
+        OWNER_ACCESS_CODE_PREFIX: PLACEHOLDER_OWNER.prefix,
+        OWNER_ACCESS_CODE_HASH: PLACEHOLDER_OWNER.hash,
       }).owner,
-    ).toEqual({ displayName: 'Platform Owner', accessCodePrefix: 'T9302', accessCodeHash: 'scrypt$x' });
+    ).toEqual({
+      displayName: 'Platform Owner',
+      accessCodePrefix: PLACEHOLDER_OWNER.prefix,
+      accessCodeHash: PLACEHOLDER_OWNER.hash,
+    });
     expect(() => seedConfigFromEnv({ APP_ENV: 'production' })).toThrow(/required in production/);
   });
 });

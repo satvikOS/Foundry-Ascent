@@ -97,15 +97,40 @@ export const EscalationCategory = z.enum([
 export type EscalationCategory = z.infer<typeof EscalationCategory>;
 export const EscalationPriority = z.enum(['P0', 'P1', 'P2', 'P3']);
 export type EscalationPriority = z.infer<typeof EscalationPriority>;
+/**
+ * Escalation lifecycle (system design §6.2). `draft` (AI-drafted) and `awaiting_consent`
+ * (founder-initiated) wait for the founder's sharing decision. Approving sharing moves the escalation to
+ * `routed` when the venture has an active assigned EIR and the packet asks for one, otherwise to
+ * `awaiting_assignment` (consented, waiting in the program team's routing queue) until a program lead
+ * routes it. `routed` and `acknowledged` have an assignee who can read the shared packet; the assignee
+ * resolves or declines. The founder can withdraw any open escalation. `resolved`, `declined` and
+ * `withdrawn` are final.
+ */
 export const EscalationStatus = z.enum([
   'draft',
   'awaiting_consent',
+  'awaiting_assignment',
   'routed',
   'acknowledged',
   'resolved',
   'declined',
   'withdrawn',
 ]);
+export type EscalationStatus = z.infer<typeof EscalationStatus>;
+/** Statuses that still need a decision or a person (venture cards and open-escalation counts). */
+export const OPEN_ESCALATION_STATUSES = [
+  'draft',
+  'awaiting_consent',
+  'awaiting_assignment',
+  'routed',
+  'acknowledged',
+] as const satisfies readonly EscalationStatus[];
+/** Final statuses. */
+export const CLOSED_ESCALATION_STATUSES = [
+  'resolved',
+  'declined',
+  'withdrawn',
+] as const satisfies readonly EscalationStatus[];
 export const RequestedRole = z.enum(['eir', 'program_lead', 'specialist', 'university_support']);
 export type RequestedRole = z.infer<typeof RequestedRole>;
 

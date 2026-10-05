@@ -3,6 +3,7 @@ import {
   EscalationPacket,
   EscalationPriority,
   EscalationStatus,
+  OPEN_ESCALATION_STATUSES as CONTRACT_OPEN_STATUSES,
   RequestedRole,
   type EscalationQueueItem,
   type EscalationView,
@@ -30,12 +31,7 @@ const Resolution = z.object({ summary: z.string(), nextSteps: z.array(z.string()
 export type EscalationResolution = z.infer<typeof Resolution>;
 
 /** Statuses that count as open (shown on venture cards / inbox). */
-export const OPEN_ESCALATION_STATUSES: readonly EscalationStatusValue[] = [
-  'draft',
-  'awaiting_consent',
-  'routed',
-  'acknowledged',
-];
+export const OPEN_ESCALATION_STATUSES: readonly EscalationStatusValue[] = CONTRACT_OPEN_STATUSES;
 
 /** Contract view plus tenant and consent bookkeeping. */
 export type EscalationRecord = EscalationView & {
@@ -107,6 +103,29 @@ export function listVentureEscalations(
     { ventureId: p.uuid(args.ventureId), statuses: p.nullable.textArray(args.statuses) },
     decode,
   );
+}
+
+/**
+ * The escalation drafted for each of the given turns (the oldest one when a turn has several), as
+ * turn id → escalation id. Runs under the caller's RLS: only escalations the caller may read appear.
+ */
+export async function escalationIdsByTurn(
+  ex: SqlExecutor,
+  turnIds: readonly string[],
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (turnIds.length === 0) return out;
+  const rows = await queryRows(
+    ex,
+    `SELECT DISTINCT ON (e.turn_id) e.turn_id, e.id
+     FROM escalations e
+     WHERE e.turn_id = ANY (:turnIds)
+     ORDER BY e.turn_id, e.created_at, e.id`,
+    { turnIds: p.uuidArray(turnIds) },
+    (r) => ({ turnId: col.uuid.decode(r.turn_id, 'turn_id'), id: col.uuid.decode(r.id, 'id') }),
+  );
+  for (const row of rows) out.set(row.turnId, row.id);
+  return out;
 }
 
 /** Escalations assigned to a principal whose packet the founder agreed to share (EIR / staff inbox). */
@@ -199,8 +218,9 @@ export async function updateEscalationPacket(
 }
 
 /**
- * Founder approves sharing the packet. With an assignee the escalation is `routed` immediately;
- * otherwise it stays `awaiting_consent` (consented, awaiting routing by a program lead).
+ * Founder approves sharing the packet (only from `draft` / `awaiting_consent`). With an assignee the
+ * escalation is `routed` immediately; otherwise it becomes `awaiting_assignment` (consented, waiting in
+ * the program team's routing queue until {@link routeEscalation}).
  */
 export async function recordSharingConsent(
   ex: SqlExecutor,
@@ -219,7 +239,8 @@ export async function recordSharingConsent(
          assignee_principal_id = coalesce(:assignee, assignee_principal_id),
          due_at = coalesce(:dueAt, due_at),
          packet = coalesce(:packet, packet),
-         status = CASE WHEN coalesce(:assignee, assignee_principal_id) IS NOT NULL THEN 'routed' ELSE 'awaiting_consent' END,
+         status = CASE WHEN coalesce(:assignee, assignee_principal_id) IS NOT NULL THEN 'routed'
+                       ELSE 'awaiting_assignment' END,
          updated_at = now()
      WHERE id = :id AND status IN ('draft', 'awaiting_consent')
      RETURNING id`,
@@ -235,12 +256,16 @@ export async function recordSharingConsent(
   return id ? getEscalation(ex, id) : null;
 }
 
-/** Allowed transitions for {@link transitionEscalation}. */
+/**
+ * Allowed transitions for {@link transitionEscalation} (system design §6.2). Consent
+ * ({@link recordSharingConsent}) and routing ({@link routeEscalation}) have their own functions. Only an
+ * assignee acknowledges, resolves or declines, so those start from the assigned states.
+ */
 export const ESCALATION_TRANSITIONS = {
   acknowledge: { to: 'acknowledged', from: ['routed'] },
   resolve: { to: 'resolved', from: ['routed', 'acknowledged'] },
-  decline: { to: 'declined', from: ['routed', 'acknowledged', 'awaiting_consent'] },
-  withdraw: { to: 'withdrawn', from: ['draft', 'awaiting_consent', 'routed', 'acknowledged'] },
+  decline: { to: 'declined', from: ['routed', 'acknowledged'] },
+  withdraw: { to: 'withdrawn', from: OPEN_ESCALATION_STATUSES },
 } as const satisfies Record<string, { to: EscalationStatusValue; from: readonly EscalationStatusValue[] }>;
 
 /**
@@ -281,9 +306,11 @@ export async function transitionEscalation(
 }
 
 /**
- * Program lead routes a consented escalation (via `app.route_escalation`, which re-checks role, tenant,
- * consent and assignee). Returns false when the escalation does not exist in the tenant; throws DbError
- * 42501 (not a program lead), 55000 (not routable), 23503 (bad assignee).
+ * Program lead routes a consented escalation (`awaiting_assignment`, or re-routes a `routed` /
+ * `acknowledged` one) to an EIR or program lead; it becomes `routed`. Via `app.route_escalation`, which
+ * re-checks role, tenant, consent, state and assignee. Returns false when the escalation does not exist in
+ * the tenant; throws DbError 42501 (not a program lead), 55000 (not routable), 23503 (assignee is not an
+ * active EIR or program lead of the tenant).
  */
 export async function routeEscalation(
   ex: SqlExecutor,

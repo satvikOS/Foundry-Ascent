@@ -26,6 +26,9 @@ export function registerStudioRoutes(r: RouteBuilder, core: Core): void {
       201,
     ),
   );
+  r.get('/persona-releases/:id', async (c, ctx) =>
+    c.json(await core.eir.getRelease(ctx, pathParam(c, 'id'))),
+  );
   r.post('/persona-releases/:id/approve', async (c, ctx) =>
     c.json(await core.eir.approveRelease(ctx, pathParam(c, 'id'))),
   );
@@ -57,6 +60,7 @@ export function registerStudioRoutes(r: RouteBuilder, core: Core): void {
     c.json(await core.program.updateResource(ctx, pathParam(c, 'id'), jsonBody(c, UpdateResourceRequest))),
   );
   r.get('/program/escalations', async (c, ctx) => c.json({ items: await core.program.escalationQueue(ctx) }));
+  r.get('/program/assignees', async (c, ctx) => c.json({ items: await core.program.listAssignees(ctx) }));
   r.post('/program/escalations/:id/route', async (c, ctx) =>
     c.json(await core.program.routeEscalation(ctx, pathParam(c, 'id'), jsonBody(c, RouteEscalationRequest))),
   );

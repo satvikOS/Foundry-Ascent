@@ -455,8 +455,12 @@ CREATE TABLE escalations (
                           'medical_regulatory', 'safety_wellbeing', 'conflict_harassment',
                           'expert_judgment', 'low_grounding', 'other')),
   priority              text NOT NULL CHECK (priority IN ('P0', 'P1', 'P2', 'P3')),
+  -- State machine (system design §6.2): draft | awaiting_consent → (founder consents) → awaiting_assignment
+  -- (program routing queue) or routed (assigned EIR) → acknowledged → resolved | declined; any open state →
+  -- withdrawn (founder).
   status                text NOT NULL DEFAULT 'draft' CHECK (status IN (
-                          'draft', 'awaiting_consent', 'routed', 'acknowledged', 'resolved', 'declined', 'withdrawn')),
+                          'draft', 'awaiting_consent', 'awaiting_assignment', 'routed', 'acknowledged', 'resolved',
+                          'declined', 'withdrawn')),
   requested_role        text NOT NULL DEFAULT 'eir' CHECK (requested_role IN ('eir', 'program_lead', 'specialist', 'university_support')),
   packet                jsonb NOT NULL, -- founder question, desired decision, shared facts, evidence, unknowns, reason, AI-generated label
   created_by            uuid NOT NULL REFERENCES principals (id),
@@ -468,7 +472,15 @@ CREATE TABLE escalations (
   resolution            jsonb,
   created_at            timestamptz NOT NULL DEFAULT now(),
   updated_at            timestamptz NOT NULL DEFAULT now(),
-  CHECK (status NOT IN ('routed', 'acknowledged', 'resolved') OR sharing_consent_at IS NOT NULL)
+  -- The founder's sharing decision separates the pre-consent states from the shared ones.
+  CONSTRAINT escalations_consent_state CHECK (
+    (status IN ('draft', 'awaiting_consent') AND sharing_consent_at IS NULL)
+    OR (status IN ('awaiting_assignment', 'routed', 'acknowledged', 'resolved') AND sharing_consent_at IS NOT NULL)
+    OR status IN ('declined', 'withdrawn')),
+  -- Waiting for routing means nobody is assigned; routed and acknowledged always have an assignee.
+  CONSTRAINT escalations_assignee_state CHECK (
+    (status <> 'awaiting_assignment' OR assignee_principal_id IS NULL)
+    AND (status NOT IN ('routed', 'acknowledged') OR assignee_principal_id IS NOT NULL))
 );
 CREATE INDEX escalations_venture_idx ON escalations (venture_id, created_at DESC);
 CREATE INDEX escalations_assignee_idx ON escalations (assignee_principal_id) WHERE assignee_principal_id IS NOT NULL;
@@ -697,7 +709,8 @@ BEGIN
     'open_escalations_by_priority', (
       SELECT coalesce(jsonb_object_agg(priority, n), '{}'::jsonb)
       FROM (SELECT priority, count(*) AS n FROM escalations
-            WHERE tenant_id = t AND status IN ('awaiting_consent', 'routed', 'acknowledged') GROUP BY priority) p),
+            WHERE tenant_id = t AND status IN ('awaiting_consent', 'awaiting_assignment', 'routed', 'acknowledged')
+            GROUP BY priority) p),
     'active_ventures_30d', (
       SELECT count(DISTINCT venture_id) FROM coaching_sessions WHERE tenant_id = t AND started_at > now() - interval '30 days'),
     'sessions_30d', (

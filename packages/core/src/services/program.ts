@@ -1,6 +1,8 @@
 import {
   CreateVentureRequest,
+  type EscalationAssignee,
   type EscalationQueueItem,
+  type EscalationStatus,
   type ProgramVentureRow,
   ResourceFilter,
   RouteEscalationRequest,
@@ -31,6 +33,13 @@ import { dueAtFor } from './escalation-packet.js';
 type ProgramVentureRowValue = z.infer<typeof ProgramVentureRow>;
 type EscalationQueueItemValue = z.infer<typeof EscalationQueueItem>;
 
+/** States a consented escalation can be routed (or re-routed) from (system design §6.2). */
+const ROUTABLE_STATUSES: ReadonlySet<EscalationStatus> = new Set([
+  'awaiting_assignment',
+  'routed',
+  'acknowledged',
+]);
+
 /** PATCH /program/resources/:id body and GET /program/resources query (now in @foundry/contracts). */
 export { ResourceFilter, UpdateResourceRequest };
 
@@ -54,7 +63,15 @@ export interface ProgramService {
   ): Promise<ResourceView>;
   /** Escalation metadata queue via app.escalation_queue() (program lead or platform admin). */
   escalationQueue(ctx: RequestContext): Promise<EscalationQueueItemValue[]>;
-  /** Routes a consented escalation to an active principal of the tenant (program lead or platform admin). */
+  /**
+   * People an escalation can be routed to: active EIRs and program leads of the caller's tenant, by name
+   * (program lead or platform admin).
+   */
+  listAssignees(ctx: RequestContext): Promise<EscalationAssignee[]>;
+  /**
+   * Routes a consented escalation (`awaiting_assignment`, or re-routes a `routed` / `acknowledged` one) to
+   * an active EIR or program lead of the tenant; it becomes `routed` (program lead or platform admin).
+   */
   routeEscalation(
     ctx: RequestContext,
     escalationId: string,
@@ -178,6 +195,17 @@ export function createProgramService(kit: Kit, directory: DirectoryCache): Progr
         return escalationsRepo.escalationQueue(scope.tx);
       }),
 
+    listAssignees: (ctx) =>
+      kit.inRequest(ctx, async (scope) => {
+        await requireRole(scope, ['program_lead', 'platform_admin'], { objectType: 'principal' });
+        const rows = await principalsRepo.listEscalationAssignees(scope.tx, ctx.tenantId);
+        return rows.map((row) => ({
+          principal: principalsRepo.toPrincipalView(row.principal),
+          roles: row.roles,
+          expertiseTags: row.expertiseTags,
+        }));
+      }),
+
     routeEscalation: async (ctx, rawEscalationId, rawInput) => {
       const escalationId = requireId(rawEscalationId, 'Escalation');
       const input = parseInput(RouteEscalationRequest, rawInput);
@@ -190,6 +218,8 @@ export function createProgramService(kit: Kit, directory: DirectoryCache): Progr
         if (!before) throw fail.notFound('Escalation');
         if (!before.shared)
           throw fail.conflict('The founder has not agreed to share this escalation', 'consent_missing');
+        if (!ROUTABLE_STATUSES.has(before.status))
+          throw fail.conflict('This escalation is closed and cannot be routed', 'invalid_transition');
         // Packets only go to program staff or EIRs of the tenant, never to another venture's members.
         const assigneeRoles = await principalsRepo.listActiveRoles(scope.tx, {
           principalId: input.assigneeId,

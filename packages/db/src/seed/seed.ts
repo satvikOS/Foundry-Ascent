@@ -683,7 +683,8 @@ async function seedVenture(
           venture_id: ventureId,
           category: e.category,
           priority: e.priority,
-          status: 'awaiting_consent',
+          // Consented without an assignee: waiting in the program team's routing queue.
+          status: e.consented ? 'awaiting_assignment' : 'awaiting_consent',
           requested_role: 'specialist',
           packet: e.packet,
           created_by: creator,

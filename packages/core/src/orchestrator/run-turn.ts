@@ -18,6 +18,7 @@ import {
   CreateTurnRequest,
   type CoachMode,
   type PlatformSettingsView,
+  type TurnBlockedDetail,
   type TurnStreamEvent,
   type TurnView,
   type ValidatorResults,
@@ -36,6 +37,7 @@ import { type DirectoryCache, type OtherVentures } from '../internal/directory.j
 import { audit, requireId, type Kit } from '../internal/kit.js';
 import { createDraftEscalation } from '../services/escalations.js';
 import { persistMemoryCandidates } from '../services/memory.js';
+import { blockedDetailOf, supportMessageFor } from './blocked.js';
 import { assembleContext } from './context-budget.js';
 import { type KeyedEvidence } from './evidence.js';
 import { assertWithinSpendCaps } from './guards.js';
@@ -96,13 +98,25 @@ function asDomainError(err: unknown): DomainError {
   return isDomainError(mapped) ? mapped : SAFE_INTERNAL(err);
 }
 
-function errorEvent(turnId: string | null, error: DomainError): TurnStreamEvent {
+/**
+ * `turn.error` for a domain error. Every event names the request (`requestId`, for support); a known wait
+ * (`retryAfterSeconds`, e.g. a replayed turn that is still being answered) makes it retryable.
+ */
+export function errorEvent(
+  turnId: string | null,
+  error: DomainError,
+  requestId: string,
+): Extract<TurnStreamEvent, { event: 'turn.error' }> {
   return {
     event: 'turn.error',
     turnId,
     code: error.code,
     message: error.message,
-    retryable: error.retryable,
+    retryable: error.retryable || error.retryAfterSeconds !== undefined,
+    ...(error.retryAfterSeconds === undefined
+      ? {}
+      : { retryAfterSeconds: Math.max(1, Math.ceil(error.retryAfterSeconds)) }),
+    requestId,
   };
 }
 
@@ -217,14 +231,13 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
             );
           }
           const evidence = (await turnsRepo.listTurnEvidence(tx, [existing.id])).get(existing.id) ?? [];
-          const escalation = (
-            await escalationsRepo.listVentureEscalations(tx, { ventureId: session.ventureId })
-          ).find((e) => e.turnId === existing.id);
+          const escalationId =
+            (await escalationsRepo.escalationIdsByTurn(tx, [existing.id])).get(existing.id) ?? null;
           return {
             kind: 'replay',
             turn: existing,
-            view: turnsRepo.toTurnView(existing, evidence),
-            escalationId: escalation?.id ?? null,
+            view: turnsRepo.toTurnView(existing, evidence, blockedDetailOf(existing, escalationId)),
+            escalationId,
           };
         }
       }
@@ -294,25 +307,23 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
     });
   }
 
-  async function replay(emit: (e: TurnStreamEvent) => Promise<void>, r: Replay): Promise<RunTurnOutcome> {
+  async function replay(
+    ctx: RequestContext,
+    emit: (e: TurnStreamEvent) => Promise<void>,
+    r: Replay,
+  ): Promise<RunTurnOutcome> {
     await emit({ event: 'turn.accepted', turnId: r.turn.id, ordinal: r.turn.ordinal });
     switch (r.turn.status) {
       case 'completed':
         await emit({ event: 'turn.completed', turn: r.view });
         return { status: 'completed', turnId: r.turn.id, replayed: true, error: null };
       case 'blocked': {
-        const crisis = r.turn.riskLabel === 'crisis';
-        await emit({
-          event: 'turn.blocked',
-          turnId: r.turn.id,
-          reason: crisis
-            ? 'crisis_support'
-            : r.turn.validatorResults?.crossVentureViolation
-              ? 'cross_venture'
-              : 'identity',
+        const blocked = r.view.blocked ?? {
+          reason: 'blocked',
+          supportMessage: null,
           escalationId: r.escalationId,
-          supportMessage: crisis ? CRISIS_SUPPORT_MESSAGE : null,
-        });
+        };
+        await emit({ event: 'turn.blocked', turnId: r.turn.id, ...blocked });
         return { status: 'blocked', turnId: r.turn.id, replayed: true, error: null };
       }
       case 'failed': {
@@ -323,7 +334,7 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
             reason: 'replayed_failure',
           },
         );
-        await emit(errorEvent(r.turn.id, error));
+        await emit(errorEvent(r.turn.id, error, ctx.requestId));
         return { status: 'failed', turnId: r.turn.id, replayed: true, error };
       }
       case 'pending': {
@@ -331,7 +342,7 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
           reason: 'turn_pending',
           retryAfterSeconds: 5,
         });
-        await emit(errorEvent(r.turn.id, error));
+        await emit(errorEvent(r.turn.id, error, ctx.requestId));
         return { status: 'failed', turnId: r.turn.id, replayed: true, error };
       }
     }
@@ -603,7 +614,7 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
           })
         : asDomainError(err);
       await failTurn(ctx, turn, error, attempts);
-      await emit(errorEvent(turn.id, error));
+      await emit(errorEvent(turn.id, error, ctx.requestId));
       return { status: 'failed', turnId: turn.id, replayed: false, error };
     }
     await kit.recordUsage({ ctx, ventureId, purpose: 'turn', attempts: result.attempts });
@@ -725,17 +736,14 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
         },
       });
       const evidence = (await turnsRepo.listTurnEvidence(tx, [turn.id])).get(turn.id) ?? [];
-      return { view: turnsRepo.toTurnView(finished, evidence), escalationId };
+      const reason = checked.blocked ? (checked.blockReason ?? 'blocked') : null;
+      const blocked: TurnBlockedDetail | null =
+        reason === null ? null : { reason, supportMessage: supportMessageFor(reason), escalationId };
+      return { view: turnsRepo.toTurnView(finished, evidence, blocked), blocked };
     });
 
-    if (checked.blocked) {
-      await emit({
-        event: 'turn.blocked',
-        turnId: turn.id,
-        reason: checked.blockReason ?? 'blocked',
-        escalationId: persisted.escalationId,
-        supportMessage: null,
-      });
+    if (persisted.blocked !== null) {
+      await emit({ event: 'turn.blocked', turnId: turn.id, ...persisted.blocked });
       return { status: 'blocked', turnId: turn.id, replayed: false, error: null };
     }
     await emit({ event: 'turn.completed', turn: persisted.view });
@@ -757,7 +765,7 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
         // Crisis detection does not depend on venture names; it decides which gates apply.
         const crisis = classifyRisk(input.text).crisis;
         const checked = await preflight(ctx, sessionId, input, crisis);
-        if (checked.kind === 'replay') return await replay(emit, checked);
+        if (checked.kind === 'replay') return await replay(ctx, emit, checked);
         pre = checked;
         if (!crisis) {
           await assertWithinSpendCaps(kit, ctx, pre.settings, {
@@ -814,7 +822,7 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
             error: err instanceof Error ? err.name : 'unknown',
           });
         }
-        await emit(errorEvent(null, error));
+        await emit(errorEvent(null, error, ctx.requestId));
         return { status: 'rejected', turnId: null, replayed: false, error };
       }
 
@@ -830,7 +838,7 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
           error: err instanceof Error ? err.name : 'unknown',
         });
         await failTurn(ctx, turn, error, []);
-        await emit(errorEvent(turn.id, error));
+        await emit(errorEvent(turn.id, error, ctx.requestId));
         return { status: 'failed', turnId: turn.id, replayed: false, error };
       }
     },

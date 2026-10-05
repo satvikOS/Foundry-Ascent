@@ -1,7 +1,10 @@
 /** Exercises every repository function not covered by the scenario suites (catches SQL/decoding errors). */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { TurnView, type ValidatorResults } from '@foundry/contracts';
+
 import { type DbContext } from '../db.js';
+import { p } from '../params.js';
 import { type SeedResult } from '../seed/seed.js';
 import { createTestDatabase, makeContext, type TestDatabase } from '../testing/test-database.js';
 import * as assignmentsRepo from './assignments.js';
@@ -328,5 +331,183 @@ describe('remaining repository functions', () => {
       const owner = await authRepo.listActiveAccessCodes(sx, [must(seed.ownerId)]);
       expect((await authRepo.getAccessCode(sx, must(owner[0]).id))?.label).toBe('owner (deploy)');
     });
+  });
+});
+
+describe('escalation assignees and blocked turns', () => {
+  it('lists the tenant EIRs and program leads as escalation assignees under RLS', async () => {
+    const ruthId = must(seed.principals['eir-ruth']);
+    const corinId = must(seed.principals['eir-corin']);
+    const leadId = must(seed.programLeadId);
+    const rows = await t.db.withContext(lead, (tx) =>
+      principalsRepo.listEscalationAssignees(tx, seed.tenantId),
+    );
+    const ids = rows.map((r) => r.principal.id);
+    expect(ids).toEqual(expect.arrayContaining([leadId, ruthId, corinId, must(seed.ownerId)]));
+    expect(ids).toHaveLength(4);
+    expect(ids).not.toContain(maya.principalId);
+    expect(rows.find((r) => r.principal.id === ruthId)?.roles).toEqual(['eir']);
+    expect(rows.find((r) => r.principal.id === ruthId)?.expertiseTags.length).toBeGreaterThan(0);
+    expect(rows.find((r) => r.principal.id === leadId)).toMatchObject({
+      roles: ['program_lead'],
+      expertiseTags: [],
+    });
+    // The owner is platform admin and program lead: only the routing-relevant role is listed.
+    expect(rows.find((r) => r.principal.id === seed.ownerId)?.roles).toEqual(['program_lead']);
+
+    // A revoked grant or a disabled principal is no longer eligible.
+    await t.db.system((sx) =>
+      sx.query(`UPDATE role_grants SET revoked_at = now() WHERE principal_id = :id AND role = 'eir'`, {
+        id: p.uuid(corinId),
+      }),
+    );
+    await t.db.system((sx) =>
+      sx.query(`UPDATE principals SET status = 'disabled' WHERE id = :id`, { id: p.uuid(ruthId) }),
+    );
+    try {
+      const after = await t.db.withContext(lead, (tx) =>
+        principalsRepo.listEscalationAssignees(tx, seed.tenantId),
+      );
+      expect(after.map((r) => r.principal.id)).not.toContain(corinId);
+      expect(after.map((r) => r.principal.id)).not.toContain(ruthId);
+      expect(after).toHaveLength(2);
+    } finally {
+      await t.db.system(async (sx) => {
+        await sx.query(`UPDATE principals SET status = 'active' WHERE id = :id`, { id: p.uuid(ruthId) });
+        await sx.query(
+          `INSERT INTO role_grants (principal_id, tenant_id, role) VALUES (:id, :tenant, 'eir')`,
+          {
+            id: p.uuid(corinId),
+            tenant: p.uuid(seed.tenantId),
+          },
+        );
+      });
+    }
+    // Another tenant's id lists nobody (RLS and the tenant filter agree).
+    expect(
+      await t.db.withContext(lead, (tx) =>
+        principalsRepo.listEscalationAssignees(tx, '00000000-0000-4000-8000-000000000000'),
+      ),
+    ).toEqual([]);
+  });
+
+  it('describes blocked turns with their reason, support message and drafted escalation', async () => {
+    const validator = (overrides: Partial<ValidatorResults>): ValidatorResults => ({
+      unknownEvidenceIdsRemoved: 0,
+      factsDowngraded: 0,
+      groundingCoverage: null,
+      narrowed: false,
+      escalationForced: false,
+      identityViolation: false,
+      crossVentureViolation: false,
+      riskCategories: [],
+      notes: [],
+      ...overrides,
+    });
+    const { sessionId, crisisTurn, crossTurn, escalationId } = await t.db.withContext(maya, async (tx) => {
+      const resolved = must(await assignmentsRepo.resolveActiveAssignment(tx, ventureId));
+      const session = await sessionsRepo.createSession(tx, {
+        tenantId: seed.tenantId,
+        ventureId,
+        assignmentId: resolved.assignment.id,
+        personaReleaseId: must(resolved.release).id,
+        startedBy: maya.principalId,
+        mode: 'coach',
+        privacy: 'standard',
+        policyVersion: 'test',
+      });
+      const newTurn = (founderText: string) =>
+        turnsRepo.createTurn(tx, {
+          tenantId: seed.tenantId,
+          ventureId,
+          sessionId: session.id,
+          authorId: maya.principalId,
+          mode: 'coach',
+          founderText,
+        });
+      const crisis = await newTurn('A message that took the crisis path');
+      await turnsRepo.finishTurn(tx, {
+        turnId: crisis.id,
+        status: 'blocked',
+        riskLabel: 'crisis',
+        validatorResults: validator({ escalationForced: true, notes: ['crisis_support', 'no_model_call'] }),
+      });
+      const cross = await newTurn('A message whose answer named another venture');
+      await turnsRepo.finishTurn(tx, {
+        turnId: cross.id,
+        status: 'blocked',
+        validatorResults: validator({ crossVentureViolation: true, notes: ['cross_venture_blocked'] }),
+      });
+      const done = await newTurn('An ordinary question');
+      await turnsRepo.finishTurn(tx, {
+        turnId: done.id,
+        status: 'completed',
+        validatorResults: validator({}),
+      });
+      const draft = await escalationsRepo.createEscalation(tx, {
+        tenantId: seed.tenantId,
+        ventureId,
+        sessionId: session.id,
+        turnId: crisis.id,
+        category: 'safety_wellbeing',
+        priority: 'P1',
+        requestedRole: 'university_support',
+        createdBy: maya.principalId,
+        packet: {
+          founderQuestion: 'q',
+          desiredDecision: null,
+          sharedFacts: [],
+          evidenceConsidered: [],
+          conflictingSignals: [],
+          unknowns: [],
+          reason: 'r',
+          urgency: 'u',
+          proposedNextStep: null,
+          sessionSummary: null,
+          aiGenerated: true,
+        },
+      });
+      return { sessionId: session.id, crisisTurn: crisis.id, crossTurn: cross.id, escalationId: draft.id };
+    });
+
+    const views = await t.db.withContext(maya, (tx) =>
+      turnsRepo.listTurnViews(tx, sessionId, (reason) => (reason === 'crisis_support' ? 'Support' : null)),
+    );
+    for (const view of views) expect(TurnView.safeParse(view).success).toBe(true);
+    expect(views.map((v) => v.blocked)).toEqual([
+      { reason: 'crisis_support', supportMessage: 'Support', escalationId },
+      { reason: 'cross_venture', supportMessage: null, escalationId: null },
+      null,
+    ]);
+    // The detail never repeats the founder's words.
+    expect(JSON.stringify(views.map((v) => v.blocked))).not.toContain('crisis path');
+
+    // Escalations follow RLS: an EIR without consent sees no escalation id.
+    expect(
+      await t.db.withContext(corin, (tx) => escalationsRepo.escalationIdsByTurn(tx, [crisisTurn, crossTurn])),
+    ).toEqual(new Map());
+    expect(
+      await t.db.withContext(maya, (tx) => escalationsRepo.escalationIdsByTurn(tx, [crisisTurn, crossTurn])),
+    ).toEqual(new Map([[crisisTurn, escalationId]]));
+    expect(turnsRepo.blockedReason({ status: 'blocked', riskLabel: null, validatorResults: null })).toBe(
+      'blocked',
+    );
+    expect(
+      turnsRepo.blockedReason({
+        status: 'blocked',
+        riskLabel: 'high',
+        validatorResults: validator({ identityViolation: true }),
+      }),
+    ).toBe('identity');
+    expect(
+      turnsRepo.blockedReason({
+        status: 'blocked',
+        riskLabel: null,
+        validatorResults: validator({ notes: ['invalid_schema:2'] }),
+      }),
+    ).toBe('invalid_schema');
+    expect(
+      turnsRepo.blockedReason({ status: 'completed', riskLabel: 'crisis', validatorResults: null }),
+    ).toBeNull();
   });
 });

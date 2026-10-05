@@ -22,19 +22,22 @@ import {
   CreateSessionResponse,
   EirProfileListResponse,
   EndSessionResponse,
+  EscalationAssigneeListResponse,
   EscalationActionResponse,
   EscalationQueueResponse,
   HealthResponse,
   MemoryActionResponse,
+  PersonaReleaseDetailResponse,
   ProblemDetails,
   ResumePersonaResponse,
   RouteEscalationResponse,
+  SessionDetailResponse,
   SignInResponse,
   SuspendPersonaResponse,
   TurnStreamEvent,
   UpdateResourceResponse,
 } from '@foundry/contracts';
-import { DatabaseResumingError, GUIDE_DOCTRINE, GUIDE_STYLE } from '@foundry/db';
+import { DatabaseResumingError, GUIDE_DOCTRINE, GUIDE_STYLE, p } from '@foundry/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type z } from 'zod';
 
@@ -88,6 +91,17 @@ const bodyless = (cookie: string) => ({
 
 const quietquad = (): string => api.h.ventures.quietquad.id;
 
+/** The events of an SSE body (`event:` + one JSON `data:` line per frame; comments skipped). */
+function sseEvents(text: string): TurnStreamEvent[] {
+  return text
+    .split('\n\n')
+    .filter((b) => b.trim() !== '' && !b.startsWith(':'))
+    .map((block) => {
+      const data = block.split('\n').find((line) => line.startsWith('data: '));
+      return TurnStreamEvent.parse(JSON.parse(data?.slice('data: '.length) ?? 'null'));
+    });
+}
+
 describe('write endpoints answer with their contract response schema', () => {
   it('sessions, memory, documents and escalations (founder) with body-less POSTs', async () => {
     const session = await expectJson(
@@ -140,7 +154,11 @@ describe('write endpoints answer with their contract response schema', () => {
 
     const escalation = await expectJson(
       await api.request(`/ventures/${quietquad()}/escalations`, {
-        body: { category: 'legal', founderQuestion: 'Can the library pilot agreement be signed as is?' },
+        body: {
+          category: 'legal',
+          requestedRole: 'specialist',
+          founderQuestion: 'Can the library pilot agreement be signed as is?',
+        },
         cookie: maya,
       }),
       CreateEscalationResponse,
@@ -156,12 +174,31 @@ describe('write endpoints answer with their contract response schema', () => {
       200,
     );
     expect(shared.sharingConsentAt).not.toBeNull();
+    // Consented, nobody assigned yet: it waits for the program team (system design §6.2).
+    expect(shared).toMatchObject({ status: 'awaiting_assignment', assignee: null });
     const queue = await expectJson(
       await api.request('/program/escalations', { cookie: lead }),
       EscalationQueueResponse,
       200,
     );
-    expect(queue.items.some((q) => q.id === escalation.id)).toBe(true);
+    expect(queue.items.find((q) => q.id === escalation.id)).toMatchObject({
+      status: 'awaiting_assignment',
+      shared: true,
+    });
+    // The routing dialog's people list: tenant EIRs and program leads only, program staff only.
+    const assignees = await expectJson(
+      await api.request('/program/assignees', { cookie: lead }),
+      EscalationAssigneeListResponse,
+      200,
+    );
+    expect(assignees.items.map((a) => a.principal.id)).toContain(api.h.people.eirRuth);
+    expect(assignees.items.map((a) => a.principal.id)).not.toContain(api.h.people.maya);
+    const denied = await expectJson(
+      await api.request('/program/assignees', { cookie: maya }),
+      ProblemDetails,
+      403,
+    );
+    expect(denied.code).toBe('forbidden');
     const routed = await expectJson(
       await api.request(`/program/escalations/${escalation.id}/route`, {
         body: { assigneeId: api.h.people.eirRuth },
@@ -170,7 +207,7 @@ describe('write endpoints answer with their contract response schema', () => {
       RouteEscalationResponse,
       200,
     );
-    expect(routed.assigneeId).toBe(api.h.people.eirRuth);
+    expect(routed).toMatchObject({ assigneeId: api.h.people.eirRuth, status: 'routed' });
 
     const ended = await expectJson(
       await api.request(`/sessions/${session.id}/end`, bodyless(maya)),
@@ -194,6 +231,18 @@ describe('write endpoints answer with their contract response schema', () => {
       }),
       CreatePersonaReleaseResponse,
       201,
+    );
+    // The full draft for review before approval (program lead), never for founders.
+    const detail = await expectJson(
+      await api.request(`/persona-releases/${draft.id}`, { cookie: lead }),
+      PersonaReleaseDetailResponse,
+      200,
+    );
+    expect(detail).toMatchObject({ id: draft.id, status: 'draft', doctrine: GUIDE_DOCTRINE });
+    await expectJson(
+      await api.request(`/persona-releases/${draft.id}`, { cookie: maya }),
+      ProblemDetails,
+      403,
     );
     await expectJson(
       await api.request(`/persona-releases/${draft.id}/approve`, bodyless(lead)),
@@ -353,6 +402,78 @@ describe('SSE turn stream framing', () => {
       const event = TurnStreamEvent.parse(JSON.parse(dataLine?.slice('data: '.length) ?? ''));
       expect(eventLine).toBe(`event: ${event.event}`);
     }
+  });
+
+  it('a reloaded session shows a crisis-blocked turn with its support message and request', async () => {
+    const session = await expectJson(
+      await api.request(`/ventures/${quietquad()}/sessions`, { body: {}, cookie: maya }),
+      CreateSessionResponse,
+      201,
+    );
+    const text = "I don't want to be alive anymore and I keep thinking about ending it.";
+    const res = await api.request(`/sessions/${session.id}/turns`, { body: { text }, cookie: maya });
+    const events = sseEvents(await res.text());
+    const blocked = events.at(-1);
+    if (blocked?.event !== 'turn.blocked') throw new Error(`expected turn.blocked, got ${blocked?.event}`);
+    expect(blocked.reason).toBe('crisis_support');
+
+    const detail = await expectJson(
+      await api.request(`/sessions/${session.id}`, { cookie: maya }),
+      SessionDetailResponse,
+      200,
+    );
+    const turn = detail.turns.find((t) => t.id === blocked.turnId);
+    expect(turn).toMatchObject({
+      status: 'blocked',
+      blocked: {
+        reason: 'crisis_support',
+        supportMessage: blocked.supportMessage,
+        escalationId: blocked.escalationId,
+      },
+    });
+    expect(turn?.blocked?.supportMessage).toContain('988');
+    // The founder's words appear once, as the founder's own message, never in the blocked detail.
+    expect(JSON.stringify(turn?.blocked)).not.toContain('ending it');
+  });
+
+  it('turn.error carries the request id, and a replay of a pending turn says when to retry', async () => {
+    const session = await expectJson(
+      await api.request(`/ventures/${quietquad()}/sessions`, { body: {}, cookie: maya }),
+      CreateSessionResponse,
+      201,
+    );
+    const body = { text: 'Which interview notes should we revisit first?' };
+    const key = 'contract-pending-replay-0001';
+    const first = sseEvents(
+      await (
+        await api.request(`/sessions/${session.id}/turns`, { body, cookie: maya, idempotencyKey: key })
+      ).text(),
+    );
+    const accepted = first[0];
+    if (accepted?.event !== 'turn.accepted') throw new Error('expected turn.accepted');
+    // Simulate the original request still running (e.g. another Lambda is answering it).
+    await api.h.t.db.system((sx) =>
+      sx.query(`UPDATE turns SET status = 'pending', completed_at = NULL WHERE id = :id`, {
+        id: p.uuid(accepted.turnId),
+      }),
+    );
+    const res = await api.request(`/sessions/${session.id}/turns`, {
+      body,
+      cookie: maya,
+      idempotencyKey: key,
+    });
+    expect(res.headers.get('idempotency-replayed')).toBe('true');
+    const requestId = res.headers.get('x-request-id');
+    const events = sseEvents(await res.text());
+    expect(events.at(-1)).toEqual({
+      event: 'turn.error',
+      turnId: accepted.turnId,
+      code: 'conflict',
+      message: 'This message is still being answered. Please wait.',
+      retryable: true,
+      retryAfterSeconds: 5,
+      requestId,
+    });
   });
 
   it('answers a refusal before acceptance as problem+json, not a stream', async () => {

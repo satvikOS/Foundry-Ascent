@@ -5,6 +5,7 @@ import {
   TurnStatus,
   ValidatorResults,
   type EvidenceItem,
+  type TurnBlockedDetail,
   type TurnView,
 } from '@foundry/contracts';
 import { type z } from 'zod';
@@ -13,6 +14,7 @@ import { col, type RawRow } from '../columns.js';
 import { type SqlExecutor } from '../executor.js';
 import { p } from '../params.js';
 import { clampLimit, excerptSql, queryFirst, queryNumber, queryOne, queryRows } from './common.js';
+import { escalationIdsByTurn } from './escalations.js';
 
 type CoachModeValue = z.infer<typeof CoachMode>;
 type CoachResponseValue = z.infer<typeof CoachResponse>;
@@ -347,8 +349,32 @@ export async function listTurnEvidence(
   return out;
 }
 
-/** Assembles the contract `TurnView`. */
-export function toTurnView(turn: TurnRecord, evidence: readonly EvidenceItemValue[]): TurnView {
+/**
+ * Why a blocked turn was blocked (`turn.blocked` `reason`), derived from what was stored when it was
+ * blocked: the crisis path, then the validator's outcome in the order the validator applies it. Null for
+ * turns that are not blocked.
+ */
+export function blockedReason(
+  turn: Pick<TurnRecord, 'status' | 'riskLabel' | 'validatorResults'>,
+): string | null {
+  if (turn.status !== 'blocked') return null;
+  if (turn.riskLabel === 'crisis') return 'crisis_support';
+  const validator = turn.validatorResults;
+  if (validator?.notes.some((note) => note.startsWith('invalid_schema'))) return 'invalid_schema';
+  if (validator?.crossVentureViolation === true) return 'cross_venture';
+  if (validator?.identityViolation === true) return 'identity';
+  return 'blocked';
+}
+
+/**
+ * Assembles the contract `TurnView`. `blocked` must be set for blocked turns (see
+ * {@link blockedReason}); it is ignored for any other status.
+ */
+export function toTurnView(
+  turn: TurnRecord,
+  evidence: readonly EvidenceItemValue[],
+  blocked: TurnBlockedDetail | null,
+): TurnView {
   return {
     id: turn.id,
     sessionId: turn.sessionId,
@@ -371,17 +397,41 @@ export function toTurnView(turn: TurnRecord, evidence: readonly EvidenceItemValu
       : null,
     createdAt: turn.createdAt,
     completedAt: turn.completedAt,
+    blocked: turn.status === 'blocked' ? blocked : null,
   };
 }
 
-/** Turns of a session as contract `TurnView`s (two queries). */
-export async function listTurnViews(ex: SqlExecutor, sessionId: string): Promise<TurnView[]> {
+/**
+ * Turns of a session as contract `TurnView`s (two queries, plus one for the escalations of blocked turns).
+ * Blocked turns carry their reason, the escalation drafted for them (when the caller may read it) and the
+ * support message `supportMessageFor` returns for the reason (the crisis message lives in packages/ai).
+ */
+export async function listTurnViews(
+  ex: SqlExecutor,
+  sessionId: string,
+  supportMessageFor: (reason: string) => string | null,
+): Promise<TurnView[]> {
   const turns = await listTurns(ex, sessionId);
   const evidence = await listTurnEvidence(
     ex,
     turns.map((t) => t.id),
   );
-  return turns.map((t) => toTurnView(t, evidence.get(t.id) ?? []));
+  const escalations = await escalationIdsByTurn(
+    ex,
+    turns.filter((t) => t.status === 'blocked').map((t) => t.id),
+  );
+  return turns.map((t) => {
+    const reason = blockedReason(t);
+    const blocked =
+      reason === null
+        ? null
+        : {
+            reason,
+            supportMessage: supportMessageFor(reason),
+            escalationId: escalations.get(t.id) ?? null,
+          };
+    return toTurnView(t, evidence.get(t.id) ?? [], blocked);
+  });
 }
 
 // ------------------------------------------------------------------------------------------------

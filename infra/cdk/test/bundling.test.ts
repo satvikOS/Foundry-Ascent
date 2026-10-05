@@ -27,6 +27,7 @@ import {
   realHandlerEntry,
   REPO_ROOT,
 } from '../src/paths.js';
+import { PLACEHOLDER_OWNER } from './helpers.js';
 
 /** Synthesizes one PlatformFunction per entry and returns the bundle directory of each. */
 function bundle(entries: Record<string, string>): Record<string, string> {
@@ -133,9 +134,9 @@ const FAKE_ENV: Readonly<Record<string, string>> = {
   MODEL_FALLBACK_ID: 'global.amazon.nova-2-lite-v1:0',
   MODEL_EMBEDDINGS_ID: 'amazon.titan-embed-text-v2:0',
   BEDROCK_REGION: 'us-east-1',
-  OWNER_ACCESS_CODE_PREFIX: 'T9302',
-  OWNER_ACCESS_CODE_HASH:
-    'scrypt$N=32768,r=8,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+  // The documented placeholder owner code FA-ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ and its hashAccessCode() hash.
+  OWNER_ACCESS_CODE_PREFIX: PLACEHOLDER_OWNER.prefix,
+  OWNER_ACCESS_CODE_HASH: PLACEHOLDER_OWNER.hash,
   OWNER_DISPLAY_NAME: 'Platform Owner',
   HOME_TENANT_SLUG: 'ain',
   HOME_TENANT_NAME: 'Ain Foundry',

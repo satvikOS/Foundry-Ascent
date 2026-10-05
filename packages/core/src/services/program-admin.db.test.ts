@@ -2,12 +2,13 @@ import {
   AdminPrincipalRow,
   AuditListResponse,
   Me,
+  PersonaReleaseDetailResponse,
   PortfolioSummary,
   UsageSummary,
   VentureDetail,
   VentureOverview,
 } from '@foundry/contracts';
-import { GUIDE_DOCTRINE, GUIDE_STYLE, eirRepo, personasRepo, p } from '@foundry/db';
+import { GUIDE_DOCTRINE, GUIDE_STYLE, eirRepo, personasRepo, principalsRepo, p } from '@foundry/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { type RequestContext } from '../context.js';
@@ -206,6 +207,54 @@ describe('EIR studio', () => {
     ).rejects.toMatchObject({
       code: 'forbidden',
     });
+  });
+
+  it('release detail: drafts for persona controllers and admins, published releases for studio roles', async () => {
+    const { personaId, auditorId } = await h.t.db.system(async (sx) => {
+      const profile = await eirRepo.getEirProfileByPrincipal(sx, h.people.eirCorin);
+      const persona = await personasRepo.createPersona(sx, {
+        tenantId: h.seed.tenantId,
+        name: 'Corin review persona (synthetic)',
+        kind: 'eir_persona',
+        eirProfileId: profile?.id ?? null,
+      });
+      // A platform admin who is not a program lead.
+      const auditor = await principalsRepo.createPrincipal(sx, {
+        tenantId: h.seed.tenantId,
+        displayName: 'Release Auditor (synthetic)',
+        synthetic: true,
+      });
+      await principalsRepo.grantRole(sx, {
+        principalId: auditor.id,
+        tenantId: h.seed.tenantId,
+        role: 'platform_admin',
+      });
+      return { personaId: persona.id, auditorId: auditor.id };
+    });
+    const draft = await h.core.eir.createRelease(corin, personaId, release);
+    const ruth = await h.ctxFor(h.people.eirRuth);
+    const auditor = await h.ctxFor(auditorId);
+
+    for (const who of [corin, lead, auditor]) {
+      const detail = PersonaReleaseDetailResponse.parse(await h.core.eir.getRelease(who, draft.id));
+      expect(detail).toMatchObject({ id: draft.id, personaId, status: 'draft', version: draft.version });
+      expect(detail.doctrine).toEqual(release.doctrine);
+      expect(detail.style).toEqual(release.style);
+      expect(detail.disclosureText).toBe(release.disclosureText);
+      expect(detail.allowedModes).toEqual(release.allowedModes);
+    }
+    // Another EIR cannot read a draft of a persona that is not theirs; founders have no studio role.
+    await expect(h.core.eir.getRelease(ruth, draft.id)).rejects.toMatchObject({ code: 'forbidden' });
+    await expect(h.core.eir.getRelease(maya, draft.id)).rejects.toMatchObject({ code: 'forbidden' });
+    // Published releases (approved or superseded) are visible to every studio role, like the active one.
+    await expect(h.core.eir.getRelease(ruth, h.seed.releaseId)).resolves.toMatchObject({
+      id: h.seed.releaseId,
+      personaId: h.seed.personaId,
+    });
+    await expect(h.core.eir.getRelease(lead, '00000000-0000-4000-8000-0000000000aa')).rejects.toMatchObject({
+      code: 'not_found',
+    });
+    await expect(h.core.eir.getRelease(lead, 'not-a-uuid')).rejects.toMatchObject({ code: 'not_found' });
   });
 
   it('EIR personas need consent before a release can be approved', async () => {

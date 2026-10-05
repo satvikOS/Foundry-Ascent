@@ -553,7 +553,7 @@ describe('documents, sessions, turns, escalations', () => {
       return { sessionId: session.id };
     });
     await t.db.withContext(maya, async (tx) => {
-      const views = await turnsRepo.listTurnViews(tx, sessionId);
+      const views = await turnsRepo.listTurnViews(tx, sessionId, () => null);
       expect(views).toHaveLength(2);
       for (const v of views) expect(TurnView.safeParse(v).success).toBe(true);
       expect(views[0]?.evidence.map((e) => e.key)).toEqual(['E1', 'E2', 'E10']);
@@ -622,10 +622,41 @@ describe('documents, sessions, turns, escalations', () => {
     const consented = await t.db.withContext(amara, (tx) =>
       escalationsRepo.recordSharingConsent(tx, { escalationId: created.id, consentBy: amara.principalId }),
     );
-    expect(consented).toMatchObject({ status: 'awaiting_consent' });
+    // Consent without an assignee: waiting in the program team's routing queue.
+    expect(consented).toMatchObject({ status: 'awaiting_assignment', assignee: null });
     expect(consented?.sharingConsentAt).not.toBeNull();
+    expect(EscalationView.safeParse(consented).success).toBe(true);
+    const packet = created.packet;
+    if (packet === null) throw new Error('packet missing');
+    await t.db.withContext(amara, async (tx) => {
+      // Sharing is decided once, and the shared packet can no longer be edited.
+      expect(
+        await escalationsRepo.recordSharingConsent(tx, {
+          escalationId: created.id,
+          consentBy: amara.principalId,
+        }),
+      ).toBeNull();
+      expect(
+        await escalationsRepo.updateEscalationPacket(tx, {
+          escalationId: created.id,
+          packet: { ...packet, founderQuestion: 'Changed after consent' },
+        }),
+      ).toBeNull();
+      expect(await escalationsRepo.countOpenEscalations(tx, solesignal.id)).toBeGreaterThanOrEqual(1);
+    });
     const queue = await t.db.withContext(lead, (tx) => escalationsRepo.escalationQueue(tx));
-    expect(queue.find((q) => q.id === created.id)).toMatchObject({ shared: true, priority: 'P2' });
+    expect(queue.find((q) => q.id === created.id)).toMatchObject({
+      shared: true,
+      priority: 'P2',
+      status: 'awaiting_assignment',
+      assigneeId: null,
+    });
+    // Only the tenant's EIRs and program staff can receive a packet (a founder cannot).
+    await expect(
+      t.db.withContext(lead, (tx) =>
+        escalationsRepo.routeEscalation(tx, { escalationId: created.id, assigneeId: maya.principalId }),
+      ),
+    ).rejects.toMatchObject({ sqlState: '23503' });
     expect(
       await t.db.withContext(lead, (tx) =>
         escalationsRepo.routeEscalation(tx, {
@@ -635,6 +666,11 @@ describe('documents, sessions, turns, escalations', () => {
         }),
       ),
     ).toBe(true);
+    const routed = await t.db.withContext(lead, (tx) => escalationsRepo.escalationQueue(tx));
+    expect(routed.find((q) => q.id === created.id)).toMatchObject({
+      status: 'routed',
+      assigneeId: ruth.principalId,
+    });
     const inbox = await t.db.withContext(ruth, (tx) =>
       escalationsRepo.listInboxEscalations(tx, { assigneeId: ruth.principalId }),
     );
@@ -673,5 +709,61 @@ describe('documents, sessions, turns, escalations', () => {
     expect(
       await t.db.withContext(amara, (tx) => escalationsRepo.countOpenEscalations(tx, solesignal.id)),
     ).toBe(1);
+    // Closed escalations cannot be routed again.
+    await expect(
+      t.db.withContext(lead, (tx) =>
+        escalationsRepo.routeEscalation(tx, { escalationId: created.id, assigneeId: ruth.principalId }),
+      ),
+    ).rejects.toMatchObject({ sqlState: '55000' });
+  });
+
+  it('enforces the escalation state machine in the table (consent and assignee per state)', async () => {
+    const solesignal = seed.ventures.find((v) => v.key === 'solesignal');
+    if (!solesignal) throw new Error('missing venture');
+    const insert = (status: string, consented: boolean, assignee: string | null) =>
+      t.db.system((sx) =>
+        sx.query(
+          `INSERT INTO escalations (tenant_id, venture_id, category, priority, status, packet, created_by,
+                                    sharing_consent_at, sharing_consent_by, assignee_principal_id)
+           VALUES (:tenant, :venture, 'other', 'P3', :status, '{}'::jsonb, :by,
+                   CASE WHEN :consented THEN now() END, CASE WHEN :consented THEN :by::uuid END, :assignee)
+           RETURNING id`,
+          {
+            tenant: p.uuid(seed.tenantId),
+            venture: p.uuid(solesignal.id),
+            status: p.text(status),
+            by: p.uuid(amara.principalId),
+            consented: p.bool(consented),
+            assignee: p.nullable.uuid(assignee),
+          },
+        ),
+      );
+    const violates = { sqlState: '23514' };
+    // Consent separates the founder's states from the shared ones.
+    await expect(insert('draft', true, null)).rejects.toMatchObject(violates);
+    await expect(insert('awaiting_consent', true, null)).rejects.toMatchObject(violates);
+    await expect(insert('awaiting_assignment', false, null)).rejects.toMatchObject(violates);
+    await expect(insert('routed', false, ruth.principalId)).rejects.toMatchObject(violates);
+    // Waiting for assignment has nobody assigned; routed and acknowledged always have someone.
+    await expect(insert('awaiting_assignment', true, ruth.principalId)).rejects.toMatchObject(violates);
+    await expect(insert('routed', true, null)).rejects.toMatchObject(violates);
+    await expect(insert('acknowledged', true, null)).rejects.toMatchObject(violates);
+    await expect(insert('not_a_status', false, null)).rejects.toMatchObject(violates);
+    // The valid combinations insert (and are removed again).
+    const ids: string[] = [];
+    for (const [status, consented, assignee] of [
+      ['draft', false, null],
+      ['awaiting_consent', false, null],
+      ['awaiting_assignment', true, null],
+      ['routed', true, ruth.principalId],
+      ['withdrawn', false, null],
+    ] as const) {
+      const result = await insert(status, consented, assignee);
+      expect(result.rowCount).toBe(1);
+      ids.push(String(result.rows[0]?.id));
+    }
+    await t.db.system((sx) =>
+      sx.query('DELETE FROM escalations WHERE id = ANY (:ids)', { ids: p.uuidArray(ids) }),
+    );
   });
 });

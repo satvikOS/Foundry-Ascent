@@ -7,6 +7,16 @@ import { buildApp, type FoundryApp } from '../src/app.js';
 import type { PlatformConfig } from '../src/config.js';
 import { INFRA_ROOT } from '../src/paths.js';
 
+/**
+ * Owner fixture for tests: the documented placeholder code FA-ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ (allowlisted in
+ * .gitleaks.toml) and its hash from packages/db `hashAccessCode`. Never a real owner code.
+ */
+export const PLACEHOLDER_OWNER = {
+  code: 'FA-ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ',
+  prefix: 'ZZZZZ',
+  hash: 'scrypt$N=32768,r=8,p=1$1rQEaLtP6xXYa2w9RLSQPA$nq0yVFlGythrlPEc6VOv_fVNtMurA6r0Jigi8sUc9Cg',
+} as const;
+
 export interface CdkJson {
   readonly app: string;
   readonly context: Record<string, unknown>;

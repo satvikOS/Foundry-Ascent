@@ -15,6 +15,7 @@ import { requireVentureAccess } from '../authz/venture-access.js';
 import { type RequestContext } from '../context.js';
 import { DomainError, fail, parseInput } from '../errors.js';
 import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
+import { blockedDetailOf } from '../orchestrator/blocked.js';
 
 type ReviewSampleValue = z.infer<typeof ReviewSample>;
 type EirProfileViewValue = z.infer<typeof EirProfileView>;
@@ -23,6 +24,12 @@ export interface EirStudioService {
   /** Personas of the tenant (EIR, program lead or platform admin). */
   listPersonas(ctx: RequestContext): Promise<PersonaView[]>;
   getPersona(ctx: RequestContext, personaId: string): Promise<PersonaView>;
+  /**
+   * One release with its full content (doctrine, style, disclosure, modes), e.g. a draft under review.
+   * Drafts and withdrawn releases: program lead, platform admin or the EIR linked to the persona;
+   * approved and superseded releases: any EIR-studio role (the same people who see the active release).
+   */
+  getRelease(ctx: RequestContext, releaseId: string): Promise<PersonaReleaseView>;
   /** EIR expertise registry (EIR, program lead or platform admin). */
   listEirProfiles(ctx: RequestContext): Promise<EirProfileViewValue[]>;
   /** New draft release (program lead, or the EIR linked to the persona). */
@@ -126,6 +133,25 @@ export function createEirStudioService(kit: Kit): EirStudioService {
         await requireRole(scope, STUDIO_ROLES, { objectType: 'persona', objectId: personaId });
         await loadPersona(scope, personaId);
         return personaView(scope, personaId);
+      });
+    },
+
+    getRelease: async (ctx, rawReleaseId) => {
+      const releaseId = requireId(rawReleaseId, 'Persona release');
+      return await kit.inRequest(ctx, async (scope) => {
+        const { roles } = await requireRole(scope, STUDIO_ROLES, {
+          objectType: 'persona_release',
+          objectId: releaseId,
+        });
+        const release = await personasRepo.getRelease(scope.tx, releaseId);
+        if (release === null) throw fail.notFound('Persona release');
+        const persona = await loadPersona(scope, release.personaId);
+        const unpublished = release.status === 'draft' || release.status === 'withdrawn';
+        if (unpublished && !hasAnyRole(roles, ['platform_admin'])) {
+          await requirePersonaControl(scope, persona);
+        }
+        const { expiresAt: _expiresAt, ...view } = release;
+        return view;
       });
     },
 
@@ -254,7 +280,8 @@ export function createEirStudioService(kit: Kit): EirStudioService {
           rows.map((r) => r.turn.id),
         );
         return rows.map((r) => ({
-          turn: turnsRepo.toTurnView(r.turn, evidence.get(r.turn.id) ?? []),
+          // Blocked turns are never sampled; the reviewer never sees the founder's escalations.
+          turn: turnsRepo.toTurnView(r.turn, evidence.get(r.turn.id) ?? [], blockedDetailOf(r.turn, null)),
           ventureId: r.ventureId,
           ventureName: r.ventureName,
           reviewed: r.reviewed,

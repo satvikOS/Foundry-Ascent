@@ -321,6 +321,12 @@ export const CreatePersonaReleaseRequest = z.object({
 export const SuspendPersonaRequest = z.object({ reason: z.string().trim().min(3).max(500) });
 /** `POST /personas/:id/releases` 201 body. */
 export const CreatePersonaReleaseResponse = PersonaReleaseView;
+/**
+ * `GET /persona-releases/:id` 200 body: the full release (doctrine, style, disclosure, modes), e.g. a draft
+ * under review. Drafts and withdrawn releases: program leads, platform admins and the EIR linked to the
+ * persona; approved and superseded releases: every EIR-studio role of the tenant.
+ */
+export const PersonaReleaseDetailResponse = PersonaReleaseView;
 /** `POST /persona-releases/:id/approve` 200 body. */
 export const ApprovePersonaReleaseResponse = PersonaReleaseView;
 /** `POST /personas/:id/suspend` 200 body. */
@@ -442,6 +448,21 @@ export const EscalationQueueResponse = z.object({ items: z.array(EscalationQueue
 export const RouteEscalationRequest = z.object({ assigneeId: Id, dueAt: Timestamp.nullable().default(null) });
 /** `POST /program/escalations/:id/route` 200 body (queue metadata, never the packet). */
 export const RouteEscalationResponse = EscalationQueueItem;
+/** Roles that make a principal eligible to receive a routed escalation: EIRs and program staff (§4.2). */
+export const EscalationAssigneeRole = PlatformRole.extract(['eir', 'program_lead']);
+export type EscalationAssigneeRole = z.infer<typeof EscalationAssigneeRole>;
+/**
+ * `GET /program/assignees` item (program lead / platform admin): an active principal of the tenant who can
+ * be chosen in `POST /program/escalations/:id/route`. Directory metadata only; `expertiseTags` come from
+ * the person's active EIR profile, if any.
+ */
+export const EscalationAssignee = z.object({
+  principal: PrincipalView,
+  roles: z.array(EscalationAssigneeRole).min(1),
+  expertiseTags: z.array(z.string()),
+});
+export type EscalationAssignee = z.infer<typeof EscalationAssignee>;
+export const EscalationAssigneeListResponse = z.object({ items: z.array(EscalationAssignee) });
 
 // Admin --------------------------------------------------------------------------------------------
 export const AdminPrincipalRow = z.object({

@@ -138,6 +138,60 @@ export async function listActiveRoles(
   return rows;
 }
 
+/** Roles that make a principal eligible to receive a routed escalation (system design §4.2). */
+export const ESCALATION_ASSIGNEE_ROLES = [
+  'eir',
+  'program_lead',
+] as const satisfies readonly PlatformRoleValue[];
+type EscalationAssigneeRoleValue = (typeof ESCALATION_ASSIGNEE_ROLES)[number];
+
+export interface EscalationAssigneeRecord {
+  readonly principal: PrincipalRecord;
+  /** The person's active `eir` / `program_lead` grants in the tenant (at least one). */
+  readonly roles: EscalationAssigneeRoleValue[];
+  /** Expertise tags of the person's active EIR profiles in the tenant (sorted, distinct). */
+  readonly expertiseTags: string[];
+}
+
+/**
+ * Active principals of the tenant who can receive a routed escalation: an active `eir` or `program_lead`
+ * grant in the tenant — the same rule `app.route_escalation` enforces. Runs under the caller's RLS (a
+ * program lead or platform admin sees every grant of the tenant) and never leaves `tenantId`.
+ */
+export function listEscalationAssignees(
+  ex: SqlExecutor,
+  tenantId: string,
+): Promise<EscalationAssigneeRecord[]> {
+  const columns = COLUMNS.split(', ')
+    .map((c) => `pr.${c}`)
+    .join(', ');
+  return queryRows(
+    ex,
+    `SELECT ${columns},
+            array(SELECT DISTINCT g.role FROM role_grants g
+                  WHERE g.principal_id = pr.id AND g.tenant_id = :tenantId AND g.revoked_at IS NULL
+                    AND g.role = ANY (:roles)
+                  ORDER BY g.role) AS assignee_roles,
+            array(SELECT DISTINCT tag FROM eir_profiles ep CROSS JOIN LATERAL unnest(ep.expertise_tags) AS tag
+                  WHERE ep.principal_id = pr.id AND ep.tenant_id = :tenantId AND ep.status = 'active'
+                  ORDER BY tag) AS expertise_tags
+     FROM principals pr
+     WHERE pr.tenant_id = :tenantId AND pr.status = 'active'
+       AND EXISTS (SELECT 1 FROM role_grants g
+                   WHERE g.principal_id = pr.id AND g.tenant_id = :tenantId AND g.revoked_at IS NULL
+                     AND g.role = ANY (:roles))
+     ORDER BY pr.display_name, pr.id`,
+    { tenantId: p.uuid(tenantId), roles: p.textArray(ESCALATION_ASSIGNEE_ROLES) },
+    (r) => ({
+      principal: principalCodec.decode(r),
+      roles: col.textArray
+        .decode(r.assignee_roles, 'assignee_roles')
+        .map((role) => col.enum(ESCALATION_ASSIGNEE_ROLES).decode(role, 'assignee_roles')),
+      expertiseTags: col.textArray.decode(r.expertise_tags, 'expertise_tags'),
+    }),
+  );
+}
+
 export interface RoleGrantRow {
   readonly principalId: string;
   readonly role: PlatformRoleValue;

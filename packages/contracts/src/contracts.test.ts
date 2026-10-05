@@ -30,7 +30,15 @@ import {
   SubmitReviewResponse,
   SuspendPersonaResponse,
   UpdateResourceResponse,
+  CLOSED_ESCALATION_STATUSES,
   ERROR_STATUS,
+  EscalationAssignee,
+  EscalationAssigneeListResponse,
+  EscalationStatus,
+  OPEN_ESCALATION_STATUSES,
+  PersonaReleaseDetailResponse,
+  TurnStreamEvent,
+  TurnView,
   ErrorCode,
   Me,
   MemoryQuery,
@@ -155,6 +163,7 @@ describe('response schemas', () => {
       [CreateProgramVentureResponse, ProgramVentureRow],
       [CreatePrincipalResponse, AdminPrincipalRow],
       [RouteEscalationResponse, EscalationQueueItem],
+      [PersonaReleaseDetailResponse, PersonaReleaseView],
     ];
     for (const [response, view] of pairs) expect(response).toBe(view);
   });
@@ -171,5 +180,78 @@ describe('response schemas', () => {
     expect(HealthResponse.parse(base)).toEqual(base);
     expect(HealthResponse.parse({ ...base, db: 'resuming' }).db).toBe('resuming');
     expect(HealthResponse.safeParse({ ...base, db: 'asleep' }).success).toBe(false);
+  });
+});
+
+describe('escalation lifecycle', () => {
+  it('has a distinct state for consented escalations waiting for routing', () => {
+    expect(EscalationStatus.options).toEqual([
+      'draft',
+      'awaiting_consent',
+      'awaiting_assignment',
+      'routed',
+      'acknowledged',
+      'resolved',
+      'declined',
+      'withdrawn',
+    ]);
+    expectTypeOf<EscalationStatus>().toEqualTypeOf<(typeof EscalationStatus.options)[number]>();
+  });
+
+  it('splits every status into open or closed, exactly once', () => {
+    const all = [...OPEN_ESCALATION_STATUSES, ...CLOSED_ESCALATION_STATUSES];
+    expect([...all].sort()).toEqual([...EscalationStatus.options].sort());
+    expect(OPEN_ESCALATION_STATUSES).toContain('awaiting_assignment');
+  });
+
+  it('lists routing assignees with EIR or program-lead roles only', () => {
+    const principal = { id: ID, displayName: 'Ruth (synthetic)', title: null, synthetic: true };
+    expect(
+      EscalationAssigneeListResponse.parse({ items: [{ principal, roles: ['eir'], expertiseTags: ['ip'] }] })
+        .items,
+    ).toHaveLength(1);
+    expect(EscalationAssignee.safeParse({ principal, roles: [], expertiseTags: [] }).success).toBe(false);
+    expect(
+      EscalationAssignee.safeParse({ principal, roles: ['platform_admin'], expertiseTags: [] }).success,
+    ).toBe(false);
+  });
+});
+
+describe('turn views and events (additive fields)', () => {
+  const turn = {
+    id: ID,
+    sessionId: ID,
+    ordinal: 1,
+    mode: 'coach',
+    founderText: 'hi',
+    status: 'blocked',
+    response: null,
+    evidence: [],
+    validator: null,
+    usage: null,
+    createdAt: '2026-10-05T10:00:00.000Z',
+    completedAt: '2026-10-05T10:00:01.000Z',
+  };
+
+  it('reads a turn without `blocked` (an older API) as not blocked-described', () => {
+    expect(TurnView.parse(turn).blocked).toBeNull();
+  });
+
+  it('carries the blocked reason, support message and escalation of a blocked turn', () => {
+    const blocked = { reason: 'crisis_support', supportMessage: 'Call 988.', escalationId: ID };
+    expect(TurnView.parse({ ...turn, blocked }).blocked).toEqual(blocked);
+    expect(TurnView.safeParse({ ...turn, blocked: { reason: 'x' } }).success).toBe(false);
+  });
+
+  it('turn.error accepts the original shape and the new retryAfterSeconds and requestId', () => {
+    const base = { event: 'turn.error', turnId: ID, code: 'conflict', message: 'm', retryable: true };
+    expect(TurnStreamEvent.parse(base)).toEqual(base);
+    expect(TurnStreamEvent.parse({ ...base, retryAfterSeconds: 5, requestId: 'req-1' })).toEqual({
+      ...base,
+      retryAfterSeconds: 5,
+      requestId: 'req-1',
+    });
+    expect(TurnStreamEvent.safeParse({ ...base, retryAfterSeconds: 0 }).success).toBe(false);
+    expect(TurnStreamEvent.safeParse({ ...base, retryAfterSeconds: 1.5 }).success).toBe(false);
   });
 });

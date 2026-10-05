@@ -101,6 +101,26 @@ export const TurnUsage = z.object({
   latencyMs: z.number().int(),
 });
 
+/**
+ * Known `reason` values of a blocked turn (`turn.blocked` events and `TurnView.blocked`). The field stays a
+ * string on the wire so a new reason never breaks an older client.
+ */
+export const TURN_BLOCK_REASONS = ['crisis_support', 'cross_venture', 'identity', 'invalid_schema'] as const;
+
+/**
+ * Why a turn was blocked and what the founder is offered instead: the same fields as the `turn.blocked`
+ * event, so a reloaded session shows the same support message and request as the live stream did.
+ * `supportMessage` is set for crisis support (human resources and crisis lines, Markdown); `escalationId`
+ * is the support request drafted for the turn, if any. It never repeats the founder's text or blocked
+ * model output.
+ */
+export const TurnBlockedDetail = z.object({
+  reason: z.string(),
+  supportMessage: z.string().nullable(),
+  escalationId: Id.nullable(),
+});
+export type TurnBlockedDetail = z.infer<typeof TurnBlockedDetail>;
+
 export const TurnView = z.object({
   id: Id,
   sessionId: Id,
@@ -114,6 +134,11 @@ export const TurnView = z.object({
   usage: TurnUsage.nullable(),
   createdAt: Timestamp,
   completedAt: Timestamp.nullable(),
+  /**
+   * Set when `status` is `blocked`, null otherwise. Additive: a payload without it (an older API) parses as
+   * null.
+   */
+  blocked: TurnBlockedDetail.nullable().default(null),
 });
 export type TurnView = z.infer<typeof TurnView>;
 
@@ -179,6 +204,14 @@ export const TurnStreamEvent = z.discriminatedUnion('event', [
     code: z.string(),
     message: z.string(),
     retryable: z.boolean(),
+    /**
+     * Seconds to wait before trying again. Set when the server knows: a retried message whose original
+     * turn is still being answered (`conflict`; resend with the same Idempotency-Key to replay it), a
+     * model that is temporarily unavailable. Optional (additive).
+     */
+    retryAfterSeconds: z.number().int().min(1).optional(),
+    /** The request that produced the event (the response's `x-request-id`), for support. Optional (additive). */
+    requestId: z.string().min(1).optional(),
   }),
 ]);
 export type TurnStreamEvent = z.infer<typeof TurnStreamEvent>;

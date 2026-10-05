@@ -13,6 +13,7 @@ import {
   MemoryIdempotencyStore,
   pingOnlyDb,
   sleep,
+  TEST_SESSION,
   TURN_ID,
 } from '../testing/fakes.js';
 import { parseSse } from '../testing/sse.js';
@@ -182,7 +183,14 @@ describe('turn SSE stream', () => {
     });
     const { frames } = parseSse(await (await app.request(post())).text());
     const last = TurnStreamEvent.parse(JSON.parse(frames.at(-1)?.data ?? '{}'));
-    expect(last).toMatchObject({ event: 'turn.error', turnId: TURN_ID, code: 'internal' });
+    expect(last).toMatchObject({
+      event: 'turn.error',
+      turnId: TURN_ID,
+      code: 'internal',
+      retryable: true,
+      // The request id of the session context (the x-request-id of the response in the real app).
+      requestId: TEST_SESSION.requestId,
+    });
   });
 
   it('binds an Idempotency-Key to the accepted ordinal and replays it via expectedOrdinal', async () => {

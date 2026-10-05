@@ -32,8 +32,10 @@ export interface EscalationsService {
     input: z.input<typeof CreateEscalationRequest>,
   ): Promise<EscalationView>;
   /**
-   * Founder/team: `approve_sharing` (consent + confirmed memory facts + routing to the assigned EIR or the
-   * program-lead queue with a due date by priority), `edit`, `withdraw`.
+   * Founder/team: `approve_sharing` (consent + confirmed memory facts, only from `draft` /
+   * `awaiting_consent`; the escalation becomes `routed` to the venture's assigned EIR when the packet asks
+   * for an EIR and one is active, otherwise `awaiting_assignment` in the program team's routing queue; the
+   * due date follows the priority), `edit` (before consent), `withdraw` (any open state).
    * Assignee (after consent only): `acknowledge`, `resolve`, `decline`.
    */
   act(

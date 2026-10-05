@@ -19,6 +19,10 @@ Region `us-east-1`, account taken from the deploying credentials. Every IAM role
 
 - GitHub OIDC provider `token.actions.githubusercontent.com` (`iam.OidcProviderNative`, audience
   `sts.amazonaws.com`). If the account already has one, pass `-c githubOidcProviderArn=<arn>` to import it.
+  `.github/workflows/deploy.yml` decides this on every run and passes `githubOidcProviderArn`
+  automatically: only when a provider exists **and** this stack does not already manage it (first deploys
+  create it, later deploys keep whichever mode they had, and CloudFormation is never asked to delete a
+  provider it manages). Set the context by hand only for a local `cdk deploy`.
 - Role `FoundryAscent-GitHubDeploy` (1 h sessions). Trust: `aud = sts.amazonaws.com` and `sub` like
   `repo:satvikOS/Foundry-Ascent:ref:refs/heads/main` or `repo:satvikOS/Foundry-Ascent:environment:production`.
   Permissions: `sts:AssumeRole`/`sts:TagSession` on `cdk-hnb659fds-*` roles, read-only CloudFormation on
@@ -178,7 +182,7 @@ pnpm --filter @foundry/infra exec cdk deploy --all --require-approval never -c a
 
 Context keys: `appVersion` (default `dev`; CI passes the commit SHA), `siteDomainName` +
 `siteCertificateArn` (optional custom domain, ACM certificate in `us-east-1`), `githubOidcProviderArn`
-(import an existing provider).
+(import an existing provider; `deploy.yml` resolves and passes it automatically, see Foundation above).
 
 `FA_SYNTH_STUB_ASSETS=1` swaps the handlers and SPA for stubs under `node_modules/.cache`. A stub assembly
 is **not deployable**: every stub handler throws, so the migrate custom resource fails and CloudFormation

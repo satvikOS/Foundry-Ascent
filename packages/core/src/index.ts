@@ -52,6 +52,7 @@ export { type AdminService, type AuditPage } from './services/admin.js';
 
 export {
   RunTurnInput,
+  errorEvent as turnErrorEvent,
   type Orchestrator,
   type RunTurnOptions,
   type RunTurnOutcome,
@@ -65,6 +66,7 @@ export {
 } from './orchestrator/evidence.js';
 export { assembleContext, estimateTokens, type AssembledContext } from './orchestrator/context-budget.js';
 export { secondsUntilUtcMidnight, shouldSampleForReview } from './orchestrator/sampling.js';
+export { blockedDetailOf, supportMessageFor } from './orchestrator/blocked.js';
 export { spendCapExceeded, type SpendState } from './orchestrator/guards.js';
 export { RECAP_SCHEMA_NAME, RecapDraft, buildRecapPrompt, sanitizeRecap } from './orchestrator/recap.js';
 

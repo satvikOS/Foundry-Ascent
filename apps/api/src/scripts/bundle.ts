@@ -87,9 +87,10 @@ export const FAKE_ENV_VALUES: Readonly<Record<string, string>> = {
   MODEL_FALLBACK_ID: 'global.amazon.nova-2-lite-v1:0',
   MODEL_EMBEDDINGS_ID: 'amazon.titan-embed-text-v2:0',
   BEDROCK_REGION: 'us-east-1',
-  OWNER_ACCESS_CODE_PREFIX: 'T9302',
+  // The documented placeholder owner code FA-ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ and its hashAccessCode() hash.
+  OWNER_ACCESS_CODE_PREFIX: 'ZZZZZ',
   OWNER_ACCESS_CODE_HASH:
-    'scrypt$N=32768,r=8,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+    'scrypt$N=32768,r=8,p=1$1rQEaLtP6xXYa2w9RLSQPA$nq0yVFlGythrlPEc6VOv_fVNtMurA6r0Jigi8sUc9Cg',
   OWNER_DISPLAY_NAME: 'Platform Owner',
   HOME_TENANT_SLUG: 'ain',
   HOME_TENANT_NAME: 'Ain Foundry',
