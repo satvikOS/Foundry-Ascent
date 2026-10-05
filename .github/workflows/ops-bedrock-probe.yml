@@ -1,0 +1,66 @@
+name: Ops - Bedrock live probe
+
+# Manually triggered check that the production model path works on real Bedrock: one structured coach
+# response per reasoning model (the CoachResponse schema with the forced tool choice every coaching turn
+# uses), then one Titan embedding, through the same gateway the API Lambda builds
+# (apps/api/src/scripts/bedrock-probe.ts). Model ids come from infra/cdk/config/production.json.
+# Cost per run: three small model calls (well under USD 0.01). Logs are public: the probe prints model
+# ids, outcomes, error class names, token counts and timings only, and the account id is masked.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ops-bedrock-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_REGION: us-east-1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Mask account id
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          account="$(aws sts get-caller-identity --query Account --output text)"
+          if [[ ! "${account}" =~ ^[0-9]{12}$ ]]; then
+            echo "::error::sts:GetCallerIdentity did not return a 12-digit account id"
+            exit 1
+          fi
+          echo "::add-mask::${account}"
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      # No dependency cache in a job that holds cloud credentials (cache-poisoning hardening).
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - run: pnpm install --frozen-lockfile --filter '@foundry/api...'
+
+      - name: Probe Bedrock
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          APP_ENV: production
+          MODEL_PROVIDER: bedrock
+          BEDROCK_REGION: us-east-1
+        run: |
+          config=infra/cdk/config/production.json
+          MODEL_PRIMARY_ID="$(jq -r '.models.primary' "${config}")"
+          MODEL_FALLBACK_ID="$(jq -r '.models.fallback' "${config}")"
+          MODEL_EMBEDDINGS_ID="$(jq -r '.models.embeddings' "${config}")"
+          export MODEL_PRIMARY_ID MODEL_FALLBACK_ID MODEL_EMBEDDINGS_ID
+          pnpm --filter @foundry/api exec tsx src/scripts/bedrock-probe.ts
