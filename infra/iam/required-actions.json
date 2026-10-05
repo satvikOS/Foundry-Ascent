@@ -32,7 +32,9 @@
         "cloudformation:DescribeStackEvents",
         "cloudformation:UpdateTerminationProtection"
       ],
-      "resources": ["arn:aws:cloudformation:{region}:{account}:stack/CDKToolkit/00000000-0000-0000-0000-000000000000"],
+      "resources": [
+        "arn:aws:cloudformation:{region}:{account}:stack/CDKToolkit/00000000-0000-0000-0000-000000000000"
+      ],
       "required": true
     },
     {
@@ -101,7 +103,9 @@
         "ecr:TagResource",
         "ecr:ListTagsForResource"
       ],
-      "resources": ["arn:aws:ecr:{region}:{account}:repository/cdk-hnb659fds-container-assets-{account}-{region}"],
+      "resources": [
+        "arn:aws:ecr:{region}:{account}:repository/cdk-hnb659fds-container-assets-{account}-{region}"
+      ],
       "required": true
     },
     {
@@ -200,7 +204,9 @@
         "cloudformation:DescribeStackEvents",
         "cloudformation:DeleteStack"
       ],
-      "resources": ["arn:aws:cloudformation:{region}:{account}:stack/FoundryAscent-Example/00000000-0000-0000-0000-000000000000"],
+      "resources": [
+        "arn:aws:cloudformation:{region}:{account}:stack/FoundryAscent-Example/00000000-0000-0000-0000-000000000000"
+      ],
       "required": false
     },
     {
@@ -272,7 +278,12 @@
     },
     {
       "purpose": "Legacy inventory: account-wide discovery",
-      "actions": ["tag:GetResources", "ec2:DescribeRegions", "cloudformation:ListStacks", "cloudformation:ListStackResources"],
+      "actions": [
+        "tag:GetResources",
+        "ec2:DescribeRegions",
+        "cloudformation:ListStacks",
+        "cloudformation:ListStackResources"
+      ],
       "resources": ["*"],
       "required": true,
       "policy": "FoundryAscent-LegacyCleanup"

@@ -10,7 +10,9 @@ Runs as IAM user ``Foundry-Ascent`` (GitHub secrets AWS_ACCESS_KEY_ID / AWS_SECR
   3. Independent live probes, each reported PASS / FAIL / WARN:
        * Bedrock catalogue: Nova 2 Lite and Titan Text Embeddings V2 listed; Nova 2 Lite inference profiles.
        * bedrock-mantle (OpenAI-compatible, SigV4 service ``bedrock-mantle``): GPT-6 Luna listed, and one
-         Chat Completions request answered.
+         Chat Completions request answered. Required only while ``models.luna.enabled`` is true in
+         ``infra/cdk/config/production.json``; while AWS gates Luna for the account (enabled = false) a
+         failure is reported as WARN, because the platform never calls it.
        * bedrock-runtime Converse with Nova 2 Lite: base id, then the ``us.`` and ``global.`` profiles.
        * bedrock-runtime InvokeModel with Titan Text Embeddings V2 (1024 dimensions).
        * Cost Explorer month-to-date by service (optional, WARN only, USD 0.01 per request).
@@ -48,6 +50,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_MANIFEST = REPO_ROOT / "infra" / "iam" / "required-actions.json"
+DEFAULT_PLATFORM_CONFIG = REPO_ROOT / "infra" / "cdk" / "config" / "production.json"
 ACTION_RE = re.compile(r"^[a-z0-9-]+:[A-Za-z0-9*]+$")
 POLICY_NAME_RE = re.compile(r"[\w+=,.@-]{1,128}", re.ASCII)
 USER_ARN_RE = re.compile(r"arn:aws[\w-]*:iam::\d{12}:user/(?:[^:]*/)?([\w+=,.@-]+)", re.ASCII)
@@ -90,6 +93,24 @@ def describe_error(exc: BaseException) -> str:
 
 def section(title: str) -> None:
     print(f"\n=== {title} ===", flush=True)
+
+
+def luna_enabled(path: Path | str = DEFAULT_PLATFORM_CONFIG) -> tuple[bool, str]:
+    """``models.luna.enabled`` of the platform config, and a note for the log.
+
+    While Luna is disabled (AWS gates it for the account) the deployed platform never calls it, so its
+    probes are reported as WARN instead of failing the run; once enabled they are required. A config that
+    cannot be read makes them required (fail closed).
+    """
+    try:
+        models = json.loads(Path(path).read_text(encoding="utf-8")).get("models", {})
+    except (OSError, ValueError, AttributeError) as exc:
+        return True, f"platform config unreadable ({type(exc).__name__}): GPT-6 Luna probes are required"
+    luna = models.get("luna") if isinstance(models, dict) else None
+    enabled = isinstance(luna, dict) and luna.get("enabled") is True
+    if enabled:
+        return True, "models.luna.enabled = true: GPT-6 Luna is the primary model and its probes are required"
+    return False, "models.luna.enabled = false: GPT-6 Luna probes are informational (WARN, not FAIL)"
 
 
 # --------------------------------------------------------------------------- manifest
@@ -325,7 +346,7 @@ def run_probe(name: str, fn: Callable[[], ProbeResult], required: bool = True) -
         status, detail, data = fn()
     except (ClientError, BotoCoreError, urllib.error.URLError, TimeoutError) as exc:
         status, detail = "FAIL", describe_error(exc)
-    except Exception as exc:  # a bug in one probe must not hide the others
+    except Exception as exc:  # noqa: BLE001 - a bug in one probe must not hide the others; reported as FAIL
         status, detail = "FAIL", f"unexpected {type(exc).__name__}"
     if not required and status == "FAIL":
         status = "WARN"
@@ -494,7 +515,7 @@ def probe_cost(ce: Any) -> ProbeResult:
                     + (", ".join(f"{k} {v:.2f}" for k, v in top) or "none")), {"total_usd": round(total, 2)}
 
 
-def run_probes(session: boto3.Session, region: str, skip_cost: bool) -> list[Probe]:
+def run_probes(session: boto3.Session, region: str, skip_cost: bool, luna_required: bool = True) -> list[Probe]:
     bedrock = session.client("bedrock", config=CFG)
     runtime = session.client("bedrock-runtime", config=CFG)
     creds_source = session.get_credentials()
@@ -506,8 +527,9 @@ def run_probes(session: boto3.Session, region: str, skip_cost: bool) -> list[Pro
     probes = [
         run_probe("bedrock ListFoundationModels(byProvider=amazon)", lambda: probe_catalogue(bedrock)),
         run_probe("bedrock ListInferenceProfiles (Nova 2 Lite)", lambda: probe_profiles(bedrock)),
-        run_probe(f"bedrock-mantle GET models list ({LUNA})", signed(probe_mantle_models)),
-        run_probe(f"bedrock-mantle POST /openai/v1/chat/completions ({LUNA})", signed(probe_mantle_chat)),
+        run_probe(f"bedrock-mantle GET models list ({LUNA})", signed(probe_mantle_models), required=luna_required),
+        run_probe(f"bedrock-mantle POST /openai/v1/chat/completions ({LUNA})", signed(probe_mantle_chat),
+                  required=luna_required),
         run_probe("bedrock-runtime Converse (Nova 2 Lite)", lambda: probe_nova(runtime)),
         run_probe(f"bedrock-runtime InvokeModel ({TITAN}, {EMBED_DIM} dims)", lambda: probe_titan(runtime)),
     ]
@@ -548,11 +570,15 @@ def step_summary(ok: bool, caller: str, region: str, run_at: str, rows: list[Sim
         "",
         f"Caller `{caller}`, region `{region}`, run at {run_at}",
         "",
-        f"- IAM simulation: {allowed}/{len(rows)} action/resource pairs allowed, "
-        f"{len(failures)} required not allowed, {len(optional)} optional not allowed",
+        (
+            f"- IAM simulation: {allowed}/{len(rows)} action/resource pairs allowed, "
+            f"{len(failures)} required not allowed, {len(optional)} optional not allowed"
+        ),
         *([f"- Skipped: {skipped_note(skipped)}"] if skipped else []),
-        f"- Live probes: {sum(p.status == 'PASS' for p in probes)}/{len(probes)} passed, "
-        f"{sum(p.failed for p in probes)} required failed",
+        (
+            f"- Live probes: {sum(p.status == 'PASS' for p in probes)}/{len(probes)} passed, "
+            f"{sum(p.failed for p in probes)} required failed"
+        ),
         "",
     ]
     if probes:
@@ -592,8 +618,9 @@ def policy_source_arn(caller_arn: str) -> str:
 def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Simulate every IAM action in the required-actions manifest for the calling identity and "
-                    "probe the Bedrock models (GPT-6 Luna on bedrock-mantle, Nova 2 Lite, Titan Text Embeddings V2). "
-                    "Exits 1 if a required permission or a model probe fails.",
+                    "probe the Bedrock models (Nova 2 Lite, Titan Text Embeddings V2, and GPT-6 Luna on bedrock-mantle, "
+                    "which is required only while models.luna.enabled is true). "
+                    "Exits 1 if a required permission or a required model probe fails.",
     )
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST,
                         help="required-actions manifest (default: infra/iam/required-actions.json)")
@@ -602,6 +629,9 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
                         help="platform region (default: $AWS_REGION, $AWS_DEFAULT_REGION or us-east-1)")
     parser.add_argument("--skip-probes", action="store_true", help="only run the IAM simulation (no model invocations)")
     parser.add_argument("--skip-cost", action="store_true", help="skip the Cost Explorer probe (USD 0.01 per request)")
+    parser.add_argument("--platform-config", type=Path, default=DEFAULT_PLATFORM_CONFIG,
+                        help="platform config whose models.luna.enabled decides whether the GPT-6 Luna probes are "
+                             "required (default: infra/cdk/config/production.json)")
     return parser.parse_args(argv)
 
 
@@ -662,11 +692,13 @@ def main(argv: Sequence[str] | None = None) -> int:
           f"{len(sim_failures)} required not allowed; {len(optional_denied)} optional not allowed")
 
     probes: list[Probe] = []
+    luna_required, luna_note = luna_enabled(args.platform_config)
     if args.skip_probes:
         print("\nLive probes skipped (--skip-probes).")
     else:
         section(f"Live probes ({args.region})")
-        probes = run_probes(session, args.region, args.skip_cost)
+        print(luna_note)
+        probes = run_probes(session, args.region, args.skip_cost, luna_required)
     probe_failures = [p for p in probes if p.failed]
 
     ok = not sim_failures and not probe_failures
@@ -694,7 +726,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         },
         "probes": [asdict(p) for p in probes],
         "models": {
-            "primary": LUNA,
+            "luna_enabled": luna_required,
+            "luna": LUNA,
             "fallback_configure_model_id": nova.get("configure_model_id"),
             "fallback_working_model_ids": nova.get("working_model_ids"),
             "fallback_inference_profiles": profiles,

@@ -69,10 +69,7 @@
         "iam:PutRolePermissionsBoundary",
         "iam:PassRole"
       ],
-      "Resource": [
-        "arn:aws:iam::*:role/cdk-*",
-        "arn:aws:iam::*:role/FoundryAscent*"
-      ]
+      "Resource": ["arn:aws:iam::*:role/cdk-*", "arn:aws:iam::*:role/FoundryAscent*"]
     },
     {
       "Sid": "PlatformManagedPolicies",

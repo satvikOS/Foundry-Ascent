@@ -60,7 +60,9 @@ def fmt(rows: list[Row]) -> None:
 
 
 def regional(session: boto3.Session, region: str) -> dict[str, list[Row]]:
-    c = lambda svc: session.client(svc, region_name=region, config=CFG)  # noqa: E731
+    def c(svc: str) -> Any:
+        return session.client(svc, region_name=region, config=CFG)
+
     out: dict[str, list[Row]] = {}
 
     def kms() -> Iterable[Row]:
@@ -334,7 +336,8 @@ def global_inventory(session: boto3.Session, caller_arn: str) -> None:
 def cost(session: boto3.Session) -> None:
     """Two Cost Explorer calls (USD 0.01 each): last full month and month-to-date, by service and region."""
     ce = session.client("ce", region_name="us-east-1", config=CFG)
-    today = dt.date.today()
+    # Cost Explorer days are UTC days; the runner's local date may differ around midnight.
+    today = dt.datetime.now(dt.UTC).date()
     first_this = today.replace(day=1)
     first_prev = (first_this - dt.timedelta(days=1)).replace(day=1)
     windows = [("last full month", first_prev, first_this)]

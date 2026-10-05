@@ -18,11 +18,12 @@ upsert_and_attach() {
   if aws iam get-policy --policy-arn "${arn}" >/dev/null 2>&1; then
     # IAM keeps at most five versions; drop the oldest non-default one first.
     local versions
+    # shellcheck disable=SC2016 # backticks are a JMESPath literal, not a shell expansion
     versions="$(aws iam list-policy-versions --policy-arn "${arn}" \
       --query 'Versions[?IsDefaultVersion==`false`].VersionId' --output text)"
     if [ "$(wc -w <<<"${versions}")" -ge 4 ]; then
       aws iam delete-policy-version --policy-arn "${arn}" \
-        --version-id "$(tr '\t ' '\n\n' <<<"${versions}" | sort -V | head -n 1)"
+        --version-id "$(tr -s '[:blank:]' '\n' <<<"${versions}" | sort -V | head -n 1)"
     fi
     aws iam create-policy-version --policy-arn "${arn}" \
       --policy-document "file://${file}" --set-as-default >/dev/null

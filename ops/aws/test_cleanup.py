@@ -86,7 +86,7 @@ def test_kms_and_secrets_use_seven_day_windows() -> None:
 
 
 def test_aws_managed_and_protected_keys_untouched() -> None:
-    def describe(KeyId: str) -> dict[str, Any]:  # noqa: N803 - boto3 parameter name
+    def describe(KeyId: str) -> dict[str, Any]:  # boto3 parameter name
         manager = "AWS" if KeyId == "aws-key" else "CUSTOMER"
         return {"KeyMetadata": {"KeyId": KeyId, "Arn": f"arn:{KeyId}", "KeyManager": manager, "KeyState": "Enabled"}}
 
@@ -268,6 +268,20 @@ def test_snapshots_of_platform_databases_are_kept() -> None:
     cleaner = make_cleaner("apply", {"rds": rds})
     cleaner.rds("us-east-1")
     assert rds.mutations == [("delete_db_cluster_snapshot", {"DBClusterSnapshotIdentifier": "old-snap"})]
+
+
+def test_platform_log_groups_are_kept() -> None:
+    # The Data stack exports Aurora logs to /aws/rds/cluster/<cluster id "foundry-ascent">/postgresql.
+    aurora_logs = "/aws/rds/cluster/foundry-ascent/postgresql"
+    assert c.starts(aurora_logs, c.PROTECTED_LOG_PREFIXES)
+    logs = Recorder(pages={"describe_log_groups": [{"logGroups": [
+        {"logGroupName": aurora_logs},
+        {"logGroupName": "/aws/lambda/FoundryAscent-Api"},
+        {"logGroupName": "/aws/lambda/legacy-fn"},
+    ]}]})
+    cleaner = make_cleaner("apply", {"logs": logs, "cloudwatch": Recorder()})
+    cleaner.logs_and_alarms("us-east-1")
+    assert logs.mutations == [("delete_log_group", {"logGroupName": "/aws/lambda/legacy-fn"})]
 
 
 def test_account_ids_are_redacted_from_the_report() -> None:

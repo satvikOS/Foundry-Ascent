@@ -54,7 +54,10 @@ PROTECTED_BUCKET_PREFIXES = ("cdk-", "foundry-ascent-")
 PROTECTED_ECR_PREFIXES = ("cdk-",)
 PROTECTED_PARAM_PREFIXES = ("/cdk-bootstrap/", "/foundry-ascent/")
 PROTECTED_SECRET_PREFIXES = ("foundry-ascent/",)
-PROTECTED_LOG_PREFIXES = ("/aws/lambda/FoundryAscent", "/foundry-ascent/", "/aws/rds/cluster/foundryascent")
+# "/aws/rds/cluster/foundry-ascent" covers the Data stack's Aurora log export group
+# /aws/rds/cluster/foundry-ascent/postgresql (cluster identifier "foundry-ascent") and restore clusters
+# named foundry-ascent-* (docs/runbooks/deploy-and-rollback.md).
+PROTECTED_LOG_PREFIXES = ("/aws/lambda/FoundryAscent", "/foundry-ascent/", "/aws/rds/cluster/foundry-ascent")
 PROTECTED_KMS_ALIAS_PREFIXES = ("alias/foundry-ascent", "alias/aws/")
 GITHUB_OIDC_HOST = "token.actions.githubusercontent.com"
 S3_DIRECT_DELETE_LIMIT = 20_000

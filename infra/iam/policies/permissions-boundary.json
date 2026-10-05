@@ -37,20 +37,13 @@
     {
       "Sid": "DenyBoundaryRemoval",
       "Effect": "Deny",
-      "Action": [
-        "iam:DeleteUserPermissionsBoundary",
-        "iam:DeleteRolePermissionsBoundary"
-      ],
+      "Action": ["iam:DeleteUserPermissionsBoundary", "iam:DeleteRolePermissionsBoundary"],
       "Resource": "*"
     },
     {
       "Sid": "DenyLongLivedCredentials",
       "Effect": "Deny",
-      "Action": [
-        "iam:CreateAccessKey",
-        "iam:CreateLoginProfile",
-        "iam:UpdateLoginProfile"
-      ],
+      "Action": ["iam:CreateAccessKey", "iam:CreateLoginProfile", "iam:UpdateLoginProfile"],
       "Resource": "*"
     },
     {
