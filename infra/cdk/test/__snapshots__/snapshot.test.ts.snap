@@ -1,0 +1,3401 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`template snapshots > FoundryAscent-App 1`] = `
+{
+  "Description": "Foundry Ascent: API/worker/migrate Lambdas, CloudFront, SPA, alarms",
+  "Outputs": {
+    "AlarmTopicArn": {
+      "Value": {
+        "Ref": "AlarmTopicD01E77F9",
+      },
+    },
+    "ApiFunctionName": {
+      "Value": {
+        "Ref": "ApiFunction6BF808ED",
+      },
+    },
+    "ClusterArn": {
+      "Value": {
+        "Fn::Join": [
+          "",
+          [
+            "arn:aws:rds:us-east-1:",
+            {
+              "Ref": "AWS::AccountId",
+            },
+            ":cluster:",
+            {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputRefAurora2CBAB212879C7DB1",
+                "Region": "us-east-1",
+                "StackName": "FoundryAscent-Data",
+              },
+            },
+          ],
+        ],
+      },
+    },
+    "DistributionId": {
+      "Value": {
+        "Ref": "Distribution830FAC52",
+      },
+    },
+    "DocumentsBucket": {
+      "Value": {
+        "Fn::GetStackOutput": {
+          "OutputName": "PublishOutputRefDocumentsBucket9EC9DEB9D4188A2E",
+          "Region": "us-east-1",
+          "StackName": "FoundryAscent-Data",
+        },
+      },
+    },
+    "JobsQueueUrl": {
+      "Value": {
+        "Fn::GetStackOutput": {
+          "OutputName": "PublishOutputRefJobsQueue86ED6666C6B4A300",
+          "Region": "us-east-1",
+          "StackName": "FoundryAscent-Data",
+        },
+      },
+    },
+    "SecretArn": {
+      "Value": {
+        "Fn::GetStackOutput": {
+          "OutputName": "PublishOutputRefAuroraSecretAttachmentEAAB0558CE8224A5",
+          "Region": "us-east-1",
+          "StackName": "FoundryAscent-Data",
+        },
+      },
+    },
+    "SiteUrl": {
+      "Description": "Public URL of the web app",
+      "Value": {
+        "Fn::Join": [
+          "",
+          [
+            "https://",
+            {
+              "Fn::GetAtt": [
+                "Distribution830FAC52",
+                "DomainName",
+              ],
+            },
+          ],
+        ],
+      },
+    },
+  },
+  "Parameters": {
+    "BootstrapVersion": {
+      "Default": "/cdk-bootstrap/hnb659fds/version",
+      "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+  },
+  "Resources": {
+    "AlarmTopicD01E77F9": {
+      "Properties": {
+        "DisplayName": "Foundry Ascent alarms",
+        "TopicName": "FoundryAscent-Alarms",
+      },
+      "Type": "AWS::SNS::Topic",
+    },
+    "AlarmTopicPolicy309DB5F8": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sns:Publish",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                },
+              },
+              "Effect": "Deny",
+              "Principal": "*",
+              "Resource": {
+                "Ref": "AlarmTopicD01E77F9",
+              },
+              "Sid": "AllowPublishThroughSSLOnly",
+            },
+            {
+              "Action": "sns:Publish",
+              "Condition": {
+                "ArnLike": {
+                  "aws:SourceArn": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "arn:",
+                        {
+                          "Ref": "AWS::Partition",
+                        },
+                        ":cloudwatch:",
+                        {
+                          "Ref": "AWS::Region",
+                        },
+                        ":",
+                        {
+                          "Ref": "AWS::AccountId",
+                        },
+                        ":alarm:*",
+                      ],
+                    ],
+                  },
+                },
+                "StringEquals": {
+                  "aws:SourceAccount": {
+                    "Ref": "AWS::AccountId",
+                  },
+                },
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "cloudwatch.amazonaws.com",
+              },
+              "Resource": {
+                "Ref": "AlarmTopicD01E77F9",
+              },
+              "Sid": "AllowCloudWatchAlarms",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Topics": [
+          {
+            "Ref": "AlarmTopicD01E77F9",
+          },
+        ],
+      },
+      "Type": "AWS::SNS::TopicPolicy",
+    },
+    "ApiErrorsAlarm77A8953B": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Ref": "AlarmTopicD01E77F9",
+          },
+        ],
+        "AlarmDescription": "API Lambda invocations failed (unhandled errors or timeouts)",
+        "AlarmName": "FoundryAscent-Api-Errors",
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": {
+              "Ref": "ApiFunction6BF808ED",
+            },
+          },
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "Errors",
+        "Namespace": "AWS/Lambda",
+        "Period": 300,
+        "Statistic": "Sum",
+        "Threshold": 1,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "ApiFunction6BF808ED": {
+      "DependsOn": [
+        "ApiRoleDefaultPolicyEAA3579A",
+        "ApiRoleDE7A08EC",
+        "Migrations",
+      ],
+      "Properties": {
+        "Architectures": [
+          "arm64",
+        ],
+        "Code": {
+          "S3Bucket": {
+            "Fn::Sub": "cdk-hnb659fds-assets-\${AWS::AccountId}-us-east-1",
+          },
+          "S3Key": "<sha256>.zip",
+        },
+        "Description": "Foundry Ascent HTTP API (Hono, response streaming) behind CloudFront",
+        "Environment": {
+          "Variables": {
+            "APP_ENV": "production",
+            "APP_VERSION": "test-sha",
+            "BEDROCK_REGION": "us-east-1",
+            "DB_CLUSTER_ARN": {
+              "Fn::Join": [
+                "",
+                [
+                  "arn:aws:rds:us-east-1:",
+                  {
+                    "Ref": "AWS::AccountId",
+                  },
+                  ":cluster:",
+                  {
+                    "Fn::GetStackOutput": {
+                      "OutputName": "PublishOutputRefAurora2CBAB212879C7DB1",
+                      "Region": "us-east-1",
+                      "StackName": "FoundryAscent-Data",
+                    },
+                  },
+                ],
+              ],
+            },
+            "DB_DRIVER": "dataapi",
+            "DB_NAME": "foundry",
+            "DB_SECRET_ARN": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputRefAuroraSecretAttachmentEAAB0558CE8224A5",
+                "Region": "us-east-1",
+                "StackName": "FoundryAscent-Data",
+              },
+            },
+            "DOCUMENTS_BUCKET": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputRefDocumentsBucket9EC9DEB9D4188A2E",
+                "Region": "us-east-1",
+                "StackName": "FoundryAscent-Data",
+              },
+            },
+            "HOME_TENANT_NAME": "Ain Foundry",
+            "HOME_TENANT_SLUG": "ain",
+            "JOBS_QUEUE_URL": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputRefJobsQueue86ED6666C6B4A300",
+                "Region": "us-east-1",
+                "StackName": "FoundryAscent-Data",
+              },
+            },
+            "LOG_LEVEL": "info",
+            "MODEL_EMBEDDINGS_ID": "amazon.titan-embed-text-v2:0",
+            "MODEL_FALLBACK_ID": "global.amazon.nova-2-lite-v1:0",
+            "MODEL_PRIMARY_ID": "us.amazon.nova-2-lite-v1:0",
+            "MODEL_PROVIDER": "bedrock",
+            "NODE_OPTIONS": "--enable-source-maps",
+            "OWNER_ACCESS_CODE_HASH": "scrypt$N=32768,r=8,p=1$3EVOFO9pqROC_L4H7mo98g$RtIal90yLMyXBPUP_M2t51rYP2irq5D3k3DB6iweVY8",
+            "OWNER_ACCESS_CODE_PREFIX": "T9302",
+            "OWNER_DISPLAY_NAME": "Platform Owner",
+          },
+        },
+        "FunctionName": "FoundryAscent-Api",
+        "Handler": "index.handler",
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "ApiLogGroup1717FE17",
+          },
+        },
+        "MemorySize": 1024,
+        "RecursiveLoop": "Terminate",
+        "ReservedConcurrentExecutions": 10,
+        "Role": {
+          "Fn::GetAtt": [
+            "ApiRoleDE7A08EC",
+            "Arn",
+          ],
+        },
+        "Runtime": "nodejs24.x",
+        "Timeout": 60,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "ApiFunctionCloudFrontInvokeViaFunctionUrlB061CC01": {
+      "DependsOn": [
+        "Migrations",
+      ],
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "ApiFunction6BF808ED",
+            "Arn",
+          ],
+        },
+        "InvokedViaFunctionUrl": true,
+        "Principal": "cloudfront.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:aws:cloudfront::",
+              {
+                "Ref": "AWS::AccountId",
+              },
+              ":distribution/",
+              {
+                "Ref": "Distribution830FAC52",
+              },
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
+    "ApiFunctionFunctionUrlFF5ECAE6": {
+      "DependsOn": [
+        "Migrations",
+      ],
+      "Properties": {
+        "AuthType": "AWS_IAM",
+        "InvokeMode": "RESPONSE_STREAM",
+        "TargetFunctionArn": {
+          "Fn::GetAtt": [
+            "ApiFunction6BF808ED",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Url",
+    },
+    "ApiLogGroup1717FE17": {
+      "DeletionPolicy": "Delete",
+      "DependsOn": [
+        "Migrations",
+      ],
+      "Properties": {
+        "LogGroupName": "/aws/lambda/FoundryAscent-Api",
+        "RetentionInDays": 30,
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "ApiRoleDE7A08EC": {
+      "DependsOn": [
+        "Migrations",
+      ],
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Description": "Execution role for FoundryAscent-Api",
+        "ManagedPolicyArns": [
+          {
+            "Fn::GetStackOutput": {
+              "OutputName": "PublishOutputRefDatabaseAccessPolicy6F8810B6D4C131DB",
+              "Region": "us-east-1",
+              "StackName": "FoundryAscent-Data",
+            },
+          },
+          {
+            "Fn::GetStackOutput": {
+              "OutputName": "PublishOutputRefDocumentsAccessPolicyBB472DF3F9ABB5E5",
+              "Region": "us-east-1",
+              "StackName": "FoundryAscent-Data",
+            },
+          },
+        ],
+        "PermissionsBoundary": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:aws:iam::",
+              {
+                "Ref": "AWS::AccountId",
+              },
+              ":policy/FoundryAscent-Boundary",
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "ApiRoleDefaultPolicyEAA3579A": {
+      "DependsOn": [
+        "Migrations",
+      ],
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "ApiLogGroup1717FE17",
+                  "Arn",
+                ],
+              },
+            },
+            {
+              "Action": [
+                "sqs:GetQueueAttributes",
+                "sqs:GetQueueUrl",
+                "sqs:SendMessage",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetStackOutput": {
+                  "OutputName": "PublishOutputFnGetAttJobsQueue86ED6666Arn08E9A495",
+                  "Region": "us-east-1",
+                  "StackName": "FoundryAscent-Data",
+                },
+              },
+            },
+            {
+              "Action": [
+                "bedrock:InvokeModel",
+                "bedrock:InvokeModelWithResponseStream",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:*::foundation-model/amazon.nova-2-lite-v1:0",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:*::foundation-model/amazon.titan-embed-text-v2:0",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:us-east-1:",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":inference-profile/global.amazon.nova-2-lite-v1:0",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:us-east-1:",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":inference-profile/us.amazon.nova-2-lite-v1:0",
+                    ],
+                  ],
+                },
+              ],
+              "Sid": "BedrockRuntimeModels",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "ApiRoleDefaultPolicyEAA3579A",
+        "Roles": [
+          {
+            "Ref": "ApiRoleDE7A08EC",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "ApiThrottlesAlarmEF45997D": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Ref": "AlarmTopicD01E77F9",
+          },
+        ],
+        "AlarmDescription": "API Lambda throttled (reserved concurrency exhausted)",
+        "AlarmName": "FoundryAscent-Api-Throttles",
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": {
+              "Ref": "ApiFunction6BF808ED",
+            },
+          },
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "Throttles",
+        "Namespace": "AWS/Lambda",
+        "Period": 300,
+        "Statistic": "Sum",
+        "Threshold": 1,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "ApiViewerHostFunction589E9404": {
+      "Properties": {
+        "AutoPublish": true,
+        "FunctionCode": "function handler(event) {
+  var request = event.request;
+  var host = request.headers.host && request.headers.host.value
+    ? request.headers.host.value
+    : event.context.distributionDomainName;
+  request.headers['x-fa-viewer-host'] = { value: host };
+  return request;
+}
+",
+        "FunctionConfig": {
+          "Comment": "Pass the viewer Host to the API",
+          "Runtime": "cloudfront-js-2.0",
+        },
+        "Name": "us-east-1FoundryAscent-ApewerHostFunction72378349",
+      },
+      "Type": "AWS::CloudFront::Function",
+    },
+    "CloudFront5xxAlarm3A35E27D": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Ref": "AlarmTopicD01E77F9",
+          },
+        ],
+        "AlarmDescription": "More than 5% of viewer requests returned 5xx in 2 of the last 3 five-minute periods",
+        "AlarmName": "FoundryAscent-CloudFront-5xxRate",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "DatapointsToAlarm": 2,
+        "Dimensions": [
+          {
+            "Name": "DistributionId",
+            "Value": {
+              "Ref": "Distribution830FAC52",
+            },
+          },
+          {
+            "Name": "Region",
+            "Value": "Global",
+          },
+        ],
+        "EvaluationPeriods": 3,
+        "MetricName": "5xxErrorRate",
+        "Namespace": "AWS/CloudFront",
+        "Period": 300,
+        "Statistic": "Average",
+        "Threshold": 5,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C512MiB6723FB92": {
+      "DependsOn": [
+        "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C512MiBServiceRoleDefaultPolicy96C3E726",
+        "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C512MiBServiceRoleBA21DBC1",
+      ],
+      "Properties": {
+        "Architectures": [
+          "arm64",
+        ],
+        "Code": {
+          "S3Bucket": {
+            "Fn::Sub": "cdk-hnb659fds-assets-\${AWS::AccountId}-us-east-1",
+          },
+          "S3Key": "<sha256>.zip",
+        },
+        "Environment": {
+          "Variables": {
+            "AWS_CA_BUNDLE": "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
+          },
+        },
+        "Handler": "index.handler",
+        "Layers": [
+          {
+            "Ref": "DeploySiteAssetsAwsCliLayerF1B8AB27",
+          },
+        ],
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "SiteDeploymentLogsE21EB6B5",
+          },
+        },
+        "MemorySize": 512,
+        "Role": {
+          "Fn::GetAtt": [
+            "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C512MiBServiceRoleBA21DBC1",
+            "Arn",
+          ],
+        },
+        "Runtime": "python3.13",
+        "Timeout": 900,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C512MiBServiceRoleBA21DBC1": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+        "PermissionsBoundary": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:aws:iam::",
+              {
+                "Ref": "AWS::AccountId",
+              },
+              ":policy/FoundryAscent-Boundary",
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C512MiBServiceRoleDefaultPolicy96C3E726": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "s3:GetBucket*",
+                "s3:GetObject*",
+                "s3:List*",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:s3:::",
+                      {
+                        "Fn::Sub": "cdk-hnb659fds-assets-\${AWS::AccountId}-us-east-1",
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:s3:::",
+                      {
+                        "Fn::Sub": "cdk-hnb659fds-assets-\${AWS::AccountId}-us-east-1",
+                      },
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "s3:Abort*",
+                "s3:DeleteObject*",
+                "s3:GetBucket*",
+                "s3:GetObject*",
+                "s3:List*",
+                "s3:PutObject",
+                "s3:PutObjectLegalHold",
+                "s3:PutObjectRetention",
+                "s3:PutObjectTagging",
+                "s3:PutObjectVersionTagging",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "SiteBucket397A1860",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "SiteBucket397A1860",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "cloudfront:CreateInvalidation",
+                "cloudfront:GetInvalidation",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C512MiBServiceRoleDefaultPolicy96C3E726",
+        "Roles": [
+          {
+            "Ref": "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C512MiBServiceRoleBA21DBC1",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "DeploySiteAssetsAwsCliLayerF1B8AB27": {
+      "DependsOn": [
+        "Migrations",
+      ],
+      "Properties": {
+        "Content": {
+          "S3Bucket": {
+            "Fn::Sub": "cdk-hnb659fds-assets-\${AWS::AccountId}-us-east-1",
+          },
+          "S3Key": "<sha256>.zip",
+        },
+        "Description": "/opt/awscli/aws",
+      },
+      "Type": "AWS::Lambda::LayerVersion",
+    },
+    "DeploySiteAssetsCustomResource512MiB7E3A24C1": {
+      "DeletionPolicy": "Delete",
+      "DependsOn": [
+        "Migrations",
+      ],
+      "Properties": {
+        "DestinationBucketName": {
+          "Ref": "SiteBucket397A1860",
+        },
+        "Exclude": [
+          "*",
+        ],
+        "Include": [
+          "assets/*",
+        ],
+        "OutputObjectKeys": false,
+        "Prune": true,
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C512MiB6723FB92",
+            "Arn",
+          ],
+        },
+        "SourceBucketNames": [
+          {
+            "Fn::Sub": "cdk-hnb659fds-assets-\${AWS::AccountId}-us-east-1",
+          },
+        ],
+        "SourceObjectKeys": [
+          "<sha256>.zip",
+        ],
+        "SystemMetadata": {
+          "cache-control": "public, max-age=31536000, immutable",
+        },
+        "WaitForDistributionInvalidation": true,
+      },
+      "Type": "Custom::CDKBucketDeployment",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "DeploySiteShellAwsCliLayer0DFC3947": {
+      "DependsOn": [
+        "DeploySiteAssetsAwsCliLayerF1B8AB27",
+        "DeploySiteAssetsCustomResource512MiB7E3A24C1",
+      ],
+      "Properties": {
+        "Content": {
+          "S3Bucket": {
+            "Fn::Sub": "cdk-hnb659fds-assets-\${AWS::AccountId}-us-east-1",
+          },
+          "S3Key": "<sha256>.zip",
+        },
+        "Description": "/opt/awscli/aws",
+      },
+      "Type": "AWS::Lambda::LayerVersion",
+    },
+    "DeploySiteShellCustomResource512MiBF1713CE1": {
+      "DeletionPolicy": "Delete",
+      "DependsOn": [
+        "DeploySiteAssetsAwsCliLayerF1B8AB27",
+        "DeploySiteAssetsCustomResource512MiB7E3A24C1",
+      ],
+      "Properties": {
+        "DestinationBucketName": {
+          "Ref": "SiteBucket397A1860",
+        },
+        "DistributionId": {
+          "Ref": "Distribution830FAC52",
+        },
+        "DistributionPaths": [
+          "/*",
+        ],
+        "Exclude": [
+          "assets/*",
+        ],
+        "OutputObjectKeys": false,
+        "Prune": true,
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C512MiB6723FB92",
+            "Arn",
+          ],
+        },
+        "SourceBucketNames": [
+          {
+            "Fn::Sub": "cdk-hnb659fds-assets-\${AWS::AccountId}-us-east-1",
+          },
+        ],
+        "SourceObjectKeys": [
+          "<sha256>.zip",
+        ],
+        "SystemMetadata": {
+          "cache-control": "public, max-age=0, must-revalidate",
+        },
+        "WaitForDistributionInvalidation": true,
+      },
+      "Type": "Custom::CDKBucketDeployment",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "Distribution830FAC52": {
+      "Properties": {
+        "DistributionConfig": {
+          "CacheBehaviors": [
+            {
+              "AllowedMethods": [
+                "GET",
+                "HEAD",
+                "OPTIONS",
+                "PUT",
+                "PATCH",
+                "POST",
+                "DELETE",
+              ],
+              "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
+              "Compress": false,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "ApiViewerHostFunction589E9404",
+                      "FunctionARN",
+                    ],
+                  },
+                },
+              ],
+              "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
+              "PathPattern": "/api/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "SecurityHeadersE66B69D3",
+              },
+              "TargetOriginId": "FoundryAscentAppDistributionOrigin2824E45B1",
+              "ViewerProtocolPolicy": "https-only",
+            },
+          ],
+          "Comment": "Foundry Ascent",
+          "DefaultCacheBehavior": {
+            "AllowedMethods": [
+              "GET",
+              "HEAD",
+            ],
+            "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
+            "CachedMethods": [
+              "GET",
+              "HEAD",
+            ],
+            "Compress": true,
+            "FunctionAssociations": [
+              {
+                "EventType": "viewer-request",
+                "FunctionARN": {
+                  "Fn::GetAtt": [
+                    "SpaRewriteFunction0C4DA631",
+                    "FunctionARN",
+                  ],
+                },
+              },
+            ],
+            "ResponseHeadersPolicyId": {
+              "Ref": "SecurityHeadersE66B69D3",
+            },
+            "TargetOriginId": "FoundryAscentAppDistributionOrigin161B0B1B7",
+            "ViewerProtocolPolicy": "redirect-to-https",
+          },
+          "DefaultRootObject": "index.html",
+          "Enabled": true,
+          "HttpVersion": "http2and3",
+          "IPV6Enabled": true,
+          "Origins": [
+            {
+              "DomainName": {
+                "Fn::GetAtt": [
+                  "SiteBucket397A1860",
+                  "RegionalDomainName",
+                ],
+              },
+              "Id": "FoundryAscentAppDistributionOrigin161B0B1B7",
+              "OriginAccessControlId": {
+                "Fn::GetAtt": [
+                  "DistributionOrigin1S3OriginAccessControlEB606076",
+                  "Id",
+                ],
+              },
+              "S3OriginConfig": {
+                "OriginAccessIdentity": "",
+              },
+            },
+            {
+              "CustomOriginConfig": {
+                "OriginProtocolPolicy": "https-only",
+                "OriginReadTimeout": 60,
+                "OriginSSLProtocols": [
+                  "TLSv1.2",
+                ],
+              },
+              "DomainName": {
+                "Fn::Select": [
+                  2,
+                  {
+                    "Fn::Split": [
+                      "/",
+                      {
+                        "Fn::GetAtt": [
+                          "ApiFunctionFunctionUrlFF5ECAE6",
+                          "FunctionUrl",
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+              "Id": "FoundryAscentAppDistributionOrigin2824E45B1",
+              "OriginAccessControlId": {
+                "Fn::GetAtt": [
+                  "DistributionOrigin2FunctionUrlOriginAccessControlAC8EE0B1",
+                  "Id",
+                ],
+              },
+            },
+          ],
+          "PriceClass": "PriceClass_100",
+        },
+      },
+      "Type": "AWS::CloudFront::Distribution",
+    },
+    "DistributionOrigin1S3OriginAccessControlEB606076": {
+      "Properties": {
+        "OriginAccessControlConfig": {
+          "Name": "FoundryAscentAppDistributionOrigin1S3OriginAccessControl814E2992",
+          "OriginAccessControlOriginType": "s3",
+          "SigningBehavior": "always",
+          "SigningProtocol": "sigv4",
+        },
+      },
+      "Type": "AWS::CloudFront::OriginAccessControl",
+    },
+    "DistributionOrigin2FunctionUrlOriginAccessControlAC8EE0B1": {
+      "Properties": {
+        "OriginAccessControlConfig": {
+          "Name": "FoundryAscentAppDistributionnctionUrlOriginAccessControl4FBF5340",
+          "OriginAccessControlOriginType": "lambda",
+          "SigningBehavior": "always",
+          "SigningProtocol": "sigv4",
+        },
+      },
+      "Type": "AWS::CloudFront::OriginAccessControl",
+    },
+    "DistributionOrigin2InvokeFromApiForFoundryAscentAppDistributionOrigin2824E45B15BE08013": {
+      "Properties": {
+        "Action": "lambda:InvokeFunctionUrl",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "ApiFunctionFunctionUrlFF5ECAE6",
+            "FunctionArn",
+          ],
+        },
+        "Principal": "cloudfront.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":cloudfront::",
+              {
+                "Ref": "AWS::AccountId",
+              },
+              ":distribution/",
+              {
+                "Ref": "Distribution830FAC52",
+              },
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
+    "JobsDlqAlarmD8B82FA4": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Ref": "AlarmTopicD01E77F9",
+          },
+        ],
+        "AlarmDescription": "Jobs failed 3 times and were moved to the dead-letter queue",
+        "AlarmName": "FoundryAscent-Jobs-DLQ-NotEmpty",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "Dimensions": [
+          {
+            "Name": "QueueName",
+            "Value": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputFnGetAttJobsDeadLetterQueueE6E1CCE2QueueNameFFDEA6FC",
+                "Region": "us-east-1",
+                "StackName": "FoundryAscent-Data",
+              },
+            },
+          },
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "ApproximateNumberOfMessagesVisible",
+        "Namespace": "AWS/SQS",
+        "Period": 300,
+        "Statistic": "Maximum",
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "MigrateFunctionE2483A46": {
+      "DependsOn": [
+        "MigrateRoleDefaultPolicy309B40E1",
+        "MigrateRole893862C7",
+      ],
+      "Properties": {
+        "Architectures": [
+          "arm64",
+        ],
+        "Code": {
+          "S3Bucket": {
+            "Fn::Sub": "cdk-hnb659fds-assets-\${AWS::AccountId}-us-east-1",
+          },
+          "S3Key": "<sha256>.zip",
+        },
+        "Description": "CloudFormation custom resource: database migrations, synthetic seed, seed embeddings",
+        "Environment": {
+          "Variables": {
+            "APP_ENV": "production",
+            "APP_VERSION": "test-sha",
+            "BEDROCK_REGION": "us-east-1",
+            "DB_CLUSTER_ARN": {
+              "Fn::Join": [
+                "",
+                [
+                  "arn:aws:rds:us-east-1:",
+                  {
+                    "Ref": "AWS::AccountId",
+                  },
+                  ":cluster:",
+                  {
+                    "Fn::GetStackOutput": {
+                      "OutputName": "PublishOutputRefAurora2CBAB212879C7DB1",
+                      "Region": "us-east-1",
+                      "StackName": "FoundryAscent-Data",
+                    },
+                  },
+                ],
+              ],
+            },
+            "DB_DRIVER": "dataapi",
+            "DB_NAME": "foundry",
+            "DB_SECRET_ARN": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputRefAuroraSecretAttachmentEAAB0558CE8224A5",
+                "Region": "us-east-1",
+                "StackName": "FoundryAscent-Data",
+              },
+            },
+            "DOCUMENTS_BUCKET": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputRefDocumentsBucket9EC9DEB9D4188A2E",
+                "Region": "us-east-1",
+                "StackName": "FoundryAscent-Data",
+              },
+            },
+            "HOME_TENANT_NAME": "Ain Foundry",
+            "HOME_TENANT_SLUG": "ain",
+            "JOBS_QUEUE_URL": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputRefJobsQueue86ED6666C6B4A300",
+                "Region": "us-east-1",
+                "StackName": "FoundryAscent-Data",
+              },
+            },
+            "LOG_LEVEL": "info",
+            "MODEL_EMBEDDINGS_ID": "amazon.titan-embed-text-v2:0",
+            "MODEL_FALLBACK_ID": "global.amazon.nova-2-lite-v1:0",
+            "MODEL_PRIMARY_ID": "us.amazon.nova-2-lite-v1:0",
+            "MODEL_PROVIDER": "bedrock",
+            "NODE_OPTIONS": "--enable-source-maps",
+            "OWNER_ACCESS_CODE_HASH": "scrypt$N=32768,r=8,p=1$3EVOFO9pqROC_L4H7mo98g$RtIal90yLMyXBPUP_M2t51rYP2irq5D3k3DB6iweVY8",
+            "OWNER_ACCESS_CODE_PREFIX": "T9302",
+            "OWNER_DISPLAY_NAME": "Platform Owner",
+          },
+        },
+        "FunctionName": "FoundryAscent-Migrate",
+        "Handler": "index.handler",
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "MigrateLogGroup6A179A3B",
+          },
+        },
+        "MemorySize": 1024,
+        "RecursiveLoop": "Terminate",
+        "Role": {
+          "Fn::GetAtt": [
+            "MigrateRole893862C7",
+            "Arn",
+          ],
+        },
+        "Runtime": "nodejs24.x",
+        "Timeout": 600,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "MigrateLogGroup6A179A3B": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/FoundryAscent-Migrate",
+        "RetentionInDays": 30,
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "MigrateProviderLogs1942A468": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "RetentionInDays": 30,
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "MigrateProviderframeworkonEvent252E0912": {
+      "DependsOn": [
+        "MigrateProviderframeworkonEventServiceRoleDefaultPolicy42DDFCC7",
+        "MigrateProviderframeworkonEventServiceRoleF2E658E5",
+      ],
+      "Properties": {
+        "Code": {
+          "S3Bucket": {
+            "Fn::Sub": "cdk-hnb659fds-assets-\${AWS::AccountId}-us-east-1",
+          },
+          "S3Key": "<sha256>.zip",
+        },
+        "Description": "AWS CDK resource provider framework - onEvent (FoundryAscent-App/MigrateProvider)",
+        "Environment": {
+          "Variables": {
+            "USER_ON_EVENT_FUNCTION_ARN": {
+              "Fn::GetAtt": [
+                "MigrateFunctionE2483A46",
+                "Arn",
+              ],
+            },
+          },
+        },
+        "Handler": "framework.onEvent",
+        "LoggingConfig": {
+          "ApplicationLogLevel": "FATAL",
+          "LogFormat": "JSON",
+          "LogGroup": {
+            "Ref": "MigrateProviderLogs1942A468",
+          },
+        },
+        "Role": {
+          "Fn::GetAtt": [
+            "MigrateProviderframeworkonEventServiceRoleF2E658E5",
+            "Arn",
+          ],
+        },
+        "Runtime": "nodejs24.x",
+        "Timeout": 900,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "MigrateProviderframeworkonEventServiceRoleDefaultPolicy42DDFCC7": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "lambda:InvokeFunction",
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "MigrateFunctionE2483A46",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "MigrateFunctionE2483A46",
+                          "Arn",
+                        ],
+                      },
+                      ":*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "lambda:GetFunction",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "MigrateFunctionE2483A46",
+                  "Arn",
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "MigrateProviderframeworkonEventServiceRoleDefaultPolicy42DDFCC7",
+        "Roles": [
+          {
+            "Ref": "MigrateProviderframeworkonEventServiceRoleF2E658E5",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "MigrateProviderframeworkonEventServiceRoleF2E658E5": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+        "PermissionsBoundary": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:aws:iam::",
+              {
+                "Ref": "AWS::AccountId",
+              },
+              ":policy/FoundryAscent-Boundary",
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "MigrateRole893862C7": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Description": "Execution role for FoundryAscent-Migrate",
+        "ManagedPolicyArns": [
+          {
+            "Fn::GetStackOutput": {
+              "OutputName": "PublishOutputRefDatabaseAccessPolicy6F8810B6D4C131DB",
+              "Region": "us-east-1",
+              "StackName": "FoundryAscent-Data",
+            },
+          },
+        ],
+        "PermissionsBoundary": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:aws:iam::",
+              {
+                "Ref": "AWS::AccountId",
+              },
+              ":policy/FoundryAscent-Boundary",
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "MigrateRoleDefaultPolicy309B40E1": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "MigrateLogGroup6A179A3B",
+                  "Arn",
+                ],
+              },
+            },
+            {
+              "Action": "bedrock:InvokeModel",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":bedrock:*::foundation-model/amazon.titan-embed-text-v2:0",
+                  ],
+                ],
+              },
+              "Sid": "BedrockEmbeddings",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "MigrateRoleDefaultPolicy309B40E1",
+        "Roles": [
+          {
+            "Ref": "MigrateRole893862C7",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "Migrations": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "MigrateProviderframeworkonEvent252E0912",
+            "Arn",
+          ],
+        },
+        "migrationsChecksum": "<sha256>",
+        "version": "test-sha",
+      },
+      "Type": "Custom::FoundryMigrations",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "SecurityHeadersE66B69D3": {
+      "Properties": {
+        "ResponseHeadersPolicyConfig": {
+          "Comment": "Foundry Ascent security headers (CSP, HSTS, frame denial)",
+          "CustomHeadersConfig": {
+            "Items": [
+              {
+                "Header": "Permissions-Policy",
+                "Override": true,
+                "Value": "camera=(), microphone=(), geolocation=()",
+              },
+            ],
+          },
+          "Name": "FoundryAscentAppSecurityHeaders5AF0E367",
+          "SecurityHeadersConfig": {
+            "ContentSecurityPolicy": {
+              "ContentSecurityPolicy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://*.s3.amazonaws.com https://*.s3.us-east-1.amazonaws.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
+              "Override": true,
+            },
+            "ContentTypeOptions": {
+              "Override": true,
+            },
+            "FrameOptions": {
+              "FrameOption": "DENY",
+              "Override": true,
+            },
+            "ReferrerPolicy": {
+              "Override": true,
+              "ReferrerPolicy": "strict-origin-when-cross-origin",
+            },
+            "StrictTransportSecurity": {
+              "AccessControlMaxAgeSec": 63072000,
+              "IncludeSubdomains": true,
+              "Override": true,
+              "Preload": true,
+            },
+          },
+        },
+      },
+      "Type": "AWS::CloudFront::ResponseHeadersPolicy",
+    },
+    "SiteBucket397A1860": {
+      "DeletionPolicy": "RetainExceptOnCreate",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256",
+              },
+            },
+          ],
+        },
+        "OwnershipControls": {
+          "Rules": [
+            {
+              "ObjectOwnership": "BucketOwnerEnforced",
+            },
+          ],
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true,
+        },
+        "Tags": [
+          {
+            "Key": "aws-cdk:cr-owned:2d940e84",
+            "Value": "true",
+          },
+          {
+            "Key": "aws-cdk:cr-owned:897947d1",
+            "Value": "true",
+          },
+        ],
+      },
+      "Type": "AWS::S3::Bucket",
+      "UpdateReplacePolicy": "Retain",
+    },
+    "SiteBucketPolicy3AC1D0F8": {
+      "Properties": {
+        "Bucket": {
+          "Ref": "SiteBucket397A1860",
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "SiteBucket397A1860",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "SiteBucket397A1860",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "NumericLessThan": {
+                  "s3:TlsVersion": 1.2,
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "SiteBucket397A1860",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "SiteBucket397A1860",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "s3:GetObject",
+              "Condition": {
+                "StringEquals": {
+                  "AWS:SourceArn": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "arn:",
+                        {
+                          "Ref": "AWS::Partition",
+                        },
+                        ":cloudfront::",
+                        {
+                          "Ref": "AWS::AccountId",
+                        },
+                        ":distribution/",
+                        {
+                          "Ref": "Distribution830FAC52",
+                        },
+                      ],
+                    ],
+                  },
+                },
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "cloudfront.amazonaws.com",
+              },
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Fn::GetAtt": [
+                        "SiteBucket397A1860",
+                        "Arn",
+                      ],
+                    },
+                    "/*",
+                  ],
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::S3::BucketPolicy",
+    },
+    "SiteDeploymentLogsE21EB6B5": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "RetentionInDays": 30,
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "SpaRewriteFunction0C4DA631": {
+      "Properties": {
+        "AutoPublish": true,
+        "FunctionCode": "function handler(event) {
+  var request = event.request;
+  var uri = request.uri;
+  if (uri === '/api' || uri.indexOf('/api/') === 0) {
+    return request;
+  }
+  var lastSegment = uri.substring(uri.lastIndexOf('/') + 1);
+  if (lastSegment.indexOf('.') === -1) {
+    request.uri = '/index.html';
+  }
+  return request;
+}
+",
+        "FunctionConfig": {
+          "Comment": "SPA routing: extension-less paths -> /index.html",
+          "Runtime": "cloudfront-js-2.0",
+        },
+        "Name": "us-east-1FoundryAscent-ApaRewriteFunction20ECD1FB",
+      },
+      "Type": "AWS::CloudFront::Function",
+    },
+    "WorkerErrorsAlarm1932B217": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Ref": "AlarmTopicD01E77F9",
+          },
+        ],
+        "AlarmDescription": "Worker Lambda invocations failed",
+        "AlarmName": "FoundryAscent-Worker-Errors",
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": {
+              "Ref": "WorkerFunctionAF8A26AF",
+            },
+          },
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "Errors",
+        "Namespace": "AWS/Lambda",
+        "Period": 300,
+        "Statistic": "Sum",
+        "Threshold": 1,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "WorkerFunctionAF8A26AF": {
+      "DependsOn": [
+        "Migrations",
+        "WorkerRoleDefaultPolicyDBA0F4B7",
+        "WorkerRoleAAEB1603",
+      ],
+      "Properties": {
+        "Architectures": [
+          "arm64",
+        ],
+        "Code": {
+          "S3Bucket": {
+            "Fn::Sub": "cdk-hnb659fds-assets-\${AWS::AccountId}-us-east-1",
+          },
+          "S3Key": "<sha256>.zip",
+        },
+        "Description": "Foundry Ascent jobs worker (document ingestion, recaps, memory consolidation)",
+        "Environment": {
+          "Variables": {
+            "APP_ENV": "production",
+            "APP_VERSION": "test-sha",
+            "BEDROCK_REGION": "us-east-1",
+            "DB_CLUSTER_ARN": {
+              "Fn::Join": [
+                "",
+                [
+                  "arn:aws:rds:us-east-1:",
+                  {
+                    "Ref": "AWS::AccountId",
+                  },
+                  ":cluster:",
+                  {
+                    "Fn::GetStackOutput": {
+                      "OutputName": "PublishOutputRefAurora2CBAB212879C7DB1",
+                      "Region": "us-east-1",
+                      "StackName": "FoundryAscent-Data",
+                    },
+                  },
+                ],
+              ],
+            },
+            "DB_DRIVER": "dataapi",
+            "DB_NAME": "foundry",
+            "DB_SECRET_ARN": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputRefAuroraSecretAttachmentEAAB0558CE8224A5",
+                "Region": "us-east-1",
+                "StackName": "FoundryAscent-Data",
+              },
+            },
+            "DOCUMENTS_BUCKET": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputRefDocumentsBucket9EC9DEB9D4188A2E",
+                "Region": "us-east-1",
+                "StackName": "FoundryAscent-Data",
+              },
+            },
+            "HOME_TENANT_NAME": "Ain Foundry",
+            "HOME_TENANT_SLUG": "ain",
+            "JOBS_QUEUE_URL": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputRefJobsQueue86ED6666C6B4A300",
+                "Region": "us-east-1",
+                "StackName": "FoundryAscent-Data",
+              },
+            },
+            "LOG_LEVEL": "info",
+            "MODEL_EMBEDDINGS_ID": "amazon.titan-embed-text-v2:0",
+            "MODEL_FALLBACK_ID": "global.amazon.nova-2-lite-v1:0",
+            "MODEL_PRIMARY_ID": "us.amazon.nova-2-lite-v1:0",
+            "MODEL_PROVIDER": "bedrock",
+            "NODE_OPTIONS": "--enable-source-maps",
+            "OWNER_ACCESS_CODE_HASH": "scrypt$N=32768,r=8,p=1$3EVOFO9pqROC_L4H7mo98g$RtIal90yLMyXBPUP_M2t51rYP2irq5D3k3DB6iweVY8",
+            "OWNER_ACCESS_CODE_PREFIX": "T9302",
+            "OWNER_DISPLAY_NAME": "Platform Owner",
+          },
+        },
+        "FunctionName": "FoundryAscent-Worker",
+        "Handler": "index.handler",
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "WorkerLogGroup67ABCFFE",
+          },
+        },
+        "MemorySize": 1024,
+        "RecursiveLoop": "Terminate",
+        "Role": {
+          "Fn::GetAtt": [
+            "WorkerRoleAAEB1603",
+            "Arn",
+          ],
+        },
+        "Runtime": "nodejs24.x",
+        "Timeout": 120,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "WorkerFunctionSqsEventSourceFoundryAscentDataJobsQueueE414FED2F095837D": {
+      "DependsOn": [
+        "Migrations",
+      ],
+      "Properties": {
+        "BatchSize": 5,
+        "EventSourceArn": {
+          "Fn::GetStackOutput": {
+            "OutputName": "PublishOutputFnGetAttJobsQueue86ED6666Arn08E9A495",
+            "Region": "us-east-1",
+            "StackName": "FoundryAscent-Data",
+          },
+        },
+        "FunctionName": {
+          "Ref": "WorkerFunctionAF8A26AF",
+        },
+        "FunctionResponseTypes": [
+          "ReportBatchItemFailures",
+        ],
+        "ScalingConfig": {
+          "MaximumConcurrency": 2,
+        },
+      },
+      "Type": "AWS::Lambda::EventSourceMapping",
+    },
+    "WorkerLogGroup67ABCFFE": {
+      "DeletionPolicy": "Delete",
+      "DependsOn": [
+        "Migrations",
+      ],
+      "Properties": {
+        "LogGroupName": "/aws/lambda/FoundryAscent-Worker",
+        "RetentionInDays": 30,
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "WorkerRoleAAEB1603": {
+      "DependsOn": [
+        "Migrations",
+      ],
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Description": "Execution role for FoundryAscent-Worker",
+        "ManagedPolicyArns": [
+          {
+            "Fn::GetStackOutput": {
+              "OutputName": "PublishOutputRefDatabaseAccessPolicy6F8810B6D4C131DB",
+              "Region": "us-east-1",
+              "StackName": "FoundryAscent-Data",
+            },
+          },
+          {
+            "Fn::GetStackOutput": {
+              "OutputName": "PublishOutputRefDocumentsAccessPolicyBB472DF3F9ABB5E5",
+              "Region": "us-east-1",
+              "StackName": "FoundryAscent-Data",
+            },
+          },
+        ],
+        "PermissionsBoundary": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:aws:iam::",
+              {
+                "Ref": "AWS::AccountId",
+              },
+              ":policy/FoundryAscent-Boundary",
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "WorkerRoleDefaultPolicyDBA0F4B7": {
+      "DependsOn": [
+        "Migrations",
+      ],
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "WorkerLogGroup67ABCFFE",
+                  "Arn",
+                ],
+              },
+            },
+            {
+              "Action": [
+                "bedrock:InvokeModel",
+                "bedrock:InvokeModelWithResponseStream",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:*::foundation-model/amazon.nova-2-lite-v1:0",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:*::foundation-model/amazon.titan-embed-text-v2:0",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:us-east-1:",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":inference-profile/global.amazon.nova-2-lite-v1:0",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:us-east-1:",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":inference-profile/us.amazon.nova-2-lite-v1:0",
+                    ],
+                  ],
+                },
+              ],
+              "Sid": "BedrockRuntimeModels",
+            },
+            {
+              "Action": [
+                "sqs:ChangeMessageVisibility",
+                "sqs:DeleteMessage",
+                "sqs:GetQueueAttributes",
+                "sqs:GetQueueUrl",
+                "sqs:ReceiveMessage",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetStackOutput": {
+                  "OutputName": "PublishOutputFnGetAttJobsQueue86ED6666Arn08E9A495",
+                  "Region": "us-east-1",
+                  "StackName": "FoundryAscent-Data",
+                },
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "WorkerRoleDefaultPolicyDBA0F4B7",
+        "Roles": [
+          {
+            "Ref": "WorkerRoleAAEB1603",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+  },
+  "Rules": {
+    "CheckBootstrapVersion": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Contains": [
+                  [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5",
+                  ],
+                  {
+                    "Ref": "BootstrapVersion",
+                  },
+                ],
+              },
+            ],
+          },
+          "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI.",
+        },
+      ],
+    },
+  },
+}
+`;
+
+exports[`template snapshots > FoundryAscent-Data 1`] = `
+{
+  "Description": "Foundry Ascent: VPC (isolated), Aurora Serverless v2, documents bucket, jobs queue",
+  "Outputs": {
+    "PublishOutputFnGetAttJobsDeadLetterQueueE6E1CCE2QueueNameFFDEA6FC": {
+      "Value": {
+        "Fn::GetAtt": [
+          "JobsDeadLetterQueueE6E1CCE2",
+          "QueueName",
+        ],
+      },
+    },
+    "PublishOutputFnGetAttJobsQueue86ED6666Arn08E9A495": {
+      "Value": {
+        "Fn::GetAtt": [
+          "JobsQueue86ED6666",
+          "Arn",
+        ],
+      },
+    },
+    "PublishOutputRefAurora2CBAB212879C7DB1": {
+      "Value": {
+        "Ref": "Aurora2CBAB212",
+      },
+    },
+    "PublishOutputRefAuroraSecretAttachmentEAAB0558CE8224A5": {
+      "Value": {
+        "Ref": "AuroraSecretAttachmentEAAB0558",
+      },
+    },
+    "PublishOutputRefDatabaseAccessPolicy6F8810B6D4C131DB": {
+      "Value": {
+        "Ref": "DatabaseAccessPolicy6F8810B6",
+      },
+    },
+    "PublishOutputRefDocumentsAccessPolicyBB472DF3F9ABB5E5": {
+      "Value": {
+        "Ref": "DocumentsAccessPolicyBB472DF3",
+      },
+    },
+    "PublishOutputRefDocumentsBucket9EC9DEB9D4188A2E": {
+      "Value": {
+        "Ref": "DocumentsBucket9EC9DEB9",
+      },
+    },
+    "PublishOutputRefJobsQueue86ED6666C6B4A300": {
+      "Value": {
+        "Ref": "JobsQueue86ED6666",
+      },
+    },
+  },
+  "Parameters": {
+    "BootstrapVersion": {
+      "Default": "/cdk-bootstrap/hnb659fds/version",
+      "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+  },
+  "Resources": {
+    "AccessLogsBucket83982689": {
+      "DeletionPolicy": "RetainExceptOnCreate",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256",
+              },
+            },
+          ],
+        },
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "AbortIncompleteMultipartUpload": {
+                "DaysAfterInitiation": 1,
+              },
+              "ExpirationInDays": 90,
+              "Id": "expire-access-logs",
+              "Status": "Enabled",
+            },
+          ],
+        },
+        "OwnershipControls": {
+          "Rules": [
+            {
+              "ObjectOwnership": "BucketOwnerEnforced",
+            },
+          ],
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true,
+        },
+      },
+      "Type": "AWS::S3::Bucket",
+      "UpdateReplacePolicy": "Retain",
+    },
+    "AccessLogsBucketPolicy7F77476F": {
+      "Properties": {
+        "Bucket": {
+          "Ref": "AccessLogsBucket83982689",
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "AccessLogsBucket83982689",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "AccessLogsBucket83982689",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "NumericLessThan": {
+                  "s3:TlsVersion": 1.2,
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "AccessLogsBucket83982689",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "AccessLogsBucket83982689",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "s3:PutObject",
+              "Condition": {
+                "ArnLike": {
+                  "aws:SourceArn": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "arn:aws:logs:us-east-1:",
+                        {
+                          "Ref": "AWS::AccountId",
+                        },
+                        ":*",
+                      ],
+                    ],
+                  },
+                },
+                "StringEquals": {
+                  "aws:SourceAccount": {
+                    "Ref": "AWS::AccountId",
+                  },
+                  "s3:x-amz-acl": "bucket-owner-full-control",
+                },
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "delivery.logs.amazonaws.com",
+              },
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Fn::GetAtt": [
+                        "AccessLogsBucket83982689",
+                        "Arn",
+                      ],
+                    },
+                    "/vpc-flow-logs/AWSLogs/",
+                    {
+                      "Ref": "AWS::AccountId",
+                    },
+                    "/*",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": [
+                "s3:GetBucketAcl",
+                "s3:ListBucket",
+              ],
+              "Condition": {
+                "ArnLike": {
+                  "aws:SourceArn": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "arn:aws:logs:us-east-1:",
+                        {
+                          "Ref": "AWS::AccountId",
+                        },
+                        ":*",
+                      ],
+                    ],
+                  },
+                },
+                "StringEquals": {
+                  "aws:SourceAccount": {
+                    "Ref": "AWS::AccountId",
+                  },
+                },
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "delivery.logs.amazonaws.com",
+              },
+              "Resource": {
+                "Fn::GetAtt": [
+                  "AccessLogsBucket83982689",
+                  "Arn",
+                ],
+              },
+            },
+            {
+              "Action": "s3:PutObject",
+              "Condition": {
+                "ArnLike": {
+                  "aws:SourceArn": {
+                    "Fn::GetAtt": [
+                      "DocumentsBucket9EC9DEB9",
+                      "Arn",
+                    ],
+                  },
+                },
+                "StringEquals": {
+                  "aws:SourceAccount": {
+                    "Ref": "AWS::AccountId",
+                  },
+                },
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "logging.s3.amazonaws.com",
+              },
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Fn::GetAtt": [
+                        "AccessLogsBucket83982689",
+                        "Arn",
+                      ],
+                    },
+                    "/documents/*",
+                  ],
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::S3::BucketPolicy",
+    },
+    "Aurora2CBAB212": {
+      "DeletionPolicy": "Snapshot",
+      "DependsOn": [
+        "AuroraPostgresqlLogs721B0FD9",
+      ],
+      "Properties": {
+        "BackupRetentionPeriod": 7,
+        "CopyTagsToSnapshot": true,
+        "DBClusterIdentifier": "foundry-ascent",
+        "DBClusterParameterGroupName": "default.aurora-postgresql16",
+        "DBSubnetGroupName": {
+          "Ref": "AuroraSubnetsC4DF45C9",
+        },
+        "DatabaseName": "foundry",
+        "DeletionProtection": true,
+        "EnableCloudwatchLogsExports": [
+          "postgresql",
+        ],
+        "EnableHttpEndpoint": true,
+        "EnableIAMDatabaseAuthentication": false,
+        "Engine": "aurora-postgresql",
+        "EngineVersion": "16.13",
+        "MasterUserPassword": {
+          "Fn::Join": [
+            "",
+            [
+              "{{resolve:secretsmanager:",
+              {
+                "Ref": "FoundryAscentDataAuroraSecretF2DD39963fdaad7efa858a3daf9490cf0a702aeb",
+              },
+              ":SecretString:password::}}",
+            ],
+          ],
+        },
+        "MasterUsername": "foundry_admin",
+        "Port": 5432,
+        "PreferredBackupWindow": "07:00-08:00",
+        "PreferredMaintenanceWindow": "sun:08:30-sun:09:30",
+        "ServerlessV2ScalingConfiguration": {
+          "MaxCapacity": 2,
+          "MinCapacity": 0,
+          "SecondsUntilAutoPause": 600,
+        },
+        "StorageEncrypted": true,
+        "VpcSecurityGroupIds": [
+          {
+            "Fn::GetAtt": [
+              "AuroraSecurityGroup75F699F6",
+              "GroupId",
+            ],
+          },
+        ],
+      },
+      "Type": "AWS::RDS::DBCluster",
+      "UpdateReplacePolicy": "Snapshot",
+    },
+    "AuroraPostgresqlLogs721B0FD9": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "LogGroupName": "/aws/rds/cluster/foundry-ascent/postgresql",
+        "RetentionInDays": 30,
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "AuroraSecretAttachmentEAAB0558": {
+      "DependsOn": [
+        "AuroraPostgresqlLogs721B0FD9",
+      ],
+      "Properties": {
+        "SecretId": {
+          "Ref": "FoundryAscentDataAuroraSecretF2DD39963fdaad7efa858a3daf9490cf0a702aeb",
+        },
+        "TargetId": {
+          "Ref": "Aurora2CBAB212",
+        },
+        "TargetType": "AWS::RDS::DBCluster",
+      },
+      "Type": "AWS::SecretsManager::SecretTargetAttachment",
+    },
+    "AuroraSecurityGroup75F699F6": {
+      "Properties": {
+        "GroupDescription": "Aurora cluster: no ingress; applications use the RDS Data API",
+        "SecurityGroupEgress": [
+          {
+            "CidrIp": "255.255.255.255/32",
+            "Description": "Disallow all traffic",
+            "FromPort": 252,
+            "IpProtocol": "icmp",
+            "ToPort": 86,
+          },
+        ],
+        "VpcId": {
+          "Ref": "Vpc8378EB38",
+        },
+      },
+      "Type": "AWS::EC2::SecurityGroup",
+    },
+    "AuroraSubnetsC4DF45C9": {
+      "DependsOn": [
+        "AuroraPostgresqlLogs721B0FD9",
+      ],
+      "Properties": {
+        "DBSubnetGroupDescription": "Subnets for Aurora database",
+        "SubnetIds": [
+          {
+            "Ref": "VpcisolatedSubnet1SubnetE62B1B9B",
+          },
+          {
+            "Ref": "VpcisolatedSubnet2Subnet39217055",
+          },
+        ],
+      },
+      "Type": "AWS::RDS::DBSubnetGroup",
+    },
+    "AuroraWriter14FF9353": {
+      "DeletionPolicy": "Delete",
+      "DependsOn": [
+        "AuroraPostgresqlLogs721B0FD9",
+        "VpcisolatedSubnet1RouteTableAssociationD259E31A",
+        "VpcisolatedSubnet2RouteTableAssociation25A4716F",
+      ],
+      "Properties": {
+        "AutoMinorVersionUpgrade": true,
+        "DBClusterIdentifier": {
+          "Ref": "Aurora2CBAB212",
+        },
+        "DBInstanceClass": "db.serverless",
+        "Engine": "aurora-postgresql",
+        "PromotionTier": 0,
+        "PubliclyAccessible": false,
+      },
+      "Type": "AWS::RDS::DBInstance",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "CustomVpcRestrictDefaultSGCustomResourceProviderHandlerDC833E5E": {
+      "DependsOn": [
+        "CustomVpcRestrictDefaultSGCustomResourceProviderRole26592FE0",
+      ],
+      "Properties": {
+        "Code": {
+          "S3Bucket": {
+            "Fn::Sub": "cdk-hnb659fds-assets-\${AWS::AccountId}-us-east-1",
+          },
+          "S3Key": "<sha256>.zip",
+        },
+        "Description": "Lambda function for removing all inbound/outbound rules from the VPC default security group",
+        "Handler": "__entrypoint__.handler",
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "RestrictDefaultSgLogsDDF1DACF",
+          },
+        },
+        "MemorySize": 128,
+        "Role": {
+          "Fn::GetAtt": [
+            "CustomVpcRestrictDefaultSGCustomResourceProviderRole26592FE0",
+            "Arn",
+          ],
+        },
+        "Runtime": "nodejs24.x",
+        "Timeout": 900,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "CustomVpcRestrictDefaultSGCustomResourceProviderRole26592FE0": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Sub": "arn:\${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+          },
+        ],
+        "PermissionsBoundary": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:aws:iam::",
+              {
+                "Ref": "AWS::AccountId",
+              },
+              ":policy/FoundryAscent-Boundary",
+            ],
+          ],
+        },
+        "Policies": [
+          {
+            "PolicyDocument": {
+              "Statement": [
+                {
+                  "Action": [
+                    "ec2:AuthorizeSecurityGroupIngress",
+                    "ec2:AuthorizeSecurityGroupEgress",
+                    "ec2:RevokeSecurityGroupIngress",
+                    "ec2:RevokeSecurityGroupEgress",
+                  ],
+                  "Effect": "Allow",
+                  "Resource": [
+                    {
+                      "Fn::Join": [
+                        "",
+                        [
+                          "arn:aws:ec2:us-east-1:",
+                          {
+                            "Ref": "AWS::AccountId",
+                          },
+                          ":security-group/",
+                          {
+                            "Fn::GetAtt": [
+                              "Vpc8378EB38",
+                              "DefaultSecurityGroup",
+                            ],
+                          },
+                        ],
+                      ],
+                    },
+                  ],
+                },
+              ],
+              "Version": "2012-10-17",
+            },
+            "PolicyName": "Inline",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "DatabaseAccessPolicy6F8810B6": {
+      "Properties": {
+        "Description": "Foundry Ascent: query Aurora through the RDS Data API",
+        "Path": "/",
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "rds-data:BatchExecuteStatement",
+                "rds-data:BeginTransaction",
+                "rds-data:CommitTransaction",
+                "rds-data:ExecuteStatement",
+                "rds-data:RollbackTransaction",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:aws:rds:us-east-1:",
+                    {
+                      "Ref": "AWS::AccountId",
+                    },
+                    ":cluster:",
+                    {
+                      "Ref": "Aurora2CBAB212",
+                    },
+                  ],
+                ],
+              },
+              "Sid": "AuroraDataApi",
+            },
+            {
+              "Action": "secretsmanager:GetSecretValue",
+              "Effect": "Allow",
+              "Resource": {
+                "Ref": "AuroraSecretAttachmentEAAB0558",
+              },
+              "Sid": "AuroraSecret",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::IAM::ManagedPolicy",
+    },
+    "DocumentsAccessPolicyBB472DF3": {
+      "Properties": {
+        "Description": "Foundry Ascent: read/write venture documents (tenants/ prefix)",
+        "Path": "/",
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "s3:DeleteObject",
+                "s3:GetObject",
+                "s3:PutObject",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Fn::GetAtt": [
+                        "DocumentsBucket9EC9DEB9",
+                        "Arn",
+                      ],
+                    },
+                    "/tenants/*",
+                  ],
+                ],
+              },
+              "Sid": "DocumentObjects",
+            },
+            {
+              "Action": "s3:ListBucket",
+              "Condition": {
+                "StringLike": {
+                  "s3:prefix": [
+                    "tenants/*",
+                  ],
+                },
+              },
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "DocumentsBucket9EC9DEB9",
+                  "Arn",
+                ],
+              },
+              "Sid": "DocumentListing",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::IAM::ManagedPolicy",
+    },
+    "DocumentsBucket9EC9DEB9": {
+      "DeletionPolicy": "RetainExceptOnCreate",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256",
+              },
+            },
+          ],
+        },
+        "CorsConfiguration": {
+          "CorsRules": [
+            {
+              "AllowedHeaders": [
+                "content-type",
+                "content-md5",
+                "x-amz-*",
+              ],
+              "AllowedMethods": [
+                "PUT",
+              ],
+              "AllowedOrigins": [
+                "https://*.cloudfront.net",
+              ],
+              "ExposedHeaders": [
+                "ETag",
+              ],
+              "MaxAge": 3000,
+            },
+          ],
+        },
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "AbortIncompleteMultipartUpload": {
+                "DaysAfterInitiation": 1,
+              },
+              "Id": "abort-incomplete-uploads",
+              "Status": "Enabled",
+            },
+          ],
+        },
+        "LoggingConfiguration": {
+          "DestinationBucketName": {
+            "Ref": "AccessLogsBucket83982689",
+          },
+          "LogFilePrefix": "documents/",
+        },
+        "OwnershipControls": {
+          "Rules": [
+            {
+              "ObjectOwnership": "BucketOwnerEnforced",
+            },
+          ],
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true,
+        },
+      },
+      "Type": "AWS::S3::Bucket",
+      "UpdateReplacePolicy": "Retain",
+    },
+    "DocumentsBucketPolicy1F991BD4": {
+      "Properties": {
+        "Bucket": {
+          "Ref": "DocumentsBucket9EC9DEB9",
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "DocumentsBucket9EC9DEB9",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "DocumentsBucket9EC9DEB9",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "NumericLessThan": {
+                  "s3:TlsVersion": 1.2,
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "DocumentsBucket9EC9DEB9",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "DocumentsBucket9EC9DEB9",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::S3::BucketPolicy",
+    },
+    "FoundryAscentDataAuroraSecretF2DD39963fdaad7efa858a3daf9490cf0a702aeb": {
+      "DeletionPolicy": "RetainExceptOnCreate",
+      "DependsOn": [
+        "AuroraPostgresqlLogs721B0FD9",
+      ],
+      "Properties": {
+        "Description": {
+          "Fn::Join": [
+            "",
+            [
+              "Generated by the CDK for stack: ",
+              {
+                "Ref": "AWS::StackName",
+              },
+            ],
+          ],
+        },
+        "GenerateSecretString": {
+          "ExcludeCharacters": " %+~\`#$&*()|[]{}:;<>?!'/@"\\",
+          "GenerateStringKey": "password",
+          "PasswordLength": 30,
+          "SecretStringTemplate": "{"username":"foundry_admin"}",
+        },
+        "Name": "foundry-ascent/aurora-admin",
+      },
+      "Type": "AWS::SecretsManager::Secret",
+      "UpdateReplacePolicy": "Retain",
+    },
+    "JobsDeadLetterQueueE6E1CCE2": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "MessageRetentionPeriod": 1209600,
+        "QueueName": "FoundryAscent-Jobs-DLQ",
+        "SqsManagedSseEnabled": true,
+      },
+      "Type": "AWS::SQS::Queue",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "JobsDeadLetterQueuePolicyF818A924": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": {
+                "Fn::GetAtt": [
+                  "JobsDeadLetterQueueE6E1CCE2",
+                  "Arn",
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Queues": [
+          {
+            "Ref": "JobsDeadLetterQueueE6E1CCE2",
+          },
+        ],
+      },
+      "Type": "AWS::SQS::QueuePolicy",
+    },
+    "JobsQueue86ED6666": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "MessageRetentionPeriod": 345600,
+        "QueueName": "FoundryAscent-Jobs",
+        "RedrivePolicy": {
+          "deadLetterTargetArn": {
+            "Fn::GetAtt": [
+              "JobsDeadLetterQueueE6E1CCE2",
+              "Arn",
+            ],
+          },
+          "maxReceiveCount": 3,
+        },
+        "SqsManagedSseEnabled": true,
+        "VisibilityTimeout": 720,
+      },
+      "Type": "AWS::SQS::Queue",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "JobsQueuePolicy1731E6A2": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": {
+                "Fn::GetAtt": [
+                  "JobsQueue86ED6666",
+                  "Arn",
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Queues": [
+          {
+            "Ref": "JobsQueue86ED6666",
+          },
+        ],
+      },
+      "Type": "AWS::SQS::QueuePolicy",
+    },
+    "RestrictDefaultSgLogsDDF1DACF": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "RetentionInDays": 30,
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "Vpc8378EB38": {
+      "Properties": {
+        "CidrBlock": "10.40.0.0/16",
+        "EnableDnsHostnames": true,
+        "EnableDnsSupport": true,
+        "InstanceTenancy": "default",
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "FoundryAscent-Data/Vpc",
+          },
+        ],
+      },
+      "Type": "AWS::EC2::VPC",
+    },
+    "VpcRejectedTrafficFlowLogEB2F935E": {
+      "DependsOn": [
+        "AccessLogsBucketPolicy7F77476F",
+      ],
+      "Properties": {
+        "LogDestination": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Fn::GetAtt": [
+                  "AccessLogsBucket83982689",
+                  "Arn",
+                ],
+              },
+              "/vpc-flow-logs/",
+            ],
+          ],
+        },
+        "LogDestinationType": "s3",
+        "ResourceId": {
+          "Ref": "Vpc8378EB38",
+        },
+        "ResourceType": "VPC",
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "FoundryAscent-Data/Vpc/RejectedTrafficFlowLog",
+          },
+        ],
+        "TrafficType": "REJECT",
+      },
+      "Type": "AWS::EC2::FlowLog",
+    },
+    "VpcRestrictDefaultSecurityGroupCustomResourceC73DA2BE": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "Account": {
+          "Ref": "AWS::AccountId",
+        },
+        "DefaultSecurityGroupId": {
+          "Fn::GetAtt": [
+            "Vpc8378EB38",
+            "DefaultSecurityGroup",
+          ],
+        },
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "CustomVpcRestrictDefaultSGCustomResourceProviderHandlerDC833E5E",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "Custom::VpcRestrictDefaultSG",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "VpcisolatedSubnet1RouteTableAssociationD259E31A": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "VpcisolatedSubnet1RouteTableE442650B",
+        },
+        "SubnetId": {
+          "Ref": "VpcisolatedSubnet1SubnetE62B1B9B",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "VpcisolatedSubnet1RouteTableE442650B": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "FoundryAscent-Data/Vpc/isolatedSubnet1",
+          },
+        ],
+        "VpcId": {
+          "Ref": "Vpc8378EB38",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "VpcisolatedSubnet1SubnetE62B1B9B": {
+      "Properties": {
+        "AvailabilityZone": {
+          "Fn::Select": [
+            0,
+            {
+              "Fn::GetAZs": "",
+            },
+          ],
+        },
+        "CidrBlock": "10.40.0.0/24",
+        "MapPublicIpOnLaunch": false,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "isolated",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Isolated",
+          },
+          {
+            "Key": "Name",
+            "Value": "FoundryAscent-Data/Vpc/isolatedSubnet1",
+          },
+        ],
+        "VpcId": {
+          "Ref": "Vpc8378EB38",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "VpcisolatedSubnet2RouteTable334F9764": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "FoundryAscent-Data/Vpc/isolatedSubnet2",
+          },
+        ],
+        "VpcId": {
+          "Ref": "Vpc8378EB38",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "VpcisolatedSubnet2RouteTableAssociation25A4716F": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "VpcisolatedSubnet2RouteTable334F9764",
+        },
+        "SubnetId": {
+          "Ref": "VpcisolatedSubnet2Subnet39217055",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "VpcisolatedSubnet2Subnet39217055": {
+      "Properties": {
+        "AvailabilityZone": {
+          "Fn::Select": [
+            1,
+            {
+              "Fn::GetAZs": "",
+            },
+          ],
+        },
+        "CidrBlock": "10.40.1.0/24",
+        "MapPublicIpOnLaunch": false,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "isolated",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Isolated",
+          },
+          {
+            "Key": "Name",
+            "Value": "FoundryAscent-Data/Vpc/isolatedSubnet2",
+          },
+        ],
+        "VpcId": {
+          "Ref": "Vpc8378EB38",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+  },
+  "Rules": {
+    "CheckBootstrapVersion": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Contains": [
+                  [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5",
+                  ],
+                  {
+                    "Ref": "BootstrapVersion",
+                  },
+                ],
+              },
+            ],
+          },
+          "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI.",
+        },
+      ],
+    },
+  },
+}
+`;
+
+exports[`template snapshots > FoundryAscent-Foundation 1`] = `
+{
+  "Description": "Foundry Ascent: GitHub OIDC provider and deploy role",
+  "Outputs": {
+    "GitHubDeployRoleArn": {
+      "Description": "Role assumed by GitHub Actions (aws-actions/configure-aws-credentials role-to-assume)",
+      "Value": {
+        "Fn::GetAtt": [
+          "GitHubDeployRoleED73FD64",
+          "Arn",
+        ],
+      },
+    },
+    "GitHubOidcProviderArn": {
+      "Value": {
+        "Ref": "GitHubOidcProvider7EBF861F",
+      },
+    },
+  },
+  "Parameters": {
+    "BootstrapVersion": {
+      "Default": "/cdk-bootstrap/hnb659fds/version",
+      "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+  },
+  "Resources": {
+    "GitHubDeployPolicyB814826B": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "sts:AssumeRole",
+                "sts:TagSession",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:aws:iam::",
+                    {
+                      "Ref": "AWS::AccountId",
+                    },
+                    ":role/cdk-hnb659fds-*",
+                  ],
+                ],
+              },
+              "Sid": "AssumeCdkBootstrapRoles",
+            },
+            {
+              "Action": [
+                "cloudformation:DescribeChangeSet",
+                "cloudformation:DescribeStackEvents",
+                "cloudformation:DescribeStackResource",
+                "cloudformation:DescribeStackResources",
+                "cloudformation:DescribeStacks",
+                "cloudformation:GetTemplate",
+                "cloudformation:ListStackResources",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:cloudformation:us-east-1:",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":stack/CDKToolkit/*",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:cloudformation:us-east-1:",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":stack/FoundryAscent-*/*",
+                    ],
+                  ],
+                },
+              ],
+              "Sid": "ReadPlatformStacks",
+            },
+            {
+              "Action": "cloudformation:ListStacks",
+              "Effect": "Allow",
+              "Resource": "*",
+              "Sid": "ListStacks",
+            },
+            {
+              "Action": [
+                "logs:FilterLogEvents",
+                "logs:GetLogEvents",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:aws:logs:us-east-1:",
+                    {
+                      "Ref": "AWS::AccountId",
+                    },
+                    ":log-group:/aws/lambda/FoundryAscent*",
+                  ],
+                ],
+              },
+              "Sid": "ReadPlatformLambdaLogs",
+            },
+            {
+              "Action": "ce:GetCostAndUsage",
+              "Effect": "Allow",
+              "Resource": "*",
+              "Sid": "CostExplorerRead",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "GitHubDeployPolicyB814826B",
+        "Roles": [
+          {
+            "Ref": "GitHubDeployRoleED73FD64",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "GitHubDeployRoleED73FD64": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRoleWithWebIdentity",
+              "Condition": {
+                "StringEquals": {
+                  "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+                },
+                "StringLike": {
+                  "token.actions.githubusercontent.com:sub": [
+                    "repo:satvikOS/Foundry-Ascent:ref:refs/heads/main",
+                    "repo:satvikOS/Foundry-Ascent:environment:production",
+                  ],
+                },
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "Federated": {
+                  "Ref": "GitHubOidcProvider7EBF861F",
+                },
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Description": "GitHub Actions deploys for satvikOS/Foundry-Ascent (OIDC; main branch and production environment only)",
+        "MaxSessionDuration": 3600,
+        "PermissionsBoundary": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:aws:iam::",
+              {
+                "Ref": "AWS::AccountId",
+              },
+              ":policy/FoundryAscent-Boundary",
+            ],
+          ],
+        },
+        "RoleName": "FoundryAscent-GitHubDeploy",
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "GitHubOidcProvider7EBF861F": {
+      "Properties": {
+        "ClientIdList": [
+          "sts.amazonaws.com",
+        ],
+        "Url": "https://token.actions.githubusercontent.com",
+      },
+      "Type": "AWS::IAM::OIDCProvider",
+    },
+  },
+  "Rules": {
+    "CheckBootstrapVersion": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Contains": [
+                  [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5",
+                  ],
+                  {
+                    "Ref": "BootstrapVersion",
+                  },
+                ],
+              },
+            ],
+          },
+          "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI.",
+        },
+      ],
+    },
+  },
+}
+`;
