@@ -60,7 +60,8 @@ GITHUB_OIDC_HOST = "token.actions.githubusercontent.com"
 S3_DIRECT_DELETE_LIMIT = 20_000
 READ_ONLY_PREFIXES = ("list_", "describe_", "get_", "head_")
 NOT_ENABLED = {"UnrecognizedClientException", "InvalidClientTokenId", "AuthFailure", "OptInRequired"}
-ACCOUNT_ID_RE = re.compile(r"(?<!\d)\d{12}(?!\d)")
+# Any run of 6+ digits: full account ids and fragments left by truncated AWS messages.
+ACCOUNT_ID_RE = re.compile(r"\d{6,}")
 
 # Second line of defence, applied by Mutator.call() to the resource label and to every top-level string
 # (or list of strings) parameter of a mutating call, whatever step issued it.
@@ -255,7 +256,7 @@ class Cleaner:
                     cfn.get_waiter("stack_delete_complete").wait(
                         StackName=name, WaiterConfig={"Delay": 15, "MaxAttempts": remaining // 15})
                 except WaiterError as exc:
-                    self.report.add("cloudformation", region, name, "wait_delete", "failed", str(exc)[:120])
+                    self.report.add("cloudformation", region, name, "wait_delete", "failed", redact(exc)[:120])
 
     def kms(self, region: str) -> None:
         kms = self.client("kms", region)
@@ -765,12 +766,12 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 getattr(cleaner, step)(region)
             except Exception as exc:  # noqa: BLE001 - one failure must never abort the run
-                cleaner.report.add(step, region, "*", "step", "failed", f"{type(exc).__name__}: {str(exc)[:120]}")
+                cleaner.report.add(step, region, "*", "step", "failed", f"{type(exc).__name__}: {redact(exc)[:120]}")
     for step in ("cloudfront", "route53", "s3", "iam"):
         try:
             getattr(cleaner, step)()
         except Exception as exc:  # noqa: BLE001
-            cleaner.report.add(step, "global", "*", "step", "failed", f"{type(exc).__name__}: {str(exc)[:120]}")
+            cleaner.report.add(step, "global", "*", "step", "failed", f"{type(exc).__name__}: {redact(exc)[:120]}")
 
     counts: dict[str, int] = {}
     for o in cleaner.report.outcomes:

@@ -52,7 +52,8 @@ ACTION_RE = re.compile(r"^[a-z0-9-]+:[A-Za-z0-9*]+$")
 POLICY_NAME_RE = re.compile(r"[\w+=,.@-]{1,128}", re.ASCII)
 USER_ARN_RE = re.compile(r"arn:aws[\w-]*:iam::\d{12}:user/(?:[^:]*/)?([\w+=,.@-]+)", re.ASCII)
 PLACEHOLDERS = {"account", "region"}
-ACCOUNT_ID_RE = re.compile(r"(?<!\d)\d{12}(?!\d)")
+# Any run of 6+ digits: full account ids and fragments left by truncated AWS messages.
+ACCOUNT_ID_RE = re.compile(r"\d{6,}")
 
 CFG = Config(retries={"max_attempts": 6, "mode": "adaptive"}, connect_timeout=10, read_timeout=60)
 IN_GITHUB = os.environ.get("GITHUB_ACTIONS") == "true"
@@ -81,7 +82,7 @@ def describe_error(exc: BaseException) -> str:
         err = exc.response.get("Error", {})
         code = err.get("Code") or "ClientError"
         message = " ".join(str(err.get("Message") or "").split())
-        return redact(f"{code}: {message[:180]}" if message else code)
+        return redact(f"{code}: {redact(message)[:180]}" if message else code)
     if isinstance(exc, urllib.error.URLError):
         return redact(f"{type(exc).__name__}: {exc.reason}")[:200]
     return type(exc).__name__  # BotoCoreError text can embed endpoints and paths; the class name is enough
@@ -366,7 +367,7 @@ def _http_reason(status: int, data: dict[str, Any], headers: Any) -> str:
     header_type = str(headers.get("x-amzn-ErrorType") or "").split(":")[0] if headers is not None else ""
     code = str(err.get("code") or err.get("type") or data.get("__type") or header_type or "").strip()
     message = " ".join(str(err.get("message") or err.get("Message") or "").split())
-    return redact(f"HTTP {status} {code}".rstrip() + (f": {message[:160]}" if message else ""))
+    return redact(f"HTTP {status} {code}".rstrip() + (f": {redact(message)[:160]}" if message else ""))
 
 
 def mantle_call(creds: Any, region: str, method: str, path: str, payload: dict[str, Any] | None = None) -> tuple[int, dict[str, Any], str]:
