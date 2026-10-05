@@ -8,6 +8,7 @@ import { createAdminService, type AdminService } from './services/admin.js';
 import { createDocumentsService, type DocumentsService } from './services/documents.js';
 import { createEirStudioService, type EirStudioService } from './services/eir-studio.js';
 import { createEscalationsService, type EscalationsService } from './services/escalations.js';
+import { createMaintenanceService, type MaintenanceService } from './services/maintenance.js';
 import { createMeService, type MeService } from './services/me.js';
 import { createMemoryService, type MemoryService } from './services/memory.js';
 import { createProgramService, type ProgramService } from './services/program.js';
@@ -30,6 +31,7 @@ export interface Core {
   readonly eir: EirStudioService;
   readonly program: ProgramService;
   readonly admin: AdminService;
+  readonly maintenance: MaintenanceService;
 }
 
 export function createCore(deps: CoreDeps): Core {
@@ -53,5 +55,6 @@ export function createCore(deps: CoreDeps): Core {
     eir: createEirStudioService(kit),
     program: createProgramService(kit, directory),
     admin: createAdminService(kit, onPrincipalChanged),
+    maintenance: createMaintenanceService(kit),
   };
 }

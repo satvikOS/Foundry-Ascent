@@ -13,7 +13,15 @@ import { type z } from 'zod';
 import { col, type RawRow } from '../columns.js';
 import { type SqlExecutor } from '../executor.js';
 import { p } from '../params.js';
-import { clampLimit, excerptSql, queryFirst, queryNumber, queryOne, queryRows } from './common.js';
+import {
+  clampLimit,
+  excerptSql,
+  fetchByIdsInBatches,
+  queryFirst,
+  queryNumber,
+  queryOne,
+  queryRows,
+} from './common.js';
 import { escalationIdsByTurn } from './escalations.js';
 
 type CoachModeValue = z.infer<typeof CoachMode>;
@@ -91,14 +99,38 @@ export function getTurn(ex: SqlExecutor, id: string): Promise<TurnRecord | null>
   return queryFirst(ex, `SELECT ${COLUMNS} FROM turns t WHERE t.id = :id`, { id: p.uuid(id) }, decodeTurn);
 }
 
-/** All turns of a session in order. */
-export function listTurns(ex: SqlExecutor, sessionId: string): Promise<TurnRecord[]> {
-  return queryRows(
-    ex,
-    `SELECT ${COLUMNS} FROM turns t WHERE t.session_id = :sessionId ORDER BY t.ordinal`,
-    { sessionId: p.uuid(sessionId) },
-    decodeTurn,
+/**
+ * Full turn rows per statement. A turn can hold 8 000 characters of founder text plus a validated response
+ * (answer, claims, actions, candidates; tens of kB at most), so five per statement keeps every result far
+ * below the RDS Data API's 1 MB limit however long the session.
+ */
+export const TURN_BATCH_SIZE = 5;
+
+/** Turns by id, in the order of `ids` (ids the caller cannot see are skipped). Batched (Data API 1 MB). */
+export function getTurnsByIds(ex: SqlExecutor, ids: readonly string[]): Promise<TurnRecord[]> {
+  return fetchByIdsInBatches(
+    ids,
+    TURN_BATCH_SIZE,
+    (batch) =>
+      queryRows(
+        ex,
+        `SELECT ${COLUMNS} FROM turns t WHERE t.id = ANY (:ids)`,
+        { ids: p.uuidArray(batch) },
+        decodeTurn,
+      ),
+    (turn) => turn.id,
   );
+}
+
+/** All turns of a session in order (ids first, then the rows in batches). */
+export async function listTurns(ex: SqlExecutor, sessionId: string): Promise<TurnRecord[]> {
+  const ids = await queryRows(
+    ex,
+    'SELECT t.id FROM turns t WHERE t.session_id = :sessionId ORDER BY t.ordinal',
+    { sessionId: p.uuid(sessionId) },
+    (r) => col.uuid.decode(r.id, 'id'),
+  );
+  return getTurnsByIds(ex, ids);
 }
 
 /** The last `limit` completed turns of a session, oldest first (conversation context; default 8). */
@@ -106,9 +138,9 @@ export async function listRecentTurns(
   ex: SqlExecutor,
   args: { sessionId: string; limit?: number; beforeOrdinal?: number },
 ): Promise<TurnRecord[]> {
-  const rows = await queryRows(
+  const ids = await queryRows(
     ex,
-    `SELECT ${COLUMNS} FROM turns t
+    `SELECT t.id FROM turns t
      WHERE t.session_id = :sessionId AND t.status = 'completed' AND (:before IS NULL OR t.ordinal < :before)
      ORDER BY t.ordinal DESC LIMIT :limit`,
     {
@@ -116,9 +148,9 @@ export async function listRecentTurns(
       before: p.nullable.int(args.beforeOrdinal),
       limit: p.int(clampLimit(args.limit, 8, 50)),
     },
-    decodeTurn,
+    (r) => col.uuid.decode(r.id, 'id'),
   );
-  return rows.reverse();
+  return (await getTurnsByIds(ex, ids)).reverse();
 }
 
 /** Number of turns in a session (max_turns_per_session). */
@@ -126,6 +158,56 @@ export function countSessionTurns(ex: SqlExecutor, sessionId: string): Promise<n
   return queryNumber(ex, 'SELECT count(*) AS n FROM turns WHERE session_id = :sessionId', {
     sessionId: p.uuid(sessionId),
   });
+}
+
+/** Advisory-lock namespace of the per-principal turn admission (two-key form; see auth/migrate keys). */
+export const TURN_ADMISSION_LOCK_NAMESPACE = 7_012_030;
+
+/**
+ * Serialises turn admission for one principal until the end of the caller's transaction: the rate-limit
+ * count, the in-flight count, the spend-cap check and the insert of the pending turn then run as one unit,
+ * so parallel requests cannot all pass the checks before any of them is recorded. The lock call is wrapped
+ * so the result column is an integer, never `void` (which the RDS Data API need not serialise). Must run
+ * inside a transaction (`db.withContext`).
+ */
+export async function lockTurnAdmission(ex: SqlExecutor, principalId: string): Promise<void> {
+  await ex.query(
+    'SELECT count(*) AS n FROM (SELECT pg_advisory_xact_lock(:namespace, hashtext(:principal))) AS l',
+    { namespace: p.int(TURN_ADMISSION_LOCK_NAMESPACE), principal: p.text(principalId.toLowerCase()) },
+  );
+}
+
+/**
+ * Daily AI spend against the caps the caller read from platform_settings (`app.spend_cap_state`): which
+ * cap is reached, or null. Runs under RLS without access to the ledger itself (no amounts are returned).
+ */
+export async function spendCapState(
+  ex: SqlExecutor,
+  caps: { globalUsd: number; principalUsd: number },
+): Promise<'global' | 'principal' | null> {
+  const row = await queryFirst(
+    ex,
+    'SELECT app.spend_cap_state(:globalCap, :principalCap) AS state',
+    { globalCap: p.num(caps.globalUsd), principalCap: p.num(caps.principalUsd) },
+    (r) => col.enum(['global', 'principal'] as const).nullable.decode(r.state, 'state'),
+  );
+  return row ?? null;
+}
+
+/**
+ * Turns of a principal still being answered (`pending`) that were created in the last `withinSeconds`
+ * (older pending turns belong to a request that died and do not count).
+ */
+export function countPendingTurnsByAuthor(
+  ex: SqlExecutor,
+  args: { authorId: string; withinSeconds: number },
+): Promise<number> {
+  return queryNumber(
+    ex,
+    `SELECT count(*) AS n FROM turns
+     WHERE author_id = :authorId AND status = 'pending' AND created_at > now() - make_interval(secs => :within)`,
+    { authorId: p.uuid(args.authorId), within: p.num(args.withinSeconds) },
+  );
 }
 
 /** Turns authored by a principal in the last `windowSeconds` (per-principal rate limit). */
@@ -310,7 +392,19 @@ export async function listTurnEvidence(
   turnIds: readonly string[],
 ): Promise<Map<string, EvidenceItemValue[]>> {
   const out = new Map<string, EvidenceItemValue[]>();
-  if (turnIds.length === 0) return out;
+  // Up to ~24 items per turn with a 600-character excerpt each: a few turns per statement (Data API 1 MB).
+  for (let i = 0; i < turnIds.length; i += TURN_BATCH_SIZE) {
+    await readTurnEvidence(ex, turnIds.slice(i, i + TURN_BATCH_SIZE), out);
+  }
+  return out;
+}
+
+async function readTurnEvidence(
+  ex: SqlExecutor,
+  turnIds: readonly string[],
+  out: Map<string, EvidenceItemValue[]>,
+): Promise<void> {
+  if (turnIds.length === 0) return;
   const rows = await queryRows(
     ex,
     `SELECT te.turn_id, te.evidence_key, te.kind, te.ref_id, te.score, te.title,
@@ -346,7 +440,6 @@ export async function listTurnEvidence(
     list.push(item);
     out.set(turnId, list);
   }
-  return out;
 }
 
 /**
@@ -485,9 +578,10 @@ export async function listReviewQueue(
   ex: SqlExecutor,
   args: { reviewerId: string; limit?: number },
 ): Promise<ReviewQueueRow[]> {
-  return queryRows(
+  // Ids and metadata first, then the full turns in batches (Data API 1 MB).
+  const entries = await queryRows(
     ex,
-    `SELECT ${COLUMNS}, v.name AS venture_name,
+    `SELECT t.id, v.id AS venture_id, v.name AS venture_name,
             EXISTS (SELECT 1 FROM eir_reviews er WHERE er.turn_id = t.id AND er.reviewer_id = :reviewerId) AS reviewed
      FROM turns t
      JOIN ventures v ON v.id = t.venture_id
@@ -499,12 +593,24 @@ export async function listReviewQueue(
      LIMIT :limit`,
     { reviewerId: p.uuid(args.reviewerId), limit: p.int(clampLimit(args.limit, 50, 200)) },
     (r) => ({
-      turn: decodeTurn(r),
+      id: col.uuid.decode(r.id, 'id'),
       ventureId: col.uuid.decode(r.venture_id, 'venture_id'),
       ventureName: col.text.decode(r.venture_name, 'venture_name'),
       reviewed: col.bool.decode(r.reviewed, 'reviewed'),
     }),
   );
+  const turns = new Map(
+    (
+      await getTurnsByIds(
+        ex,
+        entries.map((e) => e.id),
+      )
+    ).map((t) => [t.id, t] as const),
+  );
+  return entries.flatMap((e) => {
+    const turn = turns.get(e.id);
+    return turn ? [{ turn, ventureId: e.ventureId, ventureName: e.ventureName, reviewed: e.reviewed }] : [];
+  });
 }
 
 export interface EirReviewInput {

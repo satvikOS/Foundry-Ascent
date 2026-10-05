@@ -10,7 +10,7 @@ import {
 
 import { truncate } from '../prompts/escape.js';
 import { DEFAULT_PERSONA_NAME } from '../prompts/version.js';
-import { normalizeForMatching, personNameRegExp, phraseRegExp } from '../risk/normalize.js';
+import { normalizeForMatching, personNameRegExp, ventureNameRegExp } from '../risk/normalize.js';
 import {
   RISK_ESCALATION_MAP,
   morePressing,
@@ -562,7 +562,8 @@ export function responseStrings(r: CoachResponse): string[] {
 }
 
 /**
- * Whether any other venture's name (whole phrase, case/whitespace-insensitive), canary (substring,
+ * Whether any other venture's distinctive name (whole phrase, case/whitespace-insensitive; names that are
+ * common words are skipped, see `ventureNameProblem`), canary (substring,
  * case-insensitive, also with whitespace removed) or member's display name (whole phrase, names of two
  * or more words only) appears anywhere in the response.
  */
@@ -581,7 +582,7 @@ export function containsOtherVenture(
   const text = responseStrings(response).map(normalizeForMatching).join('\n');
   const compact = text.replace(/[\s\u200B-\u200D]+/g, '');
   for (const name of otherVentureNames) {
-    const pattern = phraseRegExp(name);
+    const pattern = ventureNameRegExp(name);
     if (pattern?.test(text)) return true;
   }
   for (const name of otherVentureMemberNames) {

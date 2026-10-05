@@ -15,6 +15,25 @@ export interface RetrievalArgs {
   readonly embedding: readonly number[] | null;
   readonly dataClassCeiling: 'public' | 'program_internal' | 'venture_private';
   readonly budgets: CoreConfig['retrieval'];
+  /**
+   * The principal whose own founder_private items may be retrieved: only for a session that RLS restricts
+   * to that principal (see {@link privateRetrievalOwner}); null excludes founder_private items entirely.
+   */
+  readonly privateOwnerId: string | null;
+}
+
+/**
+ * Whose founder_private memory a coaching session may retrieve. A private item may only shape output its
+ * author alone can read. Session turns, evidence, recaps and escalation drafts are readable by the whole
+ * founder/team (RLS `sessions_read`/`turns_read`), and sampled turns by the assigned EIR; no session
+ * privacy mode restricts them to their author (`ephemeral` sessions are team-readable too), so the answer
+ * is always null: coaching retrieval never uses founder_private items.
+ */
+export function privateRetrievalOwner(
+  _session: { readonly privacy: 'standard' | 'ephemeral'; readonly startedBy: string },
+  _principalId: string,
+): string | null {
+  return null;
 }
 
 /**
@@ -31,6 +50,7 @@ export async function retrieveEvidence(tx: AppExecutor, args: RetrievalArgs): Pr
           ventureId: args.ventureId,
           embedding: args.embedding,
           limit: args.budgets.memory,
+          privateOwnerId: args.privateOwnerId,
         })
       : [];
   const chunks =
@@ -61,5 +81,7 @@ export async function retrieveEvidence(tx: AppExecutor, args: RetrievalArgs): Pr
     args.budgets.patterns > 0
       ? await retrievalRepo.searchPatterns(tx, { ...base, limit: args.budgets.patterns })
       : [];
-  return buildEvidencePack({ memory, chunks, shared, resources, patterns }, args.ventureId);
+  return buildEvidencePack({ memory, chunks, shared, resources, patterns }, args.ventureId, {
+    allowPrivateMemory: args.privateOwnerId !== null,
+  });
 }

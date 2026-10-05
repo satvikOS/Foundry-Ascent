@@ -5,6 +5,7 @@ import { History } from 'lucide-react';
 import { InspectorSection } from '@/components/ui/inspector-panel';
 import { Markdown } from '@/components/ui/markdown';
 import { StatusBadge, getStatusDefinition } from '@/components/ui/status-badge';
+import { displayContent, useFullMemory } from '@/lib/api/hooks/memory';
 import { formatDateTime, formatRelative, isoString } from '@/lib/format';
 
 import { MemoryActionBar } from './memory-action-bar';
@@ -46,7 +47,10 @@ interface MemoryDetailProps {
  * Full detail for one memory object: content, typed attributes, provenance, confidence, visibility,
  * lifecycle actions and the version history. Rendered inside the page's inspector.
  */
-export function MemoryDetail({ memory, tenant, ventureId, canEdit, onRemoved }: MemoryDetailProps) {
+export function MemoryDetail({ memory: listed, tenant, ventureId, canEdit, onRemoved }: MemoryDetailProps) {
+  // Lists carry an excerpt of the content; the detail shows the full text (GET /memory/:id).
+  const { memory: full } = useFullMemory(listed);
+  const memory = full ?? listed;
   const statusDef = getStatusDefinition('memory', memory.status);
   return (
     <div>
@@ -60,7 +64,7 @@ export function MemoryDetail({ memory, tenant, ventureId, canEdit, onRemoved }: 
           {memory.title}
         </h3>
         <Markdown size="sm" className="mt-1.5">
-          {memory.content}
+          {displayContent(memory)}
         </Markdown>
         <p className="mt-2 text-xs text-muted-foreground">{statusDef.description}</p>
         {canEdit ? (

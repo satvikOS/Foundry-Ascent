@@ -23,7 +23,7 @@ import { useCreateProgramVenture } from '@/lib/api/hooks/program';
 import { DOMAIN_LABELS, STAGE_LABELS, STAGE_ORDER } from '@/lib/labels';
 
 const VentureForm = z.object({
-  name: z.string().trim().min(1, 'Enter the venture’s name.').max(120, 'Use 120 characters or fewer.'),
+  name: z.string().trim().min(3, 'Use at least 3 characters.').max(80, 'Use 80 characters or fewer.'),
   oneLiner: z.string().trim().max(280, 'Keep the one-liner to 280 characters.'),
   stage: VentureStage,
   domain: VentureDomain,
@@ -123,7 +123,12 @@ export function CreateVentureDialog({ open, onOpenChange, onInvite }: CreateVent
               </DialogDescription>
             </DialogHeader>
             <form noValidate onSubmit={(event) => void onSubmit(event)} className="grid gap-4">
-              <Field label="Venture name" required error={formState.errors.name?.message}>
+              <Field
+                label="Venture name"
+                required
+                description="A distinctive name, unique in the program (not a common word such as “Pilot”)."
+                error={formState.errors.name?.message}
+              >
                 <Input autoComplete="off" {...register('name')} />
               </Field>
               <Field

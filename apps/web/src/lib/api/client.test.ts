@@ -6,6 +6,7 @@ import {
   apiRequestOrEmpty,
   apiSend,
   buildUrl,
+  encodeQueryComponent,
   path,
   prepareRequest,
   resumeDelay,
@@ -143,6 +144,18 @@ describe('prepareRequest / headers', () => {
         empty: '',
       }),
     ).toBe('/api/v1/ventures/x/memory?type=fact&q=caf%C3%A9&pinned=false');
+  });
+
+  it('encodes query strings the way SigV4 canonicalises them (space is %20, never +)', () => {
+    expect(buildUrl('/admin/audit', { action: 'turn blocked', q: 'a+b c' })).toBe(
+      '/api/v1/admin/audit?action=turn%20blocked&q=a%2Bb%20c',
+    );
+    expect(buildUrl('/x', { q: "it's (really) fine!*~-_." })).toBe(
+      '/api/v1/x?q=it%27s%20%28really%29%20fine%21%2A~-_.',
+    );
+    expect(buildUrl('/x', { 'a b': ['1', '2'] })).toBe('/api/v1/x?a%20b=1&a%20b=2');
+    expect(buildUrl('/x', { q: '' })).toBe('/api/v1/x');
+    expect(encodeQueryComponent('ü / é')).toBe('%C3%BC%20%2F%20%C3%A9');
   });
 });
 

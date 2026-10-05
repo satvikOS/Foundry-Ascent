@@ -6,6 +6,8 @@ import {
   EscalationQueueResponse,
   PortfolioSummary,
   ProgramVentureListResponse,
+  RenameVentureRequest,
+  RenameVentureResponse,
   ResourceListResponse,
   RouteEscalationRequest,
   RouteEscalationResponse,
@@ -56,6 +58,31 @@ export function useCreateProgramVenture() {
       api.post('/program/ventures', CreateProgramVentureResponse, encodeBody(CreateVentureRequest, input), {
         idempotencyKey: createIdempotencyKey(),
       }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: queryKeys.program.all() });
+      void client.invalidateQueries({ queryKey: queryKeys.ventures.list() });
+    },
+  });
+}
+
+export type RenameVentureInput = z.input<typeof RenameVentureRequest>;
+
+/**
+ * PATCH /program/ventures/:id — program staff rename any venture of the tenant (e.g. to undo a
+ * misleading rename by its team) → 200 `ProgramVentureRow`.
+ */
+export function useRenameProgramVenture() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ventureId, input }: { ventureId: string; input: RenameVentureInput }) =>
+      api.patch(
+        path`/program/ventures/${ventureId}`,
+        RenameVentureResponse,
+        encodeBody(RenameVentureRequest, input),
+        {
+          idempotencyKey: createIdempotencyKey(),
+        },
+      ),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: queryKeys.program.all() });
       void client.invalidateQueries({ queryKey: queryKeys.ventures.list() });

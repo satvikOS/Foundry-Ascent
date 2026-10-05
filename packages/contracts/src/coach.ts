@@ -78,7 +78,13 @@ export const CoachResponse = z.object({
 });
 export type CoachResponse = z.infer<typeof CoachResponse>;
 
-/** Deterministic validator outcomes attached to every turn (blueprint 03 §5 guards). */
+/**
+ * Deterministic validator outcomes attached to every turn (blueprint 03 §5 guards). In founder/team views
+ * (session detail, turn events) `riskCategories` is always empty, `crossVentureViolation` false and the
+ * notes carry no category or cross-venture codes: which names the cross-venture guard knows would reveal
+ * other ventures and their members. The full values stay server-side (audit) and in staff views (EIR
+ * calibration review).
+ */
 export const ValidatorResults = z.object({
   unknownEvidenceIdsRemoved: z.number().int(),
   factsDowngraded: z.number().int(),
@@ -103,9 +109,13 @@ export const TurnUsage = z.object({
 
 /**
  * Known `reason` values of a blocked turn (`turn.blocked` events and `TurnView.blocked`). The field stays a
- * string on the wire so a new reason never breaks an older client.
+ * string on the wire so a new reason never breaks an older client. Founders and teams see `policy` where
+ * the server recorded `cross_venture` (a privacy or safety check held the answer back); the specific
+ * reason is only in staff views and the audit log.
  */
-export const TURN_BLOCK_REASONS = ['crisis_support', 'cross_venture', 'identity', 'invalid_schema'] as const;
+export const TURN_BLOCK_REASONS = ['crisis_support', 'policy', 'identity', 'invalid_schema'] as const;
+/** Staff-only block reason (the founder/team-facing reason is `policy`). */
+export const STAFF_ONLY_BLOCK_REASONS = ['cross_venture'] as const;
 
 /**
  * Why a turn was blocked and what the founder is offered instead: the same fields as the `turn.blocked`

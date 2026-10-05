@@ -32,8 +32,8 @@ export interface EscalationsService {
     input: z.input<typeof CreateEscalationRequest>,
   ): Promise<EscalationView>;
   /**
-   * Founder/team: `approve_sharing` (consent + confirmed memory facts, only from `draft` /
-   * `awaiting_consent`; the escalation becomes `routed` to the venture's assigned EIR when the packet asks
+   * Founder/team: `approve_sharing` (only the escalation's creator, i.e. its subject; consent + confirmed,
+   * non-private memory facts, only from `draft` / `awaiting_consent`; the escalation becomes `routed` to the venture's assigned EIR when the packet asks
    * for an EIR and one is active, otherwise `awaiting_assignment` in the program team's routing queue; the
    * due date follows the priority), `edit` (before consent), `withdraw` (any open state).
    * Assignee (after consent only): `acknowledge`, `resolve`, `decline`.
@@ -194,6 +194,23 @@ export function createEscalationsService(kit: Kit): EscalationsService {
             objectId: escalationId,
           });
           if (action.action === 'approve_sharing') {
+            // Consent to share is the subject's decision: the person who created the escalation (the
+            // founder whose turn drafted it, or who asked for help). Teammates cannot consent for them,
+            // which matters most for crisis and wellbeing escalations. The database enforces it too.
+            if (current.createdBy.id !== ctx.principalId) {
+              scope.deferAudit({
+                action: 'escalation.access',
+                outcome: 'denied',
+                ventureId: current.ventureId,
+                objectType: 'escalation',
+                objectId: escalationId,
+                policyReason: 'approve_sharing:not_subject',
+              });
+              throw fail.forbidden(
+                'not_subject',
+                'Only the person this request is about can agree to share it.',
+              );
+            }
             if (current.status !== 'draft' && current.status !== 'awaiting_consent') {
               throw fail.conflict('Sharing was already decided for this escalation', 'invalid_transition');
             }
@@ -202,15 +219,20 @@ export function createEscalationsService(kit: Kit): EscalationsService {
             const ids = [...new Set(action.sharedMemoryIds.map((id) => id.toLowerCase()))];
             const memory = await memoryRepo.getMemoryByIds(tx, ids);
             const byId = new Map(memory.map((m) => [m.id, m]));
+            // Packets are read by the whole venture team and the assignee: founder_private items never go in.
             const invalid = ids.filter((id) => {
               const m = byId.get(id);
-              return m?.ventureId !== current.ventureId || m.status !== 'confirmed';
+              return (
+                m?.ventureId !== current.ventureId ||
+                m.status !== 'confirmed' ||
+                m.visibility === 'founder_private'
+              );
             });
             if (invalid.length > 0) {
-              throw fail.validation('Only confirmed memory of this venture can be shared', [
+              throw fail.validation('Only confirmed, shared memory of this venture can be shared', [
                 {
                   path: 'sharedMemoryIds',
-                  message: `${invalid.length} item(s) are not confirmed memory of this venture`,
+                  message: `${invalid.length} item(s) are not confirmed memory of this venture visible to its team`,
                 },
               ]);
             }

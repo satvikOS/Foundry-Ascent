@@ -34,6 +34,7 @@ import { useCreateVentureMemory } from '@/features/memory/api';
 import { MemoryActionBar } from '@/features/memory/memory-action-bar';
 import { ConfidenceMeter, MemoryTypeLabel } from '@/features/memory/memory-meta';
 import { formatIsoDate } from '@/features/memory/typed/attributes';
+import { displayContent } from '@/lib/api/hooks/memory';
 
 import { EvidenceChip } from './response/evidence-chip';
 import { useCoachWorkspace } from './workspace';
@@ -353,7 +354,7 @@ export function SessionRecapView({
                         <ConfidenceMeter value={memory.confidence} />
                       </div>
                       <p className="mt-1 text-sm font-medium">{memory.title}</p>
-                      <p className="text-[13px] text-muted-foreground">{memory.content}</p>
+                      <p className="text-[13px] text-muted-foreground">{displayContent(memory)}</p>
                     </div>
                     {canEdit ? (
                       <MemoryActionBar ventureId={ventureId} memory={memory} size="sm" className="shrink-0" />

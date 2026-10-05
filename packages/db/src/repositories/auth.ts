@@ -132,6 +132,42 @@ export function getAccessCode(sx: SystemExecutor, id: string): Promise<AccessCod
   );
 }
 
+/** Whether the principal has ever held an access code (issuing another one is a re-issue). */
+export async function principalHasAccessCode(sx: SystemExecutor, principalId: string): Promise<boolean> {
+  return (
+    (await queryNumber(sx, 'SELECT count(*) AS n FROM access_codes WHERE principal_id = :principalId', {
+      principalId: p.uuid(principalId),
+    })) > 0
+  );
+}
+
+/**
+ * When codes were re-issued for the principal by someone else (an earlier code existed and `created_by` is
+ * another principal) after the principal's previous sign-in, i.e. the latest auth session created before
+ * `currentSessionId`. Newest first, at most 5. Feeds the "a new access code was issued" notice.
+ */
+export function reissuedCodesSincePreviousSignIn(
+  sx: SystemExecutor,
+  args: { principalId: string; currentSessionId: string },
+): Promise<string[]> {
+  return queryRows(
+    sx,
+    `WITH previous AS (
+       SELECT max(s.created_at) AS at FROM auth_sessions s
+       WHERE s.principal_id = :principalId AND s.id <> :sessionId
+         AND s.created_at <= (SELECT cs.created_at FROM auth_sessions cs WHERE cs.id = :sessionId))
+     SELECT c.created_at FROM access_codes c, previous
+     WHERE c.principal_id = :principalId
+       AND c.created_by IS NOT NULL AND c.created_by <> :principalId
+       AND (previous.at IS NULL OR c.created_at > previous.at)
+       AND EXISTS (SELECT 1 FROM access_codes e WHERE e.principal_id = c.principal_id AND e.created_at < c.created_at)
+     ORDER BY c.created_at DESC
+     LIMIT 5`,
+    { principalId: p.uuid(args.principalId), sessionId: p.uuid(args.currentSessionId) },
+    (r) => col.ts.decode(r.created_at, 'created_at'),
+  );
+}
+
 /** Active (not revoked, not expired) codes of the given principals, newest first. */
 export function listActiveAccessCodes(
   sx: SystemExecutor,
@@ -160,6 +196,7 @@ const authSessionShape = {
   expires_at: col.ts,
   revoked_at: col.ts.nullable,
   principal_status: col.enum(['active', 'disabled'] as const),
+  tenant_status: col.enum(['active', 'suspended', 'archived'] as const),
   access_code_revoked_at: col.ts.nullable,
 };
 const authSessionCodec = camelRow(authSessionShape);
@@ -197,14 +234,18 @@ export async function createAuthSession(
   return session;
 }
 
-/** The session with its principal status and the issuing code's revocation (for the 60 s revocation cache). */
+/**
+ * The session with its principal's and tenant's status and the issuing code's revocation (for the 60 s
+ * revocation cache: a disabled principal, a suspended tenant or a revoked code ends the session).
+ */
 export function getAuthSession(sx: SystemExecutor, id: string): Promise<AuthSessionRecord | null> {
   return queryFirst(
     sx,
     `SELECT s.id, s.principal_id, pr.tenant_id, s.access_code_id, s.created_at, s.expires_at, s.revoked_at,
-            pr.status AS principal_status, c.revoked_at AS access_code_revoked_at
+            pr.status AS principal_status, t.status AS tenant_status, c.revoked_at AS access_code_revoked_at
      FROM auth_sessions s
      JOIN principals pr ON pr.id = s.principal_id
+     JOIN tenants t ON t.id = pr.tenant_id
      LEFT JOIN access_codes c ON c.id = s.access_code_id
      WHERE s.id = :id`,
     { id: p.uuid(id) },

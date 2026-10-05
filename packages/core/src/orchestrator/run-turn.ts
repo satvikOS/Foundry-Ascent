@@ -34,15 +34,15 @@ import {
 import { type RequestContext } from '../context.js';
 import { DomainError, fail, isDomainError, parseInput, toDomainError } from '../errors.js';
 import { type DirectoryCache, type OtherVentures } from '../internal/directory.js';
-import { audit, requireId, type Kit } from '../internal/kit.js';
+import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
 import { createDraftEscalation } from '../services/escalations.js';
 import { persistMemoryCandidates } from '../services/memory.js';
-import { blockedDetailOf, supportMessageFor } from './blocked.js';
+import { blockedDetailOf, participantRiskLabel, participantTurnView, supportMessageFor } from './blocked.js';
 import { assembleContext } from './context-budget.js';
-import { type KeyedEvidence } from './evidence.js';
+import { candidateVisibility, type KeyedEvidence } from './evidence.js';
 import { assertWithinSpendCaps } from './guards.js';
-import { retrieveEvidence } from './retrieval.js';
-import { shouldSampleForReview } from './sampling.js';
+import { privateRetrievalOwner, retrieveEvidence } from './retrieval.js';
+import { secondsUntilUtcMidnight, shouldSampleForReview } from './sampling.js';
 
 /**
  * POST /sessions/:id/turns body. `expectedOrdinal` (the client's retry key) is part of the contract: when
@@ -313,12 +313,13 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
     r: Replay,
   ): Promise<RunTurnOutcome> {
     await emit({ event: 'turn.accepted', turnId: r.turn.id, ordinal: r.turn.ordinal });
+    const view = participantTurnView(r.view);
     switch (r.turn.status) {
       case 'completed':
-        await emit({ event: 'turn.completed', turn: r.view });
+        await emit({ event: 'turn.completed', turn: view });
         return { status: 'completed', turnId: r.turn.id, replayed: true, error: null };
       case 'blocked': {
-        const blocked = r.view.blocked ?? {
+        const blocked = view.blocked ?? {
           reason: 'blocked',
           supportMessage: null,
           escalationId: r.escalationId,
@@ -488,10 +489,11 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
   ): Promise<RunTurnOutcome> {
     const label = riskLabel(risk);
     const ventureId = pre.session.ventureId;
+    // The detail is a participant-safe label: which names the cross-venture guard knows is never revealed.
     await emit({
       event: 'turn.status',
       phase: 'classifying',
-      detail: label === 'none' ? null : label,
+      detail: participantRiskLabel(label),
       evidenceCount: null,
     });
 
@@ -514,6 +516,8 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
         embedding,
         dataClassCeiling: active.assignment.dataClassCeiling,
         budgets: cfg.retrieval,
+        // Always null today: no session is readable by its author alone (see privateRetrievalOwner).
+        privateOwnerId: privateRetrievalOwner(pre.session, ctx.principalId),
       });
       const recent = await turnsRepo.listRecentTurns(scope.tx, {
         sessionId: pre.session.id,
@@ -566,7 +570,10 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
       },
       mode: pre.mode,
       policy: {
-        riskCategories: risk.categories,
+        // The cross-venture flag stays out of the prompt: the model would otherwise answer differently
+        // for a real venture name than for an unknown one (a membership oracle). The always-on rule that
+        // the workspace belongs to one venture, and the output validator, cover it.
+        riskCategories: risk.categories.filter((c) => c !== 'cross_venture_request'),
         groundingThreshold: pre.settings.groundingCoverageThreshold,
         crisis: false,
       },
@@ -633,14 +640,17 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
       eirNames,
     });
     const status = checked.blocked ? 'blocked' : 'completed';
-    const sampled = shouldSampleForReview({
-      status,
-      riskLabel: label,
-      validator: checked.results,
-      response: checked.response,
-      rate: cfg.turns.reviewSampleRate,
-      random: kit.deps.random,
-    });
+    // Ephemeral sessions are never shared with the assigned EIR (RLS turns_read enforces it as well).
+    const sampled =
+      pre.session.privacy !== 'ephemeral' &&
+      shouldSampleForReview({
+        status,
+        riskLabel: label,
+        validator: checked.results,
+        response: checked.response,
+        rate: cfg.turns.reviewSampleRate,
+        random: kit.deps.random,
+      });
 
     // Step 7: persist turn, evidence, memory candidates, escalation draft, audit.
     const evidenceIndex = new Map(shown.map((k) => [k.item.key, k.item] as const));
@@ -682,6 +692,7 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
               candidates: checked.response.memory_candidates,
               evidence: evidenceIndex,
               source: { kind: 'turn', id: turn.id },
+              visibility: candidateVisibility(pack),
             })
           : [];
       const esc = checked.response.escalation;
@@ -739,7 +750,8 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
       const reason = checked.blocked ? (checked.blockReason ?? 'blocked') : null;
       const blocked: TurnBlockedDetail | null =
         reason === null ? null : { reason, supportMessage: supportMessageFor(reason), escalationId };
-      return { view: turnsRepo.toTurnView(finished, evidence, blocked), blocked };
+      const view = participantTurnView(turnsRepo.toTurnView(finished, evidence, blocked));
+      return { view, blocked: view.blocked };
     });
 
     if (persisted.blocked !== null) {
@@ -748,6 +760,80 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
     }
     await emit({ event: 'turn.completed', turn: persisted.view });
     return { status: 'completed', turnId: turn.id, replayed: false, error: null };
+  }
+
+  /**
+   * Per-principal turn admission inside the turn-creating transaction (see runTurn). Rejections are
+   * audited after the rollback (deferred) and thrown as DomainErrors.
+   */
+  async function admitTurn(
+    scope: RequestScope,
+    args: {
+      readonly crisis: boolean;
+      readonly ventureId: string;
+      readonly sessionId: string;
+      readonly settings: PlatformSettingsView;
+    },
+  ): Promise<void> {
+    const { tx, ctx } = scope;
+    const reject = (
+      code: DomainError['code'],
+      message: string,
+      reason: string,
+      retryAfterSeconds: number,
+    ) => {
+      scope.deferAudit({
+        action: code === 'spend_cap_reached' ? 'spend_cap.reached' : 'turn.rejected',
+        outcome: 'blocked',
+        ventureId: args.ventureId,
+        objectType: code === 'spend_cap_reached' ? 'turn' : 'session',
+        objectId: code === 'spend_cap_reached' ? null : args.sessionId,
+        policyReason: reason,
+      });
+      return new DomainError(code, message, { reason, retryAfterSeconds });
+    };
+    await turnsRepo.lockTurnAdmission(tx, ctx.principalId);
+    const recent = await turnsRepo.countRecentTurnsByAuthor(tx, {
+      authorId: ctx.principalId,
+      windowSeconds: cfg.turns.rateWindowSeconds,
+    });
+    if (recent >= cfg.turns.rateLimit) {
+      throw reject(
+        'rate_limited',
+        'You are sending messages very quickly. Please wait a few minutes.',
+        'turn_rate_limit',
+        cfg.turns.rateWindowSeconds,
+      );
+    }
+    const inFlight = await turnsRepo.countPendingTurnsByAuthor(tx, {
+      authorId: ctx.principalId,
+      withinSeconds: cfg.turns.inFlightWindowSeconds,
+    });
+    if (inFlight >= cfg.turns.maxInFlight) {
+      throw reject(
+        'rate_limited',
+        'Please wait for the answers you are already waiting for.',
+        'turns_in_flight',
+        5,
+      );
+    }
+    // Spend recorded by turns still in flight is not in the ledger yet; the in-flight limit bounds that.
+    if (!args.crisis) {
+      const cap = await turnsRepo.spendCapState(tx, {
+        globalUsd: args.settings.dailyUsdCapGlobal,
+        principalUsd: args.settings.dailyUsdCapPerPrincipal,
+      });
+      if (cap !== null) {
+        throw reject(
+          'spend_cap_reached',
+          cap === 'global'
+            ? 'The daily AI budget for the platform has been reached. Coaching resumes tomorrow (UTC).'
+            : 'You have reached your daily AI coaching budget. It resets at midnight UTC.',
+          `${cap}_daily_cap`,
+          secondsUntilUtcMidnight(kit.now()),
+        );
+      }
+    }
   }
 
   return {
@@ -781,7 +867,17 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
         });
         const label = riskLabel(risk);
         const parsed = input;
+        const settings = pre.settings;
         turn = await kit.inRequest(ctx, async (scope) => {
+          // Admission is atomic per principal: the rate limit, the in-flight limit and the spend caps are
+          // checked under a transaction-scoped advisory lock in the same transaction that inserts the
+          // pending turn, so parallel requests cannot all pass the checks before any turn exists.
+          await admitTurn(scope, {
+            crisis,
+            ventureId: pre.session.ventureId,
+            sessionId: pre.session.id,
+            settings,
+          });
           const created = await turnsRepo.createTurn(scope.tx, {
             tenantId: ctx.tenantId,
             ventureId: pre.session.ventureId,

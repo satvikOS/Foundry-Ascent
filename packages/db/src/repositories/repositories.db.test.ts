@@ -294,6 +294,9 @@ describe('usage, idempotency, settings (system executor)', () => {
       maxTurnsPerSession: 40,
       groundingCoverageThreshold: 0.6,
       portfolioMinGroupSize: 3,
+      // Seeded by migration 0003 (upload quota per person and UTC day).
+      dailyUploadDocumentsPerPrincipal: 20,
+      dailyUploadBytesPerPrincipal: 52_428_800,
     });
     const updated = await t.db.system((sx) =>
       settingsRepo.updatePlatformSettings(sx, { aiEnabled: false, dailyUsdCapGlobal: 3.5 }, seed.ownerId),

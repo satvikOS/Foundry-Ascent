@@ -57,12 +57,14 @@ describe('BlockedPanel', () => {
         tenant="ain"
         ventureId={IDS.venture}
         supportMessage={null}
-        reason="cross_venture"
+        reason="policy"
         escalationId={null}
         onRequestSupport={onRequestSupport}
       />,
     );
-    expect(screen.getByRole('heading', { name: 'Every venture workspace is private' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'This answer was held back' })).toBeVisible();
+    // The generic privacy wording never says the answer involved another venture.
+    expect(screen.queryByText(/other venture/i)).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Request human support' }));
     expect(onRequestSupport).toHaveBeenCalledOnce();
   });

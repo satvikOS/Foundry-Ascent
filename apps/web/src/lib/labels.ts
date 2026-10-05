@@ -118,3 +118,24 @@ export const REQUESTED_ROLE_LABELS: Record<string, string> = {
 };
 
 export const SAFETY_ICON = ShieldAlert;
+
+/**
+ * What a failed document's `failureReason` code means for the person who uploaded it (codes from
+ * `DOCUMENT_FAILURE_REASONS`; anything else gets a generic line).
+ */
+const DOCUMENT_FAILURE_MESSAGES: Record<string, string> = {
+  spend_cap_reached:
+    'Not indexed: today’s AI budget (the platform’s or yours) was used up. Retry after midnight UTC.',
+  extract_failed: 'Text couldn’t be extracted from this file.',
+  empty_text: 'This file contains no readable text.',
+  too_large: 'This file is larger than the 10 MB limit.',
+  object_missing: 'The upload didn’t finish. Upload the file again.',
+  retries_exhausted: 'Processing kept failing. Retry, or upload the file again.',
+  enqueue_failed: 'Processing couldn’t start. Retry in a moment.',
+};
+
+export function documentFailureMessage(reason: string | null): string {
+  return (
+    (reason === null ? undefined : DOCUMENT_FAILURE_MESSAGES[reason]) ?? 'Processing failed — not searchable.'
+  );
+}

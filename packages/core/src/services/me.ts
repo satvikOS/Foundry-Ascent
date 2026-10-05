@@ -1,5 +1,5 @@
-import { DEFAULT_DISCLOSURE, type Me } from '@foundry/contracts';
-import { principalsRepo, settingsRepo, tenantsRepo } from '@foundry/db';
+import { DEFAULT_DISCLOSURE, type AccountNotice, type Me } from '@foundry/contracts';
+import { authRepo, principalsRepo, settingsRepo, tenantsRepo } from '@foundry/db';
 
 import { loadPrincipalRoles } from '../authz/roles.js';
 import { type RequestContext } from '../context.js';
@@ -7,14 +7,18 @@ import { DomainError } from '../errors.js';
 import { type Kit } from '../internal/kit.js';
 
 export interface MeService {
-  /** The caller's identity, roles, memberships, assigned ventures, disclosure and AI kill-switch state. */
-  get(ctx: RequestContext): Promise<Me>;
+  /**
+   * The caller's identity, roles, memberships, assigned ventures, disclosure, AI kill-switch state and
+   * account notices. With `sessionId` (a verified session), `notices` lists access codes someone else
+   * issued for this account since the caller's previous sign-in.
+   */
+  get(ctx: RequestContext & { readonly sessionId?: string }): Promise<Me>;
 }
 
 export function createMeService(kit: Kit): MeService {
   return {
-    get: (ctx) =>
-      kit.inRequest(ctx, async ({ tx }) => {
+    get: async (ctx) => {
+      const me = await kit.inRequest(ctx, async ({ tx }) => {
         const principal = await principalsRepo.getPrincipal(tx, ctx.principalId);
         const tenant = await tenantsRepo.getTenant(tx, ctx.tenantId);
         if (principal?.status !== 'active' || tenant === null) {
@@ -39,6 +43,23 @@ export function createMeService(kit: Kit): MeService {
           disclosure: DEFAULT_DISCLOSURE,
           aiEnabled: settings.aiEnabled,
         };
-      }),
+      });
+      // Credential tables are closed to app_rls: read the caller's own code history with the owner role,
+      // for the caller's principal and session only.
+      const sessionId = ctx.sessionId;
+      const issued =
+        sessionId === undefined
+          ? []
+          : await kit.system(
+              (sx) =>
+                authRepo.reissuedCodesSincePreviousSignIn(sx, {
+                  principalId: ctx.principalId,
+                  currentSessionId: sessionId,
+                }),
+              { transaction: false },
+            );
+      const notices: AccountNotice[] = issued.map((at) => ({ kind: 'access_code_issued', at }));
+      return { ...me, notices };
+    },
   };
 }

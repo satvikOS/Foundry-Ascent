@@ -1,4 +1,4 @@
-import { type Db, migrate, type SeedConfig, seedDatabase } from '@foundry/db';
+import { type Db, DbError, migrate, type SeedConfig, seedDatabase } from '@foundry/db';
 import type { CdkCustomResourceEvent, CdkCustomResourceResponse } from 'aws-lambda';
 
 import { errorFields, type Logger } from '../logging.js';
@@ -14,6 +14,8 @@ export interface SchemaResourceDeps {
   readonly backfill: ((options: Omit<BackfillOptions, 'purpose'>) => Promise<BackfillReport>) | null;
   readonly logger: Logger;
   readonly now?: () => number;
+  /** Backoff sleep (tests inject a fake). */
+  readonly sleep?: (ms: number) => Promise<void>;
 }
 
 export interface SchemaInvocation {
@@ -31,8 +33,32 @@ export const MAX_WAKE_BUDGET_MS = 5 * 60_000;
 export const MIGRATE_RESERVE_MS = 4 * 60_000;
 /** Never wait less than this for the resume, even when invoked with little time left. */
 const MIN_WAKE_BUDGET_MS = 30_000;
-/** Time kept for the response and the provider framework after the backfill. */
-const RESPONSE_MARGIN_MS = 60_000;
+/**
+ * Time kept for the response and the provider framework after the backfill. One in-flight embedding batch
+ * (16 texts, concurrency 4, 15 s per call) can outlive the backfill deadline by up to a minute unless it
+ * is aborted, so the backfill also aborts the gateway call at its deadline (embedding-backfill.ts).
+ */
+export const RESPONSE_MARGIN_MS = 120_000;
+/**
+ * A freshly created or updated Lambda role can be refused by the Data API or Secrets Manager for a short
+ * while (IAM propagation). During the wake-up only, AccessDeniedException / ForbiddenException are retried
+ * for about this long before the deployment fails.
+ */
+export const IAM_PROPAGATION_RETRY_MS = 60_000;
+const IAM_RETRY_DELAY_MS = 5_000;
+const IAM_PROPAGATION_ERRORS = new Set(['AccessDeniedException', 'ForbiddenException']);
+
+/** True when `err` (or the driver error it wraps) is an IAM authorization refusal from AWS. */
+export function isIamPropagationError(err: unknown): boolean {
+  let current: unknown = err;
+  for (let depth = 0; depth < 4 && current !== null && typeof current === 'object'; depth += 1) {
+    const name = (current as { name?: unknown }).name;
+    if (typeof name === 'string' && IAM_PROPAGATION_ERRORS.has(name)) return true;
+    if (current instanceof DbError && current.sqlState !== null) return false;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
 /** The embedding backfill is bounded by items and time; whatever remains is left to a later run. */
 export const BACKFILL_MAX_ITEMS = 5_000;
 const BACKFILL_MAX_MS = 5 * 60_000;
@@ -70,9 +96,22 @@ export async function handleSchemaEvent(
   }
 
   const started = now();
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   // DatabaseResumingException is retried with backoff inside the Data API driver until the budget; after
-  // it a DatabaseResumingError fails the deployment (nothing has been changed yet).
-  await deps.db.ping({ maxWaitMs: wakeBudgetMs(invocation.remainingMs()) });
+  // it a DatabaseResumingError fails the deployment (nothing has been changed yet). IAM refusals right
+  // after the role was created or changed are retried here for IAM_PROPAGATION_RETRY_MS.
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await deps.db.ping({ maxWaitMs: wakeBudgetMs(invocation.remainingMs()) });
+      break;
+    } catch (err) {
+      if (!isIamPropagationError(err) || now() - started + IAM_RETRY_DELAY_MS > IAM_PROPAGATION_RETRY_MS) {
+        throw err;
+      }
+      log.warn('schema.iam_propagation_retry', { attempt, waitedMs: Math.round(now() - started) });
+      await sleep(IAM_RETRY_DELAY_MS);
+    }
+  }
   log.info('schema.database_awake', { waitedMs: Math.round(now() - started) });
   const report = await migrate(deps.db, {
     onEvent: (e) => {

@@ -19,6 +19,7 @@ import { type RequestContext } from '../context.js';
 import { fail, parseInput } from '../errors.js';
 import { type DirectoryCache } from '../internal/directory.js';
 import { audit, requireId, type Kit } from '../internal/kit.js';
+import { assertDistinctiveVentureName, ventureNameConflict } from '../internal/venture-names.js';
 import { toMemoryView, toPersonaSummary } from '../internal/views.js';
 
 export interface VenturesService {
@@ -26,7 +27,11 @@ export interface VenturesService {
   list(ctx: RequestContext): Promise<VentureSummary[]>;
   /** Venture detail with the resolved persona and assigned EIR (read access). */
   get(ctx: RequestContext, ventureId: string): Promise<VentureDetail>;
-  /** Updates name / one-liner / stage / domain / current goal (founder or team). */
+  /**
+   * Updates name / one-liner / stage / domain / current goal (founder or team). A new name must be
+   * distinctive and unique in the tenant (`assertDistinctiveVentureName`; duplicates → 409 conflict).
+   * Program staff rename through `ProgramService.renameVenture`.
+   */
   update(
     ctx: RequestContext,
     ventureId: string,
@@ -88,9 +93,12 @@ export function createVenturesService(kit: Kit, directory: DirectoryCache): Vent
     update: async (ctx, rawVentureId, rawPatch) => {
       const ventureId = requireId(rawVentureId, 'Venture');
       const patch = parseInput(UpdateVentureRequest, rawPatch);
+      if (patch.name !== undefined) assertDistinctiveVentureName(patch.name);
       return await kit.inRequest(ctx, async (scope) => {
         const decision = await requireVentureAccess(scope, ventureId, 'write');
-        const updated = await venturesRepo.updateVenture(scope.tx, ventureId, patch);
+        const updated = await venturesRepo.updateVenture(scope.tx, ventureId, patch).catch((err: unknown) => {
+          throw ventureNameConflict(err);
+        });
         if (updated === null) throw fail.notFound('Venture');
         await audit(scope, {
           action: 'venture.updated',

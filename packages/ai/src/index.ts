@@ -123,6 +123,8 @@ export {
 } from './risk/escalation-map.js';
 export { CRISIS_SUPPORT_MESSAGE, buildCrisisResponse } from './risk/crisis.js';
 export { RISK_RULES, type RiskRule } from './risk/rules.js';
+export { COMMON_WORDS } from './risk/common-words.js';
+export { ventureNameProblem, ventureNameRegExp, type VentureNameProblem } from './risk/normalize.js';
 
 // Validators --------------------------------------------------------------------------------------------
 export {

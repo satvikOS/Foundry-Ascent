@@ -14,6 +14,7 @@ import { col, type RawRow } from '../columns.js';
 import { type SqlExecutor } from '../executor.js';
 import { p } from '../params.js';
 import {
+  fetchByIdsInBatches,
   principalFrom,
   principalSelect,
   queryFirst,
@@ -91,18 +92,37 @@ export function getEscalation(ex: SqlExecutor, id: string): Promise<EscalationRe
   return queryFirst(ex, `${SELECT} WHERE e.id = :id`, { id: p.uuid(id) }, decode);
 }
 
-/** Escalations of a venture, newest first. */
-export function listVentureEscalations(
+/**
+ * Escalations per statement: a packet can carry 30 shared facts of up to 1 000 characters plus the
+ * question and unknowns (≈45 kB), so ten keep every Data API result far below its 1 MB limit.
+ */
+const ESCALATION_BATCH_SIZE = 10;
+
+function escalationsByIds(ex: SqlExecutor, ids: readonly string[]): Promise<EscalationRecord[]> {
+  return fetchByIdsInBatches(
+    ids,
+    ESCALATION_BATCH_SIZE,
+    (batch) => queryRows(ex, `${SELECT} WHERE e.id = ANY (:ids)`, { ids: p.uuidArray(batch) }, decode),
+    (e) => e.id,
+  );
+}
+
+const idOf = (r: RawRow): string => col.uuid.decode(r.id, 'id');
+
+/** Escalations of a venture, newest first (ids first, then batches). */
+export async function listVentureEscalations(
   ex: SqlExecutor,
   args: { ventureId: string; statuses?: readonly EscalationStatusValue[] },
 ): Promise<EscalationRecord[]> {
-  return queryRows(
+  const ids = await queryRows(
     ex,
-    `${SELECT} WHERE e.venture_id = :ventureId AND (:statuses IS NULL OR e.status = ANY (:statuses))
+    `SELECT e.id FROM escalations e
+     WHERE e.venture_id = :ventureId AND (:statuses IS NULL OR e.status = ANY (:statuses))
      ORDER BY e.created_at DESC, e.id`,
     { ventureId: p.uuid(args.ventureId), statuses: p.nullable.textArray(args.statuses) },
-    decode,
+    idOf,
   );
+  return escalationsByIds(ex, ids);
 }
 
 /**
@@ -129,19 +149,20 @@ export async function escalationIdsByTurn(
 }
 
 /** Escalations assigned to a principal whose packet the founder agreed to share (EIR / staff inbox). */
-export function listInboxEscalations(
+export async function listInboxEscalations(
   ex: SqlExecutor,
   args: { assigneeId: string; includeClosed?: boolean },
 ): Promise<EscalationRecord[]> {
-  return queryRows(
+  const ids = await queryRows(
     ex,
-    `${SELECT}
+    `SELECT e.id FROM escalations e
      WHERE e.assignee_principal_id = :assigneeId AND e.sharing_consent_at IS NOT NULL
        AND (:includeClosed OR e.status IN ('routed', 'acknowledged'))
      ORDER BY e.priority, e.created_at, e.id`,
     { assigneeId: p.uuid(args.assigneeId), includeClosed: p.bool(args.includeClosed ?? false) },
-    decode,
+    idOf,
   );
+  return escalationsByIds(ex, ids);
 }
 
 export function countOpenEscalations(ex: SqlExecutor, ventureId: string): Promise<number> {

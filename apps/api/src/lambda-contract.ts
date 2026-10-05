@@ -29,6 +29,10 @@ export const LambdaContract = z.object({
     /** SSE keep-alive comment interval (keeps CloudFront's origin read timeout from firing). */
     sseKeepAliveSeconds: z.number().int().min(1).max(30),
   }),
+  worker: z.object({
+    /** The jobs-queue message body the daily schedule (infra app-stack.ts) sends. */
+    dailyMaintenanceMessage: z.object({ type: z.literal('maintenance'), task: z.literal('daily') }).strict(),
+  }),
 });
 export type LambdaContract = z.infer<typeof LambdaContract>;
 
@@ -47,6 +51,9 @@ export const VIEWER_HOST_HEADER = LAMBDA_CONTRACT.edgeHeaders.viewerHost;
 export const API_DB_RESUME_BUDGET_MS = LAMBDA_CONTRACT.api.dbResumeBudgetSeconds * 1000;
 
 export const SSE_KEEP_ALIVE_MS = LAMBDA_CONTRACT.api.sseKeepAliveSeconds * 1000;
+
+/** Body of the daily maintenance message (EventBridge Scheduler -> jobs queue -> worker). */
+export const DAILY_MAINTENANCE_MESSAGE = LAMBDA_CONTRACT.worker.dailyMaintenanceMessage;
 
 export type LambdaRole = 'api' | 'worker' | 'migrate';
 

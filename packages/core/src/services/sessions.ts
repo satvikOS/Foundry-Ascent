@@ -19,7 +19,7 @@ import { type RequestContext } from '../context.js';
 import { DomainError, fail, isDomainError, parseInput } from '../errors.js';
 import { type DirectoryCache } from '../internal/directory.js';
 import { audit, requireId, type Kit } from '../internal/kit.js';
-import { supportMessageFor } from '../orchestrator/blocked.js';
+import { participantTurnView, supportMessageFor } from '../orchestrator/blocked.js';
 import { assertWithinSpendCaps } from '../orchestrator/guards.js';
 import { RECAP_SCHEMA_NAME, RecapDraft, buildRecapPrompt, sanitizeRecap } from '../orchestrator/recap.js';
 import { persistMemoryCandidates } from './memory.js';
@@ -153,8 +153,10 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
         return {
           session: await sessionView(scope.tx, sessionId),
           // Blocked turns carry their reason, support message and drafted escalation, so a reload shows
-          // what the live stream showed.
-          turns: await turnsRepo.listTurnViews(scope.tx, sessionId, supportMessageFor),
+          // what the live stream showed (participant view: no risk categories or cross-venture detail).
+          turns: (await turnsRepo.listTurnViews(scope.tx, sessionId, supportMessageFor)).map(
+            participantTurnView,
+          ),
         };
       });
     },
@@ -287,6 +289,9 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
             candidates: draft.candidates,
             evidence,
             source: { kind: 'session', id: sessionId },
+            // Turn evidence can never cite a founder_private item (retrieval excludes them and the
+            // turn_evidence insert policy rejects them), so a recap's candidates are team items.
+            visibility: 'team',
           });
           candidateCount = created.length;
           recap = {

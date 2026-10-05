@@ -6,6 +6,7 @@ import { DomainError } from '../errors.js';
 import { type Kit } from '../internal/kit.js';
 import { accessCodePrefix, timingDummyHash, verifyAccessCode } from './access-code.js';
 import { PlatformKeyCache, hashViewerAttribute } from './keys.js';
+import { LockoutCache } from './lockout-cache.js';
 import { SessionCache } from './session-cache.js';
 import { viewerNetwork } from './viewer-network.js';
 import { signSessionToken, verifySessionToken } from './session-token.js';
@@ -52,11 +53,14 @@ export interface AuthService {
    * Access-code sign-in (system executor): per-IP sliding-window lockout (10 failures / 15 min),
    * global soft limit, constant-cost verification (one scrypt per attempt), auth session row, HS256 JWT
    * (12 h, claims sub/sid/tid/iat/exp). Throws `locked_out`, `rate_limited` or `invalid_access_code`.
+   * A viewer this container already saw locked out is refused from memory (no database call, no audit)
+   * until its lockout ends; only the first refusal per window is audited (see LockoutCache).
    */
   signIn(input: SignInInput): Promise<SignInResult>;
   /**
    * Verifies the session JWT and its revocation state (cached ≤ 60 s per container) and returns the
-   * request context with the principal's active roles. Throws `unauthenticated`.
+   * request context with the principal's active roles. A revoked session or code, a disabled principal
+   * or a suspended/archived tenant ends the session (within the same ≤ 60 s). Throws `unauthenticated`.
    */
   verifySession(token: string, options: { readonly requestId: string }): Promise<SessionContext>;
   /** Revokes the caller's auth session (effective immediately in this container). */
@@ -69,6 +73,7 @@ export function createAuthService(kit: Kit): AuthService {
   const cfg = kit.config;
   const keys = new PlatformKeyCache(kit, Math.max(cfg.session.keyGraceSeconds, cfg.session.ttlSeconds));
   const cache = new SessionCache(cfg.session.revocationCacheSeconds * 1000, cfg.session.cacheMaxEntries);
+  const lockouts = new LockoutCache(cfg.signIn.lockoutCacheEntries);
 
   async function systemAudit(sx: SystemExecutor, event: auditRepo.AuditEventInput): Promise<void> {
     await auditRepo.appendAudit(sx, event);
@@ -76,11 +81,21 @@ export function createAuthService(kit: Kit): AuthService {
 
   async function signIn(input: SignInInput): Promise<SignInResult> {
     const now = kit.now();
+    // IPv6 viewers are counted per /64 (one client controls the whole prefix); IPv4 per address.
+    const network = viewerNetwork(input.viewerIp);
+    // 0. A viewer this container already knows to be locked out never reaches the database.
+    const lockoutKey = lockouts.keyFor(network);
+    const lockedForMs = lockouts.remainingMs(lockoutKey, now.getTime());
+    if (lockedForMs > 0) {
+      throw new DomainError('locked_out', 'Too many failed attempts. Please try again later.', {
+        retryAfterSeconds: Math.max(1, Math.ceil(lockedForMs / 1000)),
+        reason: 'locked_out_cached',
+      });
+    }
     const parsed = SignInRequest.safeParse({ accessCode: input.accessCode });
     const code = parsed.success ? parsed.data.accessCode : null;
     const salt = await keys.ipSalt();
-    // IPv6 viewers are counted per /64 (one client controls the whole prefix); IPv4 per address.
-    const subject = hashViewerAttribute(salt, 'ip', viewerNetwork(input.viewerIp));
+    const subject = hashViewerAttribute(salt, 'ip', network);
     const windowSeconds = cfg.signIn.ipWindowSeconds;
 
     // 1. Brute-force protection (before any credential work). `reserveAuthAttempt` serialises attempts
@@ -117,6 +132,8 @@ export function createAuthService(kit: Kit): AuthService {
     if (reservation.attemptId === null) {
       const last = reservation.lastFailureAt ? Date.parse(reservation.lastFailureAt) : now.getTime();
       const retryAfterSeconds = Math.max(1, Math.ceil((last + windowSeconds * 1000 - now.getTime()) / 1000));
+      // First refusal of this window in this container: audited once, then answered from memory.
+      lockouts.lock(lockoutKey, now.getTime() + retryAfterSeconds * 1000);
       await denied('locked_out', { failures: reservation.failures }, null);
       throw new DomainError('locked_out', 'Too many failed attempts. Please try again later.', {
         retryAfterSeconds,
@@ -233,6 +250,7 @@ export function createAuthService(kit: Kit): AuthService {
     if (entry === null) {
       const loaded = await kit.system(
         async (sx) => {
+          // Also carries the principal's and tenant's status: suspending a tenant ends its sessions.
           const session = await authRepo.getAuthSession(sx, claims.sid);
           if (session === null) return null;
           const roles = await principalsRepo.listActiveRoles(sx, {
@@ -255,6 +273,7 @@ export function createAuthService(kit: Kit): AuthService {
           session.revokedAt === null &&
           session.accessCodeRevokedAt === null &&
           session.principalStatus === 'active' &&
+          session.tenantStatus === 'active' &&
           expiresAtMs > now.getTime(),
         expiresAtMs,
         checkedAtMs: now.getTime(),

@@ -15,6 +15,8 @@ const SETTINGS: PlatformSettingsView = {
   maxTurnsPerSession: 40,
   groundingCoverageThreshold: 0.6,
   portfolioMinGroupSize: 3,
+  dailyUploadDocumentsPerPrincipal: 20,
+  dailyUploadBytesPerPrincipal: 52_428_800,
 };
 
 describe('AiKillSwitch (confirmation)', () => {
@@ -107,6 +109,18 @@ describe('limits form', () => {
       groundingCoverageThreshold: 0.725,
       dailyUsdCapGlobal: 8,
     });
+  });
+
+  it('edits the daily upload quota in megabytes and sends bytes', () => {
+    const values = toLimitsFormValues(SETTINGS);
+    expect(values.dailyUploadMegabytesPerPrincipal).toBe(50);
+    expect(
+      limitsPatch(SETTINGS, {
+        ...values,
+        dailyUploadDocumentsPerPrincipal: 5,
+        dailyUploadMegabytesPerPrincipal: 20,
+      }),
+    ).toEqual({ dailyUploadDocumentsPerPrincipal: 5, dailyUploadBytesPerPrincipal: 20 * 1024 * 1024 });
   });
 
   it('rejects a per-person cap above the platform cap', async () => {

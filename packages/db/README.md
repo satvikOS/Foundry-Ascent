@@ -11,8 +11,14 @@ import { createTestDatabase, makeContext } from '@foundry/db/testing'; // tests 
 ```
 
 Authoritative schema: [`migrations/0001_init.sql`](migrations/0001_init.sql) (tables, RLS policies,
-SECURITY DEFINER helpers) and [`migrations/0002_rls_helpers.sql`](migrations/0002_rls_helpers.sql)
-(soft deletes, escalation routing, audit determinism + verification, idempotency request hash).
+SECURITY DEFINER helpers), [`migrations/0002_rls_helpers.sql`](migrations/0002_rls_helpers.sql)
+(soft deletes, escalation routing, audit determinism + verification, idempotency request hash) and
+[`migrations/0003_security_hardening.sql`](migrations/0003_security_hardening.sql) (security review
+2026-10-05: no `founder_private` turn evidence and clean-up of existing data, ephemeral sessions out of EIR
+review, tenant-checked chunk / EIR review / role grant / membership policies, tenant-unique venture names
+and `app.rename_venture`, consent by the escalation's creator only, `app.spend_cap_state`,
+`app.upload_usage_today` and the upload quota settings). 0001 and 0002 are applied in production and never
+edited; every later change is a new migration.
 
 ---
 
@@ -146,6 +152,12 @@ original error is `cause` — do not log it verbatim).
 - Migrations must run as a role like Aurora's master user (LOGIN CREATEROLE CREATEDB, **not** superuser)
   after `vector` and `pgcrypto` exist. `0001` creates `app_rls` (NOLOGIN NOBYPASSRLS) and grants it to the
   migrating role.
+- Every statement of a migration after 0002 is re-runnable (`CREATE OR REPLACE`, `DROP … IF EXISTS` before
+  `CREATE`, `ON CONFLICT DO NOTHING`, idempotent `UPDATE`/`DELETE`); `migrate-0003.db.test.ts` applies 0003
+  on top of 0001 + 0002 with existing data, checks the clean-up, re-runs every statement one per call and
+  compares the policies, functions, triggers and settings. New functions revoke `EXECUTE` from `PUBLIC`
+  and grant it to `app_rls` only where requests need them. Statements selected through the Data API must
+  not return a `void` column (wrap `pg_advisory_xact_lock` in `SELECT count(*) … FROM (SELECT …)`).
 
 ## 6. Repositories
 
@@ -183,16 +195,21 @@ principal. Return types reuse `@foundry/contracts` views wherever one exists (`V
 
 ### Role visibility enforced by RLS (verified by `rls.db.test.ts`)
 
-| Principal                 | Memory                                                     | Sessions/turns     | Documents/chunks           | Escalations                            |
-| ------------------------- | ---------------------------------------------------------- | ------------------ | -------------------------- | -------------------------------------- |
-| founder / team            | all of own venture except other members' `founder_private` | own venture        | own venture                | own venture                            |
-| advisor                   | `venture` + `advisors` visibility                          | none               | read                       | none                                   |
-| assigned EIR              | `venture` + `advisors` of assigned ventures                | sampled turns only | read                       | when assignee **and** consented        |
-| program lead (non-member) | none                                                       | none               | none (shared corpora only) | queue metadata via `escalationQueue()` |
-| no context                | nothing (every table returns 0 rows or permission denied)  |                    |                            |                                        |
+| Principal                 | Memory                                                     | Sessions/turns                                       | Documents/chunks           | Escalations                            |
+| ------------------------- | ---------------------------------------------------------- | ---------------------------------------------------- | -------------------------- | -------------------------------------- |
+| founder / team            | all of own venture except other members' `founder_private` | own venture                                          | own venture                | own venture                            |
+| advisor                   | `venture` + `advisors` visibility                          | none                                                 | read                       | none                                   |
+| assigned EIR              | `venture` + `advisors` of assigned ventures                | sampled turns of standard (never ephemeral) sessions | read                       | when assignee **and** consented        |
+| program lead (non-member) | none                                                       | none                                                 | none (shared corpora only) | queue metadata via `escalationQueue()` |
+| no context                | nothing (every table returns 0 rows or permission denied)  |                                                      |                            |                                        |
 
 Credential, ledger and audit tables (`access_codes`, `auth_sessions`, `auth_attempts`, `platform_keys`,
 `usage_ledger`, `audit_events`, `idempotency_keys`, `schema_migrations`) are closed to `app_rls`.
+
+`founder_private` items are readable by their author only, and nothing other people read may carry them:
+turn evidence cannot cite them (insert policy), retrieval for coaching never returns them (see §7),
+escalation packets reject them, and recaps and AI memory candidates are built from evidence without them
+(`security-0003.db.test.ts`, `apps/api/src/security-review.db.test.ts`).
 
 ## 7. Hybrid retrieval
 
@@ -202,9 +219,15 @@ Credential, ledger and audit tables (`access_codes`, `auth_sessions`, `auth_atte
 only. Results carry `{kind, refId, title, excerpt (≤ 600 chars), score, freshnessAt, status, ventureId,
 sourceId, memoryType, components}`; core assigns `E1…En`.
 
-- `searchVentureMemory({tenantId, ventureId, query, embedding, statuses?, types?, limit=8})` — filters
-  tenant + venture first, exact scan; statuses default proposed/confirmed/disputed (disputed = contradiction
-  signal); authority = 1 if pinned else status weight (confirmed 1, disputed .5, proposed .4) × (0.5 + 0.5·confidence).
+- `searchVentureMemory({tenantId, ventureId, query, embedding, statuses?, types?, privateOwnerId?, limit=8})`
+  — filters tenant + venture first, exact scan; statuses default proposed/confirmed/disputed (disputed =
+  contradiction signal); authority = 1 if pinned else status weight (confirmed 1, disputed .5, proposed .4)
+  × (0.5 + 0.5·confidence). `founder_private` items are excluded unless `privateOwnerId` is their author;
+  core never passes it (`privateRetrievalOwner` returns null: turns, their evidence and their derived
+  memory are read by the team and sampled for EIR review, so private items stay out of coaching).
+- Lists stay well under the Data API's 1 MB response limit: memory lists return a 400-character excerpt
+  plus `content_length` (`GET /memory/:id` returns the full item) with `LIMIT`/`OFFSET` paging; turns,
+  sessions and escalations select ids first and load rows in small batches (`fetchByIdsInBatches`).
 - `searchVentureChunks({…, limit=6})` — the venture's own document chunks; withdrawn sources excluded.
 - `searchSharedChunks({tenantId, query, embedding, personaId?, scopes?, classifications?, candidates=40, limit=4})`
   — program/public/persona corpora (`venture_id IS NULL`): ANN candidates from the partial **HNSW** index

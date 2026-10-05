@@ -1,6 +1,8 @@
 import type { MemoryObjectView } from '@foundry/contracts';
 import { CalendarDays, Gavel, RotateCcw, UserRound } from 'lucide-react';
 
+import { displayContent } from '@/lib/api/hooks/memory';
+
 import { decisionAttributes, formatIsoDate } from './attributes';
 import { TypedCard, TypedField, TypedMemoryPage } from './typed-page';
 
@@ -51,7 +53,7 @@ export function DecisionsView() {
                       </span>
                     }
                   >
-                    <p className="text-sm leading-6">{memory.content}</p>
+                    <p className="text-sm leading-6">{displayContent(memory)}</p>
                     <dl className="grid gap-3">
                       {a.rationale ? <TypedField label="Rationale">{a.rationale}</TypedField> : null}
                       {a.reversal_condition ? (

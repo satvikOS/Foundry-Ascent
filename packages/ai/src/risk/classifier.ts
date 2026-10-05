@@ -6,8 +6,8 @@ import {
   normalizeForMatching,
   normalizeText,
   personNameRegExp,
-  phraseRegExp,
   spacedLetterRuns,
+  ventureNameRegExp,
 } from './normalize.js';
 import { RISK_RULES, SQUASHED_INJECTION_SIGNATURES, type RiskRule } from './rules.js';
 
@@ -28,7 +28,8 @@ export interface RiskClassification {
 export interface ClassifyRiskOptions {
   /**
    * Names of the *other* ventures in the tenant. A message that names one is a cross-venture
-   * request. Names shorter than three letters are ignored (too ambiguous to match safely).
+   * request. Only distinctive names count (`ventureNameProblem`): a name that is a common word, too short,
+   * or only common words would match ordinary messages and is ignored.
    */
   otherVentureNames?: readonly string[];
   /**
@@ -194,9 +195,9 @@ export function classifyRisk(text: string, options: ClassifyRiskOptions = {}): R
     }
   }
 
-  // Other ventures named explicitly.
+  // Other ventures named explicitly (distinctive names only: a common word would match everything).
   for (const name of options.otherVentureNames ?? []) {
-    const pattern = phraseRegExp(name);
+    const pattern = ventureNameRegExp(name);
     if (pattern?.test(lower)) {
       fire({ id: 'cross_venture_request:named_venture', category: 'cross_venture_request' });
       break;

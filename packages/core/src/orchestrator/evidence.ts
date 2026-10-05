@@ -14,22 +14,40 @@ export interface KeyedEvidence {
   readonly item: EvidenceItem;
   /** Venture of venture-scoped evidence (memory, venture chunks); null for shared corpora. */
   readonly ventureId: string | null;
+  /** A founder_private memory item (only ever present when the pack allowed private memory). */
+  readonly founderPrivate: boolean;
 }
 
 export interface EvidencePack {
   readonly items: readonly KeyedEvidence[];
   /** Candidates removed by the isolation guard (must be 0; anything else is audited as retrieval.denied). */
   readonly dropped: number;
+  /** True when a founder_private item is in the pack: memory candidates then default to founder_private. */
+  readonly usesPrivateMemory: boolean;
   readonly counts: { memory: number; chunks: number; shared: number; resources: number; patterns: number };
+}
+
+export interface EvidencePackOptions {
+  /**
+   * Keep founder_private memory items. Only for retrieval that was restricted to the principal's own
+   * private items in a session readable by that principal alone; default false: any founder_private item
+   * that reaches the pack is dropped (and audited) like a cross-venture row.
+   */
+  readonly allowPrivateMemory?: boolean;
 }
 
 /**
  * Defence-in-depth isolation filter and stable keys. Venture-scoped stores may only return rows of
- * `ventureId`; shared stores only rows without a venture. Duplicates (same kind + ref) are dropped.
- * Keys are assigned E1…En in store order (memory, venture documents, doctrine/program corpus,
- * resources, patterns), each store already sorted by hybrid score.
+ * `ventureId`; shared stores only rows without a venture; founder_private memory only with
+ * `allowPrivateMemory`. Duplicates (same kind + ref) are dropped. Keys are assigned E1…En in store order
+ * (memory, venture documents, doctrine/program corpus, resources, patterns), each store already sorted by
+ * hybrid score.
  */
-export function buildEvidencePack(groups: RetrievedGroups, ventureId: string): EvidencePack {
+export function buildEvidencePack(
+  groups: RetrievedGroups,
+  ventureId: string,
+  options: EvidencePackOptions = {},
+): EvidencePack {
   const items: KeyedEvidence[] = [];
   const seen = new Set<string>();
   let dropped = 0;
@@ -40,7 +58,10 @@ export function buildEvidencePack(groups: RetrievedGroups, ventureId: string): E
     ventureScoped: boolean,
   ): void => {
     for (const r of list) {
-      const allowed = ventureScoped ? r.ventureId === ventureId : r.ventureId === null;
+      const founderPrivate = r.kind === 'memory' && r.visibility === 'founder_private';
+      const allowed =
+        (ventureScoped ? r.ventureId === ventureId : r.ventureId === null) &&
+        (!founderPrivate || options.allowPrivateMemory === true);
       if (!allowed) {
         dropped += 1;
         continue;
@@ -61,6 +82,7 @@ export function buildEvidencePack(groups: RetrievedGroups, ventureId: string): E
           status: r.status,
         },
         ventureId: ventureScoped ? ventureId : null,
+        founderPrivate,
       });
     }
   };
@@ -69,7 +91,17 @@ export function buildEvidencePack(groups: RetrievedGroups, ventureId: string): E
   add('shared', groups.shared, false);
   add('resources', groups.resources, false);
   add('patterns', groups.patterns, false);
-  return { items, dropped, counts };
+  return { items, dropped, counts, usesPrivateMemory: items.some((k) => k.founderPrivate) };
+}
+
+/**
+ * Visibility of AI memory candidates produced from an evidence pack: founder_private when the pack used a
+ * founder_private item (the candidate may restate it), otherwise team (until a founder reviews it).
+ */
+export function candidateVisibility(
+  pack: Pick<EvidencePack, 'usesPrivateMemory'>,
+): 'founder_private' | 'team' {
+  return pack.usesPrivateMemory ? 'founder_private' : 'team';
 }
 
 /** Data-class ceiling of an assignment → shared-corpus source classifications it may see (null = all). */

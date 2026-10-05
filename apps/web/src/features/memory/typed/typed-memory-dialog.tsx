@@ -5,6 +5,7 @@ import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 
 import { announce } from '@/components/a11y/live-announcer';
+import { useFullMemory } from '@/lib/api/hooks/memory';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import {
@@ -251,8 +252,12 @@ export function TypedMemoryDialog({
   kind,
   open,
   onOpenChange,
-  memory = null,
+  memory: listed = null,
 }: TypedMemoryDialogProps) {
+  // Lists carry an excerpt: editing waits for the full item (a save would otherwise keep the excerpt).
+  const full = useFullMemory(open ? listed : null);
+  const memory = listed === null ? null : full.memory;
+  const complete = listed === null || full.complete;
   const { createMemory, mutation: createMutation } = useCreateVentureMemory(ventureId);
   const correct = useOptimisticMemoryAction(ventureId);
   const [formError, setFormError] = useState<string | null>(null);
@@ -269,13 +274,14 @@ export function TypedMemoryDialog({
   const errors = formState.errors;
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !complete) return;
     setFormError(null);
     reset(memory ? valuesFromMemory(kind, memory) : emptyValues(kind));
-  }, [open, memory, kind, reset]);
+  }, [open, memory, complete, kind, reset]);
 
   const onSubmit = handleSubmit(async (values) => {
     setFormError(null);
+    if (!complete) return;
     try {
       if (memory) {
         const attributes = buildTypedAttributes(values, memory.attributes);
@@ -496,7 +502,11 @@ export function TypedMemoryDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" loading={pending} loadingText="Saving…">
+            <Button
+              type="submit"
+              loading={pending || !complete}
+              loadingText={complete ? 'Saving…' : 'Loading…'}
+            >
               {editing ? 'Save changes' : `Add ${copy.noun}`}
             </Button>
           </DialogFooter>

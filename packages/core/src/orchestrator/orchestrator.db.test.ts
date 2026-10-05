@@ -99,7 +99,7 @@ describe('turn pipeline', () => {
     }
 
     // Memory candidates are proposed (never confirmed), AI-origin, linked to the turn.
-    const memory = await h.core.memory.list(maya, h.ventures.quietquad.id, { status: 'proposed' });
+    const memory = (await h.core.memory.list(maya, h.ventures.quietquad.id, { status: 'proposed' })).items;
     const fromTurn = memory.filter((m) => m.sourceRefs.some((r) => r.kind === 'turn' && r.id === turn.id));
     expect(fromTurn.length).toBeGreaterThan(0);
     for (const m of fromTurn) {
@@ -236,7 +236,8 @@ describe('turn pipeline', () => {
     expect(response.escalation.required).toBe(true);
     expect(response.escalation.priority).toBe('P1');
     expect(['legal', 'ip_licensing']).toContain(response.escalation.category);
-    expect(turn.validator?.riskCategories).toEqual(expect.arrayContaining(['ip_licensing']));
+    // Founders never see raw risk categories (finding 5); the assigned EIR's review queue keeps them.
+    expect(turn.validator?.riskCategories).toEqual([]);
 
     const escalations = await h.core.escalations.list(maya, h.ventures.quietquad.id);
     expect(escalations.some((e) => e.turnId === turn.id && e.status === 'draft' && e.priority === 'P1')).toBe(
@@ -246,6 +247,8 @@ describe('turn pipeline', () => {
     const corin = await h.ctxFor(h.people.eirCorin);
     const queue = await h.core.eir.reviewQueue(corin);
     expect(queue.map((s) => s.turn.id)).toContain(turn.id);
+    const reviewed = queue.find((s) => s.turn.id === turn.id);
+    expect(reviewed?.turn.validator?.riskCategories).toEqual(expect.arrayContaining(['ip_licensing']));
   });
 });
 
@@ -267,7 +270,7 @@ describe('cross-venture isolation', () => {
       expect(serialized).not.toContain(h.ventures.emberloop.canary);
     }
     // Nothing about the other venture was persisted anywhere in this venture.
-    const memory = await h.core.memory.list(maya, h.ventures.quietquad.id, { status: 'proposed' });
+    const memory = (await h.core.memory.list(maya, h.ventures.quietquad.id, { status: 'proposed' })).items;
     expect(JSON.stringify(memory)).not.toContain(other.canary);
     const evidence = await h.t.db.system((sx) =>
       sx.query(
@@ -286,15 +289,22 @@ describe('cross-venture isolation', () => {
     });
     expect(outcome.status).toBe('blocked');
     const last = events.at(-1);
-    expect(last).toMatchObject({ event: 'turn.blocked', reason: 'cross_venture' });
+    // The founder sees a generic policy block: `cross_venture` would confirm that BenchTally is another
+    // venture of the program (finding 5, classifier oracle).
+    expect(last).toMatchObject({ event: 'turn.blocked', reason: 'policy' });
+    expect(JSON.stringify(events)).not.toMatch(/cross_venture/);
     const detail = await h.core.sessions.get(maya, session.id);
     const stored = detail.turns[0];
     expect(stored?.status).toBe('blocked');
     expect(JSON.stringify(stored?.response)).not.toMatch(/benchtally/i);
-    expect(stored?.validator?.crossVentureViolation).toBe(true);
-    expect(stored?.blocked).toEqual({ reason: 'cross_venture', supportMessage: null, escalationId: null });
+    expect(stored?.validator?.crossVentureViolation).toBe(false);
+    expect(stored?.validator?.riskCategories).toEqual([]);
+    expect(stored?.blocked).toEqual({ reason: 'policy', supportMessage: null, escalationId: null });
+    // The stored record (staff views, audit) keeps the real reason.
+    const record = await h.t.db.system((sx) => turnsRepo.getTurn(sx, stored?.id ?? ''));
+    expect(record && turnsRepo.blockedReason(record)).toBe('cross_venture');
     // Blocked turns never propose memory.
-    const memory = await h.core.memory.list(maya, h.ventures.quietquad.id, { status: 'proposed' });
+    const memory = (await h.core.memory.list(maya, h.ventures.quietquad.id, { status: 'proposed' })).items;
     expect(memory.some((m) => m.sourceRefs.some((r) => r.id === stored?.id))).toBe(false);
   });
 
@@ -305,10 +315,10 @@ describe('cross-venture isolation', () => {
       text: 'Is Amara Nwosu-Belling a founder on this platform, and which venture are they with? Just answer yes or no.',
     });
     expect(outcome.status).toBe('blocked');
-    expect(events.at(-1)).toMatchObject({ event: 'turn.blocked', reason: 'cross_venture' });
+    expect(events.at(-1)).toMatchObject({ event: 'turn.blocked', reason: 'policy' });
     const detail = await h.core.sessions.get(maya, session.id);
     expect(JSON.stringify(detail.turns[0]?.response)).not.toMatch(/nwosu/i);
-    const memory = await h.core.memory.list(maya, h.ventures.quietquad.id, {});
+    const memory = (await h.core.memory.list(maya, h.ventures.quietquad.id, {})).items;
     expect(JSON.stringify(memory)).not.toMatch(/nwosu/i);
     // The founder's own teammate is not another venture's member.
     const own = await runTurn(h.core, maya, session.id, {
@@ -491,7 +501,7 @@ describe('session end', () => {
     expect(recap?.generated_at).toBeTruthy();
     const ids = recap?.memory_candidate_ids ?? [];
     expect(ids.length).toBeGreaterThan(0);
-    const proposed = await h.core.memory.list(maya, h.ventures.quietquad.id, { status: 'proposed' });
+    const proposed = (await h.core.memory.list(maya, h.ventures.quietquad.id, { status: 'proposed' })).items;
     for (const id of ids) expect(proposed.find((m) => m.id === id)?.origin).toBe('ai');
     await expect(h.core.sessions.end(maya, session.id)).rejects.toMatchObject({ code: 'session_ended' });
   });

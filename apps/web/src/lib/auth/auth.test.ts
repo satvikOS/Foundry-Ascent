@@ -33,6 +33,7 @@ function me(overrides: Partial<Me> = {}): Me {
     assignedVentureIds: [],
     disclosure: 'AI coach',
     aiEnabled: true,
+    notices: [],
     ...overrides,
   };
 }

@@ -3,6 +3,7 @@ import { AlarmClock, CalendarRange, Columns3, Link2, Milestone, UserRound } from
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { displayContent } from '@/lib/api/hooks/memory';
 
 import {
   MILESTONE_STATUSES,
@@ -67,7 +68,7 @@ function MilestoneMeta({ row }: { row: Row }) {
 function MilestoneBody({ row }: { row: Row }) {
   return (
     <>
-      <p className="text-[13px] leading-5 text-muted-foreground">{row.memory.content}</p>
+      <p className="text-[13px] leading-5 text-muted-foreground">{displayContent(row.memory)}</p>
       {row.owner || row.dependency ? (
         <dl className="grid gap-2 sm:grid-cols-2">
           {row.owner ? (

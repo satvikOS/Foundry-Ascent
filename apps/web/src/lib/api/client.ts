@@ -44,21 +44,33 @@ export function path(strings: TemplateStringsArray, ...params: (string | number)
   }, '');
 }
 
+/**
+ * Percent-encodes a query-string key or value the way SigV4 canonicalises it (RFC 3986: only
+ * `A–Z a–z 0–9 - _ . ~` stay literal, a space is `%20`). CloudFront signs `/api/*` requests to the Lambda
+ * Function URL with OAC; `URLSearchParams` would send a space as `+` (and leave `!'()*` literal), which can
+ * make the origin compute a different canonical query string than CloudFront signed.
+ */
+export function encodeQueryComponent(value: string): string {
+  return encodeURIComponent(value).replace(
+    /[!'()*]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+}
+
 export function buildUrl(pathname: string, query?: QueryParams): string {
   const url = `${API_PREFIX}${pathname}`;
   if (!query) return url;
-  const search = new URLSearchParams();
+  const pairs: string[] = [];
   for (const [key, raw] of Object.entries(query)) {
     const values: readonly QueryValue[] = Array.isArray(raw)
       ? (raw as readonly QueryValue[])
       : [raw as QueryValue];
     for (const value of values) {
       if (value === undefined || value === null || value === '') continue;
-      search.append(key, String(value));
+      pairs.push(`${encodeQueryComponent(key)}=${encodeQueryComponent(String(value))}`);
     }
   }
-  const qs = search.toString();
-  return qs ? `${url}?${qs}` : url;
+  return pairs.length > 0 ? `${url}?${pairs.join('&')}` : url;
 }
 
 export function createRequestId(): string {

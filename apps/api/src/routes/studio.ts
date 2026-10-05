@@ -4,6 +4,7 @@ import {
   CreatePrincipalRequest,
   CreateVentureRequest,
   IssueAccessCodeRequest,
+  RenameVentureRequest,
   RouteEscalationRequest,
   SubmitReviewRequest,
   SuspendPersonaRequest,
@@ -49,6 +50,10 @@ export function registerStudioRoutes(r: RouteBuilder, core: Core): void {
   r.get('/program/ventures', async (c, ctx) => c.json({ items: await core.program.listVentures(ctx) }));
   r.post('/program/ventures', async (c, ctx) =>
     c.json(await core.program.createVenture(ctx, jsonBody(c, CreateVentureRequest)), 201),
+  );
+  // Program staff rename any venture of the tenant (e.g. to undo a misleading rename by its team).
+  r.patch('/program/ventures/:id', async (c, ctx) =>
+    c.json(await core.program.renameVenture(ctx, pathParam(c, 'id'), jsonBody(c, RenameVentureRequest))),
   );
   r.get('/program/resources', async (c, ctx) =>
     c.json({ items: await core.program.listResources(ctx, queryParams(c, ResourceFilter)) }),

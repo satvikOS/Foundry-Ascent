@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto';
 
-import { type IngestionProcessor, JobMessage, RetryableIngestionError } from '@foundry/core';
+import {
+  type IngestionProcessor,
+  JobMessage,
+  type MaintenanceReport,
+  RetryableIngestionError,
+} from '@foundry/core';
 import type { SQSBatchItemFailure, SQSBatchResponse, SQSEvent, SQSRecord } from 'aws-lambda';
 import { z } from 'zod';
 
@@ -17,13 +22,27 @@ export const BackfillEmbeddingsJob = z.object({
   maxItems: z.number().int().min(1).max(5_000).optional(),
 });
 
+/**
+ * Daily maintenance, sent by the FoundryAscent-App EventBridge schedule (one rule, `rate(1 day)`) to the
+ * jobs queue: ends ephemeral sessions idle for 24 h and erases their content (core.maintenance.runDaily).
+ * The message carries no data; every run is idempotent.
+ */
+export const MaintenanceJob = z.object({
+  type: z.literal('maintenance'),
+  task: z.literal('daily'),
+  requestId: z.string().max(128).nullable().optional(),
+});
+/** The exact body the daily schedule sends (apps/api/lambda-contract.json, shared with infra/cdk). */
+export { DAILY_MAINTENANCE_MESSAGE } from '../lambda-contract.js';
+
 /** Every message type the worker understands: core's jobs plus worker maintenance jobs. */
-export const WorkerJob = z.union([JobMessage, BackfillEmbeddingsJob]);
+export const WorkerJob = z.union([JobMessage, BackfillEmbeddingsJob, MaintenanceJob]);
 export type WorkerJob = z.infer<typeof WorkerJob>;
 
 export interface WorkerDeps {
   readonly ingestion: Pick<IngestionProcessor, 'process'>;
   readonly backfill: (options: Omit<BackfillOptions, 'purpose'>) => Promise<BackfillReport>;
+  readonly maintenance: (options: { readonly requestId: string }) => Promise<MaintenanceReport>;
   readonly logger: Logger;
   /** The jobs queue's redrive maxReceiveCount: the last receive marks a document failed. */
   readonly maxReceiveCount: number;
@@ -69,6 +88,18 @@ async function processRecord(
   }
   const requestId = job.requestId ?? `sqs-${record.messageId}`;
   const log = deps.logger.child({ requestId, messageId: record.messageId, jobType: job.type, attempt });
+
+  if (job.type === 'maintenance') {
+    try {
+      const report = await deps.maintenance({ requestId });
+      log.info('worker.maintenance_done', { ...report });
+      return { outcome: 'done', ingested: false };
+    } catch (err) {
+      // Retried by SQS (e.g. Aurora still resuming); the redrive policy bounds the attempts.
+      log.warn('worker.maintenance_failed', errorFields(err));
+      return { outcome: 'retry', ingested: false };
+    }
+  }
 
   if (job.type === 'backfill_embeddings') {
     try {

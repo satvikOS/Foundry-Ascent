@@ -188,6 +188,7 @@ export function EscalationsPage() {
                 key={selected.id}
                 escalation={selected}
                 canEdit={canEdit}
+                isSubject={selected.createdBy.id === me.principal.id}
                 onBack={() => {
                   select(undefined);
                 }}
@@ -234,10 +235,13 @@ export function EscalationsPage() {
 function EscalationDetail({
   escalation,
   canEdit,
+  isSubject,
   onBack,
 }: {
   escalation: EscalationView;
   canEdit: boolean;
+  /** Whether the viewer created the request: only they may agree to share it. */
+  isSubject: boolean;
   onBack: () => void;
 }) {
   const action = useEscalationAction();
@@ -375,9 +379,19 @@ function EscalationDetail({
         <SectionCard
           title="Consent"
           icon={ShieldCheck}
-          description={`Choose which confirmed facts ${role} may see.`}
+          description={
+            isSubject
+              ? `Choose which confirmed facts ${role} may see.`
+              : `Waiting for ${escalation.createdBy.displayName} to agree to share this request.`
+          }
         >
-          <ConsentForm escalation={escalation} />
+          {isSubject ? (
+            <ConsentForm escalation={escalation} />
+          ) : (
+            <p className="text-[13px] text-muted-foreground">
+              Only the person who asked for help can choose what is shared with {role}.
+            </p>
+          )}
         </SectionCard>
       ) : null}
 

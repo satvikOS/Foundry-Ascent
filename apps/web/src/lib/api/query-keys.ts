@@ -46,6 +46,7 @@ export const queryKeys = {
   },
   memory: {
     history: (memoryId: string) => [ROOT, 'memory', memoryId, 'history'] as const,
+    item: (memoryId: string) => [ROOT, 'memory', memoryId, 'item'] as const,
   },
   inbox: {
     escalations: () => [ROOT, 'inbox', 'escalations'] as const,

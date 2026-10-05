@@ -16,7 +16,7 @@ import { AppShellContext, type AppShellContextValue } from './app-shell-context'
 import { CommandPalette } from './command-palette';
 import { ShortcutsDialog } from './shortcuts-dialog';
 import { Sidebar, SidebarContent } from './sidebar';
-import { AiDisabledBanner, DbWakingBanner, OfflineBanner } from './status-banners';
+import { AccessCodeNoticeBanner, AiDisabledBanner, DbWakingBanner, OfflineBanner } from './status-banners';
 import { ThemeToggle } from './theme-toggle';
 import { UserMenu } from './user-menu';
 
@@ -180,6 +180,7 @@ export function AppShell({ me, children }: AppShellProps) {
             <DbWakingBanner />
             <OfflineBanner />
             <AiDisabledBanner />
+            <AccessCodeNoticeBanner />
           </div>
 
           <main id="main-content" tabIndex={-1} className="flex min-w-0 flex-1 flex-col outline-none">

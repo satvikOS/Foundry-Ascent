@@ -204,6 +204,17 @@ export const MembershipView = z.object({
   role: MembershipRole,
 });
 
+/**
+ * Something the signed-in person should know about their account. `access_code_issued`: someone else
+ * issued a new access code for this account at `at` since the person's previous sign-in (an
+ * administrator re-issue, or a sign of account takeover if the person did not ask for it).
+ */
+export const AccountNotice = z.object({
+  kind: z.literal('access_code_issued'),
+  at: Timestamp,
+});
+export type AccountNotice = z.infer<typeof AccountNotice>;
+
 export const Me = z.object({
   principal: PrincipalView,
   tenant: TenantView,
@@ -212,6 +223,8 @@ export const Me = z.object({
   assignedVentureIds: z.array(Id),
   disclosure: z.string(),
   aiEnabled: z.boolean(),
+  /** Additive: older APIs send none. */
+  notices: z.array(AccountNotice).default([]),
 });
 export type Me = z.infer<typeof Me>;
 
@@ -264,7 +277,10 @@ export const MemoryObjectView = z.object({
   ventureId: Id,
   type: MemoryType,
   title: z.string(),
+  /** The full text, or an excerpt in list responses (see `contentLength`). */
   content: z.string(),
+  /** Length of the full content; larger than `content.length` when `content` is a list excerpt. */
+  contentLength: z.number().int().min(0),
   attributes: z.record(z.string(), z.unknown()),
   status: MemoryStatus,
   visibility: Visibility,
@@ -291,6 +307,21 @@ export const MemoryEventView = z.object({
   diff: z.record(z.string(), z.unknown()),
   at: Timestamp,
 });
+
+/**
+ * `DocumentView.failureReason` codes the web explains: `spend_cap_reached` (the daily AI budget of the
+ * platform or of the uploader was used up before indexing; retry after midnight UTC), `extract_failed`,
+ * `empty_text`, `too_large`, `object_missing`, `retries_exhausted`, `enqueue_failed`.
+ */
+export const DOCUMENT_FAILURE_REASONS = [
+  'spend_cap_reached',
+  'extract_failed',
+  'empty_text',
+  'too_large',
+  'object_missing',
+  'retries_exhausted',
+  'enqueue_failed',
+] as const;
 
 export const DocumentView = z.object({
   id: Id,

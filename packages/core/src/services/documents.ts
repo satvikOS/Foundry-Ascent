@@ -1,18 +1,22 @@
 import { CreateDocumentRequest, type CreateDocumentResponse, type DocumentView } from '@foundry/contracts';
-import { documentsRepo } from '@foundry/db';
+import { documentsRepo, settingsRepo } from '@foundry/db';
 import { type z } from 'zod';
 
 import { requireVentureAccess } from '../authz/venture-access.js';
 import { type RequestContext } from '../context.js';
 import { DomainError, fail, parseInput } from '../errors.js';
 import { audit, requireId, type Kit } from '../internal/kit.js';
+import { secondsUntilUtcMidnight } from '../orchestrator/sampling.js';
 
 type CreateDocumentResult = z.infer<typeof CreateDocumentResponse>;
 
 export interface DocumentsService {
   /**
    * Registers an upload (`pending_upload`) under `tenants/{t}/ventures/{v}/documents/{id}/{filename}` and
-   * returns a presigned PUT from the ObjectStore port (founder/team).
+   * returns a presigned PUT from the ObjectStore port (founder/team). Each person may register at most
+   * `dailyUploadDocumentsPerPrincipal` documents and `dailyUploadBytesPerPrincipal` declared bytes per UTC
+   * day (platform settings); beyond that the request is refused with 429 `rate_limited` and a Retry-After
+   * until midnight UTC. The check and the insert run under a per-principal lock in one transaction.
    */
   createUpload(
     ctx: RequestContext,
@@ -60,6 +64,29 @@ export function createDocumentsService(kit: Kit): DocumentsService {
       const key = documentKey({ tenantId: ctx.tenantId, ventureId, documentId, filename: input.filename });
       const document = await kit.inRequest(ctx, async (scope) => {
         await requireVentureAccess(scope, ventureId, 'write', { objectType: 'document' });
+        await documentsRepo.lockUploadAdmission(scope.tx, ctx.principalId);
+        const settings = await settingsRepo.getPlatformSettings(scope.tx);
+        const usage = await documentsRepo.uploadUsageToday(scope.tx);
+        const overCount = usage.documents + 1 > settings.dailyUploadDocumentsPerPrincipal;
+        const overBytes = usage.bytes + input.sizeBytes > settings.dailyUploadBytesPerPrincipal;
+        if (overCount || overBytes) {
+          const reason = overCount ? 'daily_upload_count' : 'daily_upload_bytes';
+          scope.deferAudit({
+            action: 'document.upload_quota',
+            outcome: 'blocked',
+            ventureId,
+            objectType: 'document',
+            policyReason: reason,
+            metadata: { documentsToday: usage.documents, sizeBytes: input.sizeBytes },
+          });
+          throw new DomainError(
+            'rate_limited',
+            overCount
+              ? `You can upload up to ${settings.dailyUploadDocumentsPerPrincipal} documents per day. Try again after midnight UTC.`
+              : 'You have reached your daily upload volume. Try again after midnight UTC.',
+            { reason, retryAfterSeconds: secondsUntilUtcMidnight(kit.now()) },
+          );
+        }
         await documentsRepo.createDocument(scope.tx, {
           id: documentId,
           tenantId: ctx.tenantId,

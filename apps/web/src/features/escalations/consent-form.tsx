@@ -1,5 +1,5 @@
 import type { EscalationView } from '@foundry/contracts';
-import { Lock, Search, ShieldCheck } from 'lucide-react';
+import { Search, ShieldCheck } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 
 import { announce } from '@/components/a11y/live-announcer';
@@ -50,7 +50,9 @@ export function ConsentForm({ escalation, onConsented, onCancel }: ConsentFormPr
 
   const items = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    const rows = confirmed.data ?? [];
+    // Packets are read by the whole team and the assignee, so founder-only items can never be shared
+    // (the server rejects them too).
+    const rows = (confirmed.data ?? []).filter((m) => m.visibility !== 'founder_private');
     const filtered = needle
       ? rows.filter((m) => m.title.toLowerCase().includes(needle) || m.content.toLowerCase().includes(needle))
       : rows;
@@ -93,7 +95,7 @@ export function ConsentForm({ escalation, onConsented, onCancel }: ConsentFormPr
     <div className="grid gap-4">
       <Alert variant="info" icon={ShieldCheck} title="You decide what is shared">
         {role} will see your question, the packet above, and only the facts you tick below. Founder-only items
-        are marked with a lock.
+        are never shared and are not listed.
       </Alert>
       {error ? (
         <Alert variant="destructive" live="alert" title="Couldn’t record consent">
@@ -156,12 +158,6 @@ export function ConsentForm({ escalation, onConsented, onCancel }: ConsentFormPr
                   <label htmlFor={id} className="grid min-w-0 cursor-pointer gap-0.5">
                     <span className="flex flex-wrap items-center gap-1.5">
                       <MemoryTypeLabel type={memory.type} />
-                      {memory.visibility === 'founder_private' ? (
-                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                          <Lock aria-hidden className="size-3" />
-                          Founder only
-                        </span>
-                      ) : null}
                       {suggested.has(memory.id) ? (
                         <span className="text-xs text-muted-foreground">Suggested by Foundry Guide</span>
                       ) : null}

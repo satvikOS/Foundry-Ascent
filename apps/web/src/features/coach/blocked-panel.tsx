@@ -13,7 +13,7 @@ interface BlockedPanelProps {
    * `turn.blocked` event or, after a reload, from `TurnView.blocked`.
    */
   supportMessage: string | null;
-  /** Server reason code (`crisis_support`, `cross_venture`, `identity`, …); decides the explanation. */
+  /** Server reason code (`crisis_support`, `policy`, `identity`, …); decides the explanation. */
   reason: string | null;
   /** Escalation created automatically for this turn, if any. */
   escalationId: string | null;
@@ -30,10 +30,13 @@ function explanation(reason: string | null): { title: string; body: string } {
         title: 'You deserve support from a person',
         body: 'Foundry Guide paused the coaching so you can reach people who can help right now.',
       };
+    // `policy` is what founders and teams receive for a privacy check (the specific reason stays with
+    // program staff, so a held-back answer never confirms anything about other ventures).
+    case 'policy':
     case 'cross_venture':
       return {
-        title: 'Every venture workspace is private',
-        body: 'Foundry Guide can’t share or discuss other ventures, so it held back this answer. Ask about your own venture and it will help.',
+        title: 'This answer was held back',
+        body: 'Foundry Guide held back this answer because it didn’t pass a privacy and safety check. Ask again about your own venture, or request a human.',
       };
     case 'identity':
       return {

@@ -1,17 +1,19 @@
 import { createHash } from 'node:crypto';
 
-import { MAX_DOCUMENT_BYTES } from '@foundry/contracts';
+import { MAX_DOCUMENT_BYTES, type PlatformSettingsView } from '@foundry/contracts';
 import {
   DatabaseResumingError,
   auditRepo,
   documentsRepo,
   knowledgeRepo,
   settingsRepo,
+  usageRepo,
   venturesRepo,
   type SystemExecutor,
 } from '@foundry/db';
 
 import { type Kit } from '../internal/kit.js';
+import { spendCapExceeded } from '../orchestrator/guards.js';
 import {
   ExtractionFailedError,
   JobMessage,
@@ -91,23 +93,71 @@ export function createIngestionProcessor(kit: Kit): IngestionProcessor {
     });
   }
 
+  /** Which daily spend cap (platform, or the uploader's) is reached right now, if any. */
+  async function capReached(
+    settings: PlatformSettingsView,
+    uploadedBy: string,
+  ): Promise<'global' | 'principal' | null> {
+    const state = await kit.system(
+      async (sx) => ({
+        globalUsd: await usageRepo.spendToday(sx),
+        principalUsd: await usageRepo.spendToday(sx, { principalId: uploadedBy }),
+      }),
+      { transaction: false },
+    );
+    return spendCapExceeded(state, settings);
+  }
+
+  /**
+   * Embeds the chunks with the daily spend caps applied like a coaching turn: the platform's cap and the
+   * uploader's own (usage is attributed to `documents.uploaded_by`). A cap reached before the first batch
+   * fails the document with `spend_cap_reached` (the uploader retries after midnight UTC); one reached
+   * part-way stops embedding, and the remaining chunks are stored without vectors (lexical retrieval finds
+   * them; the backfill embeds them once the platform is under its cap).
+   */
   async function embedChunks(
     chunks: readonly TextChunk[],
     job: IngestDocumentJob,
+    uploadedBy: string,
     requestId: string,
-  ): Promise<(number[] | null)[]> {
+  ): Promise<{ vectors: (number[] | null)[]; capped: 'global' | 'principal' | null }> {
     const settings = await kit.system((sx) => settingsRepo.getPlatformSettings(sx), { transaction: false });
-    if (!settings.aiEnabled || chunks.length === 0) return chunks.map(() => null);
+    if (!settings.aiEnabled || chunks.length === 0) return { vectors: chunks.map(() => null), capped: null };
+    const before = await capReached(settings, uploadedBy);
+    if (before !== null) {
+      await kit.system(
+        (sx) =>
+          systemAudit(sx, {
+            action: 'spend_cap.reached',
+            outcome: 'blocked',
+            tenantId: job.tenantId,
+            ventureId: job.ventureId,
+            actorId: uploadedBy,
+            objectType: 'document',
+            objectId: job.documentId,
+            requestId,
+            policyReason: `${before}_daily_cap`,
+            metadata: { scope: before, operation: 'ingestion' },
+          }),
+        { transaction: false },
+      );
+      throw new PermanentFailure('spend_cap_reached');
+    }
     const vectors: (number[] | null)[] = [];
+    let capped: 'global' | 'principal' | null = null;
     try {
       for (let i = 0; i < chunks.length; i += cfg.embedBatchSize) {
+        if (i > 0) {
+          capped = await capReached(settings, uploadedBy);
+          if (capped !== null) break;
+        }
         const batch = chunks.slice(i, i + cfg.embedBatchSize);
         const result = await kit.deps.gateway.embed(
           batch.map((c) => (c.heading ? `${c.heading}\n\n${c.content}` : c.content)),
           { purpose: 'ingestion', requestId },
         );
         await kit.recordUsage({
-          ctx: { tenantId: job.tenantId, requestId, principalId: null },
+          ctx: { tenantId: job.tenantId, requestId, principalId: uploadedBy },
           ventureId: job.ventureId,
           purpose: 'ingestion',
           attempts: [{ modelId: result.modelId, usage: result.usage, costUsd: result.costUsd }],
@@ -117,7 +167,11 @@ export function createIngestionProcessor(kit: Kit): IngestionProcessor {
           vectors.push(v?.length === knowledgeRepo.EMBEDDING_DIMENSIONS ? v : null);
         }
       }
-      return vectors;
+      while (vectors.length < chunks.length) vectors.push(null);
+      if (capped !== null) {
+        logger.warn('ingestion.embeddings_capped', { requestId, documentId: job.documentId, scope: capped });
+      }
+      return { vectors, capped };
     } catch (err) {
       // Lexical retrieval works without vectors; the backfill embeds them later.
       logger.warn('ingestion.embeddings_deferred', {
@@ -125,7 +179,7 @@ export function createIngestionProcessor(kit: Kit): IngestionProcessor {
         documentId: job.documentId,
         error: err instanceof Error ? err.name : 'unknown',
       });
-      return chunks.map(() => null);
+      return { vectors: chunks.map(() => null), capped };
     }
   }
 
@@ -199,7 +253,7 @@ export function createIngestionProcessor(kit: Kit): IngestionProcessor {
       maxChunks: cfg.maxChunks,
     });
     if (chunks.length === 0) throw new PermanentFailure('empty_text');
-    const embeddings = await embedChunks(chunks, job, requestId);
+    const { vectors: embeddings, capped } = await embedChunks(chunks, job, document.uploadedBy, requestId);
 
     // 4. Store chunks under the document's own tenant/venture (from the row, never from the message).
     const checksum = createHash('sha256').update(data).digest('hex');
@@ -261,6 +315,7 @@ export function createIngestionProcessor(kit: Kit): IngestionProcessor {
             embedded: embeddings.filter((e) => e !== null).length,
             truncated,
             bytes: data.byteLength,
+            spendCapped: capped,
           },
         });
         return inserted;

@@ -13,8 +13,14 @@
  * exactly within the venture — there is no unscoped vector search. Shared corpora (program/public/persona,
  * `venture_id IS NULL`) take ANN candidates from the partial HNSW index plus lexical candidates, then
  * rescore. Under `db.withContext` RLS additionally applies (memory visibility, venture membership).
+ *
+ * founder_private memory is never a coaching candidate: turns, their evidence, recaps, escalation drafts
+ * and EIR samples are shared with the venture team (and sampled turns with the assigned EIR), so an item
+ * visible to its author only must not shape them. `privateOwnerId` is the only way in (that principal's
+ * own private items), for a session whose content RLS restricts to its author; no such session mode
+ * exists today, so callers never pass it.
  */
-import { EvidenceKind, MemoryStatus, MemoryType } from '@foundry/contracts';
+import { EvidenceKind, MemoryStatus, MemoryType, Visibility } from '@foundry/contracts';
 import { type z } from 'zod';
 
 import { col, type RawRow } from '../columns.js';
@@ -46,6 +52,8 @@ export interface RetrievedItem {
   readonly sourceId: string | null;
   /** Memory type (memory items only). */
   readonly memoryType: MemoryTypeValue | null;
+  /** Memory visibility (memory items only). */
+  readonly visibility: z.infer<typeof Visibility> | null;
   readonly components: {
     readonly vector: number;
     readonly lexical: number;
@@ -105,6 +113,7 @@ function decodeItem(kind: EvidenceKindValue | 'from_row', r: RawRow): RetrievedI
     ventureId: col.uuid.nullable.decode(r.venture_id, 'venture_id'),
     sourceId: col.uuid.nullable.decode(r.source_id, 'source_id'),
     memoryType: col.enum(MemoryType.options).nullable.decode(r.memory_type, 'memory_type'),
+    visibility: col.enum(Visibility.options).nullable.decode(r.visibility, 'visibility'),
     components: {
       vector: col.num.decode(r.vec, 'vec'),
       lexical: col.num.decode(r.lex, 'lex'),
@@ -124,10 +133,15 @@ export interface VentureMemoryQuery extends BaseQuery {
   /** Default proposed + confirmed + disputed (disputed items carry a contradiction signal). */
   readonly statuses?: readonly MemoryStatusValue[];
   readonly types?: readonly MemoryTypeValue[];
+  /**
+   * Include this principal's own founder_private items (and nobody else's). Only for sessions whose
+   * content is readable by that principal alone; default none: founder_private items are excluded.
+   */
+  readonly privateOwnerId?: string | null;
 }
 
 /**
- * Venture memory candidates. authority = 1 for pinned items, otherwise
+ * Venture memory candidates (founder_private items excluded, see the module comment). authority = 1 for pinned items, otherwise
  * status weight (confirmed 1.0, disputed 0.5, proposed 0.4) × (0.5 + 0.5 · confidence).
  * Pinned items are always candidates.
  */
@@ -137,7 +151,7 @@ export function searchVentureMemory(ex: SqlExecutor, q: VentureMemoryQuery): Pro
     ex,
     `WITH q AS (SELECT ${orTsQuerySql('query')} AS tsq)
      SELECT x.*, ${SCORE_SQL} AS score FROM (
-       SELECT m.id, m.venture_id, NULL::uuid AS source_id, m.type AS memory_type, m.title,
+       SELECT m.id, m.venture_id, NULL::uuid AS source_id, m.type AS memory_type, m.visibility, m.title,
               ${excerptSql('m.content')} AS excerpt, m.updated_at AS freshness_at, m.status,
               ${vecSql('m.embedding')} AS vec,
               ts_rank_cd(m.tsv, q.tsq, 32) AS lex,
@@ -149,6 +163,7 @@ export function searchVentureMemory(ex: SqlExecutor, q: VentureMemoryQuery): Pro
        WHERE m.tenant_id = :tenantId AND m.venture_id = :ventureId
          AND m.status = ANY (:statuses)
          AND (:types IS NULL OR m.type = ANY (:types))
+         AND (m.visibility <> 'founder_private' OR (:privateOwner IS NOT NULL AND m.created_by = :privateOwner))
          AND (m.tsv @@ q.tsq OR m.pinned OR (:embedding IS NOT NULL AND m.embedding IS NOT NULL))
      ) x
      WHERE ${SCORE_SQL} >= :minScore
@@ -159,6 +174,7 @@ export function searchVentureMemory(ex: SqlExecutor, q: VentureMemoryQuery): Pro
       ventureId: p.uuid(q.ventureId),
       statuses: p.textArray(statuses),
       types: p.nullable.textArray(q.types),
+      privateOwner: p.nullable.uuid(q.privateOwnerId),
     },
     (r) => decodeItem('memory', r),
   );
@@ -178,7 +194,7 @@ export function searchVentureChunks(ex: SqlExecutor, q: VentureChunkQuery): Prom
     ex,
     `WITH q AS (SELECT ${orTsQuerySql('query')} AS tsq)
      SELECT x.*, ${SCORE_SQL} AS score FROM (
-       SELECT c.id, c.venture_id, c.source_id, NULL::text AS memory_type,
+       SELECT c.id, c.venture_id, c.source_id, NULL::text AS memory_type, NULL::text AS visibility,
               CASE WHEN c.heading IS NULL OR c.heading = '' THEN s.title ELSE s.title || ' — ' || c.heading END AS title,
               ${excerptSql('c.content')} AS excerpt, s.freshness_at, s.status,
               ${vecSql('c.embedding')} AS vec,
@@ -239,7 +255,7 @@ export function searchSharedChunks(ex: SqlExecutor, q: SharedChunkQuery): Promis
        LIMIT :candidates)
      , cand AS (SELECT id FROM ann UNION SELECT id FROM lexical)
      SELECT x.*, ${SCORE_SQL} AS score FROM (
-       SELECT c.id, NULL::uuid AS venture_id, c.source_id, NULL::text AS memory_type,
+       SELECT c.id, NULL::uuid AS venture_id, c.source_id, NULL::text AS memory_type, NULL::text AS visibility,
               CASE WHEN c.scope = 'persona' THEN 'doctrine' ELSE 'chunk' END AS kind,
               CASE WHEN c.heading IS NULL OR c.heading = '' THEN s.title ELSE s.title || ' — ' || c.heading END AS title,
               ${excerptSql('c.content')} AS excerpt, s.freshness_at, s.status,
@@ -289,7 +305,8 @@ export function searchResources(ex: SqlExecutor, q: ResourceQuery): Promise<Retr
     ex,
     `WITH q AS (SELECT ${orTsQuerySql('query')} AS tsq)
      SELECT x.*, ${score} AS score FROM (
-       SELECT r.id, NULL::uuid AS venture_id, NULL::uuid AS source_id, NULL::text AS memory_type, r.name AS title,
+       SELECT r.id, NULL::uuid AS venture_id, NULL::uuid AS source_id, NULL::text AS memory_type,
+              NULL::text AS visibility, r.name AS title,
               ${excerptSql('r.description')} AS excerpt, r.freshness_at, r.status,
               0::double precision AS vec,
               CASE WHEN :stage IS NOT NULL AND :stage = ANY (r.stages) THEN 1.0
@@ -314,7 +331,8 @@ export function searchPatterns(ex: SqlExecutor, q: Omit<BaseQuery, 'embedding'>)
     ex,
     `WITH q AS (SELECT ${orTsQuerySql('query')} AS tsq)
      SELECT x.*, ${SCORE_SQL} AS score FROM (
-       SELECT pt.id, NULL::uuid AS venture_id, NULL::uuid AS source_id, NULL::text AS memory_type, pt.title,
+       SELECT pt.id, NULL::uuid AS venture_id, NULL::uuid AS source_id, NULL::text AS memory_type,
+              NULL::text AS visibility, pt.title,
               ${excerptSql("pt.signal || ' → ' || pt.intervention || ' (limits: ' || pt.limits || ')'")} AS excerpt,
               pt.created_at AS freshness_at, pt.status,
               0::double precision AS vec,

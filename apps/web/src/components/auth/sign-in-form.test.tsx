@@ -19,6 +19,7 @@ const ME: Me = {
   assignedVentureIds: [],
   disclosure: 'You are working with Foundry Guide, an AI coach.',
   aiEnabled: true,
+  notices: [],
 };
 
 type FetchFn = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;

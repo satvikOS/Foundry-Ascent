@@ -98,7 +98,7 @@ describe('program console', () => {
     for (const value of Object.values(before.venturesByStage)) expect(value).toBeNull();
     expect(JSON.stringify(before)).not.toMatch(/QuietQuad|BenchTally|CANARY/);
 
-    for (const name of ['Discovery Two', 'Discovery Three']) {
+    for (const name of ['Zephyrine Two', 'Quillmark Three']) {
       const row = await h.core.program.createVenture(lead, { name, stage: 'discovery', domain: 'software' });
       expect(row).toMatchObject({ name, stage: 'discovery', personaName: 'Foundry Guide', memberCount: 0 });
     }

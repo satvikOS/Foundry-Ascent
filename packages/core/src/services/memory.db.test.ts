@@ -71,7 +71,7 @@ describe('memory lifecycle', () => {
     expect(v2?.id).not.toBe(v1.id);
     expect((await rawStatus(v1.id)).status).toBe('superseded');
 
-    const listed = await h.core.memory.list(maya, ventureId, { type: 'fact' });
+    const listed = (await h.core.memory.list(maya, ventureId, { type: 'fact' })).items;
     expect(listed.map((m) => m.id)).toContain(v2?.id);
     expect(listed.map((m) => m.id)).not.toContain(v1.id);
 
@@ -114,7 +114,7 @@ describe('memory lifecycle', () => {
       reason: 'no longer relevant',
     });
     expect(result).toBeNull();
-    const listed = await h.core.memory.list(maya, ventureId, {});
+    const listed = (await h.core.memory.list(maya, ventureId, {})).items;
     expect(listed.map((m) => m.id)).not.toContain(v2?.id);
     await expect(h.core.memory.history(maya, v2?.id ?? '')).rejects.toMatchObject({ code: 'not_found' });
     for (const id of [v1.id, v2?.id ?? '']) {
@@ -194,12 +194,12 @@ describe('memory lifecycle', () => {
       content: 'I can fund myself until March.',
       visibility: 'founder_private',
     });
-    const teamView = await h.core.memory.list(devin, ventureId, {});
+    const teamView = (await h.core.memory.list(devin, ventureId, {})).items;
     expect(teamView.map((m) => m.id)).not.toContain(secret.id);
     await expect(h.core.memory.act(devin, secret.id, { action: 'pin' })).rejects.toMatchObject({
       code: 'not_found',
     });
-    const search = await h.core.memory.list(maya, ventureId, { q: 'runway' });
+    const search = (await h.core.memory.list(maya, ventureId, { q: 'runway' })).items;
     expect(search.map((m) => m.id)).toContain(secret.id);
   });
 });

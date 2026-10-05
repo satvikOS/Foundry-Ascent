@@ -36,6 +36,8 @@ import { MEMORY_TYPE_LABELS, VISIBILITY_LABELS } from '@/lib/labels';
 import { FieldSelect, type FieldSelectOption } from '@/features/venture/field-select';
 import { applyFieldErrors } from '@/features/venture/form-errors';
 
+import { useFullMemory } from '@/lib/api/hooks/memory';
+
 import { useCreateVentureMemory, useMemoryActions } from './api';
 
 const VISIBILITIES = Visibility.options;
@@ -111,11 +113,14 @@ interface CorrectMemoryDialogProps {
 /** Correct a memory object: saved as a new version; the previous one stays in history. */
 export function CorrectMemoryDialog({
   ventureId,
-  memory,
+  memory: listed,
   open,
   onOpenChange,
   onCorrected,
 }: CorrectMemoryDialogProps) {
+  // Lists carry an excerpt: the form is filled (and can be saved) only once the full text is loaded,
+  // otherwise a correction would replace the content with its excerpt.
+  const { memory, complete } = useFullMemory(open ? listed : null);
   const { mutation, run } = useMemoryActions(ventureId);
   const [formError, setFormError] = useState<string | null>(null);
   const form = useForm<CorrectInput, unknown, CorrectOutput>({
@@ -132,7 +137,7 @@ export function CorrectMemoryDialog({
   const { register, handleSubmit, reset, control, setError, formState } = form;
 
   useEffect(() => {
-    if (open && memory) {
+    if (open && memory && complete) {
       setFormError(null);
       reset({
         title: memory.title,
@@ -143,13 +148,14 @@ export function CorrectMemoryDialog({
         approveAfter: true,
       });
     }
-  }, [open, memory, reset]);
+  }, [open, memory, complete, reset]);
 
   if (!memory) return null;
   const isProposed = memory.status === 'proposed';
 
   const onSubmit = handleSubmit((values) => {
     setFormError(null);
+    if (!complete) return;
     const patch: { title?: string; content?: string; visibility?: Visibility; confidence?: number } = {};
     if (values.title !== memory.title) patch.title = values.title;
     if (values.content !== memory.content) patch.content = values.content;
@@ -288,7 +294,11 @@ export function CorrectMemoryDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" loading={mutation.isPending} loadingText="Saving…">
+            <Button
+              type="submit"
+              loading={mutation.isPending || !complete}
+              loadingText={complete ? 'Saving…' : 'Loading…'}
+            >
               Save correction
             </Button>
           </DialogFooter>

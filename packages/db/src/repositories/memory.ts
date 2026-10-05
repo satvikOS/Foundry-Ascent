@@ -52,8 +52,16 @@ export type MemoryRecord = MemoryObjectView & { readonly tenantId: string; reado
 
 const Attributes = z.record(z.string(), z.unknown());
 
-const MEMORY_SELECT = `
-  SELECT m.id, m.tenant_id, m.venture_id, m.type, m.title, m.content, m.attributes, m.status, m.visibility,
+/**
+ * Item columns. With `excerpt` the content is cut to `:excerptChars` characters in SQL (list pages: a page
+ * of full 8 000-character items plus attributes could exceed the RDS Data API's 1 MB response limit);
+ * `content_length` is always the full length.
+ */
+function memorySelect(excerpt: boolean): string {
+  return `
+  SELECT m.id, m.tenant_id, m.venture_id, m.type, m.title,
+         ${excerpt ? 'left(m.content, :excerptChars)' : 'm.content'} AS content, length(m.content) AS content_length,
+         m.attributes, m.status, m.visibility,
          m.confidence, m.source_refs, m.origin, m.created_by, m.approved_by, m.approved_at, m.version,
          m.supersedes_id, m.pinned, m.expires_at, m.created_at, m.updated_at,
          m.embedding IS NOT NULL AS has_embedding,
@@ -61,6 +69,8 @@ const MEMORY_SELECT = `
   FROM memory_objects m
   LEFT JOIN principals cb ON cb.id = m.created_by
   LEFT JOIN principals ab ON ab.id = m.approved_by`;
+}
+const MEMORY_SELECT = memorySelect(false);
 
 function decodeSourceRefs(raw: unknown): SourceRefValue[] {
   const value = col.json().decode(raw, 'source_refs');
@@ -83,6 +93,7 @@ function decodeMemory(r: RawRow): MemoryRecord {
     type: col.enum(MemoryType.options).decode(r.type, 'type'),
     title: col.text.decode(r.title, 'title'),
     content: col.text.decode(r.content, 'content'),
+    contentLength: col.int.decode(r.content_length, 'content_length'),
     attributes: col.json(Attributes).decode(r.attributes, 'attributes'),
     status: col.enum(MemoryStatus.options).decode(r.status, 'status'),
     visibility: col.enum(Visibility.options).decode(r.visibility, 'visibility'),
@@ -136,6 +147,13 @@ export interface ListMemoryOptions {
   readonly orderBy?: 'recent' | 'due' | 'relevance';
   /** Default 100, max 500. */
   readonly limit?: number;
+  /** Rows to skip (offset paging of the API list). */
+  readonly offset?: number;
+  /**
+   * Cut `content` to this many characters (`contentLength` keeps the full length). API list pages always
+   * set it; full items come from {@link getMemory}.
+   */
+  readonly excerptChars?: number;
 }
 
 const DUE_SQL = `CASE WHEN coalesce(m.attributes ->> 'due', m.attributes ->> 'target_date') ~ '^\\d{4}-\\d{2}-\\d{2}$'
@@ -172,10 +190,14 @@ export function listMemory(ex: SqlExecutor, options: ListMemoryOptions): Promise
     dueBefore: p.nullable.text(options.dueBefore),
     dueOnOrAfter: p.nullable.text(options.dueOnOrAfter),
     limit: p.int(clampLimit(options.limit, 100, 500)),
+    offset: p.int(Math.max(0, Math.min(100_000, Math.trunc(options.offset ?? 0)))),
   };
+  const excerpt = options.excerptChars !== undefined;
+  if (excerpt)
+    params.excerptChars = p.int(Math.max(0, Math.min(8000, Math.trunc(options.excerptChars ?? 0))));
   return queryRows(
     ex,
-    `${MEMORY_SELECT}
+    `${memorySelect(excerpt)}
      WHERE m.venture_id = :ventureId
        AND m.status = ANY (:statuses)
        AND (:types IS NULL OR m.type = ANY (:types))
@@ -188,7 +210,7 @@ export function listMemory(ex: SqlExecutor, options: ListMemoryOptions): Promise
        AND (:dueBefore IS NULL OR ${DUE_SQL} < :dueBefore)
        AND (:dueOnOrAfter IS NULL OR ${DUE_SQL} >= :dueOnOrAfter)
      ORDER BY ${order}
-     LIMIT :limit`,
+     LIMIT :limit OFFSET :offset`,
     params,
     decodeMemory,
   );

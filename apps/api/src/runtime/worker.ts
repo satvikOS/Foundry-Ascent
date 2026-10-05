@@ -32,6 +32,7 @@ export function createWorkerRuntime(env: EnvLike): WorkerDeps {
   return {
     ingestion: core.ingestion,
     backfill: (options) => backfillEmbeddings({ db, gateway, logger }, { ...options, purpose: 'embedding' }),
+    maintenance: (options) => core.maintenance.runDaily(options),
     logger,
     maxReceiveCount: config.jobsMaxReceiveCount,
   };

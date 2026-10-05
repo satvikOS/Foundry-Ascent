@@ -134,6 +134,7 @@ export function makeMemory(overrides: Partial<MemoryObjectView> = {}): MemoryObj
     type: 'insight',
     title: 'Exam weeks drive demand',
     content: 'Usage spikes before exams.',
+    contentLength: 'Usage spikes before exams.'.length,
     attributes: {},
     status: 'proposed',
     visibility: 'venture',

@@ -14,6 +14,7 @@ export function toMemoryView(m: memoryRepo.MemoryRecord): MemoryObjectView {
     type: m.type,
     title: m.title,
     content: m.content,
+    contentLength: m.contentLength,
     attributes: m.attributes,
     status: m.status,
     visibility: m.visibility,

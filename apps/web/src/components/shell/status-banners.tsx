@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { CirclePause, DatabaseZap, WifiOff } from 'lucide-react';
+import { CirclePause, DatabaseZap, KeyRound, WifiOff } from 'lucide-react';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 
 import { announce } from '@/components/a11y/live-announcer';
@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { meQueryOptions } from '@/lib/api/hooks/auth';
 import { resumingStore, useResumingState } from '@/lib/api/resuming';
+import { formatDate } from '@/lib/format';
+import { safeStorage, STORAGE_KEYS } from '@/lib/storage';
 import { cn } from '@/lib/utils';
 
 const TYPICAL_RESUME_SECONDS = 15;
@@ -201,6 +203,53 @@ export function AiDisabledBanner() {
             <span className="font-medium">AI coaching is paused.</span>{' '}
             <span className="text-muted-foreground">
               An administrator turned off the coach. Your workspace, memory and documents remain available.
+            </span>
+          </p>
+        </BannerShell>
+      ) : null}
+    </AnimatePresence>
+  );
+}
+
+/**
+ * "A new access code was issued for your account on <date>": someone else (an administrator) issued a code
+ * for this account since the person's previous sign-in (`Me.notices`, computed by the API per sign-in).
+ * Expected after asking for a new code; otherwise the person should tell the program team. Dismissible;
+ * a newer re-issue shows again.
+ */
+export function AccessCodeNoticeBanner() {
+  const { data: me } = useQuery(meQueryOptions());
+  // `access_code_issued` is the only notice kind so far; the newest comes first.
+  const latest = me?.notices[0] ?? null;
+  const [dismissed, setDismissed] = useState(() => safeStorage.get(STORAGE_KEYS.accessCodeNoticeDismissed));
+  const show = latest !== null && dismissed !== latest.at;
+  return (
+    <AnimatePresence initial={false}>
+      {show ? (
+        <BannerShell
+          key="access-code-notice"
+          live="polite"
+          tone="warning"
+          icon={<KeyRound aria-hidden className="size-4 text-warning" />}
+          action={
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={() => {
+                safeStorage.set(STORAGE_KEYS.accessCodeNoticeDismissed, latest.at);
+                setDismissed(latest.at);
+              }}
+            >
+              Dismiss
+            </Button>
+          }
+        >
+          <p data-testid="access-code-notice">
+            <span className="font-medium">
+              A new access code was issued for your account on {formatDate(latest.at)}.
+            </span>{' '}
+            <span className="text-muted-foreground">
+              If you didn’t ask for one, tell your program team right away.
             </span>
           </p>
         </BannerShell>

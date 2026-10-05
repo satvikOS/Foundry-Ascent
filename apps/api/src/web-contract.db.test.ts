@@ -284,7 +284,7 @@ describe('write endpoints answer with their contract response schema', () => {
     );
     expect(updated.status).toBe('stale');
     await expectJson(
-      await api.request('/program/ventures', { body: { name: 'Contract Test Venture' }, cookie: lead }),
+      await api.request('/program/ventures', { body: { name: 'Contract Zephyrine Venture' }, cookie: lead }),
       CreateProgramVentureResponse,
       201,
     );

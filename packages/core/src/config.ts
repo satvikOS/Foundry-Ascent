@@ -26,6 +26,11 @@ export const CoreConfig = z.object({
     cacheMaxEntries: z.number().int().min(1).max(1_000_000),
   }),
   signIn: z.object({
+    /**
+     * Viewers this container remembers as locked out (in memory, keyed by a keyed hash of the IP or IPv6
+     * /64): their attempts are refused before any database call until the lockout ends (10 000).
+     */
+    lockoutCacheEntries: z.number().int().min(0).max(1_000_000),
     /** Failed attempts per hashed viewer IP within the window before lockout (10). */
     ipFailureLimit: z.number().int().min(1),
     /** Sliding window and lockout length (15 min). */
@@ -41,6 +46,14 @@ export const CoreConfig = z.object({
     /** Per-principal rate limit: turns per window (20 / 10 min). */
     rateLimit: z.number().int().min(1),
     rateWindowSeconds: z.number().int().min(1),
+    /**
+     * Turns one principal may have being answered at once (3). Admission is serialised per principal, and
+     * spend is only recorded once a turn's model call returns, so this bounds how far parallel turns can
+     * overshoot the daily spend caps.
+     */
+    maxInFlight: z.number().int().min(1).max(50),
+    /** A pending turn older than this belongs to a request that died and no longer counts (120 s). */
+    inFlightWindowSeconds: z.number().int().min(30).max(3_600),
     /** Share of ordinary turns sampled for EIR calibration review (all high-risk turns are sampled). */
     reviewSampleRate: z.number().min(0).max(1),
     /** Input token budget for the assembled prompt (12k). */
@@ -75,6 +88,14 @@ export const CoreConfig = z.object({
     /** IANA time zone used for "1 business day" due dates. */
     businessTimeZone: z.string().min(1),
   }),
+  maintenance: z.object({
+    /** An ephemeral session nobody wrote in for this long is ended and its content erased (24 h). */
+    ephemeralIdleSeconds: z
+      .number()
+      .int()
+      .min(3_600)
+      .max(30 * 86_400),
+  }),
 });
 export type CoreConfig = z.infer<typeof CoreConfig>;
 
@@ -89,10 +110,18 @@ export const DEFAULT_CORE_CONFIG: CoreConfig = {
     keyGraceSeconds: 12 * 3_600,
     cacheMaxEntries: 10_000,
   },
-  signIn: { ipFailureLimit: 10, ipWindowSeconds: 15 * 60, globalSoftLimit: 500, globalRetryAfterSeconds: 60 },
+  signIn: {
+    lockoutCacheEntries: 10_000,
+    ipFailureLimit: 10,
+    ipWindowSeconds: 15 * 60,
+    globalSoftLimit: 500,
+    globalRetryAfterSeconds: 60,
+  },
   turns: {
     rateLimit: 20,
     rateWindowSeconds: 10 * 60,
+    maxInFlight: 3,
+    inFlightWindowSeconds: 120,
     reviewSampleRate: 0.3,
     maxInputTokens: 12_000,
     historyTurns: 8,
@@ -102,6 +131,7 @@ export const DEFAULT_CORE_CONFIG: CoreConfig = {
   ingestion: { chunkTokens: 800, overlapRatio: 0.15, embedBatchSize: 16, maxChunks: 2_000 },
   uploads: { presignTtlSeconds: 5 * 60 },
   escalations: { businessTimeZone: 'America/New_York' },
+  maintenance: { ephemeralIdleSeconds: 24 * 3_600 },
 };
 
 type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? Partial<T[K]> : T[K] };

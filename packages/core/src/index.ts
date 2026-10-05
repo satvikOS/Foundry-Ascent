@@ -41,7 +41,8 @@ export * from './authz/index.js';
 export { type MeService } from './services/me.js';
 export { type VenturesService } from './services/ventures.js';
 export { type SessionsService, type EndSessionResult } from './services/sessions.js';
-export { type MemoryService } from './services/memory.js';
+export { MEMORY_PAGE_DEFAULT, type MemoryPage, type MemoryService } from './services/memory.js';
+export { type MaintenanceReport, type MaintenanceService } from './services/maintenance.js';
 export { documentKey, storageFilename, type DocumentsService } from './services/documents.js';
 export { type EscalationsService } from './services/escalations.js';
 export { assemblePacket, dueAtFor, type PacketInput } from './services/escalation-packet.js';
@@ -60,13 +61,24 @@ export {
 } from './orchestrator/run-turn.js';
 export {
   buildEvidencePack,
+  candidateVisibility,
   classificationsFor,
   type EvidencePack,
+  type EvidencePackOptions,
   type KeyedEvidence,
 } from './orchestrator/evidence.js';
+export { privateRetrievalOwner } from './orchestrator/retrieval.js';
 export { assembleContext, estimateTokens, type AssembledContext } from './orchestrator/context-budget.js';
 export { secondsUntilUtcMidnight, shouldSampleForReview } from './orchestrator/sampling.js';
-export { blockedDetailOf, supportMessageFor } from './orchestrator/blocked.js';
+export {
+  blockedDetailOf,
+  participantBlockReason,
+  participantRiskLabel,
+  participantTurnView,
+  participantValidator,
+  supportMessageFor,
+} from './orchestrator/blocked.js';
+export { VENTURE_NAME_UNIQUE_CONSTRAINT, assertDistinctiveVentureName } from './internal/venture-names.js';
 export { spendCapExceeded, type SpendState } from './orchestrator/guards.js';
 export { RECAP_SCHEMA_NAME, RecapDraft, buildRecapPrompt, sanitizeRecap } from './orchestrator/recap.js';
 

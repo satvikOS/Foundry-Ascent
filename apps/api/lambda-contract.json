@@ -48,5 +48,9 @@
   "api": {
     "dbResumeBudgetSeconds": 40,
     "sseKeepAliveSeconds": 15
+  },
+  "worker": {
+    "$comment": "Body of the jobs-queue message the daily EventBridge Scheduler schedule sends (ephemeral-session expiry and redaction); the worker parses it as a maintenance job.",
+    "dailyMaintenanceMessage": { "type": "maintenance", "task": "daily" }
   }
 }

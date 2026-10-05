@@ -365,4 +365,16 @@ describe('data api driver', () => {
     expect(err.constraint).toBe('documents_s3_key_key');
     expect(err.message).not.toContain('secret/path');
   });
+
+  it('recovers the venture-name constraint raised by the 0003 trigger (the Data API has no constraint field)', () => {
+    const err = toDataApiDbError(
+      new DatabaseErrorException({
+        message:
+          'ERROR: duplicate key value violates unique constraint "ventures_tenant_name_unique"\n  Detail: Another venture of this tenant already uses this name.\n  Where: PL/pgSQL function app.ventures_name_guard() line 9 at RAISE; SQLState: 23505',
+        $metadata: {},
+      }),
+    );
+    expect(err.sqlState).toBe('23505');
+    expect(err.constraint).toBe('ventures_tenant_name_unique');
+  });
 });

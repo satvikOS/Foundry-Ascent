@@ -250,6 +250,24 @@ export async function updateVenture(
   );
 }
 
+/**
+ * Renames a venture as program staff through `app.rename_venture` (program lead or platform admin of the
+ * current tenant; works without membership). False when the venture is not in the tenant. A name taken by
+ * another venture of the tenant raises a unique violation (constraint `ventures_tenant_name_unique`).
+ */
+export async function renameVentureAsStaff(
+  ex: SqlExecutor,
+  args: { ventureId: string; name: string },
+): Promise<boolean> {
+  const row = await queryFirst(
+    ex,
+    'SELECT app.rename_venture(:ventureId, :name) AS renamed',
+    { ventureId: p.uuid(args.ventureId), name: p.text(args.name) },
+    (r) => col.bool.decode(r.renamed, 'renamed'),
+  );
+  return row === true;
+}
+
 type ProgramVentureRowValue = z.infer<typeof ProgramVentureRow>;
 
 /** Program console list: metadata only (member count, assigned persona name). */

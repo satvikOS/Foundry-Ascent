@@ -2,9 +2,10 @@ import { CoachMode, SessionPrivacy, SessionRecap, SessionStatus, type SessionVie
 import { type z } from 'zod';
 
 import { col, type RawRow } from '../columns.js';
-import { type SqlExecutor } from '../executor.js';
+import { type SqlExecutor, type SystemExecutor } from '../executor.js';
 import { p } from '../params.js';
-import { clampLimit, queryFirst, queryOne, queryRows } from './common.js';
+import { clampLimit, fetchByIdsInBatches, queryFirst, queryOne, queryRows } from './common.js';
+import { EPHEMERAL_REDACTION_TEXT } from './turns.js';
 
 type CoachModeValue = z.infer<typeof CoachMode>;
 type SessionRecapValue = z.infer<typeof SessionRecap>;
@@ -187,14 +188,17 @@ export function getSessionView(ex: SqlExecutor, id: string): Promise<SessionView
   return queryFirst(ex, `${VIEW_SELECT} WHERE s.id = :id`, { id: p.uuid(id) }, decodeView);
 }
 
-/** Sessions of a venture, newest first (contract `SessionView`). */
-export function listSessionViews(
+/** Session views per statement: each carries its recap (≈15 kB at most), so 20 stay far below 1 MB. */
+const SESSION_BATCH_SIZE = 20;
+
+/** Sessions of a venture, newest first (contract `SessionView`; ids first, then batches for the Data API). */
+export async function listSessionViews(
   ex: SqlExecutor,
   args: { ventureId: string; limit?: number; status?: SessionRecord['status'] },
 ): Promise<SessionView[]> {
-  return queryRows(
+  const ids = await queryRows(
     ex,
-    `${VIEW_SELECT}
+    `SELECT s.id FROM coaching_sessions s
      WHERE s.venture_id = :ventureId AND (:status IS NULL OR s.status = :status)
      ORDER BY s.started_at DESC, s.id
      LIMIT :limit`,
@@ -203,8 +207,50 @@ export function listSessionViews(
       status: p.nullable.text(args.status),
       limit: p.int(clampLimit(args.limit, 50, 200)),
     },
-    decodeView,
+    (r) => col.uuid.decode(r.id, 'id'),
   );
+  return fetchByIdsInBatches(
+    ids,
+    SESSION_BATCH_SIZE,
+    (batch) =>
+      queryRows(ex, `${VIEW_SELECT} WHERE s.id = ANY (:ids)`, { ids: p.uuidArray(batch) }, decodeView),
+    (view) => view.id,
+  );
+}
+
+export interface EphemeralCleanupResult {
+  /** Ephemeral sessions ended because nobody wrote in them for the idle period. */
+  readonly sessionsEnded: number;
+  /** Turns of ended ephemeral sessions whose content was erased by this run. */
+  readonly turnsRedacted: number;
+}
+
+/**
+ * Daily maintenance (system executor): ends every ephemeral session idle for `idleSeconds` (no turn and no
+ * start inside the period) and erases the conversation content of every turn of an ephemeral session that
+ * has ended, exactly as ending the session does (`turnsRepo.redactSessionTurns`). Covers
+ * sessions abandoned without "End session" and anything an earlier end could not redact. Idempotent.
+ */
+export async function expireStaleEphemeralSessions(
+  sx: SystemExecutor,
+  args: { idleSeconds: number },
+): Promise<EphemeralCleanupResult> {
+  const ended = await sx.query(
+    `UPDATE coaching_sessions s SET status = 'ended', ended_at = now(), recap = NULL
+     WHERE s.privacy = 'ephemeral' AND s.status IN ('active', 'suspended')
+       AND s.started_at < now() - make_interval(secs => :idle)
+       AND NOT EXISTS (SELECT 1 FROM turns t
+                       WHERE t.session_id = s.id AND t.created_at >= now() - make_interval(secs => :idle))`,
+    { idle: p.num(args.idleSeconds) },
+  );
+  const redacted = await sx.query(
+    `UPDATE turns t SET founder_text = :redacted, response = NULL
+     FROM coaching_sessions s
+     WHERE s.id = t.session_id AND s.privacy = 'ephemeral' AND s.status = 'ended'
+       AND (t.founder_text <> :redacted OR t.response IS NOT NULL)`,
+    { redacted: p.text(EPHEMERAL_REDACTION_TEXT) },
+  );
+  return { sessionsEnded: ended.rowCount, turnsRedacted: redacted.rowCount };
 }
 
 /** Start of the most recent session of the venture (excluding `exceptSessionId`), or null. */

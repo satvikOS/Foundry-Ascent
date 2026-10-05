@@ -9,7 +9,7 @@ import { ErrorState } from '@/components/ui/error-state';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { Markdown } from '@/components/ui/markdown';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useMemory } from '@/lib/api/hooks/memory';
+import { displayContent, useMemory } from '@/lib/api/hooks/memory';
 import { formatRelative, pluralize } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -250,7 +250,7 @@ export function ProposedQueue({ ventureId, tenant, canEdit, onOpenDetail }: Prop
                 {item.title}
               </h3>
               <Markdown size="sm" className="mt-1 text-muted-foreground">
-                {item.content}
+                {displayContent(item)}
               </Markdown>
               {Object.keys(item.attributes).length > 0 ? (
                 <div className="mt-3">

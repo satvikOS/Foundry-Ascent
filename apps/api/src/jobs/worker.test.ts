@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { createJsonLogger } from '../logging.js';
 import { type BackfillReport } from './embedding-backfill.js';
-import { processSqsBatch, type WorkerDeps } from './worker.js';
+import { DAILY_MAINTENANCE_MESSAGE, processSqsBatch, type WorkerDeps } from './worker.js';
 
 const job = (documentId: string) =>
   JSON.stringify({
@@ -54,13 +54,17 @@ function deps(lines: string[] = []) {
     },
   );
   const backfill = vi.fn(() => Promise.resolve(backfillReport));
+  const maintenance = vi.fn((_options: { readonly requestId: string }) =>
+    Promise.resolve({ ephemeralSessionsEnded: 1, ephemeralTurnsRedacted: 2 }),
+  );
   const value: WorkerDeps = {
     ingestion: { process },
     backfill,
+    maintenance,
     logger: createJsonLogger({ level: 'debug', write: (l) => lines.push(l) }),
     maxReceiveCount: 3,
   };
-  return { value, process, backfill };
+  return { value, process, backfill, maintenance };
 }
 
 describe('processSqsBatch', () => {
@@ -109,5 +113,37 @@ describe('processSqsBatch', () => {
     );
     expect(result.batchItemFailures).toEqual([]);
     expect(backfill.mock.calls[0]).toEqual([expect.objectContaining({ maxItems: 50, requestId: 'sqs-b1' })]);
+  });
+});
+
+describe('daily maintenance message (EventBridge schedule → jobs queue)', () => {
+  it('runs core maintenance for the scheduled message and retries it when it fails', async () => {
+    const lines: string[] = [];
+    const { value, maintenance, process } = deps(lines);
+    const body = JSON.stringify(DAILY_MAINTENANCE_MESSAGE);
+    const ok = await processSqsBatch(value, { Records: [record('m1', body)] }, { remainingMs: () => 60_000 });
+    expect(ok.batchItemFailures).toEqual([]);
+    expect(maintenance).toHaveBeenCalledWith({ requestId: 'sqs-m1' });
+    expect(process).not.toHaveBeenCalled();
+    expect(lines.join('\n')).toContain('worker.maintenance_done');
+
+    maintenance.mockRejectedValueOnce(new Error('database still resuming'));
+    const failed = await processSqsBatch(
+      value,
+      { Records: [record('m2', body)] },
+      { remainingMs: () => 60_000 },
+    );
+    expect(failed.batchItemFailures).toEqual([{ itemIdentifier: 'm2' }]);
+  });
+
+  it('drops maintenance messages it does not understand', async () => {
+    const { value, maintenance } = deps();
+    const result = await processSqsBatch(
+      value,
+      { Records: [record('m3', JSON.stringify({ type: 'maintenance', task: 'drop_tables' }))] },
+      { remainingMs: () => 60_000 },
+    );
+    expect(result.batchItemFailures).toEqual([]);
+    expect(maintenance).not.toHaveBeenCalled();
   });
 });

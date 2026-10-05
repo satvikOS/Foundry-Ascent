@@ -304,10 +304,10 @@ describe('authorization matrix', () => {
   });
 
   it('advisors only see venture/advisor-visible memory', async () => {
-    const items = await h.core.memory.list(ctx.advisor, ventureId);
+    const items = (await h.core.memory.list(ctx.advisor, ventureId)).items;
     expect(items.length).toBeGreaterThan(0);
     for (const m of items) expect(['venture', 'advisors']).toContain(m.visibility);
-    const founderItems = await h.core.memory.list(ctx.founder, ventureId);
+    const founderItems = (await h.core.memory.list(ctx.founder, ventureId)).items;
     expect(founderItems.some((m) => m.visibility === 'team' || m.visibility === 'founder_private')).toBe(
       true,
     );

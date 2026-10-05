@@ -1,4 +1,5 @@
 import {
+  type ArrayValue,
   BeginTransactionCommand,
   type BeginTransactionCommandInput,
   type BeginTransactionCommandOutput,
@@ -179,17 +180,34 @@ export function toSqlParameters(used: readonly [string, SqlParam][]): SqlParamet
   return used.map(([name, param]) => ({ name, ...toField(param) }));
 }
 
-function fieldToRaw(field: Field): unknown {
+/**
+ * A typed-record array (`Field.arrayValue`, used for RETURNING statements) as a JS array. The service
+ * returns an empty PostgreSQL array (`'{}'`, e.g. `turns.risk_categories` by default) as an `arrayValue`
+ * with no member or with an empty member list (`{}`, `{ stringValues: [] }`, `{ arrayValues: [] }`):
+ * every such shape is `[]`, never null (the columns are NOT NULL and their decoders reject null).
+ * Multi-dimensional arrays (`arrayValues`) are decoded recursively; a null element stays null.
+ */
+export function arrayValueToRaw(value: ArrayValue | null | undefined): unknown[] {
+  if (value === null || value === undefined) return [];
+  if (value.stringValues !== undefined) return [...value.stringValues];
+  if (value.longValues !== undefined) return [...value.longValues];
+  if (value.doubleValues !== undefined) return [...value.doubleValues];
+  if (value.booleanValues !== undefined) return [...value.booleanValues];
+  if (value.arrayValues !== undefined) {
+    return value.arrayValues.map((inner) => (inner === null ? null : arrayValueToRaw(inner)));
+  }
+  return [];
+}
+
+/** One typed-record field as the primitive the column decoders accept (same as the JSON path). */
+export function fieldToRaw(field: Field): unknown {
   if (field.isNull) return null;
   if (field.stringValue !== undefined) return field.stringValue;
   if (field.longValue !== undefined) return field.longValue;
   if (field.doubleValue !== undefined) return field.doubleValue;
   if (field.booleanValue !== undefined) return field.booleanValue;
   if (field.blobValue !== undefined) return Buffer.from(field.blobValue).toString('base64');
-  if (field.arrayValue !== undefined) {
-    const a = field.arrayValue;
-    return a.stringValues ?? a.longValues ?? a.doubleValues ?? a.booleanValues ?? null;
-  }
+  if (field.arrayValue !== undefined) return arrayValueToRaw(field.arrayValue);
   return null;
 }
 

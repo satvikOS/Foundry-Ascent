@@ -152,3 +152,38 @@ export function getDocumentView(ex: SqlExecutor, id: string): Promise<DocumentVi
     decodeView,
   );
 }
+
+// ------------------------------------------------------------------------------------------------
+// Per-principal daily upload quota
+// ------------------------------------------------------------------------------------------------
+
+/** Advisory-lock namespace of the per-principal upload admission (two-key form). */
+export const UPLOAD_ADMISSION_LOCK_NAMESPACE = 7_012_031;
+
+/**
+ * Serialises upload registration for one principal until the end of the caller's transaction, so the
+ * quota check and the insert of the `pending_upload` row are atomic. Wrapped so no `void` column is
+ * returned (RDS Data API). Must run inside a transaction (`db.withContext`).
+ */
+export async function lockUploadAdmission(ex: SqlExecutor, principalId: string): Promise<void> {
+  await ex.query(
+    'SELECT count(*) AS n FROM (SELECT pg_advisory_xact_lock(:namespace, hashtext(:principal))) AS l',
+    { namespace: p.int(UPLOAD_ADMISSION_LOCK_NAMESPACE), principal: p.text(principalId.toLowerCase()) },
+  );
+}
+
+export interface UploadUsage {
+  /** Documents the current principal registered today (UTC), deleted ones included. */
+  readonly documents: number;
+  /** Sum of their declared sizes. */
+  readonly bytes: number;
+}
+
+/** The request principal's uploads today (`app.upload_usage_today()`, under RLS: own uploads only). */
+export async function uploadUsageToday(ex: SqlExecutor): Promise<UploadUsage> {
+  const row = await queryFirst(ex, 'SELECT documents, bytes FROM app.upload_usage_today()', {}, (r) => ({
+    documents: col.int.decode(r.documents, 'documents'),
+    bytes: col.int.decode(r.bytes, 'bytes'),
+  }));
+  return row ?? { documents: 0, bytes: 0 };
+}

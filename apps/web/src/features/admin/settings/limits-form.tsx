@@ -15,6 +15,7 @@ import type { UpdateSettingsInput } from '@/lib/api/hooks/admin';
 import { applyServerFieldErrors, MutationErrorAlert } from '../shared/form';
 
 const number = (message = 'Enter a number.') => z.number({ error: message });
+const MB = 1024 * 1024;
 
 export const LimitsForm = z
   .object({
@@ -33,6 +34,14 @@ export const LimitsForm = z
       .int('Enter a whole number.')
       .min(2, 'k must be at least 2.')
       .max(20, 'k can be at most 20.'),
+    dailyUploadDocumentsPerPrincipal: number('Enter a whole number.')
+      .int('Enter a whole number.')
+      .min(0, 'Can’t be negative.')
+      .max(1000, 'At most 1,000 documents.'),
+    dailyUploadMegabytesPerPrincipal: number('Enter a whole number.')
+      .int('Enter a whole number.')
+      .min(0, 'Can’t be negative.')
+      .max(10_240, 'At most 10,240 MB.'),
   })
   .refine((v) => v.dailyUsdCapPerPrincipal <= v.dailyUsdCapGlobal, {
     path: ['dailyUsdCapPerPrincipal'],
@@ -49,6 +58,8 @@ export function toLimitsFormValues(settings: PlatformSettingsView): LimitsFormVa
     maxTurnsPerSession: settings.maxTurnsPerSession,
     groundingPercent: Math.round(settings.groundingCoverageThreshold * 1000) / 10,
     portfolioMinGroupSize: settings.portfolioMinGroupSize,
+    dailyUploadDocumentsPerPrincipal: settings.dailyUploadDocumentsPerPrincipal,
+    dailyUploadMegabytesPerPrincipal: Math.round(settings.dailyUploadBytesPerPrincipal / MB),
   };
 }
 
@@ -68,6 +79,12 @@ export function limitsPatch(settings: PlatformSettingsView, values: LimitsFormVa
   if (values.portfolioMinGroupSize !== settings.portfolioMinGroupSize) {
     patch.portfolioMinGroupSize = values.portfolioMinGroupSize;
   }
+  if (values.dailyUploadDocumentsPerPrincipal !== settings.dailyUploadDocumentsPerPrincipal) {
+    patch.dailyUploadDocumentsPerPrincipal = values.dailyUploadDocumentsPerPrincipal;
+  }
+  if (values.dailyUploadMegabytesPerPrincipal !== Math.round(settings.dailyUploadBytesPerPrincipal / MB)) {
+    patch.dailyUploadBytesPerPrincipal = values.dailyUploadMegabytesPerPrincipal * MB;
+  }
   return patch;
 }
 
@@ -77,6 +94,8 @@ const FIELD_FOR_API: Record<string, LimitKey> = {
   maxTurnsPerSession: 'maxTurnsPerSession',
   groundingCoverageThreshold: 'groundingPercent',
   portfolioMinGroupSize: 'portfolioMinGroupSize',
+  dailyUploadDocumentsPerPrincipal: 'dailyUploadDocumentsPerPrincipal',
+  dailyUploadBytesPerPrincipal: 'dailyUploadMegabytesPerPrincipal',
 };
 
 interface LimitsCardProps {
@@ -89,7 +108,7 @@ interface LimitsCardProps {
   error: unknown;
 }
 
-/** Spend caps, session length, grounding threshold and portfolio k. Saves only changed fields. */
+/** Spend caps, upload quota, session length, grounding threshold and portfolio k. Saves only changes. */
 export function LimitsCard({ settings, onSave, pending, error }: LimitsCardProps) {
   const { register, handleSubmit, formState, reset, setError } = useForm<LimitsFormValues>({
     resolver: zodResolver(LimitsForm),
@@ -152,6 +171,23 @@ export function LimitsCard({ settings, onSave, pending, error }: LimitsCardProps
             error={errors.dailyUsdCapPerPrincipal?.message}
           >
             {numberInput('dailyUsdCapPerPrincipal', { step: '0.25', min: 0, max: 50 })}
+          </Field>
+        </fieldset>
+        <fieldset className="grid gap-4 sm:grid-cols-2">
+          <legend className="mb-2 text-sm font-semibold">Document uploads per person per day</legend>
+          <Field
+            label="Documents per day"
+            description="Further uploads are refused until midnight UTC."
+            error={errors.dailyUploadDocumentsPerPrincipal?.message}
+          >
+            {numberInput('dailyUploadDocumentsPerPrincipal', { step: '1', min: 0, max: 1000 })}
+          </Field>
+          <Field
+            label="Upload volume per day (MB)"
+            description="Sum of the sizes of the documents one person uploads in a day."
+            error={errors.dailyUploadMegabytesPerPrincipal?.message}
+          >
+            {numberInput('dailyUploadMegabytesPerPrincipal', { step: '1', min: 0, max: 10_240 })}
           </Field>
         </fieldset>
         <fieldset className="grid gap-4 sm:grid-cols-3">

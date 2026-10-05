@@ -41,6 +41,7 @@ import {
   useDeleteDocument,
   useDocuments,
 } from '@/lib/api/hooks/documents';
+import { documentFailureMessage } from '@/lib/labels';
 import { canWrite } from '@/lib/auth/roles';
 import { useRequiredMe } from '@/lib/auth/use-me';
 import { formatBytes, formatDateTime, formatNumber, formatRelative, isoString } from '@/lib/format';
@@ -394,7 +395,7 @@ export function DocumentsPage() {
                     </div>
                     {doc.status === 'failed' ? (
                       <p className="mt-0.5 pl-6 text-xs text-destructive">
-                        {doc.failureReason ?? 'Text couldn’t be extracted from this file.'}
+                        {documentFailureMessage(doc.failureReason)}
                       </p>
                     ) : null}
                   </TableCell>

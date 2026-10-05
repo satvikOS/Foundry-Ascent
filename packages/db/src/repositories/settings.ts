@@ -20,9 +20,14 @@ export const SETTING_KEYS = {
   maxTurnsPerSession: 'max_turns_per_session',
   groundingCoverageThreshold: 'grounding_coverage_threshold',
   portfolioMinGroupSize: 'portfolio_min_group_size',
+  dailyUploadDocumentsPerPrincipal: 'daily_upload_documents_per_principal',
+  dailyUploadBytesPerPrincipal: 'daily_upload_bytes_per_principal',
 } as const satisfies Record<keyof PlatformSettingsValue, string>;
 
-/** Values seeded by migration 0001; used when a key is missing. Fail closed for the kill switch. */
+/**
+ * Values seeded by migrations 0001 and 0003; used when a key is missing. Fail closed for the kill switch;
+ * the upload quota defaults are 20 documents and 50 MB per person per UTC day.
+ */
 export const DEFAULT_SETTINGS: PlatformSettingsValue = {
   aiEnabled: false,
   dailyUsdCapGlobal: 2,
@@ -30,6 +35,8 @@ export const DEFAULT_SETTINGS: PlatformSettingsValue = {
   maxTurnsPerSession: 40,
   groundingCoverageThreshold: 0.6,
   portfolioMinGroupSize: 3,
+  dailyUploadDocumentsPerPrincipal: 20,
+  dailyUploadBytesPerPrincipal: 50 * 1024 * 1024,
 };
 
 const Coerced = z.object({
@@ -39,6 +46,8 @@ const Coerced = z.object({
   maxTurnsPerSession: z.coerce.number().int(),
   groundingCoverageThreshold: z.coerce.number(),
   portfolioMinGroupSize: z.coerce.number().int(),
+  dailyUploadDocumentsPerPrincipal: z.coerce.number().int(),
+  dailyUploadBytesPerPrincipal: z.coerce.number().int(),
 });
 
 /** Current settings as the contract view (missing or malformed keys fall back to {@link DEFAULT_SETTINGS}). */

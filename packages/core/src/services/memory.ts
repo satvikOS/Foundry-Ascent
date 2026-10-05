@@ -1,5 +1,6 @@
 import {
   CreateMemoryRequest,
+  MEMORY_LIST_EXCERPT_CHARS,
   MemoryAction,
   MemoryQuery,
   type MemoryCandidate,
@@ -19,13 +20,24 @@ import { toMemoryView } from '../internal/views.js';
 
 type MemoryEventViewValue = z.infer<typeof MemoryEventView>;
 
+/** One page of a memory list (contract `MemoryListResponse`). */
+export interface MemoryPage {
+  readonly items: MemoryObjectView[];
+  readonly nextCursor: string | null;
+}
+
+/** Default memory list page size. */
+export const MEMORY_PAGE_DEFAULT = 50;
+
 export interface MemoryService {
-  /** Venture memory with filters / full-text search (read; RLS applies per-item visibility). */
-  list(
-    ctx: RequestContext,
-    ventureId: string,
-    query?: z.input<typeof MemoryQuery>,
-  ): Promise<MemoryObjectView[]>;
+  /**
+   * One page of venture memory with filters / full-text search (read; RLS applies per-item visibility).
+   * Items carry an excerpt of their content (`contentLength` is the full length): pages stay far below the
+   * RDS Data API's 1 MB limit. {@link MemoryService.get} returns a full item.
+   */
+  list(ctx: RequestContext, ventureId: string, query?: z.input<typeof MemoryQuery>): Promise<MemoryPage>;
+  /** One item with its full content (read; RLS applies per-item visibility). */
+  get(ctx: RequestContext, memoryId: string): Promise<MemoryObjectView>;
   /**
    * Founder/team: creates a `confirmed` item with origin `founder`. Assigned EIR: creates a `proposed`
    * item with origin `eir` (visibility venture/advisors only). Others: forbidden.
@@ -63,8 +75,10 @@ export type EvidenceIndex = ReadonlyMap<
 
 /**
  * Persists AI memory candidates as `proposed` items (never auto-confirmed; DB constraint backs this),
- * origin `ai`, visibility `team` until a founder approves (and optionally widens) them. Evidence ids
- * that are not in the turn's evidence pack are ignored.
+ * origin `ai`, with `visibility` until a founder approves (and optionally widens) them: `team` normally,
+ * `founder_private` when they came from a turn or session that used founder_private evidence
+ * (`candidateVisibility`), so they cannot restate a private item to the team. Evidence ids that are not
+ * in the turn's evidence pack are ignored.
  */
 export async function persistMemoryCandidates(
   tx: SqlExecutor,
@@ -75,6 +89,7 @@ export async function persistMemoryCandidates(
     readonly candidates: readonly MemoryCandidate[];
     readonly evidence: EvidenceIndex;
     readonly source: CandidateSource;
+    readonly visibility: 'founder_private' | 'team';
   },
 ): Promise<memoryRepo.MemoryRecord[]> {
   const created: memoryRepo.MemoryRecord[] = [];
@@ -98,7 +113,7 @@ export async function persistMemoryCandidates(
         title,
         content,
         status: 'proposed',
-        visibility: 'team',
+        visibility: args.visibility,
         confidence: Number.isFinite(candidate.confidence)
           ? Math.min(1, Math.max(0, candidate.confidence))
           : 0.5,
@@ -136,17 +151,38 @@ export function createMemoryService(kit: Kit): MemoryService {
     list: async (ctx, rawVentureId, rawQuery = {}) => {
       const ventureId = requireId(rawVentureId, 'Venture');
       const query = parseInput(MemoryQuery, rawQuery);
+      const limit = query.limit ?? MEMORY_PAGE_DEFAULT;
+      const offset = query.cursor === undefined ? 0 : Number(query.cursor);
       return await kit.inRequest(ctx, async (scope) => {
         await requireVentureAccess(scope, ventureId, 'read');
-        const items = await memoryRepo.listMemory(scope.tx, {
+        // One extra row tells whether another page exists.
+        const rows = await memoryRepo.listMemory(scope.tx, {
           ventureId,
           ...(query.type === undefined ? {} : { type: query.type }),
           ...(query.status === undefined ? {} : { status: query.status }),
           ...(query.q === undefined || query.q === '' ? {} : { q: query.q }),
           ...(query.pinned === undefined ? {} : { pinned: query.pinned }),
-          limit: 200,
+          limit: limit + 1,
+          offset,
+          excerptChars: MEMORY_LIST_EXCERPT_CHARS,
         });
-        return items.map(toMemoryView);
+        return {
+          items: rows.slice(0, limit).map(toMemoryView),
+          nextCursor: rows.length > limit ? String(offset + limit) : null,
+        };
+      });
+    },
+
+    get: async (ctx, rawMemoryId) => {
+      const memoryId = requireId(rawMemoryId, 'Memory item');
+      return await kit.inRequest(ctx, async (scope) => {
+        const item = await memoryRepo.getMemory(scope.tx, memoryId);
+        if (item === null) throw fail.notFound('Memory item');
+        await requireVentureAccess(scope, item.ventureId, 'read', {
+          objectType: 'memory',
+          objectId: memoryId,
+        });
+        return toMemoryView(item);
       });
     },
 

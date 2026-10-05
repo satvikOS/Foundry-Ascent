@@ -6,6 +6,7 @@
  * ordinary non-English text: homoglyph folding only applies to tokens that already mix Latin
  * letters with look-alike Cyrillic/Greek letters.
  */
+import { COMMON_WORDS } from './common-words.js';
 
 /** Invisible and bidi-control characters that can hide or split keywords. */
 const INVISIBLE =
@@ -173,4 +174,39 @@ export function personNameRegExp(name: string): RegExp | null {
     .split(/[\s]+/)
     .filter((word) => word.replace(/[^\p{L}]/gu, '').length >= 2);
   return words.length >= 2 ? phraseRegExp(name) : null;
+}
+
+/** Why a venture name is not distinctive enough for the cross-venture guard, or null when it is. */
+export type VentureNameProblem = 'too_short' | 'common_word' | 'only_common_words';
+
+/**
+ * Distinctiveness rule for venture names (they feed the cross-venture guard, which blocks every turn of
+ * the tenant whose text contains another venture's name):
+ *  - at least three letters or digits in total;
+ *  - a single-word name has at least 4 characters and is not a common word ({@link COMMON_WORDS});
+ *  - a name of several words contains at least one word of 3+ characters that is not a common word
+ *    ("Quiet Quad" is distinctive, "Customer Discovery" or "of the" are not).
+ * Words are compared after {@link normalizeForMatching} and diacritic folding.
+ */
+export function ventureNameProblem(name: string): VentureNameProblem | null {
+  const words = foldDiacritics(normalizeForMatching(name))
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((w) => w !== '');
+  if (words.join('').length < 3) return 'too_short';
+  if (words.length === 1) {
+    const [word = ''] = words;
+    if (word.length < 4) return 'too_short';
+    return COMMON_WORDS.has(word) ? 'common_word' : null;
+  }
+  return words.some((w) => w.length >= 3 && !COMMON_WORDS.has(w)) ? null : 'only_common_words';
+}
+
+/**
+ * The cross-venture guard's pattern for another venture's name: the full name as a whole phrase
+ * ({@link phraseRegExp}), or null when the name is not distinctive ({@link ventureNameProblem}) and so
+ * would match ordinary text. Non-distinctive names are not guarded by name (their canaries and their
+ * members' names still are).
+ */
+export function ventureNameRegExp(name: string): RegExp | null {
+  return ventureNameProblem(name) === null ? phraseRegExp(name) : null;
 }

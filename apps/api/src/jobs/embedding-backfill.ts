@@ -28,16 +28,18 @@ export interface BackfillReport {
   /** True when items without embeddings may remain (budget, deadline or a failed batch). */
   readonly remaining: boolean;
   /** Why the backfill stopped early, if it did. */
-  readonly stoppedBy: 'done' | 'max_items' | 'deadline' | 'ai_disabled' | 'embed_failed';
+  readonly stoppedBy: 'done' | 'max_items' | 'deadline' | 'ai_disabled' | 'spend_cap' | 'embed_failed';
 }
 
 type Kind = 'chunks' | 'memory';
 
 /**
  * Embeds knowledge chunks and memory items whose `embedding` is NULL (seed data, ingestion batches whose
- * embedding call failed, memory written while AI was paused). Best effort and bounded by item count and a
- * deadline; respects the AI kill switch; writes one usage-ledger row per embedding call. Runs with the
- * owner role on server-side data only (no request input).
+ * embedding call failed or was stopped by a spend cap, memory written while AI was paused). Best effort and
+ * bounded by item count and a deadline: the gateway call in flight is aborted at the deadline, so a slow
+ * batch cannot run past it. Respects the AI kill switch and the global daily spend cap (checked before
+ * every batch); writes one usage-ledger row per embedding call. Runs with the owner role on server-side
+ * data only (no request input).
  */
 export async function backfillEmbeddings(
   deps: BackfillDeps,
@@ -61,6 +63,8 @@ export async function backfillEmbeddings(
     for (;;) {
       if (counts.chunks + counts.memory >= options.maxItems) return report('max_items');
       if (now() >= options.deadline) return report('deadline');
+      const spent = await deps.db.system((sx) => usageRepo.spendToday(sx), { transaction: false });
+      if (spent >= settings.dailyUsdCapGlobal) return report('spend_cap');
       const limit = Math.min(batchSize, options.maxItems - counts.chunks - counts.memory);
       const batch = await deps.db.system(
         (sx) =>
@@ -74,10 +78,18 @@ export async function backfillEmbeddings(
       for (const item of fresh) seen.add(item.id);
 
       let vectors: number[][];
+      // Abort the call in flight at the deadline (the caller keeps a margin after it for its response).
+      const abort = new AbortController();
+      const timer = setTimeout(
+        () => {
+          abort.abort();
+        },
+        Math.max(0, options.deadline - now()),
+      );
       try {
         const result = await deps.gateway.embed(
           fresh.map((item) => item.text.slice(0, TITAN_MAX_INPUT_CHARS)),
-          { purpose: options.purpose, requestId: options.requestId },
+          { purpose: options.purpose, requestId: options.requestId, signal: abort.signal },
         );
         vectors = result.vectors;
         await deps.db.system(
@@ -93,6 +105,7 @@ export async function backfillEmbeddings(
           { transaction: false },
         );
       } catch (err) {
+        if (abort.signal.aborted) return report('deadline');
         deps.logger.warn('embeddings.backfill_batch_failed', {
           requestId: options.requestId,
           kind,
@@ -100,6 +113,8 @@ export async function backfillEmbeddings(
           ...errorFields(err),
         });
         return report('embed_failed');
+      } finally {
+        clearTimeout(timer);
       }
 
       const items = fresh.flatMap((item, i) => {

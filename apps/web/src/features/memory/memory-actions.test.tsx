@@ -44,8 +44,8 @@ function setup(items: MemoryObjectView[] = [proposedA, proposedB]) {
   });
   const allKey = memoryQueryOptions(IDS.venture).queryKey;
   const proposedKey = memoryQueryOptions(IDS.venture, { status: 'proposed' }).queryKey;
-  client.setQueryData(allKey, { items });
-  client.setQueryData(proposedKey, { items });
+  client.setQueryData(allKey, { items, nextCursor: null });
+  client.setQueryData(proposedKey, { items, nextCursor: null });
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
   );

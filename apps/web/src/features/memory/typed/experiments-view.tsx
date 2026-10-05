@@ -7,6 +7,7 @@ import { toast } from '@/components/ui/toast';
 import { announce } from '@/components/a11y/live-announcer';
 import { errorMessage } from '@/lib/api/errors';
 import { pluralize } from '@/lib/format';
+import { displayContent } from '@/lib/api/hooks/memory';
 
 import { useOptimisticMemoryAction } from '../api';
 import { EXPERIMENT_STATUSES, experimentAttributes, type ExperimentStatus } from './attributes';
@@ -83,7 +84,7 @@ function ExperimentCard({ memory, ctx }: { memory: MemoryObjectView; ctx: TypedP
       headingLevel={4}
       meta={<MoveSelect memory={memory} ctx={ctx} status={status} />}
     >
-      <p className="text-[13px] leading-5 text-muted-foreground">{memory.content}</p>
+      <p className="text-[13px] leading-5 text-muted-foreground">{displayContent(memory)}</p>
       <dl className="grid gap-2.5">
         {a.prediction ? <TypedField label="Prediction">{a.prediction}</TypedField> : null}
         {a.method ? <TypedField label="Method">{a.method}</TypedField> : null}

@@ -14,8 +14,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { useDocuments } from '@/lib/api/hooks/documents';
-import { useMemory } from '@/lib/api/hooks/memory';
+import { displayContent, useMemory } from '@/lib/api/hooks/memory';
 import { sessionQueryOptions, useSessions } from '@/lib/api/hooks/sessions';
+import { documentFailureMessage } from '@/lib/labels';
 import { formatNumber, pluralize } from '@/lib/format';
 import { MemoryTypeLabel } from '@/features/memory/memory-meta';
 
@@ -118,7 +119,7 @@ export function EvidencePage() {
             d.status === 'ready'
               ? pluralize(d.chunkCount, 'searchable passage')
               : d.status === 'failed'
-                ? (d.failureReason ?? 'Processing failed — not searchable.')
+                ? documentFailureMessage(d.failureReason)
                 : 'Processing — not yet searchable.',
           freshnessAt: d.createdAt,
           citations: 0,
@@ -128,7 +129,7 @@ export function EvidencePage() {
         id: `memory-${m.id}`,
         kind: 'memory',
         title: m.title,
-        excerpt: m.content,
+        excerpt: displayContent(m),
         freshnessAt: m.updatedAt,
         citations: citations.get(m.id) ?? 0,
         memory: m,

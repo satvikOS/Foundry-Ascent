@@ -1,5 +1,5 @@
 import { VentureStatus } from '@foundry/contracts';
-import { Briefcase, Plus, Search, SearchX, UserPlus } from 'lucide-react';
+import { Briefcase, PencilLine, Plus, Search, SearchX, UserPlus } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -28,6 +28,7 @@ import { DOMAIN_LABELS, STAGE_LABELS, STAGE_ORDER } from '@/lib/labels';
 
 import { CreateVentureDialog } from './create-venture-dialog';
 import { InviteMemberDialog } from './invite-member-dialog';
+import { RenameVentureDialog } from './rename-venture-dialog';
 
 type SortKey = 'name' | 'stage' | 'members' | 'created';
 
@@ -52,6 +53,7 @@ export function ProgramVenturesPage() {
   const [sort, setSort] = useState<SortState<SortKey> | null>({ key: 'name', direction: 'asc' });
   const [createOpen, setCreateOpen] = useState(false);
   const [inviteFor, setInviteFor] = useState<{ id: string; name: string } | null>(null);
+  const [renameFor, setRenameFor] = useState<{ id: string; name: string } | null>(null);
   const searchId = useId();
 
   const rows = useMemo(() => {
@@ -225,7 +227,18 @@ export function ProgramVenturesPage() {
                   <TableCell className="whitespace-nowrap text-muted-foreground">
                     <time dateTime={row.createdAt}>{formatDate(row.createdAt)}</time>
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right whitespace-nowrap">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`Rename ${row.name}`}
+                      onClick={() => {
+                        setRenameFor({ id: row.id, name: row.name });
+                      }}
+                    >
+                      <PencilLine aria-hidden />
+                      Rename
+                    </Button>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -256,6 +269,12 @@ export function ProgramVenturesPage() {
         venture={inviteFor}
         onClose={() => {
           setInviteFor(null);
+        }}
+      />
+      <RenameVentureDialog
+        venture={renameFor}
+        onClose={() => {
+          setRenameFor(null);
         }}
       />
     </PageContainer>

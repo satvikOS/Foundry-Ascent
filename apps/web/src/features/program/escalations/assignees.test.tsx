@@ -33,6 +33,7 @@ function me(roles: Me['roles'], principalId = LEAD): Me {
     memberships: [],
     assignedVentureIds: [],
     disclosure: 'AI coach',
+    notices: [],
     aiEnabled: true,
   };
 }

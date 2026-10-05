@@ -146,3 +146,32 @@ export function clampLimit(limit: number | undefined, fallback: number, max: num
   if (limit === undefined || !Number.isFinite(limit)) return fallback;
   return Math.max(1, Math.min(max, Math.trunc(limit)));
 }
+
+/**
+ * Rows of large tables (turns with their response, escalation packets, session recaps) are read in
+ * batches of ids, so no single statement's result approaches the RDS Data API's 1 MB response limit
+ * however many rows a caller lists. Each batch must stay well below it (see the batch sizes at the call
+ * sites, sized for the largest row a table can hold).
+ */
+export const DATA_API_RESULT_LIMIT_BYTES = 1_000_000;
+
+/**
+ * Fetches `ids` in batches of `batchSize` with `fetch` and returns the rows in the order of `ids` (ids
+ * without a row, e.g. hidden by RLS, are skipped). `idOf` extracts a row's id.
+ */
+export async function fetchByIdsInBatches<T>(
+  ids: readonly string[],
+  batchSize: number,
+  fetch: (batch: readonly string[]) => Promise<readonly T[]>,
+  idOf: (row: T) => string,
+): Promise<T[]> {
+  const byId = new Map<string, T>();
+  const size = Math.max(1, Math.trunc(batchSize));
+  for (let i = 0; i < ids.length; i += size) {
+    for (const row of await fetch(ids.slice(i, i + size))) byId.set(idOf(row), row);
+  }
+  return ids.flatMap((id) => {
+    const row = byId.get(id);
+    return row === undefined ? [] : [row];
+  });
+}

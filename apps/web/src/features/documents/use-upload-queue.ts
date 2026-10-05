@@ -1,10 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { announce } from '@/components/a11y/live-announcer';
-import { errorMessage, isAbortError } from '@/lib/api/errors';
+import { errorMessage, isAbortError, isApiError } from '@/lib/api/errors';
 import { useUploadDocument } from '@/lib/api/hooks/documents';
 
 import type { UploadCandidate } from './upload-validation';
+
+/**
+ * The daily upload quota (429 `rate_limited`) explains itself in the problem detail (count or volume,
+ * resets at midnight UTC); other errors use the generic messages.
+ */
+export function uploadErrorMessage(error: unknown): string {
+  if (isApiError(error) && error.code === 'rate_limited' && error.detail) return error.detail;
+  return errorMessage(error);
+}
 
 export type UploadItemStatus = 'queued' | 'uploading' | 'finishing' | 'done' | 'failed' | 'cancelled';
 
@@ -105,7 +114,7 @@ export function useUploadQueue(ventureId: string) {
           patch(next.id, { status: 'cancelled', error: null });
           announce('Upload cancelled');
         } else {
-          patch(next.id, { status: 'failed', error: errorMessage(error) });
+          patch(next.id, { status: 'failed', error: uploadErrorMessage(error) });
           announce('Upload failed', 'assertive');
         }
       })

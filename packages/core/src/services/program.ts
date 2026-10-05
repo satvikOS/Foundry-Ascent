@@ -4,6 +4,7 @@ import {
   type EscalationQueueItem,
   type EscalationStatus,
   type ProgramVentureRow,
+  RenameVentureRequest,
   ResourceFilter,
   RouteEscalationRequest,
   UpdateResourceRequest,
@@ -27,6 +28,7 @@ import { type RequestContext } from '../context.js';
 import { fail, parseInput } from '../errors.js';
 import { type DirectoryCache } from '../internal/directory.js';
 import { audit, requireId, type Kit } from '../internal/kit.js';
+import { assertDistinctiveVentureName, ventureNameConflict } from '../internal/venture-names.js';
 import { toResourceView } from '../internal/views.js';
 import { dueAtFor } from './escalation-packet.js';
 
@@ -52,6 +54,15 @@ export interface ProgramService {
   createVenture(
     ctx: RequestContext,
     input: z.input<typeof CreateVentureRequest>,
+  ): Promise<ProgramVentureRowValue>;
+  /**
+   * Renames any venture of the caller's tenant (program lead or platform admin, membership not needed),
+   * e.g. to undo a rename by the venture's team. Same name rules as `VenturesService.update`.
+   */
+  renameVenture(
+    ctx: RequestContext,
+    ventureId: string,
+    input: z.input<typeof RenameVentureRequest>,
   ): Promise<ProgramVentureRowValue>;
   /** Program resources (any signed-in principal of the tenant). */
   listResources(ctx: RequestContext, filter?: z.input<typeof ResourceFilter>): Promise<ResourceView[]>;
@@ -97,17 +108,22 @@ export function createProgramService(kit: Kit, directory: DirectoryCache): Progr
 
     createVenture: async (ctx, rawInput) => {
       const input = parseInput(CreateVentureRequest, rawInput);
+      assertDistinctiveVentureName(input.name);
       return await kit.inRequest(ctx, async (scope) => {
         await requireRole(scope, ['program_lead'], { objectType: 'venture' });
-        const venture = await venturesRepo.createVenture(scope.tx, {
-          tenantId: ctx.tenantId,
-          name: input.name,
-          oneLiner: input.oneLiner,
-          stage: input.stage,
-          domain: input.domain,
-          cohort: input.cohort,
-          classification: 'synthetic',
-        });
+        const venture = await venturesRepo
+          .createVenture(scope.tx, {
+            tenantId: ctx.tenantId,
+            name: input.name,
+            oneLiner: input.oneLiner,
+            stage: input.stage,
+            domain: input.domain,
+            cohort: input.cohort,
+            classification: 'synthetic',
+          })
+          .catch((err: unknown) => {
+            throw ventureNameConflict(err);
+          });
         const personas = await personasRepo.listPersonaViews(scope.tx, ctx.tenantId);
         const guide = personas.find(
           (p) => p.kind === 'neutral_guide' && p.status === 'active' && p.activeRelease !== null,
@@ -137,6 +153,40 @@ export function createProgramService(kit: Kit, directory: DirectoryCache): Progr
         if (!row) throw fail.notFound('Venture');
         return row;
       });
+    },
+
+    renameVenture: async (ctx, rawVentureId, rawInput) => {
+      const ventureId = requireId(rawVentureId, 'Venture');
+      const input = parseInput(RenameVentureRequest, rawInput);
+      assertDistinctiveVentureName(input.name);
+      await kit.inRequest(ctx, async (scope) => {
+        await requireRole(scope, ['program_lead', 'platform_admin'], {
+          objectType: 'venture',
+          objectId: ventureId,
+        });
+        const renamed = await venturesRepo
+          .renameVentureAsStaff(scope.tx, { ventureId, name: input.name })
+          .catch((err: unknown) => {
+            throw ventureNameConflict(err);
+          });
+        if (!renamed) throw fail.notFound('Venture');
+        await audit(scope, {
+          action: 'venture.renamed',
+          outcome: 'succeeded',
+          ventureId,
+          objectType: 'venture',
+          objectId: ventureId,
+          metadata: { by: 'program_staff' },
+        });
+      });
+      directory.invalidate(ctx.tenantId);
+      // Read after the rename committed, with the owner role: a platform admin without program_lead sees
+      // no ventures under RLS. Only the renamed venture of the caller's tenant is returned (metadata only).
+      const row = (
+        await kit.system((sx) => venturesRepo.listProgramVentures(sx, ctx.tenantId), { transaction: false })
+      ).find((v) => v.id === ventureId);
+      if (!row) throw fail.notFound('Venture');
+      return row;
     },
 
     listResources: async (ctx, rawFilter = {}) => {

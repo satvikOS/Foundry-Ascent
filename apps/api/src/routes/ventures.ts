@@ -25,10 +25,12 @@ export function registerVentureRoutes(r: RouteBuilder, core: Core): void {
   );
 
   // Memory --------------------------------------------------------------------------------------------
+  // One page (excerpts; `nextCursor`), so responses stay far below the Data API's 1 MB limit.
   r.get('/ventures/:id/memory', async (c, ctx) => {
     const query = queryParams(c, MemoryQuery);
-    return c.json({ items: await core.memory.list(ctx, pathParam(c, 'id'), query) });
+    return c.json(await core.memory.list(ctx, pathParam(c, 'id'), query));
   });
+  r.get('/memory/:id', async (c, ctx) => c.json(await core.memory.get(ctx, pathParam(c, 'id'))));
   r.post('/ventures/:id/memory', async (c, ctx) =>
     c.json(await core.memory.create(ctx, pathParam(c, 'id'), jsonBody(c, CreateMemoryRequest)), 201),
   );

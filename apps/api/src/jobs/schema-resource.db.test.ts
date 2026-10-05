@@ -193,6 +193,58 @@ describe('migrations custom resource', () => {
     expect(await count('SELECT count(*) AS n FROM knowledge_chunks WHERE embedding IS NULL')).toBe(0);
   });
 
+  it('aborts the embedding call in flight at the deadline (R5)', async () => {
+    await t.db.system((sx) =>
+      sx.query(
+        'UPDATE knowledge_chunks SET embedding = NULL WHERE id IN (SELECT id FROM knowledge_chunks LIMIT 3)',
+      ),
+    );
+    let aborted = false;
+    // A Bedrock call that hangs until it is aborted.
+    const hanging = {
+      embed: (_texts: readonly string[], options: { signal?: AbortSignal }) =>
+        new Promise<never>((_resolve, reject) => {
+          options.signal?.addEventListener('abort', () => {
+            aborted = true;
+            reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+          });
+        }),
+    };
+    const startedAt = Date.now();
+    const report = await backfillEmbeddings(
+      { db: t.db, gateway: hanging, logger: deps.logger },
+      { requestId: 'r-deadline', purpose: 'seed', maxItems: 100, deadline: Date.now() + 200 },
+    );
+    expect(report).toMatchObject({ stoppedBy: 'deadline', remaining: true });
+    expect(aborted).toBe(true);
+    expect(Date.now() - startedAt).toBeLessThan(5_000);
+  });
+
+  it('stops at the global daily spend cap before calling the model (finding 4)', async () => {
+    await t.db.system(async (sx) => {
+      await sx.query(
+        `INSERT INTO usage_ledger (purpose, model_id, cost_usd, request_id) VALUES ('turn', 'mock', 100, 'r-cap')`,
+      );
+    });
+    let calls = 0;
+    const counting = {
+      embed: (texts: readonly string[], options: Parameters<typeof gateway.embed>[1]) => {
+        calls += 1;
+        return gateway.embed(texts, options);
+      },
+    };
+    try {
+      const report = await backfillEmbeddings(
+        { db: t.db, gateway: counting, logger: deps.logger },
+        { requestId: 'r-cap-run', purpose: 'embedding', maxItems: 100, deadline: Date.now() + 60_000 },
+      );
+      expect(report).toMatchObject({ stoppedBy: 'spend_cap', remaining: true });
+      expect(calls).toBe(0);
+    } finally {
+      await t.db.system((sx) => sx.query(`DELETE FROM usage_ledger WHERE request_id = 'r-cap'`));
+    }
+  });
+
   it('Delete: no-op with the stable physical id', async () => {
     const event = {
       ...base,

@@ -52,15 +52,15 @@ describe('escalation consent gate', () => {
     });
 
     // Only confirmed memory of this venture can be shared.
-    const proposed = (await h.core.memory.list(maya, ventureId, { status: 'proposed' }))[0];
-    const confirmed = (await h.core.memory.list(maya, ventureId, { status: 'confirmed' })).find(
+    const proposed = (await h.core.memory.list(maya, ventureId, { status: 'proposed' })).items[0];
+    const confirmed = (await h.core.memory.list(maya, ventureId, { status: 'confirmed' })).items.find(
       (m) => m.visibility === 'venture',
     );
     const otherVenture = (
       await h.core.memory.list(await h.ctxFor(h.people.priya), h.ventures.benchtally.id, {
         status: 'confirmed',
       })
-    )[0];
+    ).items[0];
     if (!proposed || !confirmed || !otherVenture) throw new Error('seed memory missing');
     for (const bad of [proposed.id, otherVenture.id]) {
       await expect(

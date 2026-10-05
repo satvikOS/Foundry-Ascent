@@ -145,10 +145,11 @@ const ventureCases = (): Case[] => {
   const v = ids.venture ?? '';
   return [
     ['jonah', 'GET', `/ventures/${v}`],
-    ['jonah', 'PATCH', `/ventures/${v}`, { name: 'x' }],
+    ['jonah', 'PATCH', `/ventures/${v}`, { name: 'Jonah Zephyrine' }],
     ['jonah', 'GET', `/ventures/${v}/overview`],
     ['jonah', 'GET', `/ventures/${v}/memory`],
     ['jonah', 'POST', `/ventures/${v}/memory`, { type: 'fact', title: 'x', content: 'y' }],
+    ['jonah', 'GET', `/memory/${ids.memory ?? ''}`],
     ['jonah', 'PATCH', `/memory/${ids.memory ?? ''}`, { action: 'pin' }],
     ['jonah', 'GET', `/memory/${ids.memory ?? ''}/history`],
     ['jonah', 'GET', `/ventures/${v}/escalations`],
@@ -197,7 +198,8 @@ const studioCases = (): Case[] => [
   ],
   ['maya', 'GET', '/program/portfolio'],
   ['maya', 'GET', '/program/ventures'],
-  ['maya', 'POST', '/program/ventures', { name: 'x' }],
+  ['maya', 'POST', '/program/ventures', { name: 'Maya Zephyrine' }],
+  ['maya', 'PATCH', `/program/ventures/${ids.venture ?? ''}`, { name: 'Maya Zephyrine Rename' }],
   ['maya', 'POST', '/program/resources', { name: 'x', kind: 'other', description: 'y' }],
   ['maya', 'PATCH', `/program/resources/${ids.resource ?? ''}`, { status: 'retired' }],
   ['maya', 'GET', '/program/escalations'],
@@ -211,6 +213,8 @@ const studioCases = (): Case[] => [
   ['lead', 'GET', '/admin/audit'],
   ['lead', 'GET', '/admin/usage'],
   ['lead', 'POST', `/admin/principals/${api.h.people.owner}/access-codes`, {}],
+  // Re-issuing a code for a founder who already has one takes over their account: platform admins only.
+  ['lead', 'POST', `/admin/principals/${api.h.people.maya}/access-codes`, {}],
 ];
 
 describe('authorization denials', () => {

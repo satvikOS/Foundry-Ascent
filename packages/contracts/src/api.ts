@@ -81,9 +81,16 @@ export type SignInResponse = z.infer<typeof SignInResponse>;
 // Ventures -----------------------------------------------------------------------------------------
 export const VentureListResponse = z.object({ items: z.array(VentureSummary) });
 export const VentureDetailResponse = VentureDetail;
+/**
+ * A venture name as written by people (create and rename): trimmed, 3–80 characters. The server also
+ * requires it to be distinctive (not a common English word, at least 4 letters for a single word) and
+ * unique within the tenant (case-insensitive), because other ventures' names feed the cross-venture guard;
+ * a violation is 422 `validation_failed` on `name` (or 409 `conflict` for a duplicate).
+ */
+export const VentureName = z.string().trim().min(3).max(80);
 export const UpdateVentureRequest = z
   .object({
-    name: z.string().trim().min(1).max(120),
+    name: VentureName,
     oneLiner: z.string().trim().max(280),
     stage: VentureStage,
     domain: VentureDomain,
@@ -152,17 +159,51 @@ export const MemoryQuery = z.object({
    * ignored), or a boolean when the query is built in code. Unlike `z.coerce.boolean()`, `"false"` means false and other text is rejected.
    */
   pinned: z.union([z.boolean(), z.string().trim().pipe(z.stringbool())]).optional(),
+  /** Page size (default 50, at most {@link MEMORY_PAGE_MAX}). */
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+  /** `nextCursor` of the previous page. */
+  cursor: z
+    .string()
+    .trim()
+    .regex(/^\d{1,5}$/, 'Invalid cursor')
+    .optional(),
 });
-export const MemoryListResponse = z.object({ items: z.array(MemoryObjectView) });
+/** Largest memory list page. */
+export const MEMORY_PAGE_MAX = 100;
+/** Characters of `content` a memory list item carries; `GET /memory/:id` returns the full text. */
+export const MEMORY_LIST_EXCERPT_CHARS = 400;
+/**
+ * `GET /ventures/:id/memory` 200 body: one page of items whose `content` is an excerpt of at most
+ * {@link MEMORY_LIST_EXCERPT_CHARS} characters (`contentLength` is the full length), so every response
+ * (and every database result behind it) stays far below the RDS Data API's 1 MB limit. `nextCursor` is
+ * null on the last page. Fetch `GET /memory/:id` for the full item.
+ */
+export const MemoryListResponse = z.object({
+  items: z.array(MemoryObjectView),
+  nextCursor: z.string().nullable().default(null),
+});
+/** `GET /memory/:id` 200 body: the full item (complete `content`). */
+export const MemoryItemResponse = MemoryObjectView;
 /** `POST /ventures/:id/memory` 201 body. */
 export const CreateMemoryResponse = MemoryObjectView;
+/** Largest serialised `attributes` object of a memory item (keeps list pages small). */
+export const MEMORY_ATTRIBUTES_MAX_CHARS = 8000;
+export const MemoryAttributes = z
+  .record(z.string(), z.unknown())
+  .refine(
+    (value) => JSON.stringify(value).length <= MEMORY_ATTRIBUTES_MAX_CHARS,
+    `Attributes are limited to ${MEMORY_ATTRIBUTES_MAX_CHARS} characters of JSON`,
+  );
 export const CreateMemoryRequest = z.object({
   type: MemoryType,
   title: z.string().trim().min(1).max(200),
   content: z.string().trim().min(1).max(8000),
   visibility: Visibility.default('venture'),
-  attributes: z.record(z.string(), z.unknown()).default({}),
-  sourceRefs: z.array(SourceRef).default([{ kind: 'manual', id: 'founder' }]),
+  attributes: MemoryAttributes.default({}),
+  sourceRefs: z
+    .array(SourceRef)
+    .max(50)
+    .default([{ kind: 'manual', id: 'founder' }]),
 });
 /**
  * `PATCH /memory/:id` body. `approve`, `reject`, `dispute`, `pin` and `unpin` answer 200 with the item
@@ -178,7 +219,7 @@ export const MemoryAction = z.discriminatedUnion('action', [
       .object({
         title: z.string().trim().min(1).max(200),
         content: z.string().trim().min(1).max(8000),
-        attributes: z.record(z.string(), z.unknown()),
+        attributes: MemoryAttributes,
         visibility: Visibility,
         confidence: z.number().min(0).max(1),
       })
@@ -382,8 +423,14 @@ export const ProgramVentureRow = z.object({
 export const ProgramVentureListResponse = z.object({ items: z.array(ProgramVentureRow) });
 /** `POST /program/ventures` 201 body. */
 export const CreateProgramVentureResponse = ProgramVentureRow;
+/**
+ * `PATCH /program/ventures/:id` body (program lead or platform admin of the tenant): renames any venture,
+ * e.g. to undo a misleading rename by its team. 200 body: `ProgramVentureRow`.
+ */
+export const RenameVentureRequest = z.object({ name: VentureName });
+export const RenameVentureResponse = ProgramVentureRow;
 export const CreateVentureRequest = z.object({
-  name: z.string().trim().min(1).max(120),
+  name: VentureName,
   oneLiner: z.string().trim().max(280).default(''),
   stage: VentureStage.default('idea'),
   domain: VentureDomain.default('general'),
@@ -504,6 +551,14 @@ export const PlatformSettingsView = z.object({
   maxTurnsPerSession: z.number().int().min(1).max(200),
   groundingCoverageThreshold: z.number().min(0).max(1),
   portfolioMinGroupSize: z.number().int().min(2).max(20),
+  /** Documents one person may start uploading per UTC day (checked when the upload URL is issued). */
+  dailyUploadDocumentsPerPrincipal: z.number().int().min(0).max(1000),
+  /** Bytes one person may start uploading per UTC day (sum of the declared document sizes). */
+  dailyUploadBytesPerPrincipal: z
+    .number()
+    .int()
+    .min(0)
+    .max(10 * 1024 * 1024 * 1024),
 });
 export type PlatformSettingsView = z.infer<typeof PlatformSettingsView>;
 export const UpdateSettingsRequest = PlatformSettingsView.partial();

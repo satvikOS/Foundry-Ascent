@@ -13,6 +13,7 @@ export {
 export { issueCodeForPrincipal, type IssuedCode } from './codes.js';
 export { PlatformKeyCache, hashViewerAttribute } from './keys.js';
 export { SessionCache, type CachedSession } from './session-cache.js';
+export { LockoutCache } from './lockout-cache.js';
 export {
   MAX_TOKEN_LENGTH,
   signSessionToken,

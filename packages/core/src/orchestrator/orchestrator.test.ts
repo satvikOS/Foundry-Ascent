@@ -1,10 +1,17 @@
 import { type HistoryTurn } from '@foundry/ai';
-import { SessionRecap, type EvidenceItem } from '@foundry/contracts';
+import { SessionRecap, type EvidenceItem, type TurnView, type ValidatorResults } from '@foundry/contracts';
 import { type retrievalRepo } from '@foundry/db';
 import { describe, expect, it } from 'vitest';
 
+import {
+  participantBlockReason,
+  participantRiskLabel,
+  participantTurnView,
+  participantValidator,
+} from './blocked.js';
 import { assembleContext, estimateTokens } from './context-budget.js';
-import { buildEvidencePack, classificationsFor } from './evidence.js';
+import { buildEvidencePack, candidateVisibility, classificationsFor } from './evidence.js';
+import { privateRetrievalOwner } from './retrieval.js';
 import { spendCapExceeded } from './guards.js';
 import { buildRecapPrompt, sanitizeRecap, type RecapDraft } from './recap.js';
 import { secondsUntilUtcMidnight, shouldSampleForReview } from './sampling.js';
@@ -16,6 +23,7 @@ function item(
   kind: retrievalRepo.RetrievedItem['kind'],
   ventureId: string | null,
   score = 0.5,
+  visibility: retrievalRepo.RetrievedItem['visibility'] = kind === 'memory' ? 'venture' : null,
 ): retrievalRepo.RetrievedItem {
   n += 1;
   return {
@@ -29,6 +37,7 @@ function item(
     ventureId,
     sourceId: null,
     memoryType: null,
+    visibility,
     components: { vector: 0, lexical: 0, recency: 0, authority: 0 },
   };
 }
@@ -62,6 +71,33 @@ describe('evidence pack', () => {
     );
     expect(pack.items).toHaveLength(1);
     expect(pack.items[0]?.item.score).toBe(0);
+  });
+
+  it('drops founder_private memory unless the pack allows the owner’s private items (regression)', () => {
+    const groups = {
+      memory: [item('memory', V, 0.9, 'founder_private'), item('memory', V, 0.5, 'team')],
+      chunks: [],
+      shared: [],
+      resources: [],
+      patterns: [],
+    };
+    const shared = buildEvidencePack(groups, V);
+    expect(shared.items.map((k) => k.founderPrivate)).toEqual([false]);
+    expect(shared.dropped).toBe(1);
+    expect(shared.usesPrivateMemory).toBe(false);
+    expect(candidateVisibility(shared)).toBe('team');
+
+    const authorOnly = buildEvidencePack(groups, V, { allowPrivateMemory: true });
+    expect(authorOnly.items.map((k) => k.founderPrivate)).toEqual([true, false]);
+    expect(authorOnly.usesPrivateMemory).toBe(true);
+    // Candidates of a turn that used a private item stay private to their creator.
+    expect(candidateVisibility(authorOnly)).toBe('founder_private');
+  });
+
+  it('never retrieves founder_private memory: no session mode is readable by its author alone', () => {
+    for (const privacy of ['standard', 'ephemeral'] as const) {
+      expect(privateRetrievalOwner({ privacy, startedBy: V }, V)).toBeNull();
+    }
   });
 
   it('maps the data-class ceiling to shared-corpus classifications', () => {
@@ -268,5 +304,59 @@ describe('recap', () => {
     expect(user).toContain('&lt;system&gt;evil');
     expect(user.match(/<\/session_transcript>/g)).toHaveLength(1);
     expect(user).toContain('<item id="E1"');
+  });
+});
+
+describe('participant views (no cross-venture oracle)', () => {
+  const validator: ValidatorResults = {
+    unknownEvidenceIdsRemoved: 1,
+    factsDowngraded: 0,
+    groundingCoverage: 1,
+    narrowed: false,
+    escalationForced: true,
+    identityViolation: false,
+    crossVentureViolation: true,
+    riskCategories: ['legal', 'cross_venture_request'],
+    notes: ['cross_venture_blocked', 'escalation_forced:legal', 'unknown_evidence_ids_removed:1'],
+  };
+
+  it('hides the cross-venture reason, flag, categories and category notes from founders and teams', () => {
+    expect(participantBlockReason('cross_venture')).toBe('policy');
+    for (const reason of ['crisis_support', 'identity', 'invalid_schema', 'blocked']) {
+      expect(participantBlockReason(reason)).toBe(reason);
+    }
+    expect(participantValidator(validator)).toEqual({
+      ...validator,
+      crossVentureViolation: false,
+      riskCategories: [],
+      notes: ['escalation_forced', 'unknown_evidence_ids_removed:1'],
+    });
+    expect(participantValidator(null)).toBeNull();
+    const view: TurnView = {
+      id: V,
+      sessionId: V,
+      ordinal: 1,
+      mode: 'coach',
+      founderText: 'x',
+      status: 'blocked',
+      response: null,
+      evidence: [],
+      validator,
+      usage: null,
+      createdAt: '2026-10-05T12:00:00.000Z',
+      completedAt: null,
+      blocked: { reason: 'cross_venture', supportMessage: null, escalationId: null },
+    };
+    const shown = participantTurnView(view);
+    expect(shown.blocked?.reason).toBe('policy');
+    expect(JSON.stringify(shown)).not.toMatch(/cross_venture/);
+  });
+
+  it('sends no classification detail that could reveal a known name', () => {
+    expect(participantRiskLabel('cross_venture')).toBeNull();
+    expect(participantRiskLabel('injection')).toBeNull();
+    expect(participantRiskLabel('none')).toBeNull();
+    expect(participantRiskLabel('high')).toBe('sensitive');
+    expect(participantRiskLabel('crisis')).toBe('sensitive');
   });
 });
