@@ -1,0 +1,382 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+/*
+ * Foundry Ascent design tokens.
+ *
+ * Dark-first, muted black and grey (system-design §9). Every token is declared once with
+ * light-dark(<light>, <dark>), so the active palette follows `color-scheme`:
+ *   - no class on <html>  → follows the OS (works before JavaScript runs, so there is no flash)
+ *   - <html class="dark"> → forced dark;  <html class="light"> → forced light (set by ThemeProvider)
+ * Contrast: text tokens meet WCAG 2.2 AA (≥ 4.5:1) on background/card/muted surfaces; `--input`
+ * and `--ring` meet the 3:1 non-text contrast requirement for component boundaries and focus.
+ */
+
+@custom-variant dark (&:where(.dark, .dark *));
+@custom-variant light (&:where(.light, .light *));
+
+:root {
+  color-scheme: dark light;
+
+  /* Brand primitives (spec) */
+  --fa-canvas: light-dark(#fafaf9, #0b0b0b);
+  --fa-raised: light-dark(#ffffff, #151515);
+  --fa-overlay: light-dark(#ffffff, #1a1a1a);
+  --fa-border: light-dark(#e4e4e1, #303030);
+  --fa-text: light-dark(#111110, #f4f4f2);
+  --fa-text-secondary: light-dark(#5c5c58, #a6a6a3);
+  --fa-focus: light-dark(#111110, #ffffff);
+
+  /* Semantic surface tokens */
+  --background: var(--fa-canvas);
+  --foreground: var(--fa-text);
+  --card: var(--fa-raised);
+  --card-foreground: var(--fa-text);
+  --popover: var(--fa-overlay);
+  --popover-foreground: var(--fa-text);
+  --muted: light-dark(#f2f2f0, #181818);
+  --muted-foreground: var(--fa-text-secondary);
+  --subtle-foreground: light-dark(#6b6b66, #8f8f8b);
+  --primary: light-dark(#111110, #f4f4f2);
+  --primary-foreground: light-dark(#fafaf9, #0b0b0b);
+  --secondary: light-dark(#efefed, #1e1e1e);
+  --secondary-foreground: var(--fa-text);
+  --accent: light-dark(#ececea, #212121);
+  --accent-foreground: var(--fa-text);
+  --border: var(--fa-border);
+  --border-strong: light-dark(#cfcfcb, #3d3d3d);
+  --input: light-dark(#8d8d88, #6b6b67);
+  --ring: var(--fa-focus);
+
+  /* Status tokens: ≥ 5:1 as text on background, card and their own 10–15 % tints (badges). */
+  --destructive: light-dark(#b0262b, #ff6369);
+  --destructive-strong: light-dark(#b0262b, #d93036);
+  --destructive-foreground: #ffffff;
+  --success: light-dark(#0f6b42, #3fcf8e);
+  --success-foreground: light-dark(#ffffff, #052e1a);
+  --warning: light-dark(#8a4f00, #f5b94a);
+  --warning-foreground: light-dark(#ffffff, #2b1a00);
+  --info: light-dark(#1a5ab8, #79b8ff);
+  --info-foreground: light-dark(#ffffff, #04203f);
+  --neutral: var(--fa-text-secondary);
+
+  /* App chrome */
+  --sidebar: light-dark(#f5f5f3, #0e0e0e);
+  --sidebar-foreground: var(--fa-text);
+  --sidebar-muted: var(--fa-text-secondary);
+  --sidebar-accent: light-dark(#e9e9e6, #1c1c1c);
+  --sidebar-accent-foreground: var(--fa-text);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-border: light-dark(#e4e4e1, #232323);
+  --sidebar-ring: var(--fa-focus);
+
+  /* Data visualisation (distinguishable hues; always paired with labels) */
+  --chart-1: light-dark(#111110, #f4f4f2);
+  --chart-2: light-dark(#1a5ab8, #79b8ff);
+  --chart-3: light-dark(#0f6b42, #3fcf8e);
+  --chart-4: light-dark(#8a4f00, #f5b94a);
+  --chart-5: light-dark(#7a3fc4, #c4a1ff);
+
+  /* Elevation: hairline highlight in dark, soft shadow in light */
+  --shadow-color: light-dark(rgb(17 17 16 / 0.08), rgb(0 0 0 / 0.5));
+  --highlight: light-dark(rgb(255 255 255 / 0), rgb(255 255 255 / 0.04));
+
+  --radius: 0.625rem;
+  --scrollbar: light-dark(#cfcfcb, #333333);
+  --scrollbar-hover: light-dark(#a9a9a4, #4a4a4a);
+  --selection: light-dark(rgb(17 17 16 / 0.16), rgb(244 244 242 / 0.22));
+
+  --header-height: 3.5rem;
+  --sidebar-width: 15rem;
+  --sidebar-width-collapsed: 3.5rem;
+  --inspector-width: 22rem;
+}
+
+:root.dark {
+  color-scheme: dark;
+}
+
+:root.light {
+  color-scheme: light;
+}
+
+@theme inline {
+  --font-sans:
+    'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
+  --font-serif: ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-destructive: var(--destructive);
+  --color-destructive-strong: var(--destructive-strong);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-neutral: var(--neutral);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --radius-xs: calc(var(--radius) - 6px);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+
+  --shadow-xs: 0 1px 2px 0 var(--shadow-color);
+  --shadow-sm: inset 0 1px 0 0 var(--highlight), 0 1px 2px 0 var(--shadow-color);
+  --shadow-md: inset 0 1px 0 0 var(--highlight), 0 4px 12px -2px var(--shadow-color);
+  --shadow-lg: inset 0 1px 0 0 var(--highlight), 0 12px 32px -8px var(--shadow-color);
+  --shadow-xl: inset 0 1px 0 0 var(--highlight), 0 24px 64px -16px var(--shadow-color);
+
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-shimmer: fa-shimmer 1.6s ease-in-out infinite;
+  --animate-fade-in: fa-fade-in 200ms var(--ease-out-quint) both;
+  --animate-rise: fa-rise 480ms var(--ease-out-quint) both;
+
+  @keyframes fa-shimmer {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+  @keyframes fa-fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes fa-indeterminate {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(300%);
+    }
+  }
+  @keyframes fa-rise {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-color: var(--border);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    scrollbar-gutter: stable;
+    /* Inter: disambiguated l/I/1 and straight-sided 6/9 for data-dense screens. */
+    font-feature-settings: 'cv11', 'ss01', 'ss03';
+    font-optical-sizing: auto;
+  }
+
+  body {
+    @apply bg-background font-sans text-foreground;
+    min-height: 100dvh;
+    line-height: 1.5;
+  }
+
+  ::selection {
+    background-color: var(--selection);
+    color: inherit;
+  }
+
+  /* Visible, high-contrast focus for every keyboard-focusable element (WCAG 2.4.7 / 2.4.11). */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  /* Elements that receive programmatic focus (route headings, main) do not show a ring. */
+  [tabindex='-1']:focus {
+    outline: none;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    text-wrap: balance;
+    letter-spacing: -0.011em;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  /* Thin, theme-aware scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar);
+    border: 3px solid transparent;
+    border-radius: 9999px;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-hover);
+  }
+
+  /*
+   * Radix's scroll lock injects a <style> tag, which a strict CSP (style-src 'self') blocks.
+   * The same rule shipped in our own stylesheet keeps dialogs from scrolling the page behind them.
+   */
+  body[data-scroll-locked] {
+    overflow: hidden !important;
+    overscroll-behavior: contain;
+  }
+
+  .noscript-message {
+    padding: 2rem;
+    font-family: system-ui, sans-serif;
+  }
+
+  [hidden] {
+    display: none !important;
+  }
+}
+
+@layer utilities {
+  /* Metrics, counts, money and times line up in columns. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum', 'cv11', 'ss01';
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .surface-raised {
+    background-color: var(--card);
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* Hairline grid used by the public landing hero (CSS only, no imagery). */
+  .bg-grid {
+    background-image:
+      linear-gradient(to right, color-mix(in oklab, var(--foreground) 7%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in oklab, var(--foreground) 7%, transparent) 1px, transparent 1px);
+    background-size: 48px 48px;
+  }
+
+  .mask-fade-b {
+    mask-image: linear-gradient(to bottom, black 40%, transparent 100%);
+  }
+
+  .mask-radial {
+    mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, black 30%, transparent 75%);
+  }
+
+  .skeleton-shimmer {
+    background-image: linear-gradient(
+      90deg,
+      transparent 0%,
+      color-mix(in oklab, var(--foreground) 6%, transparent) 50%,
+      transparent 100%
+    );
+    background-size: 200% 100%;
+    animation: var(--animate-shimmer);
+  }
+}
+
+/* Respect reduced-motion preferences everywhere, including third-party components. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Forced colours (Windows High Contrast): keep borders and focus visible. */
+@media (forced-colors: active) {
+  :focus-visible {
+    outline: 2px solid CanvasText;
+  }
+  [data-slot='status-badge'] {
+    border: 1px solid CanvasText;
+  }
+}
+
+@media print {
+  body {
+    background: #fff;
+    color: #000;
+    font-family: var(--font-serif);
+  }
+  [data-print='hide'] {
+    display: none !important;
+  }
+}

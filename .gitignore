@@ -23,9 +23,11 @@ __pycache__/
 .ruff_cache/
 evals/results/
 
-# Test artifacts
+# Test artifacts (Playwright HTML report, failure screenshots, blob reports; the e2e sign-in state lives in
+# node_modules/.cache/foundry-e2e-auth and is covered by node_modules/)
 playwright-report/
 test-results/
+blob-report/
 
 # OS / editor
 .DS_Store

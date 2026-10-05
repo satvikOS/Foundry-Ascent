@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Foundry Ascent">
+  <style>
+    .tile { fill: #0B0B0B; }
+    .mark { fill: #F4F4F2; }
+    .step { fill: #A6A6A3; }
+    @media (prefers-color-scheme: light) {
+      .tile { fill: #F4F4F2; }
+      .mark { fill: #0B0B0B; }
+      .step { fill: #5C5C58; }
+    }
+  </style>
+  <rect class="tile" width="32" height="32" rx="8" />
+  <path class="step" d="M7 24h5v-4H7z" />
+  <path class="step" d="M13.5 24h5v-8h-5z" />
+  <path class="mark" d="M20 24h5V8l-5 5z" />
+</svg>
