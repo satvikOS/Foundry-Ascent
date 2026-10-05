@@ -373,7 +373,11 @@ def main() -> int:
     global_inventory(session, ident["Arn"])
 
     ec2 = session.client("ec2", region_name="us-east-1", config=CFG)
-    regions = sorted(r["RegionName"] for r in ec2.describe_regions()["Regions"])
+    try:
+        regions = sorted(r["RegionName"] for r in ec2.describe_regions()["Regions"])
+    except ClientError as exc:
+        print(f"  ! ec2:DescribeRegions denied ({exc.response['Error']['Code']}); scanning default-enabled regions")
+        regions = sorted(session.get_available_regions("ec2", allow_non_regional=False))
     section(f"Regional resources across {len(regions)} enabled regions")
     empty: list[str] = []
     for region in regions:

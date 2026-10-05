@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Report which AWS secret names are configured (values never printed)
         env:
@@ -36,7 +36,7 @@ jobs:
             if [ -n "${!var}" ]; then echo "secret ${name}: set"; else echo "secret ${name}: not set"; fi
           done
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
