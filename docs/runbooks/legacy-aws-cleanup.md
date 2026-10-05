@@ -28,8 +28,12 @@ bootstrap is protected twice.
    `apply`, and re-checks the target against protected names and markers (`foundryascent`,
    `foundry-ascent`, `cdk-hnb659fds`, `cdktoolkit`, `/cdk-bootstrap/`, the GitHub OIDC provider, the
    platform's log groups such as `/aws/rds/cluster/foundry-ascent/postgresql`,
-   `OrganizationAccountAccessRole`, AWS-reserved and service-linked roles). The IAM policy allows deletes
-   on `*`, so this guard — not IAM — is the safety net; it is covered by unit tests.
+   `OrganizationAccountAccessRole`, AWS-reserved and service-linked roles); it is covered by unit tests.
+   IAM backs it up: `legacy-cleanup.json` allows deletes on `*` but explicitly **denies** them on
+   `CDKToolkit` and `FoundryAscent*` stacks, `cdk-*`/`FoundryAscent*` roles and policies, the GitHub OIDC
+   provider, `cdk-*`/`foundryascent*`/`foundry-ascent*` buckets, the `foundry-ascent` Aurora cluster and
+   its secret, `FoundryAscent*` functions, queues, topics, rules and log groups, `/cdk-bootstrap/`
+   parameters, and every resource tagged `project=foundry-ascent` (`ops/aws/test_policies.py`).
 5. **Never touched:** IAM users and groups, AWS-managed KMS keys, service-linked roles, the default VPC,
    registered domains, AWS-owned backup vaults. Route 53 zones with MX records are skipped unless
    `include_mail_zones` is set.
@@ -53,8 +57,11 @@ bootstrap is protected twice.
    buckets (emptied by lifecycle rules).
 4. **Verify** with **Ops - AWS inventory (read-only)**: only Foundry Ascent, CDK bootstrap and the kept
    domains remain; the next month's bill confirms it.
-5. **Close out:** detach `FoundryAscent-LegacyCleanup` from the IAM user `Foundry-Ascent`
-   (`infra/iam/README.md`). After that, the workflow fails with AccessDenied by design.
+5. **Close out:** detach `FoundryAscent-LegacyCleanup` from the IAM user `Foundry-Ascent` (**Ops - retire
+   stage-0 AWS access** with `mode = detach-legacy-cleanup`, or the account owner's
+   `infra/iam/apply-bootstrap-access.sh`, which detaches it by default). After that, the workflow fails
+   with AccessDenied by design. The policy file stays in the repository for the record; to run another
+   cleanup, the owner re-attaches it with `apply-bootstrap-access.sh --with-legacy-cleanup`.
 
 ## Recovering something deleted by mistake
 

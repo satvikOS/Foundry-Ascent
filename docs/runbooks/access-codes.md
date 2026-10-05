@@ -30,6 +30,13 @@ API: `POST /api/v1/admin/principals/<principalId>/access-codes` with `{"label": 
 (admin), or `POST /api/v1/ventures/<ventureId>/team/invitations` (program lead). Non-GET calls need
 `x-requested-with: foundry-ascent` and `x-amz-content-sha256` (see the kill-switch runbook for a curl example).
 
+**New code for an existing account (re-issue).** Issuing a code to someone who already has (or had) one
+is an account takeover path, so for venture members (founders, team, advisors) and EIRs only a **platform
+admin** may do it; a program lead gets `403 reissue_requires_platform_admin` (audited as `authz.denied`).
+Program leads still issue first codes for new people and invitations. A re-issue is audited as
+`access_code.reissued`, and the person sees "A new access code was issued for your account on <date>" at
+their next sign-in; if they did not ask for it, they report it (incident response).
+
 ## Revoke a code
 
 1. **Admin → Principals** → person → active codes → **Revoke**.
@@ -37,8 +44,8 @@ API: `POST /api/v1/admin/principals/<principalId>/access-codes` with `{"label": 
 2. Effect: the code stops working at once, and every session signed in with it is revoked (within the
    60-second session cache).
 3. Revoking a person's role or venture membership is separate: do both when someone leaves.
-4. Audit events: `access_code.issued`, `access_code.revoked`, `auth.sign_in` successes and failures
-   (hashed IP, never the code).
+4. Audit events: `access_code.issued`, `access_code.reissued`, `access_code.revoked`, `auth.sign_in`
+   successes and failures (hashed IP, never the code).
 
 Lost code: revoke it and issue a new one; there is no recovery.
 
@@ -48,6 +55,15 @@ Ten failed sign-ins from one network address within 15 minutes lock that address
 (`429 locked_out`); a platform-wide failure spike rate-limits addresses that already failed. Every invalid
 code gets the same answer and timing. A locked-out user waits 15 minutes; repeated lockouts from one
 place are a brute-force signal (incident response, SEV-2).
+
+Once an API container has seen the lockout, it answers that network (IPv4 address or IPv6 /64) from memory
+with `429` and `Retry-After` until the lockout ends, without a database call or an audit row; only the
+first refusal per lockout window is audited, so the audit log shows one `locked_out` row per window and
+container, not one per request. A single attempt from a network that is not locked out still reaches the
+database (it has to check the code), so anonymous traffic can still resume a paused Aurora cluster.
+
+**Suspending a tenant** (`tenants.status = 'suspended'`) ends its people's sessions on their next request
+after the 60-second session cache (`401 unauthenticated`).
 
 ## Rotate the owner code
 
@@ -73,13 +89,14 @@ it, and at least every 90 days.
 3. Open a PR that changes only `owner.accessCodePrefix` and `owner.accessCodeHash` (the hash is not a
    secret: 100-bit codes cannot be brute-forced through scrypt). Merge → the normal deploy applies it.
 4. Sign in with the new code; check **Admin → Principals** shows the old deploy code revoked.
-5. If the repository secret `FA_OWNER_ACCESS_CODE` exists (evals), replace its value with the new code
-   (Settings → Secrets and variables → Actions → Secrets → `FA_OWNER_ACCESS_CODE` → Update).
+5. If the `evals` environment secret `FA_OWNER_ACCESS_CODE` exists, replace its value with the new code
+   (Settings → Environments → `evals` → Environment secrets → `FA_OWNER_ACCESS_CODE` → Update).
 
 If you are locked out (old code revoked, new one not yet deployed), the same PR is the recovery path.
 Never put the plaintext code in a repository **variable**, a workflow input, an issue, or a log. The one
-sanctioned exception is the encrypted Actions **secret** `FA_OWNER_ACCESS_CODE`, read only by the manual
-evals workflow (GitHub masks it in logs; workflows from forks never receive it); see [evals](evals.md).
+sanctioned exception is the encrypted **environment secret** `FA_OWNER_ACCESS_CODE` of the `evals`
+environment, read only by the manual evals workflow, which sends it only to the repository variable
+`FA_SITE_URL` (GitHub masks it in logs; workflows from forks never receive it); see [evals](evals.md).
 Delete that secret when no evaluation is planned, and rotate the owner code if it may have leaked.
 
 ## Periodic review (monthly)

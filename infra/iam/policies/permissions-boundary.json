@@ -24,7 +24,7 @@
       }
     },
     {
-      "Sid": "DenyBoundaryAlteration",
+      "Sid": "DenyAccessPolicyAlteration",
       "Effect": "Deny",
       "Action": [
         "iam:CreatePolicyVersion",
@@ -32,7 +32,11 @@
         "iam:DeletePolicyVersion",
         "iam:SetDefaultPolicyVersion"
       ],
-      "Resource": "arn:aws:iam::*:policy/FoundryAscent-Boundary"
+      "Resource": [
+        "arn:aws:iam::*:policy/FoundryAscent-Boundary",
+        "arn:aws:iam::*:policy/FoundryAscent-BootstrapOperator",
+        "arn:aws:iam::*:policy/FoundryAscent-LegacyCleanup"
+      ]
     },
     {
       "Sid": "DenyBoundaryRemoval",
@@ -44,6 +48,25 @@
       "Sid": "DenyLongLivedCredentials",
       "Effect": "Deny",
       "Action": ["iam:CreateAccessKey", "iam:CreateLoginProfile", "iam:UpdateLoginProfile"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyUserAndGroupGrants",
+      "Effect": "Deny",
+      "Action": [
+        "iam:AddUserToGroup",
+        "iam:AttachGroupPolicy",
+        "iam:AttachUserPolicy",
+        "iam:CreateGroup",
+        "iam:CreateServiceSpecificCredential",
+        "iam:PutGroupPolicy",
+        "iam:PutUserPolicy",
+        "iam:UpdateAccessKey",
+        "iam:UpdateGroup",
+        "iam:UpdateUser",
+        "iam:UploadSigningCertificate",
+        "iam:UploadSSHPublicKey"
+      ],
       "Resource": "*"
     },
     {

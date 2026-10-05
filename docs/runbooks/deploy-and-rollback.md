@@ -23,9 +23,9 @@ push to main ──► CI (quality · database · infra · python · e2e) ──
 - Typical duration: 5–10 minutes; the first deploy ~30 minutes (Aurora ~15, CloudFront ~10).
 - Automatic deploys ship only the tip of main. If CI runs of two pushes finish out of order, the older one
   is skipped with a notice (the newer commit's CI run deploys it).
-- Deploy, **Platform - deploy data stack** and **Platform - bootstrap** share the concurrency group
-  `deploy-production`: a run waits while another CloudFormation deployment is in progress (GitHub keeps
-  one waiting run per group; a newer one replaces it).
+- Deploy, **Platform - deploy data stack** and **Ops - retire stage-0 AWS access** share the concurrency
+  group `deploy-production`: a run waits while another CloudFormation deployment is in progress (GitHub
+  keeps one waiting run per group; a newer one replaces it).
 - **GitHub OIDC provider.** The Foundation stack creates the provider for
   `token.actions.githubusercontent.com` unless it is given an existing one to import (context
   `githubOidcProviderArn`); an account holds one provider per URL. Before `cdk deploy`, the step
@@ -58,10 +58,13 @@ pnpm --filter @foundry/infra exec cdk diff FoundryAscent-Data -c appVersion=$(gi
 
 ## One-time setup
 
-1. **Bootstrap** (account administrator, stage 0): attach the stage-0 policies (`infra/iam/README.md`), run
-   **Ops - verify AWS access**, then **Platform - bootstrap (stage 0 to CDK ready)**. (Done.)
-2. **GitHub settings** (Settings → Environments → `production`): deployment branches = `main` only; add
-   required reviewers if deploys should wait for a human approval.
+1. **Bootstrap** (account administrator in AWS CloudShell): `infra/iam/apply-bootstrap-access.sh`
+   (boundary and stage-0 policy), then `infra/iam/cdk-bootstrap.sh` (`CDKToolkit`); then run
+   **Ops - verify AWS access** (`infra/iam/README.md`). (Done; re-run the script whenever a policy file
+   changes, because the CI user has no IAM write permission.)
+2. **GitHub settings** (Settings → Environments → `production`): deployment branches = `main` only
+   (**required**: the deploy role trusts only jobs in this environment, so this rule is what keeps other
+   branches out); add required reviewers if deploys should wait for a human approval.
 3. **Credentials:** stage 0 = repository secrets `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`. Stage 1 =
    repository variable `AWS_DEPLOY_ROLE_ARN` (see [Switch to OIDC](#switch-to-github-oidc-stage-1)).
 4. **Branch protection on main:** require the CI jobs (`quality`, `database`, `infra`, `python`, `e2e`),
@@ -74,7 +77,8 @@ pnpm --filter @foundry/infra exec cdk diff FoundryAscent-Data -c appVersion=$(gi
    `FoundryAscent-Data` with the stage-0 key, so Aurora exists before the first full release.
 7. **Cost alerts:** subscribe to the `FoundryAscent-Alarms` topic and create the AWS Budget
    ([cost controls](cost-controls.md#alarms-and-budgets-one-time-setup-account-administrator)).
-8. **Evals:** add the secret `FA_OWNER_ACCESS_CODE` and the variable `FA_SITE_URL` ([evals](evals.md)).
+8. **Evals:** create the environment `evals` with the environment secret `FA_OWNER_ACCESS_CODE`, and
+   add the repository variable `FA_SITE_URL` ([evals](evals.md)).
 
 ## Routine operations
 
@@ -94,14 +98,16 @@ pnpm --filter @foundry/infra exec cdk diff FoundryAscent-Data -c appVersion=$(gi
 3. Run **Deploy** manually. The summary must show _AWS access: GitHub OIDC (stage 1)_ and _GitHub OIDC
    provider: managed by FoundryAscent-Foundation (kept)_ (or _existing provider imported_ if the account
    already had one before the first deploy).
-4. Retire stage 0: delete the access key and detach the stage-0 policies (`infra/iam/README.md`), then
+4. Retire stage 0 with **Ops - retire stage-0 AWS access**: `mode = plan`, then `mode = retire` with
+   `confirm = RETIRE-STAGE-0` (refused while `AWS_DEPLOY_ROLE_ARN` is unset). It detaches both stage-0
+   policies and deletes every access key of `Foundry-Ascent`, its own last (`infra/iam/README.md`). Then
    delete the two secrets. Rotate nothing else: no other static credential exists.
 
 ## When a deploy fails
 
 | Symptom                                                          | Meaning and action                                                                                                                                                                                                                                              |
 | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CDK bootstrap missing` / `CDKToolkit is …`                      | Run **Platform - bootstrap**, then re-run the deploy.                                                                                                                                                                                                           |
+| `CDK bootstrap missing` / `CDKToolkit is …`                      | The account owner runs `infra/iam/cdk-bootstrap.sh` in CloudShell, then re-run the deploy.                                                                                                                                                                      |
 | `No AWS credentials`                                             | Set the variable (stage 1) or the two secrets (stage 0).                                                                                                                                                                                                        |
 | `cdk deploy` fails, stack `UPDATE_ROLLBACK_COMPLETE`             | CloudFormation restored the previous version; production is unchanged. Read the first `*_FAILED` event: `aws cloudformation describe-stack-events --stack-name FoundryAscent-App --max-items 40`. Fix forward in a PR.                                          |
 | Migrate custom resource failed                                   | Check log group `/aws/lambda/FoundryAscent-Migrate` (identifiers and error codes only). Never edit an applied migration (checksums are verified); add a new migration.                                                                                          |

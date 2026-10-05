@@ -43,7 +43,7 @@ Chosen option: **1**.
 - The owner's code prefix and hash are deployment configuration (`infra/cdk/config/production.json`,
   public by design: a 100-bit code cannot be brute-forced through scrypt); the plaintext is generated on
   a trusted machine, kept in the owner's password manager and never committed. The only sanctioned copy
-  elsewhere is the encrypted Actions secret `FA_OWNER_ACCESS_CODE` that the manual evals workflow uses.
+  elsewhere is the encrypted secret `FA_OWNER_ACCESS_CODE` of the `evals` environment that the manual evals workflow uses.
 - Authentication is confined to `packages/core/src/auth` (credential → session). Everything downstream
   consumes only the resolved `RequestContext`, so an OIDC identity provider (system design §4.1) replaces
   sign-in without touching authorization or RLS.

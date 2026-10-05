@@ -18,8 +18,8 @@ on:
 permissions:
   contents: read
 
-# Shared with deploy.yml (and platform-bootstrap.yml): two CloudFormation deployments to this account never
-# overlap; a run waits for the one in progress.
+# Shared with deploy.yml (and ops-aws-retire-stage0.yml): two CloudFormation deployments to this account never
+# overlap, and the access key is never retired mid-deploy; a run waits for the one in progress.
 concurrency:
   group: deploy-production
   cancel-in-progress: false

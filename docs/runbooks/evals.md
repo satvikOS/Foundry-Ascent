@@ -12,23 +12,27 @@ GPT-6 Luna ([ADR-0014](../architecture/adr/0014-bedrock-models-luna-nova-titan.m
 
 ## One-time setup (repository owner)
 
-| Setting                | Kind     | Value                                                                                                     |
-| ---------------------- | -------- | --------------------------------------------------------------------------------------------------------- |
-| `FA_OWNER_ACCESS_CODE` | Secret   | The platform owner's access code (`FA-XXXXX-XXXXX-XXXXX-XXXXX` format), from the owner's password manager |
-| `FA_SITE_URL`          | Variable | The site origin, e.g. `https://dxxxxxxxxxxxxx.cloudfront.net` (the Deploy job summary shows it)           |
+| Setting                | Kind                          | Value                                                                                                     |
+| ---------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `evals`                | Environment                   | Settings → Environments → **New environment**; optionally add yourself as a required reviewer             |
+| `FA_OWNER_ACCESS_CODE` | Environment secret of `evals` | The platform owner's access code (`FA-XXXXX-XXXXX-XXXXX-XXXXX` format), from the owner's password manager |
+| `FA_SITE_URL`          | Repository variable           | The site origin, e.g. `https://dxxxxxxxxxxxxx.cloudfront.net` (the Deploy job summary shows it)           |
 
-Both live under Settings → Secrets and variables → Actions (the secret on the **Secrets** tab, the URL on
-the **Variables** tab). The secret is the only sanctioned copy of the owner code outside the password
-manager ([access codes](access-codes.md#rotate-the-owner-code)): GitHub stores it encrypted and masks it
-in logs, and workflows triggered from forks never receive it. Never put the code in a variable or a
-workflow input. When the owner code is rotated, update the secret; when no evaluation is planned, delete
-it.
+The secret goes on the `evals` environment page (**Environment secrets** → Add secret), not on the
+repository's Secrets tab; delete any repository-level `FA_OWNER_ACCESS_CODE`. The URL goes on Settings →
+Secrets and variables → Actions → **Variables**. The workflow has no URL input on purpose: the owner code
+is sent to that URL, so anyone able to start a run could otherwise point it at their own server. The
+environment secret is the only sanctioned copy of the owner code outside the password manager
+([access codes](access-codes.md#rotate-the-owner-code)): GitHub stores it encrypted and masks it in logs,
+and workflows triggered from forks never receive it. Never put the code in a variable or a workflow input.
+When the owner code is rotated, update the secret; when no evaluation is planned, delete it.
 
 ## Run
 
 1. Actions → **Evals - scenario benchmark and red team** → _Run workflow_ on `main`.
-2. Inputs: `base_url` (empty = `FA_SITE_URL`), `suite` (`all`, `scenarios`, `redteam`), `max_turns`
-   (default 100; each turn is one Bedrock call, ≈ $0.007 with Nova 2 Lite), optional `max_cost_usd`.
+2. Inputs: `suite` (`all`, `scenarios`, `redteam`), `max_turns` (default 100; each turn is one Bedrock
+   call, ≈ $0.007 with Nova 2 Lite), optional `max_cost_usd`. The site is always `FA_SITE_URL`. If the
+   `evals` environment requires a reviewer, approve the run when GitHub asks.
 3. The job first runs the offline lint and unit tests with the pinned toolchain
    (`evals/requirements-dev.txt`), then checks the secret and the URL, then evaluates.
 4. Read the report in the job summary; the `evals-results-<run id>` artifact (14 days) holds

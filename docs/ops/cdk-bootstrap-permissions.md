@@ -1,6 +1,14 @@
 # CDK bootstrap: IAM coverage for the stage-0 user
 
-The **Platform - bootstrap** workflow (`.github/workflows/platform-bootstrap.yml`) runs
+> **Historical (2026-10 security hardening).** The CI user no longer bootstraps: the permissions below
+> let it create and change the `cdk-*` roles, which is enough to grant itself administrator access. The
+> **Platform - bootstrap** workflow was removed, `infra/iam/policies/bootstrap-operator.json` is now the
+> post-bootstrap policy (read-only plus `sts:AssumeRole` on the four CDK CLI roles), and the account owner
+> runs the same command in AWS CloudShell with `infra/iam/cdk-bootstrap.sh`. The template and CLI analysis
+> below still describes what that command creates; the "Covered by Sid" column refers to the former
+> stage-0 policy (git history), and an administrator has all of it.
+
+The former **Platform - bootstrap** workflow (`.github/workflows/platform-bootstrap.yml`) ran
 `cdk bootstrap` (aws-cdk 2.1144.0, bootstrap template version 32) as the IAM user
 `Foundry-Ascent`. It passes no `--role-arn`, so CloudFormation calls every resource handler with the
 caller's own credentials. This page checks every one of those calls against

@@ -5,10 +5,16 @@ name: Evals - scenario benchmark and red team
 # evidence, no identity claims, ...). See evals/README.md.
 #
 # One-time setup (repository owner):
-#   * Settings -> Secrets and variables -> Actions -> Secrets: add FA_OWNER_ACCESS_CODE, the platform
-#     owner's access code (FA-XXXXX-XXXXX-XXXXX-XXXXX). The harness signs in with it, issues short-lived
-#     codes for synthetic principals only, and revokes them when the run ends.
-#   * Variables: add FA_SITE_URL (for example https://dxxxxxxxxxxxx.cloudfront.net), or pass base_url.
+#   * Settings -> Environments -> New environment "evals". Add the environment secret FA_OWNER_ACCESS_CODE,
+#     the platform owner's access code (FA-XXXXX-XXXXX-XXXXX-XXXXX); optionally require a reviewer. Delete
+#     any repository-level secret of that name. The harness signs in with it, issues short-lived codes for
+#     synthetic principals only, and revokes them when the run ends.
+#   * Settings -> Secrets and variables -> Actions -> Variables: add FA_SITE_URL, the https origin of the
+#     deployed site (for example https://dxxxxxxxxxxxx.cloudfront.net).
+#
+# The site URL is deliberately NOT a run input: the owner access code is sent to that URL, so whoever can
+# dispatch a run could otherwise point it at a server of their own and capture the code. Only a repository
+# administrator sets FA_SITE_URL, and the code lives in the "evals" environment, not in the repository.
 #
 # This repository is public, so logs are public: the harness prints case ids, statuses, grader codes
 # and aggregates only - never prompts, responses, memory content, canaries or access codes. The
@@ -16,11 +22,6 @@ name: Evals - scenario benchmark and red team
 on:
   workflow_dispatch:
     inputs:
-      base_url:
-        description: Site URL to evaluate (empty = repository variable FA_SITE_URL)
-        type: string
-        required: false
-        default: ''
       suite:
         description: Which suite to run
         type: choice
@@ -47,6 +48,8 @@ concurrency:
 jobs:
   evals:
     runs-on: ubuntu-latest
+    # Environment secret FA_OWNER_ACCESS_CODE (protection rules, e.g. required reviewers, apply).
+    environment: evals
     # Per-principal turn rate limits (20 turns / 10 min) can add waits on a full run.
     timeout-minutes: 120
     defaults:
@@ -60,8 +63,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
-          cache: pip
-          cache-dependency-path: evals/requirements*.txt
+          # No dependency cache in a job that holds the owner access code (cache-poisoning hardening).
 
       # The same pinned toolchain as the CI "python" job: requirements-dev.txt (ruff, pytest) includes the
       # runtime pins in requirements.txt.
@@ -78,17 +80,17 @@ jobs:
 
       - name: Check configuration
         env:
-          BASE_URL: ${{ inputs.base_url || vars.FA_SITE_URL }}
+          BASE_URL: ${{ vars.FA_SITE_URL }}
           HAS_CODE: ${{ secrets.FA_OWNER_ACCESS_CODE != '' }}
           MAX_TURNS: ${{ inputs.max_turns }}
           MAX_COST: ${{ inputs.max_cost_usd }}
         run: |
           if [ "${HAS_CODE}" != "true" ]; then
-            echo "::error title=Missing secret::Add the repository secret FA_OWNER_ACCESS_CODE (the platform owner's access code). See evals/README.md."
+            echo "::error title=Missing secret::Add FA_OWNER_ACCESS_CODE (the platform owner's access code) as a secret of the evals environment. See evals/README.md."
             exit 1
           fi
-          if [[ ! "${BASE_URL}" =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?/?$ ]]; then
-            echo "::error title=Missing or invalid base URL::Pass base_url or set the repository variable FA_SITE_URL to the https site origin."
+          if [[ ! "${BASE_URL}" =~ ^https://[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+/?$ ]]; then
+            echo "::error title=Missing or invalid site URL::Set the repository variable FA_SITE_URL to the https origin of the site (no path, port or credentials)."
             exit 1
           fi
           if [[ ! "${MAX_TURNS}" =~ ^[0-9]+$ ]] || [ "${MAX_TURNS}" -lt 1 ]; then
@@ -103,7 +105,7 @@ jobs:
       - name: Run evaluation
         env:
           FA_OWNER_ACCESS_CODE: ${{ secrets.FA_OWNER_ACCESS_CODE }}
-          FA_BASE_URL: ${{ inputs.base_url || vars.FA_SITE_URL }}
+          FA_BASE_URL: ${{ vars.FA_SITE_URL }}
           SUITE: ${{ inputs.suite }}
           MAX_TURNS: ${{ inputs.max_turns }}
           MAX_COST: ${{ inputs.max_cost_usd }}

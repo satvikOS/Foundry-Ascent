@@ -22,6 +22,8 @@
  *   SMOKE_EXPECT_VERSION    when set, /api/v1/health must report exactly this version (deployed commit)
  *   SMOKE_TENANT_SLUG       tenant of the deep link (default "ain")
  *   SMOKE_ALLOW_HTTP=1      accept an http:// base URL (local runs)
+ *   SMOKE_RETRY_DELAY_MS    pause between first-contact retries (default 5000)
+ *   SMOKE_FIRST_CONTACT_TIMEOUT_S  how long the first requests retry 403/404/5xx and network errors (default 180)
  *   GITHUB_STEP_SUMMARY     when set, a results table is appended to it
  *
  * Output is status codes, request ids and timings only: response bodies are never printed.
@@ -30,6 +32,7 @@
 import { createHash, randomInt } from 'node:crypto';
 import { appendFileSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { pathToFileURL } from 'node:url';
 
 const REQUEST_TIMEOUT_MS = 15_000;
 /**
@@ -38,8 +41,13 @@ const REQUEST_TIMEOUT_MS = 15_000;
  * answer (or CloudFront's 504) arrives instead of a local abort.
  */
 const DATABASE_REQUEST_TIMEOUT_MS = 65_000;
-/** A new distribution can take a few minutes to resolve everywhere; only the first request waits. */
-const FIRST_CONTACT_TIMEOUT_MS = 180_000;
+/** A new distribution can take a few minutes to resolve everywhere; only the first requests wait. */
+const FIRST_CONTACT_TIMEOUT_S = 180;
+/**
+ * HTTP statuses retried during the first-contact window: 5xx, and 403 / 404, which a freshly created or
+ * updated distribution or S3 origin briefly returns while the configuration and the SPA objects propagate.
+ */
+const FIRST_CONTACT_RETRY_STATUSES = new Set([403, 404]);
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 const MIN_HSTS_SECONDS = 31_536_000;
 const CSP_DIRECTIVES = ["default-src 'self'", "frame-ancestors 'none'", "object-src 'none'"];
@@ -54,6 +62,15 @@ function fail(message) {
 /** @param {string} line */
 function out(line) {
   process.stdout.write(`${line}\n`);
+}
+
+/**
+ * Whether a first-contact response should be retried (until the first-contact deadline) rather than
+ * reported as a failure.
+ * @param {number} status
+ */
+export function isTransientFirstContactStatus(status) {
+  return status >= 500 || FIRST_CONTACT_RETRY_STATUSES.has(status);
 }
 
 function usage() {
@@ -246,6 +263,11 @@ async function main() {
     process.exit(2);
   }
   out(`Smoke test of ${base.origin}`);
+  // Shared by the checks that hit the site before the API: a fresh distribution or origin may answer
+  // 403/404/5xx for a short while (FIRST_CONTACT_RETRY_STATUSES).
+  const firstContactDeadline =
+    Date.now() + positiveNumberEnv('SMOKE_FIRST_CONTACT_TIMEOUT_S', FIRST_CONTACT_TIMEOUT_S) * 1000;
+  const retryDelayMs = positiveNumberEnv('SMOKE_RETRY_DELAY_MS', 5_000);
 
   /** @type {string | undefined} */
   let indexHtml;
@@ -253,7 +275,7 @@ async function main() {
   let entryScript;
 
   await check('GET / serves the SPA with security headers', async () => {
-    const deadline = Date.now() + FIRST_CONTACT_TIMEOUT_MS;
+    const deadline = firstContactDeadline;
     let attempt = 0;
     for (;;) {
       attempt += 1;
@@ -264,12 +286,12 @@ async function main() {
       } catch (err) {
         // DNS of a new distribution, connection resets: retry until the first-contact deadline.
         if (Date.now() > deadline) throw err;
-        await sleep(5_000);
+        await sleep(retryDelayMs);
         continue;
       }
-      if (res.status >= 500 && Date.now() <= deadline) {
+      if (isTransientFirstContactStatus(res.status) && Date.now() <= deadline) {
         await res.body?.cancel();
-        await sleep(5_000);
+        await sleep(retryDelayMs);
         continue;
       }
       expectStatus(res, 200);
@@ -285,7 +307,12 @@ async function main() {
 
   await check('GET entry script is served immutable', async () => {
     if (!entryScript) fail('no /assets/*.js entry script referenced by index.html');
-    const res = await request(new URL(entryScript, base));
+    let res = await request(new URL(entryScript, base));
+    while (isTransientFirstContactStatus(res.status) && Date.now() <= firstContactDeadline) {
+      await res.body?.cancel();
+      await sleep(retryDelayMs);
+      res = await request(new URL(entryScript, base));
+    }
     expectStatus(res, 200);
     const type = (res.headers.get('content-type') ?? '').toLowerCase();
     if (!type.includes('javascript')) fail(`content-type "${type}" is not JavaScript`);
@@ -425,7 +452,10 @@ async function main() {
   process.exitCode = failed.length === 0 ? 0 : 1;
 }
 
-main().catch((err) => {
-  console.error(`smoke test crashed: ${describeError(err)}`);
-  process.exitCode = 1;
-});
+// Run only as a script (`node scripts/smoke.mjs <url>`), not when imported by its tests.
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((err) => {
+    console.error(`smoke test crashed: ${describeError(err)}`);
+    process.exitCode = 1;
+  });
+}

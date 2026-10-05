@@ -1,0 +1,76 @@
+name: Ops - retire stage-0 AWS access
+
+# Retires the stage-0 CI identity (IAM user Foundry-Ascent) once deploys run through GitHub OIDC
+# (infra/iam/README.md, "Moving to stage 1"). Code: ops/aws/retire_stage0.py.
+#   plan                   read-only: policies, access keys (last four characters only), what would change
+#   detach-legacy-cleanup  detaches FoundryAscent-LegacyCleanup (the legacy cleanup is closed)
+#   retire                 detaches FoundryAscent-LegacyCleanup and FoundryAscent-BootstrapOperator and deletes
+#                          EVERY access key of the user, this job's key last. Only when the repository variable
+#                          AWS_DEPLOY_ROLE_ARN is set (stage 1 is in use) and confirm = RETIRE-STAGE-0.
+# After retire, every workflow that uses the access key stops working by design; delete the repository secrets
+# AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.
+#
+# Runs as the stage-0 IAM user. The repository is public: the script masks the account id before it prints
+# anything. The access key reaches only the step that calls AWS. Actions are pinned to commit SHAs.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: plan (read-only), detach-legacy-cleanup, or retire (deletes every access key)
+        type: choice
+        options: [plan, detach-legacy-cleanup, retire]
+        default: plan
+      confirm:
+        description: Type RETIRE-STAGE-0 to allow retire
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+# Shared with deploy.yml and platform-deploy-data.yml: the access key is never deleted while a deployment that
+# uses it is running.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  retire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_REGION: us-east-1
+    steps:
+      - name: Require stage 1 and confirmation for retire
+        if: inputs.mode == 'retire'
+        env:
+          DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if [ -z "${DEPLOY_ROLE_ARN}" ]; then
+            echo "::error::retire requires the repository variable AWS_DEPLOY_ROLE_ARN (stage 1, GitHub OIDC) and a successful OIDC deploy"
+            exit 1
+          fi
+          if [ "${CONFIRM}" != "RETIRE-STAGE-0" ]; then
+            echo "::error::retire requires confirm=RETIRE-STAGE-0"
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - run: pip install --quiet -r ops/aws/requirements.txt
+
+      - name: Stage 0 (${{ inputs.mode }})
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          MODE: ${{ inputs.mode }}
+          DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+        run: python ops/aws/retire_stage0.py --mode "${MODE}" --deploy-role-arn "${DEPLOY_ROLE_ARN}"

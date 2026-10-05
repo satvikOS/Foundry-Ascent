@@ -12,10 +12,12 @@ Behaviour:
   * project tag missing   -> iam:TagPolicy
 Documents are compared as normalized JSON, so key order and whitespace do not matter.
 
-Permissions: the stage-0 CI user may only manage policies named FoundryAscent* (Sid
-PlatformManagedPolicies in infra/iam/policies/bootstrap-operator.json). That pattern also matches the
-user's own policies, so this script refuses FoundryAscent-BootstrapOperator and
-FoundryAscent-LegacyCleanup: only an administrator changes those (infra/iam/apply-bootstrap-access.sh).
+Permissions: account administrator only (for example in AWS CloudShell). The stage-0 CI user can no longer
+publish policies: a principal that can rewrite the permissions boundary can lift it from every platform role,
+so infra/iam/policies/bootstrap-operator.json denies all IAM writes (Sid NoIdentityChanges) and no workflow runs
+this script. The administrator's usual path is infra/iam/apply-bootstrap-access.sh; this script remains for a
+single policy. It refuses FoundryAscent-BootstrapOperator and FoundryAscent-LegacyCleanup, which only
+apply-bootstrap-access.sh changes (it also attaches or detaches them).
 IAM has no API to change a managed policy's description, so --description only applies on creation; a
 difference is reported.
 
@@ -86,8 +88,8 @@ def report(action: str, exc: Exception) -> NoReturn:
         code = err.get("Code", "ClientError")
         hint = ""
         if code in DENIED:
-            hint = " (not granted to this identity; see infra/iam/policies/bootstrap-operator.json"
-            hint += ", which scopes policy management to policy/FoundryAscent*)" if action.startswith("iam:") else ")"
+            hint = " (not granted to this identity: run this as an account administrator"
+            hint += "; the stage-0 CI user has no IAM write permission)" if action.startswith("iam:") else ")"
         fail(f"{action}: {code}: {err.get('Message', '')}{hint}")
     fail(f"{action}: {type(exc).__name__}: {exc}")
 

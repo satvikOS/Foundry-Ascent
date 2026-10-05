@@ -4,7 +4,9 @@ Runs as IAM user ``Foundry-Ascent`` (GitHub secrets AWS_ACCESS_KEY_ID / AWS_SECR
 
   1. ``sts:GetCallerIdentity``; the account id is masked before anything is printed.
   2. ``iam:SimulatePrincipalPolicy`` for every entry of ``infra/iam/required-actions.json``.
-     A ``required`` entry whose decision is not ``allowed`` is a failure. An entry with a ``policy`` field
+     A ``required`` entry whose decision is not ``allowed`` is a failure. An entry with ``"expect": "denied"``
+     inverts that: it lists something the CI identity must NOT be able to do (IAM changes, stack deletion,
+     CDKToolkit changes), and an ``allowed`` decision is the failure. An entry with a ``policy`` field
      (the legacy inventory/cleanup entries, ``FoundryAscent-LegacyCleanup``) is skipped once
      ``iam:ListAttachedUserPolicies`` shows that policy is no longer attached to the caller.
   3. Independent live probes, each reported PASS / FAIL / WARN:
@@ -55,6 +57,8 @@ ACTION_RE = re.compile(r"^[a-z0-9-]+:[A-Za-z0-9*]+$")
 POLICY_NAME_RE = re.compile(r"[\w+=,.@-]{1,128}", re.ASCII)
 USER_ARN_RE = re.compile(r"arn:aws[\w-]*:iam::\d{12}:user/(?:[^:]*/)?([\w+=,.@-]+)", re.ASCII)
 PLACEHOLDERS = {"account", "region"}
+EXPECTATIONS = ("allowed", "denied")
+DENIED_DECISIONS = {"explicitDeny", "implicitDeny"}
 # Any run of 6+ digits: full account ids and fragments left by truncated AWS messages.
 ACCOUNT_ID_RE = re.compile(r"\d{6,}")
 
@@ -123,6 +127,7 @@ class Entry:
     resources: tuple[str, ...]
     required: bool
     policy: str | None = None  # entry applies only while this managed policy is attached to the caller
+    expect: str = "allowed"  # "denied": the CI identity must not be able to do this
 
     @property
     def pairs(self) -> int:
@@ -142,6 +147,8 @@ def _entry_problems(where: str, item: Any) -> list[str]:
         problems.append(f"{where}: required must be true or false")
     if "policy" in item and not (isinstance(item["policy"], str) and POLICY_NAME_RE.fullmatch(item["policy"])):
         problems.append(f"{where}: policy must be a managed policy name, got {item['policy']!r}")
+    if "expect" in item and item["expect"] not in EXPECTATIONS:
+        problems.append(f"{where}: expect must be one of {', '.join(EXPECTATIONS)}, got {item['expect']!r}")
     actions, resources = item["actions"], item["resources"]
     if not isinstance(actions, list) or not actions:
         problems.append(f"{where}: actions must be a non-empty list")
@@ -169,7 +176,8 @@ def load_manifest(path: Path | str = DEFAULT_MANIFEST) -> list[Entry]:
     problems = [p for i, item in enumerate(raw) for p in _entry_problems(f"entries[{i}]", item)]
     if problems:
         raise ValueError("; ".join(problems))
-    return [Entry(e["purpose"].strip(), tuple(e["actions"]), tuple(e["resources"]), e["required"], e.get("policy"))
+    return [Entry(e["purpose"].strip(), tuple(e["actions"]), tuple(e["resources"]), e["required"], e.get("policy"),
+                  e.get("expect", "allowed"))
             for e in raw]
 
 
@@ -216,10 +224,18 @@ class SimRow:
     resource: str  # the manifest template, so it never contains the account id
     decision: str
     required: bool
+    expect: str = "allowed"
+
+    @property
+    def as_expected(self) -> bool:
+        """Allowed when it must be allowed; explicitly or implicitly denied when it must be denied."""
+        if self.expect == "denied":
+            return self.decision in DENIED_DECISIONS
+        return self.decision == "allowed"
 
     @property
     def failed(self) -> bool:
-        return self.required and self.decision != "allowed"
+        return self.required and not self.as_expected
 
 
 class SimulationUnavailable(Exception):
@@ -293,7 +309,8 @@ def simulate_all(iam: Any, principal: str, entries: list[Entry], account: str, r
                     decision = decisions.get((action.lower(), arn))
                     if decision is None and len(arns) == 1 and by_action:
                         decision = by_action[0]
-                    rows.append(SimRow(entry.purpose, action, tpl, decision or fatal or "notEvaluated", entry.required))
+                    rows.append(SimRow(entry.purpose, action, tpl, decision or fatal or "notEvaluated", entry.required,
+                                       entry.expect))
     return rows
 
 
@@ -308,7 +325,9 @@ def print_table(rows: list[SimRow]) -> None:
             _clip(r.purpose, 48),
             r.action,
             _clip(r.resource, 100),
-            r.decision + ("  <-- REQUIRED" if r.failed else "  (optional)" if r.decision != "allowed" else ""),
+            r.decision
+            + (" (must be denied)" if r.expect == "denied" else "")
+            + ("  <-- REQUIRED" if r.failed else "  (optional)" if not r.as_expected else ""),
         )
         for r in rows
     ]
@@ -547,8 +566,8 @@ def _md(text: object) -> str:
 
 
 def _md_table(rows: list[SimRow]) -> list[str]:
-    out = ["| Purpose | Action | Resource | Decision |", "| --- | --- | --- | --- |"]
-    out += [f"| {_md(r.purpose)} | `{r.action}` | `{_md(r.resource)}` | {r.decision} |" for r in rows]
+    out = ["| Purpose | Action | Resource | Expected | Decision |", "| --- | --- | --- | --- | --- |"]
+    out += [f"| {_md(r.purpose)} | `{r.action}` | `{_md(r.resource)}` | {r.expect} | {r.decision} |" for r in rows]
     return out
 
 
@@ -561,8 +580,11 @@ def skipped_note(skipped: Sequence[Entry]) -> str:
 def step_summary(ok: bool, caller: str, region: str, run_at: str, rows: list[SimRow], probes: list[Probe], note: str,
                  skipped: Sequence[Entry] = ()) -> str:
     failures = [r for r in rows if r.failed]
-    optional = [r for r in rows if not r.required and r.decision != "allowed"]
-    allowed = sum(r.decision == "allowed" for r in rows)
+    optional = [r for r in rows if not r.required and not r.as_expected]
+    allowed = sum(r.decision == "allowed" for r in rows if r.expect == "allowed")
+    must_allow = sum(r.expect == "allowed" for r in rows)
+    denied_ok = sum(r.as_expected for r in rows if r.expect == "denied")
+    must_deny = len(rows) - must_allow
     lines = [
         "## Foundry Ascent: AWS access verification",
         "",
@@ -571,8 +593,9 @@ def step_summary(ok: bool, caller: str, region: str, run_at: str, rows: list[Sim
         f"Caller `{caller}`, region `{region}`, run at {run_at}",
         "",
         (
-            f"- IAM simulation: {allowed}/{len(rows)} action/resource pairs allowed, "
-            f"{len(failures)} required not allowed, {len(optional)} optional not allowed"
+            f"- IAM simulation: {allowed}/{must_allow} action/resource pairs allowed, "
+            f"{denied_ok}/{must_deny} that must be denied are denied, "
+            f"{len(failures)} required not as expected, {len(optional)} optional not as expected"
         ),
         *([f"- Skipped: {skipped_note(skipped)}"] if skipped else []),
         (
@@ -586,9 +609,9 @@ def step_summary(ok: bool, caller: str, region: str, run_at: str, rows: list[Sim
         lines += [f"| {_md(p.name)} | {p.status} | {_md(p.detail)} |" for p in probes]
         lines.append("")
     if failures:
-        lines += ["### Required permissions not allowed", "", *_md_table(failures), ""]
+        lines += ["### Required permissions not as expected", "", *_md_table(failures), ""]
     if optional:
-        lines += ["### Optional permissions not allowed", "", *_md_table(optional), ""]
+        lines += ["### Optional permissions not as expected", "", *_md_table(optional), ""]
     if rows:
         lines += [f"<details><summary>All {len(rows)} simulated action/resource pairs</summary>", "",
                   *_md_table(rows), "", "</details>", ""]
@@ -687,9 +710,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     rows = simulate_all(iam, principal, entries, account, args.region)
     print_table(rows)
     sim_failures = [r for r in rows if r.failed]
-    optional_denied = [r for r in rows if not r.required and r.decision != "allowed"]
-    print(f"\n{sum(r.decision == 'allowed' for r in rows)}/{len(rows)} pairs allowed; "
-          f"{len(sim_failures)} required not allowed; {len(optional_denied)} optional not allowed")
+    optional_denied = [r for r in rows if not r.required and not r.as_expected]
+    must_deny = [r for r in rows if r.expect == "denied"]
+    print(f"\n{sum(r.decision == 'allowed' for r in rows if r.expect == 'allowed')}/{len(rows) - len(must_deny)} pairs "
+          f"allowed; {sum(r.as_expected for r in must_deny)}/{len(must_deny)} that must be denied are denied; "
+          f"{len(sim_failures)} required not as expected; {len(optional_denied)} optional not as expected")
 
     probes: list[Probe] = []
     luna_required, luna_note = luna_enabled(args.platform_config)
@@ -702,7 +727,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     probe_failures = [p for p in probes if p.failed]
 
     ok = not sim_failures and not probe_failures
-    note = "" if ok else f"{len(sim_failures)} required permission(s) not allowed, {len(probe_failures)} model probe(s) failed"
+    note = "" if ok else f"{len(sim_failures)} required permission(s) not as expected, {len(probe_failures)} model probe(s) failed"
     section("Result")
     print("PASS" if ok else f"FAIL: {note}")
     if IN_GITHUB and not ok:
@@ -718,7 +743,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "manifest": manifest_label,
         "simulation": {
             "pairs": len(rows),
-            "allowed": sum(r.decision == "allowed" for r in rows),
+            "allowed": sum(r.decision == "allowed" for r in rows if r.expect == "allowed"),
+            "denied_as_expected": sum(r.as_expected for r in rows if r.expect == "denied"),
             "required_not_allowed": [asdict(r) for r in sim_failures],
             "optional_not_allowed": [asdict(r) for r in optional_denied],
             "skipped_entries": [{"purpose": e.purpose, "policy": e.policy, "pairs": e.pairs} for e in skipped],

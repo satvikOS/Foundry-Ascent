@@ -26,16 +26,32 @@ today; about 900 if Luna is enabled later). The per-person cap is **$0.50/day**.
 
 ## Application caps (Admin → Settings)
 
-| Setting                   | Default | Meaning                                                                                            |
-| ------------------------- | ------- | -------------------------------------------------------------------------------------------------- |
-| `aiEnabled`               | on      | Global kill switch (no model or embedding calls when off)                                          |
-| `dailyUsdCapGlobal`       | 2.00    | Platform-wide AI spend per UTC day; reaching it returns `429 spend_cap_reached` until midnight UTC |
-| `dailyUsdCapPerPrincipal` | 0.50    | Per-person AI spend per UTC day                                                                    |
-| `maxTurnsPerSession`      | 40      | Hard stop for runaway sessions                                                                     |
+| Setting                            | Default          | Meaning                                                                                                                                 |
+| ---------------------------------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `aiEnabled`                        | on               | Global kill switch (no model or embedding calls when off)                                                                               |
+| `dailyUsdCapGlobal`                | 2.00             | Platform-wide AI spend per UTC day; reaching it returns `429 spend_cap_reached` until midnight UTC                                      |
+| `dailyUsdCapPerPrincipal`          | 0.50             | Per-person AI spend per UTC day                                                                                                         |
+| `maxTurnsPerSession`               | 40               | Hard stop for runaway sessions                                                                                                          |
+| `dailyUploadDocumentsPerPrincipal` | 20               | Documents one person may start uploading per UTC day; beyond it the upload is refused with `429` and `Retry-After` (until midnight UTC) |
+| `dailyUploadBytesPerPrincipal`     | 52428800 (50 MB) | Upload volume one person may start per UTC day (same refusal)                                                                           |
 
-Plus fixed limits in core configuration: 20 turns per 10 minutes per person, sign-in lockout. Every
-model call writes `usage_ledger` (model, tokens, estimated cost, principal, venture), visible in
-**Admin → Usage**. Prices live in `packages/ai/src/pricing.ts`; update them when AWS prices change so caps
+Plus fixed limits in core configuration: 20 turns per 10 minutes per person, at most 3 answers in flight
+per person, sign-in lockout. Every model call writes `usage_ledger` (model, tokens, estimated cost,
+principal, venture), visible in **Admin → Usage**.
+
+**Document ingestion counts against the caps.** Embedding an uploaded document is attributed to the person
+who uploaded it (`documents.uploaded_by`), and the worker checks the global cap and that person's cap
+before every embedding call. A document that would exceed a cap is marked **failed** with the reason
+`spend_cap_reached`, which the Documents page explains ("Not indexed: today's AI budget (the platform's
+or yours) was used up. Retry after midnight UTC."); nothing is embedded past the cap. The admission check and the turn insert run under
+one per-person lock in one transaction, so parallel requests cannot overshoot the turn rate limit.
+
+**Sign-in lockout and Aurora.** After the database has locked a network out (repeated invalid codes), each
+API container remembers the lockout in memory and answers `429` with `Retry-After` without touching the
+database or the audit log until it ends; only the first refusal per window is audited. A single anonymous
+sign-in attempt from a network that is not locked out still reaches the database (checking a code needs
+it), so it can resume a paused Aurora cluster (≈ $0.12 per ACU-hour while awake, auto-pause after 10
+minutes). Prices live in `packages/ai/src/pricing.ts`; update them when AWS prices change so caps
 stay accurate.
 
 ## Infrastructure limits (`infra/cdk/config/production.json`, change by PR + deploy)
@@ -52,8 +68,8 @@ accounts whose Lambda concurrency quota is only 10), `api.memoryMb` (1024), `api
    confirm the email. Alarms: `FoundryAscent-Api-Errors`, `FoundryAscent-Api-Throttles`,
    `FoundryAscent-Worker-Errors`, `FoundryAscent-Jobs-DLQ-NotEmpty`, `FoundryAscent-CloudFront-5xxRate`.
 2. **AWS Budgets** (Billing → Budgets), **recommended**: a monthly cost budget of $10 with email alerts at
-   50 %, 80 % and 100 % actual and 100 % forecast. Budgets are outside the CDK app (account-level); the
-   stage-0 policy allows `budgets:ModifyBudget`, but create it as the account administrator.
+   50 %, 80 % and 100 % actual and 100 % forecast. Budgets are outside the CDK app (account-level); create
+   it as the account administrator (the stage-0 policy can only read budgets).
 3. **Cost Anomaly Detection** (Billing → Cost Anomaly Detection): enable the default service monitor
    with a daily email summary (free).
 

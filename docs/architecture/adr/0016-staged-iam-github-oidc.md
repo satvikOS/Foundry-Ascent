@@ -32,15 +32,22 @@ only for that bootstrap window, with the narrowest permissions that still work.
 
 Chosen option: **1** (details in `infra/iam/README.md`).
 
-| Stage              | Principal                                        | Credentials                                                                                                       | Permissions                                                                               |
-| ------------------ | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| 0 — bootstrap      | IAM user `Foundry-Ascent`                        | access key in GitHub secrets                                                                                      | `FoundryAscent-BootstrapOperator` (+ `FoundryAscent-LegacyCleanup` until cleanup is done) |
-| 1 — steady state   | role `FoundryAscent-GitHubDeploy`                | GitHub OIDC, 1 h sessions, trust `repo:satvikOS/Foundry-Ascent:ref:refs/heads/main` and `:environment:production` | assume `cdk-hnb659fds-*` roles, read CloudFormation/Logs/Cost Explorer                    |
-| all platform roles | CDK-created roles, CloudFormation execution role | STS                                                                                                               | capped by `FoundryAscent-Boundary`                                                        |
+| Stage              | Principal                                        | Credentials                                                                                                              | Permissions                                                                         |
+| ------------------ | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| 0 — bootstrap      | IAM user `Foundry-Ascent`                        | access key in GitHub secrets                                                                                             | `FoundryAscent-BootstrapOperator` (post-bootstrap: read-only, assume the CDK roles) |
+| 1 — steady state   | role `FoundryAscent-GitHubDeploy`                | GitHub OIDC, 1 h sessions, trust exactly `repo:satvikOS/Foundry-Ascent:environment:production` (aud `sts.amazonaws.com`) | assume the four CDK CLI bootstrap roles, read CloudFormation/Logs/Cost Explorer     |
+| all platform roles | CDK-created roles, CloudFormation execution role | STS                                                                                                                      | capped by `FoundryAscent-Boundary`                                                  |
 
-- `platform-bootstrap.yml` publishes the boundary and bootstraps `CDKToolkit` with
+- The account owner publishes the boundary (`infra/iam/apply-bootstrap-access.sh`) and bootstraps
+  `CDKToolkit` (`infra/iam/cdk-bootstrap.sh`) in CloudShell with
   `--custom-permissions-boundary FoundryAscent-Boundary`; `cdk.json` sets
   `@aws-cdk/core:permissionsBoundary` so every role CDK creates carries it.
+- **Amendment (2026-10, security review):** the stage-0 policy originally let the CI user create and change
+  `cdk-*`/`FoundryAscent*` roles and publish `FoundryAscent*` policies (including the boundary), which is
+  enough to grant itself administrator access. After the bootstrap the policy was reduced to read-only
+  operations plus `sts:AssumeRole` on the four CDK CLI roles, with an explicit deny on IAM writes; the
+  bootstrap workflow was removed, and the deploy role trusts only the `production` environment subject
+  (no `ref:refs/heads/main`). Stage 0 is retired with the **Ops - retire stage-0 AWS access** workflow.
 - The boundary denies creating users or roles without itself, editing or removing it, and creating access
   keys or console passwords.
 - `deploy.yml` uses OIDC when the repository variable `AWS_DEPLOY_ROLE_ARN` is set, otherwise the stage-0

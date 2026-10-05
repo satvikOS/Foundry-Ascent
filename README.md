@@ -119,11 +119,13 @@ Pushes to `main` that pass CI deploy automatically to production through
 migrations and the synthetic seed run inside the deployment, before new code goes live), then the smoke
 test.
 
-1. **Stage 0 access** (done) — an account administrator attaches the bootstrap policies to the IAM user
+1. **Stage 0 access** (done) — an account administrator attaches the stage-0 policy to the IAM user
    ([`infra/iam/README.md`](infra/iam/README.md)) and adds its key as repository secrets; run
-   **Ops - verify AWS access**.
-2. **Bootstrap** (done) — **Platform - bootstrap (stage 0 to CDK ready)** publishes the permissions
-   boundary and bootstraps CDK (`CDKToolkit`).
+   **Ops - verify AWS access**. Since the bootstrap the policy is read-only plus "assume the CDK roles";
+   the owner re-applies it with `infra/iam/apply-bootstrap-access.sh` in CloudShell.
+2. **Bootstrap** (done) — the permissions boundary is published and CDK is bootstrapped (`CDKToolkit`).
+   Both are account-owner actions in CloudShell (`infra/iam/apply-bootstrap-access.sh`,
+   `infra/iam/cdk-bootstrap.sh`).
 3. **Data stack first** (done) — **Platform - deploy data stack** created `FoundryAscent-Data` (Aurora,
    documents bucket, jobs queue) on its own, because Aurora takes longest.
 4. **Full deploy** — merge to `main` (or run **Deploy** manually). It creates Foundation (GitHub OIDC

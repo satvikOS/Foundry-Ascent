@@ -153,20 +153,25 @@ identity and advice patterns do not (they usually quote the founder).
 ## CI
 
 [`.github/workflows/evals.yml`](../.github/workflows/evals.yml) (manual `workflow_dispatch`): inputs
-`base_url` (default: repository variable `FA_SITE_URL`), `suite`, `max_turns`, `max_cost_usd`. It runs the
-offline lint and tests first, then the evaluation, appends `report.md` to the job summary and uploads
-`evals/results/` as the `evals-results-<run id>` artifact (14 days).
+`suite`, `max_turns`, `max_cost_usd`. The site URL is **not** an input: it comes only from the repository
+variable `FA_SITE_URL` (must be an `https://` origin), because the owner access code is sent to that URL and
+a dispatcher could otherwise aim it at a server of their own. The job runs in the GitHub environment
+`evals`. It runs the offline lint and tests first, then the evaluation, appends `report.md` to the job
+summary and uploads `evals/results/` as the `evals-results-<run id>` artifact (14 days).
 
-One-time setup by the repository owner (Settings → Secrets and variables → Actions):
+One-time setup by the repository owner:
 
-| Name                   | Kind                    | Value                                                                                                                        |
-| ---------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `FA_OWNER_ACCESS_CODE` | **Secret** (required)   | The platform owner's access code (`FA-XXXXX-XXXXX-XXXXX-XXXXX`). The workflow fails with "Missing secret" without it         |
-| `FA_SITE_URL`          | **Variable** (optional) | The site origin, e.g. `https://dxxxxxxxxxxxxx.cloudfront.net` (Deploy job summary). Without it, pass `base_url` on every run |
+| Name                   | Kind                                                     | Value                                                                                                                |
+| ---------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `evals`                | **Environment** (Settings → Environments)                | Holds the secret below; optionally require a reviewer so every run is approved                                       |
+| `FA_OWNER_ACCESS_CODE` | **Environment secret** of `evals` (required)             | The platform owner's access code (`FA-XXXXX-XXXXX-XXXXX-XXXXX`). The workflow fails with "Missing secret" without it |
+| `FA_SITE_URL`          | **Repository variable** (required, Settings → Variables) | The site origin, e.g. `https://dxxxxxxxxxxxxx.cloudfront.net` (Deploy job summary)                                   |
 
-The secret is the only sanctioned copy of the owner code outside the owner's password manager: GitHub
-encrypts it, masks it in logs and never passes it to workflows triggered from forks. Never put the code
-in a variable, an input or on the command line; update the secret whenever the owner code is rotated
+Delete any repository-level secret named `FA_OWNER_ACCESS_CODE`: only jobs that declare
+`environment: evals` should be able to read the code. The environment secret is the only sanctioned copy
+of the owner code outside the owner's password manager: GitHub encrypts it, masks it in logs and never
+passes it to workflows triggered from forks. Never put the code in a variable, an input or on the command
+line; update the secret whenever the owner code is rotated
 ([access codes runbook](../docs/runbooks/access-codes.md#rotate-the-owner-code)) and delete it when no run
 is planned. Operating procedure: [evals runbook](../docs/runbooks/evals.md).
 

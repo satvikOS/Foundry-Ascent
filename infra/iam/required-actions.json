@@ -1,19 +1,21 @@
 {
-  "description": "Every IAM action the stage-0 CI identity (IAM user Foundry-Ascent) needs, with representative resource ARNs. ops/aws/verify_access.py simulates each action against each resource with iam:SimulatePrincipalPolicy; a required entry that is not 'allowed' fails the run. Placeholders: {account} = caller account id (never printed), {region} = platform region (us-east-1). Literal regions are cross-region inference destinations. Resource '*' marks actions without resource-level scoping and legacy resources whose names are not known in advance. Optional 'policy' (a customer-managed policy name): the entry applies only while that policy is attached directly to the calling IAM user (iam:ListAttachedUserPolicies). Once it is detached (FoundryAscent-LegacyCleanup is detached after the legacy cleanup), the entry is skipped instead of failing; if attachment cannot be determined, the entry is checked as declared.",
+  "description": "Every IAM action the stage-0 CI identity (IAM user Foundry-Ascent) needs after the CDK bootstrap, with representative resource ARNs, and what it must NOT be able to do. ops/aws/verify_access.py simulates each action against each resource with iam:SimulatePrincipalPolicy; a required entry that is not 'allowed' fails the run, and a required entry with \"expect\": \"denied\" fails the run when it IS allowed (privilege escalation, CDKToolkit or platform stack changes, deletion of platform data). Placeholders: {account} = caller account id (never printed), {region} = platform region (us-east-1). Literal regions are cross-region inference destinations. Resource '*' marks actions without resource-level scoping and legacy resources whose names are not known in advance. Optional 'policy' (a customer-managed policy name): the entry applies only while that policy is attached directly to the calling IAM user (iam:ListAttachedUserPolicies). Once it is detached (FoundryAscent-LegacyCleanup is detached after the legacy cleanup), the entry is skipped instead of failing; if attachment cannot be determined, the entry is checked as declared. Every 'aws' CLI call in .github/workflows and every boto3 call of the ops scripts run by the stage-0 workflows is listed here (ops/aws/test_policies.py checks the workflows against this file and the policy).",
   "cdk_qualifier": "hnb659fds",
   "entries": [
     {
-      "purpose": "Caller identity",
+      "purpose": "Caller identity (every workflow masks the account id first)",
       "actions": ["sts:GetCallerIdentity"],
       "resources": ["*"],
       "required": true
     },
     {
-      "purpose": "Self-introspection and access verification (verify_access.py)",
+      "purpose": "Self-introspection: verify_access.py and the retire-stage-0 plan",
       "actions": [
         "iam:GetUser",
         "iam:ListAttachedUserPolicies",
         "iam:ListUserPolicies",
+        "iam:GetUserPolicy",
+        "iam:GetLoginProfile",
         "iam:ListAccessKeys",
         "iam:SimulatePrincipalPolicy"
       ],
@@ -21,108 +23,48 @@
       "required": true
     },
     {
-      "purpose": "CDK bootstrap: CloudFormation change sets on stack CDKToolkit",
-      "actions": [
-        "cloudformation:DescribeStacks",
-        "cloudformation:GetTemplate",
-        "cloudformation:CreateChangeSet",
-        "cloudformation:DescribeChangeSet",
-        "cloudformation:ExecuteChangeSet",
-        "cloudformation:DeleteChangeSet",
-        "cloudformation:DescribeStackEvents",
-        "cloudformation:UpdateTerminationProtection"
-      ],
+      "purpose": "Deploy workflow: CDKToolkit status check (aws cloudformation describe-stacks)",
+      "actions": ["cloudformation:DescribeStacks", "cloudformation:DescribeStackEvents"],
       "resources": [
         "arn:aws:cloudformation:{region}:{account}:stack/CDKToolkit/00000000-0000-0000-0000-000000000000"
       ],
       "required": true
     },
     {
-      "purpose": "CDK bootstrap: IAM roles created by the bootstrap template (CloudFormation uses the caller's permissions, incl. rollback)",
+      "purpose": "Deploy workflow: GitHub OIDC provider lookup (aws iam list-open-id-connect-providers)",
+      "actions": ["iam:ListOpenIDConnectProviders"],
+      "resources": ["*"],
+      "required": true
+    },
+    {
+      "purpose": "Deploy workflow: GitHub OIDC provider details",
+      "actions": ["iam:GetOpenIDConnectProvider"],
+      "resources": ["arn:aws:iam::{account}:oidc-provider/token.actions.githubusercontent.com"],
+      "required": true
+    },
+    {
+      "purpose": "Deploy workflow: Foundation stack resources (aws cloudformation describe-stack-resources) and platform stack status",
       "actions": [
-        "iam:CreateRole",
-        "iam:GetRole",
-        "iam:DeleteRole",
-        "iam:TagRole",
-        "iam:UntagRole",
-        "iam:UpdateAssumeRolePolicy",
-        "iam:PutRolePolicy",
-        "iam:GetRolePolicy",
-        "iam:DeleteRolePolicy",
-        "iam:AttachRolePolicy",
-        "iam:DetachRolePolicy",
-        "iam:ListRolePolicies",
-        "iam:ListAttachedRolePolicies",
-        "iam:PutRolePermissionsBoundary"
+        "cloudformation:DescribeStacks",
+        "cloudformation:DescribeStackResources",
+        "cloudformation:DescribeStackEvents",
+        "cloudformation:GetTemplate"
       ],
       "resources": [
-        "arn:aws:iam::{account}:role/cdk-hnb659fds-deploy-role-{account}-{region}",
-        "arn:aws:iam::{account}:role/cdk-hnb659fds-file-publishing-role-{account}-{region}",
-        "arn:aws:iam::{account}:role/cdk-hnb659fds-image-publishing-role-{account}-{region}",
-        "arn:aws:iam::{account}:role/cdk-hnb659fds-lookup-role-{account}-{region}",
-        "arn:aws:iam::{account}:role/cdk-hnb659fds-cfn-exec-role-{account}-{region}"
+        "arn:aws:cloudformation:{region}:{account}:stack/FoundryAscent-Foundation/00000000-0000-0000-0000-000000000000",
+        "arn:aws:cloudformation:{region}:{account}:stack/FoundryAscent-Data/00000000-0000-0000-0000-000000000000",
+        "arn:aws:cloudformation:{region}:{account}:stack/FoundryAscent-App/00000000-0000-0000-0000-000000000000"
       ],
       "required": true
     },
     {
-      "purpose": "CDK bootstrap: S3 file-asset staging bucket",
-      "actions": [
-        "s3:CreateBucket",
-        "s3:DeleteBucket",
-        "s3:ListBucket",
-        "s3:GetBucketLocation",
-        "s3:PutBucketPolicy",
-        "s3:GetBucketPolicy",
-        "s3:DeleteBucketPolicy",
-        "s3:PutEncryptionConfiguration",
-        "s3:GetEncryptionConfiguration",
-        "s3:PutBucketVersioning",
-        "s3:GetBucketVersioning",
-        "s3:PutBucketPublicAccessBlock",
-        "s3:GetBucketPublicAccessBlock",
-        "s3:PutLifecycleConfiguration",
-        "s3:GetLifecycleConfiguration",
-        "s3:PutBucketTagging",
-        "s3:GetBucketTagging"
-      ],
-      "resources": ["arn:aws:s3:::cdk-hnb659fds-assets-{account}-{region}"],
+      "purpose": "Platform stack listing (no resource-level permissions)",
+      "actions": ["cloudformation:ListStacks"],
+      "resources": ["*"],
       "required": true
     },
     {
-      "purpose": "CDK bootstrap: ECR container-asset repository",
-      "actions": [
-        "ecr:CreateRepository",
-        "ecr:DeleteRepository",
-        "ecr:DescribeRepositories",
-        "ecr:SetRepositoryPolicy",
-        "ecr:GetRepositoryPolicy",
-        "ecr:PutLifecyclePolicy",
-        "ecr:GetLifecyclePolicy",
-        "ecr:PutImageTagMutability",
-        "ecr:PutImageScanningConfiguration",
-        "ecr:TagResource",
-        "ecr:ListTagsForResource"
-      ],
-      "resources": [
-        "arn:aws:ecr:{region}:{account}:repository/cdk-hnb659fds-container-assets-{account}-{region}"
-      ],
-      "required": true
-    },
-    {
-      "purpose": "CDK bootstrap: SSM version parameter",
-      "actions": [
-        "ssm:GetParameter",
-        "ssm:GetParameters",
-        "ssm:PutParameter",
-        "ssm:DeleteParameter",
-        "ssm:AddTagsToResource",
-        "ssm:ListTagsForResource"
-      ],
-      "resources": ["arn:aws:ssm:{region}:{account}:parameter/cdk-bootstrap/hnb659fds/version"],
-      "required": true
-    },
-    {
-      "purpose": "CDK CLI: assume bootstrap roles for deploy, asset publishing and context lookups",
+      "purpose": "CDK CLI (Deploy, Platform - deploy data stack): assume the bootstrap deploy, asset publishing and lookup roles",
       "actions": ["sts:AssumeRole"],
       "resources": [
         "arn:aws:iam::{account}:role/cdk-hnb659fds-deploy-role-{account}-{region}",
@@ -139,75 +81,22 @@
       "required": false
     },
     {
-      "purpose": "Permissions boundary managed policy FoundryAscent-Boundary",
-      "actions": [
-        "iam:CreatePolicy",
-        "iam:GetPolicy",
-        "iam:GetPolicyVersion",
-        "iam:ListPolicyVersions",
-        "iam:CreatePolicyVersion",
-        "iam:DeletePolicyVersion",
-        "iam:SetDefaultPolicyVersion",
-        "iam:TagPolicy",
-        "iam:ListEntitiesForPolicy"
-      ],
-      "resources": ["arn:aws:iam::{account}:policy/FoundryAscent-Boundary"],
-      "required": true
+      "purpose": "CDK bootstrap version (read only; the CLI normally reads it through the deploy role)",
+      "actions": ["ssm:GetParameter", "ssm:GetParameters"],
+      "resources": ["arn:aws:ssm:{region}:{account}:parameter/cdk-bootstrap/hnb659fds/version"],
+      "required": false
     },
     {
-      "purpose": "GitHub OIDC provider token.actions.githubusercontent.com",
-      "actions": [
-        "iam:CreateOpenIDConnectProvider",
-        "iam:GetOpenIDConnectProvider",
-        "iam:UpdateOpenIDConnectProviderThumbprint",
-        "iam:AddClientIDToOpenIDConnectProvider",
-        "iam:TagOpenIDConnectProvider"
-      ],
-      "resources": ["arn:aws:iam::{account}:oidc-provider/token.actions.githubusercontent.com"],
-      "required": true
-    },
-    {
-      "purpose": "GitHub OIDC provider: idempotency lookup",
-      "actions": ["iam:ListOpenIDConnectProviders"],
-      "resources": ["*"],
-      "required": true
-    },
-    {
-      "purpose": "Stage-1 deploy role FoundryAscent-GitHubDeploy (OIDC trust, capped by FoundryAscent-Boundary)",
-      "actions": [
-        "iam:CreateRole",
-        "iam:GetRole",
-        "iam:UpdateRole",
-        "iam:UpdateAssumeRolePolicy",
-        "iam:TagRole",
-        "iam:PutRolePolicy",
-        "iam:GetRolePolicy",
-        "iam:DeleteRolePolicy",
-        "iam:AttachRolePolicy",
-        "iam:DetachRolePolicy",
-        "iam:ListRolePolicies",
-        "iam:ListAttachedRolePolicies",
-        "iam:PutRolePermissionsBoundary"
-      ],
+      "purpose": "Retire stage 0: the stage-1 deploy role and the permissions boundary exist",
+      "actions": ["iam:GetRole"],
       "resources": ["arn:aws:iam::{account}:role/FoundryAscent-GitHubDeploy"],
       "required": true
     },
     {
-      "purpose": "FoundryAscent* stacks managed directly by the stage-0 identity (normally via the CDK deploy role)",
-      "actions": [
-        "cloudformation:DescribeStacks",
-        "cloudformation:GetTemplate",
-        "cloudformation:CreateChangeSet",
-        "cloudformation:DescribeChangeSet",
-        "cloudformation:ExecuteChangeSet",
-        "cloudformation:DeleteChangeSet",
-        "cloudformation:DescribeStackEvents",
-        "cloudformation:DeleteStack"
-      ],
-      "resources": [
-        "arn:aws:cloudformation:{region}:{account}:stack/FoundryAscent-Example/00000000-0000-0000-0000-000000000000"
-      ],
-      "required": false
+      "purpose": "Permissions boundary FoundryAscent-Boundary (read only; the account owner publishes it)",
+      "actions": ["iam:GetPolicy", "iam:GetPolicyVersion", "iam:ListPolicyVersions"],
+      "resources": ["arn:aws:iam::{account}:policy/FoundryAscent-Boundary"],
+      "required": true
     },
     {
       "purpose": "Bedrock smoke tests: model catalogue and inference profiles",
@@ -265,16 +154,176 @@
       "required": false
     },
     {
-      "purpose": "FinOps: monthly AWS Budget guardrail (requires IAM access to billing data)",
-      "actions": ["budgets:ViewBudget", "budgets:ModifyBudget"],
+      "purpose": "FinOps: monthly AWS Budget (read only; the account owner creates and changes it)",
+      "actions": ["budgets:ViewBudget"],
       "resources": ["arn:aws:budgets::{account}:budget/FoundryAscent-Monthly"],
       "required": false
     },
     {
-      "purpose": "Self-retirement after stage 1: detach stage-0 policies and delete the access key",
+      "purpose": "Self-retirement after stage 1: detach the stage-0 policies and delete the access keys",
       "actions": ["iam:DetachUserPolicy", "iam:DeleteAccessKey"],
       "resources": ["arn:aws:iam::{account}:user/Foundry-Ascent"],
       "required": true
+    },
+    {
+      "purpose": "MUST BE DENIED: IAM role changes (privilege escalation through CDK or platform roles)",
+      "actions": [
+        "iam:CreateRole",
+        "iam:PutRolePolicy",
+        "iam:AttachRolePolicy",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:PutRolePermissionsBoundary",
+        "iam:DeleteRolePermissionsBoundary",
+        "iam:PassRole",
+        "iam:DeleteRole",
+        "iam:DetachRolePolicy",
+        "iam:DeleteRolePolicy"
+      ],
+      "resources": [
+        "arn:aws:iam::{account}:role/cdk-hnb659fds-deploy-role-{account}-{region}",
+        "arn:aws:iam::{account}:role/cdk-hnb659fds-cfn-exec-role-{account}-{region}",
+        "arn:aws:iam::{account}:role/cdk-hnb659fds-example",
+        "arn:aws:iam::{account}:role/FoundryAscent-GitHubDeploy",
+        "arn:aws:iam::{account}:role/FoundryAscent-App-ApiRole-EXAMPLE"
+      ],
+      "required": true,
+      "expect": "denied"
+    },
+    {
+      "purpose": "MUST BE DENIED: managed policy changes (permissions boundary and the stage-0 policies)",
+      "actions": [
+        "iam:CreatePolicy",
+        "iam:CreatePolicyVersion",
+        "iam:SetDefaultPolicyVersion",
+        "iam:DeletePolicyVersion",
+        "iam:DeletePolicy"
+      ],
+      "resources": [
+        "arn:aws:iam::{account}:policy/FoundryAscent-Boundary",
+        "arn:aws:iam::{account}:policy/FoundryAscent-BootstrapOperator",
+        "arn:aws:iam::{account}:policy/FoundryAscent-LegacyCleanup"
+      ],
+      "required": true,
+      "expect": "denied"
+    },
+    {
+      "purpose": "MUST BE DENIED: new credentials or permissions for the stage-0 user",
+      "actions": [
+        "iam:CreateAccessKey",
+        "iam:UpdateAccessKey",
+        "iam:AttachUserPolicy",
+        "iam:PutUserPolicy",
+        "iam:DeleteUserPolicy",
+        "iam:CreateLoginProfile",
+        "iam:AddUserToGroup",
+        "iam:PutUserPermissionsBoundary",
+        "iam:DeleteUserPermissionsBoundary"
+      ],
+      "resources": ["arn:aws:iam::{account}:user/Foundry-Ascent"],
+      "required": true,
+      "expect": "denied"
+    },
+    {
+      "purpose": "MUST BE DENIED: assuming any role other than the four CDK bootstrap roles",
+      "actions": ["sts:AssumeRole"],
+      "resources": [
+        "arn:aws:iam::{account}:role/cdk-hnb659fds-cfn-exec-role-{account}-{region}",
+        "arn:aws:iam::{account}:role/FoundryAscent-GitHubDeploy",
+        "arn:aws:iam::{account}:role/cdk-hnb659fds-deploy-role-example"
+      ],
+      "required": true,
+      "expect": "denied"
+    },
+    {
+      "purpose": "MUST BE DENIED: direct CloudFormation changes to CDKToolkit and the platform stacks (deploys go through the CDK deploy role)",
+      "actions": [
+        "cloudformation:CreateChangeSet",
+        "cloudformation:ExecuteChangeSet",
+        "cloudformation:UpdateStack",
+        "cloudformation:DeleteStack",
+        "cloudformation:UpdateTerminationProtection",
+        "cloudformation:SetStackPolicy"
+      ],
+      "resources": [
+        "arn:aws:cloudformation:{region}:{account}:stack/CDKToolkit/00000000-0000-0000-0000-000000000000",
+        "arn:aws:cloudformation:{region}:{account}:stack/FoundryAscent-Foundation/00000000-0000-0000-0000-000000000000",
+        "arn:aws:cloudformation:{region}:{account}:stack/FoundryAscent-Data/00000000-0000-0000-0000-000000000000",
+        "arn:aws:cloudformation:{region}:{account}:stack/FoundryAscent-App/00000000-0000-0000-0000-000000000000"
+      ],
+      "required": true,
+      "expect": "denied"
+    },
+    {
+      "purpose": "MUST BE DENIED: GitHub OIDC provider changes",
+      "actions": [
+        "iam:CreateOpenIDConnectProvider",
+        "iam:UpdateOpenIDConnectProviderThumbprint",
+        "iam:AddClientIDToOpenIDConnectProvider",
+        "iam:RemoveClientIDFromOpenIDConnectProvider",
+        "iam:DeleteOpenIDConnectProvider"
+      ],
+      "resources": ["arn:aws:iam::{account}:oidc-provider/token.actions.githubusercontent.com"],
+      "required": true,
+      "expect": "denied"
+    },
+    {
+      "purpose": "MUST BE DENIED: CDK bootstrap resources (staging bucket, container repository, version parameter)",
+      "actions": [
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:PutBucketPolicy",
+        "s3:DeleteBucket",
+        "ecr:SetRepositoryPolicy",
+        "ecr:DeleteRepository",
+        "ssm:PutParameter",
+        "ssm:DeleteParameter"
+      ],
+      "resources": [
+        "arn:aws:s3:::cdk-hnb659fds-assets-{account}-{region}",
+        "arn:aws:s3:::cdk-hnb659fds-assets-{account}-{region}/example.zip",
+        "arn:aws:ecr:{region}:{account}:repository/cdk-hnb659fds-container-assets-{account}-{region}",
+        "arn:aws:ssm:{region}:{account}:parameter/cdk-bootstrap/hnb659fds/version"
+      ],
+      "required": true,
+      "expect": "denied"
+    },
+    {
+      "purpose": "MUST BE DENIED: platform data and runtime (Aurora, its secret, documents, functions, queues, logs), also while FoundryAscent-LegacyCleanup is attached",
+      "actions": [
+        "rds:DeleteDBCluster",
+        "rds:ModifyDBCluster",
+        "rds:DeleteDBInstance",
+        "secretsmanager:DeleteSecret",
+        "s3:DeleteObject",
+        "s3:DeleteBucket",
+        "s3:PutLifecycleConfiguration",
+        "lambda:DeleteFunction",
+        "sqs:DeleteQueue",
+        "sns:DeleteTopic",
+        "logs:DeleteLogGroup",
+        "events:DeleteRule"
+      ],
+      "resources": [
+        "arn:aws:rds:{region}:{account}:cluster:foundry-ascent",
+        "arn:aws:rds:{region}:{account}:db:foundry-ascent-writer",
+        "arn:aws:secretsmanager:{region}:{account}:secret:foundry-ascent/aurora-admin-AbCdEf",
+        "arn:aws:s3:::foundryascent-data-documentsbucket-example",
+        "arn:aws:s3:::foundryascent-data-documentsbucket-example/tenants/example",
+        "arn:aws:lambda:{region}:{account}:function:FoundryAscent-Api",
+        "arn:aws:sqs:{region}:{account}:FoundryAscent-Jobs",
+        "arn:aws:sns:{region}:{account}:FoundryAscent-Alarms",
+        "arn:aws:logs:{region}:{account}:log-group:/aws/lambda/FoundryAscent-Api",
+        "arn:aws:events:{region}:{account}:rule/FoundryAscent-App-DailyMaintenance-EXAMPLE"
+      ],
+      "required": true,
+      "expect": "denied"
+    },
+    {
+      "purpose": "MUST BE DENIED: budget changes (the account owner manages the budget)",
+      "actions": ["budgets:ModifyBudget"],
+      "resources": ["arn:aws:budgets::{account}:budget/FoundryAscent-Monthly"],
+      "required": true,
+      "expect": "denied"
     },
     {
       "purpose": "Legacy inventory: account-wide discovery",

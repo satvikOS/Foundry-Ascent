@@ -25,8 +25,8 @@ permissions:
   contents: read
   id-token: write
 
-# One group for every workflow that changes CloudFormation stacks in the account (this one,
-# platform-deploy-data.yml and platform-bootstrap.yml), so two deployments never overlap: a new run waits
+# One group for every workflow that changes CloudFormation stacks or the stage-0 credentials in the account
+# (this one, platform-deploy-data.yml and ops-aws-retire-stage0.yml), so they never overlap: a new run waits
 # for the one in progress. GitHub keeps at most one waiting run per group; a newer one replaces it.
 concurrency:
   group: deploy-production
@@ -176,16 +176,16 @@ jobs:
           if ! status="$(aws cloudformation describe-stacks --stack-name CDKToolkit \
             --query 'Stacks[0].StackStatus' --output text 2>"${RUNNER_TEMP}/cdktoolkit.err")"; then
             reason="$(tr -s '\r\n' '  ' < "${RUNNER_TEMP}/cdktoolkit.err" | head -c 300)"
-            echo "::error title=CDK bootstrap missing::Stack CDKToolkit could not be read in us-east-1 (${reason}). Run the 'Platform - bootstrap (stage 0 to CDK ready)' workflow (.github/workflows/platform-bootstrap.yml) once, then re-run this deploy."
+            echo "::error title=CDK bootstrap missing::Stack CDKToolkit could not be read in us-east-1 (${reason}). The account owner bootstraps CDK in AWS CloudShell (infra/iam/cdk-bootstrap.sh); then re-run this deploy."
             exit 1
           fi
           case "${status}" in
             CREATE_COMPLETE | UPDATE_COMPLETE | IMPORT_COMPLETE)
               echo "CDKToolkit: ${status}" ;;
             UPDATE_ROLLBACK_COMPLETE)
-              echo "::warning::CDKToolkit is ${status} (last bootstrap update rolled back; previous version is usable). Re-run the platform-bootstrap workflow." ;;
+              echo "::warning::CDKToolkit is ${status} (last bootstrap update rolled back; previous version is usable). The account owner re-runs infra/iam/cdk-bootstrap.sh in CloudShell." ;;
             *)
-              echo "::error title=CDK bootstrap unhealthy::CDKToolkit is ${status}. Fix it with the 'Platform - bootstrap (stage 0 to CDK ready)' workflow (.github/workflows/platform-bootstrap.yml) before deploying."
+              echo "::error title=CDK bootstrap unhealthy::CDKToolkit is ${status}. The account owner fixes it in AWS CloudShell (infra/iam/cdk-bootstrap.sh) before deploying."
               exit 1 ;;
           esac
 
