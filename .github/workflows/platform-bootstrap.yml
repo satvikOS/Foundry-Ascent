@@ -48,6 +48,8 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+          # package.json declares pnpm; v5 would try to cache with it. This job only needs npx.
+          package-manager-cache: false
 
       - name: Resolve AWS account ID (masked)
         env:
