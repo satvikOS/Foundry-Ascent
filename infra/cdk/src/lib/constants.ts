@@ -1,4 +1,5 @@
 /** Values shared by more than one stack; keep them here so the stacks cannot drift apart. */
+import { LAMBDA_CONTRACT } from './lambda-contract.js';
 
 export const PROJECT_TAG = 'foundry-ascent';
 export const ENVIRONMENT_NAME = 'production';
@@ -45,4 +46,27 @@ export const DEFAULT_UPLOAD_CORS_ORIGINS: readonly string[] = ['https://*.cloudf
  * the API cannot receive SITE_ORIGIN as an environment variable (distribution -> Function URL -> function
  * -> distribution would be a dependency cycle), so it derives `https://<this header>` instead.
  */
-export const VIEWER_HOST_HEADER = 'x-fa-viewer-host';
+export const VIEWER_HOST_HEADER = LAMBDA_CONTRACT.edgeHeaders.viewerHost;
+
+/**
+ * Header the /api/* CloudFront function sets to `event.viewer.ip` (overwriting any client value). The
+ * API keys its per-IP sign-in lockout on it; `x-forwarded-for` is client-controlled and only trusted in
+ * local development.
+ */
+export const VIEWER_IP_HEADER = LAMBDA_CONTRACT.edgeHeaders.viewerIp;
+
+// ---- /api/* timing (see README "Timeouts and Aurora resume") -------------------------------------------
+/**
+ * CloudFront origin read (response) timeout for the Function URL: the longest the edge waits for the
+ * first byte and between bytes. 60 s is the most the default quota allows without an increase.
+ */
+export const API_ORIGIN_READ_TIMEOUT_SECONDS = 60;
+/** How long one API database call waits for Aurora to resume before 503 `database_resuming` (40 s). */
+export const API_DB_RESUME_BUDGET_SECONDS = LAMBDA_CONTRACT.api.dbResumeBudgetSeconds;
+/** SSE keep-alive comment interval of a turn stream (15 s). */
+export const API_SSE_KEEP_ALIVE_SECONDS = LAMBDA_CONTRACT.api.sseKeepAliveSeconds;
+/**
+ * Minimum headroom between the resume budget and both the origin read timeout and the Lambda timeout:
+ * after waiting for the database, the request still has to run (and answer 503 if it must).
+ */
+export const API_TIMING_MARGIN_SECONDS = 15;

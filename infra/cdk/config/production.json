@@ -28,7 +28,7 @@
     "engineVersion": "16.13"
   },
   "api": {
-    "reservedConcurrency": 10,
+    "reservedConcurrency": null,
     "memoryMb": 1024,
     "timeoutSeconds": 60
   },

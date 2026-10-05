@@ -13,11 +13,13 @@ import {
   EvidenceItem,
   Id,
   MAX_DOCUMENT_BYTES,
+  Me,
   MembershipRole,
   MemoryEventView,
   MemoryObjectView,
   MemoryStatus,
   MemoryType,
+  PersonaReleaseView,
   PersonaView,
   PlatformRole,
   PrincipalView,
@@ -47,10 +49,16 @@ export const Page = <T extends z.ZodType>(item: T) =>
   z.object({ items: z.array(item), nextCursor: z.string().nullable() });
 
 // Health ------------------------------------------------------------------------------------------
+/**
+ * `GET /health` (public, liveness): never queries the database, so polling it cannot keep Aurora awake.
+ * `version` is the deployed release (`APP_VERSION`, the git SHA in CI). `db` is the state this API
+ * instance last observed while serving real requests (within the last few minutes) and is absent when it
+ * has no recent observation. `GET /admin/health` (platform admin) probes the database and always sets it.
+ */
 export const HealthResponse = z.object({
   status: z.enum(['ok', 'degraded']),
   version: z.string(),
-  db: z.enum(['awake', 'resuming', 'unavailable']),
+  db: z.enum(['awake', 'resuming', 'unavailable']).optional(),
   time: Timestamp,
 });
 
@@ -63,6 +71,12 @@ export const SignInRequest = z.object({
     .transform((s) => s.toUpperCase())
     .pipe(z.string().regex(ACCESS_CODE_PATTERN, 'Access codes look like FA-XXXXX-XXXXX-XXXXX-XXXXX')),
 });
+/**
+ * `POST /auth/sign-in` 200 body: the signed-in principal (same shape as `GET /me`). The session itself
+ * travels only in the `fa_session` cookie (HttpOnly), never in the body.
+ */
+export const SignInResponse = Me;
+export type SignInResponse = z.infer<typeof SignInResponse>;
 
 // Ventures -----------------------------------------------------------------------------------------
 export const VentureListResponse = z.object({ items: z.array(VentureSummary) });
@@ -103,11 +117,19 @@ export const CreateSessionRequest = z.object({
   privacy: SessionPrivacy.default('standard'),
 });
 export const SessionListResponse = z.object({ items: z.array(SessionView) });
+/** `POST /ventures/:id/sessions` 201 body. */
+export const CreateSessionResponse = SessionView;
 export const SessionDetailResponse = z.object({ session: SessionView, turns: z.array(TurnView) });
 export const CreateTurnRequest = z.object({
   text: z.string().trim().min(1).max(8000),
   mode: CoachMode.optional(),
   rehearsalCounterpart: z.string().trim().max(120).optional(),
+  /**
+   * The ordinal the client expects this turn to get (the session's turn count + 1). A retry that sends
+   * the same ordinal, author and text replays the stored turn instead of calling the model again; a
+   * different turn already holding that ordinal is answered with 409 `conflict`. Optional.
+   */
+  expectedOrdinal: z.number().int().min(1).max(100_000).optional(),
 });
 export const EndSessionResponse = z.object({ session: SessionView, recap: SessionRecap.nullable() });
 export const TurnFeedbackRequest = z.object({
@@ -125,9 +147,15 @@ export const MemoryQuery = z.object({
   type: MemoryType.optional(),
   status: MemoryStatus.optional(),
   q: z.string().trim().max(200).optional(),
-  pinned: z.coerce.boolean().optional(),
+  /**
+   * Query-string flag: `true/false`, `1/0`, `yes/no`, `on/off` (case-insensitive, surrounding spaces
+   * ignored), or a boolean when the query is built in code. Unlike `z.coerce.boolean()`, `"false"` means false and other text is rejected.
+   */
+  pinned: z.union([z.boolean(), z.string().trim().pipe(z.stringbool())]).optional(),
 });
 export const MemoryListResponse = z.object({ items: z.array(MemoryObjectView) });
+/** `POST /ventures/:id/memory` 201 body. */
+export const CreateMemoryResponse = MemoryObjectView;
 export const CreateMemoryRequest = z.object({
   type: MemoryType,
   title: z.string().trim().min(1).max(200),
@@ -136,6 +164,11 @@ export const CreateMemoryRequest = z.object({
   attributes: z.record(z.string(), z.unknown()).default({}),
   sourceRefs: z.array(SourceRef).default([{ kind: 'manual', id: 'founder' }]),
 });
+/**
+ * `PATCH /memory/:id` body. `approve`, `reject`, `dispute`, `pin` and `unpin` answer 200 with the item
+ * (`MemoryObjectView`); `correct` answers 200 with the new version that supersedes it; `delete` answers
+ * **204 No Content** (no body).
+ */
 export const MemoryAction = z.discriminatedUnion('action', [
   z.object({ action: z.literal('approve') }),
   z.object({ action: z.literal('reject'), reason: z.string().trim().max(500).optional() }),
@@ -158,6 +191,8 @@ export const MemoryAction = z.discriminatedUnion('action', [
   z.object({ action: z.literal('delete'), reason: z.string().trim().max(500).optional() }),
 ]);
 export type MemoryAction = z.infer<typeof MemoryAction>;
+/** `PATCH /memory/:id` 200 body for every action except `delete` (204, no body). */
+export const MemoryActionResponse = MemoryObjectView;
 export const MemoryHistoryResponse = z.object({ items: z.array(MemoryEventView) });
 
 // Documents ----------------------------------------------------------------------------------------
@@ -173,9 +208,16 @@ export const CreateDocumentRequest = z.object({
 });
 export const CreateDocumentResponse = z.object({
   document: DocumentView,
-  upload: z.object({ url: z.url(), method: z.literal('PUT'), headers: z.record(z.string(), z.string()), expiresAt: Timestamp }),
+  upload: z.object({
+    url: z.url(),
+    method: z.literal('PUT'),
+    headers: z.record(z.string(), z.string()),
+    expiresAt: Timestamp,
+  }),
 });
 export const DocumentListResponse = z.object({ items: z.array(DocumentView) });
+/** `POST /documents/:id/complete` body: 202 while ingestion runs (`status: processing`), else 200. */
+export const CompleteDocumentResponse = DocumentView;
 
 // Escalations --------------------------------------------------------------------------------------
 export const EscalationPacket = z.object({
@@ -214,6 +256,8 @@ export const EscalationView = z.object({
 });
 export type EscalationView = z.infer<typeof EscalationView>;
 export const EscalationListResponse = z.object({ items: z.array(EscalationView) });
+/** `POST /ventures/:id/escalations` 201 body. */
+export const CreateEscalationResponse = EscalationView;
 export const CreateEscalationRequest = z.object({
   turnId: Id.nullable().default(null),
   category: EscalationCategory,
@@ -232,11 +276,16 @@ export const EscalationAction = z.discriminatedUnion('action', [
   z.object({ action: z.literal('acknowledge') }),
   z.object({
     action: z.literal('resolve'),
-    resolution: z.object({ summary: z.string().trim().min(1).max(4000), nextSteps: z.array(z.string().max(500)).max(10) }),
+    resolution: z.object({
+      summary: z.string().trim().min(1).max(4000),
+      nextSteps: z.array(z.string().max(500)).max(10),
+    }),
   }),
   z.object({ action: z.literal('decline'), reason: z.string().trim().min(1).max(1000) }),
 ]);
 export type EscalationAction = z.infer<typeof EscalationAction>;
+/** `PATCH /escalations/:id` 200 body. */
+export const EscalationActionResponse = EscalationView;
 
 // Team ---------------------------------------------------------------------------------------------
 export const TeamMemberView = z.object({
@@ -270,6 +319,16 @@ export const CreatePersonaReleaseRequest = z.object({
   allowedModes: z.array(CoachMode).min(1),
 });
 export const SuspendPersonaRequest = z.object({ reason: z.string().trim().min(3).max(500) });
+/** `POST /personas/:id/releases` 201 body. */
+export const CreatePersonaReleaseResponse = PersonaReleaseView;
+/** `POST /persona-releases/:id/approve` 200 body. */
+export const ApprovePersonaReleaseResponse = PersonaReleaseView;
+/** `POST /personas/:id/suspend` 200 body. */
+export const SuspendPersonaResponse = PersonaView;
+/** `POST /personas/:id/resume` 200 body. */
+export const ResumePersonaResponse = PersonaView;
+/** `POST /eir/reviews/:turnId` 201 body. */
+export const SubmitReviewResponse = z.object({ reviewId: Id, turnId: Id });
 export const ReviewSample = z.object({
   turn: TurnView,
   ventureId: Id,
@@ -315,6 +374,8 @@ export const ProgramVentureRow = z.object({
   createdAt: Timestamp,
 });
 export const ProgramVentureListResponse = z.object({ items: z.array(ProgramVentureRow) });
+/** `POST /program/ventures` 201 body. */
+export const CreateProgramVentureResponse = ProgramVentureRow;
 export const CreateVentureRequest = z.object({
   name: z.string().trim().min(1).max(120),
   oneLiner: z.string().trim().max(280).default(''),
@@ -323,6 +384,18 @@ export const CreateVentureRequest = z.object({
   cohort: z.string().trim().max(60).nullable().default(null),
 });
 export const ResourceListResponse = z.object({ items: z.array(ResourceView) });
+/** `POST /program/resources` 201 body. */
+export const CreateResourceResponse = ResourceView;
+/** `PATCH /program/resources/:id` 200 body. */
+export const UpdateResourceResponse = ResourceView;
+/** `GET /program/resources` query (all optional; text values are trimmed). */
+export const ResourceFilter = z.object({
+  kind: ResourceKind.optional(),
+  stage: VentureStage.optional(),
+  tag: z.string().trim().min(1).max(40).optional(),
+  q: z.string().trim().max(200).optional(),
+});
+export type ResourceFilter = z.infer<typeof ResourceFilter>;
 export const UpsertResourceRequest = z.object({
   name: z.string().trim().min(1).max(160),
   kind: ResourceKind,
@@ -333,6 +406,25 @@ export const UpsertResourceRequest = z.object({
   eligibility: z.string().trim().max(500).nullable().default(null),
   owner: z.string().trim().max(120).nullable().default(null),
 });
+/**
+ * `PATCH /program/resources/:id` body: any subset of the `UpsertResourceRequest` fields plus `status`.
+ * No defaults are applied (an omitted field is left unchanged); at least one field is required.
+ */
+export const UpdateResourceRequest = z
+  .object({
+    name: z.string().trim().min(1).max(160),
+    kind: ResourceKind,
+    description: z.string().trim().min(1).max(2000),
+    url: z.url().nullable(),
+    tags: z.array(z.string().trim().min(1).max(40)).max(20),
+    stages: z.array(VentureStage),
+    eligibility: z.string().trim().max(500).nullable(),
+    owner: z.string().trim().max(120).nullable(),
+    status: ResourceView.shape.status,
+  })
+  .partial()
+  .refine((v) => Object.keys(v).length > 0, 'Provide at least one field');
+export type UpdateResourceRequest = z.infer<typeof UpdateResourceRequest>;
 export const EscalationQueueItem = z.object({
   id: Id,
   ventureId: Id,
@@ -348,6 +440,8 @@ export const EscalationQueueItem = z.object({
 });
 export const EscalationQueueResponse = z.object({ items: z.array(EscalationQueueItem) });
 export const RouteEscalationRequest = z.object({ assigneeId: Id, dueAt: Timestamp.nullable().default(null) });
+/** `POST /program/escalations/:id/route` 200 body (queue metadata, never the packet). */
+export const RouteEscalationResponse = EscalationQueueItem;
 
 // Admin --------------------------------------------------------------------------------------------
 export const AdminPrincipalRow = z.object({
@@ -357,16 +451,27 @@ export const AdminPrincipalRow = z.object({
   roles: z.array(PlatformRole),
   memberships: z.array(z.object({ ventureId: Id, ventureName: z.string(), role: MembershipRole })),
   activeAccessCodes: z.array(
-    z.object({ id: Id, prefix: z.string(), label: z.string(), createdAt: Timestamp, expiresAt: Timestamp.nullable(), lastUsedAt: Timestamp.nullable() }),
+    z.object({
+      id: Id,
+      prefix: z.string(),
+      label: z.string(),
+      createdAt: Timestamp,
+      expiresAt: Timestamp.nullable(),
+      lastUsedAt: Timestamp.nullable(),
+    }),
   ),
 });
 export const AdminPrincipalListResponse = z.object({ items: z.array(AdminPrincipalRow) });
+/** `POST /admin/principals` 201 body (the new principal as the admin list shows it; no access code). */
+export const CreatePrincipalResponse = AdminPrincipalRow;
 export const CreatePrincipalRequest = z.object({
   displayName: z.string().trim().min(1).max(120),
   email: z.email().nullable().default(null),
   title: z.string().trim().max(120).nullable().default(null),
   roles: z.array(PlatformRole).default([]),
 });
+/** `DELETE /admin/access-codes/:id` 200 body. */
+export const RevokeAccessCodeResponse = z.object({ accessCodeId: Id, revokedAt: Timestamp });
 export const IssueAccessCodeRequest = z.object({
   label: z.string().trim().min(1).max(80).default('access code'),
   expiresInDays: z.number().int().min(1).max(365).nullable().default(30),
@@ -406,5 +511,12 @@ export const UsageSummary = z.object({
   last30DaysUsd: z.number(),
   capGlobalUsd: z.number(),
   byDay: z.array(z.object({ day: z.string(), usd: z.number(), turns: z.number().int() })),
-  byModel: z.array(z.object({ modelId: z.string(), usd: z.number(), inputTokens: z.number().int(), outputTokens: z.number().int() })),
+  byModel: z.array(
+    z.object({
+      modelId: z.string(),
+      usd: z.number(),
+      inputTokens: z.number().int(),
+      outputTokens: z.number().int(),
+    }),
+  ),
 });

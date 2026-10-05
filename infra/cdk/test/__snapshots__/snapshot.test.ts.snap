@@ -240,6 +240,7 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
             },
             "DB_DRIVER": "dataapi",
             "DB_NAME": "foundry",
+            "DB_RESUME_BUDGET_MS": "40000",
             "DB_SECRET_ARN": {
               "Fn::GetStackOutput": {
                 "OutputName": "PublishOutputRefAuroraSecretAttachmentEAAB0558CE8224A5",
@@ -254,7 +255,6 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
                 "StackName": "FoundryAscent-Data",
               },
             },
-            "HOME_TENANT_NAME": "Ain Foundry",
             "HOME_TENANT_SLUG": "ain",
             "JOBS_QUEUE_URL": {
               "Fn::GetStackOutput": {
@@ -269,9 +269,6 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
             "MODEL_PRIMARY_ID": "us.amazon.nova-2-lite-v1:0",
             "MODEL_PROVIDER": "bedrock",
             "NODE_OPTIONS": "--enable-source-maps",
-            "OWNER_ACCESS_CODE_HASH": "scrypt$N=32768,r=8,p=1$3EVOFO9pqROC_L4H7mo98g$RtIal90yLMyXBPUP_M2t51rYP2irq5D3k3DB6iweVY8",
-            "OWNER_ACCESS_CODE_PREFIX": "T9302",
-            "OWNER_DISPLAY_NAME": "Platform Owner",
           },
         },
         "FunctionName": "FoundryAscent-Api",
@@ -283,7 +280,6 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
         },
         "MemorySize": 1024,
         "RecursiveLoop": "Terminate",
-        "ReservedConcurrentExecutions": 10,
         "Role": {
           "Fn::GetAtt": [
             "ApiRoleDE7A08EC",
@@ -440,6 +436,31 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
               },
             },
             {
+              "Action": "s3:GetObject",
+              "Effect": "Deny",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":s3:::",
+                    {
+                      "Fn::GetStackOutput": {
+                        "OutputName": "PublishOutputRefDocumentsBucket9EC9DEB9D4188A2E",
+                        "Region": "us-east-1",
+                        "StackName": "FoundryAscent-Data",
+                      },
+                    },
+                    "/tenants/*",
+                  ],
+                ],
+              },
+              "Sid": "DocumentsApiNeverReads",
+            },
+            {
               "Action": [
                 "bedrock:InvokeModel",
                 "bedrock:InvokeModelWithResponseStream",
@@ -467,6 +488,18 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
                         "Ref": "AWS::Partition",
                       },
                       ":bedrock:*::foundation-model/amazon.titan-embed-text-v2:0",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:::foundation-model/amazon.nova-2-lite-v1:0",
                     ],
                   ],
                 },
@@ -524,7 +557,7 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
             "Ref": "AlarmTopicD01E77F9",
           },
         ],
-        "AlarmDescription": "API Lambda throttled (reserved concurrency exhausted)",
+        "AlarmDescription": "API Lambda throttled (account or reserved concurrency exhausted)",
         "AlarmName": "FoundryAscent-Api-Throttles",
         "ComparisonOperator": "GreaterThanOrEqualToThreshold",
         "Dimensions": [
@@ -545,23 +578,25 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
       },
       "Type": "AWS::CloudWatch::Alarm",
     },
-    "ApiViewerHostFunction589E9404": {
+    "ApiViewerRequestFunction4838C8A2": {
       "Properties": {
         "AutoPublish": true,
         "FunctionCode": "function handler(event) {
   var request = event.request;
-  var host = request.headers.host && request.headers.host.value
-    ? request.headers.host.value
+  var headers = request.headers;
+  var host = headers.host && headers.host.value
+    ? headers.host.value
     : event.context.distributionDomainName;
-  request.headers['x-fa-viewer-host'] = { value: host };
+  headers['x-fa-viewer-host'] = { value: host };
+  headers['x-fa-viewer-ip'] = { value: event.viewer.ip };
   return request;
 }
 ",
         "FunctionConfig": {
-          "Comment": "Pass the viewer Host to the API",
+          "Comment": "Pass the trusted viewer IP and Host to the API",
           "Runtime": "cloudfront-js-2.0",
         },
-        "Name": "us-east-1FoundryAscent-ApewerHostFunction72378349",
+        "Name": "us-east-1FoundryAscent-AprRequestFunctionA3E72481",
       },
       "Type": "AWS::CloudFront::Function",
     },
@@ -912,7 +947,7 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
                   "EventType": "viewer-request",
                   "FunctionARN": {
                     "Fn::GetAtt": [
-                      "ApiViewerHostFunction589E9404",
+                      "ApiViewerRequestFunction4838C8A2",
                       "FunctionARN",
                     ],
                   },
@@ -1152,22 +1187,8 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
                 "StackName": "FoundryAscent-Data",
               },
             },
-            "DOCUMENTS_BUCKET": {
-              "Fn::GetStackOutput": {
-                "OutputName": "PublishOutputRefDocumentsBucket9EC9DEB9D4188A2E",
-                "Region": "us-east-1",
-                "StackName": "FoundryAscent-Data",
-              },
-            },
             "HOME_TENANT_NAME": "Ain Foundry",
             "HOME_TENANT_SLUG": "ain",
-            "JOBS_QUEUE_URL": {
-              "Fn::GetStackOutput": {
-                "OutputName": "PublishOutputRefJobsQueue86ED6666C6B4A300",
-                "Region": "us-east-1",
-                "StackName": "FoundryAscent-Data",
-              },
-            },
             "LOG_LEVEL": "info",
             "MODEL_EMBEDDINGS_ID": "amazon.titan-embed-text-v2:0",
             "MODEL_FALLBACK_ID": "global.amazon.nova-2-lite-v1:0",
@@ -1775,24 +1796,14 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
                 "StackName": "FoundryAscent-Data",
               },
             },
-            "HOME_TENANT_NAME": "Ain Foundry",
             "HOME_TENANT_SLUG": "ain",
-            "JOBS_QUEUE_URL": {
-              "Fn::GetStackOutput": {
-                "OutputName": "PublishOutputRefJobsQueue86ED6666C6B4A300",
-                "Region": "us-east-1",
-                "StackName": "FoundryAscent-Data",
-              },
-            },
+            "JOBS_MAX_RECEIVE_COUNT": "3",
             "LOG_LEVEL": "info",
             "MODEL_EMBEDDINGS_ID": "amazon.titan-embed-text-v2:0",
             "MODEL_FALLBACK_ID": "global.amazon.nova-2-lite-v1:0",
             "MODEL_PRIMARY_ID": "us.amazon.nova-2-lite-v1:0",
             "MODEL_PROVIDER": "bedrock",
             "NODE_OPTIONS": "--enable-source-maps",
-            "OWNER_ACCESS_CODE_HASH": "scrypt$N=32768,r=8,p=1$3EVOFO9pqROC_L4H7mo98g$RtIal90yLMyXBPUP_M2t51rYP2irq5D3k3DB6iweVY8",
-            "OWNER_ACCESS_CODE_PREFIX": "T9302",
-            "OWNER_DISPLAY_NAME": "Platform Owner",
           },
         },
         "FunctionName": "FoundryAscent-Worker",
@@ -1923,6 +1934,34 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
             },
             {
               "Action": [
+                "s3:DeleteObject",
+                "s3:PutObject",
+              ],
+              "Effect": "Deny",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":s3:::",
+                    {
+                      "Fn::GetStackOutput": {
+                        "OutputName": "PublishOutputRefDocumentsBucket9EC9DEB9D4188A2E",
+                        "Region": "us-east-1",
+                        "StackName": "FoundryAscent-Data",
+                      },
+                    },
+                    "/tenants/*",
+                  ],
+                ],
+              },
+              "Sid": "DocumentsWorkerReadOnly",
+            },
+            {
+              "Action": [
                 "bedrock:InvokeModel",
                 "bedrock:InvokeModelWithResponseStream",
               ],
@@ -1949,6 +1988,18 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
                         "Ref": "AWS::Partition",
                       },
                       ":bedrock:*::foundation-model/amazon.titan-embed-text-v2:0",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:::foundation-model/amazon.nova-2-lite-v1:0",
                     ],
                   ],
                 },

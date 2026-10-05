@@ -1,15 +1,28 @@
 /** Executes the CloudFront Function sources (plain ES5-compatible JS) against sample viewer requests. */
 import { describe, expect, it } from 'vitest';
-import { API_VIEWER_HOST_CODE, SPA_REWRITE_CODE } from '../src/constructs/edge.js';
-import { VIEWER_HOST_HEADER } from '../src/lib/constants.js';
+import { API_VIEWER_REQUEST_CODE, SPA_REWRITE_CODE } from '../src/constructs/edge.js';
+import { VIEWER_HOST_HEADER, VIEWER_IP_HEADER } from '../src/lib/constants.js';
 
 interface CfRequest {
   uri: string;
   headers: Record<string, { value: string }>;
 }
+/**
+ * CloudFront Functions event (runtime 1.0 and 2.0 share it; see @types/aws-lambda
+ * `CloudFrontFunctionsEvent`): `{ version, context: { distributionDomainName, distributionId, eventType,
+ * requestId }, viewer: { ip }, request: { method, uri, querystring, headers, cookies } }`. Header names
+ * are lower-case.
+ */
 interface CfEvent {
+  version: '1.0';
   request: CfRequest;
-  context: { distributionDomainName: string };
+  context: {
+    distributionDomainName: string;
+    distributionId: string;
+    eventType: 'viewer-request';
+    requestId: string;
+  };
+  viewer: { ip: string };
 }
 type Handler = (event: CfEvent) => CfRequest;
 
@@ -19,9 +32,20 @@ function load(code: string): Handler {
   return factory();
 }
 
-const event = (uri: string, headers: Record<string, { value: string }> = {}): CfEvent => ({
+const event = (
+  uri: string,
+  headers: Record<string, { value: string }> = {},
+  viewerIp = '203.0.113.9',
+): CfEvent => ({
+  version: '1.0',
   request: { uri, headers },
-  context: { distributionDomainName: 'd111111abcdef8.cloudfront.net' },
+  context: {
+    distributionDomainName: 'd111111abcdef8.cloudfront.net',
+    distributionId: 'EDFDVBD6EXAMPLE',
+    eventType: 'viewer-request',
+    requestId: 'req',
+  },
+  viewer: { ip: viewerIp },
 });
 
 describe('SPA rewrite (default behavior, viewer-request)', () => {
@@ -48,8 +72,30 @@ describe('SPA rewrite (default behavior, viewer-request)', () => {
   });
 });
 
-describe('API viewer host (/api/*, viewer-request)', () => {
-  const handler = load(API_VIEWER_HOST_CODE);
+describe('API viewer request (/api/*, viewer-request)', () => {
+  const handler = load(API_VIEWER_REQUEST_CODE);
+
+  it('sets the trusted viewer IP from event.viewer.ip (IPv4 and IPv6)', () => {
+    expect(VIEWER_IP_HEADER).toBe('x-fa-viewer-ip');
+    expect(handler(event('/api/v1/auth/sign-in', {}, '198.51.100.23')).headers[VIEWER_IP_HEADER]).toEqual({
+      value: '198.51.100.23',
+    });
+    expect(handler(event('/api/v1/auth/sign-in', {}, '2001:db8::7')).headers[VIEWER_IP_HEADER]).toEqual({
+      value: '2001:db8::7',
+    });
+  });
+
+  it('overwrites a client-supplied viewer IP and leaves x-forwarded-for alone (the API ignores it)', () => {
+    const request = handler(
+      event(
+        '/api/v1/auth/sign-in',
+        { [VIEWER_IP_HEADER]: { value: '10.0.0.1' }, 'x-forwarded-for': { value: '10.0.0.2' } },
+        '198.51.100.23',
+      ),
+    );
+    expect(request.headers[VIEWER_IP_HEADER]).toEqual({ value: '198.51.100.23' });
+    expect(request.headers['x-forwarded-for']).toEqual({ value: '10.0.0.2' });
+  });
 
   it('records the Host the browser used', () => {
     const request = handler(event('/api/v1/me', { host: { value: 'ascent.example.org' } }));

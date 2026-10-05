@@ -5,7 +5,7 @@
 import { Duration } from 'aws-cdk-lib';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import type { Construct } from 'constructs';
-import { VIEWER_HOST_HEADER } from '../lib/constants.js';
+import { VIEWER_HOST_HEADER, VIEWER_IP_HEADER } from '../lib/constants.js';
 
 /**
  * Default (S3) behavior, viewer-request: client-side routes (no file extension in the last path segment)
@@ -27,19 +27,29 @@ export const SPA_REWRITE_CODE = `function handler(event) {
 `;
 
 /**
- * /api/* behavior, viewer-request: records the host the browser addressed (the distribution domain or an
- * alternate domain name; CloudFront only routes requests whose Host belongs to this distribution) in
- * ${VIEWER_HOST_HEADER}. The origin request policy forwards every viewer header except Host (the Function
- * URL needs its own Host for SigV4), so this is how the API learns its public origin. Any value the client
- * sent is overwritten. The Function URL only accepts SigV4-signed requests from this distribution (OAC),
- * so the header cannot be forged by calling the URL directly.
+ * /api/* behavior, viewer-request (cloudfront-js-2.0). Sets two trusted headers, overwriting anything the
+ * client sent under the same names (CloudFront lower-cases header names in the event, so no case variant
+ * survives):
+ *
+ * - ${VIEWER_IP_HEADER}: `event.viewer.ip`, the address of the client that connected to CloudFront
+ *   (CloudFront Functions event structure: `{ version, context, viewer: { ip }, request }`). The API keys
+ *   its per-IP sign-in lockout on it instead of the client-controlled `x-forwarded-for`.
+ * - ${VIEWER_HOST_HEADER}: the host the browser addressed (the distribution domain or an alternate domain
+ *   name; CloudFront only routes requests whose Host belongs to this distribution). The origin request
+ *   policy forwards every viewer header except Host (the Function URL needs its own Host for SigV4), so
+ *   this is how the API learns its public origin.
+ *
+ * The Function URL only accepts SigV4-signed requests from this distribution (OAC), so neither header can
+ * be forged by calling the URL directly.
  */
-export const API_VIEWER_HOST_CODE = `function handler(event) {
+export const API_VIEWER_REQUEST_CODE = `function handler(event) {
   var request = event.request;
-  var host = request.headers.host && request.headers.host.value
-    ? request.headers.host.value
+  var headers = request.headers;
+  var host = headers.host && headers.host.value
+    ? headers.host.value
     : event.context.distributionDomainName;
-  request.headers['${VIEWER_HOST_HEADER}'] = { value: host };
+  headers['${VIEWER_HOST_HEADER}'] = { value: host };
+  headers['${VIEWER_IP_HEADER}'] = { value: event.viewer.ip };
   return request;
 }
 `;

@@ -16,7 +16,7 @@
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
-    "test:db": "pnpm --filter @foundry/db --filter @foundry/core test:db",
+    "test:db": "pnpm -r --if-present test:db",
     "db:reset": "pnpm --filter @foundry/db db:reset",
     "synth": "pnpm --filter @foundry/infra synth"
   },

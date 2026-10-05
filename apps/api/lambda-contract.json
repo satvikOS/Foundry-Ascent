@@ -1,0 +1,52 @@
+{
+  "$comment": "Values the API's Lambda bundles (apps/api) and the CDK app (infra/cdk) must agree on. Read by apps/api/src/lambda-contract.ts and infra/cdk/src/lib/lambda-contract.ts; change them here only.",
+  "bundling": {
+    "platform": "node",
+    "format": "esm",
+    "target": "node24",
+    "mainFields": ["module", "main"],
+    "externalModules": ["pg-native"],
+    "banner": [
+      "import { createRequire as __faCreateRequire } from 'node:module';",
+      "import { fileURLToPath as __faFileURLToPath } from 'node:url';",
+      "import { dirname as __faDirname } from 'node:path';",
+      "globalThis.require ??= __faCreateRequire(import.meta.url);",
+      "globalThis.__filename ??= __faFileURLToPath(import.meta.url);",
+      "globalThis.__dirname ??= __faDirname(globalThis.__filename);"
+    ]
+  },
+  "environment": {
+    "$comment": "Variables each function receives (infra sets exactly these; the bundle import-check runs each handler with exactly these). SITE_ORIGIN is added to the api only with a custom domain.",
+    "common": [
+      "APP_ENV",
+      "APP_VERSION",
+      "LOG_LEVEL",
+      "DB_DRIVER",
+      "DB_CLUSTER_ARN",
+      "DB_SECRET_ARN",
+      "DB_NAME",
+      "MODEL_PROVIDER",
+      "MODEL_PRIMARY_ID",
+      "MODEL_FALLBACK_ID",
+      "MODEL_EMBEDDINGS_ID",
+      "BEDROCK_REGION",
+      "HOME_TENANT_SLUG"
+    ],
+    "api": ["DOCUMENTS_BUCKET", "JOBS_QUEUE_URL", "DB_RESUME_BUDGET_MS"],
+    "worker": ["DOCUMENTS_BUCKET", "JOBS_MAX_RECEIVE_COUNT"],
+    "migrate": [
+      "OWNER_ACCESS_CODE_PREFIX",
+      "OWNER_ACCESS_CODE_HASH",
+      "OWNER_DISPLAY_NAME",
+      "HOME_TENANT_NAME"
+    ]
+  },
+  "edgeHeaders": {
+    "viewerIp": "x-fa-viewer-ip",
+    "viewerHost": "x-fa-viewer-host"
+  },
+  "api": {
+    "dbResumeBudgetSeconds": 40,
+    "sseKeepAliveSeconds": 15
+  }
+}

@@ -41,8 +41,18 @@ export function foundationModelId(modelId: string): string {
 export interface BedrockRuntimeAccess {
   /** Foundation-model ids, granted in every region (cross-region and global profiles route anywhere). */
   readonly foundationModels: readonly string[];
+  /**
+   * Foundation-model ids reached through a `global.` profile: Bedrock authorizes those calls against the
+   * region-less ARN (`arn:aws:bedrock:::foundation-model/<id>`), which is granted explicitly as well.
+   */
+  readonly globalFoundationModels: readonly string[];
   /** Inference-profile ids, granted in the invoking region. */
   readonly inferenceProfiles: readonly string[];
+}
+
+/** Global (all commercial regions) inference profiles: `global.amazon.nova-2-lite-v1:0`. */
+export function isGlobalInferenceProfile(modelId: string): boolean {
+  return modelId.startsWith('global.');
 }
 
 /**
@@ -54,6 +64,7 @@ export function reasoningAccess(models: EffectiveModels): BedrockRuntimeAccess {
   const profiles = ids.map((id) => (isInferenceProfile(id) ? id : `us.${id}`));
   return {
     foundationModels: unique(ids.map(foundationModelId)),
+    globalFoundationModels: unique(ids.filter(isGlobalInferenceProfile).map(foundationModelId)),
     inferenceProfiles: unique(profiles),
   };
 }
@@ -62,6 +73,9 @@ export function reasoningAccess(models: EffectiveModels): BedrockRuntimeAccess {
 export function embeddingsAccess(models: EffectiveModels): BedrockRuntimeAccess {
   return {
     foundationModels: [foundationModelId(models.embeddings)],
+    globalFoundationModels: isGlobalInferenceProfile(models.embeddings)
+      ? [foundationModelId(models.embeddings)]
+      : [],
     inferenceProfiles: isInferenceProfile(models.embeddings) ? [models.embeddings] : [],
   };
 }

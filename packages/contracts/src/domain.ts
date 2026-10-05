@@ -107,6 +107,7 @@ export const EscalationStatus = z.enum([
   'withdrawn',
 ]);
 export const RequestedRole = z.enum(['eir', 'program_lead', 'specialist', 'university_support']);
+export type RequestedRole = z.infer<typeof RequestedRole>;
 
 export const DocumentContentType = z.enum([
   'application/pdf',
@@ -309,7 +310,9 @@ export type ResourceView = z.infer<typeof ResourceView>;
 
 export const Doctrine = z.object({
   summary: z.string(),
-  frameworks: z.array(z.object({ name: z.string(), whenToUse: z.string(), keyQuestions: z.array(z.string()) })),
+  frameworks: z.array(
+    z.object({ name: z.string(), whenToUse: z.string(), keyQuestions: z.array(z.string()) }),
+  ),
   evidenceStandard: z.string(),
   typicalQuestions: z.array(z.string()),
   redLines: z.array(z.string()),
@@ -356,7 +359,9 @@ export const PersonaView = z.object({
     .nullable(),
   hasConsent: z.boolean(),
   activeRelease: PersonaReleaseView.nullable(),
-  releases: z.array(PersonaReleaseView.pick({ id: true, version: true, status: true, approvedAt: true, createdAt: true })),
+  releases: z.array(
+    PersonaReleaseView.pick({ id: true, version: true, status: true, approvedAt: true, createdAt: true }),
+  ),
   assignedVentureCount: z.number().int(),
 });
 export type PersonaView = z.infer<typeof PersonaView>;

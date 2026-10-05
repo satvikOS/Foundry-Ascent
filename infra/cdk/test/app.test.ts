@@ -2,33 +2,27 @@ import { Match } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
 import { CONTENT_SECURITY_POLICY } from '../src/constructs/edge.js';
 import { ESM_REQUIRE_SHIM } from '../src/constructs/platform-function.js';
-import { VIEWER_HOST_HEADER } from '../src/lib/constants.js';
+import {
+  API_DB_RESUME_BUDGET_SECONDS,
+  API_ORIGIN_READ_TIMEOUT_SECONDS,
+  API_SSE_KEEP_ALIVE_SECONDS,
+  JOBS_MAX_RECEIVE_COUNT,
+  VIEWER_HOST_HEADER,
+  VIEWER_IP_HEADER,
+} from '../src/lib/constants.js';
+import { environmentNames } from '../src/lib/lambda-contract.js';
+import { assertTiming } from '../src/stacks/app-stack.js';
+import { loadConfig } from '../src/config.js';
 import { effectiveModels } from '../src/lib/models.js';
 import { migrationsChecksum } from '../src/lib/migrations.js';
 import { MIGRATIONS_DIR } from '../src/paths.js';
-import { defaultSynth, functionPolicyStatements, resources, resourcesOfType } from './helpers.js';
+import { defaultSynth, functionPolicyStatements, resources, resourcesOfType, synthesize } from './helpers.js';
 
-const RUNTIME_CONTRACT_ENV = [
-  'APP_ENV',
-  'APP_VERSION',
-  'DB_DRIVER',
-  'DB_CLUSTER_ARN',
-  'DB_SECRET_ARN',
-  'DB_NAME',
-  'DOCUMENTS_BUCKET',
-  'JOBS_QUEUE_URL',
-  'MODEL_PROVIDER',
-  'MODEL_PRIMARY_ID',
-  'MODEL_FALLBACK_ID',
-  'MODEL_EMBEDDINGS_ID',
-  'BEDROCK_REGION',
-  'OWNER_ACCESS_CODE_PREFIX',
-  'OWNER_ACCESS_CODE_HASH',
-  'OWNER_DISPLAY_NAME',
-  'HOME_TENANT_SLUG',
-  'HOME_TENANT_NAME',
-  'LOG_LEVEL',
-];
+const FUNCTIONS = [
+  ['FoundryAscent-Api', 'api'],
+  ['FoundryAscent-Worker', 'worker'],
+  ['FoundryAscent-Migrate', 'migrate'],
+] as const;
 
 type Props = Record<string, unknown>;
 
@@ -68,15 +62,17 @@ describe('FoundryAscent-App', () => {
       expect(envOf(name).NODE_OPTIONS).toBe('--enable-source-maps');
     });
 
-    it('caps the API with the configured reserved concurrency', () => {
-      expect(fn('FoundryAscent-Api')[1].ReservedConcurrentExecutions).toBe(10);
-      expect(fn('FoundryAscent-Worker')[1].ReservedConcurrentExecutions).toBeUndefined();
+    it('reserves no concurrency by default (production.json: api.reservedConcurrency = null)', () => {
+      expect(synth.config.api.reservedConcurrency).toBeNull();
+      expect(synth.config.worker.reservedConcurrency).toBeNull();
+      expect(fn('FoundryAscent-Api')[1]).not.toHaveProperty('ReservedConcurrentExecutions');
+      expect(fn('FoundryAscent-Worker')[1]).not.toHaveProperty('ReservedConcurrentExecutions');
     });
 
-    it('passes the runtime contract environment', () => {
-      for (const name of ['FoundryAscent-Api', 'FoundryAscent-Worker', 'FoundryAscent-Migrate']) {
+    it('passes exactly the lambda-contract environment of each role', () => {
+      for (const [name, role] of FUNCTIONS) {
         const env = envOf(name);
-        for (const key of RUNTIME_CONTRACT_ENV) expect(env, `${name} ${key}`).toHaveProperty(key);
+        expect(Object.keys(env).sort(), name).toEqual([...environmentNames(role), 'NODE_OPTIONS'].sort());
         expect(env).toMatchObject({
           APP_ENV: 'production',
           APP_VERSION: 'test-sha',
@@ -87,16 +83,44 @@ describe('FoundryAscent-App', () => {
           MODEL_FALLBACK_ID: models.fallback,
           MODEL_EMBEDDINGS_ID: models.embeddings,
           BEDROCK_REGION: 'us-east-1',
-          OWNER_ACCESS_CODE_PREFIX: synth.config.owner.accessCodePrefix,
-          OWNER_ACCESS_CODE_HASH: synth.config.owner.accessCodeHash,
-          OWNER_DISPLAY_NAME: 'Platform Owner',
           HOME_TENANT_SLUG: 'ain',
-          HOME_TENANT_NAME: 'Ain Foundry',
         });
         // Never the pg driver in Lambda, and no SITE_ORIGIN without a custom domain (see README).
         expect(env).not.toHaveProperty('DATABASE_URL');
         expect(env).not.toHaveProperty('SITE_ORIGIN');
       }
+      // Role-specific values: the owner's code hash reaches only the migrate function.
+      expect(envOf('FoundryAscent-Migrate')).toMatchObject({
+        OWNER_ACCESS_CODE_PREFIX: synth.config.owner.accessCodePrefix,
+        OWNER_ACCESS_CODE_HASH: synth.config.owner.accessCodeHash,
+        OWNER_DISPLAY_NAME: 'Platform Owner',
+        HOME_TENANT_NAME: 'Ain Foundry',
+      });
+      expect(envOf('FoundryAscent-Api')).not.toHaveProperty('OWNER_ACCESS_CODE_HASH');
+      expect(envOf('FoundryAscent-Worker')).not.toHaveProperty('OWNER_ACCESS_CODE_HASH');
+      expect(envOf('FoundryAscent-Api').DB_RESUME_BUDGET_MS).toBe(
+        String(API_DB_RESUME_BUDGET_SECONDS * 1000),
+      );
+      expect(envOf('FoundryAscent-Worker').JOBS_MAX_RECEIVE_COUNT).toBe(String(JOBS_MAX_RECEIVE_COUNT));
+      expect(envOf('FoundryAscent-Worker')).not.toHaveProperty('JOBS_QUEUE_URL');
+    });
+
+    it('reserves concurrency only when configured', () => {
+      const config = loadConfig();
+      const { templates } = synthesize(
+        {},
+        {
+          ...config,
+          api: { ...config.api, reservedConcurrency: 5 },
+          worker: { reservedConcurrency: 2 },
+        },
+      );
+      const reserved = (name: string): unknown =>
+        resourcesOfType(templates.app, 'AWS::Lambda::Function').find(([, p]) => p.FunctionName === name)?.[1]
+          .ReservedConcurrentExecutions;
+      expect(reserved('FoundryAscent-Api')).toBe(5);
+      expect(reserved('FoundryAscent-Worker')).toBe(2);
+      expect(reserved('FoundryAscent-Migrate')).toBeUndefined();
     });
 
     it('bundles ESM with a require/__dirname shim', () => {
@@ -142,6 +166,20 @@ describe('FoundryAscent-App', () => {
       expect(migrate).not.toContain('bedrock-mantle:CreateInference');
       expect(migrate).not.toContain('bedrock:InvokeModelWithResponseStream');
       expect(migrate.some((a) => a.startsWith('sqs:') || a.startsWith('s3:'))).toBe(false);
+    });
+
+    it('narrows documents access per role: api puts and deletes, worker only reads', () => {
+      const denied = (name: string): string[] =>
+        rolePolicyStatements(name)
+          .filter((s) => s.Effect === 'Deny')
+          .flatMap((s) => (Array.isArray(s.Action) ? (s.Action as string[]) : [s.Action as string]));
+      expect(denied('FoundryAscent-Api')).toEqual(['s3:GetObject']);
+      expect(denied('FoundryAscent-Worker').sort()).toEqual(['s3:DeleteObject', 's3:PutObject']);
+      expect(denied('FoundryAscent-Migrate')).toEqual([]);
+      const deny = rolePolicyStatements('FoundryAscent-Api').find((s) => s.Effect === 'Deny');
+      const resource = JSON.stringify(deny?.Resource);
+      expect(resource).toContain('/tenants/*');
+      expect(resource).toContain('FoundryAscent-Data');
     });
 
     it('scopes each function role to its own log group (no AWS managed policies)', () => {
@@ -288,7 +326,7 @@ describe('FoundryAscent-App', () => {
           FunctionAssociations: [
             {
               EventType: 'viewer-request',
-              FunctionARN: { 'Fn::GetAtt': [startsWith('ApiViewerHostFunction'), 'FunctionARN'] },
+              FunctionARN: { 'Fn::GetAtt': [startsWith('ApiViewerRequestFunction'), 'FunctionARN'] },
             },
           ],
         }),
@@ -345,9 +383,12 @@ describe('FoundryAscent-App', () => {
         expect((props.FunctionConfig as Props).Runtime).toBe('cloudfront-js-2.0');
       }
       const apiFunction = resourcesOfType(template, 'AWS::CloudFront::Function').find(([id]) =>
-        id.startsWith('ApiViewerHost'),
+        id.startsWith('ApiViewerRequest'),
       );
       expect(apiFunction?.[1].FunctionCode).toContain(VIEWER_HOST_HEADER);
+      expect(apiFunction?.[1].FunctionCode).toContain(
+        `headers['${VIEWER_IP_HEADER}'] = { value: event.viewer.ip }`,
+      );
     });
   });
 
@@ -471,5 +512,26 @@ describe('FoundryAscent-App', () => {
         ],
       },
     });
+  });
+});
+
+describe('/api/* timing (Aurora resume vs CloudFront and Lambda timeouts)', () => {
+  const synth = defaultSynth();
+
+  it('waits for a resume (40 s) well inside the 60 s origin read timeout and the 60 s Lambda timeout', () => {
+    expect(API_DB_RESUME_BUDGET_SECONDS).toBe(40);
+    expect(API_ORIGIN_READ_TIMEOUT_SECONDS).toBe(60);
+    expect(API_DB_RESUME_BUDGET_SECONDS + 15).toBeLessThanOrEqual(API_ORIGIN_READ_TIMEOUT_SECONDS);
+    expect(API_DB_RESUME_BUDGET_SECONDS + 15).toBeLessThanOrEqual(synth.config.api.timeoutSeconds);
+    expect(API_SSE_KEEP_ALIVE_SECONDS * 2).toBeLessThanOrEqual(API_ORIGIN_READ_TIMEOUT_SECONDS);
+  });
+
+  it('rejects an API timeout that leaves no room after the resume wait', () => {
+    expect(() => {
+      assertTiming(50);
+    }).toThrow(/API Lambda timeout/);
+    expect(() => {
+      assertTiming(60);
+    }).not.toThrow();
   });
 });

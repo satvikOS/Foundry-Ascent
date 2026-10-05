@@ -45,7 +45,22 @@ describe('config', () => {
       autoPauseMinutes: 10,
       engineVersion: '16.13',
     });
-    expect(config.api.reservedConcurrency).toBe(10);
+    // Unreserved: some accounts have a total concurrency quota of 10, which any reservation would break.
+    expect(config.api.reservedConcurrency).toBeNull();
+    expect(config.worker.reservedConcurrency).toBeNull();
+  });
+
+  it('treats reserved concurrency as optional (null or absent = unreserved)', () => {
+    expect(parseConfig(valid()).api.reservedConcurrency).toBe(10);
+    expect(parseConfig(withChange(['api', 'reservedConcurrency'], null)).api.reservedConcurrency).toBeNull();
+    const absent = valid();
+    delete (absent.api as Record<string, unknown>).reservedConcurrency;
+    expect(parseConfig(absent).api.reservedConcurrency).toBeNull();
+    expect(parseConfig(valid()).worker.reservedConcurrency).toBeNull();
+    expect(parseConfig({ ...valid(), worker: { reservedConcurrency: 3 } }).worker.reservedConcurrency).toBe(
+      3,
+    );
+    expect(parseConfig({ ...valid(), worker: {} }).worker.reservedConcurrency).toBeNull();
   });
 
   it('accepts the documented shape', () => {
@@ -68,6 +83,9 @@ describe('config', () => {
     [['aurora', 'maxCapacityAcu'], 0, /maxCapacityAcu/],
     [['aurora', 'autoPauseMinutes'], 2, /autoPauseMinutes/],
     [['api', 'timeoutSeconds'], 900, /timeoutSeconds/],
+    [['api', 'timeoutSeconds'], 50, /timeoutSeconds/], // shorter than the 40 s resume budget + 15 s margin
+    [['api', 'reservedConcurrency'], 0, /reservedConcurrency/],
+    [['api', 'reservedConcurrency'], '10', /reservedConcurrency/],
     [['logRetentionDays'], 31, /logRetentionDays/],
     [['githubRepository'], 'not a repo', /githubRepository/],
     [['models', 'primary'], '', /models.primary/],

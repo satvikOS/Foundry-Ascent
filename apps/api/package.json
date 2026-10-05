@@ -1,0 +1,35 @@
+{
+  "name": "@foundry/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/dev-server.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --exclude \"**/*.db.test.ts\"",
+    "test:db": "vitest run \"db.test\"",
+    "check:bundles": "tsx src/scripts/check-bundles.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1146.0",
+    "@aws-sdk/client-sqs": "^3.1146.0",
+    "@aws-sdk/s3-request-presigner": "^3.1146.0",
+    "@foundry/ai": "workspace:*",
+    "@foundry/contracts": "workspace:*",
+    "@foundry/core": "workspace:*",
+    "@foundry/db": "workspace:*",
+    "@hono/node-server": "^1.19.0",
+    "hono": "^4.13.13",
+    "mammoth": "^1.13.0",
+    "unpdf": "^1.8.1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.164",
+    "@types/node": "^22.15.0",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.15",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.3"
+  }
+}

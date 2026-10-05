@@ -41,21 +41,33 @@ Region `us-east-1`, account taken from the deploying credentials. Every IAM role
   `FoundryAscent-Jobs-DLQ` (3 receives, 14-day retention), both TLS-only.
 - Managed policies attached by the App stack: `DatabaseAccessPolicy` (`rds-data:*Statement`/`*Transaction`
   on the cluster, `secretsmanager:GetSecretValue` on the secret) and `DocumentsAccessPolicy`
-  (`s3:Get/Put/DeleteObject` on `tenants/*`, `s3:ListBucket` limited to `tenants/`).
+  (`s3:Get/Put/DeleteObject` on `tenants/*`, `s3:ListBucket` limited to `tenants/`). The App stack narrows
+  it per role with explicit denies (see below), so this deployed stack does not change.
 
 ### `FoundryAscent-App`
 
 - Lambdas (Node 24, ARM64, ESM bundles with source maps, log groups with 30-day retention, roles without
   AWS managed policies):
-  - `FoundryAscent-Api` (`apps/api/src/handlers/api.ts`): 1024 MB, 60 s, reserved concurrency 10, Function URL
-    `AWS_IAM` + `RESPONSE_STREAM`. Database + documents policies, `sqs:SendMessage`, Bedrock.
+  - `FoundryAscent-Api` (`apps/api/src/handlers/api.ts`): 1024 MB, 60 s, no reserved concurrency by
+    default (see [Reserved concurrency](#reserved-concurrency)), Function URL `AWS_IAM` + `RESPONSE_STREAM`.
+    Database policy, documents `PutObject` (presigned uploads) + `DeleteObject` (an explicit deny removes
+    `GetObject`), `sqs:SendMessage`, Bedrock.
   - `FoundryAscent-Worker` (`worker.ts`): 1024 MB, 120 s, SQS event source (batch 5, partial batch
-    failures, max 2 concurrent pollers). Database + documents policies, Bedrock.
+    failures, max 2 concurrent pollers), `JOBS_MAX_RECEIVE_COUNT=3` (the redrive count: the last delivery
+    marks a document failed). Database policy, documents `GetObject` only (explicit deny on put/delete),
+    Bedrock.
   - `FoundryAscent-Migrate` (`migrate.ts`): 1024 MB, 10 min, `onEvent` handler of a custom-resource
-    `Provider`. Database policy, Titan embeddings only.
+    `Provider`. Database policy, Titan embeddings only. Waits up to 5 min (never more than the Lambda's
+    remaining time minus 4 min) for Aurora to resume, applies migrations, seeds (owner from
+    `OWNER_ACCESS_CODE_PREFIX`/`HASH`, home tenant from `HOME_TENANT_*`), then backfills Titan embeddings
+    bounded by 5 000 items / 5 min; a backfill failure (e.g. Bedrock throttling) only logs counts and never
+    fails the deploy. Delete is a no-op; the physical id is always `foundry-ascent-schema`.
   - Bedrock access follows the effective models (see [Models](#models)): `bedrock:InvokeModel` and
-    `InvokeModelWithResponseStream` on the foundation models (every region, which also covers the
-    region-less ARN of `global.` profiles) and on the inference profiles (`us-east-1`);
+    `bedrock:InvokeModelWithResponseStream` (Converse and ConverseStream authorize through these) on the
+    inference profiles in `us-east-1` (`…:inference-profile/us.amazon.nova-2-lite-v1:0` and
+    `…/global.amazon.nova-2-lite-v1:0`), the Nova foundation model in every region
+    (`arn:aws:bedrock:*::foundation-model/amazon.nova-2-lite-v1:0`), its region-less ARN for the global
+    profile (`arn:aws:bedrock:::foundation-model/amazon.nova-2-lite-v1:0`) and Titan;
     `bedrock-mantle:CreateInference` on `*` only while GPT-6 Luna is enabled.
 - `Custom::FoundryMigrations` with properties `{ version: appVersion, migrationsChecksum }`, so it runs on
   every deploy. **The API, worker and site deployments depend on it**: new code goes live only after its migrations applied,
@@ -69,7 +81,9 @@ Region `us-east-1`, account taken from the deploying credentials. Every IAM role
     are never rewritten.
   - `/api/*`: Function URL origin via OAC, HTTPS only, `CachingDisabled`, `AllViewerExceptHostHeader`,
     all methods, no compression (keeps SSE unbuffered), 60 s origin read timeout, viewer-request
-    function that sets `x-fa-viewer-host`.
+    function that sets `x-fa-viewer-ip` (from `event.viewer.ip`) and `x-fa-viewer-host`, overwriting any
+    client value. The API keys its per-IP sign-in lockout on `x-fa-viewer-ip` (IPv6 per /64) and trusts
+    `x-forwarded-for` only in local development.
   - Response headers policy on both: HSTS 2 years with subdomains and preload, `nosniff`,
     `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`,
     `Permissions-Policy: camera=(), microphone=(), geolocation=()` and the CSP
@@ -82,12 +96,48 @@ Region `us-east-1`, account taken from the deploying credentials. Every IAM role
 - Outputs: `SiteUrl`, `DistributionId`, `ApiFunctionName`, `ClusterArn`, `SecretArn`, `DocumentsBucket`,
   `JobsQueueUrl`, `AlarmTopicArn`.
 
-Runtime environment of every function (runtime contract): `APP_ENV=production`, `APP_VERSION`, `LOG_LEVEL=info`,
-`DB_DRIVER=dataapi`, `DB_CLUSTER_ARN`, `DB_SECRET_ARN`, `DB_NAME=foundry`, `DOCUMENTS_BUCKET`, `JOBS_QUEUE_URL`,
-`MODEL_PROVIDER=bedrock`, `MODEL_PRIMARY_ID`, `MODEL_FALLBACK_ID`, `MODEL_EMBEDDINGS_ID`, `BEDROCK_REGION`,
-`OWNER_ACCESS_CODE_PREFIX`, `OWNER_ACCESS_CODE_HASH`, `OWNER_DISPLAY_NAME`, `HOME_TENANT_SLUG`,
-`HOME_TENANT_NAME`, `NODE_OPTIONS=--enable-source-maps`; the API also gets `SITE_ORIGIN` when a custom domain
-is configured.
+Runtime environment (runtime contract). The names come from
+[`apps/api/lambda-contract.json`](../../apps/api/lambda-contract.json), the single source of truth shared with
+the API (its bundle check starts each handler with exactly these variables); synth fails if a value is missing:
+
+| Function | Variables                                                                                                                                                                                                                                           |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| all      | `APP_ENV=production`, `APP_VERSION`, `LOG_LEVEL=info`, `DB_DRIVER=dataapi`, `DB_CLUSTER_ARN`, `DB_SECRET_ARN`, `DB_NAME=foundry`, `MODEL_PROVIDER=bedrock`, `MODEL_*_ID`, `BEDROCK_REGION`, `HOME_TENANT_SLUG`, `NODE_OPTIONS=--enable-source-maps` |
+| api      | `DOCUMENTS_BUCKET`, `JOBS_QUEUE_URL`, `DB_RESUME_BUDGET_MS=40000`; `SITE_ORIGIN` only with a custom domain                                                                                                                                          |
+| worker   | `DOCUMENTS_BUCKET`, `JOBS_MAX_RECEIVE_COUNT=3`                                                                                                                                                                                                      |
+| migrate  | `OWNER_ACCESS_CODE_PREFIX`, `OWNER_ACCESS_CODE_HASH`, `OWNER_DISPLAY_NAME`, `HOME_TENANT_NAME`                                                                                                                                                      |
+
+The same file holds the ESM bundling settings (the `createRequire` banner, `pg-native` external, `node24`
+target) used by both `PlatformFunction` and `pnpm --filter @foundry/api check:bundles`, and the two
+edge header names.
+
+### Timeouts and Aurora resume
+
+Aurora at 0 ACU takes ~15 s (sometimes more) to resume. No byte goes out while an API request waits, so
+the wait must end well before CloudFront or Lambda gives up:
+
+| Number                                    | Value            | Where                                                                                        |
+| ----------------------------------------- | ---------------- | -------------------------------------------------------------------------------------------- |
+| API database resume budget (per call)     | 40 s             | `lambda-contract.json` → `DB_RESUME_BUDGET_MS`; then 503 `database_resuming` + `Retry-After` |
+| CloudFront origin read timeout (`/api/*`) | 60 s             | `API_ORIGIN_READ_TIMEOUT_SECONDS` (the most the default quota allows)                        |
+| API Lambda timeout                        | 60 s             | `config.api.timeoutSeconds` (validated ≥ 40 + 15)                                            |
+| Headroom after the resume wait            | 15 s             | `API_TIMING_MARGIN_SECONDS` (synth fails if violated)                                        |
+| SSE keep-alive comment                    | 15 s             | `lambda-contract.json`; a streamed turn is never idle for 60 s                               |
+| Model budget per turn                     | 25 s + 25 s      | primary + fallback inside the Lambda's remaining time (minus 4 s to persist the outcome)     |
+| Migrate: resume wait / Lambda timeout     | ≤ 5 min / 10 min | remaining time minus 4 min for migrations, seed and response                                 |
+
+The public `GET /api/v1/health` never queries the database (it reports the deployed `APP_VERSION` and the
+state recent requests observed), so uptime checks cannot keep Aurora awake; `GET /api/v1/admin/health`
+(platform admin) probes it.
+
+### Reserved concurrency
+
+`config.api.reservedConcurrency` and `config.worker.reservedConcurrency` are optional: `null` or absent means
+unreserved (the account pool). Production sets the API to `null`: some new accounts have a total Lambda
+concurrency quota of 10, and any reservation then fails the deploy (`PutFunctionConcurrency`). The cost
+guardrails do not depend on it: per-principal and global daily AI spend caps in `platform_settings` are
+checked before every model call, plus per-principal turn rate limits and the worker's `maxConcurrency: 2`.
+Set a number once the account quota allows (it must leave 10 unreserved).
 
 ### Models
 
@@ -174,7 +224,7 @@ and retire the stage-0 access key (see `infra/iam/README.md`).
 | `kms:CreateKey`                                                        | AWS-managed keys only (RDS, Secrets Manager, S3 SSE-S3, SQS SSE-SQS); unencrypted SNS (alarm metadata only, CloudWatch cannot use `aws/sns`) |
 | `rds:CreateDBInstance` unless `db.serverless`                          | Single `db.serverless` writer                                                                                                                |
 | `rds:CreateDBProxy`                                                    | Data API instead of a proxy                                                                                                                  |
-| `lambda:PutProvisionedConcurrencyConfig`                               | Reserved concurrency only                                                                                                                    |
+| `lambda:PutProvisionedConcurrencyConfig`                               | No provisioned concurrency (reserved concurrency optional, off by default)                                                                   |
 | `wafv2:CreateWebACL`                                                   | No WAF (cdk-nag CFR2 acknowledged); abuse controls live in the API                                                                           |
 | Roles without the boundary                                             | Boundary injected into every role, CDK-internal ones included (asserted in tests)                                                            |
 
@@ -202,7 +252,7 @@ derives IAM5 finding ids from the policy values themselves. They are attached to
 - No NAT gateway, EIP, VPC endpoint, customer KMS key, WAF, provisioned concurrency or Performance Insights.
 - Secrets Manager: one secret ($0.40/month). S3/CloudFront/SQS/SNS/CloudWatch alarms: cents at V1 traffic
   (5 standard alarms ≈ $0.50/month). Log groups expire after 30 days; access logs after 90.
-- Reserved concurrency is a budget cap, not a cost. New accounts can have a total concurrency quota of 10,
-  which leaves no room to reserve 10 for the API; request a quota increase before the first deploy if
-  `PutFunctionConcurrency` fails.
+- Reserved concurrency is off by default (see [Reserved concurrency](#reserved-concurrency)); the daily
+  AI spend caps are the cost guardrail.
 - Bedrock spend is capped per day in the database (`platform_settings`), outside this stack.
+- Public `/health` polling costs nothing on the database side (no query).
