@@ -91,11 +91,20 @@ def iam_action_order(iam: FakeIam) -> list[str]:
     return [c for c in iam.calls if c in {"iam:DetachUserPolicy", "iam:DeleteAccessKey"}]
 
 
-def test_plan_changes_nothing_and_never_prints_the_account_or_full_key_ids(capsys: pytest.CaptureFixture[str]) -> None:
+@pytest.mark.parametrize("in_github", [False, True])
+def test_plan_changes_nothing_and_never_prints_the_account_or_full_key_ids(
+        in_github: bool, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    # The outcome must not depend on where the tests run: CI sets GITHUB_ACTIONS=true.
+    monkeypatch.setattr(r, "IN_GITHUB", in_github)
     iam = FakeIam([r.OPERATOR_POLICY, r.LEGACY_POLICY], [r.SELF_RETIREMENT_POLICY], ["AKIAEXAMPLEKEY0001", "AKIAEXAMPLEKEY0002"])
     assert r.run("plan", FakeSts(), iam, "AKIAEXAMPLEKEY0002", "") == 0
     assert iam_action_order(iam) == []
-    out = capsys.readouterr().out
+    lines = capsys.readouterr().out.splitlines()
+    if in_github:
+        # Under Actions the account id appears exactly once: in the mask command, before any other output.
+        assert lines[0] == f"::add-mask::{ACCOUNT}"
+        lines = lines[1:]
+    out = "\n".join(lines)
     assert ACCOUNT not in out
     assert "AKIAEXAMPLEKEY" not in out
     assert "…0002 (this job)" in out
