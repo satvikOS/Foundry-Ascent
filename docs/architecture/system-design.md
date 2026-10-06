@@ -424,7 +424,7 @@ narrow and carries a written reason.
 | Stage            | Principal                                                                                                                                                         | Status                                                                                                                                            |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 0 — bootstrap    | IAM user `Foundry-Ascent`, access key in GitHub secrets, post-bootstrap policy `FoundryAscent-BootstrapOperator` (read-only, assume the CDK roles; no IAM writes) | **current**: boundary published, `CDKToolkit` bootstrapped, Data stack deployed (IAM changes are account-owner actions in CloudShell)             |
-| 1 — steady state | role `FoundryAscent-GitHubDeploy` via GitHub OIDC (repository variable `AWS_DEPLOY_ROLE_ARN`)                                                                     | after the first full deploy creates Foundation: set the variable, run **Deploy** once, then delete the access key and detach the stage-0 policies |
+| 1 — steady state | role `FoundryAscent-GitHubDeploy` via GitHub OIDC (repository secret `AWS_DEPLOY_ROLE_ARN`)                                                                       | after the first full deploy creates Foundation: set the variable, run **Deploy** once, then delete the access key and detach the stage-0 policies |
 
 ---
 

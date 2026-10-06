@@ -114,7 +114,7 @@ not added, because IAM support for that claim as a condition key could not be ve
 
 1. After the first full deploy, read the `GitHubDeployRoleArn` output of
    `FoundryAscent-Foundation` and set it as the repository **variable**
-   `AWS_DEPLOY_ROLE_ARN` (Settings → Secrets and variables → Actions → Variables).
+   `AWS_DEPLOY_ROLE_ARN` (Settings → Secrets and variables → Actions → Secrets; a variable also works, but a secret keeps the account id masked in the public logs).
 2. Run **Deploy** manually. The job summary must show _AWS access: GitHub OIDC (stage 1)_.
 3. Retire stage 0 with **Ops - retire stage-0 AWS access**
    ([`ops-aws-retire-stage0.yml`](../../.github/workflows/ops-aws-retire-stage0.yml)):

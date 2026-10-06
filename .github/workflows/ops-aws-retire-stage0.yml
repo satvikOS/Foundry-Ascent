@@ -45,11 +45,11 @@ jobs:
       - name: Require stage 1 and confirmation for retire
         if: inputs.mode == 'retire'
         env:
-          DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN || vars.AWS_DEPLOY_ROLE_ARN }}
           CONFIRM: ${{ inputs.confirm }}
         run: |
           if [ -z "${DEPLOY_ROLE_ARN}" ]; then
-            echo "::error::retire requires the repository variable AWS_DEPLOY_ROLE_ARN (stage 1, GitHub OIDC) and a successful OIDC deploy"
+            echo "::error::retire requires AWS_DEPLOY_ROLE_ARN (repository secret or variable; stage 1, GitHub OIDC) and a successful OIDC deploy"
             exit 1
           fi
           if [ "${CONFIRM}" != "RETIRE-STAGE-0" ]; then
@@ -72,5 +72,5 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           MODE: ${{ inputs.mode }}
-          DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN || vars.AWS_DEPLOY_ROLE_ARN }}
         run: python ops/aws/retire_stage0.py --mode "${MODE}" --deploy-role-arn "${DEPLOY_ROLE_ARN}"

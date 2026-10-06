@@ -190,7 +190,7 @@ def delete_key(iam: Any, state: State, key_id: str, outcome: Outcome) -> None:
 def check_deploy_role(iam: Any, account: str, deploy_role_arn: str) -> None:
     match = DEPLOY_ROLE_ARN_RE.fullmatch(deploy_role_arn.strip())
     if not match:
-        raise Refused(f"--deploy-role-arn must be the ARN of role {DEPLOY_ROLE_NAME} (repository variable AWS_DEPLOY_ROLE_ARN)")
+        raise Refused(f"--deploy-role-arn must be the ARN of role {DEPLOY_ROLE_NAME} (repository secret or variable AWS_DEPLOY_ROLE_ARN)")
     if match[1] != account:
         raise Refused("--deploy-role-arn belongs to another AWS account")
     try:
@@ -260,7 +260,7 @@ def run(mode: str, sts: Any, iam: Any, current_key: str | None, deploy_role_arn:
 def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Retire the stage-0 IAM user Foundry-Ascent (see the module docstring).")
     parser.add_argument("--mode", choices=MODES, default="plan")
-    parser.add_argument("--deploy-role-arn", default="", help="stage-1 role ARN (repository variable AWS_DEPLOY_ROLE_ARN); required for retire")
+    parser.add_argument("--deploy-role-arn", default="", help="stage-1 role ARN (repository secret or variable AWS_DEPLOY_ROLE_ARN); required for retire")
     return parser.parse_args(argv)
 
 

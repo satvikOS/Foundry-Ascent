@@ -50,7 +50,7 @@ Chosen option: **1** (details in `infra/iam/README.md`).
   (no `ref:refs/heads/main`). Stage 0 is retired with the **Ops - retire stage-0 AWS access** workflow.
 - The boundary denies creating users or roles without itself, editing or removing it, and creating access
   keys or console passwords.
-- `deploy.yml` uses OIDC when the repository variable `AWS_DEPLOY_ROLE_ARN` is set, otherwise the stage-0
+- `deploy.yml` uses OIDC when `AWS_DEPLOY_ROLE_ARN` is set (a repository secret, so the account id stays masked; a variable is also accepted), otherwise the stage-0
   keys; switching is a variable change, not a code change. After the first OIDC deploy succeeds, the access
   key is deleted and the stage-0 policies detached.
 - The Foundation stack creates the GitHub OIDC provider (`AWS::IAM::OIDCProvider`) unless context

@@ -132,7 +132,7 @@ test.
    provider and deploy role) and App and updates Data in place. Before `cdk deploy` the workflow decides
    whether Foundation creates, keeps or imports the GitHub OIDC provider, so an existing provider is never
    duplicated and a managed one is never deleted.
-5. **Stage 1** — set repository variable `AWS_DEPLOY_ROLE_ARN` to the `GitHubDeployRoleArn` output; later
+5. **Stage 1** — set the repository secret `AWS_DEPLOY_ROLE_ARN` to the `GitHubDeployRoleArn` output; later
    deploys use GitHub OIDC and the access key is retired.
 
 **Owner access code.** There is no Cognito: people sign in with access codes

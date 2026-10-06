@@ -66,7 +66,7 @@ pnpm --filter @foundry/infra exec cdk diff FoundryAscent-Data -c appVersion=$(gi
    (**required**: the deploy role trusts only jobs in this environment, so this rule is what keeps other
    branches out); add required reviewers if deploys should wait for a human approval.
 3. **Credentials:** stage 0 = repository secrets `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`. Stage 1 =
-   repository variable `AWS_DEPLOY_ROLE_ARN` (see [Switch to OIDC](#switch-to-github-oidc-stage-1)).
+   repository secret `AWS_DEPLOY_ROLE_ARN` (see [Switch to OIDC](#switch-to-github-oidc-stage-1)).
 4. **Branch protection on main:** require the CI jobs (`quality`, `database`, `infra`, `python`, `e2e`),
    `Secret scan (gitleaks)` and CodeQL; require review from code owners; no force pushes.
 5. **Lambda concurrency:** production reserves none (`api.reservedConcurrency: null`), because a
@@ -94,7 +94,7 @@ pnpm --filter @foundry/infra exec cdk diff FoundryAscent-Data -c appVersion=$(gi
 
 1. After the first successful deploy, read the Foundation output:
    `aws cloudformation describe-stacks --stack-name FoundryAscent-Foundation --query "Stacks[0].Outputs[?OutputKey=='GitHubDeployRoleArn'].OutputValue" --output text`
-2. Settings → Secrets and variables → Actions → **Variables** → `AWS_DEPLOY_ROLE_ARN` = that ARN.
+2. Settings → Secrets and variables → Actions → **Secrets** → `AWS_DEPLOY_ROLE_ARN` = that ARN (a secret keeps the account id masked in the public logs; a variable also works).
 3. Run **Deploy** manually. The summary must show _AWS access: GitHub OIDC (stage 1)_ and _GitHub OIDC
    provider: managed by FoundryAscent-Foundation (kept)_ (or _existing provider imported_ if the account
    already had one before the first deploy).

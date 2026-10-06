@@ -5,7 +5,9 @@ name: Deploy
 # docs/runbooks/deploy-and-rollback.md).
 #
 # AWS access is staged (infra/iam/README.md, ADR-0016):
-#   stage 1: repository variable AWS_DEPLOY_ROLE_ARN set -> GitHub OIDC, role FoundryAscent-GitHubDeploy
+#   stage 1: AWS_DEPLOY_ROLE_ARN set -> GitHub OIDC, role FoundryAscent-GitHubDeploy. Store it as a repository
+#            secret (masked in logs, so the account id in the ARN never reaches this public log); a repository
+#            variable is also accepted.
 #   stage 0: variable unset -> secrets AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (IAM user Foundry-Ascent)
 # The repository is public: the account id is masked before any AWS call can print it, the job summary
 # contains only the site URL and the commit, and stack outputs are never uploaded.
@@ -109,7 +111,9 @@ jobs:
       AWS_DEFAULT_REGION: us-east-1
       CDK_DISABLE_CLI_TELEMETRY: 'true'
       DEPLOY_SHA: ${{ needs.gate.outputs.sha }}
-      DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      # Secret first (masked); a variable is accepted too. Steps test env.DEPLOY_ROLE_ARN because step `if:`
+      # expressions cannot read the secrets context.
+      DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN || vars.AWS_DEPLOY_ROLE_ARN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -134,26 +138,30 @@ jobs:
           HAS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY_ID != '' && secrets.AWS_SECRET_ACCESS_KEY != '' }}
         run: |
           if [ -n "${DEPLOY_ROLE_ARN}" ]; then
+            if [[ ! "${DEPLOY_ROLE_ARN}" =~ ^arn:aws:iam::[0-9]{12}:role/FoundryAscent-GitHubDeploy$ ]]; then
+              echo "::error::AWS_DEPLOY_ROLE_ARN must be arn:aws:iam::<12-digit account id>:role/FoundryAscent-GitHubDeploy (IAM -> Roles -> FoundryAscent-GitHubDeploy -> ARN)."
+              exit 1
+            fi
             echo "AWS access: GitHub OIDC (stage 1)"
           elif [ "${HAS_ACCESS_KEY}" = "true" ]; then
-            echo "AWS access: stage-0 access key (set repository variable AWS_DEPLOY_ROLE_ARN to switch to OIDC)"
+            echo "AWS access: stage-0 access key (set the repository secret AWS_DEPLOY_ROLE_ARN to switch to OIDC)"
           else
-            echo "::error::No AWS credentials. Set repository variable AWS_DEPLOY_ROLE_ARN (stage 1) or secrets AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY (stage 0); see infra/iam/README.md."
+            echo "::error::No AWS credentials. Set the repository secret AWS_DEPLOY_ROLE_ARN (stage 1) or secrets AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY (stage 0); see infra/iam/README.md."
             exit 1
           fi
 
       - name: AWS credentials (stage 1, GitHub OIDC)
-        if: vars.AWS_DEPLOY_ROLE_ARN != ''
+        if: env.DEPLOY_ROLE_ARN != ''
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-to-assume: ${{ env.DEPLOY_ROLE_ARN }}
           role-session-name: foundry-ascent-deploy-${{ github.run_id }}
           role-duration-seconds: 3600
           aws-region: us-east-1
           mask-aws-account-id: true
 
       - name: AWS credentials (stage 0, access key)
-        if: vars.AWS_DEPLOY_ROLE_ARN == ''
+        if: env.DEPLOY_ROLE_ARN == ''
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -203,7 +211,7 @@ jobs:
           FOUNDATION_STACK: FoundryAscent-Foundation
           OIDC_HOST: token.actions.githubusercontent.com
           OIDC_RESOURCE_TYPE: AWS::IAM::OIDCProvider
-          USING_OIDC: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' }}
+          USING_OIDC: ${{ env.DEPLOY_ROLE_ARN != '' }}
           # Throttling is retried by the CLI; any error that remains stops the deploy.
           AWS_RETRY_MODE: standard
           AWS_MAX_ATTEMPTS: '6'
@@ -314,7 +322,7 @@ jobs:
           DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
           SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
           OIDC_MODE: ${{ steps.oidc.outputs.mode }}
-          ACCESS_STAGE: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' && 'GitHub OIDC (stage 1)' || 'access key (stage 0)' }}
+          ACCESS_STAGE: ${{ env.DEPLOY_ROLE_ARN != '' && 'GitHub OIDC (stage 1)' || 'access key (stage 0)' }}
         run: |
           # Step summaries are not covered by ::add-mask::; only non-sensitive values are written here.
           {
