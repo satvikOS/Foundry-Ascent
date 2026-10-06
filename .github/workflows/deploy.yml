@@ -22,6 +22,11 @@ on:
         description: Full commit SHA on main to deploy (empty = current tip of main)
         type: string
         default: ''
+      aws_access:
+        description: auto = GitHub OIDC when AWS_DEPLOY_ROLE_ARN is set; access-key = force the stage-0 key (recovery while it exists)
+        type: choice
+        options: [auto, access-key]
+        default: auto
 
 permissions:
   contents: read
@@ -114,6 +119,7 @@ jobs:
       # Secret first (masked); a variable is accepted too. The credentials check below normalises it into
       # env OIDC_ROLE_ARN, which later steps test (step `if:` expressions cannot read the secrets context).
       RAW_DEPLOY_ROLE: ${{ secrets.AWS_DEPLOY_ROLE_ARN || vars.AWS_DEPLOY_ROLE_ARN }}
+      FORCE_ACCESS_KEY: ${{ github.event_name == 'workflow_dispatch' && inputs.aws_access == 'access-key' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -144,6 +150,10 @@ jobs:
           if [[ "${role}" =~ ^[0-9]{12}$ ]]; then
             role="arn:aws:iam::${role}:role/FoundryAscent-GitHubDeploy"
           fi
+          if [ "${FORCE_ACCESS_KEY}" = "true" ]; then
+            echo "::notice::aws_access=access-key: using the stage-0 access key instead of GitHub OIDC for this run."
+            role=""
+          fi
           if [ -n "${role}" ]; then
             if [[ ! "${role}" =~ ^arn:aws:iam::([0-9]{12}):role/FoundryAscent-GitHubDeploy$ ]]; then
               starts=no; [[ "${role}" == arn:aws:iam::* ]] && starts=yes
@@ -167,6 +177,7 @@ jobs:
           fi
 
       - name: AWS credentials (stage 1, GitHub OIDC)
+        id: aws-oidc
         if: env.OIDC_ROLE_ARN != ''
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
@@ -175,6 +186,41 @@ jobs:
           role-duration-seconds: 3600
           aws-region: us-east-1
           mask-aws-account-id: true
+
+      # Runs only when the OIDC role could not be assumed. Prints what decides that, never a token, key or
+      # account id: the token's sub/aud claims, whether the account in AWS_DEPLOY_ROLE_ARN is the account the
+      # stage-0 key belongs to (while that key exists), and the sub the role actually trusts.
+      - name: Explain the OIDC failure
+        if: failure() && steps.aws-oidc.outcome == 'failure'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          token="$(curl -sS -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" | jq -r '.value')"
+          payload="$(cut -d. -f2 <<<"${token}" | tr '_-' '/+')"
+          while [ $(( ${#payload} % 4 )) -ne 0 ]; do payload="${payload}="; done
+          echo "GitHub OIDC token claims:"
+          base64 -d <<<"${payload}" | jq -c '{sub, aud, environment, ref, repository}'
+          if [ -z "${AWS_ACCESS_KEY_ID}" ]; then
+            echo "Stage-0 key not configured: cannot compare accounts or read the role's trust policy."
+            exit 0
+          fi
+          account="$(aws sts get-caller-identity --query Account --output text)"
+          echo "::add-mask::${account}"
+          role_account="$(cut -d: -f5 <<<"${OIDC_ROLE_ARN}")"
+          if [ "${role_account}" = "${account}" ]; then
+            echo "Account in AWS_DEPLOY_ROLE_ARN matches the stage-0 key's account: yes"
+          else
+            echo "::error::Account in AWS_DEPLOY_ROLE_ARN matches the stage-0 key's account: NO. Set AWS_DEPLOY_ROLE_ARN to that account's 12-digit id."
+          fi
+          if trust="$(aws iam get-role --role-name FoundryAscent-GitHubDeploy \
+            --query 'Role.AssumeRolePolicyDocument' --output json 2>/dev/null)"; then
+            echo "Role FoundryAscent-GitHubDeploy trusts:"
+            jq -c '[.Statement[].Condition] ' <<<"${trust}"
+          else
+            echo "Role FoundryAscent-GitHubDeploy could not be read with the stage-0 key."
+          fi
 
       - name: AWS credentials (stage 0, access key)
         if: env.OIDC_ROLE_ARN == ''
