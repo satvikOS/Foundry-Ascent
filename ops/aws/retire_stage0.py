@@ -187,8 +187,17 @@ def delete_key(iam: Any, state: State, key_id: str, outcome: Outcome) -> None:
     outcome.done.append(f"deleted access key {key_label(key_id)}")
 
 
+def normalize_deploy_role(value: str) -> str:
+    """The role ARN as pasted into GitHub: whitespace and quotes dropped (an ARN contains neither), and a bare
+    12-digit account id expanded to the ARN of role FoundryAscent-GitHubDeploy (same rule as deploy.yml)."""
+    cleaned = re.sub(r"[\s\"']", "", value)
+    if re.fullmatch(r"\d{12}", cleaned):
+        return f"arn:aws:iam::{cleaned}:role/{DEPLOY_ROLE_NAME}"
+    return cleaned
+
+
 def check_deploy_role(iam: Any, account: str, deploy_role_arn: str) -> None:
-    match = DEPLOY_ROLE_ARN_RE.fullmatch(deploy_role_arn.strip())
+    match = DEPLOY_ROLE_ARN_RE.fullmatch(normalize_deploy_role(deploy_role_arn))
     if not match:
         raise Refused(f"--deploy-role-arn must be the ARN of role {DEPLOY_ROLE_NAME} (repository secret or variable AWS_DEPLOY_ROLE_ARN)")
     if match[1] != account:

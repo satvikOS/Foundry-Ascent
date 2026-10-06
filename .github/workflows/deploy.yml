@@ -111,9 +111,9 @@ jobs:
       AWS_DEFAULT_REGION: us-east-1
       CDK_DISABLE_CLI_TELEMETRY: 'true'
       DEPLOY_SHA: ${{ needs.gate.outputs.sha }}
-      # Secret first (masked); a variable is accepted too. Steps test env.DEPLOY_ROLE_ARN because step `if:`
-      # expressions cannot read the secrets context.
-      DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN || vars.AWS_DEPLOY_ROLE_ARN }}
+      # Secret first (masked); a variable is accepted too. The credentials check below normalises it into
+      # env OIDC_ROLE_ARN, which later steps test (step `if:` expressions cannot read the secrets context).
+      RAW_DEPLOY_ROLE: ${{ secrets.AWS_DEPLOY_ROLE_ARN || vars.AWS_DEPLOY_ROLE_ARN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -137,11 +137,27 @@ jobs:
         env:
           HAS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY_ID != '' && secrets.AWS_SECRET_ACCESS_KEY != '' }}
         run: |
-          if [ -n "${DEPLOY_ROLE_ARN}" ]; then
-            if [[ ! "${DEPLOY_ROLE_ARN}" =~ ^arn:aws:iam::[0-9]{12}:role/FoundryAscent-GitHubDeploy$ ]]; then
-              echo "::error::AWS_DEPLOY_ROLE_ARN must be arn:aws:iam::<12-digit account id>:role/FoundryAscent-GitHubDeploy (IAM -> Roles -> FoundryAscent-GitHubDeploy -> ARN)."
+          # Accept the role ARN or just the 12-digit account id, ignoring surrounding whitespace and quotes
+          # (copy-paste). The value is never printed: only its shape, and the role name, are reported.
+          # An ARN never contains whitespace or quotes, so all of them are dropped.
+          role="$(printf '%s' "${RAW_DEPLOY_ROLE}" | tr -d "[:space:]\"'")"
+          if [[ "${role}" =~ ^[0-9]{12}$ ]]; then
+            role="arn:aws:iam::${role}:role/FoundryAscent-GitHubDeploy"
+          fi
+          if [ -n "${role}" ]; then
+            if [[ ! "${role}" =~ ^arn:aws:iam::([0-9]{12}):role/FoundryAscent-GitHubDeploy$ ]]; then
+              starts=no; [[ "${role}" == arn:aws:iam::* ]] && starts=yes
+              has_role=no; [[ "${role}" == *:role/* ]] && has_role=yes
+              name=""
+              if [ "${starts}" = yes ] && [[ "${role}" =~ :role/([A-Za-z0-9+=,.@_/-]{1,128})$ ]]; then
+                name="; role name = ${BASH_REMATCH[1]}"
+              fi
+              echo "::error::AWS_DEPLOY_ROLE_ARN is not usable (length ${#role}; starts with arn:aws:iam:: = ${starts}; contains :role/ = ${has_role}${name}). Use arn:aws:iam::<12-digit account id>:role/FoundryAscent-GitHubDeploy (IAM -> Roles -> FoundryAscent-GitHubDeploy -> ARN), or just the 12-digit account id."
               exit 1
             fi
+            echo "::add-mask::${BASH_REMATCH[1]}"
+            echo "::add-mask::${role}"
+            echo "OIDC_ROLE_ARN=${role}" >> "${GITHUB_ENV}"
             echo "AWS access: GitHub OIDC (stage 1)"
           elif [ "${HAS_ACCESS_KEY}" = "true" ]; then
             echo "AWS access: stage-0 access key (set the repository secret AWS_DEPLOY_ROLE_ARN to switch to OIDC)"
@@ -151,17 +167,17 @@ jobs:
           fi
 
       - name: AWS credentials (stage 1, GitHub OIDC)
-        if: env.DEPLOY_ROLE_ARN != ''
+        if: env.OIDC_ROLE_ARN != ''
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          role-to-assume: ${{ env.DEPLOY_ROLE_ARN }}
+          role-to-assume: ${{ env.OIDC_ROLE_ARN }}
           role-session-name: foundry-ascent-deploy-${{ github.run_id }}
           role-duration-seconds: 3600
           aws-region: us-east-1
           mask-aws-account-id: true
 
       - name: AWS credentials (stage 0, access key)
-        if: env.DEPLOY_ROLE_ARN == ''
+        if: env.OIDC_ROLE_ARN == ''
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -211,7 +227,7 @@ jobs:
           FOUNDATION_STACK: FoundryAscent-Foundation
           OIDC_HOST: token.actions.githubusercontent.com
           OIDC_RESOURCE_TYPE: AWS::IAM::OIDCProvider
-          USING_OIDC: ${{ env.DEPLOY_ROLE_ARN != '' }}
+          USING_OIDC: ${{ env.OIDC_ROLE_ARN != '' }}
           # Throttling is retried by the CLI; any error that remains stops the deploy.
           AWS_RETRY_MODE: standard
           AWS_MAX_ATTEMPTS: '6'
@@ -322,7 +338,7 @@ jobs:
           DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
           SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
           OIDC_MODE: ${{ steps.oidc.outputs.mode }}
-          ACCESS_STAGE: ${{ env.DEPLOY_ROLE_ARN != '' && 'GitHub OIDC (stage 1)' || 'access key (stage 0)' }}
+          ACCESS_STAGE: ${{ env.OIDC_ROLE_ARN != '' && 'GitHub OIDC (stage 1)' || 'access key (stage 0)' }}
         run: |
           # Step summaries are not covered by ::add-mask::; only non-sensitive values are written here.
           {

@@ -161,6 +161,13 @@ def test_retire_is_refused_before_any_change(deploy_role_arn: str, role_exists: 
     assert iam.keys == ["AKIAEXAMPLEKEY0001"]
 
 
+@pytest.mark.parametrize("pasted", [ROLE_ARN, f" {ROLE_ARN}\n", f'"{ROLE_ARN}"', ACCOUNT, f" {ACCOUNT} "])
+def test_retire_accepts_the_role_arn_or_account_id_as_pasted(pasted: str) -> None:
+    iam = FakeIam([r.LEGACY_POLICY, r.OPERATOR_POLICY], [r.SELF_RETIREMENT_POLICY], ["AKIAEXAMPLEKEY0001"])
+    assert r.run("retire", FakeSts(), iam, "AKIAEXAMPLEKEY0001", pasted) == 0
+    assert iam.keys == []
+
+
 def test_only_the_stage0_user_may_run_it() -> None:
     iam = FakeIam([], [], [])
     with pytest.raises(r.Refused, match="Foundry-Ascent"):
