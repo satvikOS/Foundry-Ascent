@@ -25,7 +25,7 @@ def client_error(code: str) -> ClientError:
 class FakeIam:
     """Records every IAM call (as the IAM action name) and serves a small user state."""
 
-    def __init__(self, managed: list[str], inline: list[str], keys: list[str], *, password: bool = False,
+    def __init__(self, managed: list[str], inline: list[str], keys: list[str], *, password: bool | None = False,
                  role_exists: bool = True) -> None:
         self.managed = list(managed)
         self.inline = list(inline)
@@ -56,6 +56,8 @@ class FakeIam:
 
     def get_login_profile(self, **_: Any) -> dict[str, Any]:
         self._record("get_login_profile")
+        if self.password is None:
+            raise client_error("AccessDenied")
         if not self.password:
             raise client_error("NoSuchEntity")
         return {"LoginProfile": {}}
@@ -166,6 +168,14 @@ def test_retire_accepts_the_role_arn_or_account_id_as_pasted(pasted: str) -> Non
     iam = FakeIam([r.LEGACY_POLICY, r.OPERATOR_POLICY], [r.SELF_RETIREMENT_POLICY], ["AKIAEXAMPLEKEY0001"])
     assert r.run("retire", FakeSts(), iam, "AKIAEXAMPLEKEY0001", pasted) == 0
     assert iam.keys == []
+
+
+def test_retire_proceeds_when_the_console_password_cannot_be_read(capsys: pytest.CaptureFixture[str]) -> None:
+    # The pre-tightening operator policy lacks iam:GetLoginProfile: that check is informational only.
+    iam = FakeIam([r.OPERATOR_POLICY], [], ["AKIAEXAMPLEKEY0001"], password=None)
+    assert r.run("retire", FakeSts(), iam, "AKIAEXAMPLEKEY0001", ROLE_ARN) == 0
+    assert iam.keys == []
+    assert "Could not check whether" in capsys.readouterr().out
 
 
 def test_only_the_stage0_user_may_run_it() -> None:

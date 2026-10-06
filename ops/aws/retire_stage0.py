@@ -88,7 +88,7 @@ class State:
     managed: list[str]  # managed policy names attached to the user
     inline: list[str]  # inline policy names
     keys: list[str]  # access key ids
-    console_password: bool
+    console_password: bool | None  # None: the caller may not read it (informational only)
     current_key: str | None
 
 
@@ -126,13 +126,19 @@ def read_state(iam: Any, account: str, current_key: str | None) -> State:
         for page in iam.get_paginator("list_access_keys").paginate(UserName=USER_NAME)
         for k in page.get("AccessKeyMetadata", [])
     ]
+    console_password: bool | None
     try:
         iam.get_login_profile(UserName=USER_NAME)
         console_password = True
     except ClientError as exc:
-        if exc.response.get("Error", {}).get("Code") != "NoSuchEntity":
+        code = exc.response.get("Error", {}).get("Code")
+        if code == "NoSuchEntity":
+            console_password = False
+        elif code in {"AccessDenied", "AccessDeniedException"}:
+            # Older operator policies do not grant iam:GetLoginProfile; the answer only adds a warning.
+            console_password = None
+        else:
             raise
-        console_password = False
     return State(account, managed, inline, keys, console_password, current_key)
 
 
@@ -147,7 +153,8 @@ def plan_lines(state: State) -> list[str]:
         f"  inline policies:  {', '.join(sorted(state.inline)) or 'none'}",
         "  access keys:      "
         + (", ".join(key_label(k) + (" (this job)" if k == state.current_key else "") for k in state.keys) or "none"),
-        f"  console password: {'yes' if state.console_password else 'no'}",
+        "  console password: "
+        + {True: "yes", False: "no", None: "unknown (iam:GetLoginProfile not allowed)"}[state.console_password],
         "",
         "detach-legacy-cleanup would: "
         + (f"detach {LEGACY_POLICY}" if LEGACY_POLICY in state.managed else f"nothing ({LEGACY_POLICY} is not attached)"),
@@ -232,6 +239,11 @@ def retire(iam: Any, state: State, deploy_role_arn: str) -> Outcome:
                 f"detaches it in CloudShell: aws iam detach-user-policy --user-name {USER_NAME} --policy-arn "
                 f"arn:aws:iam::<account>:policy/{OPERATOR_POLICY}"
             )
+    if state.console_password is None:
+        outcome.warnings.append(
+            f"Could not check whether {USER_NAME} has a console password; the account owner checks IAM -> Users -> "
+            f"{USER_NAME} -> Security credentials, or deletes the user"
+        )
     if state.console_password:
         outcome.warnings.append(
             f"{USER_NAME} still has a console password; the account owner deletes it "
