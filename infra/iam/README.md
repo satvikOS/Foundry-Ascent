@@ -4,19 +4,28 @@ Foundry Ascent deploys from GitHub Actions. Access is staged so that long-lived
 credentials exist only for the short bootstrap window
 ([ADR-0016](../../docs/architecture/adr/0016-staged-iam-github-oidc.md)).
 
-| Stage               | Principal                             | Credentials                                                 | Permissions                                                                      |
-| ------------------- | ------------------------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| 0 — Bootstrap (now) | IAM user `Foundry-Ascent`             | Access key in GitHub secrets                                | `FoundryAscent-BootstrapOperator` (post-bootstrap, read-only + assume CDK roles) |
-| 1 — Steady state    | IAM role `FoundryAscent-GitHubDeploy` | GitHub OIDC, 1-hour sessions, `production` environment only | Assume the four CDK bootstrap roles; read-only operations                        |
-| Every platform role | CDK and application roles             | Short-lived (STS)                                           | Capped by `FoundryAscent-Boundary`                                               |
-| Account owner       | Administrator (console / CloudShell)  | Console sign-in                                             | Publishes the policies and the boundary, bootstraps CDK, creates the budget      |
+| Stage                              | Principal                             | Credentials                                                 | Permissions                                                                 |
+| ---------------------------------- | ------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------- |
+| 0 — Bootstrap (retired 2026-10-06) | IAM user `Foundry-Ascent`             | Access key deleted                                          | `FoundryAscent-BootstrapOperator` (no credentials left to use it)           |
+| 1 — Steady state (now)             | IAM role `FoundryAscent-GitHubDeploy` | GitHub OIDC, 1-hour sessions, `production` environment only | Assume the four CDK bootstrap roles; read-only operations                   |
+| Every platform role                | CDK and application roles             | Short-lived (STS)                                           | Capped by `FoundryAscent-Boundary`                                          |
+| Account owner                      | Administrator (console / CloudShell)  | Console sign-in                                             | Publishes the policies and the boundary, bootstraps CDK, creates the budget |
 
-## Where it stands (2026-10-05)
+## Where it stands (2026-10-06)
 
-Stage 0 is in use. The boundary is published, `CDKToolkit` is bootstrapped and `FoundryAscent-Data`
-is deployed. The first full **Deploy** creates `FoundryAscent-Foundation` (the GitHub OIDC provider and
-the deploy role) and `FoundryAscent-App`. Stage 1 follows from there
-([Moving to stage 1](#moving-to-stage-1-github-oidc)).
+Stage 1 is in use: every deploy assumes `FoundryAscent-GitHubDeploy` through GitHub OIDC (repository
+secret `AWS_DEPLOY_ROLE_ARN`). The role trusts exactly
+`repo:satvikOS@228056784/Foundry-Ascent@1356439229:environment:production`: GitHub issues this
+repository's `sub` claim with the owner and repository pinned by immutable ids, and the name-only form
+(`repo:satvikOS/Foundry-Ascent:…`) is refused. Stage 0 is retired: the `Foundry-Ascent` access key was
+deleted by **Ops - retire stage-0 AWS access** and `FoundryAscent-LegacyCleanup` was detached. The
+workflows that need the stage-0 key (data-stack deploy, cleanup, inventory, verify access, Bedrock probe,
+retire) no longer run.
+
+Left for the account owner (optional hygiene): delete the IAM user `Foundry-Ascent` (it still has
+`FoundryAscent-BootstrapOperator` and `IAMUserChangePassword` attached and possibly a console
+password, but no access keys), and delete the repository secrets `AWS_ACCESS_KEY_ID` and
+`AWS_SECRET_ACCESS_KEY`.
 
 **Security hardening (2026-10):** the stage-0 policy used to let the CI user create and change
 `cdk-*` and `FoundryAscent*` roles and publish `FoundryAscent*` policies, including the permissions
