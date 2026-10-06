@@ -32,7 +32,7 @@ describe('FoundryAscent-Foundation', () => {
             StringEquals: {
               'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com',
               'token.actions.githubusercontent.com:sub':
-                'repo:satvikOS/Foundry-Ascent:environment:production',
+                'repo:satvikOS@228056784/Foundry-Ascent@1356439229:environment:production',
             },
           },
         },
@@ -97,9 +97,14 @@ describe('FoundryAscent-Foundation', () => {
   });
 
   it('derives the only trusted subject from the repository and the environment (never a branch)', () => {
-    expect(githubSubject({ githubRepository: 'acme/repo', githubEnvironment: 'prod' })).toBe(
-      'repo:acme/repo:environment:prod',
-    );
+    expect(
+      githubSubject({
+        githubRepository: 'acme/repo',
+        githubOwnerId: '42',
+        githubRepositoryId: '7',
+        githubEnvironment: 'prod',
+      }),
+    ).toBe('repo:acme@42/repo@7:environment:prod');
     // Regression: a branch subject (any workflow on main, with or without the environment) is not trusted.
     expect(JSON.stringify(template.toJSON())).not.toContain(':ref:refs/heads/');
     expect(JSON.stringify(template.toJSON())).not.toContain('StringLike');

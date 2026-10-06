@@ -24,7 +24,7 @@ Region `us-east-1`, account taken from the deploying credentials. Every IAM role
   create it, later deploys keep whichever mode they had, and CloudFormation is never asked to delete a
   provider it manages). Set the context by hand only for a local `cdk deploy`.
 - Role `FoundryAscent-GitHubDeploy` (1 h sessions). Trust (`StringEquals`): `aud = sts.amazonaws.com` and
-  `sub = repo:satvikOS/Foundry-Ascent:environment:production` (no branch subject: only jobs in the
+  `sub = repo:satvikOS@228056784/Foundry-Ascent@1356439229:environment:production` (no branch subject: only jobs in the
   `production` environment, whose deployment-branch rule allows `main` only).
   Permissions: `sts:AssumeRole`/`sts:TagSession` on the CDK deploy, file-publishing, image-publishing and
   lookup roles (`cdk-hnb659fds-<kind>-<account>-<region>`, never the execution role), read-only CloudFormation on

@@ -390,7 +390,7 @@ Stacks (all `FoundryAscent-*`, termination protection on Foundation and Data, ta
 1. **Foundation** — GitHub OIDC provider for `token.actions.githubusercontent.com`
    (`iam.OidcProviderNative`, CloudFormation type `AWS::IAM::OIDCProvider`; an account holds one per URL,
    so context `githubOidcProviderArn` imports an existing provider instead) and the
-   `FoundryAscent-GitHubDeploy` role (trust: exactly `repo:satvikOS/Foundry-Ascent:environment:production`
+   `FoundryAscent-GitHubDeploy` role (trust: exactly `repo:satvikOS@228056784/Foundry-Ascent@1356439229:environment:production`
    and `aud sts.amazonaws.com`; 1 h sessions; can assume the four CDK CLI bootstrap roles and read
    CloudFormation/Logs/Cost Explorer). `deploy.yml` decides create / keep / import on every run (§12).
 2. **Data** — VPC (2 AZ, isolated subnets only, no IGW/NAT), Aurora Serverless v2 PostgreSQL 16.13

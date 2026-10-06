@@ -1,6 +1,8 @@
 {
   "region": "us-east-1",
   "githubRepository": "satvikOS/Foundry-Ascent",
+  "githubOwnerId": "228056784",
+  "githubRepositoryId": "1356439229",
   "githubBranch": "main",
   "homeTenant": {
     "slug": "ain",

@@ -3568,7 +3568,7 @@ exports[`template snapshots > FoundryAscent-Foundation 1`] = `
               "Condition": {
                 "StringEquals": {
                   "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-                  "token.actions.githubusercontent.com:sub": "repo:satvikOS/Foundry-Ascent:environment:production",
+                  "token.actions.githubusercontent.com:sub": "repo:satvikOS@228056784/Foundry-Ascent@1356439229:environment:production",
                 },
               },
               "Effect": "Allow",

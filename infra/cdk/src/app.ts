@@ -85,6 +85,8 @@ export function buildApp(options: BuildOptions = {}): FoundryApp {
     description: 'Foundry Ascent: GitHub OIDC provider and deploy role',
     terminationProtection: true,
     githubRepository: config.githubRepository,
+    githubOwnerId: config.githubOwnerId,
+    githubRepositoryId: config.githubRepositoryId,
     githubBranch: config.githubBranch,
     githubEnvironment: ENVIRONMENT_NAME,
     ...(existingOidcProviderArn ? { existingOidcProviderArn } : {}),

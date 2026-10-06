@@ -25,6 +25,10 @@ export const CDK_CLI_ROLES = [
 export interface FoundationStackProps extends StackProps {
   /** `owner/repo`, e.g. `satvikOS/Foundry-Ascent`. */
   readonly githubRepository: string;
+  /** Immutable numeric id of the repository owner (GitHub user or organization). */
+  readonly githubOwnerId: string;
+  /** Immutable numeric id of the repository. */
+  readonly githubRepositoryId: string;
   /**
    * Branch that deploys (`main`). Informational: the trust policy pins the GitHub environment, whose
    * deployment-branch rule (repository settings) limits it to this branch.
@@ -41,9 +45,10 @@ export interface FoundationStackProps extends StackProps {
 
 /**
  * The one `sub` claim allowed to assume the deploy role: a job of this repository that runs in the deploy
- * environment. GitHub issues `repo:<owner>/<repo>:environment:<name>` to every job that declares
- * `environment:`, so the environment's protection rules (required reviewers, deployment branches) gate AWS
- * access. A branch subject (`ref:refs/heads/main`) is deliberately NOT trusted: any workflow on that branch
+ * environment. GitHub issues `repo:<owner>@<ownerId>/<repo>@<repoId>:environment:<name>` to every job that
+ * declares `environment:` (observed on this repository; the ids are immutable, so a repository later created
+ * under the same name cannot match), and the environment's protection rules (required reviewers, deployment
+ * branches) gate AWS access. A branch subject (`ref:refs/heads/main`) is deliberately NOT trusted: any workflow on that branch
  * without the environment, including one added by a later commit, could otherwise assume the role.
  *
  * `job_workflow_ref` (pinning the role to `.github/workflows/deploy.yml`) is not added: IAM's support for
@@ -51,9 +56,14 @@ export interface FoundationStackProps extends StackProps {
  * StringEquals condition would lock every deploy out.
  */
 export function githubSubject(
-  props: Pick<FoundationStackProps, 'githubRepository' | 'githubEnvironment'>,
+  props: Pick<
+    FoundationStackProps,
+    'githubRepository' | 'githubOwnerId' | 'githubRepositoryId' | 'githubEnvironment'
+  >,
 ): string {
-  return `repo:${props.githubRepository}:environment:${props.githubEnvironment}`;
+  const [owner, repo] = props.githubRepository.split('/');
+  if (!owner || !repo) throw new Error(`githubRepository must be owner/repo: ${props.githubRepository}`);
+  return `repo:${owner}@${props.githubOwnerId}/${repo}@${props.githubRepositoryId}:environment:${props.githubEnvironment}`;
 }
 
 export class FoundationStack extends Stack {

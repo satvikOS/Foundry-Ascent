@@ -102,7 +102,7 @@ CloudFormation through the CDK execution role, never by the CI user.
 ### Deploy role trust
 
 `FoundryAscent-GitHubDeploy` trusts exactly one subject, with `StringEquals` on both claims:
-`token.actions.githubusercontent.com:sub` = `repo:satvikOS/Foundry-Ascent:environment:production` and
+`token.actions.githubusercontent.com:sub` = `repo:satvikOS@228056784/Foundry-Ascent@1356439229:environment:production` and
 `:aud` = `sts.amazonaws.com`. A job only gets that subject when it declares `environment: production`, so
 the environment's protection rules gate AWS access. Set them (repository owner, Settings → Environments →
 `production`): **Deployment branches and tags** → _Selected branches_ → `main` only, and optionally

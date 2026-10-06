@@ -32,11 +32,11 @@ only for that bootstrap window, with the narrowest permissions that still work.
 
 Chosen option: **1** (details in `infra/iam/README.md`).
 
-| Stage              | Principal                                        | Credentials                                                                                                              | Permissions                                                                         |
-| ------------------ | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
-| 0 — bootstrap      | IAM user `Foundry-Ascent`                        | access key in GitHub secrets                                                                                             | `FoundryAscent-BootstrapOperator` (post-bootstrap: read-only, assume the CDK roles) |
-| 1 — steady state   | role `FoundryAscent-GitHubDeploy`                | GitHub OIDC, 1 h sessions, trust exactly `repo:satvikOS/Foundry-Ascent:environment:production` (aud `sts.amazonaws.com`) | assume the four CDK CLI bootstrap roles, read CloudFormation/Logs/Cost Explorer     |
-| all platform roles | CDK-created roles, CloudFormation execution role | STS                                                                                                                      | capped by `FoundryAscent-Boundary`                                                  |
+| Stage              | Principal                                        | Credentials                                                                                                                                   | Permissions                                                                         |
+| ------------------ | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| 0 — bootstrap      | IAM user `Foundry-Ascent`                        | access key in GitHub secrets                                                                                                                  | `FoundryAscent-BootstrapOperator` (post-bootstrap: read-only, assume the CDK roles) |
+| 1 — steady state   | role `FoundryAscent-GitHubDeploy`                | GitHub OIDC, 1 h sessions, trust exactly `repo:satvikOS@228056784/Foundry-Ascent@1356439229:environment:production` (aud `sts.amazonaws.com`) | assume the four CDK CLI bootstrap roles, read CloudFormation/Logs/Cost Explorer     |
+| all platform roles | CDK-created roles, CloudFormation execution role | STS                                                                                                                                           | capped by `FoundryAscent-Boundary`                                                  |
 
 - The account owner publishes the boundary (`infra/iam/apply-bootstrap-access.sh`) and bootstraps
   `CDKToolkit` (`infra/iam/cdk-bootstrap.sh`) in CloudShell with

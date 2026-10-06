@@ -9,6 +9,8 @@ import { PLACEHOLDER_OWNER } from './helpers.js';
 const valid = (): Record<string, unknown> => ({
   region: 'us-east-1',
   githubRepository: 'satvikOS/Foundry-Ascent',
+  githubOwnerId: '228056784',
+  githubRepositoryId: '1356439229',
   githubBranch: 'main',
   homeTenant: { slug: 'ain', name: 'Ain Foundry' },
   owner: {
@@ -92,6 +94,8 @@ describe('config', () => {
     [['api', 'reservedConcurrency'], '10', /reservedConcurrency/],
     [['logRetentionDays'], 31, /logRetentionDays/],
     [['githubRepository'], 'not a repo', /githubRepository/],
+    [['githubOwnerId'], 'satvikOS', /githubOwnerId/],
+    [['githubRepositoryId'], '0123', /githubRepositoryId/],
     [['models', 'primary'], '', /models.primary/],
     [['models', 'luna', 'enabled'], 'yes', /models.luna.enabled/],
     [['models', 'luna', 'modelId'], 'GPT 6', /models.luna.modelId/],

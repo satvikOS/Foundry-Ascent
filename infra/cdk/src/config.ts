@@ -11,6 +11,12 @@ export interface PlatformConfig {
   readonly region: 'us-east-1';
   /** `owner/repo` of the GitHub repository allowed to assume the deploy role. */
   readonly githubRepository: string;
+  /**
+   * Immutable numeric ids of the repository owner and the repository. GitHub's OIDC `sub` claim pins them
+   * (`repo:<owner>@<ownerId>/<repo>@<repoId>:…`), so a later repository reusing the name cannot match.
+   */
+  readonly githubOwnerId: string;
+  readonly githubRepositoryId: string;
   readonly githubBranch: string;
   readonly homeTenant: { readonly slug: string; readonly name: string };
   readonly owner: {
@@ -62,6 +68,7 @@ const SLUG = /^[a-z][a-z0-9-]{1,62}$/;
 const MODEL_ID = /^[a-z0-9][a-z0-9.:-]{2,127}$/;
 const GITHUB_REPO = /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/;
 const GIT_REF_NAME = /^[A-Za-z0-9._/-]+$/;
+const GITHUB_ID = /^[1-9][0-9]{0,19}$/;
 
 export class ConfigError extends Error {
   constructor(path: string, problem: string) {
@@ -148,6 +155,8 @@ export function parseConfig(raw: unknown): PlatformConfig {
   return {
     region,
     githubRepository: str(root, 'githubRepository', '$', GITHUB_REPO),
+    githubOwnerId: str(root, 'githubOwnerId', '$', GITHUB_ID),
+    githubRepositoryId: str(root, 'githubRepositoryId', '$', GITHUB_ID),
     githubBranch: str(root, 'githubBranch', '$', GIT_REF_NAME),
     homeTenant: {
       slug: str(homeTenant, 'slug', '$.homeTenant', SLUG),
