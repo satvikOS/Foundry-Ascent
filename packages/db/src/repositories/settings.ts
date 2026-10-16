@@ -24,6 +24,8 @@ export const SETTING_KEYS = {
   dailyUploadBytesPerPrincipal: 'daily_upload_bytes_per_principal',
   maxCallMinutes: 'max_call_minutes',
   dailyCallMinutesPerPrincipal: 'daily_call_minutes_per_principal',
+  streamingEnabled: 'streaming_enabled',
+  callsEnabled: 'calls_enabled',
 } as const satisfies Record<keyof PlatformSettingsValue, string>;
 
 /** Settings with every optional (additive) field present: what {@link getPlatformSettings} returns. */
@@ -32,7 +34,8 @@ export type ResolvedPlatformSettings = Required<PlatformSettingsValue>;
 /**
  * Values seeded by migrations 0001, 0003 and 0004; used when a key is missing. Fail closed for the kill
  * switch; the upload quota defaults are 20 documents and 50 MB per person per UTC day; calls last at most 30
- * minutes and one person may talk 60 minutes per UTC day.
+ * minutes and one person may talk 60 minutes per UTC day. Streaming and calls are on unless switched off (the AI
+ * kill switch still stops both).
  */
 export const DEFAULT_SETTINGS: ResolvedPlatformSettings = {
   aiEnabled: false,
@@ -45,6 +48,8 @@ export const DEFAULT_SETTINGS: ResolvedPlatformSettings = {
   dailyUploadBytesPerPrincipal: 50 * 1024 * 1024,
   maxCallMinutes: 30,
   dailyCallMinutesPerPrincipal: 60,
+  streamingEnabled: true,
+  callsEnabled: true,
 };
 
 const Coerced = z.object({
@@ -58,6 +63,8 @@ const Coerced = z.object({
   dailyUploadBytesPerPrincipal: z.coerce.number().int(),
   maxCallMinutes: z.coerce.number().int(),
   dailyCallMinutesPerPrincipal: z.coerce.number().int(),
+  streamingEnabled: z.union([z.boolean(), z.enum(['true', 'false']).transform((v) => v === 'true')]),
+  callsEnabled: z.union([z.boolean(), z.enum(['true', 'false']).transform((v) => v === 'true')]),
 });
 
 /** Current settings as the contract view (missing or malformed keys fall back to {@link DEFAULT_SETTINGS}). */

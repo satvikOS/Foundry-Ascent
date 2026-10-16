@@ -203,6 +203,11 @@ export const SessionView = z.object({
   hasCalls: z.boolean().default(false),
   /** Conversation digest (never for temporary chats). Additive. */
   digest: ConversationDigest.nullable().default(null),
+  /**
+   * The vEIR's opening line, stored at create from the notebook's `nextOpener`. Shown as the vEIR's first
+   * message and replayed into the model's history. Additive.
+   */
+  opener: z.string().max(300).nullable().default(null),
 });
 export type SessionView = z.infer<typeof SessionView>;
 

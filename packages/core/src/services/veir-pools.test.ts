@@ -85,6 +85,22 @@ describe('notebook edits', () => {
     expect(isSuppressed(gone.suppressed, 'commitments', 'Interview five library staff')).toBe(true);
   });
 
+  it('edits or removes the opener line on its own and suppresses the old one', () => {
+    const edited = applyNotebookEdit(
+      notebook,
+      [],
+      { action: 'edit_opener', text: 'How did the library interviews go?' },
+      NOW,
+    );
+    expect(edited.content.nextOpener).toBe('How did the library interviews go?');
+    expect(edited.content.summary).toBe(notebook.summary);
+    const removed = applyNotebookEdit(notebook, [], { action: 'remove_opener' }, NOW);
+    expect(removed.content.nextOpener).toBeNull();
+    if (notebook.nextOpener !== null) {
+      expect(isSuppressed(removed.suppressed, 'nextOpener', notebook.nextOpener)).toBe(true);
+    }
+  });
+
   it('clears everything and suppresses every line', () => {
     const cleared = applyNotebookEdit(notebook, [], { action: 'clear' }, NOW);
     expect(cleared.content).toEqual(notebooksRepo.EMPTY_NOTEBOOK);

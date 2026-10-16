@@ -139,6 +139,13 @@ export function applyNotebookEdit(
         suppressed: out,
       };
     }
+    case 'edit_opener':
+    case 'remove_opener': {
+      const text = edit.action === 'edit_opener' ? edit.text : null;
+      if (text === current.nextOpener) return { content: current, suppressed: out };
+      suppress('nextOpener', current.nextOpener);
+      return { content: { ...current, nextOpener: text }, suppressed: out };
+    }
     case 'clear': {
       suppress('summary', current.summary);
       suppress('nextOpener', current.nextOpener);

@@ -129,6 +129,7 @@ export function makeSession(overrides: Partial<SessionView> = {}): SessionView {
     lastActivityAt: null,
     hasCalls: false,
     digest: null,
+    opener: null,
     ...overrides,
   };
 }

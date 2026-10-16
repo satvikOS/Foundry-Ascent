@@ -161,6 +161,8 @@ export const CreateTurnRequest = z.object({
   expectedOrdinal: z.number().int().min(1).max(100_000).optional(),
   /** `voice` when the message was spoken during a call: the response then carries a short `spoken` form. */
   channel: TurnChannel.optional(),
+  /** The live call this spoken turn belongs to (required by the server when `channel` is `voice`). */
+  callId: Id.optional(),
 });
 export const EndSessionResponse = z.object({ session: SessionView, recap: SessionRecap.nullable() });
 export const TurnFeedbackRequest = z.object({
@@ -259,6 +261,18 @@ export type MemoryAction = z.infer<typeof MemoryAction>;
 /** `PATCH /memory/:id` 200 body for every action except `delete` (204, no body). */
 export const MemoryActionResponse = MemoryObjectView;
 export const MemoryHistoryResponse = z.object({ items: z.array(MemoryEventView) });
+/** `POST /ventures/:id/memory/batch`: approve or reject several pending proposals at once (the "To review" queue). */
+export const BatchMemoryActionRequest = z.object({
+  ids: z.array(Id).min(1).max(50),
+  action: z.enum(['approve', 'reject']),
+});
+export type BatchMemoryActionRequest = z.infer<typeof BatchMemoryActionRequest>;
+/** 200 body: the items that changed, and the ids that could not be (no longer pending, or not visible). */
+export const BatchMemoryActionResponse = z.object({
+  items: z.array(MemoryObjectView),
+  skippedIds: z.array(Id),
+});
+export type BatchMemoryActionResponse = z.infer<typeof BatchMemoryActionResponse>;
 
 // Documents ----------------------------------------------------------------------------------------
 export const CreateDocumentRequest = z.object({
@@ -595,6 +609,10 @@ export const PlatformSettingsView = z.object({
   maxCallMinutes: z.number().int().min(1).max(240).optional(),
   /** Voice-call minutes one person may use per UTC day. Additive: older APIs send none. */
   dailyCallMinutesPerPrincipal: z.number().int().min(0).max(1440).optional(),
+  /** Kill switch for streamed replies (`turn.delta`); off means whole replies only. Additive. */
+  streamingEnabled: z.boolean().optional(),
+  /** Kill switch for voice calls (new calls refused, live calls end at the next heartbeat). Additive. */
+  callsEnabled: z.boolean().optional(),
 });
 export type PlatformSettingsView = z.infer<typeof PlatformSettingsView>;
 export const UpdateSettingsRequest = PlatformSettingsView.partial();

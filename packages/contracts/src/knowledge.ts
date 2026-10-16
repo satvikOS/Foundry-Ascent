@@ -102,6 +102,8 @@ export const NotebookEdit = z.discriminatedUnion('action', [
     status: CommitmentStatus.optional(),
   }),
   z.object({ action: z.literal('remove_commitment'), id: z.string().min(1).max(64) }),
+  z.object({ action: z.literal('edit_opener'), text: z.string().trim().min(1).max(300) }),
+  z.object({ action: z.literal('remove_opener') }),
   z.object({ action: z.literal('clear') }),
 ]);
 export type NotebookEdit = z.infer<typeof NotebookEdit>;
