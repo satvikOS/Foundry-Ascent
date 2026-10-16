@@ -9,7 +9,9 @@ import { decodeMessage } from './event-stream';
 import type { SpeechFetchResult, SpeechUnitToPlay } from './playback';
 import {
   FakeAudioContext,
+  fakeMicStream,
   FakeSpeechSynthesis,
+  FakeTrack,
   FakeUtterance,
   FakeWebSocket,
   flush,
@@ -116,8 +118,15 @@ function setup(options: SetupOptions = {}) {
   }
   const synthesis = new FakeSpeechSynthesis();
   const script = new TurnScript();
-  const track = { enabled: true, stop: vi.fn() };
-  const stream = { getAudioTracks: () => [track], getTracks: () => [track] } as unknown as MediaStream;
+  const track = new FakeTrack();
+  vi.spyOn(track, 'stop');
+  const { stream } = fakeMicStream(track);
+  const getUserMedia = vi.fn((): Promise<MediaStream> =>
+    options.mic === 'denied'
+      ? Promise.reject(Object.assign(new Error('blocked'), { name: 'NotAllowedError' }))
+      : Promise.resolve(stream),
+  );
+  const deviceListeners = new Set<() => void>();
   const speechRequests: SpeechUnitToPlay[] = [];
   let speechResult: SpeechFetchResult = { kind: 'audio', data: new ArrayBuffer(16) };
   const beacon = { send: vi.fn() };
@@ -158,10 +167,13 @@ function setup(options: SetupOptions = {}) {
     api,
     media: {
       createAudioContext: () => context as unknown as CallAudioContext,
-      getUserMedia:
-        options.mic === 'denied'
-          ? () => Promise.reject(Object.assign(new Error('blocked'), { name: 'NotAllowedError' }))
-          : () => Promise.resolve(stream),
+      getUserMedia,
+      watchDevices: (listener) => {
+        deviceListeners.add(listener);
+        return () => {
+          deviceListeners.delete(listener);
+        };
+      },
       createWorkletNode: () => context.createWorkletNode() as unknown as AudioWorkletNode,
       createSocket: (url) => {
         if (options.socketThrows) throw new DOMException('Refused to connect', options.socketThrows);
@@ -197,6 +209,10 @@ function setup(options: SetupOptions = {}) {
     speechRequests.push(unit);
     return Promise.resolve(speechQueue.shift() ?? speechResult);
   });
+  /** The browser's `devicechange`: a microphone was plugged in or out. */
+  const devicesChanged = () => {
+    for (const listener of [...deviceListeners]) listener();
+  };
   return {
     engine,
     api,
@@ -204,6 +220,9 @@ function setup(options: SetupOptions = {}) {
     synthesis,
     script,
     track,
+    getUserMedia,
+    devicesChanged,
+    deviceListeners,
     speechRequests,
     settled,
     beacon,
@@ -504,6 +523,73 @@ describe('CallEngine · voice', () => {
     h.engine.pushToTalk(true);
     h.engine.setMuted(true);
     expect(h.state()).toMatchObject({ muted: true, talking: false });
+  });
+
+  it('says when the microphone is unplugged, continues by typing and reconnects it on request', async () => {
+    const h = setup();
+    await startLive(h);
+    const first = FakeWebSocket.last();
+    first.serverOpen();
+    h.track.unplug();
+    // Not "Listening" to a dead microphone: typing, with the reason, and nothing left open.
+    expect(h.state()).toMatchObject({ input: 'typed', typedReason: 'mic_lost', reconnecting: false });
+    expect(h.track.stop).toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(first.readyState).toBe(3);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+
+    // Plugged back in: Reconnect asks for the microphone again and goes back to voice.
+    const plugged = fakeMicStream();
+    h.getUserMedia.mockResolvedValueOnce(plugged.stream);
+    await h.engine.reconnectMicrophone();
+    await flush(10);
+    expect(h.getUserMedia).toHaveBeenCalledTimes(2);
+    expect(h.state()).toMatchObject({ input: 'voice', typedReason: null });
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    const second = FakeWebSocket.last();
+    second.serverOpen();
+    expect(h.state().activity).toBe('listening');
+    h.context.worklets.at(-1)?.emit(new Int16Array(800).fill(1000), 0.2);
+    expect(second.sent.length).toBe(1);
+  });
+
+  it('says so when a reconnect finds no microphone, and keeps the call typed', async () => {
+    const h = setup();
+    await startLive(h);
+    FakeWebSocket.last().serverOpen();
+    h.track.unplug();
+    h.getUserMedia.mockRejectedValueOnce(Object.assign(new Error('none'), { name: 'NotFoundError' }));
+    await h.engine.reconnectMicrophone();
+    expect(h.state()).toMatchObject({ input: 'typed', typedReason: 'mic_unavailable' });
+  });
+
+  it('treats a microphone the system keeps silent as disconnected', async () => {
+    const h = setup();
+    await startLive(h);
+    FakeWebSocket.last().serverOpen();
+    // A short system mute (a notification sound, a device switch) passes.
+    h.track.setMuted(true);
+    await vi.advanceTimersByTimeAsync(2_000);
+    h.track.setMuted(false);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(h.state()).toMatchObject({ input: 'voice', typedReason: null });
+    // One that lasts is a microphone that is gone.
+    h.track.setMuted(true);
+    await vi.advanceTimersByTimeAsync(6_000);
+    expect(h.state()).toMatchObject({ input: 'typed', typedReason: 'mic_lost' });
+  });
+
+  it('checks the microphone again when devices change', async () => {
+    const h = setup();
+    await startLive(h);
+    FakeWebSocket.last().serverOpen();
+    h.devicesChanged();
+    expect(h.state().input).toBe('voice');
+    // The device went away without its track firing `ended`.
+    h.track.readyState = 'ended';
+    h.devicesChanged();
+    expect(h.state()).toMatchObject({ input: 'typed', typedReason: 'mic_lost' });
+    expect(h.deviceListeners.size).toBe(0);
   });
 
   it('push-to-talk sends silence until held and ends the turn on release', async () => {

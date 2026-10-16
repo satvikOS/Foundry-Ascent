@@ -14,7 +14,13 @@ import {
   type PreparedBeacon,
   type StartCallResult,
 } from './call-api';
-import { MicCapture, MicrophoneError, requestMicrophone, type CaptureAudio } from './capture';
+import {
+  MicCapture,
+  MicrophoneError,
+  requestMicrophone,
+  type CaptureAudio,
+  type TrackChange,
+} from './capture';
 import { Endpointer, floorWords } from './endpointing';
 import { SpeechPlayer, type PlayerAudio, type SpeechFetchResult, type SpeechUnitToPlay } from './playback';
 import { IDLE_CALL, type CallEnded, type CallSnapshot, type TalkMode, type TypedReason } from './call-state';
@@ -89,6 +95,8 @@ export interface CallEngineMedia {
   createSocket: WebSocketFactory;
   synthesis: PlayerAudio['synthesis'];
   createUtterance(text: string): SpeechSynthesisUtterance;
+  /** The browser's `devicechange` (a microphone plugged in or out), where it has one. */
+  watchDevices?: CaptureAudio['watchDevices'];
 }
 
 export interface CallClock {
@@ -115,6 +123,8 @@ export interface CallTuning {
   readonly maxMissedHeartbeats: number;
   /** Suggest push-to-talk after this many ducks that no word confirmed (speakers without headphones). */
   readonly falseBargeInHint: number;
+  /** A microphone the system keeps silent this long (another app took it, a hardware mute) is gone. */
+  readonly micSilentMs: number;
 }
 
 export const DEFAULT_TUNING: CallTuning = {
@@ -126,6 +136,7 @@ export const DEFAULT_TUNING: CallTuning = {
   warnSeconds: 120,
   maxMissedHeartbeats: 3,
   falseBargeInHint: 3,
+  micSilentMs: 6_000,
 };
 
 export interface CallEngineDeps {
@@ -209,6 +220,7 @@ export class CallEngine {
   private bargeTimer: unknown = null;
   private releaseTimer: unknown = null;
   private reconnectTimer: unknown = null;
+  private micSilentTimer: unknown = null;
   private missedHeartbeats = 0;
   private falseBargeIns = 0;
   private warned = false;
@@ -500,6 +512,7 @@ export class CallEngine {
       // Close speech-to-text while muted: nothing is sent and nothing is billed.
       this.closeStt();
       this.stopReconnecting();
+      this.stopWatchingSilentMic();
       if (this.releaseTimer !== null) this.deps.clock.clearTimeout(this.releaseTimer);
       this.releaseTimer = null;
       this.endpointer.discard();
@@ -507,8 +520,56 @@ export class CallEngine {
       this.founderLevel = 0;
       this.setCaptions({ founder: null, founderLive: false });
     } else {
+      if (this.capture?.sourceMuted) this.watchSilentMic();
       void this.connectStt(this.epoch);
     }
+  }
+
+  /**
+   * After the microphone disconnected (or was refused when asked again): asks for it again and goes back to
+   * voice. Call it from a tap (Reconnect microphone). A call that started typed stays typed.
+   */
+  async reconnectMicrophone(): Promise<void> {
+    const s = this.snapshot;
+    const context = this.context;
+    const getUserMedia = this.deps.media.getUserMedia;
+    if (
+      s.phase !== 'live' ||
+      s.input !== 'typed' ||
+      s.call?.inputMode !== 'transcribe' ||
+      !(
+        s.typedReason === 'mic_lost' ||
+        s.typedReason === 'mic_denied' ||
+        s.typedReason === 'mic_unavailable'
+      ) ||
+      context === null ||
+      getUserMedia === null
+    ) {
+      return;
+    }
+    const epoch = this.epoch;
+    let stream: MediaStream;
+    try {
+      stream = await requestMicrophone(getUserMedia);
+    } catch (error) {
+      if (epoch !== this.epoch || this.snapshot.input !== 'typed') return;
+      const denied = error instanceof MicrophoneError && error.reason === 'denied';
+      this.set({ typedReason: denied ? 'mic_denied' : 'mic_unavailable' });
+      return;
+    }
+    const now = this.snapshot;
+    if (epoch !== this.epoch || now.phase !== 'live' || now.input !== 'typed') {
+      stopStream(stream);
+      return;
+    }
+    this.stopReconnecting();
+    this.set({
+      input: 'voice',
+      typedReason: null,
+      muted: false,
+      activity: now.activity === 'listening' ? 'connecting' : now.activity,
+    });
+    await this.startCapture(stream, context, epoch);
   }
 
   setTalkMode(talkMode: TalkMode): void {
@@ -603,6 +664,7 @@ export class CallEngine {
           context,
           getUserMedia: this.deps.media.getUserMedia ?? (() => Promise.reject(new Error('no microphone'))),
           createWorkletNode: (name, options) => this.deps.media.createWorkletNode(context, name, options),
+          watchDevices: this.deps.media.watchDevices,
         },
         stream,
       );
@@ -616,6 +678,10 @@ export class CallEngine {
       capture.onFrame((pcm, rms) => {
         this.onFrame(pcm, rms);
       });
+      capture.onTrackChange((change) => {
+        this.onTrackChange(change);
+      });
+      if (capture.sourceMuted) this.watchSilentMic();
     } catch {
       stopStream(stream);
       if (epoch !== this.epoch) return;
@@ -624,6 +690,35 @@ export class CallEngine {
       return;
     }
     await connecting;
+  }
+
+  /** The microphone went away or went silent at its source (unplugged, revoked, taken by another app). */
+  private onTrackChange(change: TrackChange): void {
+    if (change === 'ended') this.micLost();
+    else if (change === 'muted') this.watchSilentMic();
+    else this.stopWatchingSilentMic();
+  }
+
+  /** A source the system mutes for a moment comes back; one that stays muted is treated as gone. */
+  private watchSilentMic(): void {
+    const s = this.snapshot;
+    if (s.phase !== 'live' || s.input !== 'voice' || s.muted || this.micSilentTimer !== null) return;
+    this.micSilentTimer = this.deps.clock.setTimeout(() => {
+      this.micSilentTimer = null;
+      if (this.capture?.sourceMuted) this.micLost();
+    }, this.tuning.micSilentMs);
+  }
+
+  private stopWatchingSilentMic(): void {
+    if (this.micSilentTimer !== null) this.deps.clock.clearTimeout(this.micSilentTimer);
+    this.micSilentTimer = null;
+  }
+
+  /** Nothing the founder says can be heard any more: say so, and continue by typing (Reconnect offered). */
+  private micLost(): void {
+    const s = this.snapshot;
+    if (s.phase !== 'live' || s.input !== 'voice') return;
+    this.toTyped('mic_lost');
   }
 
   /** Speech-to-text should be connected and is not. */
@@ -720,6 +815,8 @@ export class CallEngine {
 
   private toTyped(reason: TypedReason): void {
     this.closeStt();
+    this.stopReconnecting();
+    this.stopWatchingSilentMic();
     this.capture?.stop();
     this.capture = null;
     this.endpointer.discard();
@@ -1126,10 +1223,11 @@ export class CallEngine {
   private teardown(): void {
     const { clock } = this.deps;
     for (const timer of [this.heartbeatTimer, this.tickTimer]) if (timer !== null) clock.clearInterval(timer);
-    for (const timer of [this.bargeTimer, this.releaseTimer, this.reconnectTimer]) {
+    for (const timer of [this.bargeTimer, this.releaseTimer, this.reconnectTimer, this.micSilentTimer]) {
       if (timer !== null) clock.clearTimeout(timer);
     }
     this.heartbeatTimer = this.tickTimer = this.bargeTimer = this.releaseTimer = this.reconnectTimer = null;
+    this.micSilentTimer = null;
     this.turn?.controller.abort();
     this.turn = null;
     this.pendingLines.length = 0;

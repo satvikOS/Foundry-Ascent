@@ -1,3 +1,4 @@
+import type { CallView } from '@foundry/contracts';
 import { fireEvent, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -9,6 +10,21 @@ import { IDS } from '@/lib/realtime/testing';
 import { callStatusLabel, CallLive } from './call-live';
 import { fakeEngine, LIVE, renderWithRouter } from './testing';
 import type { CallVeir } from './use-call-veir';
+
+const CALL: CallView = {
+  id: '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c01',
+  sessionId: IDS.session,
+  ventureId: IDS.venture,
+  personaId: IDS.persona,
+  status: 'live',
+  provider: 'builtin',
+  inputMode: 'transcribe',
+  startedAt: '2026-10-01T12:00:00.000Z',
+  endedAt: null,
+  endReason: null,
+  maxSeconds: 1200,
+  durationSeconds: null,
+};
 
 const VEIR: CallVeir = {
   name: "Corin's vEIR",
@@ -125,6 +141,28 @@ describe('CallLive', () => {
     await userEvent.type(line, 'We interviewed twelve clinics{Enter}');
     expect(engine.sendText).toHaveBeenCalledWith('We interviewed twelve clinics');
     expect(line).toHaveValue('');
+  });
+
+  it('says plainly when the microphone disconnected, and offers to reconnect it or type', async () => {
+    const { engine } = renderLive({
+      input: 'typed',
+      typedReason: 'mic_lost',
+      call: { ...CALL, inputMode: 'transcribe' },
+    });
+    const line = await screen.findByRole('textbox', { name: "Reply to Corin's vEIR" });
+    expect(line).toHaveFocus();
+    expect(screen.getByText('Your microphone disconnected. Reconnect it, or type instead.')).toHaveAttribute(
+      'role',
+      'status',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Reconnect microphone' }));
+    expect(engine.reconnectMicrophone).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers no microphone to a call that started typed', async () => {
+    renderLive({ input: 'typed', typedReason: 'mic_denied', call: { ...CALL, inputMode: 'typed' } });
+    await screen.findByRole('textbox', { name: "Reply to Corin's vEIR" });
+    expect(screen.queryByRole('button', { name: 'Reconnect microphone' })).toBeNull();
   });
 
   it('opens a typed line during a voice call', async () => {

@@ -1,5 +1,5 @@
 import type { TurnBlockedDetail } from '@foundry/contracts';
-import { ArrowUp, Info, Play, Volume2, VolumeX } from 'lucide-react';
+import { ArrowUp, Info, Mic, Play, Volume2, VolumeX } from 'lucide-react';
 import { useEffect, useRef, useState, type RefObject } from 'react';
 
 import { DisclosureBanner } from '@/components/disclosure-banner';
@@ -41,8 +41,19 @@ const TYPED_REASONS: Record<TypedReason, string> = {
   stt_unavailable: 'Voice input isn’t available here, so type instead.',
   mic_denied: 'Your microphone is blocked. Allow it in the browser’s site settings, or type instead.',
   mic_unavailable: 'No microphone found, so type instead.',
+  mic_lost: 'Your microphone disconnected. Reconnect it, or type instead.',
   stt_failed: 'Voice input stopped, so type instead.',
 };
+
+/** A voice call whose microphone went away (or was refused when asked again) can ask for it again. */
+function canReconnectMic(snapshot: CallSnapshot): boolean {
+  const reason = snapshot.typedReason;
+  return (
+    snapshot.input === 'typed' &&
+    snapshot.call?.inputMode === 'transcribe' &&
+    (reason === 'mic_lost' || reason === 'mic_denied' || reason === 'mic_unavailable')
+  );
+}
 
 function isInteractive(target: EventTarget | null): boolean {
   return (
@@ -277,6 +288,13 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: Cal
             onSend={(text) => {
               engine.sendText(text);
             }}
+            onReconnectMic={
+              live && canReconnectMic(snapshot)
+                ? () => {
+                    void engine.reconnectMicrophone();
+                  }
+                : null
+            }
           />
         ) : null}
         {voice && pushToTalk && live ? (
@@ -380,10 +398,12 @@ interface TypeLineProps {
   queued: number;
   disabled: boolean;
   onSend: (text: string) => void;
+  /** The microphone went away mid-call: offered next to the reason. */
+  onReconnectMic: (() => void) | null;
 }
 
 /** One line to type to the vEIR during the call; it answers aloud like any spoken line. */
-function TypeLine({ inputRef, name, hint, queued, disabled, onSend }: TypeLineProps) {
+function TypeLine({ inputRef, name, hint, queued, disabled, onSend, onReconnectMic }: TypeLineProps) {
   const [text, setText] = useState('');
   const submit = (event: { preventDefault: () => void }) => {
     event.preventDefault();
@@ -395,9 +415,17 @@ function TypeLine({ inputRef, name, hint, queued, disabled, onSend }: TypeLinePr
   return (
     <form onSubmit={submit} className="w-full max-w-xl">
       {hint ? (
-        <p role="status" className="mb-2 text-center text-small text-muted-foreground">
-          {hint}
-        </p>
+        <div className="mb-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5">
+          <p role="status" className="text-center text-small text-muted-foreground">
+            {hint}
+          </p>
+          {onReconnectMic ? (
+            <Button type="button" size="sm" variant="secondary" onClick={onReconnectMic}>
+              <Mic aria-hidden />
+              Reconnect microphone
+            </Button>
+          ) : null}
+        </div>
       ) : null}
       <div className="flex items-center gap-2 rounded-full border border-border-strong bg-card py-1.5 pr-1.5 pl-4 shadow-xs transition-[border-color,box-shadow] duration-150 focus-within:border-ring/60 focus-within:shadow-md">
         <input

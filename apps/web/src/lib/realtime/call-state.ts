@@ -10,8 +10,11 @@ import type { VoiceRoute } from './playback';
 export type CallPhase = 'idle' | 'starting' | 'live' | 'ending' | 'ended' | 'failed';
 export type CallActivity = 'connecting' | 'listening' | 'thinking' | 'speaking';
 export type TalkMode = 'hands_free' | 'push_to_talk';
-/** Why the founder types instead of speaking. */
-export type TypedReason = 'stt_unavailable' | 'mic_denied' | 'mic_unavailable' | 'stt_failed';
+/**
+ * Why the founder types instead of speaking. `mic_lost`: the microphone was unplugged, revoked or kept silent
+ * by the system mid-call (the founder may reconnect it).
+ */
+export type TypedReason = 'stt_unavailable' | 'mic_denied' | 'mic_unavailable' | 'mic_lost' | 'stt_failed';
 
 /** A one-line notice under the stage (never spoken: only validated text is voiced). */
 export interface CallNotice {
