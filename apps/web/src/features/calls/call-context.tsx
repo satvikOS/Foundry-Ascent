@@ -1,6 +1,6 @@
 import type { Me } from '@foundry/contracts';
 import { useQueryClient } from '@tanstack/react-query';
-import { useNavigate, useRouterState } from '@tanstack/react-router';
+import { useNavigate, useRouter, useRouterState } from '@tanstack/react-router';
 import {
   createContext,
   lazy,
@@ -78,6 +78,11 @@ interface CallContextValue {
   readonly switchToChat: () => void;
   /** True while a call ends without its summary (Switch to chat), so the mini bar stays out of the way. */
   readonly quietEnd: boolean;
+  /**
+   * The page was reached by the browser's Back or Forward (or `history.go`), not by a navigation the app
+   * made: a `?call=1` reached this way never starts a call by itself.
+   */
+  readonly arrivedByHistory: () => boolean;
 }
 
 const CallContext = createContext<CallContextValue | null>(null);
@@ -124,11 +129,29 @@ export function useEndCallBeforeSignOut(): () => Promise<void> {
 export function CallProvider({ me, children }: { me: Me; children: ReactNode }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const router = useRouter();
   const tenant = me.tenant.slug;
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const search = useRouterState({ select: (s) => s.location.search });
   const route = useMemo(() => callRouteFrom(pathname, search, tenant), [pathname, search, tenant]);
   const [quietEnd, setQuietEnd] = useState(false);
+
+  // Which navigation brought the page here: a call starts only from the founder's action, never because
+  // Back or Forward returned to a `?call=1` entry (that would open the microphone and a call unasked).
+  const traversedTo = useRef<string | null>(null);
+  useEffect(
+    () =>
+      router.history.subscribe(({ location, action }) => {
+        if (action.type === 'BACK' || action.type === 'FORWARD' || action.type === 'GO') {
+          traversedTo.current = location.href;
+        } else if (action.type === 'PUSH' || traversedTo.current !== location.href) {
+          // A navigation the app made; a replace of the same URL (the router tidying it) keeps the visit.
+          traversedTo.current = null;
+        }
+      }),
+    [router],
+  );
+  const arrivedByHistory = useCallback(() => traversedTo.current !== null, []);
 
   const [engine, setEngine] = useState<CallEngine | null>(null);
   const engineRequested = useRef(false);
@@ -225,8 +248,8 @@ export function CallProvider({ me, children }: { me: Me; children: ReactNode }) 
   }, [engine, hideCall]);
 
   const value = useMemo<CallContextValue>(
-    () => ({ me, engine, snapshot, route, showCall, hideCall, switchToChat, quietEnd }),
-    [me, engine, snapshot, route, showCall, hideCall, switchToChat, quietEnd],
+    () => ({ me, engine, snapshot, route, showCall, hideCall, switchToChat, quietEnd, arrivedByHistory }),
+    [me, engine, snapshot, route, showCall, hideCall, switchToChat, quietEnd, arrivedByHistory],
   );
 
   return (

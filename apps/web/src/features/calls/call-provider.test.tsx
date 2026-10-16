@@ -235,6 +235,72 @@ afterEach(() => {
 });
 
 describe('starting a call', () => {
+  it('starts when the founder clicks Call, never when history comes back to the call’s URL', async () => {
+    // An earlier call's ?call=1 entry, then the conversation, then another page.
+    const { engine, router, url } = renderApp([
+      `${BASE}/c/${SESSION}?call=1`,
+      `${BASE}/c/${SESSION}`,
+      `${BASE}/knowledge`,
+    ]);
+    await screen.findByRole('link', { name: 'Knowledge' });
+    act(() => {
+      router.history.back();
+    });
+    await waitFor(() => {
+      expect(url()).toBe(`${BASE}/c/${SESSION}`);
+    });
+    act(() => {
+      router.history.back();
+    });
+    // Back on the call's URL: the call screen opens and waits for Start call. No microphone, no call.
+    const start = await screen.findByRole('button', { name: 'Start call' });
+    await waitFor(() => {
+      expect(start).toBeEnabled();
+    });
+    expect(url()).toBe(`${BASE}/c/${SESSION}?call=1`);
+    expect(engine.start).not.toHaveBeenCalled();
+    // Forward and Back again: still nothing.
+    act(() => {
+      router.history.forward();
+    });
+    await waitFor(() => {
+      expect(url()).toBe(`${BASE}/c/${SESSION}`);
+    });
+    act(() => {
+      router.history.back();
+    });
+    await screen.findByRole('button', { name: 'Start call' });
+    expect(engine.start).not.toHaveBeenCalled();
+
+    // The founder's own click starts it.
+    await userEvent.click(screen.getByRole('button', { name: 'Start call' }));
+    expect(engine.start).toHaveBeenCalledTimes(1);
+    expect(engine.start.mock.calls[0]?.[0]).toMatchObject({ ventureId: VENTURE, sessionId: SESSION });
+  });
+
+  it('starts at once from a Call link, and closing leaves no call entry behind', async () => {
+    const { engine, router, url } = renderApp([`${BASE}/knowledge`, `${BASE}/c/${SESSION}`]);
+    await userEvent.click(await screen.findByRole('link', { name: 'Call' }));
+    await waitFor(() => {
+      expect(engine.start).toHaveBeenCalledTimes(1);
+    });
+    await userEvent.click(await screen.findByRole('button', { name: 'Not now' }));
+    await waitFor(() => {
+      expect(url()).toBe(`${BASE}/c/${SESSION}`);
+    });
+    // The call screen's entry was replaced: Back goes through the conversation, never to ?call=1.
+    for (const expected of [`${BASE}/c/${SESSION}`, `${BASE}/knowledge`]) {
+      act(() => {
+        router.history.back();
+      });
+      await waitFor(() => {
+        expect(url()).toBe(expected);
+      });
+    }
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(engine.start).toHaveBeenCalledTimes(1);
+  });
+
   it('forgets an ended call of another conversation when Call opens New chat', async () => {
     const { engine } = renderApp([BASE], {
       phase: 'ended',

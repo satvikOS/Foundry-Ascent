@@ -95,7 +95,7 @@ function useLiveCallPage(engine: CallEngine, live: boolean): void {
  * with the summary. Closing it keeps a live call going in the mini call bar.
  */
 export function CallScreen() {
-  const { me, engine, snapshot, route, hideCall, switchToChat } = useLoadedCall();
+  const { me, engine, snapshot, route, hideCall, switchToChat, arrivedByHistory } = useLoadedCall();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const tenant = me.tenant.slug;
@@ -253,19 +253,21 @@ export function CallScreen() {
   }, [engine, navigate, route, snapshot.phase, snapshot.sessionId, snapshot.ventureId, tenant]);
 
   // Arrived by clicking Call: start without another click (the first call ever shows how voice is handled
-  // first, and starts from its Start call).
+  // first, and starts from its Start call). Back or Forward to a call's URL is not a click: it waits for
+  // Start call too.
   useEffect(() => {
     if (route?.open !== true || !ready || snapshot.phase !== 'idle' || createSession.isPending) return;
     const key = route.sessionId ?? `new:${route.ventureId}`;
-    if (attempted.current === key || !noticeSeen || !hasUserActivation()) return;
+    if (attempted.current === key || !noticeSeen || !hasUserActivation() || arrivedByHistory()) return;
     begin();
-  }, [begin, createSession.isPending, noticeSeen, ready, route, snapshot.phase]);
+  }, [arrivedByHistory, begin, createSession.isPending, noticeSeen, ready, route, snapshot.phase]);
 
   const live = snapshot.phase === 'starting' || snapshot.phase === 'live' || snapshot.phase === 'ending';
   const ended = snapshot.phase === 'ended' ? snapshot.ended : null;
 
+  /** Leaves a call screen that has no live call; its `?call=1` entry is replaced, so Back never returns to it. */
   const backToConversation = () => {
-    hideCall();
+    hideCall({ replace: true });
     engine.reset();
   };
 
@@ -301,11 +303,16 @@ export function CallScreen() {
             live={live}
             snapshot={snapshot}
             onClose={
-              ended
-                ? backToConversation
-                : () => {
+              live
+                ? () => {
+                    // Minimized: the call goes on in the mini bar, and Back returns to it.
                     hideCall();
                   }
+                : ended
+                  ? backToConversation
+                  : () => {
+                      hideCall({ replace: true });
+                    }
             }
           />
           {ended && ventureId ? (
@@ -356,7 +363,7 @@ export function CallScreen() {
               onClose={() => {
                 // Forget the failed call first, so closing returns to the page (not to a call that never was).
                 engine.reset();
-                hideCall();
+                hideCall({ replace: true });
               }}
             />
           )}
