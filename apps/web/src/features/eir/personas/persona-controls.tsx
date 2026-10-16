@@ -27,9 +27,12 @@ import { Field } from '@/components/ui/field';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/toast';
 import { MutationErrorAlert } from '@/features/admin/shared/form';
+import { Alert } from '@/components/ui/alert';
 import { useResumePersona, useSuspendPersona } from '@/lib/api/hooks/eir';
 import { applyFieldErrors } from '@/lib/form-errors';
 import { pluralize } from '@/lib/format';
+
+import { consentRefusal, resumeConsentBlocker } from './persona-labels';
 
 const SuspendForm = z.object({
   reason: z
@@ -126,9 +129,26 @@ export function SuspendPersonaDialog({ persona, open, onOpenChange }: ControlPro
   );
 }
 
-export function ResumePersonaDialog({ persona, open, onOpenChange }: ControlProps) {
+/**
+ * Resume a suspended persona. An EIR persona without consent in force can't resume (the API refuses it):
+ * the dialog says so, with the way to the Consent tab for whoever can record one, instead of offering it.
+ */
+export function ResumePersonaDialog({
+  persona,
+  open,
+  onOpenChange,
+  onOpenConsent,
+}: ControlProps & {
+  /** Opens the Consent tab (shown to people who can record consent when it is what blocks the resume). */
+  onOpenConsent?: () => void;
+}) {
   const resume = useResumePersona();
   const release = persona.activeRelease;
+  // The server's own reason wins: the page may still show consent that was revoked meanwhile.
+  const refused = consentRefusal(resume.error);
+  const blocker = refused ?? resumeConsentBlocker(persona);
+  const canRecord = persona.canManageConsent === true;
+  const eirName = persona.eirProfile?.displayName ?? 'the EIR';
   return (
     <AlertDialog
       open={open}
@@ -146,15 +166,37 @@ export function ResumePersonaDialog({ persona, open, onOpenChange }: ControlProp
             Resume {persona.name}?
           </AlertDialogTitle>
           <AlertDialogDescription>
-            {release
-              ? `Coaching resumes with release v${release.version} for ${pluralize(persona.assignedVentureCount, 'assigned venture')}, from their next message. The platform kill switch and spend caps still apply.`
-              : 'This persona has no approved release, so it can’t coach until a release is approved.'}
+            {blocker
+              ? `${persona.name} stays suspended until consent is in force again.`
+              : release
+                ? `Coaching resumes with release v${release.version} for ${pluralize(persona.assignedVentureCount, 'assigned venture')}, from their next message. The platform kill switch and spend caps still apply.`
+                : 'This persona has no approved release, so it can’t coach until a release is approved.'}
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <MutationErrorAlert error={resume.error} title={`${persona.name} wasn’t resumed`} />
+        {blocker ? (
+          <Alert variant="warning" live={refused ? 'alert' : 'note'} title="Consent needed">
+            <p>{blocker}</p>
+            {canRecord ? null : <p className="mt-1">Only {eirName} can record it.</p>}
+          </Alert>
+        ) : (
+          <MutationErrorAlert error={resume.error} title={`${persona.name} wasn’t resumed`} />
+        )}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={resume.isPending}>Keep suspended</AlertDialogCancel>
+          {blocker && canRecord && onOpenConsent ? (
+            <Button
+              variant="secondary"
+              onClick={() => {
+                onOpenChange(false);
+                resume.reset();
+                onOpenConsent();
+              }}
+            >
+              Open Consent
+            </Button>
+          ) : null}
           <Button
+            disabled={blocker !== null}
             loading={resume.isPending}
             loadingText="Resuming…"
             onClick={() => {

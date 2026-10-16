@@ -209,7 +209,18 @@ export function PersonaDetailPage({
       {canCurate ? (
         <>
           <SuspendPersonaDialog persona={p} open={suspendOpen} onOpenChange={setSuspendOpen} />
-          <ResumePersonaDialog persona={p} open={resumeOpen} onOpenChange={setResumeOpen} />
+          <ResumePersonaDialog
+            persona={p}
+            open={resumeOpen}
+            onOpenChange={setResumeOpen}
+            onOpenConsent={
+              p.kind === 'eir_persona'
+                ? () => {
+                    onTabChange('consent');
+                  }
+                : undefined
+            }
+          />
         </>
       ) : null}
     </PageContainer>

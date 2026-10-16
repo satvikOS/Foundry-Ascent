@@ -1,5 +1,7 @@
 import type { PersonaView, Style } from '@foundry/contracts';
 
+import { isApiError } from '@/lib/api/errors';
+
 export const PERSONA_KIND_LABELS: Record<PersonaView['kind'], string> = {
   neutral_guide: 'Neutral guide',
   eir_persona: 'EIR persona',
@@ -37,4 +39,26 @@ export function consentState(
 ): 'not_required' | 'on_file' | 'missing' {
   if (persona.kind === 'neutral_guide') return 'not_required';
   return persona.hasConsent ? 'on_file' : 'missing';
+}
+
+/**
+ * Why a suspended EIR persona can't be resumed yet: it has no consent in force that covers doctrine (the
+ * API refuses the resume). Null when nothing about consent stands in the way.
+ */
+export function resumeConsentBlocker(
+  persona: Pick<PersonaView, 'kind' | 'hasConsent' | 'suspendedReason' | 'name'>,
+): string | null {
+  if (consentState(persona) !== 'missing') return null;
+  return persona.suspendedReason === 'consent revoked'
+    ? `Consent was revoked, so ${persona.name} can’t coach. A new consent that covers doctrine has to be recorded before it can resume.`
+    : `${persona.name} has no consent in force that covers doctrine. One has to be recorded before it can resume.`;
+}
+
+/**
+ * The reason the API gave for refusing an EIR persona that has no valid consent (403 with an error at
+ * `consent`, e.g. "Consent was revoked. …"), or null for any other failure.
+ */
+export function consentRefusal(error: unknown): string | null {
+  if (!isApiError(error) || error.code !== 'forbidden') return null;
+  return error.fieldErrors.find((field) => field.path === 'consent')?.message ?? null;
 }

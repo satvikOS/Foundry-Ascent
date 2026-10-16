@@ -156,6 +156,10 @@ export function useResumePersona() {
       void client.invalidateQueries({ queryKey: queryKeys.personas.all() });
       void client.invalidateQueries({ queryKey: ['fa', 'venture'] });
     },
+    // A refusal (e.g. consent revoked meanwhile) means the page is out of date: reload the persona.
+    onError: (_error, personaId) => {
+      void client.invalidateQueries({ queryKey: queryKeys.personas.detail(personaId) });
+    },
   });
 }
 

@@ -293,6 +293,19 @@ describe('persona lifecycle, knowledge library and lessons', () => {
       RevokeConsentResponse,
     );
     expect(revoked.suspendedPersonaIds).toEqual([persona.id]);
+    // Resuming is refused until a new consent is recorded, and the refusal says why (not "no access").
+    const refused = await api.request(`/personas/${persona.id}/resume`, { method: 'POST', cookie: lead });
+    expect(refused.status).toBe(403);
+    expect(ProblemDetails.parse(await refused.json())).toMatchObject({
+      code: 'forbidden',
+      errors: [
+        {
+          path: 'consent',
+          message:
+            'Consent was revoked. Record a new consent that covers doctrine before this vEIR can coach again.',
+        },
+      ],
+    });
     await json(
       await api.request(`/ventures/${api.h.ventures.emberloop.id}/assignment`, {
         body: { personaId: ruthPersona(), eirProfileId: null },

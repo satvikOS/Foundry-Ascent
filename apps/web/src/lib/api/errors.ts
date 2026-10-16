@@ -185,7 +185,11 @@ export function errorMessage(error: unknown): string {
     case 'rate_limited':
       return `You’re going a little fast. Try again in ${minutes(error.retryAfter)}.`;
     case 'forbidden':
-      return 'You don’t have access to this. Ask a program lead if you think you should.';
+      // A refusal that names its reason (e.g. a vEIR's consent was revoked) says it; access refusals don't.
+      return (
+        error.fieldErrors[0]?.message ??
+        'You don’t have access to this. Ask a program lead if you think you should.'
+      );
     case 'not_found':
       return 'We couldn’t find that. It may have been removed, or you may not have access.';
     case 'validation_failed':

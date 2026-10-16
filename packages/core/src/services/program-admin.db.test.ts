@@ -274,6 +274,13 @@ describe('EIR studio', () => {
     await expect(h.core.eir.approveRelease(corin, draft.id)).rejects.toMatchObject({
       code: 'forbidden',
       reason: 'consent_required',
+      // The refusal says what is wrong with consent, so the studio can show it.
+      errors: [
+        {
+          path: 'consent',
+          message: 'No consent is on file. Record one that covers doctrine before this vEIR can coach.',
+        },
+      ],
     });
     await h.t.db.system(async (sx) => {
       const consent = await personasRepo.createConsent(sx, {
