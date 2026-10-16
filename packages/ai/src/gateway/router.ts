@@ -1,14 +1,19 @@
 import { z } from 'zod';
 
 import { createPricingTable, costFor, sumUsd, type ModelPrice, type PricingTable } from '../pricing.js';
-import { createBedrockRuntimeTransport, type ConverseFn, type InvokeModelFn } from './bedrock-runtime.js';
+import {
+  createBedrockRuntimeTransport,
+  type ConverseFn,
+  type ConverseStreamFn,
+  type InvokeModelFn,
+} from './bedrock-runtime.js';
 import { Deadline } from './deadline.js';
 import { ModelGatewayError, ModelUnavailableError, isModelGatewayError } from './errors.js';
 import { toStrictJsonSchema } from './json-schema.js';
 import { LunaProvider, type LunaReasoningEffort } from './luna.js';
 import { MockModelGateway, type MockModelGatewayOptions } from './mock.js';
 import { NovaProvider } from './nova.js';
-import type { StructuredProvider } from './provider.js';
+import type { ProviderStreamResult, StructuredProvider } from './provider.js';
 import type { AwsCredentialProvider, AwsCredentials, FetchFn } from './sigv4-fetch.js';
 import { TitanEmbedder } from './titan.js';
 import {
@@ -24,11 +29,16 @@ import {
   type ModelLogger,
   type ModelUsage,
   type RawModelAttempt,
+  type StreamTextRequest,
+  type StreamTextResult,
+  type TextChunkHandler,
 } from './types.js';
 
 export const DEFAULT_PRIMARY_TIMEOUT_MS = 25_000;
 export const DEFAULT_FALLBACK_TIMEOUT_MS = 25_000;
 export const DEFAULT_MAX_OUTPUT_TOKENS = 4_096;
+/** Default bound on a streamed plain-text answer. */
+export const DEFAULT_STREAM_MAX_OUTPUT_TOKENS = 1_500;
 
 export const DEFAULT_MODEL_IDS = {
   primary: 'openai.gpt-6-luna',
@@ -53,7 +63,12 @@ export interface BedrockGatewayConfig {
   embeddingConcurrency?: number;
   lunaReasoningEffort?: LunaReasoningEffort;
   /** Test seams: replace the network transports. */
-  transports?: { mantleFetch?: FetchFn; converse?: ConverseFn; invokeModel?: InvokeModelFn };
+  transports?: {
+    mantleFetch?: FetchFn;
+    converse?: ConverseFn;
+    converseStream?: ConverseStreamFn;
+    invokeModel?: InvokeModelFn;
+  };
   /** Test seams: replace whole providers. */
   providers?: { primary?: StructuredProvider; fallback?: StructuredProvider; embedder?: TitanEmbedder };
 }
@@ -124,13 +139,14 @@ class BedrockModelGateway implements ModelGateway {
       (!config.providers?.primary && reasoningAdapterFor(config.primaryModelId) === 'converse') ||
       (!config.providers?.fallback && reasoningAdapterFor(config.fallbackModelId) === 'converse');
     const needsRuntime =
-      (usesConverse && !config.transports?.converse) ||
+      (usesConverse && (!config.transports?.converse || !config.transports.converseStream)) ||
       (!config.providers?.embedder && !config.transports?.invokeModel);
     // One BedrockRuntimeClient shared by every Converse provider and the embedder.
     const runtime = needsRuntime
       ? createBedrockRuntimeTransport({ region: config.region, ...credentials })
       : null;
     const converse = config.transports?.converse ?? runtime?.converse;
+    const converseStream = config.transports?.converseStream ?? runtime?.converseStream;
 
     const reasoningProvider = (modelId: string): StructuredProvider =>
       reasoningAdapterFor(modelId) === 'mantle'
@@ -146,6 +162,7 @@ class BedrockModelGateway implements ModelGateway {
             region: config.region,
             ...credentials,
             ...(converse ? { converse } : {}),
+            ...(converseStream ? { converseStream } : {}),
           });
     this.#primary = config.providers?.primary ?? reasoningProvider(config.primaryModelId);
     this.#fallback = config.providers?.fallback ?? reasoningProvider(config.fallbackModelId);
@@ -271,6 +288,93 @@ class BedrockModelGateway implements ModelGateway {
     }
   }
 
+  async streamText(request: StreamTextRequest, onText: TextChunkHandler): Promise<StreamTextResult> {
+    if (!(MODEL_PURPOSES as readonly string[]).includes(request.purpose)) {
+      throw new TypeError(`Unknown model purpose: ${request.purpose}`);
+    }
+    const started = performance.now();
+    const maxOutputTokens = request.maxOutputTokens ?? DEFAULT_STREAM_MAX_OUTPUT_TOKENS;
+    const raw: RawModelAttempt[] = [];
+    // An object, not a `let`: the handler sets it while the provider runs (control-flow analysis cannot see that).
+    const timing: { firstTokenAt: number | null } = { firstTokenAt: null };
+    const deliver: TextChunkHandler = async (text) => {
+      timing.firstTokenAt ??= performance.now();
+      await onText(text);
+    };
+
+    const run = async (provider: StructuredProvider, timeoutMs: number): Promise<ProviderStreamResult> => {
+      if (!provider.streamText) throw new ModelUnavailableError('config', provider.modelId);
+      const deadline = new Deadline(timeoutMs, request.signal);
+      try {
+        const result = await provider.streamText({
+          system: request.system,
+          messages: request.messages,
+          maxOutputTokens,
+          deadline,
+          requestId: request.requestId,
+          onText: deliver,
+        });
+        raw.push(...result.rawAttempts);
+        return result;
+      } catch (error) {
+        if (isModelGatewayError(error)) raw.push(...error.rawAttempts);
+        throw error;
+      } finally {
+        deadline.dispose();
+      }
+    };
+
+    const finish = (result: ProviderStreamResult, fallbackUsed: boolean): StreamTextResult => {
+      const attempts = priceAttempts(raw, this.#pricing);
+      this.#logAttempts(attempts, request.requestId, request.purpose);
+      return {
+        text: result.text,
+        modelId: result.modelId,
+        fallbackUsed,
+        usage: totalUsage(attempts),
+        costUsd: sumUsd(attempts.map((a) => a.costUsd)),
+        latencyMs: Math.round(performance.now() - started),
+        firstTokenMs: timing.firstTokenAt === null ? null : Math.round(timing.firstTokenAt - started),
+        stopReason: result.stopReason,
+        attempts,
+      };
+    };
+
+    const failWith = (error: unknown): never => {
+      if (error instanceof ModelGatewayError) {
+        error.attempts = priceAttempts(raw, this.#pricing);
+        error.rawAttempts = [...raw];
+        error.textDelivered = timing.firstTokenAt !== null;
+        this.#logAttempts(error.attempts, request.requestId, request.purpose);
+      }
+      throw error;
+    };
+
+    let primaryError: unknown;
+    try {
+      return finish(await run(this.#primary, request.timeoutMs ?? this.#primaryTimeoutMs), false);
+    } catch (error) {
+      // Once text has been shown, another model's answer would contradict it: no fallback.
+      if (timing.firstTokenAt !== null || !shouldFallback(error)) return failWith(error);
+      primaryError = error;
+    }
+    this.#logger.warn('ai.model.fallback', {
+      requestId: request.requestId,
+      purpose: request.purpose,
+      from: this.#primary.modelId,
+      to: this.#fallback.modelId,
+      reason:
+        primaryError instanceof ModelUnavailableError
+          ? primaryError.reason
+          : (primaryError as ModelGatewayError).code,
+    });
+    try {
+      return finish(await run(this.#fallback, this.#fallbackTimeoutMs), true);
+    } catch (error) {
+      return failWith(error);
+    }
+  }
+
   async embed(texts: readonly string[], options: EmbedOptions): Promise<EmbedResult> {
     if (texts.length === 0) {
       return {
@@ -315,10 +419,10 @@ class BedrockModelGateway implements ModelGateway {
 /**
  * Creates the model gateway. Primary and fallback each get the adapter their model id calls for
  * ({@link reasoningAdapterFor}): `openai.*` → Luna on Mantle (strict JSON schema, one repair retry),
- * anything else → Converse with a forced tool (Nova 2 Lite, also through `us.`/`global.` inference
- * profiles). The fallback runs when the primary is unavailable (timeout, throttling, 5xx, access),
- * refuses or returns invalid output. Titan V2 embeddings. `provider: 'mock'` returns the deterministic
- * {@link MockModelGateway}.
+ * anything else → Converse with a submit tool (Nova 2 Lite, also through `us.`/`global.` inference
+ * profiles; Claude ids ready). The fallback runs when the primary is unavailable (timeout, throttling,
+ * 5xx, access), refuses or returns invalid output; for streamed text only while no text was delivered.
+ * Titan V2 embeddings. `provider: 'mock'` returns the deterministic {@link MockModelGateway}.
  */
 export function createModelGateway(config: ModelGatewayConfig): ModelGateway {
   if (config.provider === 'mock') return new MockModelGateway(config);

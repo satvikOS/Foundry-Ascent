@@ -289,8 +289,9 @@ describe('usage, idempotency, settings (system executor)', () => {
     const settings = await t.db.withContext(maya, (tx) => settingsRepo.getPlatformSettings(tx));
     expect(settings).toEqual({
       aiEnabled: true,
-      dailyUsdCapGlobal: 2,
-      dailyUsdCapPerPrincipal: 0.5,
+      // Raised from 2 and 0.5 by migration 0006.
+      dailyUsdCapGlobal: 15,
+      dailyUsdCapPerPrincipal: 1,
       maxTurnsPerSession: 40,
       groundingCoverageThreshold: 0.6,
       portfolioMinGroupSize: 3,
@@ -300,7 +301,7 @@ describe('usage, idempotency, settings (system executor)', () => {
       // Seeded by migration 0004 (call caps).
       maxCallMinutes: 30,
       dailyCallMinutesPerPrincipal: 60,
-      // Not stored yet: the defaults (on) apply.
+      // Seeded by migration 0006 (kill switches for streamed replies and calls).
       streamingEnabled: true,
       callsEnabled: true,
     });

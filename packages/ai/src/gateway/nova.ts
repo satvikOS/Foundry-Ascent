@@ -1,17 +1,33 @@
-import type { ContentBlock, ConverseCommandOutput, Message } from '@aws-sdk/client-bedrock-runtime';
+import type {
+  ContentBlock,
+  ConverseCommandOutput,
+  ConverseStreamOutput,
+  InferenceConfiguration,
+  Message,
+  StopReason,
+  ToolChoice,
+} from '@aws-sdk/client-bedrock-runtime';
 
-import { createBedrockRuntimeTransport, mapAwsError, type ConverseFn } from './bedrock-runtime.js';
+import {
+  createBedrockRuntimeTransport,
+  mapAwsError,
+  type ConverseFn,
+  type ConverseStreamFn,
+} from './bedrock-runtime.js';
 import { ModelOutputInvalidError, ModelRefusalError, type ModelGatewayError } from './errors.js';
 import {
   MIN_REPAIR_BUDGET_MS,
+  estimatedStreamUsage,
   repairInstruction,
   validateStructured,
   type ProviderRequest,
   type ProviderResult,
+  type ProviderStreamRequest,
+  type ProviderStreamResult,
   type StructuredProvider,
 } from './provider.js';
 import type { AwsCredentialProvider, AwsCredentials } from './sigv4-fetch.js';
-import type { ChatMessage, RawModelAttempt } from './types.js';
+import type { ChatMessage, RawModelAttempt, StreamStopReason } from './types.js';
 
 export const SUBMIT_TOOL_NAME = 'submit_response';
 
@@ -22,6 +38,8 @@ export interface NovaProviderOptions {
   credentials?: AwsCredentials | AwsCredentialProvider;
   /** Converse transport; defaults to a real `BedrockRuntimeClient`. Inject a fake in tests. */
   converse?: ConverseFn;
+  /** ConverseStream transport; defaults to the same client. Inject a fake in tests. */
+  converseStream?: ConverseStreamFn;
   /** Default 0.2. */
   temperature?: number;
   /** Repair re-asks after invalid tool input. Default 1. */
@@ -30,6 +48,40 @@ export interface NovaProviderOptions {
 
 const GEO_PREFIX = /^(?:us|eu|apac|jp|au|ca|us-gov|global)\./;
 const PROFILE_REQUIRED = /on-demand throughput|inference profile/i;
+
+/**
+ * Anthropic Claude ids on Bedrock (`anthropic.…`, also behind `us.`/`global.` inference profiles). Current
+ * Claude models reject sampling parameters and a forced tool choice, so Converse requests for them send
+ * neither: the structured call asks for the tool in its description and relies on validation and repair.
+ */
+export function isClaudeModelId(modelId: string): boolean {
+  return /^(?:[a-z-]+\.)?anthropic\./.test(modelId);
+}
+
+/** Converse stream events that carry a modelled service exception. */
+const STREAM_EXCEPTIONS = [
+  'internalServerException',
+  'modelStreamErrorException',
+  'serviceUnavailableException',
+  'throttlingException',
+  'validationException',
+] as const;
+
+/** A modelled exception inside the event stream, as the error the SDK would throw (its name only). */
+function streamException(event: ConverseStreamOutput): Error | null {
+  for (const key of STREAM_EXCEPTIONS) {
+    if (event[key] !== undefined) {
+      const name = `${key.charAt(0).toUpperCase()}${key.slice(1)}`;
+      return Object.assign(new Error(name), { name });
+    }
+  }
+  return null;
+}
+
+function streamStopReason(reason: StopReason | undefined): StreamStopReason {
+  if (reason === 'end_turn' || reason === 'max_tokens' || reason === 'stop_sequence') return reason;
+  return 'other';
+}
 
 /** Geographic inference-profile prefix for a region (`us-east-1` → `us.`). */
 export function inferenceProfilePrefix(region: string): string {
@@ -70,15 +122,17 @@ function isProfileRequiredError(error: unknown): boolean {
 }
 
 /**
- * Fallback reasoning model: Amazon Nova 2 Lite via Bedrock Converse. Structured output is obtained
- * by forcing a single tool (`submit_response`) whose input schema is the response schema. If the
- * base model id requires an inference profile, the provider retries once with the geographic
- * profile id and remembers that choice for the lifetime of the instance.
+ * Bedrock Converse reasoning models: Amazon Nova 2 Lite today, Anthropic Claude ready. Structured output
+ * is obtained through a single tool (`submit_response`) whose input schema is the response schema, forced
+ * for Nova and requested (tool choice `auto`) for Claude, which rejects a forced tool. Plain text streams
+ * through ConverseStream. If the base model id requires an inference profile, the provider retries once
+ * with the geographic profile id and remembers that choice for the lifetime of the instance.
  */
 export class NovaProvider implements StructuredProvider {
   readonly name = 'nova' as const;
   readonly modelId: string;
   readonly #converse: ConverseFn;
+  readonly #converseStream: ConverseStreamFn;
   readonly #profileId: string | null;
   readonly #temperature: number;
   readonly #maxRepairAttempts: number;
@@ -86,12 +140,14 @@ export class NovaProvider implements StructuredProvider {
 
   constructor(options: NovaProviderOptions) {
     this.modelId = options.modelId;
-    this.#converse =
-      options.converse ??
+    const runtime = (): ReturnType<typeof createBedrockRuntimeTransport> =>
       createBedrockRuntimeTransport({
         region: options.region,
         ...(options.credentials ? { credentials: options.credentials } : {}),
-      }).converse;
+      });
+    const transport = options.converse && options.converseStream ? null : runtime();
+    this.#converse = options.converse ?? (transport ?? runtime()).converse;
+    this.#converseStream = options.converseStream ?? (transport ?? runtime()).converseStream;
     this.#profileId = GEO_PREFIX.test(options.modelId)
       ? null
       : `${inferenceProfilePrefix(options.region)}${options.modelId}`;
@@ -102,6 +158,103 @@ export class NovaProvider implements StructuredProvider {
   /** The id currently used for calls (the inference profile after a profile retry). */
   get effectiveModelId(): string {
     return this.#useProfile && this.#profileId ? this.#profileId : this.modelId;
+  }
+
+  #inferenceConfig(modelId: string, maxTokens: number): InferenceConfiguration {
+    return isClaudeModelId(modelId) ? { maxTokens } : { maxTokens, temperature: this.#temperature };
+  }
+
+  #toolChoice(modelId: string): ToolChoice {
+    return isClaudeModelId(modelId) ? { auto: {} } : { tool: { name: SUBMIT_TOOL_NAME } };
+  }
+
+  /** Whether a failed call should be retried once with the geographic inference profile. */
+  #profileRetry(error: unknown, kind: RawModelAttempt['kind']): boolean {
+    return (
+      !this.#useProfile &&
+      this.#profileId !== null &&
+      kind !== 'profile_retry' &&
+      isProfileRequiredError(error)
+    );
+  }
+
+  /**
+   * Streams plain text through ConverseStream. Each text delta goes to `onText` as it arrives. A failure
+   * after text was delivered is never retried (not even the inference-profile retry) and is marked
+   * `textDelivered`; usage the stream never reported (it ended early) is estimated from the text.
+   */
+  async streamText(request: ProviderStreamRequest): Promise<ProviderStreamResult> {
+    const { deadline } = request;
+    const rawAttempts: RawModelAttempt[] = [];
+    const messages = toConverseMessages(request.messages);
+    let kind: RawModelAttempt['kind'] = 'initial';
+
+    for (;;) {
+      const modelId = this.effectiveModelId;
+      const started = performance.now();
+      let text = '';
+      let stopReason: StopReason | undefined;
+      let usage: { inputTokens: number; outputTokens: number } | null = null;
+      const record = (outcome: RawModelAttempt['outcome'], errorName: string | null): void => {
+        rawAttempts.push({
+          provider: 'nova',
+          modelId,
+          kind,
+          outcome,
+          latencyMs: Math.round(performance.now() - started),
+          usage: usage ?? estimatedStreamUsage(request, text),
+          errorName,
+        });
+      };
+      try {
+        const events = await this.#converseStream(
+          {
+            modelId,
+            system: [{ text: request.system }],
+            messages,
+            inferenceConfig: this.#inferenceConfig(modelId, request.maxOutputTokens),
+          },
+          deadline.signal,
+        );
+        for await (const event of events) {
+          const thrown = streamException(event);
+          if (thrown) throw thrown;
+          const chunk = event.contentBlockDelta?.delta?.text;
+          if (typeof chunk === 'string' && chunk !== '') {
+            text += chunk;
+            await request.onText(chunk);
+          } else if (event.messageStop) {
+            stopReason = event.messageStop.stopReason;
+          } else if (event.metadata?.usage) {
+            usage = {
+              inputTokens: event.metadata.usage.inputTokens ?? 0,
+              outputTokens: event.metadata.usage.outputTokens ?? 0,
+            };
+          }
+        }
+      } catch (error) {
+        const mapped = mapAwsError(error, deadline, modelId);
+        record(mapped.reason === 'config' ? 'client_error' : mapped.reason, mapped.errorName);
+        if (text === '' && this.#profileRetry(error, kind)) {
+          this.#useProfile = true; // cached for every later call on this instance
+          kind = 'profile_retry';
+          continue;
+        }
+        mapped.rawAttempts = rawAttempts;
+        mapped.textDelivered = text !== '';
+        throw mapped;
+      }
+
+      if (stopReason === 'content_filtered' || stopReason === 'guardrail_intervened') {
+        record('refusal', null);
+        const refusal = new ModelRefusalError(modelId, 'content_filter');
+        refusal.rawAttempts = rawAttempts;
+        refusal.textDelivered = text !== '';
+        throw refusal;
+      }
+      record('ok', null);
+      return { text, modelId, stopReason: streamStopReason(stopReason), rawAttempts };
+    }
   }
 
   async generate<T>(request: ProviderRequest<T>): Promise<ProviderResult<T>> {
@@ -128,7 +281,7 @@ export class NovaProvider implements StructuredProvider {
             modelId,
             system: [{ text: request.system }],
             messages,
-            inferenceConfig: { maxTokens: request.maxOutputTokens, temperature: this.#temperature },
+            inferenceConfig: this.#inferenceConfig(modelId, request.maxOutputTokens),
             toolConfig: {
               tools: [
                 {
@@ -139,7 +292,7 @@ export class NovaProvider implements StructuredProvider {
                   },
                 },
               ],
-              toolChoice: { tool: { name: SUBMIT_TOOL_NAME } },
+              toolChoice: this.#toolChoice(modelId),
             },
           },
           deadline.signal,
@@ -155,12 +308,7 @@ export class NovaProvider implements StructuredProvider {
           usage: { inputTokens: 0, outputTokens: 0 },
           errorName: mapped.errorName,
         });
-        if (
-          !this.#useProfile &&
-          this.#profileId !== null &&
-          kind !== 'profile_retry' &&
-          isProfileRequiredError(error)
-        ) {
+        if (this.#profileRetry(error, kind)) {
           this.#useProfile = true; // cached for every later call on this instance
           kind = 'profile_retry';
           continue;

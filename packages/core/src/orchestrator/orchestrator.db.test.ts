@@ -52,12 +52,17 @@ describe('turn pipeline', () => {
     const { events, outcome } = await runTurn(h.core, maya, session.id, { text });
 
     expect(outcome.status).toBe('completed');
-    expect(events.map((e) => (e.event === 'turn.status' ? `status:${e.phase}` : e.event))).toEqual([
+    // Validated answer units stream between reasoning and validating (one entry here for the whole run).
+    const shape = events
+      .map((e) => (e.event === 'turn.status' ? `status:${e.phase}` : e.event))
+      .filter((kind, i, all) => kind !== 'turn.delta' || all[i - 1] !== 'turn.delta');
+    expect(shape).toEqual([
       'turn.accepted',
       'status:classifying',
       'status:retrieving',
       'status:retrieving',
       'status:reasoning',
+      'turn.delta',
       'status:validating',
       'turn.completed',
     ]);

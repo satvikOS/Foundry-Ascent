@@ -285,7 +285,7 @@ describe('finding 4: ingestion obeys the spend caps and uploads have a daily quo
         failureReason: 'spend_cap_reached',
       });
     } finally {
-      await setSettings({ dailyUsdCapGlobal: 2, dailyUsdCapPerPrincipal: 0.5 });
+      await setSettings({ dailyUsdCapGlobal: 15, dailyUsdCapPerPrincipal: 1 });
     }
   });
 

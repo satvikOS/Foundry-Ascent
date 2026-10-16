@@ -46,11 +46,13 @@ export interface SessionRecord {
   readonly distilledAt: string | null;
   /** Number of turns the stored digest covers (0: never distilled). */
   readonly distillVersion: number;
+  /** The vEIR's validated opening line (standard conversations only). AI-written: never log it. */
+  readonly opener: string | null;
 }
 
 const COLUMNS = `s.id, s.tenant_id, s.venture_id, s.assignment_id, s.persona_release_id, s.started_by, s.mode, s.privacy,
   s.goal, s.status, s.policy_version, s.recap, s.started_at, s.ended_at, s.title, s.last_activity_at, s.has_calls,
-  s.digest, s.digest_deleted_at, s.distilled_at, s.distill_version`;
+  s.digest, s.digest_deleted_at, s.distilled_at, s.distill_version, s.opener`;
 
 /** Parses a stored recap; recaps that no longer match the contract are treated as absent. */
 function decodeRecap(raw: unknown): SessionRecapValue | null {
@@ -91,6 +93,7 @@ function decodeSession(r: RawRow): SessionRecord {
     digestDeletedAt: col.ts.nullable.decode(r.digest_deleted_at, 'digest_deleted_at'),
     distilledAt: col.ts.nullable.decode(r.distilled_at, 'distilled_at'),
     distillVersion: col.int.decode(r.distill_version, 'distill_version'),
+    opener: col.text.nullable.decode(r.opener, 'opener'),
   };
 }
 
@@ -118,15 +121,17 @@ export interface CreateSessionInput {
   readonly policyVersion: string;
   /** Title chosen by the person; otherwise the first message titles the conversation. */
   readonly title?: string | null;
+  /** The vEIR's validated opening line (standard conversations only; at most 300 characters). */
+  readonly opener?: string | null;
 }
 
 export function createSession(ex: SqlExecutor, input: CreateSessionInput): Promise<SessionRecord> {
   return queryOne(
     ex,
     `INSERT INTO coaching_sessions AS s (id, tenant_id, venture_id, assignment_id, persona_release_id, started_by, mode,
-                                         privacy, goal, policy_version, title)
+                                         privacy, goal, policy_version, title, opener)
      VALUES (coalesce(:id, gen_random_uuid()), :tenantId, :ventureId, :assignmentId, :releaseId, :startedBy, :mode,
-             :privacy, :goal, :policyVersion, :title)
+             :privacy, :goal, :policyVersion, :title, :opener)
      RETURNING ${COLUMNS}`,
     {
       id: p.nullable.uuid(input.id),
@@ -140,6 +145,7 @@ export function createSession(ex: SqlExecutor, input: CreateSessionInput): Promi
       goal: p.nullable.text(input.goal),
       policyVersion: p.text(input.policyVersion),
       title: p.nullable.text(input.title),
+      opener: p.nullable.text(input.opener),
     },
     decodeSession,
     'createSession',
@@ -189,6 +195,23 @@ export function setSessionMode(
     ex,
     `UPDATE coaching_sessions AS s SET mode = :mode WHERE s.id = :id AND s.status = 'active' RETURNING ${COLUMNS}`,
     { id: p.uuid(args.sessionId), mode: p.text(args.mode) },
+    decodeSession,
+  );
+}
+
+/**
+ * Moves an active conversation to another approved release of its persona (its own release was withdrawn or
+ * expired). Null when the conversation is not active or not visible.
+ */
+export function setSessionRelease(
+  ex: SqlExecutor,
+  args: { sessionId: string; releaseId: string },
+): Promise<SessionRecord | null> {
+  return queryFirst(
+    ex,
+    `UPDATE coaching_sessions AS s SET persona_release_id = :releaseId
+     WHERE s.id = :id AND s.status = 'active' RETURNING ${COLUMNS}`,
+    { id: p.uuid(args.sessionId), releaseId: p.uuid(args.releaseId) },
     decodeSession,
   );
 }
@@ -295,7 +318,7 @@ function decodeView(r: RawRow): SessionView {
     lastActivityAt: s.lastActivityAt,
     hasCalls: s.hasCalls,
     digest: s.privacy === 'standard' ? s.digest : null,
-    opener: null,
+    opener: s.privacy === 'standard' ? s.opener : null,
   };
 }
 
@@ -418,6 +441,8 @@ export interface RecentDigest {
   readonly sessionId: string;
   readonly title: string | null;
   readonly lastActivityAt: string;
+  /** Whether any turn was spoken during a call. */
+  readonly hasCalls: boolean;
   readonly digest: ConversationDigestValue;
 }
 
@@ -431,7 +456,7 @@ export async function listRecentDigests(
 ): Promise<RecentDigest[]> {
   const rows = await queryRows(
     ex,
-    `SELECT s.id, s.title, s.last_activity_at, s.digest
+    `SELECT s.id, s.title, s.last_activity_at, s.has_calls, s.digest
      FROM coaching_sessions s
      JOIN persona_releases r ON r.id = s.persona_release_id
      WHERE s.venture_id = :ventureId AND r.persona_id = :personaId AND s.digest IS NOT NULL
@@ -448,6 +473,7 @@ export async function listRecentDigests(
       sessionId: col.uuid.decode(r.id, 'id'),
       title: col.text.nullable.decode(r.title, 'title'),
       lastActivityAt: col.ts.decode(r.last_activity_at, 'last_activity_at'),
+      hasCalls: col.bool.decode(r.has_calls, 'has_calls'),
       digest: decodeDigest(r.digest),
     }),
   );

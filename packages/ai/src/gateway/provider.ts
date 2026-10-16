@@ -2,7 +2,13 @@ import type { z } from 'zod';
 
 import type { Deadline } from './deadline.js';
 import { restoreOptionalNulls, type StrictJsonSchema } from './json-schema.js';
-import type { ChatMessage, ModelProviderName, RawModelAttempt } from './types.js';
+import type {
+  ChatMessage,
+  ModelProviderName,
+  RawModelAttempt,
+  StreamStopReason,
+  TextChunkHandler,
+} from './types.js';
 
 /** What the router hands to a concrete structured-output provider. */
 export interface ProviderRequest<T> {
@@ -23,14 +29,57 @@ export interface ProviderResult<T> {
   rawAttempts: RawModelAttempt[];
 }
 
+/** What the router hands to a provider for a streamed plain-text generation. */
+export interface ProviderStreamRequest {
+  system: string;
+  messages: readonly ChatMessage[];
+  maxOutputTokens: number;
+  deadline: Deadline;
+  requestId: string;
+  /** Called with every text chunk, in order (awaited). */
+  onText: TextChunkHandler;
+}
+
+export interface ProviderStreamResult {
+  text: string;
+  /** Model id actually invoked. */
+  modelId: string;
+  stopReason: StreamStopReason;
+  rawAttempts: RawModelAttempt[];
+}
+
 /**
  * A structured-output backend. Implementations throw a `ModelGatewayError` whose `rawAttempts`
- * lists every network call they made.
+ * lists every network call they made. Backends that can stream plain text implement `streamText`; their
+ * errors set `textDelivered` once any text reached `onText`.
  */
 export interface StructuredProvider {
   readonly name: ModelProviderName;
   readonly modelId: string;
   generate<T>(request: ProviderRequest<T>): Promise<ProviderResult<T>>;
+  streamText?(request: ProviderStreamRequest): Promise<ProviderStreamResult>;
+}
+
+/** Rough token estimate (≈ 4 characters per token) for usage the provider never reported. */
+export function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+/**
+ * Usage of a stream that ended before the provider reported it (cancelled or failed after text arrived):
+ * the prompt was processed and the text generated, so both are billed. Estimated from character counts.
+ */
+export function estimatedStreamUsage(
+  request: Pick<ProviderStreamRequest, 'system' | 'messages'>,
+  generated: string,
+): { inputTokens: number; outputTokens: number } {
+  if (generated === '') return { inputTokens: 0, outputTokens: 0 };
+  return {
+    inputTokens:
+      estimateTokens(request.system) +
+      request.messages.reduce((acc, m) => acc + estimateTokens(m.content), 0),
+    outputTokens: estimateTokens(generated),
+  };
 }
 
 /** Minimum remaining budget for a repair attempt to be worth making. */

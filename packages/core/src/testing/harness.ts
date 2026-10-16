@@ -68,7 +68,8 @@ export async function createCoreHarness(options: CoreHarnessOptions = {}): Promi
   const t = await createTestDatabase({ seed: true });
   const seed = must(t.seed, 'seed result');
   const config = coreConfig({ appEnv: 'test', ...options.config });
-  const gateway = new MockModelGateway(options.gatewayOptions);
+  // Streams without pauses unless a test asks for them.
+  const gateway = new MockModelGateway({ streamDelayMs: 0, ...options.gatewayOptions });
   const objectStore = new MemoryObjectStore();
   const jobQueue = new MemoryJobQueue();
   const logger = new RecordingLogger();

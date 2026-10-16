@@ -165,6 +165,8 @@ class TurnUsage(_Camel):
     output_tokens: int
     cost_usd: float
     latency_ms: int
+    # Streamed turns: milliseconds until the first validated sentence (absent or null for whole replies).
+    first_token_ms: int | None = None
 
 
 class TurnBlockedDetail(_Camel):

@@ -16,6 +16,7 @@ import { type ApiHarness, createApiHarness } from './testing/api-harness.js';
 import { parseSse } from './testing/sse.js';
 
 let api: ApiHarness;
+let owner: string;
 let maya: string;
 let jonah: string;
 let graham: string;
@@ -24,6 +25,7 @@ let corin: string;
 beforeAll(async () => {
   // random() = 0.99: ordinary turns are not sampled for EIR review.
   api = await createApiHarness({ random: () => 0.99 });
+  owner = await api.ownerToken();
   [maya, jonah, graham, corin] = await Promise.all([
     api.signInAs(api.h.people.maya),
     api.signInAs(api.h.people.jonah),
@@ -129,8 +131,15 @@ describe('coaching sessions', () => {
   });
 });
 
+/** Event kinds in order, with a run of `turn.delta` frames shown once. */
+function shape(events: readonly TurnStreamEvent[]): string[] {
+  return events
+    .map((e) => (e.event === 'turn.status' ? `status:${e.phase}` : e.event))
+    .filter((kind, i, all) => kind !== 'turn.delta' || all[i - 1] !== 'turn.delta');
+}
+
 describe('POST /sessions/:id/turns (SSE)', () => {
-  it('streams accepted → status phases → completed, each frame a valid TurnStreamEvent', async () => {
+  it('streams accepted → status phases → validated deltas → completed, each frame a valid TurnStreamEvent', async () => {
     const session = await startSession(maya);
     const { res, events } = await streamTurn(maya, session.id, {
       text: 'What did the library staff interviews tell us about quiet seat demand during exam weeks?',
@@ -139,17 +148,23 @@ describe('POST /sessions/:id/turns (SSE)', () => {
     expect(res.headers.get('content-type')).toMatch(/^text\/event-stream/);
     expect(res.headers.get('cache-control')).toBe('no-store');
     expect(res.headers.get('transfer-encoding')).toBeNull();
-    expect(events.map((e) => (e.event === 'turn.status' ? `status:${e.phase}` : e.event))).toEqual([
+    expect(shape(events)).toEqual([
       'turn.accepted',
       'status:classifying',
       'status:retrieving',
       'status:retrieving',
       'status:reasoning',
+      'turn.delta',
       'status:validating',
       'turn.completed',
     ]);
     const last = events.at(-1);
     if (last?.event !== 'turn.completed') throw new Error('expected turn.completed');
+    // The deltas are the validated answer, unit by unit; turn.completed carries it whole.
+    const deltas = events.flatMap((e) => (e.event === 'turn.delta' ? [e] : []));
+    expect(deltas.map((d) => d.seq)).toEqual(deltas.map((_, i) => i));
+    expect(deltas.map((d) => d.text).join('')).toBe(last.turn.response?.answer);
+    expect(last.turn.usage?.firstTokenMs).toEqual(expect.any(Number));
     expect(last.turn).toMatchObject({ sessionId: session.id, ordinal: 1, status: 'completed' });
     expect(last.turn.response?.answer.length).toBeGreaterThan(0);
     expect(last.turn.evidence.length).toBeGreaterThan(0);
@@ -184,9 +199,37 @@ describe('POST /sessions/:id/turns (SSE)', () => {
     ).toBe('not_found');
   });
 
+  it('sends the whole reply without deltas while streaming is switched off', async () => {
+    const off = await api.request('/admin/settings', {
+      method: 'PATCH',
+      body: { streamingEnabled: false },
+      cookie: owner,
+    });
+    expect(off.status).toBe(200);
+    try {
+      const session = await startSession(maya);
+      const { events } = await streamTurn(maya, session.id, { text: 'Should we start with one library?' });
+      expect(shape(events)).toEqual([
+        'turn.accepted',
+        'status:classifying',
+        'status:retrieving',
+        'status:retrieving',
+        'status:reasoning',
+        'status:validating',
+        'turn.completed',
+      ]);
+    } finally {
+      await api.request('/admin/settings', {
+        method: 'PATCH',
+        body: { streamingEnabled: true },
+        cookie: owner,
+      });
+    }
+  });
+
   it('answers a crisis message with turn.blocked and a support message, without a model call', async () => {
     const session = await startSession(maya);
-    const generateCalls = api.h.gateway.calls.filter((c) => c.kind === 'generate').length;
+    const modelCalls = api.h.gateway.calls.filter((c) => c.kind !== 'embed').length;
     const { events } = await streamTurn(maya, session.id, {
       text: 'I feel like I want to end my life, I cannot cope anymore.',
     });
@@ -196,7 +239,7 @@ describe('POST /sessions/:id/turns (SSE)', () => {
       expect(last.reason).toBe('crisis_support');
       expect(last.supportMessage).toEqual(expect.any(String));
     }
-    expect(api.h.gateway.calls.filter((c) => c.kind === 'generate').length).toBe(generateCalls);
+    expect(api.h.gateway.calls.filter((c) => c.kind !== 'embed').length).toBe(modelCalls);
   });
 
   it('answers refusals before acceptance with plain problem+json, not a stream', async () => {

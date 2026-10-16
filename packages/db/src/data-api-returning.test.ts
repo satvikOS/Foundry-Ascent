@@ -186,6 +186,7 @@ describe('Data API typed records: every RETURNING statement with arrays, jsonb, 
         output_tokens: n(0),
         cost_usd: s('0.000000'),
         latency_ms: NULL,
+        first_token_ms: NULL,
         sampled_for_review: b(false),
         channel: s('voice'),
       });
@@ -235,6 +236,7 @@ describe('Data API typed records: every RETURNING statement with arrays, jsonb, 
       output_tokens: n(300),
       cost_usd: s('0.001234'),
       latency_ms: n(900),
+      first_token_ms: n(420),
       sampled_for_review: b(true),
       channel: s('text'),
       completed_at: s(TS),
@@ -248,6 +250,7 @@ describe('Data API typed records: every RETURNING statement with arrays, jsonb, 
       validatorResults: { factsDowngraded: 1, riskCategories: ['legal'] },
       completedAt: TS_ISO,
       latencyMs: 900,
+      firstTokenMs: 420,
     });
   });
 
@@ -274,6 +277,7 @@ describe('Data API typed records: every RETURNING statement with arrays, jsonb, 
       digest_deleted_at: NULL,
       distilled_at: s(TS),
       distill_version: n(4),
+      opener: s('Last time you planned five interviews. How did they go?'),
     });
     await db.withContext(ctx, async (tx) => {
       const created = await sessionsRepo.createSession(tx, {
@@ -296,6 +300,7 @@ describe('Data API typed records: every RETURNING statement with arrays, jsonb, 
         digest,
         distilledAt: TS_ISO,
         distillVersion: 4,
+        opener: 'Last time you planned five interviews. How did they go?',
       });
       expect(await sessionsRepo.endSession(tx, { sessionId: ID, recap: null })).not.toBeNull();
       expect(await sessionsRepo.setSessionStatus(tx, { sessionId: ID, status: 'ended' })).not.toBeNull();
@@ -304,6 +309,7 @@ describe('Data API typed records: every RETURNING statement with arrays, jsonb, 
         title: 'Pricing the pilot',
       });
       expect(await sessionsRepo.deleteSessionDigest(tx, ID)).not.toBeNull();
+      expect(await sessionsRepo.setSessionRelease(tx, { sessionId: ID, releaseId: ID2 })).not.toBeNull();
     });
   });
 

@@ -108,6 +108,54 @@ export interface GenerateStructuredResult<T> {
   attempts: ModelAttempt[];
 }
 
+/**
+ * A plain-text generation streamed as it is produced (the conversational answer of a turn). The text is
+ * handed to the caller chunk by chunk; nothing is validated here, so the caller must gate every chunk
+ * before showing it (`SentenceGate`).
+ */
+export interface StreamTextRequest {
+  purpose: GatewayPurpose;
+  /** Trusted instructions. */
+  system: string;
+  /** Conversation, oldest first; the last message must be from the user. */
+  messages: readonly ChatMessage[];
+  /** Upper bound on generated tokens. Default 1 500. */
+  maxOutputTokens?: number;
+  /** Budget for the primary model. Default 25 000 ms. */
+  timeoutMs?: number;
+  /** Correlates log lines and ledger rows. */
+  requestId: string;
+  /** Caller cancellation (client gone, or the caller stopped the stream). Never triggers the fallback. */
+  signal?: AbortSignal;
+}
+
+/**
+ * Receives the generated text in order, as it arrives. It is awaited (back-pressure) and must not throw:
+ * to stop the stream, abort the request's `signal`.
+ */
+export type TextChunkHandler = (text: string) => void | Promise<void>;
+
+/** Why a streamed generation ended. */
+export type StreamStopReason = 'end_turn' | 'max_tokens' | 'stop_sequence' | 'other';
+
+export interface StreamTextResult {
+  /** The complete generated text (unvalidated: never show it as is). */
+  text: string;
+  /** Model id that produced the text. */
+  modelId: string;
+  fallbackUsed: boolean;
+  /** Total tokens across all attempts. */
+  usage: ModelUsage;
+  costUsd: number;
+  /** Wall-clock latency of the whole call, including a fallback. */
+  latencyMs: number;
+  /** Time from the call start to the first text chunk; null when the model produced no text. */
+  firstTokenMs: number | null;
+  stopReason: StreamStopReason;
+  /** Every network call made, in order. Write one `usage_ledger` row per attempt. */
+  attempts: ModelAttempt[];
+}
+
 export interface EmbedOptions {
   purpose: GatewayPurpose;
   requestId?: string;
@@ -135,6 +183,11 @@ export interface ModelGatewayInfo {
 export interface ModelGateway {
   readonly info: ModelGatewayInfo;
   generateStructured<T>(request: GenerateStructuredRequest<T>): Promise<GenerateStructuredResult<T>>;
+  /**
+   * Streams plain text, falling back to the fallback model only while no text has been delivered. A
+   * failure after the first chunk rejects with `textDelivered` set on the error.
+   */
+  streamText(request: StreamTextRequest, onText: TextChunkHandler): Promise<StreamTextResult>;
   embed(texts: readonly string[], options: EmbedOptions): Promise<EmbedResult>;
 }
 

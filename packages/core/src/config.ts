@@ -123,7 +123,7 @@ export const DEFAULT_CORE_CONFIG: CoreConfig = {
     maxInFlight: 3,
     inFlightWindowSeconds: 120,
     reviewSampleRate: 0.3,
-    maxInputTokens: 12_000,
+    maxInputTokens: 16_000,
     historyTurns: 8,
     modelTimeoutMs: 25_000,
   },

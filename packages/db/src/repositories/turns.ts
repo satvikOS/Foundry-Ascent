@@ -53,6 +53,8 @@ export interface TurnRecord {
   readonly outputTokens: number;
   readonly costUsd: number;
   readonly latencyMs: number | null;
+  /** Streamed turns: milliseconds until the first validated sentence was shown. */
+  readonly firstTokenMs: number | null;
   readonly sampledForReview: boolean;
   /** Typed in chat or spoken during a call. */
   readonly channel: TurnChannelValue;
@@ -62,7 +64,8 @@ export interface TurnRecord {
 
 const COLUMNS = `t.id, t.tenant_id, t.venture_id, t.session_id, t.ordinal, t.author_id, t.mode, t.founder_text, t.response,
   t.status, t.risk_label, t.risk_categories, t.validator_results, t.model_id, t.fallback_used, t.input_tokens,
-  t.output_tokens, t.cost_usd, t.latency_ms, t.sampled_for_review, t.channel, t.created_at, t.completed_at`;
+  t.output_tokens, t.cost_usd, t.latency_ms, t.first_token_ms, t.sampled_for_review, t.channel, t.created_at,
+  t.completed_at`;
 
 function safeJson<T>(schema: z.ZodType<T>, raw: unknown, column: string): T | null {
   const value = col.json().nullable.decode(raw, column);
@@ -93,6 +96,7 @@ function decodeTurn(r: RawRow): TurnRecord {
     outputTokens: col.int.decode(r.output_tokens, 'output_tokens'),
     costUsd: col.num.decode(r.cost_usd, 'cost_usd'),
     latencyMs: col.int.nullable.decode(r.latency_ms, 'latency_ms'),
+    firstTokenMs: col.int.nullable.decode(r.first_token_ms, 'first_token_ms'),
     sampledForReview: col.bool.decode(r.sampled_for_review, 'sampled_for_review'),
     channel: col.enum(TurnChannel.options).decode(r.channel, 'channel'),
     createdAt: col.ts.decode(r.created_at, 'created_at'),
@@ -215,15 +219,27 @@ export function countPendingTurnsByAuthor(
   );
 }
 
-/** Turns authored by a principal in the last `windowSeconds` (per-principal rate limit). */
+/**
+ * Turns authored by a principal in the last `windowSeconds` (per-principal rate limit), of one channel when
+ * `channel` is given (typed messages and spoken turns have separate limits). `includeCrisis` also counts
+ * crisis turns of every other channel: spoken crisis turns skip call admission, so they share the typed
+ * limit.
+ */
 export function countRecentTurnsByAuthor(
   ex: SqlExecutor,
-  args: { authorId: string; windowSeconds: number },
+  args: { authorId: string; windowSeconds: number; channel?: TurnChannelValue; includeCrisis?: boolean },
 ): Promise<number> {
   return queryNumber(
     ex,
-    `SELECT count(*) AS n FROM turns WHERE author_id = :authorId AND created_at > now() - make_interval(secs => :window)`,
-    { authorId: p.uuid(args.authorId), window: p.num(args.windowSeconds) },
+    `SELECT count(*) AS n FROM turns
+     WHERE author_id = :authorId AND created_at > now() - make_interval(secs => :window)
+       AND (:channel IS NULL OR channel = :channel OR (:includeCrisis AND risk_label = 'crisis'))`,
+    {
+      authorId: p.uuid(args.authorId),
+      window: p.num(args.windowSeconds),
+      channel: p.nullable.text(args.channel),
+      includeCrisis: p.bool(args.includeCrisis ?? false),
+    },
   );
 }
 
@@ -286,6 +302,8 @@ export interface FinishTurnInput {
   readonly outputTokens?: number;
   readonly costUsd?: number;
   readonly latencyMs?: number | null;
+  /** Streamed turns: milliseconds until the first validated sentence was shown. */
+  readonly firstTokenMs?: number | null;
   readonly sampledForReview?: boolean;
   /** Mode actually used (the model may switch e.g. to route). */
   readonly mode?: CoachModeValue;
@@ -308,6 +326,7 @@ export function finishTurn(ex: SqlExecutor, input: FinishTurnInput): Promise<Tur
        output_tokens = :outputTokens,
        cost_usd = :costUsd,
        latency_ms = :latencyMs,
+       first_token_ms = :firstTokenMs,
        sampled_for_review = :sampled,
        completed_at = now()
      WHERE t.id = :id AND t.status = 'pending'
@@ -326,6 +345,7 @@ export function finishTurn(ex: SqlExecutor, input: FinishTurnInput): Promise<Tur
       outputTokens: p.int(input.outputTokens ?? 0),
       costUsd: p.num(input.costUsd ?? 0),
       latencyMs: p.nullable.int(input.latencyMs),
+      firstTokenMs: p.nullable.int(input.firstTokenMs),
       sampled: p.bool(input.sampledForReview ?? false),
     },
     decodeTurn,
@@ -550,6 +570,7 @@ export function toTurnView(
           outputTokens: turn.outputTokens,
           costUsd: turn.costUsd,
           latencyMs: turn.latencyMs ?? 0,
+          firstTokenMs: turn.firstTokenMs,
         }
       : null,
     createdAt: turn.createdAt,
