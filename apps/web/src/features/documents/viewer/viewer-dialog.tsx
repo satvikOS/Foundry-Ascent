@@ -322,7 +322,7 @@ export default function DocumentViewerDialog({ ventureId, target, onClose, retur
     </p>
   ) : null;
   const noticeLine = notice ? (
-    <p role="alert" className="viewer-notice text-small text-destructive">
+    <p role="alert" className="text-small text-destructive">
       {notice}
     </p>
   ) : null;
