@@ -57,9 +57,14 @@ export const queryKeys = {
     list: () => [ROOT, 'personas', 'list'] as const,
     detail: (personaId: string) => [ROOT, 'personas', 'detail', personaId] as const,
     release: (releaseId: string) => [ROOT, 'personas', 'release', releaseId] as const,
+    library: (personaId: string) => [ROOT, 'personas', 'library', personaId] as const,
+    lessons: (personaId: string) => [ROOT, 'personas', 'lessons', personaId] as const,
+    consents: (personaId: string) => [ROOT, 'personas', 'consents', personaId] as const,
+    embodiment: (personaId: string) => [ROOT, 'personas', 'embodiment', personaId] as const,
   },
   eir: {
     reviews: () => [ROOT, 'eir', 'reviews'] as const,
+    profiles: () => [ROOT, 'eir', 'profiles'] as const,
   },
   program: {
     all: () => [ROOT, 'program'] as const,

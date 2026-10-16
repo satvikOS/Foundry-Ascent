@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { CoachMode, DEFAULT_DISCLOSURE, type PersonaReleaseView } from '@foundry/contracts';
 import { FilePlus2, Plus, Trash2 } from 'lucide-react';
-import { useId, useState } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { Controller, useFieldArray, useForm, type Control, type FieldPath } from 'react-hook-form';
 
 import {
@@ -82,26 +82,37 @@ function StyleDial({
 }
 
 interface ReleaseEditorProps {
-  personaName: string;
-  nextVersion: number;
-  /** Prefill source (normally the active release). */
+  /** Card title and the form's accessible name. */
+  title: string;
+  description: string;
+  submitLabel: string;
+  submittingLabel: string;
+  /** Prefill source (normally the newest release). */
   base: PersonaReleaseView | null;
+  /** Disclosure for a blank release. */
+  defaultDisclosure?: string;
   pending: boolean;
   error: unknown;
+  /** Fields shown above the doctrine (e.g. who a new vEIR is built from). */
+  leading?: ReactNode;
   onSubmit: (input: CreatePersonaReleaseInput) => void;
   onCancel: () => void;
 }
 
 /**
- * "New release" editor for a persona's doctrine and style. Submitting creates a DRAFT; nothing
- * changes for founders until the draft is approved.
+ * Editor for a persona's doctrine, style, disclosure and modes. Submitting creates a DRAFT release; nothing
+ * changes for founders until a person approves it.
  */
 export function ReleaseEditor({
-  personaName,
-  nextVersion,
+  title,
+  description,
+  submitLabel,
+  submittingLabel,
   base,
+  defaultDisclosure = DEFAULT_DISCLOSURE,
   pending,
   error,
+  leading,
   onSubmit,
   onCancel,
 }: ReleaseEditorProps) {
@@ -109,7 +120,7 @@ export function ReleaseEditor({
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const { register, control, handleSubmit, formState } = useForm<ReleaseFormValues>({
     resolver: zodResolver(ReleaseFormSchema),
-    defaultValues: releaseToForm(base, DEFAULT_DISCLOSURE),
+    defaultValues: releaseToForm(base, defaultDisclosure),
   });
   const frameworks = useFieldArray({ control, name: 'frameworks' });
   const e = formState.errors;
@@ -119,14 +130,11 @@ export function ReleaseEditor({
   );
 
   return (
-    <SectionCard
-      title={`New release · v${nextVersion}`}
-      description={`Based on ${base ? `v${base.version}` : 'a blank release'}. Saved as a draft for ${personaName}; it takes effect only when approved.`}
-      icon={FilePlus2}
-    >
+    <SectionCard title={title} description={description} icon={FilePlus2}>
+      {leading}
       <form
         noValidate
-        aria-label={`New release for ${personaName}`}
+        aria-label={title}
         onSubmit={(event) =>
           void handleSubmit((values) => {
             onSubmit(formToRelease(values));
@@ -136,7 +144,7 @@ export function ReleaseEditor({
       >
         {formState.isSubmitted && Object.keys(e).length > 0 ? (
           <Alert variant="destructive" live="alert" title="Some fields need attention">
-            Fix the highlighted fields, then create the draft again.
+            Fix the highlighted fields, then try again.
           </Alert>
         ) : null}
 
@@ -297,7 +305,7 @@ export function ReleaseEditor({
           <Field
             label="Disclosure"
             required
-            description="Shown in every session and export. It must say plainly that this is an AI and never imply a real person wrote the answers."
+            description="Shown in every conversation. Must say plainly that it’s an AI."
             error={e.disclosureText?.message}
           >
             {textarea('disclosureText')}
@@ -362,9 +370,6 @@ export function ReleaseEditor({
         <MutationErrorAlert error={error} title="The draft wasn’t created" />
 
         <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-end">
-          <p className="text-[13px] text-muted-foreground sm:mr-auto">
-            Creates draft v{nextVersion}. Coaching is unchanged until someone approves it.
-          </p>
           <Button
             variant="secondary"
             disabled={pending}
@@ -375,8 +380,8 @@ export function ReleaseEditor({
           >
             Cancel
           </Button>
-          <Button type="submit" loading={pending} loadingText="Creating draft…">
-            Create draft
+          <Button type="submit" loading={pending} loadingText={submittingLabel}>
+            {submitLabel}
           </Button>
         </div>
       </form>
@@ -384,10 +389,8 @@ export function ReleaseEditor({
       <AlertDialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Discard this release?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Your edits haven’t been saved as a draft and will be lost.
-            </AlertDialogDescription>
+            <AlertDialogTitle>Discard your changes?</AlertDialogTitle>
+            <AlertDialogDescription>They haven’t been saved and will be lost.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Keep editing</AlertDialogCancel>

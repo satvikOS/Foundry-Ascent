@@ -1,6 +1,5 @@
 import { CircleCheck, CircleDashed, ClipboardCheck, EyeOff } from 'lucide-react';
 import { useEffect, useMemo, useRef } from 'react';
-import { toast } from 'sonner';
 
 import { announce } from '@/components/a11y/live-announcer';
 import { Alert } from '@/components/ui/alert';
@@ -10,6 +9,7 @@ import { PageContainer, PageHeader } from '@/components/ui/page-header';
 import { SectionCard } from '@/components/ui/section-card';
 import { LoadingRegion, Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { toast } from '@/components/ui/toast';
 import { MutationErrorAlert } from '@/features/admin/shared/form';
 import { useReviewQueue, useSubmitReview, type ReviewSampleView } from '@/lib/api/hooks/eir';
 import { hasRole } from '@/lib/auth/roles';

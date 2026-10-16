@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { jsonResponse, renderWithProviders, stubFetch } from '@/features/admin/shared/test-utils';
 
-import { ReleaseReview } from './persona-detail-page';
+import { ReleaseReview } from './releases-tab';
 
 const RELEASE_ID = '5a1e2b3c-4d5e-4f60-8a71-b2c3d4e5f607';
 const PERSONA_ID = '6b2f3c4d-5e6f-4a71-8b82-c3d4e5f60718';

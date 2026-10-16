@@ -11,12 +11,14 @@ import {
   LayoutDashboard,
   Library,
   LifeBuoy,
+  Lightbulb,
   ListTree,
   ScrollText,
   Settings,
   ShieldCheck,
   Users,
   UserSquare,
+  Waypoints,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -118,10 +120,12 @@ export interface StaffSection {
   icon: LucideIcon;
   to:
     | '/$tenant/app/eir/personas'
+    | '/$tenant/app/eir/lessons'
     | '/$tenant/app/eir/reviews'
     | '/$tenant/app/eir/inbox'
     | '/$tenant/app/program/portfolio'
     | '/$tenant/app/program/ventures'
+    | '/$tenant/app/program/assignments'
     | '/$tenant/app/program/resources'
     | '/$tenant/app/program/escalations'
     | '/$tenant/app/admin/principals'
@@ -133,12 +137,19 @@ export interface StaffSection {
 export const STAFF_SECTIONS: Record<StaffWorkspaceId, readonly StaffSection[]> = {
   eir: [
     { id: 'personas', label: 'Personas & knowledge', icon: UserSquare, to: '/$tenant/app/eir/personas' },
+    { id: 'lessons', label: 'Lessons to review', icon: Lightbulb, to: '/$tenant/app/eir/lessons' },
     { id: 'reviews', label: 'Calibration reviews', icon: ClipboardCheck, to: '/$tenant/app/eir/reviews' },
     { id: 'inbox', label: 'Inbox', icon: Inbox, to: '/$tenant/app/eir/inbox' },
   ],
   program: [
     { id: 'portfolio', label: 'Portfolio', icon: ChartColumn, to: '/$tenant/app/program/portfolio' },
     { id: 'ventures', label: 'Ventures', icon: Briefcase, to: '/$tenant/app/program/ventures' },
+    {
+      id: 'assignments',
+      label: 'vEIRs & assignments',
+      icon: Waypoints,
+      to: '/$tenant/app/program/assignments',
+    },
     { id: 'resources', label: 'Resources', icon: ListTree, to: '/$tenant/app/program/resources' },
     { id: 'escalations', label: 'Escalations', icon: Flag, to: '/$tenant/app/program/escalations' },
   ],

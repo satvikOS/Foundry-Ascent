@@ -28,6 +28,9 @@ export function styleLabel<K extends keyof typeof STYLE_OPTIONS>(key: K, value: 
   return options.find((option) => option.value === value)?.label ?? value;
 }
 
+/** The one wording for "an EIR persona needs consent before a release can be approved". */
+export const CONSENT_NEEDED = 'Record consent before approving a release.';
+
 /** Consent state for the persona list/detail. Neutral guides don't represent a person. */
 export function consentState(
   persona: Pick<PersonaView, 'kind' | 'hasConsent'>,

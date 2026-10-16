@@ -25,8 +25,10 @@ import { Route as TenantAppAdminSettingsRouteImport } from './routes/$tenant/app
 import { Route as TenantAppAdminUsageRouteImport } from './routes/$tenant/app/admin/usage';
 import { Route as TenantAppEirIndexRouteImport } from './routes/$tenant/app/eir/index';
 import { Route as TenantAppEirInboxRouteImport } from './routes/$tenant/app/eir/inbox';
+import { Route as TenantAppEirLessonsRouteImport } from './routes/$tenant/app/eir/lessons';
 import { Route as TenantAppEirReviewsRouteImport } from './routes/$tenant/app/eir/reviews';
 import { Route as TenantAppProgramIndexRouteImport } from './routes/$tenant/app/program/index';
+import { Route as TenantAppProgramAssignmentsRouteImport } from './routes/$tenant/app/program/assignments';
 import { Route as TenantAppProgramEscalationsRouteImport } from './routes/$tenant/app/program/escalations';
 import { Route as TenantAppProgramPortfolioRouteImport } from './routes/$tenant/app/program/portfolio';
 import { Route as TenantAppProgramResourcesRouteImport } from './routes/$tenant/app/program/resources';
@@ -35,6 +37,7 @@ import { Route as TenantAppVVentureIdRouteRouteImport } from './routes/$tenant/a
 import { Route as TenantAppVenturesIndexRouteImport } from './routes/$tenant/app/ventures/index';
 import { Route as TenantAppEirPersonasIndexRouteImport } from './routes/$tenant/app/eir/personas/index';
 import { Route as TenantAppEirPersonasPersonaIdRouteImport } from './routes/$tenant/app/eir/personas/$personaId';
+import { Route as TenantAppEirPersonasNewRouteImport } from './routes/$tenant/app/eir/personas/new';
 import { Route as TenantAppVVentureIdIndexRouteImport } from './routes/$tenant/app/v/$ventureId/index';
 import { Route as TenantAppVVentureIdDocumentsRouteImport } from './routes/$tenant/app/v/$ventureId/documents';
 import { Route as TenantAppVVentureIdHelpRouteImport } from './routes/$tenant/app/v/$ventureId/help';
@@ -126,6 +129,11 @@ const TenantAppEirInboxRoute = TenantAppEirInboxRouteImport.update({
   path: '/inbox',
   getParentRoute: () => TenantAppEirRouteRoute,
 } as any);
+const TenantAppEirLessonsRoute = TenantAppEirLessonsRouteImport.update({
+  id: '/lessons',
+  path: '/lessons',
+  getParentRoute: () => TenantAppEirRouteRoute,
+} as any);
 const TenantAppEirReviewsRoute = TenantAppEirReviewsRouteImport.update({
   id: '/reviews',
   path: '/reviews',
@@ -136,6 +144,12 @@ const TenantAppProgramIndexRoute = TenantAppProgramIndexRouteImport.update({
   path: '/',
   getParentRoute: () => TenantAppProgramRouteRoute,
 } as any);
+const TenantAppProgramAssignmentsRoute =
+  TenantAppProgramAssignmentsRouteImport.update({
+    id: '/assignments',
+    path: '/assignments',
+    getParentRoute: () => TenantAppProgramRouteRoute,
+  } as any);
 const TenantAppProgramEscalationsRoute =
   TenantAppProgramEscalationsRouteImport.update({
     id: '/escalations',
@@ -183,6 +197,11 @@ const TenantAppEirPersonasPersonaIdRoute =
     path: '/personas/$personaId',
     getParentRoute: () => TenantAppEirRouteRoute,
   } as any);
+const TenantAppEirPersonasNewRoute = TenantAppEirPersonasNewRouteImport.update({
+  id: '/personas/new',
+  path: '/personas/new',
+  getParentRoute: () => TenantAppEirRouteRoute,
+} as any);
 const TenantAppVVentureIdIndexRoute =
   TenantAppVVentureIdIndexRouteImport.update({
     id: '/',
@@ -252,7 +271,9 @@ export interface FileRoutesByFullPath {
   '/$tenant/app/admin/settings': typeof TenantAppAdminSettingsRoute;
   '/$tenant/app/admin/usage': typeof TenantAppAdminUsageRoute;
   '/$tenant/app/eir/inbox': typeof TenantAppEirInboxRoute;
+  '/$tenant/app/eir/lessons': typeof TenantAppEirLessonsRoute;
   '/$tenant/app/eir/reviews': typeof TenantAppEirReviewsRoute;
+  '/$tenant/app/program/assignments': typeof TenantAppProgramAssignmentsRoute;
   '/$tenant/app/program/escalations': typeof TenantAppProgramEscalationsRoute;
   '/$tenant/app/program/portfolio': typeof TenantAppProgramPortfolioRoute;
   '/$tenant/app/program/resources': typeof TenantAppProgramResourcesRoute;
@@ -262,6 +283,7 @@ export interface FileRoutesByFullPath {
   '/$tenant/app/program/': typeof TenantAppProgramIndexRoute;
   '/$tenant/app/ventures/': typeof TenantAppVenturesIndexRoute;
   '/$tenant/app/eir/personas/$personaId': typeof TenantAppEirPersonasPersonaIdRoute;
+  '/$tenant/app/eir/personas/new': typeof TenantAppEirPersonasNewRoute;
   '/$tenant/app/v/$ventureId/documents': typeof TenantAppVVentureIdDocumentsRoute;
   '/$tenant/app/v/$ventureId/help': typeof TenantAppVVentureIdHelpRoute;
   '/$tenant/app/v/$ventureId/knowledge': typeof TenantAppVVentureIdKnowledgeRoute;
@@ -284,7 +306,9 @@ export interface FileRoutesByTo {
   '/$tenant/app/admin/settings': typeof TenantAppAdminSettingsRoute;
   '/$tenant/app/admin/usage': typeof TenantAppAdminUsageRoute;
   '/$tenant/app/eir/inbox': typeof TenantAppEirInboxRoute;
+  '/$tenant/app/eir/lessons': typeof TenantAppEirLessonsRoute;
   '/$tenant/app/eir/reviews': typeof TenantAppEirReviewsRoute;
+  '/$tenant/app/program/assignments': typeof TenantAppProgramAssignmentsRoute;
   '/$tenant/app/program/escalations': typeof TenantAppProgramEscalationsRoute;
   '/$tenant/app/program/portfolio': typeof TenantAppProgramPortfolioRoute;
   '/$tenant/app/program/resources': typeof TenantAppProgramResourcesRoute;
@@ -294,6 +318,7 @@ export interface FileRoutesByTo {
   '/$tenant/app/program': typeof TenantAppProgramIndexRoute;
   '/$tenant/app/ventures': typeof TenantAppVenturesIndexRoute;
   '/$tenant/app/eir/personas/$personaId': typeof TenantAppEirPersonasPersonaIdRoute;
+  '/$tenant/app/eir/personas/new': typeof TenantAppEirPersonasNewRoute;
   '/$tenant/app/v/$ventureId/documents': typeof TenantAppVVentureIdDocumentsRoute;
   '/$tenant/app/v/$ventureId/help': typeof TenantAppVVentureIdHelpRoute;
   '/$tenant/app/v/$ventureId/knowledge': typeof TenantAppVVentureIdKnowledgeRoute;
@@ -322,7 +347,9 @@ export interface FileRoutesById {
   '/$tenant/app/admin/settings': typeof TenantAppAdminSettingsRoute;
   '/$tenant/app/admin/usage': typeof TenantAppAdminUsageRoute;
   '/$tenant/app/eir/inbox': typeof TenantAppEirInboxRoute;
+  '/$tenant/app/eir/lessons': typeof TenantAppEirLessonsRoute;
   '/$tenant/app/eir/reviews': typeof TenantAppEirReviewsRoute;
+  '/$tenant/app/program/assignments': typeof TenantAppProgramAssignmentsRoute;
   '/$tenant/app/program/escalations': typeof TenantAppProgramEscalationsRoute;
   '/$tenant/app/program/portfolio': typeof TenantAppProgramPortfolioRoute;
   '/$tenant/app/program/resources': typeof TenantAppProgramResourcesRoute;
@@ -332,6 +359,7 @@ export interface FileRoutesById {
   '/$tenant/app/program/': typeof TenantAppProgramIndexRoute;
   '/$tenant/app/ventures/': typeof TenantAppVenturesIndexRoute;
   '/$tenant/app/eir/personas/$personaId': typeof TenantAppEirPersonasPersonaIdRoute;
+  '/$tenant/app/eir/personas/new': typeof TenantAppEirPersonasNewRoute;
   '/$tenant/app/v/$ventureId/documents': typeof TenantAppVVentureIdDocumentsRoute;
   '/$tenant/app/v/$ventureId/help': typeof TenantAppVVentureIdHelpRoute;
   '/$tenant/app/v/$ventureId/knowledge': typeof TenantAppVVentureIdKnowledgeRoute;
@@ -361,7 +389,9 @@ export interface FileRouteTypes {
     | '/$tenant/app/admin/settings'
     | '/$tenant/app/admin/usage'
     | '/$tenant/app/eir/inbox'
+    | '/$tenant/app/eir/lessons'
     | '/$tenant/app/eir/reviews'
+    | '/$tenant/app/program/assignments'
     | '/$tenant/app/program/escalations'
     | '/$tenant/app/program/portfolio'
     | '/$tenant/app/program/resources'
@@ -371,6 +401,7 @@ export interface FileRouteTypes {
     | '/$tenant/app/program/'
     | '/$tenant/app/ventures/'
     | '/$tenant/app/eir/personas/$personaId'
+    | '/$tenant/app/eir/personas/new'
     | '/$tenant/app/v/$ventureId/documents'
     | '/$tenant/app/v/$ventureId/help'
     | '/$tenant/app/v/$ventureId/knowledge'
@@ -393,7 +424,9 @@ export interface FileRouteTypes {
     | '/$tenant/app/admin/settings'
     | '/$tenant/app/admin/usage'
     | '/$tenant/app/eir/inbox'
+    | '/$tenant/app/eir/lessons'
     | '/$tenant/app/eir/reviews'
+    | '/$tenant/app/program/assignments'
     | '/$tenant/app/program/escalations'
     | '/$tenant/app/program/portfolio'
     | '/$tenant/app/program/resources'
@@ -403,6 +436,7 @@ export interface FileRouteTypes {
     | '/$tenant/app/program'
     | '/$tenant/app/ventures'
     | '/$tenant/app/eir/personas/$personaId'
+    | '/$tenant/app/eir/personas/new'
     | '/$tenant/app/v/$ventureId/documents'
     | '/$tenant/app/v/$ventureId/help'
     | '/$tenant/app/v/$ventureId/knowledge'
@@ -430,7 +464,9 @@ export interface FileRouteTypes {
     | '/$tenant/app/admin/settings'
     | '/$tenant/app/admin/usage'
     | '/$tenant/app/eir/inbox'
+    | '/$tenant/app/eir/lessons'
     | '/$tenant/app/eir/reviews'
+    | '/$tenant/app/program/assignments'
     | '/$tenant/app/program/escalations'
     | '/$tenant/app/program/portfolio'
     | '/$tenant/app/program/resources'
@@ -440,6 +476,7 @@ export interface FileRouteTypes {
     | '/$tenant/app/program/'
     | '/$tenant/app/ventures/'
     | '/$tenant/app/eir/personas/$personaId'
+    | '/$tenant/app/eir/personas/new'
     | '/$tenant/app/v/$ventureId/documents'
     | '/$tenant/app/v/$ventureId/help'
     | '/$tenant/app/v/$ventureId/knowledge'
@@ -574,6 +611,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TenantAppEirInboxRouteImport;
       parentRoute: typeof TenantAppEirRouteRoute;
     };
+    '/$tenant/app/eir/lessons': {
+      id: '/$tenant/app/eir/lessons';
+      path: '/lessons';
+      fullPath: '/$tenant/app/eir/lessons';
+      preLoaderRoute: typeof TenantAppEirLessonsRouteImport;
+      parentRoute: typeof TenantAppEirRouteRoute;
+    };
     '/$tenant/app/eir/reviews': {
       id: '/$tenant/app/eir/reviews';
       path: '/reviews';
@@ -586,6 +630,13 @@ declare module '@tanstack/react-router' {
       path: '/';
       fullPath: '/$tenant/app/program/';
       preLoaderRoute: typeof TenantAppProgramIndexRouteImport;
+      parentRoute: typeof TenantAppProgramRouteRoute;
+    };
+    '/$tenant/app/program/assignments': {
+      id: '/$tenant/app/program/assignments';
+      path: '/assignments';
+      fullPath: '/$tenant/app/program/assignments';
+      preLoaderRoute: typeof TenantAppProgramAssignmentsRouteImport;
       parentRoute: typeof TenantAppProgramRouteRoute;
     };
     '/$tenant/app/program/escalations': {
@@ -642,6 +693,13 @@ declare module '@tanstack/react-router' {
       path: '/personas/$personaId';
       fullPath: '/$tenant/app/eir/personas/$personaId';
       preLoaderRoute: typeof TenantAppEirPersonasPersonaIdRouteImport;
+      parentRoute: typeof TenantAppEirRouteRoute;
+    };
+    '/$tenant/app/eir/personas/new': {
+      id: '/$tenant/app/eir/personas/new';
+      path: '/personas/new';
+      fullPath: '/$tenant/app/eir/personas/new';
+      preLoaderRoute: typeof TenantAppEirPersonasNewRouteImport;
       parentRoute: typeof TenantAppEirRouteRoute;
     };
     '/$tenant/app/v/$ventureId/': {
@@ -731,17 +789,21 @@ const TenantAppAdminRouteRouteWithChildren =
 
 interface TenantAppEirRouteRouteChildren {
   TenantAppEirInboxRoute: typeof TenantAppEirInboxRoute;
+  TenantAppEirLessonsRoute: typeof TenantAppEirLessonsRoute;
   TenantAppEirReviewsRoute: typeof TenantAppEirReviewsRoute;
   TenantAppEirIndexRoute: typeof TenantAppEirIndexRoute;
   TenantAppEirPersonasPersonaIdRoute: typeof TenantAppEirPersonasPersonaIdRoute;
+  TenantAppEirPersonasNewRoute: typeof TenantAppEirPersonasNewRoute;
   TenantAppEirPersonasIndexRoute: typeof TenantAppEirPersonasIndexRoute;
 }
 
 const TenantAppEirRouteRouteChildren: TenantAppEirRouteRouteChildren = {
   TenantAppEirInboxRoute: TenantAppEirInboxRoute,
+  TenantAppEirLessonsRoute: TenantAppEirLessonsRoute,
   TenantAppEirReviewsRoute: TenantAppEirReviewsRoute,
   TenantAppEirIndexRoute: TenantAppEirIndexRoute,
   TenantAppEirPersonasPersonaIdRoute: TenantAppEirPersonasPersonaIdRoute,
+  TenantAppEirPersonasNewRoute: TenantAppEirPersonasNewRoute,
   TenantAppEirPersonasIndexRoute: TenantAppEirPersonasIndexRoute,
 };
 
@@ -749,6 +811,7 @@ const TenantAppEirRouteRouteWithChildren =
   TenantAppEirRouteRoute._addFileChildren(TenantAppEirRouteRouteChildren);
 
 interface TenantAppProgramRouteRouteChildren {
+  TenantAppProgramAssignmentsRoute: typeof TenantAppProgramAssignmentsRoute;
   TenantAppProgramEscalationsRoute: typeof TenantAppProgramEscalationsRoute;
   TenantAppProgramPortfolioRoute: typeof TenantAppProgramPortfolioRoute;
   TenantAppProgramResourcesRoute: typeof TenantAppProgramResourcesRoute;
@@ -757,6 +820,7 @@ interface TenantAppProgramRouteRouteChildren {
 }
 
 const TenantAppProgramRouteRouteChildren: TenantAppProgramRouteRouteChildren = {
+  TenantAppProgramAssignmentsRoute: TenantAppProgramAssignmentsRoute,
   TenantAppProgramEscalationsRoute: TenantAppProgramEscalationsRoute,
   TenantAppProgramPortfolioRoute: TenantAppProgramPortfolioRoute,
   TenantAppProgramResourcesRoute: TenantAppProgramResourcesRoute,

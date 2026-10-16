@@ -39,7 +39,7 @@ const text = (label: string, max: number) =>
     .min(1, `${label} is required.`)
     .max(max, `Use ${max.toLocaleString()} characters or fewer.`);
 
-export const FrameworkForm = z.object({
+const FrameworkForm = z.object({
   name: text('A name', 120),
   whenToUse: text('When to use it', 500),
   keyQuestions: lines({ label: 'key question', min: 1, max: 10, itemMax: 300 }),
