@@ -498,6 +498,17 @@ describe('document viewer', () => {
     expect(dialog.querySelector('.viewer-pill-dock')?.contains(status)).toBe(true);
   });
 
+  it('lets the end of a PDF scroll clear of the page pill that floats over it', async () => {
+    // jsdom lays nothing out: every element is 40px tall here.
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(40);
+    const { dialog } = await openViewer({ documentId: PDF_ID });
+    // The pill shows once the PDF reports its pages; the reading area is padded by it and its margin.
+    await within(dialog).findByRole('group', { name: 'Pages' });
+    await waitFor(() => {
+      expect(dialog.style.getPropertyValue('--viewer-footer')).toBe('60px');
+    });
+  });
+
   it('shows a document’s status above the toolbar on a phone', async () => {
     screenWidth(false);
     const { dialog } = await openViewer({ documentId: PROCESSING_ID });

@@ -133,7 +133,8 @@ export default function DocumentViewerDialog({ ventureId, target, onClose, retur
   const [notice, setNotice] = useState<string | null>(null);
   const panel = useRef<HTMLDivElement | null>(null);
   const header = useRef<HTMLDivElement | null>(null);
-  const footer = useRef<HTMLDivElement | null>(null);
+  /** The bottom bar (a phone's toolbar) or dock (a wide screen's status and page pills), once it shows. */
+  const [footer, setFooter] = useState<HTMLDivElement | null>(null);
   const findInput = useRef<HTMLInputElement | null>(null);
 
   const document_ = subject.state === 'document' ? subject.document : null;
@@ -157,17 +158,17 @@ export default function DocumentViewerDialog({ ventureId, target, onClose, retur
     if (!el) return;
     const measure = () => {
       el.style.setProperty('--viewer-header', `${String(header.current?.offsetHeight ?? 56)}px`);
-      const bottom = footer.current?.offsetHeight ?? 0;
+      const bottom = footer?.offsetHeight ?? 0;
       el.style.setProperty('--viewer-footer', `${String(bottom > 0 && desktop ? bottom + 20 : bottom)}px`);
     };
     measure();
     const observer = new ResizeObserver(measure);
     if (header.current) observer.observe(header.current);
-    if (footer.current) observer.observe(footer.current);
+    if (footer) observer.observe(footer);
     return () => {
       observer.disconnect();
     };
-  }, [desktop]);
+  }, [desktop, footer]);
 
   // A new query starts at its first match.
   useEffect(() => {
@@ -495,7 +496,7 @@ export default function DocumentViewerDialog({ ventureId, target, onClose, retur
           </div>
 
           {desktop && (pageNav || status || noticeLine) ? (
-            <div ref={footer} className="viewer-pill-dock" data-viewer-dock>
+            <div ref={setFooter} className="viewer-pill-dock" data-viewer-dock>
               {status || noticeLine ? (
                 <div className="glass-strong viewer-pill viewer-status-pill rounded-2xl border px-3.5 py-1.5 shadow-lg">
                   {status}
@@ -512,7 +513,7 @@ export default function DocumentViewerDialog({ ventureId, target, onClose, retur
 
           {desktop ? null : (
             <div
-              ref={footer}
+              ref={setFooter}
               className="glass-strong viewer-toolbar absolute inset-x-0 bottom-0 z-20 border-t"
               data-viewer-dock
             >
