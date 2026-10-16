@@ -10,7 +10,8 @@ import { FOUNDER_STATE, TENANT, test } from './support/fixtures';
  * throttled connection (time to first byte, first paint, the app shell, the composer, largest paint, layout
  * shift, when the interface fonts start loading) and the main route transitions with the cache warm. The
  * timings are written to test-results/web-perf/ and printed, never asserted: they depend on the machine.
- * What is asserted does not: the signed-in page does not shift as it loads. The landing page is measured the
+ * What is asserted does not: the signed-in page does not shift as it loads, nor as a route's skeleton gives way
+ * to its content. The landing page is measured the
  * same way, signed out.
  */
 
@@ -106,18 +107,33 @@ async function when(page: Page, probe: Probe): Promise<number> {
   return at;
 }
 
-async function transition(page: Page, hrefSuffix: string, title: string): Promise<number | null> {
+/** A route transition: how long until the page rendered its content, and how much it shifted on the way. */
+interface Transition {
+  readonly ms: number;
+  /** Layout shift from the click until half a second after the content showed (skeleton to content). */
+  readonly cls: number;
+}
+
+async function transition(page: Page, hrefSuffix: string, title: string): Promise<Transition | null> {
   const started = await page.evaluate((suffix) => {
     const link = [...document.querySelectorAll('a[href]')].find((a) =>
       (a.getAttribute('href') ?? '').replace(/[?#].*$/, '').endsWith(suffix),
     );
     if (!(link instanceof HTMLAnchorElement)) return null;
+    const perf = (window as unknown as { __perf: PaintMetrics & { mark: number } }).__perf;
+    perf.mark = perf.cls;
     const at = performance.now();
     link.click();
     return at;
   }, hrefSuffix);
   if (started === null) return null;
-  return (await when(page, { kind: 'page', title })) - started;
+  const ms = (await when(page, { kind: 'page', title })) - started;
+  await page.waitForTimeout(500);
+  const cls = await page.evaluate(() => {
+    const perf = (window as unknown as { __perf: PaintMetrics & { mark: number } }).__perf;
+    return perf.cls - perf.mark;
+  });
+  return { ms, cls };
 }
 
 test.describe('page speed', () => {
@@ -173,10 +189,10 @@ test.describe('page speed', () => {
       await cdp.send('Network.setCacheDisabled', { cacheDisabled: false });
       const venturePath = new URL(page.url()).pathname;
       const transitions = {
-        knowledgeMs: await transition(page, '/knowledge', 'Knowledge'),
-        documentsMs: await transition(page, '/documents', 'Documents'),
-        knowledgeAgainMs: await transition(page, '/knowledge', 'Knowledge'),
-        newChatMs: await transition(page, venturePath, ''),
+        knowledge: await transition(page, '/knowledge', 'Knowledge'),
+        documents: await transition(page, '/documents', 'Documents'),
+        knowledgeAgain: await transition(page, '/knowledge', 'Knowledge'),
+        newChat: await transition(page, venturePath, ''),
       };
 
       const result = {
@@ -195,6 +211,10 @@ test.describe('page speed', () => {
 
       // Machine-independent: the page does not jump while it loads.
       expect(load.paints.cls, 'cumulative layout shift of the cold load').toBeLessThan(0.1);
+      // A page's skeleton gives way to its content without moving what is already on screen.
+      for (const [name, t] of Object.entries(transitions)) {
+        if (t !== null) expect(t.cls, `layout shift of the ${name} transition`).toBeLessThan(0.1);
+      }
       expect(load.ttfbMs).not.toBeNull();
       expect(composerAt).toBeGreaterThanOrEqual(shellAt);
     });
