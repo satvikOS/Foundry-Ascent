@@ -43,13 +43,13 @@ import {
   filenameWords,
   humanAdviceIds,
   keepHumanAdvice,
+  withoutAdviceRewrites,
   modelFailure,
   personaCanDistill,
   previousNeedsDistill,
   removedSince,
   sameNotebook,
   staleWriteReason,
-  withoutPinnedRewrites,
 } from './distill-rules.js';
 import { proposeMemoryCandidates } from './memory.js';
 
@@ -573,9 +573,10 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
       pins: readonly string[],
       removed: readonly string[],
     ): SanitizedDistill | null =>
+      // sanitizeDistill drops rewrites of lines a person edited (pinned); human-help advice is kept as the EIR
+      // wrote it (keepHumanAdvice), so the model cannot reword it either.
       sanitizeDistill(
-        // Human-help advice is kept as written (keepHumanAdvice), so the model cannot reword it either.
-        withoutPinnedRewrites(draft, new Set([...pins, ...humanAdviceIds(notebook)])),
+        withoutAdviceRewrites(draft, new Set(humanAdviceIds(notebook))),
         sanitizeContext(state, source, nowIso, notebook, pins, removed),
       );
     const result = sanitizeFor(readContent, source.pins, []);

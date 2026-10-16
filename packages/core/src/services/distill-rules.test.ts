@@ -12,6 +12,7 @@ import {
   dropSuppressed,
   filenameWords,
   humanAdviceIds,
+  withoutAdviceRewrites,
   keepHumanAdvice,
   modelFailure,
   personaCanDistill,
@@ -19,7 +20,6 @@ import {
   removedSince,
   sameNotebook,
   staleWriteReason,
-  withoutPinnedRewrites,
 } from './distill-rules.js';
 import { notebookFingerprint } from './notebook.js';
 
@@ -210,26 +210,24 @@ function draftWith(notes: DistillDraft['notebook']): DistillDraft {
   };
 }
 
-describe('withoutPinnedRewrites', () => {
-  it('drops model rewrites of lines a person edited, keeps everything else', () => {
+describe('withoutAdviceRewrites', () => {
+  it('drops model rewrites of human-help advice and keeps every other line', () => {
     const draft = draftWith({
       summary: 'x',
-      founder_profile: [
-        { id: 'fp-1', text: 'Likes thorough, detailed explanations' },
-        { id: 'fp-2', text: 'Likes numbers' },
-        { id: null, text: 'Thinks out loud' },
+      founder_profile: [{ id: 'fp-1', text: 'Likes numbers' }],
+      commitments: [],
+      open_questions: [],
+      last_advice: [
+        { id: 'esc-1', text: 'Reworded advice' },
+        { id: 'la-1', text: 'Price per room' },
+        { id: null, text: 'New advice' },
       ],
-      commitments: [{ id: 'cm-1', text: 'Interview five', due: null, status: 'open' }],
-      open_questions: [{ id: 'oq-1', text: 'Who pays?' }],
-      last_advice: [{ id: 'la-1', text: 'Price per room' }],
       next_opener: null,
     });
-    const out = withoutPinnedRewrites(draft, new Set(['fp-1', 'oq-1', 'summary']));
-    expect(out.notebook.founder_profile.map((n) => n.id)).toEqual(['fp-2', null]);
-    expect(out.notebook.open_questions).toEqual([]);
-    expect(out.notebook.last_advice).toHaveLength(1);
-    expect(out.notebook.commitments).toHaveLength(1);
-    expect(draft.notebook.founder_profile).toHaveLength(3);
+    const out = withoutAdviceRewrites(draft, new Set(['esc-1']));
+    expect(out.notebook.last_advice.map((n) => n.id)).toEqual(['la-1', null]);
+    expect(out.notebook.founder_profile).toHaveLength(1);
+    expect(withoutAdviceRewrites(draft, new Set())).toBe(draft);
   });
 });
 

@@ -140,21 +140,17 @@ export function previousNeedsDistill(
 }
 
 /**
- * The model's draft without rewrites of lines a person edited (and of human-help advice, see
- * {@link keepHumanAdvice}): sanitizeDistill keeps a pinned entry as the person left it, so a proposal with
- * the same id but other wording would otherwise be added as a second, contradicting line. Commitments are
- * matched by id inside sanitizeDistill already.
+ * The model's draft without rewrites of human-help advice: it stays as the EIR wrote it until newer advice
+ * pushes it out (see {@link keepHumanAdvice}). Rewrites of lines a person edited are dropped by sanitizeDistill,
+ * which keeps pinned entries as the person left them.
  */
-export function withoutPinnedRewrites(draft: DistillDraft, pinned: ReadonlySet<string>): DistillDraft {
-  const keep = <T extends { id: string | null }>(notes: readonly T[]): T[] =>
-    notes.filter((n) => n.id === null || !pinned.has(n.id));
+export function withoutAdviceRewrites(draft: DistillDraft, adviceIds: ReadonlySet<string>): DistillDraft {
+  if (adviceIds.size === 0) return draft;
   return {
     ...draft,
     notebook: {
       ...draft.notebook,
-      founder_profile: keep(draft.notebook.founder_profile),
-      open_questions: keep(draft.notebook.open_questions),
-      last_advice: keep(draft.notebook.last_advice),
+      last_advice: draft.notebook.last_advice.filter((n) => n.id === null || !adviceIds.has(n.id)),
     },
   };
 }
