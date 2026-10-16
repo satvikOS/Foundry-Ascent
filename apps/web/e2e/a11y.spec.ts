@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect } from '@playwright/test';
 
 import {
   expectNoSeriousA11yViolations,
@@ -9,6 +9,7 @@ import {
   startConversation,
   TENANT,
   useTheme,
+  test,
 } from './support/fixtures';
 
 /**

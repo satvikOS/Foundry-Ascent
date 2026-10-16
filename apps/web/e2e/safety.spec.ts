@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext } from '@playwright/test';
+import { expect, type APIRequestContext } from '@playwright/test';
 
 import {
   FOUNDER_STATE,
@@ -7,6 +7,7 @@ import {
   runToken,
   startConversation,
   TENANT,
+  test,
 } from './support/fixtures';
 
 const WRITE_HEADERS = { 'x-requested-with': 'foundry-ascent', 'content-type': 'application/json' };

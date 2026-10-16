@@ -1,26 +1,29 @@
-import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
+import { expect, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 
 import {
+  browserSpeechRequests,
   expectNoHorizontalScroll,
   expectNoSeriousA11yViolations,
   expectReachable,
   FOUNDER_STATE,
   openVenture,
   runToken,
+  setCallsEnabled,
   startConversation,
+  test,
   useTheme,
+  expectNoBareEirName,
 } from './support/fixtures';
 
 /*
- * vEIR calls in mock mode: no speech-to-text grant, so the call continues by typing, and no server voice
- * (`POST /speech` answers 501), so the browser reads the validated reply. Every turn goes through the real
- * API with `channel: 'voice'`.
- *
- * CALLS-BACKEND-STUB: the calls endpoints (POST /sessions/:id/calls, /calls/:id/heartbeat, /calls/:id/end)
- * and /speech are answered by `stubCallsBackend` below, in the shapes of packages/contracts/src/calls.ts and
- * the way the development server answers them, because the calls backend (S3) is built in parallel. Drop
- * `stubCallsBackend` (and this comment) once the API serves them; the assertions stay as they are.
+ * vEIR calls against the real API in mock mode: calls, heartbeats, the end and its summary, interrupts and
+ * the call settings are all served by the API. Only what a test environment cannot do is missing, and the
+ * API itself says so: there is no Amazon Transcribe grant (the call continues by typing; headless browsers
+ * often have no microphone either) and no Amazon Polly (`POST /speech` answers 501), so the production build
+ * shows replies as captions and the browser never speaks. Every turn is a real `channel: 'voice'` turn.
  */
+
+const WRITE_HEADERS = { 'x-requested-with': 'foundry-ascent', 'content-type': 'application/json' };
 
 interface SessionTurns {
   session: { ventureId: string };
@@ -40,106 +43,24 @@ async function sessionTurns(request: APIRequestContext, sessionId: string): Prom
   return (await response.json()) as SessionTurns;
 }
 
-interface StubOptions {
-  /** How POST /sessions/:id/calls answers: a live call, or the kill switch's refusal. */
-  start?: 'live' | 'ai_disabled';
-  /** How long POST /sessions/:id/calls takes to answer. */
-  startDelayMs?: number;
-  /** The status of the n-th POST /speech (0-based); 501 (no server voice in mock mode) otherwise. */
-  speechStatus?: (n: number) => number;
+/** Deletes memory the test kept, so the next run (and the next spec) starts from the seeded memory. */
+async function deleteMemory(request: APIRequestContext, memoryId: string): Promise<void> {
+  const response = await request.patch(`/api/v1/memory/${memoryId}`, {
+    headers: WRITE_HEADERS,
+    data: { action: 'delete' },
+  });
+  expect([200, 204], 'PATCH /memory/:id delete').toContain(response.status());
 }
 
-// CALLS-BACKEND-STUB (see the file comment).
-async function stubCallsBackend(page: Page, options: StubOptions = {}): Promise<void> {
-  const callId = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c01';
-  let speechRequests = 0;
-  const intro = 'Hi Maya, good to hear from you. What should we work on?';
-  let currentSession = '';
-  const startedAt = new Date().toISOString();
-  const callView = (sessionId: string, ventureId: string, ended: boolean) => ({
-    id: callId,
-    sessionId,
-    ventureId,
-    personaId: '00000000-0000-4000-8000-000000000001',
-    status: ended ? 'ended' : 'live',
-    provider: 'builtin',
-    inputMode: 'typed',
-    startedAt,
-    endedAt: ended ? new Date().toISOString() : null,
-    endReason: ended ? 'user' : null,
-    maxSeconds: 1200,
-    durationSeconds: ended ? 42 : null,
-  });
-
-  await page.route(/\/api\/v1\/sessions\/[0-9a-f-]{36}\/calls$/, async (route) => {
-    const sessionId = /sessions\/([0-9a-f-]{36})\/calls$/.exec(route.request().url())?.[1] ?? '';
-    if (options.startDelayMs) await new Promise((resolve) => setTimeout(resolve, options.startDelayMs));
-    if (options.start === 'ai_disabled') {
-      await route.fulfill({
-        status: 503,
-        contentType: 'application/problem+json',
-        body: JSON.stringify({
-          type: 'urn:foundry-ascent:problem:ai_disabled',
-          title: 'AI coaching paused',
-          status: 503,
-          code: 'ai_disabled',
-          detail: 'Calls are paused by the program. You can keep chatting.',
-          requestId: 'e2e',
-        }),
-      });
-      return;
-    }
-    currentSession = sessionId;
-    const { session } = await sessionTurns(page.request, sessionId);
-    await route.fulfill({
-      status: 201,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        call: callView(sessionId, session.ventureId, false),
-        sttGrant: null,
-        intro: { text: intro, sig: 'c2lnbmVkLWludHJvLWZvci1lMmU' },
-      }),
-    });
-  });
-  await page.route(/\/api\/v1\/calls\/[0-9a-f-]{36}\/heartbeat$/, (route) =>
-    route.fulfill({
-      contentType: 'application/json',
-      body: JSON.stringify({ remainingSeconds: 1100, action: 'continue', reason: null }),
-    }),
-  );
-  await page.route(/\/api\/v1\/calls\/[0-9a-f-]{36}\/end$/, async (route) => {
-    const sessionId = currentSession;
-    const { session, turns } = await sessionTurns(page.request, sessionId);
-    const turnIds = new Set(turns.map((t) => t.id));
-    const memory = (await (
-      await page.request.get(`/api/v1/ventures/${session.ventureId}/memory?status=proposed&limit=100`)
-    ).json()) as { items: { id: string; sourceRefs: { kind: string; id: string }[] }[] };
-    await route.fulfill({
-      contentType: 'application/json',
-      body: JSON.stringify({
-        call: callView(sessionId, session.ventureId, true),
-        summary: {
-          turnCount: turns.length,
-          durationSeconds: 42,
-          memoryProposalIds: memory.items
-            .filter((m) => m.sourceRefs.some((ref) => turnIds.has(ref.id)))
-            .map((m) => m.id),
-          nextActions: turns.flatMap((t) => t.response?.next_actions ?? []),
-          escalationIds: [],
-        },
-      }),
-    });
-  });
-  await page.route(/\/api\/v1\/speech$/, (route) => {
-    const status = options.speechStatus?.(speechRequests) ?? 501;
-    speechRequests += 1;
-    const code = status === 501 ? 'speech_unavailable' : 'model_unavailable';
-    return route.fulfill({
-      status,
-      contentType: 'application/problem+json',
-      body: JSON.stringify({ type: 'about:blank', title: 'Speech', status, code, requestId: 'e2e' }),
-    });
-  });
+/** Calls off for the platform for the duration of `body` (back on afterwards, even when it fails). */
+async function withCallsOff(baseURL: string | undefined, body: () => Promise<void>): Promise<void> {
+  if (!baseURL) throw new Error('baseURL is not set');
+  await setCallsEnabled(baseURL, false);
+  try {
+    await body();
+  } finally {
+    await setCallsEnabled(baseURL, true);
+  }
 }
 
 /** The first call in a browser explains how voice is handled; tests that are not about it skip it. */
@@ -164,57 +85,11 @@ function spokenSentences(reply: { answer: string; spoken?: string | null }): str
   return (plain.match(/[^.!?]+[.!?]*/g) ?? []).map((sentence) => sentence.trim()).filter(Boolean);
 }
 
-/**
- * Replaces the browser's speech synthesis with a silent one that keeps the engine's contract (`onstart`, then
- * `onend` after a short reading time). Headless Chromium's `--mute-audio` does not reach the operating system's
- * speech service, so without this the runner's speakers read every reply aloud.
- */
-async function silenceBrowserVoice(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    const pending = new Set<number>();
-    const silent = {
-      speaking: false,
-      pending: false,
-      paused: false,
-      onvoiceschanged: null,
-      getVoices: () => [],
-      speak(utterance: SpeechSynthesisUtterance) {
-        const words = utterance.text.split(/\s+/).filter(Boolean).length;
-        utterance.onstart?.call(utterance, new Event('start') as SpeechSynthesisEvent);
-        const timer = window.setTimeout(
-          () => {
-            pending.delete(timer);
-            utterance.onend?.call(utterance, new Event('end') as SpeechSynthesisEvent);
-          },
-          Math.min(3000, 200 + 60 * words),
-        );
-        pending.add(timer);
-      },
-      cancel() {
-        for (const timer of pending) window.clearTimeout(timer);
-        pending.clear();
-      },
-      pause: () => undefined,
-      resume: () => undefined,
-      addEventListener: () => undefined,
-      removeEventListener: () => undefined,
-      dispatchEvent: () => true,
-    };
-    Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: silent });
-  });
-}
-
 test.describe('vEIR calls', () => {
   test.use({ storageState: FOUNDER_STATE });
 
-  test.beforeEach(async ({ page }) => {
-    await silenceBrowserVoice(page);
-  });
-
-  test('call from the sidebar: typed fallback, spoken reply, mini bar, summary', async ({ page }) => {
-    // The intro's voice fails once (a busy synthesiser); later sentences ask for the voice again.
-    await stubCallsBackend(page, { speechStatus: (n) => (n === 0 ? 503 : 501) });
-    await openVenture(page);
+  test('call from the sidebar: typed fallback, reply in captions, mini bar, summary', async ({ page }) => {
+    const ventureId = await openVenture(page);
     const token = runToken();
     let sessionId = '';
     let callId = '';
@@ -243,7 +118,8 @@ test.describe('vEIR calls', () => {
       callId = body.call.id;
       await expect(screen.getByRole('note', { name: 'AI disclosure' })).toHaveCount(1);
       await expect(screen.getByRole('note', { name: 'AI disclosure' })).toContainText('not a person');
-      // The intro is the vEIR's first line. Its voice failed, so it is on screen only, and the call says so.
+      // The intro is the vEIR's first line. There is no server voice here (501), so it is on screen only,
+      // and the call says so once.
       if (body.intro) {
         await expect(screen.getByRole('region', { name: 'Captions' })).toContainText(body.intro.text);
         await expect(screen.getByText('Spoken replies are unavailable right now.')).toBeVisible();
@@ -259,6 +135,7 @@ test.describe('vEIR calls', () => {
       await expect(screen.getByRole('textbox', { name: /^Reply to / })).toBeFocused();
       await expect(screen.getByRole('button', { name: 'Mute' })).toHaveCount(0);
       await expectNoSeriousA11yViolations(page, 'call screen');
+      await expectNoBareEirName(page, 'the call screen');
     });
 
     await test.step('a typed line is a voice turn; the validated reply is shown as it is spoken', async () => {
@@ -296,11 +173,11 @@ test.describe('vEIR calls', () => {
           { timeout: 30_000 },
         )
         .toBe(true);
-      if (reply?.spoken) {
-        // One failed sentence did not silence the call: the reply asked for its voice again.
-        await expect.poll(() => speech.length, { timeout: 15_000 }).toBeGreaterThan(1);
-        await expect(screen.getByText('Spoken replies are unavailable right now.')).toBeHidden();
-      }
+      // The server said once that it has no voice here (501); a production build then shows every reply on
+      // screen, asks for no more speech, and never lets the browser read it aloud.
+      expect(speech).toHaveLength(1);
+      await expect(screen.getByText('Spoken replies are unavailable right now.')).toBeVisible();
+      expect(await browserSpeechRequests(page)).toBe(0);
     });
 
     await test.step('minimized, the call continues in the mini bar over the conversation', async () => {
@@ -311,6 +188,7 @@ test.describe('vEIR calls', () => {
       await expect(bar).toBeVisible();
       // The vEIR's AI marker travels with its name.
       await expect(bar).toContainText(/AI/);
+      await expectNoBareEirName(page, 'the mini call bar over the conversation');
       await expect(page.getByRole('main').getByText(token).first()).toBeVisible();
       await bar.getByRole('button', { name: 'Return to call' }).click();
       await expect(callScreen(page)).toBeVisible();
@@ -325,15 +203,24 @@ test.describe('vEIR calls', () => {
       await expect(screen.getByRole('heading', { name: 'Call ended' })).toBeFocused();
       expect((await ended).postDataJSON()).toMatchObject({ reason: 'user' });
       await expect(screen.getByRole('note', { name: 'AI disclosure' })).toHaveCount(1);
-      // The call's turn proposed what to remember; nothing is kept until the founder says so.
+      await expectNoBareEirName(page, 'the after-call summary');
+      // The call's turn proposed what to remember; nothing is kept until the founder says so, through the
+      // app's one review path.
       const keep = screen.getByRole('button', { name: /^Keep: / }).first();
       await expect(keep).toBeVisible();
-      const approved = page.waitForRequest(
-        (request) => /\/memory\/[0-9a-f-]{36}$/.test(request.url()) && request.method() === 'PATCH',
+      const approved = page.waitForResponse(
+        (response) =>
+          response.url().endsWith(`/ventures/${ventureId}/memory/batch`) &&
+          response.request().method() === 'POST',
       );
       await keep.click();
-      expect((await approved).postDataJSON()).toEqual({ action: 'approve' });
+      const review = await approved;
+      const sent = review.request().postDataJSON() as { ids: string[]; action: string };
+      expect(sent).toMatchObject({ action: 'approve' });
+      expect(sent.ids).toHaveLength(1);
       await expect(screen.getByText('Kept').first()).toBeVisible();
+      // Leave the venture's memory as it was.
+      for (const id of sent.ids) await deleteMemory(page.request, id);
       await screen.getByRole('button', { name: 'Back to conversation' }).click();
       await expect(callScreen(page)).toBeHidden();
       await expect(page).toHaveURL(new RegExp(`/c/${sessionId}$`));
@@ -357,9 +244,7 @@ test.describe('vEIR calls', () => {
         value: { hasBeenActive: false, isActive: false },
       });
     });
-    await silenceBrowserVoice(tab);
     await voiceNoticeSeen(tab);
-    await stubCallsBackend(tab);
     await tab.goto(`${page.url().split('?')[0] ?? ''}?call=1`);
     const screen = callScreen(tab);
     const start = screen.getByRole('button', { name: 'Start call' });
@@ -378,86 +263,173 @@ test.describe('vEIR calls', () => {
     await tab.close();
   });
 
-  test('a refused call explains why and leaves no empty conversation behind', async ({ page }) => {
+  test('a call live in another conversation moves here only when the founder says so', async ({ page }) => {
     await voiceNoticeSeen(page);
-    // CALLS-BACKEND-STUB: once the API serves calls, refuse for real instead (the owner turns calls off with
-    // PATCH /admin/settings {callsEnabled: false} before, and back on after).
-    await stubCallsBackend(page, { start: 'ai_disabled' });
-    const ventureId = await openVenture(page);
-    const created = page.waitForResponse(
-      (response) =>
-        response.url().endsWith(`/ventures/${ventureId}/sessions`) && response.request().method() === 'POST',
-    );
+    // A conversation to call in, from a second tab of the same browser.
+    const tab = await page.context().newPage();
+    await openVenture(tab);
+    const sessionId = await startConversation(tab, `Who signs off on a pilot? ${runToken()}`);
+    await expect(tab.getByRole('article', { name: 'Exchange 1' })).toBeVisible({ timeout: 30_000 });
+
+    // A call from New chat in the first tab.
+    await openVenture(page);
     await page
       .getByRole('main')
       .getByRole('link', { name: /^Call / })
       .click();
-    const sessionId = ((await (await created).json()) as { id: string }).id;
-    const screen = callScreen(page);
-    await expect(screen.getByRole('heading', { name: 'Can’t call right now' })).toBeVisible();
-    await expect(screen.getByText('Calls are paused by the program. You can keep chatting.')).toBeVisible();
-    // Trying again would be refused the same way, so it is not offered.
+    await expect(callScreen(page).getByRole('textbox', { name: /^Reply to / })).toBeFocused();
+
+    // Calling in the other conversation: one call at a time, so the founder is asked first.
+    const refused = tab.waitForResponse(
+      (response) => response.url().endsWith(`/sessions/${sessionId}/calls`) && response.status() === 409,
+    );
+    // As a link opened later (a tab that has seen no click), so the call waits for Start call.
+    await tab.addInitScript(() => {
+      Object.defineProperty(navigator, 'userActivation', {
+        configurable: true,
+        value: { hasBeenActive: false, isActive: false },
+      });
+    });
+    await tab.goto(`${tab.url().split('?')[0] ?? ''}?call=1`);
+    const screen = callScreen(tab);
+    await screen.getByRole('button', { name: 'Start call' }).click();
+    await refused;
+    await expect(screen.getByRole('heading', { name: 'You’re already in a call' })).toBeVisible();
     await expect(screen.getByRole('button', { name: 'Try again' })).toHaveCount(0);
-    // The conversation created for the call is gone from the venture's conversations (Recents).
-    await expect
-      .poll(
-        async () => {
-          const list = (await (await page.request.get(`/api/v1/ventures/${ventureId}/sessions`)).json()) as {
-            items: { id: string }[];
-          };
-          return list.items.some((item) => item.id === sessionId);
-        },
-        { timeout: 10_000 },
-      )
-      .toBe(false);
-    await screen.getByRole('button', { name: 'Back to chat' }).click();
-    await expect(screen).toBeHidden();
-    await expect(page).toHaveURL(new RegExp(`/v/${ventureId}$`));
+    const moved = tab.waitForRequest(
+      (request) => request.url().endsWith(`/sessions/${sessionId}/calls`) && request.method() === 'POST',
+    );
+    await screen.getByRole('button', { name: 'Move the call here' }).click();
+    expect((await moved).postDataJSON()).toMatchObject({ replace: true });
+    await expect(screen.getByRole('textbox', { name: /^Reply to / })).toBeFocused();
+    await screen.getByRole('button', { name: 'End call' }).click();
+    await expect(screen.getByRole('heading', { name: 'Call ended' })).toBeVisible();
+    await tab.close();
+  });
+
+  test('a refused call explains why and leaves no empty conversation behind', async ({ page, baseURL }) => {
+    await voiceNoticeSeen(page);
+    const ventureId = await openVenture(page);
+    const call = page.getByRole('main').getByRole('link', { name: /^Call / });
+    await expect(call).toBeVisible();
+    // Calls are switched off after the page loaded its call settings, so the Call link is still there and the
+    // API refuses the call itself.
+    await withCallsOff(baseURL, async () => {
+      const created = page.waitForResponse(
+        (response) =>
+          response.url().endsWith(`/ventures/${ventureId}/sessions`) &&
+          response.request().method() === 'POST',
+      );
+      await call.click();
+      const sessionId = ((await (await created).json()) as { id: string }).id;
+      const screen = callScreen(page);
+      await expect(screen.getByRole('heading', { name: 'Can’t call right now' })).toBeVisible();
+      await expect(screen.getByText('Calls are paused by the program. You can keep chatting.')).toBeVisible();
+      // Trying again would be refused the same way, so it is not offered.
+      await expect(screen.getByRole('button', { name: 'Try again' })).toHaveCount(0);
+      // The conversation created for the call is gone from the venture's conversations (Recents).
+      await expect
+        .poll(
+          async () => {
+            const list = (await (
+              await page.request.get(`/api/v1/ventures/${ventureId}/sessions`)
+            ).json()) as {
+              items: { id: string }[];
+            };
+            return list.items.some((item) => item.id === sessionId);
+          },
+          { timeout: 10_000 },
+        )
+        .toBe(false);
+      await screen.getByRole('button', { name: 'Back to chat' }).click();
+      await expect(screen).toBeHidden();
+      await expect(page).toHaveURL(new RegExp(`/v/${ventureId}$`));
+    });
   });
 
   test('a call refused after it was minimized says why and leaves no empty conversation', async ({
     page,
+    baseURL,
   }) => {
     await voiceNoticeSeen(page);
-    // CALLS-BACKEND-STUB: the refusal arrives late, so the call can be minimized while it connects.
-    await stubCallsBackend(page, { start: 'ai_disabled', startDelayMs: 2_000 });
-    const ventureId = await openVenture(page);
-    const created = page.waitForResponse(
-      (response) =>
-        response.url().endsWith(`/ventures/${ventureId}/sessions`) && response.request().method() === 'POST',
-    );
-    await page
-      .getByRole('main')
-      .getByRole('link', { name: /^Call / })
-      .click();
-    const sessionId = ((await (await created).json()) as { id: string }).id;
-    await callScreen(page).getByRole('button', { name: 'Minimize call' }).click();
-    // Minimized while connecting: the page is the call's conversation, with the mini bar.
-    await expect(page).toHaveURL(new RegExp(`/c/${sessionId}$`));
-    await expect(page.getByRole('region', { name: /^Call with / })).toBeVisible();
-    // The refusal: a toast says why, and the page returns to New chat without the conversation.
-    await expect(page.getByText('Calls are paused by the program. You can keep chatting.')).toBeVisible({
-      timeout: 10_000,
+    // The only interception: the API's refusal is held back two seconds on its way to the page, so the call
+    // can be minimized while it connects (the local API answers too fast for that). The API still answers.
+    await page.route(/\/api\/v1\/sessions\/[0-9a-f-]{36}\/calls$/, async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      await route.continue();
     });
-    await expect(page).toHaveURL(new RegExp(`/v/${ventureId}$`));
-    await expect(page.getByRole('region', { name: /^Call with / })).toHaveCount(0);
-    await expect(callScreen(page)).toHaveCount(0);
-    await expect
-      .poll(
-        async () => {
-          const list = (await (await page.request.get(`/api/v1/ventures/${ventureId}/sessions`)).json()) as {
-            items: { id: string }[];
-          };
-          return list.items.some((item) => item.id === sessionId);
-        },
-        { timeout: 10_000 },
-      )
-      .toBe(false);
+    const ventureId = await openVenture(page);
+    const call = page.getByRole('main').getByRole('link', { name: /^Call / });
+    await expect(call).toBeVisible();
+    await withCallsOff(baseURL, async () => {
+      const created = page.waitForResponse(
+        (response) =>
+          response.url().endsWith(`/ventures/${ventureId}/sessions`) &&
+          response.request().method() === 'POST',
+      );
+      await call.click();
+      const sessionId = ((await (await created).json()) as { id: string }).id;
+      await callScreen(page).getByRole('button', { name: 'Minimize call' }).click();
+      // Minimized while connecting: the page is the call's conversation, with the mini bar.
+      await expect(page).toHaveURL(new RegExp(`/c/${sessionId}$`));
+      await expect(page.getByRole('region', { name: /^Call with / })).toBeVisible();
+      // The refusal: a toast says why, and the page returns to New chat without the conversation.
+      await expect(page.getByText('Calls are paused by the program. You can keep chatting.')).toBeVisible({
+        timeout: 10_000,
+      });
+      await expect(page).toHaveURL(new RegExp(`/v/${ventureId}$`));
+      await expect(page.getByRole('region', { name: /^Call with / })).toHaveCount(0);
+      await expect(callScreen(page)).toHaveCount(0);
+      await expect
+        .poll(
+          async () => {
+            const list = (await (
+              await page.request.get(`/api/v1/ventures/${ventureId}/sessions`)
+            ).json()) as {
+              items: { id: string }[];
+            };
+            return list.items.some((item) => item.id === sessionId);
+          },
+          { timeout: 10_000 },
+        )
+        .toBe(false);
+    });
+  });
+
+  test('with calls switched off, no Call entry shows and an old call link says calls are paused', async ({
+    page,
+    baseURL,
+  }) => {
+    await voiceNoticeSeen(page);
+    await withCallsOff(baseURL, async () => {
+      const ventureId = await openVenture(page);
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+      // Sidebar, New chat's composer and ⌘K offer no call.
+      await expect(
+        page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /^Call / }),
+      ).toHaveCount(0);
+      await expect(page.getByRole('main').getByRole('link', { name: /^Call / })).toHaveCount(0);
+      await page.keyboard.press('ControlOrMeta+k');
+      const palette = page.getByRole('dialog');
+      await expect(palette.getByRole('option').first()).toBeVisible();
+      await expect(palette.getByRole('option', { name: /^Call / })).toHaveCount(0);
+      await page.keyboard.press('Escape');
+      // A saved `?call=1` link explains instead of creating a conversation.
+      let created = 0;
+      page.on('request', (request) => {
+        if (request.url().endsWith(`/ventures/${ventureId}/sessions`) && request.method() === 'POST')
+          created += 1;
+      });
+      await page.goto(`${new URL(page.url()).pathname}?call=1`);
+      const screen = callScreen(page);
+      await expect(screen.getByRole('heading', { name: 'Calls are paused' })).toBeVisible();
+      await expect(screen.getByRole('button', { name: 'Start call' })).toHaveCount(0);
+      expect(created).toBe(0);
+    });
   });
 
   test('the call screen is keyboard and screen-reader friendly in both themes', async ({ page }) => {
     await voiceNoticeSeen(page);
-    await stubCallsBackend(page);
     await openVenture(page);
     for (const scheme of ['dark', 'light'] as const) {
       await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
@@ -495,7 +467,6 @@ test.describe('vEIR calls', () => {
 
     test('New chat → call: no sideways scroll, controls within reach', async ({ page }) => {
       await voiceNoticeSeen(page);
-      await stubCallsBackend(page);
       await openVenture(page);
       await page
         .getByRole('main')

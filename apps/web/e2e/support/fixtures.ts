@@ -3,7 +3,15 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import AxeBuilder from '@axe-core/playwright';
-import { expect, type APIRequestContext, type Locator, type Page } from '@playwright/test';
+import {
+  test as base,
+  expect,
+  request as playwrightRequest,
+  type APIRequestContext,
+  type BrowserContext,
+  type Locator,
+  type Page,
+} from '@playwright/test';
 
 /*
  * Shared helpers for the end-to-end suite. Everything here runs against the seeded synthetic data
@@ -258,4 +266,133 @@ export async function expectReachable(page: Page, control: ReturnType<Page['getB
 export async function useTheme(page: Page, scheme: 'dark' | 'light'): Promise<void> {
   await page.emulateMedia({ colorScheme: scheme });
   await expect(page.locator('html')).toHaveAttribute('data-theme', scheme);
+}
+
+/**
+ * Replaces the browser's speech synthesis with a silent one that keeps its contract (`onstart`, then `onend`
+ * after a short reading time) and counts what it was asked to say (`window.__speechRequests`). Production
+ * builds never pass the browser's synthesis to a call (calls show captions instead), but a test browser
+ * must never read anything aloud: headless Chromium's speech goes to the operating system's speech service,
+ * which `--disable-audio-output` (playwright.config.ts) does not reach.
+ */
+export async function silenceBrowserVoice(target: Page | BrowserContext): Promise<void> {
+  await target.addInitScript(() => {
+    const pending = new Set<number>();
+    const counted = window as unknown as { __speechRequests: number };
+    counted.__speechRequests = 0;
+    const silent = {
+      speaking: false,
+      pending: false,
+      paused: false,
+      onvoiceschanged: null,
+      getVoices: () => [],
+      speak(utterance: SpeechSynthesisUtterance) {
+        counted.__speechRequests += 1;
+        const words = utterance.text.split(/\s+/).filter(Boolean).length;
+        utterance.onstart?.call(utterance, new Event('start') as SpeechSynthesisEvent);
+        const timer = window.setTimeout(
+          () => {
+            pending.delete(timer);
+            utterance.onend?.call(utterance, new Event('end') as SpeechSynthesisEvent);
+          },
+          Math.min(3000, 200 + 60 * words),
+        );
+        pending.add(timer);
+      },
+      cancel() {
+        for (const timer of pending) window.clearTimeout(timer);
+        pending.clear();
+      },
+      pause: () => undefined,
+      resume: () => undefined,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      dispatchEvent: () => true,
+    };
+    Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: silent });
+  });
+}
+
+/** How many times this page asked the browser to speak (0 in production builds: calls show captions). */
+export function browserSpeechRequests(page: Page): Promise<number> {
+  return page.evaluate(() => (window as unknown as { __speechRequests?: number }).__speechRequests ?? 0);
+}
+
+/**
+ * The suite's `test`: every browser context it creates, the default one and any a test opens itself
+ * (`browser.newContext()`, a second tab), has the silent speech synthesis above, so no spec can make the
+ * runner's speakers talk.
+ */
+export const test = base.extend({
+  context: async ({ context }, use) => {
+    await silenceBrowserVoice(context);
+    await use(context);
+  },
+  browser: [
+    async ({ browser }, use) => {
+      const newContext = browser.newContext.bind(browser);
+      browser.newContext = async (options) => {
+        const context = await newContext(options);
+        await silenceBrowserVoice(context);
+        return context;
+      };
+      await use(browser);
+    },
+    { scope: 'worker' },
+  ],
+});
+
+/** Turns voice calls on or off for the platform as the owner (`PATCH /admin/settings`, audited). */
+export async function setCallsEnabled(baseURL: string, enabled: boolean): Promise<void> {
+  const owner = await playwrightRequest.newContext({ baseURL, storageState: OWNER_STATE });
+  try {
+    const response = await owner.patch('/api/v1/admin/settings', {
+      headers: WRITE_HEADERS,
+      data: { callsEnabled: enabled },
+    });
+    expect(response.status(), 'PATCH /admin/settings').toBe(200);
+  } finally {
+    await owner.dispose();
+  }
+}
+
+/** The seeded EIR whose vEIR coaches QuietQuad (the founder's venture). */
+export const SEEDED_EIR_FIRST_NAME = 'Corin';
+
+/**
+ * Naming invariant: the AI is always "Corin's vEIR"; a bare "Corin" only ever means the person. Checks the
+ * page's visible text and its accessible labels (aria-label, title, placeholder), leaving out the AI
+ * disclosure (whose sentence names the EIR on purpose) and the person's full name ("Corin Halvorsen").
+ */
+export async function expectNoBareEirName(
+  page: Page,
+  where: string,
+  /** Content that names the person on purpose (e.g. a library source's own title about the EIR). */
+  allow: readonly RegExp[] = [],
+): Promise<void> {
+  const found = await page.evaluate((name) => {
+    const bare = new RegExp(`\\b${name}\\b(?!['’]s vEIR)(?! Halvorsen)`);
+    const hits: string[] = [];
+    const disclosure = (element: Element) =>
+      element.closest('[role="note"][aria-label="AI disclosure"]') !== null;
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const parent = node.parentElement;
+      const text = node.textContent ?? '';
+      if (!parent || !bare.test(text) || disclosure(parent)) continue;
+      // Only what is rendered: hidden and print-only text is not shown.
+      if (!parent.checkVisibility()) continue;
+      hits.push(text.trim().slice(0, 120));
+    }
+    for (const element of document.querySelectorAll('[aria-label], [title], [placeholder]')) {
+      if (disclosure(element)) continue;
+      for (const attribute of ['aria-label', 'title', 'placeholder']) {
+        const value = element.getAttribute(attribute);
+        if (value && bare.test(value)) hits.push(`${attribute}="${value.slice(0, 120)}"`);
+      }
+    }
+    return hits;
+  }, SEEDED_EIR_FIRST_NAME);
+  const labels = found.filter((hit) => !allow.some((pattern) => pattern.test(hit)));
+  expect(labels, `the AI is never called by the EIR's bare name on ${where}`).toEqual([]);
 }

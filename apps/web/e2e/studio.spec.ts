@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext } from '@playwright/test';
+import { expect, type APIRequestContext } from '@playwright/test';
 
 import {
   expectNoSeriousA11yViolations,
@@ -8,6 +8,7 @@ import {
   signIn,
   TENANT,
   useTheme,
+  test,
 } from './support/fixtures';
 
 /*

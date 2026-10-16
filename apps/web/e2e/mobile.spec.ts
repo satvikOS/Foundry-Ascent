@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect } from '@playwright/test';
 
 import {
   composer,
@@ -8,6 +8,7 @@ import {
   FOUNDER_STATE,
   openVenture,
   runToken,
+  test,
 } from './support/fixtures';
 
 /** Phone-width smoke (390 × 844): nothing scrolls sideways and the primary controls are reachable. */

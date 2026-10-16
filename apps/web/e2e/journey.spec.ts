@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Browser, type Page } from '@playwright/test';
+import { expect, type APIRequestContext, type Browser, type Page } from '@playwright/test';
 
 import {
   composer,
@@ -17,6 +17,8 @@ import {
   takeRevealedCode,
   TENANT,
   VENTURE_NAME,
+  test,
+  expectNoBareEirName,
 } from './support/fixtures';
 
 const WRITE_HEADERS = { 'x-requested-with': 'foundry-ascent', 'content-type': 'application/json' };
@@ -140,6 +142,7 @@ test.describe('founder journey', () => {
       ).toBeVisible();
       await expect(page.getByRole('combobox', { name: 'Mode for the next message' })).toHaveText(/Auto/);
       await expect(page.getByRole('note', { name: 'AI disclosure' })).toHaveCount(1);
+      await expectNoBareEirName(page, 'New chat');
     });
 
     const question = `Which assumption should we test first? ${token}`;
@@ -156,6 +159,7 @@ test.describe('founder journey', () => {
         .locator(`a[href$="/c/${conversationId}"]`);
       await expect(row).toHaveAttribute('aria-current', 'page');
       await expect(row).toContainText('Which assumption should we test');
+      await expectNoBareEirName(page, 'a conversation with an answer');
     });
 
     await test.step('a citation opens the Sources panel on that source; reasoning expands in place', async () => {
@@ -188,8 +192,23 @@ test.describe('founder journey', () => {
       // The row becomes actionable once the refreshed venture memory includes the proposal.
       const keep = suggestion.getByRole('button', { name: /^Keep: / });
       await expect(keep).toBeVisible({ timeout: 30_000 });
+      // Keep goes through the app's one review path (the batch route).
+      const reviewed = page.waitForResponse(
+        (response) => response.url().endsWith('/memory/batch') && response.request().method() === 'POST',
+      );
       await keep.click();
+      const review = await reviewed;
+      expect(review.status()).toBe(200);
       await expect(suggestion.getByText('Kept')).toBeVisible();
+      // Leave the venture's memory as the next run finds it (the vEIR would not propose a kept fact again).
+      const { ids } = review.request().postDataJSON() as { ids: string[] };
+      for (const id of ids) {
+        const removed = await page.request.patch(`/api/v1/memory/${id}`, {
+          headers: { 'x-requested-with': 'foundry-ascent', 'content-type': 'application/json' },
+          data: { action: 'delete' },
+        });
+        expect([200, 204]).toContain(removed.status());
+      }
     });
 
     await test.step('a follow-up from the conversation composer stays in Auto (no mode is sent)', async () => {
@@ -243,6 +262,7 @@ test.describe('founder journey', () => {
       await expect(composer(page)).toHaveCount(0);
       // The summary holds the next steps now: the answers above no longer offer them a second time.
       await expect(page.getByRole('region', { name: 'Suggested next steps' })).toHaveCount(0);
+      await expectNoBareEirName(page, 'an ended conversation and its summary');
     });
 
     await test.step('an old memory link lands on Knowledge with its search', async () => {

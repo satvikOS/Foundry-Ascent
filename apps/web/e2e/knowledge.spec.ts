@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, type APIRequestContext, type Page } from '@playwright/test';
 
 import {
   expectNoSeriousA11yViolations,
@@ -10,6 +10,8 @@ import {
   signIn,
   TENANT,
   useTheme,
+  test,
+  expectNoBareEirName,
 } from './support/fixtures';
 
 /*
@@ -306,21 +308,34 @@ for (const scheme of ['dark', 'light'] as const) {
     await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?view=notebook`);
     await expect(page.getByRole('heading', { level: 2, name: /^What Corin['’]s vEIR knows$/ })).toBeVisible();
     await expectNoSeriousA11yViolations(page, `knowledge notebook (${scheme})`);
+    await expectNoBareEirName(page, 'the notebook');
 
     await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?view=proposed`);
     await expect(page.getByRole('tab', { name: /^To review/ })).toHaveAttribute('aria-selected', 'true');
     await expectNoSeriousA11yViolations(page, `knowledge review queue (${scheme})`);
+    await expectNoBareEirName(page, 'the review queue');
+
+    await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge`);
+    await expect(page.getByRole('list', { name: 'Memory' })).toBeVisible();
+    await expectNoBareEirName(page, 'Knowledge memory');
+    await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?view=conversations`);
+    await expect(page.getByRole('tab', { name: /^Conversations/ })).toHaveAttribute('aria-selected', 'true');
+    await expectNoBareEirName(page, 'Knowledge conversations');
 
     await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?view=evidence`);
     await expect(page.getByRole('list', { name: 'Sources' })).toBeVisible();
     await expectNoSeriousA11yViolations(page, `knowledge evidence (${scheme})`);
+    // A seeded library source's own title is about the person, so it may name them.
+    await expectNoBareEirName(page, 'Knowledge evidence', [/^Interview excerpt: how Corin frames /]);
 
     await page.goto(`/${TENANT}/app/v/${ventureId}/help`);
     await expect(page.getByRole('heading', { level: 1, name: 'Human help' })).toBeVisible();
     await expectNoSeriousA11yViolations(page, `human help (${scheme})`);
+    await expectNoBareEirName(page, 'Human help');
 
     await page.goto(`/${TENANT}/app/v/${ventureId}/team`);
     await expect(page.getByRole('list', { name: 'Team members' })).toBeVisible();
     await expectNoSeriousA11yViolations(page, `team (${scheme})`);
+    await expectNoBareEirName(page, 'Team');
   });
 }
