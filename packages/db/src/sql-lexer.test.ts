@@ -96,26 +96,43 @@ describe('scanSql', () => {
 });
 
 describe('RDS Data API safety', () => {
-  // The Data API parses `:name` parameters itself; nothing documents that it skips quoted text.
+  // The Data API parses `:name` parameters itself; nothing documents that it skips quoted text, comments
+  // or function bodies.
   const unsafe = [
     `SELECT to_char(s.last_activity_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US') FROM coaching_sessions s`,
     `SELECT '{"redacted":true}'::jsonb`,
     `SELECT E'line\\n:name'`,
     'SELECT 1 AS "odd:name"',
+    '-- a `±hh:mm` offset\nSELECT 1',
+    'SELECT 1 /* outer /* nested :inner */ */',
+    `CREATE FUNCTION f(p text) RETURNS boolean LANGUAGE sql AS $$ SELECT p ~ '(?:Z|[+-]\\d)' $$`,
+    'DO $body$ BEGIN PERFORM 1; -- see :note\nEND $body$',
   ];
 
-  it('finds :name shapes inside literals and quoted identifiers, never in casts or offsets', () => {
-    expect(scanSql(unsafe[0] ?? '').quotedNames.map((q) => q.name)).toEqual(['MI', 'SS']);
-    expect(unsafe.map((sql) => scanSql(sql).quotedNames.length > 0)).toEqual([true, true, true, true]);
+  it('finds :name shapes outside placeholders, never in casts, := or offsets', () => {
+    expect(unsafe.map((sql) => scanSql(sql).unsafeNames.map((q) => q.name))).toEqual([
+      ['MI', 'SS'],
+      ['true'],
+      ['name'],
+      ['name'],
+      ['mm'],
+      ['inner'],
+      ['Z'],
+      ['note'],
+    ]);
     for (const safe of [
       `SELECT x::text, '2026-10-01 10:00:00+00'::timestamptz, '{"a": 1}', '[:]'`,
       `SELECT 'it''s fine: really', 'a::b'`,
       `SELECT :id WHERE note = 'no colon here'`,
+      '-- offsets such as +05:30, casts like x::int\nSELECT 1',
+      `CREATE FUNCTION f() RETURNS int LANGUAGE plpgsql AS $$ DECLARE v int; BEGIN v := 1; RETURN v::int; END $$`,
+      `CREATE FUNCTION f(p text) RETURNS boolean LANGUAGE sql AS $$ SELECT p ~ '(?:[Z]|[+-]\\d[:]\\d)' $$`,
     ]) {
-      expect(scanSql(safe).quotedNames).toEqual([]);
+      expect(scanSql(safe).unsafeNames).toEqual([]);
     }
     // Placeholders outside quotes are unaffected.
     expect(scanSql(`SELECT :id, 'x:y'`).placeholders.map((ph) => ph.name)).toEqual(['id']);
+    expect(scanSql('SELECT :id -- by :id\n').placeholders.map((ph) => ph.name)).toEqual(['id']);
   });
 
   it('is refused by both drivers before it reaches a database', () => {
@@ -129,10 +146,10 @@ describe('RDS Data API safety', () => {
     );
   });
 
-  it('holds for every bundled migration statement', () => {
+  it('holds for every statement of every bundled migration, comments and function bodies included', () => {
     for (const m of MIGRATIONS) {
       for (const statement of splitStatements(m.sql)) {
-        expect(scanSql(statement).quotedNames, `${m.version}: ${statement.slice(0, 60)}`).toEqual([]);
+        expect(scanSql(statement).unsafeNames, `${m.version}: ${statement.slice(0, 60)}`).toEqual([]);
       }
     }
   });

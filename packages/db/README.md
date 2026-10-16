@@ -65,6 +65,11 @@ interface SqlExecutor {
 - **Named parameters** `:name` (`[A-Za-z_][A-Za-z0-9_]*`). `::` casts, `:=`, and anything inside strings,
   quoted identifiers, comments and `$$` bodies are ignored. Every placeholder needs a value built with `p.*`;
   unused params are dropped; a missing one throws `SqlUsageError`.
+- **No other `:name` in SQL text.** The RDS Data API parses named parameters itself and documents no rule
+  for strings, comments or function bodies, so a `:name` shape anywhere else (`'HH24:MI'`, `'{"a":true}'`,
+  a regex `(?:Z|…)` in a `$$` body, `hh:mm` in a comment) throws `SqlUsageError` on both drivers, for
+  migrations too (`sql-lexer.test.ts` scans every bundled statement). Pass the value as a parameter, compute
+  it numerically, write `[:]` in a regex, or reword the comment.
 - The executor renders each placeholder as **`CAST(<placeholder> AS <type>)`** — `$n` for node-postgres,
   `:name` (+ Data API `typeHint`) for the Data API — so both drivers type parameters identically. Writing
   `:v::vector` is harmless but unnecessary.
@@ -198,8 +203,9 @@ principal. Return types reuse `@foundry/contracts` views wherever one exists (`V
 Added for the vEIR knowledge pools (docs/architecture/knowledge-pools.md): `notebooksRepo` (`getNotebook` —
 records carry `intact: false` when the stored document no longer matches the contract —, `saveNotebook` —
 writes against the version read, null on a conflict, `NotebookIntegrityError` when the stored document
-cannot be read; distillation passes `sourceSessionId` so the summary and opener record their sources —
-`withDistilledSources`, `toNotebookView`, `NotebookContent`, `SuppressedLine`); `knowledgeRepo` persona-library views (`listPersonaLibrary`, `getPersonaLibrarySource`),
+cannot be read; it records where the summary and opener were drawn from, and distillation passes
+`sourceSessionId` for that — `withDistilledSources`, `withPersonSources`, `toNotebookView`, `NotebookContent`,
+`SuppressedLine`); `knowledgeRepo` persona-library views (`listPersonaLibrary`, `getPersonaLibrarySource`),
 `updateKnowledgeSource`, `listChunkTexts`, sources with `kind`/`summary`/`body`/upload state;
 `personasRepo` embodiment and consent helpers (`setPersonaEmbodiment`, `setPersonaConsent`,
 `personaConsentAssets`, `toConsentView`, `consentCovers`, `findPersonasByName`, `listPersonasForEirProfile`;
