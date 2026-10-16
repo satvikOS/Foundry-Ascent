@@ -168,7 +168,9 @@ test.describe('vEIR calls', () => {
     await test.step('no voice input here: the call continues by typing, and says why', async () => {
       const screen = callScreen(page);
       // No speech-to-text grant in mock mode (and headless browsers often have no microphone either).
-      await expect(screen.getByText(/, so type instead\.$|Allow it in the browser’s site settings/)).toBeVisible();
+      await expect(
+        screen.getByText(/, so type instead\.$|Allow it in the browser’s site settings/),
+      ).toBeVisible();
       await expect(screen.getByRole('textbox', { name: /^Reply to / })).toBeFocused();
       await expect(screen.getByRole('button', { name: 'Mute' })).toHaveCount(0);
       await expectNoSeriousA11yViolations(page, 'call screen');
