@@ -21,7 +21,7 @@ import { useApprovePersonaRelease, useWithdrawPersonaRelease } from '@/lib/api/h
 import { formatDate, pluralize } from '@/lib/format';
 
 import { CONSENT_NEEDED, consentState } from './persona-labels';
-import { isOutdatedDraft } from './release-drafts';
+import { canOpenRelease, isOutdatedDraft } from './release-drafts';
 
 type ReleaseSummary = PersonaView['releases'][number];
 
@@ -155,8 +155,9 @@ export function WithdrawReleaseDialog({
 }
 
 /**
- * Every version of the persona with its status. Any release other than the active one can be opened for
- * review; drafts newer than the active release are approved from the review panel.
+ * Every version of the persona with its status. Any release other than the active one that the viewer may
+ * open (drafts and withdrawn releases: curators only) can be opened for review; drafts newer than the
+ * active release are approved from the review panel.
  */
 export function ReleaseHistory({
   persona,
@@ -190,7 +191,7 @@ export function ReleaseHistory({
                     ? `Approved ${formatDate(release.approvedAt)}`
                     : `Created ${formatDate(release.createdAt)}`}
                 </span>
-                {active ? null : (
+                {active || !canOpenRelease(persona, release) ? null : (
                   <Button
                     size="sm"
                     variant={reviewing ? 'secondary' : 'ghost'}

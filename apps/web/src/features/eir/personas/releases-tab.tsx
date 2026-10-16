@@ -10,7 +10,7 @@ import { STATUS_DEFINITIONS } from '@/components/ui/status-badge';
 import { usePersonaRelease } from '@/lib/api/hooks/eir';
 import { formatDate } from '@/lib/format';
 
-import { isOutdatedDraft, pendingDrafts } from './release-drafts';
+import { canOpenRelease, isOutdatedDraft, pendingDrafts } from './release-drafts';
 import {
   ApproveReleaseDialog,
   approvalBlocker,
@@ -126,7 +126,10 @@ export function ReleaseReview({
   );
 }
 
-/** Releases: the version history and the review of a draft (approval makes it active). */
+/**
+ * Releases: the version history and the review of a draft (approval makes it active). Drafts and withdrawn
+ * releases open only for the persona's curators; everyone else reads the published history.
+ */
 export function ReleasesTab({ persona }: { persona: PersonaView }) {
   const [pickedId, setPickedId] = useState<string | null>(null);
   const [approving, setApproving] = useState<PersonaReleaseView | null>(null);
@@ -135,7 +138,7 @@ export function ReleasesTab({ persona }: { persona: PersonaView }) {
   const picked =
     pickedId !== null &&
     pickedId !== persona.activeRelease?.id &&
-    persona.releases.some((r) => r.id === pickedId)
+    persona.releases.some((r) => r.id === pickedId && canOpenRelease(persona, r))
       ? pickedId
       : null;
   const reviewId = picked ?? newestDraft?.id ?? null;
