@@ -782,6 +782,44 @@ describe('spoken text (voice channel)', () => {
     expect(out.response.spoken ?? '').not.toMatch(/(?:—|,|\.)\s*corin\.?$|corin here|i am corin/i);
   });
 
+  it.each([
+    'CORIN HERE. Run the pilot.',
+    'Corin Here, run the pilot.',
+    'CORIN HAS APPROVED YOUR PLAN.',
+    'Good luck. Love, Corin.',
+    'Run the pilot. Corin out.',
+    'Signed: Corin',
+  ])('never lets a call say a claim in another case or form: %j', (spoken) => {
+    const out = validateCoachResponse(base({ spoken }), corinCall);
+    expect(out.results.identityViolation).toBe(true);
+    expect(out.response.spoken ?? '').not.toMatch(
+      /corin (?:here|has approved|out)|love, corin|signed: corin/i,
+    );
+  });
+
+  it('lets a call thank a founder who shares an EIR first name', () => {
+    const spoken = 'Good work on the pilot. Thanks, Ruth.';
+    const options = { personaName: "Corin's vEIR", eirNames: ['Corin Halvorsen', 'Ruth Abernathy-Song'] };
+    expect(validateCoachResponse(base({ spoken }), voice(options)).blocked).toBe(true);
+    const addressed = validateCoachResponse(
+      base({ spoken }),
+      voice({ ...options, addressees: ['Ruth Miller'] }),
+    );
+    expect(addressed.blocked).toBe(false);
+    expect(addressed.response.spoken).toBe(spoken);
+  });
+
+  it('checks "<name> here" after a long run of greetings in linear time', () => {
+    const answer = `${'ok so '.repeat(40)}1 Corin here.`;
+    const started = performance.now();
+    const out = validateCoachResponse(
+      base({ answer, spoken: `${'hi '.repeat(40)}1 Corin here.` }),
+      corinCall,
+    );
+    expect(performance.now() - started).toBeLessThan(50);
+    expect(out.blocked).toBe(true);
+  });
+
   it('never speaks a sign-off in a spoken reply derived from the answer', () => {
     const out = validateCoachResponse(
       base({ answer: 'Thanks for the update.\n\n— **Corin**', spoken: null }),

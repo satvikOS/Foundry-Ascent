@@ -85,6 +85,11 @@ export interface ValidateCoachResponseOptions {
    * "<first name>'s vEIR" persona name and `eirNames` when omitted.
    */
   personaEirName?: string | null;
+  /**
+   * Display names of the founder and venture team the reply may address. "Thanks, Ruth." ending a reply
+   * to a founder called Ruth addresses her; without it, an EIR named Ruth is read as signing off.
+   */
+  addressees?: readonly string[];
   /** Identity violation kinds that block the turn (others are rewritten). Default `['claims_eir']`. */
   blockOnIdentity?: readonly IdentityViolationKind[];
   /**
@@ -330,6 +335,7 @@ export function validateCoachResponse(
     personaName,
     ...(options.eirNames ? { eirNames: options.eirNames } : {}),
     ...(options.personaEirName !== undefined ? { personaEirName: options.personaEirName } : {}),
+    ...(options.addressees ? { addressees: options.addressees } : {}),
   };
   const fixIdentity = (
     value: string,

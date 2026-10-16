@@ -151,6 +151,17 @@ describe('rewriteIdentity — a vEIR persona never claims to be its EIR', () => 
     'Corin reviewed and approved the pricing model.',
     'No doubt Corin has reviewed your plan.',
     'Not only has Corin reviewed your plan, she likes it.',
+    // An idiom or a condition further back does not govern the claim.
+    'If you ask me Corin has approved your plan.',
+    'No worries Corin has approved your plan.',
+    'Not to brag but Corin has approved your plan.',
+    'Before we start Corin has approved your plan.',
+    "I don't know if you heard but Corin has approved your plan.",
+    'If you ask me this was approved by Corin.',
+    // A question that asserts the claim.
+    'Did you know Corin has approved your plan?',
+    "Isn't it great that Corin has approved your plan?",
+    'Can you believe Corin already approved your plan?',
     // The full name is flagged whatever surrounds it.
     'Has Corin Halvorsen approved your plan?',
     'If Corin Halvorsen approved it, you can share it with investors.',
@@ -165,6 +176,13 @@ describe('rewriteIdentity — a vEIR persona never claims to be its EIR', () => 
     "It's not true that Corin has reviewed your plan.",
     'Before Corin has seen your deck, tighten the pricing slide.',
     'It may have been approved by Corin last week; ask her.',
+    'If and when Corin has reviewed your plan, ask about pricing.',
+    'Do you know whether Corin has reviewed your plan?',
+    'I doubt Corin has reviewed your plan yet.',
+    "I can't confirm that Corin has approved your plan.",
+    "Don't tell your investors Corin has reviewed your plan.",
+    'You should get this approved by Corin before signing.',
+    'This plan has not been approved by Corin.',
   ])('allows an endorsement verb a hedge directly governs: %s', (text) => {
     expect(kinds(text)).toEqual([]);
   });
@@ -177,6 +195,15 @@ describe('rewriteIdentity — a vEIR persona never claims to be its EIR', () => 
     'Thanks for the update. Corin speaking.',
     'Corin here',
   ])('flags "<name> here" that opens a clause and stands alone: %s', (text) => {
+    expect(kinds(text)).toContain('claims_eir');
+  });
+
+  it.each([
+    "Hi Maya, I'm Corin who you met at demo day.",
+    'My name is Corin that you spoke to last week.',
+    "You're talking to Corin who wrote this playbook.",
+    'I am Corin Halvorsen who wrote this playbook.',
+  ])('flags a self-introduction followed by a relative clause: %s', (text) => {
     expect(kinds(text)).toContain('claims_eir');
   });
 
@@ -196,6 +223,7 @@ describe('rewriteIdentity — a vEIR persona never claims to be its EIR', () => 
     "Corin's here-and-now rule: test it this week.",
     'Ruth is listening for evidence, not opinions, in these interviews.',
     "Corin's on-the-call checklist works for pilots.",
+    'Corin is listening to customers before anything else.',
   ])('does not read a possessive or a doctrine as presence: %s', (text) => {
     const out = rewriteIdentity(text, CORIN);
     expect(out.findings).toEqual([]);
@@ -208,6 +236,12 @@ describe('rewriteIdentity — a vEIR persona never claims to be its EIR', () => 
     "Corin's on the call with us.",
     'Ruth is listening in.',
     'Corin is here to help.',
+    'Corin is listening closely.',
+    'Corin is listening as we speak.',
+    'Corin is listening and taking notes.',
+    'Corin is listening attentively right now.',
+    "Corin's listening closely.",
+    'Corin Halvorsen is listening closely.',
   ])('flags presence after "is" or the contraction: %s', (text) => {
     expect(kinds(text)).toContain('claims_eir');
   });
@@ -226,21 +260,109 @@ describe('rewriteIdentity — a vEIR persona never claims to be its EIR', () => 
     expect(kinds(text)).toContain('claims_eir');
   });
 
-  it('matches a first name in any case unless it is also a word', () => {
+  it('in typed text counts a first name capitalised, or in lower case after "I am" when it is not a word', () => {
     expect(kinds('i am corin.')).toContain('claims_eir');
     expect(kinds('I AM CORIN.')).toContain('claims_eir');
-    expect(kinds('this is ruth, checking in.')).toContain('claims_eir');
+    expect(kinds('Corin Here, run the pilot.')).toContain('claims_eir');
+    expect(kinds('CORIN HAS APPROVED YOUR PLAN.')).toContain('endorsement');
+    expect(kinds('this is ruth, checking in.')).toEqual([]);
     const frank = { personaName: "Frank's vEIR", eirNames: ['Frank Mills'] };
     expect(kinds("I'm frank with founders about pricing.", frank)).toEqual([]);
     expect(kinds("I'm Frank.", frank)).toContain('claims_eir');
+    const grant = { personaName: "Grant's vEIR", eirNames: ['Grant Okafor'] };
+    expect(kinds('This is grant money, so spend it on the pilot.', grant)).toEqual([]);
+    expect(kinds("It's grant season: apply before the deadline.", grant)).toEqual([]);
+    expect(kinds('This is Grant, checking in.', grant)).toContain('claims_eir');
+    const victor = { personaName: "Victor's vEIR", eirNames: ['Victor Hale'] };
+    expect(kinds('This is victor energy talking.', victor)).toEqual([]);
+    expect(kinds('I am Victor.', victor)).toContain('claims_eir');
   });
 
-  it('matches a first name in any case in spoken text, where case is not heard', () => {
+  it.each([
+    'CORIN HERE. Run the pilot.',
+    'Corin Here, run the pilot.',
+    'CORIN HAS APPROVED YOUR PLAN.',
+    'corin here, ready when you are.',
+    'this is ruth, checking in.',
+    'Corin.',
+    'Thanks. — Corin.',
+    'Talk soon,. Corin.',
+    'Signed: Corin',
+    'Good luck. Love, Corin.',
+    'Good luck. xo, Corin.',
+    'Run the pilot. Corin out.',
+    'Good luck. — Corin H.',
+    'Thanks, Ruth.',
+  ])('flags on a call, where case is not heard: %s', (text) => {
+    expect(kinds(text, { ...CORIN, spoken: true })).not.toEqual([]);
+  });
+
+  it('on a call reads a lower-case word-name as the word unless it ends a self-introduction', () => {
     const frank = { personaName: "Frank's vEIR", eirNames: ['Frank Mills'], spoken: true };
     expect(kinds("I'm frank.", frank)).toContain('claims_eir');
     expect(kinds('best, frank.', frank)).toContain('claims_eir');
-    expect(kinds('corin here, ready when you are.', { ...CORIN, spoken: true })).toContain('claims_eir');
+    expect(kinds("i'm frank with founders about pricing.", frank)).toEqual([]);
+    const grant = { personaName: "Grant's vEIR", eirNames: ['Grant Okafor'], spoken: true };
+    expect(kinds('this is grant money, so spend it on the pilot.', grant)).toEqual([]);
+    expect(kinds('the grant has backed three pilots.', grant)).toEqual([]);
+    expect(kinds('this is grant.', grant)).toContain('claims_eir');
   });
+
+  it('reads "Thanks, <name>." as addressing a founder of that name, never "Best, <name>."', () => {
+    const founderRuth = { ...CORIN, addressees: ['Ruth Miller'] };
+    expect(kinds('Thanks, Ruth.')).toContain('claims_eir');
+    expect(kinds('Thanks, Ruth.', founderRuth)).toEqual([]);
+    expect(kinds('Talk soon, Ruth.', { ...founderRuth, spoken: true })).toEqual([]);
+    expect(kinds('Best, Ruth.', founderRuth)).toContain('claims_eir');
+    expect(kinds('Thanks,\nRuth', founderRuth)).toContain('claims_eir');
+    expect(kinds('Good luck — Ruth', founderRuth)).toContain('claims_eir');
+  });
+
+  it.each([
+    '"After the test everyone is an optimist." — Corin Halvorsen',
+    'Who should you ask next? Corin.',
+    'People to ask:\n1. Ruth\n2. Corin',
+    'People to ask:\n- Ruth\n- Corin',
+    'People to ask:\nRuth\nCorin',
+    'The founder who first wrote this down — Corin.',
+    'That is the best, Corin.',
+    'Corin.',
+  ])('does not read a quote, an answer or a list as a typed sign-off: %j', (text) => {
+    expect(kinds(text)).toEqual([]);
+  });
+
+  it.each([
+    '"Decide the stop rule first." — Corin.',
+    'Who should you ask next? Corin.',
+    'People to ask: 1. Ruth. 2. Corin.',
+    'The founder who first wrote this down — Corin.',
+  ])('does not read a quote, an answer or a list as a spoken sign-off: %j', (text) => {
+    expect(kinds(text, { ...CORIN, spoken: true })).toEqual([]);
+  });
+
+  it.each([
+    'Signed: Corin',
+    'Good luck. Love, Corin.',
+    'Good luck. xo, Corin.',
+    'Take care, Corin',
+    'All the best,\nCorin',
+    'Good luck.\n\n— *Corin H.*',
+    'Run the pilot. Corin out.',
+    'This is your mentor, Corin.',
+    'Hey Maya — Corin, here.',
+    'Corin here and ready to help.',
+    'Corin here 👋',
+  ])('flags a sign-off or greeting the wave-1 rules missed: %j', (text) => {
+    expect(kinds(text)).toContain('claims_eir');
+    expect(kinds(text, { ...CORIN, spoken: true })).toContain('claims_eir');
+  });
+
+  it.each(['Leave Corin out of it for now.', 'Corin speaking at the summit is a good chance to ask.'])(
+    'allows "out" and "speaking" that go on: %s',
+    (text) => {
+      expect(kinds(text)).toEqual([]);
+    },
+  );
 
   it('replaces a sentence with several violations once, for the gravest', () => {
     const out = rewriteIdentity('Corin approved it, Corin here. Run the pilot.', CORIN);
@@ -261,6 +383,69 @@ describe('rewriteIdentity — a vEIR persona never claims to be its EIR', () => 
     expect(out.findings).toHaveLength(1_500);
     expect(out.text).not.toMatch(/I am Corin\.|Corin approved\./);
     expect(elapsed).toBeLessThan(200);
+  });
+
+  it.each(['hi ', 'ok so ', 'good morning ', 'hey there Maya '])(
+    'checks the words before "<name> here" in linear time: 40 × %j',
+    (lead) => {
+      rewriteIdentity('Hi Maya, Corin here. Thanks.\n— Corin', CORIN);
+      const text = `${lead.repeat(40)}1 Corin here.`;
+      const started = performance.now();
+      rewriteIdentity(text, CORIN);
+      rewriteIdentity(text, { ...CORIN, spoken: true });
+      expect(performance.now() - started).toBeLessThan(50);
+    },
+  );
+
+  it('stays fast on 6,400 characters of any repeated fragment, typed or spoken', () => {
+    const fragments = [
+      'hi ',
+      'ok so ',
+      ' ',
+      '\n',
+      ' \t',
+      ', ',
+      '— ',
+      '- ',
+      '-- ',
+      'Corin ',
+      'Corin, ',
+      'Best, ',
+      'Best,\n',
+      'thanks ',
+      '**',
+      "Corin's ",
+      'Corin is listening ',
+      'Corin here ',
+      'I am ',
+      'that ',
+      'not ',
+      'if ',
+      'did you know ',
+      'a.',
+      '. ',
+      'Corin. ',
+      '1. ',
+      'with us ',
+      'Corin Halvorsen ',
+      'approved by ',
+      'Good luck. ',
+      'Hey Maya ',
+    ];
+    const endings = ['1 Corin here.', ' Corin.', '\nCorin', ' is here?', "'s listening x", '\n— Corin H.'];
+    for (const ending of endings) rewriteIdentity(`Thanks. ${ending}`, CORIN);
+    let slowest = 0;
+    for (const spoken of [false, true]) {
+      for (const fragment of fragments) {
+        for (const ending of endings) {
+          const text = fragment.repeat(Math.ceil(6_400 / fragment.length)).slice(0, 6_400) + ending;
+          const started = performance.now();
+          rewriteIdentity(text, { ...CORIN, spoken });
+          slowest = Math.max(slowest, performance.now() - started);
+        }
+      }
+    }
+    expect(slowest).toBeLessThan(100);
   });
 
   it('replaces the sentence with a disclosure that names whose approach the persona carries', () => {
@@ -307,26 +492,41 @@ describe('rewriteIdentity — a vEIR persona never claims to be its EIR', () => 
 });
 
 describe('rewriteIdentity agrees with the evals identity grader', () => {
+  interface Suite {
+    name: string;
+    persona: string;
+    eirs: string[];
+    addressees: string[];
+    flagged: string[];
+    allowed: string[];
+    flagged_spoken: string[];
+    allowed_spoken: string[];
+  }
   const casesPath = fileURLToPath(
     new URL('../../../../evals/tests/fixtures/identity_cases.json', import.meta.url),
   );
-  const shared = existsSync(casesPath)
-    ? (JSON.parse(readFileSync(casesPath, 'utf8')) as {
-        persona: string;
-        eirs: string[];
-        flagged: string[];
-        allowed: string[];
-      })
-    : { persona: '', eirs: [], flagged: [], allowed: [] };
-  const options = { personaName: shared.persona, eirNames: shared.eirs };
 
-  it.skipIf(!existsSync(casesPath))('flags every case the grader flags', () => {
-    expect(shared.flagged.length).toBeGreaterThan(30);
-    for (const text of shared.flagged) expect(kinds(text, options), text).not.toEqual([]);
+  it('reads the shared case list (it lives in this repository)', () => {
+    expect(existsSync(casesPath)).toBe(true);
   });
 
-  it.skipIf(!existsSync(casesPath))('allows every case the grader allows', () => {
-    expect(shared.allowed.length).toBeGreaterThan(25);
-    for (const text of shared.allowed) expect(kinds(text, options), text).toEqual([]);
+  const suites = existsSync(casesPath)
+    ? (JSON.parse(readFileSync(casesPath, 'utf8')) as { suites: Suite[] }).suites
+    : [];
+
+  describe.each(suites)('suite $name', (suite) => {
+    const options = { personaName: suite.persona, eirNames: suite.eirs, addressees: suite.addressees };
+
+    it('flags every case the grader flags', () => {
+      for (const text of suite.flagged) expect(kinds(text, options), text).not.toEqual([]);
+      for (const text of suite.flagged_spoken)
+        expect(kinds(text, { ...options, spoken: true }), text).not.toEqual([]);
+    });
+
+    it('allows every case the grader allows', () => {
+      for (const text of suite.allowed) expect(kinds(text, options), text).toEqual([]);
+      for (const text of suite.allowed_spoken)
+        expect(kinds(text, { ...options, spoken: true }), text).toEqual([]);
+    });
   });
 });
