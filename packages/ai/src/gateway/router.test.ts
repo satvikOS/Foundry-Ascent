@@ -27,7 +27,7 @@ import {
   jsonResponse,
   scriptedFetch,
 } from './test-helpers.js';
-import type { LogFields, ModelLogger, RawModelAttempt } from './types.js';
+import { MODEL_PURPOSES, type LogFields, type ModelLogger, type RawModelAttempt } from './types.js';
 
 type Behaviour = (request: ProviderRequest<unknown>) => Promise<ProviderResult<unknown>>;
 
@@ -220,6 +220,13 @@ describe('model router — primary/fallback policy', () => {
     await expect(gw.generateStructured({ ...request, purpose: 'bogus' as 'turn' })).rejects.toThrow(
       TypeError,
     );
+  });
+
+  it('accepts the distillation purpose (metered and capped like a turn)', async () => {
+    const { gw } = gateway(ok('luna', LUNA), ok('nova', NOVA));
+    const result = await gw.generateStructured({ ...request, purpose: 'distill' });
+    expect(result.attempts).toHaveLength(1);
+    expect(MODEL_PURPOSES).toEqual(expect.arrayContaining(['distill', 'speech']));
   });
 
   it('never logs prompt or founder text', async () => {
