@@ -363,6 +363,84 @@ describe('documents', () => {
     expect(api.h.objectStore.deleted).toContain(presigned?.key);
   });
 
+  it('marks an upload that stopped as unfinished, and a retry reuses the same document', async () => {
+    const usedToday = () =>
+      api.h.t.db.system(async (sx) =>
+        Number((await sx.query(`SELECT documents FROM app.upload_usage_today()`)).rows[0]?.documents ?? -1),
+      );
+    const created = await json(
+      await api.request(`/ventures/${quietquad()}/documents`, {
+        body: { filename: 'interview log.txt', contentType: 'text/plain', sizeBytes: 16 },
+        cookie: maya,
+      }),
+      CreateDocumentResponse,
+      201,
+    );
+    const id = created.document.id;
+    const key = api.h.objectStore.presigned.at(-1)?.key ?? '';
+    const listed = async () =>
+      (
+        await json(
+          await api.request(`/ventures/${quietquad()}/documents`, { cookie: maya }),
+          DocumentListResponse,
+        )
+      ).items.filter((d) => d.filename === 'interview log.txt');
+
+    // The PUT failed: the document no longer shows as uploading.
+    const abandoned = await json(
+      await api.request(`/documents/${id}/abandon`, { method: 'POST', cookie: maya }),
+      DocumentView,
+    );
+    expect(abandoned).toMatchObject({ id, status: 'failed', failureReason: 'upload_incomplete' });
+    // An assigned EIR reads documents but can't change their uploads.
+    expect(
+      await problemCode(await api.request(`/documents/${id}/upload`, { method: 'POST', cookie: corin }), 403),
+    ).toBe('forbidden');
+    expect(
+      await problemCode(
+        await api.request(`/documents/${id}/abandon`, { method: 'POST', cookie: corin }),
+        403,
+      ),
+    ).toBe('forbidden');
+
+    // Retry: a fresh presigned PUT to the same document and key, and no second registration.
+    const before = await usedToday();
+    const renewed = await json(
+      await api.request(`/documents/${id}/upload`, { method: 'POST', cookie: maya }),
+      CreateDocumentResponse,
+    );
+    expect(renewed.document).toMatchObject({ id, status: 'pending_upload', failureReason: null });
+    expect(renewed.upload.method).toBe('PUT');
+    expect(api.h.objectStore.presigned.at(-1)).toMatchObject({
+      key,
+      contentType: 'text/plain',
+      contentLength: 16,
+      expiresInSeconds: 300,
+    });
+    expect(await usedToday()).toBe(before);
+    expect(await listed()).toHaveLength(1);
+
+    api.h.objectStore.put(key, 'Seven interviews');
+    const completed = await api.request(`/documents/${id}/complete`, { method: 'POST', cookie: maya });
+    expect(completed.status).toBe(202);
+    // Past pending_upload: abandoning returns it unchanged, and its file can't be replaced.
+    expect(
+      await json(
+        await api.request(`/documents/${id}/abandon`, { method: 'POST', cookie: maya }),
+        DocumentView,
+      ),
+    ).toMatchObject({ id, status: 'processing' });
+    expect(
+      await problemCode(await api.request(`/documents/${id}/upload`, { method: 'POST', cookie: maya }), 409),
+    ).toBe('conflict');
+    expect(await listed()).toEqual([expect.objectContaining({ id, status: 'processing' })]);
+
+    await api.request(`/documents/${id}`, { method: 'DELETE', cookie: maya });
+    expect(
+      await problemCode(await api.request(`/documents/${id}/upload`, { method: 'POST', cookie: maya }), 404),
+    ).toBe('not_found');
+  });
+
   it('validates uploads (type, size, filename) with 422', async () => {
     for (const body of [
       { filename: 'a.exe', contentType: 'application/x-msdownload', sizeBytes: 10 },

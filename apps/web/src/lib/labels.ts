@@ -143,6 +143,7 @@ export const DOCUMENT_FAILURE_MESSAGES: Record<DocumentFailureReason, string> = 
   object_missing: 'The upload didn’t finish. Upload the file again.',
   retries_exhausted: 'Processing kept failing. Retry, or upload the file again.',
   enqueue_failed: 'Processing couldn’t start. Retry in a moment.',
+  upload_incomplete: 'The upload didn’t finish. Upload the file again.',
 };
 
 function isDocumentFailureReason(reason: string): reason is DocumentFailureReason {

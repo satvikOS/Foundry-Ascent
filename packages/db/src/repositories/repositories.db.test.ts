@@ -474,6 +474,80 @@ describe('documents, sessions, turns, escalations', () => {
     });
   });
 
+  it('re-opens an unfinished upload for a retry, and maintenance fails uploads left unfinished', async () => {
+    const register = (id: string, filename: string) =>
+      t.db.withContext(maya, (tx) =>
+        documentsRepo.createDocument(tx, {
+          id,
+          tenantId: seed.tenantId,
+          ventureId,
+          filename,
+          contentType: 'text/plain',
+          sizeBytes: 12,
+          s3Key: `tenants/${seed.tenantId}/ventures/${ventureId}/documents/${id}/${filename}`,
+          uploadedBy: maya.principalId,
+        }),
+      );
+    const retried = await register('22222222-2222-4222-8222-222222222222', 'retried.txt');
+    const reopen = (ctx: DbContext, id: string) =>
+      t.db.withContext(ctx, (tx) => documentsRepo.reopenUpload(tx, id));
+    const fail = (id: string, failureReason: string) =>
+      t.db.withContext(maya, (tx) =>
+        documentsRepo.setDocumentStatus(tx, {
+          documentId: id,
+          status: 'failed',
+          failureReason,
+          fromStatuses: ['pending_upload', 'processing'],
+        }),
+      );
+
+    // Still pending (its URL expired): the same document is offered again.
+    expect(await reopen(maya, retried.id)).toMatchObject({ id: retried.id, status: 'pending_upload' });
+    // An abandoned upload, or one whose file never arrived, is re-opened, its reason cleared.
+    await fail(retried.id, 'upload_incomplete');
+    expect(await reopen(maya, retried.id)).toMatchObject({ status: 'pending_upload', failureReason: null });
+    await fail(retried.id, 'object_missing');
+    expect(await reopen(maya, retried.id)).toMatchObject({ status: 'pending_upload', failureReason: null });
+    // Someone without write access to the venture can't (RLS); a file that arrived can't be replaced.
+    expect(await reopen(ruth, retried.id)).toBeNull();
+    await fail(retried.id, 'extract_failed');
+    expect(await reopen(maya, retried.id)).toBeNull();
+
+    // Maintenance: only uploads left pending past the window fail, as `upload_incomplete`.
+    const stale = await register('33333333-3333-4333-8333-333333333333', 'left.txt');
+    const fresh = await register('44444444-4444-4444-8444-444444444444', 'uploading.txt');
+    const processing = await register('55555555-5555-4555-8555-555555555555', 'processing.txt');
+    await t.db.withContext(maya, (tx) =>
+      documentsRepo.setDocumentStatus(tx, {
+        documentId: processing.id,
+        status: 'processing',
+        fromStatuses: ['pending_upload'],
+      }),
+    );
+    await t.db.system((sx) =>
+      sx.query(`UPDATE documents SET updated_at = now() - interval '2 hours' WHERE id = ANY (:ids)`, {
+        ids: p.uuidArray([stale.id, processing.id]),
+      }),
+    );
+    expect(await t.db.system((sx) => documentsRepo.failStaleUploads(sx, { olderThanSeconds: 3_600 }))).toBe(
+      1,
+    );
+    const after = await t.db.system((sx) =>
+      sx.query('SELECT id, status, failure_reason FROM documents WHERE id = ANY (:ids) ORDER BY id', {
+        ids: p.uuidArray([stale.id, fresh.id, processing.id]),
+      }),
+    );
+    expect(after.rows).toEqual([
+      { id: stale.id, status: 'failed', failure_reason: 'upload_incomplete' },
+      { id: fresh.id, status: 'pending_upload', failure_reason: null },
+      { id: processing.id, status: 'processing', failure_reason: null },
+    ]);
+    // Idempotent: nothing left to fail.
+    expect(await t.db.system((sx) => documentsRepo.failStaleUploads(sx, { olderThanSeconds: 3_600 }))).toBe(
+      0,
+    );
+  });
+
   it('creates sessions and turns, assembles views and ends sessions with a recap', async () => {
     const { sessionId } = await t.db.withContext(maya, async (tx) => {
       const resolved = await assignmentsRepo.resolveActiveAssignment(tx, ventureId);

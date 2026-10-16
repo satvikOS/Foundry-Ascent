@@ -305,6 +305,17 @@ export const CreatePersonaUploadResponse = z.object({
 });
 /** `POST /documents/:id/complete` body: 202 while ingestion runs (`status: processing`), else 200. */
 export const CompleteDocumentResponse = DocumentView;
+/**
+ * `POST /documents/:id/upload` 200 body: a fresh presigned PUT for a document whose file never finished
+ * uploading (`pending_upload`, or `failed` with `upload_incomplete` / `object_missing`), which is
+ * `pending_upload` again. A retry reuses the document instead of registering another one.
+ */
+export const RenewDocumentUploadResponse = CreateDocumentResponse;
+/**
+ * `POST /documents/:id/abandon` 200 body: an upload that stopped (failed, or the person left) is marked
+ * `failed` with `upload_incomplete`; a document already past `pending_upload` is returned as it is.
+ */
+export const AbandonDocumentUploadResponse = DocumentView;
 
 // Escalations --------------------------------------------------------------------------------------
 export const EscalationPacket = z.object({

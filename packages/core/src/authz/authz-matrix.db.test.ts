@@ -1,4 +1,14 @@
-import { auditRepo, memoryRepo, notebooksRepo, principalsRepo, tenantsRepo, venturesRepo } from '@foundry/db';
+import { randomUUID } from 'node:crypto';
+
+import {
+  auditRepo,
+  documentsRepo,
+  memoryRepo,
+  notebooksRepo,
+  principalsRepo,
+  tenantsRepo,
+  venturesRepo,
+} from '@foundry/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createRequestContext, type RequestContext } from '../context.js';
@@ -131,6 +141,24 @@ async function freshProposal(): Promise<string> {
   return m.id;
 }
 
+/** A fresh upload of Maya's that never finished (`pending_upload`), to retry or abandon. */
+async function freshUpload(): Promise<string> {
+  const id = randomUUID();
+  await h.t.db.system((sx) =>
+    documentsRepo.createDocument(sx, {
+      id,
+      tenantId: h.seed.tenantId,
+      ventureId,
+      filename: 'matrix.md',
+      contentType: 'text/markdown',
+      sizeBytes: 10,
+      s3Key: `tenants/${h.seed.tenantId}/ventures/${ventureId}/documents/${id}/matrix.md`,
+      uploadedBy: h.people.maya,
+    }),
+  );
+  return id;
+}
+
 type Op = (c: RequestContext) => Promise<unknown>;
 
 /** QuietQuad's vEIR (Corin's): Corin is its EIR and the venture's assigned EIR. */
@@ -214,6 +242,16 @@ const MATRIX: readonly { name: string; allowed: readonly Who[]; op: Op }[] = [
         contentType: 'text/markdown',
         sizeBytes: 10,
       }),
+  },
+  {
+    name: 'documents.renewUpload',
+    allowed: WRITERS,
+    op: async (c) => h.core.documents.renewUpload(c, await freshUpload()),
+  },
+  {
+    name: 'documents.abandonUpload',
+    allowed: WRITERS,
+    op: async (c) => h.core.documents.abandonUpload(c, await freshUpload()),
   },
   { name: 'escalations.list', allowed: WRITERS, op: (c) => h.core.escalations.list(c, ventureId) },
   {

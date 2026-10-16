@@ -25,6 +25,18 @@ export interface DocumentsService {
   ): Promise<CreateDocumentResult>;
   /** Marks the upload complete (`processing`, or retry after `failed`) and enqueues ingestion (founder/team). */
   complete(ctx: RequestContext, documentId: string): Promise<DocumentView>;
+  /**
+   * A fresh presigned PUT for a document whose file never arrived (`pending_upload`, or `failed` with
+   * `upload_incomplete` / `object_missing`), which is `pending_upload` again (founder/team). A retry
+   * reuses the document: no second row, no second count against the daily upload quota.
+   */
+  renewUpload(ctx: RequestContext, documentId: string): Promise<CreateDocumentResult>;
+  /**
+   * An upload that stopped before completing (it failed, or the person left) is marked `failed` with
+   * `upload_incomplete`, so it no longer shows as uploading (founder/team). A document already past
+   * `pending_upload` is returned unchanged.
+   */
+  abandonUpload(ctx: RequestContext, documentId: string): Promise<DocumentView>;
   /** Documents of a venture, newest first (read). */
   list(ctx: RequestContext, ventureId: string): Promise<DocumentView[]>;
   /** Soft-deletes a document (chunks removed from retrieval) and deletes the object (founder/team). */
@@ -55,6 +67,27 @@ export function documentKey(args: {
 
 export function createDocumentsService(kit: Kit): DocumentsService {
   const { objectStore, jobQueue } = kit.deps;
+
+  async function presignUpload(
+    document: DocumentView,
+    record: { s3Key: string; contentType: DocumentView['contentType']; sizeBytes: number },
+  ): Promise<CreateDocumentResult> {
+    const presigned = await objectStore.presignPut({
+      key: record.s3Key,
+      contentType: record.contentType,
+      contentLength: record.sizeBytes,
+      expiresInSeconds: kit.config.uploads.presignTtlSeconds,
+    });
+    return {
+      document,
+      upload: {
+        url: presigned.url,
+        method: 'PUT',
+        headers: { ...presigned.headers },
+        expiresAt: presigned.expiresAt,
+      },
+    };
+  }
 
   return {
     createUpload: async (ctx, rawVentureId, rawInput) => {
@@ -109,21 +142,69 @@ export function createDocumentsService(kit: Kit): DocumentsService {
         if (view === null) throw fail.notFound('Document');
         return view;
       });
-      const presigned = await objectStore.presignPut({
-        key,
+      return presignUpload(document, {
+        s3Key: key,
         contentType: input.contentType,
-        contentLength: input.sizeBytes,
-        expiresInSeconds: kit.config.uploads.presignTtlSeconds,
+        sizeBytes: input.sizeBytes,
       });
-      return {
-        document,
-        upload: {
-          url: presigned.url,
-          method: 'PUT',
-          headers: { ...presigned.headers },
-          expiresAt: presigned.expiresAt,
-        },
-      };
+    },
+
+    renewUpload: async (ctx, rawDocumentId) => {
+      const documentId = requireId(rawDocumentId, 'Document');
+      const { document, record } = await kit.inRequest(ctx, async (scope) => {
+        const current = await documentsRepo.getDocument(scope.tx, documentId);
+        if (current === null || current.status === 'deleted') throw fail.notFound('Document');
+        await requireVentureAccess(scope, current.ventureId, 'write', {
+          objectType: 'document',
+          objectId: documentId,
+        });
+        const reopened = await documentsRepo.reopenUpload(scope.tx, documentId);
+        if (reopened === null) {
+          throw fail.conflict('This document’s file was already uploaded', 'upload_not_reopenable');
+        }
+        await audit(scope, {
+          action: 'document.upload_renewed',
+          outcome: 'succeeded',
+          ventureId: current.ventureId,
+          objectType: 'document',
+          objectId: documentId,
+          metadata: { from: current.status },
+        });
+        const view = await documentsRepo.getDocumentView(scope.tx, documentId);
+        if (view === null) throw fail.notFound('Document');
+        return { document: view, record: reopened };
+      });
+      return presignUpload(document, record);
+    },
+
+    abandonUpload: async (ctx, rawDocumentId) => {
+      const documentId = requireId(rawDocumentId, 'Document');
+      return await kit.inRequest(ctx, async (scope) => {
+        const current = await documentsRepo.getDocument(scope.tx, documentId);
+        if (current === null || current.status === 'deleted') throw fail.notFound('Document');
+        await requireVentureAccess(scope, current.ventureId, 'write', {
+          objectType: 'document',
+          objectId: documentId,
+        });
+        const abandoned = await documentsRepo.setDocumentStatus(scope.tx, {
+          documentId,
+          status: 'failed',
+          failureReason: 'upload_incomplete',
+          fromStatuses: ['pending_upload'],
+        });
+        if (abandoned !== null) {
+          await audit(scope, {
+            action: 'document.upload_abandoned',
+            outcome: 'succeeded',
+            ventureId: current.ventureId,
+            objectType: 'document',
+            objectId: documentId,
+          });
+        }
+        const view = await documentsRepo.getDocumentView(scope.tx, documentId);
+        if (view === null) throw fail.notFound('Document');
+        return view;
+      });
     },
 
     complete: async (ctx, rawDocumentId) => {

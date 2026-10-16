@@ -83,6 +83,14 @@ export function registerSessionRoutes(
     const document = await core.documents.complete(ctx, pathParam(c, 'id'));
     return c.json(document, document.status === 'processing' ? 202 : 200);
   });
+  // A retry of an upload whose file never arrived: a fresh presigned PUT for the same document.
+  r.post('/documents/:id/upload', async (c, ctx) =>
+    c.json(await core.documents.renewUpload(ctx, pathParam(c, 'id'))),
+  );
+  // An upload that stopped (failed, or the person left): `failed` with `upload_incomplete`.
+  r.post('/documents/:id/abandon', async (c, ctx) =>
+    c.json(await core.documents.abandonUpload(ctx, pathParam(c, 'id'))),
+  );
   r.get('/ventures/:id/documents', async (c, ctx) =>
     c.json({ items: await core.documents.list(ctx, pathParam(c, 'id')) }),
   );
