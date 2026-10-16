@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { CirclePause, DatabaseZap, KeyRound, ServerOff, WifiOff } from 'lucide-react';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 
@@ -28,15 +27,10 @@ function BannerShell({
   tone?: 'neutral' | 'warning';
   live: 'polite' | 'off';
 }) {
-  const reduce = useReducedMotion();
+  // A CSS fade, not an animation library: `motion` was this shell's only importer and cost the first load about
+  // 125 kB of script (w4-perf measurement); reduced motion shows the banner at once.
   return (
-    <motion.div
-      initial={reduce ? false : { height: 0, opacity: 0 }}
-      animate={{ height: 'auto', opacity: 1 }}
-      exit={reduce ? { opacity: 0 } : { height: 0, opacity: 0 }}
-      transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-      className="overflow-hidden"
-    >
+    <div data-slot="status-banner" className="overflow-hidden motion-safe:animate-fade-in">
       <div
         role={live === 'polite' ? 'status' : undefined}
         aria-live={live}
@@ -49,7 +43,7 @@ function BannerShell({
         <div className="min-w-0 flex-1">{children}</div>
         {action}
       </div>
-    </motion.div>
+    </div>
   );
 }
 
@@ -92,7 +86,7 @@ export function DbWakingBanner() {
   const progress = Math.min(95, (elapsed / TYPICAL_RESUME_SECONDS) * 100);
 
   return (
-    <AnimatePresence initial={false}>
+    <>
       {active ? (
         <BannerShell
           key="db-waking"
@@ -133,7 +127,7 @@ export function DbWakingBanner() {
           </div>
         </BannerShell>
       ) : null}
-    </AnimatePresence>
+    </>
   );
 }
 
@@ -153,7 +147,7 @@ export function DbUnavailableBanner() {
   const { waiting } = useResumingState();
   const show = health.data?.db === 'unavailable' && waiting === 0;
   return (
-    <AnimatePresence initial={false}>
+    <>
       {show ? (
         <BannerShell
           key="db-unavailable"
@@ -169,7 +163,7 @@ export function DbUnavailableBanner() {
           </p>
         </BannerShell>
       ) : null}
-    </AnimatePresence>
+    </>
   );
 }
 
@@ -205,7 +199,7 @@ export function OfflineBanner() {
   }, [online]);
 
   return (
-    <AnimatePresence initial={false}>
+    <>
       {online ? null : (
         <BannerShell
           key="offline"
@@ -220,7 +214,7 @@ export function OfflineBanner() {
           </p>
         </BannerShell>
       )}
-    </AnimatePresence>
+    </>
   );
 }
 
@@ -228,7 +222,7 @@ export function OfflineBanner() {
 export function AiDisabledBanner() {
   const { data: me } = useQuery(meQueryOptions());
   return (
-    <AnimatePresence initial={false}>
+    <>
       {me && !me.aiEnabled ? (
         <BannerShell
           key="ai-disabled"
@@ -242,7 +236,7 @@ export function AiDisabledBanner() {
           </p>
         </BannerShell>
       ) : null}
-    </AnimatePresence>
+    </>
   );
 }
 
@@ -259,7 +253,7 @@ export function AccessCodeNoticeBanner() {
   const [dismissed, setDismissed] = useState(() => safeStorage.get(STORAGE_KEYS.accessCodeNoticeDismissed));
   const show = latest !== null && dismissed !== latest.at;
   return (
-    <AnimatePresence initial={false}>
+    <>
       {show ? (
         <BannerShell
           key="access-code-notice"
@@ -289,6 +283,6 @@ export function AccessCodeNoticeBanner() {
           </p>
         </BannerShell>
       ) : null}
-    </AnimatePresence>
+    </>
   );
 }
