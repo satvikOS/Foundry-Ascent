@@ -297,6 +297,32 @@ describe('New chat', () => {
     expect(screen.getByText(OPENER_LINE)).toBeVisible();
   });
 
+  it('puts the cursor in the composer on a desktop once the greeting has arrived', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query.includes('pointer: fine'),
+      media: query,
+      onchange: null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false,
+    }));
+    let answer: (response: Response) => void = () => undefined;
+    stubApi({
+      opener: new Promise<Response>((resolve) => {
+        answer = resolve;
+      }),
+    });
+    renderNewChat(B);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    answer(jsonResponse({ opener: OPENER, at: OPENER_AT, lastConversation: null }));
+    await screen.findByText(OPENER_LINE);
+    await waitFor(() => {
+      expect(composer()).toHaveFocus();
+    });
+  });
+
   it('greets without the opener when it is late, and never changes the greeting once shown', async () => {
     let answer: (response: Response) => void = () => undefined;
     const calls = stubApi({

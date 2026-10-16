@@ -210,9 +210,11 @@ function NewChat() {
   useHotkeys({ '/': focusComposer });
 
   // On desktop, put the cursor in the composer once the page has settled (after route focus moved to the
-  // heading). Touch devices keep the keyboard closed until the person taps.
+  // heading, and once the greeting is known: the composer is not there before). Touch devices keep the keyboard
+  // closed until the person taps.
+  const ready = shown !== null && !venture.isPending;
   useEffect(() => {
-    if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+    if (!ready || !window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
     const timer = setTimeout(() => {
       const active = document.activeElement;
       const idle =
@@ -225,7 +227,7 @@ function NewChat() {
     return () => {
       clearTimeout(timer);
     };
-  }, [ventureId]);
+  }, [ventureId, ready]);
 
   const send = () => {
     const value = text.trim();
@@ -277,7 +279,7 @@ function NewChat() {
 
   // The page appears once its greeting is known (briefly, at most OPENER_WAIT_MS): it never changes in front of
   // the founder, and nothing moves under them.
-  if (venture.isPending || shown === null) {
+  if (!ready) {
     return (
       <div
         // Keyed apart from the page: the page arrives as a new element, so nothing on screen "moves" (a reused
