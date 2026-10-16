@@ -11,11 +11,12 @@ import { type Plugin } from 'vite';
 
 /**
  * Most script a first page load may fetch (bytes, minified, before compression): the entry and its static
- * imports. 957,129 bytes at the time of writing (React 219 kB, motion 125 kB, zod 92 kB, the router, the
- * landing and sign-in screens and the app shell); the budget leaves room for ordinary growth and stops a new
- * library from landing on the first page load. Lower it as that set shrinks.
+ * imports. About 831 kB at the time of writing (React 219 kB, zod 92 kB, the router, the landing and sign-in
+ * screens and the app shell; the status banners' `motion` library, 125 kB, left it for a CSS fade); the budget
+ * leaves room for ordinary growth and stops a new library from landing on the first page load. Lower it as that
+ * set shrinks.
  */
-export const FIRST_LOAD_SCRIPT_BUDGET_BYTES = 975_000;
+export const FIRST_LOAD_SCRIPT_BUDGET_BYTES = 860_000;
 
 /** What the guard reads of an output chunk. */
 export interface ChunkFacts {
