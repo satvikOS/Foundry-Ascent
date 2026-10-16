@@ -1,23 +1,34 @@
-import type { Me, TurnView } from '@foundry/contracts';
+import type { Me } from '@foundry/contracts';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import {
   createContext,
+  lazy,
+  Suspense,
   useCallback,
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
 
-import type { SessionDetail } from '@/lib/api/hooks/sessions';
-import { queryKeys } from '@/lib/api/query-keys';
-import { browserCallDeps } from '@/lib/realtime/browser';
-import { CallEngine, type CallSnapshot } from '@/lib/realtime/call-engine';
+import type { CallEngine } from '@/lib/realtime/call-engine';
+import { IDLE_CALL, type CallSnapshot } from '@/lib/realtime/call-state';
 
-import { CallScreen } from './call-screen';
+/**
+ * The engine and the call screen load on demand: most visits never open them. Both are warmed once the app
+ * is idle, so the first Call opens at once.
+ */
+const loadEngine = () => import('./create-engine');
+const loadCallScreen = () => import('./call-screen');
+const CallScreen = lazy(() => loadCallScreen().then((module) => ({ default: module.CallScreen })));
+const WARM_AFTER_MS = 3000;
+
+const noSubscription = () => () => undefined;
+const idleSnapshot = () => IDLE_CALL;
 
 /**
  * The call lives in the app shell, not in a page: one CallEngine for the signed-in person, so a call keeps
@@ -54,7 +65,8 @@ export function callRouteFrom(pathname: string, search: unknown, tenant: string)
 
 interface CallContextValue {
   readonly me: Me;
-  readonly engine: CallEngine;
+  /** Null until the engine has loaded (it loads when the call screen first opens, or when idle). */
+  readonly engine: CallEngine | null;
   readonly snapshot: CallSnapshot;
   readonly route: CallRoute | null;
   /** Opens the call screen of the live (or just ended) call. */
@@ -75,6 +87,14 @@ export function useCall(): CallContextValue {
   return value;
 }
 
+/** For the call screen, which renders only once the engine has loaded. */
+export function useLoadedCall(): CallContextValue & { readonly engine: CallEngine } {
+  const value = useCall();
+  const { engine } = value;
+  if (!engine) throw new Error('The call engine has not loaded');
+  return { ...value, engine };
+}
+
 export function CallProvider({ me, children }: { me: Me; children: ReactNode }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -84,36 +104,44 @@ export function CallProvider({ me, children }: { me: Me; children: ReactNode }) 
   const route = useMemo(() => callRouteFrom(pathname, search, tenant), [pathname, search, tenant]);
   const [quietEnd, setQuietEnd] = useState(false);
 
-  const [engine] = useState(
-    () =>
-      new CallEngine(
-        browserCallDeps((sessionId: string, turn: TurnView | null) => {
-          if (turn) {
-            queryClient.setQueryData<SessionDetail>(queryKeys.session.detail(sessionId), (previous) =>
-              previous
-                ? {
-                    session: {
-                      ...previous.session,
-                      turnCount: Math.max(previous.session.turnCount, turn.ordinal),
-                    },
-                    turns: [...previous.turns.filter((t) => t.id !== turn.id), turn].sort(
-                      (a, b) => a.ordinal - b.ordinal,
-                    ),
-                  }
-                : previous,
-            );
-          }
-          void queryClient.invalidateQueries({ queryKey: queryKeys.session.detail(sessionId) });
-          const ventureId = engine.getSnapshot().ventureId;
-          if (ventureId) void queryClient.invalidateQueries({ queryKey: queryKeys.venture.scope(ventureId) });
-        }),
-      ),
+  const [engine, setEngine] = useState<CallEngine | null>(null);
+  const engineRequested = useRef(false);
+  const ensureEngine = useCallback(() => {
+    if (engineRequested.current) return;
+    engineRequested.current = true;
+    loadEngine()
+      .then(({ createCallEngine }) => {
+        setEngine(createCallEngine(queryClient));
+      })
+      .catch(() => {
+        // Offline or a stale deployment: the next Call tries again.
+        engineRequested.current = false;
+      });
+  }, [queryClient]);
+  const open = route?.open === true;
+  useEffect(() => {
+    if (open) ensureEngine();
+  }, [ensureEngine, open]);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      ensureEngine();
+      void loadCallScreen().catch(() => undefined);
+    }, WARM_AFTER_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [ensureEngine]);
+
+  const snapshot = useSyncExternalStore(
+    engine?.subscribe ?? noSubscription,
+    engine?.getSnapshot ?? idleSnapshot,
+    engine?.getSnapshot ?? idleSnapshot,
   );
-  const snapshot = useSyncExternalStore(engine.subscribe, engine.getSnapshot, engine.getSnapshot);
 
   // The microphone is released and the server call ended when the tab closes or the shell unmounts
   // (signing out, leaving the app).
   useEffect(() => {
+    if (!engine) return undefined;
     const onPageHide = () => {
       engine.dispose();
     };
@@ -125,7 +153,7 @@ export function CallProvider({ me, children }: { me: Me; children: ReactNode }) 
   }, [engine]);
 
   const showCall = useCallback(() => {
-    const { ventureId, sessionId } = engine.getSnapshot();
+    const { ventureId, sessionId } = engine?.getSnapshot() ?? IDLE_CALL;
     if (!ventureId || !sessionId) return;
     void navigate({
       to: '/$tenant/app/v/$ventureId/c/$sessionId',
@@ -136,7 +164,7 @@ export function CallProvider({ me, children }: { me: Me; children: ReactNode }) 
 
   const hideCall = useCallback(
     (options: { replace?: boolean } = {}) => {
-      const current = engine.getSnapshot();
+      const current = engine?.getSnapshot() ?? IDLE_CALL;
       const ventureId = current.ventureId ?? route?.ventureId;
       const sessionId = current.sessionId ?? route?.sessionId ?? null;
       if (!ventureId) return;
@@ -160,8 +188,9 @@ export function CallProvider({ me, children }: { me: Me; children: ReactNode }) 
   );
 
   const switchToChat = useCallback(() => {
-    setQuietEnd(true);
     hideCall();
+    if (!engine) return;
+    setQuietEnd(true);
     void engine.end('user').finally(() => {
       engine.reset();
       setQuietEnd(false);
@@ -176,7 +205,11 @@ export function CallProvider({ me, children }: { me: Me; children: ReactNode }) 
   return (
     <CallContext.Provider value={value}>
       {children}
-      <CallScreen />
+      {engine && (open || snapshot.phase !== 'idle') ? (
+        <Suspense fallback={null}>
+          <CallScreen />
+        </Suspense>
+      ) : null}
     </CallContext.Provider>
   );
 }

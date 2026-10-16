@@ -10,7 +10,7 @@ import { useCreateSession } from '@/lib/api/hooks/sessions';
 import { canWrite } from '@/lib/auth/roles';
 import { cn } from '@/lib/utils';
 
-import { useCall } from './call-context';
+import { useLoadedCall } from './call-context';
 import { CallLive } from './call-live';
 import { callBlocker, CallLobby } from './call-lobby';
 import { CallSummaryPanel } from './call-summary';
@@ -41,7 +41,7 @@ function hasUserActivation(): boolean {
  * with the summary. Closing it keeps a live call going in the mini call bar.
  */
 export function CallScreen() {
-  const { me, engine, snapshot, route, hideCall, switchToChat } = useCall();
+  const { me, engine, snapshot, route, hideCall, switchToChat } = useLoadedCall();
   const navigate = useNavigate();
   const tenant = me.tenant.slug;
   const open = route?.open === true;

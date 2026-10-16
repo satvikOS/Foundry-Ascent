@@ -1,4 +1,4 @@
-import type { CallEndReason, CallState, CallSummary, CallView, SttGrant, TurnView } from '@foundry/contracts';
+import type { CallEndReason, CallState, SttGrant, TurnView } from '@foundry/contracts';
 
 import { errorMessage } from '../api/errors';
 import type { CreateTurnBody, StreamTurnOptions, TurnStreamEventT } from '../api/sse';
@@ -13,15 +13,20 @@ import type {
 } from './call-api';
 import { MicCapture, MicrophoneError, requestMicrophone, type CaptureAudio } from './capture';
 import { Endpointer, isLikelyEcho } from './endpointing';
-import {
-  SpeechPlayer,
-  type PlayerAudio,
-  type SpeechFetchResult,
-  type SpeechUnitToPlay,
-  type VoiceRoute,
-} from './playback';
+import { SpeechPlayer, type PlayerAudio, type SpeechFetchResult, type SpeechUnitToPlay } from './playback';
+import { IDLE_CALL, type CallEnded, type CallSnapshot, type TalkMode, type TypedReason } from './call-state';
 import { TranscribeStream, type WebSocketFactory } from './transcribe';
 import { VoiceActivityDetector } from './vad';
+
+export type {
+  CallActivity,
+  CallEnded,
+  CallNotice,
+  CallPhase,
+  CallSnapshot,
+  TalkMode,
+  TypedReason,
+} from './call-state';
 
 /**
  * CallEngine: one live call with a vEIR (docs/architecture/calls.md §3).
@@ -38,61 +43,6 @@ import { VoiceActivityDetector } from './vad';
  * The engine is framework-free (React reads it through `subscribe`/`getSnapshot`) and every browser edge is
  * a dependency, so it is unit tested with fakes. Nothing here logs content.
  */
-
-export type CallPhase = 'idle' | 'starting' | 'live' | 'ending' | 'ended' | 'failed';
-export type CallActivity = 'connecting' | 'listening' | 'thinking' | 'speaking';
-export type TalkMode = 'hands_free' | 'push_to_talk';
-/** Why the founder types instead of speaking. */
-export type TypedReason = 'stt_unavailable' | 'mic_denied' | 'mic_unavailable' | 'stt_failed';
-
-export interface CallNotice {
-  readonly kind: 'turn_error' | 'blocked' | 'voice_captions' | 'stt_lost' | 'time_warning';
-  readonly message: string;
-  /** Crisis or support resources (Markdown) for a blocked turn. */
-  readonly supportMessage?: string | null;
-}
-
-export interface CallEnded {
-  readonly reason: CallEndReason;
-  readonly durationSeconds: number;
-  readonly turnCount: number;
-  readonly summary: CallSummary | null;
-  /** Why the summary could not be loaded (the call is over either way). */
-  readonly summaryError: string | null;
-}
-
-export interface CallSnapshot {
-  readonly phase: CallPhase;
-  readonly ventureId: string | null;
-  readonly sessionId: string | null;
-  readonly call: CallView | null;
-  readonly activity: CallActivity;
-  readonly input: 'voice' | 'typed';
-  readonly typedReason: TypedReason | null;
-  readonly muted: boolean;
-  readonly talkMode: TalkMode;
-  /** Push-to-talk is held. */
-  readonly talking: boolean;
-  readonly reconnecting: boolean;
-  /** When the call went live (epoch ms; the timer counts from here). */
-  readonly liveAt: number | null;
-  /** Server-reported seconds left, and when they were reported. */
-  readonly remaining: { readonly seconds: number; readonly at: number } | null;
-  readonly captions: {
-    readonly veir: string | null;
-    readonly founder: string | null;
-    /** The founder line is a live partial (still changing). */
-    readonly founderLive: boolean;
-  };
-  /** How the vEIR is heard: server voice, the browser's voice (local development), or captions only. */
-  readonly voice: VoiceRoute;
-  readonly notice: CallNotice | null;
-  /** Typed or spoken lines waiting for the vEIR to finish. */
-  readonly queued: number;
-  readonly ended: CallEnded | null;
-  /** Why the call could not start. */
-  readonly error: string | null;
-}
 
 export interface CallEngineApi {
   startCall(sessionId: string, inputMode: 'transcribe' | 'typed'): Promise<StartCallResult>;
@@ -191,28 +141,6 @@ interface ActiveTurn {
   firstAudioAt: number | null;
 }
 
-const INITIAL: CallSnapshot = {
-  phase: 'idle',
-  ventureId: null,
-  sessionId: null,
-  call: null,
-  activity: 'connecting',
-  input: 'voice',
-  typedReason: null,
-  muted: false,
-  talkMode: 'hands_free',
-  talking: false,
-  reconnecting: false,
-  liveAt: null,
-  remaining: null,
-  captions: { veir: null, founder: null, founderLive: false },
-  voice: 'server',
-  notice: null,
-  queued: 0,
-  ended: null,
-  error: null,
-};
-
 /** A grant this close to expiry is re-minted before connecting with it. */
 const GRANT_MARGIN_MS = 15_000;
 
@@ -259,7 +187,7 @@ function percentile(values: readonly number[], p: number): number | null {
 type SpeakListener = (unit: SpokenUnit) => void;
 
 export class CallEngine {
-  private snapshot: CallSnapshot = INITIAL;
+  private snapshot: CallSnapshot = IDLE_CALL;
   private readonly listeners = new Set<() => void>();
   private readonly speakListeners = new Set<SpeakListener>();
   private readonly tuning: CallTuning;
@@ -362,7 +290,7 @@ export class CallEngine {
     const epoch = ++this.epoch;
     this.resetCounters();
     this.set({
-      ...INITIAL,
+      ...IDLE_CALL,
       phase: 'starting',
       ventureId: options.ventureId,
       sessionId: options.sessionId,
@@ -453,7 +381,7 @@ export class CallEngine {
     if (phase === 'starting') {
       this.epoch += 1;
       this.teardown();
-      this.set({ ...INITIAL });
+      this.set({ ...IDLE_CALL });
       return;
     }
     if (phase !== 'live') return;
@@ -463,7 +391,7 @@ export class CallEngine {
     this.set({
       phase: 'ending',
       activity: 'connecting',
-      captions: INITIAL.captions,
+      captions: IDLE_CALL.captions,
       notice: null,
       queued: 0,
     });
@@ -506,7 +434,7 @@ export class CallEngine {
     }
     this.epoch += 1;
     this.teardown();
-    this.set({ ...INITIAL });
+    this.set({ ...IDLE_CALL });
   }
 
   /** After an ended or failed call: back to idle, ready for the next one. */
@@ -514,7 +442,7 @@ export class CallEngine {
     if (this.snapshot.phase === 'live' || this.snapshot.phase === 'starting') return;
     this.epoch += 1;
     this.teardown();
-    this.set({ ...INITIAL });
+    this.set({ ...IDLE_CALL });
   }
 
   // Controls ------------------------------------------------------------------------------------------

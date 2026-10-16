@@ -21,7 +21,7 @@ export function MiniCallBar() {
   const screenOpen = route?.open === true;
   const active = snapshot.phase === 'starting' || snapshot.phase === 'live' || snapshot.phase === 'ending';
   const ended = snapshot.phase === 'ended';
-  if (screenOpen || quietEnd || (!active && !ended) || !veir) return null;
+  if (!engine || screenOpen || quietEnd || (!active && !ended) || !veir) return null;
 
   const speaking = snapshot.phase === 'live' && snapshot.activity === 'speaking';
   const duration = ended ? (snapshot.ended?.durationSeconds ?? 0) : clock.elapsed;
