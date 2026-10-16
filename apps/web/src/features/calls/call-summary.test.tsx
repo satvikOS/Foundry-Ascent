@@ -140,7 +140,8 @@ describe('CallSummaryPanel', () => {
     expect(screen.getAllByRole('note', { name: 'AI disclosure' })).toHaveLength(1);
     expect(screen.getByText(/4 minutes 12 seconds/)).toBeInTheDocument();
     expect(screen.getByText(/3 exchanges/)).toBeInTheDocument();
-    // One quiet line for what the call saved: no Keep, no Not now, nothing waiting for the founder.
+    // A quiet "Remembered" and what the call saved: no Keep, no Not now, nothing waiting for the founder.
+    expect(screen.getByTestId('call-remembered')).toBeInTheDocument();
     const saved = await screen.findByTestId('memory-saved');
     expect(saved).toHaveTextContent('Saved to Knowledge: 2 items');
     expect(within(saved).getByRole('link', { name: '2 items' })).toHaveAttribute(
@@ -201,6 +202,7 @@ describe('CallSummaryPanel', () => {
     expect(await screen.findByTestId('call-private')).toHaveTextContent(
       'Private call: nothing from it is remembered.',
     );
+    expect(screen.queryByTestId('call-remembered')).toBeNull();
     expect(screen.queryByTestId('memory-saved')).toBeNull();
     expect(fetchMock.mock.calls.some(([input]) => urlOf(input).includes('/memory/'))).toBe(false);
   });
@@ -237,12 +239,22 @@ describe('CallSummaryPanel', () => {
     expect(callbacks.leave).toHaveBeenCalled();
   });
 
-  it('adds nothing when the call saved nothing and suggested nothing', async () => {
+  it('says quietly that the call is remembered, even before anything is saved to Knowledge', async () => {
     stubFetch().mockResolvedValue(json({ items: [] }));
     renderSummary(ended({}));
-    expect(await screen.findByRole('heading', { name: 'Call ended' })).toBeInTheDocument();
+    expect(await screen.findByTestId('call-remembered')).toHaveTextContent(
+      "Remembered. Corin's vEIR will pick up from this call next time.",
+    );
     expect(screen.queryByTestId('memory-saved')).toBeNull();
     expect(screen.queryByText(/to review/)).toBeNull();
+  });
+
+  it('claims nothing remembered for a call where nothing was said', async () => {
+    stubFetch().mockResolvedValue(json({ items: [] }));
+    renderSummary(ended({ turnCount: 0 }, { turnCount: 0 }));
+    expect(await screen.findByRole('heading', { name: 'Call ended' })).toBeInTheDocument();
+    expect(screen.getByText(/Nothing was said\./)).toBeInTheDocument();
+    expect(screen.queryByTestId('call-remembered')).toBeNull();
   });
 
   it('keeps the call over when its summary could not load', async () => {
@@ -290,6 +302,7 @@ describe('CallSummaryPanel', () => {
     renderSummary(ended({ memoryProposalIds: [IDS.memory] }), false);
     expect(await screen.findByRole('heading', { name: 'Call ended' })).toBeInTheDocument();
     expect(screen.queryByTestId('memory-saved')).toBeNull();
+    expect(screen.queryByTestId('call-remembered')).toBeNull();
     expect(fetchMock.mock.calls.some(([input]) => urlOf(input).includes('/memory/'))).toBe(false);
     expect(screen.getByRole('button', { name: 'Call again' })).toBeDisabled();
   });

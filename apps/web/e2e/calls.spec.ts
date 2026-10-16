@@ -364,6 +364,9 @@ test.describe('vEIR calls', () => {
       // What the call's turn learned is already in Knowledge: one quiet line, nothing to keep or decline.
       const { summary } = (await (await endResponse).json()) as { summary: { memoryProposalIds: string[] } };
       expect(summary.memoryProposalIds.length).toBeGreaterThan(0);
+      await expect(screen.getByTestId('call-remembered')).toContainText(
+        'will pick up from this call next time',
+      );
       await expect(screen.getByTestId('memory-saved')).toContainText('Saved to Knowledge:');
       await expect(screen.getByRole('button', { name: /^(Keep|Not now)/ })).toHaveCount(0);
       await expect(screen.getByText(/would like to remember/)).toHaveCount(0);
@@ -415,6 +418,7 @@ test.describe('vEIR calls', () => {
         'Private call: nothing from it is remembered.',
       );
       await expect(screen.getByTestId('memory-saved')).toHaveCount(0);
+      await expect(screen.getByTestId('call-remembered')).toHaveCount(0);
       await screen.getByRole('button', { name: 'Back to conversation' }).click();
       await expect(
         page.getByRole('main').locator('header').getByText('Private', { exact: true }),

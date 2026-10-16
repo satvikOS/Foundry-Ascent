@@ -1,7 +1,7 @@
 import type { CallSummary, MemoryObjectView, SessionView } from '@foundry/contracts';
 import { useQueries } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { EyeOff, ListChecks, Phone } from 'lucide-react';
+import { Check, EyeOff, ListChecks, Phone } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 
 import { DisclosureBanner } from '@/components/disclosure-banner';
@@ -17,6 +17,7 @@ import { formatDate } from '@/lib/format';
 import { ESCALATION_CATEGORY_LABELS } from '@/lib/labels';
 
 import { MemorySaved, savedByIds } from '../chat/memory-saved';
+import { sentenceStart } from '../venture/veir-name';
 
 import { formatClock, spokenDuration } from './use-call-clock';
 import { useCallConfig, type CallVeir } from './use-call-veir';
@@ -36,9 +37,9 @@ interface CallSummaryProps {
 }
 
 /**
- * After a call (`POST /calls/:id/end`): how long it was, one quiet line for what the vEIR saved to Knowledge
- * (kept automatically; a private call keeps nothing), the next actions it suggested and any request for a
- * person it drafted. The transcript itself is already in the conversation.
+ * After a call (`POST /calls/:id/end`): how long it was, a quiet "Remembered" with what the vEIR saved to
+ * Knowledge (kept automatically; a private call says it keeps nothing), the next actions it suggested and any
+ * request for a person it drafted. The transcript itself is already in the conversation.
  */
 export function CallSummaryPanel({
   tenant,
@@ -114,6 +115,7 @@ export function CallSummaryPanel({
         <SummaryDetails
           tenant={tenant}
           ventureId={ventureId}
+          veirName={veir.name}
           summary={summary}
           canWrite={canWrite}
           isPrivate={privacy === 'ephemeral'}
@@ -147,6 +149,7 @@ export function CallSummaryPanel({
 function SummaryDetails({
   tenant,
   ventureId,
+  veirName,
   summary,
   canWrite,
   isPrivate,
@@ -154,6 +157,7 @@ function SummaryDetails({
 }: {
   tenant: string;
   ventureId: string;
+  veirName: string;
   summary: CallSummary;
   canWrite: boolean;
   isPrivate: boolean;
@@ -182,13 +186,19 @@ function SummaryDetails({
           <EyeOff aria-hidden className="size-4" />
           Private call: nothing from it is remembered.
         </p>
-      ) : saved.length > 0 ? (
-        <MemorySaved
-          tenant={tenant}
-          ventureId={ventureId}
-          memories={saved}
-          className="justify-center text-small"
-        />
+      ) : summary.turnCount > 0 && canWrite ? (
+        // A quiet "remembered" state: the call is kept with the conversation and the vEIR picks up from it
+        // next time, so the founder can trust the next call knows.
+        <div className="grid justify-items-center gap-1">
+          <p
+            data-testid="call-remembered"
+            className="flex items-center justify-center gap-1.5 text-small text-muted-foreground"
+          >
+            <Check aria-hidden className="size-4" />
+            Remembered. {sentenceStart(veirName)} will pick up from this call next time.
+          </p>
+          <MemorySaved tenant={tenant} ventureId={ventureId} memories={saved} className="justify-center" />
+        </div>
       ) : null}
 
       {summary.nextActions.length > 0 ? (
