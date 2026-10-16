@@ -32,7 +32,7 @@ describe('ReasoningDisclosure', () => {
     const claims = screen.getByRole('list', { name: 'Claims and their sources' });
     expect(within(claims).getAllByRole('listitem')).toHaveLength(4);
     expect(screen.getByText('What would convince you that everyday demand is real?')).toBeVisible();
-    await user.click(screen.getByRole('button', { name: 'Open sources' }));
+    await user.click(screen.getByRole('button', { name: 'Open the 2 sources' }));
     expect(onShowSources).toHaveBeenCalledOnce();
   });
 });

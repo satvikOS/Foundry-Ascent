@@ -210,45 +210,49 @@ export function ReasoningDisclosure({
   ]
     .filter(Boolean)
     .join(' · ');
+  const toggleClasses =
+    'group inline-flex h-8 items-center gap-1.5 rounded-md pr-1.5 text-small text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring';
+  const sourcesButton = (label: string) => (
+    <button
+      type="button"
+      onClick={onShowSources}
+      className="justify-self-start text-small text-muted-foreground underline decoration-border-strong underline-offset-4 transition-colors hover:text-foreground hover:decoration-foreground focus-visible:outline-2 focus-visible:outline-ring"
+    >
+      {label}
+    </button>
+  );
+  const sources = pluralize(evidence.length, 'source');
+
+  if (!hasDetails) {
+    return evidence.length > 0 ? <div className="mt-4">{sourcesButton(sources)}</div> : null;
+  }
   return (
     <div className="mt-4">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        {hasDetails ? (
-          <button
-            type="button"
-            aria-expanded={open}
-            aria-controls={regionId}
-            onClick={() => {
-              setOpen((value) => !value);
-            }}
-            className="group inline-flex h-8 items-center gap-1.5 rounded-md pr-1.5 text-small text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-          >
-            <ChevronRight
-              aria-hidden
-              className={cn('size-4 transition-transform duration-150', open && 'rotate-90')}
-            />
-            <span className="font-medium">Sources &amp; reasoning</span>
-            {summary ? <span className="tabular text-subtle-foreground">{summary}</span> : null}
-          </button>
-        ) : null}
-        {evidence.length > 0 ? (
-          <button
-            type="button"
-            onClick={onShowSources}
-            className="inline-flex h-8 items-center rounded-md px-1 text-small text-muted-foreground underline decoration-border-strong underline-offset-4 transition-colors hover:text-foreground hover:decoration-foreground focus-visible:outline-2 focus-visible:outline-ring"
-          >
-            {hasDetails ? 'Open sources' : `Sources · ${evidence.length}`}
-          </button>
-        ) : null}
-      </div>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={regionId}
+        onClick={() => {
+          setOpen((value) => !value);
+        }}
+        className={toggleClasses}
+      >
+        <ChevronRight
+          aria-hidden
+          className={cn('size-4 transition-transform duration-150', open && 'rotate-90')}
+        />
+        <span className="font-medium">Sources &amp; reasoning</span>
+        {summary ? <span className="tabular text-subtle-foreground">{summary}</span> : null}
+      </button>
       {open ? (
-        <div id={regionId} className="mt-3 border-l border-border pl-4">
+        <div id={regionId} className="mt-3 grid gap-4 border-l border-border pl-4">
           <ReasoningDetails
             response={response}
             evidence={evidence}
             validator={validator}
             onOpenSource={onOpenSource}
           />
+          {evidence.length > 0 ? sourcesButton(`Open the ${sources}`) : null}
         </div>
       ) : null}
     </div>
