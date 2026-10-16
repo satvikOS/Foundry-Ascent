@@ -98,16 +98,25 @@ export function createEirStudioService(kit: Kit): EirStudioService {
     throw fail.forbidden('requires_program_lead_or_linked_eir');
   }
 
+  /**
+   * An EIR persona runs (its release is approved, it is resumed) only on a consent in force that covers
+   * doctrine. The refusal names which of those failed at `consent`, so the studio can say it.
+   */
   async function requireConsent(scope: RequestScope, persona: personasRepo.PersonaRecord): Promise<void> {
     if (persona.kind !== 'eir_persona') return;
     const consent = persona.consentId ? await personasRepo.getConsent(scope.tx, persona.consentId) : null;
     const now = kit.now().getTime();
-    const valid =
-      consent !== null &&
-      consent.revokedAt === null &&
-      (consent.expiresAt === null || Date.parse(consent.expiresAt) > now) &&
-      consent.assetTypes.includes('doctrine');
-    if (!valid) {
+    const problem =
+      consent === null
+        ? 'No consent is on file. Record one that covers doctrine before this vEIR can coach.'
+        : consent.revokedAt !== null
+          ? 'Consent was revoked. Record a new consent that covers doctrine before this vEIR can coach again.'
+          : consent.expiresAt !== null && Date.parse(consent.expiresAt) <= now
+            ? 'Consent has expired. Record a new consent that covers doctrine before this vEIR can coach again.'
+            : !consent.assetTypes.includes('doctrine')
+              ? 'The consent on file doesn’t cover doctrine. Record one that does before this vEIR can coach.'
+              : null;
+    if (problem !== null) {
       scope.deferAudit({
         action: 'persona.consent_check',
         outcome: 'denied',
@@ -117,6 +126,7 @@ export function createEirStudioService(kit: Kit): EirStudioService {
       });
       throw new DomainError('forbidden', 'An EIR persona needs a valid consent record before it can run', {
         reason: 'consent_required',
+        errors: [{ path: 'consent', message: problem }],
       });
     }
   }

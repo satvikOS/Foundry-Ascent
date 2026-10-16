@@ -1,9 +1,17 @@
 import { DocumentContentType, DocumentStatus, type DocumentView } from '@foundry/contracts';
 
 import { camelRow, col, type CamelRow, type RawRow } from '../columns.js';
-import { type SqlExecutor } from '../executor.js';
+import { type SqlExecutor, type SystemExecutor } from '../executor.js';
 import { p } from '../params.js';
-import { principalSelect, queryFirst, queryOne, queryRows, requiredPrincipalFrom } from './common.js';
+import {
+  clampLimit,
+  principalSelect,
+  queryFirst,
+  queryNumber,
+  queryOne,
+  queryRows,
+  requiredPrincipalFrom,
+} from './common.js';
 
 const documentShape = {
   id: col.uuid,
@@ -100,6 +108,57 @@ export function setDocumentStatus(
       fromStatuses: p.nullable.textArray(input.fromStatuses),
     },
     (r) => documentCodec.decode(r),
+  );
+}
+
+/** Failure reasons that mean the file never arrived, so it can be uploaded again into the same document. */
+export const REUPLOADABLE_FAILURES = ['upload_incomplete', 'object_missing'] as const;
+
+/**
+ * Re-opens a document for another upload of its file (a retry reuses the document, not a new row): from
+ * `pending_upload`, or from `failed` when the file never arrived ({@link REUPLOADABLE_FAILURES}), it is
+ * `pending_upload` again. Returns the record, or null when the document is in any other state or not
+ * visible. app: founder/team.
+ */
+export function reopenUpload(ex: SqlExecutor, documentId: string): Promise<DocumentRecord | null> {
+  return queryFirst(
+    ex,
+    `UPDATE documents
+     SET status = 'pending_upload', failure_reason = NULL, updated_at = now()
+     WHERE id = :id
+       AND (status = 'pending_upload' OR (status = 'failed' AND failure_reason = ANY (:reasons)))
+     RETURNING ${COLUMNS}`,
+    { id: p.uuid(documentId), reasons: p.textArray(REUPLOADABLE_FAILURES) },
+    (r) => documentCodec.decode(r),
+  );
+}
+
+/**
+ * Daily maintenance (system): uploads registered but never completed for `olderThanSeconds` (the person
+ * left mid-upload, or the browser closed) become `failed` with `upload_incomplete`, at most `limit` per run,
+ * so no document stays "Uploading" forever. Returns the number marked.
+ */
+export function failStaleUploads(
+  sx: SystemExecutor,
+  args: { olderThanSeconds: number; limit?: number },
+): Promise<number> {
+  return queryNumber(
+    sx,
+    `WITH due AS (
+       SELECT id FROM documents
+        WHERE status = 'pending_upload' AND updated_at < now() - make_interval(secs => :secs)
+        ORDER BY updated_at, id
+        LIMIT :limit
+        FOR UPDATE SKIP LOCKED)
+     , upd AS (
+       UPDATE documents d SET status = 'failed', failure_reason = 'upload_incomplete', updated_at = now()
+         FROM due WHERE d.id = due.id
+       RETURNING d.id)
+     SELECT count(*) AS n FROM upd`,
+    {
+      secs: p.int(Math.max(60, Math.trunc(args.olderThanSeconds))),
+      limit: p.int(clampLimit(args.limit, 5_000, 50_000)),
+    },
   );
 }
 

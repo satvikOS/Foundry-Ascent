@@ -229,6 +229,55 @@ describe('documents and ingestion', () => {
     expect(doc).toMatchObject({ status: 'failed', failureReason: 'enqueue_failed' });
   });
 
+  it('an upload whose file never arrived is retried into the same document and key', async () => {
+    const missing = await upload('arrives-late.md', 'temp');
+    h.objectStore.objects.delete(missing.key);
+    await h.core.ingestion.process(missing.job, { requestId: 'late-1' });
+    const renewed = await h.core.documents.renewUpload(maya, missing.documentId);
+    expect(renewed.document).toMatchObject({
+      id: missing.documentId,
+      status: 'pending_upload',
+      failureReason: null,
+    });
+    expect(h.objectStore.presigned.at(-1)?.key).toBe(missing.key);
+    h.objectStore.put(missing.key, '# Arrived\n\nThe file made it on the second try, with enough words.');
+    expect((await h.core.documents.complete(maya, missing.documentId)).status).toBe('processing');
+    const [job] = h.jobQueue.drain();
+    if (!job) throw new Error('no job');
+    await expect(h.core.ingestion.process(job, { requestId: 'late-2' })).resolves.toMatchObject({
+      status: 'ready',
+    });
+    // A file that arrived can't be replaced through a retry.
+    await expect(h.core.documents.renewUpload(maya, missing.documentId)).rejects.toMatchObject({
+      code: 'conflict',
+    });
+  });
+
+  it('daily maintenance fails uploads nobody finished, and only those', async () => {
+    const register = (filename: string) =>
+      h.core.documents.createUpload(maya, ventureId, { filename, contentType: 'text/plain', sizeBytes: 4 });
+    const left = await register('left-behind.txt');
+    const fresh = await register('still-uploading.txt');
+    // Past the presigned URL's lifetime and the hour after it.
+    await h.t.db.system((sx) =>
+      sx.query(`UPDATE documents SET updated_at = now() - interval '2 hours' WHERE id = :id`, {
+        id: p.uuid(left.document.id),
+      }),
+    );
+    const report = await h.core.maintenance.runDaily({ requestId: 'maintenance-uploads' });
+    expect(report.staleUploadsFailed).toBeGreaterThanOrEqual(1);
+    const docs = await h.core.documents.list(maya, ventureId);
+    expect(docs.find((d) => d.id === left.document.id)).toMatchObject({
+      status: 'failed',
+      failureReason: 'upload_incomplete',
+    });
+    expect(docs.find((d) => d.id === fresh.document.id)?.status).toBe('pending_upload');
+    const page = await h.t.db.system((sx) =>
+      auditRepo.listAuditEvents(sx, { action: 'maintenance.stale_uploads' }),
+    );
+    expect(page.items[0]).toMatchObject({ outcome: 'succeeded', objectType: 'document' });
+  });
+
   it('delete removes chunks from retrieval and deletes the object', async () => {
     const { documentId, key, job } = await upload('to-delete.md', DOC.replace(MARKER, 'quokka migration'));
     await h.core.ingestion.process(job, { requestId: 'd1' });

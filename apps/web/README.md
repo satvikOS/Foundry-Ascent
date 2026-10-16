@@ -168,6 +168,7 @@ UI relies on beyond plain JSON bodies:
 | `PATCH /memory/:id`                                                              | 200 `MemoryObjectView` (`correct` returns the NEW version); **`delete` → 204, no body** (resolved as `null`)   |
 | `POST /ventures/:id/documents`                                                   | 201 `{ document, upload }` (presigned PUT, 5 min, signs content-type and content-length)                       |
 | `POST /documents/:id/complete`                                                   | **202** `DocumentView` while ingestion runs (`processing`), 200 when already settled; the list polls           |
+| `POST /documents/:id/upload`, `POST /documents/:id/abandon`                      | 200 `{ document, upload }` (Retry reuses the document) / 200 `DocumentView` (an upload that stopped)           |
 | `DELETE /documents/:id`                                                          | 204                                                                                                            |
 | `POST /ventures/:id/escalations`, `PATCH /escalations/:id`                       | 201 / 200 `EscalationView`                                                                                     |
 | `POST /personas/:id/releases`, `POST /persona-releases/:id/approve`              | 201 / 200 `PersonaReleaseView`                                                                                 |

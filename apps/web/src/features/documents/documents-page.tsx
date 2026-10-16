@@ -36,6 +36,8 @@ import { toast } from '@/components/ui/toast';
 import { errorMessage } from '@/lib/api/errors';
 import {
   DOCUMENT_ACCEPT,
+  isInFlight,
+  isStaleUpload,
   useCompleteDocument,
   useDeleteDocument,
   useDocuments,
@@ -47,6 +49,7 @@ import { documentFailureMessage } from '@/lib/labels';
 import { cn } from '@/lib/utils';
 import { sentenceStart, useVeirName } from '@/features/venture/veir-name';
 
+import { isUnfinishedUpload, resumableUpload } from './unfinished-uploads';
 import { SUPPORTED_FORMATS_LABEL, validateUploadFiles, type UploadRejection } from './upload-validation';
 import { useUploadQueue, type UploadItem } from './use-upload-queue';
 
@@ -58,8 +61,6 @@ const TYPE_ICON: Record<DocumentView['contentType'], { icon: LucideIcon; label: 
   'text/markdown': { icon: FileText, label: 'Markdown' },
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': { icon: File, label: 'Word' },
 };
-
-const IN_FLIGHT = new Set<DocumentView['status']>(['pending_upload', 'processing']);
 
 const FORMATS_HINT = `${SUPPORTED_FORMATS_LABEL}, up to ${formatBytes(MAX_DOCUMENT_BYTES)} each.`;
 
@@ -169,17 +170,21 @@ export function DocumentsPage() {
         .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)),
     [documents.data],
   );
-  const processing = rows.filter((d) => IN_FLIGHT.has(d.status)).length;
+  // Uploads left unfinished are neither waited for nor counted (the list stops polling for them).
+  const processing = rows.filter((d) => isInFlight(d)).length;
 
   const onFiles = (files: File[]) => {
     if (files.length === 0) return;
+    // A file whose earlier upload never finished goes into that document again, not a second one.
     const existing = [
-      ...rows.filter((d) => d.status !== 'failed').map((d) => d.filename),
+      ...rows.filter((d) => d.status !== 'failed' && !isUnfinishedUpload(d)).map((d) => d.filename),
       ...queue.activeNames,
     ];
     const result = validateUploadFiles(files, { existingNames: existing });
     setRejections(result.rejected);
-    queue.add(result.accepted);
+    queue.add(
+      result.accepted.map((candidate) => ({ ...candidate, resume: resumableUpload(candidate, rows) })),
+    );
     if (result.rejected.length > 0) {
       announce(
         `${pluralize(result.rejected.length, 'file')} can’t be uploaded. See the list for reasons.`,
@@ -427,7 +432,11 @@ function DocumentRow({
 }) {
   const type = TYPE_ICON[doc.contentType];
   const Icon = type.icon;
+  // An upload left unfinished long ago is not "Uploading": it won't move on by itself.
+  const stale = isStaleUpload(doc);
   const status = getStatusDefinition('document', doc.status);
+  const label = stale ? 'Upload didn’t finish' : status.label;
+  const failed = doc.status === 'failed' || stale;
   const nameId = `document-${doc.id}`;
   return (
     <li
@@ -440,9 +449,7 @@ function DocumentRow({
           {doc.filename}
         </p>
         <p className="flex flex-wrap items-center gap-x-1.5 text-caption text-subtle-foreground">
-          <span className={cn(doc.status === 'failed' && 'font-medium text-destructive')}>
-            {status.label}
-          </span>
+          <span className={cn(failed && 'font-medium text-destructive')}>{label}</span>
           {doc.status === 'ready' ? (
             <>
               <span aria-hidden>·</span>
@@ -461,8 +468,10 @@ function DocumentRow({
             </time>
           </span>
         </p>
-        {doc.status === 'failed' ? (
-          <p className="text-small text-destructive">{documentFailureMessage(doc.failureReason)}</p>
+        {failed ? (
+          <p className="text-small text-destructive">
+            {documentFailureMessage(stale ? 'upload_incomplete' : doc.failureReason)}
+          </p>
         ) : null}
       </div>
       {canEdit ? (

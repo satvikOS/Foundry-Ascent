@@ -1,9 +1,11 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import {
+  AbandonDocumentUploadResponse,
   AdminPrincipalRow,
   ApprovePersonaReleaseResponse,
   CompleteDocumentResponse,
+  CreateDocumentResponse,
   CreateEscalationResponse,
   CreateMemoryResponse,
   CreatePersonaReleaseResponse,
@@ -22,6 +24,7 @@ import {
   PersonaReleaseView,
   PersonaView,
   ProgramVentureRow,
+  RenewDocumentUploadResponse,
   ResourceView,
   ResumePersonaResponse,
   RevokeAccessCodeResponse,
@@ -152,6 +155,8 @@ describe('response schemas', () => {
       [CreateMemoryResponse, MemoryObjectView],
       [MemoryActionResponse, MemoryObjectView],
       [CompleteDocumentResponse, DocumentView],
+      [AbandonDocumentUploadResponse, DocumentView],
+      [RenewDocumentUploadResponse, CreateDocumentResponse],
       [CreateEscalationResponse, EscalationView],
       [EscalationActionResponse, EscalationView],
       [CreatePersonaReleaseResponse, PersonaReleaseView],

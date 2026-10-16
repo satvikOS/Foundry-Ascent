@@ -61,4 +61,22 @@ describe('DoctrineTab', () => {
     await user.click(screen.getByRole('button', { name: 'Review' }));
     expect(onOpenReleases).toHaveBeenCalledOnce();
   });
+
+  it('does not point people who can’t review drafts to one', () => {
+    renderWithProviders(
+      <DoctrineTab
+        persona={persona({
+          canCurate: false,
+          releases: [
+            ...persona().releases,
+            { id: IDS.lesson, version: 2, status: 'draft', approvedAt: null, createdAt: RELEASE.createdAt },
+          ],
+        })}
+        onOpenReleases={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText('Draft v2 is waiting for approval')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Review' })).toBeNull();
+    expect(screen.getByText('Customer discovery first.')).toBeVisible();
+  });
 });

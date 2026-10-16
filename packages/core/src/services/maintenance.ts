@@ -1,4 +1,4 @@
-import { auditRepo, callsRepo, memoryRepo, sessionsRepo } from '@foundry/db';
+import { auditRepo, callsRepo, documentsRepo, memoryRepo, sessionsRepo } from '@foundry/db';
 
 import { type Kit } from '../internal/kit.js';
 import { CALL_LIMITS } from './call-usage.js';
@@ -13,6 +13,8 @@ export interface MaintenanceReport {
   readonly staleCallsEnded: number;
   /** AI memory proposals nobody acted on for `distillation.proposalTtlDays` (30), now expired. */
   readonly proposalsExpired: number;
+  /** Document uploads left unfinished ({@link staleUploadSeconds}), now `failed` with `upload_incomplete`. */
+  readonly staleUploadsFailed: number;
   /** The distillation backstop: idle conversations that no trigger distilled yet. */
   readonly distillation: DistillBackstopReport;
 }
@@ -21,12 +23,20 @@ export interface MaintenanceService {
   /**
    * Daily housekeeping (the worker runs it for the scheduled `maintenance` message; the schedule already wakes
    * the database once a day): ends ephemeral sessions idle for 24 h and erases the content of every ended
-   * ephemeral session's turns, closes calls whose client went away, expires stale AI memory proposals, then
-   * runs the bounded distillation
+   * ephemeral session's turns, closes calls whose client went away, expires stale AI memory proposals, fails
+   * document uploads nobody finished, then runs the bounded distillation
    * backstop while `deadline` (epoch ms) leaves time. Each step commits on its own, the privacy erasure
    * first, so a later step failing never undoes it. One audit event per step, with counts. Idempotent.
    */
   runDaily(options: { readonly requestId: string; readonly deadline?: number }): Promise<MaintenanceReport>;
+}
+
+/**
+ * A document still `pending_upload` this long after its last presigned URL was issued is abandoned: the URL
+ * expired long ago (`uploads.presignTtlSeconds`) and an hour more covers any PUT that started before it did.
+ */
+export function staleUploadSeconds(presignTtlSeconds: number): number {
+  return presignTtlSeconds + 3_600;
 }
 
 export function createMaintenanceService(
@@ -80,6 +90,18 @@ export function createMaintenanceService(
         });
         return count;
       });
+      const staleUploads = await kit.system(async (sx) => {
+        const olderThanSeconds = staleUploadSeconds(kit.config.uploads.presignTtlSeconds);
+        const count = await documentsRepo.failStaleUploads(sx, { olderThanSeconds });
+        await auditRepo.appendAudit(sx, {
+          action: 'maintenance.stale_uploads',
+          outcome: 'succeeded',
+          requestId,
+          objectType: 'document',
+          metadata: { failed: count, olderThanSeconds },
+        });
+        return count;
+      });
       const distillation = await distill.backstop({
         requestId,
         ...(deadline === undefined ? {} : { deadline }),
@@ -90,6 +112,7 @@ export function createMaintenanceService(
         ephemeralTurnsRedacted: cleanup.turnsRedacted,
         staleCallsEnded: staleCalls,
         proposalsExpired: expired,
+        staleUploadsFailed: staleUploads,
         distilled: distillation.distilled,
         distillDeferred: distillation.deferred,
       });
@@ -98,6 +121,7 @@ export function createMaintenanceService(
         ephemeralTurnsRedacted: cleanup.turnsRedacted,
         staleCallsEnded: staleCalls,
         proposalsExpired: expired,
+        staleUploadsFailed: staleUploads,
         distillation,
       };
     },

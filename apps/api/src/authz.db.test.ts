@@ -188,6 +188,8 @@ const ventureCases = (): Case[] => {
       { filename: 'a.txt', contentType: 'text/plain', sizeBytes: 3 },
     ],
     ['jonah', 'POST', `/documents/${ids.document ?? ''}/complete`],
+    ['jonah', 'POST', `/documents/${ids.document ?? ''}/upload`],
+    ['jonah', 'POST', `/documents/${ids.document ?? ''}/abandon`],
     ['jonah', 'GET', `/ventures/${v}/documents`],
     ['jonah', 'DELETE', `/documents/${ids.document ?? ''}`],
     ['jonah', 'GET', `/ventures/${v}/notebook`],

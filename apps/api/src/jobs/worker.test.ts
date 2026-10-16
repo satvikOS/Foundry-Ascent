@@ -85,6 +85,7 @@ function deps(lines: string[] = []) {
         ephemeralTurnsRedacted: 2,
         staleCallsEnded: 1,
         proposalsExpired: 3,
+        staleUploadsFailed: 1,
         distillation: sweep,
       }),
   );
@@ -224,6 +225,7 @@ describe('daily maintenance message (EventBridge schedule → jobs queue)', () =
     expect(maintenance).toHaveBeenCalledWith({ requestId: 'sqs-m1', deadline: NOW + 50_000 });
     expect(process).not.toHaveBeenCalled();
     expect(lines.join('\n')).toContain('worker.maintenance_done');
+    expect(lines.find((line) => line.includes('worker.maintenance_done'))).toContain('staleUploadsFailed');
 
     maintenance.mockRejectedValueOnce(new Error('database still resuming'));
     const failed = await processSqsBatch(
@@ -243,6 +245,7 @@ describe('daily maintenance message (EventBridge schedule → jobs queue)', () =
         ephemeralTurnsRedacted: 0,
         staleCallsEnded: 0,
         proposalsExpired: 0,
+        staleUploadsFailed: 0,
         distillation: { candidates: 50, distilled: 12, skipped: 0, dropped: 0, failed: 0, deferred: 38 },
       });
     maintenance.mockImplementation(left);

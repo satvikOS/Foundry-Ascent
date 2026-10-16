@@ -242,6 +242,48 @@ test.describe('memory', () => {
     }
   });
 
+  test('approving a disputed item resolves the dispute', async ({ page }) => {
+    const token = runToken();
+    const ventureId = await openVenture(page);
+    const created = await page.request.post(`/api/v1/ventures/${ventureId}/memory`, {
+      headers: WRITE_HEADERS,
+      data: {
+        type: 'fact',
+        title: `Door counter undercounts ${token}`,
+        content: `Checked twice (${token}).`,
+      },
+    });
+    expect(created.status(), 'POST /ventures/:id/memory').toBe(201);
+    const item = (await created.json()) as { id: string };
+    try {
+      const disputed = await page.request.patch(`/api/v1/memory/${item.id}`, {
+        headers: WRITE_HEADERS,
+        data: { action: 'dispute', reason: 'The counter was miscalibrated' },
+      });
+      expect(disputed.status(), 'PATCH /memory/:id dispute').toBe(200);
+
+      await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?m=${item.id}`);
+      const panel = page.getByRole('complementary', { name: 'Memory inspector' });
+      await expect(panel.getByRole('heading', { name: `Door counter undercounts ${token}` })).toBeVisible();
+      await panel.getByRole('button', { name: 'Approve', exact: true }).click();
+      await expect(
+        page
+          .getByRole('region', { name: /Notifications/ })
+          .getByText('Dispute resolved: kept as venture memory'),
+      ).toBeVisible();
+      await expect(page.getByText('Nothing changed: these were already handled.')).toHaveCount(0);
+      await expect
+        .poll(
+          async () =>
+            ((await (await page.request.get(`/api/v1/memory/${item.id}`)).json()) as { status: string })
+              .status,
+        )
+        .toBe('confirmed');
+    } finally {
+      await deleteMemory(page.request, [item.id]);
+    }
+  });
+
   test('type chips filter the memory list', async ({ page }) => {
     const ventureId = await openKnowledge(page);
     const list = page.getByRole('list', { name: 'Memory' });

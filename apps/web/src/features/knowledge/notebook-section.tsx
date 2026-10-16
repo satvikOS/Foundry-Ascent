@@ -34,7 +34,13 @@ import { daysUntil, formatIsoDate } from '@/features/memory/typed/attributes';
 import { sentenceStart, useVeirName } from '@/features/venture/veir-name';
 
 import { InlineEditForm, LineActions, useReturnFocus } from './inline-edit';
-import { isNotebookConflict, openerRefusal, useNotebookEdit } from './notebook-api';
+import {
+  DROPPED_EDIT,
+  isDroppedEdit,
+  isNotebookConflict,
+  useNotebookEdit,
+  type RefusedOpener,
+} from './notebook-api';
 import { isNotebookEmpty } from './notebook-edit';
 
 /** Limits of the notebook contract (`NotebookEdit` in @foundry/contracts). */
@@ -135,6 +141,25 @@ export function NotebookEditor({ ventureId, veirName, canEdit }: NotebookEditorP
           It was updated while you were editing, so your change wasn’t saved. It’s been reloaded: check it and
           try again.
         </Alert>
+      ) : isDroppedEdit(edit.error) ? (
+        <Alert
+          variant="warning"
+          live="alert"
+          title={DROPPED_EDIT.title}
+          action={
+            <Button
+              size="xs"
+              variant="ghost"
+              onClick={() => {
+                edit.reset();
+              }}
+            >
+              Dismiss
+            </Button>
+          }
+        >
+          {DROPPED_EDIT.detail}
+        </Alert>
       ) : null}
 
       {empty ? (
@@ -197,23 +222,19 @@ export function NotebookEditor({ ventureId, veirName, canEdit }: NotebookEditorP
             />
           ))}
 
-          {data.nextOpener ? (
+          {data.nextOpener || edit.refusedOpener ? (
             <OpenerBlock
-              opener={data.nextOpener}
+              opener={data.nextOpener ?? ''}
               author={author}
               canEdit={canEdit}
-              onSave={(text, onRefused) => {
-                edit.mutate(
-                  { action: 'edit_opener', text },
-                  {
-                    onError: (error) => {
-                      const refusal = openerRefusal(error);
-                      if (refusal !== null) onRefused(refusal);
-                    },
-                  },
-                );
+              refused={edit.refusedOpener}
+              onDismissRefusal={edit.clearRefusedOpener}
+              onSave={(text) => {
+                edit.clearRefusedOpener();
+                save({ action: 'edit_opener', text });
               }}
               onRemove={() => {
+                edit.clearRefusedOpener();
                 save({ action: 'remove_opener' });
               }}
             />
@@ -597,6 +618,8 @@ function OpenerBlock({
   opener,
   author,
   canEdit,
+  refused,
+  onDismissRefusal,
   onSave,
   onRemove,
 }: {
@@ -604,24 +627,27 @@ function OpenerBlock({
   /** Who writes the opening line ("Corin’s vEIR"). */
   author: string;
   canEdit: boolean;
-  /** Saves the line; `onRefused` gets the server's reason when the vEIR could not say it. */
-  onSave: (text: string, onRefused: (reason: string) => void) => void;
+  /**
+   * A line the server refused (the vEIR could not say it): the editor stays open with it and the reason
+   * under it until the person saves another line or cancels, whatever else they edited meanwhile.
+   */
+  refused: RefusedOpener | null;
+  onDismissRefusal: () => void;
+  onSave: (text: string) => void;
   onRemove: () => void;
 }) {
   const [editing, setEditing] = useState(false);
-  // A line the server refused: the editor opens again with it and the reason under it.
-  const [refused, setRefused] = useState<{ text: string; reason: string } | null>(null);
   const focus = useReturnFocus();
   const textId = useId();
   const close = () => {
     setEditing(false);
-    setRefused(null);
+    onDismissRefusal();
     focus.restore();
   };
   return (
     <Group title="Next conversation">
       <p className="text-small text-muted-foreground">{sentenceStart(author)} may open with:</p>
-      {editing ? (
+      {editing || (refused && canEdit) ? (
         <InlineEditForm
           key={refused?.text ?? 'opener'}
           value={refused?.text ?? opener}
@@ -630,11 +656,9 @@ function OpenerBlock({
           error={refused?.reason ?? null}
           onCancel={close}
           onSave={(next) => {
-            onSave(next, (reason) => {
-              setRefused({ text: next, reason });
-              setEditing(true);
-            });
-            close();
+            onSave(next);
+            setEditing(false);
+            focus.restore();
           }}
         />
       ) : (

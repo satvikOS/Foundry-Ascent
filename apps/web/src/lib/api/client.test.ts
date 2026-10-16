@@ -176,6 +176,20 @@ describe('problem+json → ApiError', () => {
     expect(errorMessage(apiError)).toContain('15 minutes');
   });
 
+  it('says why a refusal was made when the server names the reason, and stays generic otherwise', () => {
+    const consent = new ApiError({
+      status: 403,
+      code: 'forbidden',
+      title: 'Forbidden',
+      fieldErrors: [{ path: 'consent', message: 'Consent was revoked.' }],
+    });
+    expect(errorMessage(consent)).toBe('Consent was revoked.');
+    const access = new ApiError({ status: 403, code: 'forbidden', title: 'Forbidden' });
+    expect(errorMessage(access)).toBe(
+      'You don’t have access to this. Ask a program lead if you think you should.',
+    );
+  });
+
   it('keeps validation field errors', async () => {
     fetchMock.mockResolvedValue(
       problem(422, 'validation_failed', { errors: [{ path: 'title', message: 'Required' }] }),

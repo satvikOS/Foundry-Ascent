@@ -36,7 +36,8 @@ and history are never modified by any level.
      -H "cookie: fa_session=<token>" --data "$BODY"
    ```
 4. **Resume** from the same page (`POST /api/v1/personas/<id>/resume`) once the cause is resolved. EIR
-   personas resume only with a valid consent record; a revoked consent keeps them suspended.
+   personas resume only with a valid consent record; a revoked consent keeps them suspended. The page then
+   offers no Resume and says why; the API answers 403 with the reason at `errors[].path = "consent"`.
 
 Use level 1 for doctrine or style problems in one persona, a withdrawn EIR consent, or suspected persona
 poisoning (03 §14). A problem in a single **release** can also be handled by approving a corrected

@@ -1,5 +1,5 @@
 import type { PersonaReleaseView } from '@foundry/contracts';
-import { screen } from '@testing-library/react';
+import { act, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -182,5 +182,49 @@ describe('ReleasesTab', () => {
     await userEvent.click(screen.getByRole('button', { name: /^View\s*v2$/ }));
     expect(await screen.findByText('Draft v2 · outdated')).toBeVisible();
     expect(screen.queryByRole('button', { name: /Approve/ })).toBeNull();
+  });
+
+  it('opens only published releases for people who don’t curate the vEIR (drafts are refused to them)', async () => {
+    const V4 = '2b3c4d5e-6f70-4182-93a4-b5c6d7e8f9a0';
+    const reader = persona({
+      canCurate: false,
+      canManageConsent: false,
+      activeRelease: { ...RELEASE, id: V3, version: 3 },
+      releases: [
+        { id: V4, version: 4, status: 'draft', approvedAt: null, createdAt: RELEASE.createdAt },
+        {
+          id: V3,
+          version: 3,
+          status: 'approved',
+          approvedAt: RELEASE.approvedAt,
+          createdAt: RELEASE.createdAt,
+        },
+        { id: V2, version: 2, status: 'withdrawn', approvedAt: null, createdAt: RELEASE.createdAt },
+        {
+          id: RELEASE.id,
+          version: 1,
+          status: 'superseded',
+          approvedAt: RELEASE.approvedAt,
+          createdAt: RELEASE.createdAt,
+        },
+      ],
+    });
+    const fetchMock = stubFetch();
+    fetchMock.mockResolvedValue(jsonResponse({ ...draft, id: RELEASE.id, version: 1, status: 'superseded' }));
+    renderWithProviders(<ReleasesTab persona={reader} />);
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+
+    // The draft is listed, but nothing opens it: GET /persona-releases/:id would answer 403.
+    const history = screen.getByRole('list', { name: 'Releases' });
+    expect(history).toHaveTextContent('v4');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /Review\s*v4/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /View\s*v2/ })).toBeNull();
+    expect(screen.queryByText('No access')).toBeNull();
+
+    // A superseded release is published history, so it still opens.
+    await userEvent.click(screen.getByRole('button', { name: /^View\s*v1$/ }));
+    expect(await screen.findByText(/Release v1/)).toBeVisible();
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([`/api/v1/persona-releases/${RELEASE.id}`]);
   });
 });

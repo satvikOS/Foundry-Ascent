@@ -113,6 +113,7 @@ export async function dispatchJob(
           ephemeralTurnsRedacted: report.ephemeralTurnsRedacted,
           staleCallsEnded: report.staleCallsEnded,
           proposalsExpired: report.proposalsExpired,
+          staleUploadsFailed: report.staleUploadsFailed,
           distillCandidates: report.distillation.candidates,
           distilled: report.distillation.distilled,
           distillFailed: report.distillation.failed,
