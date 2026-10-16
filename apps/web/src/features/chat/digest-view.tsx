@@ -8,7 +8,6 @@ import type {
 import { Printer, Trash2 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 
-import { DisclosureBanner } from '@/components/disclosure-banner';
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -22,12 +21,13 @@ import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { toast } from '@/components/ui/toast';
 import { errorMessage } from '@/lib/api/errors';
-import { awaitingDigest, useDeleteDigest } from '@/lib/api/hooks/sessions';
+import { awaitingDigest, digestDeleted, useDeleteDigest } from '@/lib/api/hooks/sessions';
 import { formatDate, pluralize } from '@/lib/format';
 import { ESCALATION_CATEGORY_LABELS, REQUESTED_ROLE_LABELS } from '@/lib/labels';
 import { formatIsoDate } from '@/features/memory/typed/attributes';
 
 import { isActionSaved, useAddAction } from './actions';
+import { NextStepList } from './next-steps';
 import { usePanelState } from './panel-state';
 import { ANSWER_PROSE } from './veir-answer';
 
@@ -69,6 +69,7 @@ export function DigestView({
   const digest = session.digest;
   const recap = session.recap;
   const writing = awaitingDigest(session);
+  const deleted = !digest && digestDeleted(session.id);
 
   if (session.privacy === 'ephemeral') {
     return (
@@ -105,10 +106,13 @@ export function DigestView({
           {session.endedAt ? <> · {formatDate(session.endedAt)}</> : null}
         </p>
       </div>
-      <DisclosureBanner variant="print" text={session.disclosure} className="hidden print:block" />
 
       {digest ? (
         <DigestBody digest={digest} />
+      ) : deleted ? (
+        <p className="text-small text-muted-foreground">
+          You deleted the summary. {personaName} won’t write it again.
+        </p>
       ) : writing ? (
         <p className="text-small text-muted-foreground" role="status">
           {personaName} is writing a summary…
@@ -128,7 +132,7 @@ export function DigestView({
             void add(action, [{ ...sessionSource, label: 'Conversation recap' }], `recap:${index}`);
           }}
         />
-      ) : !digest && !writing ? (
+      ) : !digest && !writing && !deleted ? (
         <p className="text-small text-muted-foreground">
           No summary for this conversation. It couldn’t be written.
         </p>
@@ -292,44 +296,22 @@ function RecapBody({
       ) : null}
       {recap.next_actions.length > 0 ? (
         <Part title="Next steps">
-          <ul className="divide-y divide-border border-y border-border">
-            {recap.next_actions.map((action, index) => {
-              const saved = actionSaved(action);
-              return (
-                <li
-                  key={`${index}-${action.action}`}
-                  className="flex flex-col gap-1.5 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
-                >
-                  <div className="min-w-0">
-                    <p className="text-small font-medium">{action.action}</p>
-                    {action.owner || action.target_date ? (
-                      <p className="tabular text-caption text-muted-foreground">
-                        {[action.owner, action.target_date ? `by ${formatIsoDate(action.target_date)}` : null]
-                          .filter(Boolean)
-                          .join(' · ')}
-                      </p>
-                    ) : null}
-                  </div>
-                  {saved ? (
-                    <span className="shrink-0 text-caption font-medium">In actions</span>
-                  ) : canEdit ? (
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      data-print="hide"
-                      className="shrink-0 self-start sm:self-auto"
-                      loading={savingKey === `recap:${index}`}
-                      onClick={() => {
-                        onAddAction(action, index);
-                      }}
-                    >
-                      Add to actions
-                    </Button>
-                  ) : null}
-                </li>
-              );
-            })}
-          </ul>
+          <NextStepList
+            actions={recap.next_actions}
+            controls={
+              canEdit
+                ? {
+                    saved: new Set(
+                      recap.next_actions.flatMap((action, index) => (actionSaved(action) ? [index] : [])),
+                    ),
+                    savingIndex: savingKey?.startsWith('recap:')
+                      ? Number(savingKey.slice('recap:'.length))
+                      : null,
+                    onAdd: onAddAction,
+                  }
+                : null
+            }
+          />
         </Part>
       ) : null}
       {recap.escalation.required ? (

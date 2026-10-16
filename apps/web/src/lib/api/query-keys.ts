@@ -43,6 +43,8 @@ export const queryKeys = {
     escalations: (ventureId: string) => [ROOT, 'venture', ventureId, 'escalations'] as const,
     team: (ventureId: string) => [ROOT, 'venture', ventureId, 'team'] as const,
     notebook: (ventureId: string) => [ROOT, 'venture', ventureId, 'notebook'] as const,
+    /** `GET /ventures/:id/sessions`: one venture's conversations (Knowledge reads their digests). */
+    sessions: (ventureId: string) => [ROOT, 'venture', ventureId, 'sessions'] as const,
   },
   session: {
     detail: (sessionId: string) => [ROOT, 'session', sessionId] as const,

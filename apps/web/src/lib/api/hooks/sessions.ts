@@ -3,6 +3,7 @@ import {
   CreateSessionResponse,
   EndSessionResponse,
   SessionDetailResponse,
+  SessionListResponse,
   SessionPageResponse,
   TurnFeedbackRequest,
   UpdateSessionRequest,
@@ -18,7 +19,10 @@ import {
   useQueryClient,
   type QueryClient,
 } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import type { z } from 'zod';
+
+import { listedInRecents } from '@/lib/conversations';
 
 import { encodeBody } from '../body';
 import { api, apiSend, createIdempotencyKey, path } from '../client';
@@ -35,7 +39,7 @@ const CONVERSATION_PAGE_SIZE = 50;
  * first, one page at a time. `scope: 'mine'` lists the ones they started (the sidebar's recents); pass a
  * `ventureId` to keep one venture's. Links use each conversation's own `ventureId`.
  */
-export const conversationsQueryOptions = (filters: ConversationFilters) =>
+const conversationsQueryOptions = (filters: ConversationFilters) =>
   infiniteQueryOptions({
     queryKey: queryKeys.conversations.list(filters),
     queryFn: ({ signal, pageParam }) =>
@@ -53,12 +57,31 @@ export const conversationsQueryOptions = (filters: ConversationFilters) =>
   });
 
 /**
- * The person's own conversations for the sidebar and ⌘K. Read-only roles (advisors, assigned EIRs) never
- * start conversations, so callers pass `enabled: false` for them and nothing is requested.
+ * The person's own conversations for the sidebar and ⌘K (ended temporary chats, which keep nothing, are
+ * left out). Read-only roles (advisors, assigned EIRs) never start conversations, so callers pass
+ * `enabled: false` for them and nothing is requested.
  */
 export function useRecentConversations({ enabled }: { enabled: boolean }) {
   const query = useInfiniteQuery({ ...conversationsQueryOptions({ scope: 'mine' }), enabled });
-  return { ...query, items: query.data?.pages.flatMap((page) => page.items) ?? [] };
+  const items = useMemo(
+    () => query.data?.pages.flatMap((page) => page.items.filter(listedInRecents)) ?? [],
+    [query.data],
+  );
+  return { ...query, items };
+}
+
+/**
+ * `GET /ventures/:id/sessions`: one venture's conversations, latest activity first (founders and team
+ * only). The Knowledge page reads their digests and citations from it.
+ */
+export const sessionsQueryOptions = (ventureId: string) =>
+  queryOptions({
+    queryKey: queryKeys.venture.sessions(ventureId),
+    queryFn: ({ signal }) => api.get(path`/ventures/${ventureId}/sessions`, SessionListResponse, { signal }),
+  });
+
+export function useSessions(ventureId: string) {
+  return useQuery({ ...sessionsQueryOptions(ventureId), select: (data) => data.items });
 }
 
 /** GET /sessions/:id — a conversation with its turns (founders and team only). */
@@ -83,18 +106,34 @@ export function useSession(sessionId: string, { enabled = true }: { enabled?: bo
 const DIGEST_POLL_MS = 4_000;
 const DIGEST_WAIT_MS = 120_000;
 
-/** Whether a digest for this conversation may still arrive (standard, ended within the last two minutes). */
+/**
+ * Conversations whose digest was deleted from this page. Distillation never writes a deleted digest again,
+ * so none is awaited for them. (The view does not say whether a digest was deleted, so this is per tab.)
+ */
+const deletedDigests = new Set<string>();
+
+/** Whether the person deleted this conversation's digest (in this tab). */
+export function digestDeleted(sessionId: string): boolean {
+  return deletedDigests.has(sessionId);
+}
+
+/**
+ * Whether a digest for this conversation may still arrive: standard, ended within the last two minutes, and
+ * its digest neither written nor deleted.
+ */
 export function awaitingDigest(
-  session: Pick<SessionView, 'status' | 'privacy' | 'digest' | 'endedAt'> | undefined,
+  session: Pick<SessionView, 'id' | 'status' | 'privacy' | 'digest' | 'endedAt'> | undefined,
   now: number = Date.now(),
 ): boolean {
   if (session?.status !== 'ended' || session.privacy !== 'standard' || session.digest) return false;
+  if (deletedDigests.has(session.id)) return false;
   return session.endedAt !== null && now - Date.parse(session.endedAt) < DIGEST_WAIT_MS;
 }
 
 /** Refresh every list a conversation appears in, plus the venture data a conversation changes. */
 function invalidateConversation(client: QueryClient, session: Pick<SessionView, 'id' | 'ventureId'>) {
   void client.invalidateQueries({ queryKey: queryKeys.conversations.all() });
+  void client.invalidateQueries({ queryKey: queryKeys.venture.sessions(session.ventureId) });
   void client.invalidateQueries({ queryKey: queryKeys.venture.overview(session.ventureId) });
   void client.invalidateQueries({ queryKey: queryKeys.ventures.list() });
 }
@@ -186,10 +225,14 @@ export function useDeleteDigest() {
         idempotencyKey: createIdempotencyKey(),
       }),
     onSuccess: (_result, sessionId) => {
-      client.setQueryData<SessionDetail>(queryKeys.session.detail(sessionId), (previous) =>
+      deletedDigests.add(sessionId);
+      const detail = client.setQueryData<SessionDetail>(queryKeys.session.detail(sessionId), (previous) =>
         previous ? { ...previous, session: { ...previous.session, digest: null } } : previous,
       );
       void client.invalidateQueries({ queryKey: queryKeys.session.detail(sessionId) });
+      // The venture's conversation list carries digests too (Knowledge).
+      if (detail)
+        void client.invalidateQueries({ queryKey: queryKeys.venture.sessions(detail.session.ventureId) });
     },
   });
 }

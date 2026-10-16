@@ -2,8 +2,14 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
-import { makeTurn, makeValidator } from '../coach/testing';
-import { groundingAdjustments, NarrowedNote, ReasoningDetails, ReasoningDisclosure } from './reasoning';
+import { makeEvidence, makeResponse, makeTurn, makeValidator } from '../coach/testing';
+import {
+  citedSourceKeys,
+  groundingAdjustments,
+  NarrowedNote,
+  ReasoningDetails,
+  ReasoningDisclosure,
+} from './reasoning';
 
 const turn = makeTurn();
 const response = (() => {
@@ -32,8 +38,39 @@ describe('ReasoningDisclosure', () => {
     const claims = screen.getByRole('list', { name: 'Claims and their sources' });
     expect(within(claims).getAllByRole('listitem')).toHaveLength(4);
     expect(screen.getByText('What would convince you that everyday demand is real?')).toBeVisible();
-    await user.click(screen.getByRole('button', { name: 'Open the 2 sources' }));
+    await user.click(screen.getByRole('button', { name: 'Open sources' }));
     expect(onShowSources).toHaveBeenCalledOnce();
+  });
+});
+
+describe('citedSourceKeys', () => {
+  it('counts what the answer cites, not everything that was retrieved', () => {
+    const retrieved = Array.from({ length: 17 }, (_, n) => makeEvidence({ key: `E${n + 1}` }));
+    const answer = makeResponse({
+      answer: 'Past behaviour is hard to fake [E1]. Frequency matters [E2][E1].',
+      claims: [
+        { text: 'Nine of fourteen walk between buildings.', kind: 'fact', evidence_ids: ['E2', 'E9'] },
+      ],
+    });
+    expect(citedSourceKeys(answer, retrieved)).toEqual(['E2', 'E9', 'E1']);
+    // A key that names nothing retrieved is not a source.
+    expect(citedSourceKeys(makeResponse({ answer: 'See [E40].', claims: [] }), retrieved)).toEqual([]);
+  });
+
+  it('summarises the cited sources under the answer', () => {
+    const retrieved = Array.from({ length: 17 }, (_, n) => makeEvidence({ key: `E${n + 1}` }));
+    render(
+      <ReasoningDisclosure
+        response={makeResponse({ answer: 'Hard to fake [E1].' })}
+        evidence={retrieved}
+        validator={null}
+        onOpenSource={vi.fn()}
+        onShowSources={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('button', { name: /^Sources & reasoning/ })).toHaveTextContent(
+      '2 sources · 4 claims',
+    );
   });
 });
 

@@ -182,9 +182,27 @@ export function NarrowedNote({ validator }: { validator: ValidatorResults | null
   );
 }
 
+const CITATION_MARKER = /\[(E\d{1,3})\]/g;
+
+/**
+ * The sources an answer cites, in order: the keys of its claims and its [E#] markers that name retrieved
+ * evidence. What was retrieved but not cited stays in the Sources panel.
+ */
+export function citedSourceKeys(
+  response: Pick<CoachResponse, 'answer' | 'claims'>,
+  evidence: readonly Pick<EvidenceItem, 'key'>[],
+): string[] {
+  const known = new Set(evidence.map((item) => item.key));
+  const keys = [
+    ...response.claims.flatMap((claim) => claim.evidence_ids),
+    ...Array.from(response.answer.matchAll(CITATION_MARKER), (match) => match[1] ?? ''),
+  ];
+  return [...new Set(keys)].filter((key) => known.has(key));
+}
+
 /**
  * "Sources & reasoning": a disclosure under an answer that holds its claims, uncertainty and challenge,
- * and opens the panel on its sources.
+ * and opens the panel on its sources. Its summary counts the sources the answer cites.
  */
 export function ReasoningDisclosure({
   response,
@@ -193,7 +211,7 @@ export function ReasoningDisclosure({
   onOpenSource,
   onShowSources,
 }: {
-  response: Pick<CoachResponse, 'claims' | 'uncertainty' | 'challenge'>;
+  response: Pick<CoachResponse, 'answer' | 'claims' | 'uncertainty' | 'challenge'>;
   evidence: readonly EvidenceItem[];
   validator: ValidatorResults | null;
   onOpenSource: (key: string) => void;
@@ -201,11 +219,12 @@ export function ReasoningDisclosure({
 }) {
   const [open, setOpen] = useState(false);
   const regionId = useId();
+  const cited = citedSourceKeys(response, evidence).length;
   const hasDetails =
     response.claims.length > 0 || response.uncertainty.length > 0 || response.challenge !== null;
   if (!hasDetails && evidence.length === 0) return null;
   const summary = [
-    evidence.length > 0 ? pluralize(evidence.length, 'source') : null,
+    cited > 0 ? pluralize(cited, 'source') : null,
     response.claims.length > 0 ? pluralize(response.claims.length, 'claim') : null,
   ]
     .filter(Boolean)
@@ -221,10 +240,12 @@ export function ReasoningDisclosure({
       {label}
     </button>
   );
-  const sources = pluralize(evidence.length, 'source');
-
   if (!hasDetails) {
-    return evidence.length > 0 ? <div className="mt-4">{sourcesButton(sources)}</div> : null;
+    return (
+      <div className="mt-4">
+        {sourcesButton(cited > 0 ? `${pluralize(cited, 'source')} cited` : 'Sources')}
+      </div>
+    );
   }
   return (
     <div className="mt-4">
@@ -252,7 +273,7 @@ export function ReasoningDisclosure({
             validator={validator}
             onOpenSource={onOpenSource}
           />
-          {evidence.length > 0 ? sourcesButton(`Open the ${sources}`) : null}
+          {evidence.length > 0 ? sourcesButton('Open sources') : null}
         </div>
       ) : null}
     </div>

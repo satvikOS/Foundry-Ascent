@@ -315,7 +315,7 @@ function ReviewTab({
 
   const keepAll = () => {
     batch.mutate(
-      { ids: items.slice(0, 50).map((m) => m.id), action: 'approve' },
+      { ids: items.map((m) => m.id), action: 'approve' },
       {
         onSuccess: (result) => {
           const message = `Kept ${pluralize(result.items.length, 'item')}`;

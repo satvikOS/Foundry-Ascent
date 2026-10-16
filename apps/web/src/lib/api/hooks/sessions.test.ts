@@ -5,6 +5,7 @@ import { awaitingDigest } from './sessions';
 describe('awaitingDigest', () => {
   const now = Date.parse('2026-10-16T12:00:00.000Z');
   const ended = {
+    id: '1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e02',
     status: 'ended' as const,
     privacy: 'standard' as const,
     digest: null,

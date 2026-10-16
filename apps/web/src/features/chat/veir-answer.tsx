@@ -1,5 +1,5 @@
 import type { CoachResponse, EscalationView, NextAction, TurnView } from '@foundry/contracts';
-import { Check, HandHelping, Plus, ShieldAlert } from 'lucide-react';
+import { HandHelping, ShieldAlert } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -7,7 +7,6 @@ import { Markdown } from '@/components/ui/markdown';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { ESCALATION_CATEGORY_LABELS, REQUESTED_ROLE_LABELS } from '@/lib/labels';
 import { cn } from '@/lib/utils';
-import { formatIsoDate } from '@/features/memory/typed/attributes';
 
 import { EvidenceChip } from '../coach/response/evidence-chip';
 import {
@@ -16,17 +15,11 @@ import {
   type MemorySuggestionControls,
 } from './memory-suggestions';
 import { MessageActions } from './message-actions';
+import { NextStepList, type NextActionControls } from './next-steps';
 import { NarrowedNote, ReasoningDisclosure } from './reasoning';
 
 /** The vEIR's own words: serif reading face, generous leading, a 60–75 character measure. */
 export const ANSWER_PROSE = 'max-w-[68ch] font-serif text-[1.0625rem] leading-[1.7]';
-
-export interface NextActionControls {
-  /** Indexes of next actions already in the venture's actions. */
-  saved: ReadonlySet<number>;
-  savingIndex: number | null;
-  onAdd?: (action: NextAction, index: number) => void;
-}
 
 export interface EscalationControls {
   /** A handoff already created from this answer. */
@@ -41,6 +34,11 @@ export interface VeirAnswerProps {
   personaName: string;
   /** The conversation's latest answer: its actions stay visible. */
   latest: boolean;
+  /**
+   * The conversation ended with a summary, which holds its next steps and what to remember: the answer is
+   * shown without its own next-step and memory rows, so nothing is offered twice.
+   */
+  summarised?: boolean;
   canEdit: boolean;
   onOpenSource: (key: string) => void;
   onShowSources: () => void;
@@ -60,6 +58,7 @@ export function VeirAnswer({
   response,
   personaName,
   latest,
+  summarised = false,
   canEdit,
   onOpenSource,
   onShowSources,
@@ -90,13 +89,13 @@ export function VeirAnswer({
         onShowSources={onShowSources}
       />
 
-      {response.next_actions.length > 0 ? (
+      {response.next_actions.length > 0 && !summarised ? (
         <NextSteps actions={response.next_actions} controls={canEdit ? nextActions : null} />
       ) : null}
 
       <Handoff turnId={turn.id} response={response} validator={turn.validator} controls={escalation} />
 
-      {memory ? (
+      {memory && !summarised ? (
         <MemorySuggestions personaName={personaName} bindings={memory.bindings} controls={memory.controls} />
       ) : null}
 
@@ -115,48 +114,7 @@ function NextSteps({
   return (
     <section aria-label="Suggested next steps" className="mt-5">
       <h4 className="label-mono mb-2">Next steps</h4>
-      <ul className="divide-y divide-border border-y border-border">
-        {actions.map((action, index) => {
-          const saved = controls?.saved.has(index) ?? false;
-          return (
-            <li
-              key={`${index}-${action.action}`}
-              className="flex flex-col gap-1.5 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
-            >
-              <div className="min-w-0">
-                <p className="text-small font-medium">{action.action}</p>
-                {action.owner || action.target_date ? (
-                  <p className="tabular text-caption text-muted-foreground">
-                    {[action.owner, action.target_date ? `by ${formatIsoDate(action.target_date)}` : null]
-                      .filter(Boolean)
-                      .join(' · ')}
-                  </p>
-                ) : null}
-              </div>
-              {saved ? (
-                <span className="inline-flex shrink-0 items-center gap-1 text-caption font-medium">
-                  <Check aria-hidden className="size-3.5 text-success" />
-                  In actions
-                </span>
-              ) : controls?.onAdd ? (
-                <Button
-                  size="xs"
-                  variant="ghost"
-                  className="shrink-0 self-start sm:self-auto"
-                  loading={controls.savingIndex === index}
-                  loadingText="Adding…"
-                  onClick={() => {
-                    controls.onAdd?.(action, index);
-                  }}
-                >
-                  <Plus aria-hidden />
-                  Add to actions
-                </Button>
-              ) : null}
-            </li>
-          );
-        })}
-      </ul>
+      <NextStepList actions={actions} controls={controls} />
     </section>
   );
 }

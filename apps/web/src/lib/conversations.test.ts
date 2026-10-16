@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { conversationTitle, groupByRecency, lastActivity, titleFromMessage } from './conversations';
+import {
+  conversationTitle,
+  groupByRecency,
+  lastActivity,
+  listedInRecents,
+  startStamp,
+  titleFromMessage,
+} from './conversations';
 
 describe('titleFromMessage', () => {
   it('keeps a short first line and collapses whitespace', () => {
@@ -48,6 +55,44 @@ describe('conversationTitle', () => {
     expect(morning).not.toBe(evening);
     expect(conversationTitle({ ...base, title: '   ' }, '  ')).toBe(morning);
     expect(conversationTitle({ ...base, privacy: 'ephemeral' })).toMatch(/^Temporary chat · /);
+  });
+
+  it('keeps the fallback short enough that the time survives the sidebar', () => {
+    const now = new Date(2026, 9, 16, 15, 0, 0);
+    const today = (hour: number, minute: number) => new Date(2026, 9, 16, hour, minute).toISOString();
+    const first = conversationTitle({ ...base, privacy: 'ephemeral', startedAt: today(6, 55) }, null, now);
+    const second = conversationTitle({ ...base, privacy: 'ephemeral', startedAt: today(9, 10) }, null, now);
+    expect(first).not.toBe(second);
+    expect(first.length).toBeLessThanOrEqual(26);
+    expect(first).toBe(`Temporary chat · ${startStamp(today(6, 55), now)}`);
+  });
+});
+
+describe('startStamp', () => {
+  const now = new Date(2026, 9, 16, 15, 0, 0);
+  const time = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+
+  it('shows only the time today, the weekday this week, the day this year and the year before', () => {
+    const today = new Date(2026, 9, 16, 6, 55);
+    expect(startStamp(today.toISOString(), now)).toBe(time.format(today));
+    const monday = new Date(2026, 9, 12, 6, 55);
+    expect(startStamp(monday.toISOString(), now)).toBe(
+      new Intl.DateTimeFormat(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' }).format(
+        monday,
+      ),
+    );
+    const earlier = startStamp(new Date(2026, 8, 3, 6, 55).toISOString(), now);
+    expect(earlier).toContain(time.format(new Date(2026, 8, 3, 6, 55)));
+    expect(earlier).not.toContain('2026');
+    expect(startStamp(new Date(2025, 8, 3, 6, 55).toISOString(), now)).toContain('2025');
+  });
+});
+
+describe('listedInRecents', () => {
+  it('leaves out ended temporary chats, which keep nothing', () => {
+    expect(listedInRecents({ privacy: 'ephemeral', status: 'ended' })).toBe(false);
+    expect(listedInRecents({ privacy: 'ephemeral', status: 'active' })).toBe(true);
+    expect(listedInRecents({ privacy: 'standard', status: 'ended' })).toBe(true);
   });
 });
 

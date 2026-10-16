@@ -31,14 +31,17 @@ import type { CandidateBinding } from './memory-suggestions';
 import { usePanelState } from './panel-state';
 import { ANSWER_PROSE, VeirAnswer } from './veir-answer';
 
-/** The person's message: a right-aligned bubble in the interface face. */
-export function FounderMessage({
+/** A founder's or teammate's message: a right-aligned bubble in the interface face. */
+function FounderMessage({
   text,
   author,
   at,
 }: {
   text: string;
-  /** Who wrote it (the conversation's starter). */
+  /**
+   * The conversation's starter, whose face sits beside the bubble. Turns carry no author yet, so screen
+   * readers hear a neutral "Message" rather than a name that may not be the writer's.
+   */
   author: string;
   at: string | null;
 }) {
@@ -48,7 +51,7 @@ export function FounderMessage({
         className="max-w-[85%] rounded-2xl rounded-br-md bg-muted px-4 py-2.5 text-[0.9375rem] leading-6 whitespace-pre-wrap [overflow-wrap:anywhere]"
         title={at ? formatDateTime(at) : undefined}
       >
-        <span className="sr-only">You said: </span>
+        <span className="sr-only">Message: </span>
         <span>{text}</span>
       </p>
       <UserAvatar
@@ -62,7 +65,7 @@ export function FounderMessage({
 }
 
 /** The vEIR's side of an exchange: its face sits in the left gutter on wide screens. */
-export function VeirMessage({
+function VeirMessage({
   personaName,
   portraitUrl,
   children,
@@ -206,6 +209,7 @@ export function StoredExchange({
         response={response}
         personaName={personaName}
         latest={latest}
+        summarised={session.status === 'ended' && session.recap !== null}
         canEdit={canEdit}
         onOpenSource={onOpenSource}
         onShowSources={() => {
