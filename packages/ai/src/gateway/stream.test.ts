@@ -478,7 +478,9 @@ describe('MockModelGateway.streamText', () => {
     expect(annotations.value).not.toHaveProperty('answer');
     expect(annotations.value.mode).toBe('coach');
     expect(annotations.value.claims.length).toBeGreaterThan(0);
-    expect(JSON.stringify(annotations.value.memory_candidates)).toContain('size the pilot');
+    // The topic's open fact, never the founder's words quoted back.
+    expect(annotations.value.memory_candidates).toHaveLength(1);
+    expect(JSON.stringify(annotations.value.memory_candidates)).not.toContain('size the pilot');
   });
 
   it('follows the scripts: unavailable before text, failure midway after the first sentence', async () => {

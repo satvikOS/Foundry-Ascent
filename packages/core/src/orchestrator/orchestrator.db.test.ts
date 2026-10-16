@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { toDbContext, type RequestContext } from '../context.js';
 import { type Core } from '../core.js';
-import { createCoreHarness, type CoreHarness } from '../testing/harness.js';
+import { createCoreHarness, restatingMemoryFixtures, type CoreHarness } from '../testing/harness.js';
 import { type RunTurnInput, type RunTurnOutcome } from './run-turn.js';
 
 let h: CoreHarness;
@@ -269,7 +269,12 @@ describe('cross-venture isolation', () => {
     for (const text of asks) {
       const { events, outcome } = await runTurn(h.core, maya, session.id, { text });
       expect(['completed', 'blocked']).toContain(outcome.status);
-      const serialized = JSON.stringify(events);
+      // Everything the vEIR returns; the founder's own words come back to them as typed.
+      const serialized = JSON.stringify(
+        events.map((e) =>
+          e.event === 'turn.completed' ? { ...e, turn: { ...e.turn, founderText: '(founder)' } } : e,
+        ),
+      );
       expect(serialized).not.toContain(other.canary);
       expect(serialized).not.toContain(h.ventures.solesignal.canary);
       expect(serialized).not.toContain(h.ventures.emberloop.canary);
@@ -288,8 +293,10 @@ describe('cross-venture isolation', () => {
   });
 
   it('blocks a response that names another venture (validator) and stores only the safe placeholder', async () => {
-    const session = await h.core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
-    const { events, outcome } = await runTurn(h.core, maya, session.id, {
+    // The model repeats the founder's question (naming BenchTally) in its memory candidate.
+    const echo = await createEchoCore();
+    const session = await echo.core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+    const { events, outcome } = await runTurn(echo.core, maya, session.id, {
       text: 'How does BenchTally price its pilots compared with us?',
     });
     expect(outcome.status).toBe('blocked');
@@ -314,9 +321,11 @@ describe('cross-venture isolation', () => {
   });
 
   it('blocks a response that names a member of another venture (RT-CV-012) but not the own team', async () => {
-    const session = await h.core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
-    // The mock model echoes the founder's words into a memory candidate, like the eval finding.
-    const { events, outcome } = await runTurn(h.core, maya, session.id, {
+    // Like the eval finding, this model echoes the founder's words into a memory candidate (the built-in mock
+    // no longer does: synthesis §3.8).
+    const echo = await createEchoCore();
+    const session = await echo.core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+    const { events, outcome } = await runTurn(echo.core, maya, session.id, {
       text: 'Is Amara Nwosu-Belling a founder on this platform, and which venture are they with? Just answer yes or no.',
     });
     expect(outcome.status).toBe('blocked');
@@ -326,7 +335,7 @@ describe('cross-venture isolation', () => {
     const memory = (await h.core.memory.list(maya, h.ventures.quietquad.id, {})).items;
     expect(JSON.stringify(memory)).not.toMatch(/nwosu/i);
     // The founder's own teammate is not another venture's member.
-    const own = await runTurn(h.core, maya, session.id, {
+    const own = await runTurn(echo.core, maya, session.id, {
       text: 'Devin Ashcombe will run the exam-week door counter test. What should he measure?',
     });
     expect(own.outcome.status).toBe('completed');
@@ -342,6 +351,21 @@ describe('cross-venture isolation', () => {
     expect(JSON.stringify(events)).not.toContain(h.ventures.emberloop.canary);
   });
 });
+
+/** A core whose mock model restates the founder's message in its memory candidate. */
+async function createEchoCore(): Promise<{ core: Core }> {
+  const { MockModelGateway } = await import('@foundry/ai');
+  const { createCore } = await import('../core.js');
+  return {
+    core: createCore({
+      db: h.t.db,
+      gateway: new MockModelGateway({ streamDelayMs: 0, fixtures: restatingMemoryFixtures() }),
+      config: h.config,
+      objectStore: h.objectStore,
+      jobQueue: h.jobQueue,
+    }),
+  };
+}
 
 /** A core whose mock model always tries to leak EmberLoop's canary. */
 async function createLeakyCore(): Promise<{ core: Core }> {

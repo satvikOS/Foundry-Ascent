@@ -228,8 +228,8 @@ function quoteOf(text: string, max = 160): string {
  * Deterministic, conversational `CoachResponse` derived from the prompt: persona style, the founder's
  * first name, the mode, risk flags, the evidence shown (cited by id, referred to by title) and the
  * vEIR's notes. It reads like a mentor (short paragraphs, one question at the end) and fills every
- * structured field the validator and the UI use. The memory candidate quotes the founder's message, so
- * the cross-venture guard still sees what the founder typed.
+ * structured field the validator and the UI use. Its memory candidate states what the topic leaves open,
+ * never the founder's message quoted back.
  */
 export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
   const control = context.control;
@@ -395,10 +395,8 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
       {
         type: bank.memory.type,
         title: bank.memory.title,
-        content:
-          context.founderText.trim() === ''
-            ? bank.memory.note
-            : `${name ?? 'The founder'} asked: “${quoteOf(context.founderText)}” ${bank.memory.note}`,
+        // A fact about the venture, never the founder's own question quoted back (synthesis §3.8).
+        content: bank.memory.note,
         evidence_ids: cited.slice(0, 1),
         confidence: 0.6,
       },

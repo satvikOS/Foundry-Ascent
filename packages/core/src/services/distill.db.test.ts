@@ -22,7 +22,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type RequestContext } from '../context.js';
 import { createCore, type Core } from '../core.js';
 import { memoryEmbeddingText } from '../internal/embeddings.js';
-import { type CoreHarness, createCoreHarness } from '../testing/harness.js';
+import { type CoreHarness, createCoreHarness, restatingMemoryFixtures } from '../testing/harness.js';
 import { RetryableDistillError } from './distill.js';
 import { resolutionEntryId } from './notebook-advice.js';
 
@@ -177,7 +177,12 @@ async function proposal(ctx: RequestContext, title: string, content: string): Pr
 }
 
 beforeAll(async () => {
-  h = await createCoreHarness({ config: { turns: { rateLimit: 500 } } });
+  // The model restates what the founder said in its turn proposals (like real models), so a distilled
+  // candidate can raise one of them again (memory hygiene below).
+  h = await createCoreHarness({
+    config: { turns: { rateLimit: 500 } },
+    gatewayOptions: { fixtures: restatingMemoryFixtures() },
+  });
   maya = await h.ctxFor(h.people.maya);
   devin = await h.ctxFor(h.people.devin);
   priya = await h.ctxFor(h.people.priya);

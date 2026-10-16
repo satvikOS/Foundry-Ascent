@@ -1,6 +1,12 @@
 import { randomBytes } from 'node:crypto';
 
-import { MockModelGateway, type MockModelGatewayOptions } from '@foundry/ai';
+import {
+  COACH_ANNOTATIONS_SCHEMA_NAME,
+  MockModelGateway,
+  mockCoachResponse,
+  type MockGenerateContext,
+  type MockModelGatewayOptions,
+} from '@foundry/ai';
 import { principalsRepo, type SeedResult, type SeededVenture } from '@foundry/db';
 import { createTestDatabase, type TestDatabase } from '@foundry/db/testing';
 
@@ -21,6 +27,32 @@ export interface CoreHarnessOptions {
   readonly speech?: SpeechSynthesizer;
   /** Speech-to-text grants for calls (absent: calls start without one). */
   readonly sttGrants?: SttGrantIssuer;
+}
+
+/**
+ * Mock-model fixtures whose memory candidate restates the founder's message, as real models often do (the
+ * built-in mock states only the topic's open fact, never the founder's words). For tests of the guards and
+ * the deduplication that act on such candidates (cross-venture names, a proposal raised again).
+ */
+export function restatingMemoryFixtures(): NonNullable<MockModelGatewayOptions['fixtures']> {
+  const restating = (context: MockGenerateContext) => {
+    const response = mockCoachResponse(context);
+    const said = context.founderText.trim();
+    return {
+      ...response,
+      memory_candidates: response.memory_candidates.map((m) => ({
+        ...m,
+        content: said === '' ? m.content : `The founder said: “${said}” ${m.content}`,
+      })),
+    };
+  };
+  return {
+    CoachResponse: restating,
+    [COACH_ANNOTATIONS_SCHEMA_NAME]: (context) => {
+      const { answer: _answer, spoken: _spoken, ...annotations } = restating(context);
+      return annotations;
+    },
+  };
 }
 
 /** Seed people by role (synthetic demo data). */

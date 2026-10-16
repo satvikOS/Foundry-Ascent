@@ -102,7 +102,7 @@ describe('MockModelGateway.generateStructured', () => {
     const fact = a.value.claims.find((c) => c.kind === 'fact');
     expect(fact?.evidence_ids).toEqual(['E1', 'E2']);
     expect(a.value.memory_candidates).toHaveLength(1);
-    expect(a.value.memory_candidates[0]?.content).toContain('How should we price the pilot?');
+    expect(a.value.memory_candidates[0]?.content).not.toContain('How should we price the pilot?');
     expect(a.value.escalation.required).toBe(false);
     expect(a.value.mode).toBe('coach');
     expect(a.value.rehearsal).toBeNull();
@@ -346,7 +346,7 @@ describe('mock conversation realism', () => {
     expect(later.value.answer).not.toContain('Last time you planned');
   });
 
-  it('proposes a realistic memory candidate that still quotes the founder', async () => {
+  it('proposes a realistic memory candidate, never the founder’s question quoted back', async () => {
     const gw = new MockModelGateway();
     const { value } = await gw.generateStructured(
       veirTurn({ text: 'How should we price the library pilot?' }),
@@ -354,7 +354,8 @@ describe('mock conversation realism', () => {
     const [memory] = value.memory_candidates;
     expect(memory?.title).toBe('Pricing still to be tested with real buyers');
     expect(memory?.title).not.toMatch(/[0-9a-f]{8}/);
-    expect(memory?.content).toContain('How should we price the library pilot?');
+    expect(memory?.content).toBe('Willingness to pay has not been tested with a paid commitment yet.');
+    expect(memory?.content).not.toMatch(/asked|library pilot/i);
   });
 
   it('varies by topic and mode, deterministically', async () => {
