@@ -9,19 +9,22 @@ blueprints, the deviation is recorded as an ADR in [`adr/`](adr/) with its ratio
 
 ## 1. Scope
 
-**V1 = text-first core** (blueprint 05 §24 "Recommended first build"; blueprint 03 sprints 1–3 + 6):
+**V1 = a conversation-first coaching product with voice calls** (blueprint 05 §24 "Recommended first
+build"; blueprint 03 sprints 1–3 + 6; the owner's acceptance bar of 2026-10-16):
 
-| In V1                                                                                                                                                                                    | Deferred (adapter interfaces exist)                                                 |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Partner-separated (multi-tenant) venture workspaces, Ain as the first tenant                                                                                                             | Realtime voice (ASR/TTS, barge-in) — Rust/WebRTC gateway per blueprint 05           |
-| Neutral **Foundry Guide** coach (no real EIR identity) with six modes: diagnose, challenge, coach, teach, rehearse, route                                                                | Avatar embodiment (HeyGen LiveAvatar / Azure) — needs vendor + consent              |
-| Typed, source-linked venture memory with founder approval, correction, supersession, pin, delete                                                                                         | Real EIR personas (persona studio supports drafts; release requires consent record) |
-| Evidence pack + citations for every substantive answer; fact / inference / hypothesis / recommendation labels                                                                            | SSO (UR / Cognito) — identity provider interface exists                             |
-| Session contract: diagnosis, evidence, challenge, next actions, escalation                                                                                                               | Offline kit, async review queue                                                     |
-| Escalation packets (P0–P3) with founder sharing consent, EIR/program inbox                                                                                                               | Pattern publication workflow (table + read path only)                               |
-| Document upload → ingestion → hybrid (vector + full-text) retrieval                                                                                                                      | Localization                                                                        |
-| EIR studio (persona releases, suspend/resume, calibration reviews), program portfolio (k-anonymous aggregates), admin (access codes, kill switch, daily AI spend caps, audit log, usage) |                                                                                     |
-| Synthetic seed data only (ADR-006)                                                                                                                                                       | Real venture data (needs University approval)                                       |
+| In V1                                                                                                                                                                                                                                                            | Deferred (seams exist)                                                                                               |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Partner-separated (multi-tenant) venture workspaces, Ain as the first tenant                                                                                                                                                                                     | Avatar vendors (HeyGen LiveAvatar, Anam, Tavus): need an approved vendor and the EIR's `likeness` consent (ADR-0010) |
+| vEIR coaches built with consent from fictional EIRs (Corin's vEIR, Ruth's vEIR), plus the neutral **Foundry Guide**; modes auto, diagnose, challenge, coach, teach, rehearse, route                                                                              | A real EIR's likeness or cloned voice: needs signed consent records (ADR-0005)                                       |
+| **Knowledge pools** (ADR-0018): a common pool per persona (doctrine and style, knowledge library, published lessons) and a specific pool per venture (approved memory, documents, conversation digests, the vEIR notebook), grown by approval-gated distillation | Full-duplex realtime media (WebRTC or speech-to-speech on long-running compute)                                      |
+| Typed, source-linked venture memory with founder approval, correction, supersession, pin, delete                                                                                                                                                                 | SSO (UR / Cognito): the identity provider interface exists                                                           |
+| Evidence pack + citations for every substantive answer; fact / inference / hypothesis / recommendation labels                                                                                                                                                    | Offline kit, async review queue                                                                                      |
+| Streamed, validated replies (`turn.delta`) and the session contract: diagnosis, evidence, challenge, next actions, escalation                                                                                                                                    | Localization                                                                                                         |
+| **Voice calls** (ADR-0010): browser-direct Amazon Transcribe, validated and signed speech units, Amazon Polly, a built-in presence avatar                                                                                                                        | Real venture data (needs University approval, ADR-0006)                                                              |
+| Escalation packets (P0–P3) with founder sharing consent, EIR/program inbox                                                                                                                                                                                       |                                                                                                                      |
+| Document upload → ingestion → hybrid (vector + full-text) retrieval                                                                                                                                                                                              |                                                                                                                      |
+| EIR studio (personas, consent, knowledge library, lessons, releases, calibration reviews), program (portfolio with k-anonymous aggregates, vEIR assignments), admin (access codes, kill switches, daily AI spend caps, audit log, usage)                         |                                                                                                                      |
+| Synthetic seed data only (ADR-006)                                                                                                                                                                                                                               |                                                                                                                      |
 
 Non-negotiables carried from the blueprints: amplify never impersonate (persistent synthetic
 disclosure), venture-private by default, human authority (suspend without engineering), evidence before
@@ -33,7 +36,7 @@ eloquence, memory visible and correctable, escalation is a feature.
 
 ```
 Browser (SPA, Vite + React)                         GitHub Actions (CI/CD, OIDC)
-        │ HTTPS                                                │
+        │ HTTPS     └──wss (presigned)──► Amazon Transcribe streaming (call speech-to-text)
         ▼                                                      ▼
 CloudFront ──/*──► S3 site bucket (OAC)              CDK → CloudFormation (boundary-capped roles)
     │
@@ -47,8 +50,10 @@ CloudFront ──/*──► S3 site bucket (OAC)              CDK → CloudForm
                      │                   └─► amazon.titan-embed-text-v2:0   (embeddings, 1024-d)
                      ├╌╌ Bedrock Mantle  ╌╌► openai.gpt-6-luna  (gated by AWS for this account;
                      │                       disabled: models.luna.enabled = false, see §7)
+                     ├── Amazon Polly ──► call speech (neural voices, validated text only)
                      ├── S3 documents bucket (presigned PUT, venture-scoped keys)
-                     └── SQS jobs queue ──► worker Lambda (ingestion, recap, consolidation) ──► DLQ
+                     └── SQS jobs queue ──► worker Lambda (ingestion, embeddings, distillation,
+                                            daily maintenance) ──► DLQ
 ```
 
 - **Region:** `us-east-1` (Luna on Mantle is offered only there; Nova 2 Lite and Titan run there too).
@@ -103,7 +108,7 @@ docs/             Architecture, ADRs, runbooks, blueprints
 - **Idempotency:** every write endpoint honours `Idempotency-Key` (stored with a 24 h window). Deleting
   memory or a document also purges stored responses that mention it, so a replay never returns deleted
   content.
-- **Commits:** imperative subject, why-focused body; main is protected by CI.
+- **Commits:** imperative subject, why-focused body; `main` deploys only after CI passes on it.
 
 ---
 
@@ -168,7 +173,9 @@ set_config('app.tenant_id',$2,true), set_config('app.request_id',$3,true)` (one 
    Credential, ledger and audit tables grant nothing to `app_rls`. Retrieval queries **always** filter
    by `venture_id` first (no unscoped vector search).
 3. **Kill switches:** global (`platform_settings.ai_enabled`), per persona (`personas.status =
-'suspended'`), per assignment. Checked on session create **and** every turn.
+'suspended'`), per assignment, checked on session create **and** every turn; `calls_enabled` (new calls
+   refused, live calls end at the next heartbeat) and `streaming_enabled` (whole replies instead of
+   streamed sentences).
 
 ---
 
@@ -185,18 +192,20 @@ Authoritative DDL: [`packages/db/migrations/`](../../packages/db/migrations/). S
 | `ventures`                                                        | venture workspace                                                                                                                   | `tenant_id`, `name`, `one_liner`, `stage`, `domain`, `cohort`, `classification`, `status`                                                                                   |
 | `venture_memberships`                                             | founders/team/advisors                                                                                                              | `role`, `expires_at`, `revoked_at`                                                                                                                                          |
 | `eir_profiles`                                                    | expertise registry (candidate metadata, not authority)                                                                              | `display_name`, `expertise_tags`, `synthetic`, `principal_id?`                                                                                                              |
-| `personas`, `persona_releases`                                    | Foundry Guide + future EIR personas; versioned doctrine/style/disclosure                                                            | `status` (`draft/active/suspended/retired`), `doctrine`, `style`, `allowed_modes`                                                                                           |
+| `personas`, `persona_releases`                                    | Foundry Guide and the vEIRs built from EIR profiles; versioned doctrine/style/disclosure; embodiment (voice, portrait)              | `status` (`draft/active/suspended/retired`), `doctrine`, `style`, `allowed_modes`, `embodiment`                                                                             |
 | `consents`                                                        | likeness/voice/doctrine consent records                                                                                             | `asset_types`, `approved_uses`, `revoked_at`                                                                                                                                |
 | `assignments`                                                     | venture ↔ persona release ↔ EIR (server-resolved every session)                                                                     | `allowed_modes`, `data_class_ceiling`, `status`, `expires_at`                                                                                                               |
-| `knowledge_sources`, `knowledge_chunks`                           | program/public/persona/venture corpus; chunks with `embedding vector(1024)` + `tsv`                                                 | `scope`, `classification`, `freshness_at`                                                                                                                                   |
+| `knowledge_sources`, `knowledge_chunks`                           | program/public/persona/venture corpus (the persona library is the common pool); chunks with `embedding vector(1024)` + `tsv`        | `scope`, `kind`, `classification`, `freshness_at`                                                                                                                           |
 | `documents`                                                       | uploaded venture files → ingestion                                                                                                  | `s3_key`, `status`, `source_id`                                                                                                                                             |
 | `memory_objects`                                                  | typed venture memory (fact, hypothesis, decision, experiment, evidence, action, milestone, risk, preference, relationship, insight) | `status` (`proposed/confirmed/disputed/superseded/expired/deleted`), `visibility`, `confidence`, `source_refs`, `attributes`, `supersedes_id`, `pinned`, `embedding`, `tsv` |
 | `memory_events`                                                   | correction history (append-only)                                                                                                    | `action`, `diff`, `actor`                                                                                                                                                   |
-| `coaching_sessions`, `turns`, `turn_evidence`                     | sessions, structured responses, evidence links                                                                                      | `mode`, `privacy`, `response`, `risk_label`, `validator_results`, `model_id`, tokens, `cost_usd`, `latency_ms`                                                              |
+| `coaching_sessions`, `turns`, `turn_evidence`                     | conversations (title, digest), structured responses, evidence links                                                                 | `mode`, `privacy`, `digest`, `distill_version`, `response`, `channel` (`text`/`voice`), `risk_label`, `validator_results`, `model_id`, tokens, `cost_usd`, `latency_ms`     |
+| `veir_notebooks`                                                  | what a vEIR keeps about one venture (AI notes: visible, correctable, never cited)                                                   | `summary`, `founder_profile`, `commitments`, `open_questions`, `next_opener`, `suppressed`, `version`                                                                       |
+| `calls`                                                           | voice calls of a conversation (ADR-0010; no audio)                                                                                  | `status`, `input_mode`, `max_seconds`, `end_reason`                                                                                                                         |
 | `escalations`                                                     | human handoff packets                                                                                                               | `category`, `priority` P0–P3, `status`, `packet`, `sharing_consent_at`, `assignee_principal_id`                                                                             |
 | `feedback`                                                        | founder ratings; `eir_reviews` — blind rubric scores                                                                                |                                                                                                                                                                             |
 | `resources`                                                       | Ain program resource graph for **route** mode                                                                                       | `kind`, `tags`, `eligibility`, `url`, `freshness_at`                                                                                                                        |
-| `patterns`                                                        | reviewed, de-identified lessons (read path only in V1)                                                                              | `status`, `expires_at`                                                                                                                                                      |
+| `patterns`                                                        | de-identified lessons; drafts from distillation, published by a curator                                                             | `persona_id` (null = program-wide), `origin`, `status`, `expires_at`                                                                                                        |
 | `usage_ledger`                                                    | per-call model usage and cost (day, model, principal, venture)                                                                      |                                                                                                                                                                             |
 | `audit_events`                                                    | append-only, hash-chained (`prev_hash`, `hash`) security/policy/admin/content events                                                | metadata only                                                                                                                                                               |
 | `platform_settings`                                               | kill switch, spend caps, thresholds                                                                                                 |                                                                                                                                                                             |
@@ -210,26 +219,30 @@ Schemas live in `packages/contracts/src/api.ts`; the web client and the server i
 Every response carries `x-request-id`. `503 database_resuming`, `429 locked_out` and `429 rate_limited`
 carry `Retry-After` (and `retryAfterSeconds` in the problem document).
 
-| Area        | Endpoints                                                                                                                                                                                                                                                                                                                       |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Health      | `GET /health` (public liveness: `status`, `version` = deployed commit, optional `db` = the state this instance last observed on real requests; **never queries the database**, so polling it cannot keep Aurora awake) · `GET /admin/health` (platform admin: probes the database)                                              |
-| Auth        | `POST /auth/sign-in`, `POST /auth/sign-out`, `GET /me`                                                                                                                                                                                                                                                                          |
-| Ventures    | `GET /ventures`, `GET /ventures/:id`, `PATCH /ventures/:id`, `GET /ventures/:id/overview` (since-last-session brief)                                                                                                                                                                                                            |
-| Sessions    | `POST /ventures/:id/sessions`, `GET /ventures/:id/sessions`, `GET /sessions/:id` (blocked turns carry `blocked`: reason, support message, drafted escalation), `POST /sessions/:id/turns` (**SSE**), `POST /sessions/:id/end` (recap + memory candidates), `POST /turns/:id/feedback`, `GET /turns/:id/evidence`                |
-| Memory      | `GET /ventures/:id/memory?type&status&q`, `POST /ventures/:id/memory`, `PATCH /memory/:id` (`approve/reject/correct/pin/unpin/delete`), `GET /memory/:id/history`                                                                                                                                                               |
-| Documents   | `POST /ventures/:id/documents` (presigned upload), `POST /documents/:id/complete`, `GET /ventures/:id/documents`, `DELETE /documents/:id`                                                                                                                                                                                       |
-| Escalations | `GET /ventures/:id/escalations`, `POST /ventures/:id/escalations`, `PATCH /escalations/:id` (founder: `approve_sharing/edit/withdraw`; assignee: `acknowledge/resolve/decline`), `GET /inbox/escalations`                                                                                                                       |
-| Team        | `GET /ventures/:id/team`, `POST /ventures/:id/team/invitations` (program lead/admin → returns one-time access code)                                                                                                                                                                                                             |
-| EIR studio  | `GET /personas`, `GET /personas/:id`, `POST /personas/:id/releases`, `GET /persona-releases/:id` (full release; drafts for program leads, platform admins and the linked EIR), `POST /persona-releases/:id/approve`, `POST /personas/:id/suspend`, `POST /personas/:id/resume`, `GET /eir/reviews`, `POST /eir/reviews/:turnId` |
-| Program     | `GET /program/portfolio`, `GET/POST/PATCH /program/resources`, `GET /program/ventures`, `POST /program/ventures`, `GET /program/escalations` (metadata queue), `GET /program/assignees` (active EIRs and program leads of the tenant), `POST /program/escalations/:id/route`                                                    |
-| Admin       | `GET/POST /admin/principals`, `POST /admin/principals/:id/access-codes`, `DELETE /admin/access-codes/:id`, `GET/PATCH /admin/settings`, `GET /admin/audit`, `GET /admin/usage`                                                                                                                                                  |
+| Area                         | Endpoints                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Health                       | `GET /health` (public liveness: `status`, `version` = deployed commit, optional `db` = the state this instance last observed on real requests; **never queries the database**, so polling it cannot keep Aurora awake) · `GET /admin/health` (platform admin: probes the database)                                                                                                                                                                                                                                                                                                                                 |
+| Auth                         | `POST /auth/sign-in`, `POST /auth/sign-out`, `GET /me`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Ventures                     | `GET /ventures`, `GET /ventures/:id`, `PATCH /ventures/:id`, `GET /ventures/:id/overview` (since-last-session brief)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Conversations                | `POST /ventures/:id/sessions` (stores the notebook opener), `GET /ventures/:id/sessions`, `GET /sessions` (recents across ventures), `GET/PATCH/DELETE /sessions/:id`, `DELETE /sessions/:id/digest`, `POST /sessions/:id/turns` (**SSE**), `POST /sessions/:id/end` (recap + memory candidates), `POST /turns/:id/feedback`, `GET /turns/:id/evidence`                                                                                                                                                                                                                                                            |
+| vEIR                         | `GET /ventures/:id/veir`, `GET/PATCH /ventures/:id/notebook` (versioned edits), `GET /ventures/:id/call-config`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Calls ([calls.md](calls.md)) | `POST /sessions/:id/calls`, `GET /calls/:id`, `POST /calls/:id/stt-grant`, `POST /calls/:id/heartbeat`, `POST /calls/:id/end`, `POST /turns/:id/interrupt`, `POST /speech` (signed units or the stored validated reply → `audio/mpeg`), `POST /calls/avatar-session` (reserved for vendor tokens)                                                                                                                                                                                                                                                                                                                  |
+| Memory                       | `GET /ventures/:id/memory?type&status&q&pinned`, `POST /ventures/:id/memory`, `POST /ventures/:id/memory/batch` (approve/reject), `GET /memory/:id`, `PATCH /memory/:id` (`approve/reject/correct/dispute/pin/unpin/delete`), `GET /memory/:id/history`                                                                                                                                                                                                                                                                                                                                                            |
+| Documents                    | `POST /ventures/:id/documents` (presigned upload), `POST /documents/:id/complete`, `GET /ventures/:id/documents`, `DELETE /documents/:id`                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Escalations                  | `GET /ventures/:id/escalations`, `POST /ventures/:id/escalations`, `PATCH /escalations/:id` (founder: `approve_sharing/edit/withdraw`; assignee: `acknowledge/resolve/decline`), `GET /inbox/escalations`                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Team                         | `GET /ventures/:id/team`, `POST /ventures/:id/team/invitations` (program lead → returns one-time access code)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| EIR studio                   | `GET/POST /personas`, `GET /personas/:id`, `POST /personas/:id/releases`, `GET /persona-releases/:id` (drafts for program leads, platform admins and the linked EIR), `POST /persona-releases/:id/approve`, `POST /personas/:id/suspend`, `POST /personas/:id/resume`, `GET/POST /personas/:id/consents`, `POST /consents/:id/revoke`, `GET/PATCH /personas/:id/embodiment`, `GET/POST /personas/:id/knowledge` (+ `uploads`, `:sourceId/complete`, `PATCH/DELETE :sourceId`), `GET/POST /personas/:id/lessons`, `POST /lessons/:id/actions`, `GET /eir/profiles`, `GET /eir/reviews`, `POST /eir/reviews/:turnId` |
+| Program                      | `GET /program/portfolio`, `GET/POST/PATCH /program/resources`, `GET/POST /program/ventures`, `PATCH /program/ventures/:id`, `POST /ventures/:id/assignment` (assign a vEIR), `GET /program/escalations` (metadata queue), `GET /program/assignees` (active EIRs and program leads of the tenant), `POST /program/escalations/:id/route`                                                                                                                                                                                                                                                                            |
+| Admin                        | `GET/POST /admin/principals`, `POST /admin/principals/:id/access-codes`, `DELETE /admin/access-codes/:id`, `GET/PATCH /admin/settings`, `GET /admin/audit`, `GET /admin/usage`                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 
 ### 6.1 Turn streaming (SSE)
 
-`POST /sessions/:id/turns {text, mode?}` responds `text/event-stream` with events:
+`POST /sessions/:id/turns {text, mode?, channel?, callId?}` responds `text/event-stream` with events:
 `turn.accepted` → `turn.status` (`classifying`, `retrieving` + counts, `reasoning`, `validating`) →
-`turn.completed` (full `CoachResponse` + evidence summaries + usage) or `turn.blocked` /
-`turn.error` (problem+json). Each event is one `event: <name>` line plus one JSON `data:` line.
+`turn.delta` (each validated sentence of the answer, while `streaming_enabled`) and, on the voice
+channel, `turn.speech` (signed units to speak) → `turn.completed` (full `CoachResponse` + evidence
+summaries + usage; authoritative) or `turn.blocked` / `turn.error` (problem+json). Each event is one
+`event: <name>` line plus one JSON `data:` line.
 Refusals known before the stream starts (for example `423 persona_suspended`) are plain problem+json
 responses. Clients render progress steps; text-only, keyboard-only, and screen-reader paths are
 first-class (`aria-live="polite"`).
@@ -323,14 +336,17 @@ configuration (`packages/ai/src/pricing.ts`); every billable attempt writes `usa
 | `false` — **production today**: AWS lists GPT-6 Luna but answers 401 "not available for this account" | `us.amazon.nova-2-lite-v1:0` | `global.amazon.nova-2-lite-v1:0` | none                             |
 | `true` — after AWS grants Luna access                                                                 | `openai.gpt-6-luna`          | `us.amazon.nova-2-lite-v1:0`     | `bedrock-mantle:CreateInference` |
 
-**Enabling Luna later** is a reviewed config change, not code: (1) run **Ops - verify AWS access**: both
-GPT-6 Luna probes must PASS (they only warn while the flag is off); (2) run the evals workflow to record a
+**Enabling Luna later** is a reviewed config change, not code: (1) probe GPT-6 Luna with
+`apps/api/src/scripts/bedrock-probe.ts` and credentials allowed to invoke it (ADR-0014); (2) run the evals workflow to record a
 Nova baseline; (3) open a PR that sets `models.luna.enabled` to `true` (CDK then grants
 `bedrock-mantle:CreateInference` and maps the model ids as above); (4) merge, let **Deploy** ship it, and
 re-run the evals. Flipping the flag back is the rollback.
 
 **Session end**: recap = the five session-contract objects (diagnosis, evidence, challenge, next
 actions, escalation) + memory candidates; ephemeral sessions keep no memory beyond security records.
+**Distillation** (ADR-0018, [knowledge pools](knowledge-pools.md)) then writes the conversation's digest,
+the notebook delta and deduplicated memory and lesson candidates, from a job the API enqueues after each
+turn (delayed 9 minutes) and at session end.
 
 ---
 
@@ -340,7 +356,9 @@ Upload: client requests a presigned PUT (≤ 10 MB; PDF, DOCX, TXT, MD) → `ten
 `/complete` enqueues an SQS job → worker extracts text (`unpdf` for PDF, `mammoth` for DOCX), chunks
 (~800 tokens, 15 % overlap, heading-aware), embeds (Titan, batched), stores `knowledge_chunks` with
 `scope='venture'`, updates status. Failures go to the DLQ and the document shows `failed` with a
-retry action.
+retry action. Persona library uploads take the same path into `scope='persona'` (job
+`ingest_knowledge_source`); authored notes, cases, FAQs and transcripts are chunked on save. Retrieval and
+the knowledge pools are specified in [knowledge pools](knowledge-pools.md).
 
 ---
 
@@ -351,34 +369,45 @@ TanStack Query, Tailwind CSS 4, shadcn/ui (Radix primitives), lucide-react, cmdk
 react-hook-form + zod, motion (respecting `prefers-reduced-motion`). Portfolio and usage charts are plain
 HTML/CSS (labelled bars, a table view, k-anonymous counts shown as "Fewer than k"), not a chart library.
 
-**Routes** (blueprint 05 convention `/[partner]/app/…`):
+**Routes** (blueprint 05 convention `/[partner]/app/…`; layout per ADR-0019):
 
 ```
 /                                  public landing (product promise, disclosure, sign in)
 /sign-in
-/$tenant/app                       → role-aware home
-/$tenant/app/ventures              my ventures
-/$tenant/app/ventures/$ventureId/  VentureLayout (rail · context bar · canvas · inspector · dock)
-    overview | coach | coach/$sessionId | memory | evidence | decisions | experiments |
-    milestones | documents | team | escalations
+/$tenant/app                       → the person's last venture (new chat) or their staff workspace
+/$tenant/app/v/$ventureId          new chat: the vEIR's face, a greeting from the notebook opener, suggestions
+    c/$sessionId                   a conversation
+                                   (?call=1 on either opens the call screen over the page)
+    knowledge                      memory, decisions, experiments, milestones, evidence, notebook, digests
+    documents | help | team | settings
 /$tenant/app/eir/                  personas | personas/$personaId | reviews | inbox
 /$tenant/app/program/              portfolio | ventures | resources | escalations
-/admin/                            principals | access-codes | settings | usage | audit
+/$tenant/app/admin/                principals (people and access codes) | settings | usage | audit
 ```
 
-**Shell** (blueprint 02 §4A, 03 §22): left rail (collapses to icon rail/drawer), top context bar
-(venture, stage, assigned guide/persona release, synthetic label, session + DB health), central canvas,
-right inspector (sources, known facts, assumptions, contradictions, proposed memory, handoff) as a
-tabbed sheet on small screens, sticky control dock (send, mode, upload, escalate, end session).
+Routes from before ADR-0019 redirect: `/$tenant/app/ventures/$ventureId/<section>` to the section's new
+home, and `/admin/<section>` to `/$tenant/app/admin/<section>`.
 
-**Visual system:** dark-first, muted black and grey (canvas `#0B0B0B`, raised `#151515`, border
-`#303030`, text `#F4F4F2`, secondary `#A6A6A3`, focus `#FFFFFF`) with a matching light theme; Inter
-Variable for UI, system serif for exported documents; 4-pt spacing grid; restrained motion; status =
-label + icon + shape (never colour alone); WCAG 2.2 AA; full keyboard path, visible focus, skip links,
-landmarks; text-only mode is the default in V1.
+**Shell** (ADR-0019; blueprint 02 §4A): one layout for every role. A collapsible left sidebar (a sheet on
+mobile) holds the workspace or venture switcher, **New chat** and **Call {vEIR}**, search (⌘K), recent
+conversations (calls marked), the venture destinations (Knowledge, Documents, Human help, Team) and the
+account menu (theme, shortcuts, workspaces by role, the tenant's synthetic-data notice, sign out). Staff
+workspaces (EIR studio, Program, Admin) swap the sidebar sections. The conversation is one centred column
+with the composer at the bottom; a context panel (Sources, Notebook, To review, Human help) is closed by
+default. Calls open a full-viewport call screen from the sidebar, the conversation header, the composer
+and the new-chat home. There is no global top bar or venture tab strip; the database-waking banner shows
+only while the database wakes.
 
-**Persistent disclosure** in every session view and every export: "You are working with Foundry
-Guide, an AI coach. It is not a person, and no human EIR authored or approved these responses."
+**Visual system:** the colour tokens in `apps/web/src/styles/globals.css` (dark-first, muted black and grey
+with a matching light theme); self-hosted fonts: Geist for the interface, Newsreader for display headings
+and vEIR prose, Geist Mono for labels and data; 4-pt spacing grid; one motion grammar honouring reduced
+motion; status = label + icon + shape (never colour alone); WCAG 2.2 AA; full keyboard path, visible
+focus, skip links, landmarks.
+
+**Persistent disclosure:** one line (`role="note"`, accessible name "AI disclosure") in every conversation
+view, every call and every export, from the persona release, for example: "You are talking with Corin's
+vEIR, an AI coach built from Corin Halvorsen's approved frameworks and coaching style. It is not a person,
+and no human EIR, including Corin, wrote or approved these responses."
 
 ---
 
@@ -399,9 +428,7 @@ Stacks (all `FoundryAscent-*`, termination protection on Foundation and Data, ta
    log export to `/aws/rds/cluster/foundry-ascent/postgresql`), generated admin secret
    `foundry-ascent/aurora-admin`, documents bucket (private, SSE-S3, enforce SSL, CORS `PUT` from
    `https://*.cloudfront.net` plus the custom domain when set — the presigned URL is the authorization,
-   lifecycle for incomplete uploads), SQS jobs queue + DLQ (SSE-SQS). **Already deployed:** the Data stack
-   went out first, on its own, through **Platform - deploy data stack** with the stage-0 key, because
-   Aurora takes longest to create; the first full deploy updates it in place.
+   lifecycle for incomplete uploads), SQS jobs queue + DLQ (SSE-SQS).
 3. **App** — API Lambda (Node 24, ARM64, 1024 MB, 60 s, no reserved concurrency in production — see §2,
    Function URL `AWS_IAM` + `RESPONSE_STREAM`), worker Lambda (SQS, batch 5, at most 2 concurrent pollers), migrate custom resource
    (applies `packages/db/migrations` via Data API with an advisory lock, then seeds synthetic data and the
@@ -409,8 +436,11 @@ Stacks (all `FoundryAscent-*`, termination protection on Foundation and Data, ta
    `BucketDeployment`s (immutable `assets/*`, revalidated `index.html`), CloudFront (OAC to S3 and to the
    Function URL, `/api/*` uncached with `ALL_VIEWER_EXCEPT_HOST_HEADER` and a viewer-request function that
    sets `x-fa-viewer-ip` and `x-fa-viewer-host`, SPA rewrite CloudFront Function, security headers policy
-   with CSP, HSTS, frame-ancestors none), log retention 30 days, alarms (API errors/throttles, worker
-   errors, DLQ depth, CloudFront 5xx rate) to the SNS topic `FoundryAscent-Alarms`.
+   with CSP, HSTS, frame-ancestors none, `Permissions-Policy` with the microphone for this origin only),
+   the API role's Polly and Transcribe-streaming grants for calls, EventBridge Scheduler schedules (daily
+   maintenance; a distillation sweep shipped disabled), log retention 30 days, alarms (API
+   errors/throttles, worker errors, DLQ depth, CloudFront 5xx rate, Polly characters per hour and per
+   day) to the SNS topic `FoundryAscent-Alarms`.
 
 The API has no `SITE_ORIGIN` unless a custom domain is configured (the distribution domain would create a
 stack cycle); it builds the origin from `x-fa-viewer-host`. TLS 1.2 as the minimum viewer protocol needs a
@@ -419,12 +449,10 @@ custom domain and ACM certificate (`siteDomainName` + `siteCertificateArn` conte
 `@aws-cdk/core:permissionsBoundary`. cdk-nag `AwsSolutionsChecks` runs in CI; every acknowledgment is
 narrow and carries a written reason.
 
-**AWS access is staged** (ADR-0016, [`infra/iam/README.md`](../../infra/iam/README.md)):
-
-| Stage            | Principal                                                                                                                                                         | Status                                                                                                                                            |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0 — bootstrap    | IAM user `Foundry-Ascent`, access key in GitHub secrets, post-bootstrap policy `FoundryAscent-BootstrapOperator` (read-only, assume the CDK roles; no IAM writes) | **current**: boundary published, `CDKToolkit` bootstrapped, Data stack deployed (IAM changes are account-owner actions in CloudShell)             |
-| 1 — steady state | role `FoundryAscent-GitHubDeploy` via GitHub OIDC (repository secret `AWS_DEPLOY_ROLE_ARN`)                                                                       | after the first full deploy creates Foundation: set the variable, run **Deploy** once, then delete the access key and detach the stage-0 policies |
+**AWS access is staged** (ADR-0016, [`infra/iam/README.md`](../../infra/iam/README.md)). Stage 1 is
+current: every deploy assumes `FoundryAscent-GitHubDeploy` through GitHub OIDC (trust limited to the
+`production` environment; repository secret `AWS_DEPLOY_ROLE_ARN`). The stage-0 IAM user `Foundry-Ascent`
+has no access key since 2026-10-06, so the workflows that used it no longer run.
 
 ---
 
@@ -451,8 +479,7 @@ high-confidence statements; persona suspension without engineering.
 ## 12. Delivery
 
 - `ci.yml` on every push and pull request; `deploy.yml` on `main` after CI passes (or manually, with an
-  optional older main `sha` for a rollback). Deploy uses the stage-0 key until the repository variable
-  `AWS_DEPLOY_ROLE_ARN` is set, then GitHub OIDC (stage 1).
+  optional older main `sha` for a rollback), through GitHub OIDC (stage 1).
 - Before `cdk deploy --all`, `deploy.yml` resolves the GitHub OIDC provider: it lists the account's
   providers (`iam:ListOpenIDConnectProviders`; under OIDC, where the deploy role may not list them, it
   uses the provider's fixed ARN, which must exist because STS just accepted a token through it) and
@@ -460,12 +487,13 @@ high-confidence statements; persona suspension without engineering.
   passes `--context githubOidcProviderArn=<arn>` only when a provider exists **and** Foundation does not
   manage it, so first deploys create it, re-deploys keep whichever mode they had, and CloudFormation is
   never asked to delete a provider it manages.
-- `deploy.yml`, `platform-deploy-data.yml` and `ops-aws-retire-stage0.yml` share the concurrency group
-  `deploy-production`: two CloudFormation deployments never overlap, and the stage-0 key is never retired
-  during a deploy that uses it.
-- Post-deploy smoke test (`scripts/smoke.mjs`): security headers and SPA on `/`, an immutable asset,
+- `deploy.yml` shares the concurrency group `deploy-production` with the retired stage-0 workflows
+  (`platform-deploy-data.yml`, `ops-aws-retire-stage0.yml`), so two CloudFormation deployments never
+  overlap.
+- Post-deploy smoke test (`scripts/smoke.mjs`): security headers (including the voice-call
+  Permissions-Policy, `media-src` and `connect-src`) and SPA on `/`, an immutable asset,
   `/api/v1/health` reporting the deployed commit, a signed `POST /api/v1/auth/sign-in` with an invalid
   code → `401 invalid_access_code` (the first request that touches Aurora: it waits for a resume), the SPA
   deep link, and API errors that stay problem+json.
-- Runbooks: [`docs/runbooks/`](../runbooks/) — deploy/rollback, kill switch, incident, access codes,
-  cost controls, evals, legacy cleanup, local development.
+- Runbooks: [`docs/runbooks/`](../runbooks/): deploy and rollback, kill switch, incident response,
+  access codes, cost controls, evals, owner actions, local development.
