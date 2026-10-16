@@ -65,6 +65,17 @@ Chosen option: **1** (details in `infra/iam/README.md`).
 - Status on 2026-10-05: stage 0. The boundary is published, `CDKToolkit` is bootstrapped and
   `FoundryAscent-Data` was deployed first, on its own (**Platform - deploy data stack**). The first full
   **Deploy** creates Foundation (provider and role) and App; then the variable switch completes stage 1.
+- Status on 2026-10-06: stage 1. Every deploy assumes `FoundryAscent-GitHubDeploy` through OIDC. **Ops -
+  retire stage-0 AWS access** detached the stage-0 policies and deleted the access key, so the workflows
+  that read `AWS_ACCESS_KEY_ID` no longer authenticate. The two key secrets and the placeholder
+  repository variable `AWS_DEPLOY_ROLE_ARN` are left for the owner to remove
+  ([owner actions](../../runbooks/owner-actions.md)).
+
+  How stage 1 was reached (kept here, out of the runbooks): after the first full deploy, the
+  `GitHubDeployRoleArn` output of `FoundryAscent-Foundation` was stored as the repository secret
+  `AWS_DEPLOY_ROLE_ARN`; a manual **Deploy** confirmed _AWS access: GitHub OIDC (stage 1)_ and _GitHub OIDC
+  provider: managed by FoundryAscent-Foundation (kept)_; then the retire workflow ran in `plan` and
+  `retire` mode (`confirm = RETIRE-STAGE-0`).
 
 ### Consequences
 
