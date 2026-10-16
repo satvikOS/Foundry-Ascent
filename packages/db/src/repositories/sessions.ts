@@ -139,16 +139,22 @@ export interface CreateSessionInput {
   readonly title?: string | null;
   /** The vEIR's validated opening line (standard conversations only; at most 300 characters). */
   readonly opener?: string | null;
+  /**
+   * The conversation the opener was drawn from (the notebook's `nextOpenerSource`), so deleting that
+   * conversation erases this copy too. Null when a person wrote it or its origin is unknown.
+   */
+  readonly openerSourceSessionId?: string | null;
 }
 
 export function createSession(ex: SqlExecutor, input: CreateSessionInput): Promise<SessionRecord> {
   return queryOne(
     ex,
     `INSERT INTO coaching_sessions AS s (id, tenant_id, venture_id, assignment_id, persona_release_id, started_by, mode,
-                                         privacy, goal, policy_version, title, title_source, opener)
+                                         privacy, goal, policy_version, title, title_source, opener,
+                                         opener_source_session_id)
      VALUES (coalesce(:id, gen_random_uuid()), :tenantId, :ventureId, :assignmentId, :releaseId, :startedBy, :mode,
              :privacy, :goal, :policyVersion, :title, CASE WHEN :title IS NULL THEN 'auto' ELSE 'person' END,
-             :opener)
+             :opener, :openerSource)
      RETURNING ${COLUMNS}`,
     {
       id: p.nullable.uuid(input.id),
@@ -163,6 +169,7 @@ export function createSession(ex: SqlExecutor, input: CreateSessionInput): Promi
       policyVersion: p.text(input.policyVersion),
       title: p.nullable.text(input.title),
       opener: p.nullable.text(input.opener),
+      openerSource: p.nullable.uuid(input.opener == null ? null : (input.openerSourceSessionId ?? null)),
     },
     decodeSession,
     'createSession',

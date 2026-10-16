@@ -125,11 +125,11 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
     ventureId: string,
     active: ActiveAssignment,
     guards: { readonly others: OtherVentures; readonly eirNames: readonly string[] },
-  ): Promise<string | null> {
+  ): Promise<{ readonly text: string; readonly sourceSessionId: string | null } | null> {
     const notebook = await notebooksRepo.getNotebook(scope.tx, { ventureId, personaId: active.persona.id });
     const next = notebook?.content.nextOpener ?? null;
     if (next === null) return null;
-    return validatedOpener(next, {
+    const text = validatedOpener(next, {
       personaName: active.persona.name,
       personaEirName: await personasRepo.getPersonaEirName(scope.tx, active.persona.id),
       eirNames: guards.eirNames,
@@ -137,6 +137,9 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
       otherVentureCanaries: guards.others.canaries,
       otherVentureMemberNames: guards.others.memberNames,
     });
+    // The conversation it was drawn from, so deleting that conversation erases this copy too (null: a
+    // person wrote it, or its origin is unknown).
+    return text === null ? null : { text, sourceSessionId: notebook?.content.nextOpenerSource ?? null };
   }
 
   /** The session (RLS-visible) of a founder/team request, or 404/403. */
@@ -205,7 +208,8 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
           policyVersion: POLICY_VERSION,
           // Temporary chats keep no title (their content is erased when they end).
           title: input.privacy === 'ephemeral' ? null : input.title,
-          opener,
+          opener: opener?.text ?? null,
+          openerSourceSessionId: opener?.sourceSessionId ?? null,
         });
         await audit(scope, {
           action: 'session.started',
