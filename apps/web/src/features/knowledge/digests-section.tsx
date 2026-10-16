@@ -25,7 +25,6 @@ import { formatDateTime, formatRelative, isoString } from '@/lib/format';
 import { formatIsoDate } from '@/features/memory/typed/attributes';
 import { sentenceStart, useVeirName } from '@/features/venture/veir-name';
 
-
 type Digested = SessionView & { digest: NonNullable<SessionView['digest']> };
 
 /** Conversations with a digest, the most recent first. */

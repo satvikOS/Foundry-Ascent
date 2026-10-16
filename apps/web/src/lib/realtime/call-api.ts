@@ -144,9 +144,7 @@ export async function fetchSpeech(
     // Known refusals hold for the rest of the call; anything else (including a code this client does not
     // know yet) shows this unit as words and asks again for the next one.
     const known = error.serverCode === undefined || error.serverCode === error.code;
-    return known && CALL_SPEECH_REFUSALS.has(error.code)
-      ? { kind: 'refused' }
-      : { kind: 'failed' };
+    return known && CALL_SPEECH_REFUSALS.has(error.code) ? { kind: 'refused' } : { kind: 'failed' };
   }
 }
 
