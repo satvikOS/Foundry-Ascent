@@ -41,7 +41,7 @@ export function AiKillSwitch({ aiEnabled, onConfirm, pending = false, error }: A
   return (
     <SectionCard
       title="AI kill switch"
-      description="Stops every model call across all tenants, immediately"
+      description="Stops every model call in every tenant at once"
       icon={Power}
       className={cn(!aiEnabled && 'border-warning/60')}
     >
@@ -67,7 +67,7 @@ export function AiKillSwitch({ aiEnabled, onConfirm, pending = false, error }: A
               </p>
               <p id={descriptionId} className="text-[13px] text-muted-foreground">
                 {aiEnabled
-                  ? 'Founders can start sessions and get answers, within the daily spend caps.'
+                  ? 'Founders get answers, within the daily spend caps.'
                   : 'No model calls are made. Founders can still read their workspace and reach a human.'}
               </p>
             </div>
@@ -87,10 +87,9 @@ export function AiKillSwitch({ aiEnabled, onConfirm, pending = false, error }: A
             />
           </div>
         </div>
-        <p className="text-[13px] text-muted-foreground">
-          Use it when the coach behaves unsafely, during a model or vendor incident, or if spend is running
-          away. Every change is recorded in the audit log. To pause a single persona instead, suspend it in
-          the EIR studio.
+        <p className="text-small text-muted-foreground">
+          For unsafe answers, vendor incidents or runaway spend. To pause one vEIR, suspend it in the EIR
+          studio.
         </p>
         <MutationErrorAlert error={error} title="The kill switch wasn’t changed" />
       </div>
@@ -111,7 +110,6 @@ export function AiKillSwitch({ aiEnabled, onConfirm, pending = false, error }: A
                 </AlertDialogTitle>
                 <AlertDialogDescription asChild>
                   <div className="grid gap-2">
-                    <p>This takes effect immediately, in every venture and every tenant:</p>
                     <ul className="list-disc space-y-1 pl-5">
                       <li>New sessions and the next message in any open session are refused.</li>
                       <li>

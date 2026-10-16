@@ -7,6 +7,6 @@ export const Route = createFileRoute('/$tenant/app/program/ventures')({
   loader: ({ context }) => {
     context.queryClient.query(programVenturesQueryOptions()).catch(() => undefined);
   },
-  head: () => ({ meta: [{ title: 'Program ventures' }] }),
+  head: () => ({ meta: [{ title: 'Ventures' }] }),
   component: ProgramVenturesPage,
 });

@@ -2,7 +2,6 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { PencilLine } from 'lucide-react';
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
-import { toast } from 'sonner';
 import { z } from 'zod';
 
 import { announce } from '@/components/a11y/live-announcer';
@@ -17,6 +16,7 @@ import {
 } from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import { toast } from '@/components/ui/toast';
 import { applyServerFieldErrors, MutationErrorAlert } from '@/features/admin/shared/form';
 import { useRenameProgramVenture } from '@/lib/api/hooks/program';
 

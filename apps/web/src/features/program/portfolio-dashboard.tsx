@@ -1,16 +1,6 @@
 import type { EscalationCategory, PortfolioSummary } from '@foundry/contracts';
 import { Link } from '@tanstack/react-router';
-import {
-  Activity,
-  ArrowRight,
-  FlaskConical,
-  Gavel,
-  Layers,
-  MessagesSquare,
-  ShieldCheck,
-  Siren,
-  Star,
-} from 'lucide-react';
+import { Activity, ArrowRight, FlaskConical, Gavel, Layers, MessagesSquare, Siren, Star } from 'lucide-react';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -49,18 +39,6 @@ export function PortfolioDashboard({ summary, tenant }: { summary: PortfolioSumm
 
   return (
     <div className="grid gap-6">
-      <div
-        role="note"
-        className="flex items-start gap-2.5 rounded-lg border border-border bg-card px-4 py-3 text-[13px] text-muted-foreground"
-      >
-        <ShieldCheck aria-hidden className="mt-0.5 size-4 shrink-0 text-foreground" />
-        <p>
-          <span className="font-medium text-foreground">Aggregates only. </span>
-          You see counts across the portfolio, never transcripts, memory or documents. Groups smaller than k ={' '}
-          {k} are hidden so no venture can be singled out.
-        </p>
-      </div>
-
       <section aria-labelledby="portfolio-30d" className="grid gap-3">
         <h2 id="portfolio-30d" className="text-sm font-semibold tracking-tight">
           Last 30 days

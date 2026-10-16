@@ -284,29 +284,49 @@ export async function renameVentureAsStaff(
 
 type ProgramVentureRowValue = z.infer<typeof ProgramVentureRow>;
 
-/** Program console list: metadata only (member count, assigned persona name). */
+/**
+ * Program console list: metadata only (member count) and the active assignment (persona, reviewing EIR,
+ * since when).
+ */
 export function listProgramVentures(ex: SqlExecutor, tenantId: string): Promise<ProgramVentureRowValue[]> {
   return queryRows(
     ex,
     `SELECT v.id, v.name, v.stage, v.domain, v.status, v.created_at,
             (SELECT count(*) FROM venture_memberships m
              WHERE m.venture_id = v.id AND m.revoked_at IS NULL AND (m.expires_at IS NULL OR m.expires_at > now())) AS member_count,
-            (SELECT pe.name FROM assignments a JOIN personas pe ON pe.id = a.persona_id
-             WHERE a.venture_id = v.id AND a.status = 'active' LIMIT 1) AS persona_name
+            asg.persona_id, asg.persona_name, asg.eir_profile_id, asg.eir_name, asg.assigned_at
      FROM ventures v
+     LEFT JOIN LATERAL (
+       SELECT a.persona_id, pe.name AS persona_name, a.eir_profile_id, ep.display_name AS eir_name,
+              a.starts_at AS assigned_at
+       FROM assignments a
+       JOIN personas pe ON pe.id = a.persona_id
+       LEFT JOIN eir_profiles ep ON ep.id = a.eir_profile_id
+       WHERE a.venture_id = v.id AND a.status = 'active'
+       ORDER BY a.starts_at DESC
+       LIMIT 1
+     ) asg ON true
      WHERE v.tenant_id = :tenantId
      ORDER BY v.name, v.id`,
     { tenantId: p.uuid(tenantId) },
-    (r) => ({
-      id: col.uuid.decode(r.id, 'id'),
-      name: col.text.decode(r.name, 'name'),
-      stage: col.enum(VentureStage.options).decode(r.stage, 'stage'),
-      domain: col.enum(VentureDomain.options).decode(r.domain, 'domain'),
-      status: col.text.decode(r.status, 'status'),
-      memberCount: col.int.decode(r.member_count, 'member_count'),
-      personaName: col.text.nullable.decode(r.persona_name, 'persona_name'),
-      createdAt: col.ts.decode(r.created_at, 'created_at'),
-    }),
+    (r) => {
+      const eirProfileId = col.uuid.nullable.decode(r.eir_profile_id, 'eir_profile_id');
+      const eirName = col.text.nullable.decode(r.eir_name, 'eir_name');
+      return {
+        id: col.uuid.decode(r.id, 'id'),
+        name: col.text.decode(r.name, 'name'),
+        stage: col.enum(VentureStage.options).decode(r.stage, 'stage'),
+        domain: col.enum(VentureDomain.options).decode(r.domain, 'domain'),
+        status: col.text.decode(r.status, 'status'),
+        memberCount: col.int.decode(r.member_count, 'member_count'),
+        personaName: col.text.nullable.decode(r.persona_name, 'persona_name'),
+        personaId: col.uuid.nullable.decode(r.persona_id, 'persona_id'),
+        reviewingEir:
+          eirProfileId !== null && eirName !== null ? { id: eirProfileId, displayName: eirName } : null,
+        assignedAt: col.ts.nullable.decode(r.assigned_at, 'assigned_at'),
+        createdAt: col.ts.decode(r.created_at, 'created_at'),
+      };
+    },
   );
 }
 

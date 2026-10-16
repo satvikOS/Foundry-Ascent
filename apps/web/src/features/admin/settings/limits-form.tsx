@@ -2,7 +2,6 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import type { PlatformSettingsView } from '@foundry/contracts';
 import { SlidersHorizontal } from 'lucide-react';
 import { useForm } from 'react-hook-form';
-import { toast } from 'sonner';
 import { z } from 'zod';
 
 import { announce } from '@/components/a11y/live-announcer';
@@ -10,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { SectionCard } from '@/components/ui/section-card';
+import { toast } from '@/components/ui/toast';
 import type { UpdateSettingsInput } from '@/lib/api/hooks/admin';
 
 import { applyServerFieldErrors, MutationErrorAlert } from '../shared/form';
@@ -17,7 +17,10 @@ import { applyServerFieldErrors, MutationErrorAlert } from '../shared/form';
 const number = (message = 'Enter a number.') => z.number({ error: message });
 const MB = 1024 * 1024;
 
-export const LimitsForm = z
+/** Defaults the API applies when a setting was never changed (packages/db settings repository). */
+const CALL_DEFAULTS = { maxCallMinutes: 30, dailyCallMinutesPerPrincipal: 60 } as const;
+
+const LimitsForm = z
   .object({
     dailyUsdCapGlobal: number()
       .min(0, 'Can’t be negative.')
@@ -42,6 +45,14 @@ export const LimitsForm = z
       .int('Enter a whole number.')
       .min(0, 'Can’t be negative.')
       .max(10_240, 'At most 10,240 MB.'),
+    maxCallMinutes: number('Enter a whole number.')
+      .int('Enter a whole number.')
+      .min(1, 'At least 1 minute.')
+      .max(240, 'At most 240 minutes.'),
+    dailyCallMinutesPerPrincipal: number('Enter a whole number.')
+      .int('Enter a whole number.')
+      .min(0, 'Can’t be negative.')
+      .max(1440, 'At most 1,440 minutes.'),
   })
   .refine((v) => v.dailyUsdCapPerPrincipal <= v.dailyUsdCapGlobal, {
     path: ['dailyUsdCapPerPrincipal'],
@@ -60,6 +71,9 @@ export function toLimitsFormValues(settings: PlatformSettingsView): LimitsFormVa
     portfolioMinGroupSize: settings.portfolioMinGroupSize,
     dailyUploadDocumentsPerPrincipal: settings.dailyUploadDocumentsPerPrincipal,
     dailyUploadMegabytesPerPrincipal: Math.round(settings.dailyUploadBytesPerPrincipal / MB),
+    maxCallMinutes: settings.maxCallMinutes ?? CALL_DEFAULTS.maxCallMinutes,
+    dailyCallMinutesPerPrincipal:
+      settings.dailyCallMinutesPerPrincipal ?? CALL_DEFAULTS.dailyCallMinutesPerPrincipal,
   };
 }
 
@@ -85,6 +99,11 @@ export function limitsPatch(settings: PlatformSettingsView, values: LimitsFormVa
   if (values.dailyUploadMegabytesPerPrincipal !== Math.round(settings.dailyUploadBytesPerPrincipal / MB)) {
     patch.dailyUploadBytesPerPrincipal = values.dailyUploadMegabytesPerPrincipal * MB;
   }
+  const saved = toLimitsFormValues(settings);
+  if (values.maxCallMinutes !== saved.maxCallMinutes) patch.maxCallMinutes = values.maxCallMinutes;
+  if (values.dailyCallMinutesPerPrincipal !== saved.dailyCallMinutesPerPrincipal) {
+    patch.dailyCallMinutesPerPrincipal = values.dailyCallMinutesPerPrincipal;
+  }
   return patch;
 }
 
@@ -96,6 +115,8 @@ const FIELD_FOR_API: Record<string, LimitKey> = {
   portfolioMinGroupSize: 'portfolioMinGroupSize',
   dailyUploadDocumentsPerPrincipal: 'dailyUploadDocumentsPerPrincipal',
   dailyUploadBytesPerPrincipal: 'dailyUploadMegabytesPerPrincipal',
+  maxCallMinutes: 'maxCallMinutes',
+  dailyCallMinutesPerPrincipal: 'dailyCallMinutesPerPrincipal',
 };
 
 interface LimitsCardProps {
@@ -108,7 +129,7 @@ interface LimitsCardProps {
   error: unknown;
 }
 
-/** Spend caps, upload quota, session length, grounding threshold and portfolio k. Saves only changes. */
+/** Spend caps, call caps, upload quota, session length, grounding threshold and portfolio k. Saves changes only. */
 export function LimitsCard({ settings, onSave, pending, error }: LimitsCardProps) {
   const { register, handleSubmit, formState, reset, setError } = useForm<LimitsFormValues>({
     resolver: zodResolver(LimitsForm),
@@ -149,7 +170,7 @@ export function LimitsCard({ settings, onSave, pending, error }: LimitsCardProps
   );
 
   return (
-    <SectionCard title="Limits and thresholds" description="Apply to every tenant" icon={SlidersHorizontal}>
+    <SectionCard title="Limits and thresholds" icon={SlidersHorizontal}>
       <form
         noValidate
         onSubmit={(event) => void onSubmit(event)}
@@ -160,7 +181,7 @@ export function LimitsCard({ settings, onSave, pending, error }: LimitsCardProps
           <legend className="mb-2 text-sm font-semibold">Daily AI spend caps (USD)</legend>
           <Field
             label="Platform cap per day"
-            description="When today’s total reaches this, new turns are refused until midnight UTC."
+            description="New turns are refused once today’s total reaches it (UTC)."
             error={errors.dailyUsdCapGlobal?.message}
           >
             {numberInput('dailyUsdCapGlobal', { step: '0.5', min: 0, max: 100 })}
@@ -174,17 +195,34 @@ export function LimitsCard({ settings, onSave, pending, error }: LimitsCardProps
           </Field>
         </fieldset>
         <fieldset className="grid gap-4 sm:grid-cols-2">
+          <legend className="mb-2 text-sm font-semibold">Voice calls</legend>
+          <Field
+            label="Longest call (minutes)"
+            description="A call ends when it reaches this."
+            error={errors.maxCallMinutes?.message}
+          >
+            {numberInput('maxCallMinutes', { step: '1', min: 1, max: 240 })}
+          </Field>
+          <Field
+            label="Call minutes per person per day"
+            description="Further calls wait until midnight UTC."
+            error={errors.dailyCallMinutesPerPrincipal?.message}
+          >
+            {numberInput('dailyCallMinutesPerPrincipal', { step: '1', min: 0, max: 1440 })}
+          </Field>
+        </fieldset>
+        <fieldset className="grid gap-4 sm:grid-cols-2">
           <legend className="mb-2 text-sm font-semibold">Document uploads per person per day</legend>
           <Field
             label="Documents per day"
-            description="Further uploads are refused until midnight UTC."
+            description="Further uploads wait until midnight UTC."
             error={errors.dailyUploadDocumentsPerPrincipal?.message}
           >
             {numberInput('dailyUploadDocumentsPerPrincipal', { step: '1', min: 0, max: 1000 })}
           </Field>
           <Field
             label="Upload volume per day (MB)"
-            description="Sum of the sizes of the documents one person uploads in a day."
+            description="Total size one person can upload in a day."
             error={errors.dailyUploadMegabytesPerPrincipal?.message}
           >
             {numberInput('dailyUploadMegabytesPerPrincipal', { step: '1', min: 0, max: 10_240 })}
@@ -194,7 +232,7 @@ export function LimitsCard({ settings, onSave, pending, error }: LimitsCardProps
           <legend className="mb-2 text-sm font-semibold">Coaching quality and privacy</legend>
           <Field
             label="Max turns per session"
-            description="Long sessions drift; founders are asked to end and start fresh."
+            description="Founders are then asked to start a new conversation."
             error={errors.maxTurnsPerSession?.message}
           >
             {numberInput('maxTurnsPerSession', { step: '1', min: 1, max: 200 })}
@@ -208,7 +246,7 @@ export function LimitsCard({ settings, onSave, pending, error }: LimitsCardProps
           </Field>
           <Field
             label="Portfolio minimum group size (k)"
-            description="Aggregates over fewer than k ventures are hidden from program staff."
+            description="Smaller groups are hidden from program staff."
             error={errors.portfolioMinGroupSize?.message}
           >
             {numberInput('portfolioMinGroupSize', { step: '1', min: 2, max: 20 })}

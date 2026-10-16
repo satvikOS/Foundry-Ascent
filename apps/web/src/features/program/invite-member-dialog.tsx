@@ -21,7 +21,7 @@ import { applyServerFieldErrors, MutationErrorAlert, SelectField } from '@/featu
 import { useInviteMember, type IssuedAccessCode } from '@/lib/api/hooks/team';
 import { ROLE_LABELS } from '@/lib/auth/roles';
 
-export const EXPIRY_OPTIONS = [
+const EXPIRY_OPTIONS = [
   { value: '30', label: '30 days' },
   { value: '90', label: '90 days' },
   { value: '180', label: '180 days' },

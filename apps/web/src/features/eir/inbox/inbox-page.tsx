@@ -9,7 +9,7 @@ import { PageContainer, PageHeader } from '@/components/ui/page-header';
 import { SectionCard } from '@/components/ui/section-card';
 import { LoadingRegion, Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { FilterChips } from '@/features/admin/shared/filter-chips';
 import { isOpenEscalation, isOverdue, PRIORITY_RANK } from '@/features/program/escalations/status';
 import { useInboxEscalations } from '@/lib/api/hooks/escalations';
 import { formatDate, formatDateTime, formatRelative } from '@/lib/format';
@@ -67,28 +67,19 @@ export function InboxPage({ selectedId, filter, onSelect, onFilterChange }: Inbo
 
   return (
     <PageContainer size="wide">
-      <PageHeader
-        title="Escalation inbox"
-        description="Human handoffs routed to you. Packet details are visible only after the founder approves sharing."
-      >
-        <Tabs
-          value={filter}
-          onValueChange={(value) => {
-            onFilterChange(value === 'closed' ? 'closed' : 'open');
-          }}
-        >
-          <TabsList aria-label="Inbox">
-            <TabsTrigger value="open">
-              <Inbox aria-hidden />
-              Open <span className="tabular text-muted-foreground">{inbox.isSuccess ? open.length : ''}</span>
-            </TabsTrigger>
-            <TabsTrigger value="closed">
-              <CircleCheck aria-hidden />
-              Closed{' '}
-              <span className="tabular text-muted-foreground">{inbox.isSuccess ? closed.length : ''}</span>
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+      <PageHeader title="Escalation inbox" description="Requests routed to you.">
+        {/* Nothing to filter until something has been routed. */}
+        {all.length > 0 ? (
+          <FilterChips<InboxFilter>
+            label="Filter escalations"
+            chips={[
+              { key: 'open', label: 'Open', count: open.length },
+              { key: 'closed', label: 'Closed', count: closed.length },
+            ]}
+            selected={filter}
+            onSelect={onFilterChange}
+          />
+        ) : null}
       </PageHeader>
 
       {inbox.isPending ? (

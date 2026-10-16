@@ -97,7 +97,7 @@ export function EscalationQueuePage() {
     <PageContainer size="wide">
       <PageHeader
         title="Escalation queue"
-        description="Route human handoffs to the right person. You see metadata only — packets go to the assignee once the founder approves sharing."
+        description="Route requests for human help. You see metadata only."
         actions={
           <Button asChild variant="secondary">
             <Link to="/$tenant/app/eir/inbox" params={{ tenant }}>
@@ -157,11 +157,7 @@ export function EscalationQueuePage() {
         <EmptyState
           icon={Flag}
           title={all.length === 0 ? 'No escalations yet' : 'Nothing matches these filters'}
-          description={
-            all.length === 0
-              ? 'When Foundry Guide or a founder asks for a human, the escalation appears here for routing.'
-              : 'Try another status or priority.'
-          }
+          description={all.length === 0 ? 'New requests appear here.' : 'Try another status or priority.'}
         />
       ) : (
         <Table>

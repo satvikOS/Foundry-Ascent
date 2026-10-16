@@ -3,7 +3,6 @@ import type { EscalationView } from '@foundry/contracts';
 import { Ban, CircleCheck, Hand } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { toast } from 'sonner';
 import { z } from 'zod';
 
 import { announce } from '@/components/a11y/live-announcer';
@@ -18,6 +17,7 @@ import {
 } from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
 import { Textarea } from '@/components/ui/textarea';
+import { toast } from '@/components/ui/toast';
 import { MutationErrorAlert, parseLines } from '@/features/admin/shared/form';
 import { errorMessage } from '@/lib/api/errors';
 import { useEscalationAction } from '@/lib/api/hooks/escalations';
@@ -47,11 +47,11 @@ const DeclineForm = z.object({
 });
 type DeclineFormValues = z.infer<typeof DeclineForm>;
 
-export function canAcknowledge(escalation: Pick<EscalationView, 'status'>): boolean {
+function canAcknowledge(escalation: Pick<EscalationView, 'status'>): boolean {
   return escalation.status === 'routed';
 }
 
-export function canClose(escalation: Pick<EscalationView, 'status'>): boolean {
+function canClose(escalation: Pick<EscalationView, 'status'>): boolean {
   return escalation.status === 'routed' || escalation.status === 'acknowledged';
 }
 

@@ -139,20 +139,52 @@ export function usageByModel(sx: SystemExecutor, days = 30): Promise<UsageByMode
   );
 }
 
+export interface UsageByPurpose {
+  /** A `UsagePurpose`; read as text so a purpose added by a later migration never breaks the page. */
+  readonly purpose: string;
+  readonly usd: number;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly calls: number;
+}
+
+/** Totals per purpose (turn, distill, speech, …) over the last `days` UTC days, most expensive first. */
+export function usageByPurpose(sx: SystemExecutor, days = 30): Promise<UsageByPurpose[]> {
+  return queryRows(
+    sx,
+    `SELECT purpose, coalesce(sum(cost_usd), 0) AS usd, coalesce(sum(input_tokens), 0) AS input_tokens,
+            coalesce(sum(output_tokens), 0) AS output_tokens, count(*) AS calls
+     FROM usage_ledger
+     WHERE at >= ${TODAY_START} - make_interval(days => :days - 1)
+     GROUP BY purpose
+     ORDER BY usd DESC, purpose`,
+    { days: p.int(clampLimit(days, 30, 366)) },
+    (r) => ({
+      purpose: col.text.decode(r.purpose, 'purpose'),
+      usd: col.num.decode(r.usd, 'usd'),
+      inputTokens: col.int.decode(r.input_tokens, 'input_tokens'),
+      outputTokens: col.int.decode(r.output_tokens, 'output_tokens'),
+      calls: col.int.decode(r.calls, 'calls'),
+    }),
+  );
+}
+
 export interface UsageSummaryData {
   readonly todayUsd: number;
   readonly last30DaysUsd: number;
   readonly byDay: UsageDay[];
   readonly byModel: UsageByModel[];
+  readonly byPurpose: UsageByPurpose[];
 }
 
 /** Admin usage page data (the caller adds the configured cap to build the contract `UsageSummary`). */
 export async function getUsageSummary(sx: SystemExecutor, days = 30): Promise<UsageSummaryData> {
-  const [todayUsd, last30DaysUsd, byDay, byModel] = [
+  const [todayUsd, last30DaysUsd, byDay, byModel, byPurpose] = [
     await spendToday(sx),
     await spendLastDays(sx, 30),
     await usageByDay(sx, days),
     await usageByModel(sx, days),
+    await usageByPurpose(sx, days),
   ];
-  return { todayUsd, last30DaysUsd, byDay, byModel };
+  return { todayUsd, last30DaysUsd, byDay, byModel, byPurpose };
 }

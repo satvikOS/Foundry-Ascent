@@ -2,7 +2,6 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import type { PersonaView } from '@foundry/contracts';
 import { CirclePause, CirclePlay } from 'lucide-react';
 import { useForm } from 'react-hook-form';
-import { toast } from 'sonner';
 import { z } from 'zod';
 
 import { announce } from '@/components/a11y/live-announcer';
@@ -26,6 +25,7 @@ import {
 } from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
 import { Textarea } from '@/components/ui/textarea';
+import { toast } from '@/components/ui/toast';
 import { applyServerFieldErrors, MutationErrorAlert } from '@/features/admin/shared/form';
 import { useResumePersona, useSuspendPersona } from '@/lib/api/hooks/eir';
 import { pluralize } from '@/lib/format';
@@ -76,19 +76,9 @@ export function SuspendPersonaDialog({ persona, open, onOpenChange }: ControlPro
             <CirclePause aria-hidden className="size-4 text-warning" />
             Suspend {persona.name}?
           </DialogTitle>
-          <DialogDescription asChild>
-            <div className="grid gap-2">
-              <p>Takes effect immediately for {ventures}:</p>
-              <ul className="list-disc space-y-1 pl-5">
-                <li>New sessions are refused and the next message in any open session is blocked.</li>
-                <li>
-                  Founders see that a person paused their coach. Past sessions, memory, documents and
-                  escalations stay available, and they can still reach a human.
-                </li>
-                <li>Your reason is recorded in the audit log and shown in the studio.</li>
-                <li>You can resume it from this page at any time.</li>
-              </ul>
-            </div>
+          <DialogDescription>
+            Blocks new messages for {ventures} until resumed. Founders keep their history and can still reach
+            a human. Audited.
           </DialogDescription>
         </DialogHeader>
         <form

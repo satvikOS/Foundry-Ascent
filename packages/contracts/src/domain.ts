@@ -422,6 +422,16 @@ export const PersonaView = z.object({
     PersonaReleaseView.pick({ id: true, version: true, status: true, approvedAt: true, createdAt: true }),
   ),
   assignedVentureCount: z.number().int(),
+  /**
+   * The caller may curate this persona: its releases, knowledge library and lessons, and suspending it
+   * (a program lead, or the EIR it is built from). Additive: older APIs send none.
+   */
+  canCurate: z.boolean().optional(),
+  /**
+   * The caller may record or revoke the consent it relies on (its EIR, or a program lead for a synthetic
+   * EIR). Additive: older APIs send none.
+   */
+  canManageConsent: z.boolean().optional(),
 });
 export type PersonaView = z.infer<typeof PersonaView>;
 

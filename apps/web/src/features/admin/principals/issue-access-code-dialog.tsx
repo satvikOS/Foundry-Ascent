@@ -22,7 +22,7 @@ import type { IssuedAccessCode } from '@/lib/api/hooks/team';
 import { AccessCodeRevealDialog } from '../shared/access-code-reveal';
 import { applyServerFieldErrors, MutationErrorAlert, SelectField } from '../shared/form';
 
-export const CODE_EXPIRY_OPTIONS = [
+const CODE_EXPIRY_OPTIONS = [
   { value: '7', label: '7 days' },
   { value: '30', label: '30 days' },
   { value: '90', label: '90 days' },
@@ -121,9 +121,7 @@ function IssueAccessCodeDialogInner({ recipient, onClose }: IssueAccessCodeDialo
             <KeyRound aria-hidden className="size-4" />
             Issue access code
           </DialogTitle>
-          <DialogDescription>
-            For {recipient?.displayName}. The code is shown once; Foundry Ascent stores only its hash.
-          </DialogDescription>
+          <DialogDescription>For {recipient?.displayName}.</DialogDescription>
         </DialogHeader>
         <form noValidate onSubmit={(event) => void onSubmit(event)} className="grid gap-4">
           <Field

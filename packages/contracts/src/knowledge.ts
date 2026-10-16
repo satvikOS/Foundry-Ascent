@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { CoachMode, Doctrine, Id, PrincipalView, Style, Timestamp } from './domain.js';
+import { CoachMode, Doctrine, Id, PersonaStatus, PrincipalView, Style, Timestamp } from './domain.js';
 
 /**
  * vEIR knowledge pools (docs/architecture/knowledge-pools.md).
@@ -119,6 +119,27 @@ export const NotebookResponse = VeirNotebook;
 /** Who renders the vEIR's face and voice during a call. `builtin` needs no vendor contract. */
 export const AvatarProviderId = z.enum(['builtin', 'heygen', 'tavus', 'simli']);
 export type AvatarProviderId = z.infer<typeof AvatarProviderId>;
+
+/**
+ * Voices a persona may speak with on calls (Amazon Polly, adult US English), in the order of
+ * `packages/core/speech-voices.json` (the catalog core and infra/cdk read). The speech service refuses any
+ * other; a core test keeps this list and the catalog naming exactly the same voices.
+ */
+export const SPEECH_VOICE_IDS = [
+  'Danielle',
+  'Joanna',
+  'Matthew',
+  'Ruth',
+  'Salli',
+  'Stephen',
+  'Gregory',
+  'Joey',
+  'Kendra',
+  'Kimberly',
+  'Tiffany',
+] as const;
+/** The platform voice, for personas without a consented voice of their own. */
+export const DEFAULT_SPEECH_VOICE_ID = 'Danielle' satisfies (typeof SPEECH_VOICE_IDS)[number];
 
 export const PersonaEmbodiment = z.object({
   provider: AvatarProviderId,
@@ -297,6 +318,11 @@ export const ConsentView = z.object({
   grantedAt: Timestamp,
   expiresAt: Timestamp.nullable(),
   revokedAt: Timestamp.nullable(),
+  /**
+   * Personas linked to this consent: revoking it suspends the active ones. Sent by
+   * `GET /personas/:id/consents`; additive.
+   */
+  personas: z.array(z.object({ id: Id, name: z.string(), status: PersonaStatus })).optional(),
 });
 export type ConsentView = z.infer<typeof ConsentView>;
 export const ConsentListResponse = z.object({ items: z.array(ConsentView) });

@@ -5,7 +5,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { jsonResponse, renderWithProviders, stubFetch } from '@/features/admin/shared/test-utils';
 
-import { ReleaseReview } from './persona-detail-page';
+import { ReleaseReview, ReleasesTab } from './releases-tab';
+import { persona, RELEASE } from './test-fixtures';
 
 const RELEASE_ID = '5a1e2b3c-4d5e-4f60-8a71-b2c3d4e5f607';
 const PERSONA_ID = '6b2f3c4d-5e6f-4a71-8b82-c3d4e5f60718';
@@ -51,7 +52,9 @@ describe('ReleaseReview (EIR studio)', () => {
     const fetchMock = stubFetch();
     fetchMock.mockResolvedValue(jsonResponse(draft));
     const onApprove = vi.fn();
-    renderWithProviders(<ReleaseReview releaseId={RELEASE_ID} blocker={null} onApprove={onApprove} />);
+    renderWithProviders(
+      <ReleaseReview persona={persona()} releaseId={RELEASE_ID} blocker={null} onApprove={onApprove} />,
+    );
 
     expect(await screen.findByText('Draft v3 — ready for review')).toBeVisible();
     expect(fetchMock.mock.calls[0]?.[0]).toBe(`/api/v1/persona-releases/${RELEASE_ID}`);
@@ -61,10 +64,26 @@ describe('ReleaseReview (EIR studio)', () => {
     expect(onApprove).toHaveBeenCalledWith(draft);
   });
 
+  it('shows a draft older than the active release as outdated, with no way to approve it', async () => {
+    stubFetch().mockResolvedValue(jsonResponse({ ...draft, version: 2 }));
+    const active = persona({ activeRelease: { ...RELEASE, version: 3 } });
+    renderWithProviders(
+      <ReleaseReview persona={active} releaseId={RELEASE_ID} blocker={null} onApprove={vi.fn()} />,
+    );
+    expect(await screen.findByText('Draft v2 · outdated')).toBeVisible();
+    expect(screen.getByText('Older than the active v3, so it can’t be approved.')).toBeVisible();
+    expect(screen.queryByRole('button', { name: /Approve/ })).toBeNull();
+  });
+
   it('keeps approval disabled while consent is missing', async () => {
     stubFetch().mockResolvedValue(jsonResponse(draft));
     renderWithProviders(
-      <ReleaseReview releaseId={RELEASE_ID} blocker="Consent needed" onApprove={vi.fn()} />,
+      <ReleaseReview
+        persona={persona()}
+        releaseId={RELEASE_ID}
+        blocker="Consent needed"
+        onApprove={vi.fn()}
+      />,
     );
     expect(await screen.findByRole('button', { name: /Approve/ })).toBeDisabled();
   });
@@ -82,8 +101,51 @@ describe('ReleaseReview (EIR studio)', () => {
         { status: 403, headers: { 'content-type': 'application/problem+json' } },
       ),
     );
-    renderWithProviders(<ReleaseReview releaseId={RELEASE_ID} blocker={null} onApprove={vi.fn()} />);
+    renderWithProviders(
+      <ReleaseReview persona={persona()} releaseId={RELEASE_ID} blocker={null} onApprove={vi.fn()} />,
+    );
     expect(await screen.findByText('No access')).toBeVisible();
     expect(screen.queryByText('Push for customer evidence before building.')).toBeNull();
+  });
+});
+
+describe('ReleasesTab', () => {
+  const V3 = '0f1e2d3c-4b5a-4968-8776-655443322110';
+  const V2 = '1a2b3c4d-5e6f-4071-8293-a4b5c6d7e8f9';
+  // v3 was approved over an older v2 draft that was never approved.
+  const withStaleDraft = persona({
+    activeRelease: { ...RELEASE, id: V3, version: 3 },
+    releases: [
+      {
+        id: V3,
+        version: 3,
+        status: 'approved',
+        approvedAt: RELEASE.approvedAt,
+        createdAt: RELEASE.createdAt,
+      },
+      { id: V2, version: 2, status: 'draft', approvedAt: null, createdAt: RELEASE.createdAt },
+      {
+        id: RELEASE.id,
+        version: 1,
+        status: 'superseded',
+        approvedAt: RELEASE.approvedAt,
+        createdAt: RELEASE.createdAt,
+      },
+    ],
+  });
+
+  it('never opens a draft older than the active release for approval', async () => {
+    const fetchMock = stubFetch();
+    fetchMock.mockResolvedValue(jsonResponse({ ...draft, id: V2, version: 2 }));
+    renderWithProviders(<ReleasesTab persona={withStaleDraft} />);
+    const history = screen.getByRole('list', { name: 'Releases' });
+    expect(screen.getByText('Outdated')).toBeVisible();
+    expect(history).not.toHaveTextContent(/Review v2/);
+    // Nothing opens by default: there is no draft newer than v3.
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole('button', { name: /^View\s*v2$/ }));
+    expect(await screen.findByText('Draft v2 · outdated')).toBeVisible();
+    expect(screen.queryByRole('button', { name: /Approve/ })).toBeNull();
   });
 });

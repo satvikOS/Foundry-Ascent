@@ -15,7 +15,6 @@ import {
   TriangleAlert,
 } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
-import { toast } from 'sonner';
 
 import { announce } from '@/components/a11y/live-announcer';
 import {
@@ -28,7 +27,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -55,6 +53,7 @@ import {
   TableRow,
   type SortState,
 } from '@/components/ui/table';
+import { toast } from '@/components/ui/toast';
 import { errorMessage } from '@/lib/api/errors';
 import { useResources, useUpdateResource } from '@/lib/api/hooks/program';
 import { formatDate, formatRelative, pluralize } from '@/lib/format';
@@ -82,29 +81,33 @@ const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
   { value: 'all', label: 'All resources' },
 ];
 
-const FRESHNESS: Record<FreshnessLevel, { label: string; icon: typeof CircleCheck; className: string }> = {
-  fresh: { label: 'Fresh', icon: CircleCheck, className: 'text-muted-foreground' },
+const FRESHNESS: Record<
+  Exclude<FreshnessLevel, 'fresh'>,
+  { label: string; icon: typeof CircleCheck; className: string }
+> = {
   review_soon: { label: 'Review soon', icon: Clock, className: 'text-warning' },
   overdue: { label: 'Review overdue', icon: TriangleAlert, className: 'text-destructive' },
 };
 
-/** Icon + label + relative date; the exact date is in the tooltip/title and <time>. */
-export function FreshnessIndicator({ freshnessAt, now }: { freshnessAt: string; now?: number }) {
+/** When it was last reviewed; a label and icon only when a review is due. Exact date in the title. */
+function FreshnessIndicator({ freshnessAt, now }: { freshnessAt: string; now?: number }) {
   const { level } = resourceFreshness(freshnessAt, now);
+  const when = (
+    <time dateTime={freshnessAt} title={`Last reviewed ${formatDate(freshnessAt)}`}>
+      {formatRelative(freshnessAt)}
+    </time>
+  );
+  if (level === 'fresh')
+    return <span className="text-small whitespace-nowrap text-muted-foreground">{when}</span>;
   const def = FRESHNESS[level];
   const Icon = def.icon;
   return (
-    <span
-      className="inline-flex flex-col gap-0.5 text-[13px]"
-      title={`Last reviewed ${formatDate(freshnessAt)}`}
-    >
+    <span className="inline-flex flex-col gap-0.5 text-small">
       <span className={cn('inline-flex items-center gap-1 font-medium', def.className)}>
         <Icon aria-hidden className="size-3.5" />
         {def.label}
       </span>
-      <span className="text-xs text-muted-foreground">
-        Reviewed <time dateTime={freshnessAt}>{formatRelative(freshnessAt)}</time>
-      </span>
+      <span className="text-caption text-muted-foreground">{when}</span>
     </span>
   );
 }
@@ -128,7 +131,7 @@ function matchesStatus(resource: ResourceView, filter: StatusFilter): boolean {
   }
 }
 
-/** Program console → Resources: the resource graph Foundry Guide uses in route mode. */
+/** Program → Resources: the programs, funds, labs and clinics vEIRs may recommend. */
 export function ResourcesPage() {
   const resources = useResources();
   const update = useUpdateResource();
@@ -185,7 +188,7 @@ export function ResourcesPage() {
     <PageContainer size="wide">
       <PageHeader
         title="Resources"
-        description="Programs, funding, labs and clinics Foundry Guide can route founders to. Stale entries mislead founders — review them regularly."
+        description="Programs, funds, labs and clinics vEIRs can recommend. Review regularly."
         actions={
           <Button onClick={openCreate}>
             <Plus aria-hidden />
@@ -272,7 +275,7 @@ export function ResourcesPage() {
         <EmptyState
           icon={ListTree}
           title="No resources yet"
-          description="Add the programs, funds and clinics founders can use. Foundry Guide only routes to resources listed here."
+          description="vEIRs recommend only what’s listed here."
           action={
             <Button onClick={openCreate}>
               <Plus aria-hidden />
@@ -305,15 +308,19 @@ export function ResourcesPage() {
               <SortableTableHead sortKey="name" sort={sort} onSortChange={setSort}>
                 Resource
               </SortableTableHead>
-              <SortableTableHead sortKey="kind" sort={sort} onSortChange={setSort}>
+              <SortableTableHead
+                sortKey="kind"
+                sort={sort}
+                onSortChange={setSort}
+                className="hidden md:table-cell"
+              >
                 Kind
               </SortableTableHead>
-              <TableHead>Stages</TableHead>
-              <TableHead>Owner</TableHead>
+              <TableHead className="hidden lg:table-cell">Stages</TableHead>
+              <TableHead className="hidden 2xl:table-cell">Owner</TableHead>
               <SortableTableHead sortKey="freshness" sort={sort} onSortChange={setSort}>
-                Freshness
+                Reviewed
               </SortableTableHead>
-              <TableHead>Status</TableHead>
               <TableHead>
                 <span className="sr-only">Actions</span>
               </TableHead>
@@ -324,7 +331,7 @@ export function ResourcesPage() {
               const href = safeExternalUrl(resource.url);
               return (
                 <TableRow key={resource.id} className={cn(resource.status === 'retired' && 'opacity-70')}>
-                  <TableCell className="max-w-sm min-w-56">
+                  <TableCell className="max-w-md min-w-48">
                     <div className="flex items-center gap-1.5 font-medium">
                       {href ? (
                         <a
@@ -341,36 +348,27 @@ export function ResourcesPage() {
                         resource.name
                       )}
                     </div>
-                    <p className="mt-0.5 line-clamp-2 text-[13px] text-muted-foreground">
+                    <p className="mt-0.5 line-clamp-1 text-small text-muted-foreground">
                       {resource.description}
                     </p>
-                    {resource.tags.length > 0 ? (
-                      <ul aria-label="Tags" className="mt-1.5 flex flex-wrap gap-1">
-                        {resource.tags.slice(0, 4).map((tag) => (
-                          <li key={tag}>
-                            <Badge variant="muted">{tag}</Badge>
-                          </li>
-                        ))}
-                        {resource.tags.length > 4 ? (
-                          <li>
-                            <Badge variant="muted">+{resource.tags.length - 4} more</Badge>
-                          </li>
-                        ) : null}
-                      </ul>
-                    ) : null}
                   </TableCell>
-                  <TableCell className="whitespace-nowrap">{RESOURCE_KIND_LABELS[resource.kind]}</TableCell>
-                  <TableCell className="text-[13px] text-muted-foreground">
+                  <TableCell className="hidden whitespace-nowrap md:table-cell">
+                    {RESOURCE_KIND_LABELS[resource.kind]}
+                  </TableCell>
+                  <TableCell className="hidden text-small text-muted-foreground lg:table-cell">
                     {resource.stages.length === 0
                       ? 'All stages'
                       : resource.stages.map((stage) => STAGE_LABELS[stage]).join(', ')}
                   </TableCell>
-                  <TableCell className="text-[13px] text-muted-foreground">{resource.owner ?? '—'}</TableCell>
-                  <TableCell>
-                    <FreshnessIndicator freshnessAt={resource.freshnessAt} />
+                  <TableCell className="hidden text-small text-muted-foreground 2xl:table-cell">
+                    {resource.owner ?? '—'}
                   </TableCell>
                   <TableCell>
-                    <StatusBadge kind="resource" status={resource.status} withTitle />
+                    {resource.status === 'active' ? (
+                      <FreshnessIndicator freshnessAt={resource.freshnessAt} />
+                    ) : (
+                      <StatusBadge kind="resource" status={resource.status} withTitle />
+                    )}
                   </TableCell>
                   <TableCell className="text-right">
                     <DropdownMenu>
@@ -439,9 +437,9 @@ export function ResourcesPage() {
         </Table>
       )}
 
-      <p className="mt-3 text-xs text-muted-foreground">
-        Freshness: reviewed within {REVIEW_SOON_DAYS} days is fresh; after {REVIEW_OVERDUE_DAYS} days a review
-        is overdue. “Stale” is a manual flag that tells Foundry Guide to caveat the resource.
+      <p className="mt-3 text-caption text-muted-foreground">
+        Fresh: reviewed in the last {REVIEW_SOON_DAYS} days. Overdue after {REVIEW_OVERDUE_DAYS}. “Stale” asks
+        vEIRs to caveat a resource.
       </p>
 
       <ResourceFormSheet
@@ -462,8 +460,7 @@ export function ResourcesPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Retire “{retiring?.name}”?</AlertDialogTitle>
             <AlertDialogDescription>
-              Foundry Guide stops recommending it immediately. It stays in this list under “Retired” and can
-              be restored.
+              vEIRs stop recommending it at once. It stays under “Retired” and can be restored.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

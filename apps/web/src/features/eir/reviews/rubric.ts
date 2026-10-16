@@ -37,8 +37,6 @@ export const RUBRIC_CRITERIA = [
   },
 ] as const;
 
-export type RubricKey = (typeof RUBRIC_CRITERIA)[number]['key'];
-
 export const SCALE = [
   { value: 1, label: 'Poor' },
   { value: 2, label: 'Weak' },

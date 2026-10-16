@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { capState, describeModel, fillDays, niceCeil } from './usage-model';
+import { capState, describeModel, fillDays, isSpeechModel, niceCeil, purposeLabel } from './usage-model';
 
 const NOW = Date.parse('2026-10-05T15:30:00Z');
 
@@ -50,5 +50,18 @@ describe('usage model', () => {
     expect(describeModel('amazon.titan-embed-text-v2:0').role).toBe('Embeddings');
     expect(describeModel('mock-fallback').name).toBe('Mock provider (fallback)');
     expect(describeModel('something-else')).toEqual({ name: 'something-else', role: 'Other' });
+  });
+
+  it('names Polly voices and every ledger purpose', () => {
+    expect(describeModel('polly:generative:Matthew')).toEqual({
+      name: 'Amazon Polly · Matthew',
+      role: 'Call speech (generative)',
+    });
+    expect(isSpeechModel('polly:neural:Ruth')).toBe(true);
+    expect(isSpeechModel('us.amazon.nova-2-lite-v1:0')).toBe(false);
+    expect(purposeLabel('speech')).toBe('Call speech');
+    expect(purposeLabel('distill')).toBe('Distillation');
+    expect(purposeLabel('turn')).toBe('Coaching replies');
+    expect(purposeLabel('something_new')).toBe('something_new');
   });
 });

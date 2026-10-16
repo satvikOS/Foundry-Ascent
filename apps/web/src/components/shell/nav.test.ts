@@ -1,7 +1,7 @@
 import type { Me } from '@foundry/contracts';
 import { describe, expect, it } from 'vitest';
 
-import { defaultLanding, staffWorkspaces, workspaceFromPath } from './nav';
+import { defaultLanding, STAFF_SECTIONS, staffWorkspaces, workspaceFromPath } from './nav';
 
 const VENTURE_A = '11111111-1111-4111-8111-111111111111';
 const VENTURE_B = '22222222-2222-4222-8222-222222222222';
@@ -48,6 +48,24 @@ describe('staffWorkspaces', () => {
       'eir',
       'program',
       'admin',
+    ]);
+  });
+});
+
+describe('STAFF_SECTIONS', () => {
+  it('gives lesson review a place in the EIR studio and assignments a place in Program', () => {
+    expect(STAFF_SECTIONS.eir.map((s) => s.label)).toEqual([
+      'Personas & knowledge',
+      'Lessons to review',
+      'Calibration reviews',
+      'Inbox',
+    ]);
+    expect(STAFF_SECTIONS.program.map((s) => s.label)).toEqual([
+      'Portfolio',
+      'Ventures',
+      'vEIRs & assignments',
+      'Resources',
+      'Escalations',
     ]);
   });
 });

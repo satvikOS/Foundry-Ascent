@@ -356,9 +356,12 @@ export async function withdrawRelease(ex: SqlExecutor, releaseId: string): Promi
 const PERSONA_VIEW_SELECT = `
   SELECT pe.id, pe.name, pe.kind, pe.status, pe.suspended_reason,
          e.id AS eir_id, e.display_name AS eir_display_name, e.synthetic AS eir_synthetic, e.expertise_tags AS eir_tags,
+         -- Valid = in force and covering doctrine, as approval and resume require. NOT EXISTS keeps it
+         -- true for viewers that RLS hides the consent from.
          (pe.consent_id IS NOT NULL AND NOT EXISTS (
             SELECT 1 FROM consents c WHERE c.id = pe.consent_id
-              AND (c.revoked_at IS NOT NULL OR (c.expires_at IS NOT NULL AND c.expires_at <= now())))) AS has_consent,
+              AND (c.revoked_at IS NOT NULL OR (c.expires_at IS NOT NULL AND c.expires_at <= now())
+                   OR NOT ('doctrine' = ANY (c.asset_types))))) AS has_consent,
          (SELECT count(DISTINCT a.venture_id) FROM assignments a
           WHERE a.persona_id = pe.id AND a.status = 'active' AND (a.expires_at IS NULL OR a.expires_at > now())) AS assigned_count
   FROM personas pe
@@ -549,6 +552,32 @@ export function listConsents(ex: SqlExecutor, subjectPrincipalId: string): Promi
     `SELECT ${CONSENT_COLUMNS} FROM consents WHERE subject_principal_id = :subject ORDER BY granted_at DESC`,
     { subject: p.uuid(subjectPrincipalId) },
     (r) => consentCodec.decode(r),
+  );
+}
+
+export interface ConsentDependent {
+  readonly consentId: string;
+  readonly id: string;
+  readonly name: string;
+  readonly status: 'draft' | 'active' | 'suspended' | 'retired';
+}
+
+/** Personas linked to these consents: revoking a consent suspends the active ones. */
+export async function listConsentDependents(
+  ex: SqlExecutor,
+  consentIds: readonly string[],
+): Promise<ConsentDependent[]> {
+  if (consentIds.length === 0) return [];
+  return queryRows(
+    ex,
+    `SELECT consent_id, id, name, status FROM personas WHERE consent_id = ANY (:ids) ORDER BY name, id`,
+    { ids: p.uuidArray(consentIds) },
+    (r) => ({
+      consentId: col.uuid.decode(r.consent_id, 'consent_id'),
+      id: col.uuid.decode(r.id, 'id'),
+      name: col.text.decode(r.name, 'name'),
+      status: col.enum(['draft', 'active', 'suspended', 'retired'] as const).decode(r.status, 'status'),
+    }),
   );
 }
 

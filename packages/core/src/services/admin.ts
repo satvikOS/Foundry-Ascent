@@ -66,7 +66,7 @@ export interface AdminService {
   ): Promise<PlatformSettingsView>;
   /** Platform-wide audit metadata, newest first, keyset cursor (platform admin). */
   listAudit(ctx: RequestContext, query?: z.input<typeof AuditQuery>): Promise<AuditPage>;
-  /** Spend today / 30 days, by day and by model, with the global cap (platform admin). */
+  /** Spend today / 30 days, by day, model and purpose, with the global cap (platform admin). */
   usageSummary(ctx: RequestContext): Promise<UsageSummaryValue>;
 }
 
@@ -359,6 +359,13 @@ export function createAdminService(
           usd: m.usd,
           inputTokens: m.inputTokens,
           outputTokens: m.outputTokens,
+        })),
+        byPurpose: summary.byPurpose.map((u) => ({
+          purpose: u.purpose,
+          usd: u.usd,
+          calls: u.calls,
+          inputTokens: u.inputTokens,
+          outputTokens: u.outputTokens,
         })),
       };
     },

@@ -3,27 +3,26 @@ import { CircleMinus, FileCheck, FileX } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 
-import { consentState } from './persona-labels';
+import { CONSENT_NEEDED, consentState } from './persona-labels';
 
 const CONSENT = {
   not_required: {
     label: 'Not required',
     icon: CircleMinus,
     className: 'text-muted-foreground',
-    description:
-      'A neutral guide does not represent a real person, so no likeness or doctrine consent is needed.',
+    description: 'Not a real person — no consent needed.',
   },
   on_file: {
     label: 'Consent on file',
     icon: FileCheck,
     className: 'text-foreground',
-    description: 'A signed consent record covers this persona’s doctrine and approved uses.',
+    description: 'A signed consent covers this persona’s doctrine.',
   },
   missing: {
     label: 'No consent record',
     icon: FileX,
     className: 'text-warning',
-    description: 'Releases of an EIR persona can’t be approved until a consent record is on file.',
+    description: CONSENT_NEEDED,
   },
 } as const;
 

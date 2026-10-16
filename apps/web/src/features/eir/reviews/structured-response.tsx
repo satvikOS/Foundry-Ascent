@@ -12,7 +12,6 @@ import {
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-import { DisclosureBanner } from '@/components/disclosure-banner';
 import { Badge } from '@/components/ui/badge';
 import { Markdown } from '@/components/ui/markdown';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -77,8 +76,6 @@ export function StructuredResponse({ turn }: { turn: TurnView }) {
 
   return (
     <div className="grid gap-6">
-      <DisclosureBanner variant="inline" />
-
       <Block title="Founder message" icon={MessageSquareQuote}>
         <blockquote className="rounded-lg border-l-2 border-border-strong bg-muted/50 px-4 py-3 text-sm whitespace-pre-wrap">
           {turn.founderText}

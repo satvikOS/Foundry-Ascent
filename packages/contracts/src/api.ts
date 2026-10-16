@@ -464,6 +464,10 @@ export const ProgramVentureRow = z.object({
   status: z.string(),
   memberCount: z.number().int(),
   personaName: z.string().nullable(),
+  /** The active assignment: its persona, its reviewing EIR and when it started. Additive. */
+  personaId: Id.nullable().default(null),
+  reviewingEir: z.object({ id: Id, displayName: z.string() }).nullable().default(null),
+  assignedAt: Timestamp.nullable().default(null),
   createdAt: Timestamp,
 });
 export const ProgramVentureListResponse = z.object({ items: z.array(ProgramVentureRow) });
@@ -649,4 +653,19 @@ export const UsageSummary = z.object({
       outputTokens: z.number().int(),
     }),
   ),
+  /**
+   * Totals per ledger purpose (turn, recap, distill, speech, …), last 30 days, most expensive first. For
+   * `speech`, `inputTokens` counts the characters synthesized. Additive: older APIs send none.
+   */
+  byPurpose: z
+    .array(
+      z.object({
+        purpose: z.string(),
+        usd: z.number(),
+        calls: z.number().int(),
+        inputTokens: z.number().int(),
+        outputTokens: z.number().int(),
+      }),
+    )
+    .default([]),
 });

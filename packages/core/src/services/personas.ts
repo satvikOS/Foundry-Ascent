@@ -32,13 +32,14 @@ type ProgramVentureRowValue = z.infer<typeof ProgramVentureRow>;
  * voice its consent covers.
  */
 export interface PersonaManagementService {
-  /** Creates a draft EIR persona and its draft release v1 (program lead). */
+  /** Creates a draft EIR persona and its draft release v1 (program lead). Its name must say it is a vEIR. */
   createEirPersona(ctx: RequestContext, input: z.input<typeof CreateEirPersonaRequest>): Promise<PersonaView>;
-  /** Consent records of the persona's EIR (program lead or that EIR). */
+  /** Consent records of the persona's EIR, each with the personas relying on it (program lead or that EIR). */
   listConsents(ctx: RequestContext, personaId: string): Promise<ConsentView[]>;
   /**
    * Records the consent of the persona's EIR and links it to the persona. The EIR records their own; a
-   * program lead may record it only for a synthetic (fictional) EIR, whether or not it can sign in.
+   * program lead may record it only for a synthetic (fictional) EIR, whether or not it can sign in. It must
+   * cover doctrine.
    */
   recordConsent(
     ctx: RequestContext,
@@ -64,6 +65,13 @@ export interface PersonaManagementService {
 }
 
 const STUDIO_ROLES = ['eir', 'program_lead', 'platform_admin'] as const;
+
+/** Every EIR persona's name says it is a vEIR ("Corin's vEIR"), so it never reads as the EIR in person. */
+const VEIR_MARKER = /\bveir\b/i;
+
+function veirNameFor(eirDisplayName: string): string {
+  return `${eirDisplayName.trim().split(/\s+/)[0] ?? eirDisplayName}'s vEIR`;
+}
 
 export function createPersonaManagementService(
   kit: Kit,
@@ -118,6 +126,12 @@ export function createPersonaManagementService(
         const profile = await eirRepo.getEirProfile(scope.tx, eirProfileId);
         if (profile?.tenantId !== ctx.tenantId) throw fail.notFound('EIR profile');
         if (profile.status === 'retired') throw fail.conflict('This EIR profile is retired', 'eir_retired');
+        if (!VEIR_MARKER.test(input.name)) {
+          // Founders see this name in chat and on calls: it must read as the EIR's AI, never as the EIR.
+          throw fail.validation('A vEIR’s name must say it is a vEIR', [
+            { path: 'name', message: `Include “vEIR”, e.g. ${veirNameFor(profile.displayName)}.` },
+          ]);
+        }
         if (
           (await personasRepo.findPersonasByName(scope.tx, { tenantId: ctx.tenantId, name: input.name }))
             .length
@@ -179,9 +193,17 @@ export function createPersonaManagementService(
         if (persona.eirProfileId === null) return [];
         const profile = await eirRepo.getEirProfile(scope.tx, persona.eirProfileId);
         if (profile?.principalId == null) return [];
-        return (await personasRepo.listConsents(scope.tx, profile.principalId)).map(
-          personasRepo.toConsentView,
+        const consents = await personasRepo.listConsents(scope.tx, profile.principalId);
+        const dependents = await personasRepo.listConsentDependents(
+          scope.tx,
+          consents.map((c) => c.id),
         );
+        return consents.map((c) => ({
+          ...personasRepo.toConsentView(c),
+          personas: dependents
+            .filter((d) => d.consentId === c.id)
+            .map((d) => ({ id: d.id, name: d.name, status: d.status })),
+        }));
       });
     },
 
@@ -195,6 +217,13 @@ export function createPersonaManagementService(
           throw fail.conflict('Only EIR personas carry a consent record', 'not_eir_persona');
         }
         if (persona.status === 'retired') throw fail.conflict('The persona is retired', 'persona_retired');
+        // The new record replaces the persona's link, and a vEIR runs on its doctrine: a record that does not
+        // cover doctrine would leave it coaching on material its EIR has not consented to.
+        if (!input.assetTypes.includes('doctrine')) {
+          throw fail.validation('A vEIR can’t coach without consent to its doctrine', [
+            { path: 'assetTypes', message: 'Include doctrine: the vEIR is built from it.' },
+          ]);
+        }
         const profile = await eirRepo.getEirProfile(scope.tx, persona.eirProfileId);
         const subject = profile?.principalId ?? null;
         if (profile === null || subject === null) {

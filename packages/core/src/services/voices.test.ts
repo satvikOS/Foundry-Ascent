@@ -1,4 +1,5 @@
 import { DEFAULT_SPEECH_PRICES } from '@foundry/ai';
+import { DEFAULT_SPEECH_VOICE_ID, SPEECH_VOICE_IDS } from '@foundry/contracts';
 import { SEED_VEIRS } from '@foundry/db';
 import { describe, expect, it } from 'vitest';
 
@@ -41,5 +42,12 @@ describe('speech voices (speech-voices.json, shared with infra/cdk)', () => {
     expect(speechCostUsd(1_000_000, 'generative')).toBe(30);
     expect(speechCostUsd(500, 'neural')).toBeCloseTo(0.008, 6);
     expect(speechCostUsd(-5, 'neural')).toBe(0);
+  });
+
+  it('accepts exactly the voices the contract lists (the EIR studio offers that list)', () => {
+    expect(Object.keys(SPEECH_VOICES)).toEqual([...SPEECH_VOICE_IDS]);
+    expect(DEFAULT_SPEECH_VOICE).toBe(DEFAULT_SPEECH_VOICE_ID);
+    expect(SPEECH_VOICE_IDS.every((voice) => isSpeechVoice(voice))).toBe(true);
+    expect(isSpeechVoice('Robot')).toBe(false);
   });
 });

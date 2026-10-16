@@ -1,7 +1,8 @@
 import { Link } from '@tanstack/react-router';
-import { ChevronRight, FilePen, UserSquare } from 'lucide-react';
+import { ChevronRight, Plus, UserSquare } from 'lucide-react';
 
 import { PersonaAvatar } from '@/components/faces/persona-avatar';
+import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
 import { PageContainer, PageHeader } from '@/components/ui/page-header';
@@ -9,22 +10,35 @@ import { LoadingRegion, Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { usePersonas } from '@/lib/api/hooks/eir';
+import { useEirProfiles } from '@/lib/api/hooks/veir-pools';
 import { formatNumber, pluralize } from '@/lib/format';
 import { shortPersonaName } from '@/lib/veir';
 
 import { ConsentIndicator } from './consent-indicator';
+import { eirsWithoutVeir } from './new-persona';
 import { PERSONA_KIND_LABELS } from './persona-labels';
+import { pendingDrafts } from './release-drafts';
 
-/** EIR studio → Personas: every persona with status, active release, reach and consent. */
-export function PersonasListPage({ tenant }: { tenant: string }) {
+/** EIR studio → Personas: every vEIR and the program guide, with status, release, reach and consent. */
+export function PersonasListPage({ tenant, canCreate }: { tenant: string; canCreate: boolean }) {
   const personas = usePersonas();
+  const profiles = useEirProfiles({ enabled: canCreate });
+  // Offer New vEIR only when some EIR doesn't have one yet (one vEIR per EIR).
+  const available =
+    canCreate && profiles.data && personas.data ? eirsWithoutVeir(profiles.data, personas.data).length : 0;
+  const newVeir =
+    available > 0 ? (
+      <Button asChild>
+        <Link to="/$tenant/app/eir/personas/new" params={{ tenant }}>
+          <Plus aria-hidden />
+          New vEIR
+        </Link>
+      </Button>
+    ) : null;
 
   return (
-    <PageContainer size="wide">
-      <PageHeader
-        title="Personas"
-        description="The neutral Foundry Guide and the EIR personas (vEIRs). Every release is versioned and approved by a person; suspending a persona stops it immediately."
-      />
+    <PageContainer>
+      <PageHeader title="Personas" description="vEIRs and the program guide." actions={newVeir} />
       {personas.isPending ? (
         <LoadingRegion label="Loading personas">
           <Skeleton className="h-56 rounded-xl" />
@@ -39,7 +53,8 @@ export function PersonasListPage({ tenant }: { tenant: string }) {
         <EmptyState
           icon={UserSquare}
           title="No personas yet"
-          description="Personas are created by the platform seed. Contact an admin if Foundry Guide is missing."
+          description={newVeir ? 'Create a vEIR to get started.' : undefined}
+          action={newVeir}
         />
       ) : (
         <Table>
@@ -47,11 +62,15 @@ export function PersonasListPage({ tenant }: { tenant: string }) {
             <TableRow>
               <TableHead scope="col">Persona</TableHead>
               <TableHead scope="col">Status</TableHead>
-              <TableHead scope="col">Active release</TableHead>
-              <TableHead scope="col" className="text-right">
-                Assigned ventures
+              <TableHead scope="col" className="hidden md:table-cell">
+                Release
               </TableHead>
-              <TableHead scope="col">Consent</TableHead>
+              <TableHead scope="col" className="hidden text-right md:table-cell">
+                Ventures
+              </TableHead>
+              <TableHead scope="col" className="hidden lg:table-cell">
+                Consent
+              </TableHead>
               <TableHead scope="col">
                 <span className="sr-only">Open</span>
               </TableHead>
@@ -59,10 +78,10 @@ export function PersonasListPage({ tenant }: { tenant: string }) {
           </TableHeader>
           <TableBody>
             {personas.data.map((persona) => {
-              const drafts = persona.releases.filter((r) => r.status === 'draft').length;
+              const drafts = pendingDrafts(persona).length;
               return (
                 <TableRow key={persona.id} className="relative">
-                  <TableCell className="min-w-56">
+                  <TableCell className="min-w-48">
                     <div className="flex items-center gap-3">
                       <PersonaAvatar
                         name={shortPersonaName(persona.name, persona.kind, persona.eirProfile?.displayName)}
@@ -77,52 +96,33 @@ export function PersonasListPage({ tenant }: { tenant: string }) {
                         >
                           {persona.name}
                         </Link>
-                        <p className="flex flex-wrap items-center gap-1.5 text-small text-muted-foreground">
-                          {PERSONA_KIND_LABELS[persona.kind]}
-                          {persona.eirProfile ? (
-                            <>
-                              <span aria-hidden>·</span>
-                              {persona.eirProfile.displayName}
-                            </>
-                          ) : null}
+                        <p className="text-small text-muted-foreground">
+                          {persona.eirProfile?.displayName ?? PERSONA_KIND_LABELS[persona.kind]}
                         </p>
                       </div>
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div className="grid gap-1">
-                      <StatusBadge kind="persona" status={persona.status} withTitle />
-                      {persona.status === 'suspended' && persona.suspendedReason ? (
-                        <span
-                          className="line-clamp-1 max-w-56 text-xs text-muted-foreground"
-                          title={persona.suspendedReason}
-                        >
-                          {persona.suspendedReason}
-                        </span>
-                      ) : null}
-                    </div>
+                    <StatusBadge kind="persona" status={persona.status} withTitle />
                   </TableCell>
-                  <TableCell>
-                    <div className="grid gap-1">
-                      <span className="text-sm">
-                        {persona.activeRelease ? (
-                          `v${persona.activeRelease.version}`
-                        ) : (
-                          <span className="text-muted-foreground">None</span>
-                        )}
-                      </span>
+                  <TableCell className="hidden md:table-cell">
+                    <span className="grid gap-0.5 text-sm">
+                      {persona.activeRelease ? (
+                        `v${persona.activeRelease.version}`
+                      ) : (
+                        <span className="text-muted-foreground">None</span>
+                      )}
                       {drafts > 0 ? (
-                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                          <FilePen aria-hidden className="size-3" />
-                          {pluralize(drafts, 'draft')} awaiting approval
+                        <span className="text-caption text-muted-foreground">
+                          {pluralize(drafts, 'draft')} to approve
                         </span>
                       ) : null}
-                    </div>
+                    </span>
                   </TableCell>
-                  <TableCell className="tabular text-right">
+                  <TableCell className="tabular hidden text-right md:table-cell">
                     {formatNumber(persona.assignedVentureCount)}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="hidden lg:table-cell">
                     <ConsentIndicator persona={persona} />
                   </TableCell>
                   <TableCell className="w-8 text-right">

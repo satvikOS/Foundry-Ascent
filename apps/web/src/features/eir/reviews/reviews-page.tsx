@@ -1,6 +1,5 @@
-import { CircleCheck, CircleDashed, ClipboardCheck, EyeOff } from 'lucide-react';
+import { CircleCheck, ClipboardCheck, EyeOff } from 'lucide-react';
 import { useEffect, useMemo, useRef } from 'react';
-import { toast } from 'sonner';
 
 import { announce } from '@/components/a11y/live-announcer';
 import { Alert } from '@/components/ui/alert';
@@ -9,7 +8,8 @@ import { ErrorState } from '@/components/ui/error-state';
 import { PageContainer, PageHeader } from '@/components/ui/page-header';
 import { SectionCard } from '@/components/ui/section-card';
 import { LoadingRegion, Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { toast } from '@/components/ui/toast';
+import { FilterChips } from '@/features/admin/shared/filter-chips';
 import { MutationErrorAlert } from '@/features/admin/shared/form';
 import { useReviewQueue, useSubmitReview, type ReviewSampleView } from '@/lib/api/hooks/eir';
 import { hasRole } from '@/lib/auth/roles';
@@ -68,30 +68,18 @@ export function ReviewsPage({ selectedTurnId, filter, onSelect, onFilterChange }
     <PageContainer size="wide">
       <PageHeader
         title="Calibration reviews"
-        description="Score sampled coach turns from your assigned ventures. Reviews are blind: you see the question, the answer and its evidence — not who asked."
+        description="Score sampled answers from your ventures. You see the venture, question, answer and evidence — not who asked."
       >
-        {isEir ? (
-          <Tabs
-            value={filter}
-            onValueChange={(value) => {
-              onFilterChange(value === 'reviewed' ? 'reviewed' : 'pending');
-            }}
-          >
-            <TabsList aria-label="Review queue">
-              <TabsTrigger value="pending">
-                <CircleDashed aria-hidden />
-                To review{' '}
-                <span className="tabular text-muted-foreground">{queue.isSuccess ? pending.length : ''}</span>
-              </TabsTrigger>
-              <TabsTrigger value="reviewed">
-                <CircleCheck aria-hidden />
-                Reviewed{' '}
-                <span className="tabular text-muted-foreground">
-                  {queue.isSuccess ? reviewed.length : ''}
-                </span>
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
+        {samples.length > 0 ? (
+          <FilterChips<ReviewFilter>
+            label="Filter samples"
+            chips={[
+              { key: 'pending', label: 'To review', count: pending.length },
+              { key: 'reviewed', label: 'Reviewed', count: reviewed.length },
+            ]}
+            selected={filter}
+            onSelect={onFilterChange}
+          />
         ) : null}
       </PageHeader>
 
@@ -99,7 +87,7 @@ export function ReviewsPage({ selectedTurnId, filter, onSelect, onFilterChange }
         <EmptyState
           icon={ClipboardCheck}
           title="Reviews are scored by EIRs"
-          description="Sampled coach answers are reviewed blind by the EIRs assigned to each venture. Your role can manage personas and route escalations; ask a platform admin for the EIR role if you review turns."
+          description="Only EIRs review samples. Ask an admin for the EIR role."
         />
       ) : queue.isPending ? (
         <LoadingRegion label="Loading review queue">
@@ -114,7 +102,7 @@ export function ReviewsPage({ selectedTurnId, filter, onSelect, onFilterChange }
         <EmptyState
           icon={ClipboardCheck}
           title="No samples to review"
-          description="Samples appear when your assigned ventures have coaching sessions. Check back later."
+          description="Samples appear as your ventures hold conversations."
         />
       ) : (
         <div className="grid items-start gap-6 lg:grid-cols-[18rem_1fr]">

@@ -1,9 +1,9 @@
 import { Link, useParams } from '@tanstack/react-router';
 import {
   CalendarDays,
-  CircleAlert,
   Coins,
   Cpu,
+  Layers,
   MessagesSquare,
   OctagonAlert,
   Settings,
@@ -34,7 +34,7 @@ import { formatCompact, formatNumber, formatPercent, formatUsd } from '@/lib/for
 import { cn } from '@/lib/utils';
 
 import { DailySpendChart } from './daily-spend-chart';
-import { capState, describeModel, fillDays } from './usage-model';
+import { capState, describeModel, fillDays, isSpeechModel, purposeLabel } from './usage-model';
 
 const CAP_COPY = {
   ok: null,
@@ -82,15 +82,18 @@ function TodayTile({ usage }: { usage: Usage }) {
 function ModelTable({ usage }: { usage: Usage }) {
   const rows = [...usage.byModel].sort((a, b) => b.usd - a.usd);
   const total = rows.reduce(
-    (sum, r) => ({
-      usd: sum.usd + r.usd,
-      inputTokens: sum.inputTokens + r.inputTokens,
-      outputTokens: sum.outputTokens + r.outputTokens,
-    }),
+    (sum, r) => {
+      const speech = isSpeechModel(r.modelId);
+      return {
+        usd: sum.usd + r.usd,
+        inputTokens: sum.inputTokens + (speech ? 0 : r.inputTokens),
+        outputTokens: sum.outputTokens + (speech ? 0 : r.outputTokens),
+      };
+    },
     { usd: 0, inputTokens: 0, outputTokens: 0 },
   );
   if (rows.length === 0) {
-    return <p className="text-sm text-muted-foreground">No model calls in the last 30 days.</p>;
+    return <p className="px-5 py-4 text-small text-muted-foreground">No model calls in the last 30 days.</p>;
   }
   return (
     <Table containerClassName="rounded-none border-0">
@@ -129,9 +132,10 @@ function ModelTable({ usage }: { usage: Usage }) {
               </TableCell>
               <TableCell className="tabular text-right" title={formatNumber(row.inputTokens)}>
                 {formatCompact(row.inputTokens)}
+                {isSpeechModel(row.modelId) ? ' chars' : ''}
               </TableCell>
               <TableCell className="tabular text-right" title={formatNumber(row.outputTokens)}>
-                {formatCompact(row.outputTokens)}
+                {isSpeechModel(row.modelId) ? '—' : formatCompact(row.outputTokens)}
               </TableCell>
             </TableRow>
           );
@@ -148,6 +152,55 @@ function ModelTable({ usage }: { usage: Usage }) {
           <TableCell className="tabular text-right">{formatCompact(total.outputTokens)}</TableCell>
         </TableRow>
       </TableFooter>
+    </Table>
+  );
+}
+
+function PurposeTable({ usage }: { usage: Usage }) {
+  const rows = usage.byPurpose;
+  const total = rows.reduce((sum, r) => sum + r.usd, 0);
+  if (rows.length === 0) {
+    return <p className="px-5 py-4 text-small text-muted-foreground">No AI spend in the last 30 days.</p>;
+  }
+  return (
+    <Table containerClassName="rounded-none border-0">
+      <TableCaption className="sr-only">Spend by purpose, last 30 days</TableCaption>
+      <TableHeader>
+        <TableRow>
+          <TableHead scope="col">Purpose</TableHead>
+          <TableHead scope="col" className="text-right">
+            Spend
+          </TableHead>
+          <TableHead scope="col" className="text-right">
+            Share
+          </TableHead>
+          <TableHead scope="col" className="text-right">
+            Calls
+          </TableHead>
+          <TableHead scope="col" className="hidden text-right sm:table-cell">
+            Volume
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rows.map((row) => (
+          <TableRow key={row.purpose}>
+            <TableHead scope="row" className="h-auto py-2.5 font-medium text-foreground">
+              {purposeLabel(row.purpose)}
+            </TableHead>
+            <TableCell className="tabular text-right">{formatUsd(row.usd)}</TableCell>
+            <TableCell className="tabular text-right">
+              {total > 0 ? formatPercent(row.usd / total) : '—'}
+            </TableCell>
+            <TableCell className="tabular text-right">{formatNumber(row.calls)}</TableCell>
+            <TableCell className="tabular hidden text-right text-muted-foreground sm:table-cell">
+              {row.purpose === 'speech'
+                ? `${formatCompact(row.inputTokens)} chars`
+                : `${formatCompact(row.inputTokens)} in · ${formatCompact(row.outputTokens)} out`}
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
     </Table>
   );
 }
@@ -186,6 +239,10 @@ function UsageDashboard({ usage }: { usage: Usage }) {
         <DailySpendChart points={points} capUsd={usage.capGlobalUsd} view={view} />
       </SectionCard>
 
+      <SectionCard title="By purpose" description="Last 30 days" icon={Layers} flush>
+        <PurposeTable usage={usage} />
+      </SectionCard>
+
       <SectionCard title="By model" description="Last 30 days" icon={Cpu} flush>
         <ModelTable usage={usage} />
       </SectionCard>
@@ -193,7 +250,7 @@ function UsageDashboard({ usage }: { usage: Usage }) {
   );
 }
 
-/** Admin → Usage: AI spend against the daily cap, by day and by model. */
+/** Admin → Usage: AI spend against the daily cap, by day, purpose and model. */
 export function UsagePage() {
   const { tenant } = useParams({ from: '/$tenant/app/admin' });
   const usage = useUsage();
@@ -201,7 +258,7 @@ export function UsagePage() {
     <PageContainer size="wide">
       <PageHeader
         title="Usage"
-        description="AI spend from the usage ledger. Every model call is recorded with its cost."
+        description="AI spend by day, purpose and model."
         actions={
           <Button asChild variant="secondary">
             <Link to="/$tenant/app/admin/settings" params={{ tenant }}>
@@ -222,14 +279,6 @@ export function UsagePage() {
         </LoadingRegion>
       ) : usage.isError ? (
         <ErrorState error={usage.error} onRetry={() => void usage.refetch()} retrying={usage.isRefetching} />
-      ) : usage.data.byDay.length === 0 && usage.data.last30DaysUsd === 0 ? (
-        <div className="grid gap-6">
-          <UsageDashboard usage={usage.data} />
-          <p className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
-            <CircleAlert aria-hidden className="size-3.5" />
-            No AI usage recorded yet.
-          </p>
-        </div>
       ) : (
         <UsageDashboard usage={usage.data} />
       )}
