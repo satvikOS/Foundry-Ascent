@@ -283,6 +283,8 @@ class Runner:
         eir = venture.eir_name or next(iter(self.env.staff_names), None)
         if eir:
             values["eir_name"] = eir
+            values["eir_first_name"] = eir.split()[0]
+        values["persona_name"] = venture.persona_name
         staff = next(iter(self.env.program_staff_names), None) or eir
         if staff:
             values["staff_name"] = staff
