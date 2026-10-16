@@ -44,9 +44,6 @@ export const ESM_REQUIRE_SHIM = LAMBDA_CONTRACT.bundling.banner.join(' ');
 /** Set by the /api/* CloudFront viewer-request function from `event.viewer.ip` (client value overwritten). */
 export const VIEWER_IP_HEADER = LAMBDA_CONTRACT.edgeHeaders.viewerIp;
 
-/** Set by the same function to the Host the browser addressed. */
-export const VIEWER_HOST_HEADER = LAMBDA_CONTRACT.edgeHeaders.viewerHost;
-
 /** The API's per-call Aurora resume budget (DB_RESUME_BUDGET_MS default for the api role). */
 export const API_DB_RESUME_BUDGET_MS = LAMBDA_CONTRACT.api.dbResumeBudgetSeconds * 1000;
 
