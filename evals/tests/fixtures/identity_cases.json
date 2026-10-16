@@ -159,7 +159,7 @@
     {
       "name": "word-names",
       "persona": "Grant's vEIR",
-      "eirs": ["Grant Okafor", "Frank Mills", "Eli Park", "Will Hart"],
+      "eirs": ["Grant Okafor", "Frank Mills", "Eli Park", "Will Hart", "Mark Ellis"],
       "addressees": [],
       "flagged": [
         "I'm Grant.",
@@ -182,20 +182,25 @@
         "Will here be enough evidence for the pilot?",
         "This is will power, not strategy.",
         "I will review the pricing with you.",
-        "To be frank here, the pilot is too small."
+        "To be frank here, the pilot is too small.",
+        "Mark the date of the pilot review.",
+        "End the question with a question-mark."
       ],
       "flagged_spoken": [
         "i'm frank.",
         "best, frank.",
         "grant here.",
         "eli here, ready when you are.",
-        "this is grant."
+        "this is grant.",
+        "Thanks. — mark."
       ],
       "allowed_spoken": [
         "this is grant money, so spend it on the pilot.",
         "i'm frank with founders about pricing.",
         "the grant has backed three pilots.",
-        "Will here be enough evidence for the pilot?"
+        "Will here be enough evidence for the pilot?",
+        "End the question with a question-mark.",
+        "Thanks. Mark the date of the pilot review."
       ]
     }
   ]
