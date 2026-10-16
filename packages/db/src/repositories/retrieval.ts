@@ -25,7 +25,8 @@ import { type z } from 'zod';
 
 import { col, type RawRow } from '../columns.js';
 import { type SqlExecutor } from '../executor.js';
-import { p, type SqlParam } from '../params.js';
+import { p, type SqlParam, type SqlParams } from '../params.js';
+import { rewritePlaceholders } from '../sql-lexer.js';
 import { clampLimit, excerptSql, orTsQuerySql, queryRows } from './common.js';
 import { type KnowledgeClassification } from './knowledge.js';
 import { ACTIVE_MEMORY_STATUSES, type MemoryStatusValue, type MemoryTypeValue } from './memory.js';
@@ -128,6 +129,17 @@ function decodeItem(kind: EvidenceKindValue | 'from_row', r: RawRow): RetrievedI
   };
 }
 
+/** One store's search: its SQL, parameters and row decoder (run alone, or with the others in one statement). */
+interface StoreSearch {
+  readonly sql: string;
+  readonly params: SqlParams;
+  readonly decode: (raw: RawRow) => RetrievedItem;
+}
+
+function run(ex: SqlExecutor, search: StoreSearch): Promise<RetrievedItem[]> {
+  return queryRows(ex, search.sql, search.params, search.decode);
+}
+
 // ------------------------------------------------------------------------------------------------
 // Venture memory
 // ------------------------------------------------------------------------------------------------
@@ -150,10 +162,13 @@ export interface VentureMemoryQuery extends BaseQuery {
  * Pinned items are always candidates.
  */
 export function searchVentureMemory(ex: SqlExecutor, q: VentureMemoryQuery): Promise<RetrievedItem[]> {
+  return run(ex, memorySearch(q));
+}
+
+function memorySearch(q: VentureMemoryQuery): StoreSearch {
   const statuses = (q.statuses ?? ACTIVE_MEMORY_STATUSES).filter((s) => MemoryStatus.options.includes(s));
-  return queryRows(
-    ex,
-    `WITH q AS (SELECT ${orTsQuerySql('query')} AS tsq)
+  return {
+    sql: `WITH q AS (SELECT ${orTsQuerySql('query')} AS tsq)
      SELECT x.*, ${SCORE_SQL} AS score FROM (
        SELECT m.id, m.venture_id, NULL::uuid AS source_id, NULL::text AS source_scope, m.type AS memory_type,
               m.visibility, m.title,
@@ -174,15 +189,15 @@ export function searchVentureMemory(ex: SqlExecutor, q: VentureMemoryQuery): Pro
      WHERE ${SCORE_SQL} >= :minScore
      ORDER BY score DESC, x.id
      LIMIT :limit`,
-    {
+    params: {
       ...baseParams(q, 8),
       ventureId: p.uuid(q.ventureId),
       statuses: p.textArray(statuses),
       types: p.nullable.textArray(q.types),
       privateOwner: p.nullable.uuid(q.privateOwnerId),
     },
-    (r) => decodeItem('memory', r),
-  );
+    decode: (r) => decodeItem('memory', r),
+  };
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -195,9 +210,12 @@ export interface VentureChunkQuery extends BaseQuery {
 
 /** Chunks of the venture's own documents (exact scan inside the venture). authority: active 1.0, stale 0.5. */
 export function searchVentureChunks(ex: SqlExecutor, q: VentureChunkQuery): Promise<RetrievedItem[]> {
-  return queryRows(
-    ex,
-    `WITH q AS (SELECT ${orTsQuerySql('query')} AS tsq)
+  return run(ex, chunkSearch(q));
+}
+
+function chunkSearch(q: VentureChunkQuery): StoreSearch {
+  return {
+    sql: `WITH q AS (SELECT ${orTsQuerySql('query')} AS tsq)
      SELECT x.*, ${SCORE_SQL} AS score FROM (
        SELECT c.id, c.venture_id, c.source_id, 'venture'::text AS source_scope, NULL::text AS memory_type,
               NULL::text AS visibility,
@@ -217,9 +235,9 @@ export function searchVentureChunks(ex: SqlExecutor, q: VentureChunkQuery): Prom
      WHERE ${SCORE_SQL} >= :minScore
      ORDER BY score DESC, x.id
      LIMIT :limit`,
-    { ...baseParams(q, 6), ventureId: p.uuid(q.ventureId) },
-    (r) => decodeItem('chunk', r),
-  );
+    params: { ...baseParams(q, 6), ventureId: p.uuid(q.ventureId) },
+    decode: (r) => decodeItem('chunk', r),
+  };
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -244,11 +262,14 @@ export interface SharedChunkQuery extends BaseQuery {
  * public 0.7 (× 0.5 when the source is stale).
  */
 export function searchSharedChunks(ex: SqlExecutor, q: SharedChunkQuery): Promise<RetrievedItem[]> {
+  return run(ex, sharedSearch(q));
+}
+
+function sharedSearch(q: SharedChunkQuery): StoreSearch {
   const scopeFilter = `c.venture_id IS NULL AND c.tenant_id = :tenantId AND c.scope = ANY (:scopes)
     AND (c.scope <> 'persona' OR c.persona_id = :personaId)`;
-  return queryRows(
-    ex,
-    `WITH q AS (SELECT ${orTsQuerySql('query')} AS tsq)
+  return {
+    sql: `WITH q AS (SELECT ${orTsQuerySql('query')} AS tsq)
      , ann AS (
        SELECT c.id FROM knowledge_chunks c
        WHERE ${scopeFilter} AND :embedding IS NOT NULL
@@ -281,15 +302,15 @@ export function searchSharedChunks(ex: SqlExecutor, q: SharedChunkQuery): Promis
      WHERE ${SCORE_SQL} >= :minScore
      ORDER BY score DESC, x.id
      LIMIT :limit`,
-    {
+    params: {
       ...baseParams(q, 4),
       scopes: p.textArray(q.scopes ?? ['program', 'public', 'persona']),
       personaId: p.nullable.uuid(q.personaId),
       classifications: p.nullable.textArray(q.classifications),
       candidates: p.int(clampLimit(q.candidates, 40, 400)),
     },
-    (r) => decodeItem('from_row', r),
-  );
+    decode: (r) => decodeItem('from_row', r),
+  };
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -307,10 +328,13 @@ export interface ResourceQuery extends Omit<BaseQuery, 'embedding'> {
  * lists no stages. Candidates match lexically; retired resources are excluded.
  */
 export function searchResources(ex: SqlExecutor, q: ResourceQuery): Promise<RetrievedItem[]> {
+  return run(ex, resourceSearch(q));
+}
+
+function resourceSearch(q: ResourceQuery): StoreSearch {
   const score = '(0.55 * x.lex + 0.25 * x.stage_fit + 0.10 * x.recency + 0.10 * x.authority)';
-  return queryRows(
-    ex,
-    `WITH q AS (SELECT ${orTsQuerySql('query')} AS tsq)
+  return {
+    sql: `WITH q AS (SELECT ${orTsQuerySql('query')} AS tsq)
      SELECT x.*, ${score} AS score FROM (
        SELECT r.id, NULL::uuid AS venture_id, NULL::uuid AS source_id, NULL::text AS source_scope,
               NULL::text AS memory_type, NULL::text AS visibility, r.name AS title,
@@ -327,9 +351,9 @@ export function searchResources(ex: SqlExecutor, q: ResourceQuery): Promise<Retr
      WHERE ${score} >= :minScore
      ORDER BY score DESC, x.id
      LIMIT :limit`,
-    { ...baseParams({ ...q, embedding: null }, 4), stage: p.nullable.text(q.stage) },
-    (r) => decodeItem('resource', r),
-  );
+    params: { ...baseParams({ ...q, embedding: null }, 4), stage: p.nullable.text(q.stage) },
+    decode: (r) => decodeItem('resource', r),
+  };
 }
 
 export interface PatternQuery extends Omit<BaseQuery, 'embedding'> {
@@ -345,9 +369,12 @@ export interface PatternQuery extends Omit<BaseQuery, 'embedding'> {
  * of the assigned persona.
  */
 export function searchPatterns(ex: SqlExecutor, q: PatternQuery): Promise<RetrievedItem[]> {
-  return queryRows(
-    ex,
-    `WITH q AS (SELECT ${orTsQuerySql('query')} AS tsq)
+  return run(ex, patternSearch(q));
+}
+
+function patternSearch(q: PatternQuery): StoreSearch {
+  return {
+    sql: `WITH q AS (SELECT ${orTsQuerySql('query')} AS tsq)
      SELECT x.*, ${SCORE_SQL} AS score FROM (
        SELECT pt.id, NULL::uuid AS venture_id, NULL::uuid AS source_id, NULL::text AS source_scope,
               NULL::text AS memory_type, NULL::text AS visibility, pt.title,
@@ -367,7 +394,82 @@ export function searchPatterns(ex: SqlExecutor, q: PatternQuery): Promise<Retrie
      WHERE ${SCORE_SQL} >= :minScore
      ORDER BY score DESC, x.id
      LIMIT :limit`,
-    { ...baseParams({ ...q, embedding: null }, 2), personaId: p.nullable.uuid(q.personaId) },
-    (r) => decodeItem('pattern', r),
+    params: { ...baseParams({ ...q, embedding: null }, 2), personaId: p.nullable.uuid(q.personaId) },
+    decode: (r) => decodeItem('pattern', r),
+  };
+}
+
+// ------------------------------------------------------------------------------------------------
+// Every store in one statement
+// ------------------------------------------------------------------------------------------------
+
+/** The stores a turn searches; an absent store is not searched (and comes back empty). */
+export interface EvidenceSearch {
+  readonly memory?: VentureMemoryQuery;
+  readonly chunks?: VentureChunkQuery;
+  readonly shared?: SharedChunkQuery;
+  readonly resources?: ResourceQuery;
+  readonly patterns?: PatternQuery;
+}
+
+export type EvidenceResults = Readonly<Record<keyof EvidenceSearch, RetrievedItem[]>>;
+
+const STORES = ['memory', 'chunks', 'shared', 'resources', 'patterns'] as const;
+
+/**
+ * Every store's search in ONE statement, each with exactly its own SQL, parameters, ordering and limit, so
+ * the results equal those of the five functions above: on the RDS Data API every statement is an HTTPS round
+ * trip, and a turn searches up to five stores (docs/runbooks/latency.md). Each store's rows come back as
+ * JSON with their rank within the store.
+ */
+export async function searchEvidenceStores(
+  ex: SqlExecutor,
+  search: EvidenceSearch,
+): Promise<EvidenceResults> {
+  const builders: Record<(typeof STORES)[number], () => StoreSearch | null> = {
+    memory: () => (search.memory ? memorySearch(search.memory) : null),
+    chunks: () => (search.chunks ? chunkSearch(search.chunks) : null),
+    shared: () => (search.shared ? sharedSearch(search.shared) : null),
+    resources: () => (search.resources ? resourceSearch(search.resources) : null),
+    patterns: () => (search.patterns ? patternSearch(search.patterns) : null),
+  };
+  const parts: string[] = [];
+  const params: Record<string, SqlParam> = {};
+  const decoders = new Map<string, StoreSearch['decode']>();
+  STORES.forEach((store, i) => {
+    const built = builders[store]();
+    if (built === null) return;
+    const prefix = `s${String(i)}_`;
+    // Each store's placeholders get the store's prefix, so equal names (`:limit`, `:query`) stay apart.
+    const sql = rewritePlaceholders(built.sql, (name) => `:${prefix}${name}`).text;
+    for (const [name, param] of Object.entries(built.params)) params[`${prefix}${name}`] = param;
+    decoders.set(store, built.decode);
+    parts.push(
+      `(SELECT '${store}'::text AS store, row_number() OVER (ORDER BY r.score DESC, r.id) AS rank,
+               to_jsonb(r) AS row
+        FROM (${sql}) r)`,
+    );
+  });
+  const results: Record<(typeof STORES)[number], RetrievedItem[]> = {
+    memory: [],
+    chunks: [],
+    shared: [],
+    resources: [],
+    patterns: [],
+  };
+  if (parts.length === 0) return results;
+  const rows = await queryRows(
+    ex,
+    `SELECT u.store, u.rank, u.row FROM (${parts.join('\n UNION ALL\n')}) u ORDER BY u.store, u.rank`,
+    params,
+    (r) => ({
+      store: col.enum(STORES).decode(r.store, 'store'),
+      row: col.json().decode(r.row, 'row') as RawRow,
+    }),
   );
+  for (const { store, row } of rows) {
+    const decode = decoders.get(store);
+    if (decode) results[store].push(decode(row));
+  }
+  return results;
 }

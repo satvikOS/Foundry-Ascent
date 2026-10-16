@@ -47,56 +47,47 @@ export function privateRetrievalOwner(
 /**
  * Authorized, scoped hybrid retrieval (system design §7 step 3). Runs under the request's RLS
  * transaction (an application executor is required by type), every venture store filters tenant +
- * venture first, and the result is re-filtered by {@link buildEvidencePack}.
+ * venture first, and the result is re-filtered by {@link buildEvidencePack}. Every store is searched in one
+ * statement (`retrievalRepo.searchEvidenceStores`): one Data API round trip instead of five.
  */
 export async function retrieveEvidence(tx: AppExecutor, args: RetrievalArgs): Promise<EvidencePack> {
   const base = { tenantId: args.tenantId, query: args.query };
   const { ventureId } = args;
-  const memory =
-    ventureId !== null && args.budgets.memory > 0
-      ? await retrievalRepo.searchVentureMemory(tx, {
-          ...base,
-          ventureId,
-          embedding: args.embedding,
-          limit: args.budgets.memory,
-          privateOwnerId: args.privateOwnerId,
-        })
-      : [];
-  const chunks =
-    ventureId !== null && args.budgets.chunks > 0
-      ? await retrievalRepo.searchVentureChunks(tx, {
-          ...base,
-          ventureId,
-          embedding: args.embedding,
-          limit: args.budgets.chunks,
-        })
-      : [];
   const classifications = classificationsFor(args.dataClassCeiling);
-  const shared =
-    args.budgets.doctrine > 0
-      ? await retrievalRepo.searchSharedChunks(tx, {
-          ...base,
-          embedding: args.embedding,
-          personaId: args.personaId,
-          ...(classifications === null ? {} : { classifications }),
-          limit: args.budgets.doctrine,
-        })
-      : [];
-  const resources =
-    args.budgets.resources > 0
-      ? await retrievalRepo.searchResources(tx, { ...base, stage: args.stage, limit: args.budgets.resources })
-      : [];
-  const patterns =
-    args.budgets.patterns > 0
-      ? await retrievalRepo.searchPatterns(tx, {
-          ...base,
-          personaId: args.personaId,
-          limit: args.budgets.patterns,
-        })
-      : [];
-  return buildEvidencePack({ memory, chunks, shared, resources, patterns }, args.ventureId, {
-    allowPrivateMemory: args.privateOwnerId !== null,
+  const found = await retrievalRepo.searchEvidenceStores(tx, {
+    ...(ventureId !== null && args.budgets.memory > 0
+      ? {
+          memory: {
+            ...base,
+            ventureId,
+            embedding: args.embedding,
+            limit: args.budgets.memory,
+            privateOwnerId: args.privateOwnerId,
+          },
+        }
+      : {}),
+    ...(ventureId !== null && args.budgets.chunks > 0
+      ? { chunks: { ...base, ventureId, embedding: args.embedding, limit: args.budgets.chunks } }
+      : {}),
+    ...(args.budgets.doctrine > 0
+      ? {
+          shared: {
+            ...base,
+            embedding: args.embedding,
+            personaId: args.personaId,
+            ...(classifications === null ? {} : { classifications }),
+            limit: args.budgets.doctrine,
+          },
+        }
+      : {}),
+    ...(args.budgets.resources > 0
+      ? { resources: { ...base, stage: args.stage, limit: args.budgets.resources } }
+      : {}),
+    ...(args.budgets.patterns > 0
+      ? { patterns: { ...base, personaId: args.personaId, limit: args.budgets.patterns } }
+      : {}),
   });
+  return buildEvidencePack(found, args.ventureId, { allowPrivateMemory: args.privateOwnerId !== null });
 }
 
 /**

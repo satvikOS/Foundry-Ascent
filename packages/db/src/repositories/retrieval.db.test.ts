@@ -284,3 +284,72 @@ describe('resources and patterns', () => {
     expect(items[0]?.title).toBe('Pilot without a success threshold');
   });
 });
+
+describe('every store in one statement', () => {
+  const searches = (query: string, embedding: number[] | null): retrievalRepo.EvidenceSearch => {
+    const base = { tenantId: seed.tenantId, query, embedding };
+    return {
+      memory: { ...base, ventureId: A.id, limit: 8 },
+      chunks: { ...base, ventureId: A.id, limit: 6 },
+      shared: { ...base, personaId: seed.personaId, limit: 4 },
+      resources: { tenantId: seed.tenantId, query, stage: 'validation', limit: 4 },
+      patterns: { tenantId: seed.tenantId, query, personaId: seed.personaId, limit: 2 },
+    };
+  };
+
+  it('returns exactly what the five searches return, in their order, as one statement', async () => {
+    const cases: [string, number[] | null][] = [
+      ['scanning tolerance barcode', vec(7)],
+      ['falsifiable experiment prediction threshold pilot success', vec(100)],
+      ['contracts founder agreements legal', null],
+      ['', vec(11)],
+      ['nothing matches this zyzzyva', null],
+    ];
+    for (const [query, embedding] of cases) {
+      const search = searches(query, embedding);
+      const { separate, together, statements } = await t.db.withContext(
+        makeContext(A.founder, seed.tenantId),
+        async (tx) => {
+          let count = 0;
+          const counting = {
+            ...tx,
+            query: (sql: string, params?: Parameters<typeof tx.query>[1]) => {
+              count += 1;
+              return tx.query(sql, params);
+            },
+          };
+          const one = await retrievalRepo.searchEvidenceStores(counting, search);
+          return {
+            together: one,
+            statements: count,
+            separate: {
+              memory: await retrievalRepo.searchVentureMemory(tx, search.memory ?? never()),
+              chunks: await retrievalRepo.searchVentureChunks(tx, search.chunks ?? never()),
+              shared: await retrievalRepo.searchSharedChunks(tx, search.shared ?? never()),
+              resources: await retrievalRepo.searchResources(tx, search.resources ?? never()),
+              patterns: await retrievalRepo.searchPatterns(tx, search.patterns ?? never()),
+            },
+          };
+        },
+      );
+      expect(statements, query).toBe(1);
+      expect(together, query).toEqual(separate);
+    }
+  });
+
+  it('searches only the stores asked for, and none with no store', async () => {
+    const search = searches('scanning tolerance barcode', vec(7));
+    const only = await t.db.withContext(makeContext(A.founder, seed.tenantId), (tx) =>
+      retrievalRepo.searchEvidenceStores(tx, { memory: search.memory, patterns: search.patterns }),
+    );
+    expect(only.memory.length).toBeGreaterThan(0);
+    expect(only.chunks).toEqual([]);
+    expect(only.shared).toEqual([]);
+    const none = await t.db.system((sx) => retrievalRepo.searchEvidenceStores(sx, {}));
+    expect(none).toEqual({ memory: [], chunks: [], shared: [], resources: [], patterns: [] });
+  });
+});
+
+function never(): never {
+  throw new Error('search missing');
+}
