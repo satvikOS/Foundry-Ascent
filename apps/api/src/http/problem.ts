@@ -1,4 +1,9 @@
-import { type ErrorCode, type ProblemDetails, REQUEST_ID_HEADER } from '@foundry/contracts';
+import {
+  type ErrorCode,
+  PUBLIC_PROBLEM_REASONS,
+  type ProblemDetails,
+  REQUEST_ID_HEADER,
+} from '@foundry/contracts';
 import { DomainError, isDomainError, toDomainError } from '@foundry/core';
 
 import { type AppContext } from './types.js';
@@ -70,6 +75,9 @@ export const DEFAULT_RETRY_AFTER_SECONDS: Readonly<Partial<Record<ErrorCode, num
   spend_cap_reached: 60 * 60,
 };
 
+/** Reasons sent to the client; any other reason (authorization, policy, internals) stays in the audit log. */
+const PUBLIC_REASONS: ReadonlySet<string> = new Set(PUBLIC_PROBLEM_REASONS);
+
 export function problemDetails(error: DomainError, requestId: string): ProblemDetails {
   const body: ProblemDetails = {
     type: problemType(error.code),
@@ -80,6 +88,7 @@ export function problemDetails(error: DomainError, requestId: string): ProblemDe
     code: error.code,
     requestId,
   };
+  if (error.reason !== undefined && PUBLIC_REASONS.has(error.reason)) body.reason = error.reason;
   const retry = error.retryAfterSeconds ?? DEFAULT_RETRY_AFTER_SECONDS[error.code];
   if (retry !== undefined) body.retryAfterSeconds = retryAfter(retry);
   if (error.errors !== undefined && error.errors.length > 0) {

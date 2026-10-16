@@ -27,6 +27,23 @@ export const ErrorCode = z.enum([
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 
+/**
+ * Reasons a client acts on, sent as a problem's `reason` next to its `code`: one code covers several
+ * refusals (a 429 `rate_limited` is also the call's speech budget), and the call screen answers each its own
+ * way. Every other reason a service records stays in the audit log.
+ */
+export const PUBLIC_PROBLEM_REASONS = [
+  /** POST /speech, 429 `rate_limited`: the call's speech budget is used up for now. */
+  'call_speech_limit',
+  /** POST /speech, 429 `rate_limited`: the person's speech for today is used up. */
+  'daily_speech_limit',
+  /** POST /speech, 409 `conflict`: this unit (or the intro) was already voiced for this call. */
+  'speech_already_played',
+  /** POST /speech, 409 `conflict`: the crisis support line already played as often as it may. */
+  'crisis_speech_limit',
+] as const;
+export type PublicProblemReason = (typeof PUBLIC_PROBLEM_REASONS)[number];
+
 /** RFC 9457 problem details. */
 export const ProblemDetails = z.object({
   type: z.string(),
@@ -34,6 +51,11 @@ export const ProblemDetails = z.object({
   status: z.number().int(),
   detail: z.string().optional(),
   code: ErrorCode,
+  /**
+   * Which refusal of `code` this is, when a client acts on it (PUBLIC_PROBLEM_REASONS). Any string is
+   * accepted, so a reason added later never makes the whole problem unreadable to an older client.
+   */
+  reason: z.string().max(64).optional(),
   requestId: z.string(),
   retryAfterSeconds: z.number().int().optional(),
   errors: z.array(z.object({ path: z.string(), message: z.string() })).optional(),

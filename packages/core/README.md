@@ -49,7 +49,8 @@ interface SessionContext extends RequestContext {
 - Failures are `DomainError { code: ErrorCode, status, message, retryAfterSeconds?, errors?, reason? }`.
   `message` is safe to show and log; map to problem+json with `status` (= `ERROR_STATUS[code]`),
   `Retry-After` from `retryAfterSeconds`, and `errors` (paths + messages, never values). `reason` is a
-  machine code for logs. Infrastructure errors are already mapped (`toDomainError`):
+  machine code for logs; the few a client acts on (`PUBLIC_PROBLEM_REASONS`, e.g. a call's speech budget)
+  are also sent as the problem's `reason`. Infrastructure errors are already mapped (`toDomainError`):
 
 | Source                                          | DomainError code                                                |
 | ----------------------------------------------- | --------------------------------------------------------------- |

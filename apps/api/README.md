@@ -135,8 +135,9 @@ with `errors[{path, message}]`, 500 `internal` (generic message), 503 `database_
    `DatabaseResumingError` → 503 `database_resuming`; anything else → 500 with a generic message (the log
    gets the error class and stack frames, never the message). `database_resuming`, `locked_out`,
    `rate_limited` and `spend_cap_reached` always carry `Retry-After` and `retryAfterSeconds` (fallbacks
-   10 s / 15 min / 60 s / 1 h when the error did not set one). Every response, including 204s, errors and
-   streams, carries `x-request-id`.
+   10 s / 15 min / 60 s / 1 h when the error did not set one). A `reason` is sent only when a client acts on
+   it (`PUBLIC_PROBLEM_REASONS`: the speech refusals of a call); every other reason stays in the audit log.
+   Every response, including 204s, errors and streams, carries `x-request-id`.
 
 Database resume: an API database call waits at most 40 s (`DB_RESUME_BUDGET_MS`, default from
 `lambda-contract.json`) for Aurora to resume, then answers 503 `database_resuming` — inside the 60 s
