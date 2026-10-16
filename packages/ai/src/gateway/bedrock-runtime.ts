@@ -1,9 +1,12 @@
 import {
   BedrockRuntimeClient,
   ConverseCommand,
+  ConverseStreamCommand,
   InvokeModelCommand,
   type ConverseCommandInput,
   type ConverseCommandOutput,
+  type ConverseStreamCommandInput,
+  type ConverseStreamOutput,
 } from '@aws-sdk/client-bedrock-runtime';
 
 import type { Deadline } from './deadline.js';
@@ -12,6 +15,15 @@ import type { AwsCredentialProvider, AwsCredentials } from './sigv4-fetch.js';
 
 /** Converse call with cancellation. Injected in tests instead of a real client. */
 export type ConverseFn = (input: ConverseCommandInput, signal: AbortSignal) => Promise<ConverseCommandOutput>;
+
+/**
+ * ConverseStream call with cancellation: resolves to the event stream once the response headers arrive.
+ * Injected in tests instead of a real client.
+ */
+export type ConverseStreamFn = (
+  input: ConverseStreamCommandInput,
+  signal: AbortSignal,
+) => Promise<AsyncIterable<ConverseStreamOutput>>;
 
 export interface InvokeModelJsonInput {
   modelId: string;
@@ -22,6 +34,7 @@ export type InvokeModelFn = (input: InvokeModelJsonInput, signal: AbortSignal) =
 
 export interface BedrockRuntimeTransport {
   converse: ConverseFn;
+  converseStream: ConverseStreamFn;
   invokeModel: InvokeModelFn;
 }
 
@@ -32,7 +45,7 @@ export interface BedrockRuntimeTransportOptions {
   maxAttempts?: number;
 }
 
-/** One shared `BedrockRuntimeClient` for Nova (Converse) and Titan (InvokeModel). */
+/** One shared `BedrockRuntimeClient` for Nova (Converse, ConverseStream) and Titan (InvokeModel). */
 export function createBedrockRuntimeTransport(
   options: BedrockRuntimeTransportOptions,
 ): BedrockRuntimeTransport {
@@ -43,6 +56,12 @@ export function createBedrockRuntimeTransport(
   });
   return {
     converse: (input, signal) => client.send(new ConverseCommand(input), { abortSignal: signal }),
+    converseStream: async (input, signal) => {
+      const output = await client.send(new ConverseStreamCommand(input), { abortSignal: signal });
+      if (!output.stream)
+        throw Object.assign(new Error('Empty response stream'), { name: 'ModelStreamErrorException' });
+      return output.stream;
+    },
     invokeModel: async (input, signal) => {
       const output = await client.send(
         new InvokeModelCommand({

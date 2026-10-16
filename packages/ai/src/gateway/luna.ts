@@ -16,11 +16,14 @@ import {
 import {
   MIN_REPAIR_BUDGET_MS,
   echoForRepair,
+  estimatedStreamUsage,
   parseStructuredText,
   repairInstruction,
   sanitizeSchemaName,
   type ProviderRequest,
   type ProviderResult,
+  type ProviderStreamRequest,
+  type ProviderStreamResult,
   type StructuredProvider,
 } from './provider.js';
 import {
@@ -29,7 +32,7 @@ import {
   type AwsCredentials,
   type FetchFn,
 } from './sigv4-fetch.js';
-import type { RawModelAttempt } from './types.js';
+import type { RawModelAttempt, StreamStopReason } from './types.js';
 
 export type LunaReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high';
 
@@ -53,6 +56,7 @@ export function mantleBaseUrl(region: string): string {
 }
 
 type ChatParams = OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming;
+type StreamParams = OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming;
 type ChatMessageParam = OpenAI.Chat.Completions.ChatCompletionMessageParam;
 
 function errorName(error: unknown): string | null {
@@ -119,6 +123,77 @@ export class LunaProvider implements StructuredProvider {
       maxRetries: 0,
       logLevel: 'off', // the SDK's debug logging would print request bodies
     });
+  }
+
+  /**
+   * Streams plain text (Chat Completions with `stream: true`, usage in the last chunk). A refusal or a
+   * content filter ends the stream with a `ModelRefusalError`; any failure after text was delivered is
+   * marked `textDelivered`, and usage the stream never reported is estimated from the text.
+   */
+  async streamText(request: ProviderStreamRequest): Promise<ProviderStreamResult> {
+    const { deadline } = request;
+    const started = performance.now();
+    let text = '';
+    let finish: string | null = null;
+    let refused = false;
+    let usage: { inputTokens: number; outputTokens: number } | null = null;
+    const attempt = (outcome: RawModelAttempt['outcome'], errorName: string | null): RawModelAttempt => ({
+      provider: 'luna',
+      modelId: this.modelId,
+      kind: 'initial',
+      outcome,
+      latencyMs: Math.round(performance.now() - started),
+      usage: usage ?? estimatedStreamUsage(request, text),
+      errorName,
+    });
+    const params: StreamParams = {
+      model: this.modelId,
+      messages: [
+        { role: 'system', content: request.system },
+        ...request.messages.map((m): ChatMessageParam => ({ role: m.role, content: m.content })),
+      ],
+      max_completion_tokens: request.maxOutputTokens,
+      stream: true,
+      stream_options: { include_usage: true },
+      ...(this.#reasoningEffort ? { reasoning_effort: this.#reasoningEffort } : {}),
+    };
+    try {
+      const stream = await this.#client.chat.completions.create(params, {
+        signal: deadline.signal,
+        timeout: Math.max(1, deadline.remainingMs()),
+        maxRetries: 0,
+      });
+      for await (const chunk of stream) {
+        if (chunk.usage) {
+          usage = { inputTokens: chunk.usage.prompt_tokens, outputTokens: chunk.usage.completion_tokens };
+        }
+        const choice = chunk.choices[0];
+        if (!choice) continue;
+        if (choice.delta.refusal) refused = true;
+        if (choice.finish_reason) finish = choice.finish_reason;
+        const content = choice.delta.content;
+        if (typeof content === 'string' && content !== '' && !refused) {
+          text += content;
+          await request.onText(content);
+        }
+      }
+    } catch (error) {
+      const mapped = mapOpenAIError(error, deadline, this.modelId);
+      mapped.rawAttempts = [
+        attempt(mapped.reason === 'config' ? 'client_error' : mapped.reason, mapped.errorName),
+      ];
+      mapped.textDelivered = text !== '';
+      throw mapped;
+    }
+    if (refused || finish === 'content_filter') {
+      const refusal = new ModelRefusalError(this.modelId, refused ? 'model' : 'content_filter');
+      refusal.rawAttempts = [attempt('refusal', null)];
+      refusal.textDelivered = text !== '';
+      throw refusal;
+    }
+    const stopReason: StreamStopReason =
+      finish === 'stop' ? 'end_turn' : finish === 'length' ? 'max_tokens' : 'other';
+    return { text, modelId: this.modelId, stopReason, rawAttempts: [attempt('ok', null)] };
   }
 
   async generate<T>(request: ProviderRequest<T>): Promise<ProviderResult<T>> {

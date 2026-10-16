@@ -17,6 +17,11 @@ export abstract class ModelGatewayError extends Error {
   attempts: ModelAttempt[] = [];
   /** Raw attempts recorded by a provider before pricing; the router converts them to `attempts`. */
   rawAttempts: RawModelAttempt[] = [];
+  /**
+   * Streaming only: some text had already reached the caller when the call failed, so no fallback model
+   * was tried (a second model would contradict what was shown).
+   */
+  textDelivered = false;
 
   constructor(
     message: string,

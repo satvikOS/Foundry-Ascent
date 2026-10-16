@@ -6,6 +6,7 @@ import { veirFirstName } from '../prompts/persona.js';
 import { COACH_RESPONSE_SCHEMA_NAME } from '../prompts/version.js';
 import { RISK_ESCALATION_MAP, primaryForcedCategory } from '../risk/escalation-map.js';
 import { clampWords } from '../validators/speech.js';
+import { COACH_ANNOTATIONS_SCHEMA_NAME } from './coach-annotations.js';
 import {
   ModelOutputInvalidError,
   ModelRefusalError,
@@ -35,6 +36,9 @@ import {
   type ModelAttempt,
   type ModelGateway,
   type ModelGatewayInfo,
+  type StreamTextRequest,
+  type StreamTextResult,
+  type TextChunkHandler,
 } from './types.js';
 
 export const MOCK_MODEL_ID = 'mock';
@@ -43,8 +47,17 @@ export const MOCK_EMBEDDINGS_MODEL_ID = 'mock-embeddings';
 /** Schema name of the end-of-session recap (`RECAP_SCHEMA_NAME` in packages/core). */
 export const MOCK_RECAP_SCHEMA_NAME = 'SessionRecapDraft';
 
-/** Scripted outcomes for the next calls (consumed in order). `fallback` succeeds with `fallbackUsed`. */
+/**
+ * Scripted outcomes for the next model calls, structured or streamed (consumed in order). `fallback`
+ * succeeds with `fallbackUsed`. A failing outcome fails a stream before any text.
+ */
 export type MockScriptedOutcome = 'unavailable' | 'timeout' | 'invalid_output' | 'refusal' | 'fallback';
+
+/** Scripted outcomes for the next streamed calls only: `fail_midway` fails after the first chunk. */
+export type MockStreamOutcome = 'fail_midway';
+
+/** Pause before each streamed chunk when none is configured (realistic pacing for local demos). */
+export const MOCK_STREAM_DELAY_MS = 40;
 
 /** An evidence item as it appears in the prompt. */
 export interface MockEvidence {
@@ -66,12 +79,20 @@ export interface MockGenerateContext {
 }
 
 export interface MockModelGatewayOptions {
-  /** Custom value builders by schema name; the defaults cover `CoachResponse`, `DistillDraft` and the recap. */
+  /**
+   * Custom value builders by schema name; the defaults cover `CoachResponse`, `DistillDraft` and the recap.
+   * A `CoachResponse` fixture also shapes streamed answers (its `answer`, or `spoken` on a call) and their
+   * annotations.
+   */
   fixtures?: Readonly<Record<string, (context: MockGenerateContext) => unknown>>;
+  /** Text to stream instead of the coaching answer. */
+  streamFixture?: (context: MockGenerateContext) => string;
+  /** Pause before each streamed sentence in milliseconds (tests set 0). Default {@link MOCK_STREAM_DELAY_MS}. */
+  streamDelayMs?: number;
 }
 
 export interface MockCall {
-  kind: 'generate' | 'embed';
+  kind: 'generate' | 'stream' | 'embed';
   purpose: string;
   requestId: string | null;
   schemaName: string | null;
@@ -90,12 +111,48 @@ function unescapeData(text: string): string {
     .replace(/&amp;/g, '&');
 }
 
+/** The newest message carrying the founder's words (later messages are follow-up instructions). */
+function founderMessageIndex(messages: readonly ChatMessage[]): number {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const m = messages[i];
+    if (m?.role === 'user' && m.content.includes('<founder_message>')) return i;
+  }
+  return messages.findLastIndex((m) => m.role === 'user');
+}
+
 function lastFounderText(messages: readonly ChatMessage[]): string {
-  const last = [...messages].reverse().find((m) => m.role === 'user');
+  const last = messages[founderMessageIndex(messages)];
   if (!last) return '';
   const matches = [...last.content.matchAll(/<founder_message>\n?([\s\S]*?)\n?<\/founder_message>/g)];
   const inner = matches.at(-1)?.[1];
   return unescapeData(inner ?? last.content).trim();
+}
+
+/** vEIR messages before the founder's newest message (the conversation so far, opener included). */
+function historyTurnsIn(messages: readonly ChatMessage[]): number {
+  return messages.slice(0, Math.max(0, founderMessageIndex(messages))).filter((m) => m.role === 'assistant')
+    .length;
+}
+
+/**
+ * Streamed chunks: one per sentence, the whitespace after it attached (paragraph breaks and list items
+ * included), so the concatenation is exactly `text`.
+ */
+export function mockStreamChunks(text: string): string[] {
+  return text.split(/(?<=[.!?…]["'”’)\]*_]*\s+|\n\n+)/u).filter((chunk) => chunk !== '');
+}
+
+function pause(ms: number, signal: AbortSignal | undefined): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(done, ms);
+    function done(): void {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', done);
+      resolve();
+    }
+    signal?.addEventListener('abort', done, { once: true });
+  });
 }
 
 function evidenceIn(messages: readonly ChatMessage[], system: string): MockEvidence[] {
@@ -648,9 +705,10 @@ const BUILT_IN: Readonly<Record<string, BuiltIn>> = {
 
 /**
  * Deterministic, offline {@link ModelGateway} for tests and local development. Produces schema-valid
- * values (conversational coaching turns, distillations and recaps derived from the prompt; schema
- * samples for anything else), stable hash embeddings, records calls, and can be scripted to fail via
- * {@link MockModelGateway.scriptNext}.
+ * values (conversational coaching turns and their annotations, distillations and recaps derived from the
+ * prompt; schema samples for anything else), streams the coaching answer sentence by sentence, produces
+ * stable hash embeddings, records calls, and can be scripted to fail via {@link MockModelGateway.scriptNext}
+ * and {@link MockModelGateway.scriptStream}.
  */
 export class MockModelGateway implements ModelGateway {
   readonly info: ModelGatewayInfo = {
@@ -662,15 +720,148 @@ export class MockModelGateway implements ModelGateway {
   };
   readonly calls: MockCall[] = [];
   readonly #fixtures: Readonly<Record<string, (context: MockGenerateContext) => unknown>>;
+  readonly #streamFixture: ((context: MockGenerateContext) => string) | null;
+  readonly #streamDelayMs: number;
   readonly #script: MockScriptedOutcome[] = [];
+  readonly #streamScript: MockStreamOutcome[] = [];
 
   constructor(options: MockModelGatewayOptions = {}) {
     this.#fixtures = options.fixtures ?? {};
+    this.#streamFixture = options.streamFixture ?? null;
+    this.#streamDelayMs = Math.max(0, options.streamDelayMs ?? MOCK_STREAM_DELAY_MS);
   }
 
-  /** Queues outcomes for the next `generateStructured` calls. */
+  /** Queues outcomes for the next model calls (`generateStructured` or `streamText`). */
   scriptNext(...outcomes: MockScriptedOutcome[]): void {
     this.#script.push(...outcomes);
+  }
+
+  /** Queues outcomes for the next `streamText` calls. */
+  scriptStream(...outcomes: MockStreamOutcome[]): void {
+    this.#streamScript.push(...outcomes);
+  }
+
+  #context(system: string, messages: readonly ChatMessage[]): MockGenerateContext {
+    const evidence = evidenceIn(messages, system);
+    return {
+      system,
+      messages,
+      control: parseControlBlock(system),
+      founderText: lastFounderText(messages),
+      evidenceIds: evidence.map((e) => e.id),
+      evidence,
+      historyTurns: historyTurnsIn(messages),
+    };
+  }
+
+  /** The coaching response for a prompt: the `CoachResponse` fixture when one is set, else the built-in. */
+  #coachResponse(context: MockGenerateContext): Record<string, unknown> {
+    const fixture = this.#fixtures[COACH_RESPONSE_SCHEMA_NAME];
+    const value: unknown = fixture ? fixture(context) : mockCoachResponse(context);
+    return typeof value === 'object' && value !== null ? { ...(value as Record<string, unknown>) } : {};
+  }
+
+  #failure(error: ModelGatewayError, inputTokens: number): ModelGatewayError {
+    error.attempts = [
+      this.#attempt(
+        MOCK_MODEL_ID,
+        error instanceof ModelUnavailableError
+          ? error.reason === 'timeout'
+            ? 'timeout'
+            : error.reason === 'aborted'
+              ? 'aborted'
+              : 'server_error'
+          : error instanceof ModelRefusalError
+            ? 'refusal'
+            : 'invalid_output',
+        inputTokens,
+        0,
+      ),
+    ];
+    return error;
+  }
+
+  /**
+   * Streams the coaching answer of the prompt sentence by sentence, pausing `streamDelayMs` before each
+   * sentence: the `answer` (the short `spoken` reply on a call) of the built-in response or the
+   * `CoachResponse` fixture, or the stream fixture's text.
+   */
+  async streamText(request: StreamTextRequest, onText: TextChunkHandler): Promise<StreamTextResult> {
+    this.calls.push({
+      kind: 'stream',
+      purpose: request.purpose,
+      requestId: request.requestId,
+      schemaName: null,
+      count: 1,
+    });
+    const started = performance.now();
+    const inputTokens =
+      estimateTokens(request.system) +
+      request.messages.reduce((acc, m) => acc + estimateTokens(m.content), 0);
+    if (request.signal?.aborted) {
+      throw this.#failure(new ModelUnavailableError('aborted', MOCK_MODEL_ID), inputTokens);
+    }
+    const scripted = this.#script.shift();
+    if (scripted === 'unavailable')
+      throw this.#failure(new ModelUnavailableError('server_error', MOCK_MODEL_ID), inputTokens);
+    if (scripted === 'timeout')
+      throw this.#failure(new ModelUnavailableError('timeout', MOCK_MODEL_ID), inputTokens);
+    if (scripted === 'refusal')
+      throw this.#failure(new ModelRefusalError(MOCK_MODEL_ID, 'model'), inputTokens);
+    if (scripted === 'invalid_output')
+      throw this.#failure(new ModelOutputInvalidError(MOCK_MODEL_ID, ['(root): scripted']), inputTokens);
+    const failMidway = this.#streamScript.shift() === 'fail_midway';
+
+    const context = this.#context(request.system, request.messages);
+    let text: string;
+    if (this.#streamFixture) {
+      text = this.#streamFixture(context);
+    } else {
+      const response = this.#coachResponse(context);
+      const spoken = context.control?.channel === 'voice' ? response.spoken : null;
+      const answer = typeof response.answer === 'string' ? response.answer : '';
+      text = typeof spoken === 'string' && spoken !== '' ? spoken : answer;
+    }
+    let delivered = '';
+    let firstTokenMs: number | null = null;
+    for (const chunk of mockStreamChunks(text)) {
+      await pause(this.#streamDelayMs, request.signal);
+      if (request.signal?.aborted || (failMidway && delivered !== '')) {
+        const error = this.#failure(
+          request.signal?.aborted
+            ? new ModelUnavailableError('aborted', MOCK_MODEL_ID)
+            : new ModelUnavailableError('server_error', MOCK_MODEL_ID),
+          inputTokens,
+        );
+        error.textDelivered = true;
+        throw error;
+      }
+      firstTokenMs ??= Math.round(performance.now() - started);
+      delivered += chunk;
+      await onText(chunk);
+    }
+    const fallbackUsed = scripted === 'fallback';
+    const outputTokens = estimateTokens(text);
+    const attempts = fallbackUsed
+      ? [
+          this.#attempt(MOCK_MODEL_ID, 'timeout', inputTokens, 0),
+          this.#attempt(MOCK_FALLBACK_MODEL_ID, 'ok', inputTokens, outputTokens),
+        ]
+      : [this.#attempt(MOCK_MODEL_ID, 'ok', inputTokens, outputTokens)];
+    return {
+      text,
+      modelId: fallbackUsed ? MOCK_FALLBACK_MODEL_ID : MOCK_MODEL_ID,
+      fallbackUsed,
+      usage: {
+        inputTokens: attempts.reduce((acc, a) => acc + a.usage.inputTokens, 0),
+        outputTokens,
+      },
+      costUsd: 0,
+      latencyMs: Math.round(performance.now() - started),
+      firstTokenMs,
+      stopReason: 'end_turn',
+      attempts,
+    };
   }
 
   #attempt(modelId: string, outcome: ModelAttempt['outcome'], input: number, output: number): ModelAttempt {
@@ -701,47 +892,29 @@ export class MockModelGateway implements ModelGateway {
       estimateTokens(request.system) +
       request.messages.reduce((acc, m) => acc + estimateTokens(m.content), 0);
     const scripted = this.#script.shift();
-    const fail = (error: ModelGatewayError): Promise<never> => {
-      error.attempts = [
-        this.#attempt(
-          MOCK_MODEL_ID,
-          error instanceof ModelUnavailableError
-            ? error.reason === 'timeout'
-              ? 'timeout'
-              : 'server_error'
-            : error instanceof ModelRefusalError
-              ? 'refusal'
-              : 'invalid_output',
-          inputTokens,
-          0,
-        ),
-      ];
-      return Promise.reject(error);
-    };
+    const fail = (error: ModelGatewayError): Promise<never> =>
+      Promise.reject(this.#failure(error, inputTokens));
     if (scripted === 'unavailable') return fail(new ModelUnavailableError('server_error', MOCK_MODEL_ID));
     if (scripted === 'timeout') return fail(new ModelUnavailableError('timeout', MOCK_MODEL_ID));
     if (scripted === 'refusal') return fail(new ModelRefusalError(MOCK_MODEL_ID, 'model'));
     if (scripted === 'invalid_output')
       return fail(new ModelOutputInvalidError(MOCK_MODEL_ID, ['(root): scripted']));
 
-    const evidence = evidenceIn(request.messages, request.system);
-    const context: MockGenerateContext = {
-      system: request.system,
-      messages: request.messages,
-      control: parseControlBlock(request.system),
-      founderText: lastFounderText(request.messages),
-      evidenceIds: evidence.map((e) => e.id),
-      evidence,
-      historyTurns: request.messages.filter((m) => m.role === 'assistant').length,
-    };
+    const context = this.#context(request.system, request.messages);
     const strict = toStrictJsonSchema(request.zodSchema);
     const fixture = this.#fixtures[request.schemaName];
     const builtIn = BUILT_IN[request.schemaName];
+    const annotations = (): Record<string, unknown> => {
+      const { answer: _answer, spoken: _spoken, ...rest } = this.#coachResponse(context);
+      return rest;
+    };
     let candidate: unknown = fixture
       ? fixture(context)
-      : builtIn
-        ? builtIn.build(context)
-        : sampleFromJsonSchema(strict.original);
+      : request.schemaName === COACH_ANNOTATIONS_SCHEMA_NAME
+        ? annotations()
+        : builtIn
+          ? builtIn.build(context)
+          : sampleFromJsonSchema(strict.original);
     let outcome = validateStructured(candidate, request.zodSchema, strict);
     if (!outcome.ok && !fixture && builtIn?.sampleOnMismatch === true) {
       candidate = sampleFromJsonSchema(strict.original);

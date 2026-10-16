@@ -22,6 +22,10 @@ export {
   type ModelPurpose,
   type ModelUsage,
   type RawModelAttempt,
+  type StreamStopReason,
+  type StreamTextRequest,
+  type StreamTextResult,
+  type TextChunkHandler,
 } from './gateway/types.js';
 export {
   ModelGatewayError,
@@ -37,6 +41,7 @@ export {
   DEFAULT_MAX_OUTPUT_TOKENS,
   DEFAULT_MODEL_IDS,
   DEFAULT_PRIMARY_TIMEOUT_MS,
+  DEFAULT_STREAM_MAX_OUTPUT_TOKENS,
   MANTLE_MODEL_PREFIX,
   createModelGateway,
   modelGatewayConfigFromEnv,
@@ -49,14 +54,18 @@ export {
   MOCK_EMBEDDINGS_MODEL_ID,
   MOCK_FALLBACK_MODEL_ID,
   MOCK_MODEL_ID,
+  MOCK_STREAM_DELAY_MS,
   MockModelGateway,
   mockCoachResponse,
   mockDistillDraft,
+  mockStreamChunks,
   type MockCall,
   type MockGenerateContext,
   type MockModelGatewayOptions,
   type MockScriptedOutcome,
+  type MockStreamOutcome,
 } from './gateway/mock.js';
+export { COACH_ANNOTATIONS_SCHEMA_NAME, CoachAnnotations } from './gateway/coach-annotations.js';
 export {
   LunaProvider,
   mantleBaseUrl,
@@ -67,6 +76,7 @@ export {
   NovaProvider,
   SUBMIT_TOOL_NAME,
   inferenceProfilePrefix,
+  isClaudeModelId,
   type NovaProviderOptions,
 } from './gateway/nova.js';
 export { TitanEmbedder, TITAN_MAX_INPUT_CHARS, type TitanEmbedderOptions } from './gateway/titan.js';
@@ -74,6 +84,7 @@ export {
   createBedrockRuntimeTransport,
   type BedrockRuntimeTransport,
   type ConverseFn,
+  type ConverseStreamFn,
   type InvokeModelFn,
 } from './gateway/bedrock-runtime.js';
 export {
@@ -89,7 +100,13 @@ export {
   type JsonValue,
   type StrictJsonSchema,
 } from './gateway/json-schema.js';
-export type { StructuredProvider, ProviderRequest, ProviderResult } from './gateway/provider.js';
+export type {
+  StructuredProvider,
+  ProviderRequest,
+  ProviderResult,
+  ProviderStreamRequest,
+  ProviderStreamResult,
+} from './gateway/provider.js';
 export { cosineSimilarity, hashEmbedding } from './gateway/hash-embedding.js';
 
 // Pricing -------------------------------------------------------------------------------------------
@@ -176,3 +193,13 @@ export {
   deriveSpoken,
   toSpeakable,
 } from './validators/speech.js';
+export {
+  SentenceGate,
+  findUnitEnd,
+  holdBackFor,
+  type GateBlockReason,
+  type GateResult,
+  type GateStats,
+  type GateUnit,
+  type SentenceGateOptions,
+} from './validators/sentence-gate.js';
