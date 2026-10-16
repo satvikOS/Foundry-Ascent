@@ -1,4 +1,4 @@
-import type { CoachMode, CoachResponse } from '@foundry/contracts';
+import type { CoachMode, CoachResponse, TurnChannel } from '@foundry/contracts';
 
 import { RISK_ESCALATION_MAP } from './escalation-map.js';
 
@@ -17,8 +17,12 @@ export const CRISIS_SUPPORT_MESSAGE = [
   'I have prepared a request so someone from the program can check in with you; you choose whether to share it. Your venture work can wait, and I will be here when you are ready.',
 ].join('\n');
 
+/** The same message for a call: plain sentences, under 70 words. */
+export const CRISIS_SPOKEN_MESSAGE =
+  'It sounds like you might be going through something really hard, and you deserve support from a person. If anyone is in immediate danger, call your local emergency number now. In the US you can call or text 988, any time. Your university support service can help too. I have prepared a request so someone from the program can check in with you.';
+
 /** A schema-valid `CoachResponse` carrying the crisis message and a P1 safety escalation. */
-export function buildCrisisResponse(mode: CoachMode): CoachResponse {
+export function buildCrisisResponse(mode: CoachMode, channel: TurnChannel = 'text'): CoachResponse {
   const route = RISK_ESCALATION_MAP.safety_wellbeing;
   return {
     mode,
@@ -44,5 +48,6 @@ export function buildCrisisResponse(mode: CoachMode): CoachResponse {
     memory_candidates: [],
     follow_up_questions: [],
     rehearsal: null,
+    spoken: channel === 'voice' ? CRISIS_SPOKEN_MESSAGE : null,
   };
 }

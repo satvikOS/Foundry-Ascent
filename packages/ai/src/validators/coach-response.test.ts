@@ -5,8 +5,11 @@ import { classifyRisk } from '../risk/classifier.js';
 import {
   CROSS_VENTURE_BLOCK_ANSWER,
   EMPTY_ANSWER_FALLBACK,
+  INVALID_RESPONSE_ANSWER,
   NARROWING_NOTE_PREFIX,
+  SPOKEN_NARROWING_CAVEAT,
   forcedEscalationFor,
+  responseStrings,
   validateCoachResponse,
   type ValidateCoachResponseOptions,
 } from './coach-response.js';
@@ -34,6 +37,7 @@ function base(overrides: Partial<CoachResponseType> = {}): CoachResponseType {
     ],
     follow_up_questions: ['How many managers said they would pay?'],
     rehearsal: null,
+    spoken: null,
     ...overrides,
   };
 }
@@ -625,6 +629,17 @@ describe('mode and rehearsal', () => {
     expect(out.response.rehearsal).toBeNull();
     expect(out.results.notes).toEqual(expect.arrayContaining(['mode_corrected', 'rehearsal_removed']));
   });
+
+  it('in auto mode keeps the chosen mode when it is allowed and corrects it otherwise', () => {
+    const allowed = { allowedModes: ['diagnose', 'teach'] as const };
+    const kept = validateCoachResponse(base({ mode: 'teach' }), opts(allowed));
+    expect(kept.response.mode).toBe('teach');
+    expect(kept.results.notes).not.toContain('mode_corrected');
+    const corrected = validateCoachResponse(base({ mode: 'route' }), opts(allowed));
+    expect(corrected.response.mode).toBe('diagnose');
+    expect(corrected.results.notes).toContain('mode_corrected');
+    expect(validateCoachResponse(null, opts(allowed)).response.mode).toBe('diagnose');
+  });
 });
 
 describe('markdown sanitisation inside the validator', () => {
@@ -657,5 +672,178 @@ describe('results notes never contain content', () => {
       opts({ preRisk: { categories: ['legal'] } }),
     );
     for (const note of out.results.notes) expect(note).toMatch(/^[a-z_]+(?::[a-z0-9_+]+)*$/);
+  });
+});
+
+describe('spoken text (voice channel)', () => {
+  const voice = (overrides: Partial<ValidateCoachResponseOptions> = {}) =>
+    opts({ channel: 'voice', ...overrides });
+
+  it('is always null on the text channel, whatever the model wrote', () => {
+    const out = validateCoachResponse(base({ spoken: 'Hello there.' }), opts());
+    expect(out.response.spoken).toBeNull();
+    expect(out.results.notes).toContain('spoken_removed');
+    expect(validateCoachResponse(base({ spoken: null }), opts()).results.notes).not.toContain(
+      'spoken_removed',
+    );
+  });
+
+  it('keeps a clean spoken reply as is', () => {
+    const spoken =
+      'Your interviews point to real scheduling pain. Would clinics pay before the integration exists?';
+    const out = validateCoachResponse(base({ spoken }), voice());
+    expect(out.response.spoken).toBe(spoken);
+    expect(out.response.answer).toBe(base().answer); // the transcript keeps the full answer
+    expect(out.results.notes).toEqual([]);
+  });
+
+  it('strips Markdown, citation keys, links, URLs and HTML', () => {
+    const out = validateCoachResponse(
+      base({
+        spoken:
+          '## Short answer\n**Run the pilot** [E1]. See [the guide](https://example.org/g) or https://evil.example/x.\n- One clinic first\n<b>Ready?</b>',
+      }),
+      voice(),
+    );
+    expect(out.response.spoken).toBe(
+      'Short answer. Run the pilot. See the guide or. One clinic first. Ready?',
+    );
+    expect(out.response.spoken).not.toMatch(/\[|\]|\*|#|https?:|<|E1/);
+    expect(out.results.notes).toContain('spoken_sanitized');
+  });
+
+  it('derives the spoken reply from the answer when the model gave none', () => {
+    const out = validateCoachResponse(
+      base({
+        answer: '**Short version:** run the pilot [E1].\n\n- Pick one clinic\n- Ask for a deposit',
+        spoken: null,
+      }),
+      voice(),
+    );
+    expect(out.response.spoken).toBe('Short version: run the pilot. Pick one clinic. Ask for a deposit.');
+    expect(out.results.notes).toContain('spoken_derived');
+  });
+
+  it('clamps the spoken reply to 70 words at a sentence boundary', () => {
+    const sentence = 'This sentence has exactly ten words in it for the test.';
+    const spoken = Array.from({ length: 9 }, () => sentence).join(' ');
+    const out = validateCoachResponse(base({ spoken }), voice());
+    const words = (out.response.spoken ?? '').split(/\s+/);
+    expect(words.length).toBeLessThanOrEqual(70);
+    expect(out.response.spoken?.endsWith('test.')).toBe(true);
+    expect(out.results.notes).toContain('spoken_truncated');
+  });
+
+  it('says a short caveat first when the answer was narrowed', () => {
+    const out = validateCoachResponse(
+      base({
+        claims: [
+          { text: 'a', kind: 'fact', evidence_ids: ['E1'] },
+          { text: 'b', kind: 'fact', evidence_ids: [] },
+          { text: 'c', kind: 'fact', evidence_ids: [] },
+        ],
+        spoken: 'Run the pilot first.',
+      }),
+      voice(),
+    );
+    expect(out.results.narrowed).toBe(true);
+    expect(out.response.spoken).toBe(`${SPOKEN_NARROWING_CAVEAT} Run the pilot first.`);
+  });
+
+  it('rewrites identity violations in the spoken reply and blocks EIR impersonation', () => {
+    const human = validateCoachResponse(base({ spoken: 'I am a real person. Run the pilot.' }), voice());
+    expect(human.blocked).toBe(false);
+    expect(human.response.spoken).toContain('To be clear, I am Foundry Guide, an AI coach, not a person.');
+    expect(human.response.spoken).not.toContain('real person');
+
+    const eir = validateCoachResponse(
+      base({ spoken: "Corin here. Let's run the pilot." }),
+      voice({ personaName: "Corin's vEIR", eirNames: ['Corin Halvorsen'] }),
+    );
+    expect(eir.blocked).toBe(true);
+    expect(eir.blockReason).toBe('identity');
+    expect(eir.response.spoken).not.toContain('Corin here');
+  });
+
+  it.each([
+    ['another venture', 'BrightLoop solved this with a waitlist.'],
+    ['a canary', 'Your reference is CANARY-7f3a91.'],
+    ['a member of another venture', 'Amara Nwosu-Belling ran the same test.'],
+  ])('blocks the turn when the spoken reply names %s', (_what, spoken) => {
+    const out = validateCoachResponse(
+      base({ spoken }),
+      voice({ otherVentureMemberNames: ['Amara Nwosu-Belling'] }),
+    );
+    expect(out.blocked).toBe(true);
+    expect(out.blockReason).toBe('cross_venture');
+    expect(out.response.answer).toBe(CROSS_VENTURE_BLOCK_ANSWER);
+    const serialized = JSON.stringify(out.response).toLowerCase();
+    for (const secret of ['brightloop', 'canary-7f3a91', 'nwosu']) expect(serialized).not.toContain(secret);
+    // The safe placeholder is what a call may say instead.
+    expect(out.response.spoken).toBe(CROSS_VENTURE_BLOCK_ANSWER);
+  });
+
+  it('gives the invalid-schema placeholder a spoken form on a call', () => {
+    const out = validateCoachResponse({ answer: 1 }, voice());
+    expect(out.blocked).toBe(true);
+    expect(out.response.spoken).toBe(INVALID_RESPONSE_ANSWER);
+  });
+
+  it('reads a stored response from before calls existed (no `spoken`)', () => {
+    const stored: Record<string, unknown> = { ...base() };
+    delete stored.spoken;
+    expect(CoachResponse.parse(stored).spoken).toBeUndefined();
+    const out = validateCoachResponse(stored, opts());
+    expect(out.blocked).toBe(false);
+    expect(out.response.spoken).toBeNull();
+  });
+
+  it('scans the spoken reply for leaks via responseStrings', () => {
+    expect(responseStrings(base({ spoken: 'Say this.' }))).toContain('Say this.');
+    expect(responseStrings(base({ spoken: null }))).toHaveLength(responseStrings(base()).length);
+  });
+});
+
+describe('vEIR personas', () => {
+  const corin = (overrides: Partial<ValidateCoachResponseOptions> = {}) =>
+    opts({ personaName: "Corin's vEIR", eirNames: ['Corin Halvorsen', 'Ruth Abernathy-Song'], ...overrides });
+
+  it('lets the persona speak in the first person and refer to its EIR in the third person', () => {
+    const answer =
+      "Maya, I'm Corin's vEIR, so I'll be direct. Corin's approach is to test pricing before building [E1]. Who pays?";
+    const out = validateCoachResponse(base({ answer }), corin());
+    expect(out.blocked).toBe(false);
+    expect(out.results.identityViolation).toBe(false);
+    expect(out.response.answer).toBe(answer);
+  });
+
+  it.each([
+    'I am Corin Halvorsen and I think you should raise.',
+    'Corin here. Raise now.',
+    'This is Ruth speaking.',
+  ])('blocks a claim to be an EIR: %s', (answer) => {
+    const out = validateCoachResponse(base({ answer }), corin());
+    expect(out.blocked).toBe(true);
+    expect(out.blockReason).toBe('identity');
+  });
+
+  it('rewrites a claimed EIR endorsement with a persona-aware sentence', () => {
+    const out = validateCoachResponse(
+      base({ answer: 'Corin has reviewed your plan. Launch the pilot.' }),
+      corin(),
+    );
+    expect(out.blocked).toBe(false);
+    expect(out.response.answer).toBe(
+      "Approval decisions belong to people, not to me: I'm an AI, and I can't speak for Corin or anyone else in the program. Launch the pilot.",
+    );
+  });
+
+  it('uses an explicit persona EIR name', () => {
+    const out = validateCoachResponse(
+      base({ answer: "I'm Corin. Let's go." }),
+      opts({ personaName: 'Corin Bot', personaEirName: 'Corin Halvorsen' }),
+    );
+    expect(out.blocked).toBe(true);
+    expect(out.blockReason).toBe('identity');
   });
 });

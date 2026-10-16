@@ -2,11 +2,17 @@ import { describe, expect, it } from 'vitest';
 
 import {
   DEFAULT_MODEL_PRICES,
+  DEFAULT_SPEECH_PRICES,
   costFor,
   createPricingTable,
   normalizeModelId,
   priceFor,
+  speechAttempt,
+  speechCharacters,
+  speechCostFor,
+  speechModelId,
   sumUsd,
+  type SpeechEngine,
 } from './pricing.js';
 
 const M = 1_000_000;
@@ -77,5 +83,55 @@ describe('pricing', () => {
     expect(costFor('mock', { inputTokens: M, outputTokens: M })).toBe(0);
     expect(costFor('mock-fallback', { inputTokens: M, outputTokens: M })).toBe(0);
     expect(costFor('mock-embeddings', { inputTokens: M, outputTokens: 0 })).toBe(0);
+  });
+});
+
+describe('speech pricing (Amazon Polly, per character)', () => {
+  it('prices neural at $16 and generative at $30 per million characters', () => {
+    expect(DEFAULT_SPEECH_PRICES).toEqual({ neural: 16, generative: 30 });
+    expect(speechCostFor('neural', M)).toBe(16);
+    expect(speechCostFor('generative', M)).toBe(30);
+    expect(speechCostFor('neural', 350)).toBe(0.0056);
+    expect(speechCostFor('generative', 350)).toBe(0.0105);
+  });
+
+  it('rounds up to the micro-dollar and never prices nothing', () => {
+    expect(speechCostFor('neural', 1)).toBe(0.000016);
+    expect(speechCostFor('neural', 0)).toBe(0);
+    expect(speechCostFor('neural', -5)).toBe(0);
+  });
+
+  it('prices an unknown engine at the most expensive rate and accepts overrides', () => {
+    expect(speechCostFor('long-form' as SpeechEngine, M)).toBe(30);
+    expect(speechCostFor('neural', M, { neural: 20, generative: 40 })).toBe(20);
+  });
+
+  it('counts characters as Polly bills them (code points)', () => {
+    expect(speechCharacters('Hi Maya')).toBe(7);
+    expect(speechCharacters('café 👋')).toBe(6);
+  });
+
+  it('records a call as a billable ledger attempt (purpose speech)', () => {
+    expect(speechModelId('generative')).toBe('polly.generative');
+    expect(speechAttempt({ engine: 'neural', characters: 1_000, latencyMs: 412.6 })).toEqual({
+      provider: 'polly',
+      modelId: 'polly.neural',
+      kind: 'initial',
+      outcome: 'ok',
+      latencyMs: 413,
+      usage: { inputTokens: 1_000, outputTokens: 0 },
+      errorName: null,
+      costUsd: 0.016,
+    });
+    // Refused requests are free; anything that may have been synthesised is billed.
+    expect(
+      speechAttempt({ engine: 'neural', characters: 1_000, latencyMs: 5, outcome: 'throttled' }).costUsd,
+    ).toBe(0);
+    expect(
+      speechAttempt({ engine: 'neural', characters: 1_000, latencyMs: 5, outcome: 'client_error' }).costUsd,
+    ).toBe(0);
+    expect(
+      speechAttempt({ engine: 'neural', characters: 1_000, latencyMs: 5, outcome: 'aborted' }).costUsd,
+    ).toBe(0.016);
   });
 });

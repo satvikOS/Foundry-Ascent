@@ -1,8 +1,10 @@
 import type { z } from 'zod';
 
 /**
- * Why a model call is made. Mirrors the `usage_ledger.purpose` CHECK constraint in
- * packages/db/migrations/0001_init.sql so every call can be written to the ledger as-is.
+ * Why a model or speech call is made. Mirrors the `usage_ledger.purpose` CHECK constraint
+ * (packages/db/migrations: 0001_init.sql, extended for `distill` and `speech` in 0004) so every call
+ * can be written to the ledger as-is. `distill` is the conversation distillation job (digest, notebook,
+ * memory and lesson candidates); `speech` is text-to-speech for calls, metered in characters.
  */
 export const MODEL_PURPOSES = [
   'turn',
@@ -12,11 +14,20 @@ export const MODEL_PURPOSES = [
   'ingestion',
   'eval',
   'seed',
+  'distill',
+  'speech',
 ] as const;
-export type ModelPurpose = (typeof MODEL_PURPOSES)[number];
+/** Every purpose the gateway accepts and the ledger records (`MODEL_PURPOSES`). */
+export type GatewayPurpose = (typeof MODEL_PURPOSES)[number];
+/**
+ * Purposes the database repository type (`UsagePurpose` in packages/db) accepted before migration 0004
+ * added `distill` and `speech`. Kept as its own name so code typed against the ledger repository keeps
+ * compiling; once that type includes the new purposes it is identical to {@link GatewayPurpose}.
+ */
+export type ModelPurpose = Exclude<GatewayPurpose, 'distill' | 'speech'>;
 
-/** Which concrete backend served (or failed) an attempt. */
-export type ModelProviderName = 'luna' | 'nova' | 'titan' | 'mock';
+/** Which concrete backend served (or failed) an attempt. `polly` is text-to-speech (calls). */
+export type ModelProviderName = 'luna' | 'nova' | 'titan' | 'polly' | 'mock';
 
 /** A conversational message. The system prompt is passed separately. */
 export interface ChatMessage {
@@ -66,7 +77,7 @@ export interface ModelAttempt extends RawModelAttempt {
 }
 
 export interface GenerateStructuredRequest<T> {
-  purpose: ModelPurpose;
+  purpose: GatewayPurpose;
   /** Trusted instructions (see `buildSystemPrompt`). */
   system: string;
   /** Conversation, oldest first; the last message must be from the user. */
@@ -102,7 +113,7 @@ export interface GenerateStructuredResult<T> {
 }
 
 export interface EmbedOptions {
-  purpose: ModelPurpose;
+  purpose: GatewayPurpose;
   requestId?: string;
   signal?: AbortSignal;
 }

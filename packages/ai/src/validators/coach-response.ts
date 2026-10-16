@@ -5,6 +5,7 @@ import {
   type EscalationPriority,
   type EscalationProposal,
   type RiskCategory,
+  type TurnChannel,
   type ValidatorResults,
 } from '@foundry/contracts';
 
@@ -19,6 +20,7 @@ import {
 } from '../risk/escalation-map.js';
 import { rewriteIdentity, type IdentityFinding, type IdentityViolationKind } from './identity.js';
 import { sanitizeMarkdown, sanitizePlainText } from './markdown.js';
+import { SPOKEN_MAX_CHARS, SPOKEN_MAX_WORDS, clampWords, deriveSpoken, toSpeakable } from './speech.js';
 
 export interface CoachResponseLimits {
   answerMaxChars: number;
@@ -31,6 +33,8 @@ export interface CoachResponseLimits {
   followUpQuestionsMax: number;
   rehearsalScoresMax: number;
   evidenceIdsPerItemMax: number;
+  spokenMaxWords: number;
+  spokenMaxChars: number;
 }
 
 export const DEFAULT_COACH_RESPONSE_LIMITS: Readonly<CoachResponseLimits> = {
@@ -44,6 +48,8 @@ export const DEFAULT_COACH_RESPONSE_LIMITS: Readonly<CoachResponseLimits> = {
   followUpQuestionsMax: 5,
   rehearsalScoresMax: 6,
   evidenceIdsPerItemMax: 10,
+  spokenMaxWords: SPOKEN_MAX_WORDS,
+  spokenMaxChars: SPOKEN_MAX_CHARS,
 };
 
 export interface ValidateCoachResponseOptions {
@@ -66,10 +72,25 @@ export interface ValidateCoachResponseOptions {
   coverageThreshold: number;
   /** Mode requested for the turn; the response's `mode` is corrected to it. */
   expectedMode?: CoachMode;
+  /**
+   * Auto mode (no `expectedMode`): the modes the model was allowed to choose from. A mode outside them is
+   * corrected to the first allowed one.
+   */
+  allowedModes?: readonly CoachMode[];
   /** Names of real EIRs / program staff the coach must never speak as. */
   eirNames?: readonly string[];
+  /**
+   * Display name of the EIR a vEIR persona is built from ("Corin Halvorsen"). Optional: read from a
+   * "<first name>'s vEIR" persona name and `eirNames` when omitted.
+   */
+  personaEirName?: string | null;
   /** Identity violation kinds that block the turn (others are rewritten). Default `['claims_eir']`. */
   blockOnIdentity?: readonly IdentityViolationKind[];
+  /**
+   * `voice` (a call): `spoken` is sanitised like the answer (and derived from it when missing) because
+   * it is what the call says. `text` (default): `spoken` is always null.
+   */
+  channel?: TurnChannel;
   limits?: Partial<CoachResponseLimits>;
 }
 
@@ -120,6 +141,8 @@ const NO_ESCALATION: EscalationProposal = {
 };
 
 export const NARROWING_NOTE_PREFIX = '> **Limited evidence:**';
+/** Said first on a call when the answer was narrowed (the transcript carries the full note). */
+export const SPOKEN_NARROWING_CAVEAT = "A quick caveat: some of this isn't backed by your records yet.";
 export const EMPTY_ANSWER_FALLBACK =
   "I don't have enough to give you a reliable answer yet. Could you share a bit more detail about what you've observed so far?";
 export const CROSS_VENTURE_BLOCK_ANSWER =
@@ -131,7 +154,12 @@ function forcedReason(category: EscalationCategory): string {
   return `This touches a high-risk area (${category.replace(/_/g, ' ')}) that needs review by a qualified person.`;
 }
 
-function emptyResponse(mode: CoachMode, answer: string, escalation: EscalationProposal): CoachResponse {
+function emptyResponse(
+  mode: CoachMode,
+  answer: string,
+  escalation: EscalationProposal,
+  channel: TurnChannel,
+): CoachResponse {
   return {
     mode,
     answer,
@@ -143,6 +171,8 @@ function emptyResponse(mode: CoachMode, answer: string, escalation: EscalationPr
     memory_candidates: [],
     follow_up_questions: [],
     rehearsal: null,
+    // The placeholders are fixed, safe text: a call may say them.
+    spoken: channel === 'voice' ? deriveSpoken(answer) : null,
   };
 }
 
@@ -192,7 +222,8 @@ export function forcedEscalationFor(preRisk: { categories: readonly RiskCategory
  * Deterministic post-generation validator for coaching turns (system design §7 step 6):
  *
  * 1. schema (Zod) — invalid input is blocked with a safe placeholder response;
- * 2. mode corrected to the requested mode; `rehearsal` only in rehearse mode;
+ * 2. mode corrected to the requested mode (in auto mode, to an allowed one); `rehearsal` only in
+ *    rehearse mode;
  * 3. Markdown sanitised (no raw HTML, images, or non-https/mailto links), plain fields stripped;
  * 4. unknown evidence ids removed (claims, memory candidates, inline `[E#]` citations);
  * 5. `fact` claims without valid evidence downgraded to `inference`; grounding coverage computed;
@@ -204,6 +235,10 @@ export function forcedEscalationFor(preRisk: { categories: readonly RiskCategory
  * 8. escalation normalised and forced for pre-classified high-risk categories;
  * 9. cross-venture: any other venture name or canary anywhere in the output blocks the turn.
  *
+ * `spoken` (what a call says aloud) goes through the same steps on the voice channel: it is made plain
+ * (no Markdown, links, URLs or citation keys), derived from the answer when the model gave none,
+ * identity-checked, clamped to 70 words and scanned for other ventures. On the text channel it is null.
+ *
  * `results.notes` contains codes only — never response text, venture names or canaries.
  */
 export function validateCoachResponse(
@@ -213,6 +248,7 @@ export function validateCoachResponse(
   const limits: CoachResponseLimits = { ...DEFAULT_COACH_RESPONSE_LIMITS, ...options.limits };
   const personaName = options.personaName.trim() === '' ? DEFAULT_PERSONA_NAME : options.personaName;
   const threshold = clamp(options.coverageThreshold, 0, 1, 0.6);
+  const channel: TurnChannel = options.channel ?? 'text';
   const notes: string[] = [];
   const results: ValidatorResults = {
     unknownEvidenceIdsRemoved: 0,
@@ -242,7 +278,12 @@ export function validateCoachResponse(
     notes.push(`invalid_schema:${parsed.error.issues.length}`);
     results.escalationForced = forced !== null;
     return {
-      response: emptyResponse(options.expectedMode ?? 'coach', INVALID_RESPONSE_ANSWER, forcedProposal),
+      response: emptyResponse(
+        options.expectedMode ?? options.allowedModes?.[0] ?? 'coach',
+        INVALID_RESPONSE_ANSWER,
+        forcedProposal,
+        channel,
+      ),
       results,
       blocked: true,
       blockReason: 'invalid_schema',
@@ -254,6 +295,12 @@ export function validateCoachResponse(
   if (options.expectedMode !== undefined && r.mode !== options.expectedMode) {
     r.mode = options.expectedMode;
     notes.push('mode_corrected');
+  } else if (options.expectedMode === undefined && options.allowedModes !== undefined) {
+    const [firstAllowed] = options.allowedModes;
+    if (firstAllowed !== undefined && !options.allowedModes.includes(r.mode)) {
+      r.mode = firstAllowed;
+      notes.push('mode_corrected');
+    }
   }
   if (r.mode !== 'rehearse' && r.rehearsal !== null) {
     r.rehearsal = null;
@@ -294,6 +341,16 @@ export function validateCoachResponse(
     };
   }
   if (plainChanged > 0) notes.push(`plain_text_sanitized:${plainChanged}`);
+  // Spoken text: plain sentences on a call (citation keys and Markdown removed), never on typed turns.
+  const modelSpoken = typeof r.spoken === 'string' ? r.spoken : '';
+  if (channel === 'voice') {
+    const speakable = toSpeakable(modelSpoken);
+    r.spoken = speakable === '' ? null : speakable;
+    if (speakable !== '' && speakable !== modelSpoken.trim()) notes.push('spoken_sanitized');
+  } else {
+    if (modelSpoken.trim() !== '') notes.push('spoken_removed');
+    r.spoken = null;
+  }
 
   // 4. Evidence ids ---------------------------------------------------------------------------------
   const keys = new Set([...options.evidenceKeys].map(normalizeEvidenceId));
@@ -322,6 +379,13 @@ export function validateCoachResponse(
   r.memory_candidates = r.memory_candidates.map((m) => ({ ...m, evidence_ids: filterIds(m.evidence_ids) }));
   if (results.unknownEvidenceIdsRemoved > 0)
     notes.push(`unknown_evidence_ids_removed:${results.unknownEvidenceIdsRemoved}`);
+  // A call needs something to say: the model's spoken reply, or else the answer made speakable (before
+  // the limited-evidence note below is added to the answer).
+  if (channel === 'voice' && (r.spoken ?? '') === '') {
+    const derived = deriveSpoken(r.answer, limits.spokenMaxWords);
+    r.spoken = derived === '' ? null : derived;
+    notes.push('spoken_derived');
+  }
 
   // 5. Facts, coverage, narrowing ------------------------------------------------------------------
   let grounded = 0;
@@ -349,12 +413,17 @@ export function validateCoachResponse(
         },
         ...r.uncertainty,
       ];
+      if (r.spoken) r.spoken = `${SPOKEN_NARROWING_CAVEAT} ${r.spoken}`;
     }
   }
 
   // 6. Identity -------------------------------------------------------------------------------------
   const identityFindings: IdentityFinding[] = [];
-  const identityOptions = { personaName, ...(options.eirNames ? { eirNames: options.eirNames } : {}) };
+  const identityOptions = {
+    personaName,
+    ...(options.eirNames ? { eirNames: options.eirNames } : {}),
+    ...(options.personaEirName !== undefined ? { personaEirName: options.personaEirName } : {}),
+  };
   const fixIdentity = (value: string, checkHumanClaims = true): string => {
     const rewrite = rewriteIdentity(value, { ...identityOptions, checkHumanClaims });
     identityFindings.push(...rewrite.findings);
@@ -371,6 +440,7 @@ export function validateCoachResponse(
     content: fixIdentity(m.content),
   }));
   r.follow_up_questions = r.follow_up_questions.map((q) => fixIdentity(q));
+  if (r.spoken) r.spoken = fixIdentity(r.spoken);
   if (r.escalation.reason !== null) r.escalation.reason = fixIdentity(r.escalation.reason);
   if (r.rehearsal !== null) {
     r.rehearsal = {
@@ -453,6 +523,14 @@ export function validateCoachResponse(
       })),
     };
   }
+  if (r.spoken) {
+    const spoken = clampWords(r.spoken, limits.spokenMaxWords, limits.spokenMaxChars);
+    if (spoken.truncated) notes.push('spoken_truncated');
+    r.spoken = spoken.text === '' ? null : spoken.text;
+  }
+  if (channel === 'voice' && !r.spoken) {
+    r.spoken = deriveSpoken(r.answer, limits.spokenMaxWords) || deriveSpoken(EMPTY_ANSWER_FALLBACK);
+  }
   if (truncated > 0) notes.push(`truncated:${truncated}`);
   if (dropped.claims + dropped.other > 0) notes.push(`items_dropped:${dropped.claims + dropped.other}`);
   if (datesCleared > 0) notes.push(`invalid_dates_cleared:${datesCleared}`);
@@ -504,7 +582,7 @@ export function validateCoachResponse(
     notes.push('cross_venture_blocked');
     const escalation = forced !== null ? forcedProposal : NO_ESCALATION;
     return {
-      response: emptyResponse(r.mode, CROSS_VENTURE_BLOCK_ANSWER, escalation),
+      response: emptyResponse(r.mode, CROSS_VENTURE_BLOCK_ANSWER, escalation, channel),
       results,
       blocked: true,
       blockReason: 'cross_venture',
@@ -558,17 +636,17 @@ export function responseStrings(r: CoachResponse): string[] {
     out.push(r.rehearsal.counterpart, r.rehearsal.line, r.rehearsal.critique);
     for (const s of r.rehearsal.scores) out.push(s.criterion, s.note);
   }
+  if (r.spoken) out.push(r.spoken);
   return out;
 }
 
 /**
- * Whether any other venture's distinctive name (whole phrase, case/whitespace-insensitive; names that are
- * common words are skipped, see `ventureNameProblem`), canary (substring,
- * case-insensitive, also with whitespace removed) or member's display name (whole phrase, names of two
- * or more words only) appears anywhere in the response.
+ * Whether any other venture's distinctive name, member name or canary appears in any of `strings`
+ * (the same matching as {@link containsOtherVenture}, for outputs that are not a `CoachResponse`, such
+ * as recaps and distillations).
  */
-export function containsOtherVenture(
-  response: CoachResponse,
+export function textsContainOtherVenture(
+  strings: readonly string[],
   otherVentureNames: readonly string[],
   otherVentureCanaries: readonly string[],
   otherVentureMemberNames: readonly string[] = [],
@@ -579,7 +657,7 @@ export function containsOtherVenture(
     otherVentureMemberNames.length === 0
   )
     return false;
-  const text = responseStrings(response).map(normalizeForMatching).join('\n');
+  const text = strings.map(normalizeForMatching).join('\n');
   const compact = text.replace(/[\s\u200B-\u200D]+/g, '');
   for (const name of otherVentureNames) {
     const pattern = ventureNameRegExp(name);
@@ -595,4 +673,24 @@ export function containsOtherVenture(
     if (text.includes(needle) || compact.includes(needle.replace(/\s+/g, ''))) return true;
   }
   return false;
+}
+
+/**
+ * Whether any other venture's distinctive name (whole phrase, case/whitespace-insensitive; names that are
+ * common words are skipped, see `ventureNameProblem`), canary (substring,
+ * case-insensitive, also with whitespace removed) or member's display name (whole phrase, names of two
+ * or more words only) appears anywhere in the response.
+ */
+export function containsOtherVenture(
+  response: CoachResponse,
+  otherVentureNames: readonly string[],
+  otherVentureCanaries: readonly string[],
+  otherVentureMemberNames: readonly string[] = [],
+): boolean {
+  return textsContainOtherVenture(
+    responseStrings(response),
+    otherVentureNames,
+    otherVentureCanaries,
+    otherVentureMemberNames,
+  );
 }

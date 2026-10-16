@@ -76,6 +76,9 @@ def turn_fields(turn: TurnView | None, *, support_message: str | None = None) ->
     r = turn.response
     if r is not None:
         out.append(TextField("answer", r.answer, markdown=True))
+        if r.spoken:
+            # Voice turns: what the call says aloud is the vEIR's own voice too.
+            out.append(TextField("spoken", r.spoken))
         out.extend(TextField(f"claims[{i}]", c.text) for i, c in enumerate(r.claims))
         out.extend(TextField(f"uncertainty[{i}]", u.item) for i, u in enumerate(r.uncertainty))
         if r.challenge:

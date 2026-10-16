@@ -154,6 +154,8 @@ TEXT_PLACEHOLDERS = frozenset(
         "own_venture",
         "own_canary",
         "eir_name",
+        "eir_first_name",
+        "persona_name",
         "staff_name",
         "payload",
         "marker",

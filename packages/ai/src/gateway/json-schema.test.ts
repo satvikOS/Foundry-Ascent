@@ -102,6 +102,33 @@ describe('toStrictJsonSchema', () => {
     }
   });
 
+  it('keeps CoachResponse.spoken required and nullable for the model, optional for stored responses', () => {
+    const strict = toStrictJsonSchema(CoachResponse);
+    const props = strict.schema.properties as JsonObject;
+    expect(strict.schema.required).toContain('spoken');
+    expect(props.spoken).toEqual({ type: ['string', 'null'] });
+
+    const response = {
+      mode: 'coach',
+      answer: 'a',
+      claims: [],
+      uncertainty: [],
+      challenge: null,
+      next_actions: [],
+      escalation: { required: false, category: null, priority: null, reason: null, requested_role: null },
+      memory_candidates: [],
+      follow_up_questions: [],
+      rehearsal: null,
+    };
+    // The model must send it; null means "nothing to say aloud" and parses as absent.
+    const silent = validateStructured({ ...response, spoken: null }, CoachResponse, strict);
+    expect(silent).toEqual({ ok: true, value: response });
+    const spoken = validateStructured({ ...response, spoken: 'Run the pilot.' }, CoachResponse, strict);
+    expect(spoken.ok && spoken.value.spoken).toBe('Run the pilot.');
+    // A response stored before calls existed still parses.
+    expect(CoachResponse.parse(response)).toEqual(response);
+  });
+
   it('caches per schema instance', () => {
     expect(toStrictJsonSchema(CoachResponse)).toBe(toStrictJsonSchema(CoachResponse));
   });

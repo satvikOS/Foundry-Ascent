@@ -1,8 +1,11 @@
-import type { CoachResponse } from '@foundry/contracts';
+import type { CoachMode, CoachResponse, CommitmentStatus, MemoryCandidate } from '@foundry/contracts';
 
-import { parseControlBlock, type PromptControl } from '../prompts/control.js';
+import { DISTILL_SCHEMA_NAME, type DistillDraft } from '../distill/schema.js';
+import { AUTO_MODE, parseControlBlock, type PromptControl } from '../prompts/control.js';
+import { veirFirstName } from '../prompts/persona.js';
 import { COACH_RESPONSE_SCHEMA_NAME } from '../prompts/version.js';
 import { RISK_ESCALATION_MAP, primaryForcedCategory } from '../risk/escalation-map.js';
+import { clampWords } from '../validators/speech.js';
 import {
   ModelOutputInvalidError,
   ModelRefusalError,
@@ -11,6 +14,16 @@ import {
 } from './errors.js';
 import { fnv1a, hashEmbedding } from './hash-embedding.js';
 import { toStrictJsonSchema, type JsonObject, type JsonValue } from './json-schema.js';
+import {
+  ESCALATION_AREAS,
+  GREETINGS,
+  LEADS,
+  TEACH_STEPS,
+  TOPICS,
+  autoModeFor,
+  topicOf,
+  type MockTopic,
+} from './mock-content.js';
 import { validateStructured } from './provider.js';
 import {
   EMBEDDING_DIMENSIONS,
@@ -27,9 +40,18 @@ import {
 export const MOCK_MODEL_ID = 'mock';
 export const MOCK_FALLBACK_MODEL_ID = 'mock-fallback';
 export const MOCK_EMBEDDINGS_MODEL_ID = 'mock-embeddings';
+/** Schema name of the end-of-session recap (`RECAP_SCHEMA_NAME` in packages/core). */
+export const MOCK_RECAP_SCHEMA_NAME = 'SessionRecapDraft';
 
 /** Scripted outcomes for the next calls (consumed in order). `fallback` succeeds with `fallbackUsed`. */
 export type MockScriptedOutcome = 'unavailable' | 'timeout' | 'invalid_output' | 'refusal' | 'fallback';
+
+/** An evidence item as it appears in the prompt. */
+export interface MockEvidence {
+  id: string;
+  kind: string;
+  title: string;
+}
 
 export interface MockGenerateContext {
   system: string;
@@ -37,10 +59,14 @@ export interface MockGenerateContext {
   control: PromptControl | null;
   founderText: string;
   evidenceIds: string[];
+  /** Evidence items with their kind and title, in prompt order. */
+  evidence: MockEvidence[];
+  /** Completed earlier turns of this conversation in the prompt. */
+  historyTurns: number;
 }
 
 export interface MockModelGatewayOptions {
-  /** Custom value builders by schema name; the default covers `CoachResponse` and generic schemas. */
+  /** Custom value builders by schema name; the defaults cover `CoachResponse`, `DistillDraft` and the recap. */
   fixtures?: Readonly<Record<string, (context: MockGenerateContext) => unknown>>;
 }
 
@@ -72,67 +98,233 @@ function lastFounderText(messages: readonly ChatMessage[]): string {
   return unescapeData(inner ?? last.content).trim();
 }
 
-function evidenceIdsIn(messages: readonly ChatMessage[], system: string): string[] {
-  const ids: string[] = [];
+function evidenceIn(messages: readonly ChatMessage[], system: string): MockEvidence[] {
+  const items: MockEvidence[] = [];
   for (const text of [system, ...messages.map((m) => m.content)]) {
-    for (const match of text.matchAll(/<item id="(E\d+)"/g)) {
+    for (const match of text.matchAll(
+      /<item id="(E\d+)" kind="([a-z_]+)"[^>]*>\n<title>([^\n]*)<\/title>/g,
+    )) {
       const id = match[1];
-      if (id !== undefined && !ids.includes(id)) ids.push(id);
+      if (id !== undefined && !items.some((i) => i.id === id)) {
+        items.push({ id, kind: match[2] ?? 'chunk', title: unescapeData(match[3] ?? '').trim() });
+      }
     }
   }
-  return ids;
+  return items;
 }
 
-/** Deterministic `CoachResponse` derived from the prompt (mode, risk flags, evidence ids, founder text). */
+/** Picks deterministically from a non-empty list. */
+function pick<T>(items: readonly T[], seed: number): T {
+  const item = items[seed % items.length];
+  if (item === undefined) throw new RangeError('pick() needs a non-empty list');
+  return item;
+}
+
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1);
+}
+
+function upperFirst(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function withoutFinalStop(text: string): string {
+  return text.replace(/[.!?]+$/, '');
+}
+
+function addDays(isoDate: string | null, days: number): string | null {
+  if (isoDate === null) return null;
+  const date = new Date(`${isoDate}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function todayIn(text: string): string | null {
+  return /Today: (\d{4}-\d{2}-\d{2})/.exec(text)?.[1] ?? null;
+}
+
+function styleIn(system: string): { directness: keyof typeof LEADS; warmth: keyof typeof GREETINGS } {
+  const match = /Directness: (gentle|balanced|direct)\. Warmth: (reserved|warm)\./.exec(system);
+  return {
+    directness: (match?.[1] as keyof typeof LEADS | undefined) ?? 'balanced',
+    warmth: (match?.[2] as keyof typeof GREETINGS | undefined) ?? 'warm',
+  };
+}
+
+/** What the vEIR's notes say to pick up: the first open commitment, else whether there is an opener. */
+function notesIn(messages: readonly ChatMessage[]): { commitment: string | null; opener: boolean } {
+  const last = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
+  const notes = /<your_notes>([\s\S]*?)<\/your_notes>/.exec(last)?.[1] ?? '';
+  const commitments = /<open_commitments>\n([\s\S]*?)\n<\/open_commitments>/.exec(notes)?.[1] ?? '';
+  const first = commitments.split('\n')[0]?.replace(/^- /, '') ?? '';
+  const commitment = unescapeData(first.replace(/\s*\(due [^)]*\)$/, '')).trim();
+  return { commitment: commitment === '' ? null : commitment, opener: notes.includes('<next_opener>') };
+}
+
+function quoteOf(text: string, max = 160): string {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  return flat.length > max ? `${flat.slice(0, max - 1).trimEnd()}…` : flat;
+}
+
+/**
+ * Deterministic, conversational `CoachResponse` derived from the prompt: persona style, the founder's
+ * first name, the mode, risk flags, the evidence shown (cited by id, referred to by title) and the
+ * vEIR's notes. It reads like a mentor (short paragraphs, one question at the end) and fills every
+ * structured field the validator and the UI use. The memory candidate quotes the founder's message, so
+ * the cross-venture guard still sees what the founder typed.
+ */
 export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
-  const mode = context.control?.mode ?? 'coach';
-  const digest = fnv1a(context.founderText).toString(16).padStart(8, '0');
+  const control = context.control;
+  const mode: CoachMode =
+    control?.mode === AUTO_MODE
+      ? autoModeFor(context.founderText, control.allowedModes)
+      : (control?.mode ?? 'coach');
+  const channel = control?.channel ?? 'text';
+  const seed = fnv1a(`${mode}|${context.founderText}`);
+  const topic: MockTopic = topicOf(context.founderText);
+  const bank = TOPICS[topic];
+  const name = control?.founder ?? null;
+  const style = styleIn(context.system);
+  const today = todayIn(context.system);
   const [first, second] = context.evidenceIds;
   const cited = [first, second].filter((id): id is string => id !== undefined);
-  const flags = context.control?.riskFlags ?? [];
-  const forced = primaryForcedCategory(flags) ?? (context.control?.crisis ? 'safety_wellbeing' : null);
+  const flags = control?.riskFlags ?? [];
+  const forced = primaryForcedCategory(flags) ?? (control?.crisis ? 'safety_wellbeing' : null);
   const route = forced ? RISK_ESCALATION_MAP[forced] : null;
-  const summary = context.founderText.replace(/\s+/g, ' ').slice(0, 160);
+  const counterpart = control?.rehearsalCounterpart ?? 'a seed-stage investor';
+
+  // Opening: a greeting on the first turn, a pickup from the notes, or a short lead-in.
+  const opening: string[] = [];
+  if (context.historyTurns === 0 && name !== null) {
+    opening.push(pick(GREETINGS[style.warmth], seed).replace('{name}', name));
+  }
+  if (context.historyTurns === 0) {
+    const notes = notesIn(context.messages);
+    if (notes.commitment !== null) {
+      opening.push(
+        `Last time you planned to ${lowerFirst(withoutFinalStop(notes.commitment))}, so let's keep that in view.`,
+      );
+    } else if (notes.opener) {
+      opening.push("I've been thinking about where we left off last time.");
+    }
+  }
+  if (opening.length === 0) {
+    const lead = pick(LEADS[style.directness], seed >>> 3);
+    opening.push(name !== null && seed % 3 === 0 ? `${name}, ${lowerFirst(lead)}` : lead);
+  }
+
+  const insight = pick(bank.insights, seed >>> 5).replace('{cite}', first !== undefined ? ` [${first}]` : '');
+  const paragraphs = [`${opening.join(' ')} ${insight}`];
+  // A vEIR refers to its EIR in the third person, e.g. "Corin's approach is simple: …".
+  const eir = control?.persona ? veirFirstName(control.persona) : null;
+  const doctrine = doctrineSummaryIn(context.system);
+  if (
+    eir !== null &&
+    doctrine !== null &&
+    (mode === 'diagnose' || mode === 'coach' || mode === 'challenge')
+  ) {
+    paragraphs[0] = `${paragraphs[0] ?? ''} ${eir}'s approach comes down to this: ${lowerFirst(doctrine)}`;
+  }
+
+  const cite2 = second !== undefined ? ` [${second}]` : '';
+  switch (mode) {
+    case 'diagnose':
+      paragraphs.push(
+        `If I had to name the riskiest assumption, it's whether ${lowerFirst(withoutFinalStop(bank.hypothesis))}${cite2}. I'd want evidence on that before anything else.`,
+      );
+      break;
+    case 'challenge':
+      paragraphs.push(
+        `The strongest version of your case is that the need is real and you're close to it. The weak link is ${lowerFirst(withoutFinalStop(bank.uncertainty))}${cite2}. The cheapest test: ${lowerFirst(bank.action)}`,
+      );
+      break;
+    case 'coach':
+      paragraphs.push(
+        `You could ${bank.options[0]}, or ${bank.options[1]}. I'd ${bank.options[0]}: it gets you real evidence fastest${cite2}. A good first step is to ${lowerFirst(bank.action)}`,
+      );
+      break;
+    case 'teach':
+      paragraphs.push(
+        [
+          `Here's a simple way to work through ${bank.phrase}:`,
+          '',
+          ...TEACH_STEPS.map((s, i) => `${i + 1}. ${s}`),
+        ].join('\n'),
+      );
+      break;
+    case 'rehearse':
+      paragraphs.push(
+        `I'll play ${counterpart}. Their first line is below; answer it the way you would in the real meeting, and I'll tell you what landed.`,
+      );
+      break;
+    case 'route': {
+      const resources = context.evidence.filter((e) => e.kind === 'resource').slice(0, 2);
+      paragraphs.push(
+        resources.length > 0
+          ? resources
+              .map((r, i) =>
+                i === 0
+                  ? `${quoteOf(r.title, 80)} [${r.id}] looks like the best fit for where you are now.`
+                  : `${quoteOf(r.title, 80)} [${r.id}] is worth a look too.`,
+              )
+              .join(' ')
+          : "I don't see a program resource that clearly fits this yet, so the program lead is the best person to ask.",
+      );
+      break;
+    }
+  }
+  const area = forced !== null ? (ESCALATION_AREAS[forced] ?? forced.replace(/_/g, ' ')) : null;
+  if (area !== null) {
+    paragraphs.push(
+      `Part of this touches on ${area}, so I've flagged it for a qualified person to weigh in. I can only share general information on that part.`,
+    );
+  }
+  const question =
+    mode === 'teach'
+      ? `How would you apply the first step to ${bank.phrase} this week?`
+      : pick(bank.questions, seed >>> 7);
+  paragraphs.push(question);
+
+  const spokenParts = [
+    `${name !== null ? `${name}, ` : ''}${name !== null ? lowerFirst(firstSentence(insight)) : firstSentence(insight)}`,
+    area !== null ? "I've flagged part of this for a qualified person." : '',
+    question,
+  ].filter((p) => p !== '');
+  const spoken = clampWords(spokenParts.join(' ').replace(/\s*\[E\d+(?:,\s*E\d+)*\]/g, ''), 70).text;
 
   const claims: CoachResponse['claims'] = [];
   if (cited.length > 0) {
     claims.push({
-      text: `The venture record supports this point (${cited.join(', ')}).`,
+      text: `Your records already include evidence on ${bank.phrase}.`,
       kind: 'fact',
       evidence_ids: cited,
     });
   }
-  claims.push({
-    text: 'The current evidence base is thin, so conclusions are provisional.',
-    kind: 'inference',
-    evidence_ids: [],
-  });
-  claims.push({
-    text: 'Run a small, cheap test before committing further.',
-    kind: 'recommendation',
-    evidence_ids: [],
-  });
+  claims.push({ text: bank.inference, kind: 'inference', evidence_ids: [] });
+  if (mode === 'diagnose' || mode === 'challenge') {
+    claims.push({ text: bank.hypothesis, kind: 'hypothesis', evidence_ids: [] });
+  }
+  claims.push({ text: bank.action, kind: 'recommendation', evidence_ids: [] });
+
+  const nextActions: CoachResponse['next_actions'] = [
+    { owner: 'founder', action: bank.action, target_date: addDays(today, 7) },
+  ];
+  if (mode === 'coach') {
+    nextActions.push({
+      owner: 'team',
+      action: 'Review what you learned together and decide the next step.',
+      target_date: addDays(today, 14),
+    });
+  }
 
   return {
     mode,
-    answer: [
-      `Mock ${mode} response (ref ${digest}).`,
-      cited.length > 0
-        ? `Grounded in ${cited.map((id) => `[${id}]`).join(' ')}.`
-        : 'No evidence was available for this turn.',
-      route
-        ? `This touches a high-risk area (${route.category}); I can only give general information and have flagged it for a human.`
-        : '',
-      'What evidence do you have so far?',
-    ]
-      .filter((line) => line !== '')
-      .join('\n\n'),
+    answer: paragraphs.join('\n\n'),
     claims,
-    uncertainty: [{ item: 'How representative the available evidence is.', level: 'medium' }],
-    challenge: 'What would have to be true for this plan to work?',
-    next_actions: [
-      { owner: 'founder', action: 'Interview five target customers about this problem.', target_date: null },
-    ],
+    uncertainty: [{ item: bank.uncertainty, level: 'medium' }],
+    challenge: mode === 'route' ? null : bank.challenge,
+    next_actions: nextActions,
     escalation: route
       ? {
           required: true,
@@ -144,28 +336,216 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
       : { required: false, category: null, priority: null, reason: null, requested_role: null },
     memory_candidates: [
       {
-        type: 'hypothesis',
-        title: `Founder hypothesis ${digest}`,
-        content: summary.length > 0 ? summary : 'Founder shared an update.',
+        type: bank.memory.type,
+        title: bank.memory.title,
+        content:
+          context.founderText.trim() === ''
+            ? bank.memory.note
+            : `${name ?? 'The founder'} asked: “${quoteOf(context.founderText)}” ${bank.memory.note}`,
         evidence_ids: cited.slice(0, 1),
-        confidence: 0.5,
+        confidence: 0.6,
       },
     ],
-    follow_up_questions: ['What have you observed directly, and from how many people?'],
+    follow_up_questions: [...bank.followUps],
     rehearsal:
       mode === 'rehearse'
         ? {
-            counterpart: context.control?.rehearsalCounterpart ?? 'a seed-stage investor',
-            line: 'Walk me through the evidence that customers will pay for this.',
+            counterpart,
+            line: bank.rehearsalLine,
             scores: [
-              { criterion: 'clarity', score: 3, note: 'The core point is understandable.' },
-              { criterion: 'evidence', score: 2, note: 'Claims need supporting data.' },
+              { criterion: 'clarity', score: 3, note: 'The core point comes across.' },
+              {
+                criterion: 'evidence',
+                score: 2,
+                note: 'Back the claim with something a customer actually did.',
+              },
+              { criterion: 'the ask', score: 3, note: 'Say plainly what you want from them.' },
             ],
-            critique: 'Lead with your strongest piece of customer evidence.',
+            critique: 'Lead with your strongest piece of customer evidence, then make a specific ask.',
           }
         : null,
+    spoken: channel === 'voice' ? spoken : null,
   };
 }
+
+function firstSentence(text: string): string {
+  return /^[\s\S]*?[.!?](?=\s|$)/.exec(text)?.[0] ?? text;
+}
+
+/** The first sentence of the persona doctrine summary in the system prompt (at most 160 characters). */
+function doctrineSummaryIn(system: string): string | null {
+  const summary = /^Summary: (.+)$/m.exec(system)?.[1]?.trim();
+  if (!summary) return null;
+  const sentence = firstSentence(summary).trim();
+  if (sentence.length > 160) return null;
+  return /[.!?]$/.test(sentence) ? sentence : `${sentence}.`;
+}
+
+// Distillation and recap -----------------------------------------------------------------------------
+
+interface TranscriptTurn {
+  founder: string;
+  coach: string;
+}
+
+function transcriptIn(text: string): TranscriptTurn[] {
+  return [
+    ...text.matchAll(/<turn n="\d+"[^>]*>\n<founder>([\s\S]*?)<\/founder>\n<coach>([\s\S]*?)<\/coach>/g),
+  ].map((m) => ({ founder: unescapeData(m[1] ?? '').trim(), coach: unescapeData(m[2] ?? '').trim() }));
+}
+
+const COMMITMENT =
+  /\b(?:I|we)(?:['’]ll| will| plan to| are going to| am going to|['’]m going to|['’]re going to)\s+([^.!?\n]{4,140})/i;
+
+function sectionIn(text: string, tag: string): string {
+  return new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`).exec(text)?.[1] ?? '';
+}
+
+function entriesIn(section: string): { id: string; text: string }[] {
+  return [...section.matchAll(/<entry id="([^"]+)">([\s\S]*?)<\/entry>/g)].map((m) => ({
+    id: unescapeData(m[1] ?? ''),
+    text: unescapeData(m[2] ?? ''),
+  }));
+}
+
+/**
+ * Deterministic `DistillDraft` from a distillation prompt: a title and digest from the transcript, the
+ * previous notebook carried forward with its ids plus new entries (a founder-profile note, commitments
+ * the founder stated, open questions, the advice given, an opener), one memory candidate and, after a
+ * real exchange (two turns or more), one generic, de-identified lesson.
+ */
+export function mockDistillDraft(context: MockGenerateContext): DistillDraft {
+  const user = context.messages.map((m) => m.content).join('\n');
+  const turns = transcriptIn(user);
+  const today = todayIn(user);
+  const name = /the founder \(([^)\n]+)\)/.exec(context.system)?.[1] ?? null;
+  const who = name ?? 'The founder';
+  const founderTexts = turns.map((t) => t.founder);
+  const topics = [...new Set(founderTexts.map(topicOf))];
+  const main: MockTopic = topics.find((t) => t !== 'general') ?? topics[0] ?? 'general';
+  const bank = TOPICS[main];
+
+  const stated = founderTexts.flatMap((text) => {
+    const match = COMMITMENT.exec(text);
+    return match?.[1] ? [upperFirst(match[1].trim())] : [];
+  });
+  const questions = founderTexts.filter((t) => t.trim().endsWith('?')).map((t) => quoteOf(t, 200));
+
+  const previous = sectionIn(user, 'previous_notebook');
+  const prevProfile = entriesIn(sectionIn(previous, 'founder_profile'));
+  const prevQuestions = entriesIn(sectionIn(previous, 'open_questions'));
+  const prevAdvice = entriesIn(sectionIn(previous, 'last_advice'));
+  const prevCommitments = [
+    ...sectionIn(previous, 'commitments').matchAll(
+      /<commitment id="([^"]+)" status="(open|done|dropped)" due="([^"]+)">([\s\S]*?)<\/commitment>/g,
+    ),
+  ].map((m) => ({
+    id: unescapeData(m[1] ?? ''),
+    status: (m[2] ?? 'open') as CommitmentStatus,
+    due: m[3] === 'none' || m[3] === undefined ? null : m[3],
+    text: unescapeData(m[4] ?? ''),
+  }));
+
+  const averageLength = founderTexts.reduce((acc, t) => acc + t.length, 0) / Math.max(1, founderTexts.length);
+  const profileNote = founderTexts.some((t) => /\d/.test(t))
+    ? 'Likes to reason with concrete numbers.'
+    : averageLength < 90
+      ? 'Prefers short, direct exchanges.'
+      : 'Thinks out loud and shares a lot of context.';
+  const due = addDays(today, 7);
+  const firstQuestion = founderTexts[0] ?? '';
+  const title =
+    main === 'general' && firstQuestion !== ''
+      ? upperFirst(withoutFinalStop(firstQuestion.split(/\s+/).slice(0, 7).join(' ')))
+      : bank.title;
+  const summary = [
+    `${who} came in to talk about ${bank.phrase}.`,
+    `We looked at the evidence so far and ${lowerFirst(withoutFinalStop(bank.advice))}.`,
+    stated[0] ? `${name ?? 'They'} plan to ${lowerFirst(withoutFinalStop(stated[0]))}.` : '',
+  ]
+    .filter((s) => s !== '')
+    .join(' ');
+
+  const opener = stated[0]
+    ? `Last time you planned to ${lowerFirst(withoutFinalStop(stated[0]))}. How did it go?`
+    : `Last time we talked about ${bank.phrase}. Where did you land?`;
+
+  const lesson = turns.length >= 2 ? [bank.lesson] : [];
+  const memory: MemoryCandidate[] = [
+    {
+      type: bank.memory.type,
+      title: bank.memory.title,
+      content: stated[0] ? `${who} plans to ${lowerFirst(withoutFinalStop(stated[0]))}.` : bank.memory.note,
+      evidence_ids: context.evidenceIds.slice(0, 1),
+      confidence: 0.6,
+    },
+  ];
+
+  return {
+    title,
+    digest: {
+      summary,
+      topics: topics.map((t) => TOPICS[t].phrase),
+      commitments: stated.map((text) => ({ text, due })),
+      open_questions: questions.slice(0, 4),
+    },
+    notebook: {
+      summary: `${who} is working on ${bank.phrase}. ${upperFirst(bank.memory.note)}`,
+      founder_profile: [
+        ...prevProfile.map((e) => ({ id: e.id, text: e.text })),
+        ...(prevProfile.some((e) => e.text === profileNote) ? [] : [{ id: null, text: profileNote }]),
+      ],
+      commitments: [
+        ...prevCommitments.map((c) => ({ id: c.id, text: c.text, due: c.due, status: c.status })),
+        ...stated.map((text) => ({ id: null, text, due, status: 'open' as const })),
+      ],
+      open_questions: [
+        ...prevQuestions.map((e) => ({ id: e.id, text: e.text })),
+        ...questions.slice(0, 2).map((text) => ({ id: null, text })),
+      ],
+      last_advice: [{ id: null, text: bank.advice }, ...prevAdvice.map((e) => ({ id: e.id, text: e.text }))],
+      next_opener: opener,
+    },
+    memory_candidates: memory,
+    lesson_candidates: lesson,
+  };
+}
+
+/** Deterministic end-of-session recap (core's `RecapDraft`) from the recap prompt. */
+export function mockRecapDraft(context: MockGenerateContext): unknown {
+  const user = context.messages.map((m) => m.content).join('\n');
+  const turns = transcriptIn(user);
+  const today = todayIn(user) ?? todayIn(context.system);
+  const stage = unescapeData(/<stage>([^<]*)<\/stage>/.exec(user)?.[1] ?? 'early');
+  const topic = topicOf(turns.map((t) => t.founder).join(' '));
+  const bank = TOPICS[topic];
+  return {
+    diagnosis: {
+      stage: upperFirst(stage.replace(/_/g, ' ')),
+      immediate_constraint: bank.uncertainty,
+      riskiest_assumption: bank.hypothesis,
+    },
+    evidence: context.evidence.slice(0, 2).map((e) => ({
+      evidence_key: e.id,
+      title: e.title,
+      note: 'The most relevant record for this conversation.',
+    })),
+    challenge: bank.challenge,
+    next_actions: [{ owner: 'founder', action: bank.action, target_date: addDays(today, 7) }],
+    escalation: { required: false, category: null, priority: null, reason: null, requested_role: null },
+    memory_candidates: [
+      {
+        type: bank.memory.type,
+        title: bank.memory.title,
+        content: bank.memory.note,
+        evidence_ids: context.evidenceIds.slice(0, 1),
+        confidence: 0.6,
+      },
+    ],
+  };
+}
+
+// Generic schemas ------------------------------------------------------------------------------------
 
 function resolve(node: JsonObject, root: JsonObject): JsonObject {
   const ref = node.$ref;
@@ -194,8 +574,8 @@ export function sampleFromJsonSchema(node: JsonObject, root: JsonObject = node, 
       const objects = branches.filter(
         (b): b is JsonObject => typeof b === 'object' && b !== null && !Array.isArray(b),
       );
-      const pick = objects.find((b) => b.type !== 'null') ?? objects[0];
-      return pick ? sampleFromJsonSchema(pick, root, path) : null;
+      const choice = objects.find((b) => b.type !== 'null') ?? objects[0];
+      return choice ? sampleFromJsonSchema(choice, root, path) : null;
     }
   }
   const rawType = schema.type;
@@ -254,10 +634,23 @@ export function sampleFromJsonSchema(node: JsonObject, root: JsonObject = node, 
   }
 }
 
+interface BuiltIn {
+  build: (context: MockGenerateContext) => unknown;
+  /** For schemas defined outside this package: fall back to a schema sample if the shape drifted. */
+  sampleOnMismatch: boolean;
+}
+
+const BUILT_IN: Readonly<Record<string, BuiltIn>> = {
+  [COACH_RESPONSE_SCHEMA_NAME]: { build: mockCoachResponse, sampleOnMismatch: false },
+  [DISTILL_SCHEMA_NAME]: { build: mockDistillDraft, sampleOnMismatch: false },
+  [MOCK_RECAP_SCHEMA_NAME]: { build: mockRecapDraft, sampleOnMismatch: true },
+};
+
 /**
  * Deterministic, offline {@link ModelGateway} for tests and local development. Produces schema-valid
- * values (a prompt-derived `CoachResponse` for coaching turns), stable hash embeddings, records
- * calls, and can be scripted to fail via {@link MockModelGateway.scriptNext}.
+ * values (conversational coaching turns, distillations and recaps derived from the prompt; schema
+ * samples for anything else), stable hash embeddings, records calls, and can be scripted to fail via
+ * {@link MockModelGateway.scriptNext}.
  */
 export class MockModelGateway implements ModelGateway {
   readonly info: ModelGatewayInfo = {
@@ -331,21 +724,29 @@ export class MockModelGateway implements ModelGateway {
     if (scripted === 'invalid_output')
       return fail(new ModelOutputInvalidError(MOCK_MODEL_ID, ['(root): scripted']));
 
+    const evidence = evidenceIn(request.messages, request.system);
     const context: MockGenerateContext = {
       system: request.system,
       messages: request.messages,
       control: parseControlBlock(request.system),
       founderText: lastFounderText(request.messages),
-      evidenceIds: evidenceIdsIn(request.messages, request.system),
+      evidenceIds: evidence.map((e) => e.id),
+      evidence,
+      historyTurns: request.messages.filter((m) => m.role === 'assistant').length,
     };
     const strict = toStrictJsonSchema(request.zodSchema);
     const fixture = this.#fixtures[request.schemaName];
-    const candidate: unknown = fixture
+    const builtIn = BUILT_IN[request.schemaName];
+    let candidate: unknown = fixture
       ? fixture(context)
-      : request.schemaName === COACH_RESPONSE_SCHEMA_NAME
-        ? mockCoachResponse(context)
+      : builtIn
+        ? builtIn.build(context)
         : sampleFromJsonSchema(strict.original);
-    const outcome = validateStructured(candidate, request.zodSchema, strict);
+    let outcome = validateStructured(candidate, request.zodSchema, strict);
+    if (!outcome.ok && !fixture && builtIn?.sampleOnMismatch === true) {
+      candidate = sampleFromJsonSchema(strict.original);
+      outcome = validateStructured(candidate, request.zodSchema, strict);
+    }
     if (!outcome.ok) return fail(new ModelOutputInvalidError(MOCK_MODEL_ID, outcome.issues));
 
     const fallbackUsed = scripted === 'fallback';

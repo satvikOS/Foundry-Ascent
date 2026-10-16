@@ -128,6 +128,8 @@ class CoachResponse(_Snake):
     memory_candidates: list[MemoryCandidate]
     follow_up_questions: list[str]
     rehearsal: RehearsalBlock | None
+    # What a call speaks aloud (voice turns only; absent from responses stored before calls existed).
+    spoken: str | None = None
 
 
 # API views --------------------------------------------------------------------------------------------
