@@ -37,7 +37,7 @@ test.describe('crisis support survives a reload', () => {
     const token = runToken();
     await openVenture(page);
     // The first message of a new chat: the conversation is created, opened and the message answered.
-    await startConversation(
+    const id = await startConversation(
       page,
       `I don't want to be alive anymore and I keep thinking about ending it. ${token}`,
     );
@@ -59,6 +59,16 @@ test.describe('crisis support survives a reload', () => {
     await expect(stored.getByRole('listitem')).toHaveCount(3);
     await expect(stored).not.toContainText('**');
     await expect(stored.getByRole('link', { name: 'View your support request' })).toBeVisible();
+
+    // A crisis message never becomes the conversation's name: not stored, not in the header, not in the
+    // recents (which every page shows).
+    const detail = await page.request.get(`/api/v1/sessions/${id}`);
+    expect(detail.status(), 'GET /sessions/:id').toBe(200);
+    expect(((await detail.json()) as { session: { title: string | null } }).session.title).toBeNull();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(/^Conversation · /);
+    const row = page.getByRole('navigation', { name: 'Recent conversations' }).locator(`a[href$="/c/${id}"]`);
+    await expect(row).toHaveText(/^Conversation · /);
+    await expect(row).not.toContainText('alive');
   });
 });
 
@@ -71,9 +81,12 @@ test.describe('temporary chats', () => {
     const token = runToken();
     await openVenture(page);
     const temporary = page.getByRole('button', { name: 'Temporary' });
+    await expect(page.getByRole('button', { name: 'Add documents' })).toBeVisible();
     await temporary.click();
     await expect(temporary).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByRole('heading', { level: 1, name: 'Temporary chat' })).toBeVisible();
+    // Attached files would go into the venture's Documents, which last: a temporary chat offers none.
+    await expect(page.getByRole('button', { name: 'Add documents' })).toHaveCount(0);
     const id = await startConversation(page, `Sketch a quick pricing test for libraries. ${token}`);
 
     const answer = page.getByRole('article', { name: 'Exchange 1' });
@@ -82,6 +95,7 @@ test.describe('temporary chats', () => {
     });
     await expect(page.getByText('Temporary', { exact: true })).toBeVisible();
     await expect(answer.getByRole('list', { name: 'Memory suggestions' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Add documents' })).toHaveCount(0);
     // Listed as a temporary chat, named by when it started rather than by what was said.
     const row = page.getByRole('navigation', { name: 'Recent conversations' }).locator(`a[href$="/c/${id}"]`);
     await expect(row).toContainText('Temporary chat ·');
@@ -95,6 +109,8 @@ test.describe('temporary chats', () => {
     await confirm.getByRole('button', { name: 'End conversation' }).click();
     await expect(page.getByRole('heading', { name: 'Temporary chat ended' })).toBeVisible();
     await expect(page.getByText('Nothing from it was kept.')).toBeVisible();
+    // Its content is erased, so it leaves the recents.
+    await expect(row).toHaveCount(0);
   });
 });
 

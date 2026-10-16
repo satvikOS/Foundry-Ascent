@@ -7,6 +7,7 @@ import type { CreateTurnBody } from '@/lib/api/sse';
 import { modeToSend } from './composer';
 import {
   hasPendingFirstMessage,
+  newConversationRequest,
   rememberComposerMode,
   rememberedComposerMode,
   setPendingFirstMessage,
@@ -140,5 +141,22 @@ describe('useFirstMessageHandoff', () => {
     await flush();
     expect(send).not.toHaveBeenCalled();
     expect(restore).not.toHaveBeenCalled();
+  });
+});
+
+describe('newConversationRequest', () => {
+  it('never names the conversation after the message, so a blocked first message is never a title', () => {
+    for (const temporary of [false, true]) {
+      expect(newConversationRequest({ mode: undefined, temporary })).not.toHaveProperty('title');
+      expect(newConversationRequest({ mode: 'challenge', temporary })).not.toHaveProperty('title');
+    }
+  });
+
+  it('sends no mode for Auto and the chosen privacy', () => {
+    expect(newConversationRequest({ mode: undefined, temporary: false })).toEqual({ privacy: 'standard' });
+    expect(newConversationRequest({ mode: 'rehearse', temporary: true })).toEqual({
+      mode: 'rehearse',
+      privacy: 'ephemeral',
+    });
   });
 });

@@ -283,7 +283,10 @@ function Conversation() {
     : stream.isStreaming
       ? 'Wait for the current answer to finish.'
       : null;
-  const title = conversationTitle(session, turns[0]?.founderText ?? state.pendingText);
+  // Until the server titles it (from the first message that was not a crisis), the header shows the first
+  // stored message, never one that was blocked.
+  const firstTurn = turns[0];
+  const title = conversationTitle(session, firstTurn?.status === 'blocked' ? null : firstTurn?.founderText);
   const latest = visibleTurns[visibleTurns.length - 1] ?? null;
   const followUps =
     !showLive && latest?.status === 'completed' && !ended ? (latest.response?.follow_up_questions ?? []) : [];
@@ -347,11 +350,17 @@ function Conversation() {
         onAction={onMenu}
       >
         {ended ? (
-          <DisclosureBanner variant="line" text={session.disclosure} className="justify-start" />
+          <DisclosureBanner
+            variant="line"
+            text={session.disclosure}
+            veirName={session.personaName}
+            className="justify-start"
+          />
         ) : null}
       </ConversationHeader>
 
       <div className="mx-auto w-full max-w-(--content-width) flex-1 px-4 pt-8 pb-10 sm:px-6">
+        <DisclosureBanner variant="print" text={session.disclosure} className="mb-8 hidden print:block" />
         <section aria-label="Transcript" className="grid gap-12">
           {session.opener ? (
             <OpenerMessage text={session.opener} personaName={personaName} portraitUrl={veir?.portraitUrl} />
@@ -449,6 +458,7 @@ function Conversation() {
               onChange={setText}
               personaName={personaName}
               disclosure={session.disclosure}
+              veirName={session.personaName}
               mode={mode}
               onModeChange={setMode}
               allowedModes={venture.data?.persona?.allowedModes}
@@ -469,7 +479,12 @@ function Conversation() {
                   onDismiss={attachments.dismiss}
                 />
               }
-              tools={<AttachButton onFiles={attachments.attach} disabled={!canSend} />}
+              // Attached files go into the venture's Documents, which last: a temporary chat offers none.
+              tools={
+                session.privacy === 'ephemeral' ? null : (
+                  <AttachButton onFiles={attachments.attach} disabled={!canSend} />
+                )
+              }
               actions={
                 canSend ? (
                   <SimpleTooltip content={`Call ${personaName}`}>

@@ -1,4 +1,4 @@
-import type { CoachMode } from '@foundry/contracts';
+import type { CoachMode, SessionView } from '@foundry/contracts';
 import { useEffect, useRef } from 'react';
 
 import type { TurnStreamState } from '@/lib/api/hooks/turn-stream';
@@ -17,6 +17,21 @@ export interface PendingFirstMessage {
   /** Omitted for Auto: the vEIR picks how to help. */
   mode?: CoachMode | undefined;
   rehearsalCounterpart?: string | undefined;
+}
+
+/**
+ * The body that starts a conversation from New chat. It never carries a title: the server names a standard
+ * conversation after its first message unless that message was a crisis, so a message that is blocked never
+ * becomes a title in anyone's list. Auto sends no mode.
+ */
+export function newConversationRequest({
+  mode,
+  temporary,
+}: {
+  mode: CoachMode | undefined;
+  temporary: boolean;
+}): { mode?: CoachMode; privacy: SessionView['privacy'] } {
+  return { ...(mode ? { mode } : {}), privacy: temporary ? 'ephemeral' : 'standard' };
 }
 
 const pending = new Map<string, PendingFirstMessage>();

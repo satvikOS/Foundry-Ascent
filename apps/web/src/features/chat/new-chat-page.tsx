@@ -26,7 +26,6 @@ import { useCreateSession } from '@/lib/api/hooks/sessions';
 import { useVenture, useVentureOverview } from '@/lib/api/hooks/ventures';
 import { canWrite } from '@/lib/auth/roles';
 import { useRequiredMe } from '@/lib/auth/use-me';
-import { titleFromMessage } from '@/lib/conversations';
 import { greeting } from '@/lib/format';
 import { useHotkeys } from '@/lib/hooks/use-hotkeys';
 import { cn } from '@/lib/utils';
@@ -35,7 +34,7 @@ import { veirDisplay } from '@/lib/veir';
 import { coachingAvailability } from '../coach/availability';
 import { AttachButton, AttachmentTray, useComposerAttachments } from './attachments';
 import { Composer, MAX_TURN_CHARS, modeToSend, type ComposerMode } from './composer';
-import { setPendingFirstMessage } from './first-message';
+import { newConversationRequest, setPendingFirstMessage } from './first-message';
 import { newChatSuggestions, type Suggestion, type SuggestionIcon } from './suggestions';
 
 const routeApi = getRouteApi('/$tenant/app/v/$ventureId/');
@@ -180,26 +179,18 @@ function NewChat() {
     const chosenMode = modeToSend(mode);
     const rehearsalCounterpart =
       chosenMode === 'rehearse' && counterpart.trim() ? counterpart.trim() : undefined;
-    createSession.mutate(
-      {
-        ...(chosenMode ? { mode: chosenMode } : {}),
-        privacy: temporary ? 'ephemeral' : 'standard',
-        // Temporary chats keep no title; others are named after their first message.
-        title: temporary ? null : titleFromMessage(value),
+    createSession.mutate(newConversationRequest({ mode: chosenMode, temporary }), {
+      onSuccess: (session) => {
+        setPendingFirstMessage(session.id, { text: value, mode: chosenMode, rehearsalCounterpart });
+        void navigate({
+          to: '/$tenant/app/v/$ventureId/c/$sessionId',
+          params: { tenant, ventureId, sessionId: session.id },
+        });
       },
-      {
-        onSuccess: (session) => {
-          setPendingFirstMessage(session.id, { text: value, mode: chosenMode, rehearsalCounterpart });
-          void navigate({
-            to: '/$tenant/app/v/$ventureId/c/$sessionId',
-            params: { tenant, ventureId, sessionId: session.id },
-          });
-        },
-        onError: (error) => {
-          toast.error('Couldn’t start the conversation', { description: errorMessage(error) });
-        },
+      onError: (error) => {
+        toast.error('Couldn’t start the conversation', { description: errorMessage(error) });
       },
-    );
+    });
   };
 
   const choose = (suggestion: Extract<Suggestion, { kind: 'prompt' }>) => {
@@ -284,6 +275,7 @@ function NewChat() {
             onChange={setText}
             personaName={name}
             disclosure={veir?.disclosure}
+            veirName={veir?.name}
             mode={mode}
             onModeChange={setMode}
             allowedModes={venture.data?.persona?.allowedModes}
@@ -303,7 +295,8 @@ function NewChat() {
                 onDismiss={attachments.dismiss}
               />
             }
-            tools={<AttachButton onFiles={attachments.attach} disabled={!available} />}
+            // Attached files go into the venture's Documents, which last: a temporary chat offers none.
+            tools={temporary ? null : <AttachButton onFiles={attachments.attach} disabled={!available} />}
             actions={
               available && veir ? (
                 <SimpleTooltip content={`Call ${name}`}>
