@@ -433,6 +433,55 @@ describe('CallEngine · replies', () => {
     ]);
   });
 
+  it('reads only the opening of a reply that has no spoken form', async () => {
+    const h = setup({ grant: null });
+    await startLive(h);
+    h.engine.sendText('Hello');
+    await flush();
+    const sentence = 'This sentence has exactly ten words in it for counting.';
+    h.script.push(
+      completed({ response: makeReply({ spoken: null, answer: Array(12).fill(sentence).join(' ') }) }),
+    );
+    h.script.close();
+    await flush(20);
+    // 70 words: seven ten-word sentences, fetched two at a time while they play.
+    for (let i = 0; i < 7; i++) {
+      h.context.sources[i]?.finish();
+      await flush(10);
+    }
+    expect(h.speechRequests).toHaveLength(7);
+  });
+
+  it('mutes the microphone when a turn is blocked, so the founder can read the support', async () => {
+    const h = setup();
+    await startLive(h);
+    FakeWebSocket.last().serverOpen();
+    h.engine.sendText('I am not okay');
+    await flush();
+    h.script.push({
+      event: 'turn.blocked',
+      turnId: TURN_ID,
+      reason: 'crisis_support',
+      escalationId: null,
+      supportMessage: 'Call or text **988**.',
+    });
+    h.script.close();
+    await flush(10);
+    expect(h.state().muted).toBe(true);
+    expect(h.track.enabled).toBe(false);
+  });
+
+  it('says a refused voice turn means the call is no longer active', async () => {
+    const h = setup({ grant: null });
+    await startLive(h);
+    h.api.streamTurn.mockImplementationOnce(() => {
+      throw new ApiError({ status: 409, code: 'conflict', title: 'Conflict' });
+    });
+    h.engine.sendText('Hello');
+    await flush(10);
+    expect(h.state().notice?.message).toMatch(/isn’t active any more/);
+  });
+
   it('queues lines said while the vEIR is still thinking and sends them together', async () => {
     const h = setup({ grant: null });
     await startLive(h);

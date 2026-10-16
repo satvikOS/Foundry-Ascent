@@ -1,6 +1,6 @@
 import type { CallEndReason, CallState, SttGrant, TurnView } from '@foundry/contracts';
 
-import { errorMessage } from '../api/errors';
+import { errorMessage, isApiError } from '../api/errors';
 import type { CreateTurnBody, StreamTurnOptions, TurnStreamEventT } from '../api/sse';
 import type { AvatarState, SpokenUnit } from './avatar';
 import type {
@@ -728,7 +728,7 @@ export class CallEngine {
       }
     } catch (error) {
       if (epoch === this.epoch && !turn.interrupted && !turn.controller.signal.aborted) {
-        this.set({ notice: { kind: 'turn_error', message: turnErrorLine(errorMessage(error)) } });
+        this.set({ notice: { kind: 'turn_error', message: turnErrorLine(turnFailure(error)) } });
       }
     } finally {
       turn.done = true;
@@ -754,9 +754,11 @@ export class CallEngine {
         const completed = event.turn;
         turn.turnId = completed.id;
         if (turn.units === 0 && completed.status === 'completed' && completed.response) {
-          // No streamed units (streaming is off, or an older server): speak the stored validated reply.
-          const spoken = completed.response.spoken ?? completed.response.answer;
-          speakableUnits(spoken).forEach((text, seq) => {
+          // No streamed units (streaming is off, or an older server): speak the stored validated reply, its
+          // short spoken form, or the opening of the answer when a reply has none.
+          const { spoken, answer } = completed.response;
+          const units = spoken ? speakableUnits(spoken) : openingUnits(speakableUnits(answer));
+          units.forEach((text, seq) => {
             turn.units += 1;
             this.player?.enqueue({ turnId: completed.id, seq, text });
           });
@@ -765,6 +767,8 @@ export class CallEngine {
       }
       case 'turn.blocked':
         this.player?.stop();
+        // The founder reads the support resources; nothing more is listened to until they unmute.
+        this.setMuted(true);
         this.set({
           notice: {
             kind: 'blocked',
@@ -909,7 +913,7 @@ export class CallEngine {
       this.set({
         notice: {
           kind: 'time_warning',
-          message: `${String(Math.ceil(left / 60))} minutes left on this call.`,
+          message: minutesLeftLine(left),
         },
       });
     }
@@ -992,4 +996,34 @@ function stopStream(stream: MediaStream | null): void {
 /** The line shown (never spoken: only validated text is voiced) when a turn fails. */
 function turnErrorLine(message: string): string {
   return `Sorry, I couldn’t answer that. ${message}`;
+}
+
+/** Why a spoken turn was refused, in call terms (the generic "this changed" reads oddly on a call). */
+function turnFailure(error: unknown): string {
+  if (isApiError(error) && error.code === 'conflict' && error.retryAfter === undefined) {
+    return 'This call isn’t active any more. End it and call again.';
+  }
+  return errorMessage(error);
+}
+
+/** The words a call speaks of a reply without a spoken form: its opening, about as long as one. */
+const SPOKEN_WORD_LIMIT = 70;
+
+function openingUnits(units: readonly string[]): string[] {
+  const opening: string[] = [];
+  let words = 0;
+  for (const unit of units) {
+    const count = unit.split(/\s+/).length;
+    if (opening.length > 0 && words + count > SPOKEN_WORD_LIMIT) break;
+    opening.push(unit);
+    words += count;
+  }
+  return opening;
+}
+
+function minutesLeftLine(secondsLeft: number): string {
+  const minutes = Math.max(1, Math.round(secondsLeft / 60));
+  return minutes === 1
+    ? 'About a minute left on this call.'
+    : `${String(minutes)} minutes left on this call.`;
 }
