@@ -17,6 +17,8 @@ interface ApiErrorInit {
   requestId?: string | undefined;
   retryAfter?: number | undefined;
   fieldErrors?: FieldError[] | undefined;
+  /** The problem document's `code` as the server sent it, also when this client does not know it yet. */
+  serverCode?: string | undefined;
   cause?: unknown;
 }
 
@@ -35,6 +37,12 @@ export class ApiError extends Error {
   /** Seconds to wait before retrying (from the problem document or the Retry-After header). */
   readonly retryAfter: number | undefined;
   readonly fieldErrors: FieldError[];
+  /**
+   * The server's own `code`, kept even when it is newer than this client's `ErrorCode` list (then `code` is
+   * derived from the status). Callers that must tell such codes apart switch on it; anything unknown still
+   * has a sensible `code`.
+   */
+  readonly serverCode: string | undefined;
 
   constructor(init: ApiErrorInit) {
     super(init.detail ?? init.title, init.cause === undefined ? undefined : { cause: init.cause });
@@ -45,6 +53,7 @@ export class ApiError extends Error {
     this.requestId = init.requestId;
     this.retryAfter = init.retryAfter;
     this.fieldErrors = init.fieldErrors ?? [];
+    this.serverCode = init.serverCode;
   }
 
   /** Transient failures worth an automatic retry by the query layer. */
@@ -127,17 +136,21 @@ export async function errorFromResponse(response: Response): Promise<ApiError> {
         requestId: problem.requestId || headerRequestId,
         retryAfter: problem.retryAfterSeconds ?? headerRetryAfter,
         fieldErrors: problem.errors,
+        serverCode: problem.code,
       });
     }
     // JSON but not a recognised problem document: keep a known code if one is present.
-    const loose = body as { code?: unknown; title?: unknown } | undefined;
+    const loose = body as
+      { code?: unknown; title?: unknown; detail?: unknown; requestId?: unknown } | undefined;
     const code = ErrorCode.safeParse(loose?.code);
     return new ApiError({
       status: response.status,
       code: code.success ? code.data : fallbackCode(response.status),
       title: typeof loose?.title === 'string' ? loose.title : response.statusText || 'Request failed',
-      requestId: headerRequestId,
+      detail: typeof loose?.detail === 'string' ? loose.detail : undefined,
+      requestId: headerRequestId ?? (typeof loose?.requestId === 'string' ? loose.requestId : undefined),
       retryAfter: headerRetryAfter,
+      serverCode: typeof loose?.code === 'string' ? loose.code : undefined,
     });
   }
 

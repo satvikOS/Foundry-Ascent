@@ -242,7 +242,9 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: Cal
         {live && snapshot.voice === 'captions' ? (
           <p role="status" className="flex max-w-xl items-start gap-2 text-small text-muted-foreground">
             <VolumeX aria-hidden className="mt-0.5 size-4 shrink-0" />
-            Spoken replies are unavailable right now.
+            {snapshot.voicePaused
+              ? 'Voice is paused for the rest of this call. Replies continue as text.'
+              : 'Spoken replies are unavailable right now.'}
           </p>
         ) : null}
         {snapshot.notice ? (

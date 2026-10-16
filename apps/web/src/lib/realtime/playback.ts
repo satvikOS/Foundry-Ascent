@@ -34,7 +34,11 @@ export type SpeechFetchResult =
   /** The server refused speech for this call (AI paused, caps reached, voice consent withdrawn). */
   | { readonly kind: 'refused' }
   /** This unit could not be voiced (network, a busy synthesiser, a unit the server would not voice). */
-  | { readonly kind: 'failed' };
+  | { readonly kind: 'failed' }
+  /** This signed unit (or the intro) was already voiced for this call (409): shown, never asked for again. */
+  | { readonly kind: 'played' }
+  /** The call's or the day's speech budget is used up (429): words only for the rest of the call. */
+  | { readonly kind: 'paused' };
 
 export interface PlayerAudio {
   readonly context: Pick<
@@ -57,6 +61,8 @@ export interface PlayerEvents {
   onUnitEnd(unit: SpeechUnitToPlay, completed: boolean): void;
   /** Nothing left to play. */
   onIdle(): void;
+  /** The speech budget ran out: the rest of the call is words only (the UI says so once, calmly). */
+  onVoicePaused?(): void;
 }
 
 type Prepared = (
@@ -66,6 +72,10 @@ type Prepared = (
 ) & {
   /** The way every later unit is heard from now on (set when the server answered for the whole call). */
   readonly sticky?: Exclude<VoiceRoute, 'server'>;
+  /** Why the route became sticky captions, when the UI says something about it. */
+  readonly why?: 'paused';
+  /** Shown without a voice and without changing how the call says it is heard (an already played unit). */
+  readonly quiet?: boolean;
 };
 
 interface Entry {
@@ -199,6 +209,11 @@ export class SpeechPlayer {
       }
       case 'refused':
         return { kind: 'captions', sticky: 'captions' };
+      case 'paused':
+        return { kind: 'captions', sticky: 'captions', why: 'paused' };
+      case 'played':
+        // Heard already (a replayed unit): its caption shows, it is never asked for again.
+        return { kind: 'captions', quiet: true };
       case 'failed':
         // This unit only: the next one asks for the voice again.
         return { kind: 'captions' };
@@ -231,13 +246,17 @@ export class SpeechPlayer {
     if (generation !== this.generation || this.queue[0] !== entry) return;
     this.queue.shift();
     if (prepared.sticky) this.setRoute(prepared.sticky);
+    if (prepared.why === 'paused') this.events.onVoicePaused?.();
     // A route change applies to everything after this unit too.
     this.prefetch();
 
     const completed = await new Promise<boolean>((resolve) => {
       const finish = this.start(prepared, entry.unit, resolve);
       this.playing = { entry, stop: finish };
-      this.events.onUnitStart(entry.unit, prepared.kind === 'buffer' ? 'server' : prepared.kind);
+      this.events.onUnitStart(
+        entry.unit,
+        prepared.kind === 'buffer' ? 'server' : prepared.quiet === true ? this.route : prepared.kind,
+      );
     });
     if (generation !== this.generation) {
       this.events.onUnitEnd(entry.unit, false);

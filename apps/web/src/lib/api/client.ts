@@ -194,6 +194,7 @@ async function fetchOnce(pathname: string, options: ApiRequestOptions): Promise<
       requestId: prepared.requestId,
       retryAfter: error.retryAfter,
       fieldErrors: error.fieldErrors,
+      serverCode: error.serverCode,
     });
   }
   return response;

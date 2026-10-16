@@ -998,6 +998,9 @@ export class CallEngine {
           turn.heardSeq = unit.seq;
           turn.heard.push({ seq: unit.seq, text: unit.text, ...(unit.sig ? { sig: unit.sig } : {}) });
         },
+        onVoicePaused: () => {
+          this.set({ voicePaused: true });
+        },
         onIdle: () => {
           if (this.snapshot.phase !== 'live') return;
           if (this.turn && !this.turn.done) this.set({ activity: 'thinking' });

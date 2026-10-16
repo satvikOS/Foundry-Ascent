@@ -129,8 +129,24 @@ export async function fetchSpeech(
   } catch (error) {
     if (isAbortError(error)) throw error;
     if (!isApiError(error)) return { kind: 'failed' };
+    switch (error.serverCode) {
+      // A signed unit or the intro already voiced for this call: never ask for it again.
+      case 'speech_already_played':
+        return { kind: 'played' };
+      // The call's or the person's speech budget is used up: words only for the rest of the call.
+      case 'call_speech_limit':
+      case 'daily_speech_limit':
+        return { kind: 'paused' };
+      default:
+        break;
+    }
     if (error.status === 501 || error.code === 'speech_unavailable') return { kind: 'unavailable' };
-    return CALL_SPEECH_REFUSALS.has(error.code) ? { kind: 'refused' } : { kind: 'failed' };
+    // Known refusals hold for the rest of the call; anything else (including a code this client does not
+    // know yet) shows this unit as words and asks again for the next one.
+    const known = error.serverCode === undefined || error.serverCode === error.code;
+    return known && CALL_SPEECH_REFUSALS.has(error.code)
+      ? { kind: 'refused' }
+      : { kind: 'failed' };
   }
 }
 

@@ -201,6 +201,22 @@ describe('CallLive', () => {
     expect(screen.getByText('Replying on screen')).toBeInTheDocument();
   });
 
+  it('says calmly that the voice is paused for the rest of the call when its speech budget ran out', async () => {
+    renderLive({
+      activity: 'speaking',
+      voice: 'captions',
+      voicePaused: true,
+      captions: { veir: 'Twelve is a good start.', founder: null, founderLive: false },
+    });
+    expect(
+      await screen.findByText('Voice is paused for the rest of this call. Replies continue as text.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Spoken replies are unavailable right now.')).toBeNull();
+    // Not an error: the call goes on.
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByRole('button', { name: 'End call' })).toBeInTheDocument();
+  });
+
   it('suggests push-to-talk after repeated false interruptions', async () => {
     const { engine } = renderLive({
       notice: { kind: 'barge_hint', message: 'Sound around you keeps pausing the reply.' },

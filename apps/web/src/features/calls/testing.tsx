@@ -79,6 +79,7 @@ export const LIVE: CallSnapshot = {
   remaining: { seconds: 1200, at: Date.now() },
   captions: { veir: null, founder: null, founderLive: false },
   voice: 'server',
+  voicePaused: false,
   notice: null,
   blocked: null,
   queued: 0,

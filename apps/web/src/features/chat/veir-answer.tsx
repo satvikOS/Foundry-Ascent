@@ -49,6 +49,17 @@ export interface VeirAnswerProps {
 }
 
 /**
+ * A call turn the founder spoke over: stored as completed with the reply as far as it was written and the
+ * validator note `interrupted`. It reads as a normal answer, with a quiet "Interrupted on the call".
+ */
+export function wasInterrupted(turn: Pick<TurnView, 'channel' | 'validator'>): boolean {
+  return (
+    turn.channel === 'voice' &&
+    (turn.validator?.notes ?? []).some((note) => note.split(':')[0] === 'interrupted')
+  );
+}
+
+/**
  * One validated answer: prose with inline citations first; everything structured is either collapsed
  * (Sources & reasoning) or a compact row (next steps, memory suggestions). The handoff card is the only
  * block shown in full, because it is about safety.
@@ -78,6 +89,9 @@ export function VeirAnswer({
       <Markdown renderCitation={renderCitation} className={ANSWER_PROSE}>
         {response.answer}
       </Markdown>
+      {wasInterrupted(turn) ? (
+        <p className="mt-2 text-caption text-muted-foreground">Interrupted on the call</p>
+      ) : null}
 
       {response.rehearsal ? <Rehearsal rehearsal={response.rehearsal} personaName={personaName} /> : null}
 

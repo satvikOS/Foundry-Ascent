@@ -195,6 +195,67 @@ describe('SpeechPlayer', () => {
     expect(fetchSpeech).toHaveBeenCalledTimes(3);
   });
 
+  it('shows an already played unit as words, quietly, and never asks for it again (409)', async () => {
+    const { context, pending, fetchSpeech, player, log, audioOf } = setup();
+    player.enqueue(unit(0, 'Hi Maya.'));
+    player.enqueue(unit(1, 'What did they say?'));
+    pending[0]?.resolve({ kind: 'played' });
+    pending[1]?.resolve(audioOf(10));
+    await flush();
+    // Heard already: its caption shows, and the call keeps saying it speaks (the route stays the server's).
+    expect(log).toEqual(['start 0 server']);
+    vi.advanceTimersByTime(readingTimeMs('Hi Maya.'));
+    await flush(10);
+    expect(log).toEqual(['start 0 server', 'end 0 done', 'start 1 server']);
+    expect(context.sources).toHaveLength(1);
+    expect(fetchSpeech).toHaveBeenCalledTimes(2);
+  });
+
+  it('pauses the voice for the rest of the call when its speech budget is used up (429), and says so', async () => {
+    const paused = vi.fn();
+    const context = new FakeAudioContext();
+    const pending: { resolve: (result: SpeechFetchResult) => void }[] = [];
+    const fetchSpeech = vi.fn(
+      () =>
+        new Promise<SpeechFetchResult>((resolve) => {
+          pending.push({ resolve });
+        }),
+    );
+    const log: string[] = [];
+    const player = new SpeechPlayer(
+      {
+        context,
+        fetchSpeech,
+        synthesis: null,
+        createUtterance: (text: string) => new FakeUtterance(text) as unknown as SpeechSynthesisUtterance,
+        setTimeout: (cb: () => void, ms: number) => setTimeout(cb, ms),
+        clearTimeout: (handle: unknown) => {
+          clearTimeout(handle as ReturnType<typeof setTimeout>);
+        },
+        now: () => Date.now(),
+      } as unknown as PlayerAudio,
+      {
+        onUnitStart: (u, route) => log.push(`start ${String(u.seq)} ${route}`),
+        onUnitEnd: () => undefined,
+        onIdle: () => undefined,
+        onVoicePaused: paused,
+      },
+    );
+    player.enqueue(unit(0));
+    player.enqueue(unit(1));
+    pending[0]?.resolve({ kind: 'paused' });
+    await flush();
+    expect(paused).toHaveBeenCalledTimes(1);
+    expect(log).toEqual(['start 0 captions']);
+    vi.advanceTimersByTime(readingTimeMs('Sentence 0.'));
+    await flush(10);
+    // The rest of the call is words only, without asking for speech again.
+    expect(log).toEqual(['start 0 captions', 'start 1 captions']);
+    expect(fetchSpeech.mock.calls.length).toBeLessThanOrEqual(2);
+    player.enqueue(unit(2));
+    expect(fetchSpeech.mock.calls.length).toBeLessThanOrEqual(2);
+  });
+
   it('keeps words only for the rest of the call when the server refuses its speech', async () => {
     const { synthesis, pending, fetchSpeech, player, log } = setup();
     player.enqueue(unit(0));

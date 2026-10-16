@@ -8,7 +8,7 @@ import type { TurnStreamError, TurnStreamState } from '@/lib/api/hooks/turn-stre
 import { deriveTurnProgress } from '../coach/progress';
 import { IDS, makeTurn } from '../coach/testing';
 import { LiveExchange, TurnFailure } from './exchange';
-import { VeirAnswer, type VeirAnswerProps } from './veir-answer';
+import { VeirAnswer, wasInterrupted, type VeirAnswerProps } from './veir-answer';
 
 const streaming = (overrides: Partial<TurnStreamState> = {}): TurnStreamState => ({
   status: 'streaming',
@@ -203,5 +203,29 @@ describe('TurnFailure', () => {
       vi.advanceTimersByTime(3_000);
     });
     expect(screen.getByTestId('turn-auto-retry')).toHaveTextContent('Checking again in 2 s…');
+  });
+});
+
+describe('a call turn the founder interrupted', () => {
+  it('reads as a normal answer with a quiet note, never as a failure', () => {
+    const base = makeTurn();
+    const turn = makeTurn({
+      channel: 'voice',
+      validator: base.validator ? { ...base.validator, notes: ['interrupted'] } : null,
+    });
+    if (!turn.response) throw new Error('fixture has no response');
+    renderWithProviders(<VeirAnswer {...answerProps({ turn, response: turn.response })} />);
+    expect(screen.getByText('Interrupted on the call')).toBeInTheDocument();
+    expect(screen.queryByText(/couldn’t be completed|didn’t finish|Ask again/)).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('is only a call turn with the interrupted note', () => {
+    const base = makeTurn();
+    const notes = (n: string[]) => (base.validator ? { ...base.validator, notes: n } : null);
+    expect(wasInterrupted({ channel: 'voice', validator: notes(['interrupted']) })).toBe(true);
+    expect(wasInterrupted({ channel: 'text', validator: notes(['interrupted']) })).toBe(false);
+    expect(wasInterrupted({ channel: 'voice', validator: notes(['narrowed']) })).toBe(false);
+    expect(wasInterrupted({ channel: 'voice', validator: null })).toBe(false);
   });
 });

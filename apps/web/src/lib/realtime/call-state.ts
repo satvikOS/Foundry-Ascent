@@ -73,6 +73,8 @@ export interface CallSnapshot {
    * only), or on screen only (the voice failed for it, or speech is refused for the rest of the call).
    */
   readonly voice: VoiceRoute;
+  /** The call's or the day's speech budget ran out: replies continue as words for the rest of the call. */
+  readonly voicePaused: boolean;
   readonly notice: CallNotice | null;
   /** The latest turn was held back (crisis support or a safety check): what the founder is offered. */
   readonly blocked: TurnBlockedDetail | null;
@@ -103,6 +105,7 @@ export const IDLE_CALL: CallSnapshot = {
   remaining: null,
   captions: { veir: null, founder: null, founderLive: false },
   voice: 'server',
+  voicePaused: false,
   notice: null,
   blocked: null,
   queued: 0,
