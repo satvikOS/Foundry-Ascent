@@ -1,5 +1,6 @@
 import { COMMON_WORDS } from '../risk/common-words.js';
 import { escapeRegExp, foldDiacritics, normalizeForMatching, normalizeText } from '../risk/normalize.js';
+import { isEnglishWord } from './lexicon.js';
 
 /**
  * Deterministic de-identification check for lesson candidates (blueprint 02 §9: lessons are generalised
@@ -131,52 +132,55 @@ const GENERIC_CAPITALISED = new Set(
 );
 
 /**
- * Everyday words that open a lesson sentence and are not in `COMMON_WORDS` ("Rare but costly problems…",
- * "Prospects praised…", "Scope the first claim…"): lesson verbs, adverbs and nouns. A capitalised word
- * at a sentence start is a proper noun unless it is one of these, a common or method word, a word the
- * lesson also uses in lower case, or an inflection of one ("Interviewees", "Rewrite").
+ * Everyday words the lexicon lacks: startup vocabulary newer than it ("Waitlists…", "Onboarding…") and
+ * spellings it does not fold ("practise", "reframe").
  */
-const SENTENCE_STARTERS = new Set(
-  `abstract academic accordingly additionally adoption afterwards align allocate alternatively although
-ambitious analyse analyze anchor anybody articulate asking assess assume audit avoid besides beyond
-broader budget buyer calculate capture champion cheaper churn clarify clearer cohort collect commit
-communicate compete conduct confront connect consequently constraint contrast costly craft crucially
-debrief deeper define delegate demonstrate describe despite determine document drop earlier earn engage
-engineer ensure enterprise enthusiastic especially establish estimate evaluate eventually examine
-expensive explain explore faster filter formalise formalize fortunately frame frequent frequently gather
-generally generic gradually guard handle hardware hence honest identify importantly incumbent initially
-institutional interestingly invest invite involve isolate iterate justify label likewise limit listen
-lock lower map meanwhile mention milestone mixed momentum mostly narrow negotiate nevertheless nobody
-nonetheless notably notice novice objection observe occasionally operator otherwise outline overall
-ownership partly polite practise prepare prioritise prioritize probe procurement prospect protect
-prototype prove publish qualify quantify rank rare rarely recent recognise recognize recruit reflect
-reframe regardless regulated regulator reject relax rely remember repeat request require researcher
-resist respond retention revisit schedule scope screen separate shift ship shorten signal similarly
-simplify skip slowly smaller solve specific specifically split stakeholder stay steer stress structure
-summarise summarize surprisingly survey swap tailor teach technical therefore thus tie timeline
-tomorrow traction treat trim typically ultimately uncertainty underline unfortunately unless unlike unpaid
-update urgency vague validate verify via weak weigh whenever whereas whose widen workaround
-yesterday`.split(/\s+/),
+const NEWER_WORDS = new Set(
+  `biotech cleantech cofounder crowdfunding ecommerce edtech fintech followup freemium frontline healthcare
+incentivize medtech monetize offboarding onboarding operationalize paywall pharma practise preorder
+pushback reframe rebrand roadmap rollout scalable signup smartphone telehealth telemedicine timeline
+upsell upskill waitlist workaround workflow`.split(/\s+/),
 );
 
-const INFLECTIONS = ['ees', 'ers', 'ings', 'ments', 'ness', 'es', 'ed', 'ing', 'ly', 'er', 's', 'd'];
+const SUFFIXES = ['ments', 'ment', 'ness', 'ings', 'ing', 'ers', 'er', 'ees', 'ed', 'es', 'ly', 's', 'd'];
+const PREFIX = /^(?:re|un|pre|co|over|under|mis|non|sub|multi|inter|out)/;
 
-/** A lower-case word, or the word it is inflected or prefixed from, is everyday vocabulary. */
-function everyday(word: string, extra: ReadonlySet<string>): boolean {
-  const known = (w: string): boolean =>
-    COMMON_WORDS.has(w) ||
-    SENTENCE_STARTERS.has(w) ||
-    GENERIC_METHOD_WORDS.has(w) ||
-    GENERIC_CAPITALISED.has(w) ||
-    extra.has(w);
-  if (known(word)) return true;
-  const bases = [
-    word.replace(/ies$/, 'y'),
-    word.replace(/ied$/, 'y'),
-    ...INFLECTIONS.filter((suffix) => word.endsWith(suffix)).map((suffix) => word.slice(0, -suffix.length)),
-    word.replace(/^(?:re|un|pre|co|over|under|mis)/, ''),
-  ];
-  return bases.some((b) => b !== word && b.length >= 3 && known(b));
+/**
+ * The forms a lower-case word may be inflected, prefixed or spelled from: "batteries" → "battery",
+ * "hiring" → "hire", "shipping" → "ship", "rewrite" → "write", "prioritise" → "prioritize".
+ */
+function baseForms(word: string): string[] {
+  const american = word.replace(/is(e|ed|es|ing|ation|ations)$/, 'iz$1').replace(/yse(s|d)?$/, 'yze$1');
+  const out = american === word ? [word] : [word, american];
+  for (const form of [...out]) {
+    for (const suffix of SUFFIXES) {
+      if (!form.endsWith(suffix) || form.length - suffix.length < 3) continue;
+      const stem = form.slice(0, -suffix.length);
+      out.push(stem, `${stem}e`);
+      if (/([b-df-hj-np-tv-z])\1$/.test(stem)) out.push(stem.slice(0, -1));
+      if (stem.endsWith('i')) out.push(`${stem.slice(0, -1)}y`);
+    }
+  }
+  const unprefixed = word.replace(PREFIX, '');
+  if (unprefixed !== word && unprefixed.length >= 3) out.push(unprefixed);
+  return out;
+}
+
+/**
+ * Whether a capitalised word at a sentence start is everyday vocabulary, not a name: a common, method or
+ * allowed word, or a form of an English word ("Nurses", "Batteries", "Hiring"). What the lesson writes in
+ * lower case elsewhere does not count: "Stanford asked…" stays a name however often "stanford" appears.
+ */
+function everyday(word: string, allowed: ReadonlySet<string>): boolean {
+  return baseForms(word).some(
+    (w) =>
+      COMMON_WORDS.has(w) ||
+      GENERIC_METHOD_WORDS.has(w) ||
+      GENERIC_CAPITALISED.has(w) ||
+      NEWER_WORDS.has(w) ||
+      allowed.has(w) ||
+      isEnglishWord(w),
+  );
 }
 
 /** Words of well-known, generic methods that are often capitalised. */
@@ -317,14 +321,6 @@ export function checkDeidentified(
     (ctx.allowedTerms ?? []).flatMap((term) => wordsOf(term)).filter((w) => w.length >= 2),
   );
   const canaries = ctx.canaries.map(normalizeForMatching).filter((c) => c.length >= 4);
-  // A word the lesson also writes in lower case is vocabulary, not a name ("Pricing … the pricing").
-  const everydayTerms = new Set([
-    ...allowed,
-    ...fields.flatMap((f) =>
-      (normalizeText(f).match(/(?<![\p{L}])\p{Ll}+(?![\p{L}])/gu) ?? []).map(foldDiacritics),
-    ),
-  ]);
-
   fields.forEach((raw, i) => {
     const text = normalizeText(raw);
     const lower = normalizeForMatching(text);
@@ -343,7 +339,7 @@ export function checkDeidentified(
     if (REGION.test(text)) reasons.add('place');
     if (MONEY.test(text)) reasons.add('money');
     const titleCase = i === options.titleIndex && isTitleCase(text);
-    if (hasProperNoun(withoutGeneric, everydayTerms, titleCase)) reasons.add('proper_noun');
+    if (hasProperNoun(withoutGeneric, allowed, titleCase)) reasons.add('proper_noun');
   });
   return { ok: reasons.size === 0, reasons: [...reasons].sort() };
 }

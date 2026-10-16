@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { TOPICS } from '../gateway/mock-content.js';
 import { checkDeidentified, type LessonDeidentifyContext } from './deidentify.js';
+import { isEnglishWord } from './lexicon.js';
 
 const CTX: LessonDeidentifyContext = {
   ventureNames: ['QuietQuad', 'BenchTally', 'Kelp Kinetics'],
@@ -89,6 +90,61 @@ describe('checkDeidentified', () => {
       ok: true,
       reasons: [],
     });
+  });
+
+  it.each([
+    'Parents',
+    'Nurses',
+    'Doctors',
+    'Clinicians',
+    'Physicians',
+    'Homeowners',
+    'Installers',
+    'Batteries',
+    'Sensors',
+    'Panels',
+    'Landlords',
+    'Tenants',
+    'Employees',
+    'Executives',
+    'Shoppers',
+    'Retailers',
+    'Margins',
+    'Deposits',
+    'Referrals',
+    'Waitlists',
+    'Workshops',
+    'Hiring',
+    'Shipping',
+    'Caregivers',
+    'Warranties',
+    'Prioritising',
+  ])('accepts an everyday noun or verb that opens a sentence: %s', (word) => {
+    const text = `${word} matter more than founders expect.`;
+    expect(checkDeidentified([GOOD[0] ?? '', text], CTX, { titleIndex: 0 })).toEqual({
+      ok: true,
+      reasons: [],
+    });
+  });
+
+  it.each([
+    [['The buyer at Kaiser asked for references before kaiser agreed to a pilot.']],
+    [['They used the UCLA lab for testing; the ucla staff were helpful.']],
+    [['Stanford asked for a security review.', 'The founder sent the review to stanford the next day.']],
+    [['Mayo wanted a pilot before any purchase order.']],
+    [['Providence asked for outcome data first.']],
+  ])('never lets a lower-case mention or a word-like name launder a proper noun: %j', (fields) => {
+    const result = checkDeidentified([GOOD[0] ?? '', ...fields], CTX, { titleIndex: 0 });
+    expect(result.ok).toBe(false);
+    expect(result.reasons).toContain('proper_noun');
+  });
+
+  it('knows everyday English words but not names or organisations', () => {
+    for (const word of ['nurse', 'battery', 'landlord', 'deposit', 'hire'])
+      expect(isEnglishWord(word)).toBe(true);
+    for (const word of ['stanford', 'boston', 'kaiser', 'mayo', 'providence', 'oxford']) {
+      expect(isEnglishWord(word)).toBe(false);
+    }
   });
 
   it.each(Object.entries(TOPICS))('accepts the mock model lesson for %s', (_topic, bank) => {
