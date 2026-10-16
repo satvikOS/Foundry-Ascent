@@ -415,8 +415,15 @@ function socialReply(args: {
     if (!reading.firstMessage)
       return `Hi again${name !== null ? `, ${name}` : ''}. Where would you like to pick up?`;
     const howAreYou = /\bhow(?:'s| is| are| have)\b/i.test(text) ? ' Thanks for asking.' : '';
-    const hello = reading.openerShown ? '' : `${greetingFor(args.warmth, name, previous, seed)}${howAreYou} `;
-    return `${hello}${previous !== null ? callbackTo(previous) : "What's on your mind today?"}`.trim();
+    if (reading.openerShown) {
+      // The opener already asked how it went: say hello back and say where we were, without asking again.
+      const hi = `Hi${name !== null ? ` ${name}` : ''}.${howAreYou}`;
+      return previous !== null
+        ? `${hi} Good to pick this up again. ${whereWeWere(previous)}`
+        : `${hi} Go ahead.`;
+    }
+    const hello = `${greetingFor(args.warmth, name, previous, seed)}${howAreYou}`;
+    return `${hello} ${previous !== null ? callbackTo(previous) : "What's on your mind today?"}`;
   }
   if (moves.includes('short_reply') && !asks) {
     if (reading.founderHistory.length === 0) return 'What would you like to work on?';

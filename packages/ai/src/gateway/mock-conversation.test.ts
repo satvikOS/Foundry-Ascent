@@ -252,6 +252,25 @@ describe('openings', () => {
     expectSocial(value);
   });
 
+  it('answers a hello after the opener without asking the opener’s question again', async () => {
+    const opener = 'Last time you planned to call facilities about the library budget. How did it go?';
+    const gw = new MockModelGateway();
+    const req = request({ text: 'Hi!', section: DIGEST_CHAT });
+    const messages = [
+      {
+        role: 'user' as const,
+        content: '[The conversation started with your message below; the founder replies after it.]',
+      },
+      { role: 'assistant' as const, content: opener },
+      ...req.messages,
+    ];
+    const { value } = await gw.generateStructured({ ...req, messages });
+    expect(value.answer).toBe(
+      'Hi Maya. Good to pick this up again. When we talked yesterday, we were on per-library pricing.',
+    );
+    expectSocial(value);
+  });
+
   it('greets a first-time founder without inventing a past', async () => {
     const value = await reply({ text: 'Hello', section: NOTHING });
     expect(value.answer).toMatch(
