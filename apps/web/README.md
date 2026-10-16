@@ -66,6 +66,8 @@ staff workspaces in the same shell (the sidebar switcher moves between them).
 | `/$tenant/app/v/$ventureId/c/$sessionId`                                                                                                       | a conversation (`?view=recap\|transcript` once ended)                                                            |
 | `/$tenant/app/v/$ventureId/{knowledge,documents,help,team,settings}`                                                                           | Knowledge (`?type=&status=&q=&view=proposed`), Documents, Human help (`?id=`), Team, Venture settings            |
 | `/$tenant/app/eir/{personas,reviews,inbox}`, `/program/{portfolio,ventures,resources,escalations}`, `/admin/{principals,settings,usage,audit}` | staff workspaces (guards in each `route.tsx`)                                                                    |
+| `/$tenant/app/eir/personas/$personaId`                                                                                                         | persona sections (`?tab=doctrine\|library\|lessons\|releases\|consent\|embodiment&lesson=`)                      |
+| `/$tenant/app/eir/lessons`, `/eir/personas/new`, `/program/assignments`                                                                        | Lessons to review, New vEIR (program leads), vEIRs & assignments                                                 |
 | `/$tenant/app/ventures/…`, `/admin/…`                                                                                                          | redirects from before the redesign, keeping ids and query (`lib/legacy-routes.ts`)                               |
 
 Folder layouts: if a section switches to a folder (`memory/index.tsx`), delete the flat file
@@ -169,6 +171,11 @@ UI relies on beyond plain JSON bodies:
 | `GET /persona-releases/:id`                                                      | `PersonaReleaseDetailResponse`: the full draft the studio reviews before approval (403 for other EIRs)       |
 | `GET /sessions/:id`                                                              | `SessionDetailResponse`; blocked turns carry `blocked` (`reason`, `supportMessage`, `escalationId`)          |
 | `POST /personas/:id/suspend` · `resume`                                          | 200 `PersonaView`                                                                                            |
+| `POST /personas/:id/knowledge/:sourceId/complete`                                | **202** while the upload is processed, 200 once settled; the library polls                                   |
+| `DELETE /personas/:id/knowledge/:sourceId`                                       | 204; the source leaves retrieval at once                                                                     |
+| `GET /personas/:id/consents`                                                     | `ConsentListResponse` with `personas` per consent; 403 unless `canCurate`                                    |
+| `POST /consents/:id/revoke`                                                      | 200 `{ consent, suspendedPersonaIds }`                                                                       |
+| `POST /ventures/:id/assignment`                                                  | 200 `ProgramVentureRow` with `personaId`, `reviewingEir`, `assignedAt`                                       |
 | `POST /eir/reviews/:turnId`                                                      | 201 `{ reviewId, turnId }`                                                                                   |
 | `POST /program/ventures`                                                         | 201 `ProgramVentureRow`                                                                                      |
 | `POST` / `PATCH /program/resources[/:id]`                                        | 201 / 200 `ResourceView`; PATCH sends only changed fields (`UpdateResourceRequest`, incl. `status`)          |
