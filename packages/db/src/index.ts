@@ -4,6 +4,7 @@ export * from './db.js';
 export * from './migrate.js';
 export { splitStatements, scanSql } from './sql-lexer.js';
 export { createPgDriver, type PgDriverConfig } from './pg.js';
+export { instrumentDriver, type DbCallEvent, type DriverInstrumentation } from './instrumented.js';
 export {
   createDataApiDriver,
   dataApiClientFromSdk,

@@ -12,6 +12,7 @@ import { z } from 'zod';
 
 import { errorFields, type Logger } from '../logging.js';
 import { type InflightTracker } from '../runtime/inflight.js';
+import { currentRequestMetrics, RequestMetrics } from '../runtime/request-metrics.js';
 import { EventChannel } from './event-channel.js';
 import {
   IDEMPOTENCY_REPLAYED_HEADER,
@@ -24,6 +25,7 @@ import {
   routeKey,
 } from './idempotency.js';
 import { jsonBody, pathParam } from './input.js';
+import { TurnTimeline } from './turn-timing.js';
 import { type AppContext } from './types.js';
 
 export interface TurnStreamOptions {
@@ -156,12 +158,14 @@ export async function handleTurnRequest(
   const channel = new EventChannel<TurnStreamEvent>();
   let acceptedTurnId: string | null = null;
   const counts = { deltas: 0, speech: 0, firstDeltaMs: null as number | null };
+  const timeline = new TurnTimeline(currentRequestMetrics() ?? new RequestMetrics(started));
   const run: Promise<RunTurnOutcome> = options.orchestrator
     .runTurn(
       ctx,
       sessionId,
       input,
       (event) => {
+        timeline.observe(event);
         if (event.event === 'turn.accepted') acceptedTurnId = event.turnId;
         if (event.event === 'turn.delta') {
           counts.deltas += 1;
@@ -255,6 +259,13 @@ export async function handleTurnRequest(
       firstDeltaMs: counts.firstDeltaMs,
       clientGone,
       durationMs: Math.round(performance.now() - started),
+    });
+    // Stage timings (docs/runbooks/latency.md): numbers only.
+    logger.info('turn.timing', {
+      requestId,
+      turnId: outcome.turnId,
+      outcome: outcome.status,
+      ...timeline.fields(),
     });
   });
   // Hop-by-hop headers are invalid over HTTP/2 and in Lambda streaming metadata; the runtime frames

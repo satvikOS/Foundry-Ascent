@@ -7,6 +7,7 @@ import {
   type SqlDriver,
   type SystemExecutor,
 } from './executor.js';
+import { instrumentDriver, type DriverInstrumentation } from './instrumented.js';
 import { isUuid, p } from './params.js';
 import { createPgDriver, type PgDriverConfig } from './pg.js';
 
@@ -94,10 +95,10 @@ export function createDbFromDriver(driver: SqlDriver): Db {
 export type DbConfig =
   ({ readonly driver: 'pg' } & PgDriverConfig) | ({ readonly driver: 'dataapi' } & DataApiDriverConfig);
 
-/** Creates the facade for the configured driver. */
-export function createDb(config: DbConfig): Db {
+/** Creates the facade for the configured driver, optionally reporting every round trip (`instrumentation`). */
+export function createDb(config: DbConfig, instrumentation?: DriverInstrumentation): Db {
   const driver = config.driver === 'pg' ? createPgDriver(config) : createDataApiDriver(config);
-  return createDbFromDriver(driver);
+  return createDbFromDriver(instrumentation ? instrumentDriver(driver, instrumentation) : driver);
 }
 
 export type EnvLike = Readonly<Record<string, string | undefined>>;
@@ -145,7 +146,7 @@ export function dbConfigFromEnv(env: EnvLike = process.env): DbConfig {
   throw new SqlUsageError(`unsupported DB_DRIVER ${driver}`);
 }
 
-/** `createDb(dbConfigFromEnv(env))`. */
-export function createDbFromEnv(env: EnvLike = process.env): Db {
-  return createDb(dbConfigFromEnv(env));
+/** `createDb(dbConfigFromEnv(env), instrumentation)`. */
+export function createDbFromEnv(env: EnvLike = process.env, instrumentation?: DriverInstrumentation): Db {
+  return createDb(dbConfigFromEnv(env), instrumentation);
 }

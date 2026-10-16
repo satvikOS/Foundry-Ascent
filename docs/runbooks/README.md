@@ -12,6 +12,7 @@ verify and reverse them. Decisions behind them are in the [ADRs](../architecture
 | [Access codes](access-codes.md)                                             | Issuing, revoking and reviewing codes; rotating the owner code                                                  |
 | [Cost controls](cost-controls.md)                                           | Understanding the bill, caps and alarms (speech and distillation included); Aurora not pausing; a cap was hit   |
 | [Evals](evals.md)                                                           | Evaluating production: running and reading the gates                                                            |
+| [Latency](latency.md)                                                       | Where a turn's time goes, measuring it locally and in production, and what was done to make it faster           |
 | [Local development](local-development.md)                                   | Running and testing everything on one machine                                                                   |
 
 Archived: [legacy AWS cleanup](legacy-aws-cleanup.md) (one-time removal of pre-existing resources, closed

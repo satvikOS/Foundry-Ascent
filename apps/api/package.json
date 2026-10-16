@@ -8,7 +8,8 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run --exclude \"**/*.db.test.ts\"",
     "test:db": "vitest run \"db.test\"",
-    "check:bundles": "tsx src/scripts/check-bundles.ts"
+    "check:bundles": "tsx src/scripts/check-bundles.ts",
+    "latency": "tsx src/scripts/latency.ts"
   },
   "dependencies": {
     "@aws-crypto/sha256-js": "^5.2.0",

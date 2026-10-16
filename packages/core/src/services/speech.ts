@@ -17,6 +17,7 @@ import { refusalError, timeLimitRefusal } from './call-admission.js';
 import { CALL_LIMITS, type CallCaps, callSecondsToday, callTimeLeft, speechBudget } from './call-usage.js';
 import { voiceApproved } from './calls.js';
 import { isCrisisMessage, speakableRunSpan, speakableText } from './spoken-text.js';
+import { observedAudio } from './speech-audio.js';
 import { DEFAULT_SPEECH_VOICE, speechCostUsd, speechEngines } from './voices.js';
 
 /**
@@ -241,6 +242,12 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
 
   return {
     synthesize: async (ctx, rawInput, options = {}) => {
+      // Stage times for the `speech.timing` log line (docs/runbooks/latency.md): numbers only.
+      const started = performance.now();
+      const stages: Record<string, number> = {};
+      const stage = (name: string): void => {
+        stages[name] = Math.round(performance.now() - started);
+      };
       const input = parseInput(SpeechRequest, rawInput);
       const sessionId = requireId(input.sessionId, 'Session');
       const turnId = input.turnId === null ? null : requireId(input.turnId, 'Turn');
@@ -262,6 +269,7 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
           { sessionId, turnId, seq: input.seq ?? 0, text: input.text },
           input.sig,
         );
+      stage('verifiedMs');
 
       const plan = await kit.inRequest(ctx, async (scope): Promise<SpeechPlan> => {
         const { tx } = scope;
@@ -348,6 +356,7 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
         };
       });
 
+      stage('plannedMs');
       // Every check runs before the 501 below: a valid request tells the client to speak the text itself.
       if (plan.settings !== null) {
         // The platform's daily cap counts speech; the per-person AI cap does not (the speech budget does).
@@ -360,8 +369,10 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
       // The play and the characters are reserved before the speech service is called (one statement, so
       // concurrent requests cannot replay a unit or overrun a budget). Where no speech service runs, the
       // reservation is rolled back with the 501: it is the last check.
+      stage('capsCheckedMs');
       const reserved = plan.text.length;
       await reserve(ctx, plan, reserved);
+      stage('reservedMs');
       const synthesizer = kit.deps.speech;
       if (synthesizer === undefined) throw speechUnavailable();
 
@@ -381,6 +392,7 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
               requestId: ctx.requestId,
               ...(options.signal === undefined ? {} : { signal: options.signal }),
             });
+            stage('synthesizedMs');
             return {
               speech: synthesized,
               attempts: [
@@ -448,7 +460,22 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
           error: err instanceof Error ? err.name : 'unknown',
         });
       }
-      return speech;
+      stage('recordedMs');
+      return {
+        ...speech,
+        audio: observedAudio(speech.audio, {
+          onFirstChunk: () => {
+            stage('firstAudioMs');
+            logger.info('speech.timing', {
+              requestId: ctx.requestId,
+              callId: plan.callId,
+              signed,
+              characters: speech.characters,
+              ...stages,
+            });
+          },
+        }),
+      };
     },
   };
 }

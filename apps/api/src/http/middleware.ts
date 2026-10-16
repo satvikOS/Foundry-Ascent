@@ -13,6 +13,7 @@ import { getCookie } from 'hono/cookie';
 import { routePath } from 'hono/route';
 
 import { errorFields, type Logger, principalHash } from '../logging.js';
+import { currentRequestMetrics, RequestMetrics, withRequestMetrics } from '../runtime/request-metrics.js';
 import { classifyError, httpError, problemResponse } from './problem.js';
 import { clearedSessionCookie, resolveRequestId } from './request-meta.js';
 import { type AppContext, type AppEnv } from './types.js';
@@ -47,7 +48,9 @@ export interface RequestLogOptions {
 /**
  * Outermost middleware: request id (accepted or generated, echoed as `x-request-id`), security headers
  * and one structured access-log line per request with the route template, status, latency, a hash of the
- * principal id and the error code — never bodies, query strings or headers.
+ * principal id and the error code — never bodies, query strings or headers. The line also carries the
+ * request's database round trips and wait (until the response headers) and the session check's time
+ * ({@link RequestMetrics}).
  */
 export function requestContext({
   logger,
@@ -55,12 +58,13 @@ export function requestContext({
 }: RequestLogOptions): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
     const started = now();
+    const metrics = new RequestMetrics();
     const requestId = resolveRequestId(c.req.header(REQUEST_ID_HEADER));
     c.set('requestId', requestId);
     c.set('session', undefined);
     c.set('rawBody', undefined);
     c.set('errorCode', undefined);
-    await next();
+    await withRequestMetrics(metrics, next);
     const res = c.res;
     res.headers.set(REQUEST_ID_HEADER, requestId);
     applySecurityHeaders(res.headers);
@@ -75,6 +79,8 @@ export function requestContext({
       principal: session === undefined ? undefined : principalHash(session.principalId),
       code: c.get('errorCode'),
       streaming: res.headers.get('content-type')?.startsWith('text/event-stream') === true ? true : undefined,
+      authMs: metrics.authMs === null ? undefined : Math.round(metrics.authMs),
+      ...metrics.dbFields(),
     };
     if (status >= 500) logger.error('http.request', fields);
     else if (status >= 400) logger.warn('http.request', fields);
@@ -160,8 +166,11 @@ export function requireSession(auth: Pick<AuthService, 'verifySession'>): Middle
     if (token === undefined || token === '') {
       throw new DomainError('unauthenticated', 'Please sign in.', { reason: 'no_session_cookie' });
     }
+    const metrics = currentRequestMetrics();
+    const started = performance.now();
     try {
       c.set('session', await auth.verifySession(token, { requestId: c.get('requestId') }));
+      if (metrics) metrics.authMs = performance.now() - started;
     } catch (err) {
       if (isDomainError(err) && err.code === 'unauthenticated') {
         c.header('set-cookie', clearedSessionCookie(), { append: true });
