@@ -10,22 +10,18 @@ import { Link } from '@tanstack/react-router';
 import { ArrowUpRight } from 'lucide-react';
 import { useEffect, useRef, type ReactNode } from 'react';
 
-import { announce } from '@/components/a11y/live-announcer';
 import { Button } from '@/components/ui/button';
 import { ErrorState } from '@/components/ui/error-state';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { toast } from '@/components/ui/toast';
-import { errorMessage } from '@/lib/api/errors';
 import { useVentureEscalations } from '@/lib/api/hooks/escalations';
 import { useMemory } from '@/lib/api/hooks/memory';
-import { useBatchMemoryAction } from '@/lib/api/hooks/memory-batch';
 import { useNotebook } from '@/lib/api/hooks/notebook';
 import { formatRelative, pluralize } from '@/lib/format';
 import { ESCALATION_CATEGORY_LABELS } from '@/lib/labels';
-import { useMemoryActions } from '@/features/memory/api';
+import { useProposalDecision } from '@/features/knowledge/review-api';
 import { MemoryTypeLabel } from '@/features/memory/memory-meta';
 import { formatIsoDate } from '@/features/memory/typed/attributes';
 
@@ -308,24 +304,14 @@ function ReviewTab({
   items: MemoryObjectView[] | undefined;
   query: { isPending: boolean; isError: boolean; error: unknown; refetch: () => unknown };
 }) {
-  const { run, pendingId } = useMemoryActions(ventureId);
-  const batch = useBatchMemoryAction(ventureId);
+  const { decide, pendingIds, isPending } = useProposalDecision(ventureId);
   if (query.isPending) return <Loading />;
   if (query.isError || !items) return <Failed error={query.error} onRetry={() => void query.refetch()} />;
 
   const keepAll = () => {
-    batch.mutate(
-      { ids: items.map((m) => m.id), action: 'approve' },
-      {
-        onSuccess: (result) => {
-          const message = `Kept ${pluralize(result.items.length, 'item')}`;
-          toast.success(message);
-          announce(message);
-        },
-        onError: (error) => {
-          toast.error('Couldn’t keep these', { description: errorMessage(error) });
-        },
-      },
+    decide(
+      items.map((m) => m.id),
+      'approve',
     );
   };
 
@@ -338,7 +324,12 @@ function ReviewTab({
             : 'Suggestions to remember for this venture. Nothing is kept until someone keeps it.'}
         </p>
         {items.length > 1 ? (
-          <Button size="xs" variant="secondary" loading={batch.isPending} onClick={keepAll}>
+          <Button
+            size="xs"
+            variant="secondary"
+            loading={isPending && pendingIds.length > 1}
+            onClick={keepAll}
+          >
             Keep all
           </Button>
         ) : null}
@@ -346,7 +337,7 @@ function ReviewTab({
       {items.length > 0 ? (
         <ul className="divide-y divide-border border-y border-border">
           {items.map((memory) => {
-            const busy = pendingId === memory.id || batch.isPending;
+            const busy = pendingIds.includes(memory.id) || (isPending && pendingIds.length > 1);
             return (
               <li key={memory.id} className="grid gap-1.5 py-3">
                 <div className="flex items-center gap-1.5">
@@ -360,7 +351,7 @@ function ReviewTab({
                     disabled={busy}
                     aria-label={`Keep: ${memory.title}`}
                     onClick={() => {
-                      run(memory.id, { action: 'approve' }, { successMessage: 'Kept' });
+                      decide([memory.id], 'approve');
                     }}
                   >
                     Keep
@@ -371,7 +362,7 @@ function ReviewTab({
                     disabled={busy}
                     aria-label={`Not now: ${memory.title}`}
                     onClick={() => {
-                      run(memory.id, { action: 'reject' }, { successMessage: 'Not kept' });
+                      decide([memory.id], 'reject');
                     }}
                   >
                     Not now

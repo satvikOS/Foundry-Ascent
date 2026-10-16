@@ -19,7 +19,8 @@ import { errorMessage } from '@/lib/api/errors';
 import type { TurnBlocked, TurnStreamError, TurnStreamState } from '@/lib/api/hooks/turn-stream';
 import { formatDateTime } from '@/lib/format';
 import { formatWait, useSecondsUntil } from '@/lib/hooks/use-countdown';
-import { useCreateVentureMemory, useMemoryActions } from '@/features/memory/api';
+import { useProposalDecision } from '@/features/knowledge/review-api';
+import { useCreateVentureMemory } from '@/features/memory/api';
 import { findMemoryForCandidate } from '@/features/memory/optimistic';
 
 import { BlockedPanel } from '../coach/blocked-panel';
@@ -149,7 +150,7 @@ export function StoredExchange({
 }: StoredExchangeProps) {
   const navigate = useNavigate();
   const { showSources } = usePanelState();
-  const { run, pendingId } = useMemoryActions(ventureId);
+  const { decide, pendingIds } = useProposalDecision(ventureId);
   const { createMemory } = useCreateVentureMemory(ventureId);
   const { add, savingKey } = useAddAction(ventureId);
   const [savingTitle, setSavingTitle] = useState<string | null>(null);
@@ -232,13 +233,13 @@ export function StoredExchange({
                 bindings,
                 controls: {
                   loading: memoryLoading,
-                  pendingId,
+                  pendingId: pendingIds[0] ?? null,
                   savingTitle,
                   onKeep: (memory) => {
-                    run(memory.id, { action: 'approve' }, { successMessage: 'Kept' });
+                    decide([memory.id], 'approve');
                   },
                   onDismiss: (memory) => {
-                    run(memory.id, { action: 'reject' }, { successMessage: 'Not kept' });
+                    decide([memory.id], 'reject');
                   },
                   onSave: (candidate) => {
                     void saveCandidate(candidate);

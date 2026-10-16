@@ -26,8 +26,9 @@ import {
 import { Field } from '@/components/ui/field';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/toast';
-import { applyServerFieldErrors, MutationErrorAlert } from '@/features/admin/shared/form';
+import { MutationErrorAlert } from '@/features/admin/shared/form';
 import { useResumePersona, useSuspendPersona } from '@/lib/api/hooks/eir';
+import { applyFieldErrors } from '@/lib/form-errors';
 import { pluralize } from '@/lib/format';
 
 const SuspendForm = z.object({
@@ -95,7 +96,7 @@ export function SuspendPersonaDialog({ persona, open, onOpenChange }: ControlPro
                     close();
                   },
                   onError: (error) => {
-                    applyServerFieldErrors(error, setError, ['reason']);
+                    applyFieldErrors(error, setError, ['reason']);
                   },
                 },
               );

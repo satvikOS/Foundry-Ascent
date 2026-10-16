@@ -21,9 +21,9 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/toast';
 import { errorMessage } from '@/lib/api/errors';
+import { applyFieldErrors } from '@/lib/form-errors';
 import { VISIBILITY_LABELS } from '@/lib/labels';
-import { FieldSelect, type FieldSelectOption } from '@/features/venture/field-select';
-import { applyFieldErrors } from '@/features/venture/form-errors';
+import { SelectField, type SelectFieldOption } from '@/components/ui/select-field';
 
 import { useCreateVentureMemory, useOptimisticMemoryAction } from '../api';
 import {
@@ -35,17 +35,17 @@ import {
 } from './attributes';
 import { EXPERIMENT_STATUS_DEFS, MILESTONE_STATUS_DEFS } from './typed-status';
 
-const EXPERIMENT_STATUS_OPTIONS: FieldSelectOption<string>[] = EXPERIMENT_STATUSES.map((s) => ({
+const EXPERIMENT_STATUS_OPTIONS: SelectFieldOption<string>[] = EXPERIMENT_STATUSES.map((s) => ({
   value: s,
   label: EXPERIMENT_STATUS_DEFS[s].label,
   icon: EXPERIMENT_STATUS_DEFS[s].icon,
 }));
-const MILESTONE_STATUS_OPTIONS: FieldSelectOption<string>[] = MILESTONE_STATUSES.map((s) => ({
+const MILESTONE_STATUS_OPTIONS: SelectFieldOption<string>[] = MILESTONE_STATUSES.map((s) => ({
   value: s,
   label: MILESTONE_STATUS_DEFS[s].label,
   icon: MILESTONE_STATUS_DEFS[s].icon,
 }));
-const VISIBILITY_OPTIONS: FieldSelectOption<z.infer<typeof Visibility>>[] = Visibility.options.map((v) => ({
+const VISIBILITY_OPTIONS: SelectFieldOption<z.infer<typeof Visibility>>[] = Visibility.options.map((v) => ({
   value: v,
   label: VISIBILITY_LABELS[v].label,
 }));
@@ -423,14 +423,13 @@ export function TypedMemoryDialog({
                 control={control}
                 name="status"
                 render={({ field }) => (
-                  <Field label="Status">
-                    <FieldSelect
-                      value={field.value}
-                      onValueChange={field.onChange}
-                      options={EXPERIMENT_STATUS_OPTIONS}
-                      className="sm:w-56"
-                    />
-                  </Field>
+                  <SelectField
+                    label="Status"
+                    value={field.value}
+                    onChange={field.onChange}
+                    options={EXPERIMENT_STATUS_OPTIONS}
+                    triggerClassName="sm:w-56"
+                  />
                 )}
               />
               <Field
@@ -470,13 +469,12 @@ export function TypedMemoryDialog({
                   control={control}
                   name="status"
                   render={({ field }) => (
-                    <Field label="Status">
-                      <FieldSelect
-                        value={field.value}
-                        onValueChange={field.onChange}
-                        options={MILESTONE_STATUS_OPTIONS}
-                      />
-                    </Field>
+                    <SelectField
+                      label="Status"
+                      value={field.value}
+                      onChange={field.onChange}
+                      options={MILESTONE_STATUS_OPTIONS}
+                    />
                   )}
                 />
               </div>
@@ -494,14 +492,14 @@ export function TypedMemoryDialog({
             control={control}
             name="visibility"
             render={({ field }) => (
-              <Field label="Visibility" description={VISIBILITY_LABELS[field.value].description}>
-                <FieldSelect
-                  value={field.value}
-                  onValueChange={field.onChange}
-                  options={VISIBILITY_OPTIONS}
-                  className="sm:w-56"
-                />
-              </Field>
+              <SelectField
+                label="Visibility"
+                description={VISIBILITY_LABELS[field.value].description}
+                value={field.value}
+                onChange={field.onChange}
+                options={VISIBILITY_OPTIONS}
+                triggerClassName="sm:w-56"
+              />
             )}
           />
 

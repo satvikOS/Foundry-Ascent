@@ -32,17 +32,17 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/toast';
 import { announce } from '@/components/a11y/live-announcer';
 import { errorMessage } from '@/lib/api/errors';
+import { applyFieldErrors } from '@/lib/form-errors';
 import { MEMORY_TYPE_LABELS, VISIBILITY_LABELS } from '@/lib/labels';
 import { useFullMemory } from '@/lib/api/hooks/memory';
-import { FieldSelect, type FieldSelectOption } from '@/features/venture/field-select';
-import { applyFieldErrors } from '@/features/venture/form-errors';
+import { SelectField, type SelectFieldOption } from '@/components/ui/select-field';
 import { reviewFailure, reviewMessage, useMemoryReview } from '@/features/knowledge/review-api';
 import { sentenceStart, useVeirName } from '@/features/venture/veir-name';
 
 import { useCreateVentureMemory, useMemoryActions } from './api';
 
 const VISIBILITIES = Visibility.options;
-const TYPE_OPTIONS: FieldSelectOption<MemoryType>[] = MemoryType.options.map((type) => ({
+const TYPE_OPTIONS: SelectFieldOption<MemoryType>[] = MemoryType.options.map((type) => ({
   value: type,
   label: MEMORY_TYPE_LABELS[type].label,
   icon: MEMORY_TYPE_LABELS[type].icon,
@@ -548,9 +548,13 @@ export function CreateMemoryDialog({
               control={control}
               name="type"
               render={({ field }) => (
-                <Field label="Type" error={formState.errors.type?.message}>
-                  <FieldSelect value={field.value} onValueChange={field.onChange} options={TYPE_OPTIONS} />
-                </Field>
+                <SelectField
+                  label="Type"
+                  error={formState.errors.type?.message}
+                  value={field.value}
+                  onChange={field.onChange}
+                  options={TYPE_OPTIONS}
+                />
               )}
             />
             <Controller

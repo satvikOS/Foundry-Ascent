@@ -17,8 +17,9 @@ import {
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui/toast';
-import { applyServerFieldErrors, MutationErrorAlert } from '@/features/admin/shared/form';
+import { MutationErrorAlert } from '@/features/admin/shared/form';
 import { useRenameProgramVenture } from '@/lib/api/hooks/program';
+import { applyFieldErrors } from '@/lib/form-errors';
 
 const RenameForm = z.object({
   name: z.string().trim().min(3, 'Use at least 3 characters.').max(80, 'Use 80 characters or fewer.'),
@@ -62,7 +63,7 @@ export function RenameVentureDialog({ venture, onClose }: RenameVentureDialogPro
           close();
         },
         onError: (error) => {
-          applyServerFieldErrors(error, setError, ['name']);
+          applyFieldErrors(error, setError, ['name']);
         },
       },
     );

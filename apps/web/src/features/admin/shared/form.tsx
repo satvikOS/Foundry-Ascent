@@ -1,10 +1,5 @@
-import type { ReactNode } from 'react';
-import type { FieldValues, Path, UseFormSetError } from 'react-hook-form';
-
 import { Alert } from '@/components/ui/alert';
 import { CopyButton } from '@/components/ui/copy-button';
-import { Field } from '@/components/ui/field';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { errorMessage, isApiError } from '@/lib/api/errors';
 
 /**
@@ -33,86 +28,6 @@ export function parseCommaList(text: string): string[] {
     if (value) seen.add(value);
   }
   return [...seen];
-}
-
-/**
- * Copy server-side field errors (422 problem+json `errors[]`, or local contract validation from
- * `encodeBody`) onto react-hook-form fields. Returns true when at least one field error was placed,
- * so the caller can skip the generic form-level alert.
- */
-export function applyServerFieldErrors<T extends FieldValues>(
-  error: unknown,
-  setError: UseFormSetError<T>,
-  fields: readonly Path<T>[],
-  mapPath: (path: string) => string = (path) => path,
-): boolean {
-  if (!isApiError(error) || error.fieldErrors.length === 0) return false;
-  let placed = false;
-  for (const fieldError of error.fieldErrors) {
-    const target = mapPath(fieldError.path);
-    const field = fields.find((candidate) => candidate === target);
-    if (field) {
-      setError(field, { type: 'server', message: fieldError.message }, { shouldFocus: !placed });
-      placed = true;
-    }
-  }
-  return placed;
-}
-
-interface SelectFieldProps<V extends string> {
-  label: ReactNode;
-  value: V;
-  onChange: (value: V) => void;
-  onBlur?: () => void;
-  options: readonly { value: V; label: string }[];
-  description?: ReactNode;
-  error?: string | undefined;
-  required?: boolean;
-  disabled?: boolean;
-  placeholder?: string;
-  className?: string;
-}
-
-/**
- * Labelled Radix select. The trigger is the Field's control, so the <label>, description and error
- * are wired to the element that receives focus.
- */
-export function SelectField<V extends string>({
-  label,
-  value,
-  onChange,
-  onBlur,
-  options,
-  description,
-  error,
-  required,
-  disabled,
-  placeholder,
-  className,
-}: SelectFieldProps<V>) {
-  return (
-    <Select
-      value={value}
-      onValueChange={(next) => {
-        const match = options.find((option) => option.value === next);
-        if (match) onChange(match.value);
-      }}
-      disabled={disabled}
-    >
-      <Field label={label} description={description} error={error} required={required} className={className}>
-        <SelectTrigger className="w-full" onBlur={onBlur}>
-          <SelectValue placeholder={placeholder} />
-        </SelectTrigger>
-      </Field>
-      <SelectContent>
-        {options.map((option) => (
-          <SelectItem key={option.value} value={option.value}>
-            {option.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
 }
 
 /** Inline, announced error for a failed mutation (with a copyable request ID for support). */

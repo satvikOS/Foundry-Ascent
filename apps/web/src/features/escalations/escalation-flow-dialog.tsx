@@ -26,10 +26,10 @@ import { getStatusDefinition } from '@/components/ui/status-badge';
 import { Textarea } from '@/components/ui/textarea';
 import { errorMessage } from '@/lib/api/errors';
 import { useCreateEscalation, useEscalationAction } from '@/lib/api/hooks/escalations';
+import { applyFieldErrors } from '@/lib/form-errors';
 import { ESCALATION_CATEGORY_LABELS, REQUESTED_ROLE_LABELS } from '@/lib/labels';
 import { cn } from '@/lib/utils';
-import { FieldSelect, type FieldSelectOption } from '@/features/venture/field-select';
-import { applyFieldErrors } from '@/features/venture/form-errors';
+import { SelectField, type SelectFieldOption } from '@/components/ui/select-field';
 
 import { ConsentForm } from './consent-form';
 import { PacketView } from './packet-view';
@@ -67,15 +67,15 @@ const EditSchema = z.object({
   unknowns: z.string().max(4000),
 });
 
-const CATEGORY_OPTIONS: FieldSelectOption<Category>[] = EscalationCategory.options.map((c) => ({
+const CATEGORY_OPTIONS: SelectFieldOption<Category>[] = EscalationCategory.options.map((c) => ({
   value: c,
   label: ESCALATION_CATEGORY_LABELS[c],
 }));
-const PRIORITY_OPTIONS: FieldSelectOption<Priority>[] = EscalationPriority.options.map((p) => {
+const PRIORITY_OPTIONS: SelectFieldOption<Priority>[] = EscalationPriority.options.map((p) => {
   const def = getStatusDefinition('escalationPriority', p);
   return { value: p, label: def.label, icon: def.icon };
 });
-const ROLE_OPTIONS: FieldSelectOption<Role>[] = RequestedRole.options.map((r) => ({
+const ROLE_OPTIONS: SelectFieldOption<Role>[] = RequestedRole.options.map((r) => ({
   value: r,
   label: REQUESTED_ROLE_LABELS[r] ?? r,
 }));
@@ -296,38 +296,37 @@ export function EscalationFlowDialog({
                 control={details.control}
                 name="category"
                 render={({ field }) => (
-                  <Field label="Topic">
-                    <FieldSelect
-                      value={field.value}
-                      onValueChange={field.onChange}
-                      options={CATEGORY_OPTIONS}
-                    />
-                  </Field>
+                  <SelectField
+                    label="Topic"
+                    value={field.value}
+                    onChange={field.onChange}
+                    options={CATEGORY_OPTIONS}
+                  />
                 )}
               />
               <Controller
                 control={details.control}
                 name="priority"
                 render={({ field }) => (
-                  <Field
+                  <SelectField
                     label="Urgency"
                     description={getStatusDefinition('escalationPriority', field.value).description}
-                  >
-                    <FieldSelect
-                      value={field.value}
-                      onValueChange={field.onChange}
-                      options={PRIORITY_OPTIONS}
-                    />
-                  </Field>
+                    value={field.value}
+                    onChange={field.onChange}
+                    options={PRIORITY_OPTIONS}
+                  />
                 )}
               />
               <Controller
                 control={details.control}
                 name="requestedRole"
                 render={({ field }) => (
-                  <Field label="Who should help">
-                    <FieldSelect value={field.value} onValueChange={field.onChange} options={ROLE_OPTIONS} />
-                  </Field>
+                  <SelectField
+                    label="Who should help"
+                    value={field.value}
+                    onChange={field.onChange}
+                    options={ROLE_OPTIONS}
+                  />
                 )}
               />
             </div>

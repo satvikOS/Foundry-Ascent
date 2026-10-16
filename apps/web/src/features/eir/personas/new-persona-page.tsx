@@ -13,7 +13,7 @@ import { PageContainer, PageHeader } from '@/components/ui/page-header';
 import { SectionCard } from '@/components/ui/section-card';
 import { LoadingRegion, Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast';
-import { SelectField } from '@/features/admin/shared/form';
+import { SelectField } from '@/components/ui/select-field';
 import { usePersonas } from '@/lib/api/hooks/eir';
 import { useCreateEirPersona, useEirProfiles } from '@/lib/api/hooks/veir-pools';
 

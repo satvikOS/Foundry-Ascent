@@ -12,7 +12,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { toast } from '@/components/ui/toast';
-import { MutationErrorAlert, SelectField } from '@/features/admin/shared/form';
+import { SelectField } from '@/components/ui/select-field';
+import { MutationErrorAlert } from '@/features/admin/shared/form';
 import { type ProgramVenture } from '@/lib/api/hooks/program';
 import { type EirProfile, useAssignPersona } from '@/lib/api/hooks/veir-pools';
 

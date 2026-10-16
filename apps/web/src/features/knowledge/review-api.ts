@@ -7,6 +7,8 @@ import {
 import { useMutation, useQueryClient, type QueryKey } from '@tanstack/react-query';
 import type { z } from 'zod';
 
+import { announce } from '@/components/a11y/live-announcer';
+import { toast } from '@/components/ui/toast';
 import { encodeBody } from '@/lib/api/body';
 import { api, createIdempotencyKey, path } from '@/lib/api/client';
 import { errorMessage, isApiError } from '@/lib/api/errors';
@@ -210,4 +212,40 @@ export function useMemoryReview(ventureId: string) {
       invalidate(ids);
     },
   });
+}
+
+/** What a founder's Keep / Not now did, in the words of those buttons (counts only, never content). */
+export function decisionMessage(action: ReviewAction, result: ReviewResult): string {
+  const done = result.items.length;
+  if (done === 0) return 'Already handled.';
+  if (action === 'reject') return done === 1 ? 'Not kept' : `Not kept: ${String(done)}`;
+  return done === 1 ? 'Kept' : `Kept ${String(done)}`;
+}
+
+/**
+ * Keep / Not now on the vEIR's proposals wherever they appear in a conversation (an answer's suggestions,
+ * the panel's To review list and its Keep all) through the one review path above, with a toast and an
+ * announcement in the founder's words.
+ */
+export function useProposalDecision(ventureId: string) {
+  const review = useMemoryReview(ventureId);
+  const decide = (ids: readonly string[], action: ReviewAction) => {
+    if (ids.length === 0) return;
+    review.mutate(
+      { ids, action },
+      {
+        onSuccess: (result) => {
+          const message = decisionMessage(action, result);
+          toast.success(message);
+          announce(message);
+        },
+        onError: (error) => {
+          const { title, description } = reviewFailure(action, ids, error);
+          toast.error(title, { description });
+        },
+      },
+    );
+  };
+  const pendingIds: readonly string[] = review.isPending ? review.variables.ids : [];
+  return { decide, pendingIds, isPending: review.isPending };
 }

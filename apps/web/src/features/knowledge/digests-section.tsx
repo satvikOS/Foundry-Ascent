@@ -19,13 +19,12 @@ import { ErrorState } from '@/components/ui/error-state';
 import { HairlineSkeleton } from '@/components/ui/page-section';
 import { toast } from '@/components/ui/toast';
 import { errorMessage } from '@/lib/api/errors';
-import { useSessions } from '@/lib/api/hooks/sessions';
+import { useDeleteDigest, useSessions } from '@/lib/api/hooks/sessions';
 import { conversationTitle, lastActivity } from '@/lib/conversations';
 import { formatDateTime, formatRelative, isoString } from '@/lib/format';
 import { formatIsoDate } from '@/features/memory/typed/attributes';
 import { sentenceStart, useVeirName } from '@/features/venture/veir-name';
 
-import { useDeleteDigest } from './digest-api';
 
 type Digested = SessionView & { digest: NonNullable<SessionView['digest']> };
 
@@ -50,7 +49,7 @@ interface DigestsSectionProps {
 export function DigestsSection({ ventureId, tenant, canEdit }: DigestsSectionProps) {
   const sessions = useSessions(ventureId);
   const author = useVeirName(ventureId);
-  const remove = useDeleteDigest(ventureId);
+  const remove = useDeleteDigest();
   const [confirm, setConfirm] = useState<Digested | null>(null);
   const rows = useMemo(() => digestedConversations(sessions.data ?? []), [sessions.data]);
 

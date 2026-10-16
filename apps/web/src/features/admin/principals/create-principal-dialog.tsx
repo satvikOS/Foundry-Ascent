@@ -22,8 +22,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useCreatePrincipal } from '@/lib/api/hooks/admin';
 import { ROLE_LABELS } from '@/lib/auth/roles';
+import { applyFieldErrors } from '@/lib/form-errors';
 
-import { applyServerFieldErrors, MutationErrorAlert } from '../shared/form';
+import { MutationErrorAlert } from '../shared/form';
 import type { CodeRecipient } from './issue-access-code-dialog';
 
 const PLATFORM_ROLE_DESCRIPTIONS: Record<z.infer<typeof PlatformRole>, string> = {
@@ -81,7 +82,7 @@ export function CreatePrincipalDialog({ open, onOpenChange, onIssueCode }: Creat
           announce('Principal created');
         },
         onError: (error) => {
-          applyServerFieldErrors(error, setError, ['displayName', 'email', 'title', 'roles']);
+          applyFieldErrors(error, setError, ['displayName', 'email', 'title', 'roles']);
         },
       },
     );

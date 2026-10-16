@@ -16,19 +16,14 @@ import {
 } from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import { SelectField } from '@/components/ui/select-field';
 import { useIssueAccessCode } from '@/lib/api/hooks/admin';
 import type { IssuedAccessCode } from '@/lib/api/hooks/team';
+import { applyFieldErrors } from '@/lib/form-errors';
+import { ACCESS_CODE_EXPIRY_OPTIONS, ACCESS_CODE_EXPIRY_VALUES, expiresInDays } from '@/lib/labels';
 
 import { AccessCodeRevealDialog } from '../shared/access-code-reveal';
-import { applyServerFieldErrors, MutationErrorAlert, SelectField } from '../shared/form';
-
-const CODE_EXPIRY_OPTIONS = [
-  { value: '7', label: '7 days' },
-  { value: '30', label: '30 days' },
-  { value: '90', label: '90 days' },
-  { value: '365', label: '1 year' },
-  { value: 'never', label: 'No expiry' },
-] as const;
+import { MutationErrorAlert } from '../shared/form';
 
 const IssueForm = z.object({
   label: z
@@ -36,7 +31,7 @@ const IssueForm = z.object({
     .trim()
     .min(1, 'Add a label so you can recognise this code later.')
     .max(80, 'Use 80 characters or fewer.'),
-  expiry: z.enum(['7', '30', '90', '365', 'never']),
+  expiry: z.enum(ACCESS_CODE_EXPIRY_VALUES),
 });
 type IssueFormValues = z.infer<typeof IssueForm>;
 
@@ -77,7 +72,7 @@ function IssueAccessCodeDialogInner({ recipient, onClose }: IssueAccessCodeDialo
         principalId: recipient.id,
         input: {
           label: values.label,
-          expiresInDays: values.expiry === 'never' ? null : Number(values.expiry),
+          expiresInDays: expiresInDays(values.expiry),
         },
       },
       {
@@ -87,7 +82,7 @@ function IssueAccessCodeDialogInner({ recipient, onClose }: IssueAccessCodeDialo
           announce('Access code issued. Copy it now; it is shown once.');
         },
         onError: (error) => {
-          applyServerFieldErrors(error, setError, ['label', 'expiry'], (path) =>
+          applyFieldErrors(error, setError, ['label', 'expiry'], (path) =>
             path === 'expiresInDays' ? 'expiry' : path,
           );
         },
@@ -141,7 +136,7 @@ function IssueAccessCodeDialogInner({ recipient, onClose }: IssueAccessCodeDialo
                 value={field.value}
                 onChange={field.onChange}
                 onBlur={field.onBlur}
-                options={CODE_EXPIRY_OPTIONS}
+                options={ACCESS_CODE_EXPIRY_OPTIONS}
                 description="Shorter is safer. You can revoke a code at any time."
                 error={formState.errors.expiry?.message}
               />

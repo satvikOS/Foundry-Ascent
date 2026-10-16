@@ -18,14 +18,10 @@ import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { toast } from '@/components/ui/toast';
-import {
-  applyServerFieldErrors,
-  dateInputToIso,
-  MutationErrorAlert,
-  SelectField,
-  todayDateInput,
-} from '@/features/admin/shared/form';
+import { SelectField } from '@/components/ui/select-field';
+import { dateInputToIso, MutationErrorAlert, todayDateInput } from '@/features/admin/shared/form';
 import { useRouteEscalation, type EscalationQueueEntry } from '@/lib/api/hooks/program';
+import { applyFieldErrors } from '@/lib/form-errors';
 import { ESCALATION_CATEGORY_LABELS } from '@/lib/labels';
 
 import type { AssigneeOption } from './assignees';
@@ -115,7 +111,7 @@ function RouteForm({
           onClose();
         },
         onError: (error) => {
-          applyServerFieldErrors(error, setError, ['assigneeId', 'dueDate'], (path) =>
+          applyFieldErrors(error, setError, ['assigneeId', 'dueDate'], (path) =>
             path === 'dueAt' ? 'dueDate' : path,
           );
         },

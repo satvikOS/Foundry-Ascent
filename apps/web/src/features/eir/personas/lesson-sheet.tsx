@@ -29,7 +29,8 @@ import {
 } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/toast';
-import { applyServerFieldErrors, MutationErrorAlert } from '@/features/admin/shared/form';
+import { MutationErrorAlert } from '@/features/admin/shared/form';
+import { applyFieldErrors } from '@/lib/form-errors';
 import { formatDate } from '@/lib/format';
 import { useCreateLesson, useLessonAction } from '@/lib/api/hooks/veir-pools';
 
@@ -141,7 +142,7 @@ function LessonBody({
   };
   const fail = (error: unknown) => {
     onBusyChange(false);
-    applyServerFieldErrors(
+    applyFieldErrors(
       error,
       setError,
       LESSON_FIELDS.map((f) => f.name),

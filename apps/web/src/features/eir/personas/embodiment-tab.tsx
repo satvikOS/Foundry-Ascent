@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button';
 import { ErrorState } from '@/components/ui/error-state';
 import { LoadingRegion, Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast';
-import { MutationErrorAlert, SelectField } from '@/features/admin/shared/form';
+import { SelectField } from '@/components/ui/select-field';
+import { MutationErrorAlert } from '@/features/admin/shared/form';
 import { usePersonaEmbodiment, useUpdateEmbodiment } from '@/lib/api/hooks/veir-pools';
 
 const PLATFORM_DEFAULT = 'default';

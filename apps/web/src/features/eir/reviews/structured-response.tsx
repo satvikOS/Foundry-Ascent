@@ -7,7 +7,6 @@ import {
   MessageSquareQuote,
   Siren,
   Sparkles,
-  Swords,
   Target,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -21,6 +20,7 @@ import {
   MODE_LABELS,
   REQUESTED_ROLE_LABELS,
 } from '@/lib/labels';
+import { ReasoningDetails } from '@/features/chat/reasoning';
 import { cn } from '@/lib/utils';
 
 function Block({
@@ -46,14 +46,19 @@ function Block({
   );
 }
 
+/** Moves to an item of the evidence pack below the answer. */
+function showEvidence(id: string): void {
+  const target = document.getElementById(`evidence-${id}`);
+  target?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  target?.focus({ preventScroll: true });
+}
+
 function EvidenceKey({ id }: { id: string }) {
   return (
     <button
       type="button"
       onClick={() => {
-        const target = document.getElementById(`evidence-${id}`);
-        target?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-        target?.focus({ preventScroll: true });
+        showEvidence(id);
       }}
       className="mx-0.5 inline-flex h-5 items-center rounded-sm border border-border-strong px-1 align-baseline font-mono text-[11px] font-medium text-foreground hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
       aria-label={`Show evidence ${id}`}
@@ -62,8 +67,6 @@ function EvidenceKey({ id }: { id: string }) {
     </button>
   );
 }
-
-const UNCERTAINTY_LABEL = { low: 'Low', medium: 'Medium', high: 'High' } as const;
 
 /**
  * Read-only rendering of a turn's structured response for blind calibration review. It shows the
@@ -95,50 +98,15 @@ export function StructuredResponse({ turn }: { turn: TurnView }) {
             </div>
           </Block>
 
-          {response.claims.length > 0 ? (
-            <Block title="Claims" icon={ListChecks} meta={response.claims.length}>
-              <ul className="grid gap-2">
-                {response.claims.map((claim, i) => (
-                  <li
-                    key={i}
-                    className="flex flex-col gap-1.5 rounded-lg border border-border px-3 py-2 sm:flex-row sm:items-start"
-                  >
-                    <StatusBadge kind="claim" status={claim.kind} withTitle className="sm:mt-0.5" />
-                    <span className="flex-1 text-sm">
-                      {claim.text}
-                      {claim.evidence_ids.map((id) => (
-                        <EvidenceKey key={id} id={id} />
-                      ))}
-                      {claim.kind === 'fact' && claim.evidence_ids.length === 0 ? (
-                        <span className="ml-1 text-xs font-medium text-warning">(no evidence cited)</span>
-                      ) : null}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </Block>
-          ) : null}
-
-          {response.challenge ? (
-            <Block title="Challenge" icon={Swords}>
-              <p className="rounded-lg border border-border px-4 py-3 text-sm">{response.challenge}</p>
-            </Block>
-          ) : null}
-
-          {response.uncertainty.length > 0 ? (
-            <Block title="Uncertainty" icon={CircleHelp}>
-              <ul className="grid gap-1.5 text-sm">
-                {response.uncertainty.map((u, i) => (
-                  <li key={i} className="flex items-start gap-2">
-                    <Badge variant="outline" className="mt-0.5">
-                      {UNCERTAINTY_LABEL[u.level]}
-                    </Badge>
-                    <span>{u.item}</span>
-                  </li>
-                ))}
-              </ul>
-            </Block>
-          ) : null}
+          <Block title="Reasoning" icon={ListChecks}>
+            {/* The same claims, uncertainty and challenge rendering as the founder's conversation. */}
+            <ReasoningDetails
+              response={response}
+              evidence={turn.evidence}
+              validator={turn.validator}
+              onOpenSource={showEvidence}
+            />
+          </Block>
 
           {response.next_actions.length > 0 ? (
             <Block title="Next actions" icon={Target}>

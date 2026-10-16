@@ -19,10 +19,10 @@ import { MutationErrorAlert } from '@/features/admin/shared/form';
 import { useUpdateVenture, useVenture } from '@/lib/api/hooks/ventures';
 import { canWrite } from '@/lib/auth/roles';
 import { useRequiredMe } from '@/lib/auth/use-me';
+import { applyFieldErrors } from '@/lib/form-errors';
 import { STAGE_LABELS, STAGE_ORDER } from '@/lib/labels';
 
-import { FieldSelect } from './field-select';
-import { applyFieldErrors } from './form-errors';
+import { SelectField } from '@/components/ui/select-field';
 import { GoalEditor } from './goal-editor';
 import { sentenceStart, useVeirName } from './veir-name';
 
@@ -143,9 +143,13 @@ function ProfileCard({ venture, editable }: { venture: VentureDetail; editable: 
           control={control}
           name="stage"
           render={({ field }) => (
-            <Field label="Stage" error={formState.errors.stage?.message}>
-              <FieldSelect value={field.value} onValueChange={field.onChange} options={STAGE_OPTIONS} />
-            </Field>
+            <SelectField
+              label="Stage"
+              error={formState.errors.stage?.message}
+              value={field.value}
+              onChange={field.onChange}
+              options={STAGE_OPTIONS}
+            />
           )}
         />
         <MutationErrorAlert error={update.isError ? update.error : null} title="Couldn’t save the venture" />

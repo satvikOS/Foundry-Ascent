@@ -18,8 +18,10 @@ import {
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { applyServerFieldErrors, MutationErrorAlert, SelectField } from '@/features/admin/shared/form';
+import { SelectField } from '@/components/ui/select-field';
+import { MutationErrorAlert } from '@/features/admin/shared/form';
 import { useCreateProgramVenture } from '@/lib/api/hooks/program';
+import { applyFieldErrors } from '@/lib/form-errors';
 import { DOMAIN_LABELS, STAGE_LABELS, STAGE_ORDER } from '@/lib/labels';
 
 const VentureForm = z.object({
@@ -69,7 +71,7 @@ export function CreateVentureDialog({ open, onOpenChange, onInvite }: CreateVent
           announce('Venture enrolled');
         },
         onError: (error) => {
-          applyServerFieldErrors(error, setError, ['name', 'oneLiner', 'stage', 'domain', 'cohort']);
+          applyFieldErrors(error, setError, ['name', 'oneLiner', 'stage', 'domain', 'cohort']);
         },
       },
     );

@@ -11,8 +11,9 @@ import { Input } from '@/components/ui/input';
 import { SectionCard } from '@/components/ui/section-card';
 import { toast } from '@/components/ui/toast';
 import type { UpdateSettingsInput } from '@/lib/api/hooks/admin';
+import { applyFieldErrors } from '@/lib/form-errors';
 
-import { applyServerFieldErrors, MutationErrorAlert } from '../shared/form';
+import { MutationErrorAlert } from '../shared/form';
 
 const number = (message = 'Enter a number.') => z.number({ error: message });
 const MB = 1024 * 1024;
@@ -149,12 +150,7 @@ export function LimitsCard({ settings, onSave, pending, error }: LimitsCardProps
         announce('Settings saved');
       },
       onError: (err) => {
-        applyServerFieldErrors(
-          err,
-          setError,
-          Object.values(FIELD_FOR_API),
-          (path) => FIELD_FOR_API[path] ?? path,
-        );
+        applyFieldErrors(err, setError, Object.values(FIELD_FOR_API), (path) => FIELD_FOR_API[path] ?? path);
       },
     });
   });

@@ -18,7 +18,9 @@ import {
 } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/toast';
-import { applyServerFieldErrors, MutationErrorAlert, SelectField } from '@/features/admin/shared/form';
+import { SelectField } from '@/components/ui/select-field';
+import { MutationErrorAlert } from '@/features/admin/shared/form';
+import { applyFieldErrors } from '@/lib/form-errors';
 import { formatDate } from '@/lib/format';
 import {
   type LibrarySource,
@@ -106,7 +108,7 @@ export function LibrarySourceSheet({ personaId, displayName, state, onClose }: L
       close();
     };
     const onError = (error: unknown) => {
-      applyServerFieldErrors(error, setError, ['title', 'body', 'kind']);
+      applyFieldErrors(error, setError, ['title', 'body', 'kind']);
     };
     if (state.mode === 'create') {
       create.mutate(

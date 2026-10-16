@@ -21,13 +21,10 @@ import {
 } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/toast';
-import {
-  applyServerFieldErrors,
-  MutationErrorAlert,
-  parseCommaList,
-  SelectField,
-} from '@/features/admin/shared/form';
+import { SelectField } from '@/components/ui/select-field';
+import { MutationErrorAlert, parseCommaList } from '@/features/admin/shared/form';
 import { useCreateResource, useUpdateResource, type UpsertResourceInput } from '@/lib/api/hooks/program';
+import { applyFieldErrors } from '@/lib/form-errors';
 import { STAGE_LABELS, STAGE_ORDER } from '@/lib/labels';
 
 import { RESOURCE_KIND_LABELS } from './freshness';
@@ -135,7 +132,7 @@ function ResourceFormBody({ resource, onDone }: { resource: ResourceView | null;
   });
   const fields = ['name', 'kind', 'description', 'url', 'tags', 'stages', 'eligibility', 'owner'] as const;
   const onError = (error: unknown) => {
-    applyServerFieldErrors(error, setError, fields);
+    applyFieldErrors(error, setError, fields);
   };
 
   const onSubmit = handleSubmit((values) => {

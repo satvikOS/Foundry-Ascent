@@ -16,31 +16,25 @@ import {
 } from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import { SelectField } from '@/components/ui/select-field';
 import { AccessCodeRevealDialog } from '@/features/admin/shared/access-code-reveal';
-import { applyServerFieldErrors, MutationErrorAlert, SelectField } from '@/features/admin/shared/form';
+import { MutationErrorAlert } from '@/features/admin/shared/form';
 import { useInviteMember, type IssuedAccessCode } from '@/lib/api/hooks/team';
 import { ROLE_LABELS } from '@/lib/auth/roles';
-
-const EXPIRY_OPTIONS = [
-  { value: '30', label: '30 days' },
-  { value: '90', label: '90 days' },
-  { value: '180', label: '180 days' },
-  { value: '365', label: '1 year' },
-  { value: 'never', label: 'No expiry' },
-] as const;
-
-const ROLE_DESCRIPTIONS: Record<z.infer<typeof MembershipRole>, string> = {
-  founder: 'Full workspace, including founder-only items they author and sharing consent.',
-  team: 'Full workspace except founder-only items.',
-  advisor: 'Read access to items shared with advisors.',
-};
+import { applyFieldErrors } from '@/lib/form-errors';
+import {
+  ACCESS_CODE_EXPIRY_OPTIONS,
+  ACCESS_CODE_EXPIRY_VALUES,
+  expiresInDays,
+  MEMBERSHIP_ROLE_ACCESS,
+} from '@/lib/labels';
 
 const InviteForm = z.object({
   displayName: z.string().trim().min(1, 'Enter the person’s name.').max(120, 'Use 120 characters or fewer.'),
   email: z.union([z.literal(''), z.email('Enter a valid email address, or leave it blank.')]),
   title: z.string().trim().max(120, 'Use 120 characters or fewer.'),
   role: MembershipRole,
-  expiry: z.enum(['30', '90', '180', '365', 'never']),
+  expiry: z.enum(ACCESS_CODE_EXPIRY_VALUES),
 });
 type InviteFormValues = z.infer<typeof InviteForm>;
 
@@ -75,14 +69,14 @@ function InviteMemberDialogInner({ venture, onClose }: InviteMemberDialogProps) 
         email: values.email === '' ? null : values.email,
         title: values.title === '' ? null : values.title,
         role: values.role,
-        expiresInDays: values.expiry === 'never' ? null : Number(values.expiry),
+        expiresInDays: expiresInDays(values.expiry),
       },
       {
         onSuccess: (code) => {
           setIssued({ code, role: ROLE_LABELS[values.role] });
         },
         onError: (error) => {
-          applyServerFieldErrors(error, setError, ['displayName', 'email', 'title', 'role']);
+          applyFieldErrors(error, setError, ['displayName', 'email', 'title', 'role']);
         },
       },
     );
@@ -148,7 +142,7 @@ function InviteMemberDialogInner({ venture, onClose }: InviteMemberDialogProps) 
                   onChange={field.onChange}
                   onBlur={field.onBlur}
                   options={MembershipRole.options.map((role) => ({ value: role, label: ROLE_LABELS[role] }))}
-                  description={ROLE_DESCRIPTIONS[field.value]}
+                  description={MEMBERSHIP_ROLE_ACCESS[field.value]}
                   error={formState.errors.role?.message}
                 />
               )}
@@ -162,7 +156,7 @@ function InviteMemberDialogInner({ venture, onClose }: InviteMemberDialogProps) 
                   value={field.value}
                   onChange={field.onChange}
                   onBlur={field.onBlur}
-                  options={EXPIRY_OPTIONS}
+                  options={ACCESS_CODE_EXPIRY_OPTIONS}
                   error={formState.errors.expiry?.message}
                 />
               )}

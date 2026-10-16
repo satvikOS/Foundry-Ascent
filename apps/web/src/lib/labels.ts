@@ -155,6 +155,25 @@ export function documentFailureMessage(reason: string | null): string {
     : 'Processing failed — not searchable.';
 }
 
+/**
+ * How long an access code (an admin's code or a team invitation) stays valid: one list for both forms.
+ * `never` sends `expiresInDays: null`.
+ */
+export const ACCESS_CODE_EXPIRY_OPTIONS = [
+  { value: '7', label: '7 days' },
+  { value: '30', label: '30 days' },
+  { value: '90', label: '90 days' },
+  { value: '180', label: '180 days' },
+  { value: '365', label: '1 year' },
+  { value: 'never', label: 'No expiry' },
+] as const;
+export const ACCESS_CODE_EXPIRY_VALUES = ['7', '30', '90', '180', '365', 'never'] as const;
+
+/** `expiresInDays` for an expiry choice. */
+export function expiresInDays(expiry: (typeof ACCESS_CODE_EXPIRY_VALUES)[number]): number | null {
+  return expiry === 'never' ? null : Number(expiry);
+}
+
 /** What each venture role can see: one wording for the Team page and every invitation. */
 export const MEMBERSHIP_ROLE_ACCESS: Record<MembershipRole, string> = {
   founder: 'Everything, including their own founder-only items; decides what is shared with a person.',

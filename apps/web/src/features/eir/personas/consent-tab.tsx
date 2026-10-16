@@ -32,7 +32,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { LoadingRegion, Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast';
-import { applyServerFieldErrors, MutationErrorAlert, todayDateInput } from '@/features/admin/shared/form';
+import { MutationErrorAlert, todayDateInput } from '@/features/admin/shared/form';
+import { applyFieldErrors } from '@/lib/form-errors';
 import { formatDate, pluralize } from '@/lib/format';
 import { usePersonaConsents, useRecordConsent, useRevokeConsent } from '@/lib/api/hooks/veir-pools';
 
@@ -110,7 +111,7 @@ function RecordConsentDialog({
                   onOpenChange(false);
                 },
                 onError: (error) => {
-                  applyServerFieldErrors(
+                  applyFieldErrors(
                     error,
                     setError,
                     ['assetTypes', 'approvedUses', 'audiences', 'evidenceRef'],

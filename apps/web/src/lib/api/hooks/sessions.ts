@@ -8,7 +8,7 @@ import {
   TurnFeedbackRequest,
   UpdateSessionRequest,
   UpdateSessionResponse,
-  type SessionView,
+  SessionView,
 } from '@foundry/contracts';
 import {
   infiniteQueryOptions,
@@ -25,7 +25,7 @@ import type { z } from 'zod';
 import { listedInRecents } from '@/lib/conversations';
 
 import { encodeBody } from '../body';
-import { api, apiSend, createIdempotencyKey, path } from '../client';
+import { api, apiRequest, apiSend, createIdempotencyKey, path } from '../client';
 import { queryKeys, type ConversationFilters } from '../query-keys';
 
 export type SessionDetail = z.infer<typeof SessionDetailResponse>;
@@ -228,19 +228,25 @@ export function useDeleteDigest() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (sessionId: string) =>
-      apiSend(path`/sessions/${sessionId}/digest`, {
+      apiRequest(path`/sessions/${sessionId}/digest`, {
         method: 'DELETE',
+        schema: SessionView,
         idempotencyKey: createIdempotencyKey(),
       }),
-    onSuccess: (_result, sessionId) => {
-      deletedDigests.add(sessionId);
-      const detail = client.setQueryData<SessionDetail>(queryKeys.session.detail(sessionId), (previous) =>
-        previous ? { ...previous, session: { ...previous.session, digest: null } } : previous,
+    onSuccess: (session) => {
+      deletedDigests.add(session.id);
+      // The conversation (its ended view) and the venture's conversation list (Knowledge → Conversations)
+      // take the returned session at once, then refresh.
+      client.setQueryData<SessionDetail>(queryKeys.session.detail(session.id), (previous) =>
+        previous ? { ...previous, session } : previous,
       );
-      void client.invalidateQueries({ queryKey: queryKeys.session.detail(sessionId) });
-      // The venture's conversation list carries digests too (Knowledge).
-      if (detail)
-        void client.invalidateQueries({ queryKey: queryKeys.venture.sessions(detail.session.ventureId) });
+      client.setQueryData<z.infer<typeof SessionListResponse>>(
+        queryKeys.venture.sessions(session.ventureId),
+        (list) =>
+          list ? { items: list.items.map((item) => (item.id === session.id ? session : item)) } : list,
+      );
+      void client.invalidateQueries({ queryKey: queryKeys.session.detail(session.id) });
+      void client.invalidateQueries({ queryKey: queryKeys.venture.sessions(session.ventureId) });
     },
   });
 }
