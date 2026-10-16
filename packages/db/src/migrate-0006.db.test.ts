@@ -129,4 +129,26 @@ describe('migration 0006_turn_engine', () => {
     );
     expect(String(r.rows[0]?.def)).toContain('first_token_ms >= 0');
   });
+
+  it('adds both checks without scanning the table, and enforces them on every later write', async () => {
+    const r = await t.db.system((sx) =>
+      sx.query(
+        `SELECT conname, convalidated FROM pg_constraint
+         WHERE conname IN ('coaching_sessions_opener_check', 'turns_first_token_ms_check') ORDER BY conname`,
+      ),
+    );
+    expect(r.rows).toEqual([
+      { conname: 'coaching_sessions_opener_check', convalidated: false },
+      { conname: 'turns_first_token_ms_check', convalidated: false },
+    ]);
+    // A conversation that existed before (earlier tests inserted some) cannot be given an invalid opener.
+    await expect(
+      t.db.system((sx) =>
+        sx.query(
+          `UPDATE coaching_sessions SET opener = repeat('x', 301)
+           WHERE id = (SELECT id FROM coaching_sessions ORDER BY started_at LIMIT 1)`,
+        ),
+      ),
+    ).rejects.toMatchObject({ sqlState: '23514' });
+  });
 });

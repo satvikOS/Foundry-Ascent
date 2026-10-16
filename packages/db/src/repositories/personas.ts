@@ -74,7 +74,6 @@ export function getPersona(ex: SqlExecutor, id: string): Promise<PersonaRecord |
   );
 }
 
-/** Personas of a tenant with this name (case-insensitive, trimmed), for duplicate checks. */
 /** Display name of the EIR a persona is built from ("Corin Halvorsen"); null for neutral personas. */
 export function getPersonaEirName(ex: SqlExecutor, personaId: string): Promise<string | null> {
   return queryFirst(
@@ -85,6 +84,7 @@ export function getPersonaEirName(ex: SqlExecutor, personaId: string): Promise<s
   );
 }
 
+/** Personas of a tenant with this name (case-insensitive, trimmed), for duplicate checks. */
 export function findPersonasByName(
   ex: SqlExecutor,
   args: { tenantId: string; name: string },

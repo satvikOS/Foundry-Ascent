@@ -12,6 +12,10 @@
 --  3. Spend caps: the defaults rise to $15 per UTC day for the platform and $1 per person, only where the stored
 --     value is still the old default ($2 and $0.50); a value an administrator chose is left alone.
 --  4. Kill switches for streamed replies and for calls, on by default (the AI kill switch still stops both).
+--
+-- The CHECK constraints on the new columns are added NOT VALID: every existing row holds NULL there, so the
+-- scan a validated constraint makes (under the ACCESS EXCLUSIVE lock this transaction holds until it commits)
+-- would prove nothing. Every insert and update after it is checked as usual.
 
 -- ---------------------------------------------------------------------------------------------------
 -- 1. Conversation openers
@@ -20,7 +24,7 @@
 ALTER TABLE coaching_sessions ADD COLUMN IF NOT EXISTS opener text;
 ALTER TABLE coaching_sessions DROP CONSTRAINT IF EXISTS coaching_sessions_opener_check;
 ALTER TABLE coaching_sessions ADD CONSTRAINT coaching_sessions_opener_check
-  CHECK (opener IS NULL OR (length(opener) BETWEEN 1 AND 300 AND privacy = 'standard'));
+  CHECK (opener IS NULL OR (length(opener) BETWEEN 1 AND 300 AND privacy = 'standard')) NOT VALID;
 
 -- Deleting a conversation erases its content; the opener goes with it, whichever code path sets deleted_at.
 CREATE OR REPLACE FUNCTION app.sessions_clear_opener() RETURNS trigger
@@ -42,7 +46,8 @@ CREATE TRIGGER sessions_clear_opener BEFORE UPDATE OF deleted_at ON coaching_ses
 
 ALTER TABLE turns ADD COLUMN IF NOT EXISTS first_token_ms integer;
 ALTER TABLE turns DROP CONSTRAINT IF EXISTS turns_first_token_ms_check;
-ALTER TABLE turns ADD CONSTRAINT turns_first_token_ms_check CHECK (first_token_ms IS NULL OR first_token_ms >= 0);
+ALTER TABLE turns ADD CONSTRAINT turns_first_token_ms_check
+  CHECK (first_token_ms IS NULL OR first_token_ms >= 0) NOT VALID;
 
 -- ---------------------------------------------------------------------------------------------------
 -- 3. Spend-cap defaults (only where the stored value is still the old default)
