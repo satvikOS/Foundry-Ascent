@@ -179,6 +179,7 @@ describe('rewriteIdentity — a vEIR persona never claims to be its EIR', () => 
   it.each([
     'Corin here would ask who actually pays.',
     'It would help to have Corin here.',
+    "It's Corin who would ask who pays, so let me ask it.",
     'Is Corin here?',
     'Corin speaking at the summit is a good chance to ask questions.',
   ])('allows "<name> here" that is not a self-introduction: %s', (text) => {

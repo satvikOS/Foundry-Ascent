@@ -56,6 +56,8 @@ const APOS = "['’]";
 /** After a name: not a possessive ("Corin's approach") and not a compound ("Corin-style"). */
 const NOT_POSSESSIVE = `(?!${APOS}s${E}|-)`;
 const EIR = '(?:eir|eirs|entrepreneur[- ]in[- ]residence)';
+/** "It's Corin who…" points at the EIR; it is not a self-introduction. */
+const NOT_RELATIVE = `(?!\\s+(?:who|whom|whose|that)${E})`;
 
 function p(kind: IdentityViolationKind, rule: string, source: string, flags = 'giu'): IdentityPattern {
   return { kind, rule, pattern: new RegExp(`${S}(?:${source})${E}`, flags) };
@@ -408,7 +410,7 @@ function namePatterns(spec: NameSpec, exempt: Exempt, spoken: boolean): Identity
         ...p(
           'claims_eir',
           'named_eir_self',
-          `(?:this is|it${APOS}s|it is|I${APOS}m|I am|speaking as|my name is|signed,?|you(?:${APOS}re| are) (?:talking|speaking|chatting) (?:to|with)) ${body}${NOT_POSSESSIVE}`,
+          `(?:this is|it${APOS}s|it is|I${APOS}m|I am|speaking as|my name is|signed,?|you(?:${APOS}re| are) (?:talking|speaking|chatting) (?:to|with)) ${body}${NOT_POSSESSIVE}${NOT_RELATIVE}`,
         ),
         accept: claim,
       },
@@ -452,7 +454,7 @@ function namePatterns(spec: NameSpec, exempt: Exempt, spoken: boolean): Identity
     {
       kind: 'claims_eir',
       rule: 'named_eir_self',
-      pattern: new RegExp(`${S}(?:${leads}),? ${nameRe}${notPossessive}${E}`, 'gu'),
+      pattern: new RegExp(`${S}(?:${leads}),? ${nameRe}${notPossessive}${E}${NOT_RELATIVE}`, 'gu'),
       accept: claim,
     },
     {
