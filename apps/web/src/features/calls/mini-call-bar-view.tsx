@@ -34,9 +34,9 @@ function barAnnouncement(snapshot: CallSnapshot): string {
 /**
  * A call that continues while the person looks elsewhere: the vEIR's face and AI marker, the timer (and the
  * time left near the end), Turn on sound when the browser stopped the call's sound (as the call screen
- * offers), mute, back to the call and end. After a call ended out of view (its time ran out,
- * or the program paused calls), it says so and offers the summary instead. Rendered by `MiniCallBar` only
- * while there is a call to show; while shown, the page's sticky headers sit below it (`--mini-call-height`).
+ * offers), mute, back to the call and end. After a call ended out of view (its time ran out, or the program
+ * paused calls), it says so and offers the summary instead. Rendered by `MiniCallBar` only while there is a
+ * call to show; while shown, the page's sticky headers sit below it (`--mini-call-height`).
  */
 export function MiniCallBarView() {
   const { engine, snapshot, showCall } = useCall();
