@@ -298,7 +298,10 @@ test.describe('vEIR calls', () => {
       );
       await screen
         .getByRole('textbox', { name: /^Reply to / })
-        .fill(`Should we pilot with one library? ${token}`);
+        // The founder says something worth remembering (what only the coach says is never kept as a fact).
+        .fill(
+          `Should we pilot with one library? The pilot needs a written success threshold and stop condition. ${token}`,
+        );
       await screen.getByRole('textbox', { name: /^Reply to / }).press('Enter');
       const sent = (await turnRequest).postDataJSON() as { channel: string; callId: string; text: string };
       expect(sent).toMatchObject({ channel: 'voice', callId });
@@ -428,7 +431,7 @@ test.describe('vEIR calls', () => {
         expect(sessionId).not.toBe(first);
         expect(intro).toMatch(/^Hi Maya, this is .+, an AI coach\. /);
         expect(intro).not.toContain('What would you like to work on?');
-        expect(intro).toMatch(/last time|when we last talked|we were on|you asked|pric/i);
+        expect(intro).toMatch(/last time|when we last spoke|we talked about|you said|you asked|pric/i);
         await expectNoBareEirName(page, 'the second call');
         await hangUp();
       });
@@ -441,7 +444,7 @@ test.describe('vEIR calls', () => {
         };
         const opener = detail.session.opener ?? '';
         expect(opener).toMatch(
-          /last time|when we last talked|we were on|you asked|welcome back|good to have you back/i,
+          /last time|when we last spoke|we talked about|you said|you asked|welcome back|good to have you back|good to talk again|nice to hear from you again/i,
         );
         await expect(page.getByRole('main').getByText(opener.slice(0, 40)).first()).toBeVisible();
       });

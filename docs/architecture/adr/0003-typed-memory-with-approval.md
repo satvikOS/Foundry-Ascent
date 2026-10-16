@@ -77,5 +77,12 @@ automatically**: `confirmed`, origin `ai`, no approver, with `auto_kept_at` reco
 - A temporary (private) conversation keeps nothing, as before.
 - An EIR's suggestions stay proposals for the founder to accept, and lessons for a vEIR's common pool keep
   their curators' review: those are other people's words entering the venture's memory or a shared pool.
-- Pending AI proposals that existed were kept the same way, with an `approved` event marked `system`. The
-  daily expiry of AI proposals is gone.
+- Only what the founder said or explicitly took up is kept: each candidate carries the model's `source` label
+  (`founder_stated`, `founder_agreed`, `coach_advice`), checked against the conversation (a bare "sure" or "ok"
+  agrees to nothing); the coach's own advice is never kept as a fact, citing a record or not.
+- Forgetting is durable: deleting an item the vEIR learned (or correcting what it kept) leaves a fingerprint per
+  conversation it came from (`memory_forgotten`: hashes and a 256-bit meaning signature, never text), so the next
+  distillation of that transcript never keeps it again; it goes with its conversation.
+- Pending AI proposals that existed are not kept blindly: the daily maintenance runs each through the checks new
+  memory goes through and keeps it (an `approved` event marked `system`) or retires it as a restatement or as the
+  coach's advice. The 30-day expiry of AI proposals is gone.

@@ -145,7 +145,8 @@ test.describe('founder journey', () => {
       await expectNoBareEirName(page, 'New chat');
     });
 
-    const question = `Which assumption should we test first? ${token}`;
+    // The founder says what is worth remembering in their own words (the coach's framing alone is never kept).
+    const question = `Which assumption should we test first? Our riskiest assumption still needs a cheap test. ${token}`;
     let conversationId = '';
     await test.step('the first message starts the conversation, named after it, with a cited answer', async () => {
       const result = await startAndAwaitAnswer(page, question);
