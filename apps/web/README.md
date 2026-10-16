@@ -101,11 +101,11 @@ Folder layouts: if a section switches to a folder (`memory/index.tsx`), delete t
   and `useXxx()`; each write is a `useMutation` hook that invalidates the right keys.
 
 ```tsx
-import { useCreateMemory, useMemory } from '@/lib/api/hooks/memory';
+import { useMemory, useMemoryAction } from '@/lib/api/hooks/memory';
 
 const memory = useMemory(ventureId, { status: 'proposed' }); // data: MemoryObjectView[]
-const create = useCreateMemory(ventureId);
-create.mutate(input, { onError: (e) => toast.error(errorMessage(e)) });
+const act = useMemoryAction(ventureId);
+act.mutate({ memoryId, action: { action: 'approve' } }, { onError: (e) => toast.error(errorMessage(e)) });
 ```
 
 Route loaders prefetch with the new TanStack Query API (`fetchQuery`/`ensureQueryData` are deprecated):
@@ -117,20 +117,20 @@ loader: ({ context, params }) =>
 
 ### Hook index
 
-| Area        | Hooks                                                                                                                                                                                                |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Health      | `useHealth` (not polled — polling would keep Aurora awake)                                                                                                                                           |
-| Auth        | `meQueryOptions` (route guards), `useSignIn`, `useSignOut`; `useRequiredMe` in `lib/auth/use-me`                                                                                                     |
-| Ventures    | `useVentures`, `useVenture`, `useVentureOverview`, `useUpdateVenture`                                                                                                                                |
-| Sessions    | `useSessions`, `useRecentConversations` (sidebar; swap its one source line to `GET /sessions?scope=mine`), `useSession`, `useCreateSession`, `useEndSession`, `useTurnFeedback`, **`useTurnStream`** |
-| Notebook    | `useNotebook` (`GET /ventures/:id/notebook`; `null` on 404 — optional context for the New chat greeting)                                                                                             |
-| Memory      | `useMemory(ventureId, filters)`, `useCreateMemory`, `useMemoryHistory`, `sendMemoryAction` (PATCH `/memory/:id`)                                                                                     |
-| Documents   | `useDocuments` (polls while processing), `useUploadDocument` (create → presigned PUT with progress → complete), `useCompleteDocument`, `useDeleteDocument`, `documentContentType`, `DOCUMENT_ACCEPT` |
-| Escalations | `useVentureEscalations`, `useCreateEscalation`, `useEscalationAction`, `useInboxEscalations`                                                                                                         |
-| Team        | `useTeam`, `useInviteMember` (one-time code; `gcTime: 0`, never cache/log it)                                                                                                                        |
-| EIR studio  | `usePersonas`, `usePersona`, `usePersonaRelease`, `useCreatePersonaRelease`, `useApprovePersonaRelease`, `useSuspendPersona`, `useResumePersona`, `useReviewQueue`, `useSubmitReview`                |
-| Program     | `usePortfolio`, `useProgramVentures`, `useCreateProgramVenture`, `useResources`, `useCreateResource`, `useUpdateResource`, `useProgramEscalations`, `useEscalationAssignees`, `useRouteEscalation`   |
-| Admin       | `usePrincipals`, `useCreatePrincipal`, `useIssueAccessCode` (one-time code), `useRevokeAccessCode`, `usePlatformSettings`, `useUpdatePlatformSettings`, `useAuditLog` (infinite), `useUsage`         |
+| Area        | Hooks                                                                                                                                                                                                                   |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Health      | `useHealth` (not polled — polling would keep Aurora awake)                                                                                                                                                              |
+| Auth        | `useMe` (null when signed out), `useSignIn`, `useSignOut`; `useRequiredMe` in `lib/auth/use-me`                                                                                                                         |
+| Ventures    | `useVentures`, `useVenture`, `useVentureOverview`, `useUpdateVenture`                                                                                                                                                   |
+| Sessions    | `useSessions`, `useRecentConversations` (sidebar; swap its one source line to `GET /sessions?scope=mine`), `useSession`, `useCreateSession`, `useEndSession`, `useTurnFeedback`, `useTurnEvidence`, **`useTurnStream`** |
+| Notebook    | `useNotebook` (`GET /ventures/:id/notebook`; `null` on 404 — optional context for the New chat greeting)                                                                                                                |
+| Memory      | `useMemory(ventureId, filters)`, `useCreateMemory`, `useMemoryAction`, `useMemoryHistory`                                                                                                                               |
+| Documents   | `useDocuments` (polls while processing), `useUploadDocument` (create → presigned PUT with progress → complete), `useCompleteDocument`, `useDeleteDocument`, `documentContentType`, `DOCUMENT_ACCEPT`                    |
+| Escalations | `useVentureEscalations`, `useCreateEscalation`, `useEscalationAction`, `useInboxEscalations`                                                                                                                            |
+| Team        | `useTeam`, `useInviteMember` (one-time code; `gcTime: 0`, never cache/log it)                                                                                                                                           |
+| EIR studio  | `usePersonas`, `usePersona`, `usePersonaRelease`, `useCreatePersonaRelease`, `useApprovePersonaRelease`, `useSuspendPersona`, `useResumePersona`, `useReviewQueue`, `useSubmitReview`                                   |
+| Program     | `usePortfolio`, `useProgramVentures`, `useCreateProgramVenture`, `useResources`, `useCreateResource`, `useUpdateResource`, `useProgramEscalations`, `useEscalationAssignees`, `useRouteEscalation`                      |
+| Admin       | `usePrincipals`, `useCreatePrincipal`, `useIssueAccessCode` (one-time code), `useRevokeAccessCode`, `usePlatformSettings`, `useUpdatePlatformSettings`, `useAuditLog` (infinite), `useUsage`                            |
 
 **Turn streaming:**
 
@@ -139,7 +139,7 @@ const { state, send, retry, cancel, isStreaming } = useTurnStream(sessionId, { v
 await send({ text, mode: 'challenge' });
 await retry(); // same body; same Idempotency-Key when the last outcome is unknown
 // state.status: idle | streaming | completed | blocked | failed | cancelled
-// state.steps → progress, announced in an aria-live="polite" region by the conversation view
+// state.steps → progress (render turnPhaseLabel(step) in an aria-live="polite" region)
 // state.turn (TurnView) on completion — also merged into the session query cache
 // state.blocked (reason, supportMessage, escalationId) · state.error (code, message, retryable,
 //   requestId, retryAt) · state.autoRetryAt (a still-pending turn is replayed automatically)
@@ -435,8 +435,8 @@ Text precedence: `text` prop → `Me.disclosure` → `DEFAULT_DISCLOSURE`. It is
 
 - CSP compatibility: the build emits no inline scripts and no `data:` URIs; sonner's runtime
   `<style>` injection is removed at build time (its CSS ships in our stylesheet). Radix's modal
-  scroll-lock still injects a `<style>`, which the production CSP allows (`style-src 'self'
-'unsafe-inline'`, `infra/cdk/src/constructs/edge.ts`); an equivalent rule is in `globals.css`, so the
-  page stays correct if `'unsafe-inline'` is ever removed.
+  scroll-lock still injects a `<style>`, which the production CSP allows (`'unsafe-inline'` in
+  `style-src`, `infra/cdk/src/constructs/edge.ts`); an equivalent rule is in `globals.css`, so the page
+  stays correct if `'unsafe-inline'` is ever removed.
 - Uploads go directly to S3 with the presigned URL (no cookies, no CSRF/SHA headers).
 - `localStorage` holds UI preferences and a "probably signed in" hint only — never tokens or content.

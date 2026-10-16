@@ -36,7 +36,9 @@ eloquence, memory visible and correctable, escalation is a feature.
 
 ```
 Browser (SPA, Vite + React)                         GitHub Actions (CI/CD, OIDC)
-        │ HTTPS     └──wss (presigned)──► Amazon Transcribe streaming (call speech-to-text)
+        │ HTTPS                                                │
+        ├──wss (presigned)──► Amazon Transcribe streaming      │
+        │                     (call speech-to-text)            │
         ▼                                                      ▼
 CloudFront ──/*──► S3 site bucket (OAC)              CDK → CloudFormation (boundary-capped roles)
     │
@@ -200,7 +202,7 @@ Authoritative DDL: [`packages/db/migrations/`](../../packages/db/migrations/). S
 | `memory_objects`                                                  | typed venture memory (fact, hypothesis, decision, experiment, evidence, action, milestone, risk, preference, relationship, insight) | `status` (`proposed/confirmed/disputed/superseded/expired/deleted`), `visibility`, `confidence`, `source_refs`, `attributes`, `supersedes_id`, `pinned`, `embedding`, `tsv` |
 | `memory_events`                                                   | correction history (append-only)                                                                                                    | `action`, `diff`, `actor`                                                                                                                                                   |
 | `coaching_sessions`, `turns`, `turn_evidence`                     | conversations (title, digest), structured responses, evidence links                                                                 | `mode`, `privacy`, `digest`, `distill_version`, `response`, `channel` (`text`/`voice`), `risk_label`, `validator_results`, `model_id`, tokens, `cost_usd`, `latency_ms`     |
-| `veir_notebooks`                                                  | what a vEIR keeps about one venture (AI notes: visible, correctable, never cited)                                                   | `summary`, `founder_profile`, `commitments`, `open_questions`, `next_opener`, `suppressed`, `version`                                                                       |
+| `veir_notebooks`                                                  | what a vEIR keeps about one venture (AI notes: visible, correctable, never cited)                                                   | `content` (`summary`, `founderProfile`, `commitments`, `openQuestions`, `lastAdvice`, `nextOpener`), `suppressed`, `version`                                                |
 | `calls`                                                           | voice calls of a conversation (ADR-0010; no audio)                                                                                  | `status`, `input_mode`, `max_seconds`, `end_reason`                                                                                                                         |
 | `escalations`                                                     | human handoff packets                                                                                                               | `category`, `priority` P0–P3, `status`, `packet`, `sharing_consent_at`, `assignee_principal_id`                                                                             |
 | `feedback`                                                        | founder ratings; `eir_reviews` — blind rubric scores                                                                                |                                                                                                                                                                             |
