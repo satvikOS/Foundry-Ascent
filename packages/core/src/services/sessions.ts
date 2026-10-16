@@ -29,6 +29,7 @@ import { type RequestContext } from '../context.js';
 import { DomainError, fail, isDomainError, parseInput } from '../errors.js';
 import { type DirectoryCache, type OtherVentures } from '../internal/directory.js';
 import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
+import { meteredStructured } from '../internal/metered.js';
 import { participantTurnView, supportMessageFor } from '../orchestrator/blocked.js';
 import { validatedOpener } from '../orchestrator/continuity.js';
 import { assertWithinSpendCaps } from '../orchestrator/guards.js';
@@ -99,7 +100,7 @@ export interface SessionsService {
 }
 
 export function createSessionsService(kit: Kit, directory: DirectoryCache): SessionsService {
-  const { logger, gateway } = kit.deps;
+  const { logger } = kit.deps;
 
   async function sessionView(
     tx: Parameters<typeof sessionsRepo.getSessionView>[0],
@@ -391,33 +392,17 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
             evidence: [...evidence.values()],
             today: kit.now().toISOString().slice(0, 10),
           });
-          const result = await gateway
-            .generateStructured({
-              purpose: 'recap',
+          const result = await meteredStructured(
+            kit,
+            { ctx, ventureId: session.ventureId, purpose: 'recap' },
+            {
               system: prompt.system,
               messages: prompt.messages,
               schemaName: RECAP_SCHEMA_NAME,
               zodSchema: RecapDraft,
-              requestId: ctx.requestId,
               timeoutMs: kit.config.turns.modelTimeoutMs,
-            })
-            .catch(async (err: unknown) => {
-              if (isModelGatewayError(err)) {
-                await kit.recordUsage({
-                  ctx,
-                  ventureId: session.ventureId,
-                  purpose: 'recap',
-                  attempts: err.attempts,
-                });
-              }
-              throw err;
-            });
-          await kit.recordUsage({
-            ctx,
-            ventureId: session.ventureId,
-            purpose: 'recap',
-            attempts: result.attempts,
-          });
+            },
+          );
           draft = sanitizeRecap(result.value, {
             evidence,
             otherVentureNames: others.names,

@@ -1,6 +1,6 @@
 import { CRISIS_SPOKEN_MESSAGE } from '@foundry/ai';
 import { SpeechRequest } from '@foundry/contracts';
-import { auditRepo, callsRepo, personasRepo, sessionsRepo, settingsRepo, usageRepo } from '@foundry/db';
+import { auditRepo, callsRepo, personasRepo, sessionsRepo, settingsRepo } from '@foundry/db';
 import { type z } from 'zod';
 
 import { type PlatformKeyCache } from '../auth/keys.js';
@@ -8,6 +8,7 @@ import { requireAssignmentActive, requireVentureAccess } from '../authz/venture-
 import { type RequestContext } from '../context.js';
 import { DomainError, fail, parseInput } from '../errors.js';
 import { requireId, type Kit, type RequestScope } from '../internal/kit.js';
+import { metered } from '../internal/metered.js';
 import { assertWithinSpendCaps } from '../orchestrator/guards.js';
 import { verifySpeechUnit } from '../orchestrator/speech-units.js';
 import { SpeechSynthesisError, type SynthesizedSpeech } from '../ports.js';
@@ -242,13 +243,33 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
 
       let speech: SynthesizedSpeech;
       try {
-        speech = await synthesizer.synthesize({
-          text: plan.text,
-          voiceId: plan.voiceId,
-          engines: speechEngines(plan.voiceId),
-          requestId: ctx.requestId,
-          ...(options.signal === undefined ? {} : { signal: options.signal }),
-        });
+        // Metered like every model call (one usage-ledger row, purpose `speech`, priced per character) once
+        // synthesis succeeded: the service bills the characters whether or not playback finishes, and bills
+        // nothing for a request it refused.
+        ({ speech } = await metered(
+          kit,
+          { ctx, ventureId: plan.ventureId, purpose: 'speech' },
+          async () => {
+            const synthesized = await synthesizer.synthesize({
+              text: plan.text,
+              voiceId: plan.voiceId,
+              engines: speechEngines(plan.voiceId),
+              requestId: ctx.requestId,
+              ...(options.signal === undefined ? {} : { signal: options.signal }),
+            });
+            return {
+              speech: synthesized,
+              attempts: [
+                {
+                  modelId: `polly:${synthesized.engine}:${synthesized.voiceId}`,
+                  usage: { inputTokens: synthesized.characters, outputTokens: 0 },
+                  costUsd: speechCostUsd(synthesized.characters, synthesized.engine),
+                },
+              ],
+            };
+          },
+          () => [],
+        ));
       } catch (err) {
         logger.warn('speech.synthesis_failed', {
           requestId: ctx.requestId,
@@ -269,21 +290,10 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
         throw err;
       }
 
-      // Metered once synthesis started (the service bills the characters whether or not playback finishes).
+      // The call's speech counter and the audit (ids and counts only).
       try {
         await kit.system(
           async (sx) => {
-            await usageRepo.recordUsage(sx, {
-              tenantId: ctx.tenantId,
-              ventureId: plan.ventureId,
-              principalId: ctx.principalId,
-              purpose: 'speech',
-              modelId: `polly:${speech.engine}:${speech.voiceId}`,
-              inputTokens: speech.characters,
-              outputTokens: 0,
-              costUsd: speechCostUsd(speech.characters, speech.engine),
-              requestId: ctx.requestId,
-            });
             await callsRepo.addSpeechCharacters(sx, { callId: plan.callId, characters: speech.characters });
             await auditRepo.appendAudit(sx, {
               action: 'speech.synthesized',
@@ -307,7 +317,7 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
           { transaction: false },
         );
       } catch (err) {
-        logger.error('speech.usage_record_failed', {
+        logger.error('speech.record_failed', {
           requestId: ctx.requestId,
           callId: plan.callId,
           error: err instanceof Error ? err.name : 'unknown',
