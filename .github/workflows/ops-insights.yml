@@ -1,0 +1,224 @@
+name: Ops - insights (read-only)
+
+# How the platform is used, for the operator (docs/runbooks/insights.md). Runs only from main, in the
+# `ops-insights` GitHub environment, whose OIDC subject is the only one the FoundryAscent-OpsInsights role
+# trusts (infra/cdk/src/stacks/foundation-stack.ts). That role may invoke the read-only insights function
+# (FoundryAscent-Insights) and read the platform's Lambda logs, nothing else.
+#
+# THE REPOSITORY IS PUBLIC: this log, the job summary and artifacts are world-readable.
+#   scope = metadata  prints numbers, codes, ids and timings only. The function validates its report against a
+#                     strict schema in which no field can hold text; the log events are reduced to an allow-list
+#                     of fields whose values must be ids, codes, numbers or timings.
+#   scope = export    also exports the conversations' content (and the kept log events), sealed INSIDE AWS to
+#                     `public_key` (RSA-OAEP-256 + AES-256-GCM); only ciphertext reaches this runner. The sealed
+#                     files are uploaded as an artifact kept for 1 day. Open them locally with the private key:
+#                     pnpm --filter @foundry/api exec tsx src/scripts/insights.ts open <private.pem> <dir> <out.json>
+on:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: metadata = numbers, codes and ids only; export = also the content, sealed to public_key
+        type: choice
+        options: [metadata, export]
+        default: metadata
+      days:
+        description: Window in days (1-90; Lambda logs are kept 30 days)
+        type: string
+        default: '30'
+      public_key:
+        description: export only - RSA public key (3072+ bits) as the base64 of its DER SubjectPublicKeyInfo, one line
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ops-insights
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  insights:
+    name: Insights
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ops-insights
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+      SCOPE: ${{ inputs.scope }}
+      DAYS: ${{ inputs.days }}
+      FUNCTION_NAME: FoundryAscent-Insights
+    steps:
+      - name: Validate inputs
+        env:
+          PUBLIC_KEY: ${{ inputs.public_key }}
+        run: |
+          # Values are checked, never echoed.
+          if [ "${SCOPE}" != metadata ] && [ "${SCOPE}" != export ]; then
+            echo "::error::scope must be metadata or export."
+            exit 1
+          fi
+          if [[ ! "${DAYS}" =~ ^[0-9]{1,2}$ ]] || (( 10#${DAYS} < 1 || 10#${DAYS} > 90 )); then
+            echo "::error::days must be a whole number from 1 to 90."
+            exit 1
+          fi
+          echo "DAYS=$(( 10#${DAYS} ))" >> "${GITHUB_ENV}"
+          if [ "${SCOPE}" = export ]; then
+            key="$(printf '%s' "${PUBLIC_KEY}" | tr -d '[:space:]')"
+            if [[ ! "${key}" =~ ^[A-Za-z0-9+/]{500,1400}={0,2}$ ]]; then
+              echo "::error::public_key must be the base64 of an RSA public key's DER SubjectPublicKeyInfo (openssl pkey -pubin -in public.pem -outform DER | base64), on one line."
+              exit 1
+            fi
+            echo "INSIGHTS_PUBLIC_KEY=${key}" >> "${GITHUB_ENV}"
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      # No dependency cache in a job that holds cloud credentials; installed before any credentials exist.
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Resolve the ops-insights role
+        env:
+          RAW_DEPLOY_ROLE: ${{ secrets.AWS_DEPLOY_ROLE_ARN || vars.AWS_DEPLOY_ROLE_ARN }}
+        run: |
+          # The account id comes from the deploy role secret (an ARN or the 12-digit id); it is masked, never printed.
+          role="$(printf '%s' "${RAW_DEPLOY_ROLE}" | tr -d "[:space:]\"'")"
+          if [[ "${role}" =~ ^([0-9]{12})$ ]] || [[ "${role}" =~ ^arn:aws:iam::([0-9]{12}):role/ ]]; then
+            account="${BASH_REMATCH[1]}"
+          else
+            echo "::error::AWS_DEPLOY_ROLE_ARN is not set to a role ARN or a 12-digit account id."
+            exit 1
+          fi
+          echo "::add-mask::${account}"
+          ops_role="arn:aws:iam::${account}:role/FoundryAscent-OpsInsights"
+          echo "::add-mask::${ops_role}"
+          echo "OPS_ROLE_ARN=${ops_role}" >> "${GITHUB_ENV}"
+
+      - name: AWS credentials (GitHub OIDC, ops-insights)
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ env.OPS_ROLE_ARN }}
+          role-session-name: foundry-ascent-insights-${{ github.run_id }}
+          role-duration-seconds: 3600
+          aws-region: us-east-1
+          mask-aws-account-id: true
+
+      - name: Mask account id
+        run: |
+          account="$(aws sts get-caller-identity --query Account --output text)"
+          if [[ ! "${account}" =~ ^[0-9]{12}$ ]]; then
+            echo "::error::sts:GetCallerIdentity did not return a 12-digit account id"
+            exit 1
+          fi
+          echo "::add-mask::${account}"
+
+      - name: Metadata (numbers, codes, ids)
+        run: |
+          set -euo pipefail
+          request="${RUNNER_TEMP}/metadata-request.json"
+          answer="${RUNNER_TEMP}/metadata.json"
+          jq -n --argjson days "${DAYS}" '{scope: "metadata", days: $days}' > "${request}"
+          aws lambda invoke --function-name "${FUNCTION_NAME}" --cli-binary-format raw-in-base64-out \
+            --cli-read-timeout 900 --payload "fileb://${request}" "${answer}" > "${RUNNER_TEMP}/invoke.json"
+          if [ -n "$(jq -r '.FunctionError // empty' "${RUNNER_TEMP}/invoke.json")" ]; then
+            # The error payload is not printed (only its type, when it is a plain name).
+            type="$(jq -r '.errorType // "unknown"' "${answer}" | grep -E '^[A-Za-z][A-Za-z0-9_.]{0,63}$' || echo unknown)"
+            echo "::error::The insights function failed (${type}); see /aws/lambda/${FUNCTION_NAME}."
+            exit 1
+          fi
+          cd apps/api
+          pnpm exec tsx src/scripts/insights.ts report "${answer}" > "${RUNNER_TEMP}/metadata.md"
+          cat "${RUNNER_TEMP}/metadata.md"
+          head -c 600000 "${RUNNER_TEMP}/metadata.md" >> "${GITHUB_STEP_SUMMARY}"
+          rm -f "${answer}"
+
+      - name: Lambda logs (allow-listed fields)
+        run: |
+          set -euo pipefail
+          dir="${RUNNER_TEMP}/logs"
+          mkdir -p "${dir}"
+          log_days=$(( DAYS < 30 ? DAYS : 30 ))
+          start=$(( ( $(date +%s) - log_days * 86400 ) * 1000 ))
+          for fn in Api Worker Migrate Insights; do
+            if ! aws logs filter-log-events --log-group-name "/aws/lambda/FoundryAscent-${fn}" \
+                --start-time "${start}" --max-items 200000 --output json > "${dir}/${fn}.json" 2> "${dir}/${fn}.err"; then
+              echo "::warning::Logs of FoundryAscent-${fn} could not be read ($(grep -oE '[A-Za-z]+Exception' "${dir}/${fn}.err" | head -n 1 || true))."
+              echo '{"events": []}' > "${dir}/${fn}.json"
+            fi
+            rm -f "${dir}/${fn}.err"
+          done
+          out="${RUNNER_TEMP}/insights-export"
+          if [ "${SCOPE}" = export ]; then export INSIGHTS_OUT_DIR="${out}"; else unset INSIGHTS_PUBLIC_KEY; fi
+          cd apps/api
+          pnpm exec tsx src/scripts/insights.ts logs "${dir}"/*.json > "${RUNNER_TEMP}/logs.md"
+          rm -rf "${dir}"
+          cat "${RUNNER_TEMP}/logs.md"
+          head -c 300000 "${RUNNER_TEMP}/logs.md" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Export (sealed to public_key)
+        if: env.SCOPE == 'export'
+        run: |
+          set -euo pipefail
+          out="${RUNNER_TEMP}/insights-export"
+          mkdir -p "${out}"
+          cursor=0
+          for part in $(seq 1 40); do
+            request="${RUNNER_TEMP}/export-request.json"
+            answer="${RUNNER_TEMP}/export.json"
+            jq -n --argjson days "${DAYS}" --arg key "${INSIGHTS_PUBLIC_KEY}" --argjson cursor "${cursor}" \
+              '{scope: "export", days: $days, publicKey: $key, cursor: $cursor}' > "${request}"
+            aws lambda invoke --function-name "${FUNCTION_NAME}" --cli-binary-format raw-in-base64-out \
+              --cli-read-timeout 900 --payload "fileb://${request}" "${answer}" > "${RUNNER_TEMP}/invoke.json"
+            if [ -n "$(jq -r '.FunctionError // empty' "${RUNNER_TEMP}/invoke.json")" ]; then
+              echo "::error::The insights function failed on export part ${part}; see /aws/lambda/${FUNCTION_NAME}."
+              exit 1
+            fi
+            next="$(cd apps/api && pnpm exec tsx src/scripts/insights.ts part "${answer}" "${out}" | grep -E '^next=' | tail -n 1)"
+            rm -f "${answer}" "${request}"
+            next="${next#next=}"
+            if [ "${next}" = none ]; then
+              echo "Export complete: ${part} part(s)."
+              break
+            fi
+            if [[ ! "${next}" =~ ^[0-9]+$ ]] || (( next <= cursor )); then
+              echo "::error::The export cursor did not advance."
+              exit 1
+            fi
+            cursor="${next}"
+          done
+          # Only sealed envelopes may be uploaded.
+          for file in "${out}"/*.json; do
+            if ! jq -e '(.envelope | keys) == ["alg","data","iv","key","kid","tag","v"] and .envelope.alg == "RSA-OAEP-256+A256GCM+gzip"' "${file}" > /dev/null; then
+              echo "::error::$(basename "${file}") is not a sealed envelope; nothing is uploaded."
+              rm -rf "${out}"
+              exit 1
+            fi
+          done
+          echo "Sealed files: $(find "${out}" -maxdepth 1 -name '*.json' | wc -l)"
+
+      - name: Upload the sealed export (1 day)
+        if: env.SCOPE == 'export'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: insights-export-${{ github.run_id }}
+          path: ${{ runner.temp }}/insights-export
+          retention-days: 1
+          if-no-files-found: error
