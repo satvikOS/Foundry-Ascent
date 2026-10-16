@@ -226,6 +226,12 @@ person's own value: app_rls holds column privileges on `principals` that leave i
 through `app.call_notice_acknowledged_at()` and `app.acknowledge_call_notice()`, for the request principal. A
 column added to `principals` later must be granted to app_rls explicitly.
 
+Added for platform insights (docs/runbooks/insights.md): `insightsRepo` (S; `beginReadOnly` — callers make the
+transaction read-only first —, `listConversations`, `listCalls`, `turnStats`, `turnTrace` — what each turn's audit
+says it remembered and how long it took —, `validatorNoteCounts`, `usageByPurposeAndModel`, `ventureKnowledge`,
+`auditCounts`, `auditEvents`: ids, counts, codes and timings, optionally for one tenant; and the operator export's
+content reads `exportVoiceTurns`, `exportSpeechUnits`, `exportMemory`, `exportLessons`, sealed by the caller).
+
 ### Role visibility enforced by RLS (verified by `rls.db.test.ts`)
 
 | Principal                 | Memory                                                     | Sessions/turns                                       | Documents/chunks           | Escalations                            |
