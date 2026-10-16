@@ -32,8 +32,8 @@ const PAGE_HEADERS = {
 interface Site {
   /** Answers with this status (empty body) instead of the real response while it returns a number. */
   readonly transient: (req: IncomingMessage) => number | null;
-  /** Page headers that replace the deployed ones. */
-  readonly pageHeaders?: Record<string, string>;
+  /** Page headers that replace the deployed ones (per request when a function). */
+  readonly pageHeaders?: Record<string, string> | ((req: IncomingMessage) => Record<string, string>);
 }
 
 function serve(site: Site): Promise<{ server: Server; origin: string }> {
@@ -48,7 +48,8 @@ function serve(site: Site): Promise<{ server: Server; origin: string }> {
         .writeHead(code, { 'content-type': 'application/problem+json', 'x-content-type-options': 'nosniff' })
         .end(JSON.stringify({ ...body, requestId: 'req-1' }));
     if (req.method === 'GET' && (req.url === '/' || req.url === '/ain/app/ventures')) {
-      res.writeHead(200, { ...PAGE_HEADERS, ...site.pageHeaders }).end(INDEX);
+      const extra = typeof site.pageHeaders === 'function' ? site.pageHeaders(req) : site.pageHeaders;
+      res.writeHead(200, { ...PAGE_HEADERS, ...extra }).end(INDEX);
     } else if (req.url === '/assets/index-abc.js') {
       res
         .writeHead(200, {
@@ -175,6 +176,28 @@ describe('scripts/smoke.mjs first contact (R6)', () => {
     expect(stdout).toMatch(problem);
     expect(stdout).toContain('2 of 6 checks failed.'); // the page and the deep link
     expect(code).toBe(1);
+  });
+
+  it('waits while edges still send the previous headers policy, then passes', async () => {
+    // The live policy before voice calls: microphone off, no Transcribe origin.
+    const previous = {
+      'permissions-policy': 'camera=(), microphone=(), geolocation=()',
+      'content-security-policy': PAGE_HEADERS['content-security-policy'].replace(/ wss:\S+/, ''),
+    };
+    let stalePages = 2;
+    const { server, origin } = await serve({
+      transient: () => null,
+      pageHeaders: (req) => {
+        if (req.url !== '/' || stalePages === 0) return {};
+        stalePages -= 1;
+        return previous;
+      },
+    });
+    current = server;
+    const { code, stdout } = await runSmoke(origin, 30);
+    expect(stdout).toContain('voice-call policy present (after 3 attempts)');
+    expect(stdout).toContain('All 6 checks passed.');
+    expect(code).toBe(0);
   });
 
   it('still fails a site that keeps answering 404 once the first-contact window is over', async () => {

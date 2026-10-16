@@ -357,6 +357,14 @@ async function main() {
       // Read the page before the header assertions so the later checks still get index.html.
       indexHtml = await res.text();
       entryScript = /<script[^>]+src="(\/assets\/[^"]+\.js)"/.exec(indexHtml)?.[1];
+      // A changed response-headers policy reaches every edge location a little after the stack update
+      // finishes, so an edge may still send the previous policy: retry that within the same window.
+      const csp = res.headers.get('content-security-policy') ?? '';
+      const permissionsPolicy = res.headers.get('permissions-policy') ?? '';
+      if (edgePolicyProblems(csp, permissionsPolicy).length > 0 && Date.now() <= deadline) {
+        await sleep(retryDelayMs);
+        continue;
+      }
       expectSecurityHeaders(res, { page: true });
       if (!indexHtml.includes('id="root"')) fail('index.html has no #root element');
       return `HTTP 200, CSP + HSTS + voice-call policy present${attempt > 1 ? ` (after ${attempt} attempts)` : ''}`;
