@@ -32,6 +32,7 @@ const TITLES: Readonly<Record<ErrorCode, string>> = {
   model_unavailable: 'Coaching model unavailable',
   upload_too_large: 'Payload too large',
   unsupported_media_type: 'Unsupported media type',
+  speech_unavailable: 'Speech unavailable',
   internal: 'Internal error',
 };
 

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { SessionRecap, SessionView, TurnView } from './coach.js';
-import { TurnChannel } from './knowledge.js';
+import { PersonaKnowledgeSourceView, TurnChannel } from './knowledge.js';
 import {
   CoachMode,
   Doctrine,
@@ -130,6 +130,22 @@ export const UpdateSessionRequest = z
   .object({ title: z.string().trim().min(1).max(120).optional() })
   .refine((value) => value.title !== undefined, 'Nothing to update');
 export const SessionListResponse = z.object({ items: z.array(SessionView) });
+/**
+ * `GET /sessions` query: the caller's conversations across their ventures, latest activity first (sidebar
+ * recents). `mine`: conversations the caller started; `all`: every conversation the caller may open. Pass the
+ * previous page's `nextCursor` as `cursor`.
+ */
+export const SessionListQuery = z.object({
+  scope: z.enum(['mine', 'all']).default('mine'),
+  ventureId: Id.optional(),
+  cursor: z.string().trim().min(1).max(200).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+});
+export type SessionListQuery = z.infer<typeof SessionListQuery>;
+/** `GET /sessions` 200 body. */
+export const SessionPageResponse = Page(SessionView);
+/** `PATCH /sessions/:id` 200 body. */
+export const UpdateSessionResponse = SessionView;
 /** `POST /ventures/:id/sessions` 201 body. */
 export const CreateSessionResponse = SessionView;
 export const SessionDetailResponse = z.object({ session: SessionView, turns: z.array(TurnView) });
@@ -265,6 +281,14 @@ export const CreateDocumentResponse = z.object({
   }),
 });
 export const DocumentListResponse = z.object({ items: z.array(DocumentView) });
+/**
+ * `POST /personas/:id/knowledge/uploads` 201 body: the persona knowledge source (`processing` once complete)
+ * and a presigned PUT, exactly like a venture document upload. Body: `CreateDocumentRequest`.
+ */
+export const CreatePersonaUploadResponse = z.object({
+  source: PersonaKnowledgeSourceView,
+  upload: CreateDocumentResponse.shape.upload,
+});
 /** `POST /documents/:id/complete` body: 202 while ingestion runs (`status: processing`), else 200. */
 export const CompleteDocumentResponse = DocumentView;
 
@@ -567,6 +591,10 @@ export const PlatformSettingsView = z.object({
     .int()
     .min(0)
     .max(10 * 1024 * 1024 * 1024),
+  /** Longest voice call in minutes. Additive: older APIs send none. */
+  maxCallMinutes: z.number().int().min(1).max(240).optional(),
+  /** Voice-call minutes one person may use per UTC day. Additive: older APIs send none. */
+  dailyCallMinutesPerPrincipal: z.number().int().min(0).max(1440).optional(),
 });
 export type PlatformSettingsView = z.infer<typeof PlatformSettingsView>;
 export const UpdateSettingsRequest = PlatformSettingsView.partial();
