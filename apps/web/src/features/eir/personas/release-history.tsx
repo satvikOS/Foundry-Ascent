@@ -1,5 +1,5 @@
 import type { PersonaView } from '@foundry/contracts';
-import { BadgeCheck, Eye } from 'lucide-react';
+import { Ban, BadgeCheck, Eye } from 'lucide-react';
 
 import { announce } from '@/components/a11y/live-announcer';
 import {
@@ -17,7 +17,7 @@ import { SectionCard } from '@/components/ui/section-card';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { toast } from '@/components/ui/toast';
 import { MutationErrorAlert } from '@/features/admin/shared/form';
-import { useApprovePersonaRelease } from '@/lib/api/hooks/eir';
+import { useApprovePersonaRelease, useWithdrawPersonaRelease } from '@/lib/api/hooks/eir';
 import { formatDate, pluralize } from '@/lib/format';
 
 import { CONSENT_NEEDED, consentState } from './persona-labels';
@@ -83,6 +83,70 @@ export function ApproveReleaseDialog({ persona, release, onClose, onApproved }: 
           >
             <BadgeCheck aria-hidden />
             Approve release
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+/**
+ * Confirmation for withdrawing a superseded release (e.g. a doctrine error found after the fact): the
+ * conversations still on it move to the active release at their next message.
+ */
+export function WithdrawReleaseDialog({
+  persona,
+  release,
+  onClose,
+}: {
+  persona: Pick<PersonaView, 'name' | 'activeRelease'>;
+  release: Pick<ReleaseSummary, 'id' | 'version'> | null;
+  onClose: () => void;
+}) {
+  const withdraw = useWithdrawPersonaRelease();
+  const active = persona.activeRelease;
+  return (
+    <AlertDialog
+      open={release !== null}
+      onOpenChange={(open) => {
+        if (!open && !withdraw.isPending) {
+          withdraw.reset();
+          onClose();
+        }
+      }}
+    >
+      <AlertDialogContent className="border-destructive/50">
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            Withdraw v{release?.version} of {persona.name}?
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            {active
+              ? `Conversations still on v${String(release?.version ?? '')} move to the active v${String(active.version)} at their next message.`
+              : `Conversations still on v${String(release?.version ?? '')} stop using it at their next message.`}{' '}
+            It stays in the history as withdrawn and can’t be used again.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <MutationErrorAlert error={withdraw.error} title="The release wasn’t withdrawn" />
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={withdraw.isPending}>Cancel</AlertDialogCancel>
+          <Button
+            variant="destructive"
+            loading={withdraw.isPending}
+            loadingText="Withdrawing…"
+            onClick={() => {
+              if (!release) return;
+              withdraw.mutate(release.id, {
+                onSuccess: () => {
+                  toast.success(`v${release.version} withdrawn`);
+                  announce('Release withdrawn');
+                  onClose();
+                },
+              });
+            }}
+          >
+            <Ban aria-hidden />
+            Withdraw release
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>

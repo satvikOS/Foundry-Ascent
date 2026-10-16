@@ -1,5 +1,6 @@
 import {
   ApprovePersonaReleaseResponse,
+  WithdrawPersonaReleaseResponse,
   CreatePersonaReleaseRequest,
   CreatePersonaReleaseResponse,
   PersonaListResponse,
@@ -98,6 +99,25 @@ export function useApprovePersonaRelease() {
         idempotencyKey: createIdempotencyKey(),
       }),
     onSuccess: invalidate,
+  });
+}
+
+/**
+ * POST /persona-releases/:id/withdraw — a superseded release (or a draft) out of use; conversations still on
+ * it move to the active release at their next message.
+ */
+export function useWithdrawPersonaRelease() {
+  const invalidate = useInvalidatePersonas();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (releaseId: string) =>
+      api.post(path`/persona-releases/${releaseId}/withdraw`, WithdrawPersonaReleaseResponse, undefined, {
+        idempotencyKey: createIdempotencyKey(),
+      }),
+    onSuccess: (release) => {
+      void client.invalidateQueries({ queryKey: queryKeys.personas.release(release.id) });
+      void invalidate();
+    },
   });
 }
 

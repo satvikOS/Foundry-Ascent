@@ -44,6 +44,12 @@ export interface EirStudioService {
    * older than the active release is refused (`release_outdated`): approving it would roll doctrine back.
    */
   approveRelease(ctx: RequestContext, releaseId: string): Promise<PersonaReleaseView>;
+  /**
+   * Withdraws a superseded release (e.g. a doctrine error found after the fact) or a draft (program lead or
+   * the linked EIR). Conversations still on a withdrawn release move to the active one at their next message.
+   * The active release is refused (`release_active`): approving a corrected release supersedes it.
+   */
+  withdrawRelease(ctx: RequestContext, releaseId: string): Promise<PersonaReleaseView>;
   /** Kill switch: blocks new sessions and turns immediately (program lead or the linked EIR). */
   suspendPersona(
     ctx: RequestContext,
@@ -266,6 +272,39 @@ export function createEirStudioService(kit: Kit): EirStudioService {
           },
         });
         const { expiresAt: _expiresAt, ...view } = approved;
+        return view;
+      });
+    },
+
+    withdrawRelease: async (ctx, rawReleaseId) => {
+      const releaseId = requireId(rawReleaseId, 'Persona release');
+      return await kit.inRequest(ctx, async (scope) => {
+        const release = await personasRepo.getRelease(scope.tx, releaseId);
+        if (release === null) throw fail.notFound('Persona release');
+        const persona = await loadPersona(scope, release.personaId);
+        const via = await requirePersonaControl(scope, persona);
+        if (release.status === 'approved') {
+          throw fail.conflict(
+            'The active release can’t be withdrawn. Approve a corrected release, which replaces it.',
+            'release_active',
+          );
+        }
+        if (release.status === 'withdrawn') {
+          throw fail.conflict('This release is already withdrawn', 'invalid_transition');
+        }
+        if (!(await personasRepo.withdrawRelease(scope.tx, releaseId))) {
+          throw fail.conflict('This release changed meanwhile. Reload it.', 'invalid_transition');
+        }
+        await audit(scope, {
+          action: 'persona.release_withdrawn',
+          outcome: 'succeeded',
+          objectType: 'persona_release',
+          objectId: releaseId,
+          metadata: { personaId: persona.id, version: release.version, from: release.status, via },
+        });
+        const withdrawn = await personasRepo.getRelease(scope.tx, releaseId);
+        if (withdrawn === null) throw fail.notFound('Persona release');
+        const { expiresAt: _expiresAt, ...view } = withdrawn;
         return view;
       });
     },

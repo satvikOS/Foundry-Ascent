@@ -1,5 +1,5 @@
 import type { PersonaReleaseView, PersonaView } from '@foundry/contracts';
-import { BadgeCheck, X } from 'lucide-react';
+import { Ban, BadgeCheck, X } from 'lucide-react';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,12 @@ import { usePersonaRelease } from '@/lib/api/hooks/eir';
 import { formatDate } from '@/lib/format';
 
 import { isOutdatedDraft, pendingDrafts } from './release-drafts';
-import { ApproveReleaseDialog, approvalBlocker, ReleaseHistory } from './release-history';
+import {
+  ApproveReleaseDialog,
+  approvalBlocker,
+  ReleaseHistory,
+  WithdrawReleaseDialog,
+} from './release-history';
 import { ReleaseContent } from './release-view';
 
 /**
@@ -25,12 +30,15 @@ export function ReleaseReview({
   releaseId,
   blocker,
   onApprove,
+  onWithdraw,
   onClose,
 }: {
   persona: Pick<PersonaView, 'activeRelease'>;
   releaseId: string;
   blocker: string | null;
   onApprove?: (release: PersonaReleaseView) => void;
+  /** Withdraws a superseded release (curators only). */
+  onWithdraw?: (release: PersonaReleaseView) => void;
   /** Present when the person opened this release themselves (it can be closed). */
   onClose?: () => void;
 }) {
@@ -94,6 +102,18 @@ export function ReleaseReview({
               Approve…
             </Button>
           ) : null}
+          {r.status === 'superseded' && onWithdraw ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                onWithdraw(r);
+              }}
+            >
+              <Ban aria-hidden />
+              Withdraw…
+            </Button>
+          ) : null}
           {close}
         </>
       }
@@ -110,6 +130,7 @@ export function ReleaseReview({
 export function ReleasesTab({ persona }: { persona: PersonaView }) {
   const [pickedId, setPickedId] = useState<string | null>(null);
   const [approving, setApproving] = useState<PersonaReleaseView | null>(null);
+  const [withdrawing, setWithdrawing] = useState<PersonaReleaseView | null>(null);
   const newestDraft = pendingDrafts(persona)[0] ?? null;
   const picked =
     pickedId !== null &&
@@ -130,6 +151,7 @@ export function ReleasesTab({ persona }: { persona: PersonaView }) {
           releaseId={reviewId}
           blocker={approvalBlocker(persona)}
           onApprove={canApprove ? setApproving : undefined}
+          onWithdraw={canApprove ? setWithdrawing : undefined}
           onClose={
             picked !== null && picked !== newestDraft?.id
               ? () => {
@@ -147,6 +169,13 @@ export function ReleasesTab({ persona }: { persona: PersonaView }) {
         }}
         onApproved={() => {
           setPickedId(null);
+        }}
+      />
+      <WithdrawReleaseDialog
+        persona={persona}
+        release={withdrawing}
+        onClose={() => {
+          setWithdrawing(null);
         }}
       />
     </div>

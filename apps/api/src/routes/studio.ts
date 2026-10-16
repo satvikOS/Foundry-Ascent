@@ -42,6 +42,10 @@ export function registerStudioRoutes(r: RouteBuilder, core: Core): void {
   r.post('/persona-releases/:id/approve', async (c, ctx) =>
     c.json(await core.eir.approveRelease(ctx, pathParam(c, 'id'))),
   );
+  // A superseded release (or a draft) out of use; conversations still on it move to the active release.
+  r.post('/persona-releases/:id/withdraw', async (c, ctx) =>
+    c.json(await core.eir.withdrawRelease(ctx, pathParam(c, 'id'))),
+  );
   r.post('/personas/:id/suspend', async (c, ctx) =>
     c.json(await core.eir.suspendPersona(ctx, pathParam(c, 'id'), jsonBody(c, SuspendPersonaRequest))),
   );

@@ -772,10 +772,23 @@ describe('release pinning and the opener check (run last: they change the person
     const fresh = await h.core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
     expect(fresh.personaVersion).toBe(next.version);
 
-    // A superseded release can be withdrawn later (e.g. a doctrine error found after the fact).
-    await h.t.db.system((sx) =>
-      sx.query(`UPDATE persona_releases SET status = 'withdrawn' WHERE id = :id`, { id: p.uuid(current.id) }),
-    );
+    // A superseded release can be withdrawn later (e.g. a doctrine error found after the fact), through the
+    // studio; the active one cannot, and the founder can do neither.
+    const lead = await h.ctxFor(h.people.lead);
+    await expect(h.core.eir.withdrawRelease(lead, next.id)).rejects.toMatchObject({
+      code: 'conflict',
+      reason: 'release_active',
+    });
+    await expect(h.core.eir.withdrawRelease(maya, current.id)).rejects.toMatchObject({ code: 'forbidden' });
+    expect(await h.core.eir.withdrawRelease(lead, current.id)).toMatchObject({
+      id: current.id,
+      status: 'withdrawn',
+    });
+    await expect(h.core.eir.withdrawRelease(lead, current.id)).rejects.toMatchObject({ code: 'conflict' });
+    expect(await auditMetadata(current.id, 'persona.release_withdrawn')).toMatchObject({
+      from: 'superseded',
+      via: 'program_lead',
+    });
     const second = await run(h.core.orchestrator, pinned.id, { text: 'And after that?', mode: 'coach' });
     expect(await auditMetadata(completed(second.events).id, 'turn.completed')).toMatchObject({
       releaseVersion: next.version,

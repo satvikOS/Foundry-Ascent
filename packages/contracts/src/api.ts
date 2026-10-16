@@ -416,6 +416,12 @@ export const CreatePersonaReleaseResponse = PersonaReleaseView;
 export const PersonaReleaseDetailResponse = PersonaReleaseView;
 /** `POST /persona-releases/:id/approve` 200 body. */
 export const ApprovePersonaReleaseResponse = PersonaReleaseView;
+/**
+ * `POST /persona-releases/:id/withdraw` 200 body: a superseded release (or a draft) taken out of use, e.g. a
+ * doctrine error found after the fact. Conversations still on it move to the active release at their next
+ * message. The active release is never withdrawn (approve a corrected one, which supersedes it).
+ */
+export const WithdrawPersonaReleaseResponse = PersonaReleaseView;
 /** `POST /personas/:id/suspend` 200 body. */
 export const SuspendPersonaResponse = PersonaView;
 /** `POST /personas/:id/resume` 200 body. */

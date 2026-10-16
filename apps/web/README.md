@@ -156,41 +156,42 @@ Every hook parses the response with the schema `packages/contracts` pins for tha
 development; trusted in production builds), so drift fails loudly with `contract_mismatch`. Behaviour the
 UI relies on beyond plain JSON bodies:
 
-| Endpoint                                                                         | Response the web expects                                                                                     |
-| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `POST /auth/sign-in`                                                             | 200 `SignInResponse` (= `Me`) plus the HttpOnly cookie; it seeds the `/me` cache (no second round trip)      |
-| `POST /auth/sign-out`                                                            | 204, cookie cleared (also for an already-expired session)                                                    |
-| `GET /health`                                                                    | `HealthResponse` (`version`, optional `db`); public, never queries the database, fetched at most every 5 min |
-| `POST /ventures/:id/sessions`                                                    | 201 `CreateSessionResponse` (`SessionView`)                                                                  |
-| `POST /sessions/:id/turns`                                                       | 200 `text/event-stream` — or problem+json when refused before acceptance (see below)                         |
-| `POST /sessions/:id/end`                                                         | 200 `{ session, recap }` (`recap` null for ephemeral sessions)                                               |
-| `POST /ventures/:id/memory`                                                      | 201 `MemoryObjectView`                                                                                       |
-| `PATCH /memory/:id`                                                              | 200 `MemoryObjectView` (`correct` returns the NEW version); **`delete` → 204, no body** (resolved as `null`) |
-| `POST /ventures/:id/documents`                                                   | 201 `{ document, upload }` (presigned PUT, 5 min, signs content-type and content-length)                     |
-| `POST /documents/:id/complete`                                                   | **202** `DocumentView` while ingestion runs (`processing`), 200 when already settled; the list polls         |
-| `DELETE /documents/:id`                                                          | 204                                                                                                          |
-| `POST /ventures/:id/escalations`, `PATCH /escalations/:id`                       | 201 / 200 `EscalationView`                                                                                   |
-| `POST /personas/:id/releases`, `POST /persona-releases/:id/approve`              | 201 / 200 `PersonaReleaseView`                                                                               |
-| `GET /persona-releases/:id`                                                      | `PersonaReleaseDetailResponse`: the full draft the studio reviews before approval (403 for other EIRs)       |
-| `GET /sessions/:id`                                                              | `SessionDetailResponse`; blocked turns carry `blocked` (`reason`, `supportMessage`, `escalationId`)          |
-| `POST /personas/:id/suspend` · `resume`                                          | 200 `PersonaView`                                                                                            |
-| `POST /personas/:id/knowledge/:sourceId/complete`                                | **202** while the upload is processed, 200 once settled; the library polls                                   |
-| `DELETE /personas/:id/knowledge/:sourceId`                                       | 204; the source leaves retrieval at once                                                                     |
-| `GET /personas/:id/consents`                                                     | `ConsentListResponse` with `personas` per consent; 403 unless `canCurate`                                    |
-| `POST /personas/:id/consents`                                                    | 201 `ConsentView`; 422 unless `assetTypes` includes `doctrine`                                               |
-| `POST /persona-releases/:id/approve`                                             | 409 `conflict` for a draft older than the active release                                                     |
-| `POST /consents/:id/revoke`                                                      | 200 `{ consent, suspendedPersonaIds }`                                                                       |
-| `POST /ventures/:id/assignment`                                                  | 200 `ProgramVentureRow` with `personaId`, `reviewingEir`, `assignedAt`                                       |
-| `POST /eir/reviews/:turnId`                                                      | 201 `{ reviewId, turnId }`                                                                                   |
-| `POST /program/ventures`                                                         | 201 `ProgramVentureRow`                                                                                      |
-| `POST` / `PATCH /program/resources[/:id]`                                        | 201 / 200 `ResourceView`; PATCH sends only changed fields (`UpdateResourceRequest`, incl. `status`)          |
-| `GET /program/escalations`                                                       | `EscalationQueueResponse` (metadata only, never the packet)                                                  |
-| `GET /program/assignees`                                                         | `EscalationAssigneeListResponse`: the tenant's EIRs and program leads, the routing dialog's only choices     |
-| `POST /program/escalations/:id/route`                                            | 200 `EscalationQueueItem` (status `routed`); only from `awaiting_assignment` / `routed` / `acknowledged`     |
-| `POST /admin/principals`                                                         | 201 `AdminPrincipalRow` (the dialog offers "Issue access code" for `row.principal.id`)                       |
-| `POST /admin/principals/:id/access-codes`, `POST /ventures/:id/team/invitations` | 201 `AccessCodeIssued`; one-time secret, a replayed key gets 409 (never cached or logged)                    |
-| `DELETE /admin/access-codes/:id`                                                 | 200 `{ accessCodeId, revokedAt }`                                                                            |
-| `POST /turns/:id/feedback`                                                       | 201 `{ feedbackId }` (body not used)                                                                         |
+| Endpoint                                                                         | Response the web expects                                                                                       |
+| -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `POST /auth/sign-in`                                                             | 200 `SignInResponse` (= `Me`) plus the HttpOnly cookie; it seeds the `/me` cache (no second round trip)        |
+| `POST /auth/sign-out`                                                            | 204, cookie cleared (also for an already-expired session)                                                      |
+| `GET /health`                                                                    | `HealthResponse` (`version`, optional `db`); public, never queries the database, fetched at most every 5 min   |
+| `POST /ventures/:id/sessions`                                                    | 201 `CreateSessionResponse` (`SessionView`)                                                                    |
+| `POST /sessions/:id/turns`                                                       | 200 `text/event-stream` — or problem+json when refused before acceptance (see below)                           |
+| `POST /sessions/:id/end`                                                         | 200 `{ session, recap }` (`recap` null for ephemeral sessions)                                                 |
+| `POST /ventures/:id/memory`                                                      | 201 `MemoryObjectView`                                                                                         |
+| `PATCH /memory/:id`                                                              | 200 `MemoryObjectView` (`correct` returns the NEW version); **`delete` → 204, no body** (resolved as `null`)   |
+| `POST /ventures/:id/documents`                                                   | 201 `{ document, upload }` (presigned PUT, 5 min, signs content-type and content-length)                       |
+| `POST /documents/:id/complete`                                                   | **202** `DocumentView` while ingestion runs (`processing`), 200 when already settled; the list polls           |
+| `DELETE /documents/:id`                                                          | 204                                                                                                            |
+| `POST /ventures/:id/escalations`, `PATCH /escalations/:id`                       | 201 / 200 `EscalationView`                                                                                     |
+| `POST /personas/:id/releases`, `POST /persona-releases/:id/approve`              | 201 / 200 `PersonaReleaseView`                                                                                 |
+| `GET /persona-releases/:id`                                                      | `PersonaReleaseDetailResponse`: the full draft the studio reviews before approval (403 for other EIRs)         |
+| `GET /sessions/:id`                                                              | `SessionDetailResponse`; blocked turns carry `blocked` (`reason`, `supportMessage`, `escalationId`)            |
+| `POST /personas/:id/suspend` · `resume`                                          | 200 `PersonaView`                                                                                              |
+| `POST /personas/:id/knowledge/:sourceId/complete`                                | **202** while the upload is processed, 200 once settled; the library polls                                     |
+| `DELETE /personas/:id/knowledge/:sourceId`                                       | 204; the source leaves retrieval at once                                                                       |
+| `GET /personas/:id/consents`                                                     | `ConsentListResponse` with `personas` per consent; 403 unless `canCurate`                                      |
+| `POST /personas/:id/consents`                                                    | 201 `ConsentView`; 422 unless `assetTypes` includes `doctrine`                                                 |
+| `POST /persona-releases/:id/approve`                                             | 409 `conflict` for a draft older than the active release                                                       |
+| `POST /persona-releases/:id/withdraw`                                            | 200 `PersonaReleaseView` for a superseded release or a draft (curators); 409 `conflict` for the active release |
+| `POST /consents/:id/revoke`                                                      | 200 `{ consent, suspendedPersonaIds }`                                                                         |
+| `POST /ventures/:id/assignment`                                                  | 200 `ProgramVentureRow` with `personaId`, `reviewingEir`, `assignedAt`                                         |
+| `POST /eir/reviews/:turnId`                                                      | 201 `{ reviewId, turnId }`                                                                                     |
+| `POST /program/ventures`                                                         | 201 `ProgramVentureRow`                                                                                        |
+| `POST` / `PATCH /program/resources[/:id]`                                        | 201 / 200 `ResourceView`; PATCH sends only changed fields (`UpdateResourceRequest`, incl. `status`)            |
+| `GET /program/escalations`                                                       | `EscalationQueueResponse` (metadata only, never the packet)                                                    |
+| `GET /program/assignees`                                                         | `EscalationAssigneeListResponse`: the tenant's EIRs and program leads, the routing dialog's only choices       |
+| `POST /program/escalations/:id/route`                                            | 200 `EscalationQueueItem` (status `routed`); only from `awaiting_assignment` / `routed` / `acknowledged`       |
+| `POST /admin/principals`                                                         | 201 `AdminPrincipalRow` (the dialog offers "Issue access code" for `row.principal.id`)                         |
+| `POST /admin/principals/:id/access-codes`, `POST /ventures/:id/team/invitations` | 201 `AccessCodeIssued`; one-time secret, a replayed key gets 409 (never cached or logged)                      |
+| `DELETE /admin/access-codes/:id`                                                 | 200 `{ accessCodeId, revokedAt }`                                                                              |
+| `POST /turns/:id/feedback`                                                       | 201 `{ feedbackId }` (body not used)                                                                           |
 
 **Turn stream.** Frames are `event: <name>` + one JSON `data:` line holding the full `TurnStreamEvent`
 (the JSON carries `event` too; the two must agree), with `: keep-alive` comments every 15 s:

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { jsonResponse, renderWithProviders, stubFetch } from '@/features/admin/shared/test-utils';
 
+import { WithdrawReleaseDialog } from './release-history';
 import { ReleaseReview, ReleasesTab } from './releases-tab';
 import { persona, RELEASE } from './test-fixtures';
 
@@ -73,6 +74,40 @@ describe('ReleaseReview (EIR studio)', () => {
     expect(await screen.findByText('Draft v2 · outdated')).toBeVisible();
     expect(screen.getByText('Older than the active v3, so it can’t be approved.')).toBeVisible();
     expect(screen.queryByRole('button', { name: /Approve/ })).toBeNull();
+  });
+
+  it('offers to withdraw a superseded release to its curators, and confirms what that does', async () => {
+    const superseded = { ...draft, version: 2, status: 'superseded' as const };
+    const fetchMock = stubFetch();
+    fetchMock.mockImplementation((_input, init) =>
+      Promise.resolve(
+        jsonResponse(init?.method === 'POST' ? { ...superseded, status: 'withdrawn' } : superseded),
+      ),
+    );
+    const active = persona({ activeRelease: { ...RELEASE, version: 3 } });
+    const onWithdraw = vi.fn();
+    renderWithProviders(
+      <ReleaseReview persona={active} releaseId={RELEASE_ID} blocker={null} onWithdraw={onWithdraw} />,
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Withdraw…' }));
+    expect(onWithdraw).toHaveBeenCalledWith(superseded);
+
+    renderWithProviders(
+      <WithdrawReleaseDialog persona={active} release={{ id: RELEASE_ID, version: 2 }} onClose={vi.fn()} />,
+    );
+    expect(
+      screen.getByText(/Conversations still on v2 move to the active v3 at their next message\./),
+    ).toBeVisible();
+    await userEvent.click(screen.getByRole('button', { name: 'Withdraw release' }));
+    const post = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST');
+    expect(post?.[0]).toBe(`/api/v1/persona-releases/${RELEASE_ID}/withdraw`);
+  });
+
+  it('never offers to withdraw the release without a curator, or a draft', async () => {
+    stubFetch().mockResolvedValue(jsonResponse({ ...draft, status: 'superseded' }));
+    renderWithProviders(<ReleaseReview persona={persona()} releaseId={RELEASE_ID} blocker={null} />);
+    expect(await screen.findByText(/Release v3/)).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Withdraw…' })).toBeNull();
   });
 
   it('keeps approval disabled while consent is missing', async () => {

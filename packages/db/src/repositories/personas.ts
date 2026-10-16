@@ -341,9 +341,14 @@ export async function approveRelease(
 }
 
 /** Withdraws a draft or approved release. */
+/**
+ * Takes a release out of use: a draft, the approved one, or a superseded one that conversations may still be
+ * pinned to (they move to the active release at their next message). False when it was already withdrawn.
+ */
 export async function withdrawRelease(ex: SqlExecutor, releaseId: string): Promise<boolean> {
   const result = await ex.query(
-    `UPDATE persona_releases SET status = 'withdrawn' WHERE id = :id AND status IN ('draft', 'approved')`,
+    `UPDATE persona_releases SET status = 'withdrawn'
+      WHERE id = :id AND status IN ('draft', 'approved', 'superseded')`,
     { id: p.uuid(releaseId) },
   );
   return result.rowCount > 0;

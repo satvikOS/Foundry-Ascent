@@ -102,6 +102,31 @@ describe('EIR studio', () => {
     );
     expect(approved.status).toBe('approved');
 
+    // The release it superseded can be withdrawn (a doctrine error found later); the active one cannot.
+    const guide = await json(
+      await api.request(`/personas/${api.h.seed.personaId}`, { cookie: lead }),
+      PersonaView,
+    );
+    const superseded = guide.releases.find((r) => r.status === 'superseded');
+    if (!superseded) throw new Error('expected a superseded release');
+    expect(
+      await problemCode(
+        await api.request(`/persona-releases/${superseded.id}/withdraw`, { method: 'POST', cookie: maya }),
+        403,
+      ),
+    ).toBe('forbidden');
+    expect(
+      await problemCode(
+        await api.request(`/persona-releases/${approved.id}/withdraw`, { method: 'POST', cookie: lead }),
+        409,
+      ),
+    ).toBe('conflict');
+    const withdrawn = await json(
+      await api.request(`/persona-releases/${superseded.id}/withdraw`, { method: 'POST', cookie: lead }),
+      PersonaReleaseView,
+    );
+    expect(withdrawn).toMatchObject({ id: superseded.id, status: 'withdrawn' });
+
     // QuietQuad is coached by Corin's vEIR: suspending it pauses that venture's coach.
     const coach = api.h.ventures.quietquad.personaId;
     const suspended = await json(
