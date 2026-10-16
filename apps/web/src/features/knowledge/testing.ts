@@ -150,6 +150,7 @@ export function makeSession(overrides: Partial<SessionView> = {}): SessionView {
     personaId: IDS.persona,
     lastActivityAt: NOW,
     hasCalls: false,
+    digestDeleted: false,
     digest: {
       summary: 'Maya reviewed the seat-map test and chose to rerun it before finals.',
       topics: ['Seat-map test', 'Exam-week focus'],
@@ -209,5 +210,7 @@ export function makeTurnWithEvidence(evidence: EvidenceItem[], id: string = IDS.
     completedAt: NOW,
     blocked: null,
     channel: 'text',
+    author: null,
+    myFeedback: null,
   };
 }

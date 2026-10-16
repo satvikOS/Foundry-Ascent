@@ -113,7 +113,13 @@ export function VeirAnswer({
         <MemorySuggestions personaName={personaName} bindings={memory.bindings} controls={memory.controls} />
       ) : null}
 
-      <MessageActions turnId={turn.id} copyText={response.answer} canRate={canEdit} pinned={latest} />
+      <MessageActions
+        turnId={turn.id}
+        copyText={response.answer}
+        canRate={canEdit}
+        pinned={latest}
+        myRating={turn.myFeedback?.rating ?? null}
+      />
     </div>
   );
 }

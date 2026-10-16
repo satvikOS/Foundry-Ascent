@@ -20,6 +20,7 @@ import {
   ProblemDetails,
   ProgramVentureRow,
   RevokeConsentResponse,
+  SessionDetailResponse,
   SessionPageResponse,
   SessionView,
   VeirIdentity,
@@ -163,6 +164,13 @@ describe('conversations', () => {
       SessionView,
     );
     expect(undigested.digest).toBeNull();
+    expect(undigested.digestDeleted).toBe(true);
+    // Read again (a reload): still deleted, so the page never waits for a summary that will not come.
+    const reread = await json(
+      await api.request(`/sessions/${past?.id ?? ''}`, { cookie: maya }),
+      SessionDetailResponse,
+    );
+    expect(reread.session.digestDeleted).toBe(true);
     expect(
       await problemCode(
         await api.request(`/sessions/${created.id}`, { method: 'DELETE', cookie: corin }),

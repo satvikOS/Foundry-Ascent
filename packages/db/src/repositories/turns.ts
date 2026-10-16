@@ -491,14 +491,68 @@ export function blockedReason(
   return 'blocked';
 }
 
+/** Who wrote a turn and the viewer's own rating of it (`TurnView.author`, `TurnView.myFeedback`). */
+export interface TurnViewExtras {
+  readonly author: TurnView['author'];
+  readonly myFeedback: TurnView['myFeedback'];
+}
+
+/**
+ * The author (id and display name) of each turn, and the viewer's own rating of it when `viewerId` is given,
+ * by turn id (two queries at most). Under RLS the ratings are the viewer's own only.
+ */
+export async function turnViewExtras(
+  ex: SqlExecutor,
+  turns: readonly Pick<TurnRecord, 'id' | 'authorId'>[],
+  viewerId: string | null,
+): Promise<Map<string, TurnViewExtras>> {
+  if (turns.length === 0) return new Map();
+  const authorIds = [...new Set(turns.map((t) => t.authorId))];
+  const names = new Map(
+    await queryRows(
+      ex,
+      'SELECT pr.id, pr.display_name FROM principals pr WHERE pr.id = ANY (:ids)',
+      { ids: p.uuidArray(authorIds) },
+      (r) => [col.uuid.decode(r.id, 'id'), col.text.decode(r.display_name, 'display_name')] as const,
+    ),
+  );
+  const ratings =
+    viewerId === null
+      ? new Map<string, number>()
+      : new Map(
+          await queryRows(
+            ex,
+            `SELECT f.turn_id, f.rating FROM feedback f
+             WHERE f.principal_id = :viewerId AND f.turn_id = ANY (:ids)`,
+            { viewerId: p.uuid(viewerId), ids: p.uuidArray(turns.map((t) => t.id)) },
+            (r) => [col.uuid.decode(r.turn_id, 'turn_id'), col.int.decode(r.rating, 'rating')] as const,
+          ),
+        );
+  return new Map(
+    turns.map((t) => {
+      const name = names.get(t.authorId);
+      const rating = ratings.get(t.id);
+      return [
+        t.id,
+        {
+          author: name === undefined ? null : { id: t.authorId, displayName: name },
+          myFeedback: rating === undefined ? null : { rating },
+        },
+      ];
+    }),
+  );
+}
+
 /**
  * Assembles the contract `TurnView`. `blocked` must be set for blocked turns (see
- * {@link blockedReason}); it is ignored for any other status.
+ * {@link blockedReason}); it is ignored for any other status. `extras` (see {@link turnViewExtras}) default to
+ * an unknown author and no rating.
  */
 export function toTurnView(
   turn: TurnRecord,
   evidence: readonly EvidenceItemValue[],
   blocked: TurnBlockedDetail | null,
+  extras?: TurnViewExtras,
 ): TurnView {
   return {
     id: turn.id,
@@ -525,18 +579,22 @@ export function toTurnView(
     completedAt: turn.completedAt,
     blocked: turn.status === 'blocked' ? blocked : null,
     channel: turn.channel,
+    author: extras?.author ?? null,
+    myFeedback: extras?.myFeedback ?? null,
   };
 }
 
 /**
- * Turns of a session as contract `TurnView`s (two queries, plus one for the escalations of blocked turns).
- * Blocked turns carry their reason, the escalation drafted for them (when the caller may read it) and the
- * support message `supportMessageFor` returns for the reason (the crisis message lives in packages/ai).
+ * Turns of a session as contract `TurnView`s (two queries, plus one for the escalations of blocked turns and
+ * two for authors and ratings). Blocked turns carry their reason, the escalation drafted for them (when the
+ * caller may read it) and the support message `supportMessageFor` returns for the reason (the crisis message
+ * lives in packages/ai). Every turn carries its author, and `viewerId`'s own rating when given.
  */
 export async function listTurnViews(
   ex: SqlExecutor,
   sessionId: string,
   supportMessageFor: (reason: string) => string | null,
+  viewerId: string | null = null,
 ): Promise<TurnView[]> {
   const turns = await listTurns(ex, sessionId);
   const evidence = await listTurnEvidence(
@@ -547,6 +605,7 @@ export async function listTurnViews(
     ex,
     turns.filter((t) => t.status === 'blocked').map((t) => t.id),
   );
+  const extras = await turnViewExtras(ex, turns, viewerId);
   return turns.map((t) => {
     const reason = blockedReason(t);
     const blocked =
@@ -557,7 +616,7 @@ export async function listTurnViews(
             supportMessage: supportMessageFor(reason),
             escalationId: escalations.get(t.id) ?? null,
           };
-    return toTurnView(t, evidence.get(t.id) ?? [], blocked);
+    return toTurnView(t, evidence.get(t.id) ?? [], blocked, extras.get(t.id));
   });
 }
 

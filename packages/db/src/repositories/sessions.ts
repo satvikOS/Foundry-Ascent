@@ -349,6 +349,7 @@ function decodeView(r: RawRow): SessionView {
     lastActivityAt: s.lastActivityAt,
     hasCalls: s.hasCalls,
     digest: s.privacy === 'standard' ? s.digest : null,
+    digestDeleted: s.digestDeletedAt !== null,
     opener: s.privacy === 'standard' ? s.opener : null,
   };
 }

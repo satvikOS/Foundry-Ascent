@@ -159,6 +159,19 @@ export const TurnView = z.object({
   blocked: TurnBlockedDetail.nullable().default(null),
   /** Typed in chat or spoken during a call. Additive: older payloads parse as `text`. */
   channel: TurnChannel.default('text'),
+  /**
+   * Who wrote the message (a founder or team member; any of them may write in a venture's conversation). Null
+   * where the viewer is not shown it (staff reviews) or in older payloads. Additive.
+   */
+  author: z.object({ id: Id, displayName: z.string() }).nullable().default(null),
+  /**
+   * The viewer's own rating of the answer (1–5; the thumbs send 5 and 1), so a rating survives a reload. Null
+   * when they have not rated it, or in older payloads. Additive.
+   */
+  myFeedback: z
+    .object({ rating: z.number().int().min(1).max(5) })
+    .nullable()
+    .default(null),
 });
 export type TurnView = z.infer<typeof TurnView>;
 
@@ -203,6 +216,11 @@ export const SessionView = z.object({
   hasCalls: z.boolean().default(false),
   /** Conversation digest (never for temporary chats). Additive. */
   digest: ConversationDigest.nullable().default(null),
+  /**
+   * The digest was deleted by a founder or team member; distillation never writes it again. Lets a reloaded
+   * page say so instead of waiting for a summary. Additive: older payloads parse as false.
+   */
+  digestDeleted: z.boolean().default(false),
   /**
    * The vEIR's opening line, stored at create from the notebook's `nextOpener`. Shown as the vEIR's first
    * message and replayed into the model's history. Additive.

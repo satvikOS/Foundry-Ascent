@@ -399,10 +399,11 @@ export function createOrchestrator(
           const evidence = (await turnsRepo.listTurnEvidence(tx, [existing.id])).get(existing.id) ?? [];
           const escalationId =
             (await escalationsRepo.escalationIdsByTurn(tx, [existing.id])).get(existing.id) ?? null;
+          const extras = (await turnsRepo.turnViewExtras(tx, [existing], null)).get(existing.id);
           return {
             kind: 'replay',
             turn: existing,
-            view: turnsRepo.toTurnView(existing, evidence, blockedDetailOf(existing, escalationId)),
+            view: turnsRepo.toTurnView(existing, evidence, blockedDetailOf(existing, escalationId), extras),
             escalationId,
           };
         }
@@ -1080,7 +1081,9 @@ export function createOrchestrator(
       const reason = checked.blocked ? (checked.blockReason ?? 'blocked') : null;
       const blocked: TurnBlockedDetail | null =
         reason === null ? null : { reason, supportMessage: supportMessageFor(reason), escalationId };
-      const view = participantTurnView(turnsRepo.toTurnView(finished, evidence, blocked));
+      // A turn just answered: its author, and no rating yet.
+      const extras = (await turnsRepo.turnViewExtras(tx, [finished], null)).get(finished.id);
+      const view = participantTurnView(turnsRepo.toTurnView(finished, evidence, blocked, extras));
       return { view, blocked: view.blocked };
     });
 

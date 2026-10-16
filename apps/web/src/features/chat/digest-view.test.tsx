@@ -76,4 +76,34 @@ describe('DigestView', () => {
     // Nothing is polled for a digest that will never come.
     expect(awaitingDigest(without)).toBe(false);
   });
+
+  it('says so after a reload too: the server reports the deleted digest', async () => {
+    const deleted = makeSession({
+      id: IDS.ref,
+      status: 'ended',
+      endedAt: new Date(Date.now() - 10_000).toISOString(),
+      digest: null,
+      digestDeleted: true,
+    });
+    const fetchMock = stubFetch();
+    fetchMock.mockResolvedValue(jsonResponse({ session: deleted, turns: [] }));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(queryKeys.session.detail(IDS.ref), { session: deleted, turns: [] });
+    render(
+      <QueryClientProvider client={client}>
+        <TooltipProvider>
+          <InspectorProvider>
+            <PanelStateProvider>
+              <DigestView session={deleted} personaName="Corin" canEdit memoryItems={[]} escalations={[]} />
+            </PanelStateProvider>
+          </InspectorProvider>
+        </TooltipProvider>
+      </QueryClientProvider>,
+    );
+    expect(
+      await screen.findByText('You deleted the summary. Corin won’t write it again.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/is writing a summary/)).not.toBeInTheDocument();
+    expect(awaitingDigest(deleted)).toBe(false);
+  });
 });

@@ -40,8 +40,8 @@ function FounderMessage({
 }: {
   text: string;
   /**
-   * The conversation's starter, whose face sits beside the bubble. Turns carry no author yet, so screen
-   * readers hear a neutral "Message" rather than a name that may not be the writer's.
+   * Who wrote it (any founder or team member may write in the venture's conversation), whose face sits beside
+   * the bubble. Screen readers hear a neutral "Message": the face is decorative.
    */
   author: string;
   at: string | null;
@@ -314,7 +314,11 @@ export function StoredExchange({
       aria-label={`Exchange ${turn.ordinal}`}
       className="grid scroll-mt-24 gap-6"
     >
-      <FounderMessage text={turn.founderText} author={session.startedBy.displayName} at={turn.createdAt} />
+      <FounderMessage
+        text={turn.founderText}
+        author={turn.author?.displayName ?? session.startedBy.displayName}
+        at={turn.createdAt}
+      />
       <VeirMessage personaName={personaName} portraitUrl={portraitUrl}>
         {body}
       </VeirMessage>

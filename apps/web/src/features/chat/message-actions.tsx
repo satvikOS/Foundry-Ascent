@@ -37,22 +37,28 @@ const BAD = 1;
 
 /**
  * Copy and rate one answer. Shown under the latest answer, and on hover or focus for earlier ones.
- * Ratings feed the EIR's calibration reviews; they never change the answer.
+ * Ratings feed the EIR's calibration reviews; they never change the answer. An answer the person rated
+ * before (`myRating`, kept by the server) shows the thumb they chose instead of the buttons.
  */
 export function MessageActions({
   turnId,
   copyText,
   canRate,
   pinned,
+  myRating = null,
 }: {
   turnId: string;
   copyText: string;
   canRate: boolean;
   /** Always visible (the latest answer, touch screens); otherwise on hover or focus. */
   pinned: boolean;
+  /** The person's own earlier rating of this answer (1–5), or null. */
+  myRating?: number | null;
 }) {
   const feedback = useTurnFeedback();
+  /** Rated just now, on this page: a short thanks. */
   const [rated, setRated] = useState<'good' | 'bad' | null>(null);
+  const earlier = myRating === null ? null : myRating >= GOOD ? 'good' : 'bad';
   const [reporting, setReporting] = useState(false);
 
   const send = (rating: number, flags: Flag[] = [], comment: string | null = null) => {
@@ -86,6 +92,19 @@ export function MessageActions({
           <span className="inline-flex h-7 items-center gap-1 px-1.5 text-caption" role="status">
             <Check aria-hidden className="size-3.5" />
             Thanks
+          </span>
+        ) : earlier ? (
+          <span
+            role="img"
+            aria-label={earlier === 'good' ? 'You rated this a good answer' : 'You rated this a bad answer'}
+            title={earlier === 'good' ? 'You rated this a good answer' : 'You rated this a bad answer'}
+            className="inline-flex size-7 items-center justify-center text-foreground"
+          >
+            {earlier === 'good' ? (
+              <ThumbsUp aria-hidden className="size-4 fill-current" />
+            ) : (
+              <ThumbsDown aria-hidden className="size-4 fill-current" />
+            )}
           </span>
         ) : (
           <>

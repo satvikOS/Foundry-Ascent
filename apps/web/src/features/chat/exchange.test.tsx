@@ -1,3 +1,4 @@
+import { createMemoryHistory, createRootRoute, createRouter, RouterProvider } from '@tanstack/react-router';
 import { act, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -5,9 +6,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/features/admin/shared/test-utils';
 import type { TurnStreamError, TurnStreamState } from '@/lib/api/hooks/turn-stream';
 
+import { InspectorProvider } from '@/components/shell/inspector';
+
 import { deriveTurnProgress } from '../coach/progress';
-import { IDS, makeTurn } from '../coach/testing';
-import { LiveExchange, TurnFailure } from './exchange';
+import { IDS, makeSession, makeTurn } from '../coach/testing';
+import { LiveExchange, StoredExchange, TurnFailure } from './exchange';
+import { PanelStateProvider } from './panel-state';
 import { VeirAnswer, wasInterrupted, type VeirAnswerProps } from './veir-answer';
 
 const streaming = (overrides: Partial<TurnStreamState> = {}): TurnStreamState => ({
@@ -135,6 +139,12 @@ describe('VeirAnswer', () => {
     );
   });
 
+  it('shows the rating the person gave before a reload (TurnView.myFeedback)', () => {
+    renderWithProviders(<VeirAnswer {...answerProps({ turn: makeTurn({ myFeedback: { rating: 5 } }) })} />);
+    expect(screen.getByRole('img', { name: 'You rated this a good answer' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Good answer' })).toBeNull();
+  });
+
   it('pins copy and rating under the latest answer only', () => {
     const { unmount } = renderWithProviders(<VeirAnswer {...answerProps({ latest: true })} />);
     expect(screen.getByRole('button', { name: 'Copy answer' }).parentElement?.className).not.toContain(
@@ -227,5 +237,51 @@ describe('a call turn the founder interrupted', () => {
     expect(wasInterrupted({ channel: 'text', validator: notes(['interrupted']) })).toBe(false);
     expect(wasInterrupted({ channel: 'voice', validator: notes(['narrowed']) })).toBe(false);
     expect(wasInterrupted({ channel: 'voice', validator: null })).toBe(false);
+  });
+});
+
+describe('StoredExchange', () => {
+  async function renderStored(turn: ReturnType<typeof makeTurn>) {
+    const ui = (
+      <InspectorProvider>
+        <PanelStateProvider>
+          <StoredExchange
+            turn={turn}
+            session={makeSession({ startedBy: { id: IDS.principal, displayName: 'Maya Example' } })}
+            personaName="Corin’s vEIR"
+            tenant="ain"
+            ventureId={IDS.venture}
+            canEdit
+            latest
+            memoryItems={[]}
+            memoryLoading={false}
+            escalations={[]}
+            sendDisabledReason={null}
+            onRetry={vi.fn()}
+            onRequestEscalation={vi.fn()}
+            liveBlocked={null}
+          />
+        </PanelStateProvider>
+      </InspectorProvider>
+    );
+    const router = createRouter({
+      routeTree: createRootRoute({ component: () => ui }),
+      history: createMemoryHistory({ initialEntries: ['/'] }),
+    });
+    const result = renderWithProviders(<RouterProvider router={router} />);
+    await screen.findByText(turn.founderText);
+    return result;
+  }
+
+  it('puts the face of the person who wrote the message beside it, not the conversation’s starter', async () => {
+    const { container } = await renderStored(
+      makeTurn({ author: { id: IDS.ref, displayName: 'Devin Ashcombe' } }),
+    );
+    expect(container.querySelector('[data-slot="user-avatar"]')).toHaveTextContent('DA');
+  });
+
+  it('falls back to the starter when the API names no author (an older API)', async () => {
+    const { container } = await renderStored(makeTurn({ author: null }));
+    expect(container.querySelector('[data-slot="user-avatar"]')).toHaveTextContent('ME');
   });
 });

@@ -9,6 +9,7 @@ describe('awaitingDigest', () => {
     status: 'ended' as const,
     privacy: 'standard' as const,
     digest: null,
+    digestDeleted: false,
     endedAt: '2026-10-16T11:59:00.000Z',
   };
 
@@ -36,5 +37,9 @@ describe('awaitingDigest', () => {
     expect(awaitingDigest({ ...ended, privacy: 'ephemeral' }, now)).toBe(false);
     expect(awaitingDigest({ ...ended, status: 'active', endedAt: null }, now)).toBe(false);
     expect(awaitingDigest(undefined, now)).toBe(false);
+  });
+
+  it('never waits for a digest the server says was deleted (a reload right after deleting it)', () => {
+    expect(awaitingDigest({ ...ended, digestDeleted: true }, now)).toBe(false);
   });
 });

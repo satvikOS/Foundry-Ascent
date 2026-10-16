@@ -69,7 +69,7 @@ export function DigestView({
   const digest = session.digest;
   const recap = session.recap;
   const writing = awaitingDigest(session);
-  const deleted = !digest && digestDeleted(session.id);
+  const deleted = !digest && digestDeleted(session);
 
   if (session.privacy === 'ephemeral') {
     return (

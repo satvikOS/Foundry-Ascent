@@ -399,7 +399,7 @@ function Conversation() {
               <LiveExchange
                 state={state}
                 progress={progress}
-                author={session.startedBy.displayName}
+                author={me.principal.displayName}
                 personaName={personaName}
                 portraitUrl={veir?.portraitUrl}
                 tenant={tenant}

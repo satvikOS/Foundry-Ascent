@@ -575,9 +575,31 @@ describe('documents, sessions, turns, escalations', () => {
       expect(views[0]?.evidence[0]?.excerpt).toContain('twenty minutes');
       expect(views[0]?.evidence[0]?.status).toBe('confirmed');
       expect(views[0]?.usage).toMatchObject({ modelId: 'mock', latencyMs: 120 });
+      // Every turn names its author; ratings are the viewer's own, and only when a viewer is named.
+      expect(views.map((v) => v.author)).toEqual([
+        { id: maya.principalId, displayName: 'Maya Okafor-Lindqvist' },
+        { id: maya.principalId, displayName: 'Maya Okafor-Lindqvist' },
+      ]);
+      expect(views.map((v) => v.myFeedback)).toEqual([null, null]);
+      const first = views[0]?.id ?? '';
+      await turnsRepo.upsertFeedback(tx, {
+        turnId: first,
+        ventureId,
+        principalId: maya.principalId,
+        rating: 5,
+      });
+      const mine = await turnsRepo.listTurnViews(tx, sessionId, () => null, maya.principalId);
+      expect(mine.map((v) => v.myFeedback)).toEqual([{ rating: 5 }, null]);
+      const someoneElse = await turnsRepo.listTurnViews(tx, sessionId, () => null, lead.principalId);
+      expect(someoneElse.map((v) => v.myFeedback)).toEqual([null, null]);
       const view = await sessionsRepo.getSessionView(tx, sessionId);
       expect(SessionView.safeParse(view).success).toBe(true);
-      expect(view).toMatchObject({ personaName: "Corin's vEIR", turnCount: 2, status: 'active' });
+      expect(view).toMatchObject({
+        personaName: "Corin's vEIR",
+        turnCount: 2,
+        status: 'active',
+        digestDeleted: false,
+      });
       const ended = await sessionsRepo.endSession(tx, {
         sessionId,
         recap: {
