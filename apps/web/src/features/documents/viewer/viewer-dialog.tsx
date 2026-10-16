@@ -13,6 +13,8 @@ import {
   Quote,
   Search,
   X,
+  ZoomIn,
+  ZoomOut,
   type LucideIcon,
 } from 'lucide-react';
 import { Dialog as DialogPrimitive } from 'radix-ui';
@@ -160,7 +162,7 @@ export default function DocumentViewerDialog({ ventureId, target, onClose, retur
     return () => {
       observer.disconnect();
     };
-  });
+  }, [desktop]);
 
   // A new query starts at its first match.
   useEffect(() => {
@@ -322,10 +324,7 @@ export default function DocumentViewerDialog({ ventureId, target, onClose, retur
       }}
     >
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay
-          className="viewer-overlay fixed inset-0 z-50 data-[state=open]:animate-in data-[state=open]:fade-in-0"
-          data-testid="document-viewer-overlay"
-        />
+        <DialogPrimitive.Overlay className="viewer-overlay fixed inset-0 z-50 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
         <DialogPrimitive.Content
           ref={panel}
           aria-modal="true"
@@ -566,7 +565,7 @@ function SizeControls({
         onClick={onSmaller}
         className="font-serif text-[13px]"
       >
-        <span aria-hidden>A−</span>
+        {pdf ? <ZoomOut aria-hidden /> : <span aria-hidden>A−</span>}
       </Button>
       <span
         className="viewer-size-label tabular text-center text-caption text-muted-foreground"
@@ -582,7 +581,7 @@ function SizeControls({
         onClick={onLarger}
         className="font-serif text-[15px]"
       >
-        <span aria-hidden>A+</span>
+        {pdf ? <ZoomIn aria-hidden /> : <span aria-hidden>A+</span>}
       </Button>
     </div>
   );

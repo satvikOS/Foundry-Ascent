@@ -298,19 +298,30 @@
   box-shadow: 0 0 0 2px color-mix(in oklab, var(--warning) 70%, transparent);
 }
 
-/* The cited passage: a quiet tint with a rule beside it. */
+/* The cited passage: a quiet tint with a rule beside it, one band across consecutive blocks. */
 .reader-prose [data-cited] {
-  background: color-mix(in oklab, var(--info) 11%, transparent);
-  box-shadow: inset 2px 0 0 var(--info);
-  border-radius: 4px;
-  padding: 0.35em 0.75em;
+  background: color-mix(in oklab, var(--info) 7%, transparent);
+  border-left: 2px solid color-mix(in oklab, var(--info) 70%, transparent);
+  border-radius: 0 3px 3px 0;
+  padding: 0.2em 0.75em 0.2em calc(0.75em - 2px);
   margin-left: -0.75em;
-  margin-right: -0.75em;
 }
+.reader-prose [data-cited]:has(+ [data-cited]) {
+  border-bottom-right-radius: 0;
+}
+/* Consecutive cited blocks join: the gap between them becomes part of the band. */
 .reader-prose [data-cited] + [data-cited] {
   margin-top: 0;
-  border-top-left-radius: 0;
+  padding-top: 0.9em;
   border-top-right-radius: 0;
+}
+.reader-prose li[data-cited] + li[data-cited] {
+  padding-top: 0.5em;
+}
+
+/* The find field has its own close button. */
+.viewer-panel input[type='search']::-webkit-search-cancel-button {
+  display: none;
 }
 
 @media (forced-colors: active) {
