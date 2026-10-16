@@ -153,7 +153,9 @@ function AssignmentsTable({
         <TableHeader>
           <TableRow>
             <TableHead scope="col">Venture</TableHead>
-            <TableHead scope="col">vEIR</TableHead>
+            <TableHead scope="col" className="hidden sm:table-cell">
+              vEIR
+            </TableHead>
             <TableHead scope="col" className="hidden md:table-cell">
               Reviewed by
             </TableHead>
@@ -173,10 +175,16 @@ function AssignmentsTable({
                 <TableCell className="font-medium">
                   <span className="flex items-center gap-2.5">
                     <VentureMark name={row.name} size="sm" />
-                    {row.name}
+                    <span className="grid">
+                      {row.name}
+                      {/* Phones: the vEIR sits under the venture instead of in its own column. */}
+                      <span className="text-caption font-normal text-muted-foreground sm:hidden">
+                        {row.personaName ?? 'Not assigned'}
+                      </span>
+                    </span>
                   </span>
                 </TableCell>
-                <TableCell>
+                <TableCell className="hidden sm:table-cell">
                   {persona ? (
                     <span className="flex items-center gap-2">
                       <PersonaAvatar
@@ -184,20 +192,13 @@ function AssignmentsTable({
                         size="xs"
                         decorative
                       />
-                      <span className="grid">
-                        <Link
-                          to="/$tenant/app/eir/personas/$personaId"
-                          params={{ tenant, personaId: persona.id }}
-                          className="underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
-                        >
-                          {persona.name}
-                        </Link>
-                        {row.reviewingEir ? (
-                          <span className="text-caption text-muted-foreground md:hidden">
-                            Reviewed by {row.reviewingEir.displayName}
-                          </span>
-                        ) : null}
-                      </span>
+                      <Link
+                        to="/$tenant/app/eir/personas/$personaId"
+                        params={{ tenant, personaId: persona.id }}
+                        className="underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+                      >
+                        {persona.name}
+                      </Link>
                     </span>
                   ) : (
                     <span className="text-muted-foreground">{row.personaName ?? 'Not assigned'}</span>

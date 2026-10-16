@@ -135,4 +135,49 @@ describe('limits form', () => {
     expect(await screen.findByText('The per-person cap can’t exceed the platform cap.')).toBeVisible();
     expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(false);
   });
+
+  it('edits the call-minute caps with the other limits', () => {
+    const values = toLimitsFormValues({ ...SETTINGS, maxCallMinutes: 30, dailyCallMinutesPerPrincipal: 60 });
+    expect(values.maxCallMinutes).toBe(30);
+    expect(limitsPatch(SETTINGS, { ...values, maxCallMinutes: 20, dailyCallMinutesPerPrincipal: 0 })).toEqual(
+      {
+        maxCallMinutes: 20,
+        dailyCallMinutesPerPrincipal: 0,
+      },
+    );
+    // An API that sends no call caps shows the platform defaults, and nothing unchanged is sent.
+    expect(limitsPatch(SETTINGS, toLimitsFormValues(SETTINGS))).toEqual({});
+  });
+});
+
+describe('calls and streaming switches', () => {
+  it('turns calls off only after confirmation and streaming at once, one field per change', async () => {
+    const fetchMock = stubFetch();
+    let current: PlatformSettingsView = { ...SETTINGS, callsEnabled: true, streamingEnabled: true };
+    fetchMock.mockImplementation((_input, init) => {
+      if (init?.method === 'PATCH') {
+        current = { ...current, ...(sentJson(init) as Partial<PlatformSettingsView>) };
+      }
+      return Promise.resolve(jsonResponse(current));
+    });
+    const user = userEvent.setup();
+    renderWithProviders(<SettingsPage />);
+
+    await user.click(await screen.findByRole('switch', { name: 'Voice calls' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Turn off voice calls?' });
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(false);
+    await user.click(within(dialog).getByRole('button', { name: 'Turn off calls' }));
+    await waitFor(() => {
+      expect(screen.getByRole('switch', { name: 'Voice calls' })).not.toBeChecked();
+    });
+
+    await user.click(screen.getByRole('switch', { name: 'Streamed replies' }));
+    await waitFor(() => {
+      expect(screen.getByRole('switch', { name: 'Streamed replies' })).not.toBeChecked();
+    });
+    const patches = fetchMock.mock.calls
+      .filter(([, init]) => init?.method === 'PATCH')
+      .map(([, init]) => sentJson(init));
+    expect(patches).toEqual([{ callsEnabled: false }, { streamingEnabled: false }]);
+  });
 });

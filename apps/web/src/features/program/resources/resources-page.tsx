@@ -317,7 +317,7 @@ export function ResourcesPage() {
                 Kind
               </SortableTableHead>
               <TableHead className="hidden lg:table-cell">Stages</TableHead>
-              <TableHead className="hidden xl:table-cell">Owner</TableHead>
+              <TableHead className="hidden 2xl:table-cell">Owner</TableHead>
               <SortableTableHead sortKey="freshness" sort={sort} onSortChange={setSort}>
                 Reviewed
               </SortableTableHead>
@@ -360,7 +360,7 @@ export function ResourcesPage() {
                       ? 'All stages'
                       : resource.stages.map((stage) => STAGE_LABELS[stage]).join(', ')}
                   </TableCell>
-                  <TableCell className="hidden text-small text-muted-foreground xl:table-cell">
+                  <TableCell className="hidden text-small text-muted-foreground 2xl:table-cell">
                     {resource.owner ?? '—'}
                   </TableCell>
                   <TableCell>
