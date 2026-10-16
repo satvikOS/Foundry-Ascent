@@ -24,15 +24,17 @@
     }
   },
   "aurora": {
-    "minCapacityAcu": 0,
+    "minCapacityAcu": 0.5,
     "maxCapacityAcu": 2,
     "autoPauseMinutes": 10,
-    "engineVersion": "16.13"
+    "engineVersion": "16.13",
+    "note": "Kept awake at 0.5 ACU (about USD 44 a month, 0.5 ACU x USD 0.12 per ACU-hour x 730 hours) so no founder waits 15-30 s for a paused cluster to resume: the first request after 10 idle minutes did. autoPauseMinutes applies only at minCapacityAcu 0; set it back to 0 to pause again (docs/runbooks/latency.md)."
   },
   "api": {
     "reservedConcurrency": null,
-    "memoryMb": 1024,
-    "timeoutSeconds": 60
+    "memoryMb": 1769,
+    "timeoutSeconds": 60,
+    "note": "1,769 MB is one full vCPU on Lambda (CPU scales with memory): cold starts, session checks and every request's own work run about 1.7x faster than at 1,024 MB, for about USD 0.0000097 more per second of a running request (docs/runbooks/latency.md)."
   },
   "speech": {
     "enabled": true,
