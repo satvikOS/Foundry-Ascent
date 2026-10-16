@@ -176,6 +176,25 @@ describe('adding an EIR', () => {
   });
 });
 
+describe('two leads adding the same person at once', () => {
+  it('gives the person one profile; the other request is refused at the field', async () => {
+    const principalId = await invitedEir('Rafael Ortiz');
+    const results = await Promise.allSettled(
+      [lead, admin].map((who) =>
+        h.core.eirProfiles.create(who, { principalId, displayName: 'Rafael Ortiz' }),
+      ),
+    );
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const refused = results.find((r) => r.status === 'rejected');
+    expect(refused?.status === 'rejected' ? refused.reason : null).toMatchObject({
+      code: 'conflict',
+      errors: [{ path: 'principalId', message: 'Rafael Ortiz already has an EIR profile.' }],
+    });
+    const profiles = (await h.core.eir.listEirProfiles(lead)).filter((p) => p.principal?.id === principalId);
+    expect(profiles).toHaveLength(1);
+  });
+});
+
 describe('consent comes first', () => {
   it('a vEIR built from a new EIR is only approved once the EIR has recorded their own consent', async () => {
     const principalId = await invitedEir('Amira Nasser');

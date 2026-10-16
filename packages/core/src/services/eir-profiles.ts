@@ -52,6 +52,23 @@ function alreadyHasProfile(name: string, cause?: unknown): DomainError {
   });
 }
 
+/**
+ * A second profile for the same person that got past the check (two requests at once) fails on the
+ * one-per-person index; it is reported like the check's refusal. The Data API reports no constraint name, so a
+ * unique violation without one counts too: creating a profile writes no other unique value.
+ */
+export function profileConflict(err: unknown, personName: string): unknown {
+  const cause = isDomainError(err) ? err.cause : err;
+  if (
+    cause instanceof DbError &&
+    cause.sqlState === SqlState.uniqueViolation &&
+    (cause.constraint === null || cause.constraint === PROFILE_PER_PERSON_INDEX)
+  ) {
+    return alreadyHasProfile(personName, cause);
+  }
+  return err;
+}
+
 function principalProblem(message: string): DomainError {
   return fail.validation(message, [{ path: 'principalId', message }]);
 }
@@ -120,15 +137,7 @@ export function createEirProfilesService(kit: Kit, directory: DirectoryCache): E
         directory.invalidate(ctx.tenantId);
         return view;
       } catch (err) {
-        const cause = isDomainError(err) ? err.cause : err;
-        if (
-          cause instanceof DbError &&
-          cause.sqlState === SqlState.uniqueViolation &&
-          cause.constraint === PROFILE_PER_PERSON_INDEX
-        ) {
-          throw alreadyHasProfile(personName, cause);
-        }
-        throw err;
+        throw profileConflict(err, personName);
       }
     },
 
