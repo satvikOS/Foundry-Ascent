@@ -9,6 +9,7 @@ import {
   type ValidatorResults,
 } from '@foundry/contracts';
 
+import { ESCALATION_ROUTES } from '../prompts/escalation.js';
 import { truncate } from '../prompts/escape.js';
 import { DEFAULT_PERSONA_NAME } from '../prompts/version.js';
 import { normalizeForMatching, personNameRegExp, ventureNameRegExp } from '../risk/normalize.js';
@@ -84,6 +85,11 @@ export interface ValidateCoachResponseOptions {
    * "<first name>'s vEIR" persona name and `eirNames` when omitted.
    */
   personaEirName?: string | null;
+  /**
+   * Display names of the founder and venture team the reply may address. "Thanks, Ruth." ending a reply
+   * to a founder called Ruth addresses her; without it, an EIR named Ruth is read as signing off.
+   */
+  addressees?: readonly string[];
   /** Identity violation kinds that block the turn (others are rewritten). Default `['claims_eir']`. */
   blockOnIdentity?: readonly IdentityViolationKind[];
   /**
@@ -104,33 +110,10 @@ export interface CoachResponseValidation {
   blockReason?: CoachResponseBlockReason;
 }
 
-const DEFAULT_PRIORITY: Readonly<Record<EscalationCategory, EscalationPriority>> = {
-  security_identity: 'P0',
-  ip_licensing: 'P1',
-  legal: 'P1',
-  securities_investment: 'P1',
-  medical_regulatory: 'P1',
-  safety_wellbeing: 'P1',
-  conflict_harassment: 'P1',
-  expert_judgment: 'P2',
-  low_grounding: 'P3',
-  other: 'P3',
-};
-
-const DEFAULT_ROLE: Readonly<Record<EscalationCategory, RequestedRoleValue>> = {
-  security_identity: 'program_lead',
-  ip_licensing: 'specialist',
-  legal: 'specialist',
-  securities_investment: 'specialist',
-  medical_regulatory: 'specialist',
-  safety_wellbeing: 'university_support',
-  conflict_harassment: 'university_support',
-  expert_judgment: 'eir',
-  low_grounding: 'eir',
-  other: 'program_lead',
-};
-
 const PRIORITY_RANK: Readonly<Record<EscalationPriority, number>> = { P0: 0, P1: 1, P2: 2, P3: 3 };
+
+/** Text kept past a field's limit for the identity check, so a sentence that crosses the limit is judged whole. */
+const IDENTITY_MARGIN_CHARS = 400;
 
 const NO_ESCALATION: EscalationProposal = {
   required: false,
@@ -230,14 +213,17 @@ export function forcedEscalationFor(preRisk: { categories: readonly RiskCategory
  *    answer narrowed (explicit uncertainty note + uncertainty item) when coverage < threshold
  *    with ≥ 2 facts;
  * 6. identity: sentences claiming to be human, the EIR, or approving/endorsing are replaced;
- *    EIR impersonation blocks the turn by default;
+ *    EIR impersonation blocks the turn by default. Each field is checked cut to its limit (plus a
+ *    sentence of margin), so an over-long output cannot make the check expensive;
  * 7. length bounds and value ranges (dates, scores, confidence);
  * 8. escalation normalised and forced for pre-classified high-risk categories;
  * 9. cross-venture: any other venture name or canary anywhere in the output blocks the turn.
  *
- * `spoken` (what a call says aloud) goes through the same steps on the voice channel: it is made plain
- * (no Markdown, links, URLs or citation keys), derived from the answer when the model gave none,
- * identity-checked, clamped to 70 words and scanned for other ventures. On the text channel it is null.
+ * `spoken` (what a call says aloud) goes through the same steps on the voice channel: it is
+ * identity-checked as the model wrote it, made plain (no Markdown, links, URLs or citation keys),
+ * derived from the identity-checked answer when the model gave none, identity-checked again as it will
+ * be heard (names in any case, flattened sign-offs such as "Thanks. — Corin."), clamped to 70 words and
+ * scanned for other ventures. On the text channel it is null.
  *
  * `results.notes` contains codes only — never response text, venture names or canaries.
  */
@@ -341,10 +327,38 @@ export function validateCoachResponse(
     };
   }
   if (plainChanged > 0) notes.push(`plain_text_sanitized:${plainChanged}`);
+
+  // Identity runs on text already cut to its limit (plus a sentence of margin, so a sentence that crosses
+  // the limit is judged whole): an over-long output cannot make the check expensive.
+  const identityFindings: IdentityFinding[] = [];
+  const identityOptions = {
+    personaName,
+    ...(options.eirNames ? { eirNames: options.eirNames } : {}),
+    ...(options.personaEirName !== undefined ? { personaEirName: options.personaEirName } : {}),
+    ...(options.addressees ? { addressees: options.addressees } : {}),
+  };
+  const fixIdentity = (
+    value: string,
+    max: number,
+    { checkHumanClaims = true, spoken = false } = {},
+  ): string => {
+    const rewrite = rewriteIdentity(truncate(value, max + IDENTITY_MARGIN_CHARS), {
+      ...identityOptions,
+      checkHumanClaims,
+      spoken,
+    });
+    identityFindings.push(...rewrite.findings);
+    return rewrite.text;
+  };
+
   // Spoken text: plain sentences on a call (citation keys and Markdown removed), never on typed turns.
+  // Identity is checked on the model's own lines first (a sign-off stands on its own line there) and
+  // again on the flattened text in step 6, where "Best,\nCorin" has become "Best, Corin.".
   const modelSpoken = typeof r.spoken === 'string' ? r.spoken : '';
   if (channel === 'voice') {
-    const speakable = toSpeakable(modelSpoken);
+    const speakable = toSpeakable(
+      modelSpoken.trim() === '' ? '' : fixIdentity(modelSpoken, limits.spokenMaxChars, { spoken: true }),
+    );
     r.spoken = speakable === '' ? null : speakable;
     if (speakable !== '' && speakable !== modelSpoken.trim()) notes.push('spoken_sanitized');
   } else {
@@ -379,6 +393,9 @@ export function validateCoachResponse(
   r.memory_candidates = r.memory_candidates.map((m) => ({ ...m, evidence_ids: filterIds(m.evidence_ids) }));
   if (results.unknownEvidenceIdsRemoved > 0)
     notes.push(`unknown_evidence_ids_removed:${results.unknownEvidenceIdsRemoved}`);
+  // The answer's identity check comes before a spoken reply is derived from it, so a call never says a
+  // sentence the transcript replaced (step 6 checks the rest).
+  r.answer = fixIdentity(r.answer, limits.answerMaxChars);
   // A call needs something to say: the model's spoken reply, or else the answer made speakable (before
   // the limited-evidence note below is added to the answer).
   if (channel === 'voice' && (r.spoken ?? '') === '') {
@@ -417,38 +434,27 @@ export function validateCoachResponse(
     }
   }
 
-  // 6. Identity -------------------------------------------------------------------------------------
-  const identityFindings: IdentityFinding[] = [];
-  const identityOptions = {
-    personaName,
-    ...(options.eirNames ? { eirNames: options.eirNames } : {}),
-    ...(options.personaEirName !== undefined ? { personaEirName: options.personaEirName } : {}),
-  };
-  const fixIdentity = (value: string, checkHumanClaims = true): string => {
-    const rewrite = rewriteIdentity(value, { ...identityOptions, checkHumanClaims });
-    identityFindings.push(...rewrite.findings);
-    return rewrite.text;
-  };
-  r.answer = fixIdentity(r.answer);
-  r.claims = r.claims.map((c) => ({ ...c, text: fixIdentity(c.text) }));
-  r.uncertainty = r.uncertainty.map((u) => ({ ...u, item: fixIdentity(u.item) }));
-  r.challenge = r.challenge === null ? null : fixIdentity(r.challenge);
-  r.next_actions = r.next_actions.map((a) => ({ ...a, action: fixIdentity(a.action) }));
+  // 6. Identity (the answer and the model's own spoken lines were checked above) ------------------------
+  const textMax = limits.textMaxChars;
+  r.claims = r.claims.map((c) => ({ ...c, text: fixIdentity(c.text, textMax) }));
+  r.uncertainty = r.uncertainty.map((u) => ({ ...u, item: fixIdentity(u.item, textMax) }));
+  r.challenge = r.challenge === null ? null : fixIdentity(r.challenge, textMax);
+  r.next_actions = r.next_actions.map((a) => ({ ...a, action: fixIdentity(a.action, textMax) }));
   r.memory_candidates = r.memory_candidates.map((m) => ({
     ...m,
-    title: fixIdentity(m.title),
-    content: fixIdentity(m.content),
+    title: fixIdentity(m.title, 200),
+    content: fixIdentity(m.content, limits.memoryContentMaxChars),
   }));
-  r.follow_up_questions = r.follow_up_questions.map((q) => fixIdentity(q));
-  if (r.spoken) r.spoken = fixIdentity(r.spoken);
-  if (r.escalation.reason !== null) r.escalation.reason = fixIdentity(r.escalation.reason);
+  r.follow_up_questions = r.follow_up_questions.map((q) => fixIdentity(q, textMax));
+  if (r.spoken) r.spoken = fixIdentity(r.spoken, limits.spokenMaxChars, { spoken: true });
+  if (r.escalation.reason !== null) r.escalation.reason = fixIdentity(r.escalation.reason, 400);
   if (r.rehearsal !== null) {
     r.rehearsal = {
       ...r.rehearsal,
-      counterpart: fixIdentity(r.rehearsal.counterpart, false),
-      line: fixIdentity(r.rehearsal.line, false),
-      critique: fixIdentity(r.rehearsal.critique),
-      scores: r.rehearsal.scores.map((s) => ({ ...s, note: fixIdentity(s.note) })),
+      counterpart: fixIdentity(r.rehearsal.counterpart, 120, { checkHumanClaims: false }),
+      line: fixIdentity(r.rehearsal.line, textMax * 2, { checkHumanClaims: false }),
+      critique: fixIdentity(r.rehearsal.critique, textMax * 2),
+      scores: r.rehearsal.scores.map((s) => ({ ...s, note: fixIdentity(s.note, textMax) })),
     };
   }
   let identityBlocked = false;
@@ -605,8 +611,8 @@ function normalizeEscalation(escalation: EscalationProposal, notes: string[]): E
     return NO_ESCALATION;
   }
   const category = escalation.category ?? 'other';
-  const priority = escalation.priority ?? DEFAULT_PRIORITY[category];
-  const requested = escalation.requested_role ?? DEFAULT_ROLE[category];
+  const priority = escalation.priority ?? ESCALATION_ROUTES[category].priority;
+  const requested = escalation.requested_role ?? ESCALATION_ROUTES[category].requestedRole;
   if (escalation.category === null || escalation.priority === null || escalation.requested_role === null) {
     notes.push('escalation_defaults_applied');
   }

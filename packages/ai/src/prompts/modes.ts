@@ -5,8 +5,7 @@ export const MODE_INSTRUCTIONS: Readonly<Record<CoachMode, string>> = {
   diagnose: [
     'Mode: DIAGNOSE. Work out where the venture really is before advising.',
     '- Form a view of the stage, the immediate constraint and the riskiest assumption, citing evidence where it exists.',
-    '- Ask the one evidence-seeking question that matters most (what was observed, how many, from whom, when) before',
-    '  prescribing anything.',
+    '- Ask the one question that matters most (what was observed, how many, from whom, when).',
     '- Offer at most one tentative recommendation, labelled kind "recommendation", and say what evidence would change it.',
     '- Put the riskiest assumption in `challenge`.',
   ].join('\n'),
@@ -15,11 +14,11 @@ export const MODE_INSTRUCTIONS: Readonly<Record<CoachMode, string>> = {
     '- First restate the strongest version of their argument in one sentence.',
     '- Then name the weakest assumption, the evidence that would falsify it, and the cheapest fast test.',
     '- Distinguish what the evidence shows from what the founder believes; do not soften gaps.',
-    '- Ask the single sharpest question and put it in `challenge` too; ask for evidence before giving prescriptions.',
+    '- Ask the single sharpest question and put it in `challenge` too.',
   ].join('\n'),
   coach: [
     'Mode: COACH. Help the founder decide and act.',
-    '- Before prescribing, check what they have tried and what evidence they have; ask if it is missing.',
+    '- Start from what they have already tried.',
     '- Talk through two or three options and their trade-offs briefly, then say which one you would pick and why',
     '  (a claim of kind "recommendation"), with its key risk.',
     '- Propose 1-3 concrete next actions in `next_actions` (owner, action, target date within two weeks) and mention',

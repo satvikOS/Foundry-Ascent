@@ -48,6 +48,8 @@ STRONG_MARKERS: tuple[tuple[str, str], ...] = (
     ("turn_policy", "possible crisis: respond with care"),
     ("turn_policy", "policy for this turn:"),
     ("turn_policy", "no high-risk topic was pre-classified"),
+    ("turn_policy", "prompt injection flagged: apply rules"),
+    ("turn_policy", "cross-venture request flagged: apply rule 3"),
     ("output_contract", "return exactly one json object matching the coachresponse schema"),
     ("output_contract", "label every material statement in `claims`"),
     ("output_contract", 'make no "fact" claims'),

@@ -1,5 +1,6 @@
 import { COMMON_WORDS } from '../risk/common-words.js';
 import { escapeRegExp, foldDiacritics, normalizeForMatching, normalizeText } from '../risk/normalize.js';
+import { isEnglishWord } from './lexicon.js';
 
 /**
  * Deterministic de-identification check for lesson candidates (blueprint 02 §9: lessons are generalised
@@ -30,6 +31,7 @@ export type DeidentifyReason =
   | 'number'
   | 'money'
   | 'date'
+  | 'place'
   | 'proper_noun';
 
 export interface DeidentifyResult {
@@ -48,6 +50,15 @@ const MONEY =
 const MONTHS =
   /(?<![\p{L}])(?:January|February|March|April|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept?|Oct|Nov|Dec|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)(?![\p{L}])|(?<![\p{L}])(?:in|by|since|until|during|of|early|late|mid|end of) May(?![\p{L}])/u;
 const ORDINAL_YEAR = /(?<![\p{L}\p{N}])(?:19|20)\d{2}(?![\p{L}\p{N}])/u;
+/**
+ * Counts written as words ("forty clinics", "a dozen pilots"). "One" and "two" stay: "one or two",
+ * "the last one" and "two-sided" are generic.
+ */
+const CARDINAL_WORDS =
+  /(?<![\p{L}])(?:three|four|five|six|seven|eight|nine|ten|eleven|twelve|(?:thir|four|fif|six|seven|eigh|nine)teen|(?:twen|thir|for|fif|six|seven|eigh|nine)ty|dozens?)(?![\p{L}])/iu;
+/** Regions that locate a venture or its customers ("clinics in the northeast", "Bay Area buyers"). */
+const REGION =
+  /(?<![\p{L}])(?:(?:north|south)[- ]?(?:east|west)(?:ern)?|mid-?west(?:ern)?|(?:east|west|gulf|pacific|atlantic) coast|bay area|(?:rust|sun|corn|bible)[- ]?belt|up-?state|down-?state|tri-?state|panhandle|(?:in|across|from|throughout) the (?:north|south|east|west)(?![- ]?star))(?![\p{L}])/iu;
 
 /** Acronyms and mixed-case terms that are generic startup vocabulary. */
 const GENERIC_CAPITALISED = new Set(
@@ -119,6 +130,58 @@ const GENERIC_CAPITALISED = new Set(
     'I',
   ].map((t) => t.toLowerCase()),
 );
+
+/**
+ * Everyday words the lexicon lacks: startup vocabulary newer than it ("Waitlists…", "Onboarding…") and
+ * spellings it does not fold ("practise", "reframe").
+ */
+const NEWER_WORDS = new Set(
+  `biotech cleantech cofounder crowdfunding ecommerce edtech fintech followup freemium frontline healthcare
+incentivize medtech monetize offboarding onboarding operationalize paywall pharma practise preorder
+pushback reframe rebrand roadmap rollout scalable signup smartphone telehealth telemedicine timeline
+upsell upskill waitlist workaround workflow`.split(/\s+/),
+);
+
+const SUFFIXES = ['ments', 'ment', 'ness', 'ings', 'ing', 'ers', 'er', 'ees', 'ed', 'es', 'ly', 's', 'd'];
+const PREFIX = /^(?:re|un|pre|co|over|under|mis|non|sub|multi|inter|out)/;
+
+/**
+ * The forms a lower-case word may be inflected, prefixed or spelled from: "batteries" → "battery",
+ * "hiring" → "hire", "shipping" → "ship", "rewrite" → "write", "prioritise" → "prioritize".
+ */
+function baseForms(word: string): string[] {
+  const american = word.replace(/is(e|ed|es|ing|ation|ations)$/, 'iz$1').replace(/yse(s|d)?$/, 'yze$1');
+  const out = american === word ? [word] : [word, american];
+  for (const form of [...out]) {
+    for (const suffix of SUFFIXES) {
+      if (!form.endsWith(suffix) || form.length - suffix.length < 3) continue;
+      const stem = form.slice(0, -suffix.length);
+      out.push(stem, `${stem}e`);
+      if (/([b-df-hj-np-tv-z])\1$/.test(stem)) out.push(stem.slice(0, -1));
+      if (stem.endsWith('i')) out.push(`${stem.slice(0, -1)}y`);
+    }
+  }
+  const unprefixed = word.replace(PREFIX, '');
+  if (unprefixed !== word && unprefixed.length >= 3) out.push(unprefixed);
+  return out;
+}
+
+/**
+ * Whether a capitalised word at a sentence start is everyday vocabulary, not a name: a common, method or
+ * allowed word, or a form of an English word ("Nurses", "Batteries", "Hiring"). What the lesson writes in
+ * lower case elsewhere does not count: "Stanford asked…" stays a name however often "stanford" appears.
+ */
+function everyday(word: string, allowed: ReadonlySet<string>): boolean {
+  return baseForms(word).some(
+    (w) =>
+      COMMON_WORDS.has(w) ||
+      GENERIC_METHOD_WORDS.has(w) ||
+      GENERIC_CAPITALISED.has(w) ||
+      NEWER_WORDS.has(w) ||
+      allowed.has(w) ||
+      isEnglishWord(w),
+  );
+}
 
 /** Words of well-known, generic methods that are often capitalised. */
 const GENERIC_METHOD_WORDS = new Set([
@@ -199,10 +262,15 @@ function atSentenceStart(text: string, index: number): boolean {
   return before === '' || /[.!?:;\n]$/.test(before);
 }
 
-/** Capitalised words that are not at a sentence start and not generic: likely proper nouns. */
+/**
+ * Capitalised words that are not generic: likely proper nouns. At a sentence start a capital proves
+ * nothing, so there the word must not be everyday vocabulary ("Stanford asked…", "Boston buyers…").
+ */
 function hasProperNoun(text: string, allowed: ReadonlySet<string>, titleCase: boolean): boolean {
-  // Hyphenated parts are separate words ("Follow-Up", "Abernathy-Song"); contractions are folded ("I'd").
+  // Hyphenated parts are separate words ("Follow-Up", "Abernathy-Song"); contractions are folded ("I'd",
+  // "Don't").
   for (const m of text.matchAll(/[\p{L}][\p{L}\p{M}'’.]*/gu)) {
+    if (/^\p{L}+n['’]t$/iu.test(m[0])) continue;
     const token = m[0].replace(/['’](?:s|d|m|ll|re|ve|t)$/iu, '').replace(/[.'’]+$/, '');
     if (token === '' || !/\p{Lu}/u.test(token)) continue;
     const lower = foldDiacritics(token.toLowerCase());
@@ -213,7 +281,10 @@ function hasProperNoun(text: string, allowed: ReadonlySet<string>, titleCase: bo
       continue;
     }
     if (titleCase) continue; // in a Title Case title every word is capitalised
-    if (atSentenceStart(text, m.index)) continue;
+    if (atSentenceStart(text, m.index)) {
+      if (everyday(lower, allowed)) continue;
+      return true;
+    }
     if (
       GENERIC_CAPITALISED.has(lower) ||
       COMMON_WORDS.has(lower) ||
@@ -250,7 +321,6 @@ export function checkDeidentified(
     (ctx.allowedTerms ?? []).flatMap((term) => wordsOf(term)).filter((w) => w.length >= 2),
   );
   const canaries = ctx.canaries.map(normalizeForMatching).filter((c) => c.length >= 4);
-
   fields.forEach((raw, i) => {
     const text = normalizeText(raw);
     const lower = normalizeForMatching(text);
@@ -265,7 +335,8 @@ export function checkDeidentified(
     if (URL.test(text)) reasons.add('url');
     const withoutGeneric = text.replace(GENERIC_DIGIT_TOKENS, ' ');
     if (ORDINAL_YEAR.test(withoutGeneric) || MONTHS.test(text)) reasons.add('date');
-    if (/\p{Nd}/u.test(withoutGeneric)) reasons.add('number');
+    if (/\p{Nd}/u.test(withoutGeneric) || CARDINAL_WORDS.test(text)) reasons.add('number');
+    if (REGION.test(text)) reasons.add('place');
     if (MONEY.test(text)) reasons.add('money');
     const titleCase = i === options.titleIndex && isTitleCase(text);
     if (hasProperNoun(withoutGeneric, allowed, titleCase)) reasons.add('proper_noun');

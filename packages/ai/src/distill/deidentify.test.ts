@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
+import { TOPICS } from '../gateway/mock-content.js';
 import { checkDeidentified, type LessonDeidentifyContext } from './deidentify.js';
+import { isEnglishWord } from './lexicon.js';
 
 const CTX: LessonDeidentifyContext = {
   ventureNames: ['QuietQuad', 'BenchTally', 'Kelp Kinetics'],
@@ -59,10 +61,103 @@ describe('checkDeidentified', () => {
     ['proper_noun', 'The buyer at Kaiser asked for references.'],
     ['proper_noun', 'They used the UCLA lab for testing.'],
     ['proper_noun', 'Every student had an iPhone app installed.'],
+    ['proper_noun', 'Stanford asked for a security review before any pilot.'],
+    ['proper_noun', 'Boston buyers wanted a pilot first.'],
+    ['proper_noun', 'Kaiser asked for references.'],
+    ['number', 'A founder sold to forty clinics before raising.'],
+    ['number', 'Twenty-five students signed up in the first week.'],
+    ['number', 'They ran a dozen pilots.'],
+    ['number', 'Seven of the buyers asked for a discount.'],
+    ['place', 'A founder sold to clinics in the northeast.'],
+    ['place', 'Buyers on the West Coast moved faster.'],
+    ['place', 'Midwestern hospitals asked for references.'],
   ])('rejects %s: %s', (reason, text) => {
     const result = checkDeidentified([GOOD[0] ?? '', text], CTX, { titleIndex: 0 });
     expect(result.ok).toBe(false);
     expect(result.reasons).toContain(reason);
+  });
+
+  it.each([
+    "Don't ask what people would pay; ask for a deposit.",
+    'One or two interviews are enough to start; the last one matters most.',
+    'Scope the first claim before building.',
+    'Workarounds tell you more than competitors do.',
+    'Stakeholders often disagree about who owns the budget.',
+    'North Star metrics help a team agree on one number.',
+    'Pricing came up late. The founder moved pricing to the first call.',
+  ])('accepts everyday words at the start of a sentence: %s', (text) => {
+    expect(checkDeidentified([GOOD[0] ?? '', text], CTX, { titleIndex: 0 })).toEqual({
+      ok: true,
+      reasons: [],
+    });
+  });
+
+  it.each([
+    'Parents',
+    'Nurses',
+    'Doctors',
+    'Clinicians',
+    'Physicians',
+    'Homeowners',
+    'Installers',
+    'Batteries',
+    'Sensors',
+    'Panels',
+    'Landlords',
+    'Tenants',
+    'Employees',
+    'Executives',
+    'Shoppers',
+    'Retailers',
+    'Margins',
+    'Deposits',
+    'Referrals',
+    'Waitlists',
+    'Workshops',
+    'Hiring',
+    'Shipping',
+    'Caregivers',
+    'Warranties',
+    'Prioritising',
+  ])('accepts an everyday noun or verb that opens a sentence: %s', (word) => {
+    const text = `${word} matter more than founders expect.`;
+    expect(checkDeidentified([GOOD[0] ?? '', text], CTX, { titleIndex: 0 })).toEqual({
+      ok: true,
+      reasons: [],
+    });
+  });
+
+  it.each([
+    [['The buyer at Kaiser asked for references before kaiser agreed to a pilot.']],
+    [['They used the UCLA lab for testing; the ucla staff were helpful.']],
+    [['Stanford asked for a security review.', 'The founder sent the review to stanford the next day.']],
+    [['Mayo wanted a pilot before any purchase order.']],
+    [['Providence asked for outcome data first.']],
+  ])('never lets a lower-case mention or a word-like name launder a proper noun: %j', (fields) => {
+    const result = checkDeidentified([GOOD[0] ?? '', ...fields], CTX, { titleIndex: 0 });
+    expect(result.ok).toBe(false);
+    expect(result.reasons).toContain('proper_noun');
+  });
+
+  it('knows everyday English words but not names or organisations', () => {
+    for (const word of ['nurse', 'battery', 'landlord', 'deposit', 'hire'])
+      expect(isEnglishWord(word)).toBe(true);
+    for (const word of ['stanford', 'boston', 'kaiser', 'mayo', 'providence', 'oxford']) {
+      expect(isEnglishWord(word)).toBe(false);
+    }
+  });
+
+  it.each(Object.entries(TOPICS))('accepts the mock model lesson for %s', (_topic, bank) => {
+    const lesson = bank.lesson;
+    const fields = [
+      lesson.title,
+      lesson.context,
+      lesson.signal,
+      lesson.intervention,
+      lesson.outcome,
+      lesson.limits,
+    ];
+    expect(checkDeidentified(fields, CTX, { titleIndex: 0 })).toEqual({ ok: true, reasons: [] });
   });
 
   it('checks proper nouns in a sentence-case title but not the capitals of a Title Case one', () => {

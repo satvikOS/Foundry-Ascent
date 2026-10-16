@@ -359,6 +359,100 @@ describe('sanitizeDistill — notebook merge', () => {
     expect(out.stats.pinnedKept).toBe(2);
   });
 
+  it('drops a proposal that rewords or restates an entry a person edited', () => {
+    const out = run(
+      draft({
+        notebook: {
+          ...draft().notebook,
+          founder_profile: [
+            { id: 'fp-1', text: 'Likes thorough, detailed explanations with lots of context' },
+            { id: null, text: 'prefers short answers.' },
+            { id: null, text: 'Thinks in experiments' },
+          ],
+          commitments: [{ id: 'cm-1', text: 'Interview twenty library staff', due: null, status: 'dropped' }],
+        },
+      }),
+      ctx({ pinnedEntryIds: ['fp-1', 'cm-1'] }),
+    );
+    expect(out.notebookDelta.founderProfile.map((e) => [e.id, e.text])).toEqual([
+      ['fp-1', 'Prefers short answers'],
+      [expect.stringMatching(/^fp-/), 'Thinks in experiments'],
+    ]);
+    expect(out.notebookDelta.commitments.find((c) => c.id === 'cm-1')).toEqual(PREVIOUS.commitments[0]);
+    // The reworded fp-1 and the closed cm-1 count; restating fp-1 as it stands does not.
+    expect(out.stats.pinnedRewritesDropped).toBe(2);
+  });
+
+  it('never drops an open or person-edited commitment to stay under the cap', () => {
+    const previous = Array.from({ length: 10 }, (_, i) =>
+      commitment(
+        `cm-${i}`,
+        `Open commitment about subject ${String.fromCharCode(97 + i)}`,
+        `2026-11-${10 + i}`,
+      ),
+    );
+    const out = run(
+      draft({
+        notebook: {
+          ...draft().notebook,
+          // The model forgets cm-9 and proposes a new one.
+          commitments: [
+            ...previous.slice(0, 9).map((c) => ({ id: c.id, text: c.text, due: c.due, status: c.status })),
+            { id: null, text: 'Book the next customer interview', due: '2026-10-20', status: 'open' },
+          ],
+        },
+      }),
+      ctx({ previousNotebook: { ...PREVIOUS, commitments: previous } }),
+    );
+    expect(out.notebookDelta.commitments.map((c) => c.id)).toEqual(previous.map((c) => c.id));
+    expect(out.stats.commitmentsRefused).toBe(1);
+    expect(out.stats.commitmentsDropped).toBe(0);
+  });
+
+  it('drops closed commitments first, oldest first, and keeps a closed one a person edited', () => {
+    const previous = [
+      ...Array.from({ length: 7 }, (_, i) =>
+        commitment(
+          `cm-${i}`,
+          `Open commitment about subject ${String.fromCharCode(97 + i)}`,
+          `2026-11-${10 + i}`,
+        ),
+      ),
+      commitment('cm-done-old', 'Finish the survey draft', null, 'done', '2026-09-01T00:00:00.000Z'),
+      commitment('cm-done-new', 'Call the first pilot site', null, 'done', '2026-10-05T00:00:00.000Z'),
+      commitment('cm-edited', 'Stop the paid ads test', null, 'dropped', '2026-08-01T00:00:00.000Z'),
+    ];
+    const out = run(
+      draft({
+        notebook: {
+          ...draft().notebook,
+          commitments: [
+            { id: null, text: 'Book the next customer interview', due: '2026-10-20', status: 'open' },
+          ],
+        },
+      }),
+      ctx({ previousNotebook: { ...PREVIOUS, commitments: previous }, pinnedEntryIds: ['cm-edited'] }),
+    );
+    const ids = out.notebookDelta.commitments.map((c) => c.id);
+    expect(ids).toHaveLength(10);
+    for (const c of previous.filter((p) => p.status === 'open')) expect(ids).toContain(c.id);
+    expect(ids).toContain('cm-edited');
+    expect(ids).toContain('cm-done-new');
+    expect(ids).not.toContain('cm-done-old');
+    expect(out.notebookDelta.commitments.filter((c) => c.sourceSessionId === SESSION)).toHaveLength(1);
+    expect(out.stats.commitmentsDropped).toBe(1);
+    expect(out.stats.commitmentsRefused).toBe(0);
+  });
+
+  it('checks an over-long note within its limit, fast', () => {
+    const summary = Array.from({ length: 2_000 }, () => 'I am Corin Halvorsen.').join(' ');
+    const started = performance.now();
+    const out = run(draft({ notebook: { ...draft().notebook, summary } }));
+    expect(performance.now() - started).toBeLessThan(200);
+    expect(out.notebookDelta.summary.length).toBeLessThanOrEqual(1_200);
+    expect(out.notebookDelta.summary).not.toContain('I am Corin Halvorsen');
+  });
+
   it('closes commitments only explicitly and keeps the ones the model forgot', () => {
     const out = run();
     expect(

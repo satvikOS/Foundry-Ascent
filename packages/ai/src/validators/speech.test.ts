@@ -29,6 +29,7 @@ describe('toSpeakable', () => {
     ['HTML goes', 'Hello <b>there</b><script>alert(1)</script>.', 'Hello there.'],
     ['code blocks are not read aloud', 'Try this:\n```\nrm -rf /\n```\nDone.', 'Try this: Done.'],
     ['tables flatten', '| a | b |\n| 1 | 2 |', 'a b. 1 2.'],
+    ['a line ending in a comma runs on', 'Best,\nCorin', 'Best, Corin.'],
   ])('%s', (_name, input, expected) => {
     expect(toSpeakable(input)).toBe(expected);
   });
