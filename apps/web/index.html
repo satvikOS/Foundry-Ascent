@@ -20,7 +20,21 @@
     <noscript>
       <p class="noscript-message">Foundry Ascent needs JavaScript enabled to run.</p>
     </noscript>
-    <div id="root"></div>
+    <!--
+      Static first paint, replaced when the app mounts. Styled by the app stylesheet (no inline styles or
+      scripts: the CSP forbids them), so a slow network or a failed script never leaves a blank page.
+    -->
+    <div id="root">
+      <div class="boot-shell">
+        <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+          <rect class="boot-mark-bg" width="32" height="32" rx="8" />
+          <path class="boot-mark-step" opacity="0.55" d="M7 24h5v-4H7z" />
+          <path class="boot-mark-step" opacity="0.75" d="M13.5 24h5v-8h-5z" />
+          <path class="boot-mark-step" d="M20 24h5V8l-5 5z" />
+        </svg>
+        <span>Foundry Ascent</span>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
