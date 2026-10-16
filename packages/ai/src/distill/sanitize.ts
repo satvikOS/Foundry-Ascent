@@ -22,6 +22,9 @@ import {
 } from './schema.js';
 import { isNearDuplicate, repeatsNote, textKey } from './similarity.js';
 
+/** Text kept past a field's limit for the identity check, so a sentence that crosses the limit is judged whole. */
+const IDENTITY_MARGIN_CHARS = 400;
+
 /** Pinned keys for the two notebook fields that have no entry id. */
 export const NOTEBOOK_SUMMARY_PIN = 'summary';
 export const NOTEBOOK_OPENER_PIN = 'nextOpener';
@@ -84,6 +87,12 @@ export interface DistillStats {
   suppressedDropped: number;
   duplicatesDropped: number;
   pinnedKept: number;
+  /** Proposals that would have replaced an entry a person edited (by id or by text). */
+  pinnedRewritesDropped: number;
+  /** Closed commitments left out to keep the notebook within its cap. */
+  commitmentsDropped: number;
+  /** New commitments refused because open and person-edited ones already fill the cap. */
+  commitmentsRefused: number;
   memoryCandidatesDropped: number;
   lessonCandidatesDropped: number;
   lessonDropReasons: DeidentifyReason[];
@@ -126,8 +135,15 @@ function sentencesOf(text: string): string[] {
   return text.split(/(?<=[.!?])\s+/).filter((s) => s.trim() !== '');
 }
 
-function closedRank(c: NotebookCommitment): number {
-  return c.status === 'open' ? 0 : 1;
+/** Open commitments first (soonest due first, then oldest), then closed ones (newest first). */
+function byCommitmentOrder(a: NotebookCommitment, b: NotebookCommitment): number {
+  const rank = (a.status === 'open' ? 0 : 1) - (b.status === 'open' ? 0 : 1);
+  if (rank !== 0) return rank;
+  if (a.status === 'open') {
+    if (a.due !== b.due) return a.due === null ? 1 : b.due === null ? -1 : a.due.localeCompare(b.due);
+    return a.createdAt.localeCompare(b.createdAt);
+  }
+  return b.createdAt.localeCompare(a.createdAt);
 }
 
 /**
@@ -144,14 +160,16 @@ function closedRank(c: NotebookCommitment): number {
  *   distillation is dropped (null), like a recap.
  *
  * Notebook merge semantics: the model returns the full proposed notebook, starting from the previous one.
- * Entries a person edited (`pinnedEntryIds`) are kept as the person left them. A proposed entry whose
+ * Entries a person edited (`pinnedEntryIds`) are kept as the person left them, and a proposal with a
+ * pinned id, or that restates a pinned entry, is dropped. A proposed entry whose
  * text is unchanged from a previous entry keeps that entry's id, creation time and source conversation;
  * a new or reworded entry gets a new id that is stable for this conversation and text (so a retry
  * produces the same notebook). Anything that repeats a suppressed text is dropped, near-duplicates are
  * merged, and each section is capped (8 profile notes, 10 commitments, 6 open questions, 5 advice
  * notes). Previous commitments the model left out are kept: only an explicit "done" or "dropped" closes
- * one, so a forgetful model never silently loses a founder's commitment. Open commitments come first
- * (soonest due first), then closed ones.
+ * one, so a forgetful model never silently loses a founder's commitment. The 10-commitment cap never
+ * drops an open or person-edited commitment: closed ones go first, and new ones beyond the cap are
+ * refused (both counted in `stats`). Open commitments come first (soonest due first), then closed ones.
  */
 export function sanitizeDistill(draft: DistillDraft, ctx: DistillSanitizeContext): SanitizedDistill | null {
   const L = DISTILL_LIMITS;
@@ -159,6 +177,9 @@ export function sanitizeDistill(draft: DistillDraft, ctx: DistillSanitizeContext
     suppressedDropped: 0,
     duplicatesDropped: 0,
     pinnedKept: 0,
+    pinnedRewritesDropped: 0,
+    commitmentsDropped: 0,
+    commitmentsRefused: 0,
     memoryCandidatesDropped: 0,
     lessonCandidatesDropped: 0,
     lessonDropReasons: [],
@@ -169,9 +190,11 @@ export function sanitizeDistill(draft: DistillDraft, ctx: DistillSanitizeContext
     eirNames: ctx.eirNames,
     ...(ctx.personaEirName !== undefined ? { personaEirName: ctx.personaEirName } : {}),
   };
+  // Cut to the limit (plus a sentence of margin) before the identity check, so an over-long field cannot
+  // make it expensive; the result is bounded again after the rewrite.
   const clean = (value: string, max: number): string => {
     const plain = sanitizePlainText(value).text.replace(/\s+/g, ' ').trim();
-    const rewrite = rewriteIdentity(plain, identity);
+    const rewrite = rewriteIdentity(truncate(plain, max + IDENTITY_MARGIN_CHARS), identity);
     stats.identityRewrites += rewrite.findings.length;
     return truncate(rewrite.text, max);
   };
@@ -242,16 +265,24 @@ export function sanitizeDistill(draft: DistillDraft, ctx: DistillSanitizeContext
     before: readonly NotebookEntry[],
     max: number,
   ): NotebookEntry[] => {
-    const out: NotebookEntry[] = before.filter((e) => pinned.has(e.id)).map((e) => ({ ...e }));
+    const kept = before.filter((e) => pinned.has(e.id));
+    const out: NotebookEntry[] = kept.map((e) => ({ ...e }));
     stats.pinnedKept += out.length;
     for (const note of proposed) {
       const text = clean(note.text, L.entryMaxChars);
       if (text === '') continue;
+      // A person's edit is final: the model may neither reword it (same id) nor restate it.
+      if (
+        (note.id !== null && pinned.has(note.id)) ||
+        kept.some((e) => textKey(e.text) === textKey(text) || isNearDuplicate(e.text, text))
+      ) {
+        stats.pinnedRewritesDropped += 1;
+        continue;
+      }
       const key = textKey(text);
       const byId = note.id === null ? undefined : before.find((e) => e.id === note.id);
       const same =
         byId !== undefined && textKey(byId.text) === key ? byId : before.find((e) => textKey(e.text) === key);
-      if (same !== undefined && pinned.has(same.id)) continue; // already kept as the person left it
       if (out.some((e) => isNearDuplicate(e.text, text))) {
         stats.duplicatesDropped += 1;
         continue;
@@ -284,6 +315,10 @@ export function sanitizeDistill(draft: DistillDraft, ctx: DistillSanitizeContext
       const prev =
         (c.id === null ? undefined : before.find((p) => p.id === c.id)) ??
         before.find((p) => isNearDuplicate(p.text, text));
+      if (prev === undefined && c.id !== null && pinned.has(c.id)) {
+        stats.pinnedRewritesDropped += 1;
+        continue;
+      }
       if (prev !== undefined) {
         if (merged.has(prev.id)) {
           stats.duplicatesDropped += 1;
@@ -291,6 +326,13 @@ export function sanitizeDistill(draft: DistillDraft, ctx: DistillSanitizeContext
         }
         merged.add(prev.id);
         if (pinned.has(prev.id)) {
+          // A person's edit is final: whatever the model proposes for it is dropped.
+          if (
+            textKey(prev.text) !== textKey(text) ||
+            c.status !== prev.status ||
+            (due !== null && due !== prev.due)
+          )
+            stats.pinnedRewritesDropped += 1;
           out.push({ ...prev });
           stats.pinnedKept += 1;
           continue;
@@ -324,16 +366,31 @@ export function sanitizeDistill(draft: DistillDraft, ctx: DistillSanitizeContext
       out.push({ ...p });
       if (pinned.has(p.id)) stats.pinnedKept += 1;
     }
-    const ordered = [...out].sort((a, b) => {
-      const rank = closedRank(a) - closedRank(b);
-      if (rank !== 0) return rank;
-      if (a.status === 'open') {
-        if (a.due !== b.due) return a.due === null ? 1 : b.due === null ? -1 : a.due.localeCompare(b.due);
-        return a.createdAt.localeCompare(b.createdAt);
+    // The cap never costs the founder a commitment: open and person-edited ones always stay, new ones
+    // fill what room is left (soonest due first) and are refused beyond it, and closed ones go first.
+    const existing = new Set(before.map((p) => p.id));
+    const keeps = (c: NotebookCommitment): boolean =>
+      existing.has(c.id) && (c.status === 'open' || pinned.has(c.id));
+    const ordered = [...out].sort(byCommitmentOrder);
+    let room = L.notebookCommitmentsMax - ordered.filter(keeps).length;
+    const kept = new Set<NotebookCommitment>(ordered.filter(keeps));
+    for (const c of ordered.filter((c) => !keeps(c) && c.status === 'open')) {
+      if (room > 0) {
+        kept.add(c);
+        room -= 1;
+      } else {
+        stats.commitmentsRefused += 1;
       }
-      return b.createdAt.localeCompare(a.createdAt);
-    });
-    return ordered.slice(0, L.notebookCommitmentsMax);
+    }
+    for (const c of ordered.filter((c) => !keeps(c) && c.status !== 'open')) {
+      if (room > 0) {
+        kept.add(c);
+        room -= 1;
+      } else {
+        stats.commitmentsDropped += 1;
+      }
+    }
+    return ordered.filter((c) => kept.has(c));
   };
 
   let summary: string;
