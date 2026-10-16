@@ -9,8 +9,8 @@ import { chromium, defineConfig, type PlaywrightTestConfig } from '@playwright/t
  *
  *   1. the API dev server (apps/api `src/dev-server.ts`) on :8787 with `DATABASE_URL`, `DB_DRIVER=pg` and
  *      `MODEL_PROVIDER=mock` (deterministic, offline) taken from the environment;
- *   2. `vite preview` of the production build on :4173, which proxies `/api` to :8787 (build first:
- *      `pnpm --filter @foundry/web build`).
+ *   2. `vite preview` of the production build on the E2E_BASE_URL port (default :4173), which proxies
+ *      `/api` to E2E_API_URL (build first: `pnpm --filter @foundry/web build`).
  *
  * Environment:
  *   E2E_BASE_URL           SPA origin (default http://localhost:4173)
@@ -87,6 +87,8 @@ const webServer: PlaywrightTestConfig['webServer'] = localStack
         timeout: 60_000,
         stdout: 'ignore',
         stderr: 'pipe',
+        // The preview proxies /api to the API this run started (E2E_API_URL), not the dev default.
+        env: { API_PROXY_TARGET: apiURL.origin },
       },
     ]
   : undefined;

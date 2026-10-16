@@ -52,25 +52,6 @@ export function useDocuments(ventureId: string) {
   return useQuery({ ...documentsQueryOptions(ventureId), select: (data) => data.items });
 }
 
-export type CreateDocumentInput = z.input<typeof CreateDocumentRequest>;
-
-/** POST /ventures/:id/documents → document row + presigned PUT. Prefer `useUploadDocument`. */
-export function useCreateDocument(ventureId: string) {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: (input: CreateDocumentInput) =>
-      api.post(
-        path`/ventures/${ventureId}/documents`,
-        CreateDocumentResponse,
-        encodeBody(CreateDocumentRequest, input),
-        {
-          idempotencyKey: createIdempotencyKey(),
-        },
-      ),
-    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.venture.documents(ventureId) }),
-  });
-}
-
 /**
  * POST /documents/:id/complete → `DocumentView`: 202 while ingestion runs (`status: processing`), 200 when
  * it already finished (or failed). Calling it again for a failed document restarts processing.

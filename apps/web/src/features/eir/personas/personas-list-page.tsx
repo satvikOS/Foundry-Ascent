@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { ChevronRight, FilePen, UserSquare } from 'lucide-react';
 
-import { Badge } from '@/components/ui/badge';
+import { PersonaAvatar } from '@/components/faces/persona-avatar';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
 import { PageContainer, PageHeader } from '@/components/ui/page-header';
@@ -10,6 +10,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { usePersonas } from '@/lib/api/hooks/eir';
 import { formatNumber, pluralize } from '@/lib/format';
+import { shortPersonaName } from '@/lib/veir';
 
 import { ConsentIndicator } from './consent-indicator';
 import { PERSONA_KIND_LABELS } from './persona-labels';
@@ -22,7 +23,7 @@ export function PersonasListPage({ tenant }: { tenant: string }) {
     <PageContainer size="wide">
       <PageHeader
         title="Personas"
-        description="Foundry Guide and any EIR personas. Every release is versioned and approved by a person; suspending a persona stops it immediately."
+        description="The neutral Foundry Guide and the EIR personas (vEIRs). Every release is versioned and approved by a person; suspending a persona stops it immediately."
       />
       {personas.isPending ? (
         <LoadingRegion label="Loading personas">
@@ -62,23 +63,31 @@ export function PersonasListPage({ tenant }: { tenant: string }) {
               return (
                 <TableRow key={persona.id} className="relative">
                   <TableCell className="min-w-56">
-                    <Link
-                      to="/$tenant/app/eir/personas/$personaId"
-                      params={{ tenant, personaId: persona.id }}
-                      className="font-medium underline-offset-4 after:absolute after:inset-0 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
-                    >
-                      {persona.name}
-                    </Link>
-                    <p className="flex flex-wrap items-center gap-1.5 text-[13px] text-muted-foreground">
-                      {PERSONA_KIND_LABELS[persona.kind]}
-                      {persona.eirProfile ? (
-                        <>
-                          <span aria-hidden>·</span>
-                          {persona.eirProfile.displayName}
-                          {persona.eirProfile.synthetic ? <Badge variant="muted">Synthetic</Badge> : null}
-                        </>
-                      ) : null}
-                    </p>
+                    <div className="flex items-center gap-3">
+                      <PersonaAvatar
+                        name={shortPersonaName(persona.name, persona.kind, persona.eirProfile?.displayName)}
+                        size="md"
+                        decorative
+                      />
+                      <div className="min-w-0">
+                        <Link
+                          to="/$tenant/app/eir/personas/$personaId"
+                          params={{ tenant, personaId: persona.id }}
+                          className="font-medium underline-offset-4 after:absolute after:inset-0 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+                        >
+                          {persona.name}
+                        </Link>
+                        <p className="flex flex-wrap items-center gap-1.5 text-small text-muted-foreground">
+                          {PERSONA_KIND_LABELS[persona.kind]}
+                          {persona.eirProfile ? (
+                            <>
+                              <span aria-hidden>·</span>
+                              {persona.eirProfile.displayName}
+                            </>
+                          ) : null}
+                        </p>
+                      </div>
+                    </div>
                   </TableCell>
                   <TableCell>
                     <div className="grid gap-1">

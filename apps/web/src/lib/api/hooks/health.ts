@@ -20,6 +20,6 @@ export const healthQueryOptions = () =>
     retry: false,
   });
 
-export function useHealth() {
-  return useQuery(healthQueryOptions());
+export function useHealth({ enabled = true }: { enabled?: boolean } = {}) {
+  return useQuery({ ...healthQueryOptions(), enabled });
 }

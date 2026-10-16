@@ -109,7 +109,7 @@ export function PinnedMark({ className }: { className?: string }) {
 export function OriginLabel({ origin }: { origin: MemoryObjectView['origin'] }) {
   const map = {
     founder: { icon: PenLine, label: 'Added by the team' },
-    ai: { icon: Bot, label: 'Suggested by Foundry Guide (AI)' },
+    ai: { icon: Bot, label: 'Suggested by AI' },
     eir: { icon: UserRound, label: 'Added by an EIR' },
     import: { icon: FileText, label: 'Imported' },
   } satisfies Record<MemoryObjectView['origin'], { icon: LucideIcon; label: string }>;
@@ -160,7 +160,7 @@ export function SourceRefList({
         if (ref.kind === 'session') {
           body = (
             <Link
-              to="/$tenant/app/ventures/$ventureId/coach/$sessionId"
+              to="/$tenant/app/v/$ventureId/c/$sessionId"
               params={{ tenant, ventureId, sessionId: ref.id }}
               className={linkClasses}
             >
@@ -170,7 +170,7 @@ export function SourceRefList({
         } else if (ref.kind === 'document' || ref.kind === 'chunk') {
           body = (
             <Link
-              to="/$tenant/app/ventures/$ventureId/documents"
+              to="/$tenant/app/v/$ventureId/documents"
               params={{ tenant, ventureId }}
               className={linkClasses}
             >
@@ -180,7 +180,7 @@ export function SourceRefList({
         } else if (ref.kind === 'memory') {
           body = (
             <Link
-              to="/$tenant/app/ventures/$ventureId/memory"
+              to="/$tenant/app/v/$ventureId/knowledge"
               params={{ tenant, ventureId }}
               search={{ m: ref.id }}
               className={linkClasses}

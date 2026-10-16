@@ -1,11 +1,13 @@
 import type { CoachMode, MemoryObjectView, TurnView } from '@foundry/contracts';
 import { getRouteApi, Link } from '@tanstack/react-router';
-import { ArrowLeft, EyeOff, FileCheck2, HandHelping, MessagesSquare, Play, Square } from 'lucide-react';
+import { EyeOff, FileCheck2, HandHelping, MessagesSquare, Square, SquarePen } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { announce } from '@/components/a11y/live-announcer';
 import { DisclosureBanner } from '@/components/disclosure-banner';
-import { Inspector } from '@/components/shell/inspector';
+import { PersonaAvatar } from '@/components/faces/persona-avatar';
+import { VeirBadge } from '@/components/faces/veir-badge';
+import { Inspector, InspectorToggle } from '@/components/shell/inspector';
 import { Alert } from '@/components/ui/alert';
 import {
   AlertDialog,
@@ -32,9 +34,12 @@ import { useTurnStream } from '@/lib/api/hooks/turn-stream';
 import { useVenture } from '@/lib/api/hooks/ventures';
 import { canWrite } from '@/lib/auth/roles';
 import { useRequiredMe } from '@/lib/auth/use-me';
+import { conversationTitle } from '@/lib/conversations';
 import { formatDateTime, formatRelative, isoString, pluralize } from '@/lib/format';
+import { useDockedBottom } from '@/lib/hooks/use-docked-bottom';
 import { useHotkeys } from '@/lib/hooks/use-hotkeys';
 import { MODE_LABELS } from '@/lib/labels';
+import { shortPersonaName, veirDisplay } from '@/lib/veir';
 import { EscalationFlowDialog, type EscalationDraft } from '@/features/escalations/escalation-flow-dialog';
 import { CorrectMemoryDialog } from '@/features/memory/memory-dialogs';
 
@@ -42,14 +47,14 @@ import { coachingAvailability } from './availability';
 import { Composer, MAX_TURN_CHARS } from './composer';
 import { MODE_DETAILS, ModeBadge } from './modes';
 import { clearPendingCounterpart, pendingCounterpart } from './pending-counterpart';
+import { hasPendingFirstMessage, takePendingFirstMessage } from './pending-first-message';
 import { deriveTurnProgress } from './progress';
 import { SessionInspector } from './session-inspector';
 import { SessionRecapView } from './session-recap';
-import { sessionTitle } from './sessions-page';
 import { PendingTurn, TurnItem } from './turn-item';
 import { CoachWorkspaceProvider } from './workspace';
 
-const routeApi = getRouteApi('/$tenant/app/ventures/$ventureId/coach/$sessionId');
+const routeApi = getRouteApi('/$tenant/app/v/$ventureId/c/$sessionId');
 
 function prefersReducedMotion(): boolean {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -116,6 +121,7 @@ function SessionCanvas() {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const pendingRef = useRef<HTMLDivElement | null>(null);
   const initialScrollDone = useRef(false);
+  const composerDockRef = useDockedBottom();
 
   const session = detail.data?.session ?? null;
   const turns = useMemo(() => detail.data?.turns ?? [], [detail.data]);
@@ -126,6 +132,13 @@ function SessionCanvas() {
   const canSend = Boolean(availability?.available);
   const progress = deriveTurnProgress(stream.state);
   const { state } = stream;
+  const veir = veirDisplay(venture.data);
+  const personaName =
+    session && veir?.personaId === session.personaId
+      ? veir.shortName
+      : session
+        ? shortPersonaName(session.personaName, veir?.kind ?? 'neutral_guide')
+        : (veir?.shortName ?? 'your vEIR');
 
   const focusComposer = useCallback(() => {
     textareaRef.current?.focus();
@@ -157,7 +170,7 @@ function SessionCanvas() {
     state.status === 'failed' && state.error?.code === 'conflict' && state.error.retryAt !== undefined;
   useEffect(() => {
     if (stillAnswering) {
-      announce('Still answering. Foundry Guide will check again shortly.');
+      announce(`Still answering. ${personaName} will check again shortly.`);
       return;
     }
     switch (state.status) {
@@ -165,7 +178,7 @@ function SessionCanvas() {
         announce('Response ready.');
         break;
       case 'blocked':
-        announce('Foundry Guide handed this question to a person. Support options are shown.', 'assertive');
+        announce(`${personaName} handed this question to a person. Support options are shown.`, 'assertive');
         break;
       case 'failed':
         announce('The response could not be completed.', 'assertive');
@@ -176,7 +189,7 @@ function SessionCanvas() {
       default:
         break;
     }
-  }, [state.status, stillAnswering]);
+  }, [state.status, stillAnswering, personaName]);
 
   // When an answer arrives and the person was watching, bring its start into view.
   const completedTurnId = state.status === 'completed' ? (state.turn?.id ?? null) : null;
@@ -211,19 +224,39 @@ function SessionCanvas() {
     [mode, canSend, stream, counterpart],
   );
 
+  // The first message typed on New chat: send it once the conversation is ready. Scheduled (not sent
+  // inline) so a development double-mount cancels the timer, not an in-flight turn.
+  const firstMessageReady = Boolean(session) && canSend && turns.length === 0;
+  const sendTurn = stream.send;
+  useEffect(() => {
+    if (!firstMessageReady || !hasPendingFirstMessage(sessionId)) return;
+    const timer = setTimeout(() => {
+      const first = takePendingFirstMessage(sessionId);
+      if (!first) return;
+      void sendTurn({
+        text: first.text,
+        ...(first.mode ? { mode: first.mode } : {}),
+        ...(first.rehearsalCounterpart ? { rehearsalCounterpart: first.rehearsalCounterpart } : {}),
+      });
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [firstMessageReady, sessionId, sendTurn]);
+
   if (detail.isPending) return <SessionSkeleton />;
   if (detail.isError || session?.ventureId !== ventureId) {
     return (
       <PageContainer size="narrow">
-        <PageHeader title="Session" />
+        <PageHeader title="Conversation" />
         <ErrorState
           error={detail.error}
           title={detail.isError ? undefined : 'Session not found'}
           onRetry={detail.isError ? () => void detail.refetch() : undefined}
           action={
             <Button asChild variant="ghost" size="sm">
-              <Link to="/$tenant/app/ventures/$ventureId/coach" params={{ tenant, ventureId }}>
-                Back to sessions
+              <Link to="/$tenant/app/v/$ventureId" params={{ tenant, ventureId }}>
+                New chat
               </Link>
             </Button>
           }
@@ -290,14 +323,13 @@ function SessionCanvas() {
           <EmptyState
             icon={MessagesSquare}
             title="No messages"
-            description="This session ended before anything was asked."
+            description="This conversation ended before anything was asked."
           />
         ) : (
           <div className="rounded-xl border border-dashed border-border-strong p-6">
             <h2 className="text-base font-semibold tracking-tight">Ask your first question</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              {MODE_LABELS[mode].description} Foundry Guide answers with cited evidence, labels what is fact
-              versus inference, and ends with a challenge and next actions.
+              {MODE_LABELS[mode].description} {personaName} cites the evidence behind each answer.
             </p>
             {canSend ? (
               <ul className="mt-4 flex flex-wrap gap-2" aria-label="Suggested openers">
@@ -378,23 +410,20 @@ function SessionCanvas() {
 
   return (
     <>
-      <DisclosureBanner text={session.disclosure} />
       <PageContainer size="narrow" className="pb-4">
         <PageHeader
           eyebrow={
-            <Link
-              to="/$tenant/app/ventures/$ventureId/coach"
-              params={{ tenant, ventureId }}
-              className="inline-flex items-center gap-1 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-            >
-              <ArrowLeft aria-hidden className="size-3.5" />
-              All sessions
-            </Link>
+            <span className="flex items-center gap-2 text-foreground">
+              <PersonaAvatar name={personaName} portraitUrl={veir?.portraitUrl} size="sm" decorative />
+              <span className="font-medium">{personaName}</span>
+              <VeirBadge kind={veir?.kind ?? 'neutral_guide'} />
+            </span>
           }
-          title={sessionTitle(session)}
+          title={conversationTitle(session, turns[0]?.founderText ?? state.pendingText)}
           actions={
             !ended && canEdit ? (
               <>
+                <InspectorToggle />
                 <Button variant="ghost" size="sm" onClick={requestGeneralEscalation}>
                   <HandHelping aria-hidden />
                   Request support
@@ -412,7 +441,9 @@ function SessionCanvas() {
                   End session
                 </Button>
               </>
-            ) : null
+            ) : (
+              <InspectorToggle />
+            )
           }
         >
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
@@ -427,9 +458,6 @@ function SessionCanvas() {
                 Ephemeral
               </span>
             ) : null}
-            <span>
-              {session.personaName} v{session.personaVersion} · AI coach
-            </span>
             <span>
               Started by {session.startedBy.displayName}{' '}
               <time dateTime={isoString(session.startedAt)} title={formatDateTime(session.startedAt)}>
@@ -493,21 +521,21 @@ function SessionCanvas() {
         {ended && ventureAvailability?.available ? (
           <div className="mt-8 flex justify-center" data-print="hide">
             <Button asChild variant="secondary">
-              <Link
-                to="/$tenant/app/ventures/$ventureId/coach"
-                params={{ tenant, ventureId }}
-                search={{ start: session.mode }}
-              >
-                <Play aria-hidden />
-                Start a new session
+              <Link to="/$tenant/app/v/$ventureId" params={{ tenant, ventureId }}>
+                <SquarePen aria-hidden />
+                New chat
               </Link>
             </Button>
           </div>
+        ) : null}
+        {ended || !canEdit ? (
+          <DisclosureBanner variant="line" text={session.disclosure} className="mt-10" />
         ) : null}
       </PageContainer>
 
       {!ended && canEdit ? (
         <div
+          ref={composerDockRef}
           className="sticky bottom-0 z-10 bg-gradient-to-t from-background via-background/95 to-background/0 pt-6 pb-3"
           data-print="hide"
         >
@@ -515,8 +543,12 @@ function SessionCanvas() {
             <Composer
               value={text}
               onChange={setText}
+              personaName={personaName}
+              disclosure={session.disclosure}
               mode={mode}
-              onModeChange={setModeOverride}
+              onModeChange={(next) => {
+                if (next !== 'auto') setModeOverride(next);
+              }}
               allowedModes={persona?.allowedModes}
               counterpart={counterpart}
               onCounterpartChange={setCounterpart}
@@ -549,8 +581,8 @@ function SessionCanvas() {
             <AlertDialogTitle>End this session?</AlertDialogTitle>
             <AlertDialogDescription>
               {session.privacy === 'ephemeral'
-                ? 'This is an ephemeral session: nothing will be kept as memory and no recap is saved.'
-                : 'Foundry Guide will write a recap — diagnosis, evidence, challenge, next actions and any escalation — and propose memory for you to approve.'}
+                ? 'This is a temporary chat: nothing will be kept as memory and no recap is saved.'
+                : `${personaName} will write a recap — diagnosis, evidence, challenge, next actions and any escalation — and propose memory for you to approve.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -569,7 +601,7 @@ function SessionCanvas() {
         }}
         onViewEscalation={(e) =>
           void navigate({
-            to: '/$tenant/app/ventures/$ventureId/escalations',
+            to: '/$tenant/app/v/$ventureId/help',
             params: { tenant, ventureId },
             search: { id: e.id },
           })

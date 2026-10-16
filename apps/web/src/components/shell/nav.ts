@@ -1,163 +1,171 @@
 import type { Me } from '@foundry/contracts';
-import { linkOptions } from '@tanstack/react-router';
 import {
   BookOpenCheck,
   Briefcase,
   ChartColumn,
   ClipboardCheck,
-  Compass,
   FileText,
   Flag,
-  FlaskConical,
-  Gavel,
   Gauge,
-  House,
   Inbox,
   LayoutDashboard,
   Library,
+  LifeBuoy,
   ListTree,
-  Milestone,
-  MessagesSquare,
-  Rocket,
   ScrollText,
   Settings,
   ShieldCheck,
-  Siren,
   Users,
   UserSquare,
-  Brain,
   type LucideIcon,
 } from 'lucide-react';
 
-import { canUseAdminConsole, canUseEirStudio, canUseProgramConsole } from '@/lib/auth/roles';
+import {
+  canAccessVenture,
+  canUseAdminConsole,
+  canUseEirStudio,
+  canUseProgramConsole,
+} from '@/lib/auth/roles';
 
-/** Primary navigation (left rail), filtered by role. Shortcuts are listed in the shortcuts dialog. */
-export function primaryNav(me: Me) {
-  const tenant = me.tenant.slug;
-  const items = [
-    {
-      id: 'home',
-      label: 'Home',
-      icon: House,
-      shortcut: 'g h',
-      link: linkOptions({ to: '/$tenant/app', params: { tenant }, activeOptions: { exact: true } }),
-    },
-    {
-      id: 'ventures',
-      label: 'Ventures',
-      icon: Rocket,
-      shortcut: 'g v',
-      link: linkOptions({ to: '/$tenant/app/ventures', params: { tenant } }),
-    },
-  ];
-  const consoles = [
-    canUseEirStudio(me)
-      ? {
-          id: 'eir',
-          label: 'EIR studio',
-          icon: BookOpenCheck,
-          shortcut: 'g e',
-          link: linkOptions({ to: '/$tenant/app/eir', params: { tenant } }),
-        }
-      : null,
-    canUseProgramConsole(me)
-      ? {
-          id: 'program',
-          label: 'Program',
-          icon: LayoutDashboard,
-          shortcut: 'g p',
-          link: linkOptions({ to: '/$tenant/app/program', params: { tenant } }),
-        }
-      : null,
-    canUseAdminConsole(me)
-      ? {
-          id: 'admin',
-          label: 'Admin',
-          icon: ShieldCheck,
-          shortcut: 'g a',
-          link: linkOptions({ to: '/admin' }),
-        }
-      : null,
-  ].filter((item) => item !== null);
-  return { items, consoles };
+/*
+ * One shell for every role. The sidebar shows the sections of the current workspace: a venture
+ * (conversations and the venture's pages) or a staff workspace (EIR studio, Program, Admin). The
+ * workspace switcher at the top of the sidebar moves between them.
+ */
+
+export type StaffWorkspaceId = 'eir' | 'program' | 'admin';
+
+export type Workspace =
+  { kind: 'venture'; ventureId: string } | { kind: StaffWorkspaceId } | { kind: 'none' };
+
+/** Which workspace a path belongs to (`/<tenant>/app/v/<id>/…`, `/<tenant>/app/eir/…`, …). */
+export function workspaceFromPath(pathname: string): Workspace {
+  const match = /^\/[^/]+\/app(?:\/([^/]+)(?:\/([^/]+))?)?/.exec(pathname);
+  const section = match?.[1];
+  if (section === 'v' && match?.[2]) return { kind: 'venture', ventureId: decodeURIComponent(match[2]) };
+  if (section === 'eir' || section === 'program' || section === 'admin') return { kind: section };
+  return { kind: 'none' };
 }
 
-export type VentureSectionId =
-  | 'overview'
-  | 'coach'
-  | 'memory'
-  | 'evidence'
-  | 'decisions'
-  | 'experiments'
-  | 'milestones'
-  | 'documents'
-  | 'team'
-  | 'escalations';
-
-export interface VentureSection {
-  id: VentureSectionId;
+export interface StaffWorkspace {
+  id: StaffWorkspaceId;
   label: string;
   icon: LucideIcon;
-  description: string;
-  shortcut?: string;
+  shortcut: string;
+  to: '/$tenant/app/eir' | '/$tenant/app/program' | '/$tenant/app/admin';
 }
 
-/** Venture workspace sections, in navigation order. */
-export const VENTURE_SECTIONS: VentureSection[] = [
-  {
-    id: 'overview',
-    label: 'Overview',
-    icon: Compass,
-    description: 'Since your last session',
-    shortcut: 'g o',
-  },
-  {
-    id: 'coach',
-    label: 'Coach',
-    icon: MessagesSquare,
-    description: 'Sessions with Foundry Guide',
-    shortcut: 'g c',
-  },
-  { id: 'memory', label: 'Memory', icon: Brain, description: 'What the coach remembers', shortcut: 'g m' },
-  { id: 'evidence', label: 'Evidence', icon: Library, description: 'Sources and evidence' },
-  { id: 'decisions', label: 'Decisions', icon: Gavel, description: 'Confirmed decisions' },
-  { id: 'experiments', label: 'Experiments', icon: FlaskConical, description: 'Tests and results' },
-  { id: 'milestones', label: 'Milestones', icon: Milestone, description: 'Goals and dates' },
-  { id: 'documents', label: 'Documents', icon: FileText, description: 'Uploaded files', shortcut: 'g d' },
-  { id: 'team', label: 'Team', icon: Users, description: 'Members and roles' },
-  { id: 'escalations', label: 'Escalations', icon: Siren, description: 'Human handoffs', shortcut: 'g x' },
+const STAFF_WORKSPACES: readonly StaffWorkspace[] = [
+  { id: 'eir', label: 'EIR studio', icon: BookOpenCheck, shortcut: 'g e', to: '/$tenant/app/eir' },
+  { id: 'program', label: 'Program', icon: LayoutDashboard, shortcut: 'g p', to: '/$tenant/app/program' },
+  { id: 'admin', label: 'Admin', icon: ShieldCheck, shortcut: 'g a', to: '/$tenant/app/admin' },
 ];
 
-/** Typed route for each venture section (params: { tenant, ventureId }). */
-export const VENTURE_SECTION_ROUTES = {
-  overview: '/$tenant/app/ventures/$ventureId/overview',
-  coach: '/$tenant/app/ventures/$ventureId/coach',
-  memory: '/$tenant/app/ventures/$ventureId/memory',
-  evidence: '/$tenant/app/ventures/$ventureId/evidence',
-  decisions: '/$tenant/app/ventures/$ventureId/decisions',
-  experiments: '/$tenant/app/ventures/$ventureId/experiments',
-  milestones: '/$tenant/app/ventures/$ventureId/milestones',
-  documents: '/$tenant/app/ventures/$ventureId/documents',
-  team: '/$tenant/app/ventures/$ventureId/team',
-  escalations: '/$tenant/app/ventures/$ventureId/escalations',
-} as const satisfies Record<VentureSectionId, string>;
+/** Staff workspaces this person may open (display only; the API and RLS decide access). */
+export function staffWorkspaces(me: Me): StaffWorkspace[] {
+  return STAFF_WORKSPACES.filter((workspace) =>
+    workspace.id === 'eir'
+      ? canUseEirStudio(me)
+      : workspace.id === 'program'
+        ? canUseProgramConsole(me)
+        : canUseAdminConsole(me),
+  );
+}
 
-export const EIR_SECTIONS = [
-  { id: 'personas', label: 'Personas', icon: UserSquare, to: '/$tenant/app/eir/personas' },
-  { id: 'reviews', label: 'Reviews', icon: ClipboardCheck, to: '/$tenant/app/eir/reviews' },
-  { id: 'inbox', label: 'Inbox', icon: Inbox, to: '/$tenant/app/eir/inbox' },
-] as const;
+export function staffWorkspace(id: StaffWorkspaceId): StaffWorkspace {
+  const found = STAFF_WORKSPACES.find((workspace) => workspace.id === id);
+  if (!found) throw new Error(`Unknown workspace ${id}`);
+  return found;
+}
 
-export const PROGRAM_SECTIONS = [
-  { id: 'portfolio', label: 'Portfolio', icon: ChartColumn, to: '/$tenant/app/program/portfolio' },
-  { id: 'ventures', label: 'Ventures', icon: Briefcase, to: '/$tenant/app/program/ventures' },
-  { id: 'resources', label: 'Resources', icon: ListTree, to: '/$tenant/app/program/resources' },
-  { id: 'escalations', label: 'Escalations', icon: Flag, to: '/$tenant/app/program/escalations' },
-] as const;
+export type VentureDestinationId = 'knowledge' | 'documents' | 'help' | 'team';
 
-export const ADMIN_SECTIONS = [
-  { id: 'principals', label: 'Principals', icon: Users, to: '/admin/principals' },
-  { id: 'settings', label: 'Settings', icon: Settings, to: '/admin/settings' },
-  { id: 'usage', label: 'Usage', icon: Gauge, to: '/admin/usage' },
-  { id: 'audit', label: 'Audit log', icon: ScrollText, to: '/admin/audit' },
-] as const;
+export interface VentureDestination {
+  id: VentureDestinationId;
+  label: string;
+  icon: LucideIcon;
+  shortcut: string;
+  to:
+    | '/$tenant/app/v/$ventureId/knowledge'
+    | '/$tenant/app/v/$ventureId/documents'
+    | '/$tenant/app/v/$ventureId/help'
+    | '/$tenant/app/v/$ventureId/team';
+}
+
+/** The venture's pages, under the conversations in the sidebar. */
+export const VENTURE_DESTINATIONS: readonly VentureDestination[] = [
+  {
+    id: 'knowledge',
+    label: 'Knowledge',
+    icon: Library,
+    shortcut: 'g k',
+    to: '/$tenant/app/v/$ventureId/knowledge',
+  },
+  {
+    id: 'documents',
+    label: 'Documents',
+    icon: FileText,
+    shortcut: 'g d',
+    to: '/$tenant/app/v/$ventureId/documents',
+  },
+  { id: 'help', label: 'Human help', icon: LifeBuoy, shortcut: 'g h', to: '/$tenant/app/v/$ventureId/help' },
+  { id: 'team', label: 'Team', icon: Users, shortcut: 'g t', to: '/$tenant/app/v/$ventureId/team' },
+];
+
+export interface StaffSection {
+  id: string;
+  label: string;
+  icon: LucideIcon;
+  to:
+    | '/$tenant/app/eir/personas'
+    | '/$tenant/app/eir/reviews'
+    | '/$tenant/app/eir/inbox'
+    | '/$tenant/app/program/portfolio'
+    | '/$tenant/app/program/ventures'
+    | '/$tenant/app/program/resources'
+    | '/$tenant/app/program/escalations'
+    | '/$tenant/app/admin/principals'
+    | '/$tenant/app/admin/settings'
+    | '/$tenant/app/admin/usage'
+    | '/$tenant/app/admin/audit';
+}
+
+export const STAFF_SECTIONS: Record<StaffWorkspaceId, readonly StaffSection[]> = {
+  eir: [
+    { id: 'personas', label: 'Personas & knowledge', icon: UserSquare, to: '/$tenant/app/eir/personas' },
+    { id: 'reviews', label: 'Calibration reviews', icon: ClipboardCheck, to: '/$tenant/app/eir/reviews' },
+    { id: 'inbox', label: 'Inbox', icon: Inbox, to: '/$tenant/app/eir/inbox' },
+  ],
+  program: [
+    { id: 'portfolio', label: 'Portfolio', icon: ChartColumn, to: '/$tenant/app/program/portfolio' },
+    { id: 'ventures', label: 'Ventures', icon: Briefcase, to: '/$tenant/app/program/ventures' },
+    { id: 'resources', label: 'Resources', icon: ListTree, to: '/$tenant/app/program/resources' },
+    { id: 'escalations', label: 'Escalations', icon: Flag, to: '/$tenant/app/program/escalations' },
+  ],
+  admin: [
+    { id: 'principals', label: 'People & access', icon: Users, to: '/$tenant/app/admin/principals' },
+    { id: 'settings', label: 'Settings', icon: Settings, to: '/$tenant/app/admin/settings' },
+    { id: 'usage', label: 'Usage', icon: Gauge, to: '/$tenant/app/admin/usage' },
+    { id: 'audit', label: 'Audit log', icon: ScrollText, to: '/$tenant/app/admin/audit' },
+  ],
+};
+
+export type Landing = { kind: 'venture'; ventureId: string } | { kind: StaffWorkspaceId } | null;
+
+/**
+ * Where `/<tenant>/app` opens: venture members go to their last venture's new chat (or their first
+ * venture), staff to their main workspace, and someone with neither sees the "no workspace yet" state.
+ */
+export function defaultLanding(me: Me, lastVentureId: string | null): Landing {
+  if (me.memberships.length > 0) {
+    if (lastVentureId && canAccessVenture(me, lastVentureId))
+      return { kind: 'venture', ventureId: lastVentureId };
+    const writable = me.memberships.find((m) => m.role === 'founder' || m.role === 'team');
+    const first = writable ?? me.memberships[0];
+    if (first) return { kind: 'venture', ventureId: first.ventureId };
+  }
+  if (canUseProgramConsole(me)) return { kind: 'program' };
+  if (canUseEirStudio(me)) return { kind: 'eir' };
+  if (canUseAdminConsole(me)) return { kind: 'admin' };
+  return null;
+}

@@ -15,6 +15,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { announce } from '@/components/a11y/live-announcer';
+import { PersonaAvatar } from '@/components/faces/persona-avatar';
 import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -26,6 +27,7 @@ import { STATUS_DEFINITIONS, StatusBadge } from '@/components/ui/status-badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useCreatePersonaRelease, usePersona, usePersonaRelease } from '@/lib/api/hooks/eir';
 import { formatDate, formatNumber } from '@/lib/format';
+import { shortPersonaName } from '@/lib/veir';
 
 import { ConsentIndicator } from './consent-indicator';
 import { ResumePersonaDialog, SuspendPersonaDialog } from './persona-controls';
@@ -162,7 +164,6 @@ function PersonaOverview({ persona }: { persona: PersonaView }) {
             <dd className="grid gap-1.5">
               <span className="flex flex-wrap items-center gap-1.5 font-medium">
                 {persona.eirProfile.displayName}
-                {persona.eirProfile.synthetic ? <Badge variant="muted">Synthetic</Badge> : null}
               </span>
               {persona.eirProfile.expertiseTags.length > 0 ? (
                 <ul aria-label="Expertise" className="flex flex-wrap gap-1">
@@ -252,7 +253,16 @@ export function PersonaDetailPage({ personaId, tenant }: { personaId: string; te
     <PageContainer size="wide">
       <PageHeader
         eyebrow={back}
-        title={p.name}
+        title={
+          <span className="flex items-center gap-3">
+            <PersonaAvatar
+              name={shortPersonaName(p.name, p.kind, p.eirProfile?.displayName)}
+              size="lg"
+              decorative
+            />
+            {p.name}
+          </span>
+        }
         actions={
           editing ? null : (
             <>

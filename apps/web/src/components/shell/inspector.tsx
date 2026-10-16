@@ -1,4 +1,4 @@
-import { PanelRightOpen } from 'lucide-react';
+import { PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -7,13 +7,14 @@ import { InspectorPanel } from '@/components/ui/inspector-panel';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { SimpleTooltip } from '@/components/ui/tooltip';
 import { BREAKPOINTS, useMediaQuery } from '@/lib/hooks/use-media-query';
-import { safeStorage } from '@/lib/storage';
+import { safeStorage, STORAGE_KEYS } from '@/lib/storage';
 
 /*
- * Right-hand inspector for the venture workspace (sources, known facts, assumptions, contradictions,
- * proposed memory, handoff). Pages FILL it; the VentureLayout HOSTS it:
+ * Right-hand context panel for the venture workspace (sources, memory detail, handoffs). Closed by
+ * default: it opens from a citation, a selection or the page's panel toggle, and on desktop the
+ * person's last choice is remembered. Pages FILL it; the VentureLayout HOSTS it:
  *
- *   // in a page under /ventures/$ventureId/…
+ *   // in a page under /v/$ventureId/…
  *   <Inspector title="Evidence" description="Sources used in this answer">
  *     <InspectorSection title="Sources" meta={3}>…</InspectorSection>
  *   </Inspector>
@@ -38,7 +39,6 @@ interface InspectorContextValue {
 }
 
 const InspectorContext = createContext<InspectorContextValue | null>(null);
-const COLLAPSED_KEY = 'fa.inspector.collapsed';
 
 export function InspectorProvider({ children }: { children: ReactNode }) {
   const [target] = useState<HTMLDivElement | null>(() => {
@@ -49,7 +49,7 @@ export function InspectorProvider({ children }: { children: ReactNode }) {
   });
   const [meta, setMeta] = useState<InspectorMeta | null>(null);
   const isDesktop = useMediaQuery(BREAKPOINTS.xl);
-  const [desktopOpen, setDesktopOpen] = useState(() => safeStorage.get(COLLAPSED_KEY) !== '1');
+  const [desktopOpen, setDesktopOpen] = useState(() => safeStorage.get(STORAGE_KEYS.inspectorOpen) === '1');
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const register = useCallback((next: InspectorMeta) => {
@@ -63,7 +63,7 @@ export function InspectorProvider({ children }: { children: ReactNode }) {
     (open: boolean) => {
       if (isDesktop) {
         setDesktopOpen(open);
-        safeStorage.set(COLLAPSED_KEY, open ? '0' : '1');
+        safeStorage.set(STORAGE_KEYS.inspectorOpen, open ? '1' : '0');
       } else {
         setMobileOpen(open);
       }
@@ -133,7 +133,7 @@ export function InspectorRegion() {
     return (
       <aside
         aria-label={`${meta.title} inspector`}
-        className="sticky top-[var(--header-height)] hidden h-[calc(100dvh-var(--header-height))] w-(--inspector-width) shrink-0 border-l border-border xl:block"
+        className="sticky top-0 hidden h-dvh w-(--inspector-width) shrink-0 border-l border-border bg-background xl:block"
       >
         <InspectorPanel
           title={meta.title}
@@ -169,11 +169,11 @@ export function InspectorRegion() {
   );
 }
 
-/** Context-bar button that opens/closes the inspector (hidden when the page has no inspector). */
+/** Page-header button that opens/closes the context panel (hidden when the page has no panel). */
 export function InspectorToggle() {
   const { meta, open, setOpen } = useInspectorContext();
   if (!meta) return null;
-  const label = open ? `Hide ${meta.title.toLowerCase()}` : `Show ${meta.title.toLowerCase()}`;
+  const label = open ? `Hide ${meta.title.toLowerCase()} panel` : `Show ${meta.title.toLowerCase()} panel`;
   return (
     <SimpleTooltip content={label}>
       <Button
@@ -185,7 +185,7 @@ export function InspectorToggle() {
           setOpen(!open);
         }}
       >
-        <PanelRightOpen aria-hidden />
+        {open ? <PanelRightClose aria-hidden /> : <PanelRightOpen aria-hidden />}
       </Button>
     </SimpleTooltip>
   );

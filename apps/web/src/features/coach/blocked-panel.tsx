@@ -22,13 +22,13 @@ interface BlockedPanelProps {
 
 const SAFETY_REASON = /safety|wellbeing|crisis|harm/i;
 
-/** What Foundry Guide says when it did not answer, by reason (never blaming the founder). */
+/** What the vEIR says when it did not answer, by reason (never blaming the founder). */
 function explanation(reason: string | null): { title: string; body: string } {
   switch (reason) {
     case 'crisis_support':
       return {
         title: 'You deserve support from a person',
-        body: 'Foundry Guide paused the coaching so you can reach people who can help right now.',
+        body: 'Coaching is paused here so you can reach people who can help right now.',
       };
     // `policy` is what founders and teams receive for a privacy check (the specific reason stays with
     // program staff, so a held-back answer never confirms anything about other ventures).
@@ -36,28 +36,28 @@ function explanation(reason: string | null): { title: string; body: string } {
     case 'cross_venture':
       return {
         title: 'This answer was held back',
-        body: 'Foundry Guide held back this answer because it didn’t pass a privacy and safety check. Ask again about your own venture, or request a human.',
+        body: 'This answer was held back because it didn’t pass a privacy and safety check. Ask again about your own venture, or request a human.',
       };
     case 'identity':
       return {
         title: 'This answer was held back',
-        body: 'Foundry Guide is an AI coach and must never speak as a person or an EIR, so it stopped this answer. You can ask again, or request a human.',
+        body: 'Your vEIR is an AI and must never speak as a person or as the EIR, so it stopped this answer. You can ask again, or request a human.',
       };
     case 'invalid_schema':
       return {
         title: 'This answer was held back',
-        body: 'Foundry Guide couldn’t produce a reliable answer this time. Please ask again, or rephrase your question.',
+        body: 'A reliable answer couldn’t be produced this time. Please ask again, or rephrase your question.',
       };
     default:
       return {
         title: 'This is one for a person',
-        body: 'Foundry Guide doesn’t answer questions like this one, because a human with the right expertise should. You haven’t done anything wrong — asking was the right call.',
+        body: 'Questions like this one are for a human with the right expertise. You haven’t done anything wrong — asking was the right call.',
       };
   }
 }
 
 /**
- * Shown when Foundry Guide declines to answer and hands over to people (`turn.blocked`, live or after a
+ * Shown when the vEIR declines to answer and hands over to people (`turn.blocked`, live or after a
  * reload). Respectful and calm: it never blames the founder, shows the server's support message (crisis
  * resources) in full, explains what happens next and offers a direct route to a human.
  */
@@ -105,7 +105,7 @@ export function BlockedPanel({
             {escalationId ? (
               <Button asChild size="sm">
                 <Link
-                  to="/$tenant/app/ventures/$ventureId/escalations"
+                  to="/$tenant/app/v/$ventureId/help"
                   params={{ tenant, ventureId }}
                   search={{ id: escalationId }}
                 >

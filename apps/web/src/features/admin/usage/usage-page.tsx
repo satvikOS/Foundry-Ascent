@@ -1,4 +1,4 @@
-import { Link } from '@tanstack/react-router';
+import { Link, useParams } from '@tanstack/react-router';
 import {
   CalendarDays,
   CircleAlert,
@@ -195,6 +195,7 @@ function UsageDashboard({ usage }: { usage: Usage }) {
 
 /** Admin → Usage: AI spend against the daily cap, by day and by model. */
 export function UsagePage() {
+  const { tenant } = useParams({ from: '/$tenant/app/admin' });
   const usage = useUsage();
   return (
     <PageContainer size="wide">
@@ -203,7 +204,7 @@ export function UsagePage() {
         description="AI spend from the usage ledger. Every model call is recorded with its cost."
         actions={
           <Button asChild variant="secondary">
-            <Link to="/admin/settings">
+            <Link to="/$tenant/app/admin/settings" params={{ tenant }}>
               <Settings aria-hidden />
               Spend caps
             </Link>

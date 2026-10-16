@@ -13,7 +13,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Avatar } from '@/components/ui/avatar';
+import { UserAvatar } from '@/components/faces/user-avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -101,8 +101,8 @@ export function PrincipalsPage() {
   return (
     <PageContainer size="wide">
       <PageHeader
-        title="Principals"
-        description="Everyone who can sign in, their roles and access codes. Codes are stored as hashes and shown only once."
+        title="People & access"
+        description="Everyone who can sign in, their roles and access codes. Codes are shown once and stored only as hashes."
         actions={
           <Button
             onClick={() => {
@@ -203,12 +203,11 @@ export function PrincipalsPage() {
                 <TableRow key={row.principal.id} className="align-top">
                   <TableCell className="min-w-64 align-top">
                     <div className="flex items-start gap-2.5">
-                      <Avatar name={row.principal.displayName} size="sm" decorative className="mt-0.5" />
+                      <UserAvatar name={row.principal.displayName} size="sm" decorative className="mt-0.5" />
                       <div className="min-w-0">
                         <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 font-medium">
                           <span className="whitespace-nowrap">{row.principal.displayName}</span>
                           {isMe ? <Badge variant="outline">You</Badge> : null}
-                          {row.principal.synthetic ? <Badge variant="muted">Synthetic</Badge> : null}
                         </p>
                         {row.principal.title ? (
                           <p className="text-[13px] text-muted-foreground">{row.principal.title}</p>

@@ -112,15 +112,16 @@ function ExperimentCard({ memory, ctx }: { memory: MemoryObjectView; ctx: TypedP
 }
 
 /** Experiment board: planned → running → completed (abandoned shown when present). */
-export function ExperimentsView() {
+export function ExperimentsView({ embedded = false }: { embedded?: boolean }) {
   return (
     <TypedMemoryPage
+      embedded={embedded}
       kind="experiment"
       title="Experiments"
       description="Tests of your riskiest assumptions: what you predicted, how you tested it, what happened and what it means."
       icon={FlaskConical}
       emptyTitle="No experiments yet"
-      emptyDescription="Turn a risky assumption into a test: write the prediction first, then the method. Results become evidence Foundry Guide can cite."
+      emptyDescription="Turn a risky assumption into a test: write the prediction first, then the method. Results become evidence your vEIR can cite."
     >
       {(items, ctx) => {
         const byStatus = new Map<ExperimentStatus, MemoryObjectView[]>(

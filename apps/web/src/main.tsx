@@ -1,4 +1,9 @@
-import '@fontsource-variable/inter/wght.css';
+// Self-hosted variable fonts (the CSP allows fonts from 'self' only): Geist for the interface,
+// Newsreader for display headings and the vEIR's prose, Geist Mono for labels and data.
+import '@fontsource-variable/geist/wght.css';
+import '@fontsource-variable/geist-mono/wght.css';
+import '@fontsource-variable/newsreader/wght.css';
+import '@fontsource-variable/newsreader/wght-italic.css';
 // Sonner also injects these rules at runtime; shipping them in our own stylesheet keeps toasts styled
 // under a strict CSP (style-src 'self') that blocks injected <style> tags.
 import 'sonner/dist/styles.css';

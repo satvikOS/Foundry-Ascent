@@ -29,6 +29,23 @@ export function useSessions(ventureId: string) {
   return useQuery({ ...sessionsQueryOptions(ventureId), select: (data) => data.items });
 }
 
+/**
+ * Source of the sidebar's recent conversations. Today: the active venture's list
+ * (`GET /ventures/:id/sessions`). When `GET /sessions?scope=mine` (every conversation the person can
+ * open, across ventures) is available, swap this one line for its query options; the hook, grouping and
+ * cache invalidation (`queryKeys.venture.sessions`) stay as they are.
+ */
+const recentConversationsSource = (ventureId: string) => sessionsQueryOptions(ventureId);
+
+/** Recent conversations for the sidebar (newest activity first; grouping is done by the view). */
+export function useRecentConversations(ventureId: string | null) {
+  return useQuery({
+    ...recentConversationsSource(ventureId ?? ''),
+    enabled: ventureId !== null,
+    select: (data) => data.items,
+  });
+}
+
 /** GET /sessions/:id — session plus its turns. */
 export const sessionQueryOptions = (sessionId: string) =>
   queryOptions({
@@ -57,29 +74,6 @@ export function useCreateSession(ventureId: string) {
       client.setQueryData<SessionDetail>(queryKeys.session.detail(session.id), { session, turns: [] });
       void client.invalidateQueries({ queryKey: queryKeys.venture.sessions(ventureId) });
       void client.invalidateQueries({ queryKey: queryKeys.venture.overview(ventureId) });
-      void client.invalidateQueries({ queryKey: queryKeys.ventures.list() });
-    },
-  });
-}
-
-/**
- * Same as useCreateSession, with the venture chosen per call (command palette, home quick start):
- *   startSession.mutate({ ventureId, input: { mode: 'diagnose' } })
- */
-export function useStartSession() {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: ({ ventureId, input = {} }: { ventureId: string; input?: CreateSessionInput }) =>
-      api.post(
-        path`/ventures/${ventureId}/sessions`,
-        CreateSessionResponse,
-        encodeBody(CreateSessionRequest, input),
-        { idempotencyKey: createIdempotencyKey() },
-      ),
-    onSuccess: (session) => {
-      client.setQueryData<SessionDetail>(queryKeys.session.detail(session.id), { session, turns: [] });
-      void client.invalidateQueries({ queryKey: queryKeys.venture.sessions(session.ventureId) });
-      void client.invalidateQueries({ queryKey: queryKeys.venture.overview(session.ventureId) });
       void client.invalidateQueries({ queryKey: queryKeys.ventures.list() });
     },
   });

@@ -55,8 +55,3 @@ export function LiveAnnouncer() {
     </div>
   );
 }
-
-/** Hook form for components that prefer it. */
-export function useAnnounce(): typeof announce {
-  return announce;
-}

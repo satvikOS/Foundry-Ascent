@@ -3,7 +3,7 @@ import { getRouteApi, Link } from '@tanstack/react-router';
 import { Brain, Inbox, LayoutList, MousePointerClick, Plus, Search, SearchX, Table2, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 
-import { Inspector, useInspector } from '@/components/shell/inspector';
+import { Inspector, InspectorToggle, useInspector } from '@/components/shell/inspector';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
@@ -39,8 +39,22 @@ import { MemoryDetail } from './memory-detail';
 import { ConfidenceMeter, MemoryTypeLabel, PinnedMark, VisibilityLabel } from './memory-meta';
 import { ProposedQueue } from './proposed-queue';
 import type { MemorySearch } from './search';
+import { DecisionsView } from './typed/decisions-view';
+import { ExperimentsView } from './typed/experiments-view';
+import { MilestonesView } from './typed/milestones-view';
 
-const routeApi = getRouteApi('/$tenant/app/ventures/$ventureId/memory');
+const routeApi = getRouteApi('/$tenant/app/v/$ventureId/knowledge');
+
+/** Types with their own structured view (board, timeline) inside Knowledge. */
+const TYPED_VIEWS = {
+  decision: DecisionsView,
+  experiment: ExperimentsView,
+  milestone: MilestonesView,
+} as const;
+
+function typedView(type: MemoryType | undefined) {
+  return type === 'decision' || type === 'experiment' || type === 'milestone' ? TYPED_VIEWS[type] : null;
+}
 const ALL = '__all__';
 
 type SortKey = 'title' | 'type' | 'status' | 'confidence' | 'updated';
@@ -106,30 +120,33 @@ export function MemoryExplorer() {
         className="gap-0"
       >
         <PageHeader
-          title="Memory"
-          description="What Foundry Guide knows about this venture, with where each item came from. Nothing proposed is used until someone on the team approves it."
+          title="Knowledge"
+          description="What your vEIR knows about this venture, and where each item came from. Nothing proposed is used until someone on the team approves it."
           actions={
-            editable ? (
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setCreating(true);
-                }}
-              >
-                <Plus aria-hidden />
-                Add memory
-              </Button>
-            ) : null
+            <>
+              <InspectorToggle />
+              {editable ? (
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setCreating(true);
+                  }}
+                >
+                  <Plus aria-hidden />
+                  Add memory
+                </Button>
+              ) : null}
+            </>
           }
         >
           <TabsList variant="underline">
             <TabsTrigger value="all">
               <Brain aria-hidden />
-              All memory
+              All knowledge
             </TabsTrigger>
             <TabsTrigger value="proposed">
               <Inbox aria-hidden />
-              Proposed
+              To review
               {pendingCount > 0 ? (
                 <span className="tabular rounded-sm bg-warning/15 px-1 text-[11px] text-warning">
                   {pendingCount}
@@ -338,9 +355,55 @@ function MemoryBrowser({
     setSearch({ type: undefined, status: undefined, pinned: undefined, q: undefined });
   };
 
+  const typeFilter = (
+    <div className="grid gap-1.5">
+      <Label htmlFor={ids.type} className="text-xs text-muted-foreground">
+        Type
+      </Label>
+      <Select
+        value={search.type ?? ALL}
+        onValueChange={(value) => {
+          setSearch({ type: value === ALL ? undefined : (value as MemoryType) });
+        }}
+      >
+        <SelectTrigger id={ids.type} className="w-40">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={ALL}>All types</SelectItem>
+          {MemoryType.options.map((type) => {
+            const Icon = MEMORY_TYPE_LABELS[type].icon;
+            return (
+              <SelectItem key={type} value={type}>
+                <Icon aria-hidden className="size-4 text-muted-foreground" />
+                {MEMORY_TYPE_LABELS[type].label}
+              </SelectItem>
+            );
+          })}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+
+  const TypedView = typedView(search.type);
+  if (TypedView) {
+    return (
+      <div className="grid gap-5">
+        <div role="search" aria-label="Filter knowledge" className="flex flex-wrap items-end gap-3">
+          {typeFilter}
+          <Button variant="ghost" size="sm" onClick={clearFilters}>
+            <X aria-hidden />
+            All types
+          </Button>
+        </div>
+        <TypedView embedded />
+      </div>
+    );
+  }
+
   return (
     <div className="grid gap-4">
-      <div role="search" aria-label="Filter memory" className="flex flex-wrap items-end gap-3">
+      <div role="search" aria-label="Filter knowledge" className="flex flex-wrap items-end gap-3">
         <div className="grid min-w-[14rem] flex-1 gap-1.5">
           <Label htmlFor={ids.search} className="text-xs text-muted-foreground">
             Search
@@ -363,33 +426,7 @@ function MemoryBrowser({
             />
           </div>
         </div>
-        <div className="grid gap-1.5">
-          <Label htmlFor={ids.type} className="text-xs text-muted-foreground">
-            Type
-          </Label>
-          <Select
-            value={search.type ?? ALL}
-            onValueChange={(value) => {
-              setSearch({ type: value === ALL ? undefined : (value as MemoryType) });
-            }}
-          >
-            <SelectTrigger id={ids.type} className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>All types</SelectItem>
-              {MemoryType.options.map((type) => {
-                const Icon = MEMORY_TYPE_LABELS[type].icon;
-                return (
-                  <SelectItem key={type} value={type}>
-                    <Icon aria-hidden className="size-4 text-muted-foreground" />
-                    {MEMORY_TYPE_LABELS[type].label}
-                  </SelectItem>
-                );
-              })}
-            </SelectContent>
-          </Select>
-        </div>
+        {typeFilter}
         <div className="grid gap-1.5">
           <Label htmlFor={ids.status} className="text-xs text-muted-foreground">
             Status
@@ -498,7 +535,7 @@ function MemoryBrowser({
           <EmptyState
             icon={Brain}
             title="Nothing remembered yet"
-            description="Approved decisions, evidence, experiments and facts from your sessions will collect here. You can also add memory yourself."
+            description="Approved decisions, evidence, experiments and facts from your conversations collect here. You can also add them yourself."
             action={
               canEdit ? (
                 <>
@@ -507,8 +544,8 @@ function MemoryBrowser({
                     Add memory
                   </Button>
                   <Button asChild size="sm" variant="secondary">
-                    <Link to="/$tenant/app/ventures/$ventureId/coach" params={{ tenant, ventureId }}>
-                      Start a session
+                    <Link to="/$tenant/app/v/$ventureId" params={{ tenant, ventureId }}>
+                      New chat
                     </Link>
                   </Button>
                 </>

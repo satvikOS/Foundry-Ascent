@@ -38,7 +38,7 @@ import { EscalationFlowDialog } from './escalation-flow-dialog';
 import { EscalationPacketView } from './packet-view';
 import { EscalationTimeline } from './status-timeline';
 
-const routeApi = getRouteApi('/$tenant/app/ventures/$ventureId/escalations');
+const routeApi = getRouteApi('/$tenant/app/v/$ventureId/help');
 
 const OPEN: ReadonlySet<EscalationView['status']> = new Set(OPEN_ESCALATION_STATUSES);
 const WITHDRAWABLE = OPEN;
@@ -80,8 +80,8 @@ export function EscalationsPage() {
   return (
     <PageContainer size="wide">
       <PageHeader
-        title="Escalations"
-        description="Requests for human support. Packets are drafted by Foundry Guide (AI) — nothing is shared until you review it and consent."
+        title="Human help"
+        description="Requests for a person to weigh in. Packets are drafted by AI — nothing is shared until you review it and consent."
         actions={
           canEdit ? (
             <Button
@@ -140,10 +140,10 @@ export function EscalationsPage() {
                       ? 'Nothing closed yet'
                       : 'No requests yet'
                 }
-                description="When Foundry Guide suggests a person should weigh in — or you ask for one — the request appears here."
+                description="When a conversation suggests a person should weigh in — or you ask for one — the request appears here."
               />
             ) : (
-              <ul aria-label="Escalations" className="grid gap-2">
+              <ul aria-label="Help requests" className="grid gap-2">
                 {rows.map((e) => (
                   <li key={e.id}>
                     <button
@@ -351,7 +351,7 @@ function EscalationDetail({
 
       <SectionCard
         title="Packet"
-        description="What the human reviewer receives. Drafted by Foundry Guide — check it carefully."
+        description="What the human reviewer receives. Drafted by AI — check it carefully."
       >
         {escalation.packet ? (
           <EscalationPacketView packet={escalation.packet} sharedOnly={!needsConsent} />

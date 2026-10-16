@@ -45,12 +45,15 @@ interface TypedMemoryPageProps {
   emptyDescription: string;
   /** Optional header controls (e.g. a layout switch). */
   controls?: ReactNode;
+  /** Render inside the Knowledge page (a toolbar instead of a page header). */
+  embedded?: boolean;
   children: (items: MemoryObjectView[], ctx: TypedPageContext) => ReactNode;
 }
 
 /**
  * Frame for the typed memory views (decisions, experiments, milestones): data, header with "New …",
- * history toggle, the typed create/edit dialog and every async state.
+ * history toggle, the typed create/edit dialog and every async state. Embedded in the Knowledge page
+ * when its type filter picks one of them.
  */
 export function TypedMemoryPage({
   kind,
@@ -60,6 +63,7 @@ export function TypedMemoryPage({
   emptyTitle,
   emptyDescription,
   controls,
+  embedded = false,
   children,
 }: TypedMemoryPageProps) {
   const me = useRequiredMe();
@@ -87,39 +91,45 @@ export function TypedMemoryPage({
     },
   };
 
+  const newButton = canEdit ? (
+    <Button
+      variant={embedded ? 'secondary' : 'default'}
+      size={embedded ? 'sm' : 'default'}
+      onClick={() => {
+        setDialog({ open: true, memory: null });
+      }}
+    >
+      <Plus aria-hidden />
+      New {kind}
+    </Button>
+  ) : null;
+  const toolbar = (
+    <div className="flex flex-wrap items-center gap-4">
+      {controls}
+      <div className="flex items-center gap-2">
+        <Switch id={historyId} checked={showHistory} onCheckedChange={setShowHistory} />
+        <Label htmlFor={historyId} className="font-normal">
+          Show history{hiddenCount > 0 && !showHistory ? ` (${hiddenCount})` : ''}
+        </Label>
+      </div>
+      {memory.data ? (
+        <p className="text-small text-muted-foreground" role="status" aria-live="polite">
+          {pluralize(items.length, kind)}
+        </p>
+      ) : null}
+      {embedded ? <div className="ml-auto">{newButton}</div> : null}
+    </div>
+  );
+
   return (
-    <PageContainer size="wide">
-      <PageHeader
-        title={title}
-        description={description}
-        actions={
-          canEdit ? (
-            <Button
-              onClick={() => {
-                setDialog({ open: true, memory: null });
-              }}
-            >
-              <Plus aria-hidden />
-              New {kind}
-            </Button>
-          ) : null
-        }
-      >
-        <div className="flex flex-wrap items-center gap-4">
-          {controls}
-          <div className="flex items-center gap-2">
-            <Switch id={historyId} checked={showHistory} onCheckedChange={setShowHistory} />
-            <Label htmlFor={historyId} className="font-normal">
-              Show history{hiddenCount > 0 && !showHistory ? ` (${hiddenCount})` : ''}
-            </Label>
-          </div>
-          {memory.data ? (
-            <p className="text-[13px] text-muted-foreground" role="status" aria-live="polite">
-              {pluralize(items.length, kind)}
-            </p>
-          ) : null}
-        </div>
-      </PageHeader>
+    <Frame embedded={embedded}>
+      {embedded ? (
+        toolbar
+      ) : (
+        <PageHeader title={title} description={description} actions={newButton}>
+          {toolbar}
+        </PageHeader>
+      )}
 
       {memory.isError ? (
         <ErrorState error={memory.error} onRetry={() => void memory.refetch()} />
@@ -164,8 +174,13 @@ export function TypedMemoryPage({
           setDialog((prev) => ({ ...prev, open }));
         }}
       />
-    </PageContainer>
+    </Frame>
   );
+}
+
+function Frame({ embedded, children }: { embedded: boolean; children: ReactNode }) {
+  if (embedded) return <div className="grid gap-4">{children}</div>;
+  return <PageContainer size="wide">{children}</PageContainer>;
 }
 
 /** Card chrome shared by the typed views: header row, body, and the lifecycle actions. */
@@ -215,7 +230,7 @@ export function TypedCard({
       {children}
       <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
         <Link
-          to="/$tenant/app/ventures/$ventureId/memory"
+          to="/$tenant/app/v/$ventureId/knowledge"
           params={{ tenant: ctx.tenant, ventureId: ctx.ventureId }}
           search={{ m: memory.id }}
           className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"

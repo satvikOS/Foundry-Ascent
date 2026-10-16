@@ -1,197 +1,272 @@
 import type { Me } from '@foundry/contracts';
-import { Link } from '@tanstack/react-router';
-import { DatabaseZap, PanelLeftClose, PanelLeftOpen, type LucideIcon } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { createLink } from '@tanstack/react-router';
+import { Phone, Search, SquarePen, type LucideIcon } from 'lucide-react';
+import type { ComponentProps, ReactNode } from 'react';
 
-import { Avatar } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
+import { VentureMark } from '@/components/faces/user-avatar';
+import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { SimpleTooltip } from '@/components/ui/tooltip';
-import { cn } from '@/lib/utils';
+import { ventureQueryOptions, useVentures } from '@/lib/api/hooks/ventures';
+import { canWrite } from '@/lib/auth/roles';
+import { cn, isMac } from '@/lib/utils';
+import { veirDisplay } from '@/lib/veir';
 
-import { BrandMark } from './brand';
-import { primaryNav } from './nav';
+import { AccountMenu } from './account-menu';
+import { STAFF_SECTIONS, VENTURE_DESTINATIONS, type Workspace } from './nav';
+import { RecentConversations } from './recent-conversations';
+import { WorkspaceSwitcher } from './workspace-switcher';
 
 const itemClasses = cn(
-  'group flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-[13px] font-medium text-sidebar-muted transition-colors',
+  'group flex h-8 w-full min-w-0 items-center gap-2.5 rounded-md px-2.5 text-small font-medium text-sidebar-muted transition-colors',
   'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
   'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sidebar-ring',
   'data-[status=active]:bg-sidebar-accent data-[status=active]:text-sidebar-foreground',
 );
 
-function NavLabel({ collapsed, children }: { collapsed: boolean; children: ReactNode }) {
-  return <span className={cn('truncate', collapsed && 'sr-only')}>{children}</span>;
+interface SidebarAnchorProps extends ComponentProps<'a'> {
+  icon?: LucideIcon;
+  /** Shown instead of an icon (e.g. a venture mark). */
+  leading?: ReactNode;
+  label: string;
+  collapsed?: boolean;
+  /** Count shown after the label (e.g. items to review). */
+  count?: number;
+  countLabel?: string;
+  emphasis?: boolean;
 }
 
-function NavIcon({ icon: Icon }: { icon: LucideIcon }) {
-  return <Icon aria-hidden className="size-4 shrink-0 opacity-80 group-data-[status=active]:opacity-100" />;
-}
-
-function GroupLabel({ collapsed, children }: { collapsed: boolean; children: ReactNode }) {
-  if (collapsed) return <div aria-hidden className="mx-2 my-2 h-px bg-sidebar-border" />;
+function SidebarAnchor({
+  icon: Icon,
+  leading,
+  label,
+  collapsed = false,
+  count,
+  countLabel,
+  emphasis = false,
+  className,
+  ...props
+}: SidebarAnchorProps) {
   return (
-    <div className="px-2 pt-4 pb-1.5 text-[11px] font-semibold tracking-wide text-sidebar-muted uppercase">
-      {children}
-    </div>
+    <a
+      {...props}
+      className={cn(
+        itemClasses,
+        emphasis && 'text-sidebar-foreground',
+        collapsed && 'justify-center px-0',
+        className,
+      )}
+    >
+      {Icon ? <Icon aria-hidden className="size-4 shrink-0" /> : leading}
+      <span className={cn('min-w-0 flex-1 truncate', collapsed && 'sr-only')}>{label}</span>
+      {count && count > 0 ? (
+        <span className={cn('tabular text-caption text-sidebar-muted', collapsed && 'sr-only')}>
+          {count}
+          {countLabel ? <span className="sr-only"> {countLabel}</span> : null}
+        </span>
+      ) : null}
+    </a>
   );
 }
 
-interface SidebarContentProps {
-  me: Me;
-  collapsed?: boolean;
-  onNavigate?: () => void;
+/** Router-aware sidebar row (typed `to`/`params`, `data-status="active"` from the router). */
+const SidebarLink = createLink(SidebarAnchor);
+
+function Tip({ show, label, children }: { show: boolean; label: string; children: ReactNode }) {
+  return (
+    <SimpleTooltip content={label} side="right" disabled={!show}>
+      {children}
+    </SimpleTooltip>
+  );
 }
 
-/** Rail contents, shared by the desktop rail and the mobile drawer. */
-export function SidebarContent({ me, collapsed = false, onNavigate }: SidebarContentProps) {
-  const { items, consoles } = primaryNav(me);
+function Divider({ collapsed }: { collapsed: boolean }) {
+  return <div aria-hidden className={cn('my-2 h-px bg-sidebar-border', collapsed ? 'mx-2' : 'mx-2.5')} />;
+}
+
+export interface SidebarContentProps {
+  me: Me;
+  workspace: Workspace;
+  collapsed?: boolean;
+  /** Called after any navigation (closes the mobile sheet). */
+  onNavigate?: () => void;
+  onOpenSearch: () => void;
+  onOpenShortcuts: () => void;
+  onOpenDataUse: () => void;
+  onOpenReportProblem: () => void;
+  /** Collapse / close control shown next to the switcher. */
+  headerAction?: ReactNode;
+}
+
+/** Sidebar contents, shared by the desktop sidebar (and its collapsed rail) and the mobile sheet. */
+export function SidebarContent({
+  me,
+  workspace,
+  collapsed = false,
+  onNavigate,
+  onOpenSearch,
+  onOpenShortcuts,
+  onOpenDataUse,
+  onOpenReportProblem,
+  headerAction,
+}: SidebarContentProps) {
   const tenant = me.tenant.slug;
-  const ventures = me.memberships.slice(0, 8);
+  const ventures = useVentures();
+  const ventureId = workspace.kind === 'venture' ? workspace.ventureId : null;
+  const venture = useQuery({ ...ventureQueryOptions(ventureId ?? ''), enabled: ventureId !== null });
+  const veir = veirDisplay(venture.data);
+  const writable = ventureId !== null && canWrite(me, ventureId);
+  const staff = workspace.kind === 'eir' || workspace.kind === 'program' || workspace.kind === 'admin';
+  const assigned =
+    workspace.kind === 'eir' ? (ventures.data ?? []).filter((v) => me.assignedVentureIds.includes(v.id)) : [];
+
+  const search = (
+    <Tip show={collapsed} label="Search">
+      <button
+        type="button"
+        onClick={onOpenSearch}
+        aria-keyshortcuts={isMac() ? 'Meta+K' : 'Control+K'}
+        className={cn(itemClasses, collapsed && 'justify-center px-0')}
+      >
+        <Search aria-hidden className="size-4 shrink-0" />
+        <span className={cn('min-w-0 flex-1 truncate text-left', collapsed && 'sr-only')}>Search</span>
+        {collapsed ? null : (
+          <KbdGroup
+            aria-hidden
+            className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+          >
+            <Kbd>{isMac() ? '⌘' : 'Ctrl'}</Kbd>
+            <Kbd>K</Kbd>
+          </KbdGroup>
+        )}
+      </button>
+    </Tip>
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div
-        className={cn(
-          'flex h-(--header-height) shrink-0 items-center gap-2.5 border-b border-sidebar-border',
-          collapsed ? 'justify-center px-2' : 'px-4',
-        )}
-      >
-        <Link
-          to="/$tenant/app"
-          params={{ tenant }}
-          onClick={onNavigate}
-          className="flex min-w-0 items-center gap-2.5 rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sidebar-ring"
-          aria-label={collapsed ? `Foundry Ascent home, ${me.tenant.name}` : undefined}
-        >
-          <BrandMark className="size-7" />
-          {collapsed ? null : (
-            <span className="min-w-0 leading-tight">
-              <span className="block truncate text-sm font-semibold tracking-tight">Foundry Ascent</span>
-              <span className="block truncate text-xs text-sidebar-muted">{me.tenant.name}</span>
-            </span>
-          )}
-        </Link>
+      <div className={cn('flex shrink-0 items-center gap-1 pt-2', collapsed ? 'flex-col px-2' : 'px-2')}>
+        {collapsed ? headerAction : null}
+        <WorkspaceSwitcher me={me} workspace={workspace} ventures={ventures.data ?? []} compact={collapsed} />
+        {collapsed ? null : headerAction}
       </div>
 
-      <div className={cn('min-h-0 flex-1 overflow-y-auto py-2', collapsed ? 'px-2' : 'px-3')}>
-        <ul className="grid gap-0.5" aria-label="Workspace">
-          {items.map((item) => (
-            <li key={item.id}>
-              <SimpleTooltip content={item.label} side="right" disabled={!collapsed}>
-                <Link
-                  {...item.link}
-                  onClick={onNavigate}
-                  className={cn(itemClasses, collapsed && 'justify-center px-0')}
-                >
-                  <NavIcon icon={item.icon} />
-                  <NavLabel collapsed={collapsed}>{item.label}</NavLabel>
-                </Link>
-              </SimpleTooltip>
-            </li>
+      <div className={cn('grid shrink-0 gap-px pt-2', collapsed ? 'px-2' : 'px-2')}>
+        {ventureId && writable ? (
+          <Tip show={collapsed} label="New chat">
+            <SidebarLink
+              to="/$tenant/app/v/$ventureId"
+              params={{ tenant, ventureId }}
+              activeOptions={{ exact: true }}
+              onClick={onNavigate}
+              icon={SquarePen}
+              label="New chat"
+              emphasis
+              collapsed={collapsed}
+            />
+          </Tip>
+        ) : null}
+        {ventureId && writable && veir ? (
+          <Tip show={collapsed} label={`Call ${veir.shortName}`}>
+            <SidebarLink
+              to="/$tenant/app/v/$ventureId"
+              params={{ tenant, ventureId }}
+              search={{ call: 1 }}
+              activeOptions={{ exact: true }}
+              onClick={onNavigate}
+              icon={Phone}
+              label={`Call ${veir.shortName}`}
+              emphasis
+              collapsed={collapsed}
+            />
+          </Tip>
+        ) : null}
+        {search}
+      </div>
+
+      {staff ? (
+        <div className="grid shrink-0 gap-px px-2 pt-2">
+          <Divider collapsed={collapsed} />
+          {STAFF_SECTIONS[workspace.kind].map((section) => (
+            <Tip key={section.id} show={collapsed} label={section.label}>
+              <SidebarLink
+                to={section.to}
+                params={{ tenant }}
+                onClick={onNavigate}
+                icon={section.icon}
+                label={section.label}
+                collapsed={collapsed}
+              />
+            </Tip>
           ))}
-        </ul>
+        </div>
+      ) : null}
 
-        {ventures.length > 0 ? (
-          <>
-            <GroupLabel collapsed={collapsed}>Your ventures</GroupLabel>
-            <ul className="grid gap-0.5" aria-label="Your ventures">
-              {ventures.map((membership) => (
-                <li key={membership.ventureId}>
-                  <SimpleTooltip content={membership.ventureName} side="right" disabled={!collapsed}>
-                    <Link
-                      to="/$tenant/app/ventures/$ventureId"
-                      params={{ tenant, ventureId: membership.ventureId }}
-                      onClick={onNavigate}
-                      className={cn(itemClasses, collapsed && 'justify-center px-0')}
-                    >
-                      <Avatar name={membership.ventureName} size="xs" shape="square" decorative />
-                      <NavLabel collapsed={collapsed}>{membership.ventureName}</NavLabel>
-                    </Link>
-                  </SimpleTooltip>
-                </li>
-              ))}
-            </ul>
-          </>
+      <div className={cn('min-h-0 flex-1 overflow-y-auto pb-2', collapsed ? 'px-2' : 'px-2')}>
+        {ventureId && !collapsed ? (
+          <RecentConversations tenant={tenant} ventureId={ventureId} onNavigate={onNavigate} />
         ) : null}
-
-        {consoles.length > 0 ? (
-          <>
-            <GroupLabel collapsed={collapsed}>Consoles</GroupLabel>
-            <ul className="grid gap-0.5" aria-label="Consoles">
-              {consoles.map((item) => (
+        {assigned.length > 0 && !collapsed ? (
+          <div role="group" aria-labelledby="sidebar-assigned" className="pt-2">
+            <h2
+              id="sidebar-assigned"
+              className="px-2.5 pt-4 pb-1 text-caption font-medium text-sidebar-muted"
+            >
+              Assigned ventures
+            </h2>
+            <ul className="grid gap-px">
+              {assigned.map((item) => (
                 <li key={item.id}>
-                  <SimpleTooltip content={item.label} side="right" disabled={!collapsed}>
-                    <Link
-                      {...item.link}
-                      onClick={onNavigate}
-                      className={cn(itemClasses, collapsed && 'justify-center px-0')}
-                    >
-                      <NavIcon icon={item.icon} />
-                      <NavLabel collapsed={collapsed}>{item.label}</NavLabel>
-                    </Link>
-                  </SimpleTooltip>
+                  <SidebarLink
+                    to="/$tenant/app/v/$ventureId"
+                    params={{ tenant, ventureId: item.id }}
+                    onClick={onNavigate}
+                    leading={<VentureMark name={item.name} size="xs" />}
+                    label={item.name}
+                  />
                 </li>
               ))}
             </ul>
-          </>
+          </div>
         ) : null}
       </div>
 
-      <div className={cn('shrink-0 border-t border-sidebar-border py-3', collapsed ? 'px-2' : 'px-4')}>
-        <SimpleTooltip content="All data in this environment is synthetic" side="right" disabled={!collapsed}>
-          <p
-            className={cn(
-              'flex items-center gap-2 text-xs text-sidebar-muted',
-              collapsed && 'justify-center',
-            )}
-          >
-            <DatabaseZap aria-hidden className="size-3.5 shrink-0" />
-            <span className={cn(collapsed && 'sr-only')}>Synthetic data only</span>
-          </p>
-        </SimpleTooltip>
+      {ventureId ? (
+        <div className="grid shrink-0 gap-px border-t border-sidebar-border px-2 py-2">
+          {VENTURE_DESTINATIONS.map((destination) => {
+            const count =
+              destination.id === 'knowledge'
+                ? venture.data?.pendingMemory
+                : destination.id === 'help'
+                  ? venture.data?.openEscalations
+                  : undefined;
+            return (
+              <Tip key={destination.id} show={collapsed} label={destination.label}>
+                <SidebarLink
+                  to={destination.to}
+                  params={{ tenant, ventureId }}
+                  onClick={onNavigate}
+                  icon={destination.icon}
+                  label={destination.label}
+                  count={count}
+                  countLabel={destination.id === 'knowledge' ? 'to review' : 'open'}
+                  collapsed={collapsed}
+                />
+              </Tip>
+            );
+          })}
+        </div>
+      ) : null}
+
+      <div className={cn('shrink-0 border-t border-sidebar-border p-2', collapsed && 'flex justify-center')}>
+        <AccountMenu
+          me={me}
+          compact={collapsed}
+          onOpenShortcuts={onOpenShortcuts}
+          onOpenDataUse={onOpenDataUse}
+          onOpenReportProblem={onOpenReportProblem}
+        />
       </div>
     </div>
-  );
-}
-
-interface SidebarProps {
-  me: Me;
-  collapsed: boolean;
-  onToggle: () => void;
-}
-
-/** Desktop left rail (≥ 768 px); collapses to an icon rail. */
-export function Sidebar({ me, collapsed, onToggle }: SidebarProps) {
-  return (
-    <aside
-      aria-label="Primary"
-      data-collapsed={collapsed}
-      className={cn(
-        'fixed inset-y-0 left-0 z-30 hidden flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex',
-        'transition-[width] duration-200 ease-out motion-reduce:transition-none',
-        collapsed ? 'w-(--sidebar-width-collapsed)' : 'w-(--sidebar-width)',
-      )}
-    >
-      <nav aria-label="Main" className="flex min-h-0 flex-1 flex-col">
-        <SidebarContent me={me} collapsed={collapsed} />
-      </nav>
-      <div
-        className={cn(
-          'shrink-0 border-t border-sidebar-border p-2',
-          collapsed ? 'flex justify-center' : 'flex justify-end',
-        )}
-      >
-        <SimpleTooltip content={collapsed ? 'Expand sidebar ( [ )' : 'Collapse sidebar ( [ )'} side="right">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={onToggle}
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            aria-expanded={!collapsed}
-          >
-            {collapsed ? <PanelLeftOpen aria-hidden /> : <PanelLeftClose aria-hidden />}
-          </Button>
-        </SimpleTooltip>
-      </div>
-    </aside>
   );
 }

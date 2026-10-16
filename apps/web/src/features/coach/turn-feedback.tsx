@@ -40,7 +40,7 @@ export function TurnFeedback({ turnId }: { turnId: string }) {
     return (
       <p className="flex items-center gap-1.5 text-[13px] text-muted-foreground" role="status">
         <Check aria-hidden className="size-4 text-success" />
-        Thanks — your feedback helps reviewers calibrate Foundry Guide.
+        Thanks — reviewers use your feedback to improve answers.
       </p>
     );
   }

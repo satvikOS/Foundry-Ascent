@@ -1,12 +1,12 @@
 import { expect, test } from '@playwright/test';
 
 import {
+  composer,
   expectNoHorizontalScroll,
   expectReachable,
   FOUNDER_STATE,
   openVenture,
   runToken,
-  startSession,
 } from './support/fixtures';
 
 /** Phone-width smoke (390 × 844): nothing scrolls sideways and the primary controls are reachable. */
@@ -32,26 +32,40 @@ test.describe('mobile 390×844', () => {
   test.describe('founder', () => {
     test.use({ storageState: FOUNDER_STATE });
 
-    test('session page', async ({ page }) => {
+    test('navigation sheet', async ({ page }) => {
       await openVenture(page);
       await expectNoHorizontalScroll(page);
-      const token = runToken();
-      await startSession(page, `Phone check ${token}`);
+      await expectReachable(page, page.getByRole('link', { name: 'New chat' }));
+      await page.getByRole('button', { name: 'Open navigation' }).click();
+      const sheet = page.getByRole('dialog', { name: 'Navigation' });
+      for (const name of ['Knowledge', 'Documents', 'Human help', 'Team']) {
+        await expectReachable(page, sheet.getByRole('link', { name: new RegExp(`^${name}`) }));
+      }
+      await expectReachable(page, sheet.getByRole('button', { name: /^Account menu for / }));
+      await sheet.getByRole('link', { name: /^Knowledge/ }).click();
+      await expect(sheet).toBeHidden();
+      await expect(page.getByRole('heading', { level: 1, name: 'Knowledge' })).toBeVisible();
       await expectNoHorizontalScroll(page);
+    });
 
-      const composer = page.getByRole('textbox', { name: 'Message Foundry Guide' });
-      await expectReachable(page, composer);
+    test('new chat and conversation', async ({ page }) => {
+      await openVenture(page);
+      const token = runToken();
+      const box = composer(page);
+      await expectReachable(page, box);
       await expectReachable(page, page.getByRole('combobox', { name: 'Mode for the next message' }));
-      await expectReachable(page, page.getByRole('button', { name: 'End session' }));
 
-      await composer.fill(`What is our riskiest assumption? ${token}`);
+      await box.fill(`What is our riskiest assumption? ${token}`);
       await expectReachable(page, page.getByRole('button', { name: 'Send message' }));
       await page.getByRole('button', { name: 'Send message' }).click();
+      await page.waitForURL(/\/c\/[0-9a-f-]{36}/);
       const answer = page.getByRole('article', { name: 'Exchange 1' });
       await expect(answer.getByRole('list', { name: 'Claims and their sources' })).toBeVisible({
         timeout: 30_000,
       });
       await expectNoHorizontalScroll(page);
+      await expectReachable(page, composer(page));
+      await expectReachable(page, page.getByRole('button', { name: 'End session' }));
       await expectReachable(page, answer.getByRole('button', { name: /^Evidence E1: / }).first());
     });
   });

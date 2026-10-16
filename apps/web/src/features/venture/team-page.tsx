@@ -1,15 +1,14 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { MembershipRole } from '@foundry/contracts';
 import { getRouteApi } from '@tanstack/react-router';
-import { FlaskConical, KeyRound, ShieldAlert, UserPlus, Users } from 'lucide-react';
+import { KeyRound, ShieldAlert, UserPlus, Users } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 
 import { announce } from '@/components/a11y/live-announcer';
+import { UserAvatar } from '@/components/faces/user-avatar';
 import { Alert } from '@/components/ui/alert';
-import { Avatar } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CopyButton } from '@/components/ui/copy-button';
 import {
@@ -37,7 +36,7 @@ import { cn } from '@/lib/utils';
 
 import { applyFieldErrors } from './form-errors';
 
-const routeApi = getRouteApi('/$tenant/app/ventures/$ventureId/team');
+const routeApi = getRouteApi('/$tenant/app/v/$ventureId/team');
 
 type Role = z.infer<typeof MembershipRole>;
 
@@ -370,18 +369,12 @@ export function TeamPage() {
               <TableRow key={member.principal.id}>
                 <TableCell>
                   <div className="flex items-center gap-3">
-                    <Avatar name={member.principal.displayName} decorative />
+                    <UserAvatar name={member.principal.displayName} decorative />
                     <div className="min-w-0">
                       <p className="flex items-center gap-2 font-medium">
                         {member.principal.displayName}
                         {member.principal.id === me.principal.id ? (
                           <span className="text-xs font-normal text-muted-foreground">(you)</span>
-                        ) : null}
-                        {member.principal.synthetic ? (
-                          <Badge variant="outline" className="gap-1 border-dashed">
-                            <FlaskConical aria-hidden />
-                            Synthetic
-                          </Badge>
                         ) : null}
                       </p>
                       {member.principal.title ? (

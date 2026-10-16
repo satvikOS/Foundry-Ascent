@@ -25,7 +25,10 @@ function sonnerWithoutInjectedStyles(): Plugin {
 }
 
 // The SPA is served by CloudFront from S3 with a strict CSP (default-src 'self'), so the build must not
-// emit inline scripts or data: URIs. The API is reached same-origin under /api (proxied in dev).
+// emit inline scripts or data: URIs. The API is reached same-origin under /api (proxied in dev and by
+// `vite preview`; API_PROXY_TARGET points it at another local API, e.g. the e2e server).
+const apiProxyTarget = process.env.API_PROXY_TARGET ?? 'http://localhost:8787';
+
 export default defineConfig({
   plugins: [
     // The router plugin must run before the React plugin so generated route chunks get Fast Refresh.
@@ -34,6 +37,12 @@ export default defineConfig({
       routesDirectory: 'src/routes',
       generatedRouteTree: 'src/routeTree.gen.ts',
       autoCodeSplitting: true,
+      codeSplittingOptions: {
+        // The first screens people see ship in the main bundle, so first paint never waits for a route
+        // chunk: the landing page, sign-in, and the app shell every signed-in page renders inside.
+        splitBehavior: ({ routeId }) =>
+          routeId === '/' || routeId === '/sign-in' || routeId === '/$tenant/app' ? [] : undefined,
+      },
       quoteStyle: 'single',
       semicolons: true,
     }),
@@ -46,7 +55,7 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      '/api': { target: 'http://localhost:8787', changeOrigin: false },
+      '/api': { target: apiProxyTarget, changeOrigin: false },
     },
   },
   preview: { port: 4173, strictPort: true },

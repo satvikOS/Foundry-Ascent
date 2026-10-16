@@ -1,8 +1,20 @@
-import type { Me, VentureSummary } from '@foundry/contracts';
-import { useNavigate, useParams } from '@tanstack/react-router';
-import { Keyboard, LogOut, Monitor, Moon, Play, Rocket, Sun } from 'lucide-react';
+import type { Me } from '@foundry/contracts';
+import { useNavigate } from '@tanstack/react-router';
+import {
+  EyeOff,
+  Keyboard,
+  LogOut,
+  MessageSquare,
+  Monitor,
+  Moon,
+  Phone,
+  Settings2,
+  SquarePen,
+  Sun,
+} from 'lucide-react';
 import { useMemo, useState } from 'react';
 
+import { VentureMark } from '@/components/faces/user-avatar';
 import {
   CommandDialog,
   CommandEmpty,
@@ -14,27 +26,20 @@ import {
   CommandShortcut,
 } from '@/components/ui/command';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
-import { StageChip } from '@/components/ui/stage-chip';
-import { toast } from '@/components/ui/toast';
-import { useStartSession } from '@/lib/api/hooks/sessions';
+import { useRecentConversations } from '@/lib/api/hooks/sessions';
 import { useVentures } from '@/lib/api/hooks/ventures';
-import { errorMessage } from '@/lib/api/errors';
 import { canWrite } from '@/lib/auth/roles';
+import { conversationTitle, lastActivity } from '@/lib/conversations';
 import { formatHotkey } from '@/lib/hooks/use-hotkeys';
+import { STAGE_LABELS } from '@/lib/labels';
 import { useTheme } from '@/lib/theme';
 
-import {
-  ADMIN_SECTIONS,
-  EIR_SECTIONS,
-  PROGRAM_SECTIONS,
-  VENTURE_SECTION_ROUTES,
-  VENTURE_SECTIONS,
-  primaryNav,
-} from './nav';
-import { useSignOutAndRedirect } from './user-menu';
+import { useSignOutAndRedirect } from './account-menu';
+import { STAFF_SECTIONS, staffWorkspaces, VENTURE_DESTINATIONS, type Workspace } from './nav';
 
 interface CommandPaletteProps {
   me: Me;
+  workspace: Workspace;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onOpenShortcuts: () => void;
@@ -52,59 +57,36 @@ function Hotkey({ binding }: { binding: string }) {
   );
 }
 
+/** How many recent conversations show before anything is typed. */
+const RECENT_LIMIT = 6;
+
 /**
- * ⌘K palette: jump to any page, venture or venture section; start a coaching session; switch theme;
- * sign out. Venture sections appear once you type, to keep the default list short.
+ * ⌘K: search conversations and jump anywhere — this venture's pages, other ventures, staff
+ * workspaces — or change the theme and sign out. Starting a conversation always goes through New chat.
  */
-export function CommandPalette({ me, open, onOpenChange, onOpenShortcuts }: CommandPaletteProps) {
+export function CommandPalette({ me, workspace, open, onOpenChange, onOpenShortcuts }: CommandPaletteProps) {
   const navigate = useNavigate();
   const tenant = me.tenant.slug;
   const [search, setSearch] = useState('');
+  const ventureId = workspace.kind === 'venture' ? workspace.ventureId : null;
   const { data: ventures = [] } = useVentures();
-  const params = useParams({ strict: false });
-  const currentVentureId =
-    'ventureId' in params && typeof params.ventureId === 'string' ? params.ventureId : null;
-  const startSession = useStartSession();
+  const recents = useRecentConversations(open ? ventureId : null);
   const { setTheme } = useTheme();
   const { signOut } = useSignOutAndRedirect();
-  const { items, consoles } = primaryNav(me);
-  const consoleIds = new Set(consoles.map((c) => c.id));
+  const searching = search.trim().length > 0;
 
-  const orderedVentures = useMemo(() => {
-    if (!currentVentureId) return ventures;
-    return [...ventures].sort(
-      (a, b) => Number(b.id === currentVentureId) - Number(a.id === currentVentureId),
-    );
-  }, [ventures, currentVentureId]);
-  const writable = orderedVentures.filter((v) => canWrite(me, v.id));
+  const conversations = useMemo(() => {
+    const sorted = [...(recents.data ?? [])].sort((a, b) => lastActivity(b) - lastActivity(a));
+    return searching ? sorted : sorted.slice(0, RECENT_LIMIT);
+  }, [recents.data, searching]);
+  const otherVentures = ventures.filter((v) => v.id !== ventureId);
+  const writable = ventureId !== null && canWrite(me, ventureId);
 
   const run = (action: () => void) => {
     onOpenChange(false);
     setSearch('');
     action();
   };
-
-  const start = (venture: VentureSummary) => {
-    run(() => {
-      const id = toast.loading(`Starting a session for ${venture.name}…`);
-      startSession.mutate(
-        { ventureId: venture.id, input: { mode: 'diagnose' } },
-        {
-          onSuccess: (session) => {
-            toast.success('Session started', { id });
-            void navigate({
-              to: '/$tenant/app/ventures/$ventureId/coach/$sessionId',
-              params: { tenant, ventureId: venture.id, sessionId: session.id },
-            });
-          },
-          onError: (error) =>
-            toast.error('Couldn’t start a session', { id, description: errorMessage(error) }),
-        },
-      );
-    });
-  };
-
-  const searching = search.trim().length > 0;
 
   return (
     <CommandDialog
@@ -117,75 +99,101 @@ export function CommandPalette({ me, open, onOpenChange, onOpenShortcuts }: Comm
       <CommandInput
         value={search}
         onValueChange={setSearch}
-        placeholder="Search ventures, pages and actions…"
-        aria-label="Search ventures, pages and actions"
+        placeholder="Search conversations, pages and ventures…"
+        aria-label="Search conversations, pages and ventures"
       />
       <CommandList>
-        <CommandEmpty>No results. Try a venture name or “memory”.</CommandEmpty>
+        <CommandEmpty>Nothing matches. Try a conversation title or a page name.</CommandEmpty>
 
-        <CommandGroup heading="Go to">
-          {items.map((item) => (
-            <CommandItem
-              key={item.id}
-              value={`go ${item.label}`}
-              onSelect={() => {
-                run(() => void navigate(item.link));
-              }}
-            >
-              <item.icon aria-hidden />
-              {item.label}
-              <Hotkey binding={item.shortcut} />
-            </CommandItem>
-          ))}
-          {consoleIds.has('eir')
-            ? EIR_SECTIONS.map((section) => (
-                <CommandItem
-                  key={`eir-${section.id}`}
-                  value={`EIR studio ${section.label}`}
-                  onSelect={() => {
-                    run(() => void navigate({ to: section.to, params: { tenant } }));
-                  }}
-                >
-                  <section.icon aria-hidden />
-                  EIR studio · {section.label}
-                </CommandItem>
-              ))
-            : null}
-          {consoleIds.has('program')
-            ? PROGRAM_SECTIONS.map((section) => (
-                <CommandItem
-                  key={`program-${section.id}`}
-                  value={`Program ${section.label}`}
-                  onSelect={() => {
-                    run(() => void navigate({ to: section.to, params: { tenant } }));
-                  }}
-                >
-                  <section.icon aria-hidden />
-                  Program · {section.label}
-                </CommandItem>
-              ))
-            : null}
-          {consoleIds.has('admin')
-            ? ADMIN_SECTIONS.map((section) => (
-                <CommandItem
-                  key={`admin-${section.id}`}
-                  value={`Admin ${section.label}`}
-                  onSelect={() => {
-                    run(() => void navigate({ to: section.to }));
-                  }}
-                >
-                  <section.icon aria-hidden />
-                  Admin · {section.label}
-                </CommandItem>
-              ))
-            : null}
-        </CommandGroup>
+        {ventureId ? (
+          <CommandGroup heading="This venture">
+            {writable ? (
+              <CommandItem
+                value="new chat start conversation"
+                onSelect={() => {
+                  run(
+                    () => void navigate({ to: '/$tenant/app/v/$ventureId', params: { tenant, ventureId } }),
+                  );
+                }}
+              >
+                <SquarePen aria-hidden />
+                New chat
+                <Hotkey binding="g n" />
+              </CommandItem>
+            ) : null}
+            {VENTURE_DESTINATIONS.map((destination) => (
+              <CommandItem
+                key={destination.id}
+                value={`go ${destination.label}`}
+                onSelect={() => {
+                  run(() => void navigate({ to: destination.to, params: { tenant, ventureId } }));
+                }}
+              >
+                <destination.icon aria-hidden />
+                {destination.label}
+                <Hotkey binding={destination.shortcut} />
+              </CommandItem>
+            ))}
+            {writable ? (
+              <CommandItem
+                value="venture settings name stage goal"
+                onSelect={() => {
+                  run(
+                    () =>
+                      void navigate({
+                        to: '/$tenant/app/v/$ventureId/settings',
+                        params: { tenant, ventureId },
+                      }),
+                  );
+                }}
+              >
+                <Settings2 aria-hidden />
+                Venture settings
+              </CommandItem>
+            ) : null}
+          </CommandGroup>
+        ) : null}
 
-        {orderedVentures.length > 0 ? (
+        {ventureId && conversations.length > 0 ? (
           <>
             <CommandSeparator />
-            <CommandGroup heading="Ventures">
-              {orderedVentures.map((venture) => (
+            <CommandGroup heading={searching ? 'Conversations' : 'Recent conversations'}>
+              {conversations.map((session) => {
+                const title = conversationTitle(session);
+                return (
+                  <CommandItem
+                    key={session.id}
+                    value={`conversation ${title} ${session.id}`}
+                    onSelect={() => {
+                      run(
+                        () =>
+                          void navigate({
+                            to: '/$tenant/app/v/$ventureId/c/$sessionId',
+                            params: { tenant, ventureId, sessionId: session.id },
+                          }),
+                      );
+                    }}
+                  >
+                    {session.hasCalls ? (
+                      <Phone aria-hidden />
+                    ) : session.privacy === 'ephemeral' ? (
+                      <EyeOff aria-hidden />
+                    ) : (
+                      <MessageSquare aria-hidden />
+                    )}
+                    <span className="truncate">{title}</span>
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </>
+        ) : null}
+
+        {otherVentures.length > 0 ? (
+          <>
+            <CommandSeparator />
+            <CommandGroup heading={ventureId ? 'Other ventures' : 'Ventures'}>
+              {otherVentures.map((venture) => (
                 <CommandItem
                   key={venture.id}
                   value={`venture ${venture.name} ${venture.oneLiner}`}
@@ -193,82 +201,52 @@ export function CommandPalette({ me, open, onOpenChange, onOpenShortcuts }: Comm
                     run(
                       () =>
                         void navigate({
-                          to: '/$tenant/app/ventures/$ventureId/overview',
+                          to: '/$tenant/app/v/$ventureId',
                           params: { tenant, ventureId: venture.id },
                         }),
                     );
                   }}
                 >
-                  <Rocket aria-hidden />
+                  <VentureMark name={venture.name} size="xs" />
                   <span className="truncate">{venture.name}</span>
-                  {venture.id === currentVentureId ? (
-                    <span className="text-xs text-muted-foreground">Current</span>
-                  ) : null}
-                  <span className="ml-auto">
-                    <StageChip stage={venture.stage} showMeter={false} />
+                  <span className="ml-auto text-caption text-muted-foreground">
+                    {STAGE_LABELS[venture.stage]}
                   </span>
                 </CommandItem>
               ))}
-              {searching
-                ? orderedVentures.flatMap((venture) =>
-                    VENTURE_SECTIONS.filter((s) => s.id !== 'overview').map((section) => (
-                      <CommandItem
-                        key={`${venture.id}-${section.id}`}
-                        value={`${venture.name} ${section.label}`}
-                        onSelect={() => {
-                          run(
-                            () =>
-                              void navigate({
-                                to: VENTURE_SECTION_ROUTES[section.id],
-                                params: { tenant, ventureId: venture.id },
-                              }),
-                          );
-                        }}
-                      >
-                        <section.icon aria-hidden />
-                        <span className="truncate">
-                          {venture.name} <span className="text-muted-foreground">›</span> {section.label}
-                        </span>
-                      </CommandItem>
-                    )),
-                  )
-                : null}
             </CommandGroup>
           </>
         ) : null}
 
-        {writable.length > 0 && me.aiEnabled ? (
-          <>
-            <CommandSeparator />
-            <CommandGroup heading="Actions">
-              {writable.map((venture) => (
-                <CommandItem
-                  key={`start-${venture.id}`}
-                  value={`start session coach ${venture.name}`}
-                  onSelect={() => {
-                    start(venture);
-                  }}
-                >
-                  <Play aria-hidden />
-                  <span className="truncate">Start a session · {venture.name}</span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </>
-        ) : null}
+        {staffWorkspaces(me).map((item) => (
+          <CommandGroup key={item.id} heading={item.label}>
+            {STAFF_SECTIONS[item.id].map((section) => (
+              <CommandItem
+                key={`${item.id}-${section.id}`}
+                value={`${item.label} ${section.label}`}
+                onSelect={() => {
+                  run(() => void navigate({ to: section.to, params: { tenant } }));
+                }}
+              >
+                <section.icon aria-hidden />
+                {section.label}
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        ))}
 
         <CommandSeparator />
         <CommandGroup heading="Preferences">
           <CommandItem
-            value="theme dark"
+            value="theme system"
             onSelect={() => {
               run(() => {
-                setTheme('dark');
+                setTheme('system');
               });
             }}
           >
-            <Moon aria-hidden />
-            Use dark theme
+            <Monitor aria-hidden />
+            Use system theme
           </CommandItem>
           <CommandItem
             value="theme light"
@@ -282,15 +260,15 @@ export function CommandPalette({ me, open, onOpenChange, onOpenShortcuts }: Comm
             Use light theme
           </CommandItem>
           <CommandItem
-            value="theme system"
+            value="theme dark"
             onSelect={() => {
               run(() => {
-                setTheme('system');
+                setTheme('dark');
               });
             }}
           >
-            <Monitor aria-hidden />
-            Use system theme
+            <Moon aria-hidden />
+            Use dark theme
           </CommandItem>
           <CommandItem
             value="keyboard shortcuts help"

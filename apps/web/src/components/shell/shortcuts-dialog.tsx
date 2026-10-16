@@ -2,23 +2,28 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Kbd } from '@/components/ui/kbd';
 import { formatHotkey } from '@/lib/hooks/use-hotkeys';
 
-import { VENTURE_SECTIONS } from './nav';
+import { VENTURE_DESTINATIONS } from './nav';
 
 export const GLOBAL_SHORTCUTS: { binding: string; label: string }[] = [
-  { binding: 'mod+k', label: 'Open the command palette' },
+  { binding: 'mod+k', label: 'Search and jump anywhere' },
   { binding: '?', label: 'Show keyboard shortcuts' },
   { binding: '[', label: 'Collapse or expand the sidebar' },
-  { binding: 'g h', label: 'Go to Home' },
-  { binding: 'g v', label: 'Go to Ventures' },
   { binding: 'g e', label: 'Go to EIR studio' },
   { binding: 'g p', label: 'Go to Program' },
   { binding: 'g a', label: 'Go to Admin' },
 ];
 
-export const VENTURE_SHORTCUTS = VENTURE_SECTIONS.filter((s) => s.shortcut).map((s) => ({
-  binding: s.shortcut ?? '',
-  label: `Go to ${s.label}`,
-}));
+export const VENTURE_SHORTCUTS: { binding: string; label: string }[] = [
+  { binding: 'g n', label: 'New chat' },
+  ...VENTURE_DESTINATIONS.map((d) => ({ binding: d.shortcut, label: `Go to ${d.label}` })),
+];
+
+export const CONVERSATION_SHORTCUTS: { binding: string; label: string }[] = [
+  { binding: '/', label: 'Focus the message box' },
+  { binding: 'Enter', label: 'Send the message' },
+  { binding: 'shift+Enter', label: 'New line in the message' },
+  { binding: 'Esc', label: 'Stop an answer that is being written' },
+];
 
 function Binding({ binding }: { binding: string }) {
   const chords = formatHotkey(binding);
@@ -26,7 +31,7 @@ function Binding({ binding }: { binding: string }) {
     <span className="flex items-center gap-1">
       {chords.map((chord, i) => (
         <span key={i} className="flex items-center gap-1">
-          {i > 0 ? <span className="text-xs text-muted-foreground">then</span> : null}
+          {i > 0 ? <span className="text-caption text-muted-foreground">then</span> : null}
           {chord.map((key) => (
             <Kbd key={key}>{key}</Kbd>
           ))}
@@ -45,7 +50,7 @@ function ShortcutList({
 }) {
   return (
     <section>
-      <h3 className="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">{title}</h3>
+      <h3 className="label-mono mb-2">{title}</h3>
       <dl className="divide-y divide-border rounded-lg border border-border">
         {shortcuts.map((s) => (
           <div key={s.binding} className="flex items-center justify-between gap-4 px-3 py-2 text-sm">
@@ -69,16 +74,15 @@ export function ShortcutsDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-h-[85dvh] max-w-lg overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Keyboard shortcuts</DialogTitle>
-          <DialogDescription>
-            Single-key shortcuts are paused while you type in a field. Everything is also reachable with Tab.
-          </DialogDescription>
+          <DialogDescription>Single-key shortcuts pause while you type in a field.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-5">
           <ShortcutList title="Everywhere" shortcuts={GLOBAL_SHORTCUTS} />
-          <ShortcutList title="Inside a venture" shortcuts={VENTURE_SHORTCUTS} />
+          <ShortcutList title="In a venture" shortcuts={VENTURE_SHORTCUTS} />
+          <ShortcutList title="In a conversation" shortcuts={CONVERSATION_SHORTCUTS} />
         </div>
       </DialogContent>
     </Dialog>

@@ -1,9 +1,9 @@
 import { createFileRoute, Link, redirect, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Brain, KeyRound, LifeBuoy, ScrollText } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 
 import { SignInForm } from '@/components/auth/sign-in-form';
-import { DisclosureBanner } from '@/components/disclosure-banner';
-import { BrandMark, BrandWordmark } from '@/components/shell/brand';
+import { DisclosureBanner, PUBLIC_DISCLOSURE } from '@/components/disclosure-banner';
+import { BrandWordmark } from '@/components/shell/brand';
 import { ThemeToggle } from '@/components/shell/theme-toggle';
 import { Button } from '@/components/ui/button';
 import { meQueryOptions } from '@/lib/api/hooks/auth';
@@ -50,28 +50,17 @@ function SignInPage() {
           >
             <BrandWordmark />
           </Link>
-          <div className="max-w-md space-y-8">
-            <p className="text-3xl leading-tight font-semibold tracking-tight text-balance">
-              Your venture’s memory, evidence and next steps — in one place.
+          <div className="max-w-md">
+            <p className="label-mono">Foundry Ascent</p>
+            <p className="mt-6 font-serif text-title font-normal text-balance">
+              Pick up where you <em className="italic">left off</em>.
             </p>
-            <ul className="space-y-4 text-sm text-muted-foreground">
-              <li className="flex gap-3">
-                <Brain aria-hidden className="mt-0.5 size-4 shrink-0 text-foreground" />
-                <span>Memory you approve, correct and can trace back to its source.</span>
-              </li>
-              <li className="flex gap-3">
-                <ScrollText aria-hidden className="mt-0.5 size-4 shrink-0 text-foreground" />
-                <span>
-                  Every substantive answer cites evidence and labels facts, inferences and hypotheses.
-                </span>
-              </li>
-              <li className="flex gap-3">
-                <LifeBuoy aria-hidden className="mt-0.5 size-4 shrink-0 text-foreground" />
-                <span>Clear escalation to people — shared only with your consent.</span>
-              </li>
-            </ul>
+            <p className="mt-6 text-body text-muted-foreground">
+              Your vEIR remembers what you decided, what you tested and what you promised to do — with memory
+              you approve and a person one step away.
+            </p>
           </div>
-          <DisclosureBanner variant="inline" className="max-w-md bg-background/60" />
+          <DisclosureBanner variant="inline" className="max-w-md bg-background/60" text={PUBLIC_DISCLOSURE} />
         </div>
       </aside>
 
@@ -90,20 +79,12 @@ function SignInPage() {
           tabIndex={-1}
           className="flex flex-1 items-center justify-center px-4 pb-16 outline-none sm:px-6"
         >
-          <div className="w-full max-w-[26rem] motion-safe:animate-rise">
+          <div className="w-full max-w-[26rem]">
             <div className="mb-8 space-y-3">
-              <BrandMark className="size-10 lg:hidden" />
-              <div className="flex size-10 items-center justify-center rounded-xl border border-border bg-card shadow-sm max-lg:hidden">
-                <KeyRound aria-hidden className="size-5" />
-              </div>
-              <h1
-                data-page-title
-                tabIndex={-1}
-                className="text-2xl font-semibold tracking-tight outline-none"
-              >
+              <h1 data-page-title tabIndex={-1} className="font-serif text-heading font-normal outline-none">
                 Sign in to Foundry Ascent
               </h1>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-small text-muted-foreground">
                 Use the access code from your program lead. It looks like{' '}
                 <span className="font-mono whitespace-nowrap text-foreground">
                   FA-XXXXX-XXXXX-XXXXX-XXXXX
@@ -116,12 +97,11 @@ function SignInPage() {
                 void navigate({ href: search.redirect ?? homePath(me), replace: true });
               }}
             />
-            <div className="mt-8 space-y-3 border-t border-border pt-6 text-[13px] text-muted-foreground">
+            <div className="mt-8 space-y-3 border-t border-border pt-6 text-small text-muted-foreground">
               <p>
-                Lost your code? Ask your program lead to issue a new one. Codes are shown once, can be revoked
-                at any time, and are never stored in your browser.
+                Lost your code? Ask your program lead for a new one. Codes are shown once and can be revoked.
               </p>
-              <DisclosureBanner variant="inline" className="lg:hidden" />
+              <DisclosureBanner variant="inline" className="lg:hidden" text={PUBLIC_DISCLOSURE} />
             </div>
           </div>
         </main>

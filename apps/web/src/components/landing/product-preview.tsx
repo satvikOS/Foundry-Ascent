@@ -1,152 +1,80 @@
-import { Bot, Check, FileText, Pencil, Send } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { ArrowUp } from 'lucide-react';
 
-import { StatusBadge } from '@/components/ui/status-badge';
+import { PersonaAvatar } from '@/components/faces/persona-avatar';
 import { cn } from '@/lib/utils';
 
 function EvidenceKey({ k }: { k: string }) {
   return (
-    <span className="mx-0.5 inline-flex h-[18px] items-center rounded-[4px] border border-border-strong bg-muted px-1 align-[1px] font-mono text-[10px] font-semibold text-foreground">
+    <span className="mx-0.5 inline-flex h-[1.125rem] items-center rounded-[0.25rem] border border-border-strong bg-muted px-1 align-[0.1em] font-mono text-[0.625rem] font-medium text-foreground not-italic">
       {k}
     </span>
   );
 }
 
-function FakeButton({ children, primary = false }: { children: ReactNode; primary?: boolean }) {
-  return (
-    <span
-      className={cn(
-        'inline-flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-medium',
-        primary ? 'bg-primary text-primary-foreground' : 'border border-border bg-secondary text-foreground',
-      )}
-    >
-      {children}
-    </span>
-  );
-}
-
 /**
- * CSS-only product illustration for the landing hero: a coaching answer with labelled, cited claims,
- * a memory proposal awaiting founder approval and a suggested human escalation. Purely decorative —
- * exposed to assistive technology as a single described image. All content is synthetic.
+ * CSS-only product illustration for the landing hero: a short conversation with a vEIR — a founder's
+ * question, an answer in the vEIR's voice with cited evidence, a memory it would like to keep, and the
+ * disclosure line. Decorative; exposed to assistive technology as one described image. All content is
+ * synthetic. Rendered in its final state (no entrance animation), so first paint shows it.
  */
 export function ProductPreview({ className }: { className?: string }) {
   return (
     <div
       role="img"
-      aria-label="Illustration: a Foundry Guide answer with fact, inference and hypothesis labels citing evidence E1 and E2, a proposed decision waiting for founder approval, and a suggested P2 escalation to an EIR."
+      aria-label="Illustration: a founder asks their vEIR, Corin, whether to raise now or finish a paid pilot; Corin answers in plain prose citing evidence E1 and E2, asks one sharp question, and offers to remember a decision."
       className={cn('relative', className)}
     >
       <div
         aria-hidden
-        className="absolute -inset-6 rounded-[2rem] bg-gradient-to-b from-foreground/[0.06] to-transparent blur-2xl"
-      />
-      <div
-        aria-hidden
-        className="relative overflow-hidden rounded-2xl border border-border bg-card shadow-xl select-none motion-safe:animate-rise"
+        className="relative overflow-hidden rounded-2xl border border-border bg-card shadow-lg select-none"
       >
-        {/* window bar */}
-        <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
-          <span className="flex gap-1.5">
-            <span className="size-2.5 rounded-full bg-border-strong" />
-            <span className="size-2.5 rounded-full bg-border-strong" />
-            <span className="size-2.5 rounded-full bg-border-strong" />
+        <div className="flex items-center gap-2.5 border-b border-border px-5 py-3">
+          <PersonaAvatar name="Corin" size="sm" decorative />
+          <span className="text-small font-medium">Corin</span>
+          <span className="rounded-full border border-border-strong px-1.5 font-mono text-[0.5625rem] leading-4 tracking-[0.08em] text-muted-foreground uppercase">
+            vEIR · AI
           </span>
-          <span className="ml-2 truncate text-xs font-medium text-muted-foreground">
-            Helio Grid (synthetic) · Session · Diagnose
-          </span>
-          <span className="ml-auto">
-            <StatusBadge kind="session" status="active" />
-          </span>
-        </div>
-        <div className="flex items-center gap-2 border-b border-dashed border-border-strong bg-muted/50 px-4 py-1.5 text-[11px] text-muted-foreground">
-          <span className="inline-flex items-center gap-1 rounded-sm border border-border-strong bg-background px-1 text-[10px] font-semibold text-foreground uppercase">
-            <Bot className="size-2.5" />
-            AI
-          </span>
-          Foundry Guide is an AI coach, not a person.
+          <span className="ml-auto text-caption text-muted-foreground">Helio Grid</span>
         </div>
 
-        <div className="space-y-4 p-4 sm:p-5">
-          <div className="ml-auto w-fit max-w-[85%] rounded-xl rounded-br-sm bg-secondary px-3 py-2 text-[13px]">
+        <div className="grid gap-5 px-5 pt-5 pb-4">
+          <p className="ml-auto max-w-[85%] rounded-2xl rounded-br-md bg-secondary px-3.5 py-2 text-small">
             Should we raise a pre-seed now, or finish the paid pilot first?
-          </div>
+          </p>
 
-          <div className="space-y-2.5 text-[13px] leading-relaxed">
+          <div className="grid gap-3 font-serif text-[0.9375rem] leading-[1.6] text-foreground">
             <p>
-              <span className="mr-1.5 inline-block align-middle">
-                <StatusBadge kind="claim" status="fact" />
-              </span>
-              Two pilot sites signed letters of intent last month
-              <EvidenceKey k="E1" />.
-            </p>
-            <p>
-              <span className="mr-1.5 inline-block align-middle">
-                <StatusBadge kind="claim" status="inference" />
-              </span>
-              Converting one LOI to paid usage would materially de-risk the round
+              Finish the pilot first, Amara. Two sites signed letters of intent last month
+              <EvidenceKey k="E1" />, and converting even one to paid use changes the conversation with
+              investors
               <EvidenceKey k="E2" />.
             </p>
             <p>
-              <span className="mr-1.5 inline-block align-middle">
-                <StatusBadge kind="claim" status="hypothesis" />
-              </span>
-              Operators will pay per site rather than per seat — untested.
+              One question before you decide: <em>what would a site have to see in week six to pay?</em>
             </p>
           </div>
 
-          <div className="grid gap-2 sm:grid-cols-2">
-            {[
-              { k: 'E1', t: 'Pilot LOI summary', s: 'Document · confirmed' },
-              { k: 'E2', t: 'Interview notes — ops leads', s: 'Memory · confirmed' },
-            ].map((e) => (
-              <div
-                key={e.k}
-                className="flex items-start gap-2 rounded-lg border border-border bg-background/60 p-2.5"
-              >
-                <EvidenceKey k={e.k} />
-                <div className="min-w-0 flex-1">
-                  <p className="flex min-w-0 items-center gap-1 text-xs font-medium">
-                    <FileText className="size-3 shrink-0 text-muted-foreground" />
-                    <span className="truncate">{e.t}</span>
-                  </p>
-                  <p className="text-[11px] text-muted-foreground">{e.s}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="rounded-xl border border-dashed border-warning/50 bg-warning/[0.06] p-3">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-xs font-medium">Proposed memory · Decision</p>
-              <StatusBadge kind="memory" status="proposed" />
-            </div>
-            <p className="mt-1.5 text-[13px] text-muted-foreground">
-              Finish the paid pilot before opening the pre-seed round.
-            </p>
-            <div className="mt-2.5 flex gap-1.5">
-              <FakeButton primary>
-                <Check className="size-3" />
-                Approve
-              </FakeButton>
-              <FakeButton>
-                <Pencil className="size-3" />
-                Correct
-              </FakeButton>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border p-3">
-            <div className="flex items-center gap-2">
-              <StatusBadge kind="escalationPriority" status="P2" />
-              <span className="text-xs text-muted-foreground">Valuation question → suggest an EIR</span>
-            </div>
-            <FakeButton>
-              <Send className="size-3" />
-              Review packet
-            </FakeButton>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-dashed border-border-strong px-3.5 py-2.5 text-caption">
+            <span className="min-w-0 flex-1 text-muted-foreground">
+              Corin would like to remember:{' '}
+              <span className="text-foreground">finish the pilot before the round</span>
+            </span>
+            <span className="rounded-md bg-primary px-2 py-0.5 font-medium text-primary-foreground">
+              Keep
+            </span>
+            <span className="text-muted-foreground">Not now</span>
           </div>
         </div>
+
+        <div className="mx-5 mb-3 flex items-center gap-2 rounded-xl border border-border-strong px-3.5 py-2.5">
+          <span className="flex-1 text-small text-muted-foreground">Message Corin…</span>
+          <span className="flex size-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
+            <ArrowUp className="size-3.5" />
+          </span>
+        </div>
+        <p className="px-5 pb-4 text-center text-[0.6875rem] text-muted-foreground">
+          Corin is an AI built from an EIR’s approved doctrine and style. Not the EIR.
+        </p>
       </div>
     </div>
   );

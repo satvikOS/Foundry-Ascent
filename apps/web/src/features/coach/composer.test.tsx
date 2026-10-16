@@ -1,39 +1,46 @@
-import type { CoachMode } from '@foundry/contracts';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { LiveAnnouncer } from '@/components/a11y/live-announcer';
+import { renderWithProviders } from '@/features/admin/shared/test-utils';
 
-import { Composer, MAX_TURN_CHARS } from './composer';
+import { Composer, MAX_TURN_CHARS, type ComposerMode } from './composer';
 import { initialTurnProgress, turnProgressReducer } from './progress';
 import { TurnProgressList } from './turn-progress';
+
+const DISCLOSURE = 'Foundry Guide is an AI coach. It is not a person.';
 
 function Harness({
   initialText = '',
   initialMode = 'diagnose',
+  allowAuto = false,
   streaming = false,
   disabledReason = null,
   onSend,
   onStop = () => undefined,
 }: {
   initialText?: string;
-  initialMode?: CoachMode;
+  initialMode?: ComposerMode;
+  allowAuto?: boolean;
   streaming?: boolean;
   disabledReason?: string | null;
   onSend: (text: string) => void;
   onStop?: () => void;
 }) {
   const [text, setText] = useState(initialText);
-  const [mode, setMode] = useState<CoachMode>(initialMode);
+  const [mode, setMode] = useState<ComposerMode>(initialMode);
   const [counterpart, setCounterpart] = useState('');
   return (
     <Composer
       value={text}
       onChange={setText}
+      personaName="Foundry Guide"
+      disclosure={DISCLOSURE}
       mode={mode}
       onModeChange={setMode}
+      allowAuto={allowAuto}
       counterpart={counterpart}
       onCounterpartChange={setCounterpart}
       streaming={streaming}
@@ -50,7 +57,7 @@ describe('Composer', () => {
   it('sends on Enter and adds a new line on Shift+Enter', async () => {
     const onSend = vi.fn<(text: string) => void>();
     const user = userEvent.setup();
-    render(<Harness onSend={onSend} />);
+    renderWithProviders(<Harness onSend={onSend} />);
     const input = screen.getByRole('textbox', { name: 'Message Foundry Guide' });
     await user.type(input, 'First line{Shift>}{Enter}{/Shift}second line');
     expect(input).toHaveValue('First line\nsecond line');
@@ -62,15 +69,26 @@ describe('Composer', () => {
   it('does not send empty messages', async () => {
     const onSend = vi.fn<(text: string) => void>();
     const user = userEvent.setup();
-    render(<Harness onSend={onSend} />);
+    renderWithProviders(<Harness onSend={onSend} />);
     await user.type(screen.getByRole('textbox', { name: 'Message Foundry Guide' }), '   {Enter}');
     expect(onSend).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
   });
 
-  it('shows a character count and blocks messages over the limit', () => {
+  it('shows the character count only near the limit', () => {
+    const { unmount } = renderWithProviders(<Harness onSend={vi.fn()} initialText="short question" />);
+    expect(screen.queryByText(`/${MAX_TURN_CHARS.toLocaleString()}`, { exact: false })).toBeNull();
+    unmount();
+    renderWithProviders(
+      <Harness onSend={vi.fn()} initialText={'x'.repeat(Math.ceil(MAX_TURN_CHARS * 0.95))} />,
+    );
+    expect(screen.getByText(new RegExp(`/${MAX_TURN_CHARS.toLocaleString()}$`))).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled();
+  });
+
+  it('blocks messages over the limit', () => {
     const onSend = vi.fn<(text: string) => void>();
-    render(<Harness onSend={onSend} initialText={'x'.repeat(MAX_TURN_CHARS + 1)} />);
+    renderWithProviders(<Harness onSend={onSend} initialText={'x'.repeat(MAX_TURN_CHARS + 1)} />);
     expect(screen.getByText(/characters — too long to send/)).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Message Foundry Guide' })).toHaveAttribute(
       'aria-invalid',
@@ -82,7 +100,7 @@ describe('Composer', () => {
   it('offers Stop while streaming and stops on Escape', async () => {
     const onStop = vi.fn();
     const user = userEvent.setup();
-    render(<Harness onSend={vi.fn()} onStop={onStop} streaming initialText="next question" />);
+    renderWithProviders(<Harness onSend={vi.fn()} onStop={onStop} streaming initialText="next question" />);
     const input = screen.getByRole('textbox', { name: 'Message Foundry Guide' });
     input.focus();
     await user.keyboard('{Enter}');
@@ -94,16 +112,31 @@ describe('Composer', () => {
   });
 
   it('asks for the rehearsal counterpart in rehearse mode', () => {
-    render(<Harness onSend={vi.fn()} initialMode="rehearse" />);
+    renderWithProviders(<Harness onSend={vi.fn()} initialMode="rehearse" />);
     expect(screen.getByLabelText('Rehearsing with')).toBeInTheDocument();
   });
 
-  it('explains why it is disabled and always shows the AI reminder', () => {
-    render(<Harness onSend={vi.fn()} disabledReason="Coaching is paused by an administrator." />);
+  it('offers Auto first when the vEIR may pick the approach', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<Harness onSend={vi.fn()} allowAuto initialMode="auto" />);
+    const mode = screen.getByRole('combobox', { name: 'Mode for the next message' });
+    expect(mode).toHaveTextContent('Auto');
+    await user.click(mode);
+    const options = screen.getAllByRole('option').map((option) => option.textContent);
+    expect(options[0]).toBe('Auto');
+    expect(options).toContain('Rehearse');
+  });
+
+  it('explains why it is disabled and always carries one AI disclosure line', () => {
+    renderWithProviders(
+      <Harness onSend={vi.fn()} disabledReason="Coaching is paused by an administrator." />,
+    );
     const input = screen.getByRole('textbox', { name: 'Message Foundry Guide' });
     expect(input).toBeDisabled();
     expect(input).toHaveAttribute('placeholder', 'Coaching is paused by an administrator.');
-    expect(screen.getByText(/Foundry Guide is an AI coach, not a person/)).toBeInTheDocument();
+    const notes = screen.getAllByRole('note', { name: 'AI disclosure' });
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toHaveTextContent(DISCLOSURE);
   });
 });
 

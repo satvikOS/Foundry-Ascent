@@ -1,0 +1,57 @@
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it } from 'vitest';
+
+import { PersonaAvatar } from './persona-avatar';
+import { UserAvatar, VentureMark } from './user-avatar';
+import { VeirBadge } from './veir-badge';
+
+describe('PersonaAvatar', () => {
+  it('shows a serif monogram named after the vEIR when there is no portrait', () => {
+    render(<PersonaAvatar name="Corin" size="xl" />);
+    const face = screen.getByRole('img', { name: 'Corin' });
+    expect(face).toHaveTextContent('C');
+    expect(face.querySelector('img')).toBeNull();
+  });
+
+  it('shows the consented portrait and falls back to the monogram if it fails to load', () => {
+    render(<PersonaAvatar name="Ruth" portraitUrl="/portraits/ruth.webp" />);
+    const face = screen.getByRole('img', { name: 'Ruth' });
+    const portrait = face.querySelector('img');
+    expect(portrait).not.toBeNull();
+    expect(portrait).toHaveAttribute('alt', '');
+    if (portrait) fireEvent.error(portrait);
+    expect(face.querySelector('img')).toBeNull();
+    expect(face).toHaveTextContent('R');
+  });
+
+  it('marks the speaking state and can be decorative', () => {
+    const { container } = render(<PersonaAvatar name="Foundry Guide" speaking decorative />);
+    expect(screen.queryByRole('img')).toBeNull();
+    const face = container.querySelector('[data-slot="persona-avatar"]');
+    expect(face).toHaveAttribute('data-speaking', 'true');
+    expect(face).toHaveAttribute('aria-hidden', 'true');
+    expect(face).toHaveTextContent('FG');
+  });
+});
+
+describe('UserAvatar and VentureMark', () => {
+  it('render initials only', () => {
+    render(
+      <>
+        <UserAvatar name="Maya Okafor-Lindqvist" />
+        <VentureMark name="QuietQuad" decorative={false} />
+      </>,
+    );
+    expect(screen.getByRole('img', { name: 'Maya Okafor-Lindqvist' })).toHaveTextContent('MO');
+    expect(screen.getByRole('img', { name: 'QuietQuad' })).toHaveTextContent('Q');
+  });
+});
+
+describe('VeirBadge', () => {
+  it('says vEIR and AI for an EIR persona, AI for the neutral guide', () => {
+    const { rerender } = render(<VeirBadge kind="eir_persona" />);
+    expect(screen.getByText('vEIR · AI')).toBeInTheDocument();
+    rerender(<VeirBadge kind="neutral_guide" />);
+    expect(screen.getByText('AI')).toBeInTheDocument();
+  });
+});

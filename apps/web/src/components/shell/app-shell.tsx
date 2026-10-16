@@ -1,47 +1,61 @@
 import type { Me } from '@foundry/contracts';
-import { useNavigate, useRouterState } from '@tanstack/react-router';
-import { Building, Menu, Search } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
+import { Menu, PanelLeftClose, PanelLeftOpen, SquarePen, X } from 'lucide-react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Kbd, KbdGroup } from '@/components/ui/kbd';
-import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
-import { canUseAdminConsole, canUseEirStudio, canUseProgramConsole } from '@/lib/auth/roles';
+import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
+import { SimpleTooltip } from '@/components/ui/tooltip';
+import { ventureQueryOptions } from '@/lib/api/hooks/ventures';
+import { canWrite } from '@/lib/auth/roles';
 import { useHotkeys } from '@/lib/hooks/use-hotkeys';
 import { safeStorage, STORAGE_KEYS } from '@/lib/storage';
-import { cn, isMac } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 
-import { AppShellContext, type AppShellContextValue } from './app-shell-context';
+import { DataUseDialog, ReportProblemDialog } from './account-dialogs';
 import { CommandPalette } from './command-palette';
+import {
+  staffWorkspace,
+  staffWorkspaces,
+  VENTURE_DESTINATIONS,
+  workspaceFromPath,
+  type Workspace,
+} from './nav';
 import { ShortcutsDialog } from './shortcuts-dialog';
-import { Sidebar, SidebarContent } from './sidebar';
+import { SidebarContent } from './sidebar';
 import { AccessCodeNoticeBanner, AiDisabledBanner, DbWakingBanner, OfflineBanner } from './status-banners';
-import { ThemeToggle } from './theme-toggle';
-import { UserMenu } from './user-menu';
 
 interface AppShellProps {
   me: Me;
   children: ReactNode;
 }
 
+type ShellDialog = 'palette' | 'shortcuts' | 'data-use' | 'report' | null;
+
 /**
- * Authenticated application frame: left rail (collapsible to icons; drawer on mobile), sticky top bar
- * (tenant, ⌘K search, theme, account), global status banners and the <main> landmark.
+ * The one authenticated frame for every role: a left sidebar (collapsible to a rail on desktop, a sheet
+ * on phones) with the workspace switcher, conversations or workspace sections and the account menu;
+ * status banners only while something needs attention; and the <main> landmark. There is no top bar on
+ * desktop; phones get a slim bar with the menu, the current place and New chat.
  */
 export function AppShell({ me, children }: AppShellProps) {
   const navigate = useNavigate();
   const tenant = me.tenant.slug;
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const workspace = workspaceFromPath(pathname);
+  const ventureId = workspace.kind === 'venture' ? workspace.ventureId : null;
   const [collapsed, setCollapsed] = useState(() => safeStorage.get(STORAGE_KEYS.sidebarCollapsed) === '1');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [paletteOpen, setPaletteOpen] = useState(false);
-  const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const [dialog, setDialog] = useState<ShellDialog>(null);
 
-  // Close the mobile drawer after navigation.
+  // Close the mobile sheet after navigation; remember the venture so the app reopens there.
   useEffect(() => {
     setMobileNavOpen(false);
   }, [pathname]);
+  useEffect(() => {
+    if (ventureId) safeStorage.set(STORAGE_KEYS.lastVenture, ventureId);
+  }, [ventureId]);
 
   const toggleSidebar = useCallback(() => {
     setCollapsed((current) => {
@@ -49,155 +63,212 @@ export function AppShell({ me, children }: AppShellProps) {
       return !current;
     });
   }, []);
-
-  useHotkeys({
-    'mod+k': () => {
-      setPaletteOpen((open) => !open);
-    },
-    '?': () => {
-      setShortcutsOpen(true);
-    },
-    '[': toggleSidebar,
-    'g h': () => void navigate({ to: '/$tenant/app', params: { tenant } }),
-    'g v': () => void navigate({ to: '/$tenant/app/ventures', params: { tenant } }),
-    'g e': () => {
-      if (canUseEirStudio(me)) void navigate({ to: '/$tenant/app/eir', params: { tenant } });
-    },
-    'g p': () => {
-      if (canUseProgramConsole(me)) void navigate({ to: '/$tenant/app/program', params: { tenant } });
-    },
-    'g a': () => {
-      if (canUseAdminConsole(me)) void navigate({ to: '/admin' });
+  const openDialog = useCallback((next: ShellDialog) => {
+    setMobileNavOpen(false);
+    setDialog(next);
+  }, []);
+  const dialogProps = (id: Exclude<ShellDialog, null>) => ({
+    open: dialog === id,
+    onOpenChange: (open: boolean) => {
+      setDialog(open ? id : null);
     },
   });
 
-  const shell = useMemo<AppShellContextValue>(
-    () => ({
-      openCommandPalette: () => {
-        setPaletteOpen(true);
-      },
-      openShortcuts: () => {
-        setShortcutsOpen(true);
-      },
-      toggleSidebar,
-      sidebarCollapsed: collapsed,
-    }),
-    [collapsed, toggleSidebar],
+  const goToVenturePage = (index: number) => () => {
+    const destination = VENTURE_DESTINATIONS[index];
+    if (ventureId && destination) void navigate({ to: destination.to, params: { tenant, ventureId } });
+  };
+  const goToWorkspace = (id: 'eir' | 'program' | 'admin') => () => {
+    if (staffWorkspaces(me).some((w) => w.id === id))
+      void navigate({ to: staffWorkspace(id).to, params: { tenant } });
+  };
+  useHotkeys({
+    'mod+k': () => {
+      setDialog((current) => (current === 'palette' ? null : 'palette'));
+    },
+    '?': () => {
+      setDialog('shortcuts');
+    },
+    '[': toggleSidebar,
+    'g n': () => {
+      if (ventureId) void navigate({ to: '/$tenant/app/v/$ventureId', params: { tenant, ventureId } });
+    },
+    'g k': goToVenturePage(0),
+    'g d': goToVenturePage(1),
+    'g h': goToVenturePage(2),
+    'g t': goToVenturePage(3),
+    'g e': goToWorkspace('eir'),
+    'g p': goToWorkspace('program'),
+    'g a': goToWorkspace('admin'),
+  });
+
+  const sidebarActions = {
+    onOpenSearch: () => {
+      openDialog('palette');
+    },
+    onOpenShortcuts: () => {
+      openDialog('shortcuts');
+    },
+    onOpenDataUse: () => {
+      openDialog('data-use');
+    },
+    onOpenReportProblem: () => {
+      openDialog('report');
+    },
+  };
+
+  const collapseButton = (
+    <SimpleTooltip content={collapsed ? 'Expand sidebar  [' : 'Collapse sidebar  ['} side="right">
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        className="shrink-0 text-sidebar-muted hover:text-sidebar-foreground"
+        onClick={toggleSidebar}
+        aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        aria-expanded={!collapsed}
+      >
+        {collapsed ? <PanelLeftOpen aria-hidden /> : <PanelLeftClose aria-hidden />}
+      </Button>
+    </SimpleTooltip>
   );
 
   return (
-    <AppShellContext.Provider value={shell}>
-      <div className="min-h-dvh bg-background">
-        <Sidebar me={me} collapsed={collapsed} onToggle={toggleSidebar} />
+    <div className="min-h-dvh bg-background">
+      <aside
+        aria-label="Sidebar"
+        data-collapsed={collapsed}
+        data-print="hide"
+        className={cn(
+          'fixed inset-y-0 left-0 z-30 hidden flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex',
+          'transition-[width] duration-200 ease-out motion-reduce:transition-none',
+          collapsed ? 'w-(--sidebar-width-collapsed)' : 'w-(--sidebar-width)',
+        )}
+      >
+        <nav aria-label="Main" className="flex min-h-0 flex-1 flex-col">
+          <SidebarContent
+            me={me}
+            workspace={workspace}
+            collapsed={collapsed}
+            headerAction={collapseButton}
+            {...sidebarActions}
+          />
+        </nav>
+      </aside>
 
-        <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-          <SheetContent side="left" className="bg-sidebar p-0 text-sidebar-foreground">
-            <SheetTitle className="sr-only">Navigation</SheetTitle>
-            <SheetDescription className="sr-only">Primary navigation</SheetDescription>
-            <nav aria-label="Main" className="flex min-h-0 flex-1 flex-col">
-              <SidebarContent
-                me={me}
-                onNavigate={() => {
-                  setMobileNavOpen(false);
-                }}
-              />
-            </nav>
-          </SheetContent>
-        </Sheet>
-
-        <div
-          className={cn(
-            'flex min-h-dvh min-w-0 flex-col transition-[padding] duration-200 ease-out motion-reduce:transition-none',
-            collapsed ? 'md:pl-(--sidebar-width-collapsed)' : 'md:pl-(--sidebar-width)',
-          )}
+      <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+        <SheetContent
+          side="left"
+          hideClose
+          className="w-[min(100vw-3rem,20rem)] bg-sidebar p-0 text-sidebar-foreground"
         >
-          <header
-            className="sticky top-0 z-20 flex h-(--header-height) shrink-0 items-center gap-2 border-b border-border bg-background/85 px-3 backdrop-blur-md supports-[backdrop-filter]:bg-background/70 sm:px-4"
-            data-print="hide"
-          >
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="md:hidden"
-              aria-label="Open navigation"
-              aria-expanded={mobileNavOpen}
-              onClick={() => {
-                setMobileNavOpen(true);
+          <SheetTitle className="sr-only">Navigation</SheetTitle>
+          <SheetDescription className="sr-only">Conversations, pages and your account</SheetDescription>
+          <nav aria-label="Main" className="flex min-h-0 flex-1 flex-col">
+            <SidebarContent
+              me={me}
+              workspace={workspace}
+              onNavigate={() => {
+                setMobileNavOpen(false);
               }}
-            >
-              <Menu aria-hidden />
-            </Button>
+              headerAction={
+                <SheetClose asChild>
+                  <Button variant="ghost" size="icon-sm" aria-label="Close navigation" className="shrink-0">
+                    <X aria-hidden />
+                  </Button>
+                </SheetClose>
+              }
+              {...sidebarActions}
+            />
+          </nav>
+        </SheetContent>
+      </Sheet>
 
-            <div className="flex min-w-0 items-center gap-2 text-sm">
-              <Building aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-              <span className="truncate font-medium">{me.tenant.name}</span>
-              {me.tenant.kind === 'partner' ? (
-                <Badge variant="outline" className="hidden sm:inline-flex">
-                  Partner
-                </Badge>
-              ) : null}
-            </div>
-
-            <div className="ml-auto flex items-center gap-1.5">
-              <Button
-                variant="secondary"
-                size="sm"
-                className="hidden w-64 justify-start gap-2 text-muted-foreground md:inline-flex lg:w-72"
-                onClick={() => {
-                  setPaletteOpen(true);
-                }}
-                aria-keyshortcuts={isMac() ? 'Meta+K' : 'Control+K'}
-              >
-                <Search aria-hidden />
-                <span className="flex-1 text-left font-normal">Search or jump to…</span>
-                <KbdGroup aria-hidden>
-                  <Kbd>{isMac() ? '⌘' : 'Ctrl'}</Kbd>
-                  <Kbd>K</Kbd>
-                </KbdGroup>
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="md:hidden"
-                aria-label="Search or jump to"
-                onClick={() => {
-                  setPaletteOpen(true);
-                }}
-              >
-                <Search aria-hidden />
-              </Button>
-              <ThemeToggle />
-              <UserMenu
-                me={me}
-                onOpenShortcuts={() => {
-                  setShortcutsOpen(true);
-                }}
-              />
-            </div>
-          </header>
-
-          <div data-print="hide">
-            <DbWakingBanner />
-            <OfflineBanner />
-            <AiDisabledBanner />
-            <AccessCodeNoticeBanner />
-          </div>
-
-          <main id="main-content" tabIndex={-1} className="flex min-w-0 flex-1 flex-col outline-none">
-            {children}
-          </main>
-        </div>
-
-        <CommandPalette
+      <div
+        className={cn(
+          'flex min-h-dvh min-w-0 flex-col transition-[padding] duration-200 ease-out motion-reduce:transition-none',
+          collapsed ? 'md:pl-(--sidebar-width-collapsed)' : 'md:pl-(--sidebar-width)',
+        )}
+      >
+        <MobileBar
           me={me}
-          open={paletteOpen}
-          onOpenChange={setPaletteOpen}
-          onOpenShortcuts={() => {
-            setShortcutsOpen(true);
+          workspace={workspace}
+          navOpen={mobileNavOpen}
+          onOpenNav={() => {
+            setMobileNavOpen(true);
           }}
         />
-        <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+
+        <div data-print="hide">
+          <DbWakingBanner />
+          <OfflineBanner />
+          <AiDisabledBanner />
+          <AccessCodeNoticeBanner />
+        </div>
+
+        <main id="main-content" tabIndex={-1} className="flex min-w-0 flex-1 flex-col outline-none">
+          {children}
+        </main>
       </div>
-    </AppShellContext.Provider>
+
+      <CommandPalette
+        me={me}
+        workspace={workspace}
+        {...dialogProps('palette')}
+        onOpenShortcuts={() => {
+          setDialog('shortcuts');
+        }}
+      />
+      <ShortcutsDialog {...dialogProps('shortcuts')} />
+      <DataUseDialog me={me} {...dialogProps('data-use')} />
+      <ReportProblemDialog {...dialogProps('report')} />
+    </div>
+  );
+}
+
+/** Phones only: menu, where you are, and New chat. Desktop has no top bar. */
+function MobileBar({
+  me,
+  workspace,
+  navOpen,
+  onOpenNav,
+}: {
+  me: Me;
+  workspace: Workspace;
+  navOpen: boolean;
+  onOpenNav: () => void;
+}) {
+  const tenant = me.tenant.slug;
+  const ventureId = workspace.kind === 'venture' ? workspace.ventureId : null;
+  const venture = useQuery({ ...ventureQueryOptions(ventureId ?? ''), enabled: ventureId !== null });
+  const title =
+    workspace.kind === 'venture'
+      ? (venture.data?.name ?? me.memberships.find((m) => m.ventureId === ventureId)?.ventureName ?? '')
+      : workspace.kind === 'none'
+        ? me.tenant.name
+        : staffWorkspace(workspace.kind).label;
+
+  return (
+    <header
+      className="sticky top-0 z-20 flex h-(--header-height) shrink-0 items-center gap-1 border-b border-border bg-background/90 px-2 backdrop-blur-md supports-[backdrop-filter]:bg-background/75 md:hidden"
+      data-print="hide"
+    >
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label="Open navigation"
+        aria-expanded={navOpen}
+        onClick={onOpenNav}
+      >
+        <Menu aria-hidden />
+      </Button>
+      <p className="min-w-0 flex-1 truncate px-1 text-sm font-semibold tracking-tight">{title}</p>
+      {ventureId && canWrite(me, ventureId) ? (
+        <Button asChild variant="ghost" size="icon">
+          <Link to="/$tenant/app/v/$ventureId" params={{ tenant, ventureId }} aria-label="New chat">
+            <SquarePen aria-hidden />
+          </Link>
+        </Button>
+      ) : null}
+    </header>
   );
 }

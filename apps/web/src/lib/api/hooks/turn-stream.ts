@@ -339,7 +339,13 @@ export function useTurnStream(sessionId: string, { ventureId, onEvent }: UseTurn
         }
         void client.invalidateQueries({ queryKey: queryKeys.session.detail(sessionId) });
         if (final === 'completed' || final === 'blocked') {
-          void client.invalidateQueries({ queryKey: queryKeys.venture.scope(ventureId) });
+          // A venture read that started before this turn was saved (e.g. the memory list fetched as the
+          // conversation opened) cannot include what the turn added, and an in-flight first fetch is
+          // not restarted by invalidation alone: cancel it, then refetch.
+          const scope = queryKeys.venture.scope(ventureId);
+          void client
+            .cancelQueries({ queryKey: scope })
+            .then(() => client.invalidateQueries({ queryKey: scope }));
           void client.invalidateQueries({ queryKey: queryKeys.ventures.list() });
         }
       }

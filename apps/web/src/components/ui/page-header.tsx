@@ -27,18 +27,20 @@ export function PageHeader({
   ...props
 }: PageHeaderProps) {
   return (
-    <header data-slot="page-header" className={cn('flex flex-col gap-4 pb-6', className)} {...props}>
+    <header data-slot="page-header" className={cn('flex flex-col gap-5 pb-8', className)} {...props}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0 space-y-1.5">
-          {eyebrow ? <div className="text-[13px] font-medium text-muted-foreground">{eyebrow}</div> : null}
+        <div className="min-w-0 space-y-2">
+          {eyebrow ? <div className="text-small font-medium text-muted-foreground">{eyebrow}</div> : null}
           <h1
             data-page-title
             tabIndex={-1}
-            className="text-2xl leading-tight font-semibold tracking-tight text-balance outline-none"
+            className="font-serif text-heading font-normal text-balance outline-none"
           >
             {title}
           </h1>
-          {description ? <p className="max-w-2xl text-sm text-muted-foreground">{description}</p> : null}
+          {description ? (
+            <p className="max-w-[68ch] text-small text-pretty text-muted-foreground">{description}</p>
+          ) : null}
         </div>
         {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
       </div>
@@ -57,7 +59,7 @@ export function PageContainer({
     <div
       data-slot="page-container"
       className={cn(
-        'mx-auto w-full px-4 py-6 sm:px-6 lg:px-8 lg:py-8',
+        'mx-auto w-full px-4 py-8 sm:px-6 lg:px-10 lg:py-12',
         size === 'default' && 'max-w-6xl',
         size === 'wide' && 'max-w-7xl',
         size === 'narrow' && 'max-w-3xl',

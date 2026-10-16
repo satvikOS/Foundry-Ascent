@@ -87,10 +87,13 @@
   --scrollbar-hover: light-dark(#a9a9a4, #4a4a4a);
   --selection: light-dark(rgb(17 17 16 / 0.16), rgb(244 244 242 / 0.22));
 
-  --header-height: 3.5rem;
-  --sidebar-width: 15rem;
+  /* Layout. The mobile bar is the only top bar; desktop has none. */
+  --header-height: 3.25rem;
+  --sidebar-width: 16.5rem;
   --sidebar-width-collapsed: 3.5rem;
-  --inspector-width: 22rem;
+  --inspector-width: 24rem;
+  /* Reading column for conversations and prose. */
+  --content-width: 48rem;
 }
 
 :root.dark {
@@ -102,11 +105,45 @@
 }
 
 @theme inline {
+  /*
+   * Type families (self-hosted with @fontsource-variable; the CSP has no third-party font origins):
+   *   Geist        the interface
+   *   Newsreader   display headings and the vEIR's own words (reading comfort, a human voice)
+   *   Geist Mono   labels, keys and data
+   */
   --font-sans:
-    'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    'Geist Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
     sans-serif;
-  --font-serif: ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
-  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  --font-serif: 'Newsreader Variable', ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
+  --font-mono:
+    'Geist Mono Variable', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono',
+    monospace;
+
+  /*
+   * Type scale: few steps, a dramatic display-to-body ratio. Each step carries its own leading and
+   * tracking, so `text-title` is a complete decision (use with font-serif for display roles).
+   */
+  --text-display: clamp(2.75rem, 1.6rem + 4.6vw, 5rem);
+  --text-display--line-height: 1;
+  --text-display--letter-spacing: -0.035em;
+  --text-title: clamp(1.875rem, 1.5rem + 1.4vw, 2.5rem);
+  --text-title--line-height: 1.08;
+  --text-title--letter-spacing: -0.028em;
+  --text-heading: 1.75rem;
+  --text-heading--line-height: 1.15;
+  --text-heading--letter-spacing: -0.022em;
+  --text-subheading: 1.125rem;
+  --text-subheading--line-height: 1.35;
+  --text-subheading--letter-spacing: -0.012em;
+  --text-body: 0.9375rem;
+  --text-body--line-height: 1.6;
+  --text-small: 0.8125rem;
+  --text-small--line-height: 1.45;
+  --text-caption: 0.75rem;
+  --text-caption--line-height: 1.4;
+  --text-label: 0.6875rem;
+  --text-label--line-height: 1;
+  --text-label--letter-spacing: 0.14em;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -165,10 +202,19 @@
   --shadow-lg: inset 0 1px 0 0 var(--highlight), 0 12px 32px -8px var(--shadow-color);
   --shadow-xl: inset 0 1px 0 0 var(--highlight), 0 24px 64px -16px var(--shadow-color);
 
+  /*
+   * Motion grammar: 150 ms for hover and press (ease-out), 300–400 ms for entrances (out-expo),
+   * 8 px of travel at most. Never animate above-the-fold content in from opacity 0: first paint must
+   * show the page. Reduced motion collapses everything (see the media query at the end).
+   */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-hover: 150ms;
+  --duration-enter: 360ms;
   --animate-shimmer: fa-shimmer 1.6s ease-in-out infinite;
-  --animate-fade-in: fa-fade-in 200ms var(--ease-out-quint) both;
-  --animate-rise: fa-rise 480ms var(--ease-out-quint) both;
+  --animate-fade-in: fa-fade-in 200ms var(--ease-out-expo) both;
+  --animate-rise: fa-rise var(--duration-enter) var(--ease-out-expo) both;
+  --animate-speak: fa-speak 1.6s var(--ease-out-expo) infinite;
 
   @keyframes fa-shimmer {
     0% {
@@ -204,6 +250,21 @@
       transform: translateY(0);
     }
   }
+  /* The ring around a vEIR's face while it speaks on a call. */
+  @keyframes fa-speak {
+    0% {
+      opacity: 0.55;
+      transform: scale(1);
+    }
+    70% {
+      opacity: 0;
+      transform: scale(1.18);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(1.18);
+    }
+  }
 }
 
 @layer base {
@@ -220,8 +281,6 @@
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
     scrollbar-gutter: stable;
-    /* Inter: disambiguated l/I/1 and straight-sided 6/9 for data-dense screens. */
-    font-feature-settings: 'cv11', 'ss01', 'ss03';
     font-optical-sizing: auto;
   }
 
@@ -256,7 +315,13 @@
   h3,
   h4 {
     text-wrap: balance;
-    letter-spacing: -0.011em;
+    letter-spacing: -0.012em;
+  }
+
+  /* Hover and press feedback share one duration. */
+  a,
+  button {
+    transition-duration: var(--duration-hover);
   }
 
   p {
@@ -294,11 +359,6 @@
     overscroll-behavior: contain;
   }
 
-  .noscript-message {
-    padding: 2rem;
-    font-family: system-ui, sans-serif;
-  }
-
   [hidden] {
     display: none !important;
   }
@@ -308,7 +368,30 @@
   /* Metrics, counts, money and times line up in columns. */
   .tabular {
     font-variant-numeric: tabular-nums;
-    font-feature-settings: 'tnum', 'cv11', 'ss01';
+    font-feature-settings: 'tnum';
+  }
+
+  /* Small uppercase mono label (section eyebrows, keys). Muted by default. */
+  .label-mono {
+    font-family: var(--font-mono);
+    font-size: var(--text-label);
+    line-height: var(--text-label--line-height);
+    letter-spacing: var(--text-label--letter-spacing);
+    font-weight: 500;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+
+  /*
+   * Long-form reading: the vEIR's answers, digests and doctrine. Serif, 1.65 leading and a 60–75
+   * character measure.
+   */
+  .prose-reading {
+    font-family: var(--font-serif);
+    font-size: 1.0625rem;
+    line-height: 1.65;
+    max-width: 68ch;
+    font-variation-settings: 'opsz' 18;
   }
 
   .text-balance {
@@ -346,6 +429,44 @@
     background-size: 200% 100%;
     animation: var(--animate-shimmer);
   }
+}
+
+/*
+ * Static first paint (index.html): shown inside #root until React replaces it, so a slow network or a
+ * failed script never leaves a blank page. CSS only: no script, no animation, theme from the OS.
+ */
+.boot-shell {
+  display: flex;
+  min-height: 100dvh;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+.boot-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.boot-note {
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+.boot-shell svg {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+.boot-shell .boot-mark-bg {
+  fill: var(--foreground);
+}
+.boot-shell .boot-mark-step {
+  fill: var(--background);
 }
 
 /* Respect reduced-motion preferences everywhere, including third-party components. */

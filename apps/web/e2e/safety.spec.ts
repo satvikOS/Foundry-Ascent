@@ -1,6 +1,13 @@
 import { expect, test, type APIRequestContext } from '@playwright/test';
 
-import { FOUNDER_STATE, OWNER_STATE, openVenture, runToken, startSession, TENANT } from './support/fixtures';
+import {
+  FOUNDER_STATE,
+  OWNER_STATE,
+  openVenture,
+  runToken,
+  startConversation,
+  TENANT,
+} from './support/fixtures';
 
 const WRITE_HEADERS = { 'x-requested-with': 'foundry-ascent', 'content-type': 'application/json' };
 
@@ -29,10 +36,11 @@ test.describe('crisis support survives a reload', () => {
   test('a crisis-blocked turn shows the human-support message live and after reloading', async ({ page }) => {
     const token = runToken();
     await openVenture(page);
-    await startSession(page, `Check-in ${token}`);
-    const composer = page.getByRole('textbox', { name: 'Message Foundry Guide' });
-    await composer.fill(`I don't want to be alive anymore and I keep thinking about ending it. ${token}`);
-    await composer.press('Enter');
+    // The first message of a new chat: the conversation is created, opened and the message answered.
+    await startConversation(
+      page,
+      `I don't want to be alive anymore and I keep thinking about ending it. ${token}`,
+    );
 
     const live = page.getByTestId('blocked-panel');
     await expect(live.getByRole('heading', { name: 'You deserve support from a person' })).toBeVisible({
@@ -78,7 +86,7 @@ test.describe('routing an escalation from the people directory', () => {
     expect(shared.status(), 'PATCH /escalations/:id approve_sharing').toBe(200);
     expect(((await shared.json()) as { status: string }).status).toBe('awaiting_assignment');
 
-    await founderPage.goto(`/${TENANT}/app/ventures/${ventureId}/escalations?id=${escalationId}`);
+    await founderPage.goto(`/${TENANT}/app/v/${ventureId}/help?id=${escalationId}`);
     const detail = founderPage.getByRole('region', { name: 'Legal' });
     await expect(detail.getByRole('definition').first()).toHaveText('Waiting for assignment');
 

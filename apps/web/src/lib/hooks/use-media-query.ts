@@ -26,7 +26,3 @@ export const BREAKPOINTS = {
   lg: '(min-width: 64rem)',
   xl: '(min-width: 80rem)',
 } as const;
-
-export function usePrefersReducedMotion(): boolean {
-  return useMediaQuery('(prefers-reduced-motion: reduce)');
-}

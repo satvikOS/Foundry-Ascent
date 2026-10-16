@@ -5,7 +5,8 @@ Query · Tailwind CSS 4 (CSS-first tokens) · Radix (`radix-ui`) + CVA · lucide
 motion · react-hook-form + zod · react-markdown + remark-gfm.
 
 The app is a static SPA served by CloudFront from `dist/`. It calls the API same-origin under
-`/api/v1/*` (Vite proxies `/api` → `http://localhost:8787` in dev).
+`/api/v1/*` (Vite proxies `/api` → `http://localhost:8787` in dev and preview; `API_PROXY_TARGET`
+overrides the target).
 
 ```bash
 pnpm --filter @foundry/web dev         # http://localhost:5173 (needs the API on :8787)
@@ -27,36 +28,45 @@ it); never edit it by hand.
 src/
   main.tsx                 bootstraps theme, QueryClient, router, 401 → /sign-in handler
   router.tsx               createRouter (context: { queryClient }, default error/404/pending)
-  styles/globals.css       design tokens (light-dark()), base styles, utilities
+  styles/globals.css       design tokens (light-dark()), type scale, motion, utilities, boot shell
   routes/                  file routes (see "Route ownership")
   components/
     ui/                    accessible primitives (shadcn-style, Radix based)
-    shell/                 AppShell, sidebar, command palette, shortcuts, banners, inspector, sub-nav
+    shell/                 AppShell, sidebar (switcher, recents, account menu), command palette,
+                           shortcuts, banners, context panel (inspector), nav model
+    faces/                 PersonaAvatar, UserAvatar, VentureMark, VeirBadge
     a11y/live-announcer    global aria-live regions + announce()
-    disclosure-banner.tsx  REQUIRED AI disclosure for session views and exports
-    ventures/              venture card, context bar, quick start (shared by home/ventures)
+    disclosure-banner.tsx  REQUIRED AI disclosure for conversation views and exports
     auth/sign-in-form.tsx
     landing/
   lib/
     api/                   fetch client, errors, SSE, query keys, hooks/* (one file per API area)
     auth/                  guards, role helpers, access-code mask, useRequiredMe
-    hooks/                 useHotkeys, useMediaQuery
+    hooks/                 useHotkeys, useMediaQuery, useCountdown, useDockedBottom
+    conversations.ts       conversation titles and Today / Previous 7 days / Older grouping
+    legacy-routes.ts       where pre-redesign URLs (/ventures/…, /admin/…) live now
+    veir.ts                how a venture's vEIR is shown (short name, monogram, portrait)
     format.ts labels.ts theme.ts storage.ts utils.ts
-  features/                feature modules (venture, coach, memory, documents, escalations, eir,
+  features/                feature modules (chat, coach, memory, documents, escalations, venture, eir,
                            program, admin); route files stay thin wrappers around them
-e2e/                       Playwright suite (journey, accessibility, mobile) + support/fixtures.ts
+e2e/                       Playwright suite (journey, documents, safety, accessibility, mobile) +
+                           support/fixtures.ts
 ```
 
-### Route ownership
+### Information architecture and routes
 
-| Path                                                                                                                                                                                                  | Owner                                                                                   |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `__root.tsx`, `index.tsx` (landing), `sign-in.tsx`                                                                                                                                                    | web foundation                                                                          |
-| `$tenant/app/route.tsx` (AppShell), `$tenant/app/index.tsx` (home), `$tenant/app/ventures/index.tsx`                                                                                                  | web foundation                                                                          |
-| `$tenant/app/ventures/$ventureId/route.tsx` (VentureLayout), `$ventureId/index.tsx` (→ overview)                                                                                                      | web foundation                                                                          |
-| `$tenant/app/ventures/$ventureId/*` section pages (`overview`, `coach/index`, `coach/$sessionId`, `memory`, `evidence`, `decisions`, `experiments`, `milestones`, `documents`, `team`, `escalations`) | **web-venture** (`src/features/venture`, `coach`, `memory`, `documents`, `escalations`) |
-| `$tenant/app/eir/route.tsx`, `program/route.tsx`, `admin/route.tsx` (layouts + guards + sub-nav), their `index.tsx` redirects                                                                         | web foundation                                                                          |
-| `eir/personas/index`, `eir/personas/$personaId`, `eir/reviews`, `eir/inbox`, `program/{portfolio,ventures,resources,escalations}`, `admin/{principals,settings,usage,audit}`                          | **web-ops** (`src/features/eir`, `program`, `admin`)                                    |
+One shell for every role. A venture is a workspace of conversations; EIR studio, Program and Admin are
+staff workspaces in the same shell (the sidebar switcher moves between them).
+
+| URL                                                                                                                                            | What                                                                                                             |
+| ---------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `/`, `/sign-in`                                                                                                                                | landing, sign-in (in the main bundle: never wait for a route chunk)                                              |
+| `/$tenant/app`                                                                                                                                 | opens the last venture's New chat (members) or the main staff workspace; otherwise "nothing to open yet"         |
+| `/$tenant/app/v/$ventureId`                                                                                                                    | **New chat**: the vEIR's face and greeting, starting points, the composer (`?call=1` is read by the call screen) |
+| `/$tenant/app/v/$ventureId/c/$sessionId`                                                                                                       | a conversation (`?view=recap\|transcript` once ended)                                                            |
+| `/$tenant/app/v/$ventureId/{knowledge,documents,help,team,settings}`                                                                           | Knowledge (`?type=&status=&q=&view=proposed`), Documents, Human help (`?id=`), Team, Venture settings            |
+| `/$tenant/app/eir/{personas,reviews,inbox}`, `/program/{portfolio,ventures,resources,escalations}`, `/admin/{principals,settings,usage,audit}` | staff workspaces (guards in each `route.tsx`)                                                                    |
+| `/$tenant/app/ventures/…`, `/admin/…`                                                                                                          | redirects from before the redesign, keeping ids and query (`lib/legacy-routes.ts`)                               |
 
 Folder layouts: if a section switches to a folder (`memory/index.tsx`), delete the flat file
 (`memory.tsx`) in the same change — having both makes the flat file a layout without an `<Outlet/>`.
@@ -107,19 +117,20 @@ loader: ({ context, params }) =>
 
 ### Hook index
 
-| Area        | Hooks                                                                                                                                                                                                                     |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Health      | `useHealth` (not polled — polling would keep Aurora awake)                                                                                                                                                                |
-| Auth        | `useMe` (null when signed out), `useSignIn`, `useSignOut`; `useRequiredMe` in `lib/auth/use-me`                                                                                                                           |
-| Ventures    | `useVentures`, `useVenture`, `useVentureOverview`, `useUpdateVenture`                                                                                                                                                     |
-| Sessions    | `useSessions`, `useSession`, `useCreateSession`, `useStartSession` (venture per call), `useEndSession`, `useTurnFeedback`, `useTurnEvidence`, **`useTurnStream`**                                                         |
-| Memory      | `useMemory(ventureId, filters)`, `useCreateMemory`, `useMemoryAction`, `useMemoryHistory`                                                                                                                                 |
-| Documents   | `useDocuments` (polls while processing), `useUploadDocument` (create → presigned PUT with progress → complete), `useCreateDocument`, `useCompleteDocument`, `useDeleteDocument`, `documentContentType`, `DOCUMENT_ACCEPT` |
-| Escalations | `useVentureEscalations`, `useCreateEscalation`, `useEscalationAction`, `useInboxEscalations`                                                                                                                              |
-| Team        | `useTeam`, `useInviteMember` (one-time code; `gcTime: 0`, never cache/log it)                                                                                                                                             |
-| EIR studio  | `usePersonas`, `usePersona`, `usePersonaRelease`, `useCreatePersonaRelease`, `useApprovePersonaRelease`, `useSuspendPersona`, `useResumePersona`, `useReviewQueue`, `useSubmitReview`                                     |
-| Program     | `usePortfolio`, `useProgramVentures`, `useCreateProgramVenture`, `useResources`, `useCreateResource`, `useUpdateResource`, `useProgramEscalations`, `useEscalationAssignees`, `useRouteEscalation`                        |
-| Admin       | `usePrincipals`, `useCreatePrincipal`, `useIssueAccessCode` (one-time code), `useRevokeAccessCode`, `usePlatformSettings`, `useUpdatePlatformSettings`, `useAuditLog` (infinite), `useUsage`                              |
+| Area        | Hooks                                                                                                                                                                                                                   |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Health      | `useHealth` (not polled — polling would keep Aurora awake)                                                                                                                                                              |
+| Auth        | `useMe` (null when signed out), `useSignIn`, `useSignOut`; `useRequiredMe` in `lib/auth/use-me`                                                                                                                         |
+| Ventures    | `useVentures`, `useVenture`, `useVentureOverview`, `useUpdateVenture`                                                                                                                                                   |
+| Sessions    | `useSessions`, `useRecentConversations` (sidebar; swap its one source line to `GET /sessions?scope=mine`), `useSession`, `useCreateSession`, `useEndSession`, `useTurnFeedback`, `useTurnEvidence`, **`useTurnStream`** |
+| Notebook    | `useNotebook` (`GET /ventures/:id/notebook`; `null` on 404 — optional context for the New chat greeting)                                                                                                                |
+| Memory      | `useMemory(ventureId, filters)`, `useCreateMemory`, `useMemoryAction`, `useMemoryHistory`                                                                                                                               |
+| Documents   | `useDocuments` (polls while processing), `useUploadDocument` (create → presigned PUT with progress → complete), `useCompleteDocument`, `useDeleteDocument`, `documentContentType`, `DOCUMENT_ACCEPT`                    |
+| Escalations | `useVentureEscalations`, `useCreateEscalation`, `useEscalationAction`, `useInboxEscalations`                                                                                                                            |
+| Team        | `useTeam`, `useInviteMember` (one-time code; `gcTime: 0`, never cache/log it)                                                                                                                                           |
+| EIR studio  | `usePersonas`, `usePersona`, `usePersonaRelease`, `useCreatePersonaRelease`, `useApprovePersonaRelease`, `useSuspendPersona`, `useResumePersona`, `useReviewQueue`, `useSubmitReview`                                   |
+| Program     | `usePortfolio`, `useProgramVentures`, `useCreateProgramVenture`, `useResources`, `useCreateResource`, `useUpdateResource`, `useProgramEscalations`, `useEscalationAssignees`, `useRouteEscalation`                      |
+| Admin       | `usePrincipals`, `useCreatePrincipal`, `useIssueAccessCode` (one-time code), `useRevokeAccessCode`, `usePlatformSettings`, `useUpdatePlatformSettings`, `useAuditLog` (infinite), `useUsage`                            |
 
 **Turn streaming:**
 
@@ -210,7 +221,8 @@ SPA and runs `pnpm --filter @foundry/web e2e`. `playwright.config.ts` starts eve
 - the API dev server (`apps/api` `src/dev-server.ts`) on **:8787** with `DATABASE_URL`, `DB_DRIVER=pg` and
   `MODEL_PROVIDER=mock` from the environment (`SITE_ORIGIN` = the SPA origin; `CORE_TURN_RATE_LIMIT`
   raised so reruns against one database stay under the per-person turn limit);
-- `vite preview` of the production build on **:4173**, which proxies `/api` to :8787.
+- `vite preview` of the production build on the `E2E_BASE_URL` port (**:4173** by default), which
+  proxies `/api` to `E2E_API_URL`.
 
 | Variable                | Meaning                                             |
 | ----------------------- | --------------------------------------------------- |
@@ -223,18 +235,22 @@ Projects: `setup` (signs in the owner, issues the seeded founder a code through 
 browser states under `node_modules/.cache/foundry-e2e-auth`), `desktop` (1440 × 900: the founder journey,
 document upload and axe checks) and `mobile` (390 × 844 smoke). One worker, because everything shares one seeded database.
 
-- **Journey** — landing → owner sign-in → admin issues an access code to the seeded founder (Maya
-  Okafor-Lindqvist, QuietQuad) → sign out → founder sign-in → overview → diagnose session → message with
-  live progress steps (the download is throttled through DevTools so the steps are observable) → cited,
-  structured answer → evidence inspector → approve the proposed memory → end session → recap → memory
-  page shows the approved item → a high-risk (IP) question is escalated and the founder approves sharing.
+- **Journey** — landing → owner sign-in (lands in Program) → the switcher opens Admin, which issues an
+  access code to the seeded founder (Maya Okafor-Lindqvist, QuietQuad) → sign out → founder sign-in lands
+  in New chat → the first message creates the conversation, with live progress steps (the download is
+  throttled through DevTools so the steps are observable) → cited, structured answer, listed in the
+  sidebar's recents → sources panel from a citation → approve the proposed memory → end → recap →
+  Knowledge shows the approved item (also through an old `/ventures/<id>/memory` link) → New chat again:
+  a high-risk (IP) question is escalated and the founder approves sharing.
 - **Documents** — upload a Markdown file (presigned PUT to the dev server's local S3 stand-in through the
   preview proxy) → `complete` (202 while processing) → the list polls until it is Ready → delete.
-- **Accessibility** — `@axe-core/playwright` with WCAG 2.0/2.1/2.2 A + AA tags on landing, sign-in,
-  overview, session (with an answer), memory and admin principals, in dark **and** light themes: zero
-  serious or critical violations.
-- **Mobile** — landing, sign-in and the session page: no horizontal scroll, no text clipped at the right
-  edge, primary controls inside the viewport with ≥ 24 px targets.
+- **Safety** — a crisis message (the first of a new chat) is blocked with human-support resources, live
+  and after a reload; a consented specialist request is routed by a program lead.
+- **Accessibility** — `@axe-core/playwright` with WCAG 2.0/2.1/2.2 A + AA tags on landing, sign-in, New
+  chat, a conversation (with an answer), Knowledge and People & access (reached through the old `/admin`
+  URL), in dark **and** light themes: zero serious or critical violations; the account menu by keyboard.
+- **Mobile** — landing, sign-in, the navigation sheet and New chat → conversation: no horizontal scroll,
+  no text clipped at the right edge, primary controls inside the viewport with ≥ 24 px targets.
 
 Run locally against a scratch database (never the shared `foundry` one):
 
@@ -257,7 +273,7 @@ Access codes are typed with `fillSecret()` so they never appear in step titles o
 - Guards run in `beforeLoad`: `requireMe(context, location)` redirects to
   `/sign-in?redirect=…` (same-origin paths only, `safeRedirectPath`). `$tenant/app` also redirects a
   wrong tenant slug to the principal's tenant and puts `me` on the route context.
-- Console layouts throw `ForbiddenError` → the default error component renders "No access".
+- Staff workspace layouts throw `ForbiddenError` → the default error component renders "No access".
 - `lib/auth/roles.ts`: `hasRole`, `hasAnyRole`, `isMember(me, ventureId, roles?)`, `canWrite`
   (founder/team), `isFounder`, `isAssignedEir`, `canAccessVenture`, `canUseEirStudio`,
   `canUseProgramConsole`, `canUseAdminConsole`. These decide what to **show**; the API is the authority.
@@ -291,12 +307,27 @@ Rules:
 `button` (variants default/secondary/outline/ghost/subtle/destructive/destructive-outline/link, sizes
 xs–lg/icon, `loading`, `asChild`) · `input` · `textarea` (autosize) · `label` · `field` (label +
 description + error wired to the control) · `card` · `badge` · `status-badge` · `stage-chip` ·
-`dialog` · `alert-dialog` · `sheet` · `inspector-panel` · `dropdown-menu` · `popover` · `tooltip`
+`dialog` · `alert-dialog` · `sheet` · `inspector-panel` · `dropdown-menu` · `tooltip`
 (`SimpleTooltip`) · `tabs` (pill/underline) · `select` · `switch` · `checkbox` · `radio-group` ·
-`separator` · `scroll-area` · `skeleton` (+ `SkeletonText`, `LoadingRegion`) · `avatar` (initials only)
-· `command` (cmdk) · `toast` (`<Toaster/>` is mounted; import `toast`) · `alert` · `progress` · `table`
+`separator` · `skeleton` (+ `SkeletonText`, `LoadingRegion`) · `command` (cmdk) · `toast` (`<Toaster/>` is mounted; import `toast`) · `alert` · `progress` · `table`
 (+ `SortableTableHead`, `sortRows`) · `kbd` · `empty-state` · `error-state` · `page-header`
 (`PageHeader`, `PageContainer`) · `section-card` · `metric-tile` · `copy-button` · `markdown`.
+
+### Typography, motion and faces
+
+- Families (self-hosted, `@fontsource-variable`): **Geist** (`font-sans`, the interface), **Newsreader**
+  (`font-serif`: display headings, page titles and the vEIR's own words), **Geist Mono** (`font-mono`,
+  `label-mono` labels, keys and data).
+- Type scale utilities, each with its own leading and tracking: `text-display` · `text-title` ·
+  `text-heading` · `text-subheading` · `text-body` · `text-small` · `text-caption` · `text-label`.
+  `cn()` knows them as sizes (tailwind-merge), so they combine safely with colour classes.
+- `prose-reading` (serif, 1.65 leading, 68ch measure) for long-form vEIR text; `tabular` for numbers.
+- Motion: 150 ms hover/press, `animate-rise` (360 ms out-expo, 8 px) for entrances below the fold only —
+  never fade first-paint content in from opacity 0. Reduced motion collapses everything.
+- Faces (`components/faces`): `PersonaAvatar` (the consented portrait when one exists, else a serif
+  monogram in a hairline ring; `xs`–`xl`; `speaking` ring for calls), `UserAvatar` (people: initials
+  only), `VentureMark`, and `VeirBadge` ("vEIR · AI" / "AI"). `veirDisplay(venture)` gives the vEIR's
+  short name ("Corin") for greetings and "Call Corin".
 
 ### StatusBadge
 
@@ -326,8 +357,8 @@ navigation) inside a `PageContainer` (`size="default" | "wide" | "narrow" | "ful
 with the route's `head`:
 
 ```tsx
-export const Route = createFileRoute('/$tenant/app/ventures/$ventureId/memory')({
-  head: () => ({ meta: [{ title: 'Memory' }] }),
+export const Route = createFileRoute('/$tenant/app/v/$ventureId/knowledge')({
+  head: () => ({ meta: [{ title: 'Knowledge' }] }),
   component: MemoryPage,
 });
 
@@ -346,12 +377,13 @@ function MemoryPage() {
 Loading → skeletons inside `aria-busy` regions; empty → `EmptyState`; failure → `ErrorState`
 (`onRetry={() => query.refetch()}`; shows the copyable request ID).
 
-### VentureLayout and the inspector
+### VentureLayout and the context panel
 
-`$ventureId/route.tsx` renders the context bar (venture, stage, Foundry Guide + persona version,
-assigned EIR, synthetic label, your role, DB health, inspector toggle), the section nav and an
-`InspectorProvider`. Pages fill the right-hand inspector declaratively; it is a column at ≥ 1280 px
-and a sheet below that (the toggle appears automatically):
+`v/$ventureId/route.tsx` loads the venture (403/404 → the route error states) and provides the
+`InspectorProvider`; the sidebar carries the venture's navigation, so the layout adds no chrome. Pages
+fill the right-hand context panel declaratively; it is a column at ≥ 1280 px and a sheet below that,
+closed until a citation, a selection or the page's `<InspectorToggle />` opens it (the desktop choice is
+remembered):
 
 ```tsx
 import { Inspector, useInspector } from '@/components/shell/inspector';
@@ -372,24 +404,29 @@ Only one `<Inspector>` should be mounted per page. Section pages get the venture
 
 ### DisclosureBanner (required)
 
-Every session view and every export must show the synthetic-identity disclosure:
+Every conversation view, call and export shows the AI disclosure — once:
 
 ```tsx
-<DisclosureBanner text={session.disclosure} />              // full-width strip (session views)
-<DisclosureBanner variant="inline" />                        // callout inside a card
+<DisclosureBanner variant="line" text={session.disclosure} />  // the one line under the composer
+<DisclosureBanner variant="inline" text={PUBLIC_DISCLOSURE} /> // callout (public pages)
 <DisclosureBanner variant="print" text={session.disclosure} /> // exports / print views
 ```
+
+The `Composer` renders the line itself; a conversation without a composer (ended, read-only) renders it
+at the end of the page.
 
 Text precedence: `text` prop → `Me.disclosure` → `DEFAULT_DISCLOSURE`. It is not dismissible.
 
 ### Global UX available to every page
 
-- `useAppShell()` → `openCommandPalette()`, `openShortcuts()`, `toggleSidebar()`.
 - `announce(message, 'polite' | 'assertive')` from `components/a11y/live-announcer`.
 - `useHotkeys({ 'g m': fn, 'mod+enter': fn })` — single keys are ignored while typing.
-- Shortcuts: ⌘/Ctrl K palette · `?` help · `[` sidebar · `g h/v/e/p/a` areas · `g o/c/m/d/x` venture
-  sections.
-- Banners (database waking, offline, AI paused) render automatically in the shell.
+- `useDockedBottom()` — a callback ref for sticky bottom content (the composer) that keeps
+  `scroll-padding-bottom` in step, so focused content never hides behind it (WCAG 2.4.11).
+- Shortcuts: ⌘/Ctrl K search · `?` help · `[` sidebar · `g n` New chat · `g k/d/h/t` Knowledge,
+  Documents, Human help, Team · `g e/p/a` staff workspaces.
+- Banners (database waking, offline, AI paused, new access code) render in the shell only while they
+  apply; there is no "everything is fine" status badge.
 - Toasts for transient confirmations only — errors that need action belong inline (`Alert`/`ErrorState`).
 
 ---

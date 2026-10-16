@@ -138,30 +138,39 @@ export async function issueAccessCodeViaApi(
   return code;
 }
 
-/** Open the seeded venture's overview from the ventures list; returns its id. */
+/**
+ * Open the app as the founder: `/<tenant>/app` lands in their venture's New chat (the vEIR's greeting
+ * and the composer). Returns the venture id.
+ */
 export async function openVenture(page: Page): Promise<string> {
-  await page.goto(`/${TENANT}/app/ventures`);
-  await page
-    .getByRole('main')
-    .getByRole('link', { name: new RegExp(`^${VENTURE_NAME}\\b`) })
-    .first()
-    .click();
-  await page.waitForURL(/\/ventures\/[0-9a-f-]{36}\/overview$/);
-  await expect(page.getByRole('heading', { level: 1, name: 'Since your last session' })).toBeVisible();
-  const id = /\/ventures\/([0-9a-f-]{36})\//.exec(page.url())?.[1];
+  await page.goto(`/${TENANT}/app`);
+  await page.waitForURL(/\/app\/v\/[0-9a-f-]{36}(?:\?.*)?$/);
+  await expect(
+    page.getByRole('heading', { level: 1, name: /^Good (morning|afternoon|evening), / }),
+  ).toBeVisible();
+  await expect(composer(page)).toBeVisible();
+  const id = /\/app\/v\/([0-9a-f-]{36})/.exec(page.url())?.[1];
   if (!id) throw new Error('No venture id in the URL');
   return id;
 }
 
-/** Start a session from the overview's "Start a session" dialog and wait for the session page. */
-export async function startSession(page: Page, goal: string): Promise<void> {
-  await page.getByRole('button', { name: 'Start a session', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Start a session' });
-  await expect(dialog.getByRole('radio', { name: /^Diagnose/ })).toBeChecked();
-  await dialog.getByRole('textbox', { name: 'Goal (optional)' }).fill(goal);
-  await dialog.getByRole('button', { name: 'Start session' }).click();
-  await page.waitForURL(/\/coach\/[0-9a-f-]{36}/);
-  await expect(page.getByRole('heading', { level: 1, name: goal })).toBeVisible();
+/** The message box of New chat or a conversation ("Message <vEIR name>"). */
+export function composer(page: Page): Locator {
+  return page.getByRole('textbox', { name: /^Message / });
+}
+
+/**
+ * From New chat: type the first message and send it. The conversation is created on send (no dialog)
+ * and opens at its own URL, where that first message is answered. Returns the conversation id.
+ */
+export async function startConversation(page: Page, firstMessage: string): Promise<string> {
+  const box = composer(page);
+  await box.fill(firstMessage);
+  await box.press('Enter');
+  await page.waitForURL(/\/c\/[0-9a-f-]{36}/);
+  const id = /\/c\/([0-9a-f-]{36})/.exec(page.url())?.[1];
+  if (!id) throw new Error('No conversation id in the URL');
+  return id;
 }
 
 const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];

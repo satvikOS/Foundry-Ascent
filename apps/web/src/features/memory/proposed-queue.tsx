@@ -166,7 +166,7 @@ export function ProposedQueue({ ventureId, tenant, canEdit, onOpenDetail }: Prop
       <EmptyState
         icon={CheckCheck}
         title="All caught up"
-        description="Nothing is waiting for review. When Foundry Guide suggests something to remember, it appears here first — nothing is used until someone approves it."
+        description="Nothing is waiting for review. Suggestions to remember appear here first — nothing is used until someone approves it."
       />
     );
   }

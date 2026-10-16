@@ -5,14 +5,24 @@ import { Bot } from 'lucide-react';
 import { meQueryOptions } from '@/lib/api/hooks/auth';
 import { cn } from '@/lib/utils';
 
+/**
+ * The disclosure on public pages, before anyone has signed in (no persona is known yet): what every vEIR
+ * is, and that it never speaks for the EIR.
+ */
+export const PUBLIC_DISCLOSURE =
+  'Every vEIR is an AI, built with consent from an EIR’s approved doctrine and style. It is not the EIR and never speaks for them. Everything in this environment is synthetic.';
+
 interface DisclosureBannerProps {
   /**
    * Disclosure text. Pass the session's or persona release's `disclosure` when you have it;
    * otherwise the signed-in principal's `Me.disclosure`, then DEFAULT_DISCLOSURE, is used.
    */
   text?: string | null;
-  /** "banner" (full width strip), "inline" (card callout), "print" (exports; serif, always visible). */
-  variant?: 'banner' | 'inline' | 'print';
+  /**
+   * "line" (one quiet line under a composer or call: the conversation's single disclosure), "inline"
+   * (card callout), "banner" (full-width strip), "print" (exports; serif, always visible).
+   */
+  variant?: 'line' | 'banner' | 'inline' | 'print';
   className?: string;
 }
 
@@ -42,13 +52,32 @@ export function DisclosureBanner({ text, variant = 'banner', className }: Disclo
     );
   }
 
+  if (variant === 'line') {
+    return (
+      <p
+        role="note"
+        aria-label="AI disclosure"
+        data-slot="disclosure"
+        className={cn(
+          'flex items-baseline justify-center gap-1.5 text-caption text-muted-foreground',
+          className,
+        )}
+      >
+        <span className="shrink-0 rounded-[0.25rem] border border-border-strong px-1 font-mono text-[0.625rem] leading-[1.125rem] font-medium tracking-[0.08em] text-foreground uppercase">
+          AI
+        </span>
+        <span className="min-w-0 text-pretty">{message ?? DEFAULT_DISCLOSURE}</span>
+      </p>
+    );
+  }
+
   return (
     <div
       role="note"
       aria-label="AI disclosure"
       data-slot="disclosure"
       className={cn(
-        'flex items-start gap-2.5 text-[13px] leading-5 text-muted-foreground',
+        'flex items-start gap-2.5 text-small text-muted-foreground',
         variant === 'banner' &&
           'border-b border-dashed border-border-strong bg-muted/50 px-4 py-2 sm:items-center',
         variant === 'inline' &&
