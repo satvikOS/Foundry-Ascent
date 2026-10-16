@@ -47,11 +47,14 @@ export function MemorySaved({
   tenant,
   ventureId,
   memories,
+  onNavigate,
   className,
 }: {
   tenant: string;
   ventureId: string;
   memories: readonly MemoryObjectView[];
+  /** Following the link leaves this surface (an ended call's summary forgets the call). */
+  onNavigate?: () => void;
   className?: string;
 }) {
   const [only] = memories;
@@ -68,6 +71,7 @@ export function MemorySaved({
         to="/$tenant/app/v/$ventureId/knowledge"
         params={{ tenant, ventureId }}
         search={one ? { m: only.id } : {}}
+        onClick={onNavigate}
         className="min-w-0 truncate rounded-sm underline decoration-border-strong underline-offset-4 hover:text-foreground hover:decoration-foreground focus-visible:outline-2 focus-visible:outline-ring"
       >
         {one ? only.title : pluralize(memories.length, 'item')}

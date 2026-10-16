@@ -239,6 +239,47 @@ describe('CallSummaryPanel', () => {
     expect(callbacks.leave).toHaveBeenCalled();
   });
 
+  it('says nothing about memory under crisis support: what was said then is never remembered', async () => {
+    const fetchMock = stubFetch().mockImplementation((input) =>
+      Promise.resolve(urlOf(input).includes('/memory/') ? json(memory()) : json({ items: [] })),
+    );
+    renderSummary(
+      ended(
+        { memoryProposalIds: [IDS.memory] },
+        {
+          blocked: {
+            reason: 'crisis_support',
+            escalationId: null,
+            supportMessage: 'Call or text **988** any time.',
+          },
+        },
+      ),
+    );
+    expect(await screen.findByTestId('blocked-panel')).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByTestId('call-remembered')).toBeNull();
+    expect(screen.queryByTestId('memory-saved')).toBeNull();
+    expect(screen.queryByText(/Remembered|pick up from this call/)).toBeNull();
+    expect(fetchMock.mock.calls.some(([input]) => urlOf(input).includes('/memory/'))).toBe(false);
+  });
+
+  it('links what the vEIR kept by itself, and following the link leaves the call behind', async () => {
+    stubFetch().mockImplementation((input) =>
+      Promise.resolve(
+        urlOf(input).includes('/memory/')
+          ? json(memory({ status: 'confirmed', title: 'Per-library pricing' }))
+          : json({ items: [] }),
+      ),
+    );
+    const callbacks = renderSummary(ended({ memoryKeptIds: [IDS.memory], memoryProposalIds: [] }));
+    const link = await screen.findByRole('link', { name: 'Per-library pricing' });
+    expect(link).toHaveAttribute('href', `/ain/app/v/${IDS.venture}/knowledge?m=${IDS.memory}`);
+    expect(callbacks.leave).not.toHaveBeenCalled();
+    // Off to Knowledge: the ended call is forgotten, so no "Call ended" bar follows the founder there.
+    await userEvent.click(link);
+    expect(callbacks.leave).toHaveBeenCalledTimes(1);
+  });
+
   it('says quietly that the call is remembered, even before anything is saved to Knowledge', async () => {
     stubFetch().mockResolvedValue(json({ items: [] }));
     renderSummary(ended({}));

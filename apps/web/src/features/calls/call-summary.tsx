@@ -119,6 +119,7 @@ export function CallSummaryPanel({
           summary={summary}
           canWrite={canWrite}
           isPrivate={privacy === 'ephemeral'}
+          supportShown={ended.blocked !== null}
           onLeave={onLeave}
         />
       ) : (
@@ -153,6 +154,7 @@ function SummaryDetails({
   summary,
   canWrite,
   isPrivate,
+  supportShown,
   onLeave,
 }: {
   tenant: string;
@@ -161,16 +163,20 @@ function SummaryDetails({
   summary: CallSummary;
   canWrite: boolean;
   isPrivate: boolean;
+  /**
+   * The call ended while it showed support (crisis lines, a safety hand-over). What was said then is never
+   * remembered, and under that support a line about memory is the wrong thing to say: none is shown.
+   */
+  supportShown: boolean;
   onLeave: () => void;
 }) {
-  // What the call's turns saved to Knowledge, as it stands now (anything forgotten since is left out).
-  const memories = useQueries({
-    queries: (isPrivate || !canWrite ? [] : summary.memoryProposalIds).map((id) =>
-      memoryItemQueryOptions(id),
-    ),
-  });
+  const remembered = !isPrivate && !supportShown && canWrite && summary.turnCount > 0;
+  // What the call saved to Knowledge, as it stands now (anything forgotten since is left out): kept by the vEIR
+  // by itself, or saved before memory was kept automatically.
+  const savedIds = remembered ? [...(summary.memoryKeptIds ?? []), ...summary.memoryProposalIds] : [];
+  const memories = useQueries({ queries: savedIds.map((id) => memoryItemQueryOptions(id)) });
   const saved = savedByIds(
-    summary.memoryProposalIds,
+    savedIds,
     memories.map((query) => query.data).filter((memory): memory is MemoryObjectView => memory !== undefined),
   );
   const escalations = useVentureEscalations(ventureId);
@@ -186,7 +192,7 @@ function SummaryDetails({
           <EyeOff aria-hidden className="size-4" />
           Private call: nothing from it is remembered.
         </p>
-      ) : summary.turnCount > 0 && canWrite ? (
+      ) : remembered ? (
         // A quiet "remembered" state: the call is kept with the conversation and the vEIR picks up from it
         // next time, so the founder can trust the next call knows.
         <div className="grid justify-items-center gap-1">
@@ -197,7 +203,14 @@ function SummaryDetails({
             <Check aria-hidden className="size-4" />
             Remembered. {sentenceStart(veirName)} will pick up from this call next time.
           </p>
-          <MemorySaved tenant={tenant} ventureId={ventureId} memories={saved} className="justify-center" />
+          <MemorySaved
+            tenant={tenant}
+            ventureId={ventureId}
+            memories={saved}
+            // Leaving for Knowledge: the call is over, forget it (no "Call ended" bar follows the founder there).
+            onNavigate={onLeave}
+            className="justify-center"
+          />
         </div>
       ) : null}
 
