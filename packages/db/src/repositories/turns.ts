@@ -244,17 +244,20 @@ export interface CreateTurnInput {
 
 /**
  * Creates a `pending` turn with the next ordinal of the session. Concurrent creates in the same session
- * fail with a unique violation (session_id, ordinal); callers may retry. The `turns_touch_session` trigger
- * moves the conversation's last activity, marks spoken conversations and titles new ones.
+ * fail with a unique violation (session_id, ordinal); callers may retry. The turn is stamped with the time
+ * of the insert (not of its transaction's start), so a later ordinal never carries an earlier time and
+ * recents order conversations by when each message was actually sent, however transactions interleave. The
+ * `turns_touch_session` trigger moves the conversation's last activity, marks spoken conversations and
+ * titles new ones.
  */
 export function createTurn(ex: SqlExecutor, input: CreateTurnInput): Promise<TurnRecord> {
   return queryOne(
     ex,
     `INSERT INTO turns AS t (id, tenant_id, venture_id, session_id, ordinal, author_id, mode, founder_text, risk_label,
-                             risk_categories, channel)
+                             risk_categories, channel, created_at)
      SELECT coalesce(:id, gen_random_uuid()), :tenantId, :ventureId, :sessionId,
             coalesce((SELECT max(x.ordinal) FROM turns x WHERE x.session_id = :sessionId), 0) + 1,
-            :authorId, :mode, :text, :riskLabel, :riskCategories, coalesce(:channel, 'text')
+            :authorId, :mode, :text, :riskLabel, :riskCategories, coalesce(:channel, 'text'), clock_timestamp()
      RETURNING ${COLUMNS}`,
     {
       id: p.nullable.uuid(input.id),

@@ -3,7 +3,11 @@
  *
  * - Every object has a deterministic id (UUIDv5 of tenant slug + key); rows are inserted with
  *   ON CONFLICT DO NOTHING, so re-running never duplicates data and never overwrites changes made in the
- *   product (a suspended persona stays suspended, a deleted memory item stays deleted).
+ *   product (a suspended persona stays suspended, a deleted memory item stays deleted). A knowledge source's
+ *   chunks are inserted only together with the source (`insertSourceWithChunks`), so an edited or withdrawn
+ *   corpus and a deleted document never get their seeded chunks back.
+ * - Corpora are authored notes (kind `note` with their text as `body`) once migration 0004 is applied, as
+ *   migrations 0004 and 0005 convert the corpora of databases seeded earlier.
  * - The owner principal (platform_admin + program_lead) is bound to OWNER_ACCESS_CODE_PREFIX/HASH; the
  *   owner's display name and code hash follow the deploy configuration. Demo principals get no codes.
  * - Documents and knowledge chunks are stored without embeddings; the migrate handler backfills them
@@ -25,6 +29,7 @@ import {
   PROGRAM_METHOD_SOURCE,
 } from './doctrine.js';
 import { seedId, ventureCanary } from './ids.js';
+import { bodyFromSections, insertRows, insertSourceWithChunks } from './insert.js';
 import { SEED_PATTERNS, SEED_RESOURCES } from './resources.js';
 import { hasVeirSchema, seedVeirs, type SeededVeir } from './veir.js';
 import {
@@ -82,40 +87,6 @@ export interface SeedResult {
   readonly ventures: readonly SeededVenture[];
   /** vEIR personas (empty without demo data or before migration 0004). */
   readonly veirs: readonly SeededVeir[];
-}
-
-type ColumnType = 'uuid' | 'text' | 'text[]' | 'jsonb' | 'integer' | 'numeric' | 'boolean' | 'timestamptz';
-
-const COLUMN_NAME = /^[a-z_][a-z0-9_]*$/;
-const TABLE_NAME = /^[a-z_][a-z0-9_]*$/;
-
-/**
- * Multi-row insert through `jsonb_to_recordset` (one round trip per batch for both drivers).
- * Table and column names are code constants.
- */
-async function insertRows(
-  sx: SystemExecutor,
-  table: string,
-  columns: Readonly<Record<string, ColumnType>>,
-  rows: readonly Readonly<Record<string, unknown>>[],
-  conflict = 'ON CONFLICT DO NOTHING',
-): Promise<number> {
-  if (rows.length === 0) return 0;
-  if (!TABLE_NAME.test(table)) throw new SqlUsageError('invalid table name');
-  const names = Object.keys(columns);
-  for (const n of names) if (!COLUMN_NAME.test(n)) throw new SqlUsageError('invalid column name');
-  const typed = names.map((n) => `${n} ${columns[n] ?? 'text'}`).join(', ');
-  let inserted = 0;
-  for (let i = 0; i < rows.length; i += 100) {
-    const result = await sx.query(
-      `INSERT INTO ${table} (${names.join(', ')})
-       SELECT ${names.join(', ')} FROM jsonb_to_recordset(:rows) AS x (${typed})
-       ${conflict}`,
-      { rows: p.json(rows.slice(i, i + 100)) },
-    );
-    inserted += result.rowCount;
-  }
-  return inserted;
 }
 
 function dayFn(now: Date): (offsetDays: number) => string {
@@ -312,44 +283,9 @@ export async function seed(sx: SystemExecutor, config: SeedConfig): Promise<Seed
   );
 
   // Shared knowledge: program method + guide doctrine corpus ---------------------------------------
+  const veirSchema = await hasVeirSchema(sx);
   const programSourceId = id('knowledge-source', PROGRAM_METHOD_SOURCE.key);
   const doctrineSourceId = id('knowledge-source', 'foundry-guide-doctrine');
-  await insertRows(
-    sx,
-    'knowledge_sources',
-    {
-      id: 'uuid',
-      tenant_id: 'uuid',
-      scope: 'text',
-      persona_id: 'uuid',
-      title: 'text',
-      owner: 'text',
-      classification: 'text',
-      created_by: 'uuid',
-    },
-    [
-      {
-        id: programSourceId,
-        tenant_id: tenantId,
-        scope: 'program',
-        persona_id: null,
-        title: PROGRAM_METHOD_SOURCE.title,
-        owner: PROGRAM_METHOD_SOURCE.owner,
-        classification: 'program_internal',
-        created_by: approver,
-      },
-      {
-        id: doctrineSourceId,
-        tenant_id: tenantId,
-        scope: 'persona',
-        persona_id: personaId,
-        title: 'Foundry Guide doctrine (release v1)',
-        owner: 'Program office',
-        classification: 'program_internal',
-        created_by: approver,
-      },
-    ],
-  );
   const doctrineChunks = [
     ...GUIDE_DOCTRINE.frameworks.map((f) => ({
       heading: f.name,
@@ -364,42 +300,71 @@ export async function seed(sx: SystemExecutor, config: SeedConfig): Promise<Seed
         `Referral destinations:\n${GUIDE_DOCTRINE.referralDestinations.map((d) => `- ${d}`).join('\n')}`,
     },
   ];
-  const chunkColumns = {
-    source_id: 'uuid',
-    tenant_id: 'uuid',
-    scope: 'text',
-    venture_id: 'uuid',
-    persona_id: 'uuid',
-    ordinal: 'integer',
-    heading: 'text',
-    content: 'text',
-    token_count: 'integer',
-  } as const;
-  const tokenEstimate = (text: string): number => Math.ceil(text.length / 4);
-  await insertRows(sx, 'knowledge_chunks', chunkColumns, [
-    ...PROGRAM_METHOD_SOURCE.chunks.map((c, i) => ({
-      source_id: programSourceId,
-      tenant_id: tenantId,
+  const corpora = [
+    {
+      sourceId: programSourceId,
       scope: 'program',
-      venture_id: null,
-      persona_id: null,
-      ordinal: i + 1,
-      heading: c.heading,
-      content: c.content,
-      token_count: tokenEstimate(c.content),
-    })),
-    ...doctrineChunks.map((c, i) => ({
-      source_id: doctrineSourceId,
-      tenant_id: tenantId,
+      personaId: null,
+      title: PROGRAM_METHOD_SOURCE.title,
+      owner: PROGRAM_METHOD_SOURCE.owner,
+      sections: PROGRAM_METHOD_SOURCE.chunks,
+    },
+    {
+      sourceId: doctrineSourceId,
       scope: 'persona',
-      venture_id: null,
-      persona_id: personaId,
-      ordinal: i + 1,
-      heading: c.heading,
-      content: c.content,
-      token_count: tokenEstimate(c.content),
-    })),
-  ]);
+      personaId,
+      title: 'Foundry Guide doctrine (release v1)',
+      owner: 'Program office',
+      sections: doctrineChunks,
+    },
+  ];
+  for (const corpus of corpora) {
+    await insertSourceWithChunks(sx, {
+      sourceColumns: {
+        id: 'uuid',
+        tenant_id: 'uuid',
+        scope: 'text',
+        persona_id: 'uuid',
+        title: 'text',
+        owner: 'text',
+        classification: 'text',
+        created_by: 'uuid',
+        // Authored notes once 0004 is applied (before it, sources have no kind or body).
+        ...(veirSchema ? ({ kind: 'text', body: 'text' } as const) : {}),
+      },
+      source: {
+        id: corpus.sourceId,
+        tenant_id: tenantId,
+        scope: corpus.scope,
+        persona_id: corpus.personaId,
+        title: corpus.title,
+        owner: corpus.owner,
+        classification: 'program_internal',
+        created_by: approver,
+        ...(veirSchema ? { kind: 'note', body: bodyFromSections(corpus.sections) } : {}),
+      },
+      chunkColumns: {
+        source_id: 'uuid',
+        tenant_id: 'uuid',
+        scope: 'text',
+        persona_id: 'uuid',
+        ordinal: 'integer',
+        heading: 'text',
+        content: 'text',
+        token_count: 'integer',
+      },
+      chunks: corpus.sections.map((c, i) => ({
+        source_id: corpus.sourceId,
+        tenant_id: tenantId,
+        scope: corpus.scope,
+        persona_id: corpus.personaId,
+        ordinal: i + 1,
+        heading: c.heading,
+        content: c.content,
+        token_count: Math.ceil(c.content.length / 4),
+      })),
+    });
+  }
 
   if (demo) {
     const now = config.now ?? new Date();
@@ -408,7 +373,7 @@ export async function seed(sx: SystemExecutor, config: SeedConfig): Promise<Seed
     for (const v of seedVentures)
       ventures.push(await seedVenture(sx, { v, tenantId, id, principals, personaId, approver }));
     await seedResources(sx, { tenantId, id, ownerOrLead: approver });
-    if (await hasVeirSchema(sx)) {
+    if (veirSchema) {
       const result = await seedVeirs(sx, {
         tenantId,
         id,
@@ -420,7 +385,6 @@ export async function seed(sx: SystemExecutor, config: SeedConfig): Promise<Seed
         memoryIds: Object.fromEntries(ventures.map((v) => [v.key, v.memoryIds])),
         day,
         now,
-        insertRows: (ex, table, columns, rows) => insertRows(ex, table, columns, rows),
       });
       veirs = result.veirs;
       ventures = ventures.map((v) => {
@@ -562,10 +526,9 @@ async function seedVenture(
     documentIds.push(docId);
     const sections = documentText(doc, doc.canary ? canary : null);
     const fullText = sections.map((s) => `## ${s.heading}\n\n${s.content}`).join('\n\n');
-    await insertRows(
-      sx,
-      'knowledge_sources',
-      {
+    // A document the founder deleted keeps its withdrawn source without chunks.
+    await insertSourceWithChunks(sx, {
+      sourceColumns: {
         id: 'uuid',
         tenant_id: 'uuid',
         scope: 'text',
@@ -575,19 +538,37 @@ async function seedVenture(
         classification: 'text',
         created_by: 'uuid',
       },
-      [
-        {
-          id: sourceId,
-          tenant_id: tenantId,
-          scope: 'venture',
-          venture_id: ventureId,
-          title: doc.title,
-          owner: v.name,
-          classification: 'synthetic',
-          created_by: person(doc.uploadedBy),
-        },
-      ],
-    );
+      source: {
+        id: sourceId,
+        tenant_id: tenantId,
+        scope: 'venture',
+        venture_id: ventureId,
+        title: doc.title,
+        owner: v.name,
+        classification: 'synthetic',
+        created_by: person(doc.uploadedBy),
+      },
+      chunkColumns: {
+        source_id: 'uuid',
+        tenant_id: 'uuid',
+        scope: 'text',
+        venture_id: 'uuid',
+        ordinal: 'integer',
+        heading: 'text',
+        content: 'text',
+        token_count: 'integer',
+      },
+      chunks: sections.map((s, i) => ({
+        source_id: sourceId,
+        tenant_id: tenantId,
+        scope: 'venture',
+        venture_id: ventureId,
+        ordinal: i + 1,
+        heading: s.heading,
+        content: s.content,
+        token_count: Math.ceil(s.content.length / 4),
+      })),
+    });
     await insertRows(
       sx,
       'documents',
@@ -617,30 +598,6 @@ async function seedVenture(
           uploaded_by: person(doc.uploadedBy),
         },
       ],
-    );
-    await insertRows(
-      sx,
-      'knowledge_chunks',
-      {
-        source_id: 'uuid',
-        tenant_id: 'uuid',
-        scope: 'text',
-        venture_id: 'uuid',
-        ordinal: 'integer',
-        heading: 'text',
-        content: 'text',
-        token_count: 'integer',
-      },
-      sections.map((s, i) => ({
-        source_id: sourceId,
-        tenant_id: tenantId,
-        scope: 'venture',
-        venture_id: ventureId,
-        ordinal: i + 1,
-        heading: s.heading,
-        content: s.content,
-        token_count: Math.ceil(s.content.length / 4),
-      })),
     );
   }
 

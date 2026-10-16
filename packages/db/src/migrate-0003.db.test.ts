@@ -211,19 +211,16 @@ afterAll(async () => {
 
 describe('migration 0003_security_hardening', () => {
   it('is bundled after 0001 and 0002, which it never changes', () => {
-    expect(MIGRATIONS.map((m) => m.version)).toEqual([
-      '0001_init',
-      '0002_rls_helpers',
-      '0003_security_hardening',
-      '0004_veir_knowledge',
-    ]);
+    const versions = MIGRATIONS.map((m) => m.version);
+    expect(versions.slice(0, 3)).toEqual(['0001_init', '0002_rls_helpers', '0003_security_hardening']);
+    expect(versions).toEqual([...versions].sort());
     expect(HARDENING).toBeDefined();
   });
 
   it('applies cleanly on top of 0001 and 0002 with existing data, as the non-superuser owner', async () => {
     const report = await migrate(t.db);
-    // 0004 follows in the same run (its own suite covers it).
-    expect(report.applied).toEqual(['0003_security_hardening', '0004_veir_knowledge']);
+    // Later migrations follow in the same run (their own suites cover them).
+    expect(report.applied).toEqual(MIGRATIONS.map((m) => m.version).filter((v) => v >= '0003'));
     expect(report.alreadyApplied).toEqual(['0001_init', '0002_rls_helpers']);
     const role = await t.db.system((sx) =>
       sx.query('SELECT rolsuper FROM pg_roles WHERE rolname = current_user'),
@@ -321,12 +318,7 @@ describe('migration 0003_security_hardening', () => {
     expect(await schemaFingerprint(t.db)).toBe(before);
     const again = await migrate(t.db);
     expect(again.applied).toEqual([]);
-    expect(again.alreadyApplied).toEqual([
-      '0001_init',
-      '0002_rls_helpers',
-      '0003_security_hardening',
-      '0004_veir_knowledge',
-    ]);
+    expect(again.alreadyApplied).toEqual(MIGRATIONS.map((m) => m.version));
     const rows = await t.db.system((sx) =>
       sx.query('SELECT version, checksum FROM schema_migrations ORDER BY version'),
     );

@@ -6,7 +6,14 @@
  *
  * Placeholders are `:` followed by an identifier (`[A-Za-z_][A-Za-z0-9_]*`). `::` casts and the PL/pgSQL
  * `:=` operator are not placeholders. Write array slices with spaces (`arr[lo : hi]`).
+ *
+ * The same `:name` shape inside a string literal or quoted identifier is not a placeholder here or for
+ * PostgreSQL, but the RDS Data API parses named parameters itself and does not document that it skips
+ * literals: `to_char(x, 'HH24:MI')` could fail in production only. The scan reports such names so the
+ * executors refuse those statements on every driver (local tests catch them). Write the value as a
+ * parameter, compute it numerically, or use `[:]` in a regular expression.
  */
+import { SqlUsageError } from './errors.js';
 
 const IDENT_START = /[A-Za-z_]/;
 const IDENT_CHAR = /[A-Za-z0-9_]/;
@@ -22,6 +29,8 @@ export interface PlaceholderToken {
 
 export interface SqlScan {
   readonly placeholders: readonly PlaceholderToken[];
+  /** `:name` shapes inside string literals and quoted identifiers (unsafe for the RDS Data API). */
+  readonly quotedNames: readonly PlaceholderToken[];
   /** Offsets of top-level ';' statement terminators. */
   readonly terminators: readonly number[];
 }
@@ -30,9 +39,19 @@ function isIdentChar(ch: string | undefined): boolean {
   return ch !== undefined && IDENT_CHAR.test(ch);
 }
 
+/** A `:name` shape starting at `i` (not part of `::`), or null. */
+function colonName(sql: string, i: number): PlaceholderToken | null {
+  const next = sql[i + 1];
+  if (sql[i] !== ':' || next === undefined || !IDENT_START.test(next) || sql[i - 1] === ':') return null;
+  let j = i + 2;
+  while (j < sql.length && isIdentChar(sql[j])) j += 1;
+  return { name: sql.slice(i + 1, j), start: i, end: j };
+}
+
 /** Scans SQL once and reports placeholders and statement terminators outside quoted regions. */
 export function scanSql(sql: string): SqlScan {
   const placeholders: PlaceholderToken[] = [];
+  const quotedNames: PlaceholderToken[] = [];
   const terminators: number[] = [];
   const n = sql.length;
   let i = 0;
@@ -85,6 +104,8 @@ export function scanSql(sql: string): SqlScan {
           i += 1;
           break;
         }
+        const quoted = colonName(sql, i);
+        if (quoted) quotedNames.push(quoted);
         i += 1;
       }
       continue;
@@ -102,6 +123,8 @@ export function scanSql(sql: string): SqlScan {
           i += 1;
           break;
         }
+        const quoted = colonName(sql, i);
+        if (quoted) quotedNames.push(quoted);
         i += 1;
       }
       continue;
@@ -123,11 +146,10 @@ export function scanSql(sql: string): SqlScan {
         i += 2; // type cast
         continue;
       }
-      if (next !== undefined && IDENT_START.test(next) && sql[i - 1] !== ':') {
-        let j = i + 2;
-        while (j < n && isIdentChar(sql[j])) j += 1;
-        placeholders.push({ name: sql.slice(i + 1, j), start: i, end: j });
-        i = j;
+      const placeholder = colonName(sql, i);
+      if (placeholder) {
+        placeholders.push(placeholder);
+        i = placeholder.end;
         continue;
       }
     }
@@ -136,7 +158,7 @@ export function scanSql(sql: string): SqlScan {
     i += 1;
   }
 
-  return { placeholders, terminators };
+  return { placeholders, quotedNames, terminators };
 }
 
 /** True when the text holds nothing but whitespace and comments. */
@@ -199,13 +221,20 @@ export interface CompiledSql {
 
 /**
  * Rewrites `:name` placeholders. `render(name, index)` returns the replacement text (index is the 1-based
- * position of the distinct name). Throws via `render` for unknown names.
+ * position of the distinct name). Throws via `render` for unknown names, and {@link SqlUsageError} when a
+ * literal or quoted identifier holds a `:name` shape (unsafe for the RDS Data API).
  */
 export function rewritePlaceholders(
   sql: string,
   render: (name: string, index: number) => string,
 ): CompiledSql {
-  const { placeholders } = scanSql(sql);
+  const { placeholders, quotedNames } = scanSql(sql);
+  const quoted = quotedNames[0];
+  if (quoted) {
+    throw new SqlUsageError(
+      `quoted text holds ":${quoted.name}", which the RDS Data API may read as a parameter; pass the value as a parameter instead`,
+    );
+  }
   if (placeholders.length === 0) return { text: sql, names: [] };
   const order = new Map<string, number>();
   let out = '';

@@ -6,7 +6,7 @@ import {
   UpdateNotebookRequest,
   type VeirNotebook,
 } from '@foundry/contracts';
-import { assignmentsRepo, notebooksRepo } from '@foundry/db';
+import { NotebookIntegrityError, assignmentsRepo, notebooksRepo } from '@foundry/db';
 import { type z } from 'zod';
 
 import { requireVentureAccess } from '../authz/venture-access.js';
@@ -19,7 +19,8 @@ import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.j
  * it. Everything in it is an AI note: the founder/team see every line, correct or remove any of them, or
  * clear it; the assigned EIR reads it. Edits carry the version they were made against (409 on a stale
  * edit), and every removed or corrected line is remembered as a fingerprint so distillation never writes
- * it back.
+ * it back. A stored notebook that does not match its contract fails loudly (500, logged with ids only)
+ * instead of being shown or saved as if it were empty.
  */
 export interface NotebookService {
   /** The notebook of the venture's current vEIR (founder/team or the assigned EIR). Empty at version 0. */
@@ -139,12 +140,16 @@ export function applyNotebookEdit(
         suppressed: out,
       };
     }
-    case 'edit_opener':
-    case 'remove_opener': {
-      const text = edit.action === 'edit_opener' ? edit.text : null;
-      if (text === current.nextOpener) return { content: current, suppressed: out };
+    case 'edit_opener': {
+      if (edit.text === current.nextOpener) return { content: current, suppressed: out };
       suppress('nextOpener', current.nextOpener);
-      return { content: { ...current, nextOpener: text }, suppressed: out };
+      // A corrected opener keeps the conversation it was drawn from: deleting it still clears the line.
+      return { content: { ...current, nextOpener: edit.text }, suppressed: out };
+    }
+    case 'remove_opener': {
+      if (current.nextOpener === null) return { content: current, suppressed: out };
+      suppress('nextOpener', current.nextOpener);
+      return { content: { ...current, nextOpener: null, nextOpenerSource: null }, suppressed: out };
     }
     case 'clear': {
       suppress('summary', current.summary);
@@ -157,6 +162,22 @@ export function applyNotebookEdit(
 }
 
 export function createNotebookService(kit: Kit): NotebookService {
+  /** A notebook that cannot be read in full is never shown or saved as if it were complete. */
+  function requireIntact(
+    scope: RequestScope,
+    ventureId: string,
+    record: notebooksRepo.NotebookRecord | null,
+  ): void {
+    if (record === null || record.intact) return;
+    kit.deps.logger.error('notebook.integrity_failed', {
+      requestId: scope.ctx.requestId,
+      ventureId,
+      notebookId: record.id,
+      version: record.version,
+    });
+    throw new NotebookIntegrityError(record.id);
+  }
+
   /** The persona coaching the venture now (its notebook is the one shown). */
   async function currentPersona(
     scope: RequestScope,
@@ -189,6 +210,7 @@ export function createNotebookService(kit: Kit): NotebookService {
         }
         const persona = await currentPersona(scope, ventureId);
         const record = await notebooksRepo.getNotebook(scope.tx, { ventureId, personaId: persona.id });
+        requireIntact(scope, ventureId, record);
         return notebooksRepo.toNotebookView(
           { ventureId, personaId: persona.id, personaName: persona.name },
           record,
@@ -203,6 +225,7 @@ export function createNotebookService(kit: Kit): NotebookService {
         await requireVentureAccess(scope, ventureId, 'write', { objectType: 'notebook' });
         const persona = await currentPersona(scope, ventureId);
         const record = await notebooksRepo.getNotebook(scope.tx, { ventureId, personaId: persona.id });
+        requireIntact(scope, ventureId, record);
         const version = record?.version ?? 0;
         const stale = (): DomainError =>
           new DomainError('conflict', 'The notebook changed since you opened it. Reload it and try again.', {

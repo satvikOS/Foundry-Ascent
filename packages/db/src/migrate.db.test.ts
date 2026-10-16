@@ -17,11 +17,13 @@ afterAll(async () => {
 
 describe('migrate', () => {
   it('applies all bundled migrations as a non-superuser, then is a no-op', async () => {
-    expect(t.migrations?.applied).toEqual([
+    expect(t.migrations?.applied).toEqual(MIGRATIONS.map((m) => m.version));
+    expect(t.migrations?.applied.slice(0, 5)).toEqual([
       '0001_init',
       '0002_rls_helpers',
       '0003_security_hardening',
       '0004_veir_knowledge',
+      '0005_wave1_fixes',
     ]);
     const role = await t.db.system((sx) =>
       sx.query('SELECT rolsuper, rolcreaterole FROM pg_roles WHERE rolname = current_user'),
@@ -30,12 +32,7 @@ describe('migrate', () => {
     const events: MigrationEvent[] = [];
     const again = await migrate(t.db, { onEvent: (e) => events.push(e) });
     expect(again.applied).toEqual([]);
-    expect(again.alreadyApplied).toEqual([
-      '0001_init',
-      '0002_rls_helpers',
-      '0003_security_hardening',
-      '0004_veir_knowledge',
-    ]);
+    expect(again.alreadyApplied).toEqual(MIGRATIONS.map((m) => m.version));
     expect(again.unknown).toEqual([]);
     expect(events.every((e) => e.type === 'already_applied')).toBe(true);
     const rows = await t.db.system((sx) =>

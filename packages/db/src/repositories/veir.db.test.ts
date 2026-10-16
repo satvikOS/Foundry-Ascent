@@ -358,7 +358,7 @@ describe('the persona common pool', () => {
 });
 
 describe('deleting a conversation', () => {
-  it('removes what was drawn from it: pending AI proposals and notebook lines', async () => {
+  it('removes what was drawn from it: pending AI proposals, notebook lines, summary and opener', async () => {
     const past = must(
       (
         await t.db.withContext(maya, (tx) => sessionsRepo.listSessionViews(tx, { ventureId: quietquad.id }))
@@ -392,8 +392,9 @@ describe('deleting a conversation', () => {
     expect(after.version).toBe(before.version + 1);
     expect(after.content.commitments).toEqual([]);
     expect(after.content.founderProfile).toEqual([]);
-    // Lines not tied to the conversation (the summary) stay for the team to correct.
-    expect(after.content.summary).toBe(before.content.summary);
+    // The summary and the opener were drawn from it too.
+    expect(before.content.summarySources).toEqual([past.id]);
+    expect(after.content).toMatchObject({ summary: '', summarySources: [], nextOpener: null });
     const state = await t.db.system((sx) =>
       sx.query('SELECT status, content FROM memory_objects WHERE id = :id', { id: p.uuid(proposal.id) }),
     );

@@ -17,6 +17,8 @@ import { createTestDatabase, type TestDatabase } from './testing/test-database.j
 
 const BEFORE = MIGRATIONS.filter((m) => m.version < '0004');
 const VEIR = MIGRATIONS.find((m) => m.version === '0004_veir_knowledge');
+/** 0004 on its own: later migrations have their own suites. */
+const THROUGH_VEIR = MIGRATIONS.filter((m) => m.version <= '0004_veir_knowledge');
 const CONFIG: SeedConfig = { homeTenant: { slug: 'ain', name: 'Ain Foundry (test)' }, owner: null };
 
 let t: TestDatabase;
@@ -174,7 +176,7 @@ describe('migration 0004_veir_knowledge', () => {
   });
 
   it('applies cleanly on top of 0001–0003 with existing data, as the non-superuser owner', async () => {
-    const report = await migrate(t.db);
+    const report = await migrate(t.db, { migrations: THROUGH_VEIR });
     expect(report.applied).toEqual(['0004_veir_knowledge']);
     expect(VEIR && splitStatements(VEIR.sql).length).toBeGreaterThan(40);
   });
@@ -253,7 +255,7 @@ describe('migration 0004_veir_knowledge', () => {
       for (const statement of splitStatements(VEIR.sql)) await sx.query(statement);
     });
     expect(await schemaFingerprint(t.db)).toBe(before);
-    const again = await migrate(t.db);
+    const again = await migrate(t.db, { migrations: THROUGH_VEIR });
     expect(again.applied).toEqual([]);
   });
 

@@ -151,6 +151,20 @@ export interface VentureAccess {
 }
 
 /**
+ * Whether the venture belongs to the request's tenant, whether or not the caller may read it (a platform
+ * admin adding a team member need not be a member). Reveals existence only: no venture data.
+ */
+export async function ventureInCurrentTenant(ex: SqlExecutor, ventureId: string): Promise<boolean> {
+  const row = await queryFirst(
+    ex,
+    'SELECT app.venture_in_current_tenant(:id) AS ok',
+    { id: p.uuid(ventureId) },
+    (r) => col.bool.decode(r.ok, 'ok'),
+  );
+  return row === true;
+}
+
+/**
  * Re-derives a principal's relationship to a venture from the database (authorization input). Works
  * under both executors; under RLS a venture the caller cannot see returns null.
  */
