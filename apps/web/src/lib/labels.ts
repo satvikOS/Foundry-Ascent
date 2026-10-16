@@ -151,5 +151,5 @@ export function documentFailureMessage(reason: string | null): string {
 export const MEMBERSHIP_ROLE_ACCESS: Record<MembershipRole, string> = {
   founder: 'Everything, including their own founder-only items; decides what is shared with a person.',
   team: 'Everything except founder-only items.',
-  advisor: 'Items shared with advisors.',
+  advisor: 'Items visible to the whole venture or shared with advisors; never founder-only or team items.',
 };

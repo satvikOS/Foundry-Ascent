@@ -1,6 +1,7 @@
 import { OPEN_ESCALATION_STATUSES, type EscalationView } from '@foundry/contracts';
-import { getRouteApi } from '@tanstack/react-router';
-import { ArrowLeft, HandHelping, LifeBuoy, Undo2 } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { getRouteApi, Link } from '@tanstack/react-router';
+import { ArrowLeft, HandHelping, Inbox, LifeBuoy, Undo2 } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 
 import { announce } from '@/components/a11y/live-announcer';
@@ -22,8 +23,8 @@ import { HairlineSkeleton, PageSection } from '@/components/ui/page-section';
 import { getStatusDefinition, StatusBadge } from '@/components/ui/status-badge';
 import { toast } from '@/components/ui/toast';
 import { errorMessage } from '@/lib/api/errors';
-import { useEscalationAction, useVentureEscalations } from '@/lib/api/hooks/escalations';
-import { canWrite } from '@/lib/auth/roles';
+import { useEscalationAction, ventureEscalationsQueryOptions } from '@/lib/api/hooks/escalations';
+import { canWrite, isAssignedEir } from '@/lib/auth/roles';
 import { useRequiredMe } from '@/lib/auth/use-me';
 import { formatDateTime, formatRelative, isoString, pluralize } from '@/lib/format';
 import { BREAKPOINTS, useMediaQuery } from '@/lib/hooks/use-media-query';
@@ -61,11 +62,16 @@ export function sortHelpRequests(items: readonly EscalationView[]): EscalationVi
  */
 export function EscalationsPage() {
   const me = useRequiredMe();
-  const { ventureId } = routeApi.useParams();
+  const { tenant, ventureId } = routeApi.useParams();
   const search = routeApi.useSearch();
   const navigate = routeApi.useNavigate();
-  const escalations = useVentureEscalations(ventureId);
   const canEdit = canWrite(me, ventureId);
+  // Requests are the founders' and team's; nobody else asks for them (the API answers 403).
+  const escalations = useQuery({
+    ...ventureEscalationsQueryOptions(ventureId),
+    enabled: canEdit,
+    select: (data) => data.items,
+  });
   const [filter, setFilter] = useState<Filter>('open');
   const [creating, setCreating] = useState(false);
 
@@ -88,22 +94,50 @@ export function EscalationsPage() {
   const selected = explicit ?? (wide && !search.id ? (rows[0] ?? null) : null);
   const awaiting = (escalations.data ?? []).filter(needsFounderConsent).length;
 
+  if (!canEdit) {
+    return (
+      <PageContainer>
+        <PageHeader title="Human help" description="Requests the founders and team make for a person." />
+        {isAssignedEir(me, ventureId) ? (
+          <EmptyState
+            icon={Inbox}
+            headingLevel={2}
+            title="Requests for you arrive in your inbox"
+            description="When the founders ask for your help and agree to share the packet, it appears there."
+            action={
+              <Button asChild size="sm" variant="secondary">
+                <Link to="/$tenant/app/eir/inbox" params={{ tenant }}>
+                  Open inbox
+                </Link>
+              </Button>
+            }
+          />
+        ) : (
+          <EmptyState
+            icon={LifeBuoy}
+            headingLevel={2}
+            title="Only the venture team sees requests"
+            description="The founders and team ask for help here and choose what is shared."
+          />
+        )}
+      </PageContainer>
+    );
+  }
+
   return (
     <PageContainer>
       <PageHeader
         title="Human help"
         description="Ask a person: an EIR, the program team or a specialist. Nothing is shared without your consent."
         actions={
-          canEdit ? (
-            <Button
-              onClick={() => {
-                setCreating(true);
-              }}
-            >
-              <HandHelping aria-hidden />
-              Request human support
-            </Button>
-          ) : null
+          <Button
+            onClick={() => {
+              setCreating(true);
+            }}
+          >
+            <HandHelping aria-hidden />
+            Request human support
+          </Button>
         }
       />
 
@@ -198,7 +232,6 @@ export function EscalationsPage() {
               <HelpRequestDetail
                 key={selected.id}
                 escalation={selected}
-                canEdit={canEdit}
                 isSubject={selected.createdBy.id === me.principal.id}
                 onBack={() => {
                   select(undefined);
@@ -238,14 +271,13 @@ export function EscalationsPage() {
   );
 }
 
+/** One request, for the founders and team (the only people who see this page's requests). */
 function HelpRequestDetail({
   escalation,
-  canEdit,
   isSubject,
   onBack,
 }: {
   escalation: EscalationView;
-  canEdit: boolean;
   /** Whether the viewer created the request: only they may agree to share it. */
   isSubject: boolean;
   onBack: () => void;
@@ -290,7 +322,7 @@ function HelpRequestDetail({
               {ESCALATION_CATEGORY_LABELS[escalation.category]}
             </h2>
           </div>
-          {canEdit && OPEN.has(escalation.status) ? (
+          {OPEN.has(escalation.status) ? (
             <Button
               variant="ghost"
               size="sm"
@@ -360,7 +392,7 @@ function HelpRequestDetail({
         <PacketView escalation={escalation} audience="founder" />
       </PageSection>
 
-      {needsConsent && canEdit ? (
+      {needsConsent ? (
         <PageSection title="Consent" headingLevel={3}>
           {isSubject ? (
             <ConsentForm escalation={escalation} />

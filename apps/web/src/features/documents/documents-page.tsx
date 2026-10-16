@@ -350,7 +350,7 @@ export function DocumentsPage() {
           title="No documents yet"
           description={
             canEdit
-              ? `Upload notes, decks or research for ${veirName} to cite. ${FORMATS_HINT}`
+              ? `Upload notes, decks or research for ${veirName} to cite.`
               : `${sentenceStart(veirName)} cites the documents the team uploads here.`
           }
         />
