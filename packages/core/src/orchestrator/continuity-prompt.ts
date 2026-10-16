@@ -1,4 +1,11 @@
-import { contentTokens, escapeData, escapeInline, isEverydayWord, truncate } from '@foundry/ai';
+import {
+  WHERE_YOU_LEFT_OFF_HEADING,
+  contentTokens,
+  escapeData,
+  escapeInline,
+  isEverydayWord,
+  truncate,
+} from '@foundry/ai';
 
 /**
  * "Where you left off": what the vEIR knows about the venture's most recent earlier conversations at the moment a
@@ -17,8 +24,11 @@ import { contentTokens, escapeData, escapeInline, isEverydayWord, truncate } fro
  * Nothing here is logged; the section carries founder words.
  */
 
-/** The heading the system prompt's doctrine refers to. Keep it exactly. */
-export const LEFT_OFF_HEADING = '## Where you left off';
+/**
+ * The heading the system prompt's doctrine refers to (packages/ai prompts/craft.ts), and the one the mock model looks
+ * for: one constant, so the doctrine and the section always meet.
+ */
+export const LEFT_OFF_HEADING = WHERE_YOU_LEFT_OFF_HEADING;
 
 /** Upper bound of the rendered section (≈ 1 100 tokens). */
 export const LEFT_OFF_MAX_CHARS = 4_000;
