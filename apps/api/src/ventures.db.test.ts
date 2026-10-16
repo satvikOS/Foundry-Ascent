@@ -56,8 +56,9 @@ describe('ventures', () => {
     expect(mine.items.map((v) => v.id)).toEqual([quietquad()]);
     expect(mine.items[0]?.myRole).toBe('founder');
     const eir = await json(await api.request('/ventures', { cookie: corin }), VentureListResponse);
+    // Corin's vEIR coaches QuietQuad and SoleSignal.
     expect(eir.items.map((v) => v.id).sort()).toEqual(
-      [api.h.ventures.quietquad.id, api.h.ventures.benchtally.id].sort(),
+      [api.h.ventures.quietquad.id, api.h.ventures.solesignal.id].sort(),
     );
   });
 

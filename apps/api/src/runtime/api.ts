@@ -6,7 +6,7 @@ import { type ApiApp, createApp } from '../app.js';
 import { type ApiConfig, loadApiConfig, loadCoreConfig, required } from '../config.js';
 import { API_DB_RESUME_BUDGET_MS } from '../lambda-contract.js';
 import { type Logger } from '../logging.js';
-import { createDatabase, createGateway, createProcessLogger } from './common.js';
+import { createDatabase, createGateway, createProcessLogger, createSpeech } from './common.js';
 import { observeDatabase } from './db-observer.js';
 import { InflightTracker } from './inflight.js';
 
@@ -17,9 +17,13 @@ export interface ApiRuntime {
   readonly config: ApiConfig;
 }
 
+function optionalSpeech(speech: ReturnType<typeof createSpeech>): { speech?: NonNullable<typeof speech> } {
+  return speech === undefined ? {} : { speech };
+}
+
 /**
  * Everything the API Lambda needs, built once per container (cold start): config, logger, Data API
- * database, model gateway, S3/SQS adapters, core and the Hono app. No network I/O happens here.
+ * database, model gateway, S3/SQS/Polly adapters, core and the Hono app. No network I/O happens here.
  */
 export function createApiRuntime(env: EnvLike): ApiRuntime {
   const config = loadApiConfig(env, 'api');
@@ -45,6 +49,7 @@ export function createApiRuntime(env: EnvLike): ApiRuntime {
       region: config.awsRegion,
     }),
     logger: logger.child({ component: 'core' }),
+    ...optionalSpeech(createSpeech(env, config)),
   });
   const app = createApp({
     core,

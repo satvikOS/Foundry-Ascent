@@ -15,6 +15,7 @@ import { registerLocalUploadRoutes } from './routes/local-uploads.js';
 import { registerSessionRoutes } from './routes/sessions.js';
 import { registerStudioRoutes } from './routes/studio.js';
 import { registerSystemRoutes } from './routes/system.js';
+import { registerVeirRoutes } from './routes/veir.js';
 import { registerVentureRoutes } from './routes/ventures.js';
 import { type DbStateSource } from './runtime/db-observer.js';
 import { type InflightTracker } from './runtime/inflight.js';
@@ -113,6 +114,7 @@ export function createApp(deps: AppDeps): ApiApp {
     turnTimeoutMs: http.turnTimeoutMs,
   });
   registerStudioRoutes(routes, deps.core);
+  registerVeirRoutes(routes, deps.core);
   if (deps.localUploads !== undefined) registerLocalUploadRoutes(routes, deps.localUploads);
 
   return Object.assign(app, { routeTable: [...routes.routes] as readonly RouteInfo[] });

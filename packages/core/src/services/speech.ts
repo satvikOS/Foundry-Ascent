@@ -77,15 +77,6 @@ export function createSpeechService(kit: Kit): SpeechService {
       const input = parseInput(SpeechRequest, rawInput);
       const sessionId = requireId(input.sessionId, 'Session');
       const turnId = requireId(input.turnId, 'Turn');
-      const synthesizer = kit.deps.speech;
-      if (synthesizer === undefined) {
-        throw new DomainError(
-          'speech_unavailable',
-          'Spoken replies are not available on this server; the browser reads replies aloud instead.',
-          { reason: 'speech_not_configured' },
-        );
-      }
-
       const plan = await kit.inRequest(ctx, async (scope) => {
         const session = await sessionsRepo.getSession(scope.tx, sessionId);
         if (session === null) throw fail.notFound('Session');
@@ -145,6 +136,17 @@ export function createSpeechService(kit: Kit): SpeechService {
         if (veir === null) throw fail.notFound('Coach');
         return { session, settings, voiceId: callVoice(veir.identity.embodiment) };
       });
+
+      // Checked after authorization and validation: callers learn nothing about a conversation they
+      // cannot open, and a valid request tells the client to speak the reply itself.
+      const synthesizer = kit.deps.speech;
+      if (synthesizer === undefined) {
+        throw new DomainError(
+          'speech_unavailable',
+          'Spoken replies are not available on this server; the browser reads replies aloud instead.',
+          { reason: 'speech_not_configured' },
+        );
+      }
 
       await assertWithinSpendCaps(kit, ctx, plan.settings, {
         ventureId: plan.session.ventureId,
