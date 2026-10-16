@@ -705,6 +705,72 @@ describe('CallEngine · barge-in', () => {
     expect(h.script.calls).toHaveLength(1);
   });
 
+  it('never turns the vEIR’s own settled echo into a turn of the founder', async () => {
+    const h = setup();
+    const socket = await speaking(h);
+    socket.serverSend(transcriptEvent('r1', 'one library and a written', { partial: true, stable: true }));
+    for (let i = 0; i < 20; i++) {
+      vi.advanceTimersByTime(50);
+      h.frame(0.001);
+    }
+    await flush();
+    expect(h.state()).toMatchObject({ activity: 'speaking', queued: 0 });
+    h.script.push(completed());
+    h.script.close();
+    h.context.sources[0]?.finish();
+    await flush(10);
+    for (let i = 0; i < 20; i++) {
+      vi.advanceTimersByTime(50);
+      h.frame(0.001);
+    }
+    await flush();
+    expect(h.script.calls).toHaveLength(1);
+    expect(h.api.interruptTurn).not.toHaveBeenCalled();
+  });
+
+  it('ignores the echo of a sentence heard after it ended, while the reply goes on', async () => {
+    const h = setup();
+    const socket = await speaking(h);
+    // The first sentence ends before the next one has arrived: the vEIR is still answering.
+    h.context.sources[0]?.finish();
+    await flush(10);
+    expect(h.state().activity).toBe('thinking');
+    socket.serverSend(
+      transcriptEvent('r1', 'Start with one library and a written success threshold.', { partial: false }),
+    );
+    socket.serverSend(transcriptEvent('r2', 'okay', { partial: false }));
+    for (let i = 0; i < 20; i++) {
+      vi.advanceTimersByTime(50);
+      h.frame(0.001);
+    }
+    await flush();
+    expect(h.state()).toMatchObject({ activity: 'thinking', queued: 0 });
+    expect(h.state().captions.founder).toBeNull();
+    h.script.push(completed());
+    h.script.close();
+    await flush(10);
+    expect(h.state().activity).toBe('listening');
+    expect(h.script.calls).toHaveLength(1);
+  });
+
+  it('keeps what the founder says between the sentences of a reply, and sends it after', async () => {
+    const h = setup();
+    const socket = await speaking(h);
+    h.context.sources[0]?.finish();
+    await flush(10);
+    socket.serverSend(transcriptEvent('r1', 'What about pricing?', { partial: false }));
+    for (let i = 0; i < 20; i++) {
+      vi.advanceTimersByTime(50);
+      h.frame(0.001);
+    }
+    await flush();
+    expect(h.state().queued).toBe(1);
+    h.script.push(completed());
+    h.script.close();
+    await flush(10);
+    expect(h.script.calls[1]?.body.text).toBe('What about pricing?');
+  });
+
   it('waits for a settled word, or two words, before taking the floor', async () => {
     const h = setup();
     const socket = await speaking(h);

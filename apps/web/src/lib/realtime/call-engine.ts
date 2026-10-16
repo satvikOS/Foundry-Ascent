@@ -711,7 +711,17 @@ export class CallEngine {
     const vad = this.vad.update(rms);
     if (vad.voiced) this.endpointer.onVoice();
     if (vad.onset && s.activity === 'speaking') this.duckForBargeIn();
-    if (s.talkMode === 'hands_free' && this.endpointer.isComplete()) {
+    // While the vEIR speaks, only a barge-in hands the floor over: what is heard meanwhile is its echo or a
+    // backchannel, and never completes a turn.
+    if (s.talkMode === 'hands_free' && s.activity !== 'speaking' && this.endpointer.isComplete()) {
+      if (this.turn !== null) {
+        // Between the sentences of a reply, the last one may still be coming back through the speakers.
+        this.forgetNonWords();
+        if (!this.endpointer.hasSpeech()) {
+          this.setCaptions({ founder: null, founderLive: false });
+          return;
+        }
+      }
       const line = this.endpointer.take();
       this.setCaptions({ founder: line, founderLive: false });
       this.utterance(line);
@@ -732,8 +742,8 @@ export class CallEngine {
       const taking = floorWords(heard, this.spokenSoFar).length;
       const settled = result.stable || !result.partial;
       if (taking < (settled ? 1 : 2)) {
-        // A finished echo or backchannel is not a turn either.
-        if (!result.partial) this.forgetNonWords();
+        // A settled echo or backchannel is not a turn either (a revision that adds words is heard afresh).
+        if (settled) this.forgetNonWords();
         return;
       }
       this.bargeIn();
