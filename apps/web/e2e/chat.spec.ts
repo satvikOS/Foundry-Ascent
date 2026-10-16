@@ -96,4 +96,34 @@ test.describe('conversation composer', () => {
     });
     await expect(box).toHaveValue('My unsent draft about the deposit');
   });
+
+  test('with the context panel open, the conversation stays in view and the page does not grow', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await askFirstQuestion(page);
+    // A long Sources list in the open panel must scroll inside the panel, not stretch the page.
+    await page.getByRole('button', { name: 'Show context panel' }).click();
+    const panel = page.getByRole('complementary', { name: 'Context inspector' });
+    await expect(panel.getByRole('tab', { name: 'Sources' })).toHaveAttribute('aria-selected', 'true');
+    const box = composer(page);
+    await box.fill(`And what should the deposit be? ${runToken()}`);
+    await box.press('Enter');
+    const second = page.getByRole('article', { name: 'Exchange 2' });
+    await expect(second.getByRole('button', { name: 'Copy answer' })).toBeVisible({ timeout: 30_000 });
+    const layout = await page.evaluate(() => {
+      const content = document.querySelector('main [class*="@container/conv"]');
+      return {
+        page: document.documentElement.scrollHeight,
+        conversation: content ? content.getBoundingClientRect().height : 0,
+      };
+    });
+    expect(layout.page, 'the page is as tall as the conversation, not the panel').toBeLessThanOrEqual(
+      Math.max(900, layout.conversation) + 2,
+    );
+    await expect(page.getByRole('main').locator('header').first()).toBeInViewport();
+    // The new exchange is where the reader is (its message was brought to the top of the column).
+    await expect(second).toBeInViewport();
+    await page.getByRole('button', { name: 'Hide context panel' }).click();
+  });
 });

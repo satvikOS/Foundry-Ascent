@@ -50,7 +50,9 @@ export function InspectorPanel({
           ) : null}
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+      {/* Relative, so absolutely placed content (screen-reader text) scrolls inside it instead of
+          stretching the page behind the panel. */}
+      <div className="relative min-h-0 flex-1 overflow-y-auto">{children}</div>
     </div>
   );
 }
