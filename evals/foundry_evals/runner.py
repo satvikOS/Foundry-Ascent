@@ -21,7 +21,7 @@ from foundry_evals.client import ApiError, ApiUnreachableError, ContractError, F
 from foundry_evals.datasets import ApiProbe, AttackSetup, encode_payload, render
 from foundry_evals.environment import Actor, Environment, VentureState
 from foundry_evals.graders import grade_turn_safety
-from foundry_evals.graders.base import Finding, Severity
+from foundry_evals.graders.base import Finding, GradingContext, Severity
 from foundry_evals.graders.behaviours import TurnSignals, check_behaviours
 from foundry_evals.graders.cross_venture import find_secret
 from foundry_evals.graders.disclosure import grade_disclosure
@@ -32,7 +32,7 @@ from foundry_evals.models import MemoryObject, TurnView
 from foundry_evals.planning import CaseSpec, Plan
 from foundry_evals.results import CaseResult, ProbeResult, TurnRecord
 from foundry_evals.sse import SseProtocolError
-from foundry_evals.text import turn_fields
+from foundry_evals.text import speech_fields, turn_fields
 
 #: Refusals that make the rest of the run meaningless (kill switch, budget, suspended coach).
 ABORT_CODES = frozenset({"spend_cap_reached", "ai_disabled", "persona_suspended", "assignment_inactive"})
@@ -50,6 +50,10 @@ class RunAbortedError(Exception):
 
 class BudgetExhaustedError(Exception):
     pass
+
+
+class _CallUnavailableError(Exception):
+    """A voice case whose call could not start (the case is skipped with the server's code)."""
 
 
 class SetupFailedError(Exception):
@@ -148,6 +152,7 @@ class Runner:
         )
         created: list[tuple[str, str]] = []
         session_id: str | None = None
+        call_id: str | None = None
         escalations: list[TurnEscalation] = []
         last: TurnSignals | None = None
         try:
@@ -159,14 +164,25 @@ class Runner:
             result.sessions_created += 1
             disclosure = grade_disclosure(session.disclosure)
             result.findings += disclosure
+            if case.channel == "voice":
+                call_id = self._start_call(actor, session.id, result, ctx)
+                if call_id is None:
+                    raise _CallUnavailableError
             plan = [(t, False) for t in rendered_setup] + [(t, True) for t in rendered_turns]
             for index, (text, graded) in enumerate(plan, start=1):
                 outcome = self._turn(
-                    actor, session.id, text, case.mode, counterpart if case.mode == "rehearse" else None
+                    actor,
+                    session.id,
+                    text,
+                    case.mode,
+                    counterpart if case.mode == "rehearse" else None,
+                    call_id,
                 )
                 record = _record(index, graded, outcome)
                 result.turns.append(record)
                 fields = turn_fields(outcome.turn, support_message=outcome.support_message)
+                # What the call said before the turn completed: each unit, and the units together.
+                fields += speech_fields(outcome.speech)
                 result.findings += grade_turn_safety(fields, ctx, index)
                 self._write_transcript(case, index, text, outcome)
                 if outcome.kind == "error":
@@ -202,6 +218,8 @@ class Runner:
                 result.findings += again
         except SetupFailedError as exc:
             result.status, result.reason = "error", f"setup_failed:{exc.code}"
+        except _CallUnavailableError:
+            pass  # `_start_call` recorded why; the case is skipped, never passed
         except BudgetExhaustedError:
             # Turns that did run stay graded (their findings count); the case is not judged.
             result.status, result.reason = "skipped", "budget"
@@ -209,6 +227,8 @@ class Runner:
         except CASE_ERRORS as exc:
             result.status, result.reason = "error", _error_code(exc)
         finally:
+            if call_id is not None:
+                self._end_call(actor, call_id, result)
             self._cleanup(actor, session_id, created, result)
         if result.status not in ("error", "skipped") and last is not None:
             scope = escalations if case.escalation_scope == "any" else escalations[-1:]
@@ -313,9 +333,16 @@ class Runner:
             waited += delay
 
     def _turn(
-        self, actor: Actor, session_id: str, text: str, mode: str, counterpart: str | None
+        self,
+        actor: Actor,
+        session_id: str,
+        text: str,
+        mode: str,
+        counterpart: str | None,
+        call_id: str | None = None,
     ) -> TurnOutcome:
-        """One turn in the case's mode: a turn sent without a mode is answered in auto mode (the coach picks)."""
+        """One turn in the case's mode: a turn sent without a mode is answered in auto mode (the coach picks).
+        With ``call_id`` the turn is spoken during that call."""
         retried = False
         reauthenticated = False
         waited = 0.0
@@ -326,7 +353,7 @@ class Runner:
                 raise BudgetExhaustedError
             try:
                 outcome = actor.client.run_turn(
-                    session_id, text, mode=mode, rehearsal_counterpart=counterpart
+                    session_id, text, mode=mode, rehearsal_counterpart=counterpart, call_id=call_id
                 )
             except ApiError as exc:
                 if exc.code in ABORT_CODES:
@@ -410,6 +437,32 @@ class Runner:
                 raise SetupFailedError("document_not_ready")
             self._sleep(3.0)
             waited += 3.0
+
+    def _start_call(
+        self, actor: Actor, session_id: str, result: CaseResult, ctx: GradingContext
+    ) -> str | None:
+        """Starts a typed-input call in the case's session and grades the greeting it speaks first. A refusal
+        that ends the run (spend cap) aborts it; any other (calls switched off, no voice consent for this
+        vEIR, …) skips the case with the server's code: a voice case is never passed without a call."""
+        try:
+            started = actor.client.start_call(session_id)
+        except ApiError as exc:
+            if exc.code == "spend_cap_reached":
+                raise RunAbortedError(exc.code) from exc
+            result.status, result.reason = "skipped", f"voice_unavailable:{exc.code}"
+            return None
+        result.notes.append("call_started")
+        if started.intro is not None:
+            result.findings += grade_turn_safety(
+                speech_fields([started.intro.text], location="intro"), ctx, 0
+            )
+        return started.call.id
+
+    def _end_call(self, actor: Actor, call_id: str, result: CaseResult) -> None:
+        try:
+            actor.client.end_call(call_id)
+        except CASE_ERRORS as exc:
+            result.notes.append(f"end_call_failed:{_error_code(exc)}")
 
     def _cleanup(
         self, actor: Actor, session_id: str | None, created: list[tuple[str, str]], result: CaseResult

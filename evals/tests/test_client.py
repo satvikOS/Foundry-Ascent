@@ -19,7 +19,7 @@ from foundry_evals.client import (
     parse_session_cookie,
 )
 from tests.fake_api import OWNER_CODE, FakeFoundryApi
-from tests.sse_helpers import blocked_stream, completed_stream, error_stream
+from tests.sse_helpers import blocked_stream, completed_stream, error_stream, frame
 
 BASE = "https://d111.cloudfront.example"
 
@@ -235,6 +235,49 @@ class TestTurns:
         assert outcome.turn.id == turn_payload["id"]
         assert outcome.phases == ["classifying", "retrieving", "reasoning", "validating"]
         assert outcome.keepalives == 1
+
+    def test_voice_turn_sends_the_call_and_keeps_its_speech_units(self, turn_payload: dict[str, Any]) -> None:
+        stream = completed_stream(turn_payload)
+        at = stream.index("event: turn.completed")
+        units = [
+            frame(
+                "turn.speech",
+                {"turnId": turn_payload["id"], "seq": seq, "text": text, "sig": "s" * 43, "final": seq == 1},
+            )
+            for seq, text in ((1, "Then decide."), (0, "Run five interviews."))
+        ]
+        sent: list[dict[str, Any]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            sent.append(json.loads(request.content))
+            content = (stream[:at] + "".join(units) + stream[at:]).encode()
+            return httpx.Response(200, content=content, headers={"content-type": "text/event-stream"})
+
+        outcome = client_for(handler).run_turn("s", "hi", mode="coach", call_id="c1")
+        assert sent == [{"text": "hi", "mode": "coach", "channel": "voice", "callId": "c1"}]
+        assert outcome.speech == ["Run five interviews.", "Then decide."]
+        typed = client_for(handler).run_turn("s", "hi")
+        assert "channel" not in sent[-1]
+        assert typed.speech == ["Run five interviews.", "Then decide."]
+
+    def test_start_and_end_a_typed_call(self) -> None:
+        api = FakeFoundryApi()
+        client = FoundryClient(BASE, transport=api.transport())
+        client.sign_in(SecretStr(OWNER_CODE))
+        maya = next(p for p in api.principals.values() if p.name == "Maya Okafor-Lindqvist")
+        code = client.issue_access_code(maya.id, label="evals test").access_code
+        founder = FoundryClient(BASE, transport=api.transport())
+        founder.sign_in(code)
+        session = founder.create_session(api.venture("quietquad").id, mode="coach")
+        started = founder.start_call(session.id)
+        assert started.call.session_id == session.id
+        assert started.call.status == "live"
+        assert started.intro is not None
+        assert "AI coach" in started.intro.text
+        start = next(r for r in api.requests if r.url.path.endswith("/calls"))
+        assert json.loads(start.content) == {"inputMode": "typed", "replace": True}
+        founder.end_call(started.call.id)
+        assert api.calls[started.call.id]["status"] == "ended"
 
     def test_blocked_resolves_the_stored_turn(self, turn_payload: dict[str, Any]) -> None:
         turn_payload["status"] = "blocked"

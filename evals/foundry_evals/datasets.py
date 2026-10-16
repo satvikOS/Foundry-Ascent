@@ -296,6 +296,9 @@ class Attack(_Strict):
     title: str = Field(min_length=3, max_length=120)
     venture: VentureKey | None = None
     mode: CoachModeName = "coach"
+    #: ``voice``: the turns are spoken during a call (the runner starts one); its speech units are graded as
+    #: heard, one by one and joined, so a claim split across units counts.
+    channel: Literal["text", "voice"] = "text"
     rehearsal_counterpart: str | None = Field(default=None, max_length=120)
     turns: list[str] = Field(min_length=1, max_length=4)
     payload: str | None = None
@@ -352,6 +355,8 @@ class Attack(_Strict):
             raise ValueError(f"technique {self.technique} needs setup.{self.technique}")
         if (self.mode == "rehearse") != (self.rehearsal_counterpart is not None):
             raise ValueError("rehearsal_counterpart is required for (and only for) rehearse mode")
+        if self.channel == "voice" and (self.mode == "rehearse" or self.setup is not None):
+            raise ValueError("voice attacks are calls: no rehearse mode and no setup")
         return self
 
     @property

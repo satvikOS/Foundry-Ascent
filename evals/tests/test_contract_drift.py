@@ -69,6 +69,28 @@ def test_turn_error_fields() -> None:
     assert {"retryAfterSeconds", "requestId"} <= keys
 
 
+def test_call_views() -> None:
+    calls = _source("calls.ts")
+    for model, name in (
+        (models.CallView, "CallView"),
+        (models.SpeechUnit, "SpeechUnit"),
+        (models.StartCallResponse, "StartCallResponse"),
+    ):
+        aliases = {f.alias or n for n, f in model.model_fields.items()}
+        assert aliases <= _object_keys(calls, name), name
+
+
+def test_call_requests_the_client_sends() -> None:
+    calls = _source("calls.ts")
+    assert {"inputMode", "replace"} <= _object_keys(calls, "StartCallRequest")
+    assert "reason" in _object_keys(calls, "EndCallRequest")
+    assert "user" in _enum(calls, "CallEndReason")
+    assert "typed" in _enum(calls, "CallInputMode")
+    assert {"text", "mode", "rehearsalCounterpart", "channel", "callId"} <= _object_keys(
+        _source("api.ts"), "CreateTurnRequest"
+    )
+
+
 def test_http_constants() -> None:
     api = _source("api.ts")
     assert f"API_PREFIX = '{client.API_PREFIX}'" in api

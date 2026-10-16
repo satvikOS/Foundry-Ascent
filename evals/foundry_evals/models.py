@@ -219,6 +219,29 @@ class SessionDetail(_Camel):
     turns: list[TurnView]
 
 
+# Calls (packages/contracts/src/calls.ts) ---------------------------------------------------------------
+
+
+class CallView(_Camel):
+    id: str
+    session_id: str
+    status: Literal["live", "ended"]
+    input_mode: Literal["transcribe", "typed"]
+
+
+class SpeechUnit(_Camel):
+    """A validated unit the vEIR may speak (the call's intro, or a ``turn.speech`` unit)."""
+
+    text: str
+    sig: str
+
+
+class StartCallResponse(_Camel):
+    call: CallView
+    #: The greeting the vEIR speaks first (null when it cannot be produced).
+    intro: SpeechUnit | None = None
+
+
 class PrincipalView(_Camel):
     id: str
     display_name: str
