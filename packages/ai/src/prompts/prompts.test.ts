@@ -96,6 +96,9 @@ describe('buildSystemPrompt', () => {
       riskFlags: [],
       crisis: false,
       rehearsalCounterpart: null,
+      channel: 'text',
+      persona: 'Foundry Guide',
+      founder: null,
     });
   });
 

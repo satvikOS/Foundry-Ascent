@@ -1,4 +1,5 @@
 import type { ChatMessage } from '../gateway/types.js';
+import { buildContinuityBlock, type PromptContinuity } from './continuity.js';
 import { escapeData, truncate } from './escape.js';
 
 /** A completed earlier turn. Turns without an answer (blocked/failed) should be omitted by the caller or are skipped. */
@@ -11,6 +12,15 @@ export interface HistoryTurn {
 export interface BuildMessagesOptions {
   /** Rendered `buildEvidenceBlock(...)`, placed in the final user message ahead of the founder's text. */
   evidenceBlock?: string;
+  /**
+   * The vEIR's notes (the same object passed to `buildSystemPrompt`). Rendered with
+   * `buildContinuityBlock` as untrusted data at the start of the final user message.
+   */
+  continuity?: PromptContinuity | null;
+  /** ISO date (YYYY-MM-DD) for marking overdue commitments in the notes. Default: today (UTC). */
+  today?: string;
+  /** Upper bound on the rendered notes. Default 6 000 characters. */
+  maxContinuityChars?: number;
   /** Most recent turns to keep. Default 8. */
   maxHistoryTurns?: number;
   /** Per-message cap for history. Default 2 000 characters. */
@@ -23,9 +33,9 @@ function wrapFounder(text: string): string {
 
 /**
  * Builds the conversation for a turn: the last N completed turns (founder text wrapped and escaped
- * as data, previous answers as assistant messages), then the evidence block and the new founder
- * message as the final user message. Evidence lives in the user turn — not the system prompt — so
- * retrieved text never gains system-level authority.
+ * as data, previous answers as assistant messages), then the vEIR's notes, the evidence block and the
+ * new founder message as the final user message. Notes and evidence live in the user turn — not the
+ * system prompt — so neither AI notes nor retrieved text ever gain system-level authority.
  */
 export function buildMessages(
   history: readonly HistoryTurn[],
@@ -44,7 +54,11 @@ export function buildMessages(
     messages.push({ role: 'user', content: wrapFounder(truncate(turn.founderText, maxChars)) });
     messages.push({ role: 'assistant', content: truncate(turn.answer ?? '', maxChars) });
   }
-  const parts = [options.evidenceBlock, wrapFounder(founderText)].filter(
+  const notes = buildContinuityBlock(options.continuity, {
+    ...(options.today !== undefined ? { today: options.today } : {}),
+    ...(options.maxContinuityChars !== undefined ? { maxChars: options.maxContinuityChars } : {}),
+  });
+  const parts = [notes, options.evidenceBlock, wrapFounder(founderText)].filter(
     (p): p is string => p !== undefined && p !== '',
   );
   messages.push({ role: 'user', content: parts.join('\n\n') });
