@@ -3,7 +3,7 @@ import { createFileRoute, Outlet } from '@tanstack/react-router';
 import { InspectorProvider, InspectorRegion } from '@/components/shell/inspector';
 import { isApiError } from '@/lib/api/errors';
 import { ventureQueryOptions } from '@/lib/api/hooks/ventures';
-import { hasAnyRole } from '@/lib/auth/roles';
+import { canAccessVenture, canManageAnyTeam, hasAnyRole } from '@/lib/auth/roles';
 
 /**
  * A venture: its conversations and pages, with the right-hand context panel that pages fill with
@@ -12,6 +12,12 @@ import { hasAnyRole } from '@/lib/auth/roles';
  */
 export const Route = createFileRoute('/$tenant/app/v/$ventureId')({
   loader: async ({ context, params, location }) => {
+    const teamPage = location.pathname.endsWith(`/v/${params.ventureId}/team`);
+    // Program leads and platform admins who are not on the venture open only its team (which carries the
+    // venture's name): the venture itself, which would be refused (and audited as denied), is not requested.
+    if (teamPage && !canAccessVenture(context.me, params.ventureId) && canManageAnyTeam(context.me)) {
+      return { ventureName: null };
+    }
     try {
       const venture = await context.queryClient.query({
         ...ventureQueryOptions(params.ventureId),
@@ -22,7 +28,7 @@ export const Route = createFileRoute('/$tenant/app/v/$ventureId')({
       // Program leads and platform admins see and invite to any venture's team without reading the venture
       // itself (the team endpoint allows them); everything else of a venture they cannot read stays closed.
       if (
-        location.pathname.endsWith(`/v/${params.ventureId}/team`) &&
+        teamPage &&
         hasAnyRole(context.me, ['program_lead', 'platform_admin']) &&
         isApiError(error) &&
         (error.status === 403 || error.status === 404)
