@@ -4,7 +4,7 @@ import { type z } from 'zod';
 import { col, type RawRow } from '../columns.js';
 import { type SqlExecutor } from '../executor.js';
 import { p } from '../params.js';
-import { andTsQuerySql, queryFirst, queryOne, queryRows, setClause } from './common.js';
+import { andTsQuerySql, clampLimit, queryFirst, queryOne, queryRows, setClause } from './common.js';
 
 type ResourceKindValue = z.infer<typeof ResourceKind>;
 type VentureStageValue = z.infer<typeof VentureStage>;
@@ -244,6 +244,50 @@ export function listLessons(
     },
     decodePattern,
   );
+}
+
+/** Largest page of the curator's lesson queue (`listCuratedLessons`). */
+export const CURATED_LESSONS_MAX = 100;
+
+/**
+ * Lessons of the personas a curator curates, across personas, in one statement: every persona of the tenant
+ * (`allPersonas`, a program lead) or those built from `curatorId`'s own EIR profile; retired personas and
+ * program-wide lessons are left out. Most recently changed first, at most {@link CURATED_LESSONS_MAX};
+ * `total` counts every match.
+ */
+export async function listCuratedLessons(
+  ex: SqlExecutor,
+  args: {
+    tenantId: string;
+    curatorId: string;
+    allPersonas: boolean;
+    statuses?: readonly PatternStatus[];
+    limit?: number;
+  },
+): Promise<{ items: PatternRecord[]; total: number }> {
+  const rows = await queryRows(
+    ex,
+    `SELECT ${PATTERN_COLUMNS.split(',')
+      .map((c) => `pt.${c.trim()}`)
+      .join(', ')}, (count(*) OVER ())::int AS total
+     FROM patterns pt
+     JOIN personas pe ON pe.id = pt.persona_id AND pe.tenant_id = pt.tenant_id
+     LEFT JOIN eir_profiles e ON e.id = pe.eir_profile_id
+     WHERE pt.tenant_id = :tenantId AND pe.status <> 'retired'
+       AND (:statuses IS NULL OR pt.status = ANY (:statuses))
+       AND (:allPersonas OR e.principal_id = :curatorId)
+     ORDER BY pt.updated_at DESC, pt.id
+     LIMIT :limit`,
+    {
+      tenantId: p.uuid(args.tenantId),
+      curatorId: p.uuid(args.curatorId),
+      allPersonas: p.bool(args.allPersonas),
+      statuses: p.nullable.textArray(args.statuses),
+      limit: p.int(clampLimit(args.limit, CURATED_LESSONS_MAX, CURATED_LESSONS_MAX)),
+    },
+    (r) => ({ lesson: decodePattern(r), total: col.int.decode(r.total, 'total') }),
+  );
+  return { items: rows.map((r) => r.lesson), total: rows[0]?.total ?? 0 };
 }
 
 export interface UpdatePatternInput {

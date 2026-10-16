@@ -36,6 +36,7 @@ function item(
     status: 'confirmed',
     ventureId,
     sourceId: null,
+    sourceScope: null,
     memoryType: null,
     visibility,
     components: { vector: 0, lexical: 0, recency: 0, authority: 0 },
@@ -61,6 +62,41 @@ describe('evidence pack', () => {
     expect(pack.items.map((k) => k.ventureId)).toEqual([V, V, null, null, null]);
     expect(pack.dropped).toBe(3);
     expect(pack.counts).toEqual({ memory: 1, chunks: 1, shared: 1, resources: 1, patterns: 1 });
+  });
+
+  it('names the knowledge source of each passage by id and scope, and of nothing else', () => {
+    const doc = '77777777-7777-4777-8777-777777777777';
+    const handbook = '88888888-8888-4888-8888-888888888888';
+    const library = '99999999-9999-4999-8999-999999999999';
+    const withSource = (
+      base: retrievalRepo.RetrievedItem,
+      sourceId: string,
+      sourceScope: retrievalRepo.RetrievedItem['sourceScope'],
+    ): retrievalRepo.RetrievedItem => ({ ...base, sourceId, sourceScope });
+    const pack = buildEvidencePack(
+      {
+        memory: [item('memory', V)],
+        chunks: [withSource(item('chunk', V), doc, 'venture')],
+        shared: [
+          withSource(item('chunk', null), handbook, 'program'),
+          withSource(item('doctrine', null), library, 'persona'),
+          // A passage whose source is unknown carries none.
+          item('chunk', null),
+        ],
+        resources: [item('resource', null)],
+        patterns: [item('pattern', null)],
+      },
+      V,
+    );
+    expect(pack.items.map((k) => [k.item.kind, k.item.source ?? null])).toEqual([
+      ['memory', null],
+      ['chunk', { id: doc, scope: 'venture' }],
+      ['chunk', { id: handbook, scope: 'program' }],
+      ['doctrine', { id: library, scope: 'persona' }],
+      ['chunk', null],
+      ['resource', null],
+      ['pattern', null],
+    ]);
   });
 
   it('deduplicates references and sanitises scores', () => {

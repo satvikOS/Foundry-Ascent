@@ -211,8 +211,7 @@ export function createEirStudioService(kit: Kit): EirStudioService {
     listEirProfiles: (ctx) =>
       kit.inRequest(ctx, async (scope) => {
         await requireRole(scope, STUDIO_ROLES, { objectType: 'eir_profile' });
-        const profiles = await eirRepo.listEirProfiles(scope.tx, { tenantId: ctx.tenantId });
-        return profiles.map(eirRepo.toEirProfileView);
+        return eirRepo.listEirProfileViews(scope.tx, ctx.tenantId);
       }),
 
     createRelease: async (ctx, rawPersonaId, rawInput) => {

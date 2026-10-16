@@ -174,7 +174,7 @@ export async function softDeleteDocument(ex: SqlExecutor, id: string): Promise<s
 
 const VIEW_SELECT = `
   SELECT d.id, d.venture_id, d.filename, d.content_type, d.size_bytes, d.status, d.failure_reason, d.created_at,
-         d.uploaded_by, ${principalSelect('pr', 'pr')},
+         d.uploaded_by, d.source_id, ${principalSelect('pr', 'pr')},
          (SELECT count(*) FROM knowledge_chunks c WHERE d.source_id IS NOT NULL AND c.source_id = d.source_id) AS chunk_count
   FROM documents d LEFT JOIN principals pr ON pr.id = d.uploaded_by`;
 
@@ -190,6 +190,7 @@ function decodeView(r: RawRow): DocumentView {
     uploadedBy: requiredPrincipalFrom(r, 'pr', col.uuid.decode(r.uploaded_by, 'uploaded_by')),
     createdAt: col.ts.decode(r.created_at, 'created_at'),
     chunkCount: col.int.decode(r.chunk_count, 'chunk_count'),
+    sourceId: col.uuid.nullable.decode(r.source_id, 'source_id'),
   };
 }
 
