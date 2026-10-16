@@ -313,6 +313,44 @@ describe('document viewer', () => {
     expect(opener).toHaveFocus();
   });
 
+  it('focuses the text quietly when a pointer opened it, and marks keyboard focus once it comes back', async () => {
+    const { user, dialog } = await openViewer({ documentId: IDS.document });
+    await within(dialog).findByRole('heading', { name: 'Exam week interviews' });
+    const text = within(dialog).getByRole('region', { name: 'exam-week-interviews.md' });
+    // Opened by a click: the text has focus (arrow keys scroll), with no ring drawn around the page.
+    await waitFor(() => {
+      expect(text).toHaveFocus();
+    });
+    expect(text).toHaveAttribute('data-quiet-focus');
+    // Tabbing away and back is keyboard focus: the panel's edge shows it (viewer.css).
+    await user.tab();
+    expect(text).not.toHaveFocus();
+    await user.tab({ shift: true });
+    expect(text).toHaveFocus();
+    expect(text).not.toHaveAttribute('data-quiet-focus');
+  });
+
+  it('marks the text’s focus at once when the keyboard opened the viewer', async () => {
+    const router = await renderPage({ documentId: IDS.document });
+    const opener = screen.getByRole('link', { name: 'Open it' });
+    // jsdom draws no focus rings: the link that opens the viewer had keyboard focus.
+    const original = Object.getOwnPropertyDescriptor(Element.prototype, 'matches')?.value as (
+      this: Element,
+      selector: string,
+    ) => boolean;
+    vi.spyOn(Element.prototype, 'matches').mockImplementation(function (this: Element, selector: string) {
+      return selector === ':focus-visible' ? this === opener : original.call(this, selector);
+    });
+    opener.focus();
+    await userEvent.setup().keyboard('{Enter}');
+    const dialog = await screen.findByRole('dialog', {}, { timeout: 10_000 });
+    await within(dialog).findByRole('heading', { name: 'Exam week interviews' });
+    expect(within(dialog).getByRole('region', { name: 'exam-week-interviews.md' })).not.toHaveAttribute(
+      'data-quiet-focus',
+    );
+    expect(router.state.location.search).toMatchObject({ doc: IDS.document });
+  });
+
   it('keeps focus inside while it is open', async () => {
     const { user, dialog } = await openViewer({ documentId: IDS.document });
     await within(dialog).findByRole('heading', { name: 'Exam week interviews' });

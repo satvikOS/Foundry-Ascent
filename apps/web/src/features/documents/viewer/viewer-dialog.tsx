@@ -104,6 +104,16 @@ interface DialogProps {
   returnFocus: HTMLElement | null;
 }
 
+/** Whether `element` has keyboard focus (it shows a focus ring): the viewer was opened from the keyboard. */
+function keyboardFocused(element: HTMLElement | null): boolean {
+  if (element === null || document.activeElement !== element) return false;
+  try {
+    return element.matches(':focus-visible');
+  } catch {
+    return false;
+  }
+}
+
 /**
  * The document viewer: a reading panel over a dimmed, blurred page (full screen on a phone), with the
  * file's name in the platform's display face, find (⌘F / Ctrl+F), text size or zoom, a wider page, PDF page
@@ -129,6 +139,11 @@ export default function DocumentViewerDialog({ ventureId, target, onClose, retur
   const [jump, setJump] = useState(0);
   const [pageRequest, setPageRequest] = useState<{ page: number; seq: number } | null>(null);
   const [scrollRoot, setScrollRoot] = useState<HTMLDivElement | null>(null);
+  /**
+   * The viewer focuses the text itself when it opens (arrow keys scroll at once). Opened by a pointer or a link,
+   * that focus shows no ring; opened from the keyboard, or once focus has left the text and come back, it does.
+   */
+  const [quietFocus, setQuietFocus] = useState(() => !keyboardFocused(returnFocus));
   /** A download that could not start (said at the bottom, where the document's status shows). */
   const [notice, setNotice] = useState<string | null>(null);
   const panel = useRef<HTMLDivElement | null>(null);
@@ -376,6 +391,10 @@ export default function DocumentViewerDialog({ ventureId, target, onClose, retur
             role="region"
             aria-label={title}
             data-viewer-scroll
+            data-quiet-focus={quietFocus ? '' : undefined}
+            onBlur={(event) => {
+              if (event.target === event.currentTarget) setQuietFocus(false);
+            }}
             className="viewer-scroll"
           >
             <ViewerBody

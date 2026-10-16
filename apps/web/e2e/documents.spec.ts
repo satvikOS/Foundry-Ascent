@@ -751,6 +751,45 @@ test.describe('document viewer', () => {
       const linked = page.getByRole('dialog', { name: notes });
       await expect(linked.getByRole('heading', { name: `Reading room notes (${token})` })).toBeVisible();
       await expectNoSeriousA11yViolations(page, `document viewer opened from a link (${scheme})`);
+      // One glass hairline, the same on all four sides, and no ring drawn around the text the viewer focused
+      // for itself (a 2px inset ring under the glass bars showed as a bright edge on three sides in dark).
+      // Keyboard focus coming back to the text turns the whole edge to the focus colour, evenly.
+      const edge = () =>
+        linked.evaluate((el) => {
+          const style = getComputedStyle(el);
+          const text = el.querySelector('[data-viewer-scroll]');
+          return {
+            widths: [
+              ...new Set([
+                style.borderTopWidth,
+                style.borderRightWidth,
+                style.borderBottomWidth,
+                style.borderLeftWidth,
+              ]),
+            ],
+            colors: [
+              ...new Set([
+                style.borderTopColor,
+                style.borderRightColor,
+                style.borderBottomColor,
+                style.borderLeftColor,
+              ]),
+            ],
+            ring: text ? getComputedStyle(text).boxShadow : null,
+            textFocused: document.activeElement === text,
+          };
+        });
+      const quiet = await edge();
+      expect(quiet).toMatchObject({ widths: ['1px'], ring: 'none', textFocused: true });
+      expect(quiet.colors).toHaveLength(1);
+      expect(
+        Number(/rgba\(\d+, \d+, \d+, ([\d.]+)\)/.exec(quiet.colors[0] ?? '')?.[1] ?? 1),
+      ).toBeLessThanOrEqual(0.12);
+      await page.keyboard.press('Tab');
+      await page.keyboard.press('Shift+Tab');
+      const focused = await edge();
+      expect(focused).toMatchObject({ widths: ['1px'], ring: 'none', textFocused: true });
+      expect(focused.colors).toEqual([scheme === 'dark' ? 'rgb(255, 255, 255)' : 'rgb(17, 17, 16)']);
       await page.keyboard.press('ControlOrMeta+f');
       await linked.getByRole('searchbox', { name: 'Find in document' }).fill('quiet seat');
       await expect(linked.getByText('1 of 2')).toBeVisible();
