@@ -51,8 +51,7 @@ function SignInPage() {
             <BrandWordmark />
           </Link>
           <div className="max-w-md">
-            <p className="label-mono">Foundry Ascent</p>
-            <p className="mt-6 font-serif text-title font-normal text-balance">
+            <p className="font-serif text-title font-normal text-balance">
               Pick up where you <em className="italic">left off</em>.
             </p>
             <p className="mt-6 text-body text-muted-foreground">
