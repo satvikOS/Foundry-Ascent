@@ -11,7 +11,7 @@ says how to verify it. Tick them off in order of the table; none blocks a deploy
 | #   | Action                                                                                                     | Why it matters                                                      |
 | --- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | 1   | [Subscribe to the alarms](#1-subscribe-to-the-alarms)                                                      | Seven alarms exist and reach nobody                                 |
-| 2   | [Create an AWS Budget](#2-create-an-aws-budget)                                                            | The only account-wide spend alert; CI may not create one            |
+| 2   | [Create an AWS Budget](#2-create-an-aws-budget)                                                            | The only spend alert for the whole account and for Transcribe       |
 | 3   | [Remove the dead stage-0 credentials](#3-remove-the-dead-stage-0-credentials)                              | Two secrets hold a deleted key; a variable holds a placeholder      |
 | 4   | [Create the `evals` environment](#4-create-the-evals-environment)                                          | Evals have never run against production                             |
 | 5   | [Opt out of AWS AI content use](#5-opt-out-of-aws-ai-content-use)                                          | Transcribe and Polly may otherwise keep call content to improve AWS |
@@ -44,7 +44,12 @@ budget of, for example, $50 with email alerts at 50 %, 80 % and 100 % of actual 
 forecast cost catches growth early. Also turn on **Cost Anomaly Detection** (Billing → Cost Anomaly
 Detection → default service monitor, daily email summary; free).
 
-**Verify:** the budget appears under Budgets with its alerts; the anomaly monitor lists the email.
+Add a second cost budget scoped to **Service: Amazon Transcribe** (for example $10 a month, alert at 100 %
+of actual cost). Transcribe streaming is the one AI cost outside the app's caps: an open socket bills
+until the browser closes it ([cost controls](cost-controls.md#where-the-money-goes)). Budgets update a few
+times a day, so this is a backstop, not a live limit; `speech.enabled: false` is the lever.
+
+**Verify:** both budgets appear under Budgets with their alerts; the anomaly monitor lists the email.
 
 ## 3. Remove the dead stage-0 credentials
 

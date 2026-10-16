@@ -81,8 +81,9 @@ Re-enable with `true`. Conversations, including the transcripts of earlier calls
 
 `speech.enabled: false` in `infra/cdk/config/production.json` is for when the in-product switches are
 not enough (for example a defect that bypasses them). It removes the API role's Amazon Polly and Amazon
-Transcribe permissions and sets `SPEECH_ENABLED=false`, so calls can neither listen nor speak even if
-application code tried to. It is a one-line change plus a normal deploy (about 2 minutes after CI).
+Transcribe permissions and sets `SPEECH_ENABLED=false`, so the API offers neither and calls can neither
+listen nor speak even if application code tried to. Transcribe sockets already open run until the browser
+closes them. It is a one-line change plus a normal deploy (about 2 minutes after CI).
 
 ## Level 4 — break-glass (product unavailable or not trusted)
 

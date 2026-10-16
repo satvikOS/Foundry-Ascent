@@ -20,7 +20,7 @@ on them.
 | Bedrock embeddings (Titan v2) | $0                                                                                                   | ~$0.02 per million tokens (a 50-page document ≈ $0.001)                                                                                                                                              | ingestion only, kill switch                                            |
 | Distillation (worker)         | $0: jobs exist only after someone talked                                                             | one `distill` model call per conversation version (digest, notebook, memory and lesson candidates)                                                                                                   | daily caps, kill switch                                                |
 | Amazon Polly (call speech)    | $0                                                                                                   | per character synthesized: neural $16, generative $30 per million (a 70-word spoken reply ≈ 420 characters ≈ $0.007 neural)                                                                          | daily caps (speech is metered), minute caps, kill switches, two alarms |
-| Amazon Transcribe (call STT)  | $0                                                                                                   | $0.01 per minute, billed per second while the browser's stream is open (silence included)                                                                                                            | per-call and per-person minute caps, `calls_enabled`, `speech.enabled` |
+| Amazon Transcribe (call STT)  | $0                                                                                                   | $0.01 per minute, billed per second while the browser's stream is open (silence included)                                                                                                            | AWS's stream quota, the AWS Budget, `speech.enabled` (see below)       |
 | Lambda (ARM, 1 GB)            | $0                                                                                                   | fractions of a cent per turn                                                                                                                                                                         | no reserved concurrency (see below); ≤ 2 pollers (worker); spend caps  |
 | Secrets Manager               | $0.40/month (one secret)                                                                             | —                                                                                                                                                                                                    | —                                                                      |
 | CloudWatch                    | 7 alarms ≈ $0.70/month; logs per GB ingested                                                         | —                                                                                                                                                                                                    | 30-day log retention, no content in logs                               |
@@ -29,7 +29,18 @@ on them.
 
 At the default global cap of **$15.00/day**, AI spend (models, embeddings, distillation and speech) is at
 most ≈ $450/month, about 2,100 Nova turns a day. The per-person cap is **$1.00/day**. A full 30-minute call
-costs at most about $0.30 of Transcribe plus its speech and turns.
+costs about $0.30 of Transcribe plus its speech and turns.
+
+**Transcribe is outside the caps.** The API grants speech-to-text only to a live call, a limited number of
+times per call, and each grant only opens a socket. Once open, the browser streams straight to AWS: the
+minute caps, `callsEnabled` and the kill switch end the call in the app, and a well-behaved client closes
+its socket, but nothing on the server can. Transcribe use is not in `usage_ledger`, and AWS publishes no
+per-stream duration metric to alarm on. What bounds it:
+
+- AWS's quota of 25 concurrent streams per account in us-east-1: at most about $360 a day;
+- the AWS Budget and Cost Anomaly Detection ([owner actions](owner-actions.md) §2), which see Transcribe
+  by service;
+- `speech.enabled: false` (a deploy), which removes the grant so no new socket opens.
 
 ## Application caps (Admin → Settings)
 
@@ -50,8 +61,8 @@ Plus fixed limits in core configuration: 20 turns per 10 minutes per person, a s
 per-call turn cap for spoken turns, one live call per person, at most 3 answers in flight per person,
 sign-in lockout. Every model and speech call writes `usage_ledger` (purpose, model or voice, tokens or
 characters, estimated cost, principal, venture), visible in **Admin → Usage**. Prices live in
-`packages/ai/src/pricing.ts` (models) and `packages/core/src/services/voices.ts` (speech); update them when
-AWS prices change so the caps stay accurate.
+`packages/ai/src/pricing.ts` (models) and `packages/core/speech-voices.json` (speech, which also prices the
+speech alarms); update them when AWS prices change so the caps stay accurate.
 
 **Document ingestion counts against the caps.** Embedding an uploaded document is attributed to the person
 who uploaded it (`documents.uploaded_by`), and the worker checks the global cap and that person's cap
@@ -78,7 +89,6 @@ it), so it can resume a paused Aurora cluster.
 | `models.luna.enabled`                | `false`    | see [ADR-0014](../architecture/adr/0014-bedrock-models-luna-nova-titan.md#enabling-luna-later) |
 | `speech.enabled`                     | `true`     | `false` removes the API's Polly and Transcribe permissions and both speech alarms              |
 | `speech.engine`                      | `neural`   | `generative` costs almost twice as much per character and carries a residual risk (ADR-0010)   |
-| `speech.defaultVoice`                | `Matthew`  | must exist for the engine (synth checks)                                                       |
 | `speech.dailyAlarmUsd`               | 15         | the daily speech alarm's threshold: keep it equal to `dailyUsdCapGlobal`                       |
 | `distillation.sweepEnabled`          | `false`    | keep off: a 15-minute sweep that queries Aurora stops it from pausing (ADR-0018)               |
 

@@ -113,17 +113,20 @@ voice launch with real students.
 
 ### Voices and faces
 
-- **Engine: `neural`** (`speech.engine`). It has lower latency, costs about half as much ($16 against $30
-  per million characters) and carries no hallucination caveat. `generative` stays a configuration option
+- **Engine: `neural`** (`speech.engine` → `SPEECH_ENGINE`; the API's Polly adapter tries it first, then
+  the voice's other engine). It has lower latency, costs about half as much ($16 against $30 per million
+  characters) and carries no hallucination caveat. `generative` stays a configuration option
   with a recorded residual risk: AWS states that in rare cases the generative model "might continue
   generating random content beyond the stop threshold. Do not assume complete protection against
   hallucinated speech output" (Polly developer guide, "Generative voices"). Short per-sentence units and
   captions of the validated text limit, but do not remove, that risk; choosing generative needs the same
   review as any change to what a call may say.
-- **Voices.** The platform default is `Matthew` (`speech.defaultVoice`); Corin's vEIR speaks as Matthew,
-  Ruth's as Ruth. Both exist on the neural and generative engines in `us-east-1`; `cdk synth` rejects a
-  default voice the chosen engine lacks. Stock voices are synthetic: they are nobody's voice. A
-  persona-specific voice is used only while the EIR's `voice` consent is active.
+- **Voices.** Corin's vEIR speaks as Matthew, Ruth's as Ruth; personas without a consented voice of their
+  own, such as Foundry Guide, use the platform voice, Danielle. All three exist on both engines in
+  `us-east-1`. `packages/core/speech-voices.json` is the one list of voices, engines and prices: core
+  speaks and meters with it, infra prices the speech alarms with it, and tests pin it to the AWS voice
+  list. Stock voices are synthetic: they are nobody's voice. A persona-specific voice is used only while
+  the EIR's `voice` consent is active.
 - The built-in avatar is an audio-reactive presence orb with the persona's monogram, or its portrait when
   `likeness` consent and an image exist. No video of a person is generated.
 - The camera stays off for the whole site (`camera=()`): calls are voice only.
@@ -160,15 +163,15 @@ voice launch with real students.
 
 ### Infrastructure and cost
 
-| Item               | Setting                                                                                                                                                                                                                                                                                                 |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Permissions-Policy | `camera=(), microphone=(self), geolocation=()`: the microphone for this origin only; the browser still asks the person first                                                                                                                                                                            |
-| CSP                | `media-src 'self' blob:` (speech played from blob URLs); `connect-src` adds exactly `wss://transcribestreaming.us-east-1.amazonaws.com:8443`. The AudioWorklet is a same-origin file, which `script-src 'self'` already allows (checked in Chromium)                                                    |
-| IAM                | API role only, pinned with `aws:RequestedRegion = us-east-1`: `polly:SynthesizeSpeech` and `polly:DescribeVoices` on `*` (no resource-level permissions without a lexicon); `transcribe:StartStreamTranscriptionWebSocket` on `*` (the action has no resource types)                                    |
-| Runtime contract   | `SPEECH_ENABLED`, `SPEECH_DEFAULT_VOICE`, `SPEECH_ENGINE` (api) from `infra/cdk/config/production.json` → `speech`; `speech.enabled: false` removes the Polly and Transcribe grants and the speech alarms                                                                                               |
-| Spend              | Polly per character (neural $16, generative $30 per million; a 70-word reply ≈ 420 characters ≈ $0.007 neural), metered as usage purpose `speech` under the daily caps; Transcribe streaming $0.01 per minute while the socket is open, bounded by the minute caps (30 per call, 60 per person per day) |
-| Kill switches      | `calls_enabled = false` refuses new calls and ends live ones at the next heartbeat; `ai_enabled = false` stops calls with every other AI path                                                                                                                                                           |
-| Alarms             | `FoundryAscent-Speech-Characters` (more than 100,000 Polly characters in an hour) and `FoundryAscent-Speech-Characters-Daily` (more than the global daily AI cap's worth in a day): backstops for the in-app metering                                                                                   |
+| Item               | Setting                                                                                                                                                                                                                                                                             |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Permissions-Policy | `camera=(), microphone=(self), geolocation=()`: the microphone for this origin only; the browser still asks the person first                                                                                                                                                        |
+| CSP                | `media-src 'self' blob:` (speech played from blob URLs); `connect-src` adds exactly `wss://transcribestreaming.us-east-1.amazonaws.com:8443`. The AudioWorklet is a same-origin file, which `script-src 'self'` already allows (checked in Chromium, Firefox and WebKit)            |
+| IAM                | API role only, pinned with `aws:RequestedRegion = us-east-1`: `polly:SynthesizeSpeech` and `polly:DescribeVoices` on `*` (no resource-level permissions without a lexicon); `transcribe:StartStreamTranscriptionWebSocket` on `*` (the action has no resource types)                |
+| Runtime contract   | `SPEECH_ENABLED`, `SPEECH_ENGINE` (api) from `infra/cdk/config/production.json` → `speech`; `speech.enabled: false` removes the Polly and Transcribe grants and the speech alarms, and the API then offers neither (no speech-to-text grant, `/speech` answers 501)                 |
+| Spend              | Polly per character (neural $16, generative $30 per million; a 70-word reply ≈ 420 characters ≈ $0.007 neural), metered as usage purpose `speech` under the daily caps; Transcribe streaming $0.01 per minute while a socket is open, outside the app's metering (see Consequences) |
+| Kill switches      | `calls_enabled = false` refuses new calls and ends live ones at the next heartbeat; `ai_enabled = false` stops calls with every other AI path. Both reach the browser, which closes its Transcribe socket; neither can close it from the server                                     |
+| Alarms             | `FoundryAscent-Speech-Characters` (more than 100,000 Polly characters in an hour) and `FoundryAscent-Speech-Characters-Daily` (more than the global daily AI cap's worth in a day): backstops for the in-app metering                                                               |
 
 ### Consequences
 
@@ -184,7 +187,15 @@ voice launch with real students.
   P95 ≤ 1.2 s) is not met.
 - Bad: `connect-src` names Transcribe's shared endpoint, which serves every AWS account, so the CSP cannot
   pin it to ours; `script-src 'self'` is what keeps injected code from using it.
-- Bad: Transcribe bills the whole time the socket is open, silence included; the minute caps bound it.
+- Bad: Transcribe bills the whole time a socket is open, silence included, and the minute caps bound only
+  a well-behaved client. The API mints grants only for a live call, a limited number per call, and the
+  5-minute expiry bounds only the handshake: once open, the browser's socket to AWS is out of the
+  platform's reach. Heartbeats, minute caps and `calls_enabled` cannot close it, Transcribe use is not in
+  `usage_ledger`, and AWS publishes no per-stream duration metric to alarm on. A modified client can keep
+  streaming for hours. The real bounds are AWS's quota of 25 concurrent streams per account in
+  `us-east-1` (at most about $360 a day at $0.01 a minute), the AWS Budget with Cost Anomaly Detection
+  ([owner actions](../../runbooks/owner-actions.md) §2), and `speech.enabled: false`, which stops new
+  sockets but not open ones.
 - Neutral: rehearsal (pitch practice) can now be spoken.
 
 ### Confirmation
@@ -192,8 +203,11 @@ voice launch with real students.
 - `infra/cdk/test/app.test.ts` pins the Permissions-Policy, the CSP (`media-src`, and a `connect-src` of
   exactly the documents bucket and the Transcribe origin), the API-only, region-pinned Polly and
   Transcribe statements, both speech alarms and the runtime-contract environment; with
-  `speech.enabled: false` there is no grant and no alarm. `config.test.ts` rejects a default voice the
-  engine lacks. cdk-nag runs on every synth.
+  `speech.enabled: false` there is no grant and no alarm. cdk-nag runs on every synth.
+- The voices file is pinned by `infra/cdk/test/speech-voices.test.ts` (the AWS voice list, the seeded
+  voices, the prices) and `packages/core/src/services/voices.test.ts` (neural first, the seeded voices,
+  the same prices as `packages/ai`). API tests pin that `SPEECH_ENGINE` is tried first and that
+  `SPEECH_ENABLED=false` wires no Polly.
 - `scripts/smoke.mjs` checks the deployed Permissions-Policy, `media-src` and `connect-src` after every
   deploy.
 - API tests for calls and `/speech`: signed units and the intro verify, forged or foreign text is refused,

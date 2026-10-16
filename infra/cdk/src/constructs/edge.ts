@@ -92,8 +92,8 @@ export interface ContentSecurityPolicyOrigins {
  *   `audio/mpeg`) and plays it from a `blob:` object URL. Remote media stays blocked.
  * - `script-src 'self'` for the microphone's AudioWorklet: a worklet module is fetched as a script
  *   (CSP3 `script-src-elem`, falling back to `script-src`), so a same-origin static file such as
- *   `/worklets/<name>.js` loads, while `blob:` and cross-origin modules are refused. Verified in Chromium
- *   on 2026-10-16; no `worker-src` is needed.
+ *   `/worklets/<name>.js` loads, while `blob:` and cross-origin modules are refused. Verified on
+ *   2026-10-16 in Chromium 153, Firefox 155 and WebKit 26.6; no `worker-src` is needed.
  *
  * `style-src` keeps `'unsafe-inline'`: Radix's scroll lock injects a `<style>` element at runtime. The SPA
  * already ships that rule and sonner's styles in its own stylesheet, so removing `'unsafe-inline'` is a

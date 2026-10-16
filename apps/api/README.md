@@ -168,13 +168,14 @@ Environment (runtime contract): the per-function variable names live in
 | Role    | Variables                                                                                                                                                                                                                |
 | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | all     | `APP_ENV`, `APP_VERSION`, `LOG_LEVEL`, `DB_DRIVER`, `DB_CLUSTER_ARN`, `DB_SECRET_ARN`, `DB_NAME`, `MODEL_PROVIDER`, `MODEL_PRIMARY_ID`, `MODEL_FALLBACK_ID`, `MODEL_EMBEDDINGS_ID`, `BEDROCK_REGION`, `HOME_TENANT_SLUG` |
-| api     | `DOCUMENTS_BUCKET`, `JOBS_QUEUE_URL`, `DB_RESUME_BUDGET_MS`, `SPEECH_ENABLED`, `SPEECH_DEFAULT_VOICE`, `SPEECH_ENGINE` (+ `SITE_ORIGIN` with a custom domain)                                                            |
+| api     | `DOCUMENTS_BUCKET`, `JOBS_QUEUE_URL`, `DB_RESUME_BUDGET_MS`, `SPEECH_ENABLED`, `SPEECH_ENGINE` (+ `SITE_ORIGIN` with a custom domain)                                                                                    |
 | worker  | `DOCUMENTS_BUCKET`, `JOBS_MAX_RECEIVE_COUNT` (the queue's redrive `maxReceiveCount`); no queue URL: the worker never enqueues                                                                                            |
 | migrate | `OWNER_ACCESS_CODE_PREFIX`, `OWNER_ACCESS_CODE_HASH`, `OWNER_DISPLAY_NAME`, `HOME_TENANT_NAME`                                                                                                                           |
 
-`SPEECH_*` come from `infra/cdk/config/production.json` → `speech` (ADR-0010): `SPEECH_ENABLED` is `false`
-when infra grants no Polly or Transcribe access, `SPEECH_ENGINE` is `neural` (or `generative`) and
-`SPEECH_DEFAULT_VOICE` a Polly voice that exists for that engine (`Matthew`). Locally `DATABASE_URL` (pg)
+`SPEECH_*` come from `infra/cdk/config/production.json` → `speech` (ADR-0010). `SPEECH_ENABLED=false` means
+infra grants no Polly or Transcribe access, so the API wires neither (`/speech` answers 501).
+`SPEECH_ENGINE` (`neural` by default, or `generative`) is the Polly engine tried first; voices and prices
+are `packages/core/speech-voices.json`. Both are optional locally. Locally `DATABASE_URL` (pg)
 and core's optional `CORE_*` knobs. A missing or invalid variable fails the cold start with its name (never
 its value).
 

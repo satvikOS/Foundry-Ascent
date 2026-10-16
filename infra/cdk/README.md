@@ -121,7 +121,8 @@ Region `us-east-1`, account taken from the deploying credentials. Every IAM role
   `5xxErrorRate` > 5 % in 2 of 3 five-minute periods, and while `speech.enabled` two backstops for the
   in-app speech metering on Polly `RequestCharacters` for `SynthesizeSpeech`: more than 100,000 in one hour
   (`FoundryAscent-Speech-Characters`) and more than `speech.dailyAlarmUsd` worth at the engine's price in
-  one day (`FoundryAscent-Speech-Characters-Daily`, 937,500 at $15 on neural).
+  one day (`FoundryAscent-Speech-Characters-Daily`, 937,500 at $15 on neural). The price is read from
+  `packages/core/speech-voices.json`, the file the API meters speech with (`src/lib/speech-voices.ts`).
 - Outputs: `SiteUrl`, `DistributionId`, `ApiFunctionName`, `ClusterArn`, `SecretArn`, `DocumentsBucket`,
   `JobsQueueUrl`, `AlarmTopicArn`.
 
@@ -132,7 +133,7 @@ the API (its bundle check starts each handler with exactly these variables); syn
 | Function | Variables                                                                                                                                                                                                                                           |
 | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | all      | `APP_ENV=production`, `APP_VERSION`, `LOG_LEVEL=info`, `DB_DRIVER=dataapi`, `DB_CLUSTER_ARN`, `DB_SECRET_ARN`, `DB_NAME=foundry`, `MODEL_PROVIDER=bedrock`, `MODEL_*_ID`, `BEDROCK_REGION`, `HOME_TENANT_SLUG`, `NODE_OPTIONS=--enable-source-maps` |
-| api      | `DOCUMENTS_BUCKET`, `JOBS_QUEUE_URL`, `DB_RESUME_BUDGET_MS=40000`, `SPEECH_ENABLED=true`, `SPEECH_DEFAULT_VOICE=Matthew`, `SPEECH_ENGINE=neural`; `SITE_ORIGIN` only with a custom domain                                                           |
+| api      | `DOCUMENTS_BUCKET`, `JOBS_QUEUE_URL`, `DB_RESUME_BUDGET_MS=40000`, `SPEECH_ENABLED=true`, `SPEECH_ENGINE=neural`; `SITE_ORIGIN` only with a custom domain                                                                                           |
 | worker   | `DOCUMENTS_BUCKET`, `JOBS_MAX_RECEIVE_COUNT=3`                                                                                                                                                                                                      |
 | migrate  | `OWNER_ACCESS_CODE_PREFIX`, `OWNER_ACCESS_CODE_HASH`, `OWNER_DISPLAY_NAME`, `HOME_TENANT_NAME`                                                                                                                                                      |
 
@@ -187,14 +188,13 @@ config change plus a normal deploy.
 growth, [ADR-0018](../../docs/architecture/adr/0018-veir-knowledge-pools.md)). Both sections are optional;
 an absent section means off.
 
-| Key                                 | Production | Effect                                                                                                                                                                                                 |
-| ----------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `speech.enabled`                    | `true`     | `SPEECH_ENABLED`; when `false` the API role has no Polly or Transcribe permission and neither speech alarm exists                                                                                      |
-| `speech.engine`                     | `neural`   | `SPEECH_ENGINE` (`neural` or `generative`). Neural: lower latency, USD 16 per million characters; generative USD 30 and a residual hallucination risk (ADR-0010)                                       |
-| `speech.defaultVoice`               | `Matthew`  | `SPEECH_DEFAULT_VOICE`: the Polly voice for personas without a consented voice of their own; synth rejects a voice the engine lacks (adult US-English voices, `POLLY_EN_US_VOICES` in `src/config.ts`) |
-| `speech.dailyAlarmUsd`              | `15`       | threshold of `FoundryAscent-Speech-Characters-Daily`, converted to characters at the engine's price; keep it equal to the global daily AI cap                                                          |
-| `distillation.sweepEnabled`         | `false`    | `DistillSweep` schedule state (`ENABLED`/`DISABLED`); keep it off (see above)                                                                                                                          |
-| `distillation.sweepIntervalMinutes` | `15`       | sweep rate (5–60 minutes) if it is ever enabled                                                                                                                                                        |
+| Key                                 | Production | Effect                                                                                                                                                                                           |
+| ----------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `speech.enabled`                    | `true`     | `SPEECH_ENABLED`; when `false` the API role has no Polly or Transcribe permission and neither speech alarm exists                                                                                |
+| `speech.engine`                     | `neural`   | `SPEECH_ENGINE` (`neural` or `generative`), the engine the API tries first. Neural: lower latency, USD 16 per million characters; generative USD 30 and a residual hallucination risk (ADR-0010) |
+| `speech.dailyAlarmUsd`              | `15`       | threshold of `FoundryAscent-Speech-Characters-Daily`, converted to characters at the engine's price; keep it equal to the global daily AI cap                                                    |
+| `distillation.sweepEnabled`         | `false`    | `DistillSweep` schedule state (`ENABLED`/`DISABLED`); keep it off (see above)                                                                                                                    |
+| `distillation.sweepIntervalMinutes` | `15`       | sweep rate (5–60 minutes) if it is ever enabled                                                                                                                                                  |
 
 Changing any of them is a config change plus a normal deploy. The kill switch in the database
 (`ai_enabled`, plus `calls_enabled` for calls) is what stops calls and distillation at runtime; these keys
@@ -309,8 +309,10 @@ derives IAM5 finding ids from the policy values themselves. They are attached to
 - Amazon Polly (voice calls): per character synthesized (neural USD 16, generative USD 30 per million;
   a 70-word spoken reply is about 420 characters, ≈ USD 0.007 neural). Metered in `usage_ledger` under
   the daily caps; the two speech alarms are the backstop.
-- Amazon Transcribe streaming (voice calls): USD 0.01 per minute while the browser's stream is open,
-  bounded by the per-call and per-person call-minute caps.
+- Amazon Transcribe streaming (voice calls): USD 0.01 per minute while the browser's stream is open. The
+  call-minute caps bound only a well-behaved client; an open socket is out of the API's reach, so AWS's
+  25-concurrent-stream quota and the AWS Budget are the backstops
+  ([cost controls](../../docs/runbooks/cost-controls.md#where-the-money-goes)).
 - Reserved concurrency is off by default (see [Reserved concurrency](#reserved-concurrency)); the daily
   AI spend caps are the cost guardrail.
 - Bedrock spend is capped per day in the database (`platform_settings`), outside this stack.
