@@ -200,7 +200,9 @@ type TurnEmitter = (event: TurnStreamEvent) => void | Promise<void>;
 - Pipeline: authorize (membership, session, kill switch, assignment + approved release, mode, turn limit,
   20 turns / 10 min per principal, daily spend caps) → deterministic risk pre-classifier → crisis path
   (fixed support message, **no model call**, P1 `safety_wellbeing` escalation draft; it bypasses the AI
-  gates: kill switch, spend caps, persona status) → query embedding (`gateway.embed`) → scoped hybrid
+  gates: kill switch, spend caps, persona status, and every limit: the message rate limit, the in-flight
+  limit, call admission and the session turn limit; crisis turns still count towards the message limit, and
+  past it a spoken one is answered as typed, without speech) → query embedding (`gateway.embed`) → scoped hybrid
   retrieval (memory 8, venture chunks 6, doctrine/program 4, resources 4, patterns 2; isolation
   re-filtered; `retrieval.authorized` audit) → context ≤ 12k tokens → `generateStructured(CoachResponse)`
   → `validateCoachResponse` (evidence ids, facts, grounding, identity, cross-venture names/canaries/member names,
