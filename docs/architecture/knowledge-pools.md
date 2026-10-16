@@ -152,8 +152,9 @@ generated time), with `distilled_at` and `distill_version` (the number of comple
 
 ## 5. Conversations
 
-- **Titles** come from the first non-crisis message (trigger `turns_touch_session`) and can be renamed
-  (`PATCH /sessions/:id`). `title_source` records who set them: `auto` (first message, distillation) or
+- **Titles** come from the first message that is neither a crisis nor high-risk (trigger
+  `turns_touch_session`; until then the client shows its default "Conversation · date, time") and can be
+  renamed (`PATCH /sessions/:id`). `title_source` records who set them: `auto` (first message, distillation) or
   `person` (a rename, or a title given at the start). Distillation (`setSessionDigest`) replaces only
   `auto` titles.
 - **Temporary chats never carry a title** (CHECK `coaching_sessions_title_privacy_check`); renaming one is 409.

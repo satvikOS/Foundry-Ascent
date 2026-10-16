@@ -1115,6 +1115,22 @@ export function createOrchestrator(
       return new DomainError(code, message, { reason, retryAfterSeconds });
     };
     await turnsRepo.lockTurnAdmission(tx, ctx.principalId);
+    // Preflight read the conversation in its own transaction. Deleting or ending it since then must win: the
+    // conversation is re-checked under the lock its delete and end take, so a turn admitted just after a
+    // delete is refused, and a delete that comes later waits for this turn and erases it with the rest.
+    if (!(await sessionsRepo.lockSessionForTurn(tx, args.sessionId))) {
+      scope.deferAudit({
+        action: 'turn.rejected',
+        outcome: 'blocked',
+        ventureId: args.ventureId,
+        objectType: 'session',
+        objectId: args.sessionId,
+        policyReason: 'session_not_active',
+      });
+      throw new DomainError('session_ended', 'This session has ended. Start a new session to continue.', {
+        reason: 'session_not_active',
+      });
+    }
     const limited = await overMessageLimit(scope, { channel: args.channel, crisis: args.crisis });
     if (limited !== null) {
       throw reject(limited.code, limited.message, limited.reason, limited.retryAfterSeconds);

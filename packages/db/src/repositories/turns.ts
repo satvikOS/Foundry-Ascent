@@ -606,7 +606,8 @@ export interface ReviewQueueRow {
 
 /**
  * Sampled turns of ventures where `reviewerId` is the assigned EIR (explicit filter; RLS additionally
- * restricts EIRs to sampled turns of assigned ventures). Unreviewed first, newest first.
+ * restricts EIRs to sampled turns of assigned ventures), never of a deleted conversation. Unreviewed first,
+ * newest first.
  */
 export async function listReviewQueue(
   ex: SqlExecutor,
@@ -620,6 +621,7 @@ export async function listReviewQueue(
      FROM turns t
      JOIN ventures v ON v.id = t.venture_id
      WHERE t.sampled_for_review AND t.status = 'completed'
+       AND EXISTS (SELECT 1 FROM coaching_sessions s WHERE s.id = t.session_id AND s.deleted_at IS NULL)
        AND EXISTS (SELECT 1 FROM assignments a JOIN eir_profiles e ON e.id = a.eir_profile_id
                    WHERE a.venture_id = t.venture_id AND a.status = 'active' AND e.principal_id = :reviewerId
                      AND (a.expires_at IS NULL OR a.expires_at > now()))

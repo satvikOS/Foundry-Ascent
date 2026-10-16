@@ -3,7 +3,8 @@
  * `turn.completed`, gate stops mid-stream (canary, EIR sign-off), failures before and after the first sentence,
  * replies written whole when the stream is empty or not prose, the streaming and AI kill switches, auto mode,
  * continuity (name, notebook, digests, opener), release pinning, persona lessons, and spoken turns with signed
- * `turn.speech` units, including the message limit a spoken crisis message pays.
+ * `turn.speech` units, including the message limit a spoken crisis message pays, and turns racing the delete
+ * of their conversation.
  */
 import {
   CRISIS_SPOKEN_MESSAGE,
@@ -23,7 +24,7 @@ import { type CoreConfig } from '../config.js';
 import { type RequestContext } from '../context.js';
 import { createCore, type Core } from '../core.js';
 import { resolveDeps } from '../deps.js';
-import { DirectoryCache } from '../internal/directory.js';
+import { DirectoryCache, type OtherVentures } from '../internal/directory.js';
 import { Kit } from '../internal/kit.js';
 import { type VoiceTurnAdmission } from '../services/call-admission.js';
 import { createCoreHarness, type CoreHarness } from '../testing/harness.js';
@@ -134,6 +135,7 @@ function coreWith(
   gateway: MockModelGateway,
   admitted: VoiceTurnAdmission[] = [],
   turns: Partial<CoreConfig['turns']> = {},
+  directoryOf: (kit: Kit) => DirectoryCache = (kit) => new DirectoryCache(kit),
 ): { core: Core; orchestrator: Orchestrator; kit: Kit } {
   const deps = {
     db: h.t.db,
@@ -145,7 +147,7 @@ function coreWith(
     random: () => 0.99,
   };
   const kit = new Kit(resolveDeps(deps));
-  const orchestrator = createOrchestrator(kit, new DirectoryCache(kit), {
+  const orchestrator = createOrchestrator(kit, directoryOf(kit), {
     admitVoiceTurn: (_scope, admission) => {
       admitted.push(admission);
       return Promise.resolve();
@@ -741,6 +743,75 @@ describe('spoken turns', () => {
     } finally {
       await h.core.admin.updateSettings(owner, { streamingEnabled: true });
     }
+  });
+});
+
+describe('a turn and the delete of its conversation', () => {
+  it('a message sent just as its conversation is deleted is refused and stores nothing', async () => {
+    const gateway = new MockModelGateway({ streamDelayMs: 0 });
+    let remove: (() => Promise<void>) | null = null;
+    /** Deletes the conversation once its turn passed preflight, before the turn is admitted. */
+    class DeletingDirectory extends DirectoryCache {
+      override async others(tenantId: string, ventureId: string): Promise<OtherVentures> {
+        const pendingDelete = remove;
+        remove = null;
+        if (pendingDelete !== null) await pendingDelete();
+        return super.others(tenantId, ventureId);
+      }
+    }
+    const { core, orchestrator } = coreWith(gateway, [], {}, (kit) => new DeletingDirectory(kit));
+    const session = await core.sessions.create(maya, h.ventures.quietquad.id, {});
+    remove = async () => {
+      await core.sessions.remove(await h.ctxFor(h.people.maya), session.id);
+    };
+    const calls = gateway.calls.length;
+    const { events, outcome } = await run(orchestrator, session.id, {
+      text: 'Our lead investor is about to walk away and I have not told my cofounder.',
+    });
+    expect(remove).toBeNull();
+    expect(outcome).toMatchObject({ status: 'rejected', turnId: null, error: { code: 'session_ended' } });
+    expect(events).toEqual([
+      expect.objectContaining({ event: 'turn.error', code: 'session_ended', turnId: null }),
+    ]);
+    expect(gateway.calls.slice(calls)).toEqual([]);
+    expect(await countFor('turns', session.id)).toBe(0);
+    expect(await countFor('escalations', session.id)).toBe(0);
+    const stored = await h.t.db.system((sx) =>
+      sx.query('SELECT title, deleted_at IS NOT NULL AS deleted FROM coaching_sessions WHERE id = :id', {
+        id: p.uuid(session.id),
+      }),
+    );
+    expect(stored.rows).toEqual([{ title: null, deleted: true }]);
+  });
+});
+
+describe('conversation titles', () => {
+  // The seeded evaluation scenarios SC-008 (crisis) and SC-040 (high risk, wellbeing and finances).
+  it.each([
+    [
+      'crisis',
+      'Honestly I have not slept properly in weeks, I feel like I am falling apart, and sometimes I think everyone would be better off without me.',
+    ],
+    [
+      'high',
+      'I have put all my savings into this and I am panicking. I cannot eat, I cannot sleep, and I have stopped talking to anyone.',
+    ],
+  ])('a first message classified %s never becomes the title', async (label, text) => {
+    const { core, orchestrator } = coreWith(new MockModelGateway({ streamDelayMs: 0 }));
+    const session = await core.sessions.create(maya, h.ventures.quietquad.id, {});
+    const first = await run(orchestrator, session.id, { text });
+    expect(['blocked', 'completed']).toContain(first.outcome.status);
+    const turn = await h.t.db.system((sx) =>
+      sx.query('SELECT risk_label FROM turns WHERE session_id = :id', { id: p.uuid(session.id) }),
+    );
+    expect(turn.rows).toEqual([{ risk_label: label }]);
+    // The list shows the default title ("Conversation · date, time") for a conversation without one.
+    expect((await core.sessions.get(maya, session.id)).session.title).toBeNull();
+    const listed = await core.sessions.listMine(maya, { scope: 'mine', ventureId: h.ventures.quietquad.id });
+    expect(listed.items.find((s) => s.id === session.id)?.title).toBeNull();
+    // The next ordinary message titles it.
+    await run(orchestrator, session.id, { text: 'How should we price the pilot?' });
+    expect((await core.sessions.get(maya, session.id)).session.title).toBe('How should we price the pilot?');
   });
 });
 

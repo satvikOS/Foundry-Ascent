@@ -208,6 +208,10 @@ type TurnEmitter = (event: TurnStreamEvent) => void | Promise<void>;
   candidates become `proposed` items (origin `ai`, visibility `team`); forced or P0/P1 escalations become
   `draft` escalations; all high-risk turns and 30 % of others are sampled for EIR review.
 - `signal` (client disconnect / deadline) cancels the model call; the turn is marked `failed`.
+- The turn is admitted under a lock on its conversation (`sessionsRepo.lockSessionForTurn`, the row lock a
+  delete and an end take): a conversation deleted or ended after preflight refuses the turn
+  (`session_ended`), and the database refuses any turn on a deleted conversation (trigger
+  `turns_require_live_session`).
 
 ## 5. Ingestion worker: `ingestion.process`
 

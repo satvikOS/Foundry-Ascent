@@ -122,6 +122,26 @@ export function getSession(ex: SqlExecutor, id: string): Promise<SessionRecord |
   );
 }
 
+/**
+ * Locks an active, undeleted conversation for the rest of the caller's transaction, before a turn is added
+ * to it. Deleting a conversation (`app.soft_delete_session`) and ending one lock the same row, so they
+ * serialise with the turn: a delete or end that committed first is seen here (false, nothing is written),
+ * and one that comes later waits for the turn and then erases it with the rest. The lock is the one the
+ * turn's insert takes anyway (`turns_touch_session`), so it adds no contention. Must run inside a
+ * transaction. Returns false when the conversation is not active, deleted or not visible.
+ */
+export async function lockSessionForTurn(ex: SqlExecutor, sessionId: string): Promise<boolean> {
+  const row = await queryFirst(
+    ex,
+    `SELECT s.id FROM coaching_sessions s
+     WHERE s.id = :id AND s.status = 'active' AND s.deleted_at IS NULL
+     FOR NO KEY UPDATE OF s`,
+    { id: p.uuid(sessionId) },
+    (r) => col.uuid.decode(r.id, 'id'),
+  );
+  return row !== null;
+}
+
 export interface CreateSessionInput {
   readonly id?: string;
   readonly tenantId: string;
