@@ -13,6 +13,7 @@ import {
 } from '@foundry/ai';
 import { type EvidenceItem, type SessionView } from '@foundry/contracts';
 import {
+  NotebookIntegrityError,
   auditRepo,
   documentsRepo,
   eirRepo,
@@ -599,9 +600,16 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
       // The notebook first, written against the version read; a person's edit in between is merged, not lost.
       const scope = { ventureId: state.ventureId, personaId: state.personaId };
       let notebookVersion: number | null = null;
+      let notebookIntact = true;
       let suppressedDropped = 0;
       for (let attempt = 0; attempt < NOTEBOOK_WRITE_ATTEMPTS && notebookVersion === null; attempt += 1) {
         const current = await notebooksRepo.getNotebook(sx, scope);
+        // A notebook that cannot be read in full is never written over (its salvaged lines would replace
+        // what could not be read); the digest, memory and lessons are still written.
+        if (current !== null && !current.intact) {
+          notebookIntact = false;
+          break;
+        }
         const marks = await notebooksRepo.getNotebookMarks(sx, scope);
         if (marks.veirVersion > readVersion) return { kind: 'notebook_changed' };
         const version = current?.version ?? 0;
@@ -627,16 +635,31 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
           notebookVersion = version;
           break;
         }
-        const saved = await notebooksRepo.saveNotebook(sx, {
-          tenantId: state.tenantId,
-          ...scope,
-          expectedVersion: version,
-          content: filtered.content,
-          suppressed: current?.suppressed ?? [],
-          editedBy: 'veir',
-          principalId: null,
-        });
+        let saved: notebooksRepo.NotebookRecord | null;
+        try {
+          saved = await notebooksRepo.saveNotebook(sx, {
+            tenantId: state.tenantId,
+            ...scope,
+            expectedVersion: version,
+            content: filtered.content,
+            suppressed: current?.suppressed ?? [],
+            editedBy: 'veir',
+            principalId: null,
+            // The summary and opener drawn here record this conversation, so deleting it erases them (and
+            // deleting another conversation does not).
+            sourceSessionId: sessionId,
+          });
+        } catch (err) {
+          // Permanent (the stored notebook is damaged): neither retried nor overwritten. It is thrown after a
+          // successful read, so the transaction stays usable.
+          if (!(err instanceof NotebookIntegrityError)) throw err;
+          notebookIntact = false;
+          break;
+        }
         notebookVersion = saved?.version ?? null;
+      }
+      if (!notebookIntact) {
+        logger.warn('distill.notebook_unreadable', { requestId, sessionId, personaId: state.personaId });
       }
 
       await sessionsRepo.setSessionDigest(sx, {
@@ -700,6 +723,7 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
           personaId: state.personaId,
           titled: result.title !== null,
           notebookVersion,
+          notebookIntact,
           pinnedKept: result.stats.pinnedKept,
           suppressedDropped: result.stats.suppressedDropped + suppressedDropped,
           duplicatesDropped: result.stats.duplicatesDropped,

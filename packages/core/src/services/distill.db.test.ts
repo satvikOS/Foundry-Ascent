@@ -1247,3 +1247,99 @@ describe('daily maintenance', () => {
     expect((await session(id))?.status).toBe('ended');
   });
 });
+
+describe('what a distillation draws from a conversation, and its deletion', () => {
+  const OPENER = 'Last time you planned to ask three libraries for a deposit. How did it go?';
+  const scriptOpener = (): void => {
+    scripted = (context) => {
+      const draft = mockDistillDraft(context);
+      return {
+        ...draft,
+        notebook: { ...draft.notebook, summary: 'Maya is pricing the library pilot.', next_opener: OPENER },
+      };
+    };
+  };
+  async function openerOf(sessionId: string): Promise<{ opener: string | null; source: string | null }> {
+    const rows = await h.t.db.system((sx) =>
+      sx.query('SELECT opener, opener_source_session_id AS source FROM coaching_sessions WHERE id = :id', {
+        id: p.uuid(sessionId),
+      }),
+    );
+    return rows.rows[0] as { opener: string | null; source: string | null };
+  }
+
+  it('records the conversation behind the summary and opener; deleting it erases them and their copies only', async () => {
+    const drawn = await conversation(maya, ['Should we ask the libraries for a deposit up front?']);
+    await idle(drawn, 15);
+    scriptOpener();
+    try {
+      expect((await scriptedCore.distill.distillSession(job(drawn))).status).toBe('distilled');
+    } finally {
+      scripted = null;
+    }
+    const content = (await notebook())?.content;
+    expect(content).toMatchObject({ nextOpener: OPENER, nextOpenerSource: drawn });
+    expect(content?.summarySources).toContain(drawn);
+
+    // A later conversation opens with that line, and remembers where it came from.
+    const later = await h.core.sessions.create(maya, quietquad(), { mode: 'diagnose' });
+    expect(await openerOf(later.id)).toEqual({ opener: OPENER, source: drawn });
+
+    // Deleting another distilled conversation leaves both alone: their sources are known now.
+    const other = await conversation(maya, ['Unrelated question about the sensors.']);
+    await h.t.db.system((sx) =>
+      sx.query('UPDATE coaching_sessions SET distilled_at = now(), distill_version = 1 WHERE id = :id', {
+        id: p.uuid(other),
+      }),
+    );
+    await h.core.sessions.remove(maya, other);
+    expect((await notebook())?.content).toMatchObject({ nextOpener: OPENER });
+    expect((await openerOf(later.id)).opener).toBe(OPENER);
+
+    // Deleting the conversation it was drawn from erases the notebook's opener and summary, and the copy.
+    await h.core.sessions.remove(maya, drawn);
+    expect((await notebook())?.content).toMatchObject({ nextOpener: null, summary: '' });
+    expect(await openerOf(later.id)).toEqual({ opener: null, source: null });
+  });
+
+  it('never writes over a notebook it cannot read in full, and still writes the digest', async () => {
+    const id = await conversation(maya, ['What should the deposit be?']);
+    await idle(id, 15);
+    const before = await notebook();
+    await h.t.db.system(async (sx) => {
+      await sx.query('ALTER TABLE veir_notebooks DROP CONSTRAINT veir_notebooks_content_check');
+      await sx.query(
+        `UPDATE veir_notebooks SET content = content || jsonb_build_object('founderProfile', :entries)
+         WHERE venture_id = :venture AND persona_id = :persona`,
+        {
+          venture: p.uuid(quietquad()),
+          persona: p.uuid(corinPersona()),
+          entries: p.json([
+            { id: 'fp-x', text: 'Unreadable line', sourceSessionId: 'row-4', createdAt: 'later' },
+          ]),
+        },
+      );
+    });
+    try {
+      const outcome = await h.core.distill.distillSession(job(id));
+      expect(outcome).toMatchObject({ status: 'distilled', notebookVersion: null });
+      expect((await notebook())?.version).toBe(before?.version);
+      expect((await session(id))?.digest).not.toBeNull();
+      const [audited] = await auditFor('session.distilled', id);
+      expect(audited?.metadata).toMatchObject({ notebookIntact: false, notebookVersion: null });
+      expect(h.logger.records.some((r) => r.event === 'distill.notebook_unreadable')).toBe(true);
+    } finally {
+      await h.t.db.system(async (sx) => {
+        await sx.query(
+          `UPDATE veir_notebooks SET content = content || '{"founderProfile": []}'::jsonb
+           WHERE venture_id = :venture AND persona_id = :persona`,
+          { venture: p.uuid(quietquad()), persona: p.uuid(corinPersona()) },
+        );
+        await sx.query(
+          `ALTER TABLE veir_notebooks ADD CONSTRAINT veir_notebooks_content_check
+             CHECK (app.notebook_content_valid(content))`,
+        );
+      });
+    }
+  });
+});
