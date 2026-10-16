@@ -7,6 +7,9 @@
  *
  * Checks, in order (each one independent, all reported):
  *   1. GET /                         200 text/html with the security headers (CSP, HSTS, nosniff, DENY)
+ *                                    and the voice-call edge policy: Permissions-Policy microphone=(self)
+ *                                    with the camera off, CSP media-src 'self' blob:, and a connect-src of
+ *                                    exactly 'self', the documents bucket and Amazon Transcribe streaming
  *   2. GET /assets/<entry>.js        200 JavaScript, immutable caching
  *   3. GET /api/v1/health            200 JSON, status ok/degraded [+ the deployed version]. The public
  *                                    health route never queries the database (so polling it cannot keep
@@ -14,7 +17,7 @@
  *   4. POST /api/v1/auth/sign-in     401 problem+json `invalid_access_code` for a random code, no cookie.
  *                                    The first check that reaches Aurora (Data API): it waits for a resume
  *                                    from auto-pause (503 database_resuming + Retry-After, or a 504).
- *   5. GET /<tenant>/app/ventures    200 index.html (SPA deep link rewrite)
+ *   5. GET /<tenant>/app/ventures    200 index.html (SPA deep link rewrite), same headers as check 1
  *   6. GET /api/v1/<unknown>         4xx problem+json (API errors are never rewritten to the SPA)
  *
  * Environment:
@@ -51,6 +54,15 @@ const FIRST_CONTACT_RETRY_STATUSES = new Set([403, 404]);
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 const MIN_HSTS_SECONDS = 31_536_000;
 const CSP_DIRECTIVES = ["default-src 'self'", "frame-ancestors 'none'", "object-src 'none'"];
+/**
+ * Voice calls (ADR-0010; infra/cdk/src/constructs/edge.ts): the microphone for this origin only and the
+ * camera off; synthesized speech plays from blob: URLs; the browser may connect to the documents bucket
+ * (presigned uploads) and to Amazon Transcribe streaming (presigned speech-to-text), and nowhere else.
+ */
+const PERMISSIONS = { microphone: '(self)', camera: '()' };
+const MEDIA_SRC = "'self' blob:";
+const SPEECH_TO_TEXT_ORIGIN = 'wss://transcribestreaming.us-east-1.amazonaws.com:8443';
+const UPLOAD_ORIGIN = /^https:\/\/[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]\.s3\.us-east-1\.amazonaws\.com$/;
 
 class CheckError extends Error {}
 
@@ -179,8 +191,53 @@ function expectContentType(res, expected) {
 }
 
 /**
+ * `name value value; name value` → Map of name → value list (CSP), or `a=(x), b=()` → Map of a → `(x)`.
+ * @param {string} header
+ * @param {';' | ','} separator
+ */
+function directives(header, separator) {
+  /** @type {Map<string, string[]>} */
+  const map = new Map();
+  for (const part of header.split(separator)) {
+    const [name, ...values] = part.trim().split(separator === ';' ? /\s+/ : /=/);
+    if (name) map.set(name.toLowerCase(), values);
+  }
+  return map;
+}
+
+/**
+ * What is wrong with the voice-call edge policy of a page response (empty when it is right).
+ * @param {string} csp
+ * @param {string} permissionsPolicy
+ */
+function edgePolicyProblems(csp, permissionsPolicy) {
+  const problems = [];
+  const features = directives(permissionsPolicy, ',');
+  for (const [feature, allow] of Object.entries(PERMISSIONS)) {
+    const actual = features.get(feature)?.join('=');
+    if (actual !== allow)
+      problems.push(`Permissions-Policy ${feature}=${actual ?? 'missing'}, expected ${allow}`);
+  }
+  const policy = directives(csp, ';');
+  const media = policy.get('media-src')?.join(' ');
+  if (media !== MEDIA_SRC) problems.push(`CSP media-src "${media ?? 'missing'}", expected "${MEDIA_SRC}"`);
+  const connect = policy.get('connect-src') ?? [];
+  const uploads = connect.filter((source) => UPLOAD_ORIGIN.test(source));
+  const unexpected = connect.filter(
+    (source) => source !== "'self'" && source !== SPEECH_TO_TEXT_ORIGIN && !UPLOAD_ORIGIN.test(source),
+  );
+  if (!connect.includes("'self'")) problems.push("CSP connect-src lacks 'self'");
+  if (uploads.length !== 1)
+    problems.push(`CSP connect-src has ${uploads.length} documents-bucket origins, expected 1`);
+  if (!connect.includes(SPEECH_TO_TEXT_ORIGIN))
+    problems.push(`CSP connect-src lacks ${SPEECH_TO_TEXT_ORIGIN}`);
+  if (unexpected.length > 0) problems.push(`CSP connect-src allows ${unexpected.join(' ')}`);
+  return problems;
+}
+
+/**
  * @param {Response} res
- * @param {{ page: boolean }} opts  page responses also need the CSP and frame headers
+ * @param {{ page: boolean }} opts  page responses also need the CSP, frame and voice-call headers
  */
 function expectSecurityHeaders(res, opts) {
   const h = res.headers;
@@ -198,6 +255,7 @@ function expectSecurityHeaders(res, opts) {
     }
     if ((h.get('x-frame-options') ?? '').toUpperCase() !== 'DENY') problems.push('X-Frame-Options');
     if (!h.get('referrer-policy')) problems.push('Referrer-Policy missing');
+    problems.push(...edgePolicyProblems(csp, h.get('permissions-policy') ?? ''));
   }
   if (problems.length > 0) fail(`security headers: ${problems.join('; ')}`);
 }
@@ -301,7 +359,7 @@ async function main() {
       entryScript = /<script[^>]+src="(\/assets\/[^"]+\.js)"/.exec(indexHtml)?.[1];
       expectSecurityHeaders(res, { page: true });
       if (!indexHtml.includes('id="root"')) fail('index.html has no #root element');
-      return `HTTP 200, CSP + HSTS present${attempt > 1 ? ` (after ${attempt} attempts)` : ''}`;
+      return `HTTP 200, CSP + HSTS + voice-call policy present${attempt > 1 ? ` (after ${attempt} attempts)` : ''}`;
     }
   });
 

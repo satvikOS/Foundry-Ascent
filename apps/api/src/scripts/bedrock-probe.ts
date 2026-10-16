@@ -8,8 +8,9 @@
  *
  *   MODEL_PROVIDER=bedrock pnpm --filter @foundry/api exec tsx src/scripts/bedrock-probe.ts
  *
- * Model ids come from MODEL_PRIMARY_ID / MODEL_FALLBACK_ID / MODEL_EMBEDDINGS_ID (see .github/workflows/
- * ops-bedrock-probe.yml, which reads them from infra/cdk/config/production.json).
+ * Model ids come from MODEL_PRIMARY_ID / MODEL_FALLBACK_ID / MODEL_EMBEDDINGS_ID (copy them from
+ * infra/cdk/config/production.json → models). Run it with credentials allowed to invoke those models; the
+ * CI workflow that ran it is retired (docs/runbooks/deploy-and-rollback.md, "Probing Bedrock and Polly").
  */
 import { randomUUID } from 'node:crypto';
 

@@ -1,7 +1,9 @@
 /**
- * scripts/smoke.mjs against a local stand-in for a freshly deployed site (R6): the first requests of a new
- * CloudFront distribution or S3 origin can answer 403/404 while the configuration propagates, and the smoke
- * test must retry those within its first-contact window instead of failing the deploy.
+ * scripts/smoke.mjs against a local stand-in for a deployed site.
+ * - First contact (R6): the first requests of a new CloudFront distribution or S3 origin can answer 403/404
+ *   while the configuration propagates, and the smoke test must retry those instead of failing the deploy.
+ * - Voice-call edge policy: pages must allow the microphone for this origin only, play speech from blob:
+ *   URLs, and connect to nothing beyond the documents bucket and Amazon Transcribe streaming.
  */
 import { execFile } from 'node:child_process';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
@@ -18,14 +20,20 @@ const PAGE_HEADERS = {
   'content-type': 'text/html; charset=utf-8',
   'strict-transport-security': 'max-age=63072000; includeSubDomains; preload',
   'x-content-type-options': 'nosniff',
-  'content-security-policy': "default-src 'self'; frame-ancestors 'none'; object-src 'none'",
+  'content-security-policy':
+    "default-src 'self'; script-src 'self'; media-src 'self' blob:; " +
+    "connect-src 'self' https://foundryascent-data-documentsbucket-abc.s3.us-east-1.amazonaws.com " +
+    "wss://transcribestreaming.us-east-1.amazonaws.com:8443; frame-ancestors 'none'; object-src 'none'",
   'x-frame-options': 'DENY',
   'referrer-policy': 'strict-origin-when-cross-origin',
+  'permissions-policy': 'camera=(), microphone=(self), geolocation=()',
 };
 
 interface Site {
   /** Answers with this status (empty body) instead of the real response while it returns a number. */
   readonly transient: (req: IncomingMessage) => number | null;
+  /** Page headers that replace the deployed ones. */
+  readonly pageHeaders?: Record<string, string>;
 }
 
 function serve(site: Site): Promise<{ server: Server; origin: string }> {
@@ -40,7 +48,7 @@ function serve(site: Site): Promise<{ server: Server; origin: string }> {
         .writeHead(code, { 'content-type': 'application/problem+json', 'x-content-type-options': 'nosniff' })
         .end(JSON.stringify({ ...body, requestId: 'req-1' }));
     if (req.method === 'GET' && (req.url === '/' || req.url === '/ain/app/ventures')) {
-      res.writeHead(200, PAGE_HEADERS).end(INDEX);
+      res.writeHead(200, { ...PAGE_HEADERS, ...site.pageHeaders }).end(INDEX);
     } else if (req.url === '/assets/index-abc.js') {
       res
         .writeHead(200, {
@@ -126,6 +134,47 @@ describe('scripts/smoke.mjs first contact (R6)', () => {
     expect(stdout).toContain('(after 4 attempts)');
     expect(stdout).toContain('All 6 checks passed.');
     expect(code).toBe(0);
+  });
+
+  it.each([
+    [
+      'the microphone is off',
+      { 'permissions-policy': 'camera=(), microphone=(), geolocation=()' },
+      /Permissions-Policy microphone=\(\), expected \(self\)/,
+    ],
+    [
+      'the camera is on',
+      { 'permissions-policy': 'camera=(self), microphone=(self)' },
+      /Permissions-Policy camera=\(self\), expected \(\)/,
+    ],
+    [
+      'speech cannot play from blob: URLs',
+      { 'content-security-policy': PAGE_HEADERS['content-security-policy'].replace(' blob:', '') },
+      /CSP media-src "'self'", expected "'self' blob:"/,
+    ],
+    [
+      'Transcribe streaming is not allowed',
+      { 'content-security-policy': PAGE_HEADERS['content-security-policy'].replace(/ wss:\S+/, '') },
+      /CSP connect-src lacks wss:\/\/transcribestreaming\.us-east-1\.amazonaws\.com:8443/,
+    ],
+    [
+      'connect-src allows another host',
+      {
+        'content-security-policy': PAGE_HEADERS['content-security-policy'].replace(
+          "connect-src 'self'",
+          "connect-src 'self' https://*.amazonaws.com",
+        ),
+      },
+      /CSP connect-src allows https:\/\/\*\.amazonaws\.com/,
+    ],
+  ])('fails the page checks when %s', async (_case, pageHeaders, problem) => {
+    const { server, origin } = await serve({ transient: () => null, pageHeaders });
+    current = server;
+    const { code, stdout } = await runSmoke(origin, 1);
+    expect(stdout).toMatch(/FAIL {2}GET \/ serves the SPA with security headers/);
+    expect(stdout).toMatch(problem);
+    expect(stdout).toContain('2 of 6 checks failed.'); // the page and the deep link
+    expect(code).toBe(1);
   });
 
   it('still fails a site that keeps answering 404 once the first-contact window is over', async () => {
