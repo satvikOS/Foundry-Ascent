@@ -32,7 +32,7 @@ function Bullets({ items, empty = 'None.' }: { items: readonly string[]; empty?:
 }
 
 /** A persona's doctrine as readable prose and lists (never raw JSON). */
-export function DoctrineView({ doctrine, level = 3 }: { doctrine: Doctrine; level?: SubLevel }) {
+function DoctrineView({ doctrine, level = 3 }: { doctrine: Doctrine; level?: SubLevel }) {
   return (
     <div className="grid gap-8">
       <p className="prose-reading">{doctrine.summary}</p>
@@ -118,7 +118,7 @@ function Dial<K extends 'directness' | 'warmth' | 'pace'>({
 }
 
 /** A persona's style: the three dials, feedback structure, vocabulary and things to avoid. */
-export function StyleView({ style, level = 3 }: { style: Style; level?: SubLevel }) {
+function StyleView({ style, level = 3 }: { style: Style; level?: SubLevel }) {
   return (
     <div className="grid gap-8">
       <dl className="grid gap-6 sm:grid-cols-3">

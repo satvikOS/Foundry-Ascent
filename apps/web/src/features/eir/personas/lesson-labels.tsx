@@ -3,9 +3,9 @@ import { Sparkles } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 
-export type LessonStatus = LessonView['status'];
+type LessonStatus = LessonView['status'];
 
-export const LESSON_STATUS: Record<
+const LESSON_STATUS: Record<
   LessonStatus,
   { label: string; variant: 'muted' | 'info' | 'success' | 'outline' }
 > = {

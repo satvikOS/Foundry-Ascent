@@ -82,7 +82,7 @@ export function useEirProfiles(options: { enabled?: boolean } = {}) {
   });
 }
 
-export type CreateEirPersonaInput = z.input<typeof CreateEirPersonaRequest>;
+type CreateEirPersonaInput = z.input<typeof CreateEirPersonaRequest>;
 
 /** POST /personas → 201 a draft EIR persona with its draft release v1 (program lead). */
 export function useCreateEirPersona() {
@@ -117,7 +117,7 @@ function useInvalidateLibrary(personaId: string) {
   return () => client.invalidateQueries({ queryKey: queryKeys.personas.library(personaId) });
 }
 
-export type CreateLibrarySourceInput = z.input<typeof CreatePersonaKnowledgeRequest>;
+type CreateLibrarySourceInput = z.input<typeof CreatePersonaKnowledgeRequest>;
 
 /** POST /personas/:id/knowledge → 201 an authored note, case, FAQ or transcript (chunked on save). */
 export function useCreateLibrarySource(personaId: string) {
@@ -134,7 +134,7 @@ export function useCreateLibrarySource(personaId: string) {
   });
 }
 
-export type UpdateLibrarySourceInput = z.input<typeof UpdatePersonaKnowledgeRequest>;
+type UpdateLibrarySourceInput = z.input<typeof UpdatePersonaKnowledgeRequest>;
 
 /** PATCH /personas/:id/knowledge/:sourceId — the title, or the text of an authored source. */
 export function useUpdateLibrarySource(personaId: string) {
@@ -178,7 +178,7 @@ export function useRetryLibraryUpload(personaId: string) {
   });
 }
 
-export interface UploadLibraryDocumentVariables {
+interface UploadLibraryDocumentVariables {
   file: File;
   onProgress?: (progress: UploadProgress) => void;
   signal?: AbortSignal;
@@ -219,10 +219,8 @@ export function useUploadLibraryDocument(personaId: string) {
 
 // Common pool: lessons ------------------------------------------------------------------------------
 
-export type Lesson = LessonView;
-
 /** GET /personas/:id/lessons — drafts are visible to the persona's curators only. */
-export const personaLessonsQueryOptions = (personaId: string) =>
+const personaLessonsQueryOptions = (personaId: string) =>
   queryOptions({
     queryKey: queryKeys.personas.lessons(personaId),
     queryFn: ({ signal }) => api.get(path`/personas/${personaId}/lessons`, LessonListResponse, { signal }),
@@ -267,8 +265,6 @@ export function useLessonAction(personaId: string) {
 
 // Consent and embodiment ----------------------------------------------------------------------------
 
-export type Consent = ConsentView;
-
 /** GET /personas/:id/consents — program leads and the persona's EIR (`enabled: false` for anyone else). */
 export function usePersonaConsents(personaId: string, options: { enabled?: boolean } = {}) {
   return useQuery({
@@ -286,13 +282,13 @@ function useInvalidateConsent(personaId: string) {
       client.invalidateQueries({ queryKey: queryKeys.personas.all() }),
       client.invalidateQueries({ queryKey: queryKeys.personas.embodiment(personaId) }),
       // Ventures show their vEIR's status; a revocation suspends it.
-      client.invalidateQueries({ queryKey: ['fa', 'venture'] }),
+      client.invalidateQueries({ queryKey: queryKeys.venture.all() }),
     ]);
 }
 
 export type RecordConsentInput = z.input<typeof CreateConsentRequest>;
 
-/** POST /personas/:id/consents → 201; it replaces the consent the persona relies on. */
+/** POST /personas/:id/consents → 201; the persona relies on it from now on. It must cover doctrine. */
 export function useRecordConsent(personaId: string) {
   const invalidate = useInvalidateConsent(personaId);
   return useMutation({
@@ -324,7 +320,7 @@ export function usePersonaEmbodiment(personaId: string) {
   });
 }
 
-export type UpdateEmbodimentInput = z.input<typeof UpdateEmbodimentRequest>;
+type UpdateEmbodimentInput = z.input<typeof UpdateEmbodimentRequest>;
 
 /** PATCH /personas/:id/embodiment — a voice needs a consent covering voice. */
 export function useUpdateEmbodiment(personaId: string) {

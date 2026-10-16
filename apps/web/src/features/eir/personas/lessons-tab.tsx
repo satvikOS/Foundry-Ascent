@@ -6,8 +6,8 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
 import { LoadingRegion, Skeleton } from '@/components/ui/skeleton';
+import { FilterChips } from '@/features/admin/shared/filter-chips';
 import { formatRelative } from '@/lib/format';
-import { cn } from '@/lib/utils';
 import { usePersonaLessons } from '@/lib/api/hooks/veir-pools';
 
 import { DistilledBadge, LessonStatusBadge, needsReview } from './lesson-labels';
@@ -67,32 +67,12 @@ export function LessonsTab({ persona, shortName, openLessonId, onOpenLessonChang
   return (
     <div className="grid gap-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div role="group" aria-label="Filter lessons" className="flex flex-wrap gap-1.5">
-          {FILTERS.map((f) => {
-            const count = all.filter(f.match).length;
-            const selected = f.value === filter;
-            return (
-              <button
-                key={f.value}
-                type="button"
-                aria-pressed={selected}
-                onClick={() => {
-                  setChosen(f.value);
-                }}
-                className={cn(
-                  'inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-small transition-colors',
-                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
-                  selected
-                    ? 'border-foreground bg-foreground text-background'
-                    : 'border-border text-muted-foreground hover:border-border-strong hover:text-foreground',
-                )}
-              >
-                {f.label}
-                <span className="tabular text-caption opacity-70">{count}</span>
-              </button>
-            );
-          })}
-        </div>
+        <FilterChips
+          label="Filter lessons"
+          chips={FILTERS.map((f) => ({ key: f.value, label: f.label, count: all.filter(f.match).length }))}
+          selected={filter}
+          onSelect={setChosen}
+        />
         {canCurate ? (
           <Button
             onClick={() => {

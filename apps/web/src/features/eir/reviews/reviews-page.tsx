@@ -1,4 +1,4 @@
-import { CircleCheck, CircleDashed, ClipboardCheck, EyeOff } from 'lucide-react';
+import { CircleCheck, ClipboardCheck, EyeOff } from 'lucide-react';
 import { useEffect, useMemo, useRef } from 'react';
 
 import { announce } from '@/components/a11y/live-announcer';
@@ -8,8 +8,8 @@ import { ErrorState } from '@/components/ui/error-state';
 import { PageContainer, PageHeader } from '@/components/ui/page-header';
 import { SectionCard } from '@/components/ui/section-card';
 import { LoadingRegion, Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/components/ui/toast';
+import { FilterChips } from '@/features/admin/shared/filter-chips';
 import { MutationErrorAlert } from '@/features/admin/shared/form';
 import { useReviewQueue, useSubmitReview, type ReviewSampleView } from '@/lib/api/hooks/eir';
 import { hasRole } from '@/lib/auth/roles';
@@ -71,27 +71,15 @@ export function ReviewsPage({ selectedTurnId, filter, onSelect, onFilterChange }
         description="Score sampled answers from your ventures. You see the venture, question, answer and evidence — not who asked."
       >
         {isEir ? (
-          <Tabs
-            value={filter}
-            onValueChange={(value) => {
-              onFilterChange(value === 'reviewed' ? 'reviewed' : 'pending');
-            }}
-          >
-            <TabsList aria-label="Review queue">
-              <TabsTrigger value="pending">
-                <CircleDashed aria-hidden />
-                To review{' '}
-                <span className="tabular text-muted-foreground">{queue.isSuccess ? pending.length : ''}</span>
-              </TabsTrigger>
-              <TabsTrigger value="reviewed">
-                <CircleCheck aria-hidden />
-                Reviewed{' '}
-                <span className="tabular text-muted-foreground">
-                  {queue.isSuccess ? reviewed.length : ''}
-                </span>
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
+          <FilterChips<ReviewFilter>
+            label="Filter samples"
+            chips={[
+              { key: 'pending', label: 'To review', count: queue.isSuccess ? pending.length : undefined },
+              { key: 'reviewed', label: 'Reviewed', count: queue.isSuccess ? reviewed.length : undefined },
+            ]}
+            selected={filter}
+            onSelect={onFilterChange}
+          />
         ) : null}
       </PageHeader>
 

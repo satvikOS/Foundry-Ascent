@@ -10,24 +10,26 @@ import { ErrorState } from '@/components/ui/error-state';
 import { PageContainer, PageHeader } from '@/components/ui/page-header';
 import { LoadingRegion, Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { type FilterChip, FilterChips } from '@/features/admin/shared/filter-chips';
 import { usePersonas } from '@/lib/api/hooks/eir';
 import { type ProgramVenture, useProgramVentures } from '@/lib/api/hooks/program';
 import { useEirProfiles } from '@/lib/api/hooks/veir-pools';
 import { formatDate } from '@/lib/format';
-import { cn } from '@/lib/utils';
 import { shortPersonaName } from '@/lib/veir';
 
 import { AssignDialog } from './assign-dialog';
 import { countByPersona } from './assignment';
 
-type Filter = { kind: 'all' } | { kind: 'persona'; personaId: string | null };
+/** 'all', a persona id, or 'none' for unassigned ventures (ids are UUIDs, so they never collide). */
+type Filter = string;
+const UNASSIGNED = 'none';
 
 /** Program → vEIRs & assignments: who coaches each venture, who reviews it, and changing either. */
 export function AssignmentsPage({ tenant }: { tenant: string }) {
   const ventures = useProgramVentures();
   const personas = usePersonas();
   const eirProfiles = useEirProfiles();
-  const [filter, setFilter] = useState<Filter>({ kind: 'all' });
+  const [filter, setFilter] = useState<Filter>('all');
   const [changing, setChanging] = useState<ProgramVenture | null>(null);
 
   const loading = ventures.isPending || personas.isPending;
@@ -92,61 +94,20 @@ function AssignmentsTable({
   onChange: (venture: ProgramVenture) => void;
 }) {
   const counts = countByPersona(rows);
-  const chips: { key: string; label: string; count: number; filter: Filter }[] = [
-    { key: 'all', label: 'All', count: rows.length, filter: { kind: 'all' } },
+  const chips: FilterChip<Filter>[] = [
+    { key: 'all', label: 'All', count: rows.length },
     ...personas
       .filter((p) => counts.has(p.id))
-      .map((p) => ({
-        key: p.id,
-        label: p.name,
-        count: counts.get(p.id) ?? 0,
-        filter: { kind: 'persona', personaId: p.id } as const,
-      })),
-    ...(counts.has(null)
-      ? [
-          {
-            key: 'none',
-            label: 'Unassigned',
-            count: counts.get(null) ?? 0,
-            filter: { kind: 'persona', personaId: null } as const,
-          },
-        ]
-      : []),
+      .map((p) => ({ key: p.id, label: p.name, count: counts.get(p.id) ?? 0 })),
+    ...(counts.has(null) ? [{ key: UNASSIGNED, label: 'Unassigned', count: counts.get(null) ?? 0 }] : []),
   ];
-  const shown = filter.kind === 'all' ? rows : rows.filter((r) => r.personaId === filter.personaId);
+  const shown = filter === 'all' ? rows : rows.filter((r) => (r.personaId ?? UNASSIGNED) === filter);
   const personaById = new Map(personas.map((p) => [p.id, p]));
 
   return (
     <div className="grid gap-4">
       {chips.length > 2 ? (
-        <div role="group" aria-label="Filter by vEIR" className="flex flex-wrap gap-1.5">
-          {chips.map((chip) => {
-            const selected =
-              chip.filter.kind === filter.kind &&
-              (chip.filter.kind === 'all' ||
-                (filter.kind === 'persona' && chip.filter.personaId === filter.personaId));
-            return (
-              <button
-                key={chip.key}
-                type="button"
-                aria-pressed={selected}
-                onClick={() => {
-                  onFilterChange(chip.filter);
-                }}
-                className={cn(
-                  'inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-small transition-colors',
-                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
-                  selected
-                    ? 'border-foreground bg-foreground text-background'
-                    : 'border-border text-muted-foreground hover:border-border-strong hover:text-foreground',
-                )}
-              >
-                {chip.label}
-                <span className="tabular text-caption opacity-70">{chip.count}</span>
-              </button>
-            );
-          })}
-        </div>
+        <FilterChips label="Filter by vEIR" chips={chips} selected={filter} onSelect={onFilterChange} />
       ) : null}
 
       <Table>
@@ -160,7 +121,7 @@ function AssignmentsTable({
               Reviewed by
             </TableHead>
             <TableHead scope="col" className="hidden lg:table-cell">
-              Since
+              Assigned
             </TableHead>
             <TableHead scope="col">
               <span className="sr-only">Actions</span>

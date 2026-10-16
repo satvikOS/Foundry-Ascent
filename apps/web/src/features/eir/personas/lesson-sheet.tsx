@@ -44,7 +44,7 @@ import {
 } from './lesson-form';
 import { DistilledBadge, LessonStatusBadge, needsReview } from './lesson-labels';
 
-export type LessonSheetState = { mode: 'closed' } | { mode: 'create' } | { mode: 'open'; lesson: LessonView };
+type LessonSheetState = { mode: 'closed' } | { mode: 'create' } | { mode: 'open'; lesson: LessonView };
 
 interface LessonSheetProps {
   personaId: string;

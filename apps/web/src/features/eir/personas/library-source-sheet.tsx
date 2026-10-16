@@ -29,7 +29,7 @@ import {
 import { AUTHORED_KINDS, type AuthoredKind, isAuthoredKind, SOURCE_KINDS } from './library-labels';
 
 /** Mirrors CreatePersonaKnowledgeRequest (the API validates again). */
-export const LibrarySourceForm = z.object({
+const LibrarySourceForm = z.object({
   kind: z.enum(AUTHORED_KINDS),
   title: z
     .string()
@@ -42,7 +42,7 @@ export const LibrarySourceForm = z.object({
     .min(20, 'Write at least 20 characters.')
     .max(50_000, 'Use 50,000 characters or fewer.'),
 });
-export type LibrarySourceFormValues = z.infer<typeof LibrarySourceForm>;
+type LibrarySourceFormValues = z.infer<typeof LibrarySourceForm>;
 
 /** An uploaded document: only its title is edited (its text comes from the file). */
 const DocumentTitleForm = LibrarySourceForm.extend({ body: z.string() });

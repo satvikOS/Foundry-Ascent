@@ -1,7 +1,7 @@
 import type { PersonaView } from '@foundry/contracts';
 
 /** Sections of a persona's page in the EIR studio, in display order (kept in the `tab` search param). */
-export const PERSONA_TABS = [
+const PERSONA_TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'doctrine', label: 'Doctrine & style' },
   { id: 'library', label: 'Knowledge library' },

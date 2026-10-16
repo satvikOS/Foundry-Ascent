@@ -26,6 +26,7 @@ import { ErrorState } from '@/components/ui/error-state';
 import { Progress } from '@/components/ui/progress';
 import { LoadingRegion, Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast';
+import { FilterChips } from '@/features/admin/shared/filter-chips';
 import { MutationErrorAlert } from '@/features/admin/shared/form';
 import { fileRejection } from '@/features/documents/upload-validation';
 import { errorMessage } from '@/lib/api/errors';
@@ -38,8 +39,7 @@ import {
   useUploadLibraryDocument,
 } from '@/lib/api/hooks/veir-pools';
 import { documentFailureMessage } from '@/lib/labels';
-import { formatNumber, formatRelative, pluralize } from '@/lib/format';
-import { cn } from '@/lib/utils';
+import { formatRelative, pluralize } from '@/lib/format';
 
 import { AUTHORED_KINDS, isAuthoredKind, SOURCE_KIND_ORDER, SOURCE_KINDS } from './library-labels';
 import { LibrarySourceSheet, type LibrarySheetState } from './library-source-sheet';
@@ -176,32 +176,19 @@ export function LibraryTab({ persona, shortName }: { persona: PersonaView; short
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         {kinds.length > 1 ? (
-          <div role="group" aria-label="Filter by kind" className="flex flex-wrap gap-1.5">
-            {(['all', ...kinds] as const).map((kind) => {
-              const count = kind === 'all' ? sources.length : sources.filter((s) => s.kind === kind).length;
-              const selected = filter === kind;
-              return (
-                <button
-                  key={kind}
-                  type="button"
-                  aria-pressed={selected}
-                  onClick={() => {
-                    setFilter(kind);
-                  }}
-                  className={cn(
-                    'inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-small transition-colors',
-                    'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
-                    selected
-                      ? 'border-foreground bg-foreground text-background'
-                      : 'border-border text-muted-foreground hover:border-border-strong hover:text-foreground',
-                  )}
-                >
-                  {kind === 'all' ? 'All' : SOURCE_KINDS[kind].plural}
-                  <span className="tabular text-caption opacity-70">{count}</span>
-                </button>
-              );
-            })}
-          </div>
+          <FilterChips<KindFilter>
+            label="Filter by kind"
+            chips={[
+              { key: 'all', label: 'All', count: sources.length },
+              ...kinds.map((kind) => ({
+                key: kind,
+                label: SOURCE_KINDS[kind].plural,
+                count: sources.filter((s) => s.kind === kind).length,
+              })),
+            ]}
+            selected={filter}
+            onSelect={setFilter}
+          />
         ) : (
           <p className="text-small text-muted-foreground">{pluralize(sources.length, 'source')}</p>
         )}
@@ -264,7 +251,7 @@ export function LibraryTab({ persona, shortName }: { persona: PersonaView; short
                   <p className="text-caption text-muted-foreground">
                     {def.label} · updated{' '}
                     <time dateTime={source.updatedAt}>{formatRelative(source.updatedAt)}</time>
-                    {source.chunkCount > 0 ? ` · ${formatNumber(source.chunkCount)} passages` : ''}
+                    {source.chunkCount > 0 ? ` · ${pluralize(source.chunkCount, 'passage')}` : ''}
                   </p>
                 </div>
                 {canCurate ? (

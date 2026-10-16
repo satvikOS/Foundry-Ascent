@@ -27,6 +27,7 @@ export const queryKeys = {
     list: () => [ROOT, 'ventures'] as const,
   },
   venture: {
+    all: () => [ROOT, 'venture'] as const,
     scope: (ventureId: string) => [ROOT, 'venture', ventureId] as const,
     detail: (ventureId: string) => [ROOT, 'venture', ventureId, 'detail'] as const,
     overview: (ventureId: string) => [ROOT, 'venture', ventureId, 'overview'] as const,
