@@ -176,7 +176,8 @@ export default function DocumentViewerDialog({ ventureId, target, onClose, retur
       mark.removeAttribute('data-active');
     });
     if (query.trim() === '' || matches === 0) return;
-    const mark = scrollRoot.querySelector<HTMLElement>(`mark[data-find-index="${String(active)}"]`);
+    // The active match is the n-th mark in reading order (a long document is rendered in parts).
+    const mark = scrollRoot.querySelectorAll<HTMLElement>('mark[data-find-index]')[active];
     if (!mark) return;
     mark.dataset.active = 'true';
     mark.scrollIntoView({ block: 'center', behavior: scrollBehavior() });

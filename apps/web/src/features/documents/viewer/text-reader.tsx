@@ -1,12 +1,21 @@
 import { ExternalLink } from 'lucide-react';
-import { memo, useLayoutEffect, useMemo, useRef, type ComponentProps, type JSX } from 'react';
+import {
+  memo,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+  type JSX,
+} from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 import { urlTransform } from '@/components/ui/markdown';
 
 import { rehypeFindMarks, segmentText, type TextSegment } from './find';
-import { citedBlocks, rehypeCitedBlocks } from './passage-match';
+import { citedBlocks, comparableWords, rehypeCitedBlocks } from './passage-match';
 
 /*
  * Reading views of text: a Markdown or plain-text document as prose, and a source's extracted passages.
@@ -85,6 +94,72 @@ interface TextReaderProps {
   onReport: (report: ReaderReport) => void;
 }
 
+/** A long document is shown in parts of about this many characters, the next one as the reader nears it. */
+export const SEGMENT_CHARS = 60_000;
+
+/**
+ * Splits a long text into parts at paragraph breaks (and, for Markdown, before headings), never inside a
+ * fenced code block. A text under {@link SEGMENT_CHARS} is one part.
+ */
+export function splitIntoSegments(text: string, format: 'markdown' | 'plain'): string[] {
+  if (text.length <= SEGMENT_CHARS) return [text];
+  const segments: string[] = [];
+  let current: string[] = [];
+  let size = 0;
+  let fenced = false;
+  for (const line of text.split('\n')) {
+    const fence = format === 'markdown' && /^\s{0,3}(```|~~~)/.test(line);
+    const breakable = !fenced && (line.trim() === '' || (format === 'markdown' && /^#{1,6}\s/.test(line)));
+    if (breakable && size >= SEGMENT_CHARS) {
+      segments.push(current.join('\n'));
+      current = [];
+      size = 0;
+    }
+    if (fence) fenced = !fenced;
+    current.push(line);
+    size += line.length + 1;
+  }
+  if (current.length > 0) segments.push(current.join('\n'));
+  return segments;
+}
+
+/** The part a passage starts in (by its first words), or -1. */
+export function segmentOfPassage(segments: readonly string[], passage: string): number {
+  if (segments.length === 1) return 0;
+  const head = comparableWords(passage).slice(0, 8).join(' ');
+  if (head === '') return -1;
+  return segments.findIndex((segment) => ` ${comparableWords(segment).join(' ')} `.includes(` ${head} `));
+}
+
+/**
+ * How many parts of a long document are shown: the first (and the one with the cited passage), more as a
+ * marker past the last one nears the reading area, and all of them while find is open.
+ */
+function useReveal(total: number, minimum: number, all: boolean) {
+  const [shown, setShown] = useState(Math.min(total, Math.max(1, minimum)));
+  const marker = useRef<HTMLDivElement | null>(null);
+  const count = all ? total : Math.min(total, Math.max(shown, minimum));
+  useEffect(() => {
+    const el = marker.current;
+    if (!el || count >= total) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setShown(total);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) setShown(count + 1);
+      },
+      { root: el.closest('[data-viewer-scroll]'), rootMargin: '1500px 0px' },
+    );
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+    };
+  }, [count, total]);
+  return { count, marker };
+}
+
 function PlainText({ text, query, citedText }: Pick<TextReaderProps, 'text' | 'query' | 'citedText'>) {
   const paragraphs = useMemo(() => text.split(/\n[ \t]*\n/).filter((p) => p.trim() !== ''), [text]);
   const cited = useMemo(
@@ -103,7 +178,31 @@ function PlainText({ text, query, citedText }: Pick<TextReaderProps, 'text' | 'q
   );
 }
 
-/** A Markdown or plain-text document as reading prose. */
+const MarkdownPart = memo(function MarkdownPart({
+  text,
+  query,
+  citedText,
+}: Pick<TextReaderProps, 'text' | 'query' | 'citedText'>) {
+  return (
+    <ReactMarkdown
+      skipHtml
+      remarkPlugins={[remarkGfm]}
+      rehypePlugins={[
+        [rehypeCitedBlocks, { passage: citedText }],
+        [rehypeFindMarks, { query }],
+      ]}
+      urlTransform={urlTransform}
+      components={READING}
+    >
+      {text}
+    </ReactMarkdown>
+  );
+});
+
+/**
+ * A Markdown or plain-text document as reading prose. A long one is shown part by part as the reader
+ * scrolls (all of it while find is open, so every match is counted).
+ */
 export const TextReader = memo(function TextReader({
   text,
   format,
@@ -112,27 +211,26 @@ export const TextReader = memo(function TextReader({
   onReport,
 }: TextReaderProps) {
   const root = useRef<HTMLDivElement | null>(null);
+  const segments = useMemo(() => splitIntoSegments(text, format), [text, format]);
+  const citedSegment = useMemo(
+    () => (citedText ? segmentOfPassage(segments, citedText) : -1),
+    [segments, citedText],
+  );
+  const { count, marker } = useReveal(segments.length, citedSegment + 1, query.trim() !== '');
   useLayoutEffect(() => {
     if (root.current) onReport(reportOf(root.current));
   });
   return (
     <div ref={root} data-reader="text" className="reader-prose">
-      {format === 'markdown' ? (
-        <ReactMarkdown
-          skipHtml
-          remarkPlugins={[remarkGfm]}
-          rehypePlugins={[
-            [rehypeCitedBlocks, { passage: citedText }],
-            [rehypeFindMarks, { query }],
-          ]}
-          urlTransform={urlTransform}
-          components={READING}
-        >
-          {text}
-        </ReactMarkdown>
-      ) : (
-        <PlainText text={text} query={query} citedText={citedText} />
-      )}
+      {segments.slice(0, count).map((segment, i) => {
+        const cited = i === citedSegment ? citedText : null;
+        return format === 'markdown' ? (
+          <MarkdownPart key={i} text={segment} query={query} citedText={cited} />
+        ) : (
+          <PlainText key={i} text={segment} query={query} citedText={cited} />
+        );
+      })}
+      {count < segments.length ? <div ref={marker} aria-hidden data-more /> : null}
     </div>
   );
 });
@@ -156,6 +254,9 @@ function headingTitle(heading: string): string {
   return heading.split(' › ').at(-1) ?? heading;
 }
 
+/** Passages shown at a time in a long source (more as the reader scrolls). */
+export const PASSAGES_PER_PART = 40;
+
 /** A source's extracted text: its passages in order, a heading where a new section starts. */
 export const PassagesReader = memo(function PassagesReader({
   passages,
@@ -164,14 +265,22 @@ export const PassagesReader = memo(function PassagesReader({
   onReport,
 }: PassagesReaderProps) {
   const root = useRef<HTMLDivElement | null>(null);
+  const parts = Math.max(1, Math.ceil(passages.length / PASSAGES_PER_PART));
+  const citedIndex = citedPassageId === null ? -1 : passages.findIndex((p) => p.id === citedPassageId);
+  const { count, marker } = useReveal(
+    parts,
+    citedIndex === -1 ? 1 : Math.floor(citedIndex / PASSAGES_PER_PART) + 1,
+    query.trim() !== '',
+  );
   useLayoutEffect(() => {
     if (root.current) onReport(reportOf(root.current));
   });
   const counter = { next: 0 };
+  const shown = passages.slice(0, count * PASSAGES_PER_PART);
   return (
     <div ref={root} data-reader="passages" className="reader-prose">
-      {passages.map((passage, i) => {
-        const previous = passages[i - 1];
+      {shown.map((passage, i) => {
+        const previous = shown[i - 1];
         const heading =
           passage.heading !== null && passage.heading !== previous?.heading ? passage.heading : null;
         return (
@@ -190,6 +299,7 @@ export const PassagesReader = memo(function PassagesReader({
           </section>
         );
       })}
+      {count < parts ? <div ref={marker} aria-hidden data-more /> : null}
     </div>
   );
 });
