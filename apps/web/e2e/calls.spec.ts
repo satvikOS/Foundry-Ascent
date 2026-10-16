@@ -376,6 +376,54 @@ test.describe('vEIR calls', () => {
     });
   });
 
+  test('a private call from New chat: chosen before it starts, marked while it lasts, keeps nothing', async ({
+    page,
+  }) => {
+    const calls = trackCalls(page);
+    try {
+      await voiceNoticeSeen(page);
+      const ventureId = await openVenture(page);
+      await page.getByRole('radio', { name: 'Private, a one-off' }).click();
+      const created = page.waitForRequest(
+        (request) => request.method() === 'POST' && request.url().endsWith(`/ventures/${ventureId}/sessions`),
+      );
+      await page
+        .getByRole('main')
+        .getByRole('link', { name: /^Call / })
+        .click();
+      expect((await created).postDataJSON()).toMatchObject({ privacy: 'ephemeral' });
+      const screen = callScreen(page);
+      const reply = screen.getByRole('textbox', { name: /^Reply to / });
+      await expect(reply).toBeFocused({ timeout: 20_000 });
+      await expect(screen.getByTestId('private-indicator')).toHaveText('Private');
+      const answered = page.waitForResponse(
+        (response) =>
+          /\/sessions\/[0-9a-f-]{36}\/turns$/.test(response.url()) && response.request().method() === 'POST',
+      );
+      await reply.fill(`Just between us: is per-library pricing right? ${runToken()}`);
+      await reply.press('Enter');
+      await answered;
+      const endResponse = page.waitForResponse(
+        (response) =>
+          /\/calls\/[0-9a-f-]{36}\/end$/.test(response.url()) && response.request().method() === 'POST',
+      );
+      await screen.getByRole('button', { name: 'End call' }).click();
+      await expect(screen.getByRole('heading', { name: 'Call ended' })).toBeVisible({ timeout: 20_000 });
+      const { summary } = (await (await endResponse).json()) as { summary: { memoryProposalIds: string[] } };
+      expect(summary.memoryProposalIds, 'a private call saves nothing').toEqual([]);
+      await expect(screen.getByTestId('call-private')).toHaveText(
+        'Private call: nothing from it is remembered.',
+      );
+      await expect(screen.getByTestId('memory-saved')).toHaveCount(0);
+      await screen.getByRole('button', { name: 'Back to conversation' }).click();
+      await expect(
+        page.getByRole('main').locator('header').getByText('Private', { exact: true }),
+      ).toBeVisible();
+    } finally {
+      await endCalls(page, calls.ids);
+    }
+  });
+
   test('the first call says how voice is handled, once per person and in any browser', async ({
     browser,
   }) => {

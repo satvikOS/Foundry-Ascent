@@ -128,7 +128,7 @@ export function DeleteConversationDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>Delete this conversation?</AlertDialogTitle>
           <AlertDialogDescription>
-            Its messages, summary and pending suggestions are erased. This can’t be undone.
+            Its messages, its summary and anything remembered only from it are erased. This can’t be undone.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
