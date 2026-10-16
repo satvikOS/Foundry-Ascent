@@ -124,8 +124,8 @@ loader: ({ context, params }) =>
 | Auth        | `useMe` (null when signed out), `useSignIn`, `useSignOut`; `useRequiredMe` in `lib/auth/use-me`                                                                                                                                                                                     |
 | Ventures    | `useVentures`, `useVenture`, `useVentureOverview`, `useUpdateVenture`                                                                                                                                                                                                               |
 | Sessions    | `useSessions`, `useRecentConversations` (sidebar; swap its one source line to `GET /sessions?scope=mine`), `useSession`, `useCreateSession`, `useEndSession`, `useTurnFeedback`, `useTurnEvidence`, **`useTurnStream`**                                                             |
-| Notebook    | `useNotebook` (`GET /ventures/:id/notebook`; `null` on 404 — optional context for the New chat greeting); edits: `useNotebookEdit` in `features/knowledge` (sends the version it was made against; a 409 reloads the notebook)                                                      |
-| Memory      | `useMemory(ventureId, filters)`, `useCreateMemory`, `useMemoryHistory`; in `features/memory/api`: `useMemoryActions` (correct, pin, dispute, delete); in `features/knowledge/review-api`: `useMemoryReview` (approve or reject proposals through `POST /ventures/:id/memory/batch`) |
+| Notebook    | `useNotebook` (`GET /ventures/:id/notebook`; `null` on 404 — optional context for the New chat greeting); edits: `useNotebookEdit` in `features/knowledge` (sent in order; a failed edit drops those queued behind it and reloads)                                                  |
+| Memory      | `useMemory(ventureId, filters)`, `useCreateMemory`, `useMemoryHistory`; in `features/memory/api`: `useMemoryActions` (correct, pin, dispute, delete); `useMemoryReview` in `features/knowledge/review-api`: the one approve/reject path (`POST …/memory/batch`, 50 ids per request) |
 | Documents   | `useDocuments` (polls while processing), `useUploadDocument` (create → presigned PUT with progress → complete), `useCompleteDocument`, `useDeleteDocument`, `documentContentType`, `DOCUMENT_ACCEPT`                                                                                |
 | Escalations | `useVentureEscalations`, `useCreateEscalation`, `useEscalationAction`, `useInboxEscalations`                                                                                                                                                                                        |
 | Team        | `useTeam`, `useInviteMember` (one-time code; `gcTime: 0`, never cache/log it)                                                                                                                                                                                                       |
@@ -248,8 +248,10 @@ document upload, Knowledge and axe checks) and `mobile` (390 × 844 smoke). One 
   Knowledge → Evidence → delete.
 - **Knowledge** — correct a line of the vEIR's notebook and remove its opening line (both restored
   afterwards); the venture's EIR proposes two items and the founder approves them together from the
-  review queue; type chips filter memory; axe on the notebook, review queue, evidence, Human help and Team
-  in both themes.
+  review queue (then deletes them); a replaced item opens with its history, also from the new version's
+  "earlier version" link; type chips filter memory; the assigned EIR and an advisor get a designed Human
+  help page with no refused request; axe on the notebook, review queue, evidence, Human help and Team in
+  both themes.
 - **Safety** — a crisis message (the first of a new chat) is blocked with human-support resources, live
   and after a reload; a consented specialist request is routed by a program lead.
 - **Accessibility** — `@axe-core/playwright` with WCAG 2.0/2.1/2.2 A + AA tags on landing, sign-in, New
