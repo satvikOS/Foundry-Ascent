@@ -750,7 +750,8 @@ export interface EphemeralCleanupResult {
 /**
  * Daily maintenance (system executor): ends every ephemeral session idle for `idleSeconds` (no turn and no
  * start inside the period) and erases the conversation content of every turn of an ephemeral session that
- * has ended, exactly as ending the session does (`turnsRepo.redactSessionTurns`). Covers
+ * has ended (founder text, response and what the founder heard of it), exactly as ending the session does
+ * (`turnsRepo.redactSessionTurns`). Covers
  * sessions abandoned without "End session" and anything an earlier end could not redact. Idempotent.
  */
 export async function expireStaleEphemeralSessions(
@@ -770,10 +771,10 @@ export async function expireStaleEphemeralSessions(
      WHERE s.privacy = 'ephemeral' AND s.status = 'ended' AND s.title IS NOT NULL`,
   );
   const redacted = await sx.query(
-    `UPDATE turns t SET founder_text = :redacted, response = NULL
+    `UPDATE turns t SET founder_text = :redacted, response = NULL, heard_text = NULL
      FROM coaching_sessions s
      WHERE s.id = t.session_id AND s.privacy = 'ephemeral' AND s.status = 'ended'
-       AND (t.founder_text <> :redacted OR t.response IS NOT NULL)`,
+       AND (t.founder_text <> :redacted OR t.response IS NOT NULL OR t.heard_text IS NOT NULL)`,
     { redacted: p.text(EPHEMERAL_REDACTION_TEXT) },
   );
   return { sessionsEnded: ended.rowCount, turnsRedacted: redacted.rowCount };

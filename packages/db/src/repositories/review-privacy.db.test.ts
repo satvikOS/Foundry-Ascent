@@ -1,14 +1,17 @@
 /**
  * Migration 0009 (fixes from the review of 5105c40), against real transactions: a turn never lands on a
- * deleted conversation however the two interleave, and risky first messages never title a conversation.
+ * deleted conversation however the two interleave, risky first messages never title a conversation, and what
+ * a founder heard of a reply is erased with the conversation even when a barge-in races the erasure.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { DbError } from '../errors.js';
+import { type AppExecutor } from '../executor.js';
 import { p } from '../params.js';
 import { type SeedResult } from '../seed/seed.js';
 import { createTestDatabase, makeContext, type TestDatabase } from '../testing/test-database.js';
 import * as assignmentsRepo from './assignments.js';
+import * as callsRepo from './calls.js';
 import * as sessionsRepo from './sessions.js';
 import * as turnsRepo from './turns.js';
 
@@ -56,7 +59,11 @@ function watch<T>(promise: Promise<T>): { promise: Promise<T>; settled: () => bo
   return { promise: tracked, settled: () => done };
 }
 
-async function newSession(ctx: Ctx, v: Venture): Promise<string> {
+async function newSession(
+  ctx: Ctx,
+  v: Venture,
+  privacy: 'standard' | 'ephemeral' = 'standard',
+): Promise<string> {
   return t.db.withContext(ctx, async (tx) => {
     const resolved = must(await assignmentsRepo.resolveActiveAssignment(tx, v.id));
     const session = await sessionsRepo.createSession(tx, {
@@ -66,7 +73,7 @@ async function newSession(ctx: Ctx, v: Venture): Promise<string> {
       personaReleaseId: must(resolved.release).id,
       startedBy: ctx.principalId,
       mode: 'coach',
-      privacy: 'standard',
+      privacy,
       policyVersion: 'test',
     });
     return session.id;
@@ -241,4 +248,145 @@ describe('conversation titles from risky messages', () => {
       expect((await storedSession(sessionId)).title).toBe('How should we price the pilot?');
     },
   );
+});
+
+describe('what the founder heard, when a barge-in races the erasure', () => {
+  const HEARD = 'Run it in exam weeks.';
+
+  /** A conversation with a live call and an answered spoken turn of it. */
+  async function spokenTurn(
+    ctx: Ctx,
+    privacy: 'standard' | 'ephemeral' = 'standard',
+  ): Promise<{ sessionId: string; callId: string; turnId: string }> {
+    const sessionId = await newSession(ctx, quietquad, privacy);
+    return t.db.withContext(ctx, async (tx) => {
+      const call = await callsRepo.startCall(tx, {
+        tenantId: seed.tenantId,
+        ventureId: quietquad.id,
+        sessionId,
+        personaId: quietquad.personaId,
+        startedBy: ctx.principalId,
+        provider: 'builtin',
+        inputMode: 'transcribe',
+        voiceId: 'Matthew',
+        maxSeconds: 1800,
+      });
+      const turn = await turnsRepo.createTurn(tx, {
+        ...turnInput(ctx, quietquad, sessionId, 'Spoken words'),
+        channel: 'voice',
+      });
+      await tx.query(
+        `UPDATE turns SET status = 'completed', response = :r, completed_at = now() WHERE id = :id`,
+        { id: p.uuid(turn.id), r: p.json({ answer: 'Run it in exam weeks. Then compare.' }) },
+      );
+      await callsRepo.endCall(tx, { callId: call.id, reason: 'user', detail: 'client_user' });
+      return { sessionId, callId: call.id, turnId: turn.id };
+    });
+  }
+
+  async function heard(turnId: string): Promise<{ founder_text: string; heard_text: string | null }> {
+    const r = await t.db.system((sx) =>
+      sx.query('SELECT founder_text, heard_text FROM turns WHERE id = :id', { id: p.uuid(turnId) }),
+    );
+    const row = must(r.rows[0]);
+    return { founder_text: String(row.founder_text), heard_text: (row.heard_text as string | null) ?? null };
+  }
+
+  function interrupt(ctx: Ctx, ids: { callId: string; turnId: string }) {
+    return t.db.withContext(ctx, (tx) =>
+      callsRepo.markTurnInterrupted(tx, {
+        turnId: ids.turnId,
+        callId: ids.callId,
+        authorId: ctx.principalId,
+        heardSeq: 0,
+        heardText: HEARD,
+      }),
+    );
+  }
+
+  /** Runs `erase` in a transaction held open while a barge-in is recorded, then commits it. */
+  async function racing(
+    erase: (tx: AppExecutor) => Promise<void>,
+    ids: { callId: string; turnId: string },
+  ): Promise<callsRepo.TurnInterruption | null> {
+    const erased = gate();
+    const committing = gate();
+    const erasure = t.db.withContext(maya, async (tx) => {
+      await erase(tx);
+      erased.open();
+      await committing.promise;
+    });
+    await erased.promise;
+    const bargeIn = watch(interrupt(maya, ids));
+    await pause(300);
+    expect(bargeIn.settled()).toBe(false);
+    committing.open();
+    await erasure;
+    return bargeIn.promise;
+  }
+
+  it('a barge-in while the conversation is being deleted records nothing', async () => {
+    const ids = await spokenTurn(maya);
+    const recorded = await racing(async (tx) => {
+      expect(await sessionsRepo.softDeleteSession(tx, ids.sessionId)).toBe(true);
+    }, ids);
+    expect(recorded).toBeNull();
+    expect(await heard(ids.turnId)).toEqual({ founder_text: '[deleted conversation]', heard_text: null });
+  });
+
+  it('a barge-in while a temporary chat is being ended records nothing', async () => {
+    const ids = await spokenTurn(maya, 'ephemeral');
+    const recorded = await racing(async (tx) => {
+      expect(await sessionsRepo.endSession(tx, { sessionId: ids.sessionId, recap: null })).not.toBeNull();
+      await turnsRepo.redactSessionTurns(tx, ids.sessionId);
+    }, ids);
+    expect(recorded).toBeNull();
+    expect(await heard(ids.turnId)).toEqual({
+      founder_text: turnsRepo.EPHEMERAL_REDACTION_TEXT,
+      heard_text: null,
+    });
+  });
+
+  /** Heard words left on a turn whose own words are already redacted (what the race used to leave). */
+  async function leftOver(turnId: string, founderText: string): Promise<void> {
+    await t.db.system(async (sx) => {
+      await sx.query('UPDATE turns SET founder_text = :text, response = NULL WHERE id = :id', {
+        id: p.uuid(turnId),
+        text: p.text(founderText),
+      });
+      // Only the heard columns: the redaction trigger does not fire.
+      await sx.query(
+        'UPDATE turns SET heard_seq = 0, interrupted_at = now(), heard_text = :heard WHERE id = :id',
+        { id: p.uuid(turnId), heard: p.text(HEARD) },
+      );
+    });
+    expect((await heard(turnId)).heard_text).toBe(HEARD);
+  }
+
+  it('deleting, ending a temporary chat and the daily sweep each clear heard words left on redacted turns', async () => {
+    // Deleting a conversation whose turn's words were already redacted.
+    const deleted = await spokenTurn(maya);
+    await leftOver(deleted.turnId, '[deleted conversation]');
+    expect(await t.db.withContext(maya, (tx) => sessionsRepo.softDeleteSession(tx, deleted.sessionId))).toBe(
+      true,
+    );
+    expect((await heard(deleted.turnId)).heard_text).toBeNull();
+
+    // Ending a temporary chat redacts again.
+    const ended = await spokenTurn(maya, 'ephemeral');
+    await t.db.withContext(maya, (tx) =>
+      sessionsRepo.endSession(tx, { sessionId: ended.sessionId, recap: null }),
+    );
+    await leftOver(ended.turnId, turnsRepo.EPHEMERAL_REDACTION_TEXT);
+    await t.db.withContext(maya, (tx) => turnsRepo.redactSessionTurns(tx, ended.sessionId));
+    expect((await heard(ended.turnId)).heard_text).toBeNull();
+
+    // The daily sweep of ended temporary chats.
+    await leftOver(ended.turnId, turnsRepo.EPHEMERAL_REDACTION_TEXT);
+    const sweep = await t.db.system((sx) =>
+      sessionsRepo.expireStaleEphemeralSessions(sx, { idleSeconds: 86_400 }),
+    );
+    expect(sweep.turnsRedacted).toBeGreaterThanOrEqual(1);
+    expect((await heard(ended.turnId)).heard_text).toBeNull();
+  });
 });

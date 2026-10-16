@@ -360,13 +360,13 @@ export const EPHEMERAL_REDACTION_TEXT = '[ephemeral session: content removed]';
 
 /**
  * Removes the conversation content of every turn of a session (ephemeral sessions keep no content beyond
- * security records once they end): the founder text is replaced and the structured response dropped.
- * Run it in the caller's RLS transaction (the `turns_update` policy limits it to ventures the caller may
- * write). Returns the number of turns redacted.
+ * security records once they end): the founder text is replaced, and the structured response and what the
+ * founder heard of it during a call are dropped. Run it in the caller's RLS transaction (the `turns_update`
+ * policy limits it to ventures the caller may write). Returns the number of turns redacted.
  */
 export async function redactSessionTurns(ex: SqlExecutor, sessionId: string): Promise<number> {
   const result = await ex.query(
-    'UPDATE turns SET founder_text = :redacted, response = NULL WHERE session_id = :sessionId',
+    'UPDATE turns SET founder_text = :redacted, response = NULL, heard_text = NULL WHERE session_id = :sessionId',
     { sessionId: p.uuid(sessionId), redacted: p.text(EPHEMERAL_REDACTION_TEXT) },
   );
   return result.rowCount;
