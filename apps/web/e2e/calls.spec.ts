@@ -85,6 +85,111 @@ function spokenSentences(reply: { answer: string; spoken?: string | null }): str
   return (plain.match(/[^.!?]+[.!?]*/g) ?? []).map((sentence) => sentence.trim()).filter(Boolean);
 }
 
+/**
+ * The calls a test starts (`POST /sessions/:id/calls` as the page sends them), and the ids of those the API
+ * opened, so the test can end them whatever happens (`endCalls`) and the next test can call.
+ */
+function trackCalls(page: Page): { starts: () => number; ids: string[] } {
+  let starts = 0;
+  const ids: string[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && /\/sessions\/[0-9a-f-]{36}\/calls$/.test(request.url())) starts += 1;
+  });
+  page.on('response', (response) => {
+    if (response.request().method() !== 'POST' || response.status() !== 201) return;
+    if (!/\/sessions\/[0-9a-f-]{36}\/calls$/.test(response.url())) return;
+    void response
+      .json()
+      .then((body: { call: { id: string } }) => ids.push(body.call.id))
+      .catch(() => undefined);
+  });
+  return { starts: () => starts, ids };
+}
+
+/** Ends calls through the API (idempotent: an ended call answers as before). */
+async function endCalls(page: Page, ids: readonly string[]): Promise<void> {
+  for (const id of ids) {
+    const response = await page.request.post(`/api/v1/calls/${id}/end`, {
+      headers: WRITE_HEADERS,
+      data: { reason: 'user' },
+    });
+    expect(response.status(), 'POST /calls/:id/end').toBe(200);
+  }
+}
+
+/** A conversation with one answered exchange, and a typed call in it, minimized to the mini bar. */
+async function minimizedCall(page: Page): Promise<{ sessionId: string; bar: Locator }> {
+  await voiceNoticeSeen(page);
+  await openVenture(page);
+  const sessionId = await startConversation(page, `Which library hosts the pilot? ${runToken()}`);
+  await expect(page.getByRole('article', { name: 'Exchange 1' })).toBeVisible({ timeout: 30_000 });
+  await page
+    .getByRole('main')
+    .getByRole('link', { name: /^Call / })
+    .first()
+    .click();
+  const screen = callScreen(page);
+  await expect(screen.getByRole('textbox', { name: /^Reply to / })).toBeFocused();
+  await screen.getByRole('button', { name: 'Minimize call' }).click();
+  await expect(page).toHaveURL(new RegExp(`/c/${sessionId}$`));
+  const bar = page.getByRole('region', { name: /^Call with / });
+  await expect(bar).toBeVisible();
+  return { sessionId, bar };
+}
+
+/**
+ * The mini bar and the conversation's sticky header never cover each other, scrolled or not: the header sits
+ * below the bar, and each one's controls are the element under the pointer at their centre.
+ */
+async function expectBarAndHeaderApart(page: Page, bar: Locator): Promise<void> {
+  const header = page.getByRole('main').locator('header').first();
+  const controls = [
+    bar.getByRole('button', { name: 'End call' }),
+    bar.getByRole('button', { name: /Return to call/ }),
+    header.getByRole('button', { name: 'Conversation options' }),
+  ];
+  // A conversation long enough to scroll whatever the viewport (its header is sticky within it): the overlap
+  // shows once the page has scrolled.
+  await header.evaluate((element) => {
+    const spacer = document.createElement('div');
+    spacer.style.height = '3000px';
+    spacer.dataset.testSpacer = '';
+    element.parentElement?.append(spacer);
+  });
+  for (const scrollY of [0, 1200]) {
+    await page.evaluate((y) => {
+      window.scrollTo(0, y);
+    }, scrollY);
+    await page.waitForFunction((y) => Math.abs(window.scrollY - y) < 2, scrollY);
+    const barBox = await bar.boundingBox();
+    const headerBox = await header.boundingBox();
+    expect(barBox, 'the mini bar is laid out').not.toBeNull();
+    expect(headerBox, 'the conversation header is laid out').not.toBeNull();
+    if (!barBox || !headerBox) return;
+    expect(
+      barBox.y,
+      `the mini bar is at the top of the view (scrolled ${String(scrollY)})`,
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      headerBox.y,
+      `the header sits below the mini bar (scrolled ${String(scrollY)})`,
+    ).toBeGreaterThanOrEqual(barBox.y + barBox.height - 1);
+    for (const control of controls) {
+      const onTop = await control.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+        return hit !== null && (hit === element || element.contains(hit));
+      });
+      const name = (await control.getAttribute('aria-label')) ?? 'a control';
+      expect(onTop, `${name} is not covered (scrolled ${String(scrollY)})`).toBe(true);
+    }
+  }
+  await page.evaluate(() => {
+    document.querySelector('[data-test-spacer]')?.remove();
+    window.scrollTo(0, 0);
+  });
+}
+
 test.describe('vEIR calls', () => {
   test.use({ storageState: FOUNDER_STATE });
 
@@ -462,6 +567,85 @@ test.describe('vEIR calls', () => {
     }
   });
 
+  test('Back or Forward to a call’s URL never starts a call; only a click does', async ({ page }) => {
+    const calls = trackCalls(page);
+    try {
+      const { sessionId, bar } = await minimizedCall(page);
+      expect(calls.starts()).toBe(1);
+      // Ended from the mini bar and dismissed; then the founder goes elsewhere.
+      await bar.getByRole('button', { name: 'End call' }).click();
+      await expect(bar).toContainText('Call ended');
+      await bar.getByRole('button', { name: 'Dismiss' }).click();
+      await expect(bar).toHaveCount(0);
+      await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'New chat' }).click();
+      await expect(page).not.toHaveURL(/\/c\//);
+
+      // Back to the conversation, and Back again to the call's URL: the call screen waits for Start call.
+      await page.goBack();
+      await expect(page).toHaveURL(new RegExp(`/c/${sessionId}$`));
+      await page.goBack();
+      await expect(page).toHaveURL(new RegExp(`/c/${sessionId}\\?call=1$`));
+      const start = callScreen(page).getByRole('button', { name: 'Start call' });
+      await expect(start).toBeVisible();
+      await page.waitForLoadState('networkidle');
+      expect(calls.starts(), 'no call started by Back').toBe(1);
+      await page.goForward();
+      await expect(page).toHaveURL(new RegExp(`/c/${sessionId}$`));
+      await page.goBack();
+      await expect(start).toBeVisible();
+      await page.waitForLoadState('networkidle');
+      expect(calls.starts(), 'no call started by Forward and Back').toBe(1);
+
+      // The founder's click starts it. Leaving its summary replaces the call's entry: Back does not reopen it.
+      await start.click();
+      await expect.poll(calls.starts).toBe(2);
+      const screen = callScreen(page);
+      await screen.getByRole('button', { name: 'End call' }).click();
+      await expect(screen.getByRole('heading', { name: 'Call ended' })).toBeFocused();
+      await screen.getByRole('button', { name: 'Back to conversation' }).click();
+      await expect(page).toHaveURL(new RegExp(`/c/${sessionId}$`));
+      await page.goBack();
+      await expect(page).not.toHaveURL(/call=1/);
+      await expect(callScreen(page)).toHaveCount(0);
+      await page.waitForLoadState('networkidle');
+      expect(calls.starts()).toBe(2);
+    } finally {
+      await endCalls(page, calls.ids);
+    }
+  });
+
+  test('the mini bar and the conversation header never cover each other', async ({ page }) => {
+    const calls = trackCalls(page);
+    try {
+      const { bar } = await minimizedCall(page);
+      await expectBarAndHeaderApart(page, bar);
+      await bar.getByRole('button', { name: 'End call' }).click();
+      await expect(bar).toContainText('Call ended');
+      await bar.getByRole('button', { name: 'Dismiss' }).click();
+    } finally {
+      await endCalls(page, calls.ids);
+    }
+  });
+
+  test('a minimized call that ends out of view says so, and why', async ({ page, baseURL }) => {
+    const calls = trackCalls(page);
+    try {
+      const { bar } = await minimizedCall(page);
+      const status = bar.getByRole('status');
+      await expect(status).toHaveText('');
+      // The program pauses calls: the next heartbeat (every 15 s) ends the call while the founder reads.
+      await withCallsOff(baseURL, async () => {
+        await expect(bar).toContainText('Call ended', { timeout: 25_000 });
+        await expect(status).toHaveText('Call ended. Calls were paused by the program.');
+        await expectNoBareEirName(page, 'the mini call bar after the call ended');
+      });
+      await bar.getByRole('button', { name: 'Dismiss' }).click();
+      await expect(bar).toHaveCount(0);
+    } finally {
+      await endCalls(page, calls.ids);
+    }
+  });
+
   test.describe('on a phone', () => {
     test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 
@@ -483,6 +667,20 @@ test.describe('vEIR calls', () => {
       await expectNoHorizontalScroll(page);
       await screen.getByRole('button', { name: 'Back to conversation' }).click();
       await expect(screen).toBeHidden();
+    });
+
+    test('the mini bar and the conversation header never cover each other', async ({ page }) => {
+      const calls = trackCalls(page);
+      try {
+        const { bar } = await minimizedCall(page);
+        await expectBarAndHeaderApart(page, bar);
+        await expectNoHorizontalScroll(page);
+        await bar.getByRole('button', { name: 'End call' }).click();
+        await expect(bar).toContainText('Call ended');
+        await bar.getByRole('button', { name: 'Dismiss' }).click();
+      } finally {
+        await endCalls(page, calls.ids);
+      }
     });
   });
 });
