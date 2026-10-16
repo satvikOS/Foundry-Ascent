@@ -49,10 +49,7 @@ export function EscalationPacketView({ escalation }: { escalation: EscalationVie
         <Lock aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
         <div className="grid gap-1">
           <p className="font-medium">Packet not shared</p>
-          <p className="text-muted-foreground">
-            The founder hasn’t approved sharing the details of this escalation with you yet, so only its
-            category, priority and status are visible. You’ll see the packet as soon as they approve.
-          </p>
+          <p className="text-muted-foreground">Waiting for the founder to share details.</p>
         </div>
       </div>
     );
@@ -109,9 +106,11 @@ export function EscalationPacketView({ escalation }: { escalation: EscalationVie
       </Group>
 
       <Group title="What’s uncertain" icon={Scale}>
-        <Item label="Conflicting signals">
-          <List items={packet.conflictingSignals} empty="None noted." />
-        </Item>
+        {packet.conflictingSignals.length > 0 ? (
+          <Item label="Conflicting signals">
+            <List items={packet.conflictingSignals} empty="None noted." />
+          </Item>
+        ) : null}
         <Item label="Unknowns">
           <List items={packet.unknowns} empty="None noted." />
         </Item>

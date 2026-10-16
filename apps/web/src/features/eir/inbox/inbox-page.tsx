@@ -67,10 +67,7 @@ export function InboxPage({ selectedId, filter, onSelect, onFilterChange }: Inbo
 
   return (
     <PageContainer size="wide">
-      <PageHeader
-        title="Escalation inbox"
-        description="Human handoffs routed to you. Packet details are visible only after the founder approves sharing."
-      >
+      <PageHeader title="Escalation inbox" description="Requests routed to you.">
         <Tabs
           value={filter}
           onValueChange={(value) => {

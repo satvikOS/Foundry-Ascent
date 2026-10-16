@@ -45,7 +45,7 @@ describe('consent form', () => {
 describe('ConsentTab', () => {
   it('shows what the consent covers and who relies on it, and revokes after naming the vEIRs suspended', async () => {
     const fetchMock = stubFetch();
-    fetchMock.mockImplementation((url, init) =>
+    fetchMock.mockImplementation((_url, init) =>
       Promise.resolve(
         init?.method === 'POST'
           ? jsonResponse({

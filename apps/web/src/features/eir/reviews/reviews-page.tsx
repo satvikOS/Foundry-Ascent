@@ -68,7 +68,7 @@ export function ReviewsPage({ selectedTurnId, filter, onSelect, onFilterChange }
     <PageContainer size="wide">
       <PageHeader
         title="Calibration reviews"
-        description="Score sampled coach turns from your assigned ventures. Reviews are blind: you see the question, the answer and its evidence — not who asked."
+        description="Score sampled answers from your ventures. You see the venture, question, answer and evidence — not who asked."
       >
         {isEir ? (
           <Tabs
@@ -99,7 +99,7 @@ export function ReviewsPage({ selectedTurnId, filter, onSelect, onFilterChange }
         <EmptyState
           icon={ClipboardCheck}
           title="Reviews are scored by EIRs"
-          description="Sampled coach answers are reviewed blind by the EIRs assigned to each venture. Your role can manage personas and route escalations; ask a platform admin for the EIR role if you review turns."
+          description="Only EIRs review samples. Ask an admin for the EIR role."
         />
       ) : queue.isPending ? (
         <LoadingRegion label="Loading review queue">
@@ -114,7 +114,7 @@ export function ReviewsPage({ selectedTurnId, filter, onSelect, onFilterChange }
         <EmptyState
           icon={ClipboardCheck}
           title="No samples to review"
-          description="Samples appear when your assigned ventures have coaching sessions. Check back later."
+          description="Samples appear as your ventures hold conversations."
         />
       ) : (
         <div className="grid items-start gap-6 lg:grid-cols-[18rem_1fr]">
