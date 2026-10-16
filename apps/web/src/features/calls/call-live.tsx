@@ -164,6 +164,11 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: Cal
   const status = callStatusLabel(snapshot);
   const speaking = live && snapshot.activity === 'speaking';
   const halfDuplexInterrupt = speaking && voice && snapshot.halfDuplex;
+  // Replies on screen only (no voice for them): they are shown whatever the captions setting, and read to a
+  // screen reader, since there is no voice to talk over.
+  const onScreenOnly = snapshot.voice === 'captions';
+  const readCaptions = announceCaptions || onScreenOnly;
+  const veirLine = snapshot.captions.veir;
 
   return (
     // Content taller than the screen (support resources, a long caption) scrolls the call screen instead of
@@ -187,6 +192,10 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: Cal
             {veir.name}
             <VeirBadge kind={veir.kind} mode="Live voice" />
           </h2>
+          {/* Always present, so each new line is announced (a live region added with its text is not). */}
+          <p className="sr-only" aria-live="polite" aria-atomic="true">
+            {readCaptions && veirLine ? `${veir.name}: ${veirLine}` : ''}
+          </p>
           <p className="flex items-center gap-2 text-small text-muted-foreground">
             <span role="status" aria-live="polite">
               {status}
@@ -248,14 +257,14 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: Cal
             personaName={veir.name}
             onSwitchToChat={onSwitchToChat}
           />
-        ) : captions ? (
+        ) : captions || onScreenOnly ? (
           <CallCaptions
             name={veir.name}
-            veir={snapshot.captions.veir}
-            founder={snapshot.captions.founder}
+            veir={veirLine}
+            founder={captions ? snapshot.captions.founder : null}
             founderLive={snapshot.captions.founderLive}
             size={captionSize}
-            announce={announceCaptions}
+            readAloud={readCaptions}
           />
         ) : null}
       </div>

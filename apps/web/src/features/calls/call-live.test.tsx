@@ -51,6 +51,11 @@ function renderLive(snapshot: Partial<CallSnapshot> = {}) {
   return { engine, switched: () => switched };
 }
 
+/** What the call's polite live regions say now. */
+function liveText(): string[] {
+  return [...document.querySelectorAll('[aria-live="polite"]')].map((element) => element.textContent);
+}
+
 beforeEach(() => {
   window.localStorage.clear();
   // jsdom has no pointer capture; the hold-to-talk button captures the pointer while held.
@@ -297,10 +302,50 @@ describe('CallLive', () => {
   it('sizes captions and lets a screen reader follow them when asked', async () => {
     window.localStorage.setItem('fa.call.caption-size', 'lg');
     window.localStorage.setItem('fa.call.announce-captions', '1');
-    renderLive({ captions: { veir: 'Twelve is a good start.', founder: null, founderLive: false } });
+    renderLive({
+      activity: 'speaking',
+      captions: { veir: 'Twelve is a good start.', founder: null, founderLive: false },
+    });
     const line = (await screen.findByRole('region', { name: 'Captions' })).querySelector('p');
-    expect(line).toHaveAttribute('aria-live', 'polite');
     expect(line?.className).toMatch(/1\.5rem/);
+    expect(liveText()).toContain("Corin's vEIR: Twelve is a good start.");
+  });
+
+  it('does not read the captions over the vEIR’s voice unless asked', async () => {
+    renderLive({
+      activity: 'speaking',
+      captions: { veir: 'Twelve is a good start.', founder: null, founderLive: false },
+    });
+    expect(await screen.findByRole('region', { name: 'Captions' })).toHaveTextContent(
+      'Twelve is a good start.',
+    );
+    expect(liveText().some((text) => text.includes('Twelve'))).toBe(false);
+  });
+
+  it('reads the vEIR’s replies to a screen reader when they are on screen only', async () => {
+    renderLive({
+      activity: 'speaking',
+      voice: 'captions',
+      captions: { veir: 'Twelve is a good start.', founder: null, founderLive: false },
+    });
+    await screen.findByText('Replying on screen');
+    // No voice to talk over: each line is announced, without a setting to find first.
+    expect(liveText()).toContain("Corin's vEIR: Twelve is a good start.");
+  });
+
+  it('shows the vEIR’s reply when it is on screen only, even with captions turned off', async () => {
+    window.localStorage.setItem('fa.call.captions', '0');
+    renderLive({
+      activity: 'speaking',
+      voice: 'captions',
+      captions: { veir: 'Twelve is a good start.', founder: 'What about price?', founderLive: false },
+    });
+    const captions = await screen.findByRole('region', { name: 'Captions' });
+    expect(captions).toHaveTextContent('Twelve is a good start.');
+    // Only the reply: the founder chose not to see their own words.
+    expect(captions).not.toHaveTextContent('What about price?');
+    expect(liveText()).toContain("Corin's vEIR: Twelve is a good start.");
+    expect(screen.getByRole('button', { name: 'Captions' })).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('disables the controls until the call is live', async () => {
