@@ -170,8 +170,27 @@ const CALL_DETAIL_CODES: ReadonlySet<ClientErrorCode> = new Set<ClientErrorCode>
 
 /** A failure of the calls API in plain words: the server's own message for call refusals. */
 export function callErrorMessage(error: unknown): string {
+  if (isApiError(error) && error.code === 'spend_cap_reached') {
+    // The daily AI allowance covers typed chat as well, so say so, and that nothing was lost.
+    return `${error.detail ?? 'Today’s AI allowance is used up. It resets at midnight UTC.'} Typed chat pauses too until then. Your conversation is saved.`;
+  }
   if (isApiError(error) && error.detail && CALL_DETAIL_CODES.has(error.code)) return error.detail;
   return errorMessage(error);
+}
+
+/**
+ * Why a call ended for its budget (`budget`), in plain words. The server ends a call for today's call
+ * minutes or for today's AI allowance; the refreshed call settings tell which: with minutes left, it was the
+ * allowance, which pauses typed chat too.
+ */
+export function budgetEndLine(remainingMinutesToday: number | undefined): string {
+  if (remainingMinutesToday === undefined) {
+    return 'Today’s allowance for calls is used up. Your conversation is saved.';
+  }
+  if (remainingMinutesToday < 1) {
+    return 'You’ve used today’s call minutes. Your conversation is saved, and you can keep going in chat.';
+  }
+  return 'Today’s AI allowance is used up, so the call ended and typed chat pauses too until midnight UTC. Your conversation is saved.';
 }
 
 /** What the founder is asked when they are already in a call in another conversation. */

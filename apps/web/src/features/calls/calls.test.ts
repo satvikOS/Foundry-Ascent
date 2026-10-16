@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
+import { ApiError } from '@/lib/api/errors';
+import { callErrorMessage } from '@/lib/realtime/call-api';
+
 import { callRouteFrom } from './call-context';
 import { callBlocker } from './call-lobby';
 import { callClock, formatClock, spokenDuration } from './use-call-clock';
@@ -101,5 +104,19 @@ describe('callBlocker', () => {
       message: 'Offline',
       retry: true,
     });
+  });
+});
+
+describe('callErrorMessage', () => {
+  it('says a turn hit the day’s AI allowance calmly: typed chat pauses too, and nothing was lost', () => {
+    const error = new ApiError({
+      status: 429,
+      code: 'spend_cap_reached',
+      title: 'Daily AI budget reached',
+      detail: 'You have reached your daily AI coaching budget. It resets at midnight UTC.',
+    });
+    expect(callErrorMessage(error)).toBe(
+      'You have reached your daily AI coaching budget. It resets at midnight UTC. Typed chat pauses too until then. Your conversation is saved.',
+    );
   });
 });

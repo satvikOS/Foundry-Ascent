@@ -184,6 +184,37 @@ describe('CallSummaryPanel', () => {
     expect(screen.getByText('The call reached its time limit.')).toBeInTheDocument();
   });
 
+  it('says calmly why the budget ended the call: today’s AI allowance, which pauses typed chat too', async () => {
+    stubFetch().mockImplementation((input) =>
+      Promise.resolve(
+        urlOf(input).endsWith('/call-config')
+          ? json(callConfig({ remainingMinutesToday: 24 }))
+          : json({ items: [] }),
+      ),
+    );
+    renderSummary(ended(null, { reason: 'budget' }));
+    const line = await screen.findByText(/AI allowance is used up/);
+    expect(line).toHaveTextContent('typed chat pauses too until midnight UTC');
+    expect(line).toHaveTextContent('Your conversation is saved.');
+    expect(screen.queryByText(/went wrong|error/i)).toBeNull();
+  });
+
+  it('says when the budget that ended the call was today’s call minutes', async () => {
+    stubFetch().mockImplementation((input) =>
+      Promise.resolve(
+        urlOf(input).endsWith('/call-config')
+          ? json(callConfig({ remainingMinutesToday: 0 }))
+          : json({ items: [] }),
+      ),
+    );
+    renderSummary(ended(null, { reason: 'budget' }));
+    expect(
+      await screen.findByText(
+        'You’ve used today’s call minutes. Your conversation is saved, and you can keep going in chat.',
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('shows a proposal decided elsewhere by what happened to it', async () => {
     const statuses: Record<string, MemoryObjectView['status']> = {
       [IDS.memory]: 'confirmed',
@@ -215,3 +246,29 @@ describe('CallSummaryPanel', () => {
     expect(screen.getByRole('button', { name: 'Call again' })).toBeDisabled();
   });
 });
+
+function callConfig(overrides: { remainingMinutesToday: number }) {
+  return {
+    veir: {
+      personaId: IDS.persona,
+      name: "Corin's vEIR",
+      shortName: 'Corin',
+      kind: 'eir_persona',
+      eirDisplayName: 'Corin Halvorsen',
+      tagline: null,
+      disclosure: 'AI',
+      embodiment: {
+        provider: 'builtin',
+        voiceId: null,
+        portraitUrl: null,
+        voiceConsented: false,
+        likenessConsented: false,
+      },
+    },
+    provider: 'builtin',
+    maxMinutes: 20,
+    remainingMinutesToday: overrides.remainingMinutesToday,
+    aiEnabled: true,
+    callsEnabled: true,
+  };
+}

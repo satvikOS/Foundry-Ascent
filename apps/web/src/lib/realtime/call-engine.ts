@@ -190,6 +190,8 @@ export class CallEngine {
   private readonly vad = new VoiceActivityDetector();
   private endpointer: Endpointer;
   private turn: ActiveTurn | null = null;
+  /** The crisis turn whose fixed support line is being said (never cut off). */
+  private crisisTurnId: string | null = null;
   private readonly pendingLines: string[] = [];
   private beacon: PreparedBeacon | null = null;
   private founderLevel = 0;
@@ -533,7 +535,17 @@ export class CallEngine {
 
   /** Stops the vEIR mid-sentence (Esc, or tapping the presence). */
   interrupt(): void {
-    if (this.snapshot.activity === 'speaking') this.bargeIn();
+    if (this.snapshot.activity === 'speaking' && !this.sayingCrisisSupport()) this.bargeIn();
+  }
+
+  /**
+   * The vEIR is saying the fixed crisis support line (the one unit of a crisis turn, said before the support
+   * panel): nothing cuts it off, neither Esc, Interrupt nor a voice that sounds like a barge-in.
+   */
+  private sayingCrisisSupport(): boolean {
+    const blocked = this.snapshot.blocked;
+    const playing = this.player?.current ?? null;
+    return blocked?.reason === 'crisis_support' && playing !== null && playing.turnId === this.crisisTurnId;
   }
 
   /**
@@ -892,8 +904,9 @@ export class CallEngine {
       }
       case 'turn.blocked':
         // Crisis support is said first (the fixed support line arrives as signed units of this turn), so
-        // it keeps playing; any other held-back reply stops at once.
-        if (event.reason !== 'crisis_support') this.player?.stop();
+        // it keeps playing to its end; any other held-back reply stops at once.
+        if (event.reason === 'crisis_support') this.crisisTurnId = event.turnId;
+        else this.player?.stop();
         // The founder reads the support; nothing more is listened to until they unmute.
         this.setMuted(true);
         this.set({
@@ -930,6 +943,7 @@ export class CallEngine {
 
   /** The founder spoke over the vEIR: stop the audio, abort the stream, record what was heard. */
   private bargeIn(): void {
+    if (this.sayingCrisisSupport()) return;
     const turn = this.turn;
     if (this.bargeTimer !== null) this.deps.clock.clearTimeout(this.bargeTimer);
     this.bargeTimer = null;

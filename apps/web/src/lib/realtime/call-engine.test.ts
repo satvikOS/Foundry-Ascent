@@ -680,6 +680,11 @@ describe('CallEngine · replies', () => {
     expect(h.context.sources[0]?.stopped).toBe(false);
     expect(h.state()).toMatchObject({ activity: 'speaking', muted: true });
     expect(h.state().blocked?.escalationId).toBe(IDS.escalation);
+    // Nothing cuts the support line off: not Esc or Interrupt, and no interrupt is recorded.
+    h.engine.interrupt();
+    await flush();
+    expect(h.context.sources[0]?.stopped).toBe(false);
+    expect(h.api.interruptTurn).not.toHaveBeenCalled();
     h.context.sources[0]?.finish();
     await flush(10);
     expect(h.state().activity).toBe('listening');

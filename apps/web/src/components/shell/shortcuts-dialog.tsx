@@ -23,6 +23,16 @@ const CONVERSATION_SHORTCUTS: { binding: string; label: string }[] = [
   { binding: 'Esc', label: 'Stop an answer that is being written' },
 ];
 
+/** On the call screen (call design §2.6); single keys pause while the typed line has focus. */
+const CALL_SHORTCUTS: { binding: string; label: string }[] = [
+  { binding: 'Space', label: 'Hold to talk (push to talk)' },
+  { binding: 'm', label: 'Mute or unmute' },
+  { binding: 'p', label: 'Switch push to talk on or off' },
+  { binding: 'c', label: 'Show or hide captions' },
+  { binding: 't', label: 'Type instead' },
+  { binding: 'Esc', label: 'Interrupt the vEIR while it speaks; otherwise minimize the call' },
+];
+
 function Binding({ binding }: { binding: string }) {
   const chords = formatHotkey(binding);
   return (
@@ -81,6 +91,7 @@ export function ShortcutsDialog({
           <ShortcutList title="Everywhere" shortcuts={GLOBAL_SHORTCUTS} />
           <ShortcutList title="In a venture" shortcuts={VENTURE_SHORTCUTS} />
           <ShortcutList title="In a conversation" shortcuts={CONVERSATION_SHORTCUTS} />
+          <ShortcutList title="During a call" shortcuts={CALL_SHORTCUTS} />
         </div>
       </DialogContent>
     </Dialog>

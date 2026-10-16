@@ -11,6 +11,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { toast } from '@/components/ui/toast';
 import { useVentureEscalations } from '@/lib/api/hooks/escalations';
 import { displayContent, memoryItemQueryOptions } from '@/lib/api/hooks/memory';
+import { budgetEndLine } from '@/lib/realtime/call-api';
 import type { CallEnded } from '@/lib/realtime/call-engine';
 import { formatDate } from '@/lib/format';
 import { ESCALATION_CATEGORY_LABELS } from '@/lib/labels';
@@ -18,7 +19,7 @@ import { ESCALATION_CATEGORY_LABELS } from '@/lib/labels';
 import { reviewFailure, useMemoryReview } from '../knowledge/review-api';
 
 import { formatClock, spokenDuration } from './use-call-clock';
-import type { CallVeir } from './use-call-veir';
+import { useCallConfig, type CallVeir } from './use-call-veir';
 
 interface CallSummaryProps {
   tenant: string;
@@ -34,7 +35,6 @@ interface CallSummaryProps {
 
 const END_LINES: Partial<Record<CallEnded['reason'], string>> = {
   timeout: 'The call reached its time limit.',
-  budget: 'Today’s call minutes are used up.',
   disabled: 'Calls were paused by the program.',
   error: 'The connection was lost.',
 };
@@ -60,6 +60,10 @@ export function CallSummaryPanel({
   }, []);
   const summary = ended.summary;
   const exchanges = summary?.turnCount ?? ended.turnCount;
+  // Ended for its budget: the refreshed call settings tell call minutes from the day's AI allowance.
+  const config = useCallConfig(ventureId, ended.reason === 'budget');
+  const endLine =
+    ended.reason === 'budget' ? budgetEndLine(config.data?.remainingMinutesToday) : END_LINES[ended.reason];
 
   return (
     <div className="mx-auto flex w-full max-w-xl flex-col items-center px-4 pt-6 pb-8 text-center sm:pt-10">
@@ -76,8 +80,10 @@ export function CallSummaryPanel({
         {' · '}
         {exchanges > 0 ? 'The transcript is in this conversation.' : 'Nothing was said.'}
       </p>
-      {END_LINES[ended.reason] ? (
-        <p className="mt-1 text-small text-muted-foreground">{END_LINES[ended.reason]}</p>
+      {endLine ? (
+        <p role="status" className="mt-1 max-w-md text-small text-pretty text-muted-foreground">
+          {endLine}
+        </p>
       ) : null}
 
       {summary ? (
