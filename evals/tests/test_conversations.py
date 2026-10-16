@@ -105,7 +105,10 @@ class TestConversationGraders:
     def test_sessions_never_open_alike(self) -> None:
         grade = grade_conversation(
             [],
-            openings=[(1, "Good to see you, Maya. Pricing first."), (2, "Good to see you, Maya. The pilot.")],
+            openings=[
+                (1, "Good to see you again, Maya. Pricing first."),
+                (2, "Good to see you again, Maya. The pilot."),
+            ],
         )
         assert codes(grade.findings) == ["repeated_opening"]
         assert (
@@ -131,6 +134,14 @@ class TestConversationGraders:
                 [], openings=[(1, f"{intro} What's on your mind?"), (2, f"{intro} What's on your mind?")]
             ).findings
         ) == ["repeated_opening"]
+
+    def test_a_shared_formula_with_new_specifics_is_not_a_repeat(self) -> None:
+        intro = "Hi Maya, this is Corin's vEIR, an AI coach."
+        openings = [
+            (1, f"{intro} Last time you planned five library-staff interviews. How many have you done?"),
+            (2, f"{intro} Last time you planned to call facilities about the budget. How did it go?"),
+        ]
+        assert grade_conversation([], openings=openings).findings == []
 
     def test_question_habits_across_a_session(self) -> None:
         asks = [reply(f"Point {n}. Who pays?", turn=n) for n in range(1, 4)]

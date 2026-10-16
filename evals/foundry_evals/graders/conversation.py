@@ -60,7 +60,9 @@ SPOKEN_MARKUP = re.compile(
     r"(?:\*\*|__|^\s*#{1,6}\s|^\s*(?:[-*+•]|\d+[.)])\s+\S|\[\s*E\d+|https?://|`)", re.MULTILINE
 )
 SPOKEN_MAX_WORDS = 70
-OPENING_WORDS = 4
+#: Words that make an opening: a shared formula with new specifics ("Last time you planned to …") is not a
+#: repeat; the same greeting line is.
+OPENING_WORDS = 6
 
 #: How a reply admits there is nothing from before (for "do you remember…?" with no history).
 NOTHING_BEFORE = re.compile(
