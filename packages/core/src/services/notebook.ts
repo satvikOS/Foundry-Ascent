@@ -75,7 +75,8 @@ function validDate(value: string): boolean {
 
 /**
  * Pure edit rule (unit tested). Throws `not_found` for an unknown line and `validation_failed` for a bad
- * date; every replaced or removed line is added to the suppression list.
+ * date; every replaced or removed line is added to the suppression list. Where the summary and opener were
+ * drawn from is recorded by `saveNotebook`, not here.
  */
 export function applyNotebookEdit(
   current: notebooksRepo.NotebookContent,
@@ -143,13 +144,12 @@ export function applyNotebookEdit(
     case 'edit_opener': {
       if (edit.text === current.nextOpener) return { content: current, suppressed: out };
       suppress('nextOpener', current.nextOpener);
-      // A corrected opener keeps the conversation it was drawn from: deleting it still clears the line.
       return { content: { ...current, nextOpener: edit.text }, suppressed: out };
     }
     case 'remove_opener': {
       if (current.nextOpener === null) return { content: current, suppressed: out };
       suppress('nextOpener', current.nextOpener);
-      return { content: { ...current, nextOpener: null, nextOpenerSource: null }, suppressed: out };
+      return { content: { ...current, nextOpener: null }, suppressed: out };
     }
     case 'clear': {
       suppress('summary', current.summary);

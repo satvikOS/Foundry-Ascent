@@ -1,19 +1,21 @@
 /**
  * Migration 0005 (wave-1 fixes) on the state production has: a database seeded before vEIRs existed, migrated
  * to 0004 and seeded again, with data the 0004 code wrote. It applies cleanly, backfills who set each title,
- * clears temporary-chat titles, repairs notebooks to the stricter shape, removes chunks an earlier seed run
- * brought back, turns the program corpus into a note, stays compatible with rows written the 0004 way,
- * re-runs without changes, and the seed that follows changes nothing on its second run.
+ * clears temporary-chat titles, repairs notebooks to the stricter shape, erases what was drawn from
+ * conversations deleted under 0004, removes chunks an earlier seed run brought back, turns the program corpus
+ * into a note, stays compatible with rows written the 0004 way, re-runs without changes, and the seed that
+ * follows changes nothing on its second run. A database first seeded after 0004 (dev, CI and stacks first
+ * deployed at wave 1) gets its doctrine corpus turned into a note too.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { type Db } from './db.js';
 import { MIGRATIONS, migrate } from './migrate.js';
 import { p } from './params.js';
-import { auditRepo } from './repositories/index.js';
+import { auditRepo, escalationsRepo, memoryRepo } from './repositories/index.js';
 import { seedDatabase, type SeedConfig, type SeedResult } from './seed/seed.js';
 import { splitStatements } from './sql-lexer.js';
-import { createTestDatabase, type TestDatabase } from './testing/test-database.js';
+import { createTestDatabase, makeContext, type TestDatabase } from './testing/test-database.js';
 
 const FIXES = MIGRATIONS.find((m) => m.version === '0005_wave1_fixes');
 const THROUGH_VEIR = MIGRATIONS.filter((m) => m.version <= '0004_veir_knowledge');
@@ -32,6 +34,7 @@ let legacy: {
   edited: string;
   withdrawn: string;
   program: string;
+  deleted: { session: string; rejected: string; unshared: string; shared: string };
 };
 
 function must<T>(value: T | null | undefined): T {
@@ -153,6 +156,7 @@ async function writeLegacyData(db: Db): Promise<typeof legacy> {
       id: p.uuid(created.withdrawn),
     });
   });
+  const deleted = await deleteUnder0004(db);
   // ...and the next deploy's 0004-era seed inserts their seeded chunks again (ON CONFLICT DO NOTHING).
   await db.system((sx) =>
     sx.query(
@@ -164,6 +168,90 @@ async function writeLegacyData(db: Db): Promise<typeof legacy> {
       { edited: p.uuid(created.edited), withdrawn: p.uuid(created.withdrawn) },
     ),
   );
+  return { ...created, deleted };
+}
+
+/**
+ * Maya deletes the seeded, distilled QuietQuad conversation while 0004 is live. 0004 erased its turns but
+ * kept the notebook summary and opener (written by the 0004-era seed without sources), a rejected AI
+ * proposal and the escalations drawn from it.
+ */
+async function deleteUnder0004(db: Db): Promise<typeof legacy.deleted> {
+  const quietquad = must(seed.ventures.find((v) => v.key === 'quietquad'));
+  const maya = must(seed.principals.maya);
+  const created = await db.system(async (sx) => {
+    const r = await sx.query(
+      'SELECT id FROM coaching_sessions WHERE venture_id = :venture AND distilled_at IS NOT NULL',
+      { venture: p.uuid(quietquad.id) },
+    );
+    const session = String(r.rows[0]?.id);
+    await sx.query(
+      `UPDATE veir_notebooks SET content = content - 'summarySources' - 'nextOpenerSource'
+       WHERE venture_id = :venture`,
+      { venture: p.uuid(quietquad.id) },
+    );
+    const rejected = await memoryRepo.createMemory(sx, {
+      tenantId: seed.tenantId,
+      ventureId: quietquad.id,
+      type: 'insight',
+      title: 'Rejected',
+      content: 'Students might prefer notifications.',
+      status: 'rejected',
+      origin: 'ai',
+      createdBy: maya,
+      visibility: 'team',
+      sourceRefs: [{ kind: 'session', id: session }],
+    });
+    const escalate = () =>
+      escalationsRepo.createEscalation(sx, {
+        tenantId: seed.tenantId,
+        ventureId: quietquad.id,
+        sessionId: session,
+        category: 'expert_judgment',
+        priority: 'P2',
+        status: 'awaiting_consent',
+        requestedRole: 'eir',
+        packet: {
+          founderQuestion: 'Should we wait for staff counts?',
+          desiredDecision: null,
+          sharedFacts: [],
+          evidenceConsidered: [],
+          conflictingSignals: [],
+          unknowns: [],
+          reason: 'Needs a person who knows the libraries',
+          urgency: 'This week',
+          proposedNextStep: null,
+          sessionSummary: null,
+          aiGenerated: true,
+        },
+        createdBy: maya,
+      });
+    const unshared = await escalate();
+    const shared = await escalate();
+    await escalationsRepo.recordSharingConsent(sx, { escalationId: shared.id, consentBy: maya });
+    return { session, rejected: rejected.id, unshared: unshared.id, shared: shared.id };
+  });
+  await db.withContext(makeContext(maya, seed.tenantId), async (tx) => {
+    const r = await tx.query('SELECT app.soft_delete_session(:id) AS ok', { id: p.uuid(created.session) });
+    expect(r.rows[0]).toEqual({ ok: true });
+  });
+  await db.system((sx) =>
+    auditRepo.appendAudit(sx, {
+      action: 'session.deleted',
+      outcome: 'succeeded',
+      tenantId: seed.tenantId,
+      actorId: maya,
+      ventureId: quietquad.id,
+      objectType: 'session',
+      objectId: created.session,
+    }),
+  );
+  const kept = await db.system((sx) =>
+    sx.query(`SELECT content ->> 'summary' AS summary FROM veir_notebooks WHERE venture_id = :venture`, {
+      venture: p.uuid(quietquad.id),
+    }),
+  );
+  expect(String(kept.rows[0]?.summary)).not.toBe('');
   return created;
 }
 
@@ -276,6 +364,43 @@ describe('migration 0005_wave1_fixes', () => {
     expect(invalid.rows[0]).toEqual({ n: 0 });
   });
 
+  it('erases what was drawn from conversations deleted under 0004', async () => {
+    const quietquad = must(seed.ventures.find((v) => v.key === 'quietquad'));
+    const maya = must(seed.principals.maya);
+    const notebook = await t.db.system((sx) =>
+      sx.query(
+        `SELECT content ->> 'summary' AS summary, content -> 'nextOpener' AS opener FROM veir_notebooks
+         WHERE venture_id = :venture`,
+        { venture: p.uuid(quietquad.id) },
+      ),
+    );
+    expect(notebook.rows[0]).toEqual({ summary: '', opener: 'null' });
+    const memory = await t.db.system((sx) =>
+      sx.query(
+        `SELECT m.status, m.content, (SELECT e.actor_id FROM memory_events e
+                                      WHERE e.memory_id = m.id ORDER BY e.id DESC LIMIT 1) AS actor
+         FROM memory_objects m WHERE m.id = :id`,
+        { id: p.uuid(legacy.deleted.rejected) },
+      ),
+    );
+    expect(memory.rows[0]).toEqual({ status: 'deleted', content: '', actor: maya });
+    const escalations = await t.db.system((sx) =>
+      sx.query(
+        `SELECT id, status, packet ->> 'founderQuestion' AS question FROM escalations WHERE id = ANY (:ids)`,
+        { ids: p.uuidArray([legacy.deleted.unshared, legacy.deleted.shared]) },
+      ),
+    );
+    const byId = new Map(escalations.rows.map((r) => [String(r.id), r]));
+    expect(byId.get(legacy.deleted.unshared)).toMatchObject({
+      status: 'withdrawn',
+      question: '[deleted conversation]',
+    });
+    expect(byId.get(legacy.deleted.shared)).toMatchObject({
+      status: 'awaiting_assignment',
+      question: 'Should we wait for staff counts?',
+    });
+  });
+
   it('removes the chunks a seed run brought back and turns the program corpus into a note', async () => {
     expect(await chunkCount(legacy.edited)).toBe(1);
     expect(await chunkCount(legacy.withdrawn)).toBe(0);
@@ -331,5 +456,45 @@ describe('migration 0005_wave1_fixes', () => {
     expect(await chunkCount(legacy.withdrawn)).toBe(0);
     await seedDatabase(t.db, CONFIG);
     expect(await counts(t.db)).toEqual(after);
+  });
+});
+
+describe('migration 0005 on a database first seeded after 0004', () => {
+  it('turns the doctrine corpus the wave-1 seed stored as a bodiless document into a note', async () => {
+    const fresh = await createTestDatabase({ migrate: false });
+    try {
+      await migrate(fresh.db, { migrations: THROUGH_VEIR });
+      const seeded = await seedDatabase(fresh.db, CONFIG);
+      // The wave-1 seed ran after 0004, so 0004 never converted its doctrine: it stayed a document.
+      const doctrine = await fresh.db.system(async (sx) => {
+        const r = await sx.query(
+          `UPDATE knowledge_sources SET kind = 'document', body = NULL
+           WHERE scope = 'persona' AND persona_id = :guide AND kind = 'note' RETURNING id`,
+          { guide: p.uuid(seeded.personaId) },
+        );
+        return r.rows.map((row) => String(row.id));
+      });
+      expect(doctrine.length).toBeGreaterThan(0);
+      await migrate(fresh.db, { migrations: THROUGH_FIXES });
+      const after = await fresh.db.system((sx) =>
+        sx.query(
+          `SELECT s.kind, s.body = (SELECT string_agg(CASE WHEN c.heading IS NULL OR c.heading = '' THEN c.content
+                                                         ELSE '## ' || c.heading || E'\\n\\n' || c.content END,
+                                                    E'\\n\\n' ORDER BY c.ordinal)
+                                    FROM knowledge_chunks c WHERE c.source_id = s.id) AS body_is_chunks
+           FROM knowledge_sources s WHERE s.id = ANY (:ids)`,
+          { ids: p.uuidArray(doctrine) },
+        ),
+      );
+      expect(after.rows).toEqual(doctrine.map(() => ({ kind: 'note', body_is_chunks: true })));
+      const documents = await fresh.db.system((sx) =>
+        sx.query(
+          `SELECT count(*)::int AS n FROM knowledge_sources WHERE scope <> 'venture' AND kind = 'document'`,
+        ),
+      );
+      expect(documents.rows[0]).toEqual({ n: 0 });
+    } finally {
+      await fresh.cleanup();
+    }
   });
 });

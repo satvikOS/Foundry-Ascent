@@ -67,8 +67,9 @@ export interface SessionsService {
   ): Promise<SessionView>;
   /**
    * Deletes a conversation (founder/team): its content is erased like an ended temporary chat; the AI memory
-   * proposals nobody kept, the notebook lines and the notebook summary and opener drawn from it go too; it
-   * disappears from every list. Escalation packets stay (the founder consented to share them).
+   * proposals nobody kept, the escalations the founder never shared, and the notebook lines, summary and
+   * opener drawn from it go too; it disappears from every list. Escalations the founder shared stay: they
+   * went to a person with consent.
    */
   remove(ctx: RequestContext, sessionId: string): Promise<void>;
   /** Deletes a conversation's digest (founder/team); distillation never writes it again. */

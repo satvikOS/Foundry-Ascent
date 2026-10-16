@@ -1,9 +1,10 @@
 /**
  * Core rules behind the wave-1 fixes: platform admins invite to a venture team like program leads (audited,
- * denials too); temporary chats cannot be renamed; a notebook that no longer matches its contract fails
- * loudly (logged with ids only) instead of being shown or saved as empty.
+ * denials too); temporary chats cannot be renamed; deleting a conversation keeps notebook text a
+ * person wrote; a notebook that no longer matches its contract fails loudly (logged with ids only) instead
+ * of being shown or saved as empty.
  */
-import { AccessCodeIssued, SessionView } from '@foundry/contracts';
+import { AccessCodeIssued, type NotebookEdit, SessionView } from '@foundry/contracts';
 import { NotebookIntegrityError, auditRepo, notebooksRepo, p, principalsRepo } from '@foundry/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -101,6 +102,30 @@ describe('conversations', () => {
     expect(temporary.title).toBeNull();
     const refused = await rejection(h.core.sessions.rename(maya, temporary.id, { title: 'Private' }));
     expect(isDomainError(refused) && refused.code).toBe('conflict');
+  });
+});
+
+describe('deleting a conversation', () => {
+  it('keeps a summary and opener a person wrote into the notebook', async () => {
+    const ventureId = h.ventures.quietquad.id;
+    const edit = async (version: number, e: NotebookEdit) =>
+      (await h.core.notebook.update(maya, ventureId, { expectedVersion: version, edit: e })).version;
+    let version = (await h.core.notebook.get(maya, ventureId)).version;
+    version = await edit(version, { action: 'clear' });
+    version = await edit(version, { action: 'edit_summary', summary: 'My own words about QuietQuad.' });
+    await edit(version, { action: 'edit_opener', text: 'Ask me about the Tuesday library meeting.' });
+    // An unrelated conversation that was distilled, which nothing in the notebook cites.
+    const unrelated = SessionView.parse(await h.core.sessions.create(maya, ventureId, {}));
+    await h.t.db.system((sx) =>
+      sx.query('UPDATE coaching_sessions SET distilled_at = now(), distill_version = 1 WHERE id = :id', {
+        id: p.uuid(unrelated.id),
+      }),
+    );
+    await h.core.sessions.remove(maya, unrelated.id);
+    expect(await h.core.notebook.get(maya, ventureId)).toMatchObject({
+      summary: 'My own words about QuietQuad.',
+      nextOpener: 'Ask me about the Tuesday library meeting.',
+    });
   });
 });
 

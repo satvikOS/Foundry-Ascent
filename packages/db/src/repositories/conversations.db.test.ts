@@ -308,18 +308,32 @@ describe('deleting a conversation', () => {
       sessionSummary: 'Exam-week demand and staff counts.',
       aiGenerated: true as const,
     };
-    const escalation = await t.db.withContext(maya, (tx) =>
-      escalationsRepo.createEscalation(tx, {
-        tenantId: seed.tenantId,
-        ventureId: quietquad.id,
-        sessionId: past.id,
-        category: 'expert_judgment',
-        priority: 'P2',
-        status: 'awaiting_consent',
-        requestedRole: 'eir',
-        packet,
-        createdBy: maya.principalId,
+    const escalate = (status: 'draft' | 'awaiting_consent') =>
+      t.db.withContext(maya, (tx) =>
+        escalationsRepo.createEscalation(tx, {
+          tenantId: seed.tenantId,
+          ventureId: quietquad.id,
+          sessionId: past.id,
+          category: 'expert_judgment',
+          priority: 'P2',
+          status,
+          requestedRole: 'eir',
+          packet,
+          createdBy: maya.principalId,
+        }),
+      );
+    const unshared = await escalate('awaiting_consent');
+    const withdrawn = await escalate('draft');
+    await t.db.withContext(maya, (tx) =>
+      escalationsRepo.transitionEscalation(tx, {
+        escalationId: withdrawn.id,
+        action: 'withdraw',
+        actorId: maya.principalId,
       }),
+    );
+    const shared = await escalate('awaiting_consent');
+    await t.db.withContext(maya, (tx) =>
+      escalationsRepo.recordSharingConsent(tx, { escalationId: shared.id, consentBy: maya.principalId }),
     );
 
     expect(await t.db.withContext(maya, (tx) => sessionsRepo.softDeleteSession(tx, past.id))).toBe(true);
@@ -336,11 +350,26 @@ describe('deleting a conversation', () => {
       status: 'confirmed',
       content: 'Kept: students might prefer notifications.',
     });
-    // The founder consents to share a packet with a person: it stays.
-    const stored = await t.db.system((sx) =>
-      sx.query('SELECT packet FROM escalations WHERE id = :id', { id: p.uuid(escalation.id) }),
+    // A packet the founder shared went to a person with consent: it stays. One never shared (open or
+    // withdrawn) is withdrawn and erased: it held the founder's question verbatim.
+    const escalations = await t.db.withContext(
+      maya,
+      async (tx) =>
+        new Map(
+          (await escalationsRepo.listVentureEscalations(tx, { ventureId: quietquad.id })).map(
+            (e) => [e.id, e] as const,
+          ),
+        ),
     );
-    expect(JSON.parse(String(stored.rows[0]?.packet))).toEqual(packet);
+    expect(escalations.get(shared.id)).toMatchObject({ status: 'awaiting_assignment', packet });
+    const erased = {
+      ...packet,
+      founderQuestion: '[deleted conversation]',
+      reason: '[deleted conversation]',
+      sessionSummary: null,
+    };
+    expect(escalations.get(unshared.id)).toMatchObject({ status: 'withdrawn', packet: erased });
+    expect(escalations.get(withdrawn.id)).toMatchObject({ status: 'withdrawn', packet: erased });
     const notebook = await notebookOf(maya, quietquad);
     expect(notebook.content).toMatchObject({
       summary: '',
@@ -412,6 +441,60 @@ describe('deleting a conversation', () => {
       }),
     );
     expect(await t.db.withContext(maya, (tx) => sessionsRepo.softDeleteSession(tx, c))).toBe(true);
+    expect((await notebookOf(maya, quietquad)).content).toMatchObject({ summary: '', nextOpener: null });
+  });
+});
+
+describe('deleting a conversation leaves what a person wrote', () => {
+  it('keeps a summary and opener a person wrote, whichever conversation is deleted', async () => {
+    const distill = (sessionId: string) =>
+      t.db.system((sx) =>
+        sx.query('UPDATE coaching_sessions SET distilled_at = now(), distill_version = 1 WHERE id = :id', {
+          id: p.uuid(sessionId),
+        }),
+      );
+    const save = async (
+      editedBy: 'person' | 'veir',
+      patch: Pick<notebooksRepo.NotebookContent, 'summary' | 'nextOpener'>,
+    ): Promise<void> => {
+      const current = await notebookOf(maya, quietquad);
+      const saved = await t.db.withContext(maya, (tx) =>
+        notebooksRepo.saveNotebook(tx, {
+          tenantId: seed.tenantId,
+          ventureId: quietquad.id,
+          personaId: quietquad.personaId,
+          expectedVersion: current.version,
+          content: { ...current.content, ...patch },
+          suppressed: current.suppressed,
+          editedBy,
+          principalId: editedBy === 'person' ? maya.principalId : null,
+        }),
+      );
+      expect(saved).not.toBeNull();
+    };
+    const mine = { summary: 'My own words about QuietQuad.', nextOpener: 'Ask me about Tuesday.' };
+    await save('person', { summary: '', nextOpener: null });
+    await save('person', mine);
+    // The repository records a person's text written where there was none as drawn from no conversation.
+    expect((await notebookOf(maya, quietquad)).content).toMatchObject({
+      ...mine,
+      summarySources: [],
+      nextOpenerSource: null,
+    });
+
+    const unrelated = await newSession(maya, quietquad);
+    await addTurn(maya, quietquad, unrelated, 'An unrelated question about logos');
+    await distill(unrelated);
+    expect(await t.db.withContext(maya, (tx) => sessionsRepo.softDeleteSession(tx, unrelated))).toBe(true);
+    expect((await notebookOf(maya, quietquad)).content).toMatchObject(mine);
+
+    // Text rewritten by distillation without a source is of unknown origin: it may carry the deleted
+    // conversation, so it is cleared.
+    await save('veir', { summary: 'Rewritten by the vEIR.', nextOpener: 'Rewritten opener?' });
+    expect((await notebookOf(maya, quietquad)).content).not.toHaveProperty('summarySources');
+    const other = await newSession(maya, quietquad);
+    await distill(other);
+    expect(await t.db.withContext(maya, (tx) => sessionsRepo.softDeleteSession(tx, other))).toBe(true);
     expect((await notebookOf(maya, quietquad)).content).toMatchObject({ summary: '', nextOpener: null });
   });
 });

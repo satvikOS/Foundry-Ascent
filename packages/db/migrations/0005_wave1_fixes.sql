@@ -7,13 +7,13 @@
 --     never one a person chose. Temporary chats never carry a title (CHECK, after clearing any that do).
 --  2. The notebook document matches its contract exactly (uuid sources, ISO timestamps) and may record the
 --     conversations its summary and opener were drawn from. Rows that predate the stricter shape are repaired.
---  3. Deleting a conversation also clears the notebook summary and opener drawn from it, and erases the AI
---     memory proposals drawn from it that nobody kept (rejected or expired as well as pending). Escalation
---     packets stay: a shared one went to a person with the founder's consent, and a draft is the founder's
---     to send or withdraw.
+--  3. Deleting a conversation also clears the notebook summary and opener drawn from it, erases the AI memory
+--     proposals drawn from it that nobody kept (rejected or expired as well as pending), and withdraws and
+--     erases the escalations drawn from it that the founder never shared. Escalations the founder shared went
+--     to a person with consent and stay. Conversations deleted before this migration get the same treatment.
 --  4. Seeded knowledge: chunks that a seed re-run brought back under an edited or withdrawn source are
---     removed (the seed now inserts chunks only together with a new source). The program method corpus
---     becomes an authored note, as 0004 did for the persona corpora.
+--     removed (the seed now inserts chunks only together with a new source). The seeded doctrine and program
+--     corpora still stored as bodiless documents become authored notes, as 0004 did for the persona corpora.
 --  5. Platform admins may add members to a venture team (invitations), as program leads may.
 --  6. Consent wording: the program-lead exception covers synthetic (fictional) EIRs whether or not they can
 --     sign in.
@@ -56,13 +56,13 @@ CREATE OR REPLACE FUNCTION app.is_contract_uuid(p text) RETURNS boolean
 $$;
 
 -- An ISO 8601 timestamp as the contract accepts it: a real calendar date, seconds, optional fraction, and
--- `Z` or a `±hh:mm` offset.
+-- `Z` or a numeric offset such as `+05:30`.
 CREATE OR REPLACE FUNCTION app.is_contract_timestamp(p text) RETURNS boolean
   LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
   SELECT coalesce(p ~ ('^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29'
                        || '|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)'
                        || '|(?:02)-(?:0[1-9]|1\d|2[0-8])))'
-                       || 'T(?:[01]\d|2[0-3])[:][0-5]\d[:][0-5]\d(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3])[:][0-5]\d)$'),
+                       || 'T(?:[01]\d|2[0-3])[:][0-5]\d[:][0-5]\d(?:\.\d+)?(?:[Z]|[+-](?:[01]\d|2[0-3])[:][0-5]\d)$'),
                   false)
 $$;
 
@@ -148,18 +148,18 @@ DROP FUNCTION IF EXISTS app.notebook_repair_entries(jsonb, timestamptz);
 -- 3. Deleting a conversation
 -- ---------------------------------------------------------------------------------------------------
 
--- Deletes a conversation (founder/team): the content of every turn is erased exactly like an ended temporary
--- chat, together with its title, goal, recap, digest and feedback comments; pending turns are failed so a
--- late model answer is never stored. Everything the vEIR drew from it goes too:
+-- Erases what the vEIR drew from a conversation. Called when a conversation is deleted, and once below for the
+-- conversations deleted before this migration. Internal (no grant): its callers authorize. It erases:
 --   - AI memory proposals drawn from it that no person kept (pending, rejected or expired);
+--   - escalations drawn from it that the founder never shared: open ones are withdrawn, and the packet (their
+--     question verbatim) is erased. A shared one went to a person with the founder's consent and stays;
 --   - notebook lines sourced from it;
---   - the notebook summary and opener when they were drawn from it. When the notebook does not record where
---     they came from (written before sources were recorded), they are cleared if the conversation was
---     distilled or any notebook line came from it.
--- Stored idempotent responses that mention it are purged. Escalation packets stay (a shared one went to a
--- person with the founder's consent; a draft is the founder's to send or withdraw). Security records (audit,
--- usage, turn metadata) stay. Returns false when the conversation does not exist or is not visible.
-CREATE OR REPLACE FUNCTION app.soft_delete_session(p_session uuid) RETURNS boolean
+--   - the notebook summary and opener when they were drawn from it. A missing `summarySources` or
+--     `nextOpenerSource` key means their origin is unknown; `[]` or null means no conversation (a person wrote
+--     them). Text of unknown origin is cleared when the conversation was distilled or a notebook line cites
+--     it (in that persona's notebook only): it may carry the conversation.
+-- `p_actor` (the person who deleted the conversation) is recorded in the history of the erased proposals.
+CREATE OR REPLACE FUNCTION app.erase_drawn_from_session(p_session uuid, p_actor uuid) RETURNS void
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE
   s           coaching_sessions%ROWTYPE;
@@ -169,24 +169,13 @@ DECLARE
   v_distilled boolean;
   v_id        jsonb := to_jsonb(p_session::text);
 BEGIN
-  SELECT * INTO s FROM coaching_sessions WHERE id = p_session AND deleted_at IS NULL FOR UPDATE;
-  IF NOT FOUND OR NOT app.in_current_tenant(s.tenant_id)
-     OR NOT (app.can_write_venture(s.venture_id) OR app.is_assigned_eir(s.venture_id)) THEN
-    RETURN false;
+  SELECT * INTO s FROM coaching_sessions WHERE id = p_session;
+  IF NOT FOUND THEN
+    RETURN;
   END IF;
-  IF NOT app.can_write_venture(s.venture_id) THEN
-    RAISE EXCEPTION 'deleting a conversation requires founder or team membership' USING ERRCODE = '42501';
-  END IF;
-
   SELECT r.persona_id INTO v_persona FROM persona_releases r WHERE r.id = s.persona_release_id;
   v_distilled := s.distilled_at IS NOT NULL OR s.distill_version > 0;
-
   SELECT coalesce(array_agg(t.id), '{}') INTO v_turns FROM turns t WHERE t.session_id = p_session;
-  UPDATE turns SET status = 'failed', completed_at = coalesce(completed_at, now())
-   WHERE session_id = p_session AND status = 'pending';
-  UPDATE turns SET founder_text = '[deleted conversation]', response = NULL, sampled_for_review = false
-   WHERE session_id = p_session;
-  UPDATE feedback SET comment = NULL WHERE turn_id = ANY (v_turns) AND comment IS NOT NULL;
 
   -- AI proposals drawn from this conversation that no person kept.
   SELECT coalesce(array_agg(m.id), '{}') INTO v_mem FROM memory_objects m
@@ -203,8 +192,24 @@ BEGIN
   UPDATE memory_events SET diff = '{"redacted": true}'::jsonb WHERE memory_id = ANY (v_mem);
   UPDATE turn_evidence SET title = '[deleted]' WHERE kind = 'memory' AND ref_id = ANY (v_mem);
   INSERT INTO memory_events (memory_id, venture_id, actor_id, action, diff)
-  SELECT x, s.venture_id, app.current_principal(), 'deleted', '{"conversationDeleted": true}'::jsonb
+  SELECT x, s.venture_id, coalesce(p_actor, s.started_by), 'deleted', '{"conversationDeleted": true}'::jsonb
   FROM unnest(v_mem) AS x;
+
+  -- Escalations the founder never shared.
+  UPDATE escalations e
+     SET status = CASE WHEN e.status IN ('draft', 'awaiting_consent') THEN 'withdrawn' ELSE e.status END,
+         packet = jsonb_build_object(
+           'founderQuestion', '[deleted conversation]', 'desiredDecision', NULL, 'sharedFacts', '[]'::jsonb,
+           'evidenceConsidered', '[]'::jsonb, 'conflictingSignals', '[]'::jsonb, 'unknowns', '[]'::jsonb,
+           'reason', '[deleted conversation]',
+           'urgency', CASE WHEN jsonb_typeof(e.packet -> 'urgency') = 'string' THEN e.packet -> 'urgency'
+                           ELSE '""'::jsonb END,
+           'proposedNextStep', NULL, 'sessionSummary', NULL, 'aiGenerated', true),
+         updated_at = now()
+   WHERE e.venture_id = s.venture_id AND e.sharing_consent_at IS NULL
+     AND (e.session_id = p_session OR e.turn_id = ANY (v_turns))
+     AND (e.status IN ('draft', 'awaiting_consent')
+          OR e.packet ->> 'founderQuestion' IS DISTINCT FROM '[deleted conversation]');
 
   -- Notebook lines sourced from this conversation, and a summary or opener drawn from it.
   UPDATE veir_notebooks n
@@ -225,20 +230,19 @@ BEGIN
            || CASE WHEN x.clear_summary THEN '{"summary": "", "summarySources": []}'::jsonb ELSE '{}'::jsonb END
            || CASE WHEN x.clear_opener THEN '{"nextOpener": null, "nextOpenerSource": null}'::jsonb
                    ELSE '{}'::jsonb END,
-         version = n.version + 1, last_edited_by = 'person', last_edited_principal = app.current_principal(),
-         updated_at = now()
+         version = n.version + 1, last_edited_by = 'person', last_edited_principal = p_actor, updated_at = now()
     FROM (SELECT c.id, c.cites,
-                 c.summary <> '' AND (c.summary_sources @> jsonb_build_array(v_id)
-                                      OR (jsonb_array_length(c.summary_sources) = 0 AND c.own
-                                          AND (v_distilled OR c.cites))) AS clear_summary,
-                 c.opener IS NOT NULL AND (c.opener_source = v_id
-                                           OR (c.opener_source IS NULL AND c.own AND (v_distilled OR c.cites)))
-                   AS clear_opener
+                 c.summary <> ''
+                   AND (coalesce(c.summary_sources @> jsonb_build_array(v_id), false)
+                        OR (c.summary_sources IS NULL AND c.own AND (v_distilled OR c.cites))) AS clear_summary,
+                 c.opener IS NOT NULL
+                   AND (c.opener_source IS NOT DISTINCT FROM v_id
+                        OR (c.opener_source IS NULL AND c.own AND (v_distilled OR c.cites))) AS clear_opener
             FROM (SELECT nb.id, nb.content ->> 'summary' AS summary, nb.content ->> 'nextOpener' AS opener,
+                         -- SQL NULL when the key is missing (unknown); a JSON array or JSON null when known.
                          CASE WHEN jsonb_typeof(nb.content -> 'summarySources') = 'array'
-                              THEN nb.content -> 'summarySources' ELSE '[]'::jsonb END AS summary_sources,
-                         CASE WHEN jsonb_typeof(nb.content -> 'nextOpenerSource') = 'string'
-                              THEN nb.content -> 'nextOpenerSource' END AS opener_source,
+                              THEN nb.content -> 'summarySources' END AS summary_sources,
+                         nb.content -> 'nextOpenerSource' AS opener_source,
                          nb.persona_id IS NOT DISTINCT FROM v_persona AS own,
                          EXISTS (SELECT 1 FROM jsonb_each(nb.content) AS sec (k, v)
                                  WHERE jsonb_typeof(sec.v) = 'array'
@@ -247,6 +251,38 @@ BEGIN
                                                  AND e.item ->> 'sourceSessionId' = p_session::text)) AS cites
                     FROM veir_notebooks nb WHERE nb.venture_id = s.venture_id) AS c) AS x
    WHERE n.id = x.id AND (x.cites OR x.clear_summary OR x.clear_opener);
+END
+$$;
+REVOKE ALL ON FUNCTION app.erase_drawn_from_session(uuid, uuid) FROM PUBLIC;
+
+-- Deletes a conversation (founder/team): the content of every turn is erased exactly like an ended temporary
+-- chat, together with its title, goal, recap, digest and feedback comments; pending turns are failed so a
+-- late model answer is never stored; everything the vEIR drew from it goes too (app.erase_drawn_from_session).
+-- Stored idempotent responses that mention it are purged. Security records (audit, usage, turn metadata)
+-- stay. Returns false when the conversation does not exist or is not visible.
+CREATE OR REPLACE FUNCTION app.soft_delete_session(p_session uuid) RETURNS boolean
+  LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+DECLARE
+  s       coaching_sessions%ROWTYPE;
+  v_turns uuid[];
+BEGIN
+  SELECT * INTO s FROM coaching_sessions WHERE id = p_session AND deleted_at IS NULL FOR UPDATE;
+  IF NOT FOUND OR NOT app.in_current_tenant(s.tenant_id)
+     OR NOT (app.can_write_venture(s.venture_id) OR app.is_assigned_eir(s.venture_id)) THEN
+    RETURN false;
+  END IF;
+  IF NOT app.can_write_venture(s.venture_id) THEN
+    RAISE EXCEPTION 'deleting a conversation requires founder or team membership' USING ERRCODE = '42501';
+  END IF;
+
+  PERFORM app.erase_drawn_from_session(p_session, app.current_principal());
+
+  SELECT coalesce(array_agg(t.id), '{}') INTO v_turns FROM turns t WHERE t.session_id = p_session;
+  UPDATE turns SET status = 'failed', completed_at = coalesce(completed_at, now())
+   WHERE session_id = p_session AND status = 'pending';
+  UPDATE turns SET founder_text = '[deleted conversation]', response = NULL, sampled_for_review = false
+   WHERE session_id = p_session;
+  UPDATE feedback SET comment = NULL WHERE turn_id = ANY (v_turns) AND comment IS NOT NULL;
 
   DELETE FROM idempotency_keys WHERE strpos(response::text, p_session::text) > 0;
   UPDATE coaching_sessions
@@ -258,6 +294,24 @@ END
 $$;
 REVOKE ALL ON FUNCTION app.soft_delete_session(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app.soft_delete_session(uuid) TO app_rls;
+
+-- Conversations deleted before this migration: 0004 erased their turns, pending proposals and notebook lines
+-- but kept the notebook summary and opener, rejected or expired proposals and unshared escalations drawn
+-- from them. The person who deleted each one is taken from the audit trail.
+DO $$
+BEGIN
+  PERFORM app.erase_drawn_from_session(
+            s.id,
+            coalesce((SELECT a.actor_id FROM audit_events a
+                       WHERE a.action = 'session.deleted' AND a.object_type = 'session'
+                         AND a.object_id = s.id::text
+                       ORDER BY a.id DESC LIMIT 1),
+                     s.started_by))
+     FROM coaching_sessions s
+    WHERE s.deleted_at IS NOT NULL
+    ORDER BY s.deleted_at, s.id;
+END
+$$;
 
 -- ---------------------------------------------------------------------------------------------------
 -- 4. Seeded knowledge
@@ -271,15 +325,16 @@ DELETE FROM knowledge_chunks c USING knowledge_sources s WHERE c.source_id = s.i
 DELETE FROM knowledge_chunks c USING knowledge_sources s
  WHERE c.source_id = s.id AND s.kind IN ('note', 'case', 'faq', 'transcript') AND c.created_at > s.updated_at;
 
--- The program method corpus written before this migration becomes an authored note whose text is its chunks,
--- like the persona corpora in 0004 (fresh databases are seeded that way).
+-- Seeded corpora still stored as documents without a file or text become authored notes whose text is their
+-- chunks, like the persona corpora in 0004 (fresh databases are seeded that way): the program method corpus
+-- everywhere, and the doctrine on databases whose first seed ran after 0004 (0004 found nothing to convert).
 UPDATE knowledge_sources s
    SET kind = 'note',
        body = (SELECT string_agg(CASE WHEN c.heading IS NULL OR c.heading = '' THEN c.content
                                       ELSE '## ' || c.heading || E'\n\n' || c.content END,
                                  E'\n\n' ORDER BY c.ordinal)
                FROM knowledge_chunks c WHERE c.source_id = s.id)
- WHERE s.scope = 'program' AND s.kind = 'document' AND s.s3_key IS NULL AND s.body IS NULL
+ WHERE s.scope IN ('persona', 'program') AND s.kind = 'document' AND s.s3_key IS NULL AND s.body IS NULL
    AND EXISTS (SELECT 1 FROM knowledge_chunks c WHERE c.source_id = s.id);
 
 -- ---------------------------------------------------------------------------------------------------

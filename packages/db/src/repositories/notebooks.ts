@@ -9,8 +9,9 @@
  * by the founder/team; distillation writes with the owner role.
  *
  * The summary and the opener record the conversations they were drawn from (`summarySources`,
- * `nextOpenerSource`), so deleting a conversation clears them (`app.soft_delete_session`). Absent sources
- * mean "unknown": deleting any distilled conversation of the persona then clears them.
+ * `nextOpenerSource`), so deleting a conversation clears them (`app.soft_delete_session`). A missing key
+ * means "unknown": deleting any distilled conversation of the persona then clears the text. `[]` or null
+ * means no conversation: a person wrote it, and deleting a conversation leaves it.
  */
 import { Id, NotebookCommitment, NotebookEntry, type VeirNotebook } from '@foundry/contracts';
 import { z } from 'zod';
@@ -32,9 +33,9 @@ export const NotebookContent = z.object({
   openQuestions: z.array(NotebookEntry).max(40),
   lastAdvice: z.array(NotebookEntry).max(40),
   nextOpener: z.string().max(300).nullable(),
-  /** Conversations the summary was drawn from (absent: unknown). */
+  /** Conversations the summary was drawn from (missing: unknown; `[]`: none, a person wrote it). */
   summarySources: z.array(Id).max(MAX_SUMMARY_SOURCES).optional(),
-  /** Conversation the opener was drawn from (absent or null: unknown). */
+  /** Conversation the opener was drawn from (missing: unknown; null: none, a person wrote it). */
   nextOpenerSource: Id.nullable().optional(),
 });
 export type NotebookContent = z.infer<typeof NotebookContent>;
@@ -181,7 +182,7 @@ export interface SaveNotebookInput {
  * Where a distillation write's summary and opener came from, given the document it replaces. An unchanged
  * summary or opener keeps its recorded sources. A rewritten summary adds `sourceSessionId` to the earlier
  * summary's sources (unknown stays unknown: the rewrite may carry the earlier text). A new opener is drawn
- * from `sourceSessionId`. Pure (unit tested).
+ * from `sourceSessionId`. Without `sourceSessionId` rewritten text is of unknown origin. Pure (unit tested).
  */
 export function withDistilledSources(
   previous: NotebookContent | null,
@@ -209,18 +210,47 @@ export function withDistilledSources(
   }
   if (next.nextOpener === before.nextOpener) {
     if (before.nextOpenerSource !== undefined) out.nextOpenerSource = before.nextOpenerSource;
-  } else if (next.nextOpener !== null) {
+  } else if (next.nextOpener !== null && sourceSessionId !== null) {
     out.nextOpenerSource = sourceSessionId;
   }
   return out;
 }
 
 /**
+ * Where a person's write left the summary and opener, given the document it replaces. Text written where there
+ * was none is a person's: drawn from no conversation (`summarySources: []`, `nextOpenerSource: null`), so
+ * deleting a conversation leaves it. Unchanged or corrected text keeps where it was drawn from (a correction
+ * may keep the conversation's words), unknown included. The caller's own source fields are ignored. Pure
+ * (unit tested).
+ */
+export function withPersonSources(previous: NotebookContent | null, next: NotebookContent): NotebookContent {
+  const before = previous ?? EMPTY_NOTEBOOK;
+  const out: NotebookContent = {
+    summary: next.summary,
+    founderProfile: next.founderProfile,
+    commitments: next.commitments,
+    openQuestions: next.openQuestions,
+    lastAdvice: next.lastAdvice,
+    nextOpener: next.nextOpener,
+  };
+  if (next.summary !== '') {
+    if (before.summary === '') out.summarySources = [];
+    else if (before.summarySources !== undefined) out.summarySources = before.summarySources;
+  }
+  if (next.nextOpener !== null) {
+    if (before.nextOpener === null) out.nextOpenerSource = null;
+    else if (before.nextOpenerSource !== undefined) out.nextOpenerSource = before.nextOpenerSource;
+  }
+  return out;
+}
+
+/**
  * Writes the notebook if it is still at `expectedVersion` (optimistic concurrency: edits and distillation
- * never overwrite each other's changes silently) and bumps the version. Creates the row when none exists
- * and `expectedVersion` is 0. Returns null on a version conflict (the caller re-reads and retries or
- * reports 409). Throws {@link NotebookIntegrityError} when the stored document at that version does not
- * match the contract: a write never replaces content that could not be read.
+ * never overwrite each other's changes silently) and bumps the version. It records where the summary and
+ * opener were drawn from ({@link withDistilledSources}, {@link withPersonSources}). Creates the row when
+ * none exists and `expectedVersion` is 0. Returns null on a version conflict (the caller re-reads and
+ * retries or reports 409). Throws {@link NotebookIntegrityError} when the stored document at that version
+ * does not match the contract: a write never replaces content that could not be read.
  */
 export async function saveNotebook(
   ex: SqlExecutor,
@@ -242,7 +272,7 @@ export async function saveNotebook(
   const content =
     input.editedBy === 'veir'
       ? withDistilledSources(stored?.content ?? null, parsed, input.sourceSessionId ?? null)
-      : parsed;
+      : withPersonSources(stored?.content ?? null, parsed);
   const suppressed = input.suppressed.slice(-MAX_SUPPRESSED).map((line) => SuppressedLine.parse(line));
   const params = {
     tenantId: p.uuid(input.tenantId),

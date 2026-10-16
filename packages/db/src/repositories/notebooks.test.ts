@@ -5,6 +5,7 @@ import {
   MAX_SUMMARY_SOURCES,
   decodeNotebookContent,
   withDistilledSources,
+  withPersonSources,
   type NotebookContent,
 } from './notebooks.js';
 
@@ -76,6 +77,27 @@ describe('withDistilledSources', () => {
     expect(capped.summarySources?.[0]).toBe(many[1]);
   });
 
+  it('records rewritten text without a conversation as of unknown origin, never as written by a person', () => {
+    // `[]` and null mean "a person wrote it": a rewrite must not inherit that.
+    const personWritten: NotebookContent = { ...base, summarySources: [], nextOpenerSource: null };
+    const rewritten = withDistilledSources(
+      personWritten,
+      { ...personWritten, summary: 'Rewritten', nextOpener: 'New opener?' },
+      null,
+    );
+    expect(rewritten).not.toHaveProperty('summarySources');
+    expect(rewritten).not.toHaveProperty('nextOpenerSource');
+    const drawn = withDistilledSources(
+      personWritten,
+      { ...personWritten, summary: 'Rewritten', nextOpener: 'New opener?' },
+      B,
+    );
+    expect(drawn).toMatchObject({ summarySources: [B], nextOpenerSource: B });
+    // Unchanged person-written text stays a person's.
+    const untouched = withDistilledSources(personWritten, { ...personWritten, lastAdvice: [entry] }, B);
+    expect(untouched).toMatchObject({ summarySources: [], nextOpenerSource: null });
+  });
+
   it('drops the opener source with the opener', () => {
     const cleared = withDistilledSources(
       withDistilledSources(null, base, A),
@@ -84,5 +106,56 @@ describe('withDistilledSources', () => {
     );
     expect(cleared.nextOpener).toBeNull();
     expect(cleared.nextOpenerSource).toBeUndefined();
+  });
+});
+
+describe('withPersonSources', () => {
+  const drawn: NotebookContent = {
+    ...EMPTY_NOTEBOOK,
+    summary: 'From A',
+    nextOpener: 'About A?',
+    summarySources: [A],
+    nextOpenerSource: A,
+  };
+
+  it('records text a person writes where there was none as drawn from no conversation', () => {
+    const written = withPersonSources(EMPTY_NOTEBOOK, {
+      ...EMPTY_NOTEBOOK,
+      summary: 'Mine',
+      nextOpener: 'Ask me',
+    });
+    expect(written).toMatchObject({ summarySources: [], nextOpenerSource: null });
+    expect(withPersonSources(null, { ...EMPTY_NOTEBOOK, summary: 'Mine' })).toMatchObject({
+      summarySources: [],
+    });
+  });
+
+  it('keeps where unchanged or corrected text was drawn from, unknown included', () => {
+    expect(withPersonSources(drawn, { ...drawn, lastAdvice: [entry] })).toMatchObject({
+      summarySources: [A],
+      nextOpenerSource: A,
+    });
+    expect(
+      withPersonSources(drawn, { ...drawn, summary: 'Corrected', nextOpener: 'Reworded?' }),
+    ).toMatchObject({ summarySources: [A], nextOpenerSource: A });
+    const unknown: NotebookContent = { ...EMPTY_NOTEBOOK, summary: 'From somewhere', nextOpener: 'Hm?' };
+    const corrected = withPersonSources(unknown, {
+      ...unknown,
+      summary: 'Corrected',
+      nextOpener: 'Hm, really?',
+    });
+    expect(corrected).not.toHaveProperty('summarySources');
+    expect(corrected).not.toHaveProperty('nextOpenerSource');
+  });
+
+  it('ignores the caller’s source fields and drops them with the text', () => {
+    // A caller cannot launder drawn text as a person's by sending `[]`.
+    expect(withPersonSources(drawn, { ...drawn, summarySources: [], nextOpenerSource: null })).toMatchObject({
+      summarySources: [A],
+      nextOpenerSource: A,
+    });
+    const cleared = withPersonSources(drawn, { ...drawn, summary: '', nextOpener: null });
+    expect(cleared).not.toHaveProperty('summarySources');
+    expect(cleared).not.toHaveProperty('nextOpenerSource');
   });
 });
