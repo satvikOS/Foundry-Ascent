@@ -3,6 +3,8 @@ import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 
+import { entryChunkBudget, FRAMEWORK_CHUNK } from './vite-plugins/page-speed.js';
+
 /**
  * Sonner injects its stylesheet with a runtime <style> tag, which a strict CSP (style-src 'self')
  * blocks and reports. We ship the identical rules from `sonner/dist/styles.css` (imported in
@@ -49,6 +51,8 @@ export default defineConfig({
     react(),
     tailwindcss(),
     sonnerWithoutInjectedStyles(),
+    // Page speed (docs/runbooks/latency.md): the entry chunk stays within its budget (the build fails otherwise).
+    entryChunkBudget(),
   ],
   resolve: { tsconfigPaths: true },
   server: {
@@ -64,6 +68,13 @@ export default defineConfig({
     sourcemap: true,
     // Keep every asset a separate file so the CSP never needs `data:` for fonts or images.
     assetsInlineLimit: 0,
-    chunkSizeWarningLimit: 700,
+    chunkSizeWarningLimit: 650,
+    rolldownOptions: {
+      output: {
+        // React in a chunk of its own: loaded in parallel with the app's entry chunk, and still cached by a
+        // returning visitor after a release changed the app.
+        codeSplitting: { groups: [FRAMEWORK_CHUNK] },
+      },
+    },
   },
 });
