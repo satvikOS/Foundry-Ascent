@@ -372,18 +372,27 @@ describe('rewriteIdentity — a vEIR persona never claims to be its EIR', () => 
     );
   });
 
-  it('rewrites 1,500 violations in 18,000 characters within 200 ms', () => {
-    const text = Array.from({ length: 1_500 }, (_, i) =>
-      i % 2 === 0 ? 'I am Corin.' : 'Corin approved.',
-    ).join(' ');
+  it('rewrites 1,500 violations in 18,000 characters, in linear time', () => {
+    const violations = (count: number): string =>
+      Array.from({ length: count }, (_, i) => (i % 2 === 0 ? 'I am Corin.' : 'Corin approved.')).join(' ');
+    const text = violations(1_500);
     expect(text.length).toBeGreaterThan(18_000);
-    const started = performance.now();
     const out = rewriteIdentity(text, CORIN);
-    const elapsed = performance.now() - started;
     expect(out.findings).toHaveLength(1_500);
     expect(out.text).not.toMatch(/I am Corin\.|Corin approved\./);
-    expect(elapsed).toBeLessThan(200);
-  });
+    // Timing ratios of warm runs (not absolute times) keep this independent of the machine: eight times the
+    // violations take about eight times as long, not sixty-four.
+    const time = (count: number): number => {
+      const input = violations(count);
+      const started = performance.now();
+      for (let i = 0; i < 5; i += 1) rewriteIdentity(input, CORIN);
+      return performance.now() - started;
+    };
+    time(150);
+    const small = Math.min(time(150), time(150));
+    const large = Math.min(time(1_200), time(1_200));
+    expect(large).toBeLessThan(16 * small + 100);
+  }, 30_000);
 
   it.each(['hi ', 'ok so ', 'good morning ', 'hey there Maya '])(
     'checks the words before "<name> here" in linear time: 40 × %j',
@@ -434,19 +443,28 @@ describe('rewriteIdentity — a vEIR persona never claims to be its EIR', () => 
     ];
     const endings = ['1 Corin here.', ' Corin.', '\nCorin', ' is here?', "'s listening x", '\n— Corin H.'];
     for (const ending of endings) rewriteIdentity(`Thanks. ${ending}`, CORIN);
-    let slowest = 0;
-    for (const spoken of [false, true]) {
-      for (const fragment of fragments) {
-        for (const ending of endings) {
-          const text = fragment.repeat(Math.ceil(6_400 / fragment.length)).slice(0, 6_400) + ending;
-          const started = performance.now();
-          rewriteIdentity(text, { ...CORIN, spoken });
-          slowest = Math.max(slowest, performance.now() - started);
+    // Timing ratios of warm runs (not absolute times) keep this independent of the machine: eight times the
+    // text takes about eight times as long, not sixty-four. Summed over every fragment so the fixed allowance
+    // is small next to one rule turning quadratic.
+    const time = (chars: number): number => {
+      let total = 0;
+      for (const spoken of [false, true]) {
+        for (const fragment of fragments) {
+          for (const ending of endings) {
+            const text = fragment.repeat(Math.ceil(chars / fragment.length)).slice(0, chars) + ending;
+            const started = performance.now();
+            rewriteIdentity(text, { ...CORIN, spoken });
+            total += performance.now() - started;
+          }
         }
       }
-    }
-    expect(slowest).toBeLessThan(100);
-  });
+      return total;
+    };
+    time(800);
+    const small = Math.min(time(800), time(800));
+    const large = Math.min(time(6_400), time(6_400));
+    expect(large).toBeLessThan(16 * small + 100);
+  }, 60_000);
 
   it('stays linear on 20,000 characters of the question, relay and feedback rules, typed or spoken', () => {
     // Timing ratios (not absolute times) keep this independent of the machine: eight times the text takes

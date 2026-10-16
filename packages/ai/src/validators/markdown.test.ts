@@ -78,11 +78,19 @@ describe('sanitizeMarkdown', () => {
     expect(sanitizeMarkdown('[the\nlead](https://library.example.edu)').unsafeLinksRemoved).toBe(0);
     // A blank line ends the paragraph: no link, nothing removed.
     expect(sanitizeMarkdown('[a\n\nb](data:text/html,x)').unsafeLinksRemoved).toBe(0);
-    // Linear on unclosed labels.
-    const started = performance.now();
-    sanitizeMarkdown('[a\n'.repeat(5_000));
-    expect(performance.now() - started).toBeLessThan(200);
-  });
+    // Linear on unclosed labels: eight times the labels take about eight times as long, not sixty-four.
+    // Ratios of warm runs (not absolute times) keep this independent of the machine.
+    const time = (labels: number): number => {
+      const input = '[a\n'.repeat(labels);
+      const started = performance.now();
+      for (let i = 0; i < 5; i += 1) sanitizeMarkdown(input);
+      return performance.now() - started;
+    };
+    time(625);
+    const small = Math.min(time(625), time(625));
+    const large = Math.min(time(5_000), time(5_000));
+    expect(large).toBeLessThan(16 * small + 100);
+  }, 30_000);
 
   it('handles autolinks', () => {
     const out = sanitizeMarkdown('Visit <https://example.org> not <javascript:alert(1)>');

@@ -856,18 +856,29 @@ describe('spoken text (voice channel)', () => {
     expect(out.response.spoken).not.toMatch(/Corin has reviewed/);
   });
 
-  it('checks an over-long answer within its limit, fast', () => {
-    const answer = Array.from({ length: 1_500 }, (_, i) =>
-      i % 2 === 0 ? 'I am Corin.' : 'Corin approved.',
-    ).join(' ');
+  it('checks an over-long answer within its limit, in linear time', () => {
+    const violations = (count: number): string =>
+      Array.from({ length: count }, (_, i) => (i % 2 === 0 ? 'I am Corin.' : 'Corin approved.')).join(' ');
+    const answer = violations(1_500);
     expect(answer.length).toBeGreaterThan(18_000);
-    const started = performance.now();
     const out = validateCoachResponse(base({ answer }), corinCall);
-    expect(performance.now() - started).toBeLessThan(200);
     expect(out.blocked).toBe(true);
     expect(out.response.answer.length).toBeLessThanOrEqual(6_000);
     expect(out.response.answer).not.toMatch(/I am Corin\.|Corin approved\./);
-  });
+    // Linear below the answer limit (both sizes are read in full): eight times the violations take about
+    // eight times as long, not sixty-four. Ratios of warm runs keep this independent of the machine.
+    const time = (count: number): number => {
+      const input = base({ answer: violations(count) });
+      const started = performance.now();
+      for (let i = 0; i < 5; i += 1) validateCoachResponse(input, corinCall);
+      return performance.now() - started;
+    };
+    expect(violations(400).length).toBeLessThan(6_000);
+    time(50);
+    const small = Math.min(time(50), time(50));
+    const large = Math.min(time(400), time(400));
+    expect(large).toBeLessThan(16 * small + 100);
+  }, 30_000);
 
   it.each([
     ['another venture', 'BrightLoop solved this with a waitlist.'],
