@@ -1,8 +1,8 @@
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { renderWithProviders } from '@/features/admin/shared/test-utils';
+import { jsonResponse, renderWithProviders, stubFetch } from '@/features/admin/shared/test-utils';
 
 import { IDS } from '../coach/testing';
 import { MessageActions } from './message-actions';
@@ -52,5 +52,38 @@ describe('MessageActions', () => {
     );
     expect(screen.queryByRole('img', { name: /You rated/ })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Good answer' })).toBeNull();
+  });
+
+  describe('keeps keyboard focus when a rating replaces the thumbs', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('Good answer: "Thanks" takes focus', async () => {
+      stubFetch().mockResolvedValue(jsonResponse({ feedbackId: IDS.ref }, 201));
+      const user = userEvent.setup();
+      renderWithProviders(<MessageActions turnId={IDS.turn} copyText="Answer" canRate pinned />);
+      screen.getByRole('button', { name: 'Good answer' }).focus();
+      await user.keyboard('{Enter}');
+      const thanks = (await screen.findByText('Thanks')).closest('[role="status"]');
+      await waitFor(() => {
+        expect(thanks).toHaveFocus();
+      });
+    });
+
+    it('a sent "What was wrong?" report: focus returns to "Thanks", not to the page', async () => {
+      stubFetch().mockResolvedValue(jsonResponse({ feedbackId: IDS.ref }, 201));
+      const user = userEvent.setup();
+      renderWithProviders(<MessageActions turnId={IDS.turn} copyText="Answer" canRate pinned />);
+      await user.click(screen.getByRole('button', { name: 'Bad answer' }));
+      const dialog = screen.getByRole('dialog', { name: 'What was wrong?' });
+      await user.click(within(dialog).getByRole('button', { name: 'Send feedback' }));
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog')).toBeNull();
+      });
+      await waitFor(() => {
+        expect(screen.getByText('Thanks').closest('[role="status"]')).toHaveFocus();
+      });
+    });
   });
 });

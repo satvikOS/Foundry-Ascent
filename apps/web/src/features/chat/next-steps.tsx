@@ -4,6 +4,8 @@ import { Check, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { formatIsoDate } from '@/features/memory/typed/attributes';
 
+import { handOffFocus, useFocusHandoff } from './focus-handoff';
+
 export interface NextActionControls {
   /** Indexes of next actions already in the venture's actions. */
   saved: ReadonlySet<number>;
@@ -43,10 +45,7 @@ export function NextStepList({
               ) : null}
             </div>
             {saved ? (
-              <span className="inline-flex shrink-0 items-center gap-1 text-caption font-medium">
-                <Check aria-hidden className="size-3.5 text-success" />
-                In actions
-              </span>
+              <InActions focusKey={`action:${String(index)}:${action.action}`} />
             ) : controls?.onAdd ? (
               <Button
                 size="xs"
@@ -56,6 +55,7 @@ export function NextStepList({
                 loading={controls.savingIndex === index}
                 loadingText="Adding…"
                 onClick={() => {
+                  handOffFocus(`action:${String(index)}:${action.action}`);
                   controls.onAdd?.(action, index);
                 }}
               >
@@ -67,5 +67,20 @@ export function NextStepList({
         );
       })}
     </ul>
+  );
+}
+
+/** "In actions", in place of the Add to actions button it replaces (and taking its focus). */
+function InActions({ focusKey }: { focusKey: string }) {
+  const ref = useFocusHandoff<HTMLSpanElement>(focusKey);
+  return (
+    <span
+      ref={ref}
+      tabIndex={-1}
+      className="inline-flex shrink-0 items-center gap-1 rounded-sm text-caption font-medium focus-visible:outline-2 focus-visible:outline-ring"
+    >
+      <Check aria-hidden className="size-3.5 text-success" />
+      In actions
+    </span>
   );
 }

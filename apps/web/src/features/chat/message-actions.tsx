@@ -1,6 +1,6 @@
 import type { TurnFeedbackRequest } from '@foundry/contracts';
 import { Check, ThumbsDown, ThumbsUp } from 'lucide-react';
-import { useId, useState } from 'react';
+import { useId, useRef, useState, type RefObject } from 'react';
 import type { z } from 'zod';
 
 import { announce } from '@/components/a11y/live-announcer';
@@ -20,6 +20,8 @@ import { SimpleTooltip } from '@/components/ui/tooltip';
 import { errorMessage } from '@/lib/api/errors';
 import { useTurnFeedback } from '@/lib/api/hooks/sessions';
 import { cn } from '@/lib/utils';
+
+import { handOffFocus, useFocusHandoff } from './focus-handoff';
 
 type Flag = z.infer<typeof TurnFeedbackRequest>['flags'][number];
 
@@ -59,6 +61,9 @@ export function MessageActions({
   /** Rated just now, on this page: a short thanks. */
   const [rated, setRated] = useState<'good' | 'bad' | null>(null);
   const earlier = myRating === null ? null : myRating >= GOOD ? 'good' : 'bad';
+  // The thumbs are replaced by "Thanks": it takes focus, so keyboard users keep their place.
+  const thanksKey = `rating:${turnId}`;
+  const thanksRef = useRef<HTMLSpanElement | null>(null);
   const [reporting, setReporting] = useState(false);
 
   const send = (rating: number, flags: Flag[] = [], comment: string | null = null) => {
@@ -66,6 +71,7 @@ export function MessageActions({
       { turnId, feedback: { rating, flags, comment } },
       {
         onSuccess: () => {
+          handOffFocus(thanksKey);
           setRated(rating >= GOOD ? 'good' : 'bad');
           setReporting(false);
           announce('Thanks for the feedback');
@@ -89,10 +95,7 @@ export function MessageActions({
       <CopyButton value={copyText} label="Copy answer" size="icon-xs" variant="subtle" />
       {canRate ? (
         rated ? (
-          <span className="inline-flex h-7 items-center gap-1 px-1.5 text-caption" role="status">
-            <Check aria-hidden className="size-3.5" />
-            Thanks
-          </span>
+          <Thanks focusKey={thanksKey} elementRef={thanksRef} />
         ) : earlier ? (
           <span
             role="img"
@@ -137,6 +140,7 @@ export function MessageActions({
             <BadAnswerDialog
               open={reporting}
               onOpenChange={setReporting}
+              returnFocusTo={thanksRef}
               pending={feedback.isPending}
               onSubmit={(flags, comment) => {
                 send(BAD, flags, comment);
@@ -157,17 +161,28 @@ export function MessageActions({
 function BadAnswerDialog({
   open,
   onOpenChange,
+  returnFocusTo,
   pending,
   onSubmit,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Where focus goes when the dialog closes after a sent report (its trigger is gone by then). */
+  returnFocusTo: RefObject<HTMLElement | null>;
   pending: boolean;
   onSubmit: (flags: Flag[], comment: string | null) => void;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent
+        className="max-w-md"
+        onCloseAutoFocus={(event) => {
+          if (returnFocusTo.current) {
+            event.preventDefault();
+            returnFocusTo.current.focus({ preventScroll: true });
+          }
+        }}
+      >
         <DialogHeader>
           <DialogTitle>What was wrong?</DialogTitle>
           <DialogDescription>
@@ -265,5 +280,30 @@ function BadAnswerForm({
         </Button>
       </DialogFooter>
     </>
+  );
+}
+
+/** "Thanks", in place of the thumbs it replaces: it takes their keyboard focus. */
+function Thanks({
+  focusKey,
+  elementRef,
+}: {
+  focusKey: string;
+  elementRef: RefObject<HTMLSpanElement | null>;
+}) {
+  const ref = useFocusHandoff<HTMLSpanElement>(focusKey);
+  return (
+    <span
+      ref={(node) => {
+        ref.current = node;
+        elementRef.current = node;
+      }}
+      tabIndex={-1}
+      className="inline-flex h-7 items-center gap-1 rounded-sm px-1.5 text-caption focus-visible:outline-2 focus-visible:outline-ring"
+      role="status"
+    >
+      <Check aria-hidden className="size-3.5" />
+      Thanks
+    </span>
   );
 }
