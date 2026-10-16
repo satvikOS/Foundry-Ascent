@@ -202,7 +202,24 @@ test.describe('founder journey', () => {
       // It is in the venture's memory already, used by the vEIR without anyone approving it.
       const item = await page.request.get(`/api/v1/memory/${memoryId ?? ''}`);
       expect(item.status()).toBe(200);
-      expect(((await item.json()) as { status: string }).status).toMatch(/^(confirmed|proposed)$/);
+      const learned = (await item.json()) as { status: string; origin: string; keptAutomatically?: boolean };
+      // INTEGRATION (w4-memory): a server that keeps memory automatically says so on every item
+      // (`keptAutomatically`), and then what an answer taught must arrive kept: confirmed, kept automatically,
+      // never a proposal. Until that server is merged, this branch's server still saves it as a proposal, which the
+      // UI shows as learned (nothing to approve). Either way, exactly one of the two holds, so a half-merged server
+      // (the field without kept memory, or kept memory without the field) fails here.
+      if ('keptAutomatically' in learned) {
+        expect(learned, 'AI memory arrives already kept').toMatchObject({
+          origin: 'ai',
+          status: 'confirmed',
+          keptAutomatically: true,
+        });
+      } else {
+        expect(learned, 'before w4-memory: still a proposal, shown as learned').toMatchObject({
+          origin: 'ai',
+          status: 'proposed',
+        });
+      }
       // Leave the venture's memory as the next run finds it (the vEIR would not save a known fact again).
       const removed = await page.request.patch(`/api/v1/memory/${memoryId ?? ''}`, {
         headers: { 'x-requested-with': 'foundry-ascent', 'content-type': 'application/json' },
