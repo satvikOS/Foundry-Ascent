@@ -108,6 +108,37 @@ export interface SpeechSynthesizer {
   synthesize(input: SpeechSynthesisInput): Promise<SynthesizedSpeech>;
 }
 
+export interface SttGrantRequest {
+  /** BCP-47 language of the founder's speech (`en-US`). */
+  readonly languageCode: string;
+  /** PCM sample rate the browser streams (16 000 Hz). */
+  readonly sampleRateHertz: number;
+  /** Lifetime of the grant: it only bounds opening the stream (at most 300 s). */
+  readonly expiresInSeconds: number;
+  readonly requestId: string;
+}
+
+export interface IssuedSttGrant {
+  /** Presigned `wss://` URL the browser opens directly (audio never passes through our API). */
+  readonly url: string;
+  /** ISO-8601 expiry of the URL. */
+  readonly expiresAt: string;
+}
+
+/** Thrown when a speech-to-text grant cannot be minted (no credentials, signing failure). */
+export class SttGrantError extends Error {
+  override readonly name = 'SttGrantError';
+}
+
+/**
+ * Speech-to-text grants for calls: Amazon Transcribe streaming URLs presigned (SigV4) with the API's own role
+ * credentials. Absent locally and in tests unless injected: calls then start without a grant and the founder
+ * types instead.
+ */
+export interface SttGrantIssuer {
+  issue(request: SttGrantRequest): Promise<IssuedSttGrant>;
+}
+
 export interface JobQueue {
   /** Enqueues a job. `deduplicationId` lets FIFO/idempotent consumers drop duplicates. */
   enqueue(job: JobMessage, options?: { readonly deduplicationId?: string }): Promise<void>;

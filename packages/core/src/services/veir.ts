@@ -5,7 +5,7 @@ import {
   type PersonaEmbodiment,
   type VeirIdentity,
 } from '@foundry/contracts';
-import { assignmentsRepo, personasRepo, settingsRepo, turnsRepo, type SqlExecutor } from '@foundry/db';
+import { assignmentsRepo, personasRepo, settingsRepo, type SqlExecutor } from '@foundry/db';
 import { type z } from 'zod';
 
 import { requireAssignmentActive, requireVentureAccess } from '../authz/venture-access.js';
@@ -13,7 +13,7 @@ import { type RequestContext } from '../context.js';
 import { DomainError, parseInput } from '../errors.js';
 import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
 import { secondsUntilUtcMidnight } from '../orchestrator/sampling.js';
-import { measureCalls, remainingCallMinutes, type CallUsage } from './call-usage.js';
+import { CALL_LIMITS, callSecondsToday, remainingDailyMinutes, remainingDailySeconds } from './call-usage.js';
 import { DEFAULT_SPEECH_VOICE } from './voices.js';
 
 /**
@@ -96,11 +96,6 @@ export async function resolveVeir(ex: SqlExecutor, ventureId: string): Promise<R
   };
 }
 
-/** Today's call minutes of the request principal. */
-export async function callUsageToday(ex: SqlExecutor, now: Date): Promise<CallUsage> {
-  return measureCalls(await turnsRepo.listVoiceTurnsToday(ex), now);
-}
-
 export function createVeirService(kit: Kit): VeirService {
   async function requireVeir(scope: RequestScope, ventureId: string): Promise<ResolvedVeir> {
     const veir = await resolveVeir(scope.tx, ventureId);
@@ -127,12 +122,12 @@ export function createVeirService(kit: Kit): VeirService {
         await requireVentureAccess(scope, ventureId, 'write', { objectType: 'call' });
         const { identity } = await requireVeir(scope, ventureId);
         const settings = await settingsRepo.getPlatformSettings(scope.tx);
-        const usage = await callUsageToday(scope.tx, kit.now());
+        const used = await callSecondsToday(scope.tx, ctx.principalId);
         return {
           veir: identity,
           provider: identity.embodiment.provider,
           maxMinutes: settings.maxCallMinutes,
-          remainingMinutesToday: remainingCallMinutes(usage, settings.dailyCallMinutesPerPrincipal),
+          remainingMinutesToday: remainingDailyMinutes(used, settings.dailyCallMinutesPerPrincipal),
           aiEnabled: settings.aiEnabled,
         };
       });
@@ -155,8 +150,10 @@ export function createVeirService(kit: Kit): VeirService {
         }
         await requireAssignmentActive(scope, ventureId);
         const { identity } = await requireVeir(scope, ventureId);
-        const usage = await callUsageToday(scope.tx, kit.now());
-        if (remainingCallMinutes(usage, settings.dailyCallMinutesPerPrincipal) <= 0) {
+        const used = await callSecondsToday(scope.tx, ctx.principalId);
+        if (
+          remainingDailySeconds(used, settings.dailyCallMinutesPerPrincipal) < CALL_LIMITS.minStartSeconds
+        ) {
           throw new DomainError(
             'rate_limited',
             'You have used today’s call minutes. Calls reset at midnight UTC.',

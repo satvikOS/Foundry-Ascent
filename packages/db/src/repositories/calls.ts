@@ -7,7 +7,7 @@ import {
   AvatarProviderId,
   CallEndReason,
   CallInputMode,
-  CallState,
+  type CallState,
   CallStatus,
   NextAction,
   TurnStatus,

@@ -1,8 +1,7 @@
 /**
  * The vEIR endpoints over HTTP: the notebook, conversation recents/rename/delete/digest, the vEIR identity and
- * call configuration, speech of validated replies (audio/mpeg; 501 where no speech service runs), persona
- * lifecycle, the persona knowledge library (authored notes and uploads) and lessons. Every response parses
- * with its contract.
+ * call configuration (calls and speech: calls.db.test.ts), persona lifecycle, the persona knowledge library
+ * (authored notes and uploads) and lessons. Every response parses with its contract.
  */
 import {
   AvatarSessionResponse,
@@ -23,19 +22,14 @@ import {
   RevokeConsentResponse,
   SessionPageResponse,
   SessionView,
-  TurnStreamEvent,
   VeirIdentity,
 } from '@foundry/contracts';
-import { createCore } from '@foundry/core';
-import { FakeSpeechSynthesizer } from '@foundry/core/testing';
 import { p } from '@foundry/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { type ApiHarness, buildRequest, createApiHarness } from './testing/api-harness.js';
-import { parseSse } from './testing/sse.js';
+import { type ApiHarness, createApiHarness } from './testing/api-harness.js';
 
 let api: ApiHarness;
-const speech = new FakeSpeechSynthesizer();
 let lead: string;
 let corin: string;
 let ruth: string;
@@ -44,7 +38,7 @@ let devin: string;
 let graham: string;
 
 beforeAll(async () => {
-  api = await createApiHarness({ speech });
+  api = await createApiHarness();
   [lead, corin, ruth, maya, devin, graham] = await Promise.all([
     api.signInAs(api.h.people.lead),
     api.signInAs(api.h.people.eirCorin),
@@ -183,7 +177,7 @@ describe('conversations', () => {
   });
 });
 
-describe('vEIR identity, calls and speech', () => {
+describe('vEIR identity and call configuration', () => {
   it('describes the vEIR and the call caps', async () => {
     const veir = await json(
       await api.request(`/ventures/${quietquad()}/veir`, { cookie: maya }),
@@ -200,58 +194,6 @@ describe('vEIR identity, calls and speech', () => {
       AvatarSessionResponse,
     );
     expect(session).toEqual({ provider: 'builtin', token: null, expiresAt: null, voiceId: 'Matthew' });
-  });
-
-  it('streams audio of a validated reply only; 501 where no speech service runs', async () => {
-    const session = await json(
-      await api.request(`/ventures/${quietquad()}/sessions`, { body: {}, cookie: maya }),
-      SessionView,
-      201,
-    );
-    const res = await api.request(`/sessions/${session.id}/turns`, {
-      body: { text: 'What should the pilot measure?' },
-      cookie: maya,
-      idempotencyKey: 'speech-turn-0001',
-    });
-    const events = parseSse(await res.text()).frames.map((f) => TurnStreamEvent.parse(JSON.parse(f.data)));
-    const done = events.at(-1);
-    if (done?.event !== 'turn.completed') throw new Error('turn not completed');
-    const passage = (done.turn.response?.answer ?? '').split(/(?<=[.?!])\s+/)[0] ?? '';
-    const audio = await api.request('/speech', {
-      body: { sessionId: session.id, turnId: done.turn.id, text: passage },
-      cookie: maya,
-    });
-    expect(audio.status).toBe(200);
-    expect(audio.headers.get('content-type')).toBe('audio/mpeg');
-    expect(audio.headers.get('x-request-id')).toBeTruthy();
-    expect(Number(audio.headers.get('x-speech-characters'))).toBeGreaterThan(0);
-    expect(new TextDecoder().decode(await audio.arrayBuffer())).toMatch(/^MP3:/);
-    expect(
-      await problemCode(
-        await api.request('/speech', {
-          body: { sessionId: session.id, turnId: done.turn.id, text: 'Something the coach never said.' },
-          cookie: maya,
-        }),
-        422,
-      ),
-    ).toBe('validation_failed');
-    // Local development runs without a speech service: the client falls back to browser speech.
-    const bare = api.appWith({
-      core: createCore({
-        db: api.h.t.db,
-        gateway: api.h.gateway,
-        config: api.h.config,
-        objectStore: api.h.objectStore,
-        jobQueue: api.h.jobQueue,
-      }),
-    });
-    const unavailable = await bare.request(
-      buildRequest('/speech', {
-        body: { sessionId: session.id, turnId: done.turn.id, text: passage },
-        cookie: maya,
-      }),
-    );
-    expect(await problemCode(unavailable, 501)).toBe('speech_unavailable');
   });
 });
 

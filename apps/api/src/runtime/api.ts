@@ -1,8 +1,9 @@
-import { createCore, type EnvLike, type SpeechSynthesizer } from '@foundry/core';
+import { createCore, type EnvLike, type SpeechSynthesizer, type SttGrantIssuer } from '@foundry/core';
 
 import { PollySpeechSynthesizer } from '../adapters/polly-speech.js';
 import { S3ObjectStore } from '../adapters/s3-object-store.js';
 import { SqsJobQueue } from '../adapters/sqs-job-queue.js';
+import { TranscribeStreamingPresigner } from '../adapters/transcribe-presigner.js';
 import { type ApiApp, createApp } from '../app.js';
 import { type ApiConfig, loadApiConfig, loadCoreConfig, required } from '../config.js';
 import { API_DB_RESUME_BUDGET_MS } from '../lambda-contract.js';
@@ -26,6 +27,17 @@ export interface ApiRuntime {
 export function speechFor(env: EnvLike, config: ApiConfig): { speech?: SpeechSynthesizer } {
   return env.MODEL_PROVIDER?.trim().toLowerCase() === 'bedrock'
     ? { speech: new PollySpeechSynthesizer({ region: config.awsRegion }) }
+    : {};
+}
+
+/**
+ * Speech-to-text grants for calls: Amazon Transcribe streaming URLs presigned with the API role's credentials,
+ * wherever the models run on Bedrock. Local development and tests get none: calls start without a grant and
+ * the founder types. No network I/O at construction.
+ */
+export function sttGrantsFor(env: EnvLike, config: ApiConfig): { sttGrants?: SttGrantIssuer } {
+  return env.MODEL_PROVIDER?.trim().toLowerCase() === 'bedrock'
+    ? { sttGrants: new TranscribeStreamingPresigner({ region: config.awsRegion }) }
     : {};
 }
 
@@ -58,6 +70,7 @@ export function createApiRuntime(env: EnvLike): ApiRuntime {
     }),
     logger: logger.child({ component: 'core' }),
     ...speechFor(env, config),
+    ...sttGrantsFor(env, config),
   });
   const app = createApp({
     core,

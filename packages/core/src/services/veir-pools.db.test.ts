@@ -1,28 +1,23 @@
 /**
  * vEIR pools, conversations and calls through the core services: the notebook (specific pool), the persona
  * library and lessons (common pool), persona lifecycle and assignment, conversation recents/rename/delete/
- * digest, the vEIR identity and call configuration, and speech of validated replies only.
+ * digest, and the vEIR identity and call configuration (calls and speech: calls.db.test.ts).
  */
 import {
   ConsentView,
   LessonView,
   PersonaKnowledgeSourceView,
   SessionView,
-  TurnStreamEvent,
-  type TurnView,
   VeirIdentity,
   VeirNotebook,
 } from '@foundry/contracts';
-import { auditRepo, knowledgeRepo, p, retrievalRepo, sessionsRepo, usageRepo } from '@foundry/db';
+import { auditRepo, knowledgeRepo, p, retrievalRepo } from '@foundry/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { type RequestContext } from '../context.js';
-import { createCore } from '../core.js';
 import { type CoreHarness, createCoreHarness } from '../testing/harness.js';
-import { FakeSpeechSynthesizer } from '../testing/fakes.js';
 
 let h: CoreHarness;
-const speech = new FakeSpeechSynthesizer();
 let maya: RequestContext;
 let devin: RequestContext;
 let graham: RequestContext;
@@ -35,24 +30,13 @@ let priya: RequestContext;
 const corinPersona = (): string => h.ventures.quietquad.personaId;
 const ruthPersona = (): string => h.ventures.benchtally.personaId;
 
-async function completedTurn(ctx: RequestContext, sessionId: string, text: string): Promise<TurnView> {
-  const events: TurnStreamEvent[] = [];
-  await h.core.orchestrator.runTurn(ctx, sessionId, { text }, (e) => {
-    events.push(TurnStreamEvent.parse(e));
-  });
-  const last = events.at(-1);
-  if (last?.event !== 'turn.completed')
-    throw new Error(`expected turn.completed, got ${last?.event ?? 'none'}`);
-  return last.turn;
-}
-
 async function auditActions(): Promise<string[]> {
   const page = await h.t.db.system((sx) => auditRepo.listAuditEvents(sx, { limit: 200 }));
   return page.items.map((e) => e.action);
 }
 
 beforeAll(async () => {
-  h = await createCoreHarness({ speech });
+  h = await createCoreHarness();
   maya = await h.ctxFor(h.people.maya);
   devin = await h.ctxFor(h.people.devin);
   graham = await h.ctxFor(h.people.graham);
@@ -425,119 +409,5 @@ describe('calls', () => {
       expiresAt: null,
       voiceId: 'Matthew',
     });
-  });
-
-  it('speaks only validated replies of the conversation, metered as speech', async () => {
-    const session = await h.core.sessions.create(maya, h.ventures.quietquad.id, {});
-    const turn = await completedTurn(maya, session.id, 'What should we test before the pilot?');
-    const answer = turn.response?.answer ?? '';
-    const passage = answer.replace(/\[E\d+\]/g, '').split(/(?<=[.?!])\s+/)[0] ?? '';
-    expect(passage.length).toBeGreaterThan(0);
-    const spoken = await h.core.speech.synthesize(maya, {
-      sessionId: session.id,
-      turnId: turn.id,
-      text: passage,
-    });
-    expect(spoken).toMatchObject({ contentType: 'audio/mpeg', voiceId: 'Matthew', engine: 'generative' });
-    expect(new TextDecoder().decode(await new Response(spoken.audio).arrayBuffer())).toMatch(/^MP3:/);
-    expect(speech.calls.at(-1)?.engines).toEqual(['generative', 'neural']);
-    const usage = await h.t.db.system((sx) =>
-      sx.query(`SELECT model_id, input_tokens, cost_usd FROM usage_ledger WHERE purpose = 'speech'`),
-    );
-    expect(usage.rows).toHaveLength(1);
-    expect(usage.rows[0]).toMatchObject({ model_id: 'polly:generative:Matthew' });
-
-    await expect(
-      h.core.speech.synthesize(maya, {
-        sessionId: session.id,
-        turnId: turn.id,
-        text: 'You are a genius, invest now.',
-      }),
-    ).rejects.toMatchObject({ code: 'validation_failed' });
-    const other = await h.core.sessions.create(maya, h.ventures.quietquad.id, {});
-    await expect(
-      h.core.speech.synthesize(maya, { sessionId: other.id, turnId: turn.id, text: passage }),
-    ).rejects.toMatchObject({ code: 'not_found' });
-    await expect(
-      h.core.speech.synthesize(graham, { sessionId: session.id, turnId: turn.id, text: passage }),
-    ).rejects.toMatchObject({ code: 'not_found' });
-    speech.failNext = true;
-    await expect(
-      h.core.speech.synthesize(maya, { sessionId: session.id, turnId: turn.id, text: passage }),
-    ).rejects.toMatchObject({ code: 'model_unavailable' });
-    expect(h.logger.dump()).not.toContain(passage);
-
-    // The daily call-minute cap: an hour of spoken turns earlier today.
-    await h.t.db.system(async (sx) => {
-      await sx.query(
-        `INSERT INTO turns (tenant_id, venture_id, session_id, ordinal, author_id, mode, founder_text, status, channel,
-                            created_at)
-         SELECT :t, :v, :s, 100 + g, :maya, 'coach', 'spoken', 'completed', 'voice',
-                greatest(date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC', now() - interval '3 hours')
-                  + make_interval(mins => g * 5)
-         FROM generate_series(0, 13) AS g`,
-        {
-          t: p.uuid(h.seed.tenantId),
-          v: p.uuid(h.ventures.quietquad.id),
-          s: p.uuid(other.id),
-          maya: p.uuid(h.people.maya),
-        },
-      );
-    });
-    expect((await h.core.veir.callConfig(maya, h.ventures.quietquad.id)).remainingMinutesToday).toBe(0);
-    await expect(
-      h.core.speech.synthesize(maya, { sessionId: session.id, turnId: turn.id, text: passage }),
-    ).rejects.toMatchObject({ code: 'rate_limited' });
-    await expect(
-      h.core.veir.avatarSession(maya, { ventureId: h.ventures.quietquad.id }),
-    ).rejects.toMatchObject({
-      code: 'rate_limited',
-    });
-    const otherSession = await h.t.db.system((sx) => sessionsRepo.getSession(sx, other.id));
-    expect(otherSession?.hasCalls).toBe(true);
-  });
-
-  it('answers speech_unavailable without a synthesizer, and respects the kill switch and spend caps', async () => {
-    const devinSession = await h.core.sessions.create(devin, h.ventures.quietquad.id, {});
-    const turn = await completedTurn(devin, devinSession.id, 'How do we pick the second library?');
-    const passage = (turn.response?.answer ?? '').split(/(?<=[.?!])\s+/)[0] ?? '';
-    // A core without a speech port (local development, MODEL_PROVIDER=mock) answers 501.
-    const bare = createCore({
-      db: h.t.db,
-      gateway: h.gateway,
-      config: h.config,
-      objectStore: h.objectStore,
-      jobQueue: h.jobQueue,
-      logger: h.logger,
-    });
-    await expect(
-      bare.speech.synthesize(devin, { sessionId: devinSession.id, turnId: turn.id, text: passage }),
-    ).rejects.toMatchObject({ code: 'speech_unavailable', status: 501 });
-    await h.t.db.system((sx) =>
-      sx.query(`UPDATE platform_settings SET value = 'false' WHERE key = 'ai_enabled'`),
-    );
-    try {
-      await expect(
-        h.core.speech.synthesize(devin, { sessionId: devinSession.id, turnId: turn.id, text: passage }),
-      ).rejects.toMatchObject({ code: 'ai_disabled' });
-    } finally {
-      await h.t.db.system((sx) =>
-        sx.query(`UPDATE platform_settings SET value = 'true' WHERE key = 'ai_enabled'`),
-      );
-    }
-    await h.t.db.system((sx) =>
-      usageRepo.recordUsage(sx, {
-        tenantId: h.seed.tenantId,
-        principalId: h.people.devin,
-        purpose: 'turn',
-        modelId: 'test',
-        inputTokens: 1,
-        outputTokens: 1,
-        costUsd: 5,
-      }),
-    );
-    await expect(
-      h.core.speech.synthesize(devin, { sessionId: devinSession.id, turnId: turn.id, text: passage }),
-    ).rejects.toMatchObject({ code: 'spend_cap_reached' });
   });
 });

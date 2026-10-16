@@ -14,6 +14,7 @@ import {
   type JobQueue,
   type ObjectStore,
   type SpeechSynthesizer,
+  type SttGrantIssuer,
   type TextExtractor,
 } from './ports.js';
 
@@ -29,6 +30,8 @@ export interface CoreDeps {
   readonly textExtractor?: TextExtractor;
   /** Text-to-speech for calls (API only). Absent: the speech endpoint answers `speech_unavailable`. */
   readonly speech?: SpeechSynthesizer;
+  /** Speech-to-text grants for calls (API only). Absent: calls start without one and the founder types. */
+  readonly sttGrants?: SttGrantIssuer;
   readonly clock?: Clock;
   readonly ids?: IdGenerator;
   readonly logger?: CoreLogger;
