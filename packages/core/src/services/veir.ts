@@ -11,6 +11,7 @@ import { type z } from 'zod';
 import { requireAssignmentActive, requireVentureAccess } from '../authz/venture-access.js';
 import { type RequestContext } from '../context.js';
 import { DomainError, parseInput } from '../errors.js';
+import { veirEirName } from '../internal/eir-names.js';
 import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
 import { secondsUntilUtcMidnight } from '../orchestrator/sampling.js';
 import { CALL_LIMITS, callSecondsToday, remainingDailyMinutes, remainingDailySeconds } from './call-usage.js';
@@ -78,9 +79,7 @@ export async function resolveVeir(ex: SqlExecutor, ventureId: string): Promise<R
   const persona = await personasRepo.getPersona(ex, resolved.persona.id);
   if (persona === null) return null;
   const assets = await personasRepo.personaConsentAssets(ex, persona.id);
-  // The EIR the persona is built from (its own consented profile), never the assignment's reviewer.
-  const eirDisplayName =
-    persona.kind === 'eir_persona' ? await personasRepo.getPersonaEirName(ex, persona.id) : null;
+  const eirDisplayName = await veirEirName(ex, persona);
   return {
     assignment: resolved,
     identity: {
@@ -88,7 +87,7 @@ export async function resolveVeir(ex: SqlExecutor, ventureId: string): Promise<R
       name: persona.name,
       shortName: shortName(persona, eirDisplayName),
       kind: persona.kind,
-      eirDisplayName: persona.kind === 'eir_persona' ? eirDisplayName : null,
+      eirDisplayName,
       tagline: persona.tagline,
       disclosure: resolved.release?.disclosureText ?? '',
       embodiment: embodimentView(persona, assets),

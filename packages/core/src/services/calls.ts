@@ -39,7 +39,7 @@ import {
 import { type RequestContext } from '../context.js';
 import { DomainError, fail, parseInput } from '../errors.js';
 import { type DirectoryCache } from '../internal/directory.js';
-import { mentionsEir, personaNameClaimsEir } from '../internal/eir-names.js';
+import { mentionsEir, personaNameClaimsEir, veirEirName } from '../internal/eir-names.js';
 import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
 import { secondsUntilUtcMidnight } from '../orchestrator/sampling.js';
 import { signSpeechUnit, verifySpeechUnit } from '../orchestrator/speech-units.js';
@@ -621,7 +621,8 @@ export function createCallsService(
           ventureId,
           personaName: persona.name,
           personaKind: persona.kind,
-          eirDisplayName: active.eir?.displayName ?? null,
+          // The vEIR introduces itself after its own EIR, never after the venture's reviewing EIR.
+          eirDisplayName: await veirEirName(tx, persona),
           firstName: principal === null ? null : greetingName(principal.displayName),
           // The conversation's own opener, validated when it was created and replayed to the model as its first
           // message, so the call says exactly what the vEIR believes it opened with (none for temporary chats).
