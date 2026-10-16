@@ -1,5 +1,5 @@
 import type { CallView } from '@foundry/contracts';
-import { fireEvent, screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -198,6 +198,10 @@ describe('CallLive', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'More call controls' }));
     await userEvent.click(await screen.findByRole('menuitemcheckbox', { name: /Type instead/ }));
     const line = screen.getByRole('textbox', { name: "Reply to Corin's vEIR" });
+    // The closing menu returns focus a moment later (a timer): it must not take it back to More.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
     expect(line).toHaveFocus();
     await userEvent.type(line, 'Quick note{Enter}');
     expect(engine.sendText).toHaveBeenCalledWith('Quick note');

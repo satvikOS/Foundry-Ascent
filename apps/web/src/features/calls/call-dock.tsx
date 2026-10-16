@@ -10,7 +10,7 @@ import {
   PhoneOff,
   type LucideIcon,
 } from 'lucide-react';
-import { useRef, type ComponentProps, type KeyboardEvent, type PointerEvent } from 'react';
+import type { ComponentProps, KeyboardEvent, PointerEvent } from 'react';
 
 import {
   DropdownMenu,
@@ -117,8 +117,6 @@ export function CallDock({
   onSwitchToChat,
   onEnd,
 }: CallDockProps) {
-  // Opening the typed line moves focus to it: the closing menu must not take it back to More.
-  const focusMoved = useRef(false);
   return (
     <div
       role="toolbar"
@@ -156,15 +154,7 @@ export function CallDock({
             </button>
           </DropdownMenuTrigger>
         </SimpleTooltip>
-        <DropdownMenuContent
-          align="center"
-          side="top"
-          className="w-56"
-          onCloseAutoFocus={(event) => {
-            if (focusMoved.current) event.preventDefault();
-            focusMoved.current = false;
-          }}
-        >
+        <DropdownMenuContent align="center" side="top" className="w-56">
           {voice ? (
             <>
               <DropdownMenuCheckboxItem
@@ -176,14 +166,7 @@ export function CallDock({
                 Push to talk
                 <DropdownMenuShortcut>P</DropdownMenuShortcut>
               </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={typing}
-                disabled={disabled}
-                onCheckedChange={() => {
-                  focusMoved.current = !typing;
-                  onTyping();
-                }}
-              >
+              <DropdownMenuCheckboxItem checked={typing} disabled={disabled} onCheckedChange={onTyping}>
                 <Keyboard aria-hidden />
                 Type instead
                 <DropdownMenuShortcut>T</DropdownMenuShortcut>
