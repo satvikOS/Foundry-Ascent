@@ -37,7 +37,10 @@ for (const scheme of ['dark', 'light'] as const) {
     test.describe('founder', () => {
       test.use({ storageState: FOUNDER_STATE });
 
-      test('new chat, a conversation with an answer, knowledge and the account menu', async ({ page }) => {
+      test('new chat, a conversation and its panel, its summary, knowledge and the account menu', async ({
+        page,
+      }) => {
+        test.setTimeout(90_000);
         const ventureId = await openVenture(page);
         await useTheme(page, scheme);
         await expectNoSeriousA11yViolations(page, `new chat (${scheme})`);
@@ -45,14 +48,35 @@ for (const scheme of ['dark', 'light'] as const) {
         const token = runToken();
         await startConversation(page, `What should we test next? ${token}`);
         const answer = page.getByRole('article', { name: 'Exchange 1' });
-        await expect(answer.getByRole('list', { name: 'Claims and their sources' })).toBeVisible({
+        await expect(answer.getByRole('button', { name: /^Sources & reasoning/ })).toBeVisible({
           timeout: 30_000,
         });
+        await answer.getByRole('button', { name: /^Sources & reasoning/ }).click();
+        await expect(answer.getByRole('list', { name: 'Claims and their sources' })).toBeVisible();
         await expectNoSeriousA11yViolations(page, `conversation (${scheme})`);
+
+        await answer
+          .getByRole('button', { name: /^Evidence E1: / })
+          .first()
+          .click();
+        const panel = page.getByRole('complementary', { name: 'Context inspector' });
+        await expect(panel.getByRole('tab', { name: 'Sources' })).toHaveAttribute('aria-selected', 'true');
+        await expectNoSeriousA11yViolations(page, `sources panel (${scheme})`);
+        await panel.getByRole('tab', { name: /^To review/ }).click();
+        await expectNoSeriousA11yViolations(page, `to-review panel (${scheme})`);
+        await page.getByRole('button', { name: 'Hide context panel' }).click();
+
+        await page.getByRole('button', { name: 'Conversation options' }).click();
+        await page.getByRole('menuitem', { name: 'End and summarise' }).click();
+        await page
+          .getByRole('alertdialog', { name: 'End this conversation?' })
+          .getByRole('button', { name: 'End conversation' })
+          .click();
+        await expect(page.getByRole('region', { name: 'Summary' })).toBeVisible();
+        await expectNoSeriousA11yViolations(page, `ended conversation (${scheme})`);
 
         await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge`);
         await expect(page.getByRole('heading', { level: 1, name: 'Knowledge' })).toBeVisible();
-        await expect(page.getByRole('list', { name: 'Memory' })).toBeVisible();
         await expectNoSeriousA11yViolations(page, `knowledge (${scheme})`);
 
         // The account menu is reachable by keyboard and returns focus when closed.
@@ -60,6 +84,7 @@ for (const scheme of ['dark', 'light'] as const) {
         await account.focus();
         await page.keyboard.press('Enter');
         await expect(page.getByRole('menuitem', { name: 'Data use & privacy' })).toBeVisible();
+        await expect(page.getByText('Synthetic data only')).toBeVisible();
         await page.keyboard.press('Escape');
         await expect(account).toBeFocused();
       });

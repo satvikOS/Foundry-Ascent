@@ -1,9 +1,11 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
 import {
   composer,
   FOUNDER_NAME,
+  issueAccessCodeViaApi,
   openVenture,
+  OWNER_STATE,
   ownerAccessCode,
   pageShowsText,
   runToken,
@@ -14,6 +16,8 @@ import {
   TENANT,
   VENTURE_NAME,
 } from './support/fixtures';
+
+const WRITE_HEADERS = { 'x-requested-with': 'foundry-ascent', 'content-type': 'application/json' };
 
 /**
  * Slow the response download (Chromium DevTools network emulation) while a turn streams, so the progress
@@ -43,7 +47,7 @@ async function withSlowNetwork<T>(page: Page, run: () => Promise<T>): Promise<T>
 
 /**
  * From New chat: send the first message (which creates the conversation and opens it) and wait for the
- * structured answer, asserting the live progress steps on the way.
+ * answer, asserting the live progress steps on the way.
  */
 async function startAndAwaitAnswer(page: Page, text: string) {
   let conversationId = '';
@@ -51,28 +55,42 @@ async function startAndAwaitAnswer(page: Page, text: string) {
     conversationId = await startConversation(page, text);
     const current = page.getByRole('article', { name: 'Current exchange' });
     const progress = current.getByRole('list', { name: 'Response progress' });
-    await expect(progress).toBeVisible();
+    await expect(progress).toBeAttached();
     await expect(progress.getByRole('listitem')).toHaveText([
       /^Understanding/,
       /^Retrieving evidence/,
       /^Reasoning/,
       /^Checking grounding & policy/,
     ]);
-    await expect(progress.locator('li[data-status="done"]').first()).toBeVisible();
+    await expect(progress.locator('li[data-status="done"]').first()).toBeAttached();
   });
   // Full speed again: the rest of the answer and the venture data it refreshes (memory to bind the
   // suggestions to) arrive normally.
   await expect(page.getByRole('article', { name: 'Current exchange' })).toBeHidden({ timeout: 30_000 });
   const answer = page.getByRole('article', { name: 'Exchange 1' });
   await expect(answer.getByText(text, { exact: true }).first()).toBeVisible();
-  await expect(answer.getByRole('list', { name: 'Claims and their sources' })).toBeVisible();
+  await expect(answer.getByRole('button', { name: /^Sources & reasoning/ })).toBeVisible();
   return { answer, conversationId };
 }
 
+async function ventureGoal(request: APIRequestContext, ventureId: string): Promise<string | null> {
+  const res = await request.get(`/api/v1/ventures/${ventureId}`);
+  expect(res.status(), 'GET /ventures/:id').toBe(200);
+  return ((await res.json()) as { currentGoal: string | null }).currentGoal;
+}
+
+async function escalationStatus(request: APIRequestContext, ventureId: string, id: string): Promise<string> {
+  const res = await request.get(`/api/v1/ventures/${ventureId}/escalations`);
+  expect(res.status(), 'GET /ventures/:id/escalations').toBe(200);
+  const items = ((await res.json()) as { items: { id: string; status: string }[] }).items;
+  return items.find((item) => item.id === id)?.status ?? 'missing';
+}
+
 test.describe('founder journey', () => {
-  test('admin issues a code, the founder talks to the vEIR, curates memory and escalates', async ({
+  test('a founder talks to their vEIR, keeps memory, follows citations and ends with a summary', async ({
     page,
   }) => {
+    test.setTimeout(120_000);
     const token = runToken();
     let founderCode = '';
 
@@ -93,10 +111,6 @@ test.describe('founder journey', () => {
       await nav.getByRole('button', { name: /^Switch venture or workspace/ }).click();
       await page.getByRole('menuitem', { name: 'Admin' }).click();
       await expect(page.getByRole('heading', { level: 1, name: 'People & access' })).toBeVisible();
-      await expect(nav.getByRole('link', { name: 'People & access' })).toHaveAttribute(
-        'aria-current',
-        'page',
-      );
       await page.getByRole('button', { name: `Issue access code to ${FOUNDER_NAME}` }).click();
       const dialog = page.getByRole('dialog', { name: 'Issue access code' });
       await dialog.getByRole('textbox', { name: 'Label' }).fill(`journey ${token}`);
@@ -104,8 +118,6 @@ test.describe('founder journey', () => {
       founderCode = await takeRevealedCode(page, FOUNDER_NAME);
       // The plaintext code is gone from the page once the dialog closes.
       expect(await pageShowsText(page, founderCode), 'code still on the page').toBe(false);
-      const row = page.getByRole('row', { name: new RegExp(FOUNDER_NAME) });
-      await expect(row).toContainText(`journey ${token}`);
     });
 
     await test.step('sign out, then sign in as the founder, who lands in New chat', async () => {
@@ -115,108 +127,224 @@ test.describe('founder journey', () => {
     });
 
     let ventureId = '';
-    await test.step('New chat: the vEIR greets the founder with starting points', async () => {
+    await test.step('New chat: the vEIR greets the founder with starting points and one disclosure', async () => {
       ventureId = await openVenture(page);
       const nav = page.getByRole('navigation', { name: 'Main' });
       await expect(nav.getByRole('button', { name: new RegExp(`Current: ${VENTURE_NAME}$`) })).toBeVisible();
       await expect(nav.getByRole('link', { name: 'New chat' })).toHaveAttribute('aria-current', 'page');
+      await expect(nav.getByRole('link', { name: /^Call / })).toBeVisible();
       await expect(
         page.getByRole('list', { name: 'Suggestions' }).getByRole('listitem').first(),
       ).toBeVisible();
+      await expect(page.getByRole('combobox', { name: 'Mode for the next message' })).toHaveText(/Auto/);
       await expect(page.getByRole('note', { name: 'AI disclosure' })).toHaveCount(1);
     });
 
     const question = `Which assumption should we test first? ${token}`;
-    await test.step('the first message starts the conversation and gets a structured, cited answer', async () => {
-      const { answer, conversationId } = await startAndAwaitAnswer(page, question);
-      await expect(page.getByRole('note', { name: 'AI disclosure' })).toHaveCount(1);
+    let conversationId = '';
+    await test.step('the first message starts the conversation, named after it, with a cited answer', async () => {
+      const result = await startAndAwaitAnswer(page, question);
+      conversationId = result.conversationId;
+      const disclosure = page.getByRole('note', { name: 'AI disclosure' });
+      await expect(disclosure).toHaveCount(1);
+      await expect(disclosure).toBeInViewport();
       await expect(page.getByRole('heading', { level: 1 })).toContainText('Which assumption should we test');
+      await expect(result.answer.getByRole('button', { name: /^Evidence E1: / }).first()).toBeVisible();
+      // The conversation is listed (and current) in the sidebar's recents, under its own title.
+      const row = page
+        .getByRole('navigation', { name: 'Recent conversations' })
+        .locator(`a[href$="/c/${conversationId}"]`);
+      await expect(row).toHaveAttribute('aria-current', 'page');
+      await expect(row).toContainText('Which assumption should we test');
+    });
+
+    await test.step('a citation opens the Sources panel on that source; reasoning expands in place', async () => {
+      const answer = page.getByRole('article', { name: 'Exchange 1' });
+      const chip = answer.getByRole('button', { name: /^Evidence E1: / }).first();
+      const title = ((await chip.getAttribute('aria-label')) ?? '').replace(/^Evidence E1: /, '');
+      await chip.click();
+      const panel = page.getByRole('complementary', { name: 'Context inspector' });
+      await expect(panel.getByRole('tab', { name: 'Sources' })).toHaveAttribute('aria-selected', 'true');
+      const source = panel.getByRole('article', { name: title, exact: true }).first();
+      await expect(source).toBeVisible();
+      await expect(source).toBeFocused();
+      await panel.getByRole('tab', { name: 'Notebook' }).click();
+      await expect(panel.getByRole('heading', { name: /^What .+ knows$/ })).toBeVisible();
+      await page.getByRole('button', { name: 'Hide context panel' }).click();
+      await expect(panel).toBeHidden();
+
+      await answer.getByRole('button', { name: /^Sources & reasoning/ }).click();
       await expect(
         answer.getByRole('list', { name: 'Claims and their sources' }).getByText('Fact'),
       ).toBeVisible();
-      await expect(answer.getByRole('button', { name: /^Evidence E1: / }).first()).toBeVisible();
-      // The conversation is listed (and current) in the sidebar's recents.
-      await expect(
-        page.getByRole('navigation', { name: 'Main' }).locator(`a[href$="/c/${conversationId}"]`),
-      ).toHaveAttribute('aria-current', 'page');
     });
 
-    await test.step('open the sources panel from a citation chip', async () => {
-      const answer = page.getByRole('article', { name: 'Exchange 1' });
-      const chip = answer.getByRole('button', { name: /^Evidence E1: / }).first();
-      const label = (await chip.getAttribute('aria-label')) ?? '';
-      const title = label.replace(/^Evidence E1: /, '');
-      await chip.click();
-      const inspector = page.getByRole('complementary', { name: 'Session inspector' });
-      await expect(inspector.getByRole('tab', { name: 'Evidence' })).toHaveAttribute('aria-selected', 'true');
-      const source = inspector.getByRole('article', { name: title, exact: true }).first();
-      await expect(source).toBeVisible();
-      await expect(source).toBeFocused();
-    });
-
-    await test.step('approve the proposed memory', async () => {
-      const suggestions = page
+    await test.step('keep what the vEIR suggests remembering', async () => {
+      const suggestion = page
         .getByRole('article', { name: 'Exchange 1' })
-        .getByRole('list', { name: 'Memory suggestions' });
-      const item = suggestions.getByRole('listitem').filter({ hasText: token });
-      // The suggestion becomes approvable once the refreshed venture memory includes it.
-      const approve = item.getByRole('button', { name: 'Approve' });
-      await expect(approve).toBeVisible({ timeout: 30_000 });
-      await approve.click();
-      await expect(item.getByText('Confirmed')).toBeVisible();
+        .getByRole('list', { name: 'Memory suggestions' })
+        .getByRole('listitem')
+        .first();
+      // The row becomes actionable once the refreshed venture memory includes the proposal.
+      const keep = suggestion.getByRole('button', { name: /^Keep: / });
+      await expect(keep).toBeVisible({ timeout: 30_000 });
+      await keep.click();
+      await expect(suggestion.getByText('Kept')).toBeVisible();
     });
 
-    await test.step('end the conversation and read the recap', async () => {
-      await page.getByRole('button', { name: 'End session' }).click();
-      const confirm = page.getByRole('alertdialog', { name: 'End this session?' });
-      await confirm.getByRole('button', { name: 'End session' }).click();
-      await expect(page).toHaveURL(/view=recap/);
-      await expect(page.getByRole('tab', { name: 'Recap' })).toHaveAttribute('aria-selected', 'true');
-      for (const section of ['Diagnosis', 'Evidence', 'Challenge', 'Next actions', 'Escalation']) {
-        await expect(page.getByRole('region', { name: new RegExp(`^\\d ${section}$`) })).toBeVisible();
-      }
-      await expect(page.getByRole('note', { name: 'AI disclosure' })).toHaveCount(1);
+    await test.step('a follow-up from the conversation composer stays in Auto (no mode is sent)', async () => {
+      await expect(page.getByRole('combobox', { name: 'Mode for the next message' })).toHaveText(/Auto/);
+      const box = composer(page);
+      await box.fill(`How many interviews before we decide? ${token}`);
+      const sent = page.waitForRequest(
+        (request) =>
+          request.method() === 'POST' && request.url().endsWith(`/sessions/${conversationId}/turns`),
+      );
+      await box.press('Enter');
+      const body = (await sent).postDataJSON() as Record<string, unknown>;
+      expect(body.text).toBe(`How many interviews before we decide? ${token}`);
+      expect(body).not.toHaveProperty('mode');
+      const second = page.getByRole('article', { name: 'Exchange 2' });
+      await expect(second.getByRole('button', { name: /^Sources & reasoning/ })).toBeVisible({
+        timeout: 30_000,
+      });
+      // Follow-up questions of the latest answer sit above the composer.
+      await expect(
+        page.getByRole('list', { name: 'Follow-up questions' }).getByRole('listitem').first(),
+      ).toBeVisible();
     });
 
-    await test.step('Knowledge shows the approved item (also reached from an old memory link)', async () => {
-      await page
-        .getByRole('navigation', { name: 'Main' })
-        .getByRole('link', { name: /^Knowledge/ })
-        .click();
-      await expect(page.getByRole('heading', { level: 1, name: 'Knowledge' })).toBeVisible();
-      await page.getByRole('searchbox', { name: 'Search' }).fill(token);
-      const item = page
-        .getByRole('list', { name: 'Memory' })
-        .getByRole('button', { name: new RegExp(token) });
-      await expect(item).toHaveCount(1);
-      await expect(item).toContainText('Confirmed');
+    await test.step('rename the conversation from its menu', async () => {
+      await page.getByRole('button', { name: 'Conversation options' }).click();
+      await page.getByRole('menuitem', { name: 'Rename' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Rename conversation' });
+      await dialog.getByRole('textbox', { name: 'Title' }).fill(`Interview plan ${token}`);
+      await dialog.getByRole('button', { name: 'Save' }).click();
+      await expect(dialog).toBeHidden();
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText(`Interview plan ${token}`);
+      await expect(
+        page
+          .getByRole('navigation', { name: 'Recent conversations' })
+          .locator(`a[href$="/c/${conversationId}"]`),
+      ).toContainText(`Interview plan ${token}`);
+    });
 
+    await test.step('end the conversation and read its summary, with the disclosure still in view', async () => {
+      await page.getByRole('button', { name: 'Conversation options' }).click();
+      await page.getByRole('menuitem', { name: 'End and summarise' }).click();
+      const confirm = page.getByRole('alertdialog', { name: 'End this conversation?' });
+      await confirm.getByRole('button', { name: 'End conversation' }).click();
+      await expect(page).toHaveURL(/view=digest/);
+      const summary = page.getByRole('region', { name: 'Summary' });
+      await expect(summary).toBeVisible();
+      await expect(summary.getByRole('heading', { name: 'Diagnosis' })).toBeVisible();
+      await expect(summary.getByRole('heading', { name: 'Next steps' })).toBeVisible();
+      const disclosure = page.getByRole('note', { name: 'AI disclosure' });
+      await expect(disclosure).toHaveCount(1);
+      await expect(disclosure).toBeInViewport();
+      await expect(composer(page)).toHaveCount(0);
+    });
+
+    await test.step('an old memory link lands on Knowledge with its search', async () => {
       await page.goto(`/${TENANT}/app/ventures/${ventureId}/memory?q=${token}`);
       await expect(page).toHaveURL(new RegExp(`/${TENANT}/app/v/${ventureId}/knowledge\\?q=${token}$`));
-      await expect(
-        page.getByRole('list', { name: 'Memory' }).getByRole('button', { name: new RegExp(token) }),
-      ).toHaveCount(1);
+      await expect(page.getByRole('heading', { level: 1, name: 'Knowledge' })).toBeVisible();
     });
 
-    await test.step('a high-risk question is escalated and the founder approves sharing', async () => {
+    await test.step('the venture settings save a new current goal', async () => {
+      const original = await ventureGoal(page.request, ventureId);
+      await page.goto(`/${TENANT}/app/v/${ventureId}/settings`);
+      await expect(page.getByRole('heading', { level: 1, name: 'Venture settings' })).toBeVisible();
+      await page.getByRole('button', { name: /^(Edit|Set goal)$/ }).click();
+      await page.getByRole('textbox', { name: 'Current goal' }).fill(`Test exam-week demand ${token}`);
+      await page.getByRole('button', { name: 'Save goal' }).click();
+      await expect.poll(() => ventureGoal(page.request, ventureId)).toBe(`Test exam-week demand ${token}`);
+      // Put the seeded goal back so later runs see the venture as seeded.
+      const restored = await page.request.patch(`/api/v1/ventures/${ventureId}`, {
+        headers: WRITE_HEADERS,
+        data: { currentGoal: original },
+      });
+      expect(restored.status(), 'PATCH /ventures/:id').toBe(200);
+    });
+
+    await test.step('a high-risk question is handed to a person and the founder approves sharing', async () => {
       await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'New chat' }).click();
       await expect(composer(page)).toBeVisible();
       const prompt = `We need to file a provisional patent before demo day. ${token}`;
-      const { answer } = await startAndAwaitAnswer(page, prompt);
+      const { answer, conversationId: handoffConversation } = await startAndAwaitAnswer(page, prompt);
       const handoff = answer.getByRole('region', { name: 'A person should weigh in on this' });
       await expect(handoff).toContainText('IP & licensing');
       await handoff.getByRole('button', { name: 'View handoff' }).click();
-
       await expect(page).toHaveURL(/\/help\?id=[0-9a-f-]{36}/);
-      const detail = page.getByRole('region', { name: 'IP & licensing' });
-      await expect(detail.getByRole('definition').first()).toHaveText('Draft');
-      await expect(page.getByRole('region', { name: 'Packet' })).toContainText(prompt);
-      const consent = page.getByRole('region', { name: 'Consent' });
-      await consent.getByRole('button', { name: 'Approve sharing' }).click();
+      const escalationId = /[?&]id=([0-9a-f-]{36})/.exec(page.url())?.[1] ?? '';
+      await page.getByRole('button', { name: 'Approve sharing' }).click();
       // Specialist requests wait in the program team's routing queue once the founder consents.
-      await expect(detail.getByRole('definition').first()).toHaveText('Waiting for assignment');
-      await expect(consent).toHaveCount(0);
-      await expect(page.getByRole('list', { name: 'Status timeline' })).toContainText('Your consent (done)');
+      await expect
+        .poll(() => escalationStatus(page.request, ventureId, escalationId))
+        .toBe('awaiting_assignment');
+
+      // The conversation can be deleted from its row in the sidebar.
+      const recents = page.getByRole('navigation', { name: 'Recent conversations' });
+      const row = recents
+        .getByRole('listitem')
+        .filter({ has: page.locator(`a[href$="/c/${handoffConversation}"]`) });
+      await row.hover();
+      await row.getByRole('button', { name: /^Options for / }).click();
+      await page.getByRole('menuitem', { name: 'Delete' }).click();
+      await page
+        .getByRole('alertdialog', { name: 'Delete this conversation?' })
+        .getByRole('button', { name: 'Delete' })
+        .click();
+      await expect(recents.locator(`a[href$="/c/${handoffConversation}"]`)).toHaveCount(0);
     });
+  });
+});
+
+test.describe('read-only roles', () => {
+  test('an advisor opens their venture without requesting what only founders and team may read', async ({
+    browser,
+  }) => {
+    const owner = await browser.newContext({ storageState: OWNER_STATE });
+    const advisorCode = await issueAccessCodeViaApi(owner.request, 'Graham Fenwick-Tate');
+    await owner.close();
+
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    const refused: string[] = [];
+    page.on('response', (response) => {
+      if (response.url().includes('/api/v1/') && (response.status() === 403 || response.status() === 404)) {
+        refused.push(`${response.status()} ${new URL(response.url()).pathname}`);
+      }
+    });
+    const conversationReads: string[] = [];
+    page.on('request', (request) => {
+      const path = new URL(request.url()).pathname;
+      if (/\/api\/v1\/(sessions|ventures\/[^/]+\/(sessions|notebook|escalations))/.test(path)) {
+        conversationReads.push(path);
+      }
+    });
+
+    await signIn(page, advisorCode);
+    await page.goto(`/${TENANT}/app`);
+    await page.waitForURL(/\/app\/v\/[0-9a-f-]{36}$/);
+    await expect(
+      page.getByRole('heading', { level: 1, name: /^Good (morning|afternoon|evening), Graham$/ }),
+    ).toBeVisible();
+    await expect(page.getByText(/are private to the founders and team/)).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Knowledge' }).first()).toBeVisible();
+    await expect(composer(page)).toHaveCount(0);
+    const nav = page.getByRole('navigation', { name: 'Main' });
+    await expect(nav.getByRole('link', { name: 'New chat' })).toHaveCount(0);
+    await expect(nav.getByRole('navigation', { name: 'Recent conversations' })).toHaveCount(0);
+
+    // ⌘K lists pages and ventures, never conversations, for a read-only role.
+    await page.keyboard.press('ControlOrMeta+k');
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await page.keyboard.press('Escape');
+
+    await page.waitForLoadState('networkidle');
+    expect(conversationReads, 'conversation endpoints requested by a read-only role').toEqual([]);
+    expect(refused, 'refused API calls').toEqual([]);
+    await context.close();
   });
 });

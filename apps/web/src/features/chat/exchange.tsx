@@ -49,7 +49,7 @@ export function FounderMessage({
         title={at ? formatDateTime(at) : undefined}
       >
         <span className="sr-only">You said: </span>
-        {text}
+        <span>{text}</span>
       </p>
       <UserAvatar
         name={author}

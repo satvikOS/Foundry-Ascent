@@ -62,6 +62,42 @@ test.describe('crisis support survives a reload', () => {
   });
 });
 
+test.describe('temporary chats', () => {
+  test.use({ storageState: FOUNDER_STATE });
+
+  test('a temporary chat offers nothing to remember, keeps no title and ends with nothing kept', async ({
+    page,
+  }) => {
+    const token = runToken();
+    await openVenture(page);
+    const temporary = page.getByRole('button', { name: 'Temporary' });
+    await temporary.click();
+    await expect(temporary).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('heading', { level: 1, name: 'Temporary chat' })).toBeVisible();
+    const id = await startConversation(page, `Sketch a quick pricing test for libraries. ${token}`);
+
+    const answer = page.getByRole('article', { name: 'Exchange 1' });
+    await expect(answer.getByRole('button', { name: /^Sources & reasoning/ })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByText('Temporary', { exact: true })).toBeVisible();
+    await expect(answer.getByRole('list', { name: 'Memory suggestions' })).toHaveCount(0);
+    // Listed as a temporary chat, named by when it started rather than by what was said.
+    const row = page.getByRole('navigation', { name: 'Recent conversations' }).locator(`a[href$="/c/${id}"]`);
+    await expect(row).toContainText('Temporary chat ·');
+    await expect(row).not.toContainText(token);
+
+    await page.getByRole('button', { name: 'Conversation options' }).click();
+    await expect(page.getByRole('menuitem', { name: 'Rename' })).toHaveCount(0);
+    await page.getByRole('menuitem', { name: 'End and summarise' }).click();
+    const confirm = page.getByRole('alertdialog', { name: 'End this conversation?' });
+    await expect(confirm).toContainText('nothing from it is kept');
+    await confirm.getByRole('button', { name: 'End conversation' }).click();
+    await expect(page.getByRole('heading', { name: 'Temporary chat ended' })).toBeVisible();
+    await expect(page.getByText('Nothing from it was kept.')).toBeVisible();
+  });
+});
+
 test.describe('routing an escalation from the people directory', () => {
   test('consent puts a request in the routing queue; a program lead routes it to an EIR', async ({
     browser,
