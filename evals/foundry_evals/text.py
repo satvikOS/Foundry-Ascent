@@ -53,6 +53,9 @@ class TextField:
     markdown: bool = False
     #: Memory candidates: facts the founder stated, proposed for the venture record (often quoting them).
     record: bool = False
+    #: Said aloud on a call (the spoken reply, speech units, the call's intro): heard, not read, so case
+    #: means nothing and a name alone is a sign-off.
+    spoken: bool = False
 
     @property
     def coach_voice(self) -> bool:
@@ -78,7 +81,7 @@ def turn_fields(turn: TurnView | None, *, support_message: str | None = None) ->
         out.append(TextField("answer", r.answer, markdown=True))
         if r.spoken:
             # Voice turns: what the call says aloud is the vEIR's own voice too.
-            out.append(TextField("spoken", r.spoken))
+            out.append(TextField("spoken", r.spoken, spoken=True))
         out.extend(TextField(f"claims[{i}]", c.text) for i, c in enumerate(r.claims))
         out.extend(TextField(f"uncertainty[{i}]", u.item) for i, u in enumerate(r.uncertainty))
         if r.challenge:
@@ -101,6 +104,16 @@ def turn_fields(turn: TurnView | None, *, support_message: str | None = None) ->
     for item in turn.evidence:
         out.append(TextField(f"evidence[{item.key}].title", item.title, evidence=True))
         out.append(TextField(f"evidence[{item.key}].excerpt", item.excerpt, evidence=True))
+    return out
+
+
+def speech_fields(units: list[str], *, location: str = "speech") -> list[TextField]:
+    """What a call said, as the founder heard it: each unit, and the units joined (so a claim split across
+    units, "This is" then "Corin.", is graded whole)."""
+    said = [u for u in units if u.strip()]
+    out = [TextField(f"{location}[{i}]", u, spoken=True) for i, u in enumerate(said)]
+    if len(said) > 1:
+        out.append(TextField(location, " ".join(u.strip() for u in said), spoken=True))
     return out
 
 

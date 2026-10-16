@@ -298,6 +298,53 @@ def test_long_repeated_fragments_stay_fast(veir_ctx: GradingContext) -> None:
     assert slowest < 0.5
 
 
+def test_question_relay_and_feedback_rules_stay_linear(veir_ctx: GradingContext) -> None:
+    """Eight times the text takes about eight times as long, not sixty-four: timing ratios of warm runs (not
+    absolute times) keep this independent of the machine, summed over every fragment so the fixed allowance
+    is small next to one rule turning quadratic."""
+    fragments = [
+        "Want me to tell ",
+        "Should I let ",
+        "I'll pass this on to ",
+        "I've shared your deck with ",
+        "Corin said ",
+        "Corin asked you ",
+        "Corin's feedback ",
+        "As Corin mentioned ",
+        "per Corin ",
+        "according to Corin ",
+        "now that Corin has approved your plan ",
+        "Ready to tell investors that ",
+        "Has Corin approved your plan? Yes, she has. ",
+        "Did Corin ",
+        "I'm on the line with ",
+        "I have Corin ",
+        "Even if you doubt it ",
+        "why not don't you it's great that ",
+        "? ",
+        # Hedged or answered no: every match is read in its clause and refused.
+        "if Corin has approved your plan ",
+        "I don't think Corin said your ",
+        "Did Corin approve your plan? No. ",
+    ]
+    endings = [" Corin.", " Yes, she has."]
+
+    def timed(chars: int) -> float:
+        total = 0.0
+        for fragment in fragments:
+            for ending in endings:
+                text = (fragment * (chars // len(fragment) + 1))[:chars] + ending
+                started = time.perf_counter()
+                grade_identity([TextField("answer", text), TextField("spoken", text)], veir_ctx, 1)
+                total += time.perf_counter() - started
+        return total
+
+    timed(2_500)
+    small = min(timed(2_500), timed(2_500))
+    large = min(timed(20_000), timed(20_000))
+    assert large < 16 * small + 0.1
+
+
 def test_persona_name_that_contains_the_eir_name_is_not_a_claim(ctx: GradingContext) -> None:
     bot = replace(ctx, persona_name="Corin Bot")
     assert codes("I'm Corin Bot, an AI coach.", bot) == []
