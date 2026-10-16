@@ -7,6 +7,7 @@ import {
   API_ORIGIN_READ_TIMEOUT_SECONDS,
   API_SSE_KEEP_ALIVE_SECONDS,
   JOBS_MAX_RECEIVE_COUNT,
+  SPEECH_ALARM_CHARACTERS_PER_HOUR,
   VIEWER_HOST_HEADER,
   VIEWER_IP_HEADER,
 } from '../src/lib/constants.js';
@@ -16,7 +17,14 @@ import { loadConfig } from '../src/config.js';
 import { effectiveModels } from '../src/lib/models.js';
 import { migrationsChecksum } from '../src/lib/migrations.js';
 import { MIGRATIONS_DIR } from '../src/paths.js';
-import { defaultSynth, functionPolicyStatements, resources, resourcesOfType, synthesize } from './helpers.js';
+import {
+  defaultSynth,
+  functionPolicyStatements,
+  resources,
+  resourcesOfType,
+  synthesize,
+  type Synthesized,
+} from './helpers.js';
 
 const FUNCTIONS = [
   ['FoundryAscent-Api', 'api'],
@@ -103,6 +111,18 @@ describe('FoundryAscent-App', () => {
       );
       expect(envOf('FoundryAscent-Worker').JOBS_MAX_RECEIVE_COUNT).toBe(String(JOBS_MAX_RECEIVE_COUNT));
       expect(envOf('FoundryAscent-Worker')).not.toHaveProperty('JOBS_QUEUE_URL');
+      // Voice calls: only the API synthesizes speech, with the voice and engine from production.json.
+      expect(envOf('FoundryAscent-Api')).toMatchObject({
+        SPEECH_ENABLED: 'true',
+        SPEECH_DEFAULT_VOICE: 'Matthew',
+        SPEECH_ENGINE: 'generative',
+      });
+      for (const name of ['FoundryAscent-Worker', 'FoundryAscent-Migrate']) {
+        expect(
+          Object.keys(envOf(name)).filter((key) => key.startsWith('SPEECH_')),
+          name,
+        ).toEqual([]);
+      }
     });
 
     it('reserves concurrency only when configured', () => {
@@ -180,6 +200,32 @@ describe('FoundryAscent-App', () => {
       const resource = JSON.stringify(deny?.Resource);
       expect(resource).toContain('/tenants/*');
       expect(resource).toContain('FoundryAscent-Data');
+    });
+
+    it('lets only the API synthesize speech with Amazon Polly, pinned to the platform region', () => {
+      const polly = (name: string): Props[] =>
+        rolePolicyStatements(name).filter((s) =>
+          (Array.isArray(s.Action) ? (s.Action as string[]) : [s.Action as string]).some((a) =>
+            a.startsWith('polly:'),
+          ),
+        );
+      expect(polly('FoundryAscent-Api')).toEqual([
+        {
+          Sid: 'PollySpeech',
+          Effect: 'Allow',
+          Action: ['polly:DescribeVoices', 'polly:SynthesizeSpeech'],
+          // Neither action has resource-level permissions without a lexicon; the region condition narrows it.
+          Resource: '*',
+          Condition: { StringEquals: { 'aws:RequestedRegion': 'us-east-1' } },
+        },
+      ]);
+      expect(polly('FoundryAscent-Worker')).toEqual([]);
+      expect(polly('FoundryAscent-Migrate')).toEqual([]);
+      // Synthesis and voice listing only: no lexicon writes, no asynchronous tasks writing to S3.
+      const pollyActions = rolePolicyStatements('FoundryAscent-Api')
+        .flatMap((s) => (Array.isArray(s.Action) ? (s.Action as string[]) : [s.Action as string]))
+        .filter((a) => a.startsWith('polly:'));
+      expect(pollyActions.sort()).toEqual(['polly:DescribeVoices', 'polly:SynthesizeSpeech']);
     });
 
     it('scopes each function role to its own log group (no AWS managed policies)', () => {
@@ -363,7 +409,8 @@ describe('FoundryAscent-App', () => {
             Items: [
               {
                 Header: 'Permissions-Policy',
-                Value: 'camera=(), microphone=(), geolocation=()',
+                // Voice calls need the microphone on this origin; the camera and geolocation stay off.
+                Value: 'camera=(), microphone=(self), geolocation=()',
                 Override: true,
               },
             ],
@@ -372,9 +419,21 @@ describe('FoundryAscent-App', () => {
       });
       expect(contentSecurityPolicy(documentsUploadOrigin('docs-bucket', 'us-east-1'))).toBe(
         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; " +
-          "font-src 'self' data:; connect-src 'self' https://docs-bucket.s3.us-east-1.amazonaws.com; " +
+          "media-src 'self' blob:; font-src 'self' data:; " +
+          "connect-src 'self' https://docs-bucket.s3.us-east-1.amazonaws.com; " +
           "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
       );
+    });
+
+    it('lets calls play synthesized speech from blob URLs but no remote media', () => {
+      const directives = contentSecurityPolicy(documentsUploadOrigin('docs-bucket', 'us-east-1')).split('; ');
+      expect(directives.filter((d) => d.startsWith('media-src'))).toEqual(["media-src 'self' blob:"]);
+      // Speech is fetched from the API (same origin); nothing new may be contacted or framed.
+      expect(directives.find((d) => d.startsWith('connect-src'))).toBe(
+        "connect-src 'self' https://docs-bucket.s3.us-east-1.amazonaws.com",
+      );
+      expect(directives.some((d) => /^(frame-src|child-src|worker-src) /.test(d))).toBe(false);
+      expect(directives.find((d) => d.startsWith('script-src'))).toBe("script-src 'self'");
     });
 
     it('pins connect-src to the documents bucket endpoint the presigned uploads use (no S3 wildcard)', () => {
@@ -465,28 +524,65 @@ describe('FoundryAscent-App', () => {
     });
   });
 
-  describe('daily maintenance', () => {
-    it('sends the maintenance message to the jobs queue once a day through EventBridge Scheduler', () => {
-      template.resourceCountIs('AWS::Scheduler::Schedule', 1);
+  describe('schedules (EventBridge Scheduler -> jobs queue -> worker)', () => {
+    const jobsQueueArn = {
+      'Fn::GetStackOutput': Match.objectLike({
+        OutputName: Match.stringLikeRegexp('^PublishOutputFnGetAttJobsQueue'),
+        StackName: 'FoundryAscent-Data',
+      }),
+    };
+    const schedule = (prefix: string): Props => {
+      const found = resourcesOfType(template, 'AWS::Scheduler::Schedule').find(([id]) =>
+        id.startsWith(prefix),
+      );
+      if (!found) throw new Error(`schedule ${prefix} not found`);
+      return found[1];
+    };
+
+    it('creates exactly the daily maintenance and the distillation sweep', () => {
+      template.resourceCountIs('AWS::Scheduler::Schedule', 2);
+      expect(
+        resourcesOfType(template, 'AWS::Scheduler::Schedule').map(([id]) => id.replace(/[0-9A-F]{8}$/, '')),
+      ).toEqual(expect.arrayContaining(['DailyMaintenance', 'DistillSweep']));
+    });
+
+    it('sends the maintenance message to the jobs queue once a day', () => {
       template.hasResourceProperties('AWS::Scheduler::Schedule', {
         ScheduleExpression: 'rate(1 day)',
         State: 'ENABLED',
         Target: Match.objectLike({
-          Arn: {
-            'Fn::GetStackOutput': Match.objectLike({
-              OutputName: Match.stringLikeRegexp('^PublishOutputFnGetAttJobsQueue'),
-              StackName: 'FoundryAscent-Data',
-            }),
-          },
+          Arn: jobsQueueArn,
           Input: JSON.stringify({ type: 'maintenance', task: 'daily' }),
         }),
       });
     });
 
+    it('sends the distillation sweep every 15 minutes and drops a sweep older than one interval', () => {
+      expect(synth.config.distillation).toEqual({ sweepEnabled: true, sweepIntervalMinutes: 15 });
+      template.hasResourceProperties('AWS::Scheduler::Schedule', {
+        ScheduleExpression: 'rate(15 minutes)',
+        State: 'ENABLED',
+        FlexibleTimeWindow: { Mode: 'OFF' },
+        Target: Match.objectLike({
+          Arn: jobsQueueArn,
+          // apps/api/lambda-contract.json worker.distillSweepMessage, parsed by the worker.
+          Input: JSON.stringify({ type: 'distill_sweep' }),
+          RetryPolicy: { MaximumEventAgeInSeconds: 900, MaximumRetryAttempts: 2 },
+        }),
+      });
+      expect(schedule('DistillSweep').Description).toMatch(/distillation sweep/);
+    });
+
     it('grants the schedule role sqs:SendMessage on the jobs queue only, without touching the Data stack', () => {
-      const [[roleId, role] = ['', {}]] = resourcesOfType(template, 'AWS::IAM::Role').filter(([id]) =>
+      const schedulerRoles = resourcesOfType(template, 'AWS::IAM::Role').filter(([id]) =>
         id.startsWith('SchedulerRoleForTarget'),
       );
+      // Both schedules target the same queue and share the one role CDK creates per target.
+      expect(schedulerRoles).toHaveLength(1);
+      const [[roleId, role] = ['', {}]] = schedulerRoles;
+      for (const prefix of ['DailyMaintenance', 'DistillSweep']) {
+        expect((schedule(prefix).Target as Props).RoleArn, prefix).toEqual({ 'Fn::GetAtt': [roleId, 'Arn'] });
+      }
       expect(JSON.stringify(role.AssumeRolePolicyDocument)).toContain('scheduler.amazonaws.com');
       expect(role.PermissionsBoundary).toBeDefined();
       const policies = resourcesOfType(template, 'AWS::IAM::Policy').filter(([, p]) =>
@@ -531,6 +627,13 @@ describe('FoundryAscent-App', () => {
         0,
       ],
       ['FoundryAscent-CloudFront-5xxRate', 'AWS/CloudFront', '5xxErrorRate', 'GreaterThanThreshold', 5],
+      [
+        'FoundryAscent-Speech-Characters',
+        'AWS/Polly',
+        'RequestCharacters',
+        'GreaterThanThreshold',
+        SPEECH_ALARM_CHARACTERS_PER_HOUR,
+      ],
     ])('%s watches %s %s', (alarmName, namespace, metricName, comparison, threshold) => {
       template.hasResourceProperties('AWS::CloudWatch::Alarm', {
         AlarmName: alarmName,
@@ -540,6 +643,20 @@ describe('FoundryAscent-App', () => {
         Threshold: threshold,
         TreatMissingData: 'notBreaching',
         AlarmActions: [{ Ref: Match.stringLikeRegexp('^AlarmTopic') }],
+      });
+    });
+
+    it('creates exactly the six alarms, all on the alarm topic', () => {
+      template.resourceCountIs('AWS::CloudWatch::Alarm', 6);
+    });
+
+    it('sums synthesized speech characters per hour for SynthesizeSpeech', () => {
+      template.hasResourceProperties('AWS::CloudWatch::Alarm', {
+        AlarmName: 'FoundryAscent-Speech-Characters',
+        Dimensions: [{ Name: 'Operation', Value: 'SynthesizeSpeech' }],
+        Statistic: 'Sum',
+        Period: 3600,
+        EvaluationPeriods: 1,
       });
     });
 
@@ -576,6 +693,65 @@ describe('FoundryAscent-App', () => {
         ],
       },
     });
+  });
+});
+
+describe('speech and distillation switches (config/production.json)', () => {
+  const base = loadConfig();
+  const policyActions = (template: Synthesized['templates']['app'], name: string): string[] =>
+    functionPolicyStatements(template, name).flatMap((s) =>
+      Array.isArray(s.Action) ? (s.Action as string[]) : [s.Action as string],
+    );
+
+  it('grants no Polly access, raises no speech alarm and tells the API when speech is off', () => {
+    const { templates } = synthesize(
+      {},
+      {
+        ...base,
+        speech: { ...base.speech, enabled: false },
+        distillation: { sweepEnabled: false, sweepIntervalMinutes: 30 },
+      },
+    );
+    const app = templates.app;
+    expect(policyActions(app, 'FoundryAscent-Api').some((a) => a.startsWith('polly:'))).toBe(false);
+    const apiEnv = (
+      resourcesOfType(app, 'AWS::Lambda::Function').find(
+        ([, p]) => p.FunctionName === 'FoundryAscent-Api',
+      )?.[1].Environment as { Variables: Record<string, string> }
+    ).Variables;
+    expect(apiEnv.SPEECH_ENABLED).toBe('false');
+    expect(resourcesOfType(app, 'AWS::CloudWatch::Alarm').map(([, p]) => p.AlarmName)).not.toContain(
+      'FoundryAscent-Speech-Characters',
+    );
+    // A disabled sweep keeps its schedule and role; enabling it again is a state change only.
+    app.hasResourceProperties('AWS::Scheduler::Schedule', {
+      ScheduleExpression: 'rate(30 minutes)',
+      State: 'DISABLED',
+      Target: Match.objectLike({
+        Input: JSON.stringify({ type: 'distill_sweep' }),
+        RetryPolicy: { MaximumEventAgeInSeconds: 1800, MaximumRetryAttempts: 2 },
+      }),
+    });
+    app.hasResourceProperties('AWS::Scheduler::Schedule', {
+      ScheduleExpression: 'rate(1 day)',
+      State: 'ENABLED',
+    });
+  });
+
+  it('acknowledges the API role wildcard once when Luna (Mantle) and speech are both on', () => {
+    // Synthesis runs cdk-nag and fails on any unacknowledged finding, so this synth passing is the check.
+    const { templates } = synthesize(
+      {},
+      { ...base, models: { ...base.models, luna: { modelId: 'openai.gpt-6-luna', enabled: true } } },
+    );
+    const onStar = functionPolicyStatements(templates.app, 'FoundryAscent-Api')
+      .filter((s) => s.Resource === '*' && s.Effect === 'Allow')
+      .map((s) => s.Sid);
+    expect(onStar.sort()).toEqual(['BedrockMantleInference', 'PollySpeech']);
+    const workerOnStar = functionPolicyStatements(templates.app, 'FoundryAscent-Worker')
+      .filter((s) => s.Resource === '*' && s.Effect === 'Allow')
+      .map((s) => s.Sid);
+    expect(workerOnStar).toEqual(['BedrockMantleInference']);
   });
 });
 

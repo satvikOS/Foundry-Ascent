@@ -34,5 +34,15 @@
     "memoryMb": 1024,
     "timeoutSeconds": 60
   },
+  "speech": {
+    "enabled": true,
+    "defaultVoice": "Matthew",
+    "engine": "generative",
+    "note": "Amazon Polly in us-east-1. Matthew and Ruth (en-US) have generative voices there (verified against the Polly generative-voices list, 2026-10-16); generative is USD 30 per million characters, neural USD 16. A persona's consented voice id overrides defaultVoice and must exist for this engine (polly:DescribeVoices with Engine=generative lists them)."
+  },
+  "distillation": {
+    "sweepEnabled": true,
+    "sweepIntervalMinutes": 15
+  },
   "logRetentionDays": 30
 }

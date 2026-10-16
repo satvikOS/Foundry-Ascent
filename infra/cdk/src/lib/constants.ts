@@ -29,6 +29,14 @@ export const JOBS_MAX_RECEIVE_COUNT = 3;
 /** Migrate custom resource handler timeout (migrations + seed + seed embeddings). */
 export const MIGRATE_TIMEOUT_MINUTES = 10;
 
+/**
+ * Amazon Polly characters per hour above which the speech alarm fires. 100,000 characters cost about
+ * USD 3 on the generative engine (USD 30 per million; neural USD 16), more than the default global daily
+ * AI cap of USD 2 that speech is metered against, so crossing it in one hour means the in-app caps did
+ * not hold or were raised.
+ */
+export const SPEECH_ALARM_CHARACTERS_PER_HOUR = 100_000;
+
 /** S3 key prefix that every venture document lives under (`tenants/{t}/ventures/{v}/documents/...`). */
 export const DOCUMENTS_PREFIX = 'tenants/';
 

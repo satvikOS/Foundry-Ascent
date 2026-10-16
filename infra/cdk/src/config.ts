@@ -52,8 +52,37 @@ export interface PlatformConfig {
     /** Reserved concurrency of the jobs worker, or null for none (default). */
     readonly reservedConcurrency: number | null;
   };
+  /**
+   * Live voice calls (ADR-0010): the API synthesizes validated vEIR text with Amazon Polly. Optional in the
+   * file; absent means off (no Polly permission, `SPEECH_ENABLED=false`).
+   */
+  readonly speech: {
+    readonly enabled: boolean;
+    /** Polly voice id for personas without a consented voice of their own (e.g. `Matthew`). */
+    readonly defaultVoice: string;
+    /** Polly engine: `generative` (most natural; a subset of voices) or `neural`. */
+    readonly engine: SpeechEngine;
+  };
+  /**
+   * Knowledge-pool growth (ADR-0018): an EventBridge Scheduler schedule asks the worker every
+   * `sweepIntervalMinutes` to distill conversations that went idle. Optional in the file; absent means the
+   * schedule exists but is disabled.
+   */
+  readonly distillation: {
+    readonly sweepEnabled: boolean;
+    readonly sweepIntervalMinutes: number;
+  };
   readonly logRetentionDays: number;
 }
+
+/** Polly engines the call pipeline supports (standard voices sound robotic; long-form is not real-time). */
+export const SPEECH_ENGINES = ['generative', 'neural'] as const;
+export type SpeechEngine = (typeof SPEECH_ENGINES)[number];
+
+/** Used when `speech` is absent from the file: speech off; the voice and engine are then never used. */
+const SPEECH_OFF = { enabled: false, defaultVoice: 'Matthew', engine: 'neural' } as const;
+/** Used when `distillation` is absent from the file. */
+const DISTILLATION_OFF = { sweepEnabled: false, sweepIntervalMinutes: 15 } as const;
 
 export const CONFIG_FILE = join(INFRA_ROOT, 'config', 'production.json');
 
@@ -69,6 +98,8 @@ const MODEL_ID = /^[a-z0-9][a-z0-9.:-]{2,127}$/;
 const GITHUB_REPO = /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/;
 const GIT_REF_NAME = /^[A-Za-z0-9._/-]+$/;
 const GITHUB_ID = /^[1-9][0-9]{0,19}$/;
+/** Amazon Polly `VoiceId` values are capitalised ASCII names (`Matthew`, `Ruth`, `Lea`). */
+const POLLY_VOICE_ID = /^[A-Z][A-Za-z]{1,31}$/;
 
 export class ConfigError extends Error {
   constructor(path: string, problem: string) {
@@ -123,10 +154,43 @@ function optionalInt(parent: Json, key: string, path: string, min: number, max: 
   return int(parent, key, path, min, max);
 }
 
+function bool(parent: Json, key: string, path: string): boolean {
+  const value = parent[key];
+  if (typeof value !== 'boolean') throw new ConfigError(`${path}.${key}`, 'must be a boolean');
+  return value;
+}
+
 function parseLuna(raw: unknown): { modelId: string; enabled: boolean } {
   const luna = obj(raw, '$.models.luna');
-  if (typeof luna.enabled !== 'boolean') throw new ConfigError('$.models.luna.enabled', 'must be a boolean');
-  return { modelId: str(luna, 'modelId', '$.models.luna', MODEL_ID), enabled: luna.enabled };
+  return {
+    modelId: str(luna, 'modelId', '$.models.luna', MODEL_ID),
+    enabled: bool(luna, 'enabled', '$.models.luna'),
+  };
+}
+
+function parseSpeech(raw: unknown): PlatformConfig['speech'] {
+  if (raw === undefined) return SPEECH_OFF;
+  const speech = obj(raw, '$.speech');
+  const engine = str(speech, 'engine', '$.speech');
+  if (!(SPEECH_ENGINES as readonly string[]).includes(engine)) {
+    throw new ConfigError('$.speech.engine', `must be one of ${SPEECH_ENGINES.join(', ')}`);
+  }
+  return {
+    enabled: bool(speech, 'enabled', '$.speech'),
+    defaultVoice: str(speech, 'defaultVoice', '$.speech', POLLY_VOICE_ID),
+    engine: engine as SpeechEngine,
+  };
+}
+
+function parseDistillation(raw: unknown): PlatformConfig['distillation'] {
+  if (raw === undefined) return DISTILLATION_OFF;
+  const distillation = obj(raw, '$.distillation');
+  return {
+    sweepEnabled: bool(distillation, 'sweepEnabled', '$.distillation'),
+    // Faster than every 5 minutes buys nothing (a conversation counts as idle after 20); slower than hourly
+    // leaves the notebook stale for the founder's next visit.
+    sweepIntervalMinutes: int(distillation, 'sweepIntervalMinutes', '$.distillation', 5, 60),
+  };
 }
 
 export function parseConfig(raw: unknown): PlatformConfig {
@@ -190,6 +254,8 @@ export function parseConfig(raw: unknown): PlatformConfig {
     worker: {
       reservedConcurrency: optionalInt(worker, 'reservedConcurrency', '$.worker', 1, 1000),
     },
+    speech: parseSpeech(root.speech),
+    distillation: parseDistillation(root.distillation),
     logRetentionDays,
   };
 }
