@@ -1,6 +1,14 @@
 import { expect, type Page } from '@playwright/test';
 
-import { FOUNDER_STATE, openVenture, runToken, TENANT, test, expectNoBareEirName } from './support/fixtures';
+import {
+  FOUNDER_STATE,
+  openVenture,
+  runToken,
+  startConversation,
+  TENANT,
+  test,
+  expectNoBareEirName,
+} from './support/fixtures';
 
 test.use({ storageState: FOUNDER_STATE });
 
@@ -38,14 +46,33 @@ test('a founder uploads a document and it becomes searchable evidence', async ({
   await expect(row).toContainText('Ready', { timeout: 30_000 });
   await expect(row).toContainText(/\d+ passages?/);
 
-  // The Evidence section of Knowledge lists it as a source the vEIR can cite.
+  // A conversation that cites it links the cited passage to this very document, by its source.
+  await page.goto(`/${TENANT}/app/v/${ventureId}`);
+  await startConversation(page, `Six of eight students checked two buildings: what did ${token} show?`);
+  const answer = page.getByRole('article', { name: 'Exchange 1' });
+  await answer
+    .getByRole('button', { name: /^Evidence E\d+: / })
+    .first()
+    .click({ timeout: 30_000 });
+  const panel = page.getByRole('complementary', { name: 'Context inspector' });
+  const passage = panel.getByRole('article', { name: new RegExp(`^${filename.replace(/[.-]/g, '\\$&')}`) });
+  await expect(passage).toContainText('Venture document');
+  await passage.getByRole('link', { name: 'Open document' }).click();
+  await expect(page).toHaveURL(new RegExp(`/${TENANT}/app/v/${ventureId}/documents\\?source=[0-9a-f-]{36}$`));
+  await expect(row).toHaveAttribute('aria-current', 'true');
+
+  // The Evidence section of Knowledge lists it as a source the vEIR can cite, cited once.
   await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?view=evidence`);
   const sources = page.getByRole('list', { name: 'Sources' });
   await expect(sources.getByRole('link', { name: filename })).toBeVisible();
+  await expect(sources.getByRole('listitem').filter({ hasText: filename })).toContainText(
+    'Cited in 1 answer',
+  );
 
   // Clean up so reruns against the same database stay tidy.
   await sources.getByRole('link', { name: filename }).click();
-  await expect(page).toHaveURL(new RegExp(`/${TENANT}/app/v/${ventureId}/documents$`));
+  await expect(page).toHaveURL(new RegExp(`/${TENANT}/app/v/${ventureId}/documents\\?source=`));
+  await expect(row).toHaveAttribute('aria-current', 'true');
   await row.getByRole('button', { name: `Delete ${filename}` }).click();
   const confirm = page.getByRole('alertdialog', { name: 'Delete this document?' });
   await confirm.getByRole('button', { name: 'Delete' }).click();
