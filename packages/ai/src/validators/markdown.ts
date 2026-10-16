@@ -79,10 +79,12 @@ const COMMENTS = /<!--[\s\S]*?(?:-->|$)/g;
 const DECLARATIONS = /<[!?][^>]*>/g;
 const AUTOLINK = /<((?:[a-z][a-z0-9+.-]{1,31}):[^\s<>]*)>/gi;
 const TAG = /<\s*\/?\s*[a-z][a-z0-9-]*(?:\s[^<>]*)?\/?\s*>/gi;
-const IMAGE = /!\[([^\]\n]{0,500})\]\((?:[^()\n]|\([^()\n]*\))*\)/g;
-const IMAGE_REF = /!\[([^\]\n]{0,500})\]\[[^\]\n]*\]/g;
+// Link text and image alt text may run over single line breaks, as CommonMark renders them, but never over a
+// blank line ("[Open\nthe sheet](data:…)" is a link). The two alternatives cannot overlap, so no backtracking.
+const IMAGE = /!\[((?:[^\]\n]|\n(?![ \t]*\n)){0,500})\]\((?:[^()\n]|\([^()\n]*\))*\)/g;
+const IMAGE_REF = /!\[((?:[^\]\n]|\n(?![ \t]*\n)){0,500})\]\[[^\]\n]*\]/g;
 const LINK =
-  /\[([^\]\n]{0,1000})\]\(\s*<?((?:[^()\s<>]|\([^()\s]*\))*)>?(?:\s+(?:"[^"\n]*"|'[^'\n]*'|\([^()\n]*\)))?\s*\)/g;
+  /\[((?:[^\]\n]|\n(?![ \t]*\n)){0,1000})\]\(\s*<?((?:[^()\s<>]|\([^()\s]*\))*)>?(?:\s+(?:"[^"\n]*"|'[^'\n]*'|\([^()\n]*\)))?\s*\)/g;
 const REF_DEFINITION =
   /^[ \t]{0,3}\[[^\]\n]+\]:[ \t]*<?(\S+?)>?(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^()\n]*\)))?[ \t]*$/gm;
 const BARE_SCRIPT_SCHEME = /\b(?:javascript|vbscript|livescript)\s*:/gi;

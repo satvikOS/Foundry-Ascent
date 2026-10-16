@@ -70,6 +70,20 @@ describe('sanitizeMarkdown', () => {
     expect(out.unsafeLinksRemoved).toBe(2);
   });
 
+  it('reads link text and alt text over a single line break, as Markdown renders them, not over a blank line', () => {
+    const link = sanitizeMarkdown('[Open\nthe sheet](data:text/html,x) now');
+    expect(link).toMatchObject({ text: 'Open\nthe sheet now', unsafeLinksRemoved: 1 });
+    const image = sanitizeMarkdown('![a\nchart](https://evil.example/track.png)');
+    expect(image).toMatchObject({ text: 'a\nchart', imagesRemoved: 1 });
+    expect(sanitizeMarkdown('[the\nlead](https://library.example.edu)').unsafeLinksRemoved).toBe(0);
+    // A blank line ends the paragraph: no link, nothing removed.
+    expect(sanitizeMarkdown('[a\n\nb](data:text/html,x)').unsafeLinksRemoved).toBe(0);
+    // Linear on unclosed labels.
+    const started = performance.now();
+    sanitizeMarkdown('[a\n'.repeat(5_000));
+    expect(performance.now() - started).toBeLessThan(200);
+  });
+
   it('handles autolinks', () => {
     const out = sanitizeMarkdown('Visit <https://example.org> not <javascript:alert(1)>');
     expect(out.text).toBe('Visit https://example.org not');
