@@ -25,6 +25,8 @@ describe('memory history lines', () => {
       'Learned from a conversation',
     );
     expect(aiEventLine('created', { origin: 'ai' })).toBe('Learned from a conversation');
+    // Seen again in a later answer: still the vEIR, never "Suggested by" the founder.
+    expect(aiEventLine('proposed', { repeated: true })).toBe('Learned again in a conversation');
     // What people do with it afterwards, and what people write themselves, keep their names.
     expect(aiEventLine('approved', { origin: 'ai' })).toBeNull();
     expect(aiEventLine('created', { status: 'confirmed', origin: 'founder', type: 'decision' })).toBeNull();

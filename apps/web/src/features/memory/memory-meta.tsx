@@ -119,7 +119,9 @@ export function SourceRefList({
         const def = SOURCE_KIND[ref.kind];
         const Icon = def.icon;
         const label = ref.label?.trim();
-        const text = label && !MACHINE_LABELS.has(label.toLowerCase()) ? label : def.label;
+        // An evidence key ("E1") names the item only inside the answer that cited it.
+        const machine = !label || MACHINE_LABELS.has(label.toLowerCase()) || /^E\d+$/.test(label);
+        const text = machine ? def.label : label;
         let body = <span>{text}</span>;
         if (ref.kind === 'session') {
           body = (

@@ -66,6 +66,8 @@ export function systemEventLine(action: EventAction, diff: Record<string, unknow
  * came from, so it never reads "by" them: they did not write it.
  */
 export function aiEventLine(action: EventAction, diff: Record<string, unknown>): string | null {
+  // The vEIR came across it again in a later answer (a repeat, not a person's suggestion).
+  if (action === 'proposed' && diff.repeated === true) return 'Learned again in a conversation';
   if (diff.origin !== 'ai' || (action !== 'proposed' && action !== 'created')) return null;
   return 'Learned from a conversation';
 }

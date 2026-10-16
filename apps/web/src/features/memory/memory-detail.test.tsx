@@ -21,7 +21,11 @@ describe('MemoryDetail', () => {
           origin: 'ai',
           status: 'confirmed',
           createdBy: MAYA,
-          sourceRefs: [{ kind: 'session', id: IDS.session, label: 'AI proposal' }],
+          sourceRefs: [
+            { kind: 'session', id: IDS.session, label: 'AI proposal' },
+            { kind: 'memory', id: IDS.memory2, label: 'E1' },
+          ],
+          attributes: { evidence_keys: ['E1'] },
         })}
         tenant="ain"
         ventureId={IDS.venture}
@@ -31,8 +35,11 @@ describe('MemoryDetail', () => {
     const learned = screen.getByRole('link', { name: /^Learned from the conversation on / });
     expect(learned).toHaveAttribute('href', `/ain/app/v/${IDS.venture}/c/${IDS.session}`);
     expect(screen.queryByText(/Maya Okafor-Lindqvist/)).toBeNull();
-    // The server's bookkeeping label is not shown as a source name.
+    // The server's bookkeeping (its labels, the cited evidence keys) is not shown as if it meant something.
     expect(screen.queryByText('AI proposal')).toBeNull();
+    expect(screen.queryByText('E1')).toBeNull();
+    expect(screen.queryByText(/Evidence keys/)).toBeNull();
+    expect(screen.getByRole('link', { name: 'Earlier memory' })).toBeInTheDocument();
     // Nothing waits for approval: no status badge for memory in use, no approve or reject.
     expect(screen.queryByText(/Proposed|Confirmed|approval/)).toBeNull();
   });

@@ -157,11 +157,15 @@ export function humaniseValue(value: string): string {
 }
 
 /** Render-ready attribute rows: dates formatted, enums humanised, lists joined, empties dropped. */
+/** Attributes the server keeps for its own bookkeeping, not for people (which evidence a suggestion cited). */
+const INTERNAL_ATTRIBUTES: ReadonlySet<string> = new Set(['evidence_keys']);
+
 export function attributeRows(
   attributes: Record<string, unknown>,
 ): { key: string; label: string; value: string }[] {
   const rows: { key: string; label: string; value: string }[] = [];
   for (const [key, raw] of Object.entries(attributes)) {
+    if (INTERNAL_ATTRIBUTES.has(key)) continue;
     let value: string | null = null;
     if (typeof raw === 'string') {
       const trimmed = raw.trim();
