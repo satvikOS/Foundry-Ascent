@@ -399,6 +399,105 @@ describe('distillSession', () => {
     expect(await distilledLessons()).toHaveLength(1);
   });
 
+  /** BenchTally (Priya's venture): its own notebook, so these parts leave QuietQuad's alone. */
+  const bench = { ventureId: '' };
+  beforeAll(() => {
+    bench.ventureId = h.ventures.benchtally.id;
+  });
+
+  /** The user message of every distillation the scripted core makes while `run` runs. */
+  async function distillPrompts(run: () => Promise<void>): Promise<string[]> {
+    const prompts: string[] = [];
+    scripted = (context) => {
+      prompts.push(context.messages.map((m) => m.content).join('\n'));
+      return mockDistillDraft(context);
+    };
+    try {
+      await run();
+    } finally {
+      scripted = null;
+    }
+    return prompts;
+  }
+
+  it('sends a continued conversation’s digest and only its new turns, and covers exactly those', async () => {
+    const id = await conversation(
+      priya,
+      ['I will ask the dean for the sensor budget before the term ends.', 'What should we charge per seat?'],
+      bench,
+    );
+    await idle(id, 15);
+    expect((await scriptedCore.distill.distillSession(job(id))).turns).toBe(2);
+    await completedTurn(priya, id, 'The dean wants a usage report first.');
+    await idle(id, 15);
+    let outcome: Awaited<ReturnType<Core['distill']['distillSession']>> | null = null;
+    const [prompt] = await distillPrompts(async () => {
+      outcome = await scriptedCore.distill.distillSession(job(id));
+    });
+    expect(outcome).toMatchObject({ status: 'distilled', turns: 3 });
+    expect(prompt).toContain('<previous_digest turns="1-2">');
+    expect(prompt).toContain('Ask the dean for the sensor budget before the term ends</commitment>');
+    expect(prompt?.match(/<turn n=/g)).toHaveLength(1);
+    expect(prompt).toContain('<turn n="3">\n<founder>The dean wants a usage report first.</founder>');
+    // The digest still holds the first part's commitment.
+    const stored = await session(id);
+    expect(stored?.distillVersion).toBe(3);
+    expect(stored?.digest?.commitments.map((c) => c.text)).toContain(
+      'Ask the dean for the sensor budget before the term ends',
+    );
+  });
+
+  it('distils a long conversation in parts, oldest first, so no turn is left out', async () => {
+    const texts = [
+      'I will send the pilot contract to the second library by Monday.',
+      ...Array.from({ length: 19 }, (_, i) => `Question ${i + 2} about the seat sensors?`),
+    ];
+    const id = await conversation(priya, texts, bench);
+    await idle(id, 15);
+    let outcome: Awaited<ReturnType<Core['distill']['distillSession']>> | null = null;
+    const prompts = await distillPrompts(async () => {
+      outcome = await scriptedCore.distill.distillSession(job(id));
+    });
+    expect(outcome).toMatchObject({ status: 'distilled', turns: 20 });
+    expect(prompts).toHaveLength(2);
+    expect(prompts[0]?.match(/<turn n=/g)).toHaveLength(16);
+    expect(prompts[0]).toContain('<turn n="1">\n<founder>I will send the pilot contract');
+    expect(prompts[0]).not.toContain('<previous_digest');
+    expect(prompts[1]?.match(/<turn n=/g)).toHaveLength(4);
+    expect(prompts[1]).toContain('<previous_digest turns="1-16">');
+    expect(prompts[1]).toContain('<turn n="17">\n<founder>Question 17 about the seat sensors?</founder>');
+    const stored = await session(id);
+    expect(stored?.distillVersion).toBe(20);
+    // The first turn's commitment survives into the digest of the whole conversation.
+    expect(stored?.digest?.commitments.map((c) => c.text)).toContain(
+      'Send the pilot contract to the second library by Monday',
+    );
+    // One metered model call per part.
+    expect(await auditFor('session.distilled', id)).toHaveLength(2);
+  });
+
+  it('stops between parts when the deadline is near, and the next job continues where it stopped', async () => {
+    const id = await conversation(
+      priya,
+      Array.from({ length: 18 }, (_, i) => `Note ${i + 1} on the library pilot.`),
+      bench,
+    );
+    await idle(id, 15);
+    // Enough time for one part, not for a second.
+    const first = await scriptedCore.distill.distillSession(job(id), { deadline: Date.now() + 44_000 });
+    expect(first).toMatchObject({ status: 'distilled', turns: 16 });
+    expect((await session(id))?.distillVersion).toBe(16);
+    const prompts = await distillPrompts(async () => {
+      expect(await scriptedCore.distill.distillSession(job(id))).toMatchObject({
+        status: 'distilled',
+        turns: 18,
+      });
+    });
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain('<previous_digest turns="1-16">');
+    expect(prompts[0]?.match(/<turn n=/g)).toHaveLength(2);
+  });
+
   it('skips while AI is paused and when the spend cap is reached, without touching the conversation', async () => {
     const id = await conversation(devin, ['Exam weeks double demand for rooms.']);
     await idle(id, 15);

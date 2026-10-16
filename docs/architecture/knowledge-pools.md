@@ -262,9 +262,12 @@ Migration 0005 (`0005_wave1_fixes`, expand-only and re-runnable, `migrate-0005.d
   - in daily maintenance, the backstop: a bounded number of idle, undistilled conversations. The 15-minute
     `DistillSweep` schedule ships **disabled** ([ADR-0018](adr/0018-veir-knowledge-pools.md)).
 
-  One run claims the conversation, checks the persona and its consent, calls the model once, and writes in
-  one transaction: the digest and title (`setSessionDigest`, never for temporary or digest-deleted
-  conversations; it keeps a person's title), the notebook delta merged against the version read
+  One run claims the conversation, checks the persona and its consent, and distils it in parts of at most 16
+  turns, oldest first: each part's prompt carries the digest of the turns before it, and the digest written
+  covers exactly the turns the model saw (`distill_version`), so a long conversation is never cut to its last
+  turns. Each part is one model call, written in one transaction: the digest and title (`setSessionDigest`,
+  never for temporary or digest-deleted conversations; it keeps a person's title), the notebook delta merged
+  against the version read
   (`saveNotebook` with `sourceSessionId`; suppressed lines skipped; lines a person edited since the last
   distillation pinned for one run; human-help advice kept until a person removes it or newer advice pushes
   it out; a `NotebookIntegrityError` leaves the notebook untouched), memory candidates as proposals and
