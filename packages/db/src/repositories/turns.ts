@@ -350,7 +350,7 @@ export async function redactSessionTurns(ex: SqlExecutor, sessionId: string): Pr
 }
 
 // ------------------------------------------------------------------------------------------------
-// Calls: what may be spoken, and how long people talked
+// Calls: what may be spoken (call records and minutes: callsRepo)
 // ------------------------------------------------------------------------------------------------
 
 export interface SpeechSource {
@@ -386,22 +386,6 @@ export function getSpeechSource(ex: SqlExecutor, turnId: string): Promise<Speech
       answer: col.text.nullable.decode(r.answer, 'answer'),
     }),
   );
-}
-
-export interface VoiceTurnTime {
-  readonly sessionId: string;
-  readonly at: string;
-}
-
-/**
- * When each turn the request principal spoke today (UTC) was sent, by conversation and time
- * (`app.voice_turns_today()`): call minutes are computed from these. No content.
- */
-export function listVoiceTurnsToday(ex: SqlExecutor): Promise<VoiceTurnTime[]> {
-  return queryRows(ex, 'SELECT session_id, at FROM app.voice_turns_today()', {}, (r) => ({
-    sessionId: col.uuid.decode(r.session_id, 'session_id'),
-    at: col.ts.decode(r.at, 'at'),
-  }));
 }
 
 // ------------------------------------------------------------------------------------------------

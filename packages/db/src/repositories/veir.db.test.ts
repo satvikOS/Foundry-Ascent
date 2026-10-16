@@ -1,7 +1,7 @@
 /**
  * Repositories behind the vEIR pools and conversations: the notebook's optimistic versioning, conversation
  * titles/activity/call markers (trigger), recents paging, digests and the distillation sweep, the speech
- * source of a turn, voice-turn accounting, the persona library and persona-aware lesson retrieval.
+ * source of a turn, the persona library and persona-aware lesson retrieval.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -205,7 +205,7 @@ describe('conversations', () => {
     });
   });
 
-  it('speaks only the stored validated text of a turn, and counts today’s voice turns', async () => {
+  it('speaks only the stored validated text of a turn', async () => {
     const id = await newSession(maya);
     const turnId = await addTurn(maya, id, 'Spoken question', {
       channel: 'voice',
@@ -220,14 +220,11 @@ describe('conversations', () => {
         spoken: 'The short spoken answer.',
         answer: 'The **full** answer [E1].',
       });
-      const voice = await turnsRepo.listVoiceTurnsToday(tx);
-      expect(voice.filter((v) => v.sessionId === id)).toHaveLength(1);
     });
     // Another venture's founder sees neither.
     const amara = makeContext(must(seed.principals.amara), seed.tenantId);
     await t.db.withContext(amara, async (tx) => {
       expect(await turnsRepo.getSpeechSource(tx, turnId)).toBeNull();
-      expect(await turnsRepo.listVoiceTurnsToday(tx)).toEqual([]);
     });
   });
 });

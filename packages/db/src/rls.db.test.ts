@@ -10,6 +10,7 @@ import { type SqlExecutor } from './executor.js';
 import { p, type SqlParams } from './params.js';
 import {
   auditRepo,
+  callsRepo,
   documentsRepo,
   escalationsRepo,
   knowledgeRepo,
@@ -129,6 +130,19 @@ async function buildFixture(db: Db): Promise<Fixture> {
         goal: 'Test session',
         policyVersion: 'test',
       });
+      // An ended call in the conversation (its turns stay ordinary turns).
+      const call = await callsRepo.startCall(tx, {
+        tenantId: seed.tenantId,
+        ventureId,
+        sessionId: session.id,
+        personaId: resolved.persona.id,
+        startedBy: founder.id,
+        provider: 'builtin',
+        inputMode: 'typed',
+        voiceId: 'Danielle',
+        maxSeconds: 1800,
+      });
+      await callsRepo.endCall(tx, { callId: call.id, reason: 'user', detail: 'client_user' });
       const turn = await turnsRepo.createTurn(tx, {
         tenantId: seed.tenantId,
         ventureId,
@@ -461,6 +475,7 @@ const VENTURE_TABLES = [
   'eir_reviews',
   'escalations',
   'veir_notebooks',
+  'calls',
 ] as const;
 
 /** Tables with a tenant_id column (and no venture_id) that app_rls can read. */
