@@ -392,7 +392,8 @@ export default function PdfReader({
     return () => {
       observer.disconnect();
     };
-  }, [activeMatch]);
+    // `pdf`: the pages exist (and can be watched) once the document is open.
+  }, [activeMatch, pdf]);
 
   // Go to a page.
   useEffect(() => {
@@ -485,7 +486,8 @@ export default function PdfReader({
       scrollRoot.removeEventListener('pointerup', up);
       scrollRoot.removeEventListener('pointercancel', up);
     };
-  }, [scrollRoot, zoom, onZoom]);
+    // `pdf`: the pages exist once the document is open.
+  }, [scrollRoot, zoom, onZoom, pdf]);
 
   if (!pdf) {
     return (

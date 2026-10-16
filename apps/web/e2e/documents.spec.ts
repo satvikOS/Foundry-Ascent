@@ -604,5 +604,84 @@ test.describe('document viewer', () => {
       await expect(viewer).toHaveCount(0);
       await deleteDocument(page, row, notes);
     });
+
+    test('zooms a PDF with a pinch', async ({ page }) => {
+      const token = runToken();
+      const survey = `phone-survey-${token}.pdf`;
+      const ventureId = await openVenture(page);
+      await page.goto(`/${TENANT}/app/v/${ventureId}/documents`);
+      await uploadFiles(page, [
+        {
+          name: survey,
+          mimeType: 'application/pdf',
+          buffer: textPdf([[`Phone survey ${token}`, 'Seats by the window go first.']]),
+        },
+      ]);
+      const row = page
+        .getByRole('list', { name: 'Venture documents' })
+        .getByRole('listitem')
+        .filter({ hasText: survey });
+      await expect(row).toContainText('Ready', { timeout: 30_000 });
+      await row.getByRole('link', { name: survey }).click();
+      const viewer = page.getByRole('dialog', { name: survey });
+      const firstPage = viewer.locator('[data-page-index="0"][data-rendered]');
+      await expect(firstPage).toBeVisible({ timeout: 15_000 });
+      const zoom = viewer.getByRole('group', { name: 'Zoom' });
+      await expect(zoom).toContainText('100%');
+      const box = await firstPage.boundingBox();
+      if (!box) throw new Error('the page has no box');
+      // Two fingers spread apart over the page (touch input through the DevTools protocol).
+      const cdp = await page.context().newCDPSession(page);
+      const [x, y] = [box.x + box.width / 2, box.y + Math.min(box.height / 2, 200)];
+      const fingers = (spread: number) => [
+        { x: x - spread, y, id: 1 },
+        { x: x + spread, y, id: 2 },
+      ];
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: fingers(30) });
+      for (let spread = 40; spread <= 90; spread += 10) {
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: fingers(spread) });
+      }
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await expect(zoom).not.toContainText('100%');
+      expect(Number((await zoom.textContent())?.match(/(\d+)%/)?.[1])).toBeGreaterThan(150);
+      await expectNoHorizontalScroll(page);
+      await viewer.getByRole('button', { name: 'Close' }).click();
+      await deleteDocument(page, row, survey);
+    });
+  });
+
+  /**
+   * A citation of the program's own handbook opens the handbook's text in the viewer, at the passage.
+   */
+  test('opens program guidance a citation came from, at the passage', async ({ page }) => {
+    await openVenture(page);
+    await startConversation(
+      page,
+      'What should an experiment card state? I need a success threshold set in advance and a time box.',
+    );
+    const answer = page.getByRole('article', { name: 'Exchange 1' });
+    await answer
+      .getByRole('button', { name: /^Evidence E\d+: / })
+      .first()
+      .click({ timeout: 30_000 });
+    const panel = page.getByRole('complementary', { name: 'Context inspector' });
+    const guidance = panel
+      .getByRole('article')
+      .filter({ hasText: 'Program guidance' })
+      .filter({ hasText: 'Experiment card' });
+    await expect(guidance.first()).toBeVisible();
+    await guidance.first().getByRole('link', { name: 'Read source' }).click();
+    const viewer = page.getByRole('dialog', {
+      name: 'Foundry venture-building method (synthetic program handbook)',
+    });
+    await expect(viewer).toBeVisible();
+    await expect(viewer.getByText(/^Program guidance · Updated /)).toBeVisible();
+    await expect(
+      viewer.locator('[data-cited]').filter({ hasText: 'Every experiment card states' }),
+    ).toBeVisible();
+    // Program text cannot be downloaded: it is not one of the venture's files.
+    await expect(viewer.getByRole('link', { name: 'Download' })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(viewer).toHaveCount(0);
   });
 });
