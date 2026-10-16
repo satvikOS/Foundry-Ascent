@@ -6,6 +6,7 @@
 import {
   AvatarSessionResponse,
   CallConfigResponse,
+  CallNoticeAcknowledgement,
   ConsentListResponse,
   ConsentView,
   CreatePersonaUploadResponse,
@@ -20,6 +21,7 @@ import {
   ProblemDetails,
   ProgramVentureRow,
   RevokeConsentResponse,
+  SessionDetailResponse,
   SessionPageResponse,
   SessionView,
   VeirIdentity,
@@ -118,6 +120,30 @@ describe('notebook', () => {
   });
 });
 
+describe('notebook greeting', () => {
+  it('greets with the opener only as the vEIR may say it: never one that names the EIR', async () => {
+    const setOpener = (text: string) =>
+      api.h.t.db.system((sx) =>
+        sx.query(
+          `UPDATE veir_notebooks SET content = jsonb_set(content, '{nextOpener}', to_jsonb(:text::text))
+           WHERE venture_id = :venture`,
+          { text: p.text(text), venture: p.uuid(quietquad()) },
+        ),
+      );
+    const read = async () =>
+      json(await api.request(`/ventures/${quietquad()}/notebook`, { cookie: maya }), NotebookResponse);
+
+    // Distillation wrote an opener that names the EIR (the identity rewrite does not catch this one).
+    const named = 'Last time Corin suggested five library interviews. How did they go?';
+    await setOpener(named);
+    expect(await read()).toMatchObject({ nextOpener: named, greeting: null });
+
+    const plain = 'Last time you planned five library interviews. How did they go?';
+    await setOpener(plain);
+    expect(await read()).toMatchObject({ nextOpener: plain, greeting: plain });
+  });
+});
+
 describe('conversations', () => {
   it('pages recents, renames, deletes digests and deletes conversations', async () => {
     const created = await json(
@@ -163,6 +189,13 @@ describe('conversations', () => {
       SessionView,
     );
     expect(undigested.digest).toBeNull();
+    expect(undigested.digestDeleted).toBe(true);
+    // Read again (a reload): still deleted, so the page never waits for a summary that will not come.
+    const reread = await json(
+      await api.request(`/sessions/${past?.id ?? ''}`, { cookie: maya }),
+      SessionDetailResponse,
+    );
+    expect(reread.session.digestDeleted).toBe(true);
     expect(
       await problemCode(
         await api.request(`/sessions/${created.id}`, { method: 'DELETE', cookie: corin }),
@@ -194,6 +227,48 @@ describe('vEIR identity and call configuration', () => {
       AvatarSessionResponse,
     );
     expect(session).toEqual({ provider: 'builtin', token: null, expiresAt: null, voiceId: 'Matthew' });
+  });
+
+  it('stores the first-call privacy notice with the person: once, theirs only, audited the first time', async () => {
+    const configFor = async (cookie: string) =>
+      json(await api.request(`/ventures/${quietquad()}/call-config`, { cookie }), CallConfigResponse);
+    const audited = async () =>
+      Number(
+        (
+          await api.h.t.db.system((sx) =>
+            sx.query(
+              `SELECT count(*) AS n FROM audit_events WHERE action = 'call.notice_acknowledged' AND actor_id = :id`,
+              { id: p.uuid(api.h.people.maya) },
+            ),
+          )
+        ).rows[0]?.n,
+      );
+    expect((await configFor(maya)).callNoticeAcknowledgedAt).toBeNull();
+
+    const first = await json(
+      await api.request('/calls/notice/acknowledge', { method: 'POST', cookie: maya }),
+      CallNoticeAcknowledgement,
+    );
+    expect(Date.parse(first.acknowledgedAt)).not.toBeNaN();
+    expect((await configFor(maya)).callNoticeAcknowledgedAt).toBe(first.acknowledgedAt);
+    expect(await audited()).toBe(1);
+
+    // Idempotent: a repeat (another browser, another key) keeps the first time and is not audited again.
+    const again = await json(
+      await api.request('/calls/notice/acknowledge', {
+        method: 'POST',
+        cookie: maya,
+        idempotencyKey: 'notice-key-0001',
+      }),
+      CallNoticeAcknowledgement,
+    );
+    expect(again).toEqual(first);
+    expect(await audited()).toBe(1);
+
+    // Per person: a teammate on the same venture has not acknowledged it.
+    expect((await configFor(devin)).callNoticeAcknowledgedAt).toBeNull();
+    // Signed out: refused.
+    expect((await api.request('/calls/notice/acknowledge', { method: 'POST' })).status).toBe(401);
   });
 });
 

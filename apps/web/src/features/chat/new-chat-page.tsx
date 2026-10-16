@@ -61,7 +61,10 @@ function firstName(displayName: string): string {
 export function NewChatPage() {
   const me = useRequiredMe();
   const { ventureId } = routeApi.useParams();
-  return canWrite(me, ventureId) ? <NewChat /> : <ReadOnlyVenture />;
+  // One New chat per venture: switching ventures (the same route, new params) must not carry a draft or the
+  // upload queue across, or files queued for one venture would upload into the other's Documents. Remounting
+  // also cancels any upload in flight.
+  return canWrite(me, ventureId) ? <NewChat key={ventureId} /> : <ReadOnlyVenture />;
 }
 
 function Greeting({ title, children }: { title: string; children?: ReactNode }) {
@@ -175,9 +178,21 @@ function NewChat() {
     };
   }, [ventureId]);
 
+  // Sending opens the conversation, which leaves this page: files still uploading would be cancelled, so Send
+  // waits for them and says why.
+  const sendHold = attachments.uploading
+    ? 'Your files are still uploading. You can send when they’re done.'
+    : null;
+
   const send = () => {
     const value = text.trim();
-    if (!value || value.length > MAX_TURN_CHARS || !availability?.available || createSession.isPending)
+    if (
+      !value ||
+      value.length > MAX_TURN_CHARS ||
+      !availability?.available ||
+      createSession.isPending ||
+      sendHold !== null
+    )
       return;
     const chosenMode = modeToSend(mode);
     const rehearsalCounterpart =
@@ -208,7 +223,9 @@ function NewChat() {
   };
 
   const name = veir?.name ?? 'your vEIR';
-  const opener = notebook.data?.nextOpener?.trim() ?? null;
+  // Only the opener as the vEIR may say it (the server's checked copy), else the generic greeting.
+  const greetingLine = notebook.data?.greeting?.trim() ?? '';
+  const opener = greetingLine === '' ? null : greetingLine;
   const available = availability?.available === true;
   const suggestions = available && !temporary ? newChatSuggestions(overview.data ?? null) : [];
 
@@ -287,6 +304,7 @@ function NewChat() {
             streaming={false}
             busy={createSession.isPending}
             disabledReason={available ? null : (availability?.title ?? 'Unavailable')}
+            sendHold={sendHold}
             onSend={send}
             onStop={() => undefined}
             textareaRef={textareaRef}

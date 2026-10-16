@@ -30,13 +30,8 @@ import { useLoadedCall } from './call-context';
 import { CallLive } from './call-live';
 import { callBlocker, CallLobby } from './call-lobby';
 import { CallSummaryPanel } from './call-summary';
-import {
-  CAPTION_SIZES,
-  storedTalkMode,
-  useAnnounceCaptions,
-  useCaptionSize,
-  useVoiceNoticeSeen,
-} from './preferences';
+import { useCallNotice } from './call-notice';
+import { CAPTION_SIZES, storedTalkMode, useAnnounceCaptions, useCaptionSize } from './preferences';
 import { formatClock, spokenDuration, useCallClock } from './use-call-clock';
 import { useCallConfig, useCallVeir, type CallVeir } from './use-call-veir';
 
@@ -107,7 +102,8 @@ export function CallScreen() {
   const config = useCallConfig(routeVenture, open && writable && !active);
   const veir = useCallVeir(ventureId, config.data?.veir) ?? FALLBACK_VEIR;
   const createSession = useCreateSession(routeVenture ?? '');
-  const [noticeSeen, acknowledgeNotice] = useVoiceNoticeSeen();
+  // Stored with the person on the server: the first call in any browser says how voice is handled.
+  const [noticeSeen, acknowledgeNotice] = useCallNotice(me.principal.id, config.data);
   const [createError, setCreateError] = useState<string | null>(null);
   /** The conversation (or New chat) this screen already tried to start a call in. */
   const attempted = useRef<string | null>(null);

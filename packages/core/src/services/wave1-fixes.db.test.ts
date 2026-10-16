@@ -67,12 +67,12 @@ describe('team invitations', () => {
       }),
     );
     expect(issued.accessCode).toMatch(/^FA-/);
-    const team = await h.core.team.list(maya, ventureId);
+    const team = (await h.core.team.list(maya, ventureId)).items;
     expect(team.find((m) => m.principal.id === issued.principal.id)?.role).toBe('team');
-    // The admin sees the team they invite to, without reading the venture itself.
-    expect((await h.core.team.list(admin, ventureId)).map((m) => m.principal.id)).toEqual(
-      team.map((m) => m.principal.id),
-    );
+    // The admin sees the team they invite to, and the venture's name, without reading the venture itself.
+    const asAdmin = await h.core.team.list(admin, ventureId);
+    expect(asAdmin.items.map((m) => m.principal.id)).toEqual(team.map((m) => m.principal.id));
+    expect(asAdmin.venture).toEqual({ id: ventureId, name: h.ventures.quietquad.name });
     expect(isDomainError(await rejection(h.core.ventures.get(admin, ventureId)))).toBe(true);
     const invited = (await auditOf('team.invited')).find((e) => e.objectId === issued.principal.id);
     expect(invited).toMatchObject({ actorId: admin.principalId, ventureId, outcome: 'succeeded' });

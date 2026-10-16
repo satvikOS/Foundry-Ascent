@@ -16,6 +16,7 @@ import {
 import { fnv1a, hashEmbedding } from './hash-embedding.js';
 import { toStrictJsonSchema, type JsonObject, type JsonValue } from './json-schema.js';
 import {
+  BANK_PROPER_NOUNS,
   ESCALATION_AREAS,
   GREETINGS,
   LEADS,
@@ -177,7 +178,23 @@ function pick<T>(items: readonly T[], seed: number): T {
   return item;
 }
 
-function lowerFirst(text: string): string {
+/** The pronoun "I" and its contractions, which keep their capital anywhere in a sentence. */
+const PRONOUN_I = /^I(?:['’](?:m|ll|d|ve))?$/u;
+
+/**
+ * Lower-cases the first letter of `text` so it can continue a sentence ("Maya, here's my honest read."), unless
+ * its first word keeps its capital: the pronoun "I" and its contractions ("Maya, I'll be direct."), an acronym
+ * (second letter upper-case: "MVP", "FDA") or a proper noun (the banks' own, plus `names`: the founder's,
+ * the EIR's and the venture's, possessive included: "Corin's approach").
+ */
+export function lowerFirst(text: string, names: Iterable<string> = []): string {
+  const word = /^[\p{L}\p{N}'’-]+/u.exec(text)?.[0] ?? '';
+  if (PRONOUN_I.test(word) || /^\p{L}\p{Lu}/u.test(word)) return text;
+  const bare = word.replace(/['’]s$/u, '');
+  if (BANK_PROPER_NOUNS.has(bare)) return text;
+  for (const name of names) {
+    if (name !== '' && (name === bare || name.split(/\s+/u).includes(bare))) return text;
+  }
   return text.charAt(0).toLowerCase() + text.slice(1);
 }
 
@@ -250,6 +267,10 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
   const forced = primaryForcedCategory(flags) ?? (control?.crisis ? 'safety_wellbeing' : null);
   const route = forced ? RISK_ESCALATION_MAP[forced] : null;
   const counterpart = control?.rehearsalCounterpart ?? 'a seed-stage investor';
+  // A vEIR refers to its EIR in the third person, e.g. "Corin's approach is simple: …".
+  const eir = control?.persona ? veirFirstName(control.persona) : null;
+  // Names keep their capital where a phrase continues a sentence.
+  const names = [name, eir, ventureNameIn(context.system)].filter((n): n is string => n !== null);
 
   // Opening: a greeting on the first turn, a pickup from the notes, or a short lead-in.
   const opening: string[] = [];
@@ -260,7 +281,7 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
     const notes = notesIn(context.messages);
     if (notes.commitment !== null) {
       opening.push(
-        `Last time you planned to ${lowerFirst(withoutFinalStop(notes.commitment))}, so let's keep that in view.`,
+        `Last time you planned to ${lowerFirst(withoutFinalStop(notes.commitment), names)}, so let's keep that in view.`,
       );
     } else if (notes.opener) {
       opening.push("I've been thinking about where we left off last time.");
@@ -268,37 +289,35 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
   }
   if (opening.length === 0) {
     const lead = pick(LEADS[style.directness], seed >>> 3);
-    opening.push(name !== null && seed % 3 === 0 ? `${name}, ${lowerFirst(lead)}` : lead);
+    opening.push(name !== null && seed % 3 === 0 ? `${name}, ${lowerFirst(lead, names)}` : lead);
   }
 
   const insight = pick(bank.insights, seed >>> 5).replace('{cite}', first !== undefined ? ` [${first}]` : '');
   const paragraphs = [`${opening.join(' ')} ${insight}`];
-  // A vEIR refers to its EIR in the third person, e.g. "Corin's approach is simple: …".
-  const eir = control?.persona ? veirFirstName(control.persona) : null;
   const doctrine = doctrineSummaryIn(context.system);
   if (
     eir !== null &&
     doctrine !== null &&
     (mode === 'diagnose' || mode === 'coach' || mode === 'challenge')
   ) {
-    paragraphs[0] = `${paragraphs[0] ?? ''} ${eir}'s approach comes down to this: ${lowerFirst(doctrine)}`;
+    paragraphs[0] = `${paragraphs[0] ?? ''} ${eir}'s approach comes down to this: ${lowerFirst(doctrine, names)}`;
   }
 
   const cite2 = second !== undefined ? ` [${second}]` : '';
   switch (mode) {
     case 'diagnose':
       paragraphs.push(
-        `If I had to name the riskiest assumption, it's whether ${lowerFirst(withoutFinalStop(bank.hypothesis))}${cite2}. I'd want evidence on that before anything else.`,
+        `If I had to name the riskiest assumption, it's whether ${lowerFirst(withoutFinalStop(bank.hypothesis), names)}${cite2}. I'd want evidence on that before anything else.`,
       );
       break;
     case 'challenge':
       paragraphs.push(
-        `The strongest version of your case is that the need is real and you're close to it. The weak link is ${lowerFirst(withoutFinalStop(bank.uncertainty))}${cite2}. The cheapest test: ${lowerFirst(bank.action)}`,
+        `The strongest version of your case is that the need is real and you're close to it. The weak link is ${lowerFirst(withoutFinalStop(bank.uncertainty), names)}${cite2}. The cheapest test: ${lowerFirst(bank.action, names)}`,
       );
       break;
     case 'coach':
       paragraphs.push(
-        `You could ${bank.options[0]}, or ${bank.options[1]}. I'd ${bank.options[0]}: it gets you real evidence fastest${cite2}. A good first step is to ${lowerFirst(bank.action)}`,
+        `You could ${bank.options[0]}, or ${bank.options[1]}. I'd ${bank.options[0]}: it gets you real evidence fastest${cite2}. A good first step is to ${lowerFirst(bank.action, names)}`,
       );
       break;
     case 'teach':
@@ -344,7 +363,7 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
   paragraphs.push(question);
 
   const spokenParts = [
-    `${name !== null ? `${name}, ` : ''}${name !== null ? lowerFirst(firstSentence(insight)) : firstSentence(insight)}`,
+    `${name !== null ? `${name}, ` : ''}${name !== null ? lowerFirst(firstSentence(insight), names) : firstSentence(insight)}`,
     area !== null ? "I've flagged part of this for a qualified person." : '',
     question,
   ].filter((p) => p !== '');
@@ -436,6 +455,12 @@ function doctrineSummaryIn(system: string): string | null {
   return /[.!?]$/.test(sentence) ? sentence : `${sentence}.`;
 }
 
+/** The venture's name from the system prompt's venture context, or null. */
+function ventureNameIn(system: string): string | null {
+  const name = /<venture_context>\n<name>([^<\n]*)<\/name>/.exec(system)?.[1];
+  return name ? unescapeData(name).trim() || null : null;
+}
+
 // Distillation and recap -----------------------------------------------------------------------------
 
 interface TranscriptTurn {
@@ -475,6 +500,7 @@ export function mockDistillDraft(context: MockGenerateContext): DistillDraft {
   const today = todayIn(user);
   const name = /the founder \(([^)\n]+)\)/.exec(context.system)?.[1] ?? null;
   const who = name ?? 'The founder';
+  const names = name !== null ? [name] : [];
   const founderTexts = turns.map((t) => t.founder);
   const topics = [...new Set(founderTexts.map(topicOf))];
   const main: MockTopic = topics.find((t) => t !== 'general') ?? topics[0] ?? 'general';
@@ -526,8 +552,8 @@ export function mockDistillDraft(context: MockGenerateContext): DistillDraft {
       : bank.title;
   const summary = [
     `${who} came in to talk about ${bank.phrase}.`,
-    `We looked at the evidence so far and ${lowerFirst(withoutFinalStop(bank.advice))}.`,
-    stated[0] ? `${name ?? 'They'} plan to ${lowerFirst(withoutFinalStop(stated[0]))}.` : '',
+    `We looked at the evidence so far and ${lowerFirst(withoutFinalStop(bank.advice), names)}.`,
+    stated[0] ? `${name ?? 'They'} plan to ${lowerFirst(withoutFinalStop(stated[0]), names)}.` : '',
   ]
     .filter((s) => s !== '')
     .join(' ');
@@ -535,7 +561,7 @@ export function mockDistillDraft(context: MockGenerateContext): DistillDraft {
   // The thread of the whole conversation: what the founder said now, or what an earlier part recorded.
   const thread = stated[0] ?? earlierCommitments[0]?.text;
   const opener = thread
-    ? `Last time you planned to ${lowerFirst(withoutFinalStop(thread))}. How did it go?`
+    ? `Last time you planned to ${lowerFirst(withoutFinalStop(thread), names)}. How did it go?`
     : `Last time we talked about ${bank.phrase}. Where did you land?`;
 
   const lesson = turns.length >= 2 ? [bank.lesson] : [];
@@ -543,7 +569,7 @@ export function mockDistillDraft(context: MockGenerateContext): DistillDraft {
     {
       type: bank.memory.type,
       title: bank.memory.title,
-      content: thread ? `${who} plans to ${lowerFirst(withoutFinalStop(thread))}.` : bank.memory.note,
+      content: thread ? `${who} plans to ${lowerFirst(withoutFinalStop(thread), names)}.` : bank.memory.note,
       evidence_ids: context.evidenceIds.slice(0, 1),
       confidence: 0.6,
     },

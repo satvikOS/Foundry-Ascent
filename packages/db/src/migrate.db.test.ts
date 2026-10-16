@@ -29,6 +29,7 @@ describe('migrate', () => {
       '0007_distillation',
       '0008_calls',
       '0009_review_privacy',
+      '0010_call_notice',
     ]);
     expect(t.migrations?.applied).toEqual(versions);
     const role = await t.db.system((sx) =>

@@ -24,6 +24,7 @@ import {
 
 import {
   canAccessVenture,
+  canManageAnyTeam,
   canUseAdminConsole,
   canUseEirStudio,
   canUseProgramConsole,
@@ -114,6 +115,16 @@ export const VENTURE_DESTINATIONS: readonly VentureDestination[] = [
   { id: 'help', label: 'Human help', icon: LifeBuoy, shortcut: 'g h', to: '/$tenant/app/v/$ventureId/help' },
   { id: 'team', label: 'Team', icon: Users, shortcut: 'g t', to: '/$tenant/app/v/$ventureId/team' },
 ];
+
+/**
+ * The venture's pages this person can open: all of them for its members and its assigned EIR; only Team for
+ * program leads and platform admins who are neither (the other pages would refuse them).
+ */
+export function ventureDestinations(me: Me, ventureId: string): readonly VentureDestination[] {
+  if (canAccessVenture(me, ventureId)) return VENTURE_DESTINATIONS;
+  if (canManageAnyTeam(me)) return VENTURE_DESTINATIONS.filter((destination) => destination.id === 'team');
+  return [];
+}
 
 export interface StaffSection {
   id: string;

@@ -6,6 +6,7 @@ import {
   StartCallRequest,
   type CallDetailResponse,
   type CallEndReason,
+  type CallNoticeAcknowledgement,
   type CallHeartbeatResponse,
   type CallSummary,
   type EndCallResponse,
@@ -84,6 +85,11 @@ export interface CallsService {
   get(ctx: RequestContext, callId: string): Promise<z.infer<typeof CallDetailResponse>>;
   /** Barge-in: the founder spoke over a reply after hearing units 0…`heardSeq`. */
   interrupt(ctx: RequestContext, turnId: string, input: z.input<typeof InterruptTurnRequest>): Promise<void>;
+  /**
+   * The caller read the first-call privacy notice: stored with the person (their own value only), once.
+   * Idempotent: a repeat returns the first time and is not audited again.
+   */
+  acknowledgeNotice(ctx: RequestContext): Promise<CallNoticeAcknowledgement>;
 }
 
 /** Language and audio format of speech-to-text (the browser streams 16 kHz mono PCM). */
@@ -833,5 +839,24 @@ export function createCallsService(
         });
       });
     },
+
+    acknowledgeNotice: async (ctx) =>
+      kit.inRequest(ctx, async (scope) => {
+        const acknowledged = await principalsRepo.acknowledgeCallNotice(scope.tx);
+        if (acknowledged === null) {
+          throw new DomainError('unauthenticated', 'Please sign in again.', {
+            reason: 'principal_unavailable',
+          });
+        }
+        if (acknowledged.firstTime) {
+          await audit(scope, {
+            action: 'call.notice_acknowledged',
+            outcome: 'succeeded',
+            objectType: 'principal',
+            objectId: ctx.principalId,
+          });
+        }
+        return { acknowledgedAt: acknowledged.acknowledgedAt };
+      }),
   };
 }

@@ -30,7 +30,7 @@ import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { useCallsAvailable } from '@/features/calls/calls-available';
 import { useRecentConversations } from '@/lib/api/hooks/sessions';
 import { ventureQueryOptions, useVentures } from '@/lib/api/hooks/ventures';
-import { canWrite, writesAnyVenture } from '@/lib/auth/roles';
+import { canAccessVenture, canWrite, writesAnyVenture } from '@/lib/auth/roles';
 import { conversationTitle, lastActivity } from '@/lib/conversations';
 import { formatHotkey } from '@/lib/hooks/use-hotkeys';
 import { STAGE_LABELS } from '@/lib/labels';
@@ -38,7 +38,7 @@ import { useTheme } from '@/lib/theme';
 import { veirDisplay } from '@/lib/veir';
 
 import { useSignOutAndRedirect } from './account-menu';
-import { STAFF_SECTIONS, staffWorkspaces, VENTURE_DESTINATIONS, type Workspace } from './nav';
+import { STAFF_SECTIONS, staffWorkspaces, ventureDestinations, type Workspace } from './nav';
 
 interface CommandPaletteProps {
   me: Me;
@@ -74,7 +74,10 @@ export function CommandPalette({ me, workspace, open, onOpenChange, onOpenShortc
   const ventureId = workspace.kind === 'venture' ? workspace.ventureId : null;
   const { data: ventures = [] } = useVentures();
   const recents = useRecentConversations({ enabled: open && writesAnyVenture(me) });
-  const ventureDetail = useQuery({ ...ventureQueryOptions(ventureId ?? ''), enabled: ventureId !== null });
+  const ventureDetail = useQuery({
+    ...ventureQueryOptions(ventureId ?? ''),
+    enabled: ventureId !== null && canAccessVenture(me, ventureId),
+  });
   const veir = veirDisplay(ventureDetail.data);
   const { setTheme } = useTheme();
   const { signOut } = useSignOutAndRedirect();
@@ -145,7 +148,7 @@ export function CommandPalette({ me, workspace, open, onOpenChange, onOpenShortc
                 Call {veir.name}
               </CommandItem>
             ) : null}
-            {VENTURE_DESTINATIONS.map((destination) => (
+            {ventureDestinations(me, ventureId).map((destination) => (
               <CommandItem
                 key={destination.id}
                 value={`go ${destination.label}`}

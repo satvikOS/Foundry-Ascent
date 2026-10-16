@@ -75,4 +75,32 @@ describe('MemorySuggestions', () => {
     renderRows([{ candidate, memory: null }], { loading: true });
     expect(screen.queryByRole('button', { name: /Keep/ })).toBeNull();
   });
+
+  it('hands keyboard focus to "Kept" when Keep succeeds (not to the page)', async () => {
+    const memory = makeMemory({ status: 'proposed' });
+    const props = controls();
+    const { rerender } = render(
+      <MemorySuggestions personaName="Corin" bindings={[{ candidate, memory }]} controls={props} />,
+    );
+    const user = userEvent.setup();
+    screen.getByRole('button', { name: 'Keep: Exam weeks drive demand' }).focus();
+    await user.keyboard('{Enter}');
+    expect(props.onKeep).toHaveBeenCalledWith(memory);
+    rerender(
+      <MemorySuggestions
+        personaName="Corin"
+        bindings={[{ candidate, memory: { ...memory, status: 'confirmed' } }]}
+        controls={props}
+      />,
+    );
+    expect(screen.getByText('Kept').closest('span')).toHaveFocus();
+  });
+
+  it('never takes focus for an item that was kept before (a page load)', () => {
+    const memory = makeMemory({ status: 'confirmed' });
+    render(
+      <MemorySuggestions personaName="Corin" bindings={[{ candidate, memory }]} controls={controls()} />,
+    );
+    expect(screen.getByText('Kept').closest('span')).not.toHaveFocus();
+  });
 });

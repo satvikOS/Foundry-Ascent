@@ -118,6 +118,42 @@ export async function updatePrincipal(
 }
 
 // ------------------------------------------------------------------------------------------------
+// The first-call privacy notice (migration 0010): the caller's own value only
+// ------------------------------------------------------------------------------------------------
+
+/**
+ * When the request's principal acknowledged the first-call privacy notice, or null. The column is closed to
+ * app_rls; this reads the caller's own value through `app.call_notice_acknowledged_at()` (null without a
+ * request principal, e.g. under the system executor).
+ */
+export async function callNoticeAcknowledgedAt(ex: SqlExecutor): Promise<string | null> {
+  return (
+    (await queryFirst(ex, 'SELECT app.call_notice_acknowledged_at() AS at', {}, (r) =>
+      col.ts.nullable.decode(r.at, 'at'),
+    )) ?? null
+  );
+}
+
+/**
+ * Acknowledges the notice for the request's principal, once: a repeat keeps the first time. `firstTime` says
+ * whether this call set it. Null without an active request principal.
+ */
+export async function acknowledgeCallNotice(
+  ex: SqlExecutor,
+): Promise<{ acknowledgedAt: string; firstTime: boolean } | null> {
+  const row = await queryFirst(
+    ex,
+    'SELECT n.acknowledged_at, n.first_time FROM app.acknowledge_call_notice() AS n',
+    {},
+    (r) => ({
+      acknowledgedAt: col.ts.nullable.decode(r.acknowledged_at, 'acknowledged_at'),
+      firstTime: col.bool.decode(r.first_time, 'first_time'),
+    }),
+  );
+  return row?.acknowledgedAt ? { acknowledgedAt: row.acknowledgedAt, firstTime: row.firstTime } : null;
+}
+
+// ------------------------------------------------------------------------------------------------
 // Role grants
 // ------------------------------------------------------------------------------------------------
 

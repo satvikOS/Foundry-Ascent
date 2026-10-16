@@ -33,7 +33,18 @@ export function useComposerAttachments(ventureId: string) {
     },
     [add, existing],
   );
-  return { items: queue.items, attach, cancel: queue.cancel, retry: queue.retry, dismiss: queue.dismiss };
+  // Queued, uploading or finishing: leaving the page now would cancel it.
+  const uploading = queue.items.some(
+    (item) => item.status === 'queued' || item.status === 'uploading' || item.status === 'finishing',
+  );
+  return {
+    items: queue.items,
+    uploading,
+    attach,
+    cancel: queue.cancel,
+    retry: queue.retry,
+    dismiss: queue.dismiss,
+  };
 }
 
 export function AttachButton({ onFiles, disabled }: { onFiles: (files: File[]) => void; disabled: boolean }) {

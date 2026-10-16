@@ -16,8 +16,9 @@ export const teamQueryOptions = (ventureId: string) =>
     queryFn: ({ signal }) => api.get(path`/ventures/${ventureId}/team`, TeamResponse, { signal }),
   });
 
-export function useTeam(ventureId: string) {
-  return useQuery({ ...teamQueryOptions(ventureId), select: (data) => data.items });
+/** The venture's members and its name (`venture`, which staff who are not members see too). */
+export function useTeam(ventureId: string, { enabled = true }: { enabled?: boolean } = {}) {
+  return useQuery({ ...teamQueryOptions(ventureId), enabled });
 }
 
 export type InviteMemberInput = z.input<typeof InviteMemberRequest>;

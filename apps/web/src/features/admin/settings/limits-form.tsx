@@ -176,6 +176,7 @@ export function LimitsCard({ settings, onSave, pending, error }: LimitsCardProps
         <fieldset className="grid gap-4 sm:grid-cols-2">
           <legend className="mb-2 text-sm font-semibold">Daily AI spend caps (USD)</legend>
           <Field
+            subgrid
             label="Platform cap per day"
             description="New turns are refused once today’s total reaches it (UTC)."
             error={errors.dailyUsdCapGlobal?.message}
@@ -183,6 +184,7 @@ export function LimitsCard({ settings, onSave, pending, error }: LimitsCardProps
             {numberInput('dailyUsdCapGlobal', { step: '0.5', min: 0, max: 100 })}
           </Field>
           <Field
+            subgrid
             label="Cap per person per day"
             description="Stops one account from using the whole budget."
             error={errors.dailyUsdCapPerPrincipal?.message}
@@ -193,6 +195,7 @@ export function LimitsCard({ settings, onSave, pending, error }: LimitsCardProps
         <fieldset className="grid gap-4 sm:grid-cols-2">
           <legend className="mb-2 text-sm font-semibold">Voice calls</legend>
           <Field
+            subgrid
             label="Longest call (minutes)"
             description="A call ends when it reaches this."
             error={errors.maxCallMinutes?.message}
@@ -200,6 +203,7 @@ export function LimitsCard({ settings, onSave, pending, error }: LimitsCardProps
             {numberInput('maxCallMinutes', { step: '1', min: 1, max: 240 })}
           </Field>
           <Field
+            subgrid
             label="Call minutes per person per day"
             description="Further calls wait until midnight UTC."
             error={errors.dailyCallMinutesPerPrincipal?.message}
@@ -210,6 +214,7 @@ export function LimitsCard({ settings, onSave, pending, error }: LimitsCardProps
         <fieldset className="grid gap-4 sm:grid-cols-2">
           <legend className="mb-2 text-sm font-semibold">Document uploads per person per day</legend>
           <Field
+            subgrid
             label="Documents per day"
             description="Further uploads wait until midnight UTC."
             error={errors.dailyUploadDocumentsPerPrincipal?.message}
@@ -217,6 +222,7 @@ export function LimitsCard({ settings, onSave, pending, error }: LimitsCardProps
             {numberInput('dailyUploadDocumentsPerPrincipal', { step: '1', min: 0, max: 1000 })}
           </Field>
           <Field
+            subgrid
             label="Upload volume per day (MB)"
             description="Total size one person can upload in a day."
             error={errors.dailyUploadMegabytesPerPrincipal?.message}
@@ -227,6 +233,7 @@ export function LimitsCard({ settings, onSave, pending, error }: LimitsCardProps
         <fieldset className="grid gap-4 sm:grid-cols-3">
           <legend className="mb-2 text-sm font-semibold">Coaching quality and privacy</legend>
           <Field
+            subgrid
             label="Max turns per session"
             description="Founders are then asked to start a new conversation."
             error={errors.maxTurnsPerSession?.message}
@@ -234,6 +241,7 @@ export function LimitsCard({ settings, onSave, pending, error }: LimitsCardProps
             {numberInput('maxTurnsPerSession', { step: '1', min: 1, max: 200 })}
           </Field>
           <Field
+            subgrid
             label="Grounding threshold (%)"
             description="Below this share of cited facts, answers are narrowed with an uncertainty banner."
             error={errors.groundingPercent?.message}
@@ -241,6 +249,7 @@ export function LimitsCard({ settings, onSave, pending, error }: LimitsCardProps
             {numberInput('groundingPercent', { step: '1', min: 0, max: 100 })}
           </Field>
           <Field
+            subgrid
             label="Portfolio minimum group size (k)"
             description="Smaller groups are hidden from program staff."
             error={errors.portfolioMinGroupSize?.message}

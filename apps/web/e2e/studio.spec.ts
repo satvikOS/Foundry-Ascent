@@ -99,6 +99,42 @@ test.describe('program lead', () => {
     await assign(SEEDED_VEIR);
     await expect(row).toContainText('Ruth Abernathy-Song');
   });
+
+  test('opens a venture’s Team without being a member: its name, only pages it can open, Invite', async ({
+    page,
+  }) => {
+    const refused: string[] = [];
+    page.on('response', (response) => {
+      if (response.url().includes('/api/v1/') && response.status() >= 400) {
+        refused.push(`${String(response.status())} ${new URL(response.url()).pathname}`);
+      }
+    });
+    await page.goto(`/${TENANT}/app/program/ventures`);
+    const row = page.getByRole('row', { name: /QuietQuad/ });
+    await row.getByRole('button', { name: /^Actions for / }).click();
+    await page.getByRole('menuitem', { name: 'Team' }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Team' })).toBeVisible();
+    await expect(page.getByText('People on QuietQuad and what each can see.')).toBeVisible();
+    await expect(page.getByRole('list', { name: 'Team members' })).toContainText('Maya Okafor-Lindqvist');
+
+    const nav = page.getByRole('navigation', { name: 'Main' });
+    await expect(
+      nav.getByRole('button', { name: 'Switch venture or workspace. Current: QuietQuad' }),
+    ).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Team', exact: true })).toBeVisible();
+    // The venture's other pages would refuse a non-member: none is linked.
+    for (const name of ['Knowledge', 'Documents', 'Human help', 'New chat']) {
+      await expect(nav.getByRole('link', { name, exact: true })).toHaveCount(0);
+    }
+
+    // Invite opens for this venture (closed again without inviting anyone).
+    await page.getByRole('button', { name: 'Invite', exact: true }).click();
+    const invite = page.getByRole('dialog', { name: 'Invite to QuietQuad' });
+    await expect(invite).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(invite).toBeHidden();
+    expect(refused, 'requests the page made that the API refused').toEqual([]);
+  });
 });
 
 test.describe('EIR', () => {
@@ -195,6 +231,43 @@ test.describe('platform admin', () => {
     await calls.click();
     await expect(calls).toBeChecked();
     expect(await settingsCallsEnabled(page.request)).toBe(true);
+  });
+
+  test('limits side by side line up on one row, even when a label or helper wraps', async ({ page }) => {
+    const rows = [
+      ['Platform cap per day', 'Cap per person per day'],
+      ['Longest call (minutes)', 'Call minutes per person per day'],
+      ['Documents per day', 'Upload volume per day (MB)'],
+      ['Max turns per session', 'Grounding threshold (%)', 'Portfolio minimum group size (k)'],
+    ];
+    // Wide, and narrow enough that more helpers wrap while the fields still sit side by side.
+    for (const width of [1440, 900]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/${TENANT}/app/admin/settings`);
+      const form = page.getByRole('form', { name: 'Limits and thresholds' });
+      await expect(form).toBeVisible();
+      for (const names of rows) {
+        const inputs: { x: number; y: number }[] = [];
+        const labels: number[] = [];
+        for (const name of names) {
+          const input = await form.getByRole('spinbutton', { name, exact: true }).boundingBox();
+          const label = await form.getByText(name, { exact: true }).boundingBox();
+          if (!input || !label) throw new Error(`${name} has no layout box`);
+          inputs.push(input);
+          labels.push(label.y);
+        }
+        const spread = (values: number[]) => Math.max(...values) - Math.min(...values);
+        expect(
+          new Set(inputs.map((box) => Math.round(box.x))).size,
+          `${names.join(' | ')} side by side`,
+        ).toBe(names.length);
+        expect(
+          spread(inputs.map((box) => box.y)),
+          `inputs of ${names.join(' | ')} at ${String(width)}px`,
+        ).toBeLessThan(1);
+        expect(spread(labels), `labels of ${names.join(' | ')} at ${String(width)}px`).toBeLessThan(1);
+      }
+    }
   });
 });
 

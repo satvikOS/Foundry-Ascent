@@ -185,9 +185,15 @@ describe('conversations', () => {
       });
       expect(digests[0]).toMatchObject({ sessionId: id, title: 'Pilot', digest });
       expect(digests.length).toBe(2); // and the seeded past conversation
+      expect(must(await sessionsRepo.getSessionView(tx, id)).digestDeleted).toBe(false);
       const cleared = must(await sessionsRepo.deleteSessionDigest(tx, id));
       expect(cleared.digest).toBeNull();
       expect(cleared.digestDeletedAt).not.toBeNull();
+      // The view says so, so a reloaded page stops waiting for a summary.
+      expect(must(await sessionsRepo.getSessionView(tx, id))).toMatchObject({
+        digest: null,
+        digestDeleted: true,
+      });
     });
     await t.db.system(async (sx) => {
       expect(await sessionsRepo.setSessionDigest(sx, { sessionId: id, digest, distillVersion: 2 })).toBe(

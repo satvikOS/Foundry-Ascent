@@ -5,6 +5,8 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 
+import { handOffFocus, useFocusHandoff } from './focus-handoff';
+
 /** A memory suggestion of an answer and the memory item it was saved as (null until found or saved). */
 export interface CandidateBinding {
   candidate: MemoryCandidate;
@@ -64,10 +66,7 @@ export function MemorySuggestions({
               {controls.loading ? (
                 <Skeleton className="h-7 w-28" />
               ) : memory?.status === 'confirmed' ? (
-                <span className="inline-flex h-7 items-center gap-1 text-small font-medium">
-                  <Check aria-hidden className="size-4 text-success" />
-                  Kept
-                </span>
+                <Kept focusKey={`memory:${title}`} />
               ) : memory ? (
                 <>
                   <Button
@@ -75,6 +74,7 @@ export function MemorySuggestions({
                     disabled={busy}
                     aria-label={`Keep: ${title}`}
                     onClick={() => {
+                      handOffFocus(`memory:${title}`);
                       controls.onKeep(memory);
                     }}
                   >
@@ -99,6 +99,7 @@ export function MemorySuggestions({
                     loading={controls.savingTitle === candidate.title}
                     aria-label={`Keep: ${title}`}
                     onClick={() => {
+                      handOffFocus(`memory:${title}`);
                       controls.onSave(candidate);
                     }}
                   >
@@ -121,5 +122,20 @@ export function MemorySuggestions({
         );
       })}
     </ul>
+  );
+}
+
+/** "Kept", in place of the Keep button it replaces (and taking its focus). */
+function Kept({ focusKey }: { focusKey: string }) {
+  const ref = useFocusHandoff<HTMLSpanElement>(focusKey);
+  return (
+    <span
+      ref={ref}
+      tabIndex={-1}
+      className="inline-flex h-7 items-center gap-1 rounded-sm text-small font-medium focus-visible:outline-2 focus-visible:outline-ring"
+    >
+      <Check aria-hidden className="size-4 text-success" />
+      Kept
+    </span>
   );
 }

@@ -61,6 +61,15 @@ export function systemEventLine(action: EventAction, diff: Record<string, unknow
   return `${EVENT_DEFS[action].label} automatically`;
 }
 
+/**
+ * A proposal the AI made (`origin: 'ai'` on its first event). Its actor is the person whose conversation it came
+ * from, so it never reads "by" them: the vEIR suggested it, a person only reviews it.
+ */
+export function aiEventLine(action: EventAction, diff: Record<string, unknown>): string | null {
+  if (diff.origin !== 'ai' || (action !== 'proposed' && action !== 'created')) return null;
+  return 'Suggested by AI';
+}
+
 /** Changed fields in a diff, and a reason if one was recorded (values are not repeated here). */
 export function summariseDiff(diff: Record<string, unknown>): { fields: string[]; reason: string | null } {
   const reason = typeof diff.reason === 'string' && diff.reason.trim() ? diff.reason.trim() : null;
@@ -99,7 +108,7 @@ export function MemoryHistoryTimeline({ memoryId }: { memoryId: string }) {
       {events.map((event) => {
         const def = EVENT_DEFS[event.action];
         const Icon = def.icon;
-        const system = systemEventLine(event.action, event.diff);
+        const system = systemEventLine(event.action, event.diff) ?? aiEventLine(event.action, event.diff);
         const { fields, reason } = system === null ? summariseDiff(event.diff) : { fields: [], reason: null };
         return (
           <li key={event.id} className="relative">

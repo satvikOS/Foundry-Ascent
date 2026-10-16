@@ -21,6 +21,12 @@ interface FieldProps {
   required?: boolean;
   /** Visually hide the label (it stays available to assistive technology). */
   hideLabel?: boolean;
+  /**
+   * Lay the label, the control and the helpers (description and error) on three rows of the parent grid
+   * (`grid-rows-subgrid`), so the controls of fields side by side line up even when one label or helper wraps.
+   * The parent must be a grid.
+   */
+  subgrid?: boolean;
   className?: string;
   id?: string;
 }
@@ -36,6 +42,7 @@ export function Field({
   error,
   required,
   hideLabel,
+  subgrid = false,
   className,
   id,
 }: FieldProps) {
@@ -55,17 +62,8 @@ export function Field({
       })
     : children;
 
-  return (
-    <div data-slot="field" className={cn('grid gap-2', className)}>
-      <Label htmlFor={controlId} className={cn(hideLabel && 'sr-only')}>
-        {label}
-        {required ? (
-          <span aria-hidden className="text-muted-foreground">
-            *
-          </span>
-        ) : null}
-      </Label>
-      {control}
+  const helpers = (
+    <>
       {description ? (
         <p id={descriptionId} className="text-[13px] leading-snug text-muted-foreground">
           {description}
@@ -77,6 +75,24 @@ export function Field({
           <span>{error}</span>
         </p>
       ) : null}
+    </>
+  );
+
+  return (
+    <div
+      data-slot="field"
+      className={cn(subgrid ? 'row-span-3 grid grid-rows-subgrid gap-y-2' : 'grid gap-2', className)}
+    >
+      <Label htmlFor={controlId} className={cn(subgrid && 'self-start', hideLabel && 'sr-only')}>
+        {label}
+        {required ? (
+          <span aria-hidden className="text-muted-foreground">
+            *
+          </span>
+        ) : null}
+      </Label>
+      {control}
+      {subgrid ? <div className="grid content-start gap-2">{helpers}</div> : helpers}
     </div>
   );
 }

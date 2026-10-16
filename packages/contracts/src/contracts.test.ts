@@ -243,6 +243,42 @@ describe('turn views and events (additive fields)', () => {
     expect(TurnView.safeParse({ ...turn, blocked: { reason: 'x' } }).success).toBe(false);
   });
 
+  it('reads a turn without `author` or `myFeedback` (an older API) as unknown author and unrated', () => {
+    const parsed = TurnView.parse(turn);
+    expect(parsed.author).toBeNull();
+    expect(parsed.myFeedback).toBeNull();
+  });
+
+  it('carries who wrote the turn and the viewer’s own rating', () => {
+    const author = { id: ID, displayName: 'Devin Ashcombe' };
+    const parsed = TurnView.parse({ ...turn, author, myFeedback: { rating: 5 } });
+    expect(parsed.author).toEqual(author);
+    expect(parsed.myFeedback).toEqual({ rating: 5 });
+    expect(TurnView.safeParse({ ...turn, myFeedback: { rating: 6 } }).success).toBe(false);
+    expect(TurnView.safeParse({ ...turn, author: { id: ID } }).success).toBe(false);
+  });
+
+  it('reads a conversation without `digestDeleted` (an older API) as not deleted', () => {
+    const session = {
+      id: ID,
+      ventureId: ID,
+      mode: 'coach',
+      privacy: 'standard',
+      goal: null,
+      status: 'ended',
+      personaName: "Corin's vEIR",
+      personaVersion: 1,
+      disclosure: 'AI',
+      startedBy: { id: ID, displayName: 'Maya' },
+      startedAt: '2026-10-05T10:00:00.000Z',
+      endedAt: '2026-10-05T10:05:00.000Z',
+      turnCount: 1,
+      recap: null,
+    };
+    expect(SessionView.parse(session).digestDeleted).toBe(false);
+    expect(SessionView.parse({ ...session, digestDeleted: true }).digestDeleted).toBe(true);
+  });
+
   it('turn.error accepts the original shape and the new retryAfterSeconds and requestId', () => {
     const base = { event: 'turn.error', turnId: ID, code: 'conflict', message: 'm', retryable: true };
     expect(TurnStreamEvent.parse(base)).toEqual(base);

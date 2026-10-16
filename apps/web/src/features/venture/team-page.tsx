@@ -10,8 +10,7 @@ import { ErrorState } from '@/components/ui/error-state';
 import { PageContainer, PageHeader } from '@/components/ui/page-header';
 import { HairlineSkeleton } from '@/components/ui/page-section';
 import { useTeam } from '@/lib/api/hooks/team';
-import { useVenture } from '@/lib/api/hooks/ventures';
-import { hasAnyRole, ROLE_LABELS } from '@/lib/auth/roles';
+import { canManageAnyTeam, ROLE_LABELS } from '@/lib/auth/roles';
 import { useRequiredMe } from '@/lib/auth/use-me';
 import { formatDate, isoString } from '@/lib/format';
 import { MEMBERSHIP_ROLE_ACCESS } from '@/lib/labels';
@@ -21,31 +20,33 @@ const routeApi = getRouteApi('/$tenant/app/v/$ventureId/team');
 
 /**
  * Team: the people on the venture and what each can see. Program leads and platform admins invite
- * (one invitation flow for the whole product, with the one-time access code revealed once).
+ * (one invitation flow for the whole product, with the one-time access code revealed once). They open any
+ * venture's Team without reading the venture, so its name comes with the team.
  */
 export function TeamPage() {
   const me = useRequiredMe();
   const { ventureId } = routeApi.useParams();
   const team = useTeam(ventureId);
-  const venture = useVenture(ventureId);
-  const canInvite = hasAnyRole(me, ['program_lead', 'platform_admin']);
+  const canInvite = canManageAnyTeam(me);
   const [inviting, setInviting] = useState(false);
 
-  const members = [...(team.data ?? [])].sort(
+  const members = [...(team.data?.items ?? [])].sort(
     (a, b) =>
       MembershipRole.options.indexOf(a.role) - MembershipRole.options.indexOf(b.role) ||
       a.principal.displayName.localeCompare(b.principal.displayName),
   );
-  const ventureName = venture.data?.name ?? 'this venture';
+  const name =
+    team.data?.venture?.name ?? me.memberships.find((m) => m.ventureId === ventureId)?.ventureName ?? null;
 
   return (
     <PageContainer className="max-w-4xl">
       <PageHeader
         title="Team"
-        description={`People on ${ventureName} and what each can see.`}
+        description={`People on ${name ?? 'this venture'} and what each can see.`}
         actions={
           canInvite ? (
             <Button
+              disabled={name === null}
               onClick={() => {
                 setInviting(true);
               }}
@@ -112,7 +113,7 @@ export function TeamPage() {
 
       {canInvite ? (
         <InviteMemberDialog
-          venture={inviting && venture.data ? { id: ventureId, name: venture.data.name } : null}
+          venture={inviting && name !== null ? { id: ventureId, name } : null}
           onClose={() => {
             setInviting(false);
           }}

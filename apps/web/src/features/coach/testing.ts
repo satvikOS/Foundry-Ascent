@@ -104,6 +104,8 @@ export function makeTurn(overrides: Partial<TurnView> = {}): TurnView {
     completedAt: NOW,
     blocked: null,
     channel: 'text',
+    author: null,
+    myFeedback: null,
     ...overrides,
   };
 }
@@ -126,8 +128,10 @@ export function makeSession(overrides: Partial<SessionView> = {}): SessionView {
     recap: null,
     title: null,
     personaId: null,
+    personaKind: null,
     lastActivityAt: null,
     hasCalls: false,
+    digestDeleted: false,
     digest: null,
     opener: null,
     ...overrides,

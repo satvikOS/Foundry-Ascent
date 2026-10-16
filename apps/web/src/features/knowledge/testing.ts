@@ -123,6 +123,7 @@ export function makeNotebook(overrides: Partial<VeirNotebook> = {}): VeirNoteboo
     openQuestions: [entry('q-chat', 'Would students open a map instead of the group chat?')],
     lastAdvice: [entry('a-rerun', 'Rerun the map only in the two weeks before finals.')],
     nextOpener: 'Last time you planned five library-staff interviews. How did they go?',
+    greeting: 'Last time you planned five library-staff interviews. How did they go?',
     version: 3,
     updatedAt: NOW,
     lastEditedBy: 'veir',
@@ -148,8 +149,10 @@ export function makeSession(overrides: Partial<SessionView> = {}): SessionView {
     recap: null,
     title: 'Is exam-week demand strong enough for a pilot?',
     personaId: IDS.persona,
+    personaKind: 'eir_persona',
     lastActivityAt: NOW,
     hasCalls: false,
+    digestDeleted: false,
     digest: {
       summary: 'Maya reviewed the seat-map test and chose to rerun it before finals.',
       topics: ['Seat-map test', 'Exam-week focus'],
@@ -209,5 +212,7 @@ export function makeTurnWithEvidence(evidence: EvidenceItem[], id: string = IDS.
     completedAt: NOW,
     blocked: null,
     channel: 'text',
+    author: null,
+    myFeedback: null,
   };
 }

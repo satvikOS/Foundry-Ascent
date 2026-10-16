@@ -1,7 +1,13 @@
 import type { Me } from '@foundry/contracts';
 import { describe, expect, it } from 'vitest';
 
-import { defaultLanding, STAFF_SECTIONS, staffWorkspaces, workspaceFromPath } from './nav';
+import {
+  defaultLanding,
+  STAFF_SECTIONS,
+  staffWorkspaces,
+  ventureDestinations,
+  workspaceFromPath,
+} from './nav';
 
 const VENTURE_A = '11111111-1111-4111-8111-111111111111';
 const VENTURE_B = '22222222-2222-4222-8222-222222222222';
@@ -102,5 +108,48 @@ describe('defaultLanding', () => {
 
   it('has nowhere to go for someone with no venture and no staff role', () => {
     expect(defaultLanding(me(), null)).toBeNull();
+  });
+});
+
+describe('ventureDestinations', () => {
+  const ids = (person: Me) => ventureDestinations(person, VENTURE_A).map((d) => d.id);
+
+  it('gives members and the assigned EIR every page of the venture', () => {
+    const all = ['knowledge', 'documents', 'help', 'team'];
+    for (const role of ['founder', 'team', 'advisor'] as const) {
+      expect(ids(me({ memberships: [{ ventureId: VENTURE_A, ventureName: 'QuietQuad', role }] }))).toEqual(
+        all,
+      );
+    }
+    expect(ids(me({ roles: ['eir'], assignedVentureIds: [VENTURE_A] }))).toEqual(all);
+    // Staff who are also members keep every page.
+    expect(
+      ids(
+        me({
+          roles: ['platform_admin'],
+          memberships: [{ ventureId: VENTURE_A, ventureName: 'QuietQuad', role: 'founder' }],
+        }),
+      ),
+    ).toEqual(all);
+  });
+
+  it('gives program leads and platform admins who are not members only the Team page (no dead links)', () => {
+    expect(ids(me({ roles: ['platform_admin'] }))).toEqual(['team']);
+    expect(ids(me({ roles: ['program_lead'] }))).toEqual(['team']);
+    expect(ids(me({ roles: ['platform_admin', 'program_lead'] }))).toEqual(['team']);
+    // A member of another venture is not a member of this one.
+    expect(
+      ids(
+        me({
+          roles: ['program_lead'],
+          memberships: [{ ventureId: VENTURE_B, ventureName: 'BenchTally', role: 'founder' }],
+        }),
+      ),
+    ).toEqual(['team']);
+  });
+
+  it('gives nothing to someone who cannot open the venture at all', () => {
+    expect(ids(me())).toEqual([]);
+    expect(ids(me({ roles: ['eir'], assignedVentureIds: [VENTURE_B] }))).toEqual([]);
   });
 });

@@ -117,7 +117,8 @@ describe('program console', () => {
     const session = await h.core.sessions.create(founder, row.id, { mode: 'teach' });
     expect(session).toMatchObject({ personaName: 'Foundry Guide', mode: 'teach', status: 'active' });
     const team = await h.core.team.list(lead, row.id);
-    expect(team.map((m) => m.principal.id)).toEqual([issued.principal.id]);
+    expect(team.items.map((m) => m.principal.id)).toEqual([issued.principal.id]);
+    expect(team.venture).toEqual({ id: row.id, name: 'Fresh Venture' });
     expect((await h.core.program.listVentures(lead)).map((v) => v.id)).toContain(row.id);
   });
 

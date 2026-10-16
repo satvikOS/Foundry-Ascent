@@ -12,9 +12,9 @@ import { type z } from 'zod';
 import { requireVentureAccess } from '../authz/venture-access.js';
 import { type RequestContext } from '../context.js';
 import { DomainError, fail, parseInput } from '../errors.js';
-import { type DirectoryCache } from '../internal/directory.js';
+import { type DirectoryCache, type OtherVentures } from '../internal/directory.js';
 import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
-import { openerProblem, type OpenerProblem } from '../orchestrator/continuity.js';
+import { openerProblem, validatedOpener, type OpenerProblem } from '../orchestrator/continuity.js';
 
 /**
  * The vEIR notebook: "what <vEIR> knows about you and <venture>", one per venture × the persona that coaches
@@ -33,6 +33,12 @@ export interface NotebookService {
     ventureId: string,
     input: z.input<typeof UpdateNotebookRequest>,
   ): Promise<VeirNotebook>;
+}
+
+/** What the opener checks need from the tenant's directory. */
+interface OpenerDirectory {
+  readonly others: OtherVentures;
+  readonly eirNames: readonly string[];
 }
 
 const SECTIONS: readonly NotebookSection[] = ['founderProfile', 'openQuestions', 'lastAdvice'];
@@ -189,6 +195,35 @@ export function createNotebookService(kit: Kit, directory: DirectoryCache): Note
     throw new NotebookIntegrityError(record.id);
   }
 
+  /** The directory facts the opener checks need (owner role, read before the request transaction). */
+  async function openerDirectory(ctx: RequestContext, ventureId: string): Promise<OpenerDirectory> {
+    return {
+      others: await directory.others(ctx.tenantId, ventureId),
+      eirNames: (await directory.get(ctx.tenantId)).eirNames,
+    };
+  }
+
+  /**
+   * The notebook's opener as New chat may show it: the same checks as at the start of a conversation and of a
+   * call (a person may have edited it, and distillation does not check EIR names).
+   */
+  async function greetingOf(
+    scope: RequestScope,
+    persona: { id: string; name: string },
+    opener: string | null,
+    guards: OpenerDirectory,
+  ): Promise<string | null> {
+    if (opener === null) return null;
+    return validatedOpener(opener, {
+      personaName: persona.name,
+      personaEirName: await personasRepo.getPersonaEirName(scope.tx, persona.id),
+      eirNames: guards.eirNames,
+      otherVentureNames: guards.others.names,
+      otherVentureCanaries: guards.others.canaries,
+      otherVentureMemberNames: guards.others.memberNames,
+    });
+  }
+
   /** The persona coaching the venture now (its notebook is the one shown). */
   async function currentPersona(
     scope: RequestScope,
@@ -206,6 +241,7 @@ export function createNotebookService(kit: Kit, directory: DirectoryCache): Note
   return {
     get: async (ctx, rawVentureId) => {
       const ventureId = requireId(rawVentureId, 'Venture');
+      const guards = await openerDirectory(ctx, ventureId);
       return await kit.inRequest(ctx, async (scope) => {
         const decision = await requireVentureAccess(scope, ventureId, 'read', { objectType: 'notebook' });
         if (!decision.canWrite && !decision.isAssignedEir) {
@@ -225,6 +261,7 @@ export function createNotebookService(kit: Kit, directory: DirectoryCache): Note
         return notebooksRepo.toNotebookView(
           { ventureId, personaId: persona.id, personaName: persona.name },
           record,
+          await greetingOf(scope, persona, record?.content.nextOpener ?? null, guards),
         );
       });
     },
@@ -235,17 +272,11 @@ export function createNotebookService(kit: Kit, directory: DirectoryCache): Note
       // An opener a person writes is shown and spoken as the vEIR (the first bubble of the next conversation
       // and the call intro), so it passes the checks applied there; the directory (owner role) is read before
       // the writing transaction, as at session start.
-      const openerGuards =
-        input.edit.action === 'edit_opener'
-          ? {
-              others: await directory.others(ctx.tenantId, ventureId),
-              eirNames: (await directory.get(ctx.tenantId)).eirNames,
-            }
-          : null;
+      const openerGuards = await openerDirectory(ctx, ventureId);
       return await kit.inRequest(ctx, async (scope) => {
         await requireVentureAccess(scope, ventureId, 'write', { objectType: 'notebook' });
         const persona = await currentPersona(scope, ventureId);
-        if (input.edit.action === 'edit_opener' && openerGuards !== null) {
+        if (input.edit.action === 'edit_opener') {
           const problem = openerProblem(input.edit.text, {
             personaName: persona.name,
             personaEirName: await personasRepo.getPersonaEirName(scope.tx, persona.id),
@@ -308,6 +339,7 @@ export function createNotebookService(kit: Kit, directory: DirectoryCache): Note
         return notebooksRepo.toNotebookView(
           { ventureId, personaId: persona.id, personaName: persona.name },
           saved,
+          await greetingOf(scope, persona, saved.content.nextOpener, openerGuards),
         );
       });
     },

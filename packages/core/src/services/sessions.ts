@@ -336,7 +336,8 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
           session: await sessionView(scope.tx, sessionId),
           // Blocked turns carry their reason, support message and drafted escalation, so a reload shows
           // what the live stream showed (participant view: no risk categories or cross-venture detail).
-          turns: (await turnsRepo.listTurnViews(scope.tx, sessionId, supportMessageFor)).map(
+          // Each turn names its author and carries the caller's own rating (thumbs survive a reload).
+          turns: (await turnsRepo.listTurnViews(scope.tx, sessionId, supportMessageFor, ctx.principalId)).map(
             participantTurnView,
           ),
         };

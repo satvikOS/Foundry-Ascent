@@ -347,6 +347,8 @@ describe('participant views (no cross-venture oracle)', () => {
       createdAt: '2026-10-05T12:00:00.000Z',
       completedAt: null,
       blocked: { reason: 'cross_venture', supportMessage: null, escalationId: null },
+      author: null,
+      myFeedback: null,
     };
     const shown = participantTurnView(view);
     expect(shown.blocked?.reason).toBe('policy');

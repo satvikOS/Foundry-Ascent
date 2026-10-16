@@ -115,14 +115,15 @@ const DIGEST_POLL_MS = 4_000;
 const DIGEST_WAIT_MS = 120_000;
 
 /**
- * Conversations whose digest was deleted from this page. Distillation never writes a deleted digest again,
- * so none is awaited for them. (The view does not say whether a digest was deleted, so this is per tab.)
+ * Conversations whose digest was deleted from this page, until the conversation is read again (the server's
+ * `digestDeleted` then says so, across reloads). Distillation never writes a deleted digest again, so none is
+ * awaited for them.
  */
 const deletedDigests = new Set<string>();
 
-/** Whether the person deleted this conversation's digest (in this tab). */
-export function digestDeleted(sessionId: string): boolean {
-  return deletedDigests.has(sessionId);
+/** Whether this conversation's digest was deleted (by anyone, or from this page just now). */
+export function digestDeleted(session: Pick<SessionView, 'id' | 'digestDeleted'>): boolean {
+  return session.digestDeleted || deletedDigests.has(session.id);
 }
 
 /**
@@ -130,11 +131,12 @@ export function digestDeleted(sessionId: string): boolean {
  * its digest neither written nor deleted.
  */
 export function awaitingDigest(
-  session: Pick<SessionView, 'id' | 'status' | 'privacy' | 'digest' | 'endedAt'> | undefined,
+  session:
+    Pick<SessionView, 'id' | 'status' | 'privacy' | 'digest' | 'digestDeleted' | 'endedAt'> | undefined,
   now: number = Date.now(),
 ): boolean {
   if (session?.status !== 'ended' || session.privacy !== 'standard' || session.digest) return false;
-  if (deletedDigests.has(session.id)) return false;
+  if (digestDeleted(session)) return false;
   return session.endedAt !== null && now - Date.parse(session.endedAt) < DIGEST_WAIT_MS;
 }
 

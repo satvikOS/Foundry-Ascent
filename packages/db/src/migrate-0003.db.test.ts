@@ -222,6 +222,7 @@ describe('migration 0003_security_hardening', () => {
       '0007_distillation',
       '0008_calls',
       '0009_review_privacy',
+      '0010_call_notice',
     ]);
     expect(versions).toEqual([...versions].sort());
     expect(HARDENING).toBeDefined();

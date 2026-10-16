@@ -191,6 +191,25 @@ describe('POST /sessions/:id/turns (SSE)', () => {
     });
     expect(feedback.status).toBe(201);
     expect(await feedback.json()).toMatchObject({ feedbackId: expect.any(String) as unknown });
+    // A reload shows who wrote the message and the founder's own rating (thumbs stay rated).
+    const reloaded = await json(
+      await api.request(`/sessions/${session.id}`, { cookie: maya }),
+      SessionDetailResponse,
+    );
+    expect(reloaded.turns[0]).toMatchObject({
+      author: { id: api.h.people.maya, displayName: 'Maya Okafor-Lindqvist' },
+      myFeedback: { rating: 4 },
+    });
+    expect(last.turn.author).toEqual({ id: api.h.people.maya, displayName: 'Maya Okafor-Lindqvist' });
+    expect(last.turn.myFeedback).toBeNull();
+    // A teammate sees the author too, and no rating of their own.
+    const devin = await api.signInAs(api.h.people.devin);
+    const asTeammate = await json(
+      await api.request(`/sessions/${session.id}`, { cookie: devin }),
+      SessionDetailResponse,
+    );
+    expect(asTeammate.turns[0]?.author?.displayName).toBe('Maya Okafor-Lindqvist');
+    expect(asTeammate.turns[0]?.myFeedback).toBeNull();
     expect(
       await problemCode(
         await api.request(`/turns/${last.turn.id}/feedback`, { body: { rating: 4 }, cookie: jonah }),

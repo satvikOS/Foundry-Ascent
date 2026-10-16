@@ -1,6 +1,14 @@
 import { CreateTurnRequest, type CoachMode } from '@foundry/contracts';
 import { ArrowUp, Sparkles, Square } from 'lucide-react';
-import { useId, type KeyboardEvent, type ReactNode, type Ref } from 'react';
+import {
+  useEffect,
+  useId,
+  useRef,
+  type KeyboardEvent,
+  type MouseEvent,
+  type ReactNode,
+  type Ref,
+} from 'react';
 
 import { DisclosureBanner } from '@/components/disclosure-banner';
 import { Button } from '@/components/ui/button';
@@ -24,6 +32,12 @@ export function modeToSend(mode: ComposerMode): CoachMode | undefined {
   return mode === 'auto' ? undefined : mode;
 }
 
+/**
+ * Stop ignores clicks this soon after an answer starts: Send turns into Stop under the pointer, so the second
+ * click of a double click on Send would otherwise stop the message it just sent.
+ */
+export const STOP_GRACE_MS = 600;
+
 interface ComposerProps {
   value: string;
   onChange: (value: string) => void;
@@ -44,6 +58,11 @@ interface ComposerProps {
   busy?: boolean;
   /** When set, the composer is disabled and shows this reason. */
   disabledReason: string | null;
+  /**
+   * When set, the person can keep writing but Send waits, and this says why under the message box (files
+   * still uploading on New chat, which sending would leave).
+   */
+  sendHold?: string | null;
   onSend: () => void;
   onStop: () => void;
   textareaRef?: Ref<HTMLTextAreaElement>;
@@ -75,6 +94,7 @@ export function Composer({
   streaming,
   busy = false,
   disabledReason,
+  sendHold = null,
   onSend,
   onStop,
   textareaRef,
@@ -88,9 +108,25 @@ export function Composer({
   const tooLong = length > MAX_TURN_CHARS;
   const empty = value.trim().length === 0;
   const disabled = disabledReason !== null;
+  const held = sendHold !== null;
   const modes = COACH_MODES.filter((m) => !allowedModes || allowedModes.includes(m));
   const nearLimit = length > MAX_TURN_CHARS * 0.9;
   const label = `Message ${personaName}`;
+  // When an answer started from this composer (Stop's grace period runs from there). An answer already under
+  // way when the composer appears has no grace period.
+  const streamingSince = useRef<number | null>(null);
+  const wasStreaming = useRef(streaming);
+  useEffect(() => {
+    if (streaming && !wasStreaming.current) streamingSince.current = Date.now();
+    if (!streaming) streamingSince.current = null;
+    wasStreaming.current = streaming;
+  }, [streaming]);
+  const stop = (event: MouseEvent<HTMLButtonElement>) => {
+    const since = streamingSince.current;
+    // A click that belongs to the double click on Send (or lands right after it) is not a request to stop.
+    if (event.detail > 1 || (since !== null && Date.now() - since < STOP_GRACE_MS)) return;
+    onStop();
+  };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Escape' && streaming) {
@@ -100,7 +136,7 @@ export function Composer({
     }
     if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
     event.preventDefault();
-    if (!streaming && !busy && !empty && !tooLong && !disabled) onSend();
+    if (!streaming && !busy && !empty && !tooLong && !disabled && !held) onSend();
   };
 
   return (
@@ -118,8 +154,8 @@ export function Composer({
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            if (streaming) onStop();
-            else if (!busy && !empty && !tooLong && !disabled) onSend();
+            // Submitting only ever sends: Stop is its own button (and Escape), never the form.
+            if (!streaming && !busy && !empty && !tooLong && !disabled && !held) onSend();
           }}
           aria-label={label}
         >
@@ -215,15 +251,23 @@ export function Composer({
               </p>
               {actions}
               {streaming ? (
-                <Button type="submit" size="icon-sm" aria-label="Stop generating" className="rounded-full">
+                <Button
+                  key="stop"
+                  type="button"
+                  size="icon-sm"
+                  aria-label="Stop generating"
+                  className="rounded-full"
+                  onClick={stop}
+                >
                   <Square aria-hidden className="size-3 fill-current" />
                 </Button>
               ) : (
                 <Button
+                  key="send"
                   type="submit"
                   size="icon-sm"
                   loading={busy}
-                  disabled={disabled || empty || tooLong}
+                  disabled={disabled || empty || tooLong || held}
                   aria-label="Send message"
                   className="rounded-full"
                 >
@@ -234,6 +278,11 @@ export function Composer({
           </div>
         </form>
       </div>
+      {sendHold ? (
+        <p role="status" className="text-center text-small text-muted-foreground">
+          {sendHold}
+        </p>
+      ) : null}
       <DisclosureBanner variant="line" text={disclosure} veirName={veirName} />
     </div>
   );
