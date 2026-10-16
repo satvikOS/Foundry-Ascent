@@ -36,10 +36,14 @@ interface MemoryActionBarProps {
   onEdit?: (() => void) | undefined;
 }
 
+/** What approving a disputed item did: it is kept, confirmed, as venture memory again. */
+const DISPUTE_RESOLVED = 'Dispute resolved: kept as venture memory';
+
 /**
  * Lifecycle actions for one memory object: approve / reject for proposals (the same review path as the
- * "To review" queue), correct / pin / dispute / delete for kept memory. Deleting asks for confirmation;
- * everything else applies at once.
+ * "To review" queue), approve to resolve a dispute (`PATCH /memory/:id`, which confirms a disputed item),
+ * and correct / pin / dispute / delete for kept memory. Deleting asks for confirmation; everything else
+ * applies at once.
  */
 export function MemoryActionBar({
   ventureId,
@@ -57,6 +61,11 @@ export function MemoryActionBar({
     (isPending && pendingId === memory.id) || (review.isPending && review.variables.ids.includes(memory.id));
 
   const decide = (action: ReviewAction) => {
+    if (action === 'approve' && memory.status === 'disputed') {
+      // The review path decides proposals only; a dispute is resolved on the item itself.
+      run(memory.id, { action: 'approve' }, { successMessage: DISPUTE_RESOLVED });
+      return;
+    }
     review.mutate(
       { ids: [memory.id], action },
       {
