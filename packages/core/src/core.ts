@@ -1,3 +1,4 @@
+import { PlatformKeyCache } from './auth/keys.js';
 import { createAuthService, type AuthService } from './auth/service.js';
 import { resolveDeps, type CoreDeps } from './deps.js';
 import { createIngestionProcessor, type IngestionProcessor } from './ingestion/processor.js';
@@ -5,6 +6,7 @@ import { DirectoryCache } from './internal/directory.js';
 import { Kit } from './internal/kit.js';
 import { createOrchestrator, type Orchestrator } from './orchestrator/run-turn.js';
 import { createAdminService, type AdminService } from './services/admin.js';
+import { createCallsService, type CallsService } from './services/calls.js';
 import { createDistillService, type DistillService } from './services/distill.js';
 import { createDocumentsService, type DocumentsService } from './services/documents.js';
 import { createEirStudioService, type EirStudioService } from './services/eir-studio.js';
@@ -45,6 +47,8 @@ export interface Core {
   readonly notebook: NotebookService;
   /** The vEIR a venture talks to, call configuration and avatar sessions. */
   readonly veir: VeirService;
+  /** Voice calls: start, heartbeat, barge-in, end and summary. */
+  readonly calls: CallsService;
   /** Text-to-speech of validated replies during calls. */
   readonly speech: SpeechService;
   /** Persona lifecycle: EIR personas, consent, embodiment, assignments. */
@@ -58,6 +62,11 @@ export interface Core {
 export function createCore(deps: CoreDeps): Core {
   const kit = new Kit(resolveDeps(deps));
   const directory = new DirectoryCache(kit);
+  // Signs and verifies call speech units (retired keys verify for as long as a session token may live).
+  const speechKeys = new PlatformKeyCache(
+    kit,
+    Math.max(kit.config.session.keyGraceSeconds, kit.config.session.ttlSeconds),
+  );
   const auth = createAuthService(kit);
   const distill = createDistillService(kit, directory);
   const onPrincipalChanged = (principalId: string): void => {
@@ -81,7 +90,8 @@ export function createCore(deps: CoreDeps): Core {
     distill,
     notebook: createNotebookService(kit),
     veir: createVeirService(kit),
-    speech: createSpeechService(kit),
+    calls: createCallsService(kit, directory, speechKeys),
+    speech: createSpeechService(kit, speechKeys),
     personas: createPersonaManagementService(kit, directory),
     library: createKnowledgeLibraryService(kit),
     lessons: createLessonsService(kit),

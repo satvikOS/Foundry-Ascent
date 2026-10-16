@@ -19,6 +19,10 @@ import {
   type SpeechSynthesisInput,
   type SpeechSynthesizer,
   type SynthesizedSpeech,
+  SttGrantError,
+  type IssuedSttGrant,
+  type SttGrantIssuer,
+  type SttGrantRequest,
   type TextExtractor,
 } from '../ports.js';
 
@@ -127,6 +131,28 @@ export class FakeSpeechSynthesizer implements SpeechSynthesizer {
       characters: input.text.length,
       engine,
       voiceId: input.voiceId,
+    });
+  }
+}
+
+/**
+ * Test speech-to-text grants: a fake `wss://` URL carrying the request's language and rate (no credentials).
+ * `failNext` makes the next grant fail like a signing error.
+ */
+export class FakeSttGrantIssuer implements SttGrantIssuer {
+  readonly calls: SttGrantRequest[] = [];
+  failNext = false;
+
+  issue(request: SttGrantRequest): Promise<IssuedSttGrant> {
+    this.calls.push(request);
+    if (this.failNext) {
+      this.failNext = false;
+      return Promise.reject(new SttGrantError('no credentials'));
+    }
+    const n = String(this.calls.length);
+    return Promise.resolve({
+      url: `wss://stt.test.invalid:8443/stream-transcription-websocket?language-code=${request.languageCode}&sample-rate=${String(request.sampleRateHertz)}&grant=${n}`,
+      expiresAt: new Date(Date.now() + request.expiresInSeconds * 1000).toISOString(),
     });
   }
 }

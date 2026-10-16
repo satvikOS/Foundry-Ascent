@@ -1,12 +1,4 @@
-import {
-  auditRepo,
-  memoryRepo,
-  notebooksRepo,
-  principalsRepo,
-  tenantsRepo,
-  turnsRepo,
-  venturesRepo,
-} from '@foundry/db';
+import { auditRepo, memoryRepo, notebooksRepo, principalsRepo, tenantsRepo, venturesRepo } from '@foundry/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createRequestContext, type RequestContext } from '../context.js';
@@ -152,9 +144,14 @@ async function notebookVersion(): Promise<number> {
 }
 
 /** The first sentence of the plain turn's validated answer (what a call may speak). */
-async function spokenPassage(): Promise<string> {
-  const turn = await h.t.db.system((sx) => turnsRepo.getSpeechSource(sx, plainTurnId));
-  return (turn?.answer ?? '').replace(/\[E\d+\]/g, '').split(/(?<=[.?!])\s+/)[0] ?? '';
+/** Runs `fn` with a live call of the founder in the matrix conversation, then ends it. */
+async function withFounderCall<T>(fn: (callId: string) => Promise<T>): Promise<T> {
+  const { call } = await h.core.calls.start(ctx.founder, sessionId, { inputMode: 'typed' });
+  try {
+    return await fn(call.id);
+  } finally {
+    await h.core.calls.end(ctx.founder, call.id, { reason: 'user' });
+  }
 }
 
 const ALL_DENIED: readonly Who[] = [];
@@ -313,10 +310,38 @@ const MATRIX: readonly { name: string; allowed: readonly Who[]; op: Op }[] = [
   { name: 'veir.callConfig', allowed: WRITERS, op: (c) => h.core.veir.callConfig(c, ventureId) },
   { name: 'veir.avatarSession', allowed: WRITERS, op: (c) => h.core.veir.avatarSession(c, { ventureId }) },
   {
+    name: 'calls.start',
+    allowed: WRITERS,
+    op: async (c) => {
+      const { call } = await h.core.calls.start(c, sessionId, { inputMode: 'typed' });
+      await h.core.calls.end(c, call.id, { reason: 'user' });
+    },
+  },
+  {
+    name: 'calls.get',
+    allowed: ['founder', 'team', 'eirAssigned'],
+    op: (c) => withFounderCall(async (callId) => h.core.calls.get(c, callId)),
+  },
+  {
     name: 'speech.synthesize',
     allowed: WRITERS,
-    op: async (c) =>
-      h.core.speech.synthesize(c, { sessionId, turnId: plainTurnId, text: await spokenPassage() }),
+    // Speech belongs to the caller's own live call: writers start one; everyone else tries the founder's.
+    op: async (c) => {
+      const owner = WRITERS.some((w) => ctx[w] === c) ? c : ctx.founder;
+      const { call, intro } = await h.core.calls.start(owner, sessionId, { inputMode: 'typed' });
+      try {
+        if (intro === null) throw new Error('no intro');
+        await h.core.speech.synthesize(c, {
+          sessionId,
+          turnId: null,
+          seq: 0,
+          text: intro.text,
+          sig: intro.sig,
+        });
+      } finally {
+        await h.core.calls.end(owner, call.id, { reason: 'user' });
+      }
+    },
   },
   { name: 'library.list', allowed: STUDIO, op: (c) => h.core.library.list(c, personaId()) },
   {

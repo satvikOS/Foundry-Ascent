@@ -40,6 +40,10 @@ export {
   type SpeechSynthesisInput,
   type SpeechSynthesizer,
   type SynthesizedSpeech,
+  SttGrantError,
+  type IssuedSttGrant,
+  type SttGrantIssuer,
+  type SttGrantRequest,
   type TextExtractor,
 } from './ports.js';
 
@@ -57,25 +61,23 @@ export {
   type NotebookService,
 } from './services/notebook.js';
 export {
-  callUsageToday,
-  callVoice,
   embodimentView,
   resolveVeir,
   shortName,
   type ResolvedVeir,
   type VeirService,
 } from './services/veir.js';
-export { isSpeakable, speakableText, type SpeechService } from './services/speech.js';
+export { type SpeechService } from './services/speech.js';
 export {
-  CALL_GAP_SECONDS,
-  CALL_TAIL_SECONDS,
-  currentCallMinutes,
-  measureCalls,
-  remainingCallMinutes,
-  type CallSegment,
-  type CallUsage,
-  type VoiceTurnTime,
-} from './services/call-usage.js';
+  historyAsHeard,
+  isCrisisMessage,
+  speakableRun,
+  speakableText,
+  splitSentences,
+} from './services/spoken-text.js';
+export { CALL_LIMITS } from './services/call-usage.js';
+export { admitVoiceTurn, type AdmitVoiceTurn, type VoiceTurnAdmission } from './services/call-admission.js';
+export { STT_LANGUAGE, STT_SAMPLE_RATE_HERTZ, type CallsService } from './services/calls.js';
 export {
   DEFAULT_SPEECH_VOICE,
   SPEECH_PRICE_PER_MILLION_CHARS,

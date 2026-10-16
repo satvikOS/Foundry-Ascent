@@ -11,6 +11,7 @@ import { httpError, problemResponse } from './http/problem.js';
 import { RouteBuilder } from './http/router.js';
 import { type AppEnv, type RouteInfo } from './http/types.js';
 import { type Logger } from './logging.js';
+import { registerCallRoutes } from './routes/calls.js';
 import { registerLocalUploadRoutes } from './routes/local-uploads.js';
 import { registerSessionRoutes } from './routes/sessions.js';
 import { registerStudioRoutes } from './routes/studio.js';
@@ -115,6 +116,7 @@ export function createApp(deps: AppDeps): ApiApp {
   });
   registerStudioRoutes(routes, deps.core);
   registerVeirRoutes(routes, deps.core);
+  registerCallRoutes(routes, deps.core);
   if (deps.localUploads !== undefined) registerLocalUploadRoutes(routes, deps.localUploads);
 
   return Object.assign(app, { routeTable: [...routes.routes] as readonly RouteInfo[] });

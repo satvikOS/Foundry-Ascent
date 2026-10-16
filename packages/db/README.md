@@ -201,8 +201,14 @@ Added for the vEIR knowledge pools (docs/architecture/knowledge-pools.md): `note
 `updateKnowledgeSource`, `listChunkTexts`, sources with `kind`/`summary`/`body`/upload state;
 `personasRepo` embodiment and consent helpers (`setPersonaEmbodiment`, `setPersonaConsent`,
 `personaConsentAssets`, `toConsentView`, `consentCovers`, `findPersonasByName`, `listPersonasForEirProfile`;
-`revokeConsent` returns the suspended persona ids); `turnsRepo.getSpeechSource`, `listVoiceTurnsToday`;
+`revokeConsent` returns the suspended persona ids);
 `retrievalRepo.searchPatterns({personaId?})` (program-wide lessons plus the assigned persona's).
+
+Added for calls (docs/architecture/calls.md, migration 0008): `callsRepo` (`startCall`, `endCall`,
+`recordHeartbeat` — microphone seconds clamped to wall time —, `recordSttGrant`, `sttGrantsToday`,
+`getLiveCallOf`, `callSecondsToday` — minutes by the database clock —, `countRecentVoiceTurns`,
+`listCallTurns`, `callFollowUps`, `markTurnInterrupted` and `listTurnInterruptions` — what the founder heard,
+redacted with the turn —, `getSpokenTurn`, `countTurnSyntheses`, `reapStaleCalls`, `toCallView`).
 
 ### Role visibility enforced by RLS (verified by `rls.db.test.ts`)
 

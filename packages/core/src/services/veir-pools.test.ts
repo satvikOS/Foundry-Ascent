@@ -1,10 +1,8 @@
 import { notebooksRepo } from '@foundry/db';
 import { describe, expect, it } from 'vitest';
 
-import { measureCalls, currentCallMinutes, remainingCallMinutes } from './call-usage.js';
 import { summarize } from './knowledge-library.js';
 import { applyNotebookEdit, isSuppressed, notebookFingerprint } from './notebook.js';
-import { isSpeakable, speakableText } from './speech.js';
 import { embodimentView, shortName } from './veir.js';
 import { speechCostUsd, speechEngines } from './voices.js';
 
@@ -107,66 +105,6 @@ describe('notebook edits', () => {
     expect(cleared.suppressed.map((s) => s.section).sort()).toEqual(
       ['commitments', 'founderProfile', 'founderProfile', 'nextOpener', 'summary'].sort(),
     );
-  });
-});
-
-describe('speech text', () => {
-  const source = {
-    spoken: 'Run the map only in exam weeks. Under fifteen percent means stop.',
-    answer:
-      'Not yet. **38 of 200** is 19% [E1], below your bar.\n\n- Rerun in [finals](https://x.test) weeks (E2)',
-  };
-
-  it('reads answers as plain sentences', () => {
-    expect(speakableText(source.answer)).toBe(
-      'Not yet. 38 of 200 is 19%, below your bar. Rerun in finals weeks',
-    );
-  });
-
-  it('accepts only passages of the stored validated reply', () => {
-    expect(isSpeakable('Run the map only in exam weeks.', source)).toBe(true);
-    expect(isSpeakable('under fifteen percent means stop.', source)).toBe(true);
-    expect(isSpeakable('38 of 200 is 19%', source)).toBe(true);
-    expect(isSpeakable('Rerun in finals weeks', source)).toBe(true);
-    expect(isSpeakable('Run the map every week.', source)).toBe(false);
-    expect(isSpeakable('   ', source)).toBe(false);
-    expect(isSpeakable('Not yet.', { spoken: null, answer: null })).toBe(false);
-  });
-});
-
-describe('call minutes', () => {
-  const at = (minutesAgo: number): string => new Date(NOW.getTime() - minutesAgo * 60_000).toISOString();
-
-  it('groups spoken turns into calls and measures them', () => {
-    const usage = measureCalls(
-      [
-        // A finished call: 08:00–08:12 plus the tail minute.
-        { sessionId: 'a', at: at(240) },
-        { sessionId: 'a', at: at(234) },
-        { sessionId: 'a', at: at(228) },
-        // An ongoing call in another conversation, started 6 minutes ago.
-        { sessionId: 'b', at: at(6) },
-        { sessionId: 'b', at: at(2) },
-      ],
-      NOW,
-    );
-    expect(usage.segments).toHaveLength(2);
-    expect(usage.minutesToday).toBeCloseTo(13 + 6, 5);
-    expect(currentCallMinutes(usage, 'b')).toBeCloseTo(6, 5);
-    expect(currentCallMinutes(usage, 'a')).toBe(0);
-    expect(remainingCallMinutes(usage, 60)).toBe(41);
-    expect(remainingCallMinutes(usage, 10)).toBe(0);
-  });
-
-  it('splits a conversation into two calls after a long pause', () => {
-    const usage = measureCalls(
-      [
-        { sessionId: 'a', at: at(120) },
-        { sessionId: 'a', at: at(100) },
-      ],
-      NOW,
-    );
-    expect(usage.segments.map((s) => s.minutes)).toEqual([1, 1]);
   });
 });
 

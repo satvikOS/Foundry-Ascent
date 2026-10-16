@@ -31,6 +31,7 @@ import {
   type ValidatorResults,
 } from '@foundry/contracts';
 import {
+  callsRepo,
   escalationsRepo,
   personasRepo,
   sessionsRepo,
@@ -54,6 +55,7 @@ import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.j
 import { admitVoiceTurn as callsAdmission, type AdmitVoiceTurn } from '../services/call-admission.js';
 import { createDraftEscalation } from '../services/escalations.js';
 import { persistMemoryCandidates } from '../services/memory.js';
+import { historyAsHeard } from '../services/spoken-text.js';
 import {
   RATE_LIMITED_CRISIS_MESSAGE,
   blockedDetailOf,
@@ -223,6 +225,11 @@ interface Coach {
   readonly personaEirName: string | null;
   /** Earlier completed turns, oldest first (at most `historyTurns`). */
   readonly history: readonly turnsRepo.TurnRecord[];
+  /**
+   * The same turns as the founder heard them: a reply they spoke over during a call is replayed as the
+   * verified words they heard, or left out when they heard none of it (docs/architecture/calls.md §2.6).
+   */
+  readonly heardHistory: readonly HistoryTurn[];
   /** The stored opener, when the history reaches back to the start of the conversation. */
   readonly opener: string | null;
   readonly memory: LoadedContinuity;
@@ -437,11 +444,16 @@ export function createOrchestrator(
           throw reject('forbidden', 'No coaching mode is enabled for this venture', 'no_modes_allowed');
         }
         const history = await turnsRepo.listRecentTurns(tx, { sessionId, limit: cfg.turns.historyTurns });
+        const interruptions = await callsRepo.listTurnInterruptions(
+          tx,
+          history.map((t) => t.id),
+        );
         coach = {
           release,
           allowedModes,
           personaEirName: await personasRepo.getPersonaEirName(tx, active.persona.id),
           history,
+          heardHistory: historyAsHeard(history, interruptions),
           // The opener is the conversation's first message: replayed while the history reaches back to it.
           opener:
             session.opener !== null && (history.length < cfg.turns.historyTurns || history[0]?.ordinal === 1)
@@ -804,10 +816,7 @@ export function createOrchestrator(
     const context = assembleContext({
       system,
       evidence: pack.items.map((k) => k.item),
-      history: coach.history.map((t): HistoryTurn => ({
-        founderText: t.founderText,
-        answer: t.response?.answer ?? null,
-      })),
+      history: coach.heardHistory,
       founderText: input.text,
       maxInputTokens: cfg.turns.maxInputTokens,
       maxHistoryTurns: cfg.turns.historyTurns,
@@ -1167,15 +1176,16 @@ export function createOrchestrator(
         const parsed = input;
         const settings = pre.settings;
         const session = pre.session;
-        // A short reply answers the vEIR's last message: the previous answer, or the opener on the first turn.
+        // A short reply answers the vEIR's last message: the previous answer as the founder heard it, or the
+        // opener on the first turn.
         const coach = pre.coach;
         query = buildRetrievalQuery({
           founderText: parsed.text,
           previousAnswer:
             coach === null
               ? null
-              : coach.history.length > 0
-                ? (coach.history.at(-1)?.response?.answer ?? null)
+              : coach.heardHistory.length > 0
+                ? (coach.heardHistory.at(-1)?.answer ?? null)
                 : coach.opener,
           currentGoal: session.goal ?? pre.venture.currentGoal,
         });

@@ -25,4 +25,5 @@ export * as settingsRepo from './settings.js';
 export * as idempotencyRepo from './idempotency.js';
 export * as portfolioRepo from './portfolio.js';
 export * as notebooksRepo from './notebooks.js';
+export * as callsRepo from './calls.js';
 export { EXCERPT_CHARS } from './common.js';

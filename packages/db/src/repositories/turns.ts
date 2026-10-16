@@ -370,61 +370,6 @@ export async function redactSessionTurns(ex: SqlExecutor, sessionId: string): Pr
 }
 
 // ------------------------------------------------------------------------------------------------
-// Calls: what may be spoken, and how long people talked
-// ------------------------------------------------------------------------------------------------
-
-export interface SpeechSource {
-  readonly turnId: string;
-  readonly sessionId: string;
-  readonly ventureId: string;
-  readonly status: TurnStatusValue;
-  /** The validated short spoken form of the answer (voice turns), when the response has one. */
-  readonly spoken: string | null;
-  /** The validated answer. */
-  readonly answer: string | null;
-}
-
-/**
- * The validated text a turn may speak: its stored response's `spoken` form and `answer`, read straight from
- * the stored JSON so the check does not depend on which response fields this build's contract knows.
- * Content: never log it. Null when the turn is not visible.
- */
-export function getSpeechSource(ex: SqlExecutor, turnId: string): Promise<SpeechSource | null> {
-  return queryFirst(
-    ex,
-    `SELECT t.id, t.session_id, t.venture_id, t.status,
-            CASE WHEN jsonb_typeof(t.response -> 'spoken') = 'string' THEN t.response ->> 'spoken' END AS spoken,
-            CASE WHEN jsonb_typeof(t.response -> 'answer') = 'string' THEN t.response ->> 'answer' END AS answer
-     FROM turns t WHERE t.id = :id`,
-    { id: p.uuid(turnId) },
-    (r) => ({
-      turnId: col.uuid.decode(r.id, 'id'),
-      sessionId: col.uuid.decode(r.session_id, 'session_id'),
-      ventureId: col.uuid.decode(r.venture_id, 'venture_id'),
-      status: col.enum(TurnStatus.options).decode(r.status, 'status'),
-      spoken: col.text.nullable.decode(r.spoken, 'spoken'),
-      answer: col.text.nullable.decode(r.answer, 'answer'),
-    }),
-  );
-}
-
-export interface VoiceTurnTime {
-  readonly sessionId: string;
-  readonly at: string;
-}
-
-/**
- * When each turn the request principal spoke today (UTC) was sent, by conversation and time
- * (`app.voice_turns_today()`): call minutes are computed from these. No content.
- */
-export function listVoiceTurnsToday(ex: SqlExecutor): Promise<VoiceTurnTime[]> {
-  return queryRows(ex, 'SELECT session_id, at FROM app.voice_turns_today()', {}, (r) => ({
-    sessionId: col.uuid.decode(r.session_id, 'session_id'),
-    at: col.ts.decode(r.at, 'at'),
-  }));
-}
-
-// ------------------------------------------------------------------------------------------------
 // Evidence
 // ------------------------------------------------------------------------------------------------
 
