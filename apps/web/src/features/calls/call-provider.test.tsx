@@ -427,6 +427,27 @@ describe('the mini call bar', () => {
     expect(within(bar).getByRole('button', { name: 'Summary' })).toBeInTheDocument();
   });
 
+  it('offers Turn on sound when the browser stopped the call’s sound, keeping the AI marker', async () => {
+    const { engine, bar } = await minimized();
+    expect(within(bar).queryByRole('button', { name: 'Turn on sound' })).toBeNull();
+    // An interruption (a phone call on iOS) suspends the call's audio while it is minimized.
+    act(() => {
+      engine.set({ audioBlocked: true });
+    });
+    expect(bar).toHaveTextContent('Sound is off');
+    expect(within(bar).getByRole('status')).toHaveTextContent('Sound is off. Turn on sound to hear replies.');
+    await userEvent.click(within(bar).getByRole('button', { name: 'Turn on sound' }));
+    expect(engine.resumeAudio).toHaveBeenCalledTimes(1);
+    // The vEIR stays marked as AI in the bar.
+    expect(bar.querySelector('[data-slot="veir-badge"]')).toHaveTextContent('vEIR · AI');
+
+    act(() => {
+      engine.set({ audioBlocked: false });
+    });
+    expect(within(bar).queryByRole('button', { name: 'Turn on sound' })).toBeNull();
+    expect(bar).not.toHaveTextContent('Sound is off');
+  });
+
   it('says when the microphone disconnected while the call is minimized', async () => {
     const { engine, bar } = await minimized();
     act(() => {

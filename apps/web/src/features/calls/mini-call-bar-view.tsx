@@ -1,4 +1,4 @@
-import { Maximize2, Mic, MicOff, PhoneOff, X } from 'lucide-react';
+import { Maximize2, Mic, MicOff, PhoneOff, Volume2, X } from 'lucide-react';
 
 import { PersonaAvatar } from '@/components/faces/persona-avatar';
 import { VeirBadge } from '@/components/faces/veir-badge';
@@ -13,8 +13,9 @@ import { formatClock, spokenDuration, useCallClock } from './use-call-clock';
 import { useCallVeir } from './use-call-veir';
 
 /**
- * What the bar announces (its status region): the time warning, a microphone that went away, and the end
- * of a call that ended out of view, with why. The call screen says these itself while it is open.
+ * What the bar announces (its status region): the time warning, a microphone that went away, sound the
+ * browser stopped, and the end of a call that ended out of view, with why. The call screen says these
+ * itself while it is open.
  */
 function barAnnouncement(snapshot: CallSnapshot): string {
   if (snapshot.phase === 'ended') {
@@ -25,12 +26,15 @@ function barAnnouncement(snapshot: CallSnapshot): string {
   if (snapshot.typedReason === 'mic_lost') {
     return 'Your microphone disconnected. Return to the call to reconnect it or type.';
   }
+  if (snapshot.phase === 'live' && snapshot.audioBlocked)
+    return 'Sound is off. Turn on sound to hear replies.';
   return snapshot.notice?.kind === 'time_warning' ? snapshot.notice.message : '';
 }
 
 /**
  * A call that continues while the person looks elsewhere: the vEIR's face and AI marker, the timer (and the
- * time left near the end), mute, back to the call and end. After a call ended out of view (its time ran out,
+ * time left near the end), Turn on sound when the browser stopped the call's sound (as the call screen
+ * offers), mute, back to the call and end. After a call ended out of view (its time ran out,
  * or the program paused calls), it says so and offers the summary instead. Rendered by `MiniCallBar` only
  * while there is a call to show; while shown, the page's sticky headers sit below it (`--mini-call-height`).
  */
@@ -44,6 +48,8 @@ export function MiniCallBarView() {
   const speaking = snapshot.phase === 'live' && snapshot.activity === 'speaking';
   const duration = ended ? (snapshot.ended?.durationSeconds ?? 0) : clock.elapsed;
   const micLost = !ended && snapshot.typedReason === 'mic_lost';
+  // The browser stopped the call's sound (no tap yet, or an interruption such as a phone call on iOS).
+  const soundOff = snapshot.phase === 'live' && snapshot.audioBlocked;
 
   return (
     <section
@@ -93,6 +99,7 @@ export function MiniCallBarView() {
             <span className="font-medium text-warning"> · {clock.leftLabel}</span>
           ) : null}
           {micLost ? <span className="text-warning"> · Microphone disconnected</span> : null}
+          {soundOff ? <span className="text-warning"> · Sound is off</span> : null}
         </p>
         <VeirBadge kind={veir.kind} />
       </div>
@@ -116,6 +123,18 @@ export function MiniCallBarView() {
         </>
       ) : (
         <>
+          {soundOff ? (
+            <Button
+              size="sm"
+              aria-label="Turn on sound"
+              onClick={() => {
+                engine.resumeAudio();
+              }}
+            >
+              <Volume2 aria-hidden />
+              <span className="hidden sm:inline">Turn on sound</span>
+            </Button>
+          ) : null}
           {snapshot.input === 'voice' ? (
             <SimpleTooltip content={snapshot.muted ? 'Unmute' : 'Mute'}>
               <Button
