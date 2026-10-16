@@ -95,8 +95,8 @@ export function NotebookEditor({ ventureId, veirName, canEdit }: NotebookEditorP
 
   return (
     <div className="grid gap-8">
-      <div className="flex flex-wrap items-start gap-4">
-        <PersonaAvatar name={veirName} size="lg" decorative className="mt-1" />
+      <div className="flex items-start gap-4">
+        <PersonaAvatar name={veirName} size="lg" decorative className="mt-1 hidden sm:inline-flex" />
         <div className="grid min-w-0 flex-1 gap-1.5">
           <p className="label-mono">AI notes</p>
           <h2 className="font-serif text-subheading font-normal">What {veirName} knows</h2>
@@ -113,17 +113,6 @@ export function NotebookEditor({ ventureId, veirName, canEdit }: NotebookEditorP
             </p>
           ) : null}
         </div>
-        {canEdit && !empty ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setConfirmClear(true);
-            }}
-          >
-            Clear notebook
-          </Button>
-        ) : null}
       </div>
 
       {isNotebookConflict(edit.error) ? (
@@ -220,6 +209,21 @@ export function NotebookEditor({ ventureId, veirName, canEdit }: NotebookEditorP
                 save({ action: 'remove_opener' });
               }}
             />
+          ) : null}
+
+          {canEdit ? (
+            <div className="border-t border-border pt-4">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="-ml-3 text-muted-foreground"
+                onClick={() => {
+                  setConfirmClear(true);
+                }}
+              >
+                Clear notebook
+              </Button>
+            </div>
           ) : null}
         </div>
       )}

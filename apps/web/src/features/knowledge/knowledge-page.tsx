@@ -94,7 +94,8 @@ export function KnowledgePage() {
       <Tabs
         value={tab}
         onValueChange={(value) => {
-          setSearch({ view: value === 'memory' ? undefined : (value as KnowledgeView) }, false);
+          // The open memory item belongs to the section it was opened from.
+          setSearch({ view: value === 'memory' ? undefined : (value as KnowledgeView), m: undefined }, false);
         }}
         className="gap-0"
       >
