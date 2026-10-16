@@ -283,10 +283,9 @@ function Conversation() {
     : stream.isStreaming
       ? 'Wait for the current answer to finish.'
       : null;
-  // Until the server titles it (from the first message that was not a crisis), the header shows the first
-  // stored message, never one that was blocked.
-  const firstTurn = turns[0];
-  const title = conversationTitle(session, firstTurn?.status === 'blocked' ? null : firstTurn?.founderText);
+  // Only the server titles a conversation (never from a crisis or high-risk message); until then the header
+  // reads when it started.
+  const title = conversationTitle(session);
   const latest = visibleTurns[visibleTurns.length - 1] ?? null;
   const followUps =
     !showLive && latest?.status === 'completed' && !ended ? (latest.response?.follow_up_questions ?? []) : [];

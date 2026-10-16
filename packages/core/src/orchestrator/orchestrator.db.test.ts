@@ -537,3 +537,35 @@ describe('session end', () => {
     await expect(h.core.sessions.end(maya, session.id)).rejects.toMatchObject({ code: 'session_ended' });
   });
 });
+
+describe('crisis-safe titles', () => {
+  it('never titles a conversation with a crisis message, and titles it from the next ordinary one', async () => {
+    const session = await h.core.sessions.create(maya, h.ventures.quietquad.id, {});
+    const crisis = await runTurn(h.core, maya, session.id, {
+      text: "I don't want to be alive anymore and I keep thinking about ending it.",
+    });
+    expect(crisis.outcome.status).toBe('blocked');
+    expect((await h.core.sessions.get(maya, session.id)).session.title).toBeNull();
+    await runTurn(h.core, maya, session.id, { text: 'How should we price the library pilot?' });
+    expect((await h.core.sessions.get(maya, session.id)).session.title).toBe(
+      'How should we price the library pilot?',
+    );
+  });
+
+  it('never titles a conversation with a high-risk first message', async () => {
+    const session = await h.core.sessions.create(maya, h.ventures.quietquad.id, {});
+    const { outcome } = await runTurn(h.core, maya, session.id, {
+      text: 'We need to file a provisional patent before demo day.',
+    });
+    expect(outcome.status).toBe('completed');
+    expect((await h.core.sessions.get(maya, session.id)).session.title).toBeNull();
+  });
+
+  it('withdraws the title of an ordinary message whose answer was held back', async () => {
+    const leaky = await createLeakyCore();
+    const session = await leaky.core.sessions.create(maya, h.ventures.quietquad.id, {});
+    const { outcome } = await runTurn(leaky.core, maya, session.id, { text: 'Summarise our evidence.' });
+    expect(outcome.status).toBe('blocked');
+    expect((await h.core.sessions.get(maya, session.id)).session.title).toBeNull();
+  });
+});

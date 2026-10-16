@@ -36,16 +36,13 @@ describe('conversationTitle', () => {
     startedAt: '2026-10-16T14:05:00.000Z',
   };
 
-  it('prefers the title, then the goal, then the first message', () => {
-    expect(conversationTitle({ ...base, title: 'Interview plan', goal: 'Goal' }, 'Hello')).toBe(
-      'Interview plan',
-    );
-    expect(conversationTitle({ ...base, goal: 'Find the riskiest assumption' }, 'Hello')).toBe(
+  it('prefers the title, then the goal, and never derives one from a message', () => {
+    expect(conversationTitle({ ...base, title: 'Interview plan', goal: 'Goal' })).toBe('Interview plan');
+    expect(conversationTitle({ ...base, goal: 'Find the riskiest assumption' })).toBe(
       'Find the riskiest assumption',
     );
-    expect(conversationTitle(base, 'Which assumption should we test first?')).toBe(
-      'Which assumption should we test first?',
-    );
+    // Untitled by the server (e.g. a crisis first message): the time it started, never the message.
+    expect(conversationTitle(base)).toMatch(/^Conversation · /);
   });
 
   it('falls back to when it started, so untitled conversations never read the same', () => {
@@ -53,15 +50,15 @@ describe('conversationTitle', () => {
     const evening = conversationTitle({ ...base, startedAt: '2026-10-16T19:40:00.000Z' });
     expect(morning).toMatch(/^Conversation · /);
     expect(morning).not.toBe(evening);
-    expect(conversationTitle({ ...base, title: '   ' }, '  ')).toBe(morning);
+    expect(conversationTitle({ ...base, title: '   ' })).toBe(morning);
     expect(conversationTitle({ ...base, privacy: 'ephemeral' })).toMatch(/^Temporary chat · /);
   });
 
   it('keeps the fallback short enough that the time survives the sidebar', () => {
     const now = new Date(2026, 9, 16, 15, 0, 0);
     const today = (hour: number, minute: number) => new Date(2026, 9, 16, hour, minute).toISOString();
-    const first = conversationTitle({ ...base, privacy: 'ephemeral', startedAt: today(6, 55) }, null, now);
-    const second = conversationTitle({ ...base, privacy: 'ephemeral', startedAt: today(9, 10) }, null, now);
+    const first = conversationTitle({ ...base, privacy: 'ephemeral', startedAt: today(6, 55) }, now);
+    const second = conversationTitle({ ...base, privacy: 'ephemeral', startedAt: today(9, 10) }, now);
     expect(first).not.toBe(second);
     expect(first.length).toBeLessThanOrEqual(26);
     expect(first).toBe(`Temporary chat · ${startStamp(today(6, 55), now)}`);

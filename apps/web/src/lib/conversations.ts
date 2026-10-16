@@ -40,21 +40,19 @@ export function startStamp(value: string, now: Date = new Date()): string {
 }
 
 /**
- * The name of a conversation everywhere it is listed: its title (from the first message that was not a
- * crisis, refined by distillation), else its goal, else the first message when given, else when it
- * started ("Temporary chat · 2:05 PM"), so two conversations never read the same.
+ * The name of a conversation everywhere it is listed: the server's title (from the first message the
+ * classifier found ordinary, refined by distillation), else its goal, else when it started ("Conversation ·
+ * 2:05 PM"), so two conversations never read the same. The client never titles a conversation from a
+ * message itself: it cannot tell a crisis or high-risk message from an ordinary one.
  */
 export function conversationTitle(
   session: Pick<SessionView, 'title' | 'goal' | 'privacy' | 'startedAt'>,
-  firstMessage?: string | null,
   now: Date = new Date(),
 ): string {
   const title = session.title?.trim();
   if (title) return title;
   const goal = session.goal?.trim();
   if (goal) return goal;
-  const fromMessage = firstMessage ? titleFromMessage(firstMessage) : '';
-  if (fromMessage) return fromMessage;
   return `${session.privacy === 'ephemeral' ? 'Temporary chat' : 'Conversation'} · ${startStamp(session.startedAt, now)}`;
 }
 
