@@ -51,6 +51,7 @@ from foundry_evals.models import (
     TurnCompleted,
     TurnError,
     TurnView,
+    VeirNotebook,
     VentureDetail,
     VentureSummary,
 )
@@ -559,6 +560,25 @@ class FoundryClient:
 
     def end_session(self, session_id: str) -> None:
         self.request("POST", f"/sessions/{session_id}/end", idempotency_key=str(uuid.uuid4()))
+
+    def delete_session(self, session_id: str) -> None:
+        """Deletes the conversation: its content and everything derived from it (notes, digest, memory) are
+        erased and it leaves every list."""
+        self.request("DELETE", f"/sessions/{session_id}")
+
+    # The vEIR notebook ------------------------------------------------------------------------------------
+
+    def get_notebook(self, venture_id: str) -> VeirNotebook:
+        return self._json(self.request("GET", f"/ventures/{venture_id}/notebook"), VeirNotebook)
+
+    def edit_notebook(self, venture_id: str, expected_version: int, edit: dict[str, Any]) -> VeirNotebook:
+        """One edit against the version it was made for (409 ``conflict`` when the notebook changed meanwhile)."""
+        response = self.request(
+            "PATCH",
+            f"/ventures/{venture_id}/notebook",
+            json_body={"expectedVersion": expected_version, "edit": edit},
+        )
+        return self._json(response, VeirNotebook)
 
     # Calls --------------------------------------------------------------------------------------------
 

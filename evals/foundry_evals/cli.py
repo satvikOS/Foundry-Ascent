@@ -24,8 +24,15 @@ from pydantic import SecretStr
 
 from foundry_evals import __version__
 from foundry_evals.client import normalize_base_url
-from foundry_evals.datasets import DATASETS_DIR, DatasetError, dataset_digest, load_redteam, load_scenarios
-from foundry_evals.environment import Environment, EnvironmentSetupError
+from foundry_evals.datasets import (
+    DATASETS_DIR,
+    DatasetError,
+    dataset_digest,
+    load_conversations,
+    load_redteam,
+    load_scenarios,
+)
+from foundry_evals.environment import SEED_VENTURE_SLUGS, Environment, EnvironmentSetupError
 from foundry_evals.graders.judge import JudgeNotAvailableError, load_judge
 from foundry_evals.planning import Budget, build_cases, plan_cases
 from foundry_evals.report import write_reports
@@ -35,6 +42,7 @@ from foundry_evals.runner import Runner, RunnerOptions
 EXIT_OK, EXIT_GATE_FAILED, EXIT_USAGE, EXIT_INFRA = 0, 1, 2, 3
 ACCESS_CODE_ENV = "FA_OWNER_ACCESS_CODE"
 BASE_URL_ENV = "FA_BASE_URL"
+MEMORY_VENTURE_ENV = "FA_EVALS_MEMORY_VENTURE"
 
 
 def _utc_now() -> dt.datetime:
@@ -71,7 +79,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     run = sub.add_parser("run", help="run a suite against a deployed API")
-    run.add_argument("--suite", choices=("scenarios", "redteam", "all"), default="all")
+    run.add_argument("--suite", choices=("scenarios", "redteam", "conversations", "all"), default="all")
     run.add_argument(
         "--base-url", default=os.environ.get(BASE_URL_ENV), help=f"site URL (default: ${BASE_URL_ENV})"
     )
@@ -92,6 +100,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument(
         "--category", action="append", default=[], metavar="NAME", help="run only these categories/groups"
+    )
+    run.add_argument(
+        "--memory-venture",
+        default=os.environ.get(MEMORY_VENTURE_ENV) or None,
+        metavar="KEY",
+        help=(
+            "key of a dedicated synthetic venture for the remembered (multi-session) conversations; they write to "
+            f"its vEIR notebook and memory, so never a seeded or shared venture (default: ${MEMORY_VENTURE_ENV}; "
+            "without one they are skipped)"
+        ),
     )
     run.add_argument("--skip-probes", action="store_true", help="do not run API authorization probes")
     run.add_argument(
@@ -122,10 +140,12 @@ def cmd_validate(args: argparse.Namespace, out: TextIO) -> int:
     try:
         scenarios = load_scenarios(args.datasets_dir / "scenarios.yaml")
         redteam = load_redteam(args.datasets_dir / "redteam.yaml")
+        conversations = load_conversations(args.datasets_dir / "conversations.yaml")
     except DatasetError as exc:
         print(f"dataset error: {exc}", file=sys.stderr)
         return EXIT_USAGE
     s = scenarios.scenarios
+    co = conversations.conversations
     summary: dict[str, Any] = {
         "scenarios": len(s),
         "highRisk": sum(1 for x in s if x.risk == "high"),
@@ -137,9 +157,12 @@ def cmd_validate(args: argparse.Namespace, out: TextIO) -> int:
         "byCategory": dict(Counter(a.category for a in redteam.attacks)),
         "byTechnique": dict(Counter(a.technique for a in redteam.attacks)),
         "apiProbes": len(redteam.api_probes),
+        "conversations": len(co),
+        "conversationsByKind": dict(Counter(c.kind for c in co)),
         "turns": {
             "scenarios": sum(len(x.setup_turns) + 1 for x in s),
             "redteam": sum(len(a.turns) for a in redteam.attacks),
+            "conversations": sum(c.turn_count for c in co),
         },
     }
     out.write(json.dumps(summary, indent=2) + "\n")
@@ -169,11 +192,31 @@ def cmd_run(
         redteam = (
             load_redteam(args.datasets_dir / "redteam.yaml") if args.suite in ("redteam", "all") else None
         )
+        conversations = (
+            load_conversations(args.datasets_dir / "conversations.yaml")
+            if args.suite in ("conversations", "all")
+            else None
+        )
     except DatasetError as exc:
         print(f"dataset error: {exc}", file=sys.stderr)
         return EXIT_USAGE
+    if args.memory_venture is not None and args.memory_venture in SEED_VENTURE_SLUGS:
+        print(
+            "--memory-venture must be a dedicated synthetic venture, never a seeded one: remembered conversations "
+            "write to its notebook and memory, and deleting them erases a notebook summary they contributed to",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
     budget = Budget(args.max_turns, args.max_cost_usd, args.est_cost_per_turn)
-    cases = build_cases(args.suite, scenarios, redteam, ids=args.case, categories=args.category)
+    cases = build_cases(
+        args.suite,
+        scenarios,
+        redteam,
+        conversations=conversations,
+        ids=args.case,
+        categories=args.category,
+        remembered=args.memory_venture is not None,
+    )
     if not cases:
         print("no cases match the selection", file=sys.stderr)
         return EXIT_USAGE
@@ -215,7 +258,7 @@ def cmd_run(
         started_at=started.isoformat(timespec="seconds"),
         datasets={
             name: dataset_digest(args.datasets_dir / name)
-            for name in ("scenarios.yaml", "redteam.yaml")
+            for name in ("scenarios.yaml", "redteam.yaml", "conversations.yaml")
             if (args.datasets_dir / name).exists()
         },
         budget={
@@ -261,6 +304,7 @@ def cmd_run(
                 max_cost_usd=args.max_cost_usd,
                 turn_rate_limit=args.turn_rate_limit,
                 max_wait_seconds=args.max_wait_seconds,
+                memory_venture=args.memory_venture,
             ),
             log=_log,
             sleep=sleep,

@@ -134,3 +134,12 @@ def test_seed_canary_formula_mirrors_typescript() -> None:
     assert "CANARY::${ventureSlug}::${out}" in source
     assert "% 32" in source
     assert re.fullmatch(r"CANARY::quietquad::[0-9A-HJKMNP-TV-Z]{8}", seed_canary("quietquad"))
+
+
+def test_notebook_fields() -> None:
+    # The mirror reads a subset of the notebook (whether it is empty, and its version for edits).
+    keys = _object_keys(_source("knowledge.ts"), "VeirNotebook")
+    aliases = {f.alias or name for name, f in models.VeirNotebook.model_fields.items()}
+    assert aliases <= keys
+    edits = re.findall(r"action: z\.literal\('([a-z_]+)'\)", _source("knowledge.ts"))
+    assert {"edit_summary", "clear"} <= set(edits)

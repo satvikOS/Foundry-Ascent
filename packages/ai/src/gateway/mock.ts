@@ -2,6 +2,12 @@ import type { CoachMode, CoachResponse, CommitmentStatus, MemoryCandidate } from
 
 import { DISTILL_SCHEMA_NAME, type DistillDraft } from '../distill/schema.js';
 import { AUTO_MODE, parseControlBlock, type PromptControl } from '../prompts/control.js';
+import {
+  contentWords,
+  endsWithQuestion,
+  founderMoves,
+  type FounderMove,
+} from '../prompts/conversation-state.js';
 import { veirFirstName } from '../prompts/persona.js';
 import { COACH_RESPONSE_SCHEMA_NAME } from '../prompts/version.js';
 import { RISK_ESCALATION_MAP, primaryForcedCategory } from '../risk/escalation-map.js';
@@ -19,13 +25,29 @@ import {
   BANK_PROPER_NOUNS,
   ESCALATION_AREAS,
   GREETINGS,
+  HAND_BACKS,
+  HELLO_AFTER_OPENER,
+  HUMOUR_LINES,
   LEADS,
+  RECALL_LEADS,
+  REPAIR_LINES,
+  SHORT_ACKS,
+  SIGN_OFFS,
+  STRESS_LINES,
   TEACH_STEPS,
+  THANKS_REPLIES,
   TOPICS,
   autoModeFor,
   topicOf,
   type MockTopic,
 } from './mock-content.js';
+import {
+  conversationStateIn,
+  previousConversationIn,
+  unescapeData,
+  type PreviousConversation,
+  type StateReading,
+} from './mock-conversation.js';
 import { validateStructured } from './provider.js';
 import {
   EMBEDDING_DIMENSIONS,
@@ -104,12 +126,8 @@ function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
-function unescapeData(text: string): string {
-  return text
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&amp;/g, '&');
+function wordsIn(text: string): number {
+  return text.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
 }
 
 /** The newest message carrying the founder's words (later messages are follow-up instructions). */
@@ -171,6 +189,78 @@ function evidenceIn(messages: readonly ChatMessage[], system: string): MockEvide
   return items;
 }
 
+/**
+ * Picks deterministically from a non-empty list, skipping items whose first sentence is already in `said` (what
+ * the vEIR said earlier in the conversation); when every item was said, the seeded one.
+ */
+function fresh(items: readonly string[], seed: number, said: string): string {
+  for (let i = 0; i < items.length; i += 1) {
+    const item = pick(items, seed + i);
+    const head = firstSentence(item)
+      .replace(/\{cite\}/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!said.includes(head.slice(0, 60))) return item;
+  }
+  return pick(items, seed);
+}
+
+/** Like {@link fresh}, but null when every item was already said (never the same question twice). */
+function freshOrNull(items: readonly string[], seed: number, said: string): string | null {
+  const item = fresh(items, seed, said);
+  const head = firstSentence(item).replace(/\s+/g, ' ').trim();
+  return said.includes(head.slice(0, 60)) ? null : item;
+}
+
+/** Citation keys removed ("evidence [E1, E2]." → "evidence."). */
+function withoutCitations(text: string): string {
+  return text.replace(/\s*\[E\d+(?:,\s*E\d+)*\]/g, '');
+}
+
+/** The four-word sequences of a text (lower-cased words), the unit of the evals' repetition check. */
+function fourGrams(text: string): Set<string> {
+  const words = withoutCitations(text)
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s']/gu, ' ')
+    .split(/\s+/)
+    .filter((w) => w !== '');
+  const out = new Set<string>();
+  for (let i = 0; i + 4 <= words.length; i += 1) out.add(words.slice(i, i + 4).join(' '));
+  return out;
+}
+
+/** Whether most of `text` was already said in `said` (half or more of its four-word sequences). */
+function repeats(text: string, said: ReadonlySet<string>): boolean {
+  const grams = fourGrams(text);
+  if (grams.size === 0) return false;
+  let seen = 0;
+  for (const g of grams) if (said.has(g)) seen += 1;
+  return seen / grams.size >= 0.5;
+}
+
+/**
+ * A spoken reply of at most `max` words that ends by handing the turn back: `parts` in order (empty ones skipped),
+ * dropping the `optional` ones (by index, last first) while it is too long, then clamping the rest so `last` is
+ * always said.
+ */
+function spokenWithin(
+  parts: readonly string[],
+  optional: ReadonlySet<number>,
+  last: string,
+  max: number,
+): string {
+  let body = parts.map((p, i) => ({ text: withoutCitations(p).trim(), i })).filter((p) => p.text !== '');
+  const total = (): number => wordsIn([...body.map((p) => p.text), last].join(' '));
+  for (const index of [...optional].sort((a, b) => b - a)) {
+    if (total() <= max) break;
+    body = body.filter((p) => p.i !== index);
+  }
+  if (body.length === 0) return last;
+  const room = Math.max(1, max - wordsIn(last));
+  const head = clampWords(body.map((p) => p.text).join(' '), room).text;
+  return `${head} ${last}`.trim();
+}
+
 /** Picks deterministically from a non-empty list. */
 function pick<T>(items: readonly T[], seed: number): T {
   const item = items[seed % items.length];
@@ -226,27 +316,263 @@ function styleIn(system: string): { directness: keyof typeof LEADS; warmth: keyo
   };
 }
 
-/** What the vEIR's notes say to pick up: the first open commitment, else whether there is an opener. */
-function notesIn(messages: readonly ChatMessage[]): { commitment: string | null; opener: boolean } {
-  const last = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
-  const notes = /<your_notes>([\s\S]*?)<\/your_notes>/.exec(last)?.[1] ?? '';
-  const commitments = /<open_commitments>\n([\s\S]*?)\n<\/open_commitments>/.exec(notes)?.[1] ?? '';
-  const first = commitments.split('\n')[0]?.replace(/^- /, '') ?? '';
-  const commitment = unescapeData(first.replace(/\s*\(due [^)]*\)$/, '')).trim();
-  return { commitment: commitment === '' ? null : commitment, opener: notes.includes('<next_opener>') };
-}
-
 function quoteOf(text: string, max = 160): string {
   const flat = text.replace(/\s+/g, ' ').trim();
   return flat.length > max ? `${flat.slice(0, max - 1).trimEnd()}…` : flat;
 }
 
+/** The founder's earlier messages in the prompt (oldest first) and the vEIR's earlier replies (opener included). */
+interface ConversationReading {
+  readonly founderHistory: readonly string[];
+  readonly priorReplies: readonly string[];
+  /** The founder's first message of this conversation. */
+  readonly firstMessage: boolean;
+  /** The conversation opened with the vEIR's opener (it already greeted). */
+  readonly openerShown: boolean;
+  readonly previous: PreviousConversation | null;
+  readonly state: StateReading | null;
+  /** The vEIR's last reply ended with a question. */
+  readonly lastReplyAsked: boolean;
+}
+
+function readConversation(
+  context: MockGenerateContext,
+  name: string | null,
+  today: string | null,
+): ConversationReading {
+  const index = founderMessageIndex(context.messages);
+  const before = context.messages.slice(0, Math.max(0, index));
+  const founderHistory = before
+    .filter((m) => m.role === 'user' && m.content.includes('<founder_message>'))
+    .map((m) =>
+      unescapeData(/<founder_message>\n?([\s\S]*?)\n?<\/founder_message>/.exec(m.content)?.[1] ?? '').trim(),
+    );
+  const priorReplies = before.filter((m) => m.role === 'assistant').map((m) => m.content);
+  const state = conversationStateIn(context.messages);
+  const last = priorReplies.at(-1) ?? '';
+  return {
+    founderHistory,
+    priorReplies,
+    firstMessage: founderHistory.length === 0,
+    openerShown: founderHistory.length === 0 && priorReplies.length > 0,
+    previous: previousConversationIn(context.system, context.messages, name, today),
+    state,
+    lastReplyAsked: state !== null ? state.questionStreak > 0 : last !== '' && endsWithQuestion(last),
+  };
+}
+
+/** The first `n` words of a text, lower-cased, for comparing openings. */
+function headWords(text: string, n = 3): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s']/gu, ' ')
+    .split(/\s+/)
+    .filter((w) => w !== '')
+    .slice(0, n)
+    .join(' ');
+}
+
+function fillName(template: string, name: string | null): string {
+  return template
+    .replace('{ name}', name !== null ? ` ${name}` : '')
+    .replace('{, name}', name !== null ? `, ${name}` : '');
+}
+
 /**
- * Deterministic, conversational `CoachResponse` derived from the prompt: persona style, the founder's
- * first name, the mode, risk flags, the evidence shown (cited by id, referred to by title) and the
- * vEIR's notes. It reads like a mentor (short paragraphs, one question at the end) and fills every
- * structured field the validator and the UI use. Its memory candidate states what the topic leaves open,
- * never the founder's message quoted back.
+ * A greeting for the first reply of a conversation, seeded per conversation (its opener, else what the prompt says
+ * about the last conversation), never the way any line the prompt shows of the last conversation opened.
+ */
+function greetingFor(
+  warmth: keyof typeof GREETINGS,
+  name: string | null,
+  previous: PreviousConversation | null,
+  seed: number,
+): string {
+  const templates = GREETINGS[warmth][previous !== null ? 'returning' : 'first'];
+  const avoid = new Set((previous?.openings ?? []).map((line) => headWords(line)));
+  for (let i = 0; i < templates.length; i += 1) {
+    const candidate = fillName(pick(templates, seed + i), name);
+    if (!avoid.has(headWords(candidate))) return candidate;
+  }
+  return fillName(pick(templates, seed), name);
+}
+
+/** Social lead-ins before a founder's actual question ("Sure, but who pays?"). */
+const SOCIAL_LEAD =
+  /^(?:(?:hi|hey|hello|hiya|good (?:morning|afternoon|evening)|thanks|thank you|thx|cheers|ok|okay|sure|yes|yeah|yep|no|nope|right|great|perfect|cool|got it|makes sense|fair enough|sounds good|and|but|so)\b[\s,.!:;-]*)+/i;
+/** "How are you?" and its kin: a social question, answered socially. */
+const HOW_ARE_YOU =
+  /\bhow(?:'s| is| are| have) (?:it going|you(?: been| doing)?|things|your (?:day|week))\b[?!.]*/gi;
+const QUESTION_WORD =
+  /^(?:what|how|why|when|where|who|which|should|could|would|can|do|does|did|is|are|will|any)\b/i;
+
+/**
+ * Whether the founder's message asks something that needs an answer, however short ("Sure, but who pays?"): a
+ * question left after the greeting, thanks or "ok" around it. "How are you?" alone is social.
+ */
+function asksSomething(text: string, moves: readonly FounderMove[]): boolean {
+  if (!moves.includes('question')) return false;
+  const rest = text.replace(SOCIAL_LEAD, '').replace(HOW_ARE_YOU, '').replace(SOCIAL_LEAD, '').trim();
+  return rest.includes('?') || (QUESTION_WORD.test(rest) && wordsIn(rest) > 2);
+}
+
+/** A question about who or what the vEIR is ("are you a man or a woman?", "am I talking to a person?"). */
+const IDENTITY_QUESTION =
+  /\b(?:are|r) (?:you|u) (?:a |an |actually |really |even )*(?:man|woman|guy|girl|lady|male|female|person|human|real person|real|bot|robot|machine|ai)\b|\b(?:am i|are we) (?:talking|speaking|chatting) (?:to|with) (?:a |an )?(?:person|human|real person|bot|machine|ai)\b|\bwhat are you\b|\bwho am i (?:talking|speaking) (?:to|with)\b/i;
+const GENDER_QUESTION = /\b(?:man|woman|guy|girl|lady|male|female|he or she|she or he)\b/i;
+
+/**
+ * The short, human answer to an identity question: always an AI, never a person or the EIR, in one sentence (the
+ * full disclosure is for "what are you?"), so the conversation can go on.
+ */
+function identityLine(text: string, persona: string | null, eir: string | null): string {
+  const who = persona ?? 'an AI coach';
+  const notEir = eir !== null ? `, not ${eir}` : '';
+  return GENDER_QUESTION.test(text)
+    ? `I'm an AI, so neither: I'm ${who}${notEir}.`
+    : `I'm an AI, not a person: I'm ${who}${notEir}.`;
+}
+
+/** "When we spoke about 20 minutes ago, we were on pricing." */
+function whereWeWere(previous: PreviousConversation): string {
+  const verb = previous.channel === 'call' ? 'spoke' : 'talked';
+  return previous.when !== null
+    ? `When we ${verb} ${previous.when}, we were on ${previous.topic}.`
+    : `Last time we were on ${previous.topic}.`;
+}
+
+/** The specific callback of a first reply: where we were, and how what they planned went. */
+function callbackTo(previous: PreviousConversation): string {
+  return previous.plan !== null
+    ? `${whereWeWere(previous)} You were going to ${withoutFinalStop(previous.plan)}. How did that go?`
+    : `${whereWeWere(previous)} Where did you land on it?`;
+}
+
+/** A thread named for the founder: the mock's phrase for its topic, or their own words quoted. */
+function threadPhrase(gist: string): string {
+  const topic = topicOf(gist);
+  return topic !== 'general' ? TOPICS[topic].phrase : `"${quoteOf(gist, 80)}"`;
+}
+
+/** The founder's last substantive topic in this conversation (their newest message first). */
+function lastTopicOf(texts: readonly string[]): MockTopic {
+  for (let i = texts.length - 1; i >= 0; i -= 1) {
+    const topic = topicOf(texts[i] ?? '');
+    if (topic !== 'general') return topic;
+  }
+  return 'general';
+}
+
+/**
+ * A social turn's reply (doctrine "Conversation craft"): recall, getting back to a thread, a greeting, thanks, a
+ * wrap-up or a short "yes". Null for a turn with venture substance (answered as coaching).
+ */
+function socialReply(args: {
+  readonly text: string;
+  readonly moves: readonly FounderMove[];
+  readonly reading: ConversationReading;
+  readonly name: string | null;
+  readonly warmth: keyof typeof GREETINGS;
+  readonly seed: number;
+  readonly names: readonly string[];
+}): string | null {
+  const { text, moves, reading, name, seed, names } = args;
+  const previous = reading.previous;
+  const content = contentWords(text).size;
+  // Any real question gets an answer, however short the message ("Sure, but who pays?").
+  const asks = asksSomething(text, moves);
+  const lastTopic = lastTopicOf(reading.founderHistory);
+  const nextStep = lowerFirst(withoutFinalStop(TOPICS[lastTopic].action), names);
+
+  if (moves.includes('recall')) {
+    if (previous !== null) {
+      const detail =
+        previous.plan !== null
+          ? `You were going to ${withoutFinalStop(previous.plan)}. How did that go?`
+          : 'Want to pick it up from there?';
+      return `${pick(RECALL_LEADS, seed)} ${whereWeWere(previous)} ${detail}`;
+    }
+    if (reading.founderHistory.length > 0) {
+      const first = reading.founderHistory.find((t) => contentWords(t).size >= 2);
+      return `I don't have anything from an earlier conversation with you yet, so this looks like our first one.${
+        first !== undefined ? ` So far today we've been on ${threadPhrase(first)}.` : ''
+      }`;
+    }
+    return "This is our first conversation, so I don't have anything from before yet. What would you like to start with?";
+  }
+  if (moves.includes('resume')) {
+    const target =
+      reading.state?.parked[0] ??
+      reading.state?.previous ??
+      [...reading.founderHistory].reverse().find((t) => contentWords(t).size >= 2) ??
+      null;
+    if (target !== null) {
+      const topic = topicOf(target);
+      const aside = reading.state?.parked[0] === target ? ', before we got sidetracked' : '';
+      return `We were on ${threadPhrase(target)}${aside}. ${pick(TOPICS[topic].questions, seed)}`;
+    }
+    if (previous !== null) return callbackTo(previous);
+    return "We hadn't got into anything yet. What's on your mind?";
+  }
+  if (moves.includes('closing') && !asks) {
+    const step = reading.founderHistory.length > 0 ? ` The one thing to hold onto: ${nextStep}.` : '';
+    return `Good talking with you${name !== null ? `, ${name}` : ''}.${step} ${pick(SIGN_OFFS, seed)}`;
+  }
+  if (moves.includes('thanks') && !asks && content < 3) {
+    const step = reading.founderHistory.length > 0 ? ` The next step stands: ${nextStep}.` : '';
+    return `${pick(THANKS_REPLIES, seed)}${step}`;
+  }
+  if (moves.includes('greeting') && !asks && content < 2) {
+    if (!reading.firstMessage)
+      return `Hi again${name !== null ? `, ${name}` : ''}. Where would you like to pick up?`;
+    const howAreYou = /\bhow(?:'s| is| are| have)\b/i.test(text) ? ' Thanks for asking.' : '';
+    if (reading.openerShown) {
+      // The opener already asked how it went: say hello back and say where we were, without asking again. The
+      // hello varies per conversation (seeded by its opener).
+      const hi = fillName(pick(HELLO_AFTER_OPENER, seed), name);
+      return previous !== null
+        ? `${hi}${howAreYou} ${whereWeWere(previous)}`
+        : `${fillName('Hi{ name}.', name)}${howAreYou} Go ahead.`;
+    }
+    const hello = `${greetingFor(args.warmth, name, previous, seed)}${howAreYou}`;
+    return `${hello} ${previous !== null ? callbackTo(previous) : "What's on your mind today?"}`;
+  }
+  if (moves.includes('short_reply') && !asks) {
+    if (reading.founderHistory.length === 0) return 'What would you like to work on?';
+    return `${pick(SHORT_ACKS, seed)} Then the next step is to ${nextStep}.`;
+  }
+  return null;
+}
+
+/** A social turn as a full response: the reply alone, nothing to cite, propose or remember. */
+function socialResponse(mode: CoachMode, answer: string, channel: string): CoachResponse {
+  return {
+    mode,
+    answer,
+    claims: [],
+    uncertainty: [],
+    challenge: null,
+    next_actions: [],
+    escalation: { required: false, category: null, priority: null, reason: null, requested_role: null },
+    memory_candidates: [],
+    follow_up_questions: [],
+    rehearsal: null,
+    spoken: channel === 'voice' ? clampWords(answer, 70).text : null,
+  };
+}
+
+/**
+ * Deterministic, conversational `CoachResponse` derived from the prompt, behaving the way the "Conversation
+ * craft" doctrine asks of a model: persona style, the founder's first name, the mode, risk flags, the evidence
+ * shown (cited by id, referred to by title), the last conversation (the "## Where you left off" section, else the
+ * vEIR's notes) and the `<conversation_state>` observations.
+ *
+ * - The first reply greets (differently in each conversation, never like the last one) and calls back to the
+ *   last conversation specifically; "do you remember…?" is answered from it, or plainly as a first conversation.
+ * - Social turns (greetings, thanks, wrapping up, a short "yes", "where were we?") get a short social reply with
+ *   nothing to cite, propose or remember.
+ * - Coaching replies mirror the founder's length, vary their opening, ask at most one question and not after a
+ *   reply that already asked one, offer to return to a parked thread on a topic change, and repair in one beat.
  */
 export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
   const control = context.control;
@@ -256,11 +582,15 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
       : (control?.mode ?? 'coach');
   const channel = control?.channel ?? 'text';
   const seed = fnv1a(`${mode}|${context.founderText}`);
-  const topic: MockTopic = topicOf(context.founderText);
-  const bank = TOPICS[topic];
   const name = control?.founder ?? null;
   const style = styleIn(context.system);
   const today = todayIn(context.system);
+  const reading = readConversation(context, name, today);
+  // A short follow-up ("Sure, but who pays?") is about what the conversation is on.
+  const own = topicOf(context.founderText);
+  const topic: MockTopic =
+    own === 'general' && !reading.firstMessage ? lastTopicOf(reading.founderHistory) : own;
+  const bank = TOPICS[topic];
   const [first, second] = context.evidenceIds;
   const cited = [first, second].filter((id): id is string => id !== undefined);
   const flags = control?.riskFlags ?? [];
@@ -271,36 +601,95 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
   const eir = control?.persona ? veirFirstName(control.persona) : null;
   // Names keep their capital where a phrase continues a sentence.
   const names = [name, eir, ventureNameIn(context.system)].filter((n): n is string => n !== null);
-
-  // Opening: a greeting on the first turn, a pickup from the notes, or a short lead-in.
-  const opening: string[] = [];
-  if (context.historyTurns === 0 && name !== null) {
-    opening.push(pick(GREETINGS[style.warmth], seed).replace('{name}', name));
+  const moves = founderMoves(context.founderText);
+  // Seeds that change with the conversation (its opener, which is seeded by the conversation's id, else what the
+  // prompt says about the last one), so a new conversation never opens like the last one.
+  const openingSeed = fnv1a(
+    `${reading.openerShown || reading.founderHistory.length > 0 ? (reading.priorReplies[0] ?? '') : ''}|${reading.previous?.source ?? ''}|${today ?? ''}|${name ?? ''}|${context.founderText}`,
+  );
+  // "Are you a man or a woman?": a short, human disclosure, then the conversation goes on.
+  const identity = IDENTITY_QUESTION.test(context.founderText)
+    ? identityLine(context.founderText, control?.persona ?? null, eir)
+    : null;
+  const rest = identity === null ? context.founderText : context.founderText.replace(IDENTITY_QUESTION, ' ');
+  if (identity !== null && forced === null && contentWords(rest).size < 2) {
+    const back = reading.state?.previous ?? null;
+    return socialResponse(
+      mode,
+      back !== null
+        ? `${identity} Back to ${threadPhrase(back)}: where were you on it?`
+        : `${identity} What would you like to work on?`,
+      channel,
+    );
   }
-  if (context.historyTurns === 0) {
-    const notes = notesIn(context.messages);
-    if (notes.commitment !== null) {
+
+  if (identity === null && forced === null && mode !== 'rehearse') {
+    const social = socialReply({
+      text: context.founderText,
+      moves,
+      reading,
+      name,
+      warmth: style.warmth,
+      seed: openingSeed,
+      names,
+    });
+    if (social !== null) return socialResponse(mode, social, channel);
+  }
+
+  // Opening: a greeting and a callback on the first reply, a one-beat repair or acknowledgement, or (now and
+  // then) a lead-in that differs from the last reply's opening.
+  const opening: string[] = [];
+  if (identity !== null) opening.push(identity);
+  if (moves.includes('repair')) opening.push(pick(REPAIR_LINES, seed));
+  if (moves.includes('stress')) opening.push(pick(STRESS_LINES, seed));
+  if (moves.includes('humour')) opening.push(pick(HUMOUR_LINES, seed));
+  if (reading.firstMessage && !reading.openerShown && name !== null) {
+    opening.unshift(greetingFor(style.warmth, name, reading.previous, openingSeed));
+  }
+  const previous = reading.previous;
+  if (reading.firstMessage && previous !== null) {
+    if (previous.bank === topic && topic !== 'general') {
       opening.push(
-        `Last time you planned to ${lowerFirst(withoutFinalStop(notes.commitment), names)}, so let's keep that in view.`,
+        `That picks up right where we left off${previous.when !== null ? ` ${previous.when}` : ''}.`,
       );
-    } else if (notes.opener) {
-      opening.push("I've been thinking about where we left off last time.");
+    } else if (previous.plan !== null && !reading.openerShown) {
+      opening.push(
+        `Last time you planned to ${lowerFirst(withoutFinalStop(previous.plan), names)}, so let's keep that in view.`,
+      );
     }
   }
-  if (opening.length === 0) {
-    const lead = pick(LEADS[style.directness], seed >>> 3);
-    opening.push(name !== null && seed % 3 === 0 ? `${name}, ${lowerFirst(lead, names)}` : lead);
+  if (opening.length === 0 && (seed >>> 3) % 3 === 0) {
+    const lastOpening = headWords(reading.priorReplies.at(-1) ?? '');
+    const leads = LEADS[style.directness];
+    const lead = [0, 1, 2]
+      .map((i) => pick(leads, (seed >>> 4) + i))
+      .find((l) => headWords(l) !== lastOpening && !lastOpening.startsWith(headWords(l, 2)));
+    if (lead !== undefined)
+      opening.push(name !== null && seed % 2 === 0 ? `${name}, ${lowerFirst(lead, names)}` : lead);
   }
 
-  const insight = pick(bank.insights, seed >>> 5).replace('{cite}', first !== undefined ? ` [${first}]` : '');
-  const paragraphs = [`${opening.join(' ')} ${insight}`];
+  // Never the same observation, advice or question twice in a conversation: skip what an earlier reply said.
+  const said = reading.priorReplies.join('\n');
+  const saidGrams = fourGrams(said);
+  const insight = fresh(bank.insights, seed >>> 5, said).replace(
+    '{cite}',
+    first !== undefined ? ` [${first}]` : '',
+  );
+  const paragraphs = [[...opening, insight].join(' ')];
+  // Mirror the founder: a short follow-up gets a short reply.
+  const compact = !reading.firstMessage && wordsIn(context.founderText) <= 8;
   const doctrine = doctrineSummaryIn(context.system);
+  const approach =
+    eir !== null && doctrine !== null
+      ? `${eir}'s approach comes down to this: ${lowerFirst(doctrine, names)}`
+      : null;
   if (
-    eir !== null &&
-    doctrine !== null &&
+    !compact &&
+    approach !== null &&
+    !repeats(approach, saidGrams) &&
     (mode === 'diagnose' || mode === 'coach' || mode === 'challenge')
   ) {
-    paragraphs[0] = `${paragraphs[0] ?? ''} ${eir}'s approach comes down to this: ${lowerFirst(doctrine, names)}`;
+    paragraphs[0] = `${paragraphs[0] ?? ''} ${approach}`;
   }
 
   const cite2 = second !== undefined ? ` [${second}]` : '';
@@ -317,7 +706,9 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
       break;
     case 'coach':
       paragraphs.push(
-        `You could ${bank.options[0]}, or ${bank.options[1]}. I'd ${bank.options[0]}: it gets you real evidence fastest${cite2}. A good first step is to ${lowerFirst(bank.action, names)}`,
+        compact
+          ? `I'd ${bank.options[0]}${cite2}. A good first step is to ${lowerFirst(bank.action, names)}`
+          : `You could ${bank.options[0]}, or ${bank.options[1]}. I'd ${bank.options[0]}: it gets you real evidence fastest${cite2}. A good first step is to ${lowerFirst(bank.action, names)}`,
       );
       break;
     case 'teach':
@@ -350,24 +741,50 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
       break;
     }
   }
+  // Advice already given in this conversation is not given again (the reply stays short instead).
+  if (paragraphs.length > 1 && mode !== 'rehearse' && repeats(paragraphs.at(-1) ?? '', saidGrams)) {
+    paragraphs.pop();
+  }
   const area = forced !== null ? (ESCALATION_AREAS[forced] ?? forced.replace(/_/g, ' ')) : null;
   if (area !== null) {
     paragraphs.push(
       `Part of this touches on ${area}, so I've flagged it for a qualified person to weigh in. I can only share general information on that part.`,
     );
   }
-  const question =
-    mode === 'teach'
-      ? `How would you apply the first step to ${bank.phrase} this week?`
-      : pick(bank.questions, seed >>> 7);
-  paragraphs.push(question);
+  // Topic change: follow the founder, and offer to come back to what they left.
+  const parked = moves.includes('topic_shift') ? reading.state?.parked[0] : undefined;
+  if (parked !== undefined) {
+    paragraphs.push(`Happy to come back to ${threadPhrase(parked)} after this.`);
+  }
+  // One question at most, and not right after a reply that already asked one.
+  const ask = reading.firstMessage || (!reading.lastReplyAsked && (seed >>> 9) % 3 !== 0);
+  const question = !ask
+    ? null
+    : mode === 'teach'
+      ? freshOrNull([`How would you apply the first step to ${bank.phrase} this week?`], 0, said)
+      : freshOrNull(bank.questions, seed >>> 7, said);
+  if (question !== null) paragraphs.push(question);
 
+  // Said aloud: the same opening (greeting, repair, acknowledgement), else now and then the founder's name, never
+  // on two replies in a row.
+  const lastSpokeName = name !== null && (reading.priorReplies.at(-1) ?? '').startsWith(`${name}, `);
+  const named =
+    opening.length === 0 && name !== null && !lastSpokeName && (reading.firstMessage || seed % 3 === 0);
+  const sentence = firstSentence(insight);
+  // Said as speech, not cut from the written answer: two or three sentences that end by handing the turn back (the
+  // question, else an invitation), never a caveat or a citation key.
+  const nextStep = `A good next step: ${withoutFinalStop(lowerFirst(bank.action, names))}.`;
+  const handBack =
+    question ?? freshOrNull(HAND_BACKS, seed >>> 11, said) ?? pick(HAND_BACKS, (seed >>> 11) + 1);
   const spokenParts = [
-    `${name !== null ? `${name}, ` : ''}${name !== null ? lowerFirst(firstSentence(insight), names) : firstSentence(insight)}`,
+    ...opening,
+    named ? `${name}, ${lowerFirst(sentence, names)}` : sentence,
     area !== null ? "I've flagged part of this for a qualified person." : '',
-    question,
-  ].filter((p) => p !== '');
-  const spoken = clampWords(spokenParts.join(' ').replace(/\s*\[E\d+(?:,\s*E\d+)*\]/g, ''), 70).text;
+    question === null && !said.includes(nextStep.slice(0, 50)) ? nextStep : '',
+  ];
+  // Over the limit, the next step goes first, then the extra opening lines (never the main sentence or the flag).
+  const optional = new Set([spokenParts.length - 1, ...opening.map((_, i) => i).slice(1)]);
+  const spoken = spokenWithin(spokenParts, optional, handBack, 70);
 
   const claims: CoachResponse['claims'] = [];
   if (cited.length > 0) {
@@ -396,7 +813,8 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
 
   return {
     mode,
-    answer: paragraphs.join('\n\n'),
+    // On a call the transcript is what was said (no citation keys: the claims carry the ids).
+    answer: channel === 'voice' ? spoken : paragraphs.join('\n\n'),
     claims,
     uncertainty: [{ item: bank.uncertainty, level: 'medium' }],
     challenge: mode === 'route' ? null : bank.challenge,

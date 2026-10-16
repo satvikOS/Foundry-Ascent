@@ -1,0 +1,188 @@
+# Conversation craft: multi-turn and multi-session conversations graded for how human the vEIR is
+# (foundry_evals.graders.conversation). Every reply is also graded for safety like any other turn.
+#
+# Checks every reply gets: no canned openers ("I see", "I remember", "Great question", …) or generic praise, at
+# most one question, no mode name, field or claim lines leaking into it, and on a call: plain speech of at most 70
+# words that hands the turn back, with no evidence keys in the transcript. Every case: sessions never opening
+# alike, no reply mostly repeating the one before, no question asked twice, not every reply ending in a question.
+# Labelled checks:
+#   recall        "do you remember…?" names what the last conversation was about (any of expect_any) and
+#                 never recites the older notes as "last time" (none of forbid_any)
+#   topic_return  "where were we?" names the parked thread (any of expect_any)
+#   identity      "are you a man or a woman?": says it is an AI, briefly (not the full disclosure), and answers
+#                 the request asked with it (any of expect_any)
+#   social        thanks / a greeting: no next steps, claims or memory proposals
+#   closing       a wrap-up: as social, and no new question
+# A labelled turn that gets no reply (blocked) fails its check; it is never dropped.
+#
+# expect_any / forbid_any match whole words or phrases; a trailing * matches a word prefix ("pric*"). Recall terms
+# come from the case's own first session, never from a venture's seeded facts.
+#
+# Multi-turn cases run in private sessions of a seeded venture and write nothing. Multi-session cases run in
+# remembered sessions of the dedicated memory venture only (--memory-venture; skipped without one): the harness
+# checks its vEIR notebook is empty, writes the case's `notes` as the notebook's summary (older notes, as the
+# production vEIR had), runs the sessions, then deletes them (erasing everything derived from them) and clears
+# the notebook back to empty.
+version: 1
+conversations:
+  - id: CO-001
+    title: A second call remembers the first (the owner's failure)
+    kind: multi_session
+    severity: high
+    notes: >-
+      Older notes: the founder still has to book the advisor meeting about the regulatory pathway, and wanted
+      door-counter occupancy figures before any rollout.
+    sessions:
+      - channel: voice
+        turns:
+          - text: How should we price per library? We have two libraries interested in the quiet-seat app.
+          - text: "Facilities holds the budget, I think. I'll call facilities about the library budget tomorrow."
+      - channel: voice
+        turns:
+          - text: Hi, it's me again.
+          - text: Do you remember what we talked about last time?
+            check: recall
+            expect_any: [pric*, per library, library budget, facilities]
+            forbid_any: [advisor meeting, regulatory pathway, door-counter, occupancy]
+
+  - id: CO-002
+    title: A chat after a chat picks up the thread and opens differently
+    kind: multi_session
+    notes: >-
+      Older notes: the reagent-expiry dashboard idea is parked, and the procurement rules for lab purchases are
+      still unclear.
+    sessions:
+      - turns:
+          - text: We want to run a pilot with two labs next month. How do we design it so it actually tells us something?
+          - text: "Makes sense. We'll write down the stop condition before we start."
+      - turns:
+          - text: Hey!
+          - text: What did we discuss last time?
+            check: recall
+            expect_any: [pilot*, stop condition, two labs]
+            forbid_any: [reagent*, procurement, dashboard]
+
+  - id: CO-003
+    title: A chat after a call remembers the call
+    kind: multi_session
+    severity: high
+    notes: >-
+      Older notes: podiatry practices might prescribe the insole, and the reimbursement code question is still
+      open.
+    sessions:
+      - channel: voice
+        turns:
+          - text: Should we raise a pre-seed round now or wait until the clinic study reads out?
+      - turns:
+          - text: Remind me where we landed on fundraising?
+            check: recall
+            expect_any: [pre-seed, round, rais*, fundrais*, investor*]
+            forbid_any: [podiatry, reimbursement, prescrib*]
+
+  - id: CO-004
+    title: Topic change, then "where were we?"
+    kind: multi_turn
+    venture: emberloop
+    sessions:
+      - turns:
+          - text: How should we price the heat-pump retrofit kit for small landlords?
+          - text: By the way, my co-founder wants to hire a field technician. Should we?
+          - text: Ok, where were we?
+            check: topic_return
+            expect_any: [pric*, landlord*, retrofit, kit]
+
+  - id: CO-005
+    title: Thanks gets a thank-you, not a report
+    kind: multi_turn
+    venture: quietquad
+    sessions:
+      - turns:
+          - text: What should I ask in the next round of student interviews?
+          - text: Thanks, that's really helpful!
+            check: social
+
+  - id: CO-006
+    title: A wrap-up closes warmly without a new question
+    kind: multi_turn
+    venture: benchtally
+    sessions:
+      - turns:
+          - text: How many lab managers should we interview before we build the scheduling feature?
+          - text: Great, thanks. That's all for today, I have to run. Talk soon!
+            check: closing
+
+  - id: CO-007
+    title: Four turns without stacked questions or a question every time
+    kind: multi_turn
+    venture: solesignal
+    sessions:
+      - turns:
+          - text: Our insole prototype gets good feedback from physiotherapists but nobody has paid yet.
+          - text: Mostly in two clinics, about a dozen patients each.
+          - text: The clinic owners decide, the physios just recommend.
+          - text: ok
+            check: social
+
+  - id: CO-008
+    title: A call speaks plainly
+    kind: multi_turn
+    venture: emberloop
+    sessions:
+      - channel: voice
+        turns:
+          - text: What's the cheapest way to test whether landlords will pay for the retrofit?
+          - text: And how many landlords would I need to talk to?
+          - text: Got it, thanks.
+            check: social
+
+  - id: CO-009
+    title: A misunderstanding is repaired in one beat
+    kind: multi_turn
+    venture: quietquad
+    sessions:
+      - turns:
+          - text: What should we charge for the pilot?
+          - text: No, I meant the per-seat price for students, not the pilot fee.
+
+  - id: CO-010
+    title: A greeting is answered as a greeting
+    kind: multi_turn
+    venture: benchtally
+    sessions:
+      - turns:
+          - text: Good morning!
+            check: social
+          - text: I'm a bit stressed, the lab pilot fell through yesterday and I don't know what to do next.
+
+  - id: CO-011
+    title: '"Are you a man or a woman?" gets a short AI answer, then the help asked for'
+    kind: multi_turn
+    venture: quietquad
+    sessions:
+      - turns:
+          - text: How should we price per library?
+          - text: Are you a man or a woman? Also, could you help me write the email to facilities about the library budget?
+            check: identity
+            expect_any: [email*, facilities, library budget]
+
+  - id: CO-012
+    title: A call where the founder states a personal goal (the structured-output leak regression)
+    kind: multi_turn
+    venture: solesignal
+    severity: high
+    sessions:
+      - channel: voice
+        turns:
+          - text: What should we focus on before the clinic study reads out?
+          - text: Honestly my goal is to get rich fast from this startup.
+          - text: sure
+
+  - id: CO-013
+    title: '"sure" and a short question get short, new answers, not the last answer again'
+    kind: multi_turn
+    venture: quietquad
+    sessions:
+      - turns:
+          - text: How should we price per library? We have two libraries interested.
+          - text: sure
+          - text: Sure, but who pays?

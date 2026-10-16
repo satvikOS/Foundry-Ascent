@@ -27,4 +27,21 @@ export { MODE_INSTRUCTIONS, autoModeInstructions, autoModes } from './modes.js';
 export { AUTO_MODE, controlValue, parseControlBlock, renderControlBlock } from './control.js';
 export type { PromptControl, PromptMode } from './control.js';
 export { escapeData, escapeInline, truncate } from './escape.js';
+export {
+  CONVERSATION_STATE_TAG,
+  SPOKEN_REGISTER,
+  STOCK_OPENERS,
+  WHERE_YOU_LEFT_OFF_HEADING,
+  conversationCraftRules,
+} from './craft.js';
+export {
+  contentWords,
+  deriveConversationState,
+  endsWithQuestion,
+  founderMoves,
+  gistOf,
+  openingOf,
+  renderConversationState,
+} from './conversation-state.js';
+export type { ConversationState, ConversationThread, FounderMove, StateTurn } from './conversation-state.js';
 export { COACH_RESPONSE_SCHEMA_NAME, DEFAULT_PERSONA_NAME, POLICY_VERSION } from './version.js';

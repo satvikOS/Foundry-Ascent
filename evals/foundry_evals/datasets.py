@@ -3,6 +3,8 @@
 ``datasets/scenarios.yaml`` — labelled coaching prompts (blueprint 01 §4 scenario benchmark).
 ``datasets/redteam.yaml`` — adversarial conversations (``attacks``) and API authorization probes
 (``api_probes``).
+``datasets/conversations.yaml`` — multi-turn and multi-session conversations graded for conversation craft
+(recall of the last conversation, topic return, varied openings, social turns, spoken register).
 
 Prompts may use ``{{placeholder}}`` tokens that the runner fills from the live environment (other
 ventures' names, the assigned EIR's name, the acting venture's own canary, …), so the datasets never
@@ -24,6 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from foundry_evals.graders.behaviours import BEHAVIOURS
 from foundry_evals.models import CoachModeName, EscalationCategoryName
+from foundry_evals.text import mentions_any
 
 DATASETS_DIR = Path(__file__).resolve().parent.parent / "datasets"
 
@@ -391,6 +394,107 @@ class ApiProbe(_Strict):
         return self
 
 
+ConversationCheck = Literal["recall", "topic_return", "social", "closing", "identity"]
+
+
+class ConversationTurn(_Strict):
+    text: str = Field(min_length=1, max_length=2000)
+    #: What this reply is graded for beyond the checks every reply gets (graders.conversation).
+    check: ConversationCheck | None = None
+    #: For ``recall`` and ``topic_return``: the reply must name at least one of these; for ``identity``: the
+    #: request asked with it. Whole words or phrases, case-insensitive; a trailing ``*`` matches a word prefix.
+    #: Use terms only the case's own earlier session says (never the venture's seeded facts).
+    expect_any: list[str] = Field(default_factory=list, max_length=12)
+    #: For ``recall``: terms of older notes (the case's ``notes``) that must not be recited as "last time".
+    forbid_any: list[str] = Field(default_factory=list, max_length=12)
+
+    @model_validator(mode="after")
+    def _expectations(self) -> ConversationTurn:
+        if self.check in ("recall", "topic_return", "identity") and not self.expect_any:
+            raise ValueError(f"{self.check} needs expect_any")
+        if self.check not in ("recall", "topic_return", "identity") and self.expect_any:
+            raise ValueError("expect_any is only for recall, topic_return and identity")
+        if self.check != "recall" and self.forbid_any:
+            raise ValueError("forbid_any is only for recall")
+        for term in [*self.expect_any, *self.forbid_any]:
+            if len(term.strip("* ")) < 3:
+                raise ValueError(f"expectation too short to mean anything: {term!r}")
+        overlap = {t.casefold() for t in self.expect_any} & {t.casefold() for t in self.forbid_any}
+        if overlap:
+            raise ValueError(f"terms both expected and forbidden: {sorted(overlap)}")
+        unknown = placeholders(self.text) - TEXT_PLACEHOLDERS
+        if unknown:
+            raise ValueError(f"unknown placeholders: {sorted(unknown)}")
+        return self
+
+
+class ConversationSession(_Strict):
+    #: ``voice``: the session's turns are spoken during a call started with typed input.
+    channel: Literal["text", "voice"] = "text"
+    turns: list[ConversationTurn] = Field(min_length=1, max_length=6)
+
+
+class Conversation(_Strict):
+    """A multi-turn or multi-session conversation graded for conversation craft (graders.conversation).
+
+    Multi-turn cases run in private (ephemeral) sessions and write nothing. Multi-session cases run in *standard*
+    (remembered) sessions so the second can recall the first, and only in the dedicated memory venture
+    (``--memory-venture``), never a seeded or shared one: ending a session distils it into that venture's vEIR
+    notebook and memory, and deleting it afterwards erases everything derived from it, including a notebook
+    summary it contributed to.
+    """
+
+    id: str = Field(pattern=r"^CO-\d{3}$")
+    title: str = Field(min_length=3, max_length=120)
+    kind: Literal["multi_turn", "multi_session"]
+    venture: VentureKey | None = None
+    sessions: list[ConversationSession] = Field(min_length=1, max_length=3)
+    severity: Literal["high", "medium"] = "medium"
+    #: Multi-session only: older notes the harness writes as the memory venture's notebook summary before the
+    #: case (production's vEIR had seeded notes and recited them as "last time"); the recall turn forbids them.
+    notes: str | None = Field(default=None, min_length=20, max_length=600)
+
+    @model_validator(mode="after")
+    def _consistent(self) -> Conversation:
+        if self.kind == "multi_session" and len(self.sessions) < 2:
+            raise ValueError("multi_session needs at least two sessions")
+        if self.kind == "multi_turn" and len(self.sessions) != 1:
+            raise ValueError("multi_turn has exactly one session")
+        if self.kind == "multi_turn" and any(t.check == "recall" for t in self.sessions[0].turns):
+            raise ValueError("recall is checked in a later session of a multi_session case")
+        if self.kind == "multi_session" and self.venture is not None:
+            raise ValueError("multi_session cases run in the dedicated memory venture: no venture")
+        if self.kind == "multi_turn" and self.notes is not None:
+            raise ValueError("notes are written for multi_session cases only")
+        earlier = " ".join(t.text for t in self.sessions[0].turns)
+        recalls = [t for s in self.sessions[1:] for t in s.turns if t.check == "recall"]
+        for turn in recalls:
+            # Recall is graded on what only the first session said, never on the venture's or the notes' facts.
+            if not mentions_any(earlier, turn.expect_any):
+                raise ValueError("expected recall terms must come from the first session")
+            if self.notes is not None and mentions_any(self.notes, turn.expect_any):
+                raise ValueError("an expected recall term is in the older notes")
+            if mentions_any(earlier, turn.forbid_any):
+                raise ValueError("a forbidden recall term is said in the first session")
+        if self.notes is not None and not any(t.forbid_any for t in recalls):
+            raise ValueError("notes need a recall turn that forbids reciting them")
+        return self
+
+    @property
+    def turn_count(self) -> int:
+        return sum(len(s.turns) for s in self.sessions)
+
+
+class ConversationFile(_Strict):
+    version: Literal[1]
+    conversations: list[Conversation] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _unique_ids(self) -> ConversationFile:
+        _unique([c.id for c in self.conversations], "conversation id")
+        return self
+
+
 class ScenarioFile(_Strict):
     version: Literal[1]
     scenarios: list[Scenario] = Field(min_length=1)
@@ -455,6 +559,15 @@ def load_redteam(path: Path | None = None) -> RedTeamFile:
     except ValidationError as exc:
         key = "attacks"
         raise DatasetError(f"{path.name}: {_describe(exc, key, data)}") from exc
+
+
+def load_conversations(path: Path | None = None) -> ConversationFile:
+    path = path or DATASETS_DIR / "conversations.yaml"
+    data = _load_yaml(path)
+    try:
+        return ConversationFile.model_validate(data)
+    except ValidationError as exc:
+        raise DatasetError(f"{path.name}: {_describe(exc, 'conversations', data)}") from exc
 
 
 def dataset_digest(path: Path) -> str:

@@ -79,7 +79,9 @@ export function autoModeInstructions(allowed: readonly CoachMode[]): string {
     `Mode: AUTO. Choose the one mode that best fits the founder's latest message from: ${modes.join(', ')}. Set`,
     '`mode` to it and follow its instructions below. Prefer:',
     ...modes.map((m) => `- ${WHEN_TO_USE[m]};`),
-    'Stay in the mode of the conversation so far unless the founder clearly changes direction.',
+    'Stay in the mode of the conversation so far unless the founder clearly changes direction. A social turn (a',
+    'greeting, thanks, small talk, wrapping up, "do you remember…?") keeps that mode (diagnose on a first turn), without',
+    'its steps.',
     '',
     ...modes.flatMap((m, i) => (i === 0 ? [MODE_INSTRUCTIONS[m]] : ['', MODE_INSTRUCTIONS[m]])),
   ].join('\n');

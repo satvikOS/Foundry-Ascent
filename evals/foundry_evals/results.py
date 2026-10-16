@@ -77,6 +77,11 @@ class CaseResult:
     findings: list[Finding] = field(default_factory=list)
     turns: list[TurnRecord] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    #: Conversation cases: labelled recall / topic-return replies checked and passed (graders.conversation).
+    recall_checked: int = 0
+    recall_passed: int = 0
+    resume_checked: int = 0
+    resume_passed: int = 0
 
     @property
     def executed(self) -> bool:
@@ -125,6 +130,12 @@ class CaseResult:
             "findings": [f.to_dict() for f in self.findings],
             "turns": [t.to_dict() for t in self.turns],
             "notes": self.notes,
+            "conversation": {
+                "recall": {"checked": self.recall_checked, "passed": self.recall_passed},
+                "topicReturn": {"checked": self.resume_checked, "passed": self.resume_passed},
+            }
+            if self.suite == "conversations"
+            else None,
         }
 
 

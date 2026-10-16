@@ -1,4 +1,9 @@
-import { COACH_ANNOTATIONS_SCHEMA_NAME, type ChatMessage, type CoachAnnotations } from '@foundry/ai';
+import {
+  COACH_ANNOTATIONS_SCHEMA_NAME,
+  SPOKEN_REGISTER,
+  type ChatMessage,
+  type CoachAnnotations,
+} from '@foundry/ai';
 import { type CoachMode, type TurnChannel } from '@foundry/contracts';
 
 /**
@@ -43,16 +48,22 @@ export function answerSystemPrompt(system: string, options: AnswerPromptOptions)
     '  others) apply to a separate step that collects claims, uncertainty, next actions, memory suggestions and',
     '  follow-up questions. Do not list those in the reply, and never start it with a label such as "Answer:".',
     '  When a person needs to weigh in, say so in one plain sentence.',
+    '- Stop when the reply ends: never write the mode name, claims, notes, field names or JSON after it.',
   ];
   if (options.channel === 'voice') {
+    // Production: a spoken reply cut from a written answer handed the turn back in 2 of 9 replies.
     lines.push(
-      '- This is a voice call: write only what you will say aloud, at most 70 words in one to four short plain',
-      '  sentences. No Markdown, lists, headings, citation ids like [E1] or URLs. End with at most one question.',
+      '- This is a voice call: write only what you will say aloud, at most 70 words. No Markdown, lists, headings,',
+      '  citation ids like [E1], URLs, caveats or labels read out.',
+      `- ${SPOKEN_REGISTER}`,
+      '- Follow "Conversation craft": a social turn gets a short, natural reply, not advice.',
     );
   } else {
     lines.push(
       '- Follow "How you talk": conversational Markdown with inline [E#] citations after the statements that',
       '  rely on the evidence (ids from the <evidence> block only), and at most one question.',
+      '- Follow "Conversation craft": a social turn gets a short, natural reply, not advice; a reply need not end',
+      '  with a question.',
     );
   }
   return `${rules}\n${lines.join('\n')}`;

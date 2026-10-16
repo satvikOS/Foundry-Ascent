@@ -227,6 +227,8 @@ class SessionView(_Camel):
     disclosure: str
     started_by: PrincipalRef
     turn_count: int
+    #: The vEIR's opening line shown as the conversation's first message (contract: additive, nullable).
+    opener: str | None = None
 
 
 class SessionDetail(_Camel):
@@ -350,6 +352,27 @@ class MemoryObject(_Camel):
     content: str
     status: str
     visibility: Literal["founder_private", "team", "venture", "advisors"]
+
+
+class VeirNotebook(_Camel):
+    """``GET /ventures/:id/notebook`` (packages/contracts/src/knowledge.ts ``VeirNotebook``): only what the harness
+    needs to tell whether a notebook is empty and to edit it against its version."""
+
+    summary: str
+    founder_profile: list[dict[str, object]]
+    commitments: list[dict[str, object]]
+    open_questions: list[dict[str, object]]
+    last_advice: list[dict[str, object]]
+    next_opener: str | None
+    version: int
+
+    @property
+    def empty(self) -> bool:
+        return (
+            self.summary.strip() == ""
+            and self.next_opener is None
+            and not (self.founder_profile or self.commitments or self.open_questions or self.last_advice)
+        )
 
 
 class DocumentView(_Camel):

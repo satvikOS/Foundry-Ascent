@@ -61,6 +61,11 @@ HIGH_RISK_WORDS = {
     "accent": "conflict_harassment",
 }
 CRISIS_WORDS = ("better off without me", "hopeless", "can't eat", "cannot eat")
+#: The seeded QuietQuad notebook (packages/db/src/seed/veir.ts), drawn from the owner's demo conversation.
+QUIETQUAD_NOTEBOOK_SUMMARY = (
+    "Maya and Devin are testing whether exam-week seat scarcity hurts enough for students to check a live map. "
+    "The open risk is data: library or facilities counts may need an approval that outlasts the pilot window."
+)
 
 
 def _id() -> str:
@@ -161,11 +166,19 @@ class FakeFoundryApi:
         health_db: tuple[str | None, ...] = (None,),
         calls_refusal: str | None = None,
         intro: str | None = None,
+        intro_for: Callable[[FakeFoundryApi, dict[str, Any]], str] | None = None,
+        memory_lab: bool = False,
     ) -> None:
         self.responder = responder
+        # A fifth, unseeded synthetic venture for remembered conversations (``--memory-venture memorylab``).
+        self.memory_lab = memory_lab
+        # The vEIR notebook of each venture (one persona each): what distillation writes and deletion erases.
+        self.notebooks: dict[str, dict[str, Any]] = {}
         # Calls: a refusal code for every start (calls switched off, no voice consent), and the intro text.
         self.calls_refusal = calls_refusal
         self.intro = intro
+        # Or an intro built for the session the call starts in.
+        self.intro_for = intro_for
         self.calls: dict[str, dict[str, Any]] = {}
         self.resuming_responses = resuming_responses
         # `db` of successive public /health answers (the last one repeats). None omits the field, as the
@@ -182,7 +195,19 @@ class FakeFoundryApi:
         self.turns: dict[str, list[dict[str, Any]]] = {}
         self.documents: dict[str, dict[str, Any]] = {}
         self.turn_count = 0
+        self.current_session: dict[str, Any] | None = None
         self._seed()
+
+    def remembered_sessions(self, venture_id: str, *, before: str) -> list[dict[str, Any]]:
+        """Standard, undeleted sessions of a venture other than ``before`` (what a vEIR may remember)."""
+        return [
+            x
+            for x in self.sessions.values()
+            if x["venture_id"] == venture_id
+            and x["id"] != before
+            and x.get("privacy") == "standard"
+            and not x.get("deleted")
+        ]
 
     # Seed ------------------------------------------------------------------------------------------
 
@@ -227,10 +252,29 @@ class FakeFoundryApi:
                 [("Jonah Castellane", "founder"), ("Ines Varga-Molloy", "team")],
             ),
         ]
+        if self.memory_lab:
+            specs.append(
+                (
+                    "memorylab",
+                    "Memory Lab",
+                    "validation",
+                    "software",
+                    corin.name,
+                    [("Mina Halloway-Test", "founder")],
+                )
+            )
         for key, name, stage, domain, eir, members in specs:
             persona = f"{eir.split()[0]}'s vEIR"
             venture = Venture(_id(), key, name, stage, domain, eir, seed_canary(key), persona)
             self.ventures[venture.id] = venture
+            self.notebooks[venture.id] = {
+                # QuietQuad's vEIR starts with a seeded notebook built from the owner's past conversation.
+                "summary": QUIETQUAD_NOTEBOOK_SUMMARY if key == "quietquad" else "",
+                "summarySources": ["seeded-session"] if key == "quietquad" else [],
+                "commitments": [],
+                "nextOpener": None,
+                "version": 1 if key == "quietquad" else 0,
+            }
             for person, role in members:
                 self._principal(person, memberships=[(venture.id, role)])
             self._memory(
@@ -408,8 +452,9 @@ class FakeFoundryApi:
             "id": s["id"],
             "ventureId": s["venture_id"],
             "mode": s["mode"],
-            "privacy": "ephemeral",
+            "privacy": s.get("privacy", "ephemeral"),
             "goal": None,
+            "opener": None,
             "status": s["status"],
             "personaName": persona,
             "personaVersion": 1,
@@ -574,8 +619,10 @@ class FakeFoundryApi:
                 "id": sid,
                 "venture_id": venture.id,
                 "mode": body["mode"],
+                "privacy": body.get("privacy", "ephemeral"),
                 "status": "active",
                 "by": p.id,
+                "deleted": False,
             }
             self.turns[sid] = []
             return httpx.Response(201, json=self._session_view(self.sessions[sid]))
@@ -611,15 +658,94 @@ class FakeFoundryApi:
             )
         if sub in ("sessions", "escalations") and method == "GET":
             return httpx.Response(200, json={"items": []})
+        if sub == "notebook" and role != "advisor":
+            notebook = self.notebooks[venture.id]
+            if method == "PATCH":
+                if body.get("expectedVersion") != notebook["version"]:
+                    return self._problem(409, "conflict")
+                edit = body["edit"]
+                if edit["action"] == "edit_summary":
+                    notebook |= {"summary": edit["summary"], "summarySources": []}
+                elif edit["action"] == "clear":
+                    notebook |= {"summary": "", "summarySources": [], "commitments": [], "nextOpener": None}
+                else:
+                    return self._problem(400, "validation_failed")
+                notebook["version"] += 1
+            return httpx.Response(200, json=self._notebook_view(venture))
         return self._problem(404, "not_found")
+
+    def _notebook_view(self, v: Venture) -> dict[str, Any]:
+        n = self.notebooks[v.id]
+        return {
+            "ventureId": v.id,
+            "personaId": v.id,
+            "personaName": v.persona,
+            "summary": n["summary"],
+            "founderProfile": [],
+            "commitments": [
+                {
+                    "id": f"c-{i}",
+                    "text": c["text"],
+                    "due": None,
+                    "status": "open",
+                    "sourceSessionId": c["source"],
+                    "createdAt": NOW,
+                }
+                for i, c in enumerate(n["commitments"])
+            ],
+            "openQuestions": [],
+            "lastAdvice": [],
+            "nextOpener": n["nextOpener"],
+            "greeting": None,
+            "version": n["version"],
+            "updatedAt": NOW,
+            "lastEditedBy": "veir",
+        }
+
+    def _distill(self, s: dict[str, Any]) -> None:
+        """Ending a remembered conversation writes it into the vEIR's notebook (summary, commitments, opener)."""
+        if s.get("privacy") != "standard" or not self.turns[s["id"]]:
+            return
+        notebook = self.notebooks[s["venture_id"]]
+        first = self.turns[s["id"]][0]["founderText"]
+        notebook["summary"] = f"{notebook['summary']} Talked about: {first}".strip()
+        notebook["summarySources"] = [*notebook["summarySources"], s["id"]]
+        for turn in self.turns[s["id"]]:
+            if re.search(r"\b(?:I'll|we'll)\b", turn["founderText"], re.IGNORECASE):
+                notebook["commitments"].append({"text": turn["founderText"], "source": s["id"]})
+        notebook["nextOpener"] = f"Last time: {first}"
+        notebook["openerSource"] = s["id"]
+        notebook["version"] += 1
+
+    def _erase(self, s: dict[str, Any]) -> None:
+        """app.erase_drawn_from_session: a summary drawn from the conversation is cleared whole (it mixes
+        conversations), and so are its commitments and an opener drawn from it."""
+        notebook = self.notebooks[s["venture_id"]]
+        before = json.dumps(notebook, sort_keys=True)
+        if s["id"] in notebook["summarySources"]:
+            notebook |= {"summary": "", "summarySources": []}
+        notebook["commitments"] = [c for c in notebook["commitments"] if c["source"] != s["id"]]
+        if notebook.get("openerSource") == s["id"]:
+            notebook["nextOpener"] = None
+        if json.dumps(notebook, sort_keys=True) != before:
+            notebook["version"] += 1
 
     def _session_route(self, p: Principal, method: str, parts: list[str], body: Any) -> httpx.Response:
         s = self.sessions.get(parts[1])
         if s is None or self._role_in(p, s["venture_id"]) in (None, "advisor"):
             return self._problem(404, "not_found")
+        if len(parts) == 2 and method == "DELETE":
+            # Erases the conversation and everything derived from it: it is never remembered again, and what it
+            # added to the notebook goes (a summary it contributed to is cleared whole).
+            s["deleted"] = True
+            s["status"] = "ended"
+            self._erase(s)
+            return httpx.Response(204)
         if len(parts) == 2:
             return httpx.Response(200, json={"session": self._session_view(s), "turns": self.turns[s["id"]]})
         if parts[2] == "end":
+            if s["status"] != "ended":
+                self._distill(s)
             s["status"] = "ended"
             return httpx.Response(200, json={"session": self._session_view(s), "recap": None})
         if parts[2] == "turns":
@@ -638,7 +764,11 @@ class FakeFoundryApi:
             call |= {"status": "live", "input_mode": body.get("inputMode", "transcribe")}
             self.calls[call["id"]] = call
             persona = self.ventures[s["venture_id"]].persona
-            intro = self.intro or f"Hi, I'm {persona}, an AI coach. What would you like to work on?"
+            intro = (
+                self.intro_for(self, s)
+                if self.intro_for is not None
+                else self.intro or f"Hi, I'm {persona}, an AI coach. What would you like to work on?"
+            )
             return httpx.Response(
                 201,
                 json={
@@ -669,6 +799,8 @@ class FakeFoundryApi:
         self.turn_count += 1
         venture = self.ventures[s["venture_id"]]
         mode = body.get("mode") or s["mode"]
+        # Responders that hold a conversation read the session being answered.
+        self.current_session = s
         result = self.responder(self, venture, body["text"], mode)
         turn_id = _id()
         evidence = [
