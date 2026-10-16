@@ -259,6 +259,15 @@ export async function runScenario(
   requests.push(
     (await timed(rig, 'conversations', `/ventures/${rig.ventureId}/sessions`, { cookie })).sample,
   );
+  // What New chat also asks for as it opens.
+  for (const [name, path] of [
+    ['overview', `/ventures/${rig.ventureId}/overview`],
+    ['notebook', `/ventures/${rig.ventureId}/notebook`],
+    ['memory', `/ventures/${rig.ventureId}/memory`],
+    ['call-config', `/ventures/${rig.ventureId}/call-config`],
+  ] as const) {
+    requests.push((await timed(rig, name, path, { cookie })).sample);
+  }
 
   const typed = await newConversation(rig, cookie);
   requests.push(typed);
