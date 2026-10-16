@@ -9,18 +9,20 @@ import {
   Outlet,
   RouterProvider,
 } from '@tanstack/react-router';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useSignOutAndRedirect } from '@/components/shell/account-menu';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { queryKeys } from '@/lib/api/query-keys';
 import type { StartCallOptions } from '@/lib/realtime/call-engine';
 import { IDLE_CALL, type CallSnapshot } from '@/lib/realtime/call-state';
 import { IDS } from '@/lib/realtime/testing';
 
 import { CallProvider } from './call-context';
+import { MiniCallBar } from './mini-call-bar';
 import { json, stubFetch, urlOf } from './testing';
 
 /*
@@ -190,9 +192,19 @@ function renderApp(entries: string[], snapshot: Partial<CallSnapshot> = {}) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  // The venture is in the cache already (the sidebar loaded it): the mini bar takes the vEIR's name from it.
+  client.setQueryData(queryKeys.venture.detail(VENTURE), {
+    persona: {
+      personaId: IDS.persona,
+      name: "Corin's vEIR",
+      kind: 'eir_persona',
+      disclosure: CALL_CONFIG.veir.disclosure,
+    },
+  });
   const root = createRootRoute({
     component: () => (
       <CallProvider me={ME}>
+        <MiniCallBar />
         <Outlet />
       </CallProvider>
     ),
@@ -362,5 +374,66 @@ describe('signing out during a call', () => {
     expect(signedOut).toBeGreaterThan(-1);
     expect(log.indexOf('ended')).toBeGreaterThan(-1);
     expect(log.indexOf('ended')).toBeLessThan(signedOut);
+  });
+});
+
+describe('the mini call bar', () => {
+  /** A live call, minimized: the conversation with the mini bar. */
+  async function minimized() {
+    const app = renderApp([`${BASE}/c/${SESSION}?call=1`], {
+      phase: 'live',
+      ventureId: VENTURE,
+      sessionId: SESSION,
+      call: { ...liveCall(SESSION), inputMode: 'transcribe' },
+      input: 'voice',
+      activity: 'listening',
+      liveAt: Date.now(),
+      remaining: { seconds: 600, at: Date.now() },
+    });
+    await userEvent.click(await screen.findByRole('button', { name: 'Minimize call' }));
+    const bar = await screen.findByRole('region', { name: "Call with Corin's vEIR" });
+    return { ...app, bar };
+  }
+
+  it('warns when the time is nearly up, and says when the call ended out of view', async () => {
+    const { engine, bar } = await minimized();
+    const status = within(bar).getByRole('status');
+    expect(status).toHaveTextContent('');
+    act(() => {
+      engine.set({
+        remaining: { seconds: 100, at: Date.now() },
+        notice: { kind: 'time_warning', message: 'About 2 minutes left on this call.' },
+      });
+    });
+    expect(bar).toHaveTextContent(/1:[34]\d left/);
+    expect(status).toHaveTextContent('About 2 minutes left on this call.');
+
+    act(() => {
+      engine.set({
+        phase: 'ended',
+        ended: {
+          reason: 'timeout',
+          durationSeconds: 1200,
+          turnCount: 4,
+          summary: null,
+          summaryError: null,
+          blocked: null,
+        },
+      });
+    });
+    expect(bar).toHaveTextContent('Call ended');
+    expect(status).toHaveTextContent('Call ended. The call reached its time limit.');
+    expect(within(bar).getByRole('button', { name: 'Summary' })).toBeInTheDocument();
+  });
+
+  it('says when the microphone disconnected while the call is minimized', async () => {
+    const { engine, bar } = await minimized();
+    act(() => {
+      engine.set({ input: 'typed', typedReason: 'mic_lost' });
+    });
+    expect(bar).toHaveTextContent('Microphone disconnected');
+    expect(within(bar).getByRole('status')).toHaveTextContent(
+      'Your microphone disconnected. Return to the call to reconnect it or type.',
+    );
   });
 });

@@ -195,6 +195,13 @@ export function callErrorMessage(error: unknown): string {
   return errorMessage(error);
 }
 
+/** Why a call ended, when it was not the founder's own choice (the summary and the mini bar say it). */
+export const CALL_END_LINES: Partial<Record<CallEndReason, string>> = {
+  timeout: 'The call reached its time limit.',
+  disabled: 'Calls were paused by the program.',
+  error: 'The connection was lost.',
+};
+
 /**
  * Why a call ended for its budget (`budget`), in plain words. The server ends a call for today's call
  * minutes or for today's AI allowance; the refreshed call settings tell which: with minutes left, it was the

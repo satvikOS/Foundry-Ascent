@@ -12,7 +12,7 @@ import { toast } from '@/components/ui/toast';
 import { BlockedPanel } from '@/features/coach/blocked-panel';
 import { useVentureEscalations } from '@/lib/api/hooks/escalations';
 import { displayContent, memoryItemQueryOptions } from '@/lib/api/hooks/memory';
-import { budgetEndLine } from '@/lib/realtime/call-api';
+import { budgetEndLine, CALL_END_LINES } from '@/lib/realtime/call-api';
 import type { CallEnded } from '@/lib/realtime/call-engine';
 import { formatDate } from '@/lib/format';
 import { ESCALATION_CATEGORY_LABELS } from '@/lib/labels';
@@ -33,12 +33,6 @@ interface CallSummaryProps {
   /** Leaving for another page from the summary (Human help): the call is over, forget it. */
   onLeave: () => void;
 }
-
-const END_LINES: Partial<Record<CallEnded['reason'], string>> = {
-  timeout: 'The call reached its time limit.',
-  disabled: 'Calls were paused by the program.',
-  error: 'The connection was lost.',
-};
 
 /**
  * After a call (`POST /calls/:id/end`): how long it was, what the vEIR proposes to remember (Keep / Not
@@ -66,7 +60,9 @@ export function CallSummaryPanel({
   // Ended for its budget: the refreshed call settings tell call minutes from the day's AI allowance.
   const config = useCallConfig(ventureId, ended.reason === 'budget');
   const endLine =
-    ended.reason === 'budget' ? budgetEndLine(config.data?.remainingMinutesToday) : END_LINES[ended.reason];
+    ended.reason === 'budget'
+      ? budgetEndLine(config.data?.remainingMinutesToday)
+      : CALL_END_LINES[ended.reason];
 
   return (
     <div className="mx-auto flex w-full max-w-xl flex-col items-center px-4 pt-6 pb-8 text-center sm:pt-10">
