@@ -1,11 +1,23 @@
 import type { PersonaSummary, SessionView } from '@foundry/contracts';
 import { Link } from '@tanstack/react-router';
-import { EyeOff, Flag, MoreHorizontal, Pencil, Phone, Square, Trash2 } from 'lucide-react';
+import {
+  EyeOff,
+  Flag,
+  Menu,
+  MoreHorizontal,
+  PanelRight,
+  Pencil,
+  Phone,
+  Square,
+  SquarePen,
+  Trash2,
+} from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { PersonaAvatar } from '@/components/faces/persona-avatar';
 import { VeirBadge } from '@/components/faces/veir-badge';
-import { InspectorToggle } from '@/components/shell/inspector';
+import { InspectorToggle, useInspector } from '@/components/shell/inspector';
+import { usePageMobileBar } from '@/components/shell/shell-chrome';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -37,7 +49,8 @@ interface ConversationHeaderProps {
 
 /**
  * The conversation's one header: the vEIR's face, name and "vEIR · AI" chip, the title, then Call, the
- * context panel and a menu for everything rarer (rename, end, report, delete).
+ * context panel and a menu for everything rarer (rename, end, report, delete). On phones it is the only bar:
+ * the menu button, the title over "{vEIR} · AI", Call, New chat and the menu (which also opens the panel).
  */
 export function ConversationHeader({
   tenant,
@@ -52,41 +65,68 @@ export function ConversationHeader({
   onAction,
   children,
 }: ConversationHeaderProps) {
+  const openNavigation = usePageMobileBar();
+  const inspector = useInspector();
   const active = session.status === 'active';
+  const temporary = session.privacy === 'ephemeral';
+  const phoneSubtitle = [
+    `${session.personaName} · AI`,
+    temporary ? 'Temporary' : null,
+    active ? null : 'Ended',
+  ]
+    .filter(Boolean)
+    .join(' · ');
   return (
-    <header
-      className="sticky top-(--header-height) z-20 border-b border-border bg-background md:top-0"
-      data-print="hide"
-    >
-      <div className="mx-auto flex h-14 w-full max-w-(--content-width) items-center gap-3 px-4 sm:px-6">
+    <header className="sticky top-0 z-20 border-b border-border bg-background" data-print="hide">
+      <div className="mx-auto flex h-14 w-full max-w-(--content-width) items-center gap-2.5 px-4 sm:px-6">
+        {openNavigation ? (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="-ml-1.5 shrink-0 md:hidden"
+            aria-label="Open navigation"
+            onClick={openNavigation}
+          >
+            <Menu aria-hidden />
+          </Button>
+        ) : null}
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
-          <PersonaAvatar name={personaName} portraitUrl={portraitUrl} size="sm" decorative />
+          <PersonaAvatar
+            name={personaName}
+            portraitUrl={portraitUrl}
+            size="sm"
+            decorative
+            className="hidden sm:inline-flex"
+          />
           <span className="hidden shrink-0 text-small font-medium sm:inline">{personaName}</span>
-          <VeirBadge kind={personaKind} />
+          <VeirBadge kind={personaKind} className="hidden sm:inline-flex" />
           <span aria-hidden className="hidden text-border-strong sm:inline">
             /
           </span>
-          <h1
-            data-page-title
-            tabIndex={-1}
-            className="min-w-0 truncate text-small text-muted-foreground outline-none"
-            title={title}
-          >
-            {title}
-          </h1>
-          {session.privacy === 'ephemeral' ? (
-            <span className="inline-flex shrink-0 items-center gap-1 text-caption text-muted-foreground">
+          <div className="min-w-0 flex-1 sm:contents">
+            <h1
+              data-page-title
+              tabIndex={-1}
+              className="truncate text-small font-medium outline-none sm:min-w-0 sm:font-normal sm:text-muted-foreground"
+              title={title}
+            >
+              {title}
+            </h1>
+            <p className="truncate text-caption text-muted-foreground sm:hidden">{phoneSubtitle}</p>
+          </div>
+          {temporary ? (
+            <span className="hidden shrink-0 items-center gap-1 text-caption text-muted-foreground sm:inline-flex">
               <EyeOff aria-hidden className="size-3.5" />
               Temporary
             </span>
           ) : null}
           {active ? null : (
-            <span className="shrink-0 rounded-full border border-border px-2 py-px text-caption text-muted-foreground">
+            <span className="hidden shrink-0 rounded-full border border-border px-2 py-px text-caption text-muted-foreground sm:inline">
               Ended
             </span>
           )}
         </div>
-        <div className="flex shrink-0 items-center gap-0.5">
+        <div className="-mr-1.5 flex shrink-0 items-center gap-0.5 sm:mr-0">
           {canCall ? (
             <SimpleTooltip content={`Call ${personaName}`}>
               <Button asChild variant="ghost" size="icon-sm">
@@ -101,7 +141,14 @@ export function ConversationHeader({
               </Button>
             </SimpleTooltip>
           ) : null}
-          <InspectorToggle />
+          {openNavigation && canEdit ? (
+            <Button asChild variant="ghost" size="icon-sm" className="md:hidden">
+              <Link to="/$tenant/app/v/$ventureId" params={{ tenant, ventureId }} aria-label="New chat">
+                <SquarePen aria-hidden />
+              </Link>
+            </Button>
+          ) : null}
+          <InspectorToggle className="hidden md:inline-flex" />
           {canEdit ? (
             <DropdownMenu>
               <SimpleTooltip content="More">
@@ -112,6 +159,17 @@ export function ConversationHeader({
                 </DropdownMenuTrigger>
               </SimpleTooltip>
               <DropdownMenuContent align="end" className="w-56">
+                {inspector.hasContent ? (
+                  <DropdownMenuItem
+                    className="md:hidden"
+                    onSelect={() => {
+                      inspector.setOpen(true);
+                    }}
+                  >
+                    <PanelRight aria-hidden />
+                    Sources and notes
+                  </DropdownMenuItem>
+                ) : null}
                 {session.privacy === 'standard' ? (
                   <DropdownMenuItem
                     onSelect={() => {

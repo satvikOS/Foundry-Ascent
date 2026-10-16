@@ -10,7 +10,7 @@ import {
   maskAccessCodeInput,
 } from './access-code';
 import { homePath, safeRedirectPath } from './guards';
-import { canAccessVenture, canWrite, describeRoles, hasAnyRole, hasRole, isFounder, isMember } from './roles';
+import { canAccessVenture, canWrite, describeRoles, hasAnyRole, hasRole, isMember } from './roles';
 
 const V1 = '11111111-1111-4111-8111-111111111111';
 const V2 = '22222222-2222-4222-8222-222222222222';
@@ -118,7 +118,7 @@ describe('role helpers', () => {
     expect(isMember(person, V3)).toBe(false);
     expect(canWrite(person, V1)).toBe(true);
     expect(canWrite(person, V2)).toBe(false); // advisor is read-only
-    expect(isFounder(person, V1)).toBe(true);
+    expect(isMember(person, V1, ['founder'])).toBe(true);
     expect(isMember(person, V2, ['founder', 'team'])).toBe(false);
   });
 

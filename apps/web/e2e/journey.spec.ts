@@ -1,8 +1,10 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Browser, type Page } from '@playwright/test';
 
 import {
   composer,
+  expectDisclosureInView,
   FOUNDER_NAME,
+  FOUNDER_STATE,
   issueAccessCodeViaApi,
   openVenture,
   OWNER_STATE,
@@ -145,9 +147,7 @@ test.describe('founder journey', () => {
     await test.step('the first message starts the conversation, named after it, with a cited answer', async () => {
       const result = await startAndAwaitAnswer(page, question);
       conversationId = result.conversationId;
-      const disclosure = page.getByRole('note', { name: 'AI disclosure' });
-      await expect(disclosure).toHaveCount(1);
-      await expect(disclosure).toBeInViewport();
+      await expectDisclosureInView(page);
       await expect(page.getByRole('heading', { level: 1 })).toContainText('Which assumption should we test');
       await expect(result.answer.getByRole('button', { name: /^Evidence E1: / }).first()).toBeVisible();
       // The conversation is listed (and current) in the sidebar's recents, under its own title.
@@ -239,10 +239,10 @@ test.describe('founder journey', () => {
       await expect(summary).toBeVisible();
       await expect(summary.getByRole('heading', { name: 'Diagnosis' })).toBeVisible();
       await expect(summary.getByRole('heading', { name: 'Next steps' })).toBeVisible();
-      const disclosure = page.getByRole('note', { name: 'AI disclosure' });
-      await expect(disclosure).toHaveCount(1);
-      await expect(disclosure).toBeInViewport();
+      await expectDisclosureInView(page);
       await expect(composer(page)).toHaveCount(0);
+      // The summary holds the next steps now: the answers above no longer offer them a second time.
+      await expect(page.getByRole('region', { name: 'Suggested next steps' })).toHaveCount(0);
     });
 
     await test.step('an old memory link lands on Knowledge with its search', async () => {
@@ -300,6 +300,42 @@ test.describe('founder journey', () => {
   });
 });
 
+/** QuietQuad's id and a new conversation of its founder's, made through the API as the founder. */
+async function founderConversation(browser: Browser): Promise<{ ventureId: string; sessionId: string }> {
+  const founder = await browser.newContext({ storageState: FOUNDER_STATE });
+  const me = await founder.request.get('/api/v1/me');
+  expect(me.status(), 'GET /me').toBe(200);
+  const memberships = ((await me.json()) as { memberships: { ventureId: string; ventureName: string }[] })
+    .memberships;
+  const ventureId = memberships.find((m) => m.ventureName === VENTURE_NAME)?.ventureId ?? '';
+  const created = await founder.request.post(`/api/v1/ventures/${ventureId}/sessions`, {
+    headers: WRITE_HEADERS,
+    data: {},
+  });
+  expect(created.status(), 'POST /ventures/:id/sessions').toBe(201);
+  const sessionId = ((await created.json()) as { id: string }).id;
+  await founder.close();
+  return { ventureId, sessionId };
+}
+
+/** Records API calls a read-only role must never make or be refused. */
+function watchReadOnly(page: Page) {
+  const refused: string[] = [];
+  const conversationReads: string[] = [];
+  page.on('response', (response) => {
+    if (response.url().includes('/api/v1/') && (response.status() === 403 || response.status() === 404)) {
+      refused.push(`${response.status()} ${new URL(response.url()).pathname}`);
+    }
+  });
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname;
+    if (/\/api\/v1\/(sessions|ventures\/[^/]+\/(sessions|notebook|escalations))/.test(path)) {
+      conversationReads.push(path);
+    }
+  });
+  return { refused, conversationReads };
+}
+
 test.describe('read-only roles', () => {
   test('an advisor opens their venture without requesting what only founders and team may read', async ({
     browser,
@@ -310,19 +346,7 @@ test.describe('read-only roles', () => {
 
     const context = await browser.newContext();
     const page = await context.newPage();
-    const refused: string[] = [];
-    page.on('response', (response) => {
-      if (response.url().includes('/api/v1/') && (response.status() === 403 || response.status() === 404)) {
-        refused.push(`${response.status()} ${new URL(response.url()).pathname}`);
-      }
-    });
-    const conversationReads: string[] = [];
-    page.on('request', (request) => {
-      const path = new URL(request.url()).pathname;
-      if (/\/api\/v1\/(sessions|ventures\/[^/]+\/(sessions|notebook|escalations))/.test(path)) {
-        conversationReads.push(path);
-      }
-    });
+    const { refused, conversationReads } = watchReadOnly(page);
 
     await signIn(page, advisorCode);
     await page.goto(`/${TENANT}/app`);
@@ -345,6 +369,40 @@ test.describe('read-only roles', () => {
     await page.waitForLoadState('networkidle');
     expect(conversationReads, 'conversation endpoints requested by a read-only role').toEqual([]);
     expect(refused, 'refused API calls').toEqual([]);
+    await context.close();
+  });
+
+  test('the assigned EIR opens the venture and a conversation link, and reads neither conversation', async ({
+    browser,
+  }) => {
+    const owner = await browser.newContext({ storageState: OWNER_STATE });
+    const eirCode = await issueAccessCodeViaApi(owner.request, 'Corin Halvorsen');
+    await owner.close();
+    const { ventureId, sessionId } = await founderConversation(browser);
+
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await signIn(page, eirCode);
+    const watched = watchReadOnly(page);
+
+    await page.goto(`/${TENANT}/app/v/${ventureId}`);
+    await expect(
+      page.getByRole('heading', { level: 1, name: /^Good (morning|afternoon|evening), Corin$/ }),
+    ).toBeVisible();
+    await expect(page.getByText(/are private to the founders and team/)).toBeVisible();
+    await expect(composer(page)).toHaveCount(0);
+
+    // A link to one of the founder's conversations says plainly that it is private.
+    await page.goto(`/${TENANT}/app/v/${ventureId}/c/${sessionId}`);
+    await expect(
+      page.getByRole('heading', { name: 'Conversations are private to the venture team' }),
+    ).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Open Knowledge' })).toBeVisible();
+    await expect(composer(page)).toHaveCount(0);
+
+    await page.waitForLoadState('networkidle');
+    expect(watched.conversationReads, 'conversation endpoints requested by the assigned EIR').toEqual([]);
+    expect(watched.refused, 'refused API calls').toEqual([]);
     await context.close();
   });
 });

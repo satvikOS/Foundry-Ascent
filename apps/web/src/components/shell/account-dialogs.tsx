@@ -61,8 +61,9 @@ export function DataUseDialog({
           </Section>
           <Section title="Who can see your venture">
             <p>
-              Your venture team sees its conversations, memory and documents. Your assigned EIR can read the
-              memory, documents and notes, and reviews a sample of answers, not whole conversations. Program
+              Your venture team sees its conversations, memory and documents. Advisors on your venture can
+              read the memory and documents shared with them, not your conversations. Your assigned EIR can
+              also read your vEIR’s notes, and reviews a sample of answers, not whole conversations. Program
               staff see aggregate numbers. Nothing goes to anyone else unless you approve it in a help
               request.
             </p>

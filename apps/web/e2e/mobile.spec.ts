@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 
 import {
   composer,
+  expectDisclosureInView,
   expectNoHorizontalScroll,
   expectReachable,
   FOUNDER_STATE,
@@ -68,7 +69,14 @@ test.describe('mobile 390×844', () => {
       });
       await expectNoHorizontalScroll(page);
       await expectReachable(page, composer(page));
-      await expect(page.getByRole('note', { name: 'AI disclosure' })).toBeInViewport();
+      await expectDisclosureInView(page);
+      // One bar on a phone: the conversation's header carries the menu, its title, Call and New chat.
+      const bar = page.locator('header').filter({ has: page.getByRole('heading', { level: 1 }) });
+      await expect(page.locator('header:visible')).toHaveCount(1);
+      await expectReachable(page, bar.getByRole('button', { name: 'Open navigation' }));
+      await expect(bar).toContainText('AI');
+      await expectReachable(page, bar.getByRole('link', { name: /^Call / }));
+      await expectReachable(page, bar.getByRole('link', { name: 'New chat' }));
       await expectReachable(page, page.getByRole('button', { name: 'Conversation options' }));
 
       // A citation opens the sources as a sheet.
@@ -80,6 +88,15 @@ test.describe('mobile 390×844', () => {
       await expectReachable(page, panel.getByRole('tab', { name: 'Human help' }));
       await page.keyboard.press('Escape');
       await expect(panel).toBeHidden();
+
+      // The panel also opens from the conversation's menu, and the header opens the navigation sheet.
+      await page.getByRole('button', { name: 'Conversation options' }).click();
+      await page.getByRole('menuitem', { name: 'Sources and notes' }).click();
+      await expect(panel.getByRole('tab', { name: 'Sources' })).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(panel).toBeHidden();
+      await page.getByRole('button', { name: 'Open navigation' }).click();
+      await expect(page.getByRole('dialog', { name: 'Navigation' })).toBeVisible();
     });
   });
 });

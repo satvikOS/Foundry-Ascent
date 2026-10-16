@@ -130,6 +130,11 @@ export function MessageActions({
   );
 }
 
+/**
+ * "What was wrong?": optional problems and details for a thumbs-down. The form lives inside the dialog
+ * content, which unmounts when the dialog closes, so every way of closing it (Cancel, Escape, the close
+ * button, a sent report) starts the next report empty.
+ */
 function BadAnswerDialog({
   open,
   onOpenChange,
@@ -141,20 +146,8 @@ function BadAnswerDialog({
   pending: boolean;
   onSubmit: (flags: Flag[], comment: string | null) => void;
 }) {
-  const commentId = useId();
-  const [flags, setFlags] = useState<ReadonlySet<Flag>>(new Set());
-  const [comment, setComment] = useState('');
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        onOpenChange(next);
-        if (!next) {
-          setFlags(new Set());
-          setComment('');
-        }
-      }}
-    >
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>What was wrong?</DialogTitle>
@@ -162,76 +155,96 @@ function BadAnswerDialog({
             Reviewers use this to improve answers. Both parts are optional.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-4">
-          <fieldset>
-            <legend className="sr-only">Problems</legend>
-            <div className="flex flex-wrap gap-1.5">
-              {PROBLEMS.map((problem) => {
-                const on = flags.has(problem.id);
-                return (
-                  <button
-                    key={problem.id}
-                    type="button"
-                    aria-pressed={on}
-                    onClick={() => {
-                      setFlags((prev) => {
-                        const next = new Set(prev);
-                        if (on) next.delete(problem.id);
-                        else next.add(problem.id);
-                        return next;
-                      });
-                    }}
-                    className={cn(
-                      'inline-flex h-8 items-center gap-1 rounded-full border px-3 text-small transition-colors',
-                      'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring',
-                      on
-                        ? 'border-foreground bg-accent text-foreground'
-                        : 'border-border text-muted-foreground hover:text-foreground',
-                    )}
-                  >
-                    {on ? <Check aria-hidden className="size-3.5" /> : null}
-                    {problem.label}
-                  </button>
-                );
-              })}
-            </div>
-          </fieldset>
-          <div className="grid gap-1.5">
-            <label htmlFor={commentId} className="text-small font-medium">
-              Details
-            </label>
-            <Textarea
-              id={commentId}
-              value={comment}
-              maxLength={2000}
-              minRows={3}
-              maxRows={6}
-              onChange={(event) => {
-                setComment(event.target.value);
-              }}
-            />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button
-            variant="ghost"
-            onClick={() => {
-              onOpenChange(false);
-            }}
-          >
-            Cancel
-          </Button>
-          <Button
-            loading={pending}
-            loadingText="Sending…"
-            onClick={() => {
-              onSubmit([...flags], comment.trim() || null);
-            }}
-          >
-            Send feedback
-          </Button>
-        </DialogFooter>
+        <BadAnswerForm
+          pending={pending}
+          onCancel={() => {
+            onOpenChange(false);
+          }}
+          onSubmit={onSubmit}
+        />
       </DialogContent>
     </Dialog>
+  );
+}
+
+function BadAnswerForm({
+  pending,
+  onCancel,
+  onSubmit,
+}: {
+  pending: boolean;
+  onCancel: () => void;
+  onSubmit: (flags: Flag[], comment: string | null) => void;
+}) {
+  const commentId = useId();
+  const [flags, setFlags] = useState<ReadonlySet<Flag>>(new Set());
+  const [comment, setComment] = useState('');
+  return (
+    <>
+      <div className="grid gap-4">
+        <fieldset>
+          <legend className="sr-only">Problems</legend>
+          <div className="flex flex-wrap gap-1.5">
+            {PROBLEMS.map((problem) => {
+              const on = flags.has(problem.id);
+              return (
+                <button
+                  key={problem.id}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => {
+                    setFlags((prev) => {
+                      const next = new Set(prev);
+                      if (on) next.delete(problem.id);
+                      else next.add(problem.id);
+                      return next;
+                    });
+                  }}
+                  className={cn(
+                    'inline-flex h-8 items-center gap-1 rounded-full border px-3 text-small transition-colors',
+                    'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring',
+                    on
+                      ? 'border-foreground bg-accent text-foreground'
+                      : 'border-border text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {on ? <Check aria-hidden className="size-3.5" /> : null}
+                  {problem.label}
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
+        <div className="grid gap-1.5">
+          <label htmlFor={commentId} className="text-small font-medium">
+            Details
+          </label>
+          <Textarea
+            id={commentId}
+            value={comment}
+            maxLength={2000}
+            minRows={3}
+            maxRows={6}
+            onChange={(event) => {
+              setComment(event.target.value);
+            }}
+          />
+        </div>
+      </div>
+      <DialogFooter>
+        <Button variant="ghost" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button
+          loading={pending}
+          loadingText="Sending…"
+          onClick={() => {
+            onSubmit([...flags], comment.trim() || null);
+          }}
+        >
+          Send feedback
+        </Button>
+      </DialogFooter>
+    </>
   );
 }

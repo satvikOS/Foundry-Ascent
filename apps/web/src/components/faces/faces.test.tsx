@@ -50,7 +50,8 @@ describe('UserAvatar and VentureMark', () => {
 describe('VeirBadge', () => {
   it('says vEIR and AI for an EIR persona, AI for the neutral guide', () => {
     const { rerender } = render(<VeirBadge kind="eir_persona" />);
-    expect(screen.getByText('vEIR · AI')).toBeInTheDocument();
+    // The brand keeps its casing: never "VEIR".
+    expect(screen.getByText('vEIR · AI')).not.toHaveClass('uppercase');
     rerender(<VeirBadge kind="neutral_guide" />);
     expect(screen.getByText('AI')).toBeInTheDocument();
   });

@@ -2,7 +2,7 @@ import type { Me } from '@foundry/contracts';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import { Menu, PanelLeftClose, PanelLeftOpen, SquarePen, X } from 'lucide-react';
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
@@ -16,12 +16,14 @@ import { cn } from '@/lib/utils';
 import { DataUseDialog, ReportProblemDialog } from './account-dialogs';
 import { CommandPalette } from './command-palette';
 import {
+  STAFF_WORKSPACES,
   staffWorkspace,
   staffWorkspaces,
   VENTURE_DESTINATIONS,
   workspaceFromPath,
   type Workspace,
 } from './nav';
+import { ShellChromeContext, type ShellChrome } from './shell-chrome';
 import { ShortcutsDialog } from './shortcuts-dialog';
 import { SidebarContent } from './sidebar';
 import {
@@ -43,7 +45,8 @@ type ShellDialog = 'palette' | 'shortcuts' | 'data-use' | 'report' | null;
  * The one authenticated frame for every role: a left sidebar (collapsible to a rail on desktop, a sheet
  * on phones) with the workspace switcher, conversations or workspace sections and the account menu;
  * status banners only while something needs attention; and the <main> landmark. There is no top bar on
- * desktop; phones get a slim bar with the menu, the current place and New chat.
+ * desktop; phones get a slim bar with the menu, the current place and New chat, unless the page's own
+ * header takes its place (a conversation).
  */
 export function AppShell({ me, children }: AppShellProps) {
   const navigate = useNavigate();
@@ -54,6 +57,22 @@ export function AppShell({ me, children }: AppShellProps) {
   const [collapsed, setCollapsed] = useState(() => safeStorage.get(STORAGE_KEYS.sidebarCollapsed) === '1');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [dialog, setDialog] = useState<ShellDialog>(null);
+  // Pages with their own phone header (a conversation) claim the bar; the shell's bar shows otherwise.
+  const [mobileBarClaims, setMobileBarClaims] = useState(0);
+  const chrome = useMemo<ShellChrome>(
+    () => ({
+      openNavigation: () => {
+        setMobileNavOpen(true);
+      },
+      claimMobileBar: () => {
+        setMobileBarClaims((count) => count + 1);
+        return () => {
+          setMobileBarClaims((count) => count - 1);
+        };
+      },
+    }),
+    [],
+  );
 
   // Close the mobile sheet after navigation; remember the venture so the app reopens there.
   useEffect(() => {
@@ -80,14 +99,7 @@ export function AppShell({ me, children }: AppShellProps) {
     },
   });
 
-  const goToVenturePage = (index: number) => () => {
-    const destination = VENTURE_DESTINATIONS[index];
-    if (ventureId && destination) void navigate({ to: destination.to, params: { tenant, ventureId } });
-  };
-  const goToWorkspace = (id: 'eir' | 'program' | 'admin') => () => {
-    if (staffWorkspaces(me).some((w) => w.id === id))
-      void navigate({ to: staffWorkspace(id).to, params: { tenant } });
-  };
+  // The page and workspace shortcuts come from nav.ts, which the shortcuts list reads too.
   useHotkeys({
     'mod+k': () => {
       setDialog((current) => (current === 'palette' ? null : 'palette'));
@@ -99,13 +111,23 @@ export function AppShell({ me, children }: AppShellProps) {
     'g n': () => {
       if (ventureId) void navigate({ to: '/$tenant/app/v/$ventureId', params: { tenant, ventureId } });
     },
-    'g k': goToVenturePage(0),
-    'g d': goToVenturePage(1),
-    'g h': goToVenturePage(2),
-    'g t': goToVenturePage(3),
-    'g e': goToWorkspace('eir'),
-    'g p': goToWorkspace('program'),
-    'g a': goToWorkspace('admin'),
+    ...Object.fromEntries(
+      VENTURE_DESTINATIONS.map((destination) => [
+        destination.shortcut,
+        () => {
+          if (ventureId) void navigate({ to: destination.to, params: { tenant, ventureId } });
+        },
+      ]),
+    ),
+    ...Object.fromEntries(
+      STAFF_WORKSPACES.map((workspace) => [
+        workspace.shortcut,
+        () => {
+          if (staffWorkspaces(me).some((w) => w.id === workspace.id))
+            void navigate({ to: workspace.to, params: { tenant } });
+        },
+      ]),
+    ),
   });
 
   const sidebarActions = {
@@ -195,14 +217,14 @@ export function AppShell({ me, children }: AppShellProps) {
           collapsed ? 'md:pl-(--sidebar-width-collapsed)' : 'md:pl-(--sidebar-width)',
         )}
       >
-        <MobileBar
-          me={me}
-          workspace={workspace}
-          navOpen={mobileNavOpen}
-          onOpenNav={() => {
-            setMobileNavOpen(true);
-          }}
-        />
+        {mobileBarClaims > 0 ? null : (
+          <MobileBar
+            me={me}
+            workspace={workspace}
+            navOpen={mobileNavOpen}
+            onOpenNav={chrome.openNavigation}
+          />
+        )}
 
         <div data-print="hide">
           <DbWakingBanner />
@@ -213,7 +235,7 @@ export function AppShell({ me, children }: AppShellProps) {
         </div>
 
         <main id="main-content" tabIndex={-1} className="flex min-w-0 flex-1 flex-col outline-none">
-          {children}
+          <ShellChromeContext.Provider value={chrome}>{children}</ShellChromeContext.Provider>
         </main>
       </div>
 

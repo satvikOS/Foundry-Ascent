@@ -12,7 +12,7 @@ export function hasAnyRole(me: Me | null | undefined, roles: readonly PlatformRo
   return roles.some((role) => hasRole(me, role));
 }
 
-export function membershipFor(me: Me | null | undefined, ventureId: string) {
+function membershipFor(me: Me | null | undefined, ventureId: string) {
   return me?.memberships.find((m) => m.ventureId === ventureId) ?? null;
 }
 
@@ -27,7 +27,7 @@ export function isMember(
   return roles ? roles.includes(membership.role) : true;
 }
 
-export function isAssignedEir(me: Me | null | undefined, ventureId: string): boolean {
+function isAssignedEir(me: Me | null | undefined, ventureId: string): boolean {
   return hasRole(me, 'eir') && Boolean(me?.assignedVentureIds.includes(ventureId));
 }
 
@@ -47,11 +47,6 @@ export function canWrite(me: Me | null | undefined, ventureId: string): boolean 
 /** Whether the person is a founder or team member of any venture (holds conversations of their own). */
 export function writesAnyVenture(me: Me | null | undefined): boolean {
   return Boolean(me?.memberships.some((m) => m.role === 'founder' || m.role === 'team'));
-}
-
-/** Founder-only actions (e.g. sharing consent on escalation packets). */
-export function isFounder(me: Me | null | undefined, ventureId: string): boolean {
-  return isMember(me, ventureId, ['founder']);
 }
 
 export function canUseEirStudio(me: Me | null | undefined): boolean {

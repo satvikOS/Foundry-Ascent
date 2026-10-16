@@ -2,15 +2,13 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Kbd } from '@/components/ui/kbd';
 import { formatHotkey } from '@/lib/hooks/use-hotkeys';
 
-import { VENTURE_DESTINATIONS } from './nav';
+import { STAFF_WORKSPACES, VENTURE_DESTINATIONS } from './nav';
 
 const GLOBAL_SHORTCUTS: { binding: string; label: string }[] = [
   { binding: 'mod+k', label: 'Search and jump anywhere' },
   { binding: '?', label: 'Show keyboard shortcuts' },
   { binding: '[', label: 'Collapse or expand the sidebar' },
-  { binding: 'g e', label: 'Go to EIR studio' },
-  { binding: 'g p', label: 'Go to Program' },
-  { binding: 'g a', label: 'Go to Admin' },
+  ...STAFF_WORKSPACES.map((w) => ({ binding: w.shortcut, label: `Go to ${w.label}` })),
 ];
 
 const VENTURE_SHORTCUTS: { binding: string; label: string }[] = [
