@@ -1,4 +1,5 @@
 import type {
+  DocumentFailureReason,
   CoachMode,
   EscalationCategory,
   MembershipRole,
@@ -127,13 +128,16 @@ export const REQUESTED_ROLE_LABELS: Record<string, string> = {
 export const SAFETY_ICON = ShieldAlert;
 
 /**
- * What a failed document's `failureReason` code means for the person who uploaded it (codes from
- * `DOCUMENT_FAILURE_REASONS`; anything else gets a generic line).
+ * What a failed document's `failureReason` code means for the person who uploaded it: one line for every
+ * code the ingestion pipeline writes (`DOCUMENT_FAILURE_REASONS`; a new code fails the type check here).
+ * Anything else (an older row) gets a generic line.
  */
-const DOCUMENT_FAILURE_MESSAGES: Record<string, string> = {
+export const DOCUMENT_FAILURE_MESSAGES: Record<DocumentFailureReason, string> = {
   spend_cap_reached:
     'Not indexed: today’s AI budget (the platform’s or yours) was used up. Retry after midnight UTC.',
   extract_failed: 'Text couldn’t be extracted from this file.',
+  extractor_unavailable:
+    'Text can’t be read from this kind of file here yet. Retry later, or upload it as text.',
   empty_text: 'This file contains no readable text.',
   too_large: 'This file is larger than the 10 MB limit.',
   object_missing: 'The upload didn’t finish. Upload the file again.',
@@ -141,10 +145,14 @@ const DOCUMENT_FAILURE_MESSAGES: Record<string, string> = {
   enqueue_failed: 'Processing couldn’t start. Retry in a moment.',
 };
 
+function isDocumentFailureReason(reason: string): reason is DocumentFailureReason {
+  return Object.hasOwn(DOCUMENT_FAILURE_MESSAGES, reason);
+}
+
 export function documentFailureMessage(reason: string | null): string {
-  return (
-    (reason === null ? undefined : DOCUMENT_FAILURE_MESSAGES[reason]) ?? 'Processing failed — not searchable.'
-  );
+  return reason !== null && isDocumentFailureReason(reason)
+    ? DOCUMENT_FAILURE_MESSAGES[reason]
+    : 'Processing failed — not searchable.';
 }
 
 /** What each venture role can see: one wording for the Team page and every invitation. */

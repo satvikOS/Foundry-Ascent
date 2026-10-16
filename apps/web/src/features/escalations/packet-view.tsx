@@ -1,9 +1,20 @@
 import type { EscalationView } from '@foundry/contracts';
-import { Bot, Lock } from 'lucide-react';
+import { Bot, Lock, Trash2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { formatDateTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
+
+/**
+ * What a request's packet says once the conversation it was drawn from was deleted and the founder never
+ * shared it: the request is withdrawn and its words are erased (migration 0005, deleting a conversation).
+ */
+export const DELETED_CONVERSATION = '[deleted conversation]';
+
+/** A packet whose content was erased with the conversation it came from. */
+export function isErasedPacket(packet: { founderQuestion: string } | null | undefined): boolean {
+  return packet?.founderQuestion === DELETED_CONVERSATION;
+}
 
 /** Who reads the brief: the founder who asked (before and after consent) or the person it went to. */
 export type PacketAudience = 'founder' | 'assignee';
@@ -52,6 +63,15 @@ export function PacketView({
       <p className={cn('flex items-center gap-2 text-small text-muted-foreground', className)}>
         <Lock aria-hidden className="size-4 shrink-0" />
         {audience === 'assignee' ? 'Waiting for the founder to share details.' : 'Packet unavailable.'}
+      </p>
+    );
+  }
+  if (isErasedPacket(packet)) {
+    return (
+      <p className={cn('flex items-start gap-2 text-small text-muted-foreground', className)}>
+        <Trash2 aria-hidden className="mt-0.5 size-4 shrink-0" />
+        This request came from a conversation that was deleted, so its details were removed. Nothing was
+        shared.
       </p>
     );
   }

@@ -46,6 +46,21 @@ const FIELD_LABELS: Record<string, string> = {
   pinned: 'pinned',
 };
 
+/**
+ * An event no person made: maintenance expiring a proposal nobody reviewed (`{system: true, reason:
+ * 'not_reviewed', days}`). Its actor is only the person the proposal was for, so it never reads "by" them.
+ */
+export function systemEventLine(action: EventAction, diff: Record<string, unknown>): string | null {
+  if (diff.system !== true) return null;
+  if (action === 'expired') {
+    const days = typeof diff.days === 'number' ? diff.days : null;
+    return days === null
+      ? 'Expired, not reviewed'
+      : `Expired, not reviewed in ${String(days)} day${days === 1 ? '' : 's'}`;
+  }
+  return `${EVENT_DEFS[action].label} automatically`;
+}
+
 /** Changed fields in a diff, and a reason if one was recorded (values are not repeated here). */
 export function summariseDiff(diff: Record<string, unknown>): { fields: string[]; reason: string | null } {
   const reason = typeof diff.reason === 'string' && diff.reason.trim() ? diff.reason.trim() : null;
@@ -84,15 +99,22 @@ export function MemoryHistoryTimeline({ memoryId }: { memoryId: string }) {
       {events.map((event) => {
         const def = EVENT_DEFS[event.action];
         const Icon = def.icon;
-        const { fields, reason } = summariseDiff(event.diff);
+        const system = systemEventLine(event.action, event.diff);
+        const { fields, reason } = system === null ? summariseDiff(event.diff) : { fields: [], reason: null };
         return (
           <li key={event.id} className="relative">
             <span className="absolute top-0.5 -left-[27px] flex size-[22px] items-center justify-center rounded-full border border-border bg-card">
               <Icon aria-hidden className="size-3 text-muted-foreground" />
             </span>
             <p className="text-[13px] leading-5">
-              <span className="font-medium">{def.label}</span>{' '}
-              <span className="text-muted-foreground">by {event.actor.displayName}</span>
+              {system === null ? (
+                <>
+                  <span className="font-medium">{def.label}</span>{' '}
+                  <span className="text-muted-foreground">by {event.actor.displayName}</span>
+                </>
+              ) : (
+                <span className="font-medium">{system}</span>
+              )}
             </p>
             <p className="text-xs text-muted-foreground">
               <time dateTime={isoString(event.at)} title={formatDateTime(event.at)}>

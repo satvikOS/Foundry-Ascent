@@ -1,5 +1,6 @@
 import { VentureStatus } from '@foundry/contracts';
-import { Briefcase, Ellipsis, PencilLine, Plus, Search, SearchX, UserPlus } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
+import { Briefcase, Ellipsis, PencilLine, Plus, Search, SearchX, UserPlus, Users } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 
 import { VentureMark } from '@/components/faces/user-avatar';
@@ -30,6 +31,7 @@ import {
   type SortState,
 } from '@/components/ui/table';
 import { useProgramVentures, type ProgramVenture } from '@/lib/api/hooks/program';
+import { useRequiredMe } from '@/lib/auth/use-me';
 import { formatDate, pluralize } from '@/lib/format';
 import { DOMAIN_LABELS, STAGE_LABELS, STAGE_ORDER } from '@/lib/labels';
 
@@ -54,6 +56,7 @@ function sortValue(row: ProgramVenture, key: SortKey): string | number {
 
 /** Program → Ventures: enrolment metadata only (never venture content); enrol, rename and invite. */
 export function ProgramVenturesPage() {
+  const me = useRequiredMe();
   const ventures = useProgramVentures();
   const [query, setQuery] = useState('');
   const [stage, setStage] = useState<string>('all');
@@ -262,6 +265,15 @@ export function ProgramVenturesPage() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
+                        <DropdownMenuItem asChild>
+                          <Link
+                            to="/$tenant/app/v/$ventureId/team"
+                            params={{ tenant: me.tenant.slug, ventureId: row.id }}
+                          >
+                            <Users aria-hidden />
+                            Team
+                          </Link>
+                        </DropdownMenuItem>
                         <DropdownMenuItem
                           onSelect={() => {
                             setInviteFor({ id: row.id, name: row.name });

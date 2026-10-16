@@ -10,13 +10,13 @@ import { SectionCard } from '@/components/ui/section-card';
 import { LoadingRegion, Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { FilterChips } from '@/features/admin/shared/filter-chips';
+import { PacketView } from '@/features/escalations/packet-view';
 import { isOpenEscalation, isOverdue, PRIORITY_RANK } from '@/features/program/escalations/status';
 import { useInboxEscalations } from '@/lib/api/hooks/escalations';
 import { formatDate, formatDateTime, formatRelative } from '@/lib/format';
 import { ESCALATION_CATEGORY_LABELS, REQUESTED_ROLE_LABELS } from '@/lib/labels';
 import { cn } from '@/lib/utils';
 
-import { EscalationPacketView } from './escalation-packet';
 import { InboxActions } from './inbox-actions';
 
 export type InboxFilter = 'open' | 'closed';
@@ -162,7 +162,7 @@ export function InboxPage({ selectedId, filter, onSelect, onFilterChange }: Inbo
                     {selected.sessionId ? <Badge variant="muted">From a coaching session</Badge> : null}
                   </div>
                   <InboxActions key={selected.id} escalation={selected} />
-                  <EscalationPacketView escalation={selected} />
+                  <PacketView escalation={selected} audience="assignee" />
                   {selected.resolution ? (
                     <section className="grid gap-2 rounded-lg border border-border px-4 py-3">
                       <h3 className="flex items-center gap-1.5 text-sm font-semibold">

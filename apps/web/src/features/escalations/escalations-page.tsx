@@ -35,7 +35,7 @@ import { SegmentedControl } from '@/features/venture/segmented-control';
 
 import { ConsentForm } from './consent-form';
 import { EscalationFlowDialog } from './escalation-flow-dialog';
-import { PacketView } from './packet-view';
+import { isErasedPacket, PacketView } from './packet-view';
 import { EscalationTimeline } from './status-timeline';
 
 const routeApi = getRouteApi('/$tenant/app/v/$ventureId/help');
@@ -204,7 +204,11 @@ export function EscalationsPage() {
                           {formatRelative(e.createdAt)}
                         </span>
                       </span>
-                      {e.packet ? (
+                      {isErasedPacket(e.packet) ? (
+                        <span className="text-small text-muted-foreground italic">
+                          From a deleted conversation
+                        </span>
+                      ) : e.packet ? (
                         <span className="line-clamp-2 text-small text-muted-foreground">
                           {e.packet.founderQuestion}
                         </span>
