@@ -13,7 +13,7 @@ const NOOR = '33333333-4444-4555-8666-777777777777';
 
 const NAME_REFUSAL = "Name it as whose vEIR it is, e.g. Noor's vEIR, so founders never take it for the EIR.";
 
-function mockApi(options: { refuseName?: boolean } = {}) {
+function mockApi(options: { refuseName?: boolean; initialEirId?: string } = {}) {
   const fetchMock = stubFetch();
   fetchMock.mockImplementation((input, init) => {
     const url = input instanceof Request ? input.url : input.toString();
@@ -60,7 +60,9 @@ function mockApi(options: { refuseName?: boolean } = {}) {
     }
     return Promise.resolve(jsonResponse({ items: [GUIDE, persona(), RUTH] }));
   });
-  const rootRoute = createRootRoute({ component: () => <NewPersonaPage tenant="ain" /> });
+  const rootRoute = createRootRoute({
+    component: () => <NewPersonaPage tenant="ain" initialEirId={options.initialEirId} />,
+  });
   const router = createRouter({
     routeTree: rootRoute,
     history: createMemoryHistory({ initialEntries: ['/'] }),
@@ -70,6 +72,16 @@ function mockApi(options: { refuseName?: boolean } = {}) {
 }
 
 describe('NewPersonaPage (program lead)', () => {
+  it('starts from the EIR chosen in the EIR list, with the standard name', async () => {
+    mockApi({ initialEirId: NOOR_EIR });
+    const eir = await screen.findByRole('combobox', { name: 'EIR' });
+    await waitFor(() => {
+      expect(eir).toHaveTextContent('Noor Example');
+    });
+    expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue("Noor's vEIR");
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled();
+  });
+
   it('builds a draft vEIR from an EIR without one, then opens its consent section', async () => {
     const { fetchMock, router } = mockApi();
     const user = userEvent.setup();

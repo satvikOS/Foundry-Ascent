@@ -22,6 +22,7 @@ import {
 } from '@/lib/labels';
 import { ReasoningDetails } from '@/features/chat/reasoning';
 import { cn } from '@/lib/utils';
+import { evidenceKindLabel } from '@/features/coach/evidence-item';
 
 function Block({
   title,
@@ -224,7 +225,7 @@ function EvidenceList({ items }: { items: readonly EvidenceItem[] }) {
                   {item.key}
                 </code>
                 <span className="font-medium">{item.title}</span>
-                <Badge variant="muted">{item.kind}</Badge>
+                <Badge variant="muted">{evidenceKindLabel(item).label}</Badge>
                 {item.status ? <span className="text-xs text-muted-foreground">{item.status}</span> : null}
               </div>
               <p className="mt-1 line-clamp-4 text-[13px] text-muted-foreground">{item.excerpt}</p>

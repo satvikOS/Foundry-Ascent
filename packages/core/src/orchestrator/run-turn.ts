@@ -971,6 +971,7 @@ export function createOrchestrator(
           score: k.item.score,
           title: k.item.title,
           ventureId: k.ventureId,
+          source: k.item.source ?? null,
         })),
       );
       const candidates =

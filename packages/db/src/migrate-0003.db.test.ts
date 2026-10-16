@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type Db } from './db.js';
 import { MIGRATIONS, migrate } from './migrate.js';
 import { p } from './params.js';
-import { assignmentsRepo, escalationsRepo, memoryRepo, turnsRepo } from './repositories/index.js';
+import { assignmentsRepo, escalationsRepo, memoryRepo } from './repositories/index.js';
 import { seedDatabase, type SeedResult } from './seed/seed.js';
 import { splitStatements } from './sql-lexer.js';
 import { createTestDatabase, type TestDatabase } from './testing/test-database.js';
@@ -103,17 +103,20 @@ async function writeLegacyData(db: Db): Promise<Legacy> {
     const ephemeral = await session('ephemeral');
     const standardTurn = await turn(standard.id);
     const ephemeralTurn = await turn(ephemeral.id);
-    await turnsRepo.insertTurnEvidence(sx, standardTurn, [
+    // Evidence as the code of that time wrote it (today's repository writes the 0011 source columns).
+    await sx.query(
+      `INSERT INTO turn_evidence (turn_id, evidence_key, venture_id, kind, ref_id, score, title)
+       VALUES (:turn, 'E1', :venture, 'memory', :private, 0.9, :privateTitle),
+              (:turn, 'E2', :venture, 'memory', :team, 0.8, :teamTitle)`,
       {
-        key: 'E1',
-        kind: 'memory',
-        refId: privateMemory.id,
-        score: 0.9,
-        title: PRIVATE_TITLE,
-        ventureId: venture.id,
+        turn: p.uuid(standardTurn),
+        venture: p.uuid(venture.id),
+        private: p.uuid(privateMemory.id),
+        privateTitle: p.text(PRIVATE_TITLE),
+        team: p.uuid(team.id),
+        teamTitle: p.text(team.title),
       },
-      { key: 'E2', kind: 'memory', refId: team.id, score: 0.8, title: team.title, ventureId: venture.id },
-    ]);
+    );
     await sx.query(
       `UPDATE coaching_sessions SET recap = :recap, status = 'ended', ended_at = now() WHERE id = :id`,
       {
@@ -212,7 +215,7 @@ afterAll(async () => {
 describe('migration 0003_security_hardening', () => {
   it('is bundled after 0001 and 0002, which it never changes', () => {
     const versions = MIGRATIONS.map((m) => m.version);
-    expect(versions.slice(0, 10)).toEqual([
+    expect(versions.slice(0, 11)).toEqual([
       '0001_init',
       '0002_rls_helpers',
       '0003_security_hardening',
@@ -223,6 +226,7 @@ describe('migration 0003_security_hardening', () => {
       '0008_calls',
       '0009_review_privacy',
       '0010_call_notice',
+      '0011_eir_profiles_evidence_sources',
     ]);
     expect(versions).toEqual([...versions].sort());
     expect(HARDENING).toBeDefined();

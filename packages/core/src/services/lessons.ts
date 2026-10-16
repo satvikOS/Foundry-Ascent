@@ -1,4 +1,10 @@
-import { CreateLessonRequest, LessonAction, type LessonView } from '@foundry/contracts';
+import {
+  CreateLessonRequest,
+  LESSON_QUEUE_MAX,
+  LessonAction,
+  LessonQuery,
+  type LessonView,
+} from '@foundry/contracts';
 import { eirRepo, personasRepo, resourcesRepo } from '@foundry/db';
 import { type z } from 'zod';
 
@@ -15,6 +21,15 @@ import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.j
 export interface LessonsService {
   /** A persona's lessons: drafts first for its curators, published ones only for other EIR-studio roles. */
   list(ctx: RequestContext, personaId: string): Promise<LessonView[]>;
+  /**
+   * Lessons of every vEIR the caller curates, in one query (any EIR-studio role; a program lead curates every
+   * vEIR, an EIR those built from them, anyone else none), optionally in given states (the review queue asks
+   * for drafts). Most recently changed first, at most {@link LESSON_QUEUE_MAX}, with how many match.
+   */
+  queue(
+    ctx: RequestContext,
+    query?: z.input<typeof LessonQuery>,
+  ): Promise<{ items: LessonView[]; total: number }>;
   /** A new draft lesson (program lead or the persona's EIR). */
   create(
     ctx: RequestContext,
@@ -66,6 +81,24 @@ export function createLessonsService(kit: Kit): LessonsService {
         await loadPersona(scope, personaId);
         const lessons = await resourcesRepo.listLessons(scope.tx, { tenantId: ctx.tenantId, personaId });
         return lessons.map(resourcesRepo.toLessonView);
+      });
+    },
+
+    queue: async (ctx, rawQuery = {}) => {
+      const query = parseInput(LessonQuery, rawQuery);
+      return await kit.inRequest(ctx, async (scope) => {
+        const { roles } = await requireRole(scope, STUDIO_ROLES, { objectType: 'lesson' });
+        const allPersonas = hasAnyRole(roles, ['program_lead']);
+        // A platform admin who is neither a program lead nor an EIR curates no vEIR.
+        if (!allPersonas && !hasAnyRole(roles, ['eir'])) return { items: [], total: 0 };
+        const page = await resourcesRepo.listCuratedLessons(scope.tx, {
+          tenantId: ctx.tenantId,
+          curatorId: ctx.principalId,
+          allPersonas,
+          ...(query.status === undefined ? {} : { statuses: query.status }),
+          limit: LESSON_QUEUE_MAX,
+        });
+        return { items: page.items.map(resourcesRepo.toLessonView), total: page.total };
       });
     },
 

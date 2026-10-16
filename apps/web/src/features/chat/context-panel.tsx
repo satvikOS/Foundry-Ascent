@@ -79,7 +79,7 @@ export function ContextPanel({
         </TabsList>
       </div>
       <TabsContent value="sources">
-        <SourcesTab turns={turns} personaName={personaName} />
+        <SourcesTab turns={turns} personaName={personaName} tenant={tenant} ventureId={ventureId} />
       </TabsContent>
       <TabsContent value="notebook">
         <NotebookTab personaName={personaName} tenant={tenant} ventureId={ventureId} />
@@ -122,7 +122,17 @@ function Failed({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   );
 }
 
-function SourcesTab({ turns, personaName }: { turns: TurnView[]; personaName: string }) {
+function SourcesTab({
+  turns,
+  personaName,
+  tenant,
+  ventureId,
+}: {
+  turns: TurnView[];
+  personaName: string;
+  tenant: string;
+  ventureId: string;
+}) {
   const { selectedTurnId, focused, showSources } = usePanelState();
   const answered = turns.filter((t) => t.status === 'completed');
   const turn = answered.find((t) => t.id === selectedTurnId) ?? answered[answered.length - 1] ?? null;
@@ -194,6 +204,8 @@ function SourcesTab({ turns, personaName }: { turns: TurnView[]; personaName: st
             <li key={item.key}>
               <EvidenceItemCard
                 item={item}
+                veirName={personaName}
+                venture={{ tenant, ventureId }}
                 highlighted={focused?.turnId === turn.id && focused.key === item.key}
                 ref={(node) => {
                   if (node) refs.current.set(item.key, node);

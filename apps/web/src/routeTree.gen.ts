@@ -24,6 +24,7 @@ import { Route as TenantAppAdminPrincipalsRouteImport } from './routes/$tenant/a
 import { Route as TenantAppAdminSettingsRouteImport } from './routes/$tenant/app/admin/settings';
 import { Route as TenantAppAdminUsageRouteImport } from './routes/$tenant/app/admin/usage';
 import { Route as TenantAppEirIndexRouteImport } from './routes/$tenant/app/eir/index';
+import { Route as TenantAppEirEirsRouteImport } from './routes/$tenant/app/eir/eirs';
 import { Route as TenantAppEirInboxRouteImport } from './routes/$tenant/app/eir/inbox';
 import { Route as TenantAppEirLessonsRouteImport } from './routes/$tenant/app/eir/lessons';
 import { Route as TenantAppEirReviewsRouteImport } from './routes/$tenant/app/eir/reviews';
@@ -122,6 +123,11 @@ const TenantAppAdminUsageRoute = TenantAppAdminUsageRouteImport.update({
 const TenantAppEirIndexRoute = TenantAppEirIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => TenantAppEirRouteRoute,
+} as any);
+const TenantAppEirEirsRoute = TenantAppEirEirsRouteImport.update({
+  id: '/eirs',
+  path: '/eirs',
   getParentRoute: () => TenantAppEirRouteRoute,
 } as any);
 const TenantAppEirInboxRoute = TenantAppEirInboxRouteImport.update({
@@ -270,6 +276,7 @@ export interface FileRoutesByFullPath {
   '/$tenant/app/admin/principals': typeof TenantAppAdminPrincipalsRoute;
   '/$tenant/app/admin/settings': typeof TenantAppAdminSettingsRoute;
   '/$tenant/app/admin/usage': typeof TenantAppAdminUsageRoute;
+  '/$tenant/app/eir/eirs': typeof TenantAppEirEirsRoute;
   '/$tenant/app/eir/inbox': typeof TenantAppEirInboxRoute;
   '/$tenant/app/eir/lessons': typeof TenantAppEirLessonsRoute;
   '/$tenant/app/eir/reviews': typeof TenantAppEirReviewsRoute;
@@ -305,6 +312,7 @@ export interface FileRoutesByTo {
   '/$tenant/app/admin/principals': typeof TenantAppAdminPrincipalsRoute;
   '/$tenant/app/admin/settings': typeof TenantAppAdminSettingsRoute;
   '/$tenant/app/admin/usage': typeof TenantAppAdminUsageRoute;
+  '/$tenant/app/eir/eirs': typeof TenantAppEirEirsRoute;
   '/$tenant/app/eir/inbox': typeof TenantAppEirInboxRoute;
   '/$tenant/app/eir/lessons': typeof TenantAppEirLessonsRoute;
   '/$tenant/app/eir/reviews': typeof TenantAppEirReviewsRoute;
@@ -346,6 +354,7 @@ export interface FileRoutesById {
   '/$tenant/app/admin/principals': typeof TenantAppAdminPrincipalsRoute;
   '/$tenant/app/admin/settings': typeof TenantAppAdminSettingsRoute;
   '/$tenant/app/admin/usage': typeof TenantAppAdminUsageRoute;
+  '/$tenant/app/eir/eirs': typeof TenantAppEirEirsRoute;
   '/$tenant/app/eir/inbox': typeof TenantAppEirInboxRoute;
   '/$tenant/app/eir/lessons': typeof TenantAppEirLessonsRoute;
   '/$tenant/app/eir/reviews': typeof TenantAppEirReviewsRoute;
@@ -388,6 +397,7 @@ export interface FileRouteTypes {
     | '/$tenant/app/admin/principals'
     | '/$tenant/app/admin/settings'
     | '/$tenant/app/admin/usage'
+    | '/$tenant/app/eir/eirs'
     | '/$tenant/app/eir/inbox'
     | '/$tenant/app/eir/lessons'
     | '/$tenant/app/eir/reviews'
@@ -423,6 +433,7 @@ export interface FileRouteTypes {
     | '/$tenant/app/admin/principals'
     | '/$tenant/app/admin/settings'
     | '/$tenant/app/admin/usage'
+    | '/$tenant/app/eir/eirs'
     | '/$tenant/app/eir/inbox'
     | '/$tenant/app/eir/lessons'
     | '/$tenant/app/eir/reviews'
@@ -463,6 +474,7 @@ export interface FileRouteTypes {
     | '/$tenant/app/admin/principals'
     | '/$tenant/app/admin/settings'
     | '/$tenant/app/admin/usage'
+    | '/$tenant/app/eir/eirs'
     | '/$tenant/app/eir/inbox'
     | '/$tenant/app/eir/lessons'
     | '/$tenant/app/eir/reviews'
@@ -602,6 +614,13 @@ declare module '@tanstack/react-router' {
       path: '/';
       fullPath: '/$tenant/app/eir/';
       preLoaderRoute: typeof TenantAppEirIndexRouteImport;
+      parentRoute: typeof TenantAppEirRouteRoute;
+    };
+    '/$tenant/app/eir/eirs': {
+      id: '/$tenant/app/eir/eirs';
+      path: '/eirs';
+      fullPath: '/$tenant/app/eir/eirs';
+      preLoaderRoute: typeof TenantAppEirEirsRouteImport;
       parentRoute: typeof TenantAppEirRouteRoute;
     };
     '/$tenant/app/eir/inbox': {
@@ -788,6 +807,7 @@ const TenantAppAdminRouteRouteWithChildren =
   TenantAppAdminRouteRoute._addFileChildren(TenantAppAdminRouteRouteChildren);
 
 interface TenantAppEirRouteRouteChildren {
+  TenantAppEirEirsRoute: typeof TenantAppEirEirsRoute;
   TenantAppEirInboxRoute: typeof TenantAppEirInboxRoute;
   TenantAppEirLessonsRoute: typeof TenantAppEirLessonsRoute;
   TenantAppEirReviewsRoute: typeof TenantAppEirReviewsRoute;
@@ -798,6 +818,7 @@ interface TenantAppEirRouteRouteChildren {
 }
 
 const TenantAppEirRouteRouteChildren: TenantAppEirRouteRouteChildren = {
+  TenantAppEirEirsRoute: TenantAppEirEirsRoute,
   TenantAppEirInboxRoute: TenantAppEirInboxRoute,
   TenantAppEirLessonsRoute: TenantAppEirLessonsRoute,
   TenantAppEirReviewsRoute: TenantAppEirReviewsRoute,

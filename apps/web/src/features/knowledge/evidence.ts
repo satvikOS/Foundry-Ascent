@@ -3,7 +3,8 @@ import type { DocumentView, EvidenceItem, MemoryObjectView, TurnView } from '@fo
 /*
  * Evidence on the Knowledge page: everything the vEIR can cite for the venture (its documents and kept
  * memory) plus the program-side sources it actually cited in recent conversations, each with how many
- * answers cited it. Pure, so the counting rules are unit tested.
+ * answers cited it. A cited passage names its knowledge source by id, so it is credited to exactly that
+ * document or library source, whatever the sources are called. Pure, so the counting rules are unit tested.
  */
 
 export type EvidenceSourceKind = 'document' | 'memory' | 'program';
@@ -17,6 +18,8 @@ export interface EvidenceSource {
   kind: EvidenceSourceKind;
   /** For program-side sources: what kind of source it is. */
   programKind: ProgramSourceKind | null;
+  /** The knowledge source behind a document or a guidance / library row (links and highlights use it). */
+  sourceId: string | null;
   title: string;
   /** Excerpt from the last citation (program sources) or the item's own text (memory). */
   excerpt: string;
@@ -27,40 +30,41 @@ export interface EvidenceSource {
   memory: MemoryObjectView | null;
 }
 
-const PROGRAM_KIND: Partial<Record<EvidenceItem['kind'], ProgramSourceKind>> = {
-  chunk: 'guidance',
-  doctrine: 'library',
-  resource: 'resource',
-  pattern: 'lesson',
-};
-
-/** A chunk is titled "<source title> — <heading>"; the source is what a person recognises. */
+/** A passage is titled "<source title> — <heading>"; the source is what a person recognises. */
 function sourceTitle(title: string): string {
   const cut = title.indexOf(' — ');
   return cut === -1 ? title : title.slice(0, cut);
 }
 
-type DocumentMatch =
-  /** Exactly one of the venture's documents has this name: the citation is credited to it. */
-  | { kind: 'document'; document: DocumentView }
-  /** Several of the venture's documents share the name: counted once, credited to none of them. */
-  | { kind: 'ambiguous'; filename: string }
-  /** Only deleted documents have the name: a passage of a removed file, not counted. */
-  | { kind: 'deleted' };
-
 /**
- * The venture document a cited passage belongs to. Evidence carries no document id, only the source's
- * title, which is the document's filename, so a name shared by two live documents is not guessed at.
+ * Where a cited item is counted: a venture document or a library source (by the knowledge source the
+ * passage names), a kept memory item, a resource or a lesson. Null when it is counted nowhere: a passage of a
+ * document that is no longer here (deleted), or one whose source is unknown (an answer from before sources
+ * were recorded, whose passage has since been removed).
  */
-function documentFor(item: EvidenceItem, documents: readonly DocumentView[]): DocumentMatch | null {
-  if (item.kind !== 'chunk') return null;
-  const source = sourceTitle(item.title);
-  const named = documents.filter((doc) => doc.filename === source);
-  const live = named.filter((doc) => doc.status !== 'deleted');
-  const [only] = live;
-  if (only && live.length === 1) return { kind: 'document', document: only };
-  if (live.length > 1) return { kind: 'ambiguous', filename: source };
-  return named.length > 0 ? { kind: 'deleted' } : null;
+function citedAs(
+  item: EvidenceItem,
+  documentsBySource: ReadonlyMap<string, DocumentView>,
+): { key: string; programKind: ProgramSourceKind | null; sourceId: string | null } | null {
+  switch (item.kind) {
+    case 'memory':
+      return { key: `memory:${item.refId}`, programKind: null, sourceId: null };
+    case 'resource':
+      return { key: `program:resource:${item.refId}`, programKind: 'resource', sourceId: null };
+    case 'pattern':
+      return { key: `program:lesson:${item.refId}`, programKind: 'lesson', sourceId: null };
+    case 'chunk':
+    case 'doctrine': {
+      const source = item.source;
+      if (!source) return null;
+      if (source.scope === 'venture') {
+        const document = documentsBySource.get(source.id);
+        return document ? { key: `document:${document.id}`, programKind: null, sourceId: source.id } : null;
+      }
+      const programKind = source.scope === 'persona' ? 'library' : 'guidance';
+      return { key: `program:${programKind}:${source.id}`, programKind, sourceId: source.id };
+    }
+  }
 }
 
 export function buildEvidenceSources(input: {
@@ -71,60 +75,31 @@ export function buildEvidenceSources(input: {
   turns: readonly Pick<TurnView, 'evidence'>[];
 }): EvidenceSource[] {
   const documents = input.documents.filter((doc) => doc.status !== 'deleted');
+  const documentsBySource = new Map<string, DocumentView>();
+  for (const doc of documents) if (doc.sourceId) documentsBySource.set(doc.sourceId, doc);
   const citations = new Map<string, number>();
   const program = new Map<string, EvidenceSource>();
-  const shared = new Map<string, EvidenceSource>();
 
   for (const turn of input.turns) {
     // One answer citing two passages of the same source counts once for that source.
     const cited = new Set<string>();
     for (const item of turn.evidence) {
-      // Deleted documents are matched too, so their passages are not mistaken for program guidance.
-      const match = documentFor(item, input.documents);
-      if (match?.kind === 'document') {
-        cited.add(`document:${match.document.id}`);
-        continue;
-      }
-      if (match?.kind === 'ambiguous') {
-        const key = `document-name:${match.filename}`;
-        cited.add(key);
-        if (!shared.has(key)) {
-          shared.set(key, {
-            key,
-            kind: 'document',
-            programKind: null,
-            title: match.filename,
-            excerpt: 'More than one document has this name.',
-            freshnessAt: item.freshnessAt,
-            citations: 0,
-            document: null,
-            memory: null,
-          });
-        }
-        continue;
-      }
-      if (match?.kind === 'deleted') continue;
-      if (item.kind === 'memory') {
-        cited.add(`memory:${item.refId}`);
-        continue;
-      }
-      const programKind = PROGRAM_KIND[item.kind];
-      if (!programKind) continue;
-      // Passages of one handbook or library entry are one source; resources and lessons are their own.
-      const id =
-        programKind === 'guidance' || programKind === 'library' ? sourceTitle(item.title) : item.refId;
-      const key = `program:${programKind}:${id}`;
-      cited.add(key);
-      const previous = program.get(key);
+      const target = citedAs(item, documentsBySource);
+      if (!target) continue;
+      cited.add(target.key);
+      if (target.programKind === null) continue;
+      const previous = program.get(target.key);
       const fresher =
         previous?.freshnessAt && item.freshnessAt && previous.freshnessAt > item.freshnessAt
           ? previous.freshnessAt
           : (item.freshnessAt ?? previous?.freshnessAt ?? null);
-      program.set(key, {
-        key,
+      program.set(target.key, {
+        key: target.key,
         kind: 'program',
-        programKind,
-        title: programKind === 'guidance' || programKind === 'library' ? sourceTitle(item.title) : item.title,
+        programKind: target.programKind,
+        sourceId: target.sourceId,
+        // Passages of one handbook or library entry are one source, shown by the source's own title.
+        title: target.sourceId === null ? item.title : sourceTitle(item.title),
         excerpt: item.excerpt,
         freshnessAt: fresher,
         citations: 0,
@@ -140,6 +115,7 @@ export function buildEvidenceSources(input: {
       key: `document:${document.id}`,
       kind: 'document',
       programKind: null,
+      sourceId: document.sourceId ?? null,
       title: document.filename,
       excerpt: '',
       freshnessAt: document.createdAt,
@@ -153,6 +129,7 @@ export function buildEvidenceSources(input: {
         key: `memory:${memory.id}`,
         kind: 'memory',
         programKind: null,
+        sourceId: null,
         title: memory.title,
         excerpt: memory.content,
         freshnessAt: memory.updatedAt,
@@ -160,7 +137,6 @@ export function buildEvidenceSources(input: {
         document: null,
         memory,
       })),
-    ...shared.values(),
     ...program.values(),
   ].map((row) => ({ ...row, citations: citations.get(row.key) ?? 0 }));
 

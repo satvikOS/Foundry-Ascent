@@ -8,13 +8,14 @@ import { VentureMark } from '@/components/faces/user-avatar';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { SimpleTooltip } from '@/components/ui/tooltip';
 import { useCallsAvailable } from '@/features/calls/calls-available';
+import { useLessonsToReview } from '@/lib/api/hooks/eir';
 import { ventureQueryOptions, useVentures } from '@/lib/api/hooks/ventures';
 import { canAccessVenture, canWrite, writesAnyVenture } from '@/lib/auth/roles';
 import { cn, isMac } from '@/lib/utils';
 import { veirDisplay } from '@/lib/veir';
 
 import { AccountMenu } from './account-menu';
-import { STAFF_SECTIONS, ventureDestinations, type Workspace } from './nav';
+import { staffSections, ventureDestinations, type Workspace } from './nav';
 import { RecentConversations } from './recent-conversations';
 import { useVentureName } from './venture-name';
 import { WorkspaceSwitcher } from './workspace-switcher';
@@ -130,6 +131,8 @@ export function SidebarContent({
     [me.memberships],
   );
   const staff = workspace.kind === 'eir' || workspace.kind === 'program' || workspace.kind === 'admin';
+  // Lessons waiting in every vEIR the person curates, counted on "Lessons to review" in the EIR studio.
+  const lessonsToReview = useLessonsToReview({ enabled: workspace.kind === 'eir' });
   const assigned =
     workspace.kind === 'eir' ? (ventures.data ?? []).filter((v) => me.assignedVentureIds.includes(v.id)) : [];
 
@@ -206,7 +209,7 @@ export function SidebarContent({
       {staff ? (
         <div className="grid shrink-0 gap-px px-2 pt-2">
           <Divider collapsed={collapsed} />
-          {STAFF_SECTIONS[workspace.kind].map((section) => (
+          {staffSections(me, workspace.kind).map((section) => (
             <Tip key={section.id} show={collapsed} label={section.label}>
               <SidebarLink
                 to={section.to}
@@ -214,6 +217,8 @@ export function SidebarContent({
                 onClick={onNavigate}
                 icon={section.icon}
                 label={section.label}
+                count={section.id === 'lessons' ? lessonsToReview.data?.total : undefined}
+                countLabel="to review"
                 collapsed={collapsed}
               />
             </Tip>

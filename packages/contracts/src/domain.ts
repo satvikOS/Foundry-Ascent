@@ -340,8 +340,23 @@ export const DocumentView = z.object({
   uploadedBy: PrincipalView,
   createdAt: Timestamp,
   chunkCount: z.number().int(),
+  /**
+   * The knowledge source the document's passages are cited from (`EvidenceItem.source.id`); null until the
+   * document is processed. Additive: older APIs send none.
+   */
+  sourceId: Id.nullable().optional(),
 });
 export type DocumentView = z.infer<typeof DocumentView>;
+
+/**
+ * Where a cited passage comes from: one of the venture's own documents (`venture`), or a library the program
+ * keeps: its handbook (`program`), public material (`public`) or the vEIR's own knowledge library (`persona`).
+ */
+export const EvidenceSourceScope = z.enum(['venture', 'program', 'public', 'persona']);
+export type EvidenceSourceScope = z.infer<typeof EvidenceSourceScope>;
+/** The knowledge source of a cited passage, by id (a venture document's `DocumentView.sourceId`). */
+export const EvidenceSource = z.object({ id: Id, scope: EvidenceSourceScope });
+export type EvidenceSource = z.infer<typeof EvidenceSource>;
 
 export const EvidenceItem = z.object({
   key: z.string().regex(/^E\d+$/),
@@ -352,6 +367,11 @@ export const EvidenceItem = z.object({
   score: z.number(),
   freshnessAt: Timestamp.nullable(),
   status: z.string().nullable(), // e.g. memory status: confirmed / proposed / disputed
+  /**
+   * The knowledge source of a passage (kinds `chunk` and `doctrine`); null for memory, resources and lessons,
+   * and for a passage whose source is not known. Additive: older APIs and answers stored before it send none.
+   */
+  source: EvidenceSource.nullable().optional(),
 });
 export type EvidenceItem = z.infer<typeof EvidenceItem>;
 
@@ -446,4 +466,11 @@ export const EirProfileView = z.object({
   routingIntents: z.array(z.string()),
   synthetic: z.boolean(),
   status: z.enum(['active', 'unavailable', 'retired']),
+  /** A short biography of the person. Additive: older APIs send none. */
+  bio: z.string().nullable().optional(),
+  /**
+   * The person's own account (who signs in, records consent and reviews as this EIR); null for a profile
+   * without one. Additive: older APIs send none.
+   */
+  principal: PrincipalView.nullable().optional(),
 });

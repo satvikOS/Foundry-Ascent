@@ -5,10 +5,13 @@ import {
   CreateConsentRequest,
   CreateDocumentRequest,
   CreateEirPersonaRequest,
+  CreateEirProfileRequest,
   CreateLessonRequest,
   CreatePersonaKnowledgeRequest,
   CreatePersonaUploadResponse,
+  EirCandidateListResponse,
   EirProfileListResponse,
+  EirProfileView,
   LessonAction,
   LessonListResponse,
   LessonView,
@@ -19,10 +22,11 @@ import {
   PersonaView,
   ProgramVentureRow,
   RevokeConsentResponse,
+  UpdateEirProfileRequest,
   UpdateEmbodimentRequest,
   UpdatePersonaKnowledgeRequest,
 } from '@foundry/contracts';
-import { queryOptions, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { z } from 'zod';
 
 import { encodeBody } from '../body';
@@ -79,6 +83,60 @@ export function useEirProfiles(options: { enabled?: boolean } = {}) {
     staleTime: 5 * 60_000,
     enabled: options.enabled ?? true,
     select: (data) => data.items,
+  });
+}
+
+/** GET /eir/candidates — people with the EIR role and no profile yet (program lead or platform admin). */
+export function useEirCandidates(options: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: queryKeys.eir.candidates(),
+    queryFn: ({ signal }) => api.get('/eir/candidates', EirCandidateListResponse, { signal }),
+    enabled: options.enabled ?? true,
+    select: (data) => data.items,
+  });
+}
+
+function useInvalidateEirRegistry() {
+  const client = useQueryClient();
+  return () =>
+    Promise.all([
+      client.invalidateQueries({ queryKey: queryKeys.eir.profiles() }),
+      client.invalidateQueries({ queryKey: queryKeys.eir.candidates() }),
+      // Personas show their EIR's name.
+      client.invalidateQueries({ queryKey: queryKeys.personas.all() }),
+    ]);
+}
+
+export type CreateEirProfileInput = z.input<typeof CreateEirProfileRequest>;
+
+/** POST /eir/profiles → 201 the new EIR (program lead or platform admin). It records no consent. */
+export function useCreateEirProfile() {
+  const invalidate = useInvalidateEirRegistry();
+  return useMutation({
+    mutationFn: (input: CreateEirProfileInput) =>
+      api.post('/eir/profiles', EirProfileView, encodeBody(CreateEirProfileRequest, input), {
+        idempotencyKey: createIdempotencyKey(),
+      }),
+    onSuccess: invalidate,
+  });
+}
+
+export type UpdateEirProfileInput = z.input<typeof UpdateEirProfileRequest>;
+
+/** PATCH /eir/profiles/:id — name, title, areas of expertise or bio. */
+export function useUpdateEirProfile() {
+  const invalidate = useInvalidateEirRegistry();
+  return useMutation({
+    mutationFn: ({ profileId, input }: { profileId: string; input: UpdateEirProfileInput }) =>
+      api.patch(
+        path`/eir/profiles/${profileId}`,
+        EirProfileView,
+        encodeBody(UpdateEirProfileRequest, input),
+        {
+          idempotencyKey: createIdempotencyKey(),
+        },
+      ),
+    onSuccess: invalidate,
   });
 }
 
@@ -230,11 +288,6 @@ export function usePersonaLessons(personaId: string) {
   return useQuery({ ...personaLessonsQueryOptions(personaId), select: (data) => data.items });
 }
 
-/** Lessons of several personas at once (the "Lessons to review" queue). */
-export function useLessonsOfPersonas(personaIds: readonly string[]) {
-  return useQueries({ queries: personaIds.map((personaId) => personaLessonsQueryOptions(personaId)) });
-}
-
 export type CreateLessonInput = z.input<typeof CreateLessonRequest>;
 
 /** POST /personas/:id/lessons → 201 a draft lesson. */
@@ -245,7 +298,11 @@ export function useCreateLesson(personaId: string) {
       api.post(path`/personas/${personaId}/lessons`, LessonView, encodeBody(CreateLessonRequest, input), {
         idempotencyKey: createIdempotencyKey(),
       }),
-    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.personas.lessons(personaId) }),
+    onSuccess: () =>
+      Promise.all([
+        client.invalidateQueries({ queryKey: queryKeys.personas.lessons(personaId) }),
+        client.invalidateQueries({ queryKey: queryKeys.personas.lessonsToReview() }),
+      ]),
   });
 }
 
@@ -259,7 +316,12 @@ export function useLessonAction(personaId: string) {
       api.post(path`/lessons/${lessonId}/actions`, LessonView, encodeBody(LessonAction, action), {
         idempotencyKey: createIdempotencyKey(),
       }),
-    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.personas.lessons(personaId) }),
+    // The persona's list and the review queue (and the sidebar's count) both change.
+    onSuccess: () =>
+      Promise.all([
+        client.invalidateQueries({ queryKey: queryKeys.personas.lessons(personaId) }),
+        client.invalidateQueries({ queryKey: queryKeys.personas.lessonsToReview() }),
+      ]),
   });
 }
 

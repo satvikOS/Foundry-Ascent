@@ -20,7 +20,7 @@
  * own private items), for a session whose content RLS restricts to its author; no such session mode
  * exists today, so callers never pass it.
  */
-import { EvidenceKind, MemoryStatus, MemoryType, Visibility } from '@foundry/contracts';
+import { EvidenceKind, EvidenceSourceScope, MemoryStatus, MemoryType, Visibility } from '@foundry/contracts';
 import { type z } from 'zod';
 
 import { col, type RawRow } from '../columns.js';
@@ -34,6 +34,7 @@ export const RETRIEVAL_WEIGHTS = { vector: 0.55, lexical: 0.25, recency: 0.1, au
 export const DEFAULT_HALF_LIFE_DAYS = 90;
 
 type EvidenceKindValue = z.infer<typeof EvidenceKind>;
+type EvidenceSourceScopeValue = z.infer<typeof EvidenceSourceScope>;
 
 /** A scored candidate; core assigns evidence keys (E1…En) and builds `EvidenceItem`s from these. */
 export interface RetrievedItem {
@@ -50,6 +51,8 @@ export interface RetrievedItem {
   readonly ventureId: string | null;
   /** Knowledge source of a chunk. */
   readonly sourceId: string | null;
+  /** Scope of that source: a venture document, or a program, public or persona library source. */
+  readonly sourceScope: EvidenceSourceScopeValue | null;
   /** Memory type (memory items only). */
   readonly memoryType: MemoryTypeValue | null;
   /** Memory visibility (memory items only). */
@@ -112,6 +115,7 @@ function decodeItem(kind: EvidenceKindValue | 'from_row', r: RawRow): RetrievedI
     status: col.text.nullable.decode(r.status, 'status'),
     ventureId: col.uuid.nullable.decode(r.venture_id, 'venture_id'),
     sourceId: col.uuid.nullable.decode(r.source_id, 'source_id'),
+    sourceScope: col.enum(EvidenceSourceScope.options).nullable.decode(r.source_scope, 'source_scope'),
     memoryType: col.enum(MemoryType.options).nullable.decode(r.memory_type, 'memory_type'),
     visibility: col.enum(Visibility.options).nullable.decode(r.visibility, 'visibility'),
     components: {
@@ -151,7 +155,8 @@ export function searchVentureMemory(ex: SqlExecutor, q: VentureMemoryQuery): Pro
     ex,
     `WITH q AS (SELECT ${orTsQuerySql('query')} AS tsq)
      SELECT x.*, ${SCORE_SQL} AS score FROM (
-       SELECT m.id, m.venture_id, NULL::uuid AS source_id, m.type AS memory_type, m.visibility, m.title,
+       SELECT m.id, m.venture_id, NULL::uuid AS source_id, NULL::text AS source_scope, m.type AS memory_type,
+              m.visibility, m.title,
               ${excerptSql('m.content')} AS excerpt, m.updated_at AS freshness_at, m.status,
               ${vecSql('m.embedding')} AS vec,
               ts_rank_cd(m.tsv, q.tsq, 32) AS lex,
@@ -194,7 +199,8 @@ export function searchVentureChunks(ex: SqlExecutor, q: VentureChunkQuery): Prom
     ex,
     `WITH q AS (SELECT ${orTsQuerySql('query')} AS tsq)
      SELECT x.*, ${SCORE_SQL} AS score FROM (
-       SELECT c.id, c.venture_id, c.source_id, NULL::text AS memory_type, NULL::text AS visibility,
+       SELECT c.id, c.venture_id, c.source_id, 'venture'::text AS source_scope, NULL::text AS memory_type,
+              NULL::text AS visibility,
               CASE WHEN c.heading IS NULL OR c.heading = '' THEN s.title ELSE s.title || ' — ' || c.heading END AS title,
               ${excerptSql('c.content')} AS excerpt, s.freshness_at, s.status,
               ${vecSql('c.embedding')} AS vec,
@@ -255,7 +261,8 @@ export function searchSharedChunks(ex: SqlExecutor, q: SharedChunkQuery): Promis
        LIMIT :candidates)
      , cand AS (SELECT id FROM ann UNION SELECT id FROM lexical)
      SELECT x.*, ${SCORE_SQL} AS score FROM (
-       SELECT c.id, NULL::uuid AS venture_id, c.source_id, NULL::text AS memory_type, NULL::text AS visibility,
+       SELECT c.id, NULL::uuid AS venture_id, c.source_id, c.scope AS source_scope, NULL::text AS memory_type,
+              NULL::text AS visibility,
               CASE WHEN c.scope = 'persona' THEN 'doctrine' ELSE 'chunk' END AS kind,
               CASE WHEN c.heading IS NULL OR c.heading = '' THEN s.title ELSE s.title || ' — ' || c.heading END AS title,
               ${excerptSql('c.content')} AS excerpt, s.freshness_at, s.status,
@@ -305,8 +312,8 @@ export function searchResources(ex: SqlExecutor, q: ResourceQuery): Promise<Retr
     ex,
     `WITH q AS (SELECT ${orTsQuerySql('query')} AS tsq)
      SELECT x.*, ${score} AS score FROM (
-       SELECT r.id, NULL::uuid AS venture_id, NULL::uuid AS source_id, NULL::text AS memory_type,
-              NULL::text AS visibility, r.name AS title,
+       SELECT r.id, NULL::uuid AS venture_id, NULL::uuid AS source_id, NULL::text AS source_scope,
+              NULL::text AS memory_type, NULL::text AS visibility, r.name AS title,
               ${excerptSql('r.description')} AS excerpt, r.freshness_at, r.status,
               0::double precision AS vec,
               CASE WHEN :stage IS NOT NULL AND :stage = ANY (r.stages) THEN 1.0
@@ -342,8 +349,8 @@ export function searchPatterns(ex: SqlExecutor, q: PatternQuery): Promise<Retrie
     ex,
     `WITH q AS (SELECT ${orTsQuerySql('query')} AS tsq)
      SELECT x.*, ${SCORE_SQL} AS score FROM (
-       SELECT pt.id, NULL::uuid AS venture_id, NULL::uuid AS source_id, NULL::text AS memory_type,
-              NULL::text AS visibility, pt.title,
+       SELECT pt.id, NULL::uuid AS venture_id, NULL::uuid AS source_id, NULL::text AS source_scope,
+              NULL::text AS memory_type, NULL::text AS visibility, pt.title,
               ${excerptSql("pt.signal || ' → ' || pt.intervention || ' (limits: ' || pt.limits || ')'")} AS excerpt,
               pt.created_at AS freshness_at, pt.status,
               0::double precision AS vec,

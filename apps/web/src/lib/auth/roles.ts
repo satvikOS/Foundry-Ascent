@@ -61,6 +61,11 @@ export function canUseAdminConsole(me: Me | null | undefined): boolean {
   return hasRole(me, 'platform_admin');
 }
 
+/** Program leads and platform admins add and edit EIRs, the people vEIRs are built from. */
+export function canManageEirs(me: Me | null | undefined): boolean {
+  return hasAnyRole(me, ['program_lead', 'platform_admin']);
+}
+
 /**
  * Program leads and platform admins see and invite to the team of any venture of the tenant, without being able
  * to read anything else of it.

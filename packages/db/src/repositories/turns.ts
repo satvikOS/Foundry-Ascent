@@ -2,10 +2,12 @@ import {
   CoachMode,
   CoachResponse,
   EvidenceKind,
+  EvidenceSourceScope,
   TurnChannel,
   TurnStatus,
   ValidatorResults,
   type EvidenceItem,
+  type EvidenceSource,
   type TurnBlockedDetail,
   type TurnView,
 } from '@foundry/contracts';
@@ -385,6 +387,8 @@ export interface TurnEvidenceInput {
   readonly title: string;
   /** Venture of venture-scoped evidence (memory, venture chunks); null for shared corpora. */
   readonly ventureId?: string | null;
+  /** Knowledge source of a passage (`chunk`, `doctrine`), recorded with the answer (migration 0011). */
+  readonly source?: EvidenceSource | null;
 }
 
 /** Stores the evidence pack of a turn (one statement). */
@@ -395,20 +399,28 @@ export async function insertTurnEvidence(
 ): Promise<number> {
   if (items.length === 0) return 0;
   const result = await ex.query(
-    `INSERT INTO turn_evidence (turn_id, evidence_key, venture_id, kind, ref_id, score, title)
-     SELECT :turnId, x.key, x.venture_id, x.kind, x.ref_id, x.score, x.title
-     FROM jsonb_to_recordset(:rows) AS x (key text, venture_id uuid, kind text, ref_id uuid, score real, title text)`,
+    `INSERT INTO turn_evidence (turn_id, evidence_key, venture_id, kind, ref_id, score, title, source_id, source_scope)
+     SELECT :turnId, x.key, x.venture_id, x.kind, x.ref_id, x.score, x.title, x.source_id, x.source_scope
+     FROM jsonb_to_recordset(:rows)
+       AS x (key text, venture_id uuid, kind text, ref_id uuid, score real, title text, source_id uuid,
+             source_scope text)`,
     {
       turnId: p.uuid(turnId),
       rows: p.json(
-        items.map((i) => ({
-          key: i.key,
-          venture_id: i.ventureId ?? null,
-          kind: i.kind,
-          ref_id: i.refId,
-          score: Number.isFinite(i.score) ? i.score : 0,
-          title: i.title,
-        })),
+        items.map((i) => {
+          // Only passages carry a source (the table's turn_evidence_source_shape check).
+          const source = i.kind === 'chunk' || i.kind === 'doctrine' ? (i.source ?? null) : null;
+          return {
+            key: i.key,
+            venture_id: i.ventureId ?? null,
+            kind: i.kind,
+            ref_id: i.refId,
+            score: Number.isFinite(i.score) ? i.score : 0,
+            title: i.title,
+            source_id: source?.id ?? null,
+            source_scope: source?.scope ?? null,
+          };
+        }),
       ),
     },
   );
@@ -416,8 +428,19 @@ export async function insertTurnEvidence(
 }
 
 /**
+ * The recorded source of a passage; null for other evidence, and for a passage cited before migration 0011
+ * whose chunk was gone by then.
+ */
+function decodeEvidenceSource(r: RawRow): EvidenceSource | null {
+  const id = col.uuid.nullable.decode(r.source_id, 'source_id');
+  const scope = col.enum(EvidenceSourceScope.options).nullable.decode(r.source_scope, 'source_scope');
+  return id === null || scope === null ? null : { id, scope };
+}
+
+/**
  * Evidence items of the given turns (contract `EvidenceItem` with current excerpt, freshness and status
- * joined from the referenced object; an object no longer visible yields an empty excerpt).
+ * joined from the referenced object; an object no longer visible yields an empty excerpt). `source` is the
+ * knowledge source a passage was cited from, as recorded with the answer.
  */
 export async function listTurnEvidence(
   ex: SqlExecutor,
@@ -439,7 +462,7 @@ async function readTurnEvidence(
   if (turnIds.length === 0) return;
   const rows = await queryRows(
     ex,
-    `SELECT te.turn_id, te.evidence_key, te.kind, te.ref_id, te.score, te.title,
+    `SELECT te.turn_id, te.evidence_key, te.kind, te.ref_id, te.score, te.title, te.source_id, te.source_scope,
             coalesce(${excerptSql('m.content')}, ${excerptSql('c.content')}, ${excerptSql('r.description')},
                      ${excerptSql('pt.signal')}, '') AS excerpt,
             coalesce(m.updated_at, s.freshness_at, r.freshness_at, pt.created_at) AS freshness_at,
@@ -464,6 +487,7 @@ async function readTurnEvidence(
         score: col.num.decode(r.score, 'score'),
         freshnessAt: col.ts.nullable.decode(r.freshness_at, 'freshness_at'),
         status: col.text.nullable.decode(r.status, 'status'),
+        source: decodeEvidenceSource(r),
       } satisfies EvidenceItemValue,
     }),
   );

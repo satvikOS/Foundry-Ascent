@@ -80,6 +80,11 @@ export function buildEvidencePack(
           score: Number.isFinite(r.score) ? Math.round(r.score * 10_000) / 10_000 : 0,
           freshnessAt: r.freshnessAt,
           status: r.status,
+          // A passage names its knowledge source by id (its document, or its library source).
+          source:
+            (r.kind === 'chunk' || r.kind === 'doctrine') && r.sourceId !== null && r.sourceScope !== null
+              ? { id: r.sourceId, scope: r.sourceScope }
+              : null,
         },
         ventureId: ventureScoped ? ventureId : null,
         founderPrivate,

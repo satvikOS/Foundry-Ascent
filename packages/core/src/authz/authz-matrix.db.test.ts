@@ -159,6 +159,25 @@ async function freshUpload(): Promise<string> {
   return id;
 }
 
+/** A person with the EIR role and no profile yet, to link a new profile to. */
+async function freshEir(): Promise<string> {
+  return h.t.db.system(async (sx) => {
+    const created = await principalsRepo.createPrincipal(sx, {
+      tenantId: h.seed.tenantId,
+      displayName: `Matrix EIR ${randomUUID().slice(0, 8)}`,
+    });
+    await principalsRepo.grantRole(sx, { principalId: created.id, tenantId: h.seed.tenantId, role: 'eir' });
+    return created.id;
+  });
+}
+
+/** Corin's EIR profile. */
+const corinProfileId = (): string => {
+  const profile = h.seed.eirs.find((e) => e.key === 'eir-corin');
+  if (!profile) throw new Error('no Corin profile');
+  return profile.profileId;
+};
+
 type Op = (c: RequestContext) => Promise<unknown>;
 
 /** QuietQuad's vEIR (Corin's): Corin is its EIR and the venture's assigned EIR. */
@@ -399,6 +418,28 @@ const MATRIX: readonly { name: string; allowed: readonly Who[]; op: Op }[] = [
       }),
   },
   { name: 'lessons.list', allowed: STUDIO, op: (c) => h.core.lessons.list(c, personaId()) },
+  // Every vEIR the caller curates (none for a platform admin who curates nothing: an empty queue).
+  { name: 'lessons.queue', allowed: STUDIO, op: (c) => h.core.lessons.queue(c, { status: 'draft' }) },
+  {
+    name: 'eirProfiles.listCandidates',
+    allowed: ['programLead', 'admin'],
+    op: (c) => h.core.eirProfiles.listCandidates(c),
+  },
+  {
+    name: 'eirProfiles.create',
+    allowed: ['programLead', 'admin'],
+    op: async (c) =>
+      h.core.eirProfiles.create(c, {
+        principalId: await freshEir(),
+        displayName: 'Matrix EIR',
+        expertiseTags: ['pricing'],
+      }),
+  },
+  {
+    name: 'eirProfiles.update',
+    allowed: ['programLead', 'admin'],
+    op: (c) => h.core.eirProfiles.update(c, corinProfileId(), { bio: 'Edited in the matrix test.' }),
+  },
   {
     name: 'lessons.create',
     allowed: CURATORS,

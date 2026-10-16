@@ -280,7 +280,42 @@ export const LessonView = z.object({
   createdAt: Timestamp,
 });
 export type LessonView = z.infer<typeof LessonView>;
-export const LessonListResponse = z.object({ items: z.array(LessonView) });
+export const LessonListResponse = z.object({
+  items: z.array(LessonView),
+  /**
+   * `GET /lessons` only: how many lessons match, which can exceed the {@link LESSON_QUEUE_MAX} listed. Additive:
+   * absent elsewhere.
+   */
+  total: z.number().int().optional(),
+});
+/** Most lessons `GET /lessons` lists (the most recently changed ones). */
+export const LESSON_QUEUE_MAX = 100;
+/**
+ * `GET /lessons` query: lessons of the vEIRs the caller curates (every vEIR for a program lead, the vEIRs built
+ * from an EIR for that EIR; retired vEIRs and program-wide lessons left out), in one or more states,
+ * comma-separated (`draft`, `draft,in_review`); every state when absent. 200 body: `LessonListResponse`, the
+ * most recently changed first, with `total`.
+ */
+export const LessonQuery = z.object({
+  /** Comma-separated in a query string; a list when the query is built in code. */
+  status: z
+    .union([
+      z.array(LessonStatus).min(1),
+      z
+        .string()
+        .trim()
+        .transform((value) => [
+          ...new Set(
+            value
+              .split(',')
+              .map((part) => part.trim())
+              .filter((part) => part !== ''),
+          ),
+        ])
+        .pipe(z.array(LessonStatus).min(1)),
+    ])
+    .optional(),
+});
 
 const LessonFields = {
   title: z.string().trim().min(3).max(200),

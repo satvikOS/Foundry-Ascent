@@ -19,7 +19,7 @@ describe('migrate', () => {
   it('applies all bundled migrations as a non-superuser, then is a no-op', async () => {
     const versions = MIGRATIONS.map((m) => m.version);
     // Every shipped migration, pinned in version order (a missing one fails here); later ones follow.
-    expect(versions.slice(0, 10)).toEqual([
+    expect(versions.slice(0, 11)).toEqual([
       '0001_init',
       '0002_rls_helpers',
       '0003_security_hardening',
@@ -30,6 +30,7 @@ describe('migrate', () => {
       '0008_calls',
       '0009_review_privacy',
       '0010_call_notice',
+      '0011_eir_profiles_evidence_sources',
     ]);
     expect(t.migrations?.applied).toEqual(versions);
     const role = await t.db.system((sx) =>

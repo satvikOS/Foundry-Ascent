@@ -68,12 +68,15 @@ export const queryKeys = {
     release: (releaseId: string) => [ROOT, 'personas', 'release', releaseId] as const,
     library: (personaId: string) => [ROOT, 'personas', 'library', personaId] as const,
     lessons: (personaId: string) => [ROOT, 'personas', 'lessons', personaId] as const,
+    /** `GET /lessons?status=draft,in_review`: lessons waiting in every vEIR the person curates. */
+    lessonsToReview: () => [ROOT, 'personas', 'lessons-to-review'] as const,
     consents: (personaId: string) => [ROOT, 'personas', 'consents', personaId] as const,
     embodiment: (personaId: string) => [ROOT, 'personas', 'embodiment', personaId] as const,
   },
   eir: {
     reviews: () => [ROOT, 'eir', 'reviews'] as const,
     profiles: () => [ROOT, 'eir', 'profiles'] as const,
+    candidates: () => [ROOT, 'eir', 'candidates'] as const,
   },
   program: {
     all: () => [ROOT, 'program'] as const,

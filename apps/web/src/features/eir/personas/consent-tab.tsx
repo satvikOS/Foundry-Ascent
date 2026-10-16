@@ -378,7 +378,9 @@ export function ConsentTab({ persona }: { persona: PersonaView }) {
 
       {canManage ? (
         <RecordConsentDialog
-          key={current?.id ?? 'none'}
+          // The form starts from the record in use when it opens; it is not remounted while open, or the
+          // record it has just saved (now the one in use) would drop its "close when saved".
+          key={recording ? 'recording' : (current?.id ?? 'none')}
           persona={persona}
           eirName={eirName}
           current={current}

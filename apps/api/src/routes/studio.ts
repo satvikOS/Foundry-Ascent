@@ -4,6 +4,7 @@ import {
   CreateConsentRequest,
   CreateDocumentRequest,
   CreateEirPersonaRequest,
+  CreateEirProfileRequest,
   CreateLessonRequest,
   CreatePersonaKnowledgeRequest,
   CreatePersonaReleaseRequest,
@@ -11,10 +12,12 @@ import {
   CreateVentureRequest,
   IssueAccessCodeRequest,
   LessonAction,
+  LessonQuery,
   RenameVentureRequest,
   RouteEscalationRequest,
   SubmitReviewRequest,
   SuspendPersonaRequest,
+  UpdateEirProfileRequest,
   UpdateEmbodimentRequest,
   UpdatePersonaKnowledgeRequest,
   UpdateSettingsRequest,
@@ -57,6 +60,14 @@ export function registerStudioRoutes(r: RouteBuilder, core: Core): void {
     c.json(await core.eir.submitReview(ctx, pathParam(c, 'turnId'), jsonBody(c, SubmitReviewRequest)), 201),
   );
   r.get('/eir/profiles', async (c, ctx) => c.json({ items: await core.eir.listEirProfiles(ctx) }));
+  // The EIR registry (program lead or platform admin): a profile never records consent.
+  r.get('/eir/candidates', async (c, ctx) => c.json({ items: await core.eirProfiles.listCandidates(ctx) }));
+  r.post('/eir/profiles', async (c, ctx) =>
+    c.json(await core.eirProfiles.create(ctx, jsonBody(c, CreateEirProfileRequest)), 201),
+  );
+  r.patch('/eir/profiles/:id', async (c, ctx) =>
+    c.json(await core.eirProfiles.update(ctx, pathParam(c, 'id'), jsonBody(c, UpdateEirProfileRequest))),
+  );
 
   // Persona lifecycle: EIR personas, consent, embodiment, assignment ------------------------------------
   r.post('/personas', async (c, ctx) =>
@@ -127,6 +138,8 @@ export function registerStudioRoutes(r: RouteBuilder, core: Core): void {
   r.post('/personas/:id/lessons', async (c, ctx) =>
     c.json(await core.lessons.create(ctx, pathParam(c, 'id'), jsonBody(c, CreateLessonRequest)), 201),
   );
+  // Every vEIR the caller curates at once (the "Lessons to review" queue asks for drafts).
+  r.get('/lessons', async (c, ctx) => c.json(await core.lessons.queue(ctx, queryParams(c, LessonQuery))));
   r.post('/lessons/:id/actions', async (c, ctx) =>
     c.json(await core.lessons.act(ctx, pathParam(c, 'id'), jsonBody(c, LessonAction))),
   );

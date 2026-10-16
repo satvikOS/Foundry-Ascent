@@ -1,6 +1,6 @@
 import { Link, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, UserSquare } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { announce } from '@/components/a11y/live-announcer';
 import { PersonaAvatar } from '@/components/faces/persona-avatar';
@@ -30,13 +30,25 @@ import { ReleaseEditor } from './release-editor';
  * EIR studio → New vEIR (program lead): choose the EIR it is built from and its name, then write its first
  * doctrine and style. It starts as a draft; it coaches once the EIR's consent is recorded and v1 approved.
  */
-export function NewPersonaPage({ tenant }: { tenant: string }) {
+export function NewPersonaPage({
+  tenant,
+  initialEirId,
+}: {
+  tenant: string;
+  /** The EIR chosen already (from the EIR list). */
+  initialEirId?: string | undefined;
+}) {
   const navigate = useNavigate();
   const profiles = useEirProfiles();
   const personas = usePersonas();
   const create = useCreateEirPersona();
-  const [eirId, setEirId] = useState('');
+  const [eirId, setEirId] = useState(initialEirId ?? '');
   const [name, setName] = useState('');
+  // The name an EIR chosen already suggests, once the EIRs are loaded (until someone types their own).
+  const suggested = profiles.data?.find((p) => p.id === initialEirId)?.displayName;
+  useEffect(() => {
+    if (suggested) setName((current) => (current === '' ? defaultVeirName(suggested) : current));
+  }, [suggested]);
   const [nameError, setNameError] = useState<string | undefined>();
   const [step, setStep] = useState<'who' | 'doctrine'>('who');
 

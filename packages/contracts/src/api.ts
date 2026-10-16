@@ -467,6 +467,73 @@ export const SubmitReviewRequest = z.object({
 });
 export const EirProfileListResponse = z.object({ items: z.array(EirProfileView) });
 
+/** An expertise tag as the registry keeps them: lower case, words joined by hyphens ("b2b-sales"). */
+export const ExpertiseTag = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .transform((tag) => tag.replace(/\s+/g, '-'))
+  .pipe(
+    z
+      .string()
+      .min(2, 'Use 2 to 40 characters for each area.')
+      .max(40, 'Use 2 to 40 characters for each area.'),
+  );
+const ExpertiseTags = z
+  .array(ExpertiseTag)
+  .max(12, 'List at most 12 areas.')
+  .transform((tags) => [...new Set(tags)]);
+/** Optional text: trimmed, and empty means none. */
+const OptionalText = (max: number, message: string) =>
+  z
+    .string()
+    .trim()
+    .max(max, message)
+    .nullable()
+    .transform((value) => (value === '' ? null : value));
+const EirDisplayName = z
+  .string()
+  .trim()
+  .min(2, 'Enter the person’s name.')
+  .max(120, 'Use 120 characters or fewer.');
+const EirTitle = OptionalText(120, 'Use 120 characters or fewer.');
+const EirBio = OptionalText(2000, 'Use 2,000 characters or fewer.');
+
+/**
+ * `POST /eir/profiles` body (program lead or platform admin): the EIR a vEIR may be built from, linked to the
+ * person's own account (`principalId`: someone of the tenant with the EIR role and no profile yet). It does not
+ * record consent: that stays the person's own act, before any vEIR built from them can be released.
+ * 201 body: `EirProfileView`.
+ */
+export const CreateEirProfileRequest = z.object({
+  principalId: Id,
+  displayName: EirDisplayName,
+  title: EirTitle.default(null),
+  expertiseTags: ExpertiseTags.default([]),
+  bio: EirBio.default(null),
+});
+/** `PATCH /eir/profiles/:id` body (program lead or platform admin). 200 body: `EirProfileView`. */
+export const UpdateEirProfileRequest = z
+  .object({
+    displayName: EirDisplayName.optional(),
+    title: EirTitle.optional(),
+    expertiseTags: ExpertiseTags.optional(),
+    bio: EirBio.optional(),
+  })
+  .refine(
+    (patch) =>
+      patch.displayName !== undefined ||
+      patch.title !== undefined ||
+      patch.expertiseTags !== undefined ||
+      patch.bio !== undefined,
+    'Nothing to update',
+  );
+/**
+ * `GET /eir/candidates` 200 body: people of the tenant with the EIR role and no EIR profile yet, whom a
+ * profile can be linked to (program lead or platform admin).
+ */
+export const EirCandidateListResponse = z.object({ items: z.array(PrincipalView) });
+
 // Program ------------------------------------------------------------------------------------------
 export const PortfolioSummary = z.object({
   minGroupSize: z.number().int(),

@@ -15,6 +15,8 @@ export interface KnowledgeSearch {
   q?: string | undefined;
   /** Selected memory item, shown in the side panel. */
   m?: string | undefined;
+  /** A cited source to show highlighted in Evidence (its knowledge source id). */
+  source?: string | undefined;
 }
 
 function isView(value: unknown): value is KnowledgeView {
@@ -29,6 +31,7 @@ export function validateKnowledgeSearch(search: Record<string, unknown>): Knowle
   const type = MemoryType.safeParse(search.type);
   const status = MemoryStatus.safeParse(search.status);
   const id = z.uuid().safeParse(search.m);
+  const source = z.uuid().safeParse(search.source);
   const proposed = status.success && status.data === 'proposed';
   return {
     view: isView(search.view) ? search.view : proposed ? 'proposed' : undefined,
@@ -37,5 +40,6 @@ export function validateKnowledgeSearch(search: Record<string, unknown>): Knowle
     pinned: search.pinned === true || search.pinned === 'true' ? true : undefined,
     q: typeof search.q === 'string' && search.q.trim() ? search.q.trim().slice(0, 200) : undefined,
     m: id.success ? id.data : undefined,
+    source: source.success ? source.data : undefined,
   };
 }
