@@ -9,7 +9,13 @@ export function Table({
   ...props
 }: ComponentProps<'table'> & { containerClassName?: string }) {
   return (
-    <div data-slot="table-container" className={cn('relative w-full overflow-x-auto', containerClassName)}>
+    // The scroll container also clips vertically, and edge cells have no inline padding (text lines up
+    // with the page). An 8px gutter, given back with a negative margin, keeps focus rings and the sort
+    // buttons' bleed on the first and last columns inside the clip box without moving the content.
+    <div
+      data-slot="table-container"
+      className={cn('relative -mx-2 overflow-x-auto px-2', containerClassName)}
+    >
       <table
         data-slot="table"
         className={cn('w-full caption-bottom border-collapse text-sm', className)}
@@ -120,7 +126,8 @@ export function SortableTableHead<K extends string>({
         }}
         className={cn(
           '-mx-1.5 inline-flex h-7 items-center gap-1 rounded-md px-1.5 transition-colors hover:bg-accent hover:text-foreground',
-          'focus-visible:outline-2 focus-visible:outline-ring',
+          // Inset: the header row is barely taller than the button, and the table scrolls (clips).
+          'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring',
           active && 'text-foreground',
           align === 'right' && 'flex-row-reverse',
         )}
