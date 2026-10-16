@@ -25,9 +25,7 @@ export const DEFAULT_VAD_OPTIONS: VadOptions = {
 export interface VadResult {
   /** This frame is louder than the speech threshold. */
   readonly voiced: boolean;
-  /** Speech is in progress (onset reached and not yet silent). */
-  readonly speaking: boolean;
-  /** Speech started on this frame. */
+  /** Speech started on this frame (enough loud frames in a row). */
   readonly onset: boolean;
 }
 
@@ -57,7 +55,7 @@ export class VoiceActivityDetector {
     }
     const onset = voiced && !this.speaking && this.loudFrames >= onsetFrames;
     if (onset) this.speaking = true;
-    return { voiced, speaking: this.speaking, onset };
+    return { voiced, onset };
   }
 
   reset(): void {

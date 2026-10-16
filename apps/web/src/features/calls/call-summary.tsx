@@ -4,6 +4,7 @@ import { Link } from '@tanstack/react-router';
 import { Check, ListChecks, Phone } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
+import { DisclosureBanner } from '@/components/disclosure-banner';
 import { PersonaAvatar } from '@/components/faces/persona-avatar';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -102,6 +103,7 @@ export function CallSummaryPanel({
           Back to conversation
         </Button>
       </div>
+      <DisclosureBanner variant="line" text={veir.disclosure} className="mt-8 max-w-2xl text-center" />
     </div>
   );
 }
@@ -225,17 +227,16 @@ function MemoryProposal({
   canWrite: boolean;
 }) {
   const action = useMemoryAction(ventureId);
-  const [decided, setDecided] = useState<'kept' | 'dismissed' | null>(null);
+  const [decided, setDecided] = useState<'confirmed' | 'rejected' | null>(null);
   // A proposal decided elsewhere meanwhile (the conversation's own Keep row) shows that decision.
-  const status =
-    decided ?? (memory.status === 'proposed' ? null : memory.status === 'confirmed' ? 'kept' : 'dismissed');
+  const status = decided ?? (memory.status === 'proposed' ? null : memory.status);
 
   const decide = (choice: 'approve' | 'reject') => {
     action.mutate(
       { memoryId: memory.id, action: { action: choice } },
       {
         onSuccess: () => {
-          setDecided(choice === 'approve' ? 'kept' : 'dismissed');
+          setDecided(choice === 'approve' ? 'confirmed' : 'rejected');
         },
         onError: (error) => {
           toast.error('Couldn’t save that choice', { description: errorMessage(error) });
@@ -249,11 +250,15 @@ function MemoryProposal({
       <p className="text-small font-medium">{memory.title}</p>
       <p className="mt-0.5 line-clamp-3 text-small text-muted-foreground">{displayContent(memory)}</p>
       <div className="mt-2.5 flex items-center gap-2">
-        {status ? (
+        {status === 'confirmed' ? (
           <p className="flex items-center gap-1.5 text-small text-muted-foreground">
             <Check aria-hidden className="size-4" />
-            {status === 'kept' ? 'Kept' : 'Not kept'}
+            Kept
           </p>
+        ) : status === 'rejected' ? (
+          <p className="text-small text-muted-foreground">Not kept</p>
+        ) : status ? (
+          <StatusBadge kind="memory" status={status} />
         ) : canWrite ? (
           <>
             <Button

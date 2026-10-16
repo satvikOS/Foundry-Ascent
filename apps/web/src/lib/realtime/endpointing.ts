@@ -135,17 +135,61 @@ export class Endpointer {
   discard(): void {
     this.take();
   }
+
+  /**
+   * Forgets the segments `keep` rejects (the vEIR's echo, a backchannel), keeping the rest. A forgotten
+   * segment Transcribe revises later is heard afresh.
+   */
+  retain(keep: (text: string) => boolean): void {
+    for (const [id, segment] of this.segments) if (!keep(segment.text)) this.segments.delete(id);
+  }
 }
 
 /**
- * Whether a partial is probably the vEIR's own voice coming back through the speakers: every word of it
- * appears in what is being played. Echo cancellation catches most of it; this keeps the rest from cutting
- * the vEIR off.
+ * Sounds people make to show they are listening, not to take the floor ("yeah", "mm-hmm", "right", "got it",
+ * "I see"). Said while the vEIR speaks, they neither cut it off nor become a turn of their own.
  */
-export function isLikelyEcho(partial: string, playing: string | null): boolean {
-  const heard = words(partial);
-  if (heard.length === 0) return true;
-  if (playing === null) return false;
-  const spoken = new Set(words(playing));
-  return heard.every((word) => spoken.has(word));
+const BACKCHANNELS: ReadonlySet<string> = new Set([
+  'ah',
+  'aha',
+  'cool',
+  'exactly',
+  'got',
+  'great',
+  'hm',
+  'hmm',
+  'huh',
+  'i',
+  'it',
+  'mhm',
+  'mm',
+  'mmhmm',
+  'mmm',
+  'nice',
+  'oh',
+  'ok',
+  'okay',
+  'right',
+  'see',
+  'sure',
+  'totally',
+  'true',
+  'uh',
+  'uhhuh',
+  'um',
+  'wow',
+  'yeah',
+  'yep',
+  'yes',
+  'yup',
+]);
+
+/**
+ * The words of what the founder said that can only mean they are taking the floor: not the vEIR's own voice
+ * coming back through the speakers (every word of `spoken`, what it has said of this reply so far; echo
+ * cancellation catches most of it) and not a backchannel.
+ */
+export function floorWords(heard: string, spoken: string): string[] {
+  const echo = new Set(words(spoken));
+  return words(heard).filter((word) => !echo.has(word) && !BACKCHANNELS.has(word));
 }

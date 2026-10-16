@@ -136,6 +136,8 @@ describe('CallSummaryPanel', () => {
     );
 
     expect(await screen.findByRole('heading', { name: 'Call ended' })).toHaveFocus();
+    // The summary carries the vEIR's proposals and actions, so it carries the AI disclosure too.
+    expect(screen.getAllByRole('note', { name: 'AI disclosure' })).toHaveLength(1);
     expect(screen.getByText(/4 minutes 12 seconds/)).toBeInTheDocument();
     expect(screen.getByText(/3 exchanges/)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Corin would like to remember' })).toBeInTheDocument();
@@ -176,6 +178,27 @@ describe('CallSummaryPanel', () => {
     renderSummary(ended(null, { summaryError: 'Can’t reach Foundry Ascent.', reason: 'timeout' }));
     expect(await screen.findByText(/The summary couldn’t load/)).toBeInTheDocument();
     expect(screen.getByText('The call reached its time limit.')).toBeInTheDocument();
+  });
+
+  it('shows a proposal decided elsewhere by what happened to it', async () => {
+    const statuses: Record<string, MemoryObjectView['status']> = {
+      [IDS.memory]: 'confirmed',
+      [IDS.turn]: 'rejected',
+      [IDS.session]: 'superseded',
+    };
+    stubFetch().mockImplementation((input) => {
+      const id = Object.keys(statuses).find((key) => urlOf(input).endsWith(`/memory/${key}`));
+      return Promise.resolve(
+        id
+          ? json(memory({ id, title: `Proposal ${id.slice(0, 4)}`, status: statuses[id] }))
+          : json({ items: [] }),
+      );
+    });
+    renderSummary(ended({ memoryProposalIds: Object.keys(statuses) }));
+    expect(await screen.findByText('Kept')).toBeInTheDocument();
+    expect(await screen.findByText('Not kept')).toBeInTheDocument();
+    expect(await screen.findByText('Superseded')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Keep/ })).toBeNull();
   });
 
   it('shows proposals without Keep / Not now to someone who cannot decide', async () => {

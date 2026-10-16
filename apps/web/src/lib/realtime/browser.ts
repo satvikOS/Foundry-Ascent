@@ -59,3 +59,14 @@ export function browserCallDeps(
     onTurnSettled,
   };
 }
+
+/**
+ * Whether calls in this browser close the microphone while the vEIR speaks (call design §2.4): on iOS and
+ * iPadOS, where every browser is WebKit, echo cancellation does not reliably keep the vEIR's own voice out
+ * of the microphone the recogniser hears. The founder interrupts with a tap instead.
+ */
+export function prefersHalfDuplex(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent;
+  return /\b(iPhone|iPad|iPod)\b/.test(ua) || (/\bMacintosh\b/.test(ua) && navigator.maxTouchPoints > 1);
+}

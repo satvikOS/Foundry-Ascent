@@ -1,10 +1,11 @@
-import { ArrowUp, Info, LifeBuoy } from 'lucide-react';
+import type { TurnBlockedDetail } from '@foundry/contracts';
+import { ArrowUp, Info, Play, Volume2, VolumeX } from 'lucide-react';
 import { useEffect, useRef, useState, type RefObject } from 'react';
 
 import { DisclosureBanner } from '@/components/disclosure-banner';
 import { VeirBadge } from '@/components/faces/veir-badge';
 import { Button } from '@/components/ui/button';
-import { Markdown } from '@/components/ui/markdown';
+import { BlockedPanel } from '@/features/coach/blocked-panel';
 import { useHotkeys } from '@/lib/hooks/use-hotkeys';
 import type { CallEngine, CallNotice, CallSnapshot, TypedReason } from '@/lib/realtime/call-engine';
 import { cn } from '@/lib/utils';
@@ -12,7 +13,7 @@ import { cn } from '@/lib/utils';
 import { CallCaptions } from './call-captions';
 import { CallDock, HoldToTalk } from './call-dock';
 import { CallStage } from './call-stage';
-import { storeTalkMode, useCaptionsPreference } from './preferences';
+import { storeTalkMode, useAnnounceCaptions, useCaptionSize, useCaptionsPreference } from './preferences';
 import type { CallVeir } from './use-call-veir';
 
 /** The words under the presence: what the call is doing, as text (never colour or motion alone). */
@@ -20,16 +21,17 @@ export function callStatusLabel(snapshot: CallSnapshot): string {
   if (snapshot.phase === 'starting') return 'Connecting…';
   if (snapshot.phase === 'ending') return 'Ending…';
   if (snapshot.reconnecting) return 'Reconnecting…';
+  if (snapshot.held) return 'On hold';
   switch (snapshot.activity) {
     case 'connecting':
       return 'Connecting…';
     case 'speaking':
-      return 'Speaking';
+      return snapshot.voice === 'captions' ? 'Replying on screen' : 'Speaking';
     case 'thinking':
       return 'Thinking…';
     case 'listening':
       if (snapshot.muted) return 'Muted';
-      if (snapshot.input === 'typed') return 'Type your reply';
+      if (snapshot.input === 'typed') return 'Your turn';
       if (snapshot.talkMode === 'push_to_talk' && !snapshot.talking) return 'Hold to talk';
       return 'Listening';
   }
@@ -50,6 +52,7 @@ function isInteractive(target: EventTarget | null): boolean {
 }
 
 interface CallLiveProps {
+  tenant: string;
   engine: CallEngine;
   snapshot: CallSnapshot;
   veir: CallVeir;
@@ -57,11 +60,13 @@ interface CallLiveProps {
 }
 
 /**
- * The call in progress: the presence and the vEIR's name and state, live captions, any notice (a blocked
- * turn's support resources among them), the typed line, the controls and the AI disclosure.
+ * The call in progress: the presence and the vEIR's name and state, live captions (or, after a held-back
+ * turn, the support it offers), any notice, the typed line, the controls and the AI disclosure.
  */
-export function CallLive({ engine, snapshot, veir, onSwitchToChat }: CallLiveProps) {
+export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: CallLiveProps) {
   const [captions, setCaptions] = useCaptionsPreference();
+  const [captionSize] = useCaptionSize();
+  const [announceCaptions] = useAnnounceCaptions();
   const typedOnly = snapshot.input === 'typed';
   const [typingOpen, setTypingOpen] = useState(false);
   const typing = typedOnly || typingOpen;
@@ -135,6 +140,8 @@ export function CallLive({ engine, snapshot, veir, onSwitchToChat }: CallLivePro
   }, [engine, live, pushToTalk, voice]);
 
   const status = callStatusLabel(snapshot);
+  const speaking = live && snapshot.activity === 'speaking';
+  const halfDuplexInterrupt = speaking && voice && snapshot.halfDuplex;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -158,7 +165,7 @@ export function CallLive({ engine, snapshot, veir, onSwitchToChat }: CallLivePro
             <span role="status" aria-live="polite">
               {status}
             </span>
-            {snapshot.activity === 'speaking' && live ? (
+            {speaking && !halfDuplexInterrupt ? (
               <>
                 <span aria-hidden>·</span>
                 <button
@@ -175,18 +182,73 @@ export function CallLive({ engine, snapshot, veir, onSwitchToChat }: CallLivePro
             ) : null}
           </p>
         </div>
-        {captions ? (
+        {live && snapshot.audioBlocked ? (
+          <Button
+            size="lg"
+            onClick={() => {
+              engine.resumeAudio();
+            }}
+          >
+            <Volume2 aria-hidden />
+            Turn on sound
+          </Button>
+        ) : live && snapshot.held ? (
+          <Button
+            size="lg"
+            onClick={() => {
+              engine.resume();
+            }}
+          >
+            <Play aria-hidden />
+            Resume call
+          </Button>
+        ) : halfDuplexInterrupt ? (
+          <Button
+            size="lg"
+            variant="secondary"
+            aria-keyshortcuts="Escape"
+            onClick={() => {
+              engine.interrupt();
+            }}
+          >
+            Interrupt
+          </Button>
+        ) : null}
+        {snapshot.blocked && snapshot.ventureId ? (
+          <CallBlocked
+            tenant={tenant}
+            ventureId={snapshot.ventureId}
+            blocked={snapshot.blocked}
+            onSwitchToChat={onSwitchToChat}
+          />
+        ) : captions ? (
           <CallCaptions
             name={veir.shortName}
             veir={snapshot.captions.veir}
             founder={snapshot.captions.founder}
             founderLive={snapshot.captions.founderLive}
+            size={captionSize}
+            announce={announceCaptions}
           />
         ) : null}
       </div>
 
       <div className="flex shrink-0 flex-col items-center gap-4 px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))]">
-        {snapshot.notice ? <Notice notice={snapshot.notice} onSwitchToChat={onSwitchToChat} /> : null}
+        {live && snapshot.voice === 'captions' ? (
+          <p role="status" className="flex max-w-xl items-start gap-2 text-small text-muted-foreground">
+            <VolumeX aria-hidden className="mt-0.5 size-4 shrink-0" />
+            Voice unavailable right now.
+          </p>
+        ) : null}
+        {snapshot.notice ? (
+          <Notice
+            notice={snapshot.notice}
+            onPushToTalk={() => {
+              storeTalkMode('push_to_talk');
+              engine.setTalkMode('push_to_talk');
+            }}
+          />
+        ) : null}
         {typing ? (
           <TypeLine
             inputRef={typeRef}
@@ -232,41 +294,56 @@ export function CallLive({ engine, snapshot, veir, onSwitchToChat }: CallLivePro
   );
 }
 
-function Notice({ notice, onSwitchToChat }: { notice: CallNotice; onSwitchToChat: () => void }) {
-  if (notice.kind === 'blocked') {
-    return (
-      <div
-        role="alert"
-        className="w-full max-w-xl rounded-xl border border-border-strong bg-card px-4 py-3.5 text-left shadow-sm"
-      >
-        <p className="flex items-start gap-2.5 text-small font-medium">
-          <LifeBuoy aria-hidden className="mt-0.5 size-4 shrink-0" />
-          {notice.message}
-        </p>
-        {notice.supportMessage ? (
-          <Markdown size="sm" className="mt-2 pl-6.5">
-            {notice.supportMessage}
-          </Markdown>
-        ) : null}
-        <div className="mt-3 pl-6.5">
-          <Button size="sm" variant="secondary" onClick={onSwitchToChat}>
-            Switch to chat
-          </Button>
-        </div>
-      </div>
-    );
-  }
+/**
+ * A held-back turn on a call: the same support the conversation shows (crisis resources first, the drafted
+ * request for a person), announced at once. The microphone is already muted.
+ */
+function CallBlocked({
+  tenant,
+  ventureId,
+  blocked,
+  onSwitchToChat,
+}: {
+  tenant: string;
+  ventureId: string;
+  blocked: TurnBlockedDetail;
+  onSwitchToChat: () => void;
+}) {
   return (
-    <p
+    <div role="alert" className="flex w-full max-w-xl flex-col gap-3 text-left">
+      <BlockedPanel
+        tenant={tenant}
+        ventureId={ventureId}
+        supportMessage={blocked.supportMessage}
+        reason={blocked.reason}
+        escalationId={blocked.escalationId}
+      />
+      <Button size="sm" variant="secondary" onClick={onSwitchToChat} className="self-center">
+        Switch to chat
+      </Button>
+    </div>
+  );
+}
+
+function Notice({ notice, onPushToTalk }: { notice: CallNotice; onPushToTalk: () => void }) {
+  return (
+    <div
       role="status"
       className={cn(
-        'flex max-w-xl items-start gap-2 text-small text-muted-foreground',
+        'flex max-w-xl flex-wrap items-center justify-center gap-x-3 gap-y-1.5 text-small text-muted-foreground',
         notice.kind === 'time_warning' && 'text-warning',
       )}
     >
-      <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
-      {notice.message}
-    </p>
+      <p className="flex items-start gap-2">
+        <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
+        {notice.message}
+      </p>
+      {notice.kind === 'barge_hint' ? (
+        <Button size="sm" variant="secondary" onClick={onPushToTalk}>
+          Use push to talk
+        </Button>
+      ) : null}
+    </div>
   );
 }
 
@@ -291,7 +368,11 @@ function TypeLine({ inputRef, name, hint, queued, disabled, onSend }: TypeLinePr
   };
   return (
     <form onSubmit={submit} className="w-full max-w-xl">
-      {hint ? <p className="mb-2 text-center text-small text-muted-foreground">{hint}</p> : null}
+      {hint ? (
+        <p role="status" className="mb-2 text-center text-small text-muted-foreground">
+          {hint}
+        </p>
+      ) : null}
       <div className="flex items-center gap-2 rounded-full border border-border-strong bg-card py-1.5 pr-1.5 pl-4 shadow-xs transition-[border-color,box-shadow] duration-150 focus-within:border-ring/60 focus-within:shadow-md">
         <input
           ref={inputRef}

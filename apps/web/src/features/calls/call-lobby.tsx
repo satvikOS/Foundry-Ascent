@@ -1,10 +1,10 @@
 import type { CallConfigResponse } from '@foundry/contracts';
-import { Phone } from 'lucide-react';
+import { AudioLines, Phone } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 
 import { DisclosureBanner } from '@/components/disclosure-banner';
 import { Button } from '@/components/ui/button';
-import type { CallEngine } from '@/lib/realtime/call-engine';
+import type { CallEngine, CallFailure } from '@/lib/realtime/call-engine';
 
 import { CallStage } from './call-stage';
 import type { CallVeir } from './use-call-veir';
@@ -55,9 +55,11 @@ interface CallLobbyProps {
   veir: CallVeir;
   config: CallConfigResponse | undefined;
   blocker: CallBlocker | null;
-  /** A start that failed (the engine's message). */
-  failure: string | null;
+  /** A start that failed: the server's refusal (which will not pass by trying again) or a hiccup. */
+  failure: CallFailure | null;
   busy: boolean;
+  /** The first call: say how the founder's voice is handled before it starts. */
+  voiceNotice: boolean;
   onStart: () => void;
   onRetry: () => void;
   onClose: () => void;
@@ -65,7 +67,8 @@ interface CallLobbyProps {
 
 /**
  * Before the call: start it (a click is what lets the browser play audio), or learn why it can't start.
- * When the person arrived by clicking Call, the call starts on its own and this shows only "Connecting".
+ * When the person arrived by clicking Call, the call starts on its own and this shows only "Connecting";
+ * the first call ever waits here so the founder reads how their voice is handled.
  */
 export function CallLobby({
   engine,
@@ -74,6 +77,7 @@ export function CallLobby({
   blocker,
   failure,
   busy,
+  voiceNotice,
   onStart,
   onRetry,
   onClose,
@@ -84,7 +88,14 @@ export function CallLobby({
   }, [blocker, failure, busy]);
 
   const problem =
-    blocker ?? (failure ? { title: 'The call didn’t connect', message: failure, retry: true } : null);
+    blocker ??
+    (failure
+      ? {
+          title: failure.retry ? 'The call didn’t connect' : 'Can’t call right now',
+          message: failure.message,
+          retry: failure.retry,
+        }
+      : null);
   const minutes =
     config && !problem
       ? `Up to ${String(config.maxMinutes)} minutes · ${String(Math.floor(config.remainingMinutesToday))} min left today`
@@ -112,6 +123,18 @@ export function CallLobby({
             </p>
           ) : null}
         </div>
+        {voiceNotice && !problem ? (
+          <p
+            data-testid="voice-notice"
+            className="flex max-w-md items-start gap-3 rounded-xl border border-border bg-card/70 px-4 py-3 text-left text-small text-muted-foreground"
+          >
+            <AudioLines aria-hidden className="mt-0.5 size-4 shrink-0 text-foreground" />
+            <span>
+              Your voice goes to Amazon Transcribe to become text. No audio is kept; the transcript is saved
+              here like chat, and you can type instead at any time.
+            </span>
+          </p>
+        ) : null}
         <div className="flex w-full max-w-xs flex-col gap-2 sm:max-w-none sm:flex-row sm:justify-center">
           {problem ? (
             problem.retry ? (

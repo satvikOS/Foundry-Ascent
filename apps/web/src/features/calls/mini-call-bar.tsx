@@ -1,6 +1,7 @@
 import { Maximize2, Mic, MicOff, PhoneOff, X } from 'lucide-react';
 
 import { PersonaAvatar } from '@/components/faces/persona-avatar';
+import { VeirBadge } from '@/components/faces/veir-badge';
 import { Button } from '@/components/ui/button';
 import { SimpleTooltip } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -28,7 +29,7 @@ export function MiniCallBar() {
 
   return (
     <section
-      aria-label={`Call with ${veir.shortName}`}
+      aria-label={`Call with ${veir.name}`}
       data-print="hide"
       className={cn(
         'sticky top-(--header-height) z-20 flex h-12 shrink-0 items-center gap-2 border-b border-border bg-card/95 px-3 backdrop-blur-md supports-[backdrop-filter]:bg-card/80 sm:gap-3 sm:px-4 md:top-0',
@@ -41,14 +42,18 @@ export function MiniCallBar() {
         speaking={speaking}
         decorative
       />
-      <p className="min-w-0 flex-1 truncate text-small">
-        <span className="font-medium">{ended ? 'Call ended' : `Call with ${veir.shortName}`}</span>
-        <span className="text-muted-foreground"> · </span>
-        <span className="font-mono tabular text-muted-foreground" aria-hidden>
-          {formatClock(duration)}
-        </span>
-        <span className="sr-only">{spokenDuration(duration)}</span>
-      </p>
+      <div className="flex min-w-0 flex-1 items-center gap-2 text-small">
+        <p className="min-w-0 truncate">
+          <span className="font-medium">{ended ? 'Call ended' : `Call with ${veir.shortName}`}</span>
+          <span className="text-muted-foreground"> · </span>
+          <span className="font-mono tabular text-muted-foreground" aria-hidden>
+            {formatClock(duration)}
+          </span>
+          <span className="sr-only">{spokenDuration(duration)}</span>
+          {snapshot.held ? <span className="text-muted-foreground"> · On hold</span> : null}
+        </p>
+        <VeirBadge kind={veir.kind} />
+      </div>
       {ended ? (
         <>
           <Button size="sm" variant="secondary" onClick={showCall}>
@@ -78,7 +83,8 @@ export function MiniCallBar() {
                 aria-pressed={snapshot.muted}
                 disabled={snapshot.phase !== 'live'}
                 onClick={() => {
-                  engine.setMuted(!snapshot.muted);
+                  if (snapshot.held) engine.resume();
+                  else engine.setMuted(!snapshot.muted);
                 }}
               >
                 {snapshot.muted ? <MicOff aria-hidden /> : <Mic aria-hidden />}

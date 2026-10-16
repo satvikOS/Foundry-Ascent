@@ -216,6 +216,9 @@ export class FakeWorkletNode extends FakeNode {
 
 export class FakeAudioContext {
   state: AudioContextState = 'running';
+  /** Test control: false keeps the context suspended on resume() (a browser waiting for a gesture). */
+  resumeAllowed = true;
+  private readonly stateListeners = new Set<() => void>();
   currentTime = 0;
   readonly destination = new FakeNode();
   readonly sources: FakeBufferSource[] = [];
@@ -252,13 +255,25 @@ export class FakeAudioContext {
     return Promise.resolve({ duration: data.byteLength / 1000, length: data.byteLength } as AudioBuffer);
   }
   resume(): Promise<void> {
-    this.state = 'running';
+    if (this.resumeAllowed) this.setState('running');
     return Promise.resolve();
   }
   close(): Promise<void> {
     this.closed = true;
-    this.state = 'closed';
+    this.setState('closed');
     return Promise.resolve();
+  }
+  addEventListener(_type: 'statechange', listener: () => void): void {
+    this.stateListeners.add(listener);
+  }
+  removeEventListener(_type: 'statechange', listener: () => void): void {
+    this.stateListeners.delete(listener);
+  }
+  /** Test control: the browser changed the context's state (fires `statechange`). */
+  setState(state: AudioContextState): void {
+    if (state === this.state) return;
+    this.state = state;
+    for (const listener of [...this.stateListeners]) listener();
   }
   createWorkletNode(): FakeWorkletNode {
     const node = new FakeWorkletNode();

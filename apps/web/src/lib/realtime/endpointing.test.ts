@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { Endpointer, isLikelyEcho } from './endpointing';
+import { Endpointer, floorWords } from './endpointing';
 import { VoiceActivityDetector } from './vad';
 
 function clock(start = 1_000) {
@@ -83,23 +83,30 @@ describe('Endpointer', () => {
   });
 });
 
-describe('isLikelyEcho', () => {
-  it('flags a partial made only of words being played', () => {
-    expect(isLikelyEcho('twelve is a good', 'Twelve is a good start. What did they say?')).toBe(true);
-    expect(isLikelyEcho('wait, stop', 'Twelve is a good start.')).toBe(false);
-    expect(isLikelyEcho('twelve', null)).toBe(false);
-    expect(isLikelyEcho('  ', 'anything')).toBe(true);
+describe('floorWords', () => {
+  it('keeps only words that are neither the vEIR’s own echo nor a backchannel', () => {
+    const spoken = 'Twelve is a good start. What did they say?';
+    expect(floorWords('twelve is a good', spoken)).toEqual([]);
+    expect(floorWords('yeah mm-hmm, right', spoken)).toEqual([]);
+    expect(floorWords('uh-huh got it, I see', spoken)).toEqual([]);
+    expect(floorWords('wait, stop', spoken)).toEqual(['wait', 'stop']);
+    expect(floorWords('yeah but price', spoken)).toEqual(['but', 'price']);
+    expect(floorWords('twelve', '')).toEqual(['twelve']);
+    expect(floorWords('  ', spoken)).toEqual([]);
   });
 });
 
 describe('VoiceActivityDetector', () => {
   it('needs consecutive loud frames for an onset and ends on a quiet frame', () => {
     const vad = new VoiceActivityDetector({ minRms: 0.01, onsetFrames: 2 });
-    expect(vad.update(0.002)).toMatchObject({ voiced: false, speaking: false });
-    expect(vad.update(0.05)).toMatchObject({ voiced: true, speaking: false, onset: false });
-    expect(vad.update(0.05)).toMatchObject({ voiced: true, speaking: true, onset: true });
-    expect(vad.update(0.05)).toMatchObject({ speaking: true, onset: false });
-    expect(vad.update(0.001)).toMatchObject({ voiced: false, speaking: false });
+    expect(vad.update(0.002)).toEqual({ voiced: false, onset: false });
+    expect(vad.update(0.05)).toEqual({ voiced: true, onset: false });
+    expect(vad.update(0.05)).toEqual({ voiced: true, onset: true });
+    expect(vad.update(0.05)).toEqual({ voiced: true, onset: false });
+    expect(vad.update(0.001)).toEqual({ voiced: false, onset: false });
+    // A new onset after the quiet frame.
+    vad.update(0.05);
+    expect(vad.update(0.05)).toEqual({ voiced: true, onset: true });
   });
 
   it('adapts to a steady background so it is not mistaken for speech', () => {

@@ -1,26 +1,31 @@
 import type { CallEndReason, CallState, SttGrant, TurnView } from '@foundry/contracts';
 
-import { errorMessage, isApiError } from '../api/errors';
 import type { CreateTurnBody, StreamTurnOptions, TurnStreamEventT } from '../api/sse';
 import type { AvatarState, SpokenUnit } from './avatar';
-import type {
-  EndCallBody,
-  EndCallResult,
-  HeartbeatBody,
-  HeartbeatResult,
-  PreparedBeacon,
-  StartCallResult,
+import {
+  callErrorMessage,
+  startFailure,
+  type EndCallBody,
+  type EndCallResult,
+  type HeardUnitBody,
+  type HeartbeatBody,
+  type HeartbeatResult,
+  type InterruptBody,
+  type PreparedBeacon,
+  type StartCallResult,
 } from './call-api';
 import { MicCapture, MicrophoneError, requestMicrophone, type CaptureAudio } from './capture';
-import { Endpointer, isLikelyEcho } from './endpointing';
+import { Endpointer, floorWords } from './endpointing';
 import { SpeechPlayer, type PlayerAudio, type SpeechFetchResult, type SpeechUnitToPlay } from './playback';
 import { IDLE_CALL, type CallEnded, type CallSnapshot, type TalkMode, type TypedReason } from './call-state';
-import { TranscribeStream, type WebSocketFactory } from './transcribe';
+import { openingText, speakableSentences } from './spoken-text';
+import { TranscribeStream, type TranscribeHandlers, type WebSocketFactory } from './transcribe';
 import { VoiceActivityDetector } from './vad';
 
 export type {
   CallActivity,
   CallEnded,
+  CallFailure,
   CallNotice,
   CallPhase,
   CallSnapshot,
@@ -49,7 +54,7 @@ export interface CallEngineApi {
   refreshSttGrant(callId: string): Promise<SttGrant>;
   heartbeat(callId: string, body: HeartbeatBody): Promise<HeartbeatResult>;
   endCall(callId: string, body: EndCallBody): Promise<EndCallResult>;
-  interruptTurn(turnId: string, body: { callId: string; heardSeq: number }): Promise<void>;
+  interruptTurn(turnId: string, body: InterruptBody): Promise<void>;
   streamTurn(
     sessionId: string,
     body: CreateTurnBody,
@@ -65,6 +70,8 @@ export type CallAudioContext = CaptureAudio['context'] &
     readonly state: AudioContextState;
     resume(): Promise<void>;
     close(): Promise<void>;
+    addEventListener(type: 'statechange', listener: () => void): void;
+    removeEventListener(type: 'statechange', listener: () => void): void;
   };
 
 export interface CallEngineMedia {
@@ -102,6 +109,8 @@ export interface CallTuning {
   readonly warnSeconds: number;
   /** End the call after this many heartbeats in a row failed. */
   readonly maxMissedHeartbeats: number;
+  /** Suggest push-to-talk after this many ducks that no word confirmed (speakers without headphones). */
+  readonly falseBargeInHint: number;
 }
 
 export const DEFAULT_TUNING: CallTuning = {
@@ -112,6 +121,7 @@ export const DEFAULT_TUNING: CallTuning = {
   releaseSettleMs: 700,
   warnSeconds: 120,
   maxMissedHeartbeats: 3,
+  falseBargeInHint: 3,
 };
 
 export interface CallEngineDeps {
@@ -127,6 +137,11 @@ export interface StartCallOptions {
   readonly ventureId: string;
   readonly sessionId: string;
   readonly talkMode?: TalkMode;
+  /**
+   * Close the microphone while the vEIR speaks (it is interrupted by tapping or Esc instead). For devices
+   * whose echo cancellation does not reach the recogniser, where the vEIR would otherwise hear itself.
+   */
+  readonly halfDuplex?: boolean;
 }
 
 interface ActiveTurn {
@@ -134,6 +149,8 @@ interface ActiveTurn {
   turnId: string | null;
   /** Last unit of this turn heard to its end (-1: none). */
   heardSeq: number;
+  /** The units heard to their end, in order, as played. */
+  readonly heard: HeardUnitBody[];
   units: number;
   done: boolean;
   interrupted: boolean;
@@ -143,39 +160,6 @@ interface ActiveTurn {
 
 /** A grant this close to expiry is re-minted before connecting with it. */
 const GRANT_MARGIN_MS = 15_000;
-
-/** Sentences of a stored reply, each a passage `POST /speech` accepts on its own. */
-export function speakableUnits(text: string, maxChars = 600): string[] {
-  const plain = text
-    .replace(/\[(E\d+(?:\s*[,;]\s*E\d+)*)\]/g, ' ')
-    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/^\s{0,3}(?:#{1,6}\s+|>\s?|[-*+]\s+|\d+[.)]\s+)/gm, '')
-    .replace(/[*_`~]+/g, '')
-    .replace(/\s+/g, ' ')
-    .replace(/\s+([,.;:!?])/g, '$1')
-    .trim();
-  if (plain === '') return [];
-  const sentences = plain.match(/[^.!?]+(?:[.!?]+["')\]]*|$)/g) ?? [plain];
-  const units: string[] = [];
-  for (const raw of sentences) {
-    const sentence = raw.trim();
-    if (sentence === '') continue;
-    if (sentence.length <= maxChars) {
-      units.push(sentence);
-      continue;
-    }
-    // A run-on sentence is cut at word boundaries.
-    let rest = sentence;
-    while (rest.length > maxChars) {
-      const cut = rest.lastIndexOf(' ', maxChars);
-      const at = cut > maxChars / 2 ? cut : maxChars;
-      units.push(rest.slice(0, at).trim());
-      rest = rest.slice(at).trim();
-    }
-    if (rest) units.push(rest);
-  }
-  return units;
-}
 
 function percentile(values: readonly number[], p: number): number | null {
   if (values.length === 0) return null;
@@ -203,6 +187,11 @@ export class CallEngine {
   private readonly pendingLines: string[] = [];
   private beacon: PreparedBeacon | null = null;
   private founderLevel = 0;
+  /** What the vEIR has said of the current reply (and the intro): its echo is not the founder speaking. */
+  private spokenSoFar = '';
+  private readonly onAudioState = (): void => {
+    this.syncAudioState();
+  };
   /** Bumped whenever a call starts or stops, so late async work for an old call is ignored. */
   private epoch = 0;
   private turnCount = 0;
@@ -213,6 +202,7 @@ export class CallEngine {
   private releaseTimer: unknown = null;
   private reconnectTimer: unknown = null;
   private missedHeartbeats = 0;
+  private falseBargeIns = 0;
   private warned = false;
   private sttOpenedAt: number | null = null;
   private micOpenMs = 0;
@@ -260,7 +250,8 @@ export class CallEngine {
     if (speaking && this.player) {
       if (this.snapshot.voice === 'server') {
         veir = this.player.level();
-      } else {
+      } else if (this.snapshot.voice === 'browser') {
+        // The browser's voice cannot be measured: a gentle pulse while it reads.
         const t = this.deps.clock.now() / 1000;
         veir = 0.03 + 0.025 * Math.abs(Math.sin(t * 5.3) * Math.sin(t * 2.1));
       }
@@ -283,7 +274,8 @@ export class CallEngine {
 
   /**
    * Starts a call in a conversation. Call it from a user gesture where possible: the AudioContext it
-   * creates may only play sound after one.
+   * creates may only play sound after one (otherwise the call shows Turn on sound). It never rejects: a
+   * call that cannot start ends in the `failed` phase with the reason.
    */
   async start(options: StartCallOptions): Promise<void> {
     if (this.snapshot.phase !== 'idle') return;
@@ -295,15 +287,39 @@ export class CallEngine {
       ventureId: options.ventureId,
       sessionId: options.sessionId,
       talkMode: options.talkMode ?? 'hands_free',
+      halfDuplex: options.halfDuplex ?? false,
     });
+    try {
+      await this.open(options, epoch);
+    } catch {
+      // A browser API that threw: never leave a half-open call or a live microphone behind.
+      if (epoch !== this.epoch) return;
+      const call = this.snapshot.call;
+      this.epoch += 1;
+      this.teardown();
+      if (call) void this.deps.api.endCall(call.id, { reason: 'error' }).catch(() => undefined);
+      this.set({
+        ...IDLE_CALL,
+        phase: 'failed',
+        ventureId: options.ventureId,
+        sessionId: options.sessionId,
+        error: { message: 'The call couldn’t start. Try again.', retry: true },
+      });
+    }
+  }
 
+  private async open(options: StartCallOptions, epoch: number): Promise<void> {
     const context = this.deps.media.createAudioContext();
     if (context === null) {
-      this.set({ phase: 'failed', error: 'This browser can’t play call audio. Continue in chat instead.' });
+      this.set({
+        phase: 'failed',
+        error: { message: 'This browser can’t play call audio. Continue in chat instead.', retry: false },
+      });
       return;
     }
     this.context = context;
-    void context.resume().catch(() => undefined);
+    context.addEventListener('statechange', this.onAudioState);
+    this.resumeAudio();
     this.player = this.createPlayer(context, options.sessionId);
 
     let stream: MediaStream | null = null;
@@ -331,7 +347,7 @@ export class CallEngine {
       stopStream(stream);
       if (epoch !== this.epoch) return;
       this.releaseAudio();
-      this.set({ phase: 'failed', error: errorMessage(error) });
+      this.set({ phase: 'failed', error: startFailure(error) });
       return;
     }
     if (epoch !== this.epoch) {
@@ -358,6 +374,7 @@ export class CallEngine {
       typedReason: stream ? null : typedReason,
       activity: intro || stream ? 'connecting' : 'listening',
     });
+    this.syncAudioState();
     this.heartbeatTimer = this.deps.clock.setInterval(() => {
       void this.heartbeat();
     }, this.tuning.heartbeatMs);
@@ -393,6 +410,9 @@ export class CallEngine {
       activity: 'connecting',
       captions: IDLE_CALL.captions,
       notice: null,
+      blocked: null,
+      held: false,
+      audioBlocked: false,
       queued: 0,
     });
     const sessionId = this.snapshot.sessionId;
@@ -415,7 +435,7 @@ export class CallEngine {
         };
         this.set({ call: result.call });
       } catch (error) {
-        ended = { ...ended, summaryError: errorMessage(error) };
+        ended = { ...ended, summaryError: callErrorMessage(error) };
       }
     }
     if (sessionId) this.deps.onTurnSettled?.(sessionId, null);
@@ -460,7 +480,7 @@ export class CallEngine {
   setMuted(muted: boolean): void {
     if (this.snapshot.phase !== 'live' || this.snapshot.input !== 'voice' || muted === this.snapshot.muted)
       return;
-    this.set({ muted });
+    this.set({ muted, held: false });
     this.capture?.setEnabled(!muted);
     if (muted) {
       // Close speech-to-text while muted: nothing is sent and nothing is billed.
@@ -477,7 +497,8 @@ export class CallEngine {
   setTalkMode(talkMode: TalkMode): void {
     if (talkMode === this.snapshot.talkMode) return;
     this.endpointer.discard();
-    this.set({ talkMode, talking: false });
+    const notice = this.snapshot.notice?.kind === 'barge_hint' ? null : this.snapshot.notice;
+    this.set({ talkMode, talking: false, notice });
   }
 
   /** Push-to-talk held (true) or released (false). Releasing ends the turn. */
@@ -503,6 +524,44 @@ export class CallEngine {
   /** Stops the vEIR mid-sentence (Esc, or tapping the presence). */
   interrupt(): void {
     if (this.snapshot.activity === 'speaking') this.bargeIn();
+  }
+
+  /**
+   * Puts the call on hold while the page is hidden: the microphone is muted and speech-to-text closed, so
+   * nothing is heard or billed. The founder resumes with a tap (which also lets the browser play again).
+   */
+  hold(): void {
+    const s = this.snapshot;
+    if (s.phase !== 'live' || s.input !== 'voice' || s.muted) return;
+    this.setMuted(true);
+    this.set({ held: true });
+  }
+
+  /** Back from hold. Call it from a tap. */
+  resume(): void {
+    if (!this.snapshot.held) return;
+    this.resumeAudio();
+    this.setMuted(false);
+  }
+
+  /**
+   * Lets the call's audio play. Browsers keep an AudioContext silent until a user gesture: when the call
+   * started without one, the screen offers Turn on sound, whose tap calls this.
+   */
+  resumeAudio(): void {
+    const context = this.context;
+    if (!context || context.state === 'closed') return;
+    context.resume().then(this.onAudioState, this.onAudioState);
+  }
+
+  private syncAudioState(): void {
+    const context = this.context;
+    const blocked =
+      this.snapshot.phase === 'live' &&
+      context !== null &&
+      context.state !== 'running' &&
+      context.state !== 'closed';
+    if (blocked !== this.snapshot.audioBlocked) this.set({ audioBlocked: blocked });
   }
 
   // Speech-to-text ------------------------------------------------------------------------------------
@@ -556,30 +615,36 @@ export class CallEngine {
     }
     // The founder may have muted (or the stream reconnected) while the grant was minted.
     if (!this.sttWanted()) return;
-    const stream = new TranscribeStream(
-      grant.url,
-      {
-        onOpen: () => {
-          if (this.stt !== stream) return;
-          this.sttOpenedAt = this.deps.clock.now();
-          this.reconnectSince = null;
-          this.reconnectAttempt = 0;
-          if (this.snapshot.reconnecting) this.set({ reconnecting: false });
-          if (this.snapshot.activity === 'connecting') this.set({ activity: 'listening' });
-        },
-        onResult: (result) => {
-          if (this.stt !== stream) return;
-          this.onTranscript(result);
-        },
-        onClose: ({ expected }) => {
-          if (this.stt !== stream) return;
-          this.stopMicClock();
-          this.stt = null;
-          if (!expected && epoch === this.epoch && !this.snapshot.muted) this.sttLost();
-        },
+    let stream: TranscribeStream | null = null;
+    const handlers: TranscribeHandlers = {
+      onOpen: () => {
+        if (this.stt !== stream) return;
+        this.sttOpenedAt = this.deps.clock.now();
+        this.reconnectSince = null;
+        this.reconnectAttempt = 0;
+        if (this.snapshot.reconnecting) this.set({ reconnecting: false });
+        if (this.snapshot.activity === 'connecting') this.set({ activity: 'listening' });
       },
-      this.deps.media.createSocket,
-    );
+      onResult: (result) => {
+        if (this.stt !== stream) return;
+        this.onTranscript(result);
+      },
+      onClose: ({ expected }) => {
+        if (this.stt !== stream) return;
+        this.stopMicClock();
+        this.stt = null;
+        if (!expected && epoch === this.epoch && !this.snapshot.muted) this.sttLost();
+      },
+    };
+    try {
+      stream = new TranscribeStream(grant.url, handlers, this.deps.media.createSocket);
+    } catch (error) {
+      // The socket could not even be created. A SecurityError (the page's CSP or the browser refuses the
+      // host) will refuse every retry too: continue by typing at once. Anything else is retried.
+      if (errorName(error) === 'SecurityError') this.toTyped('stt_unavailable');
+      else this.sttLost();
+      return;
+    }
     this.stt = stream;
   }
 
@@ -623,12 +688,9 @@ export class CallEngine {
       reconnecting: false,
       muted: false,
       talking: false,
+      held: false,
       activity: this.snapshot.activity === 'connecting' ? 'listening' : this.snapshot.activity,
       captions: { ...this.snapshot.captions, founder: null, founderLive: false },
-      notice:
-        reason === 'stt_failed'
-          ? { kind: 'stt_lost', message: 'Voice input stopped. Type instead, or end and call again.' }
-          : this.snapshot.notice,
     });
   }
 
@@ -636,8 +698,12 @@ export class CallEngine {
     const s = this.snapshot;
     if (s.phase !== 'live' || s.muted) return;
     this.founderLevel = rms;
-    if (s.talkMode === 'push_to_talk' && !s.talking) {
-      // Keep the stream alive with silence; nothing the founder says counts until they hold to talk.
+    const gated =
+      (s.talkMode === 'push_to_talk' && !s.talking) || (s.halfDuplex && s.activity === 'speaking');
+    if (gated) {
+      // Keep the stream alive with silence: nothing counts until the founder holds to talk, or (half duplex)
+      // until the vEIR has finished.
+      this.founderLevel = 0;
       this.stt?.sendPcm(new Int16Array(pcm.length));
       return;
     }
@@ -656,27 +722,54 @@ export class CallEngine {
     const s = this.snapshot;
     if (s.phase !== 'live' || s.muted) return;
     if (s.talkMode === 'push_to_talk' && !s.talking && this.releaseTimer === null) return;
+    if (s.halfDuplex && s.activity === 'speaking') return;
     this.endpointer.onResult(result);
     const heard = this.endpointer.text();
     if (heard === '') return;
-    if (s.activity === 'speaking') {
-      if (isLikelyEcho(heard, this.player?.current?.text ?? null)) {
-        // The vEIR's own voice through the speakers: not the founder.
-        this.endpointer.discard();
+    if (s.activity === 'speaking' && s.talkMode === 'hands_free') {
+      // Barge-in needs the founder taking the floor: a settled word that is neither the vEIR's echo nor a
+      // backchannel ("yeah", "mm-hmm"), or two such words while the transcript is still changing.
+      const taking = floorWords(heard, this.spokenSoFar).length;
+      const settled = result.stable || !result.partial;
+      if (taking < (settled ? 1 : 2)) {
+        // A finished echo or backchannel is not a turn either.
+        if (!result.partial) this.forgetNonWords();
         return;
       }
       this.bargeIn();
+      this.forgetNonWords();
     }
-    this.setCaptions({ founder: heard, founderLive: true });
+    const line = this.endpointer.text();
+    if (line !== '') this.setCaptions({ founder: line, founderLive: true });
+  }
+
+  /** Drops what was only the vEIR's echo or a backchannel from what the founder is saying. */
+  private forgetNonWords(): void {
+    this.endpointer.retain((text) => floorWords(text, this.spokenSoFar).length > 0);
   }
 
   private duckForBargeIn(): void {
     this.player?.duck();
     if (this.bargeTimer !== null) this.deps.clock.clearTimeout(this.bargeTimer);
     this.bargeTimer = this.deps.clock.setTimeout(() => {
+      // No word followed the sound (a cough, the speakers): restore the vEIR's volume.
       this.bargeTimer = null;
       this.player?.unduck();
+      this.falseBargeIn();
     }, this.tuning.bargeConfirmMs);
+  }
+
+  /** Repeated sound without words while the vEIR speaks: suggest push-to-talk once. */
+  private falseBargeIn(): void {
+    this.falseBargeIns += 1;
+    const s = this.snapshot;
+    if (this.falseBargeIns !== this.tuning.falseBargeInHint || s.talkMode !== 'hands_free') return;
+    this.set({
+      notice: {
+        kind: 'barge_hint',
+        message: 'Sound around you keeps pausing the reply. Headphones or push to talk will help.',
+      },
+    });
   }
 
   // Turns ---------------------------------------------------------------------------------------------
@@ -701,6 +794,7 @@ export class CallEngine {
       controller: new AbortController(),
       turnId: null,
       heardSeq: -1,
+      heard: [],
       units: 0,
       done: false,
       interrupted: false,
@@ -709,9 +803,11 @@ export class CallEngine {
     };
     this.turn = turn;
     this.turnCount += 1;
+    this.spokenSoFar = '';
     this.set({
       activity: 'thinking',
-      notice: null,
+      notice: this.snapshot.notice?.kind === 'turn_error' ? null : this.snapshot.notice,
+      blocked: null,
       queued: 0,
       captions: { ...this.snapshot.captions, veir: null },
     });
@@ -728,7 +824,7 @@ export class CallEngine {
       }
     } catch (error) {
       if (epoch === this.epoch && !turn.interrupted && !turn.controller.signal.aborted) {
-        this.set({ notice: { kind: 'turn_error', message: turnErrorLine(turnFailure(error)) } });
+        this.set({ notice: { kind: 'turn_error', message: turnErrorLine(callErrorMessage(error)) } });
       }
     } finally {
       turn.done = true;
@@ -754,29 +850,33 @@ export class CallEngine {
         const completed = event.turn;
         turn.turnId = completed.id;
         if (turn.units === 0 && completed.status === 'completed' && completed.response) {
-          // No streamed units (streaming is off, or an older server): speak the stored validated reply, its
-          // short spoken form, or the opening of the answer when a reply has none.
+          // No streamed units (streaming is off): speak the stored, validated spoken reply sentence by
+          // sentence. A reply without one is shown, never voiced.
           const { spoken, answer } = completed.response;
-          const units = spoken ? speakableUnits(spoken) : openingUnits(speakableUnits(answer));
-          units.forEach((text, seq) => {
-            turn.units += 1;
-            this.player?.enqueue({ turnId: completed.id, seq, text });
-          });
+          if (spoken) {
+            speakableSentences(spoken).forEach((text, seq) => {
+              turn.units += 1;
+              this.player?.enqueue({ turnId: completed.id, seq, text });
+            });
+          } else {
+            this.setCaptions({ veir: openingText(answer) || null });
+          }
         }
         return completed;
       }
       case 'turn.blocked':
-        this.player?.stop();
-        // The founder reads the support resources; nothing more is listened to until they unmute.
+        // Crisis support is said first (the fixed support line arrives as signed units of this turn), so
+        // it keeps playing; any other held-back reply stops at once.
+        if (event.reason !== 'crisis_support') this.player?.stop();
+        // The founder reads the support; nothing more is listened to until they unmute.
         this.setMuted(true);
         this.set({
-          notice: {
-            kind: 'blocked',
-            message: event.supportMessage
-              ? 'I can’t help with this on a call. Please look at the support below.'
-              : 'I can’t answer that. The conversation shows what to do next.',
+          blocked: {
+            reason: event.reason,
+            escalationId: event.escalationId,
             supportMessage: event.supportMessage,
           },
+          notice: null,
         });
         return null;
       case 'turn.error':
@@ -792,6 +892,11 @@ export class CallEngine {
   private afterReply(): void {
     this.turn = null;
     if (this.snapshot.phase !== 'live') return;
+    // A "yeah" or the vEIR's own echo heard while it spoke is not the founder's next turn.
+    if (this.endpointer.hasSpeech()) {
+      this.forgetNonWords();
+      if (!this.endpointer.hasSpeech()) this.setCaptions({ founder: null, founderLive: false });
+    }
     const waiting = this.pendingLines.splice(0);
     this.set({ activity: 'listening', queued: 0 });
     if (waiting.length > 0) void this.submit(waiting.join(' '));
@@ -810,7 +915,7 @@ export class CallEngine {
       turn.controller.abort();
       if (turn.turnId && call) {
         void this.deps.api
-          .interruptTurn(turn.turnId, { callId: call.id, heardSeq: turn.heardSeq })
+          .interruptTurn(turn.turnId, { callId: call.id, heardSeq: turn.heardSeq, heard: turn.heard })
           .catch(() => undefined);
       }
     }
@@ -833,32 +938,30 @@ export class CallEngine {
         now: clock.now,
       },
       {
-        onUnitStart: (unit) => {
+        onUnitStart: (unit, route) => {
           const turn = this.turn;
           if (turn && unit.turnId !== null && unit.turnId === turn.turnId && turn.firstAudioAt === null) {
             turn.firstAudioAt = clock.now();
             this.stats.firstAudioMs.push(turn.firstAudioAt - turn.submittedAt);
           }
-          this.set({ activity: 'speaking', captions: { ...this.snapshot.captions, veir: unit.text } });
+          this.spokenSoFar = `${this.spokenSoFar} ${unit.text}`;
+          this.set({
+            activity: 'speaking',
+            voice: route,
+            captions: { ...this.snapshot.captions, veir: unit.text },
+          });
           for (const listener of this.speakListeners) listener({ text: unit.text });
         },
         onUnitEnd: (unit, completed) => {
           const turn = this.turn;
-          if (completed && turn?.turnId === unit.turnId) turn.heardSeq = Math.max(turn.heardSeq, unit.seq);
+          if (!completed || turn?.turnId !== unit.turnId || unit.seq <= turn.heardSeq) return;
+          turn.heardSeq = unit.seq;
+          turn.heard.push({ seq: unit.seq, text: unit.text, ...(unit.sig ? { sig: unit.sig } : {}) });
         },
         onIdle: () => {
           if (this.snapshot.phase !== 'live') return;
           if (this.turn && !this.turn.done) this.set({ activity: 'thinking' });
           else this.afterReply();
-        },
-        onRouteChange: (voice) => {
-          this.set({
-            voice,
-            notice:
-              voice === 'captions'
-                ? { kind: 'voice_captions', message: 'Voice unavailable. Replies appear on screen.' }
-                : this.snapshot.notice,
-          });
         },
       },
     );
@@ -948,7 +1051,9 @@ export class CallEngine {
   private resetCounters(): void {
     this.turnCount = 0;
     this.missedHeartbeats = 0;
+    this.falseBargeIns = 0;
     this.warned = false;
+    this.spokenSoFar = '';
     this.micOpenMs = 0;
     this.sttOpenedAt = null;
     this.reconnectSince = null;
@@ -985,8 +1090,15 @@ export class CallEngine {
     this.player = null;
     const context = this.context;
     this.context = null;
-    if (context && context.state !== 'closed') void context.close().catch(() => undefined);
+    if (!context) return;
+    context.removeEventListener('statechange', this.onAudioState);
+    if (context.state !== 'closed') void context.close().catch(() => undefined);
   }
+}
+
+function errorName(error: unknown): string | null {
+  const name = (error as { name?: unknown } | null)?.name;
+  return typeof name === 'string' ? name : null;
 }
 
 function stopStream(stream: MediaStream | null): void {
@@ -996,29 +1108,6 @@ function stopStream(stream: MediaStream | null): void {
 /** The line shown (never spoken: only validated text is voiced) when a turn fails. */
 function turnErrorLine(message: string): string {
   return `Sorry, I couldn’t answer that. ${message}`;
-}
-
-/** Why a spoken turn was refused, in call terms (the generic "this changed" reads oddly on a call). */
-function turnFailure(error: unknown): string {
-  if (isApiError(error) && error.code === 'conflict' && error.retryAfter === undefined) {
-    return 'This call isn’t active any more. End it and call again.';
-  }
-  return errorMessage(error);
-}
-
-/** The words a call speaks of a reply without a spoken form: its opening, about as long as one. */
-const SPOKEN_WORD_LIMIT = 70;
-
-function openingUnits(units: readonly string[]): string[] {
-  const opening: string[] = [];
-  let words = 0;
-  for (const unit of units) {
-    const count = unit.split(/\s+/).length;
-    if (opening.length > 0 && words + count > SPOKEN_WORD_LIMIT) break;
-    opening.push(unit);
-    words += count;
-  }
-  return opening;
 }
 
 function minutesLeftLine(secondsLeft: number): string {

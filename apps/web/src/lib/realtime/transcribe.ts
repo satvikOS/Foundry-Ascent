@@ -96,10 +96,6 @@ export class TranscribeStream {
     };
   }
 
-  get open(): boolean {
-    return !this.closed && this.socket.readyState === OPEN;
-  }
-
   /** Sends one frame of 16-bit PCM (little-endian, mono, at the grant's sample rate). */
   sendPcm(pcm: Int16Array): void {
     if (this.closed || this.ending || pcm.length === 0) return;

@@ -47,7 +47,6 @@ function setup(options: { synthesis?: boolean } = {}) {
     onUnitStart: (u, route) => log.push(`start ${String(u.seq)} ${route}`),
     onUnitEnd: (u, completed) => log.push(`end ${String(u.seq)} ${completed ? 'done' : 'cut'}`),
     onIdle: () => log.push('idle'),
-    onRouteChange: (route) => log.push(`route ${route}`),
   });
   const audioOf = (bytes: number): SpeechFetchResult => ({ kind: 'audio', data: new ArrayBuffer(bytes) });
   return { context, synthesis, pending, fetchSpeech, player, log, audioOf };
@@ -104,12 +103,16 @@ describe('SpeechPlayer', () => {
     expect(player.busy).toBe(false);
   });
 
-  it('ducks and restores the volume', () => {
-    const { player } = setup();
+  it('ducks and restores the volume', async () => {
+    const { context, pending, player, audioOf } = setup();
+    player.enqueue(unit(0));
+    pending[0]?.resolve(audioOf(10));
+    await flush();
+    const gain = context.sources[0]?.connections[0] as unknown as { gain: { value: number } };
     player.duck();
-    // The gain node is the first one created by the player.
+    expect(gain.gain.value).toBeCloseTo(0.2);
     player.unduck();
-    expect(player.voice).toBe('server');
+    expect(gain.gain.value).toBe(1);
   });
 
   it('reads validated text with the browser voice when the server has no speech (501)', async () => {
@@ -118,7 +121,7 @@ describe('SpeechPlayer', () => {
     player.enqueue(unit(1, 'How did the interviews go?'));
     pending[0]?.resolve({ kind: 'unavailable' });
     await flush();
-    expect(log).toEqual(['route browser', 'start 0 browser']);
+    expect(log).toEqual(['start 0 browser']);
     expect(synthesis.spoken.map((u) => u.text)).toEqual(['Hello Maya.']);
 
     synthesis.finish();
@@ -136,19 +139,47 @@ describe('SpeechPlayer', () => {
     await flush();
     vi.advanceTimersByTime(readingTimeMs('Short.') * 2);
     await flush();
-    expect(log).toEqual(['route browser', 'start 0 browser', 'end 0 done', 'idle']);
+    expect(log).toEqual(['start 0 browser', 'end 0 done', 'idle']);
   });
 
-  it('shows the words without a voice when synthesis fails, never another voice', async () => {
-    const { synthesis, pending, player, log } = setup();
+  it('shows a unit whose voice failed as words only, and asks for the voice again for the next one', async () => {
+    const { context, synthesis, pending, fetchSpeech, player, log, audioOf } = setup();
     player.enqueue(unit(0, 'Twelve is a good start.'));
+    player.enqueue(unit(1, 'What did they say about price?'));
+    // A dropped connection or a busy synthesiser: this unit only.
     pending[0]?.resolve({ kind: 'failed' });
     await flush();
-    expect(log).toEqual(['route captions', 'start 0 captions']);
+    expect(log).toEqual(['start 0 captions']);
     expect(synthesis.spoken).toHaveLength(0);
+    pending[1]?.resolve(audioOf(10));
     vi.advanceTimersByTime(readingTimeMs('Twelve is a good start.'));
+    await flush(10);
+    expect(log).toEqual(['start 0 captions', 'end 0 done', 'start 1 server']);
+    expect(context.sources[0]?.started).toBe(true);
+
+    // A later unit after a transient failure is fetched from the server again.
+    context.sources[0]?.finish();
     await flush();
-    expect(log.at(-1)).toBe('idle');
+    player.enqueue(unit(2));
+    expect(fetchSpeech).toHaveBeenCalledTimes(3);
+  });
+
+  it('keeps words only for the rest of the call when the server refuses its speech', async () => {
+    const { synthesis, pending, fetchSpeech, player, log } = setup();
+    player.enqueue(unit(0));
+    player.enqueue(unit(1));
+    // The kill switch or a cap: no voice for this call any more, and no browser voice instead.
+    pending[0]?.resolve({ kind: 'refused' });
+    await flush();
+    expect(log).toEqual(['start 0 captions']);
+    // The prefetched unit is prepared again without asking the server.
+    expect(pending[1]?.signal.aborted).toBe(true);
+    vi.advanceTimersByTime(readingTimeMs('Sentence 0.'));
+    await flush(10);
+    expect(log).toEqual(['start 0 captions', 'end 0 done', 'start 1 captions']);
+    player.enqueue(unit(2));
+    expect(fetchSpeech).toHaveBeenCalledTimes(2);
+    expect(synthesis.spoken).toHaveLength(0);
   });
 
   it('falls back to captions when there is no browser voice either', async () => {
@@ -156,16 +187,22 @@ describe('SpeechPlayer', () => {
     player.enqueue(unit(0));
     pending[0]?.resolve({ kind: 'unavailable' });
     await flush();
-    expect(log).toEqual(['route captions', 'start 0 captions']);
+    expect(log).toEqual(['start 0 captions']);
   });
 
-  it('treats undecodable audio as captions only', async () => {
+  it('treats undecodable audio as words only for that unit', async () => {
     const { context, pending, player, log, audioOf } = setup();
     context.decodeFails = true;
     player.enqueue(unit(0));
+    player.enqueue(unit(1));
     pending[0]?.resolve(audioOf(10));
     await flush();
-    expect(log).toEqual(['route captions', 'start 0 captions']);
+    expect(log).toEqual(['start 0 captions']);
+    context.decodeFails = false;
+    pending[1]?.resolve(audioOf(10));
+    vi.advanceTimersByTime(readingTimeMs('Sentence 0.'));
+    await flush(10);
+    expect(log.at(-1)).toBe('start 1 server');
   });
 
   it('reports the level of what is playing', async () => {

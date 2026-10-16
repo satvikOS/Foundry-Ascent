@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CreateTurnBody, StreamTurnOptions, TurnStreamEventT } from '../api/sse';
 import { ApiError } from '../api/errors';
 import type { HeartbeatResult, StartCallResult } from './call-api';
-import { CallEngine, speakableUnits, type CallAudioContext, type CallEngineApi } from './call-engine';
+import { CallEngine, type CallAudioContext, type CallEngineApi } from './call-engine';
 import { decodeMessage } from './event-stream';
 import type { SpeechFetchResult, SpeechUnitToPlay } from './playback';
 import {
@@ -98,8 +98,22 @@ function completed(turn: Partial<TurnView> = {}): TurnStreamEventT {
   return { event: 'turn.completed', turn: makeVoiceTurn({ id: TURN_ID, ...turn }) };
 }
 
-function setup(options: { grant?: SttGrant | null; intro?: boolean; mic?: 'ok' | 'denied' } = {}) {
+interface SetupOptions {
+  grant?: SttGrant | null;
+  intro?: boolean;
+  mic?: 'ok' | 'denied';
+  /** How creating the Transcribe socket fails (a CSP block throws a SecurityError). */
+  socketThrows?: string;
+  /** The browser keeps the call's audio suspended until a gesture. */
+  suspended?: boolean;
+}
+
+function setup(options: SetupOptions = {}) {
   const context = new FakeAudioContext();
+  if (options.suspended) {
+    context.state = 'suspended';
+    context.resumeAllowed = false;
+  }
   const synthesis = new FakeSpeechSynthesis();
   const script = new TurnScript();
   const track = { enabled: true, stop: vi.fn() };
@@ -149,7 +163,10 @@ function setup(options: { grant?: SttGrant | null; intro?: boolean; mic?: 'ok' |
           ? () => Promise.reject(Object.assign(new Error('blocked'), { name: 'NotAllowedError' }))
           : () => Promise.resolve(stream),
       createWorkletNode: () => context.createWorkletNode() as unknown as AudioWorkletNode,
-      createSocket: (url) => new FakeWebSocket(url),
+      createSocket: (url) => {
+        if (options.socketThrows) throw new DOMException('Refused to connect', options.socketThrows);
+        return new FakeWebSocket(url);
+      },
       synthesis: synthesis as unknown as SpeechSynthesis,
       createUtterance: (text) => new FakeUtterance(text) as unknown as SpeechSynthesisUtterance,
     },
@@ -174,6 +191,12 @@ function setup(options: { grant?: SttGrant | null; intro?: boolean; mic?: 'ok' |
   const setSpeechResult = (result: SpeechFetchResult) => {
     speechResult = result;
   };
+  /** The next `/speech` answers, one per request, before the default one. */
+  const speechQueue: SpeechFetchResult[] = [];
+  api.fetchSpeech.mockImplementation((_sessionId: string, unit: SpeechUnitToPlay) => {
+    speechRequests.push(unit);
+    return Promise.resolve(speechQueue.shift() ?? speechResult);
+  });
   return {
     engine,
     api,
@@ -187,6 +210,7 @@ function setup(options: { grant?: SttGrant | null; intro?: boolean; mic?: 'ok' |
     state,
     frame,
     setSpeechResult,
+    speechQueue,
   };
 }
 
@@ -202,19 +226,6 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.useRealTimers();
-});
-
-describe('speakableUnits', () => {
-  it('splits a stored reply into plain sentences without citation keys or Markdown', () => {
-    expect(speakableUnits('**Twelve** is a good start [E1]. What did the clinics say?\n\n- Price')).toEqual([
-      'Twelve is a good start.',
-      'What did the clinics say?',
-      'Price',
-    ]);
-    expect(speakableUnits('   ')).toEqual([]);
-    const long = `${'word '.repeat(200)}end.`;
-    expect(speakableUnits(long).every((unit) => unit.length <= 600)).toBe(true);
-  });
 });
 
 describe('CallEngine · typed fallback', () => {
@@ -281,7 +292,7 @@ describe('CallEngine · typed fallback', () => {
     );
     await startLive(h);
     expect(h.state().phase).toBe('failed');
-    expect(h.state().error).toMatch(/turned off/);
+    expect(h.state().error).toEqual({ message: expect.stringMatching(/turned off/) as string, retry: false });
     expect(h.context.closed).toBe(true);
     expect(h.track.stop).toHaveBeenCalled();
   });
@@ -350,7 +361,12 @@ describe('CallEngine · voice', () => {
     expect(h.state().activity).toBe('listening');
     expect(h.context.sources[1]?.stopped).toBe(true);
     expect(h.script.calls[0]?.options.signal?.aborted).toBe(true);
-    expect(h.api.interruptTurn).toHaveBeenCalledWith(TURN_ID, { callId: CALL_ID, heardSeq: 0 });
+    // What was heard, as played, so the history carries only that.
+    expect(h.api.interruptTurn).toHaveBeenCalledWith(TURN_ID, {
+      callId: CALL_ID,
+      heardSeq: 0,
+      heard: [{ seq: 0, text: 'Start with what they pay today.', sig: SIG }],
+    });
     expect(h.state().captions.founder).toBe('wait actually');
   });
 
@@ -388,8 +404,8 @@ describe('CallEngine · voice', () => {
       FakeWebSocket.last().serverDrop();
       await vi.advanceTimersByTimeAsync(4_000);
     }
-    expect(h.state()).toMatchObject({ input: 'typed', typedReason: 'stt_failed' });
-    expect(h.state().notice?.kind).toBe('stt_lost');
+    expect(h.state()).toMatchObject({ input: 'typed', typedReason: 'stt_failed', reconnecting: false });
+    expect(h.track.stop).toHaveBeenCalled();
   });
 
   it('push-to-talk sends silence until held and ends the turn on release', async () => {
@@ -433,7 +449,7 @@ describe('CallEngine · replies', () => {
     ]);
   });
 
-  it('reads only the opening of a reply that has no spoken form', async () => {
+  it('shows (never voices) the opening of a reply that has no spoken form', async () => {
     const h = setup({ grant: null });
     await startLive(h);
     h.engine.sendText('Hello');
@@ -444,12 +460,10 @@ describe('CallEngine · replies', () => {
     );
     h.script.close();
     await flush(20);
-    // 70 words: seven ten-word sentences, fetched two at a time while they play.
-    for (let i = 0; i < 7; i++) {
-      h.context.sources[i]?.finish();
-      await flush(10);
-    }
-    expect(h.speechRequests).toHaveLength(7);
+    // Only the stored spoken form may be voiced unsigned: nothing is asked of /speech.
+    expect(h.speechRequests).toHaveLength(0);
+    expect(h.state().captions.veir).toBe(Array(7).fill(sentence).join(' '));
+    expect(h.state().activity).toBe('listening');
   });
 
   it('mutes the microphone when a turn is blocked, so the founder can read the support', async () => {
@@ -471,15 +485,24 @@ describe('CallEngine · replies', () => {
     expect(h.track.enabled).toBe(false);
   });
 
-  it('says a refused voice turn means the call is no longer active', async () => {
+  it('explains a refused voice turn in the server’s words', async () => {
     const h = setup({ grant: null });
     await startLive(h);
     h.api.streamTurn.mockImplementationOnce(() => {
-      throw new ApiError({ status: 409, code: 'conflict', title: 'Conflict' });
+      throw new ApiError({
+        status: 409,
+        code: 'conflict',
+        title: 'Conflict',
+        detail: 'This call reached its turn limit. Start a new call to keep talking.',
+      });
     });
     h.engine.sendText('Hello');
     await flush(10);
-    expect(h.state().notice?.message).toMatch(/isn’t active any more/);
+    expect(h.state().notice).toEqual({
+      kind: 'turn_error',
+      message:
+        'Sorry, I couldn’t answer that. This call reached its turn limit. Start a new call to keep talking.',
+    });
   });
 
   it('queues lines said while the vEIR is still thinking and sends them together', async () => {
@@ -512,9 +535,17 @@ describe('CallEngine · replies', () => {
     });
     h.script.close();
     await flush(10);
-    expect(h.state().notice).toMatchObject({ kind: 'blocked', supportMessage: 'Call or text **988**.' });
+    expect(h.state().blocked).toEqual({
+      reason: 'crisis_support',
+      escalationId: null,
+      supportMessage: 'Call or text **988**.',
+    });
     expect(h.speechRequests).toHaveLength(0);
     expect(h.state().activity).toBe('listening');
+    // The next line clears the panel.
+    h.engine.sendText('Thank you');
+    await flush();
+    expect(h.state().blocked).toBeNull();
   });
 
   it('shows (never speaks) a failed turn', async () => {
@@ -535,17 +566,258 @@ describe('CallEngine · replies', () => {
     expect(h.speechRequests).toHaveLength(0);
   });
 
-  it('keeps the words on screen when the voice fails, with no other voice', async () => {
+  it('shows a sentence whose voice failed on screen, then speaks the next turn again', async () => {
     const h = setup({ grant: null });
-    h.setSpeechResult({ kind: 'failed' });
+    // A network blip or a busy synthesiser on the first sentence only.
+    h.speechQueue.push({ kind: 'failed' });
     await startLive(h);
     h.engine.sendText('Hello');
     await flush();
     h.script.push(speech(0, 'Twelve is a good start.'));
     await flush(10);
-    expect(h.state()).toMatchObject({ voice: 'captions', activity: 'speaking' });
-    expect(h.state().notice?.kind).toBe('voice_captions');
+    expect(h.state()).toMatchObject({ voice: 'captions', activity: 'speaking', notice: null });
     expect(h.synthesis.spoken).toHaveLength(0);
+    h.script.push(completed());
+    h.script.close();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(h.state().activity).toBe('listening');
+
+    h.engine.sendText('And then?');
+    await flush();
+    h.script.push(speech(0, 'Test a pilot price.'));
+    await flush(10);
+    expect(h.speechRequests.map((u) => u.text)).toEqual(['Twelve is a good start.', 'Test a pilot price.']);
+    expect(h.state()).toMatchObject({ voice: 'server', activity: 'speaking' });
+  });
+
+  it('stays on screen for the rest of the call when the server refuses its speech', async () => {
+    const h = setup({ grant: null });
+    h.speechQueue.push({ kind: 'refused' });
+    await startLive(h);
+    h.engine.sendText('Hello');
+    await flush();
+    h.script.push(speech(0, 'Twelve is a good start.'));
+    h.script.push(completed());
+    h.script.close();
+    await vi.advanceTimersByTimeAsync(5_000);
+    h.engine.sendText('And then?');
+    await flush();
+    h.script.push(speech(0, 'Test a pilot price.'));
+    await flush(10);
+    expect(h.speechRequests).toHaveLength(1);
+    expect(h.state()).toMatchObject({ voice: 'captions', activity: 'speaking' });
+    expect(h.state().captions.veir).toBe('Test a pilot price.');
+  });
+
+  it('lets the crisis support line play when a turn is blocked for crisis support', async () => {
+    const h = setup();
+    await startLive(h);
+    FakeWebSocket.last().serverOpen();
+    h.engine.sendText('I am not okay');
+    await flush();
+    h.script.push(
+      { event: 'turn.accepted', turnId: TURN_ID, ordinal: 1 },
+      speech(0, 'You deserve support from a person.', true),
+    );
+    await flush(20);
+    h.script.push({
+      event: 'turn.blocked',
+      turnId: TURN_ID,
+      reason: 'crisis_support',
+      escalationId: IDS.escalation,
+      supportMessage: 'Call or text **988**.',
+    });
+    h.script.close();
+    await flush(20);
+    expect(h.context.sources[0]?.stopped).toBe(false);
+    expect(h.state()).toMatchObject({ activity: 'speaking', muted: true });
+    expect(h.state().blocked?.escalationId).toBe(IDS.escalation);
+    h.context.sources[0]?.finish();
+    await flush(10);
+    expect(h.state().activity).toBe('listening');
+  });
+
+  it('stops a reply that a safety check held back', async () => {
+    const h = setup({ grant: null });
+    await startLive(h);
+    h.engine.sendText('Tell me about BenchTally');
+    await flush();
+    h.script.push(
+      { event: 'turn.accepted', turnId: TURN_ID, ordinal: 1 },
+      speech(0, 'Start with what they pay today.'),
+    );
+    await flush(20);
+    expect(h.state().activity).toBe('speaking');
+    h.script.push({
+      event: 'turn.blocked',
+      turnId: TURN_ID,
+      reason: 'policy',
+      escalationId: null,
+      supportMessage: null,
+    });
+    h.script.close();
+    await flush(20);
+    expect(h.context.sources[0]?.stopped).toBe(true);
+    expect(h.state()).toMatchObject({ activity: 'listening', blocked: { reason: 'policy' } });
+  });
+});
+
+describe('CallEngine · barge-in', () => {
+  async function speaking(h: ReturnType<typeof setup>) {
+    // Twenty seconds of reply audio, so the vEIR is still speaking throughout.
+    h.setSpeechResult({ kind: 'audio', data: new ArrayBuffer(20_000) });
+    await h.engine.start({ ventureId: IDS.venture, sessionId: IDS.session });
+    await flush(10);
+    const socket = FakeWebSocket.last();
+    socket.serverOpen();
+    h.engine.sendText('Tell me about pilots.');
+    await flush();
+    h.script.push(
+      { event: 'turn.accepted', turnId: TURN_ID, ordinal: 1 },
+      speech(0, 'Start with one library and a written success threshold.'),
+    );
+    await flush(20);
+    expect(h.state().activity).toBe('speaking');
+    return socket;
+  }
+
+  it('does not cut the vEIR off for a backchannel', async () => {
+    const h = setup();
+    const socket = await speaking(h);
+    socket.serverSend(transcriptEvent('r1', 'mm-hmm right', { partial: false }));
+    socket.serverSend(transcriptEvent('r2', 'yeah', { partial: true, stable: false }));
+    socket.serverSend(transcriptEvent('r2', 'yeah', { partial: true, stable: true }));
+    await flush();
+    expect(h.state().activity).toBe('speaking');
+    expect(h.api.interruptTurn).not.toHaveBeenCalled();
+    expect(h.state().captions.founder).toBe('Tell me about pilots.');
+
+    // Nor is the backchannel sent as a turn once the vEIR is done.
+    h.script.push(completed({ response: makeReply({ spoken: 'Start with one library.' }) }));
+    h.script.close();
+    h.context.sources[0]?.finish();
+    await flush(10);
+    for (let i = 0; i < 20; i++) {
+      vi.advanceTimersByTime(50);
+      h.frame(0.001);
+    }
+    await flush();
+    expect(h.script.calls).toHaveLength(1);
+  });
+
+  it('waits for a settled word, or two words, before taking the floor', async () => {
+    const h = setup();
+    const socket = await speaking(h);
+    socket.serverSend(transcriptEvent('r1', 'stop', { partial: true, stable: false }));
+    await flush();
+    expect(h.state().activity).toBe('speaking');
+    socket.serverSend(transcriptEvent('r1', 'stop', { partial: true, stable: true }));
+    await flush();
+    expect(h.state().activity).toBe('listening');
+    expect(h.api.interruptTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it('suggests push-to-talk after repeated sound without words', async () => {
+    const h = setup();
+    await speaking(h);
+    for (let i = 0; i < 3; i++) {
+      h.frame(0.2);
+      h.frame(0.2);
+      h.frame(0.001);
+      await vi.advanceTimersByTimeAsync(1_300);
+    }
+    expect(h.state().notice).toMatchObject({ kind: 'barge_hint' });
+    expect(h.state().activity).toBe('speaking');
+    // The hint stays through the next turn.
+    h.context.sources[0]?.finish();
+    h.script.push(completed());
+    h.script.close();
+    await flush(10);
+    h.engine.sendText('Ok');
+    await flush();
+    expect(h.state().notice?.kind).toBe('barge_hint');
+  });
+
+  it('closes the microphone while the vEIR speaks in half duplex', async () => {
+    const h = setup();
+    await h.engine.start({ ventureId: IDS.venture, sessionId: IDS.session, halfDuplex: true });
+    await flush(10);
+    const socket = FakeWebSocket.last();
+    socket.serverOpen();
+    h.engine.sendText('Tell me about pilots.');
+    await flush();
+    h.script.push(speech(0, 'Start with one library.'));
+    await flush(20);
+    h.frame(0.2);
+    h.frame(0.2);
+    const sent = decodeMessage(socket.sent.at(-1) ?? new Uint8Array()).payload;
+    expect(sent.every((b) => b === 0)).toBe(true);
+    socket.serverSend(transcriptEvent('r1', 'wait stop that', { partial: false }));
+    await flush();
+    expect(h.state()).toMatchObject({ activity: 'speaking', halfDuplex: true });
+    h.engine.interrupt();
+    expect(h.state().activity).toBe('listening');
+  });
+});
+
+describe('CallEngine · resilience', () => {
+  it('continues by typing at once when the browser refuses the speech-to-text host', async () => {
+    const h = setup({ socketThrows: 'SecurityError' });
+    await expect(startLive(h)).resolves.toBeUndefined();
+    expect(h.state()).toMatchObject({
+      phase: 'live',
+      input: 'typed',
+      typedReason: 'stt_unavailable',
+      activity: 'listening',
+      reconnecting: false,
+    });
+    expect(h.track.stop).toHaveBeenCalled();
+  });
+
+  it('retries a socket that could not be created, then continues by typing', async () => {
+    const h = setup({ socketThrows: 'SyntaxError' });
+    await startLive(h);
+    expect(h.state().reconnecting).toBe(true);
+    await vi.advanceTimersByTimeAsync(35_000);
+    expect(h.state()).toMatchObject({ input: 'typed', typedReason: 'stt_failed', reconnecting: false });
+    expect(h.track.stop).toHaveBeenCalled();
+  });
+
+  it('never rejects: a browser API that throws ends in a failed call with the microphone closed', async () => {
+    const h = setup();
+    h.context.createGain = () => {
+      throw new Error('boom');
+    };
+    await expect(startLive(h)).resolves.toBeUndefined();
+    expect(h.state()).toMatchObject({ phase: 'failed', error: { retry: true } });
+    expect(h.api.startCall).not.toHaveBeenCalled();
+  });
+
+  it('offers Turn on sound when the browser keeps the audio suspended, and clears it once resumed', async () => {
+    const h = setup({ suspended: true, grant: null });
+    await startLive(h);
+    expect(h.state()).toMatchObject({ phase: 'live', audioBlocked: true });
+    h.context.resumeAllowed = true;
+    h.engine.resumeAudio();
+    await flush();
+    expect(h.state().audioBlocked).toBe(false);
+    // The browser suspends it again later (another tab took the audio device): the offer comes back.
+    h.context.setState('suspended');
+    expect(h.state().audioBlocked).toBe(true);
+  });
+
+  it('holds while the page is hidden and resumes on a tap', async () => {
+    const h = setup();
+    await startLive(h);
+    const first = FakeWebSocket.last();
+    first.serverOpen();
+    h.engine.hold();
+    expect(h.state()).toMatchObject({ held: true, muted: true });
+    expect(h.track.enabled).toBe(false);
+    h.engine.resume();
+    await flush();
+    expect(h.state()).toMatchObject({ held: false, muted: false });
+    expect(FakeWebSocket.instances).toHaveLength(2);
   });
 });
 

@@ -8,7 +8,9 @@
  *
  * Calls speak only validated text. When the server cannot synthesise in this environment (`501
  * speech_unavailable`, local development), the browser's own `speechSynthesis` reads the same validated
- * text; any other failure shows the words without a voice ("captions only"), never a substitute voice.
+ * text. Any other failure shows the words without a voice ("captions only"), never a substitute voice: for
+ * that unit alone when the failure may pass (a dropped connection, a busy synthesiser, audio that would not
+ * decode), and for the rest of the call when the server refused the call's speech (kill switch, caps).
  */
 
 export interface SpeechUnitToPlay {
@@ -27,6 +29,9 @@ export type SpeechFetchResult =
   | { readonly kind: 'audio'; readonly data: ArrayBuffer }
   /** The server has no speech synthesis here (501); the browser may read validated text itself. */
   | { readonly kind: 'unavailable' }
+  /** The server refused speech for this call (AI paused, caps reached, voice consent withdrawn). */
+  | { readonly kind: 'refused' }
+  /** This unit could not be voiced (network, a busy synthesiser, a unit the server would not voice). */
   | { readonly kind: 'failed' };
 
 export interface PlayerAudio {
@@ -44,20 +49,22 @@ export interface PlayerAudio {
 }
 
 export interface PlayerEvents {
-  /** A unit starts being heard (captions follow this). */
+  /** A unit starts being heard (captions follow this), and how it is heard. */
   onUnitStart(unit: SpeechUnitToPlay, route: VoiceRoute): void;
   /** A unit finished (`completed` false when it was stopped part-way). */
   onUnitEnd(unit: SpeechUnitToPlay, completed: boolean): void;
   /** Nothing left to play. */
   onIdle(): void;
-  /** The way units are heard changed for the rest of the call (browser voice, or captions only). */
-  onRouteChange(route: VoiceRoute): void;
 }
 
-type Prepared =
+type Prepared = (
   | { readonly kind: 'buffer'; readonly buffer: AudioBuffer }
   | { readonly kind: 'browser' }
-  | { readonly kind: 'captions' };
+  | { readonly kind: 'captions' }
+) & {
+  /** The way every later unit is heard from now on (set when the server answered for the whole call). */
+  readonly sticky?: Exclude<VoiceRoute, 'server'>;
+};
 
 interface Entry {
   readonly unit: SpeechUnitToPlay;
@@ -96,10 +103,6 @@ export class SpeechPlayer {
     this.samples = new Float32Array(this.analyser.fftSize);
     this.gain.connect(this.analyser);
     this.analyser.connect(context.destination);
-  }
-
-  get voice(): VoiceRoute {
-    return this.route;
   }
 
   /** The unit being heard, if any. */
@@ -173,17 +176,27 @@ export class SpeechPlayer {
     } catch {
       result = { kind: 'failed' };
     }
-    if (result.kind === 'unavailable') return { kind: this.audio.synthesis ? 'browser' : 'captions' };
-    if (result.kind === 'failed') return { kind: 'captions' };
-    try {
-      return { kind: 'buffer', buffer: await this.audio.context.decodeAudioData(result.data) };
-    } catch {
-      return { kind: 'captions' };
+    switch (result.kind) {
+      case 'unavailable': {
+        const route = this.audio.synthesis ? 'browser' : 'captions';
+        return { kind: route, sticky: route };
+      }
+      case 'refused':
+        return { kind: 'captions', sticky: 'captions' };
+      case 'failed':
+        // This unit only: the next one asks for the voice again.
+        return { kind: 'captions' };
+      case 'audio':
+        try {
+          return { kind: 'buffer', buffer: await this.audio.context.decodeAudioData(result.data) };
+        } catch {
+          return { kind: 'captions' };
+        }
     }
   }
 
-  private setRoute(route: VoiceRoute): void {
-    if (route === this.route || route === 'server') return;
+  private setRoute(route: Exclude<VoiceRoute, 'server'>): void {
+    if (route === this.route) return;
     this.route = route;
     // Units already being fetched from the server are prepared again for the new route.
     for (const entry of this.queue) {
@@ -191,7 +204,6 @@ export class SpeechPlayer {
       entry.controller = new AbortController();
       entry.prepared = null;
     }
-    this.events.onRouteChange(route);
   }
 
   private async playNext(): Promise<void> {
@@ -202,7 +214,7 @@ export class SpeechPlayer {
     const prepared = await entry.prepared;
     if (generation !== this.generation || this.queue[0] !== entry) return;
     this.queue.shift();
-    if (prepared.kind !== 'buffer') this.setRoute(prepared.kind);
+    if (prepared.sticky) this.setRoute(prepared.sticky);
     // A route change applies to everything after this unit too.
     this.prefetch();
 

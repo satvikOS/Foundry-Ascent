@@ -1,4 +1,4 @@
-import type { CallEndReason, CallSummary, CallView } from '@foundry/contracts';
+import type { CallEndReason, CallSummary, CallView, TurnBlockedDetail } from '@foundry/contracts';
 
 import type { VoiceRoute } from './playback';
 
@@ -13,11 +13,16 @@ export type TalkMode = 'hands_free' | 'push_to_talk';
 /** Why the founder types instead of speaking. */
 export type TypedReason = 'stt_unavailable' | 'mic_denied' | 'mic_unavailable' | 'stt_failed';
 
+/** A one-line notice under the stage (never spoken: only validated text is voiced). */
 export interface CallNotice {
-  readonly kind: 'turn_error' | 'blocked' | 'voice_captions' | 'stt_lost' | 'time_warning';
+  readonly kind: 'turn_error' | 'time_warning' | 'barge_hint';
   readonly message: string;
-  /** Crisis or support resources (Markdown) for a blocked turn. */
-  readonly supportMessage?: string | null;
+}
+
+/** Why a call could not start, and whether trying again may help. */
+export interface CallFailure {
+  readonly message: string;
+  readonly retry: boolean;
 }
 
 export interface CallEnded {
@@ -38,10 +43,16 @@ export interface CallSnapshot {
   readonly input: 'voice' | 'typed';
   readonly typedReason: TypedReason | null;
   readonly muted: boolean;
+  /** The call is on hold (the page was hidden): the microphone is off until the founder resumes. */
+  readonly held: boolean;
   readonly talkMode: TalkMode;
   /** Push-to-talk is held. */
   readonly talking: boolean;
+  /** The microphone is closed while the vEIR speaks (devices without usable echo cancellation). */
+  readonly halfDuplex: boolean;
   readonly reconnecting: boolean;
+  /** The browser has not let the call's audio start yet: one tap (Turn on sound) unlocks it. */
+  readonly audioBlocked: boolean;
   /** When the call went live (epoch ms; the timer counts from here). */
   readonly liveAt: number | null;
   /** Server-reported seconds left, and when they were reported. */
@@ -52,14 +63,19 @@ export interface CallSnapshot {
     /** The founder line is a live partial (still changing). */
     readonly founderLive: boolean;
   };
-  /** How the vEIR is heard: server voice, the browser's voice (local development), or captions only. */
+  /**
+   * How the vEIR's latest sentence was heard: the server's voice, the browser's voice (local development
+   * only), or on screen only (the voice failed for it, or speech is refused for the rest of the call).
+   */
   readonly voice: VoiceRoute;
   readonly notice: CallNotice | null;
+  /** The latest turn was held back (crisis support or a safety check): what the founder is offered. */
+  readonly blocked: TurnBlockedDetail | null;
   /** Typed or spoken lines waiting for the vEIR to finish. */
   readonly queued: number;
   readonly ended: CallEnded | null;
   /** Why the call could not start. */
-  readonly error: string | null;
+  readonly error: CallFailure | null;
 }
 
 /** No call: the engine's state before a call and after it is dismissed. */
@@ -72,14 +88,18 @@ export const IDLE_CALL: CallSnapshot = {
   input: 'voice',
   typedReason: null,
   muted: false,
+  held: false,
   talkMode: 'hands_free',
   talking: false,
+  halfDuplex: false,
   reconnecting: false,
+  audioBlocked: false,
   liveAt: null,
   remaining: null,
   captions: { veir: null, founder: null, founderLive: false },
   voice: 'server',
   notice: null,
+  blocked: null,
   queued: 0,
   ended: null,
   error: null,

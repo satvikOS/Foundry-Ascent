@@ -14,7 +14,8 @@ import type { z } from 'zod';
 
 import { encodeBody } from '../api/body';
 import { api, apiSend, createIdempotencyKey, path, prepareRequest, sendRequest } from '../api/client';
-import { isAbortError, isApiError } from '../api/errors';
+import { errorMessage, isAbortError, isApiError, type ClientErrorCode } from '../api/errors';
+import type { CallFailure } from './call-state';
 import type { SpeechFetchResult, SpeechUnitToPlay } from './playback';
 
 /**
@@ -71,8 +72,23 @@ export function endCall(callId: string, body: EndCallBody): Promise<EndCallResul
   });
 }
 
+/** A unit of the reply the founder heard to its end, as played (streamed units carry their signature). */
+export interface HeardUnitBody {
+  seq: number;
+  text: string;
+  sig?: string;
+}
+
+export type InterruptBody = z.input<typeof InterruptTurnRequest> & {
+  /**
+   * Units 0…`heardSeq` as played, so the server can replay exactly what was heard in the conversation's
+   * history. Sent once the contract carries the field; `encodeBody` drops what the contract does not know.
+   */
+  heard?: HeardUnitBody[];
+};
+
 /** `POST /turns/:id/interrupt` — the founder spoke over the vEIR; records what they actually heard. */
-export function interruptTurn(turnId: string, body: z.input<typeof InterruptTurnRequest>): Promise<void> {
+export function interruptTurn(turnId: string, body: InterruptBody): Promise<void> {
   return apiSend(path`/turns/${turnId}/interrupt`, {
     method: 'POST',
     body: encodeBody(InterruptTurnRequest, body),
@@ -108,11 +124,61 @@ export async function fetchSpeech(
     return { kind: 'audio', data: await response.arrayBuffer() };
   } catch (error) {
     if (isAbortError(error)) throw error;
-    if (isApiError(error) && (error.status === 501 || error.code === 'speech_unavailable')) {
-      return { kind: 'unavailable' };
-    }
-    return { kind: 'failed' };
+    if (!isApiError(error)) return { kind: 'failed' };
+    if (error.status === 501 || error.code === 'speech_unavailable') return { kind: 'unavailable' };
+    return CALL_SPEECH_REFUSALS.has(error.code) ? { kind: 'refused' } : { kind: 'failed' };
   }
+}
+
+/**
+ * Refusals that hold for the rest of the call (the kill switch, spend and minute caps, a paused vEIR or its
+ * voice consent, lost access). Anything else concerns one unit (a dropped connection, a busy synthesiser, a
+ * reply that can no longer be spoken) and the next unit asks again.
+ */
+const CALL_SPEECH_REFUSALS: ReadonlySet<ClientErrorCode> = new Set<ClientErrorCode>([
+  'ai_disabled',
+  'spend_cap_reached',
+  'rate_limited',
+  'persona_suspended',
+  'assignment_inactive',
+  'forbidden',
+  'unauthenticated',
+]);
+
+/**
+ * `DELETE /sessions/:id` — removes the conversation a call from New chat created when the call never started
+ * (refused, cancelled), so a failed call leaves no empty conversation behind.
+ */
+export function discardConversation(sessionId: string): Promise<void> {
+  return api.delete(path`/sessions/${sessionId}`, { idempotencyKey: createIdempotencyKey() });
+}
+
+/** Codes whose server message is written for the person calling and says more than the generic one. */
+const CALL_DETAIL_CODES: ReadonlySet<ClientErrorCode> = new Set<ClientErrorCode>([
+  'conflict',
+  'ai_disabled',
+  'rate_limited',
+  'spend_cap_reached',
+  'persona_suspended',
+  'assignment_inactive',
+  'session_ended',
+]);
+
+/** A failure of the calls API in plain words: the server's own message for call refusals. */
+export function callErrorMessage(error: unknown): string {
+  if (isApiError(error) && error.detail && CALL_DETAIL_CODES.has(error.code)) return error.detail;
+  return errorMessage(error);
+}
+
+/** Why a call could not start; trying again is offered only when it may help (a network or server hiccup). */
+export function startFailure(error: unknown): CallFailure {
+  const transient =
+    !isApiError(error) ||
+    error.isTransient ||
+    error.code === 'database_resuming' ||
+    error.code === 'internal' ||
+    error.code === 'invalid_response';
+  return { message: callErrorMessage(error), retry: transient };
 }
 
 /**
