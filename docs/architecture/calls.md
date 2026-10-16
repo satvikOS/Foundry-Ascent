@@ -118,9 +118,10 @@ reasons (§5); one that names no live call of the caller in that conversation is
 typed message (no speech unit, no voice turn, no call marked on the conversation).
 
 **Minutes** come from the `calls` table, by the database clock: ended calls count until they ended, live
-calls until now, but never more than 30 s after their last heartbeat. A call whose client went away is
-closed there (at its next start, heartbeat or end, or by `callsRepo.reapStaleCalls`), so the count is the
-same before and after it is closed.
+calls until now, but never more than 60 s after their last heartbeat (or their start): as long as a call
+without heartbeats still takes spoken turns and speech, so every second a call could be used is counted.
+A call whose client went away is closed there (at its next start, heartbeat or end, or by
+`callsRepo.reapStaleCalls`), so the count is the same before and after it is closed.
 
 ### 2.4 Heartbeats
 

@@ -117,14 +117,23 @@ async function withSetting<T>(key: string, value: string, fn: () => Promise<T>):
 
 /** Moves a call back in time (owner role): started `minutes` ago, last heartbeat `beatMinutesAgo` ago. */
 async function backdate(callId: string, minutes: number, beatMinutesAgo: number | null): Promise<void> {
+  await backdateSeconds(callId, minutes * 60, beatMinutesAgo === null ? null : beatMinutesAgo * 60);
+}
+
+/** {@link backdate} in seconds. */
+async function backdateSeconds(
+  callId: string,
+  seconds: number,
+  beatSecondsAgo: number | null,
+): Promise<void> {
   await h.t.db.system(async (sx) => {
     await sx.query('ALTER TABLE calls DISABLE TRIGGER calls_guard');
     await sx.query(
-      `UPDATE calls SET started_at = now() - make_interval(mins => :m),
+      `UPDATE calls SET started_at = now() - make_interval(secs => :s),
               last_heartbeat_at = CASE WHEN :b::integer IS NULL THEN NULL
-                                       ELSE now() - make_interval(mins => :b::integer) END
+                                       ELSE now() - make_interval(secs => :b::integer) END
        WHERE id = :id`,
-      { id: p.uuid(callId), m: p.int(minutes), b: p.nullable.int(beatMinutesAgo) },
+      { id: p.uuid(callId), s: p.int(seconds), b: p.nullable.int(beatSecondsAgo) },
     );
     await sx.query('ALTER TABLE calls ENABLE TRIGGER calls_guard');
   });
@@ -500,8 +509,9 @@ describe('heartbeats', () => {
     expect(await beat('priya', silent.id)).toMatchObject({ action: 'terminate', reason: 'timeout' });
     const reaped = await callRow(silent.id);
     expect(reaped.endDetail).toBe('stale_heartbeat');
-    // Charged until a little after the last heartbeat, not until now.
-    expect(reaped.elapsedSeconds).toBeLessThanOrEqual(4 * 60 + CALL_LIMITS.staleGraceSeconds + 1);
+    // Charged until the stale window after the last heartbeat (as long as it was usable), not until now.
+    expect(reaped.elapsedSeconds).toBeGreaterThanOrEqual(4 * 60 + CALL_LIMITS.staleSeconds - 1);
+    expect(reaped.elapsedSeconds).toBeLessThanOrEqual(4 * 60 + CALL_LIMITS.staleSeconds + 1);
     // A suspended vEIR ends the call.
     const { call: suspended } = await startCall('priya', sessionId);
     await h.t.db.system((sx) =>
@@ -1412,7 +1422,7 @@ describe('the turn engine and the calls service together', () => {
       h.t.db.system((sx) =>
         callsRepo.callSecondsToday(sx, {
           principalId: h.people.devin,
-          graceSeconds: CALL_LIMITS.staleGraceSeconds,
+          graceSeconds: CALL_LIMITS.staleSeconds,
         }),
       );
     const before = await minutes();
@@ -1425,6 +1435,43 @@ describe('the turn engine and the calls service together', () => {
     });
     expect(await minutes()).toBe(before);
     expect(await auditActions()).toContain('maintenance.stale_calls');
+  });
+
+  it('charges every second a call could be used, so a client that never heartbeats gets no extra minutes', async () => {
+    const sessionId = await newSession('amara', 'solesignal');
+    const minutes = () =>
+      h.t.db.system((sx) =>
+        callsRepo.callSecondsToday(sx, {
+          principalId: h.people.amara,
+          graceSeconds: CALL_LIMITS.staleSeconds,
+        }),
+      );
+    const admit = (callId: string) =>
+      kit.inRequest(ctx.amara, (scope) => admitVoiceTurn(scope, { sessionId, callId, now: new Date() }));
+    // Never a heartbeat: a minute after the start the call still takes spoken turns …
+    const { call } = await startCall('amara', sessionId, 'typed');
+    await backdateSeconds(call.id, CALL_LIMITS.staleSeconds, null);
+    await admit(call.id);
+    // … and a second later it is over: closed at the next start, charged the whole minute it was usable.
+    await backdateSeconds(call.id, CALL_LIMITS.staleSeconds + 1, null);
+    const next = await startCall('amara', sessionId, 'typed');
+    expect(await callRow(call.id)).toMatchObject({
+      status: 'ended',
+      endDetail: 'stale_heartbeat',
+      elapsedSeconds: CALL_LIMITS.staleSeconds,
+    });
+    await endCall('amara', next.call.id);
+    // The same when daily maintenance closes it, and the minutes do not move when it does.
+    const reaped = await startCall('amara', sessionId, 'typed');
+    await backdateSeconds(reaped.call.id, 5 * 60, null);
+    const before = await minutes();
+    await h.core.maintenance.runDaily({ requestId: 'maintenance-unheartbeated-call' });
+    expect(await callRow(reaped.call.id)).toMatchObject({
+      status: 'ended',
+      endDetail: 'stale_heartbeat',
+      elapsedSeconds: CALL_LIMITS.staleSeconds,
+    });
+    expect(await minutes()).toBe(before);
   });
 });
 

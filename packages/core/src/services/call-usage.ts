@@ -4,22 +4,19 @@ import { callsRepo, type SqlExecutor } from '@foundry/db';
 /**
  * Call limits, minute accounting and the rules that end a call (docs/architecture/calls.md §2). Minutes come
  * from the `calls` table: ended calls count until they ended, live calls until now, but never more than
- * {@link CALL_LIMITS.staleGraceSeconds} after their last heartbeat (where a call whose client went away is
- * closed). The rules are pure and unit tested.
+ * {@link CALL_LIMITS.staleSeconds} after their last heartbeat, which is as long as a call without heartbeats
+ * can still be used and where a call whose client went away is closed. The rules are pure and unit tested.
  */
 export const CALL_LIMITS = {
   /** Clients send a heartbeat this often. */
   heartbeatSeconds: 15,
   /**
-   * A live call without a heartbeat for this long is over: its client went away. The `turns_link_call`
-   * trigger of migration 0008 uses the same 60 s window.
+   * A live call without a heartbeat for this long is over: its client went away. Until then it takes spoken
+   * turns and speech, so it counts until this long after its last heartbeat (or its start), and a call whose
+   * client went away is closed there: its minutes are the same before and after it is closed, and are every
+   * second it could be used. The `turns_link_call` trigger of migration 0008 uses the same 60 s window.
    */
   staleSeconds: 60,
-  /**
-   * A live call counts until at most this long after its last heartbeat (two heartbeats), and a call whose
-   * client went away is closed there: its minutes are the same before and after it is closed.
-   */
-  staleGraceSeconds: 30,
   /** A call needs at least this much time left to start. */
   minStartSeconds: 60,
   /**
@@ -48,7 +45,7 @@ export type CallCaps = Required<
 
 /** Seconds the person spent in calls today (UTC), by the database clock. */
 export function callSecondsToday(ex: SqlExecutor, principalId: string): Promise<number> {
-  return callsRepo.callSecondsToday(ex, { principalId, graceSeconds: CALL_LIMITS.staleGraceSeconds });
+  return callsRepo.callSecondsToday(ex, { principalId, graceSeconds: CALL_LIMITS.staleSeconds });
 }
 
 /** Amazon Transcribe streaming, US English, in USD per second of audio (us-east-1, first pricing tier). */
