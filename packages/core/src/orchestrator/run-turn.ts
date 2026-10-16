@@ -1,21 +1,13 @@
 import {
-  AUTO_MODE,
   CRISIS_SPOKEN_MESSAGE,
   CRISIS_SUPPORT_MESSAGE,
-  CROSS_VENTURE_BLOCK_ANSWER,
-  INVALID_RESPONSE_ANSWER,
   POLICY_VERSION,
   SPOKEN_NARROWING_CAVEAT,
   buildCrisisResponse,
   buildRetrievalQuery,
-  buildSystemPrompt,
   classifyRisk,
   deriveSpoken,
-  isModelGatewayError,
   riskLabel,
-  validateCoachResponse,
-  type CoachResponseValidation,
-  type GateBlockReason,
   type HistoryTurn,
   type ModelAttempt,
   type RiskClassification,
@@ -60,21 +52,16 @@ import {
 import { createDraftEscalation } from '../services/escalations.js';
 import { persistMemoryCandidates } from '../services/memory.js';
 import { historyAsHeard } from '../services/spoken-text.js';
+import { answerTurn, generationError } from './answer.js';
 import { blockedDetailOf, participantRiskLabel, participantTurnView, supportMessageFor } from './blocked.js';
-import { assembleContext } from './context-budget.js';
 import { loadContinuity, type LoadedContinuity } from './continuity.js';
-import { candidateVisibility, type KeyedEvidence } from './evidence.js';
-import {
-  GenerationFailure,
-  generateStreamed,
-  generateWhole,
-  generationTotals,
-  SpeechStream,
-  type Generation,
-} from './generate.js';
+import { candidateVisibility } from './evidence.js';
+import { generationTotals, SpeechStream } from './generate.js';
 import { assertWithinSpendCaps } from './guards.js';
-import { privateRetrievalOwner, retrieveEvidence } from './retrieval.js';
+import { embedRetrievalQuery, privateRetrievalOwner, retrieveEvidence } from './retrieval.js';
 import { secondsUntilUtcMidnight, shouldSampleForReview } from './sampling.js';
+
+export { enforceGateBlock } from './answer.js';
 
 /**
  * POST /sessions/:id/turns body. `expectedOrdinal` (the client's retry key) is part of the contract: when
@@ -162,42 +149,6 @@ export function errorEvent(
   };
 }
 
-/**
- * The validation of a turn the sentence gate stopped. The final validator normally reaches the same verdict
- * on the text the gate saw; when it does not (a guarded string cut differently), the gate's verdict stands
- * and nothing from the stopped text is kept: the stored answer is the fixed placeholder for the reason.
- */
-export function enforceGateBlock(
-  checked: CoachResponseValidation,
-  reason: GateBlockReason,
-  channel: TurnChannel,
-): CoachResponseValidation {
-  if (checked.blocked) return checked;
-  const results: ValidatorResults = {
-    ...checked.results,
-    crossVentureViolation: checked.results.crossVentureViolation || reason === 'cross_venture',
-    identityViolation: checked.results.identityViolation || reason === 'identity',
-  };
-  const answer = reason === 'cross_venture' ? CROSS_VENTURE_BLOCK_ANSWER : INVALID_RESPONSE_ANSWER;
-  return {
-    response: {
-      ...checked.response,
-      answer,
-      claims: [],
-      uncertainty: [],
-      challenge: null,
-      next_actions: [],
-      memory_candidates: [],
-      follow_up_questions: [],
-      rehearsal: null,
-      spoken: channel === 'voice' ? deriveSpoken(answer) : null,
-    },
-    results,
-    blocked: true,
-    blockReason: reason,
-  };
-}
-
 interface Proceed {
   readonly kind: 'proceed';
   readonly session: sessionsRepo.SessionRecord;
@@ -246,7 +197,7 @@ export function createOrchestrator(
   options: OrchestratorOptions = {},
 ): Orchestrator {
   const cfg = kit.config;
-  const { logger, gateway } = kit.deps;
+  const { logger } = kit.deps;
   const admitVoiceTurn = options.admitVoiceTurn ?? callsAdmission;
   const speechKeys =
     options.speechKeys ??
@@ -672,34 +623,6 @@ export function createOrchestrator(
     return { status: 'blocked', turnId: turn.id, replayed: false, error: null };
   }
 
-  async function embedQuery(
-    ctx: RequestContext,
-    ventureId: string,
-    text: string,
-    signal?: AbortSignal,
-  ): Promise<number[] | null> {
-    try {
-      const result = await gateway.embed([text.slice(0, 8_000)], {
-        purpose: 'embedding',
-        requestId: ctx.requestId,
-        ...(signal ? { signal } : {}),
-      });
-      await kit.recordUsage({
-        ctx,
-        ventureId,
-        purpose: 'embedding',
-        attempts: [{ modelId: result.modelId, usage: result.usage, costUsd: result.costUsd }],
-      });
-      return result.vectors[0] ?? null;
-    } catch (err) {
-      logger.warn('turn.query_embedding_failed', {
-        requestId: ctx.requestId,
-        error: err instanceof Error ? err.name : 'unknown',
-      });
-      return null;
-    }
-  }
-
   interface Accepted {
     readonly ctx: RequestContext;
     readonly turn: turnsRepo.TurnRecord;
@@ -743,7 +666,8 @@ export function createOrchestrator(
 
     // Step 3: authorized, scoped retrieval.
     await emit({ event: 'turn.status', phase: 'retrieving', detail: null, evidenceCount: null });
-    const embedding = await (a.embedding ?? embedQuery(ctx, ventureId, a.query, signal));
+    const embedding = await (a.embedding ??
+      embedRetrievalQuery(kit, ctx, { purpose: 'turn', ventureId }, a.query, signal));
     const pack = await kit.inRequest(ctx, async (scope) => {
       const evidencePack = await retrieveEvidence(scope.tx, {
         tenantId: ctx.tenantId,
@@ -785,129 +709,49 @@ export function createOrchestrator(
       evidenceCount: pack.items.length,
     });
 
-    // Step 4: assemble context (≤ maxInputTokens): rules and persona, the vEIR's notes, history, evidence.
-    const today = kit.now().toISOString().slice(0, 10);
-    const continuity = coach.memory.continuity;
-    const system = buildSystemPrompt({
-      release: {
-        version: coach.release.version,
-        doctrine: coach.release.doctrine,
-        style: coach.release.style,
-        disclosureText: coach.release.disclosureText,
-        personaName: active.persona.name,
-        eirName: coach.personaEirName,
-      },
-      mode: pre.mode ?? AUTO_MODE,
+    // Steps 4–6: assemble the prompt, generate, validate (shared with the EIR studio's test bench).
+    const answered = await answerTurn({
+      kit,
+      ctx,
+      meter: { purpose: 'turn', ventureId },
+      ids: { sessionId: pre.session.id, turnId: turn.id },
+      release: coach.release,
+      personaName: active.persona.name,
+      personaEirName: coach.personaEirName,
+      mode: pre.mode,
       allowedModes: coach.allowedModes,
-      policy: {
-        // The cross-venture flag stays out of the prompt: the model would otherwise answer differently
-        // for a real venture name than for an unknown one (a membership oracle). The always-on rule that
-        // the workspace belongs to one venture, and the output validator, cover it.
-        riskCategories: risk.categories.filter((c) => c !== 'cross_venture_request'),
-        groundingThreshold: pre.settings.groundingCoverageThreshold,
-        crisis: false,
-      },
-      ventureContext: {
+      fallbackMode: coach.allowedModes.includes(pre.session.mode)
+        ? pre.session.mode
+        : (coach.allowedModes[0] ?? pre.session.mode),
+      risk,
+      settings: pre.settings,
+      venture: {
         name: pre.venture.name,
         stage: pre.venture.stage,
         domain: pre.venture.domain,
         currentGoal: pre.venture.currentGoal,
       },
       conversationGoal: pre.session.goal,
-      rehearsalCounterpart:
-        pre.mode === 'rehearse' || pre.mode === null ? (input.rehearsalCounterpart ?? null) : null,
-      today,
+      rehearsalCounterpart: input.rehearsalCounterpart ?? null,
       channel: pre.channel,
-      continuity,
-    });
-    const context = assembleContext({
-      system,
-      evidence: pack.items.map((k) => k.item),
+      continuity: coach.memory.continuity,
+      evidence: pack.items,
       history: coach.heardHistory,
-      founderText: input.text,
-      maxInputTokens: cfg.turns.maxInputTokens,
-      maxHistoryTurns: cfg.turns.historyTurns,
-      continuity,
-      today,
       opener: coach.opener,
-    });
-    const shown: KeyedEvidence[] = pack.items.filter((k) => context.shownKeys.has(k.item.key));
-
-    // Step 5: generate (streamed through the sentence gate, or whole when streaming is switched off).
-    await emit({ event: 'turn.status', phase: 'reasoning', detail: null, evidenceCount: shown.length });
-    const streaming = pre.settings.streamingEnabled !== false;
-    const base = {
-      kit,
-      ctx,
-      ventureId,
-      sessionId: pre.session.id,
-      turnId: turn.id,
-      system,
-      messages: context.messages,
-      channel: pre.channel,
-      mode: pre.mode,
-      allowedModes: coach.allowedModes,
-      fallbackMode: coach.allowedModes.includes(pre.session.mode)
-        ? pre.session.mode
-        : (coach.allowedModes[0] ?? pre.session.mode),
+      founderText: input.text,
+      guards: { eirNames, addressees, others },
+      emit,
+      speechKey: a.speechKey,
       signal,
       startedAt: a.startedAt,
-    };
-    let generation: Generation;
-    try {
-      generation = streaming
-        ? await generateStreamed({
-            ...base,
-            emit,
-            speechKey: a.speechKey,
-            gate: {
-              personaName: active.persona.name,
-              eirNames,
-              personaEirName: coach.personaEirName,
-              addressees,
-              otherVentureNames: others.names,
-              otherVentureCanaries: others.canaries,
-              otherVentureMemberNames: others.memberNames,
-              evidenceKeys: new Set(shown.map((k) => k.item.key)),
-            },
-          })
-        : await generateWhole(base);
-    } catch (err) {
-      const cause = err instanceof GenerationFailure ? err.cause : err;
-      const attempts = err instanceof GenerationFailure ? err.attempts : [];
-      const error = isModelGatewayError(cause)
-        ? new DomainError('model_unavailable', 'The coach could not answer right now. Please try again.', {
-            reason: cause.code,
-            retryAfterSeconds: 5,
-            cause,
-          })
-        : asDomainError(cause);
-      await failTurn(ctx, turn, error, attempts);
+    });
+    if (answered.kind === 'generation_failed') {
+      const error = generationError(answered.cause);
+      await failTurn(ctx, turn, error, answered.attempts);
       await emit(errorEvent(turn.id, error, ctx.requestId));
       return { status: 'failed', turnId: turn.id, replayed: false, error };
     }
-
-    // Step 6: deterministic validation of the whole response (authoritative over any streamed unit).
-    await emit({ event: 'turn.status', phase: 'validating', detail: null, evidenceCount: shown.length });
-    const validated = validateCoachResponse(generation.raw, {
-      evidenceKeys: new Set(shown.map((k) => k.item.key)),
-      preRisk: risk,
-      otherVentureNames: others.names,
-      otherVentureCanaries: others.canaries,
-      otherVentureMemberNames: others.memberNames,
-      personaName: active.persona.name,
-      coverageThreshold: pre.settings.groundingCoverageThreshold,
-      ...(pre.mode === null ? { allowedModes: coach.allowedModes } : { expectedMode: pre.mode }),
-      eirNames,
-      personaEirName: coach.personaEirName,
-      addressees,
-      channel: pre.channel,
-    });
-    validated.results.notes.push(...generation.notes);
-    const checked =
-      generation.gateBlocked === null
-        ? validated
-        : enforceGateBlock(validated, generation.gateBlocked, pre.channel);
+    const { context, shown, generation, checked } = answered;
     const status = checked.blocked ? 'blocked' : 'completed';
     // A call ends a streamed reply with its last unit (and a caveat when the answer was narrowed). A reply
     // written whole (streaming off, or a stream that broke, was empty or was not prose) is said as its
@@ -1292,7 +1136,15 @@ export function createOrchestrator(
         }
         // The query embedding starts once the turn is admitted (a refused request buys no model call) and
         // overlaps the accepted and classifying events.
-        if (!crisis && !risk.crisis) embedding = embedQuery(ctx, session.ventureId, query, options.signal);
+        if (!crisis && !risk.crisis) {
+          embedding = embedRetrievalQuery(
+            kit,
+            ctx,
+            { purpose: 'turn', ventureId: session.ventureId },
+            query,
+            options.signal,
+          );
+        }
       } catch (err) {
         const error = asDomainError(err);
         if (error.code === 'internal') {

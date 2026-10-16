@@ -54,6 +54,9 @@ import {
   RequestedRole,
   ResourceFilter,
   SignInResponse,
+  TEST_TURN_MAX_HISTORY,
+  TestTurnRequest,
+  TestTurnResponse,
   UpdateResourceRequest,
 } from './index.js';
 
@@ -432,5 +435,56 @@ describe('LessonQuery', () => {
   it('carries how many lessons match, absent elsewhere', () => {
     expect(LessonListResponse.parse({ items: [] }).total).toBeUndefined();
     expect(LessonListResponse.parse({ items: [], total: 3 }).total).toBe(3);
+  });
+});
+
+describe('test bench (EIR studio)', () => {
+  it('carries one message, the release and at most a few earlier exchanges; nothing else', () => {
+    const parsed = TestTurnRequest.parse({ releaseId: ID, text: '  How should I price this?  ' });
+    expect(parsed).toEqual({ releaseId: ID, text: 'How should I price this?', history: [] });
+    const exchange = { text: 'Hi', answer: 'Hello.' };
+    expect(
+      TestTurnRequest.safeParse({
+        releaseId: ID,
+        text: 'x',
+        history: Array.from({ length: TEST_TURN_MAX_HISTORY }, () => exchange),
+      }).success,
+    ).toBe(true);
+    expect(
+      TestTurnRequest.safeParse({
+        releaseId: ID,
+        text: 'x',
+        history: Array.from({ length: TEST_TURN_MAX_HISTORY + 1 }, () => exchange),
+      }).success,
+    ).toBe(false);
+    expect(TestTurnRequest.safeParse({ releaseId: ID, text: '   ' }).success).toBe(false);
+    expect(TestTurnRequest.safeParse({ releaseId: 'nope', text: 'x' }).success).toBe(false);
+    expect(TestTurnRequest.safeParse({ releaseId: ID, text: 'x'.repeat(8001) }).success).toBe(false);
+  });
+
+  it('answers with the release tried, the validated response or the block, and what the checks did', () => {
+    const validator = {
+      unknownEvidenceIdsRemoved: 0,
+      factsDowngraded: 0,
+      groundingCoverage: null,
+      narrowed: false,
+      escalationForced: true,
+      identityViolation: false,
+      crossVentureViolation: false,
+      riskCategories: ['safety_wellbeing'],
+      notes: ['crisis_support', 'no_model_call'],
+    };
+    const blocked = TestTurnResponse.parse({
+      release: { id: ID, version: 2, status: 'draft' },
+      status: 'blocked',
+      response: null,
+      evidence: [],
+      validator,
+      blocked: { reason: 'crisis_support', supportMessage: 'Call 988.' },
+    });
+    expect(blocked.blocked?.reason).toBe('crisis_support');
+    expect(
+      TestTurnResponse.safeParse({ ...blocked, release: { id: ID, version: 2, status: 'live' } }).success,
+    ).toBe(false);
   });
 });

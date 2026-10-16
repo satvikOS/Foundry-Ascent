@@ -102,8 +102,8 @@ costUsd, errorName }`. `usage`/`costUsd` are totals over all attempts, so a fail
 still charged to the turn. Use `attempts.length` if you only need a count.
 
 `purpose` is one of `MODEL_PURPOSES` (`turn`, `recap`, `classification`, `embedding`, `ingestion`,
-`eval`, `seed`, `distill`, `speech`), matching the `usage_ledger.purpose` check constraint (`distill` and
-`speech` need migration 0004). Requests take a `GatewayPurpose` (all of them); `ModelPurpose` is the
+`eval`, `seed`, `distill`, `speech`, `test_bench`), matching the `usage_ledger.purpose` check constraint
+(`distill` and `speech` need migration 0004, `test_bench` migration 0012). Requests take a `GatewayPurpose` (all of them); `ModelPurpose` is the
 subset the database repository type accepted before 0004.
 
 ### Errors

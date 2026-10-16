@@ -11,6 +11,7 @@ import {
   type GateResult,
   type GateStats,
   type ModelAttempt,
+  type ModelPurpose,
   type SentenceGateOptions,
 } from '@foundry/ai';
 import { CoachResponse, type CoachMode, type TurnChannel, type TurnStreamEvent } from '@foundry/contracts';
@@ -148,10 +149,20 @@ export class SpeechStream {
   }
 }
 
+/**
+ * What a generation is billed as: a coaching turn of a venture (`turn`), or an EIR studio test conversation
+ * (`test_bench`, no venture). Every model call of the generation is metered once under it.
+ */
+export interface GenerationMeter {
+  readonly purpose: Extract<ModelPurpose, 'turn' | 'test_bench'>;
+  readonly ventureId: string | null;
+}
+
 export interface GenerateArgs {
   readonly kit: Kit;
   readonly ctx: RequestContext;
-  readonly ventureId: string;
+  readonly meter: GenerationMeter;
+  /** Ids the speech units and logs carry (a test conversation uses its run id for both). */
   readonly sessionId: string;
   readonly turnId: string;
   /** The turn's system prompt (whole-reply path and phase B). */
@@ -186,7 +197,7 @@ function sum(attempts: readonly ModelAttempt[], pick: (a: ModelAttempt) => numbe
 }
 
 async function record(a: GenerateArgs, attempts: readonly ModelAttempt[]): Promise<void> {
-  await a.kit.recordUsage({ ctx: a.ctx, ventureId: a.ventureId, purpose: 'turn', attempts });
+  await a.kit.recordUsage({ ctx: a.ctx, ventureId: a.meter.ventureId, purpose: a.meter.purpose, attempts });
 }
 
 function attemptsOf(err: unknown): readonly ModelAttempt[] {
@@ -200,7 +211,7 @@ export async function generateWhole(
 ): Promise<Generation> {
   try {
     const result = await a.kit.deps.gateway.generateStructured({
-      purpose: 'turn',
+      purpose: a.meter.purpose,
       system: a.system,
       messages: a.messages,
       schemaName: COACH_RESPONSE_SCHEMA_NAME,
@@ -353,7 +364,7 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
   try {
     answer = await gateway.streamText(
       {
-        purpose: 'turn',
+        purpose: a.meter.purpose,
         system: answerSystemPrompt(a.system, {
           channel: a.channel,
           mode: a.mode,
@@ -401,7 +412,7 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
   let interrupted = false;
   try {
     const result = await gateway.generateStructured({
-      purpose: 'turn',
+      purpose: a.meter.purpose,
       system: a.system,
       messages: annotationMessages(a.messages, answer.text),
       schemaName: COACH_ANNOTATIONS_SCHEMA_NAME,

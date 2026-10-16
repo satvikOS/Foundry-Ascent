@@ -5,6 +5,7 @@ import { createIngestionProcessor, type IngestionProcessor } from './ingestion/p
 import { DirectoryCache } from './internal/directory.js';
 import { Kit } from './internal/kit.js';
 import { createOrchestrator, type Orchestrator } from './orchestrator/run-turn.js';
+import { createTestBench, type TestBench } from './orchestrator/test-turn.js';
 import { createAdminService, type AdminService } from './services/admin.js';
 import { createCallsService, type CallsService } from './services/calls.js';
 import { createDistillService, type DistillService } from './services/distill.js';
@@ -33,6 +34,8 @@ export interface Core {
   readonly ventures: VenturesService;
   readonly sessions: SessionsService;
   readonly orchestrator: Orchestrator;
+  /** The EIR studio test bench: a curator tries a release of their vEIR; nothing is stored. */
+  readonly testBench: TestBench;
   readonly memory: MemoryService;
   readonly documents: DocumentsService;
   readonly ingestion: IngestionProcessor;
@@ -82,6 +85,7 @@ export function createCore(deps: CoreDeps): Core {
     sessions: createSessionsService(kit, directory),
     // One key cache signs the turn engine's speech units and verifies them for calls and /speech.
     orchestrator: createOrchestrator(kit, directory, { speechKeys }),
+    testBench: createTestBench(kit, directory),
     memory: createMemoryService(kit),
     documents: createDocumentsService(kit),
     ingestion: createIngestionProcessor(kit),

@@ -175,6 +175,7 @@ UI relies on beyond plain JSON bodies:
 | `GET /persona-releases/:id`                                                      | `PersonaReleaseDetailResponse`: the full draft the studio reviews before approval (403 for other EIRs)         |
 | `GET /sessions/:id`                                                              | `SessionDetailResponse`; blocked turns carry `blocked` (`reason`, `supportMessage`, `escalationId`)            |
 | `POST /personas/:id/suspend` · `resume`                                          | 200 `PersonaView`                                                                                              |
+| `POST /personas/:id/test-turns`                                                  | 200 `TestTurnResponse`: the Test bench tab keeps the transcript in memory and sends the last few exchanges     |
 | `POST /personas/:id/knowledge/:sourceId/complete`                                | **202** while the upload is processed, 200 once settled; the library polls                                     |
 | `DELETE /personas/:id/knowledge/:sourceId`                                       | 204; the source leaves retrieval at once                                                                       |
 | `GET /personas/:id/consents`                                                     | `ConsentListResponse` with `personas` per consent; 403 unless `canCurate`                                      |

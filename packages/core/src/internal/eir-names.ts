@@ -2,6 +2,7 @@
  * The tenant's EIR names as words, for rules that keep a vEIR's own lines (the conversation opener, the call
  * intro, a persona's name) from speaking for, or about, the human EIR it was built from.
  */
+import { personasRepo, type SqlExecutor } from '@foundry/db';
 
 export function normalizedName(text: string): string {
   return text.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -38,4 +39,16 @@ export function personaNameClaimsEir(personaName: string, eirNames: readonly str
   let rest = normalizedName(personaName);
   for (const name of possessives) rest = rest.split(`${name}'s`).join(' ').split(`${name}’s`).join(' ');
   return rest.split(/[^\p{L}]+/u).some((word) => words.has(word));
+}
+
+/**
+ * The display name of the EIR a vEIR is built from: the persona's own EIR profile, the one its consent covers
+ * (null for a neutral guide). Every place the server names a vEIR or its EIR takes the name from here, never
+ * from the venture assignment's reviewing EIR: that person did not necessarily consent to this vEIR.
+ */
+export async function veirEirName(
+  ex: SqlExecutor,
+  persona: Pick<personasRepo.PersonaRecord, 'id' | 'kind'>,
+): Promise<string | null> {
+  return persona.kind === 'eir_persona' ? personasRepo.getPersonaEirName(ex, persona.id) : null;
 }

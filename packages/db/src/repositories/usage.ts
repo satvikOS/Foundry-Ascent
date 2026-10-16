@@ -17,7 +17,9 @@ export type UsagePurpose =
   | 'seed'
   | 'distill'
   /** Text-to-speech for calls: `input_tokens` holds the characters synthesized. */
-  | 'speech';
+  | 'speech'
+  /** Every model call of an EIR studio test conversation (migration 0012). */
+  | 'test_bench';
 
 export interface UsageEntry {
   readonly tenantId?: string | null;

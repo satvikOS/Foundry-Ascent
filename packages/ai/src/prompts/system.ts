@@ -50,7 +50,11 @@ export interface SystemPromptInput {
   /** The modes the model may choose from in `auto` mode (the assignment's allowed modes). */
   allowedModes?: readonly CoachMode[];
   policy: PromptPolicy;
-  ventureContext: PromptVentureContext;
+  /**
+   * The venture the conversation belongs to, or null when there is none: an EIR studio test conversation
+   * (test bench), where the vEIR runs on its common pool alone.
+   */
+  ventureContext: PromptVentureContext | null;
   /** Counterpart for rehearse mode, as named by the founder (untrusted; escaped). */
   rehearsalCounterpart?: string | null;
   /** ISO date (YYYY-MM-DD) used for next-action target dates. Default: today (UTC). */
@@ -307,7 +311,15 @@ function renderTurnPolicy(policy: PromptPolicy): string {
   return lines.join('\n');
 }
 
-function renderVentureContext(ctx: PromptVentureContext, conversationGoal: string | null): string {
+/** What the model is told when no venture is attached (the EIR studio's test bench). */
+export const NO_VENTURE_CONTEXT = [
+  '<venture_context>',
+  '(none: no venture is attached to this conversation. Do not invent venture details; ask for what you need.)',
+  '</venture_context>',
+].join('\n');
+
+function renderVentureContext(ctx: PromptVentureContext | null, conversationGoal: string | null): string {
+  if (ctx === null) return NO_VENTURE_CONTEXT;
   const lines = [
     '<venture_context>',
     `<name>${escapeInline(ctx.name, 120)}</name>`,

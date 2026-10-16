@@ -114,7 +114,7 @@ export function createApp(deps: AppDeps): ApiApp {
     writeTimeoutMs: http.sseWriteTimeoutMs,
     turnTimeoutMs: http.turnTimeoutMs,
   });
-  registerStudioRoutes(routes, deps.core);
+  registerStudioRoutes(routes, deps.core, { turnTimeoutMs: http.turnTimeoutMs });
   registerVeirRoutes(routes, deps.core);
   registerCallRoutes(routes, deps.core);
   if (deps.localUploads !== undefined) registerLocalUploadRoutes(routes, deps.localUploads);

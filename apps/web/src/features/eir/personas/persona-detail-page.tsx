@@ -23,6 +23,7 @@ import { ResumePersonaDialog, SuspendPersonaDialog } from './persona-controls';
 import { PERSONA_KIND_LABELS } from './persona-labels';
 import { personaTabs, type PersonaTab } from './persona-tabs';
 import { ReleasesTab } from './releases-tab';
+import { TestBenchTab } from './test-bench-tab';
 
 interface PersonaDetailPageProps {
   personaId: string;
@@ -38,7 +39,8 @@ interface PersonaDetailPageProps {
 
 /**
  * EIR studio → one persona, in sections: overview, doctrine & style, knowledge library, lessons, releases,
- * consent, and voice & face. Curators (program leads and the persona's own EIR) edit; other studio roles read.
+ * the test bench (curators only), consent, and voice & face. Curators (program leads and the persona's own EIR)
+ * edit; other studio roles read.
  */
 export function PersonaDetailPage({
   personaId,
@@ -190,6 +192,11 @@ export function PersonaDetailPage({
         <TabsContent value="releases">
           <ReleasesTab persona={p} />
         </TabsContent>
+        {canCurate ? (
+          <TabsContent value="testbench">
+            <TestBenchTab persona={p} displayName={displayName} />
+          </TabsContent>
+        ) : null}
         {p.kind === 'eir_persona' ? (
           <TabsContent value="consent">
             <ConsentTab persona={p} />

@@ -13,6 +13,8 @@ import {
   SubmitReviewResponse,
   SuspendPersonaRequest,
   SuspendPersonaResponse,
+  TestTurnRequest,
+  TestTurnResponse,
 } from '@foundry/contracts';
 import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { z } from 'zod';
@@ -77,6 +79,26 @@ export function usePersonaRelease(releaseId: string | null) {
     ...personaReleaseQueryOptions(releaseId ?? ''),
     enabled: releaseId !== null,
   });
+}
+
+/**
+ * POST /personas/:id/test-turns — one message of a Test bench conversation (curators only). Nothing is kept:
+ * not on the server, and not in the query cache either; the tab holds the transcript in memory and sends the
+ * last few exchanges back. No Idempotency-Key: the server never replays an answer (a retry asks again).
+ */
+export function sendTestTurn(
+  personaId: string,
+  input: z.input<typeof TestTurnRequest>,
+  signal?: AbortSignal,
+): Promise<z.output<typeof TestTurnResponse>> {
+  return api.post(
+    path`/personas/${personaId}/test-turns`,
+    TestTurnResponse,
+    encodeBody(TestTurnRequest, input),
+    {
+      signal,
+    },
+  );
 }
 
 function useInvalidatePersonas() {

@@ -18,10 +18,11 @@ import {
   ResourceView,
   ReviewQueueResponse,
   SessionView,
+  TestTurnResponse,
   TurnStreamEvent,
   UsageSummary,
 } from '@foundry/contracts';
-import { GUIDE_DOCTRINE, GUIDE_STYLE } from '@foundry/db';
+import { GUIDE_DOCTRINE, GUIDE_STYLE, p } from '@foundry/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { type ApiHarness, createApiHarness } from './testing/api-harness.js';
@@ -190,6 +191,92 @@ describe('EIR studio', () => {
     const denied = await api.request(`/eir/reviews/${done.turn.id}`, { body: { scores }, cookie: ruth });
     expect([403, 404]).toContain(denied.status);
     expect(await problemCode(await api.request('/eir/reviews', { cookie: maya }), 403)).toBe('forbidden');
+  });
+});
+
+describe('EIR studio test bench', () => {
+  async function count(
+    table: 'coaching_sessions' | 'turns' | 'escalations' | 'memory_objects',
+  ): Promise<number> {
+    const r = await api.h.t.db.system((sx) => sx.query(`SELECT count(*)::int AS n FROM ${table}`));
+    return Number(r.rows[0]?.n);
+  }
+
+  it('answers a curator from a release of their vEIR, stores nothing and never replays the answer', async () => {
+    const personaId = api.h.ventures.quietquad.personaId;
+    const persona = await json(await api.request(`/personas/${personaId}`, { cookie: corin }), PersonaView);
+    expect(persona.canCurate).toBe(true);
+    const releaseId = persona.activeRelease?.id ?? '';
+    const text = 'How would you test whether students pay for quiet study seats?';
+    const before = await Promise.all(
+      (['coaching_sessions', 'turns', 'escalations', 'memory_objects'] as const).map(count),
+    );
+    const calls = api.h.gateway.calls.length;
+    const send = (cookie: string, body: unknown = { releaseId, text }) =>
+      api.request(`/personas/${personaId}/test-turns`, {
+        body,
+        cookie,
+        idempotencyKey: 'test-bench-key-0001',
+      });
+
+    const first = await send(corin);
+    const answer = await json(first, TestTurnResponse);
+    expect(answer).toMatchObject({ status: 'completed', release: { id: releaseId, status: 'approved' } });
+    expect(answer.response?.answer.length).toBeGreaterThan(20);
+    // The same key again asks again: model output is never stored for replay.
+    const second = await send(corin);
+    expect(second.status).toBe(200);
+    expect(second.headers.get('idempotency-replayed')).toBeNull();
+    await second.text();
+    expect(api.h.gateway.calls.length - calls).toBe(6);
+    const keys = await api.h.t.db.system((sx) =>
+      sx.query(`SELECT count(*)::int AS n FROM idempotency_keys WHERE key = :key`, {
+        key: p.text('test-bench-key-0001'),
+      }),
+    );
+    expect(Number(keys.rows[0]?.n)).toBe(0);
+    expect(
+      await Promise.all(
+        (['coaching_sessions', 'turns', 'escalations', 'memory_objects'] as const).map(count),
+      ),
+    ).toEqual(before);
+    expect(api.app.routeTable).toContainEqual({
+      method: 'POST',
+      path: '/personas/:id/test-turns',
+      auth: 'session',
+      idempotency: 'none',
+    });
+    // Logs carry ids and counts, never the message or the answer.
+    const logs = api.logs.join('\n');
+    expect(logs).not.toContain('quiet study seats');
+    expect(logs).not.toContain(answer.response?.answer.slice(0, 40) ?? '<none>');
+
+    // Program leads curate every persona; another EIR, and founders, are refused.
+    expect((await json(await send(lead), TestTurnResponse)).status).toBe('completed');
+    expect(await problemCode(await send(ruth), 403)).toBe('forbidden');
+    expect(await problemCode(await send(maya), 403)).toBe('forbidden');
+    expect(await problemCode(await send(corin, { releaseId, text: '' }), 422)).toBe('validation_failed');
+    expect(
+      await problemCode(await send(corin, { releaseId: '00000000-0000-4000-8000-000000000000', text }), 404),
+    ).toBe('not_found');
+  });
+
+  it('answers a crisis message with support, without a model call', async () => {
+    const personaId = api.h.ventures.quietquad.personaId;
+    const persona = await json(await api.request(`/personas/${personaId}`, { cookie: corin }), PersonaView);
+    const calls = api.h.gateway.calls.length;
+    const res = await api.request(`/personas/${personaId}/test-turns`, {
+      body: { releaseId: persona.activeRelease?.id ?? '', text: 'I want to end my life, I cannot go on.' },
+      cookie: corin,
+    });
+    const answer = await json(res, TestTurnResponse);
+    expect(answer).toMatchObject({
+      status: 'blocked',
+      response: null,
+      blocked: { reason: 'crisis_support' },
+    });
+    expect(answer.blocked?.supportMessage).toBeTruthy();
+    expect(api.h.gateway.calls.length).toBe(calls);
   });
 });
 

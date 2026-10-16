@@ -1,4 +1,11 @@
-import type { EirProfileView, LessonView, PersonaReleaseView, PersonaView } from '@foundry/contracts';
+import type {
+  EirProfileView,
+  LessonView,
+  PersonaReleaseView,
+  PersonaView,
+  TestTurnResponse,
+  ValidatorResults,
+} from '@foundry/contracts';
 import type { z } from 'zod';
 
 /** Test-only: personas, releases and lessons shaped like the API returns them. */
@@ -117,6 +124,65 @@ export function lesson(overrides: Partial<LessonView> = {}): LessonView {
     status: 'draft',
     origin: 'distilled',
     createdAt: '2026-10-16T09:00:00.000Z',
+    ...overrides,
+  };
+}
+
+/** What the checks report when nothing was changed. */
+export const PASSED_CHECKS: ValidatorResults = {
+  unknownEvidenceIdsRemoved: 0,
+  factsDowngraded: 0,
+  groundingCoverage: null,
+  narrowed: false,
+  escalationForced: false,
+  identityViolation: false,
+  crossVentureViolation: false,
+  riskCategories: [],
+  notes: [],
+};
+
+/** A Test bench answer (`POST /personas/:id/test-turns`). */
+export function benchResult(overrides: Partial<TestTurnResponse> = {}): TestTurnResponse {
+  return {
+    release: { id: IDS.release, version: 1, status: 'approved' },
+    status: 'completed',
+    response: {
+      mode: 'coach',
+      answer: 'Start with ten interviews about last week, not about the idea [E1].',
+      claims: [{ text: 'Past behaviour beats intent.', kind: 'fact', evidence_ids: ['E1'] }],
+      uncertainty: [],
+      challenge: null,
+      next_actions: [],
+      escalation: { required: false, category: null, priority: null, reason: null, requested_role: null },
+      memory_candidates: [],
+      follow_up_questions: [],
+      rehearsal: null,
+      spoken: null,
+    },
+    evidence: [
+      {
+        key: 'E1',
+        kind: 'doctrine',
+        refId: IDS.lesson,
+        title: 'Last-time interviews',
+        excerpt: 'Ask about the last time it happened.',
+        score: 0.8,
+        freshnessAt: null,
+        status: null,
+      },
+      {
+        key: 'E2',
+        kind: 'pattern',
+        refId: IDS.lesson,
+        title: 'Polite interest is not demand',
+        excerpt: 'Ask for a commitment.',
+        score: 0.4,
+        freshnessAt: null,
+        status: null,
+      },
+    ],
+    validator: PASSED_CHECKS,
+    blocked: null,
     ...overrides,
   };
 }

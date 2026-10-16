@@ -65,7 +65,9 @@ DO $$ BEGIN RAISE NOTICE 'x;y'; END $$;`;
       const onDisk = readFileSync(join(here, '..', 'migrations', `${m.version}.sql`), 'utf8');
       expect(onDisk.replace(/\r\n/g, '\n')).toBe(m.sql);
       const statements = splitStatements(m.sql);
-      expect(statements.length).toBeGreaterThan(10);
+      // The live migrations 0001–0010 are large; a later one may be small (its own suite pins its count), but
+      // it still splits into more than one statement.
+      expect(statements.length, m.version).toBeGreaterThan(m.version < '0011' ? 10 : 1);
       for (const s of statements) {
         expect(s.trim()).not.toBe('');
         expect(s.endsWith(';')).toBe(false);

@@ -2,9 +2,10 @@ import type { z } from 'zod';
 
 /**
  * Why a model or speech call is made. Mirrors the `usage_ledger.purpose` CHECK constraint
- * (packages/db/migrations: 0001_init.sql, extended for `distill` and `speech` in 0004) so every call
- * can be written to the ledger as-is. `distill` is the conversation distillation job (digest, notebook,
- * memory and lesson candidates); `speech` is text-to-speech for calls, metered in characters.
+ * (packages/db/migrations: 0001_init.sql, extended for `distill` and `speech` in 0004 and `test_bench` in
+ * 0012) so every call can be written to the ledger as-is. `distill` is the conversation distillation job
+ * (digest, notebook, memory and lesson candidates); `speech` is text-to-speech for calls, metered in
+ * characters; `test_bench` is every call of an EIR studio test conversation (a curator trying a release).
  */
 export const MODEL_PURPOSES = [
   'turn',
@@ -16,10 +17,11 @@ export const MODEL_PURPOSES = [
   'seed',
   'distill',
   'speech',
+  'test_bench',
 ] as const;
 /** Every purpose the gateway accepts and the ledger records (`MODEL_PURPOSES`). */
 export type GatewayPurpose = (typeof MODEL_PURPOSES)[number];
-/** Purposes the usage ledger records; identical to {@link GatewayPurpose} since migration 0004. */
+/** Purposes the usage ledger records; identical to {@link GatewayPurpose} (migrations 0004 and 0012). */
 export type ModelPurpose = GatewayPurpose;
 
 /** Which concrete backend served (or failed) an attempt. `polly` is text-to-speech (calls). */

@@ -206,6 +206,28 @@ export async function spendCapState(
 }
 
 /**
+ * The caller's own EIR studio test messages (`app.test_bench_admission`, migration 0012): those admitted in the
+ * last `windowSeconds`, and those still being answered (admitted in the last `inFlightSeconds` and not answered
+ * yet). Read from the bench's audit events, counts only. Run under {@link lockTurnAdmission}, in the transaction
+ * that records the new message's admission.
+ */
+export async function testBenchAdmission(
+  ex: SqlExecutor,
+  args: { windowSeconds: number; inFlightSeconds: number },
+): Promise<{ recent: number; inFlight: number }> {
+  const row = await queryFirst(
+    ex,
+    'SELECT recent, in_flight FROM app.test_bench_admission(:window, :inFlight)',
+    { window: p.int(Math.ceil(args.windowSeconds)), inFlight: p.int(Math.ceil(args.inFlightSeconds)) },
+    (r) => ({
+      recent: col.num.nullable.decode(r.recent, 'recent') ?? 0,
+      inFlight: col.num.nullable.decode(r.in_flight, 'in_flight') ?? 0,
+    }),
+  );
+  return row ?? { recent: 0, inFlight: 0 };
+}
+
+/**
  * Turns of a principal still being answered (`pending`) that were created in the last `withinSeconds`
  * (older pending turns belong to a request that died and do not count).
  */
