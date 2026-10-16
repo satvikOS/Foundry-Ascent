@@ -1,4 +1,4 @@
-import { CircleCheck, CircleSlash, KeyRound, Plus, Search, SearchX, Trash2, Users } from 'lucide-react';
+import { CircleSlash, Plus, Search, SearchX, Trash2, Users } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 
 import { announce } from '@/components/a11y/live-announcer';
@@ -55,7 +55,20 @@ function matchesRole(row: AdminPrincipal, filter: RoleFilter): boolean {
   return row.roles.includes(filter);
 }
 
-/** Admin → Principals: people, roles, memberships and their active access codes. */
+/** An empty cell: a dash for the eye, the words for assistive technology. */
+function None({ label }: { label: string }) {
+  return (
+    <span className="text-muted-foreground">
+      <span aria-hidden>—</span>
+      <span className="sr-only">{label}</span>
+    </span>
+  );
+}
+
+/**
+ * Admin → Principals: people, roles, memberships and their active access codes. Quiet by default: only a
+ * disabled account is marked, and empty cells are a dash.
+ */
 export function PrincipalsPage() {
   const me = useRequiredMe();
   const principals = usePrincipals();
@@ -166,7 +179,7 @@ export function PrincipalsPage() {
 
       {principals.isPending ? (
         <LoadingRegion label="Loading principals">
-          <Skeleton className="h-72 rounded-xl" />
+          <Skeleton className="h-72 rounded-lg" />
         </LoadingRegion>
       ) : principals.isError ? (
         <ErrorState
@@ -187,7 +200,6 @@ export function PrincipalsPage() {
           <TableHeader>
             <TableRow>
               <TableHead scope="col">Person</TableHead>
-              <TableHead scope="col">Status</TableHead>
               <TableHead scope="col">Roles</TableHead>
               <TableHead scope="col">Ventures</TableHead>
               <TableHead scope="col">Active access codes</TableHead>
@@ -208,6 +220,12 @@ export function PrincipalsPage() {
                         <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 font-medium">
                           <span className="whitespace-nowrap">{row.principal.displayName}</span>
                           {isMe ? <Badge variant="outline">You</Badge> : null}
+                          {row.status === 'active' ? null : (
+                            <Badge variant="muted" className="border-dotted border-border-strong">
+                              <CircleSlash aria-hidden />
+                              Disabled
+                            </Badge>
+                          )}
                         </p>
                         {row.principal.title ? (
                           <p className="text-[13px] text-muted-foreground">{row.principal.title}</p>
@@ -219,21 +237,8 @@ export function PrincipalsPage() {
                     </div>
                   </TableCell>
                   <TableCell className="align-top">
-                    {row.status === 'active' ? (
-                      <Badge variant="outline" className="border-solid">
-                        <CircleCheck aria-hidden />
-                        Active
-                      </Badge>
-                    ) : (
-                      <Badge variant="muted" className="border-dotted border-border-strong">
-                        <CircleSlash aria-hidden />
-                        Disabled
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="align-top">
                     {row.roles.length === 0 ? (
-                      <span className="text-[13px] text-muted-foreground">Venture access only</span>
+                      <None label="Venture access only" />
                     ) : (
                       <ul className="flex flex-wrap gap-1" aria-label="Roles">
                         {row.roles.map((r) => (
@@ -246,7 +251,7 @@ export function PrincipalsPage() {
                   </TableCell>
                   <TableCell className="min-w-44 align-top text-[13px]">
                     {row.memberships.length === 0 ? (
-                      <span className="text-muted-foreground">—</span>
+                      <None label="No ventures" />
                     ) : (
                       <ul className="grid gap-0.5">
                         {row.memberships.slice(0, 3).map((m) => (
@@ -263,7 +268,7 @@ export function PrincipalsPage() {
                   </TableCell>
                   <TableCell className="min-w-72 align-top">
                     {row.activeAccessCodes.length === 0 ? (
-                      <span className="text-[13px] text-muted-foreground">No active codes</span>
+                      <None label="No active codes" />
                     ) : (
                       <ul className="grid gap-2">
                         {row.activeAccessCodes.map((code) => (
@@ -297,7 +302,7 @@ export function PrincipalsPage() {
                   </TableCell>
                   <TableCell className="text-right align-top">
                     <Button
-                      variant="secondary"
+                      variant="ghost"
                       size="sm"
                       aria-label={`Issue access code to ${row.principal.displayName}`}
                       disabled={row.status !== 'active'}
@@ -305,7 +310,6 @@ export function PrincipalsPage() {
                         setIssueFor({ id: row.principal.id, displayName: row.principal.displayName });
                       }}
                     >
-                      <KeyRound aria-hidden />
                       Issue code
                     </Button>
                   </TableCell>
