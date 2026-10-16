@@ -2,6 +2,8 @@ import { type PollyClient, type SynthesizeSpeechCommand } from '@aws-sdk/client-
 import { SpeechSynthesisError } from '@foundry/core';
 import { describe, expect, it } from 'vitest';
 
+import { loadApiConfig } from '../config.js';
+import { speechFor } from '../runtime/api.js';
 import { PollySpeechSynthesizer } from './polly-speech.js';
 
 function named(name: string): Error {
@@ -88,5 +90,17 @@ describe('PollySpeechSynthesizer', () => {
         engines: ['generative'],
       }),
     ).rejects.toMatchObject({ name: 'AbortError' });
+  });
+});
+
+describe('speech wiring', () => {
+  it('uses Polly wherever the models run on Bedrock, and nothing on the mock model', () => {
+    const env = { DOCUMENTS_BUCKET: 'docs-bucket', JOBS_QUEUE_URL: 'https://sqs.test/queue' };
+    const config = loadApiConfig(env, 'api');
+    expect(speechFor({ ...env, MODEL_PROVIDER: 'bedrock' }, config).speech).toBeInstanceOf(
+      PollySpeechSynthesizer,
+    );
+    expect(speechFor({ ...env, MODEL_PROVIDER: 'mock' }, config)).toEqual({});
+    expect(speechFor(env, config)).toEqual({});
   });
 });

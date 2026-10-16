@@ -1,12 +1,13 @@
-import { createCore, type EnvLike } from '@foundry/core';
+import { createCore, type EnvLike, type SpeechSynthesizer } from '@foundry/core';
 
+import { PollySpeechSynthesizer } from '../adapters/polly-speech.js';
 import { S3ObjectStore } from '../adapters/s3-object-store.js';
 import { SqsJobQueue } from '../adapters/sqs-job-queue.js';
 import { type ApiApp, createApp } from '../app.js';
 import { type ApiConfig, loadApiConfig, loadCoreConfig, required } from '../config.js';
 import { API_DB_RESUME_BUDGET_MS } from '../lambda-contract.js';
 import { type Logger } from '../logging.js';
-import { createDatabase, createGateway, createProcessLogger, createSpeech } from './common.js';
+import { createDatabase, createGateway, createProcessLogger } from './common.js';
 import { observeDatabase } from './db-observer.js';
 import { InflightTracker } from './inflight.js';
 
@@ -17,8 +18,15 @@ export interface ApiRuntime {
   readonly config: ApiConfig;
 }
 
-function optionalSpeech(speech: ReturnType<typeof createSpeech>): { speech?: NonNullable<typeof speech> } {
-  return speech === undefined ? {} : { speech };
+/**
+ * Text-to-speech for calls: Amazon Polly wherever the models run on Bedrock (the deployed stacks). Local
+ * development and tests run the mock model and get none: `POST /speech` answers 501 `speech_unavailable` and
+ * the browser reads validated replies aloud itself. No network I/O at construction.
+ */
+export function speechFor(env: EnvLike, config: ApiConfig): { speech?: SpeechSynthesizer } {
+  return env.MODEL_PROVIDER?.trim().toLowerCase() === 'bedrock'
+    ? { speech: new PollySpeechSynthesizer({ region: config.awsRegion }) }
+    : {};
 }
 
 /**
@@ -49,7 +57,7 @@ export function createApiRuntime(env: EnvLike): ApiRuntime {
       region: config.awsRegion,
     }),
     logger: logger.child({ component: 'core' }),
-    ...optionalSpeech(createSpeech(env, config)),
+    ...speechFor(env, config),
   });
   const app = createApp({
     core,

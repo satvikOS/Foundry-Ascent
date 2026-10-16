@@ -1,8 +1,7 @@
 import { createModelGateway, type ModelGateway, modelGatewayConfigFromEnv } from '@foundry/ai';
-import { type EnvLike, type SpeechSynthesizer } from '@foundry/core';
+import { type EnvLike } from '@foundry/core';
 import { createDbFromEnv, type Db } from '@foundry/db';
 
-import { PollySpeechSynthesizer } from '../adapters/polly-speech.js';
 import { type ApiConfig } from '../config.js';
 import { createJsonLogger, type Logger } from '../logging.js';
 
@@ -34,15 +33,4 @@ export function createDatabase(env: EnvLike, options: { readonly defaultResumeBu
  */
 export function createGateway(env: EnvLike, logger: Logger): ModelGateway {
   return createModelGateway(modelGatewayConfigFromEnv(env, { logger: logger.child({ component: 'ai' }) }));
-}
-
-/**
- * Text-to-speech for calls: Amazon Polly wherever the models run on Bedrock (the deployed stacks). Local
- * development and tests run the mock model and get none: `POST /speech` answers 501 `speech_unavailable` and
- * the browser reads validated replies aloud itself. No network I/O at construction.
- */
-export function createSpeech(env: EnvLike, config: ApiConfig): SpeechSynthesizer | undefined {
-  return env.MODEL_PROVIDER?.trim().toLowerCase() === 'bedrock'
-    ? new PollySpeechSynthesizer({ region: config.awsRegion })
-    : undefined;
 }
