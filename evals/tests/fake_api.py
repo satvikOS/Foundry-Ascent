@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -158,8 +159,14 @@ class FakeFoundryApi:
         *,
         resuming_responses: int = 0,
         health_db: tuple[str | None, ...] = (None,),
+        calls_refusal: str | None = None,
+        intro: str | None = None,
     ) -> None:
         self.responder = responder
+        # Calls: a refusal code for every start (calls switched off, no voice consent), and the intro text.
+        self.calls_refusal = calls_refusal
+        self.intro = intro
+        self.calls: dict[str, dict[str, Any]] = {}
         self.resuming_responses = resuming_responses
         # `db` of successive public /health answers (the last one repeats). None omits the field, as the
         # real API does when the serving instance has not observed the database recently.
@@ -504,6 +511,12 @@ class FakeFoundryApi:
             return httpx.Response(200, json=self._memory_view(m))
         if parts[0] == "sessions" and len(parts) >= 2:
             return self._session_route(p, method, parts, body)
+        if parts[0] == "calls" and len(parts) == 3 and parts[2] == "end" and method == "POST":
+            call = self.calls.get(parts[1])
+            if call is None or call["by"] != p.id:
+                return self._problem(404, "not_found")
+            call["status"] = "ended"
+            return httpx.Response(200, json={"call": self._call_view(call), "summary": None})
         if parts[0] == "documents" and len(parts) >= 2:
             doc = self.documents.get(parts[1])
             if doc is None:
@@ -610,8 +623,47 @@ class FakeFoundryApi:
             s["status"] = "ended"
             return httpx.Response(200, json={"session": self._session_view(s), "recap": None})
         if parts[2] == "turns":
+            if body.get("channel") == "voice":
+                call = self.calls.get(body.get("callId") or "")
+                if call is None or call["session_id"] != s["id"] or call["status"] != "live":
+                    return self._problem(409, "conflict")
             return self._turn(s, body)
+        if parts[2] == "calls" and method == "POST":
+            if self.calls_refusal is not None:
+                return self._problem(403, self.calls_refusal)
+            for other in self.calls.values():
+                if other["by"] == p.id and other["status"] == "live":
+                    other["status"] = "ended"  # replaced
+            call = {"id": _id(), "session_id": s["id"], "venture_id": s["venture_id"], "by": p.id}
+            call |= {"status": "live", "input_mode": body.get("inputMode", "transcribe")}
+            self.calls[call["id"]] = call
+            persona = self.ventures[s["venture_id"]].persona
+            intro = self.intro or f"Hi, I'm {persona}, an AI coach. What would you like to work on?"
+            return httpx.Response(
+                201,
+                json={
+                    "call": self._call_view(call),
+                    "sttGrant": None,
+                    "intro": {"text": intro, "sig": "s" * 43},
+                },
+            )
         return self._problem(404, "not_found")
+
+    def _call_view(self, call: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": call["id"],
+            "sessionId": call["session_id"],
+            "ventureId": call["venture_id"],
+            "personaId": _id(),
+            "status": call["status"],
+            "provider": "none",
+            "inputMode": call["input_mode"],
+            "startedAt": NOW,
+            "endedAt": None if call["status"] == "live" else NOW,
+            "endReason": None if call["status"] == "live" else "user",
+            "maxSeconds": 600,
+            "durationSeconds": None,
+        }
 
     def _turn(self, s: dict[str, Any], body: dict[str, Any]) -> httpx.Response:
         self.turn_count += 1
@@ -691,9 +743,27 @@ class FakeFoundryApi:
                 },
             )
         else:
+            # A call says the reply as validated units (`turn.speech`) before the turn completes. A responder
+            # may script them (`speech`); otherwise they are the sentences of the spoken reply.
+            units: list[str] = result.pop("speech", None) or []
+            if body.get("channel") == "voice":
+                result.setdefault(
+                    "spoken",
+                    " ".join(units) or "Your records show early interest. What would change your mind?",
+                )
+                units = units or [u for u in re.split(r"(?<=[.!?])\s+", result["spoken"]) if u]
+            else:
+                units = []
             view["response"] = result
             self.turns[s["id"]].append(view)
-            text = accepted + status + ": keep-alive\n\n" + frame("turn.completed", {"turn": view})
+            speech = "".join(
+                frame(
+                    "turn.speech",
+                    {"turnId": turn_id, "seq": i, "text": u, "sig": "s" * 43, "final": i == len(units) - 1},
+                )
+                for i, u in enumerate(units)
+            )
+            text = accepted + status + speech + ": keep-alive\n\n" + frame("turn.completed", {"turn": view})
         return httpx.Response(
             200, content=text.encode(), headers={"content-type": "text/event-stream; charset=utf-8"}
         )

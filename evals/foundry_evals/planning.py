@@ -21,6 +21,7 @@ GROUP_ORDER = (
     "redteam:prompt_injection",
     "redteam:policy_bypass",
     "redteam:identity",
+    "redteam:voice",
     "redteam:escalation_jailbreak",
     "redteam:exfiltration",
 )
@@ -57,6 +58,8 @@ class CaseSpec:
     escalation_scope: str = "last"
     stage: str | None = None
     domain: str | None = None
+    #: "voice": the turns are spoken during a call and its speech units are graded too.
+    channel: str = "text"
 
     @property
     def turn_count(self) -> int:
@@ -93,7 +96,8 @@ def attack_case(a: Attack) -> CaseSpec:
     return CaseSpec(
         suite="redteam",
         id=a.id,
-        group=f"redteam:{a.category}",
+        # Calls are their own group, so a capped run still places some (gates count them by category).
+        group="redteam:voice" if a.channel == "voice" else f"redteam:{a.category}",
         category=a.category,
         technique=a.technique,
         venture_key=a.venture,
@@ -114,6 +118,7 @@ def attack_case(a: Attack) -> CaseSpec:
         must_not=tuple(a.must_not),
         severity=a.severity,
         escalation_scope="any",
+        channel=a.channel,
     )
 
 

@@ -448,6 +448,56 @@ describe('rewriteIdentity — a vEIR persona never claims to be its EIR', () => 
     expect(slowest).toBeLessThan(100);
   });
 
+  it('stays linear on 20,000 characters of the question, relay and feedback rules, typed or spoken', () => {
+    // Timing ratios (not absolute times) keep this independent of the machine: eight times the text takes
+    // about eight times as long, not sixty-four. Summed over every fragment so the fixed allowance is small
+    // next to one rule turning quadratic.
+    const fragments = [
+      'Want me to tell ',
+      'Should I let ',
+      "I'll pass this on to ",
+      "I've shared your deck with ",
+      'Corin said ',
+      'Corin asked you ',
+      "Corin's feedback ",
+      'As Corin mentioned ',
+      'per Corin ',
+      'according to Corin ',
+      'now that Corin has approved your plan ',
+      'Ready to tell investors that ',
+      'Has Corin approved your plan? Yes, she has. ',
+      'Did Corin ',
+      "I'm on the line with ",
+      'I have Corin ',
+      'Even if you doubt it ',
+      "why not don't you it's great that ",
+      '? ',
+      // Hedged or answered no: every match is read in its clause and refused.
+      'if Corin has approved your plan ',
+      "I don't think Corin said your ",
+      'Did Corin approve your plan? No. ',
+    ];
+    const endings = [' Corin.', ' Yes, she has.'];
+    const time = (chars: number): number => {
+      let total = 0;
+      for (const spoken of [false, true]) {
+        for (const fragment of fragments) {
+          for (const ending of endings) {
+            const text = fragment.repeat(Math.ceil(chars / fragment.length)).slice(0, chars) + ending;
+            const started = performance.now();
+            rewriteIdentity(text, { ...CORIN, spoken });
+            total += performance.now() - started;
+          }
+        }
+      }
+      return total;
+    };
+    time(2_500);
+    const small = Math.min(time(2_500), time(2_500));
+    const large = Math.min(time(20_000), time(20_000));
+    expect(large).toBeLessThan(16 * small + 100);
+  }, 60_000);
+
   it('replaces the sentence with a disclosure that names whose approach the persona carries', () => {
     const out = rewriteIdentity('Good point. I am Corin Halvorsen. Test pricing first.', CORIN);
     expect(out.text).toBe(

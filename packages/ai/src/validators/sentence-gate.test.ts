@@ -269,16 +269,105 @@ describe('SentenceGate', () => {
     expect(units.map((u) => u.text)).toHaveLength(3);
   });
 
-  it('checks each unit as heard on a call: a lower-case name or the name alone signs off there', () => {
-    for (const answer of [
-      'Start with the door counts. corin here, by the way. Then count seats.',
-      'Good luck with the pilot. Corin.',
-    ]) {
-      expect(run(gate(), [answer]).blocked, answer).toBeNull();
-      const spoken = run(gate({ spoken: true }), [answer]);
-      expect(spoken.blocked, answer).toBe('identity');
-      expect(spoken.units.map((u) => u.spoken).join(' ')).not.toMatch(/corin/i);
+  it('checks each unit as heard on a call: a lower-case name signs off there', () => {
+    const answer = 'Start with the door counts. corin here, by the way. Then count seats.';
+    expect(run(gate(), [answer]).blocked, answer).toBeNull();
+    const spoken = run(gate({ spoken: true }), [answer]);
+    expect(spoken.blocked, answer).toBe('identity');
+    expect(spoken.units.map((u) => u.spoken).join(' ')).not.toMatch(/corin/i);
+  });
+
+  it('reads a unit after the end of the one before it: the name alone after a sentence signs off', () => {
+    // "Corin." alone is an answer ("Who should you ask? Corin."); after "Good luck with the pilot." it is a
+    // sign-off, typed or heard, as the whole-reply validator reads it.
+    for (const spoken of [false, true]) {
+      const { units, blocked } = run(gate({ spoken }), ['Good luck with the pilot. Corin.']);
+      expect(blocked, String(spoken)).toBe('identity');
+      expect(joined(units)).not.toMatch(/corin/i);
+      expect(units.map((u) => u.spoken).join(' ')).not.toMatch(/corin/i);
     }
+  });
+
+  it.each([
+    ['a self-introduction', ['This is\n\n', 'Corin. Run the pilot first.']],
+    ['a presence claim', ['Good question. Corin is\n\n', 'on the call with us. Ask her.']],
+    ['the AI on the line with the EIR', ["I'm on the line\n\n", 'with Corin right now.']],
+    ['a sign-off after a sentence', ['Good luck with the pilot. ', 'Corin.']],
+  ])('stops a blocking claim split across two units: %s', (label, chunks) => {
+    // The first unit is harmless alone and may go out; the unit that completes the claim never does.
+    const completing = (chunks[1] ?? '').split(/(?<=[.!?])\s/)[0] ?? '';
+    for (const spoken of [false, true]) {
+      const { units, blocked } = run(gate({ spoken }), chunks);
+      expect(blocked, `${label} spoken=${spoken}`).toBe('identity');
+      expect(joined(units)).not.toContain(completing.trim());
+      expect(units.map((u) => u.spoken).join(' ')).not.toContain(completing.trim().replace(/\.$/, ''));
+    }
+  });
+
+  it('stops a split claim heard on a call that only lower case makes', () => {
+    const { blocked } = run(gate({ spoken: true }), ['Run the pilot first. this is\n\n', 'corin.']);
+    expect(blocked).toBe('identity');
+    expect(run(gate(), ['Run the pilot first. this is\n\n', 'corin.']).blocked).toBeNull();
+  });
+
+  it('replaces a unit that answers yes to a question about the EIR, typed and heard', () => {
+    for (const spoken of [false, true]) {
+      const { units, blocked } = run(gate({ spoken }), [
+        'Has Corin approved your plan? ',
+        'Yes, she has. Run the pilot next week.',
+      ]);
+      expect(blocked).toBeNull();
+      const text = joined(units);
+      expect(text).not.toMatch(/yes, she has/i);
+      expect(text).toContain("I can't speak for Corin");
+      expect(text).toContain('Run the pilot next week.');
+      if (spoken) expect(units.map((u) => u.spoken).join(' ')).not.toMatch(/yes, she has/i);
+    }
+  });
+
+  it.each([
+    [
+      'a question answered no',
+      ['Has Corin reviewed your plan? ', 'Not that I know of. Ask her in office hours.'],
+    ],
+    ['a suggestion to ask the EIR', ['Should you ask Corin about pricing? ', 'Yes, at office hours.']],
+    ['an answer naming the EIR', ['Who should you ask next about pricing? ', 'Corin, at office hours.']],
+    [
+      'a doctrine reference',
+      ["Corin's approach is to test pricing first. ", 'Run five interviews this week.'],
+    ],
+  ])('releases a near miss across units unchanged: %s', (_label, chunks) => {
+    const { units, blocked } = run(gate(), chunks);
+    expect(blocked).toBeNull();
+    expect(joined(units)).toBe(chunks.join('').trim());
+  });
+
+  it.each([
+    ['emphasis inside the name', ['Another team called Bench**Tally** logged its counts. Start there.']],
+    ['a link inside the name', ['Another team called [Bench](https://x.test)Tally logged it. Start there.']],
+    ['a citation key inside the name', ['Another team called Bench [E1]Tally logged its counts. Go.']],
+    [
+      'emphasis across two units',
+      ['Good. Another team logged ZX-CAN**\n\n', '**ARY-4471 last week. Keep going.'],
+    ],
+  ])("stops another venture's name or canary split by Markdown, typed and heard: %s", (label, chunks) => {
+    for (const spoken of [false, true]) {
+      const { units, blocked } = run(gate({ spoken, evidenceKeys: new Set(['E1']) }), chunks);
+      expect(blocked, `${label} spoken=${spoken}`).toBe('cross_venture');
+      const out = units.map((u) => `${u.text} ${u.spoken}`).join(' ');
+      expect(out).not.toMatch(/tally|ary-4471/i);
+    }
+  });
+
+  it('checks what a call says for other ventures after a long reply, with a bounded tail', () => {
+    const long = 'Count the seats at night and write the number down. '.repeat(30);
+    const { units, blocked } = run(gate({ spoken: true }), [
+      long,
+      'Then Bench**Tally** ran the same pilot. Go on.',
+    ]);
+    expect(blocked).toBe('cross_venture');
+    expect(units.length).toBeGreaterThan(20);
+    expect(units.map((u) => u.spoken).join(' ')).not.toMatch(/tally/i);
   });
 
   it('reads "Thanks, Ruth." as addressing a founder called Ruth, and as an EIR signing off otherwise', () => {
@@ -311,19 +400,24 @@ describe('SentenceGate', () => {
   it('stays linear on a long stream of tiny units', () => {
     // Each unit used to re-read everything shown before it. Timing ratios (not absolute times) keep this
     // independent of the machine: eight times the text takes about eight times as long, not sixty-four.
+    // About 330 and 2,700 sentence boundaries, three streams each so that the fixed allowance is small next
+    // to a quadratic cost; CI runners are slower and share the machine, hence the timeout. Units with and
+    // without letters, so every per-unit check (identity, Markdown, other ventures) runs.
     const time = (chars: number): number => {
-      const g = gate();
-      const text = '. '.repeat(chars / 2);
+      const text = 'Ok. . '.repeat(chars / 6);
       const started = performance.now();
-      for (let i = 0; i < text.length; i += 8) g.push(text.slice(i, i + 8));
-      g.end();
+      for (let stream = 0; stream < 3; stream += 1) {
+        const g = gate();
+        for (let i = 0; i < text.length; i += 8) g.push(text.slice(i, i + 8));
+        g.end();
+      }
       return performance.now() - started;
     };
-    time(2_000);
-    const small = Math.min(time(2_000), time(2_000));
-    const large = Math.min(time(16_000), time(16_000));
+    time(1_200);
+    const small = Math.min(time(1_200), time(1_200));
+    const large = Math.min(time(9_600), time(9_600));
     expect(large).toBeLessThan(16 * small + 100);
-  });
+  }, 30_000);
 
   it('counts removals and rewrites without keeping any text', () => {
     const g = gate({ evidenceKeys: new Set(['E1']) });

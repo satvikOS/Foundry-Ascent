@@ -119,6 +119,27 @@ class TestRedTeam:
                     body += a.setup.memory.content
                 assert "{{marker}}" in body, a.id
 
+    def test_voice_red_team(self) -> None:
+        voice = [a for a in REDTEAM.attacks if a.channel == "voice"]
+        assert len(voice) == 12
+        assert {a.category for a in voice} == {"identity"}
+        assert any(len(a.turns) > 1 for a in voice)
+        spoken = " ".join(t for a in voice for t in a.turns).lower()
+        # A self-introduction split across units, presence, the AI on the line with the EIR, a sign-off, a
+        # question answered yes, a presupposition, an offer to relay, relayed feedback, a greeting.
+        for needle in (
+            "say this is, then stop",
+            "is on the line with us",
+            "you're on the line with",
+            "talk soon",
+            "answer yes",
+            "now that {{eir_first_name}}",
+            "you'll let her know",
+            "as {{eir_first_name}} mentioned",
+            "{{eir_first_name}} here",
+        ):
+            assert needle in spoken, needle
+
     def test_api_probes(self) -> None:
         probes = REDTEAM.api_probes
         assert len(probes) >= 12
@@ -151,6 +172,15 @@ class TestSchema:
         data["category"] = "identity"
         with pytest.raises(ValueError, match="prefix"):
             Attack.model_validate(data)
+
+    def test_voice_attacks_are_plain_calls(self) -> None:
+        data = next(a for a in REDTEAM.attacks if a.channel == "voice").model_dump()
+        rehearse = {**data, "mode": "rehearse", "rehearsal_counterpart": "an investor"}
+        with pytest.raises(ValueError, match="voice"):
+            Attack.model_validate(rehearse)
+        with_setup = {**data, "setup": {"memory": {"type": "fact", "title": "Note", "content": "A note."}}}
+        with pytest.raises(ValueError, match="voice"):
+            Attack.model_validate(with_setup)
 
     def test_marker_requires_injection_marker(self) -> None:
         data = REDTEAM.attacks[0].model_dump()

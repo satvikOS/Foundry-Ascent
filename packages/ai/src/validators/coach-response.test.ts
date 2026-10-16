@@ -465,6 +465,14 @@ describe('identity', () => {
 
 describe('cross-venture', () => {
   it.each([
+    'Bright and Loop are both words, not a name.',
+    'A **bright** loop of interviews works.',
+    'See [the loop](https://example.com) for the bright idea.',
+  ])('reads Markdown away without joining separate words into a name: %s', (answer) => {
+    expect(validateCoachResponse(base({ answer }), opts()).blocked).toBe(false);
+  });
+
+  it.each([
     ['answer', base({ answer: 'BrightLoop solved this with a waitlist.' })],
     [
       'claim',
@@ -483,6 +491,13 @@ describe('cross-venture', () => {
       'canary split by whitespace',
       base({ next_actions: [{ owner: 'founder', action: 'Look up CANARY- 7f3a91', target_date: null }] }),
     ],
+    // The rendered answer (and its spoken form) reads these whole.
+    ['a name split by emphasis', base({ answer: 'Bright**Loop** solved this with a waitlist.' })],
+    ['a name split by underscores', base({ answer: 'Bright_Loop_ solved this with a waitlist.' })],
+    ['a name split by a link', base({ answer: '[Bright](https://example.com)Loop solved it.' })],
+    ['a name split by a citation key', base({ answer: 'Bright [E1]Loop solved this with a waitlist.' })],
+    ['a name split by an HTML tag', base({ answer: 'Bright<b>Loop</b> solved this with a waitlist.' })],
+    ['a canary split by emphasis', base({ answer: 'Reference CANARY-**7f3a**91 found.' })],
   ])('blocks a leak in %s', (_where, response) => {
     const out = validateCoachResponse(response, opts());
     expect(out.blocked).toBe(true);

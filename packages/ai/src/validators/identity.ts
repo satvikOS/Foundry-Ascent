@@ -317,7 +317,74 @@ const RELAYED_TO_ME =
   '(?:asked|told|wanted|reminded|instructed|wrote to|messaged|emailed|called|texted|mentioned to|said to) me';
 const I_CONTACTED = `(?:I|we)(?:${APOS}ve| have| had)?\\s+(?:(?:just|already|recently|personally)\\s+)?(?:(?:spoke|spoken|talked|chatted|met|checked|conferred|consulted)\\s+(?:with|to)|asked|told|emailed|messaged|called|consulted|showed|briefed)`;
 const WITH_ME =
-  'and I\\s+(?:(?:just|already|recently)\\s+)?(?:reviewed|discussed|looked at|looked over|went over|talked|spoke|met|agreed|decided|read|worked on)';
+  'and I\\s+(?:(?:just|already|recently)\\s+)?(?:reviewed|discussed|looked at|looked over|went over|talked|spoke|met|agreed|decided|read|worked on|(?:are|were)\\s+(?:(?:both|now|still|already|all)\\s+)?(?:here|on (?:the|this) (?:call|line|phone)|in (?:this|the) (?:call|room|meeting|session)|together|talking|speaking|chatting|listening|working|meeting))';
+/** Something passed on to someone: "this", "it", "your deck", "the summary". */
+const RELAY_OBJECT =
+  '(?:this|it|that|these|them|everything|(?:your|the|our|a)\\s+[\\p{L}-]+(?:\\s+[\\p{L}-]+)?)';
+/**
+ * Passing something on to the EIR, which an AI cannot do: the verbs that end right before the name ("tell
+ * Corin", "let Corin know", "pass this on to Corin", "loop Corin in").
+ */
+const RELAY_VERBS = `(?:tell|let|remind|update|ping|message|email|e-mail|text|cc|copy|loop|brief|alert|notify|inform|(?:pass|forward|send|share|flag|mention|raise|run|bring|show)(?:\\s+${RELAY_OBJECT})?(?:\\s+(?:on|along|over|up|by))?\\s+(?:to|with|for|by))`;
+/** Reaching the EIR to ask or meet: an offer only when the AI is clearly the one acting ("Want me to ask Corin?"). */
+const REACH_VERBS =
+  '(?:ask|check with|consult|contact|call|reach out to|get in touch with|meet with|talk to|talk with|speak to|speak with|put you in touch with|connect you with|introduce you to|set up (?:a |some )?(?:call|meeting|time) with)';
+/**
+ * The AI offering to pass something on to the EIR or reach them: "Want me to tell Corin…?", "Shall I ask
+ * Corin…?", "I'll let Corin know", "Should I let Corin know…?". A founder's own question ("Should I ask Corin
+ * about pricing?") and a suggestion ("Ask Corin about pricing") name no such offer.
+ */
+const OFFER_TO_CONTACT = `(?:(?:(?:do |would )?you want me to|would you like me to|want me to|shall I|let me|I['’]ll|I will|I['’]m going to|I am going to|I can|I could|I['’]d be happy to|I['’]m happy to|I am happy to|happy to)(?:\\s+(?:go ahead and|also|just|quickly|personally|gladly|happily|now))?\\s+(?:${RELAY_VERBS}|${REACH_VERBS})|(?:should|could|can|may) I(?:\\s+(?:also|just|quickly))?\\s+${RELAY_VERBS})`;
+/** Having passed something on to the EIR (the forms `I_CONTACTED` does not cover): "I've let Corin know". */
+const I_RELAYED = `(?:I|we)(?:${APOS}ve| have| had)?\\s+(?:(?:just|already|recently|personally|also)\\s+)?(?:let|reminded|updated|pinged|texted|cc['’]?d|cc-ed|copied|looped(?:\\s+in)?|alerted|notified|informed|contacted|reached out to|got in touch with|(?:passed|forwarded|sent|shared|flagged|mentioned|raised|ran|brought)(?:\\s+${RELAY_OBJECT})?(?:\\s+(?:on|along|over|up|by))?\\s+(?:to|with|for|by))`;
+/** The AI with the EIR right now: "I'm on the line with Corin", "We're joined by Corin". */
+const I_AM_WITH = `(?:I['’]m|I am|we['’]re|we are)\\s+(?:(?:here|now|currently|still|already|also|just|both)\\s+)?(?:(?:on (?:the|this) (?:line|call|phone)|in (?:a|the|this) (?:call|meeting|room|session)|talking|speaking|chatting|meeting|sitting|working|connected|conferencing|together|here|live)\\s+with|joined by)`;
+/** The AI holding the EIR on the call: "I have Corin on the line". */
+const I_HAVE = `(?:I|we)(?:${APOS}ve)?\\s+(?:got\\s+|have\\s+)?`;
+const ON_THE_LINE =
+  '(?:on the (?:line|call|phone)|here with (?:me|us)|with (?:me|us)(?: now| here)?|listening in)';
+/**
+ * What the EIR said, thought or decided about the founder, which an AI cannot know: "Corin said your plan is
+ * strong", "Corin asked you to send the deck", "Corin agreed to review your plan". Up to three words may come
+ * between the verb and the founder ("suggested that you", "agreed to review your"). A doctrine about founders
+ * in general ("Corin often says founders should…", "Corin asked founders to bring their numbers") names no
+ * "you".
+ */
+const SAID_ABOUT_YOU = `(?:(?:has|had)\\s+)?(?:(?:already|just|also|actually|personally)\\s+)?(?:said|mentioned|noted|told|thought|felt|suggested|recommended|agreed|decided|confirmed|warned|asked|wanted|pointed out|flagged)(?:\\s+[\\p{L}'’-]+){0,3}?\\s+(?:you|your|yours|you${APOS}re|you${APOS}ve|you${APOS}ll|you${APOS}d|yes)`;
+/**
+ * "As Corin mentioned, …", "like Corin said": what the EIR told someone. Her published talks, posts and
+ * books are hers to cite ("As Corin said in her keynote, …"), and "as Corin puts it" or "as Corin says"
+ * quotes her doctrine.
+ */
+const AS_SAID = `(?:(?:has|had)\\s+)?(?:(?:already|just|also)\\s+)?(?:mentioned|said|noted|pointed out|told (?:you|me|us)|explained|suggested|recommended|flagged|warned|asked)(?!\\s+(?:in|on|at|during|from)\\s+(?:(?:her|his|their|a|an|the|one of (?:her|his|their))\\s+)?(?:[\\p{L}-]+\\s+)?(?:talks?|keynotes?|posts?|blog(?: posts?)?|books?|essays?|articles?|newsletters?|podcasts?|interviews?|lectures?|playbook|doctrine|course|videos?|threads?|papers?|writing|tweets?|panels?|webinars?|speech|speeches|columns?|letters?|summit|conference|events?|masterclass|workshops?|guide|handbook|blog)(?!\\p{L}))`;
+/** The EIR's response to the founder, as a past event: "Corin's feedback was clear", "Corin's take on your deck is…". */
+const RESPONSE_NOUN = '(?:feedback|verdict|reaction|response|reply|answer|review|assessment|take|read)';
+const OPINION_NOUN = `(?:${RESPONSE_NOUN}|advice|opinion|view|views|thoughts|input|message|note|notes|comments|recommendation|sign-off)`;
+/** "was" of a habit is doctrine ("Corin's answer was always: talk to buyers"). */
+const NOT_HABIT =
+  '(?!\\s+(?:always|usually|often|typically|generally|famously|consistently|never|the same)(?!\\p{L}))';
+const FEEDBACK = `${APOS}s\\s+(?:(?:latest|initial|final|first|quick|overall|honest)\\s+)?(?:${RESPONSE_NOUN}\\s+(?:was|were|came back)${NOT_HABIT}|${OPINION_NOUN}\\s+(?:on|about|of|for|to)\\s+(?:you|your\\s+[\\p{L}-]+(?:\\s+[\\p{L}-]+)?|this\\s+(?:plan|deck|pitch|idea))\\s+(?:is|was|were|has been|came back))`;
+/**
+ * "Per Corin, …" relays the EIR; "According to Corin, your plan is ready" only when what follows is about the
+ * founder ("According to Corin, founders should…" is doctrine).
+ */
+const ACCORDING_TAIL = `(?:[ \\t]*[,:—–])?\\s+(?:you|your|yours|you${APOS}re|you${APOS}ve|you${APOS}ll|yes)`;
+/**
+ * A yes/no question about the EIR, which an answer of yes right after turns into a claim ("Did Corin approve
+ * your plan? Yes, she did."). The inverted auxiliary comes first, then the name, then what was asked.
+ */
+const ASKED_LEAD = '(?:did|does|do|has|have|had|is|was)\\s+';
+const ASKED_ADVERB = '(?:\\s+(?:already|really|actually|personally|ever|now|still|also))?';
+/** What the founder's own work was given; "Does Corin review decks?" asks about the program, not a claim. */
+const ASKED_ENDORSED =
+  '(?:approve|approved|endorse|endorsed|back|backed|bless|blessed|vet|vetted|validate|validated|review|reviewed|see|seen|read|check|checked|look (?:at|over)|looked (?:at|over)|sign off on|signed off on|agree with|agreed with|like|liked|love|loved|enjoy|enjoyed|say|said|mention|mentioned|give|given)(?:\\s+(?:your|this|that|these|it|anything|something|the (?:plan|deck|pitch|pricing|pilot|model|numbers|idea))(?!\\p{L})|(?=\\s*\\?))';
+const ASKED_CONTACT =
+  '(?:(?:ask|asked|tell|told|want|wanted|remind|reminded) (?:me|us|you)|message|messaged|email|emailed|call|called|text|texted|contact|contacted)';
+const ASKED_PRESENT =
+  '(?:here|listening|on (?:the|this) (?:call|line|phone)|in (?:the|this) (?:call|room|meeting|session|chat)|with (?:us|you|me)|joining (?:us|you)|join(?:ed)? (?:us|you|the call|this call)|hear (?:us|me|you))';
+/** A possessive after these words is their object ("Get Corin's feedback on your deck…"), not the subject. */
+const OBJECT_LEAD =
+  /^(?:get|gets|getting|got|ask|asks|asking|asked|request|requesting|seek|seeking|want|wants|need|needs|await|awaiting|for|with|without|about|on|of|to|into|from|use|using|share|sharing|bring|take|hear|read|see|gather|collect|book|schedule|wait|incorporate|apply|applying|follow|following|compare|between)$/iu;
 /** "Your plan has Corin's approval", "Go ahead with Corin's blessing": the subject is part of the match. */
 const HAS_THE =
   '(?:(?:you|we|it|this|that|(?:your|the|this|our) [\\p{L}-]+)\\s+)?(?:has|have|had|got|gets|earned|won|with)';
@@ -367,13 +434,56 @@ interface Clause {
   prefix: string;
   /** The clause containing the match is a question. */
   question: boolean;
+  /** Index of the "?" that ends the question (-1 when not a question). */
+  questionEnd: number;
 }
 
 const QUESTION_LEAD =
   /^\s*(?:(?:and|but|so|or|then|now|well|ok|okay)\s+)?(?:has|have|had|did|does|do|is|was|were|will|would|could|can|should|may|might)\s+$/iu;
-/** A question that asserts what follows it: "Did you know Corin has approved your plan?" */
+/**
+ * A question that asserts what follows it: "Did you know Corin has approved your plan?", "Wouldn't you agree
+ * it's great that Corin approved it?", "Aren't you glad Corin reviewed it?".
+ */
 const ASSERTING_QUESTION =
-  /(?:^|\s)(?:did you (?:know|hear|see|notice|realise|realize)|didn['’]t you (?:know|hear|see)|have you (?:heard|seen|noticed)|do you (?:know|realise|realize)|can you believe|would you believe|(?:isn['’]t|is) it (?:great|nice|good|amazing|exciting|wonderful|cool|fantastic|awesome)|guess what|did i (?:mention|tell you)|you know what)(?:\s+that)?\s*$/iu;
+  /(?:^|\s)(?:did you (?:know|hear|see|notice|realise|realize|catch|read)|didn['’]t you (?:know|hear|see|notice)|have you (?:heard|seen|noticed|read)|haven['’]t you (?:heard|seen|noticed)|do you (?:know|realise|realize|remember)|don['’]t you (?:know|remember|think)|remember|can you believe|would you believe|(?:isn['’]t|is|wasn['’]t|was) it (?:so |really |pretty )?(?:great|nice|good|amazing|exciting|wonderful|cool|fantastic|awesome|lucky|helpful|reassuring|encouraging)|(?:it['’]s|it is|that['’]s|that is|it was|how) (?:so |really |pretty )?(?:great|nice|good|amazing|exciting|wonderful|cool|fantastic|awesome|lucky|helpful|reassuring|encouraging)(?: news)?|(?:aren['’]t|are|weren['’]t|were) you (?:glad|happy|pleased|relieved|excited|thrilled|proud|aware)|(?:wouldn['’]t|don['’]t|won['’]t|doesn['’]t) (?:you|everyone|anyone) agree|how (?:does|did) it feel(?: to (?:know|hear))?|guess what|did i (?:mention|tell you)|you know what)(?:\s+that)?\s*$/iu;
+/**
+ * A question that takes what follows as given: "Shall we draft the email now that Corin has approved your
+ * plan?", "Since Corin reviewed your deck, what's next?". "after", "when" and "as" presuppose only a past or
+ * finished event ("after Corin approved"), not a future one ("after Corin approves").
+ */
+const PRESUPPOSING_QUESTION =
+  /(?:^|\s)(?:now that|now|since|because|['’]?cause|given that|given|seeing that|seeing as|considering that|considering|ever since)\s*$/iu;
+const PRESUPPOSING_IF_PAST = /(?:^|\s)(?:after|when|as|like)\s*$/iu;
+/** A past or finished event in a claim ("has approved", "liked", "gave"). */
+const PAST_EVENT =
+  /(?<!\p{L})(?:has|have|had|already|gave|given|was|were|did|thought|felt|said|told|read|seen|liked|loved|enjoyed|approved|endorsed|reviewed|signed|vetted|validated|vouched|blessed|backed|green-?lit|greenlit|agreed|looked|checked|asked|wanted|reminded|instructed|wrote|messaged|emailed|called|texted|mentioned|spoke|spoken|talked|chatted|met|conferred|consulted|showed|briefed|discussed|went|decided|worked|noted|suggested|recommended|warned|joined)(?!\p{L})/iu;
+/**
+ * Telling someone a claim takes it as true: "Ready to tell investors that Corin has reviewed your plan?",
+ * "Why not tell investors Corin approved it?". Up to three words name whom ("your lead investors").
+ */
+const TELLING_QUESTION =
+  /(?:^|\s)(?:tell|telling|let(?:\s+[\p{L}'’-]+){1,3}\s+know|letting(?:\s+[\p{L}'’-]+){1,3}\s+know|announce|announcing|share|sharing|mention|mentioning|remind|reminding|inform|informing|update|updating|reassure|reassuring)(?:\s+[\p{L}'’-]+){0,3}?(?:\s+that)?\s*$/iu;
+/**
+ * An answer right after a question that says yes: "Has Corin approved your plan? Yes, she has." asserts it.
+ * "Yes or no?", "No, she hasn't" and "Not that I know of" do not.
+ */
+const AFFIRMATIVE_ANSWER =
+  /^\s*(?:["'”’)*_]+\s*)?(?:(?:yes|yeah|yep|yup|indeed|absolutely|definitely|certainly|of course)(?!\p{L})(?!\s*(?:or|and|\/)\s*no(?!\p{L}))(?!\s*\?)|(?:she|he|they|it)\s+(?:has|have|had|did|does|is|was|already)(?![\p{L}'’])(?!\s+(?:not|never)(?!\p{L})))/iu;
+/** How far after a question its answer is read. */
+const ANSWER_SCAN_CHARS = 60;
+
+/**
+ * Whether a question still makes the claim inside it: it asserts it ("Did you know…?"), takes it as given
+ * ("…now that Corin has approved it?", "Ready to tell investors that…?") or is answered yes right after.
+ */
+function questionAsserts(text: string, clause: Clause, claim: string): boolean {
+  const { prefix } = clause;
+  if (ASSERTING_QUESTION.test(prefix) || PRESUPPOSING_QUESTION.test(prefix) || TELLING_QUESTION.test(prefix))
+    return true;
+  if (PRESUPPOSING_IF_PAST.test(prefix) && PAST_EVENT.test(claim)) return true;
+  const after = clause.questionEnd + 1;
+  return AFFIRMATIVE_ANSWER.test(text.slice(after, after + ANSWER_SCAN_CHARS));
+}
 
 /**
  * How far the clause around a match is read each way. Longer runs without punctuation are not prose, and
@@ -392,8 +502,8 @@ function clauseAround(text: string, start: number, end: number): Clause {
   let e = end;
   while (e < text.length && e - end < CLAUSE_SCAN_CHARS && !isClauseBreak(text, e)) e += 1;
   const prefix = text.slice(s, start);
-  if (text.charAt(e) === '?') return { prefix, question: true };
-  if (!QUESTION_LEAD.test(prefix)) return { prefix, question: false };
+  if (text.charAt(e) === '?') return { prefix, question: true, questionEnd: e };
+  if (!QUESTION_LEAD.test(prefix)) return { prefix, question: false, questionEnd: -1 };
   let sentenceEnd = e;
   while (
     sentenceEnd < text.length &&
@@ -401,7 +511,8 @@ function clauseAround(text: string, start: number, end: number): Clause {
     !/[.!?\n]/.test(text.charAt(sentenceEnd))
   )
     sentenceEnd += 1;
-  return { prefix, question: text.charAt(sentenceEnd) === '?' };
+  const question = text.charAt(sentenceEnd) === '?';
+  return { prefix, question, questionEnd: question ? sentenceEnd : -1 };
 }
 
 /** Words before a verb-first match within which a modal governs it ("should get this approved by…"). */
@@ -414,6 +525,13 @@ const FRAME =
   /^(?:think|thinks|thought|believe|believes|believed|know|knows|knew|say|says|said|saying|claim|claims|claiming|suggest|suggests|suggesting|imply|implies|implying|assume|tell|telling|told|confirm|confirmed|recall|remember|expect|guarantee|promise|hear|heard|see|seen|saw|sure|true|sign|evidence|idea|record|indication|proof|aware|mean|pretend)$/iu;
 /** Doubts what follows on its own ("I doubt Corin…"); "no doubt" affirms it. */
 const DOUBT = /^(?:doubt|doubts|deny|denies|unlikely|unclear|unsure|uncertain|false|untrue)$/iu;
+/**
+ * A word that closes what a doubt or a verb of saying is about ("even if you doubt it", "don't believe it"):
+ * the claim after it is not their object.
+ */
+const CLOSED_OBJECT = /^(?:it|this|so)$/iu;
+/** A subject after a contracted negation: an inverted question ("Don't you think…", "Wouldn't you agree…"). */
+const INVERTED_SUBJECT = /^(?:you|we|they|it|she|he|i|everyone|anyone)$/iu;
 /** Auxiliaries and adverbs between a subject and a verb-first match ("it may have been approved by…"). */
 const AUX =
   /^(?:has|have|had|been|be|being|was|were|is|are|am|get|gets|got|gotten|getting|already|just|yet|ever|officially|also|actually|really|probably|definitely|certainly|apparently|reportedly|clearly|surely|not|never|may|might|could|would|should|can|will|must|shall)$|n['’]t$/iu;
@@ -429,20 +547,30 @@ function wordsOf(prefix: string): string[] {
  * Whether the words just before a claim govern it: a condition or negation right before it ("if Corin",
  * "once Corin", "neither Corin", "if and when Corin", "as soon as Corin"), a negated verb of saying or
  * knowing ("I don't think Corin…", "it's not true that Corin…", "don't tell investors Corin…") or a doubt
- * ("I doubt Corin…"). An idiom further back ("If you ask me Corin…", "No worries Corin…") does not.
+ * ("I doubt Corin…"). An idiom further back ("If you ask me Corin…", "No worries Corin…") does not, nor does
+ * a doubt or a verb of saying whose object is closed ("Even if you doubt it Corin…"), a suggestion ("Why not
+ * tell investors Corin…") or an inverted question ("Don't you think Corin…?").
  */
 function governs(before: readonly string[]): boolean {
   const w = /^that$/iu.test(before.at(-1) ?? '') ? before.slice(0, -1) : before;
   const at = (i: number): string => (i >= 0 ? (w[i] ?? '') : '');
   const n = w.length;
+  /** A negation of what follows: not "or not" ("believe it or not"), "why not" or "don't you…". */
+  const negates = (i: number): boolean => {
+    const word = at(i);
+    if (!NEGATION.test(word)) return false;
+    const previous = at(i - 1);
+    if (/^not$/iu.test(word) && /^or$/iu.test(previous)) return false;
+    if (/^why$/iu.test(previous)) return false;
+    return !(/n['’]t$/iu.test(word) && INVERTED_SUBJECT.test(at(i + 1)));
+  };
   const last = at(n - 1);
-  // "believe it or not", "like it or not" are idioms, not a negation of the claim.
-  const orNot = /^not$/iu.test(last) && /^or$/iu.test(at(n - 2));
-  if (CONDITION.test(last) || (NEGATION.test(last) && !orNot)) return true;
+  if (CONDITION.test(last) || negates(n - 1)) return true;
   if (/^when$/iu.test(last) && /^(?:and|or)$/iu.test(at(n - 2)) && CONDITION.test(at(n - 3))) return true;
   if (/^as$/iu.test(last) && /^(?:soon|long)$/iu.test(at(n - 2))) return true;
   for (let j = n - 1; j >= Math.max(0, n - 3); j -= 1) {
-    if (FRAME.test(at(j)) && (NEGATION.test(at(j - 1)) || NEGATION.test(at(j - 2)))) return true;
+    if (j + 1 < n && CLOSED_OBJECT.test(at(j + 1))) continue;
+    if (FRAME.test(at(j)) && (negates(j - 1) || negates(j - 2))) return true;
     // "no doubt", "without a doubt", "nobody can deny": a negation up to three words back cancels the doubt.
     if (DOUBT.test(at(j)) && ![1, 2, 3].some((k) => NEGATION.test(at(j - k)))) return true;
   }
@@ -469,12 +597,35 @@ function governsVerbFirst(before: readonly string[]): boolean {
   return false;
 }
 
-/** A claim: not a question (unless one that asserts it) and not governed by a hedge. */
+/** A claim: not a question (unless one that still makes it) and not governed by a hedge. */
 function assertive(text: string, start: number, end: number, verbFirst = false): boolean {
   const clause = clauseAround(text, start, end);
-  if (clause.question && !ASSERTING_QUESTION.test(clause.prefix)) return false;
+  if (clause.question && !questionAsserts(text, clause, text.slice(start, end))) return false;
   const before = wordsOf(clause.prefix);
   return !(verbFirst ? governsVerbFirst(before) : governs(before));
+}
+
+/**
+ * An offer to pass something on to the EIR or reach them ("Want me to tell Corin…?"): a question too, since
+ * offers are asked; only a hedge right before it ("if", "not") takes it back.
+ */
+function offered(text: string, m: RegExpExecArray): boolean {
+  return !governs(wordsOf(clauseAround(text, m.index, m.index + m[0].length).prefix));
+}
+
+/** A yes/no question about the EIR answered yes right after it ("Did Corin approve it? Yes, she did."). */
+function answeredYes(text: string, m: RegExpExecArray): boolean {
+  const clause = clauseAround(text, m.index, m.index + m[0].length);
+  if (!clause.question) return false;
+  const after = clause.questionEnd + 1;
+  return AFFIRMATIVE_ANSWER.test(text.slice(after, after + ANSWER_SCAN_CHARS));
+}
+
+/** "Corin's feedback was…" as the subject of its clause (not "Get Corin's feedback on your deck…"), asserted. */
+function feedbackClaim(text: string, m: RegExpExecArray): boolean {
+  const end = m.index + m[0].length;
+  const lead = wordsOf(clauseAround(text, m.index, end).prefix).at(-1) ?? '';
+  return !OBJECT_LEAD.test(lead) && assertive(text, m.index, end);
 }
 
 /** Greetings and interjections that may open a "<name> here" clause ("Hey Maya Corin here."). */
@@ -672,6 +823,66 @@ function namePatterns(spec: NameSpec, ctx: PatternContext): IdentityPattern[] {
         ...pn('endorsement', 'named_eir_approved', () => `${HAS_THE}\\s+${body}${APPROVAL_NOUN}`),
         accept: claim,
       },
+      {
+        ...pn('endorsement', 'named_eir_said', () => `${body}\\s+${SAID_ABOUT_YOU}`),
+        accept: (text, m) => own(m) && assertive(text, m.index, m.index + m[0].length),
+      },
+      {
+        ...pn('endorsement', 'named_eir_said', () => `(?:as|like)\\s+${body}\\s+${AS_SAID}`),
+        accept: (text, m) => own(m) && assertive(text, m.index, m.index + m[0].length),
+      },
+      {
+        ...pn('endorsement', 'named_eir_said', () => `per\\s+${body}${NOT_POSSESSIVE}`),
+        accept: (text, m) => own(m) && assertive(text, m.index, m.index + m[0].length),
+      },
+      {
+        ...pn('endorsement', 'named_eir_said', () => `according\\s+to\\s+${body}${ACCORDING_TAIL}`),
+        accept: (text, m) => own(m) && assertive(text, m.index, m.index + m[0].length),
+      },
+      {
+        ...pn('endorsement', 'named_eir_said', () => `${body}${FEEDBACK}`),
+        accept: (text, m) => own(m) && feedbackClaim(text, m),
+      },
+      {
+        ...pn('claims_eir', 'named_eir_contact', () => `${OFFER_TO_CONTACT}\\s+${body}${NOT_POSSESSIVE}`),
+        accept: (text, m) => own(m) && offered(text, m),
+      },
+      {
+        ...pn('claims_eir', 'named_eir_contact', () => `${I_RELAYED}\\s+${body}${NOT_POSSESSIVE}`),
+        accept: (text, m) => own(m) && assertive(text, m.index, m.index + m[0].length),
+      },
+      {
+        ...pn('claims_eir', 'named_eir_present', () => `${I_AM_WITH}\\s+${body}${NOT_POSSESSIVE}`),
+        accept: (text, m) => own(m) && assertive(text, m.index, m.index + m[0].length),
+      },
+      {
+        ...pn('claims_eir', 'named_eir_present', () => `${I_HAVE}${body}\\s+${ON_THE_LINE}`),
+        accept: (text, m) => own(m) && assertive(text, m.index, m.index + m[0].length),
+      },
+      {
+        ...pn(
+          'endorsement',
+          'named_eir_approved',
+          () => `${ASKED_LEAD}${body}${ASKED_ADVERB}\\s+${ASKED_ENDORSED}`,
+        ),
+        accept: (text, m) => own(m) && answeredYes(text, m),
+      },
+      {
+        ...pn(
+          'claims_eir',
+          'named_eir_contact',
+          () => `${ASKED_LEAD}${body}${ASKED_ADVERB}\\s+${ASKED_CONTACT}`,
+        ),
+        accept: (text, m) => own(m) && answeredYes(text, m),
+      },
+      {
+        ...pn(
+          'claims_eir',
+          'named_eir_present',
+          () => `(?:${ASKED_LEAD}|can\\s+)${body}${ASKED_ADVERB}\\s+${ASKED_PRESENT}`,
+        ),
+        accept: (text, m) => own(m) && answeredYes(text, m),
+      },
     );
   }
 
@@ -856,6 +1067,82 @@ function namePatterns(spec: NameSpec, ctx: PatternContext): IdentityPattern[] {
       pattern: re(() => `${S}${HAS_THE}\\s+${subject}${APPROVAL_NOUN}${E}`),
       accept: asserted,
     },
+    // What the EIR said, thought or relayed about the founder: "Corin said your plan is strong", "As Corin
+    // mentioned, …", "Per Corin, …", "Corin's feedback was…".
+    {
+      kind: 'endorsement',
+      rule: 'named_eir_said',
+      pattern: re(() => `${S}${subject}\\s+${SAID_ABOUT_YOU}${E}`),
+      accept: asserted,
+    },
+    {
+      kind: 'endorsement',
+      rule: 'named_eir_said',
+      pattern: re(() => `${S}(?:as|like)\\s+${subject}\\s+${AS_SAID}${E}`),
+      accept: asserted,
+    },
+    {
+      kind: 'endorsement',
+      rule: 'named_eir_said',
+      pattern: re(() => `${S}per\\s+${name}`),
+      accept: asserted,
+    },
+    {
+      kind: 'endorsement',
+      rule: 'named_eir_said',
+      pattern: re(() => `${S}according\\s+to\\s+${name}${ACCORDING_TAIL}${E}`),
+      accept: asserted,
+    },
+    {
+      kind: 'endorsement',
+      rule: 'named_eir_said',
+      pattern: re(() => `${S}${subject}${FEEDBACK}${E}`),
+      accept: (text, m) => namedAsSubject(m) && feedbackClaim(text, m),
+    },
+    // The AI offering to reach the EIR, having passed something on, or being with the EIR right now.
+    {
+      kind: 'claims_eir',
+      rule: 'named_eir_contact',
+      pattern: re(() => `${S}${OFFER_TO_CONTACT}\\s+${name}`),
+      accept: (text, m) => namedAsSubject(m) && offered(text, m),
+    },
+    {
+      kind: 'claims_eir',
+      rule: 'named_eir_contact',
+      pattern: re(() => `${S}${I_RELAYED}\\s+${name}`),
+      accept: asserted,
+    },
+    {
+      kind: 'claims_eir',
+      rule: 'named_eir_present',
+      pattern: re(() => `${S}${I_AM_WITH}\\s+${name}`),
+      accept: asserted,
+    },
+    {
+      kind: 'claims_eir',
+      rule: 'named_eir_present',
+      pattern: re(() => `${S}${I_HAVE}${subject}\\s+${ON_THE_LINE}${E}`),
+      accept: asserted,
+    },
+    // A yes/no question about the EIR, answered yes right after it.
+    {
+      kind: 'endorsement',
+      rule: 'named_eir_approved',
+      pattern: re(() => `${S}${ASKED_LEAD}${subject}${ASKED_ADVERB}\\s+${ASKED_ENDORSED}${E}`),
+      accept: (text, m) => namedAsSubject(m) && answeredYes(text, m),
+    },
+    {
+      kind: 'claims_eir',
+      rule: 'named_eir_contact',
+      pattern: re(() => `${S}${ASKED_LEAD}${subject}${ASKED_ADVERB}\\s+${ASKED_CONTACT}${E}`),
+      accept: (text, m) => namedAsSubject(m) && answeredYes(text, m),
+    },
+    {
+      kind: 'claims_eir',
+      rule: 'named_eir_present',
+      pattern: re(() => `${S}(?:${ASKED_LEAD}|can\\s+)${subject}${ASKED_ADVERB}\\s+${ASKED_PRESENT}${E}`),
+      accept: (text, m) => namedAsSubject(m) && answeredYes(text, m),
+    },
   );
   return out;
 }
@@ -922,6 +1209,37 @@ function resolveNames(options: IdentityCheckOptions): ResolvedNames {
   return { eirFirstName: personaEir === null ? null : firstNameOf(normalizeText(personaEir)), specs };
 }
 
+/** The sentence `rewriteIdentity` puts in place of a violation of `kind`, for these options. */
+export function identityReplacementFor(kind: IdentityViolationKind, options: IdentityCheckOptions): string {
+  return identityReplacement(kind, options.personaName, resolveNames(options).eirFirstName);
+}
+
+/**
+ * Findings of `joined` (a text ending in `tail`'s continuation) beyond those `tail` has alone: what the
+ * continuation adds or completes ("Has Corin approved your plan?" then "Yes, she has."). Compared by kind and
+ * rule; `tail` is only checked when `joined` has findings.
+ */
+export function identityFindingsAdded(
+  tail: string,
+  joined: string,
+  options: IdentityCheckOptions,
+): IdentityFinding[] {
+  const found = rewriteIdentity(joined, options).findings;
+  if (found.length === 0) return found;
+  const before = new Map<string, number>();
+  for (const f of rewriteIdentity(tail, options).findings) {
+    const key = `${f.kind}:${f.rule}`;
+    before.set(key, (before.get(key) ?? 0) + 1);
+  }
+  return found.filter((f) => {
+    const key = `${f.kind}:${f.rule}`;
+    const left = before.get(key) ?? 0;
+    if (left === 0) return true;
+    before.set(key, left - 1);
+    return false;
+  });
+}
+
 const PERSONA_REGEXES = new Map<string, RegExp>();
 
 /** Ranges of `text` where the persona's own name appears ("Corin's vEIR"), apostrophe-insensitive. */
@@ -984,15 +1302,22 @@ export function rewriteIdentity(
         .filter((n) => n !== ''),
     ),
   };
-  // Every rule of a name contains its first name under the same flags: a name the text never mentions (and
-  // that no replacement sentence will add) has no rule to run.
-  const replacementName = names.eirFirstName?.toLowerCase() ?? null;
-  const mentioned = names.specs.filter(
-    (spec) => spec.first.toLowerCase() === replacementName || namePresent(spec, text),
-  );
-  const patterns = [...BASE_PATTERNS, ...mentioned.flatMap((spec) => namePatterns(spec, ctx))].filter(
+  // Every rule of a name contains its first name under the same flags: a name the current text never
+  // mentions has no rule to run (each round asks again, since a replacement sentence names the persona's EIR).
+  const base = BASE_PATTERNS.filter(
     (pat) => options.checkHumanClaims !== false || pat.kind !== 'claims_human',
   );
+  const ruleCache = new Map<NameSpec, IdentityPattern[]>();
+  const rulesOf = (spec: NameSpec): IdentityPattern[] => {
+    let rules = ruleCache.get(spec);
+    if (rules === undefined) {
+      rules = namePatterns(spec, ctx).filter(
+        (pat) => options.checkHumanClaims !== false || pat.kind !== 'claims_human',
+      );
+      ruleCache.set(spec, rules);
+    }
+    return rules;
+  };
   const eirFirstNames = new Set(names.specs.map((s) => s.first.toLowerCase()));
   // Words of the persona name that may open "<name> here," without naming a person ("Foundry Guide
   // here,"); an EIR's first name inside the persona name ("Corin's vEIR") never counts.
@@ -1011,11 +1336,22 @@ export function rewriteIdentity(
   const maxRounds = (text.match(/[.!?\n]/g)?.length ?? 0) + 2;
   for (let round = 0; round < maxRounds; round += 1) {
     const hits: Hit[] = [];
+    const patterns = [...base];
+    for (const spec of names.specs) if (namePresent(spec, current)) patterns.push(...rulesOf(spec));
     for (const pat of patterns) {
-      pat.pattern.lastIndex = 0;
-      for (const m of current.matchAll(pat.pattern)) {
-        if (pat.accept && !pat.accept(current, m)) continue;
-        hits.push({ start: m.index, end: m.index + m[0].length, kind: pat.kind, rule: pat.rule });
+      // `exec` on the shared global regex: `matchAll` would copy the regex on every call.
+      const re = pat.pattern;
+      re.lastIndex = 0;
+      for (let m = re.exec(current); m !== null; m = re.exec(current)) {
+        if (m[0] === '') {
+          re.lastIndex += 1;
+          continue;
+        }
+        const { lastIndex } = re;
+        const accepted = !pat.accept || pat.accept(current, m);
+        re.lastIndex = lastIndex;
+        if (accepted)
+          hits.push({ start: m.index, end: m.index + m[0].length, kind: pat.kind, rule: pat.rule });
       }
     }
     if (options.checkHumanClaims !== false) {

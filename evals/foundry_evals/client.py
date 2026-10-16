@@ -46,6 +46,7 @@ from foundry_evals.models import (
     ProgramVentureRow,
     SessionDetail,
     SessionView,
+    StartCallResponse,
     TurnBlocked,
     TurnCompleted,
     TurnError,
@@ -220,6 +221,8 @@ class TurnOutcome:
     keepalives: int = 0
     duration_seconds: float = 0.0
     replayed: bool = False
+    #: Voice turns: the ``turn.speech`` units the call would say, in order (what the founder hears).
+    speech: list[str] = field(default_factory=list)
 
 
 class FoundryClient:
@@ -557,6 +560,23 @@ class FoundryClient:
     def end_session(self, session_id: str) -> None:
         self.request("POST", f"/sessions/{session_id}/end", idempotency_key=str(uuid.uuid4()))
 
+    # Calls --------------------------------------------------------------------------------------------
+
+    def start_call(self, session_id: str) -> StartCallResponse:
+        """Starts a call in the conversation with typed input (no speech-to-text grant, no audio). A live call
+        of this principal elsewhere is replaced. Never retried with a key: the server replaces the call a
+        repeated start would have begun."""
+        response = self.request(
+            "POST", f"/sessions/{session_id}/calls", json_body={"inputMode": "typed", "replace": True}
+        )
+        return self._json(response, StartCallResponse)
+
+    def end_call(self, call_id: str) -> None:
+        """Ends the call (idempotent on the server)."""
+        self.request(
+            "POST", f"/calls/{call_id}/end", json_body={"reason": "user"}, idempotency_key=str(uuid.uuid4())
+        )
+
     def run_turn(
         self,
         session_id: str,
@@ -564,8 +584,10 @@ class FoundryClient:
         *,
         mode: str | None = None,
         rehearsal_counterpart: str | None = None,
+        call_id: str | None = None,
     ) -> TurnOutcome:
-        """Sends one founder message and consumes the SSE stream to the terminal event.
+        """Sends one founder message and consumes the SSE stream to the terminal event. With ``call_id`` the
+        message is spoken during that call (``channel: voice``) and the outcome carries its speech units.
 
         Raises ApiError when the turn is refused before streaming (problem+json: rate limit, spend cap,
         kill switch, …) and ApiUnreachableError when the stream cannot be completed within the retry budget.
@@ -575,6 +597,9 @@ class FoundryClient:
             payload["mode"] = mode
         if rehearsal_counterpart is not None:
             payload["rehearsalCounterpart"] = rehearsal_counterpart
+        if call_id is not None:
+            payload["channel"] = "voice"
+            payload["callId"] = call_id
         body = encode_json(payload)
         path = f"/sessions/{session_id}/turns"
         key = str(uuid.uuid4())
@@ -658,7 +683,11 @@ class FoundryClient:
             raise _BrokenStreamError
         terminal = result.terminal
         outcome = TurnOutcome(
-            kind="error", phases=result.phases, keepalives=result.keepalives, replayed=replayed
+            kind="error",
+            phases=result.phases,
+            keepalives=result.keepalives,
+            replayed=replayed,
+            speech=[u.text for u in sorted(result.speech, key=lambda u: u.seq)],
         )
         if isinstance(terminal, TurnCompleted):
             outcome.kind = "completed"
