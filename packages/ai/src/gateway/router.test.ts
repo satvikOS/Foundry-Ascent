@@ -229,6 +229,12 @@ describe('model router — primary/fallback policy', () => {
     expect(MODEL_PURPOSES).toEqual(expect.arrayContaining(['distill', 'speech']));
   });
 
+  it('accepts the test bench purpose (an EIR studio test conversation, metered on its own)', async () => {
+    const { gw } = gateway(ok('luna', LUNA), ok('nova', NOVA));
+    const result = await gw.generateStructured({ ...request, purpose: 'test_bench' });
+    expect(result.attempts).toHaveLength(1);
+  });
+
   it('never logs prompt or founder text', async () => {
     const { gw, logger } = gateway(
       fail(new ModelUnavailableError('server_error', LUNA), [attempt('luna', LUNA, 'server_error', 0, 0)]),
