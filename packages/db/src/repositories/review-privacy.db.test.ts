@@ -1,7 +1,8 @@
 /**
  * Migration 0009 (fixes from the review of 5105c40), against real transactions: a turn never lands on a
  * deleted conversation however the two interleave, risky first messages never title a conversation, and what
- * a founder heard of a reply is erased with the conversation even when a barge-in races the erasure.
+ * a founder heard of a reply is erased with the conversation even when a barge-in races the erasure, and
+ * deleting a conversation purges the stored idempotent responses that carry what it erases.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -12,6 +13,8 @@ import { type SeedResult } from '../seed/seed.js';
 import { createTestDatabase, makeContext, type TestDatabase } from '../testing/test-database.js';
 import * as assignmentsRepo from './assignments.js';
 import * as callsRepo from './calls.js';
+import * as idempotencyRepo from './idempotency.js';
+import * as memoryRepo from './memory.js';
 import * as sessionsRepo from './sessions.js';
 import * as turnsRepo from './turns.js';
 
@@ -388,5 +391,78 @@ describe('what the founder heard, when a barge-in races the erasure', () => {
     );
     expect(sweep.turnsRedacted).toBeGreaterThanOrEqual(1);
     expect((await heard(ended.turnId)).heard_text).toBeNull();
+  });
+});
+
+describe('stored idempotent responses of what a delete erases', () => {
+  let keys = 0;
+
+  /** Stores a 2xx response for one of Maya's requests, as the API's idempotency store does. */
+  async function stored(route: string, response: unknown): Promise<idempotencyRepo.IdempotencyKey> {
+    keys += 1;
+    const key = { principalId: maya.principalId, route, key: `review-privacy-${keys}` };
+    expect(
+      await t.db.system((sx) =>
+        idempotencyRepo.saveIdempotencyRecord(sx, { ...key, requestHash: 'h', statusCode: 200, response }),
+      ),
+    ).toBe(true);
+    return key;
+  }
+
+  const replayable = async (key: idempotencyRepo.IdempotencyKey): Promise<boolean> =>
+    (await t.db.system((sx) => idempotencyRepo.getIdempotencyRecord(sx, key))) !== null;
+
+  it('purges responses holding a memory proposal drawn from the deleted conversation', async () => {
+    const sessionId = await newSession(maya, quietquad);
+    const rejected = await t.db.withContext(maya, (tx) =>
+      memoryRepo.createMemory(tx, {
+        tenantId: seed.tenantId,
+        ventureId: quietquad.id,
+        type: 'insight',
+        title: 'Exam-week demand',
+        content: 'Students said they would pay for a quiet seat during exams.',
+        origin: 'ai',
+        status: 'rejected',
+        createdBy: maya.principalId,
+        visibility: 'team',
+        sourceRefs: [{ kind: 'session', id: sessionId }],
+      }),
+    );
+    // PATCH /memory/:id (reject) answered with the proposal: its id and text, not the conversation's id.
+    const review = await stored('PATCH /memory/:id', {
+      id: rejected.id,
+      title: rejected.title,
+      content: rejected.content,
+      status: 'rejected',
+    });
+    const unrelated = await stored('PATCH /memory/:id', { id: '00000000-0000-4000-8000-000000000001' });
+    expect(await t.db.withContext(maya, (tx) => sessionsRepo.softDeleteSession(tx, sessionId))).toBe(true);
+    expect(await replayable(review)).toBe(false);
+    expect(await replayable(unrelated)).toBe(true);
+  });
+
+  it('purges the start response of a conversation whose copy of the opener is erased', async () => {
+    const source = await newSession(maya, quietquad);
+    const later = await t.db.withContext(maya, async (tx) => {
+      const resolved = must(await assignmentsRepo.resolveActiveAssignment(tx, quietquad.id));
+      return sessionsRepo.createSession(tx, {
+        tenantId: seed.tenantId,
+        ventureId: quietquad.id,
+        assignmentId: resolved.assignment.id,
+        personaReleaseId: must(resolved.release).id,
+        startedBy: maya.principalId,
+        mode: 'coach',
+        privacy: 'standard',
+        policyVersion: 'test',
+        opener: 'Last time you planned five library-staff interviews. How did they go?',
+        openerSourceSessionId: source,
+      });
+    });
+    // POST /ventures/:id/sessions answered with the new conversation and its opener.
+    const start = await stored('POST /ventures/:id/sessions', { id: later.id, opener: later.opener });
+    expect(await t.db.withContext(maya, (tx) => sessionsRepo.softDeleteSession(tx, source))).toBe(true);
+    const copy = await t.db.withContext(maya, (tx) => sessionsRepo.getSession(tx, later.id));
+    expect(copy?.opener).toBeNull();
+    expect(await replayable(start)).toBe(false);
   });
 });

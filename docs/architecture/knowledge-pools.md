@@ -175,8 +175,9 @@ generated time), with `distilled_at` and `distill_version` (the number of comple
 - `DELETE /sessions/:id` (founder/team) erases the content like an ended temporary chat: founder text and
   responses of every turn, title, goal, recap, digest, feedback comments, the AI memory proposals drawn from
   it that no person kept (pending, rejected or expired), the notebook lines, summary and opener drawn from
-  it (§4.2), and stored idempotent responses that mention it. Pending turns are failed so a late answer is
-  never stored. AI suggestions a person approved stay: they are the venture's memory now. Escalations the
+  it (§4.2), and stored idempotent responses that mention it or carry what it erases (its AI proposals,
+  later conversations' copies of its opener). Pending turns are failed so a late answer is never stored, and
+  a turn admitted while it is being deleted is refused. AI suggestions a person approved stay: they are the venture's memory now. Escalations the
   founder never shared (draft, awaiting consent, or withdrawn before sharing) are withdrawn and their packet
   erased: it held the founder's question verbatim. Escalations the founder shared stay: they went to a
   person with consent. The row stays for security records; RLS hides it from everyone.
