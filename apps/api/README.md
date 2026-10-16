@@ -200,9 +200,10 @@ runs the same check in the unit suite and also exercises unpdf + mammoth inside 
 - **SqsJobQueue** — JSON body (ids only), `jobType` attribute; FIFO fields only on `.fifo` queues (grouped
   by venture, or by persona for persona-library uploads).
 - **PollySpeechSynthesizer** — Amazon Polly `SynthesizeSpeech` (MP3, streamed) for `POST /speech`, trying
-  the engines in the order core gives; used wherever `MODEL_PROVIDER=bedrock` (needs
-  `polly:SynthesizeSpeech` on the API role). Local development has none: `/speech` answers 501
-  `speech_unavailable` and the web reads validated replies aloud with the browser's speech synthesis.
+  `SPEECH_ENGINE` first, then the voice's other engine; used where `MODEL_PROVIDER=bedrock` and
+  `SPEECH_ENABLED` is not `false` (needs `polly:SynthesizeSpeech` on the API role). Otherwise none:
+  `/speech` answers 501 `speech_unavailable` and the web reads validated replies aloud with the browser's
+  speech synthesis.
 - **DocumentTextExtractor** — PDF via unpdf `extractText` (copy of the bytes, ≤ 500 pages, `verbosity: 0`),
   DOCX via mammoth `convertToHtml` → Markdown headings (`extractRawText` as fallback;
   `externalFileAccess: false`, images skipped), UTF-8 for text/markdown; ≤ 10 MB in, ≤ 2 M characters out,
