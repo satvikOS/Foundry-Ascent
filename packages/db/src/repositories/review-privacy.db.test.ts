@@ -551,3 +551,82 @@ describe('openers of unknown origin', () => {
     ).rejects.toMatchObject({ sqlState: '23514' });
   });
 });
+
+describe('notebook lines drawn from several conversations', () => {
+  async function saveLines(lines: notebooksRepo.NotebookContent['commitments']): Promise<void> {
+    const current = await t.db.system((sx) =>
+      notebooksRepo.getNotebook(sx, { ventureId: quietquad.id, personaId: quietquad.personaId }),
+    );
+    const saved = await t.db.system((sx) =>
+      notebooksRepo.saveNotebook(sx, {
+        tenantId: seed.tenantId,
+        ventureId: quietquad.id,
+        personaId: quietquad.personaId,
+        expectedVersion: current?.version ?? 0,
+        content: { ...(current?.content ?? notebooksRepo.EMPTY_NOTEBOOK), commitments: lines },
+        suppressed: current?.suppressed ?? [],
+        editedBy: 'veir',
+      }),
+    );
+    expect(saved).not.toBeNull();
+  }
+
+  const lineIds = async (): Promise<string[]> =>
+    (
+      await t.db.system((sx) =>
+        notebooksRepo.getNotebook(sx, { ventureId: quietquad.id, personaId: quietquad.personaId }),
+      )
+    )?.content.commitments.map((c) => c.id) ?? [];
+
+  it('deleting a conversation removes a line that lists it among its earlier sources', async () => {
+    const earlier = await newSession(maya, quietquad);
+    const later = await newSession(maya, quietquad);
+    const other = await newSession(maya, quietquad);
+    const line = (id: string, sourceSessionId: string, sourceSessionIds?: string[]) => ({
+      id,
+      text: `Commitment ${id}`,
+      due: null,
+      status: 'open' as const,
+      sourceSessionId,
+      ...(sourceSessionIds ? { sourceSessionIds } : {}),
+      createdAt: '2026-10-16T10:00:00.000Z',
+    });
+    await saveLines([line('cm-reworded', later, [earlier]), line('cm-other', other)]);
+    expect(await t.db.withContext(maya, (tx) => sessionsRepo.softDeleteSession(tx, earlier))).toBe(true);
+    expect(await lineIds()).toEqual(['cm-other']);
+  });
+
+  it.each([
+    ['not an array', 'x'],
+    ['not conversation ids', ['not-a-uuid']],
+    [
+      'more than 20',
+      Array.from({ length: 21 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`),
+    ],
+  ])('the database refuses earlier sources that are %s', async (_what, sources) => {
+    const current = await t.db.system((sx) =>
+      notebooksRepo.getNotebook(sx, { ventureId: quietquad.id, personaId: quietquad.personaId }),
+    );
+    const content = {
+      ...(current?.content ?? notebooksRepo.EMPTY_NOTEBOOK),
+      lastAdvice: [
+        {
+          id: 'la-bad',
+          text: 'Advice',
+          sourceSessionId: null,
+          sourceSessionIds: sources,
+          createdAt: '2026-10-16T10:00:00.000Z',
+        },
+      ],
+    };
+    await expect(
+      t.db.system((sx) =>
+        sx.query('UPDATE veir_notebooks SET content = :content WHERE venture_id = :v AND persona_id = :p', {
+          content: p.json(content),
+          v: p.uuid(quietquad.id),
+          p: p.uuid(quietquad.personaId),
+        }),
+      ),
+    ).rejects.toMatchObject({ sqlState: '23514' });
+  });
+});

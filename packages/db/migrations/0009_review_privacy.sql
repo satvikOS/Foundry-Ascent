@@ -10,7 +10,9 @@
 --     not the turn's words change (0008's trigger clears it only when they do). It also purges the stored
 --     idempotent responses that carry what it erases without naming the conversation: the AI memory proposals
 --     drawn from it (a review or batch response holds their text) and the conversations whose copy of its
---     opener is cleared (their start response holds the opener), as app.soft_delete_memory does.
+--     opener is cleared (their start response holds the opener), as app.soft_delete_memory does. A notebook
+--     line a later conversation reworded keeps the conversations it was drawn from before (`sourceSessionIds`,
+--     validated with the rest of the notebook), and deleting any of them removes it.
 --  3. Openers of unknown origin are erased. A conversation records whether a person wrote the opener it copied
 --     (`opener_by_person`); a copy that has neither a source conversation nor that mark is of unknown origin
 --     (a legacy notebook opener), and deleting any conversation of the venture clears it, as it clears a
@@ -76,14 +78,58 @@ ALTER TABLE coaching_sessions DROP CONSTRAINT IF EXISTS coaching_sessions_opener
 ALTER TABLE coaching_sessions ADD CONSTRAINT coaching_sessions_opener_origin_check
   CHECK (NOT opener_by_person OR opener_source_session_id IS NULL) NOT VALID;
 
--- 0005's function, which erases what the vEIR drew from a conversation when it is deleted, with two changes:
+-- 0005's function with one addition: a line may list the earlier conversations it was also drawn from
+-- (`sourceSessionIds`, at most 20 conversation ids). One section of a notebook: an array (at most 40) of
+-- {id, text, sourceSessionId, sourceSessionIds?, createdAt} objects; commitments also carry {due, status}.
+-- Sources are conversation ids or null; times are ISO timestamps.
+CREATE OR REPLACE FUNCTION app.notebook_entries_valid(p_entries jsonb, p_max_text integer, p_commitments boolean)
+  RETURNS boolean
+  LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  SELECT coalesce(jsonb_typeof(p_entries) = 'array' AND jsonb_array_length(p_entries) <= 40
+     AND NOT EXISTS (
+       SELECT 1 FROM jsonb_array_elements(p_entries) AS e (item)
+       WHERE coalesce(jsonb_typeof(e.item), 'missing') <> 'object'
+          OR coalesce(jsonb_typeof(e.item -> 'id'), 'missing') <> 'string'
+          OR coalesce(length(e.item ->> 'id'), 0) NOT BETWEEN 1 AND 64
+          OR coalesce(jsonb_typeof(e.item -> 'text'), 'missing') <> 'string'
+          OR coalesce(length(e.item ->> 'text'), 0) > p_max_text
+          OR coalesce(jsonb_typeof(e.item -> 'sourceSessionId'), 'missing') NOT IN ('string', 'null')
+          OR (jsonb_typeof(e.item -> 'sourceSessionId') = 'string'
+              AND NOT app.is_contract_uuid(e.item ->> 'sourceSessionId'))
+          OR (e.item -> 'sourceSessionIds' IS NOT NULL
+              AND NOT coalesce(jsonb_typeof(e.item -> 'sourceSessionIds') = 'array'
+                               AND jsonb_array_length(e.item -> 'sourceSessionIds') <= 20
+                               AND NOT EXISTS (
+                                 SELECT 1 FROM jsonb_array_elements(e.item -> 'sourceSessionIds') AS x (v)
+                                 WHERE jsonb_typeof(x.v) <> 'string' OR NOT app.is_contract_uuid(x.v #>> '{}')),
+                               false))
+          OR coalesce(jsonb_typeof(e.item -> 'createdAt'), 'missing') <> 'string'
+          OR NOT app.is_contract_timestamp(e.item ->> 'createdAt')
+          OR (p_commitments AND (
+                coalesce(e.item ->> 'status', 'missing') NOT IN ('open', 'done', 'dropped')
+                OR coalesce(jsonb_typeof(e.item -> 'due'), 'missing') NOT IN ('string', 'null')))), false)
+$$;
+
+
+-- Whether a notebook line was drawn from a conversation: its own source, or one of the earlier ones it lists.
+CREATE OR REPLACE FUNCTION app.notebook_line_drawn_from(p_item jsonb, p_session text) RETURNS boolean
+  LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  SELECT coalesce(jsonb_typeof(p_item) = 'object'
+                  AND (p_item ->> 'sourceSessionId' = p_session
+                       OR (jsonb_typeof(p_item -> 'sourceSessionIds') = 'array'
+                           AND p_item -> 'sourceSessionIds' @> jsonb_build_array(p_session))), false)
+$$;
+REVOKE ALL ON FUNCTION app.notebook_line_drawn_from(jsonb, text) FROM PUBLIC;
+
+-- 0005's function, which erases what the vEIR drew from a conversation when it is deleted, with three changes:
 -- stored idempotent responses that carry an erased AI proposal are purged (they hold its title and content and
--- need not name the conversation), and a notebook opener of unknown origin is cleared in every notebook of the
--- venture (it may carry any of its conversations). Internal (no grant): its callers authorize. It erases:
+-- need not name the conversation), a notebook line is removed when it lists the conversation among the earlier
+-- ones it was drawn from, and a notebook opener of unknown origin is cleared in every notebook of the venture
+-- (it may carry any of its conversations). Internal (no grant): its callers authorize. It erases:
 --   - AI memory proposals drawn from it that no person kept (pending, rejected or expired);
 --   - escalations drawn from it that the founder never shared: open ones are withdrawn, and the packet (their
 --     question verbatim) is erased. A shared one went to a person with the founder's consent and stays;
---   - notebook lines sourced from it;
+--   - notebook lines drawn from it (`sourceSessionId`, or among `sourceSessionIds`);
 --   - the notebook summary and opener when they were drawn from it. A missing `summarySources` or
 --     `nextOpenerSource` key means their origin is unknown; `[]` or null means no conversation (a person wrote
 --     them). A summary of unknown origin is cleared when the conversation was distilled or a notebook line
@@ -150,16 +196,16 @@ BEGIN
            || jsonb_build_object(
                 'founderProfile', (SELECT coalesce(jsonb_agg(e.item ORDER BY e.i), '[]'::jsonb)
                                    FROM jsonb_array_elements(n.content -> 'founderProfile') WITH ORDINALITY AS e (item, i)
-                                   WHERE e.item ->> 'sourceSessionId' IS DISTINCT FROM p_session::text),
+                                   WHERE NOT app.notebook_line_drawn_from(e.item, p_session::text)),
                 'commitments', (SELECT coalesce(jsonb_agg(e.item ORDER BY e.i), '[]'::jsonb)
                                 FROM jsonb_array_elements(n.content -> 'commitments') WITH ORDINALITY AS e (item, i)
-                                WHERE e.item ->> 'sourceSessionId' IS DISTINCT FROM p_session::text),
+                                WHERE NOT app.notebook_line_drawn_from(e.item, p_session::text)),
                 'openQuestions', (SELECT coalesce(jsonb_agg(e.item ORDER BY e.i), '[]'::jsonb)
                                   FROM jsonb_array_elements(n.content -> 'openQuestions') WITH ORDINALITY AS e (item, i)
-                                  WHERE e.item ->> 'sourceSessionId' IS DISTINCT FROM p_session::text),
+                                  WHERE NOT app.notebook_line_drawn_from(e.item, p_session::text)),
                 'lastAdvice', (SELECT coalesce(jsonb_agg(e.item ORDER BY e.i), '[]'::jsonb)
                                FROM jsonb_array_elements(n.content -> 'lastAdvice') WITH ORDINALITY AS e (item, i)
-                               WHERE e.item ->> 'sourceSessionId' IS DISTINCT FROM p_session::text))
+                               WHERE NOT app.notebook_line_drawn_from(e.item, p_session::text)))
            || CASE WHEN x.clear_summary THEN '{"summary": "", "summarySources": []}'::jsonb ELSE '{}'::jsonb END
            || CASE WHEN x.clear_opener THEN '{"nextOpener": null, "nextOpenerSource": null}'::jsonb
                    ELSE '{}'::jsonb END,
@@ -179,8 +225,8 @@ BEGIN
                          EXISTS (SELECT 1 FROM jsonb_each(nb.content) AS sec (k, v)
                                  WHERE jsonb_typeof(sec.v) = 'array'
                                    AND EXISTS (SELECT 1 FROM jsonb_array_elements(sec.v) AS e (item)
-                                               WHERE jsonb_typeof(e.item) = 'object'
-                                                 AND e.item ->> 'sourceSessionId' = p_session::text)) AS cites
+                                               WHERE app.notebook_line_drawn_from(e.item, p_session::text)))
+                           AS cites
                     FROM veir_notebooks nb WHERE nb.venture_id = s.venture_id) AS c) AS x
    WHERE n.id = x.id AND (x.cites OR x.clear_summary OR x.clear_opener);
 END

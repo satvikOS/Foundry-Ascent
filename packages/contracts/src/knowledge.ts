@@ -42,11 +42,22 @@ export type ConversationDigest = z.infer<typeof ConversationDigest>;
 export const NotebookSection = z.enum(['founderProfile', 'openQuestions', 'lastAdvice']);
 export type NotebookSection = z.infer<typeof NotebookSection>;
 
+/** Most earlier conversations a notebook line records besides its own (the oldest are dropped first). */
+export const MAX_LINE_SOURCES = 20;
+
+/**
+ * Earlier conversations a notebook line was also drawn from: a line a later conversation's distillation
+ * reworded (or re-dated, or closed) carries the earlier ones' words too, so deleting any of them removes it.
+ */
+const EarlierSources = z.array(Id).max(MAX_LINE_SOURCES).optional();
+
 export const NotebookEntry = z.object({
   /** Stable key within the notebook (not a database id). */
   id: z.string().min(1).max(64),
   text: z.string().max(400),
+  /** The conversation the line's current text was drawn from; null when a person wrote it. */
   sourceSessionId: Id.nullable(),
+  sourceSessionIds: EarlierSources,
   createdAt: Timestamp,
 });
 export type NotebookEntry = z.infer<typeof NotebookEntry>;
@@ -60,7 +71,9 @@ export const NotebookCommitment = z.object({
   /** ISO date (YYYY-MM-DD) or null. */
   due: z.string().nullable(),
   status: CommitmentStatus,
+  /** The conversation the commitment as it stands was drawn from; null when a person wrote it. */
   sourceSessionId: Id.nullable(),
+  sourceSessionIds: EarlierSources,
   createdAt: Timestamp,
 });
 export type NotebookCommitment = z.infer<typeof NotebookCommitment>;

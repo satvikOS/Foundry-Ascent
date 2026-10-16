@@ -1,4 +1,9 @@
-import type { EvidenceItem, NotebookCommitment, NotebookEntry } from '@foundry/contracts';
+import {
+  MAX_LINE_SOURCES,
+  type EvidenceItem,
+  type NotebookCommitment,
+  type NotebookEntry,
+} from '@foundry/contracts';
 import { describe, expect, it } from 'vitest';
 
 import { toStrictJsonSchema, type JsonObject } from '../gateway/json-schema.js';
@@ -293,6 +298,105 @@ describe('sanitizeDistill — notebook merge', () => {
     );
     expect(out.notebookDelta.founderProfile[0]?.id).not.toBe('fp-2');
     expect(out.notebookDelta.founderProfile[0]?.sourceSessionId).toBe(SESSION);
+  });
+
+  it('keeps the conversations a line it changed was drawn from, so deleting any of them removes it', () => {
+    const A = '00000000-0000-4000-8000-0000000000a1';
+    const B = '00000000-0000-4000-8000-0000000000b2';
+    const fromA = { sourceSessionId: A };
+    const previous: PreviousNotebook = {
+      ...PREVIOUS,
+      founderProfile: [
+        { ...entry('fp-2', 'Likes numbers'), sourceSessionId: A, sourceSessionIds: [B] },
+        { ...entry('fp-3', 'Prefers mornings for calls'), ...fromA },
+        { ...entry('fp-4', 'Writes long emails'), ...fromA },
+      ],
+      commitments: [
+        { ...commitment('cm-1', 'Call the clinic lead about the pilot', '2026-10-20'), ...fromA },
+        { ...commitment('cm-2', 'Install the door counter', '2026-10-30'), ...fromA },
+        { ...commitment('cm-3', 'Write the survey', '2026-11-02'), ...fromA },
+        { ...commitment('cm-4', 'Email the dean', null), ...fromA },
+      ],
+    };
+    const out = run(
+      draft({
+        notebook: {
+          ...draft().notebook,
+          founder_profile: [
+            // Reworded under its id; reworded without it (a near-duplicate); unchanged.
+            { id: 'fp-2', text: 'Likes concrete numbers and charts' },
+            { id: null, text: 'Prefers morning calls' },
+            { id: 'fp-4', text: 'Writes long emails' },
+          ],
+          commitments: [
+            // Reworded with this conversation's details, re-dated, closed, unchanged.
+            {
+              id: 'cm-1',
+              text: 'Call Dr. Lee at Mercy General about the pilot after her leave',
+              due: '2026-11-20',
+              status: 'open',
+            },
+            { id: 'cm-2', text: 'Install the door counter', due: '2026-11-15', status: 'open' },
+            { id: 'cm-3', text: 'Write the survey', due: '2026-11-02', status: 'done' },
+            { id: 'cm-4', text: 'Email the dean', due: null, status: 'open' },
+          ],
+        },
+      }),
+      ctx({ previousNotebook: previous }),
+    );
+    const profile = out.notebookDelta.founderProfile;
+    expect(profile.find((e) => e.text === 'Likes concrete numbers and charts')).toMatchObject({
+      sourceSessionId: SESSION,
+      sourceSessionIds: [B, A],
+    });
+    expect(profile.find((e) => e.text === 'Prefers morning calls')).toMatchObject({
+      sourceSessionId: SESSION,
+      sourceSessionIds: [A],
+    });
+    expect(profile.find((e) => e.id === 'fp-4')).toEqual({
+      ...entry('fp-4', 'Writes long emails'),
+      ...fromA,
+    });
+    const byId = new Map(out.notebookDelta.commitments.map((c) => [c.id, c] as const));
+    expect(byId.get('cm-1')).toMatchObject({
+      text: 'Call Dr. Lee at Mercy General about the pilot after her leave',
+      due: '2026-11-20',
+      sourceSessionId: SESSION,
+      sourceSessionIds: [A],
+    });
+    expect(byId.get('cm-2')).toMatchObject({
+      due: '2026-11-15',
+      sourceSessionId: SESSION,
+      sourceSessionIds: [A],
+    });
+    expect(byId.get('cm-3')).toMatchObject({
+      status: 'done',
+      sourceSessionId: SESSION,
+      sourceSessionIds: [A],
+    });
+    expect(byId.get('cm-4')).toEqual({ ...commitment('cm-4', 'Email the dean', null), ...fromA });
+  });
+
+  it('records at most the latest earlier conversations of a line, never this one twice', () => {
+    const earlier = Array.from(
+      { length: MAX_LINE_SOURCES + 3 },
+      (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
+    );
+    const previous: PreviousNotebook = {
+      ...PREVIOUS,
+      founderProfile: [
+        { ...entry('fp-2', 'Likes numbers'), sourceSessionId: SESSION, sourceSessionIds: earlier },
+      ],
+    };
+    const out = run(
+      draft({
+        notebook: { ...draft().notebook, founder_profile: [{ id: 'fp-2', text: 'Likes numbers in tables' }] },
+      }),
+      ctx({ previousNotebook: previous }),
+    );
+    const [line] = out.notebookDelta.founderProfile;
+    expect(line?.sourceSessionId).toBe(SESSION);
+    expect(line?.sourceSessionIds).toEqual(earlier.slice(-MAX_LINE_SOURCES));
   });
 
   it('never writes back what the team removed or corrected (near-duplicates included)', () => {

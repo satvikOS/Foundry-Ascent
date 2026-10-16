@@ -133,20 +133,22 @@ generated time), with `distilled_at` and `distill_version` (the number of comple
   fingerprint (never its text) in `suppressed`. Distillation must skip any line whose fingerprint is
   suppressed (`isSuppressed`) and writes with the version it read (`saveNotebook` returns null on a
   conflict), so a founder's correction is never silently overwritten.
-- **Sources.** Every line records the conversation it came from. The summary records the conversations it
+- **Sources.** Every line records the conversation it came from; a line a later distillation changed (an
+  entry reworded, a commitment reworded, re-dated or closed) records that conversation and keeps the earlier
+  ones (`sourceSessionIds`, at most 20): its words may carry theirs. The summary records the conversations it
   was drawn from (`summarySources`) and the opener the one it was drawn from (`nextOpenerSource`); a missing
   key means unknown. `saveNotebook` owns these fields and ignores what callers send. For distillation it
   keeps unchanged text's sources and adds `sourceSessionId` to rewritten text, which is of unknown origin
   without it (`withDistilledSources`). Text a person writes where there was none is drawn from no
   conversation (`[]`, null); corrected text keeps where it was drawn from (`withPersonSources`). These
   fields stay in the stored document; the contract view does not show them.
-- **Deleting a conversation** removes the lines sourced from it, and clears the summary and the opener when
-  they were drawn from it. A summary of unknown origin is cleared when the deleted conversation was distilled
-  or a line cites it: a summary is never kept on the chance it did not use the conversation. An opener of
-  unknown origin is cleared whichever conversation of the venture is deleted, in every notebook of the
-  venture and in every conversation that opened with it (`coaching_sessions.opener_by_person` tells a copy a
-  person wrote from one of unknown origin): over-erasing it is harmless, the next distillation writes a new
-  one. Text a person wrote stays.
+- **Deleting a conversation** removes the lines drawn from it (as their source or an earlier one), and clears
+  the summary and the opener when they were drawn from it. A summary of unknown origin is cleared when the
+  deleted conversation was distilled or a line cites it: a summary is never kept on the chance it did not use
+  the conversation. An opener of unknown origin is cleared whichever conversation of the venture is deleted,
+  in every notebook of the venture and in every conversation that opened with it
+  (`coaching_sessions.opener_by_person` tells a copy a person wrote from one of unknown origin): over-erasing
+  it is harmless, the next distillation writes a new one. Text a person wrote stays.
 - **Integrity.** The database checks the document against the contract (conversation ids, ISO timestamps).
   Should a stored notebook still not match a later contract, reads keep the readable lines and mark the
   record not intact; the notebook API fails loudly (500, logged with ids only) and `saveNotebook` refuses to

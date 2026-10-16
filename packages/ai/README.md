@@ -269,7 +269,9 @@ stats }` or `null`:
 - `notebookDelta` is the full next notebook, merged with the previous one: the model returns the full
   proposed notebook; entries a person edited (`pinnedEntryIds`, plus `NOTEBOOK_SUMMARY_PIN` /
   `NOTEBOOK_OPENER_PIN`) are kept as the person left them; unchanged entries keep their id, creation
-  time and source conversation; new or reworded entries get ids that are stable for the conversation
+  time and source conversation; a line this conversation changed (an entry reworded, a commitment reworded,
+  re-dated or closed) is drawn from it and keeps the conversations it was drawn from before
+  (`sourceSessionIds`); new or reworded entries get ids that are stable for the conversation
   and text (a retry yields the same notebook); anything repeating a `suppressed` text (near-duplicates
   and notes contained in a longer sentence included) is dropped; duplicates merge; sections are capped
   (8 profile notes, 10 commitments, 6 open questions, 5 advice notes); a commitment closes only when the

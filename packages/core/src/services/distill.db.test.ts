@@ -1302,6 +1302,52 @@ describe('what a distillation draws from a conversation, and its deletion', () =
     expect(await openerOf(later.id)).toEqual({ opener: null, source: null });
   });
 
+  it('a commitment a later conversation rewords keeps both conversations, and goes with either', async () => {
+    const withCommitment = (line: { id: string | null; text: string; due: string | null }) => {
+      scripted = (context) => {
+        const draft = mockDistillDraft(context);
+        return {
+          ...draft,
+          notebook: { ...draft.notebook, commitments: [{ ...line, status: 'open' as const }] },
+        };
+      };
+    };
+    const commitments = async () => (await notebook())?.content.commitments ?? [];
+    const first = await conversation(maya, ['I will call the clinic lead about the pilot.']);
+    await idle(first, 15);
+    withCommitment({ id: null, text: 'Call the clinic lead about the pilot', due: null });
+    try {
+      expect((await scriptedCore.distill.distillSession(job(first))).status).toBe('distilled');
+    } finally {
+      scripted = null;
+    }
+    const line = (await commitments()).find((c) => c.text === 'Call the clinic lead about the pilot');
+    if (line === undefined) throw new Error('the commitment was not written');
+    expect(line.sourceSessionId).toBe(first);
+
+    // The next conversation rewords it with its own details.
+    const second = await conversation(maya, ['Dr. Lee at Mercy General is on leave until November.']);
+    await idle(second, 15);
+    const REWORDED = 'Call Dr. Lee at Mercy General about the pilot after her leave';
+    withCommitment({ id: line.id, text: REWORDED, due: '2026-11-20' });
+    try {
+      expect((await scriptedCore.distill.distillSession(job(second))).status).toBe('distilled');
+    } finally {
+      scripted = null;
+    }
+    expect((await commitments()).find((c) => c.id === line.id)).toMatchObject({
+      text: REWORDED,
+      sourceSessionId: second,
+      sourceSessionIds: [first],
+    });
+
+    // Deleting the later conversation takes its words out of the notebook.
+    await h.core.sessions.remove(maya, second);
+    expect((await commitments()).some((c) => c.id === line.id || c.text.includes('Mercy General'))).toBe(
+      false,
+    );
+  });
+
   it('erases copies of an opener of unknown origin when any conversation of the venture is deleted; a person’s stay', async () => {
     const writeOpener = async (nextOpener: string): Promise<void> => {
       // A legacy write: the vEIR's opener without the conversation it came from (origin unknown).
