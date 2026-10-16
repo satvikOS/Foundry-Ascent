@@ -173,8 +173,13 @@ describe('migration 0009_review_privacy', () => {
   it('is idempotent: re-running every statement, then the runner, changes nothing', async () => {
     if (!REVIEW) throw new Error('0009 missing');
     const before = await schemaFingerprint(t.db);
+    // A later migration may replace one of its functions again (0013 widens app.erase_drawn_from_session):
+    // re-running this file, then the later ones in order, must land on the same schema.
+    const later = MIGRATIONS.filter((m) => m.version > '0009');
     await t.db.system(async (sx) => {
-      for (const statement of splitStatements(REVIEW.sql)) await sx.query(statement);
+      for (const migration of [REVIEW, ...later]) {
+        for (const statement of splitStatements(migration.sql)) await sx.query(statement);
+      }
     });
     expect(await schemaFingerprint(t.db)).toBe(before);
     expect((await migrate(t.db)).applied).toEqual([]);

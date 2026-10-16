@@ -321,9 +321,10 @@ describe('starting a call', () => {
     await storeOpenerUnchecked(h, h.ventures.quietquad, text);
     const sessionId = await newSession('maya', 'quietquad');
     const started = await startCall('maya', sessionId);
-    expect(started.intro?.text).toBe(
-      "Hi Maya, this is Corin's vEIR, an AI coach. What would you like to work on?",
-    );
+    // Never the stored line: the call picks up Maya's last conversation (the test above) instead.
+    expect(started.intro?.text).toMatch(/^Hi Maya, this is Corin's vEIR, an AI coach\. /);
+    expect(started.intro?.text).toContain('“Can we test the seat map this week?”');
+    expect(started.intro?.text).not.toMatch(/Corin here|myself/);
     await endCall('maya', started.call.id);
   });
 
@@ -340,9 +341,8 @@ describe('starting a call', () => {
     try {
       const sessionId = await newSession('maya', 'quietquad');
       const started = await startCall('maya', sessionId);
-      expect(started.intro?.text).toBe(
-        "Hi Maya, this is Corin's vEIR, an AI coach. What would you like to work on?",
-      );
+      expect(started.intro?.text).toMatch(/^Hi Maya, this is Corin's vEIR, an AI coach\. /);
+      expect(started.intro?.text).not.toMatch(/Corin Halvorsen|Corin asked/);
       await endCall('maya', started.call.id);
     } finally {
       await rename("Corin's vEIR");
@@ -744,13 +744,16 @@ describe('ending a call', () => {
     expect(ended.call.durationSeconds).toBe(ended.summary.durationSeconds);
     expect(ended.summary.turnCount).toBe(2);
     expect(ended.summary.nextActions.length).toBeGreaterThan(0);
-    expect(ended.summary.memoryProposalIds.length).toBeGreaterThan(0);
-    const proposals = await h.t.db.system((sx) =>
-      sx.query(`SELECT source_refs FROM memory_objects WHERE id = ANY (:ids)`, {
-        ids: p.uuidArray(ended.summary.memoryProposalIds),
+    // What the call taught was kept automatically: nothing awaits a Keep.
+    expect(ended.summary.memoryProposalIds).toEqual([]);
+    expect(ended.summary.memoryKeptIds?.length).toBeGreaterThan(0);
+    const kept = await h.t.db.system((sx) =>
+      sx.query(`SELECT source_refs, status FROM memory_objects WHERE id = ANY (:ids)`, {
+        ids: p.uuidArray(ended.summary.memoryKeptIds ?? []),
       }),
     );
-    expect(JSON.stringify(proposals.rows)).toContain(turn.id);
+    expect(JSON.stringify(kept.rows)).toContain(turn.id);
+    expect(kept.rows.every((r) => r.status === 'confirmed')).toBe(true);
     expect(await h.t.db.system((sx) => callsRepo.getCall(sx, call.id))).toMatchObject({
       endDetail: 'client_user',
     });

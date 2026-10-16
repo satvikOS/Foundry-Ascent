@@ -32,7 +32,8 @@ import { type DirectoryCache, type OtherVentures } from '../internal/directory.j
 import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
 import { meteredStructured } from '../internal/metered.js';
 import { participantTurnView, supportMessageFor } from '../orchestrator/blocked.js';
-import { validatedOpener } from '../orchestrator/continuity.js';
+import { loadLeftOff, validatedOpener } from '../orchestrator/continuity.js';
+import { continuityOpener } from '../orchestrator/continuity-prompt.js';
 import { assertWithinSpendCaps } from '../orchestrator/guards.js';
 import { RECAP_SCHEMA_NAME, RecapDraft, buildRecapPrompt, sanitizeRecap } from '../orchestrator/recap.js';
 import { persistMemoryCandidates } from './memory.js';
@@ -54,8 +55,8 @@ export interface SessionsService {
   /**
    * Starts a session (founder/team). Resolves the active assignment and approved persona release
    * server-side, checks persona status, the kill switch, the mode and the daily spend caps. A standard
-   * conversation opens with the vEIR's line: the notebook's next opener, validated (never for temporary
-   * chats).
+   * conversation opens with the vEIR's line, validated: the notebook's next opener, or a line picking up the
+   * person's latest conversation (never for temporary chats).
    */
   create(
     ctx: RequestContext,
@@ -118,35 +119,69 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
   }
 
   /**
-   * The vEIR's opening line for a new standard conversation: the notebook's next opener, kept only when it
-   * passes the identity and cross-venture checks (a person may have edited it). Null when there is none.
+   * The vEIR's opening line for a new standard conversation (its first bubble, and what a call says after
+   * introducing itself), in this order:
+   * 1. the notebook's next opener when a person wrote it (they chose what to open with);
+   * 2. the notebook's next opener when distillation drew it from the person's latest conversation, or the
+   *    notebook was written after that conversation's last turn (nothing was said since it was written);
+   * 3. a line that picks up the person's latest conversation itself (when it was, what it was about), built
+   *    without any model call from what was said, so it is right even before distillation ran
+   *    (orchestrator/continuity-prompt.ts);
+   * 4. an older notebook opener.
+   * Every line must pass the opener checks (identity, cross-venture); one that fails is skipped. Null when
+   * there is none (a first conversation). `seed` (the new conversation's id) varies the phrasing of 3.
    */
   async function openerFor(
     scope: RequestScope,
     ventureId: string,
     active: ActiveAssignment,
     guards: { readonly others: OtherVentures; readonly eirNames: readonly string[] },
+    seed: string,
   ): Promise<{
     readonly text: string;
     readonly sourceSessionId: string | null;
     readonly byPerson: boolean;
   } | null> {
     const notebook = await notebooksRepo.getNotebook(scope.tx, { ventureId, personaId: active.persona.id });
-    const next = notebook?.content.nextOpener ?? null;
-    if (next === null) return null;
-    const text = validatedOpener(next, {
+    const openerGuards = {
       personaName: active.persona.name,
       personaEirName: await personasRepo.getPersonaEirName(scope.tx, active.persona.id),
       eirNames: guards.eirNames,
       otherVentureNames: guards.others.names,
       otherVentureCanaries: guards.others.canaries,
       otherVentureMemberNames: guards.others.memberNames,
-    });
+    };
+    const next = notebook?.content.nextOpener ?? null;
+    const stored = next === null ? null : validatedOpener(next, openerGuards);
     // The conversation it was drawn from, so deleting that conversation erases this copy too. A null source
     // means a person wrote it (the copy stays); a missing one means its origin is unknown, and deleting any
     // conversation of the venture erases the copy.
     const source = notebook?.content.nextOpenerSource;
-    return text === null ? null : { text, sourceSessionId: source ?? null, byPerson: source === null };
+    if (stored !== null && source === null) return { text: stored, sourceSessionId: null, byPerson: true };
+    const last = await loadLeftOff(scope.tx, {
+      ventureId,
+      personaId: active.persona.id,
+      sessionId: null,
+      principalId: scope.ctx.principalId,
+      privacy: 'standard',
+      ownOnly: true,
+    });
+    const latest = last?.conversations[0] ?? null;
+    const current =
+      latest === null ||
+      source === latest.sessionId ||
+      (notebook?.updatedAt != null && Date.parse(notebook.updatedAt) > Date.parse(latest.lastActivityAt));
+    if (stored !== null && current) {
+      return { text: stored, sourceSessionId: source ?? null, byPerson: false };
+    }
+    if (latest !== null) {
+      const lines = continuityOpener(latest, { now: kit.now(), seed });
+      for (const candidate of [lines.withTopic, lines.generic]) {
+        const text = candidate === null ? null : validatedOpener(candidate, openerGuards);
+        if (text !== null) return { text, sourceSessionId: latest.sessionId, byPerson: false };
+      }
+    }
+    return stored === null ? null : { text: stored, sourceSessionId: source ?? null, byPerson: false };
   }
 
   /** The session (RLS-visible) of a founder/team request, or 404/403. */
@@ -202,8 +237,10 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
         // Re-resolved in the writing transaction: a suspension in between still blocks the session.
         const active = await requireAssignmentActive(scope, ventureId);
         requireModeAllowed(active, input.mode);
-        const opener = guards === null ? null : await openerFor(scope, ventureId, active, guards);
+        const id = kit.deps.ids.uuid();
+        const opener = guards === null ? null : await openerFor(scope, ventureId, active, guards, id);
         const session = await sessionsRepo.createSession(scope.tx, {
+          id,
           tenantId: ctx.tenantId,
           ventureId,
           assignmentId: active.assignment.id,

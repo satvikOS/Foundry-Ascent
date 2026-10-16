@@ -84,7 +84,7 @@ function deps(lines: string[] = []) {
         ephemeralSessionsEnded: 1,
         ephemeralTurnsRedacted: 2,
         staleCallsEnded: 1,
-        proposalsExpired: 3,
+        endedCallsDistilled: 3,
         staleUploadsFailed: 1,
         distillation: sweep,
       }),
@@ -244,7 +244,7 @@ describe('daily maintenance message (EventBridge schedule → jobs queue)', () =
         ephemeralSessionsEnded: 0,
         ephemeralTurnsRedacted: 0,
         staleCallsEnded: 0,
-        proposalsExpired: 0,
+        endedCallsDistilled: 0,
         staleUploadsFailed: 0,
         distillation: { candidates: 50, distilled: 12, skipped: 0, dropped: 0, failed: 0, deferred: 38 },
       });

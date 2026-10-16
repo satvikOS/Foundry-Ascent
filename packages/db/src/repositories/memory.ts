@@ -12,7 +12,7 @@ import { z } from 'zod';
 
 import { col, type RawRow } from '../columns.js';
 import { SqlUsageError } from '../errors.js';
-import { type SqlExecutor, type SystemExecutor } from '../executor.js';
+import { type SqlExecutor } from '../executor.js';
 import { p, type SqlParam } from '../params.js';
 import {
   andTsQuerySql,
@@ -47,8 +47,23 @@ export const CLOSED_ITEM_STATUSES = [
   'missed',
 ] as const;
 
+/** History `reason` of an item the vEIR kept by itself (no person approved it). */
+export const KEPT_AUTOMATICALLY = 'kept_automatically';
+
+/**
+ * Whether `m` was kept automatically. Migration 0013's approval CHECK makes this exactly "`auto_kept_at` is set"
+ * for live items: an AI item can be confirmed, disputed or superseded without an approver only when it was kept
+ * automatically. Written without the column so the read works on every schema (no such row exists before 0013).
+ */
+const KEPT_AUTOMATICALLY_SQL = `(m.origin = 'ai' AND m.approved_by IS NULL AND m.status IN ('confirmed', 'disputed', 'superseded'))`;
+
 /** Contract view plus tenant and embedding presence. */
-export type MemoryRecord = MemoryObjectView & { readonly tenantId: string; readonly hasEmbedding: boolean };
+export type MemoryRecord = MemoryObjectView & {
+  readonly tenantId: string;
+  readonly hasEmbedding: boolean;
+  /** Kept by the vEIR itself (`auto_kept_at`, migration 0013): nobody had to approve it. */
+  readonly keptAutomatically: boolean;
+};
 
 const Attributes = z.record(z.string(), z.unknown());
 
@@ -64,7 +79,7 @@ function memorySelect(excerpt: boolean): string {
          m.attributes, m.status, m.visibility,
          m.confidence, m.source_refs, m.origin, m.created_by, m.approved_by, m.approved_at, m.version,
          m.supersedes_id, m.pinned, m.expires_at, m.created_at, m.updated_at,
-         m.embedding IS NOT NULL AS has_embedding,
+         m.embedding IS NOT NULL AS has_embedding, ${KEPT_AUTOMATICALLY_SQL} AS kept_automatically,
          ${principalSelect('cb', 'cb')}, ${principalSelect('ab', 'ab')}
   FROM memory_objects m
   LEFT JOIN principals cb ON cb.id = m.created_by
@@ -109,6 +124,7 @@ function decodeMemory(r: RawRow): MemoryRecord {
     expiresAt: col.ts.nullable.decode(r.expires_at, 'expires_at'),
     createdAt: col.ts.decode(r.created_at, 'created_at'),
     updatedAt: col.ts.decode(r.updated_at, 'updated_at'),
+    keptAutomatically: col.bool.decode(r.kept_automatically, 'kept_automatically'),
     hasEmbedding: col.bool.decode(r.has_embedding, 'has_embedding'),
   };
 }
@@ -237,8 +253,16 @@ export interface CreateMemoryInput {
   readonly title: string;
   readonly content: string;
   readonly attributes?: Readonly<Record<string, unknown>>;
-  /** Default `proposed`. AI-origin items must stay `proposed` until a founder approves them. */
+  /**
+   * Default `proposed`. An AI-origin item is `proposed` until a person approves it, unless it is kept
+   * automatically ({@link CreateMemoryInput.keptAutomatically}).
+   */
   readonly status?: MemoryStatusValue;
+  /**
+   * The vEIR keeps the item by itself (owner decision, migration 0013): it is stored `confirmed` with
+   * `auto_kept_at` and no approver, and its first history event is a `created` event marked `system`.
+   */
+  readonly keptAutomatically?: boolean;
   readonly visibility?: VisibilityValue;
   readonly confidence?: number;
   readonly sourceRefs?: readonly SourceRefValue[];
@@ -255,17 +279,20 @@ export interface CreateMemoryInput {
 
 /** Creates a memory item and its `proposed`/`created` event (one round trip). */
 export async function createMemory(ex: SqlExecutor, input: CreateMemoryInput): Promise<MemoryRecord> {
-  const status = input.status ?? 'proposed';
-  const approvedBy = input.approvedBy ?? (status === 'confirmed' ? input.createdBy : null);
+  const kept = input.keptAutomatically === true;
+  const status = kept ? 'confirmed' : (input.status ?? 'proposed');
+  const approvedBy = kept ? null : (input.approvedBy ?? (status === 'confirmed' ? input.createdBy : null));
+  // Only an item kept automatically names `auto_kept_at` (migration 0013), so every other write is the
+  // statement of the previous schema.
   const id = await queryOne(
     ex,
     `WITH ins AS (
        INSERT INTO memory_objects (id, tenant_id, venture_id, type, title, content, attributes, status, visibility,
                                    confidence, source_refs, origin, created_by, approved_by, approved_at, pinned,
-                                   expires_at, embedding)
+                                   expires_at, embedding${kept ? ', auto_kept_at' : ''})
        VALUES (coalesce(:id, gen_random_uuid()), :tenantId, :ventureId, :type, :title, :content, :attributes, :status,
                :visibility, :confidence, :sourceRefs, :origin, :createdBy, :approvedBy,
-               CASE WHEN :approvedBy IS NULL THEN NULL ELSE now() END, :pinned, :expiresAt, :embedding)
+               CASE WHEN :approvedBy IS NULL THEN NULL ELSE now() END, :pinned, :expiresAt, :embedding${kept ? ', now()' : ''})
        RETURNING id, venture_id, created_by)
      , ev AS (
        INSERT INTO memory_events (memory_id, venture_id, actor_id, action, diff)
@@ -290,7 +317,13 @@ export async function createMemory(ex: SqlExecutor, input: CreateMemoryInput): P
       expiresAt: p.nullable.ts(input.expiresAt),
       embedding: p.nullable.vector(input.embedding),
       action: p.text(status === 'proposed' ? 'proposed' : 'created'),
-      diff: p.json({ status, origin: input.origin, type: input.type }),
+      // Nobody acted on an item kept automatically: the event says so (`system`), as maintenance events do.
+      diff: p.json({
+        status,
+        origin: input.origin,
+        type: input.type,
+        ...(kept ? { system: true, reason: KEPT_AUTOMATICALLY } : {}),
+      }),
     },
     (r) => col.uuid.decode(r.id, 'id'),
     'createMemory',
@@ -615,9 +648,11 @@ export function nearestMemory(
 const MAX_SOURCE_REFS = 50;
 
 /**
- * Raises a pending AI proposal again instead of proposing a duplicate: adds the new source refs it does not
- * have yet, keeps the higher confidence and refreshes `updated_at` (the expiry clock), with a `proposed`
- * history event marked `repeated`. Null when the item is no longer a pending AI proposal (or not visible).
+ * Raises AI memory again instead of adding a duplicate: a pending AI proposal, or an item the vEIR kept by itself
+ * that no person approved or corrected since. Adds the new source refs it does not have yet (so its provenance
+ * names every conversation it was learned from), keeps the higher confidence and refreshes `updated_at`. A
+ * proposal gets a `proposed` history event marked `repeated`; a kept item needs none (nothing about it changed
+ * but its sources). Null when the item is neither any more (or not visible).
  */
 export async function repeatProposal(
   ex: SqlExecutor,
@@ -636,11 +671,12 @@ export async function repeatProposal(
               END,
               confidence = greatest(m.confidence, :confidence),
               updated_at = now()
-        WHERE m.id = :id AND m.origin = 'ai' AND m.status = 'proposed'
-        RETURNING m.id, m.venture_id)
+        WHERE m.id = :id AND m.origin = 'ai'
+          AND (m.status = 'proposed' OR (m.status = 'confirmed' AND m.approved_by IS NULL))
+        RETURNING m.id, m.venture_id, m.status)
      , ev AS (
        INSERT INTO memory_events (memory_id, venture_id, actor_id, action, diff)
-       SELECT id, venture_id, :actor, 'proposed', '{"repeated": true}'::jsonb FROM upd)
+       SELECT id, venture_id, :actor, 'proposed', '{"repeated": true}'::jsonb FROM upd WHERE status = 'proposed')
      SELECT id FROM upd`,
     {
       id: p.uuid(args.memoryId),
@@ -655,42 +691,9 @@ export async function repeatProposal(
 }
 
 /**
- * Daily maintenance (system): AI proposals nobody approved, rejected or raised again for `olderThanDays`
- * become `expired` (allowed by the approval CHECK since migration 0007), at most `limit` per run. Each gets an
- * `expired` history event marked `system: true` (nobody acted: the event names the person the proposal was
- * made for only because every event needs one). Returns the number expired.
+ * AI memory without an embedding (a pending proposal, or an item kept automatically): what distillation embeds
+ * before it deduplicates against it.
  */
-export function expireStaleAiProposals(
-  sx: SystemExecutor,
-  args: { olderThanDays: number; limit?: number },
-): Promise<number> {
-  return queryNumber(
-    sx,
-    `WITH due AS (
-       SELECT m.id FROM memory_objects m
-        WHERE m.origin = 'ai' AND m.status = 'proposed'
-          AND m.updated_at < now() - make_interval(days => :days)
-        ORDER BY m.updated_at, m.id
-        LIMIT :limit
-        FOR UPDATE SKIP LOCKED)
-     , upd AS (
-       UPDATE memory_objects m SET status = 'expired', pinned = false, updated_at = now()
-         FROM due WHERE m.id = due.id
-       RETURNING m.id, m.venture_id, m.created_by)
-     , ev AS (
-       INSERT INTO memory_events (memory_id, venture_id, actor_id, action, diff)
-       SELECT id, venture_id, created_by, 'expired',
-              jsonb_build_object('system', true, 'reason', 'not_reviewed', 'days', :days)
-         FROM upd)
-     SELECT count(*) AS n FROM upd`,
-    {
-      days: p.int(Math.max(1, Math.trunc(args.olderThanDays))),
-      limit: p.int(clampLimit(args.limit, 5_000, 50_000)),
-    },
-  );
-}
-
-/** A pending AI proposal without an embedding: what distillation embeds before it deduplicates against it. */
 export interface UnembeddedProposal {
   readonly id: string;
   readonly title: string;
@@ -698,9 +701,9 @@ export interface UnembeddedProposal {
 }
 
 /**
- * The venture's pending AI proposals that have no embedding yet, most recently raised first (turns propose
- * without embedding; the backfill catches up later). Distillation embeds them so its candidates can be
- * compared by meaning.
+ * The venture's AI memory that has no embedding yet (pending proposals and items kept automatically, still
+ * live), most recently raised first: turns keep what they learn without an embedding, and the backfill catches
+ * up later. Distillation embeds them so its candidates can be compared by meaning.
  */
 export function listUnembeddedAiProposals(
   ex: SqlExecutor,
@@ -709,7 +712,8 @@ export function listUnembeddedAiProposals(
   return queryRows(
     ex,
     `SELECT m.id, m.title, m.content FROM memory_objects m
-     WHERE m.venture_id = :ventureId AND m.origin = 'ai' AND m.status = 'proposed' AND m.embedding IS NULL
+     WHERE m.venture_id = :ventureId AND m.origin = 'ai' AND m.embedding IS NULL
+       AND (m.status = 'proposed' OR (m.status = 'confirmed' AND m.approved_by IS NULL))
      ORDER BY m.updated_at DESC, m.id
      LIMIT :limit`,
     { ventureId: p.uuid(args.ventureId), limit: p.int(clampLimit(args.limit, 20, 100)) },

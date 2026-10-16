@@ -112,7 +112,7 @@ export async function dispatchJob(
           ephemeralSessionsEnded: report.ephemeralSessionsEnded,
           ephemeralTurnsRedacted: report.ephemeralTurnsRedacted,
           staleCallsEnded: report.staleCallsEnded,
-          proposalsExpired: report.proposalsExpired,
+          endedCallsDistilled: report.endedCallsDistilled,
           staleUploadsFailed: report.staleUploadsFailed,
           distillCandidates: report.distillation.candidates,
           distilled: report.distillation.distilled,
@@ -152,6 +152,7 @@ export async function dispatchJob(
             sessionId: job.sessionId,
             requestId,
             ...(job.turns === undefined ? {} : { queuedTurns: job.turns }),
+            ...(job.settled === true ? { settled: true } : {}),
           },
           { deadline, attempt: ctx.attempt, maxAttempts: deps.maxReceiveCount },
         );

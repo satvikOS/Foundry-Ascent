@@ -296,6 +296,12 @@ export const MemoryObjectView = z.object({
   expiresAt: Timestamp.nullable(),
   createdAt: Timestamp,
   updatedAt: Timestamp,
+  /**
+   * The vEIR kept it by itself, learned from a conversation (origin `ai`, no approver): what a conversation
+   * teaches goes to memory without an "add to memory" step, and the founder and team edit or forget it like any
+   * item. Its source refs name the conversation (`session`) it was learned from, and `createdAt` says when.
+   */
+  keptAutomatically: z.boolean().optional(),
 });
 export type MemoryObjectView = z.infer<typeof MemoryObjectView>;
 

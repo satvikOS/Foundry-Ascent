@@ -103,15 +103,29 @@ describe('turn pipeline', () => {
       }
     }
 
-    // Memory candidates are proposed (never confirmed), AI-origin, linked to the turn.
-    const memory = (await h.core.memory.list(maya, h.ventures.quietquad.id, { status: 'proposed' })).items;
+    // What the turn taught is kept automatically (owner decision: no "add to memory" step): AI-origin, nobody
+    // approved it, and it names the conversation and the turn it was learned from.
+    const memory = (await h.core.memory.list(maya, h.ventures.quietquad.id, { status: 'confirmed' })).items;
     const fromTurn = memory.filter((m) => m.sourceRefs.some((r) => r.kind === 'turn' && r.id === turn.id));
     expect(fromTurn.length).toBeGreaterThan(0);
     for (const m of fromTurn) {
-      expect(m.status).toBe('proposed');
-      expect(m.origin).toBe('ai');
-      expect(m.approvedBy).toBeNull();
+      expect(m).toMatchObject({
+        status: 'confirmed',
+        origin: 'ai',
+        approvedBy: null,
+        keptAutomatically: true,
+      });
+      expect(m.sourceRefs[0]).toEqual({
+        kind: 'session',
+        id: session.id,
+        label: 'Learned from the conversation',
+      });
     }
+    expect(
+      (await h.core.memory.list(maya, h.ventures.quietquad.id, { status: 'proposed' })).items.filter((m) =>
+        m.sourceRefs.some((r) => r.kind === 'turn' && r.id === turn.id),
+      ),
+    ).toEqual([]);
 
     // Usage ledger: the generation and the query embedding.
     const usage = await h.t.db.system((sx) =>
@@ -519,7 +533,7 @@ describe('gates', () => {
 });
 
 describe('session end', () => {
-  it('produces a recap with proposed memory candidates', async () => {
+  it('produces a recap whose memory candidates are kept automatically', async () => {
     const session = await h.core.sessions.create(maya, h.ventures.quietquad.id, {
       goal: 'Decide on the pilot',
     });
@@ -532,8 +546,14 @@ describe('session end', () => {
     expect(recap?.generated_at).toBeTruthy();
     const ids = recap?.memory_candidate_ids ?? [];
     expect(ids.length).toBeGreaterThan(0);
-    const proposed = (await h.core.memory.list(maya, h.ventures.quietquad.id, { status: 'proposed' })).items;
-    for (const id of ids) expect(proposed.find((m) => m.id === id)?.origin).toBe('ai');
+    const kept = (await h.core.memory.list(maya, h.ventures.quietquad.id, { status: 'confirmed' })).items;
+    for (const id of ids) {
+      expect(kept.find((m) => m.id === id)).toMatchObject({
+        origin: 'ai',
+        keptAutomatically: true,
+        approvedBy: null,
+      });
+    }
     await expect(h.core.sessions.end(maya, session.id)).rejects.toMatchObject({ code: 'session_ended' });
   });
 });

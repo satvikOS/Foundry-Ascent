@@ -1,4 +1,4 @@
-import { auditRepo, callsRepo, documentsRepo, memoryRepo, sessionsRepo } from '@foundry/db';
+import { auditRepo, callsRepo, documentsRepo, sessionsRepo } from '@foundry/db';
 
 import { type Kit } from '../internal/kit.js';
 import { CALL_LIMITS } from './call-usage.js';
@@ -11,8 +11,8 @@ export interface MaintenanceReport {
   readonly ephemeralTurnsRedacted: number;
   /** Calls still live whose client stopped sending heartbeats (ended at their last heartbeat + grace). */
   readonly staleCallsEnded: number;
-  /** AI memory proposals nobody acted on for `distillation.proposalTtlDays` (30), now expired. */
-  readonly proposalsExpired: number;
+  /** Conversations of those calls distilled right after (a call that ends is distilled, however it ends). */
+  readonly endedCallsDistilled: number;
   /** Document uploads left unfinished ({@link staleUploadSeconds}), now `failed` with `upload_incomplete`. */
   readonly staleUploadsFailed: number;
   /** The distillation backstop: idle conversations that no trigger distilled yet. */
@@ -23,10 +23,11 @@ export interface MaintenanceService {
   /**
    * Daily housekeeping (the worker runs it for the scheduled `maintenance` message; the schedule already wakes
    * the database once a day): ends ephemeral sessions idle for 24 h and erases the content of every ended
-   * ephemeral session's turns, closes calls whose client went away, expires stale AI memory proposals, fails
-   * document uploads nobody finished, then runs the bounded distillation
-   * backstop while `deadline` (epoch ms) leaves time. Each step commits on its own, the privacy erasure
-   * first, so a later step failing never undoes it. One audit event per step, with counts. Idempotent.
+   * ephemeral session's turns, closes calls whose client went away and distils their conversations, fails
+   * document uploads nobody finished, then runs the bounded distillation backstop while `deadline` (epoch ms)
+   * leaves time. Each step commits on its own, the privacy erasure first, so a later step failing never undoes
+   * it. One audit event per step, with counts. Idempotent. (AI memory is kept automatically, so no proposal
+   * waits for a person and nothing expires.)
    */
   runDaily(options: { readonly requestId: string; readonly deadline?: number }): Promise<MaintenanceReport>;
 }
@@ -41,7 +42,7 @@ export function staleUploadSeconds(presignTtlSeconds: number): number {
 
 export function createMaintenanceService(
   kit: Kit,
-  distill: Pick<DistillService, 'backstop'>,
+  distill: Pick<DistillService, 'backstop' | 'distillSettled'>,
 ): MaintenanceService {
   return {
     runDaily: async ({ requestId, deadline }) => {
@@ -64,8 +65,8 @@ export function createMaintenanceService(
       });
       // Abandoned calls already count only to their last heartbeat + the stale window (as long as they were
       // usable) and never block a new call; this only closes them (the same window, so minutes do not move).
-      const staleCalls = await kit.system(async (sx) => {
-        const count = await callsRepo.reapStaleCalls(sx, {
+      const reaped = await kit.system(async (sx) => {
+        const calls = await callsRepo.reapStaleCalls(sx, {
           staleSeconds: CALL_LIMITS.staleSeconds,
           graceSeconds: CALL_LIMITS.staleSeconds,
         });
@@ -74,22 +75,17 @@ export function createMaintenanceService(
           outcome: 'succeeded',
           requestId,
           objectType: 'call',
-          metadata: { ended: count },
+          metadata: { ended: calls.length },
         });
-        return count;
+        return calls;
       });
-      const ttlDays = kit.config.distillation.proposalTtlDays;
-      const expired = await kit.system(async (sx) => {
-        const count = await memoryRepo.expireStaleAiProposals(sx, { olderThanDays: ttlDays });
-        await auditRepo.appendAudit(sx, {
-          action: 'maintenance.memory_proposals',
-          outcome: 'succeeded',
-          requestId,
-          objectType: 'memory',
-          metadata: { expired: count, ttlDays },
-        });
-        return count;
-      });
+      const staleCalls = reaped.length;
+      // A call that ends is distilled however it ends, the ones closed here too (inline: the worker never
+      // enqueues), before the backstop takes the rest.
+      const endedCalls = await distill.distillSettled(
+        reaped.map((c) => c.sessionId),
+        { requestId, ...(deadline === undefined ? {} : { deadline }) },
+      );
       const staleUploads = await kit.system(async (sx) => {
         const olderThanSeconds = staleUploadSeconds(kit.config.uploads.presignTtlSeconds);
         const count = await documentsRepo.failStaleUploads(sx, { olderThanSeconds });
@@ -111,7 +107,7 @@ export function createMaintenanceService(
         ephemeralSessionsEnded: cleanup.sessionsEnded,
         ephemeralTurnsRedacted: cleanup.turnsRedacted,
         staleCallsEnded: staleCalls,
-        proposalsExpired: expired,
+        endedCallsDistilled: endedCalls.distilled,
         staleUploadsFailed: staleUploads,
         distilled: distillation.distilled,
         distillDeferred: distillation.deferred,
@@ -120,7 +116,7 @@ export function createMaintenanceService(
         ephemeralSessionsEnded: cleanup.sessionsEnded,
         ephemeralTurnsRedacted: cleanup.turnsRedacted,
         staleCallsEnded: staleCalls,
-        proposalsExpired: expired,
+        endedCallsDistilled: endedCalls.distilled,
         staleUploadsFailed: staleUploads,
         distillation,
       };

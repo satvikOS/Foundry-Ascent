@@ -158,7 +158,10 @@ describe('memory lifecycle', () => {
       expect(pinned.every((m) => m.pinned)).toBe(true);
       const search = await memoryRepo.listMemory(tx, { ventureId, q: 'group chats workaround' });
       expect(search[0]?.title).toBe('Group chats are the current workaround');
-      expect(await memoryRepo.countPendingMemory(tx, ventureId)).toBeGreaterThanOrEqual(1);
+      // Only a person's suggestion waits for review: what the vEIR learned was kept automatically (0013).
+      expect(await memoryRepo.countPendingMemory(tx, ventureId)).toBe(
+        (await memoryRepo.listMemory(tx, { ventureId, status: 'proposed' })).length,
+      );
     });
   });
 

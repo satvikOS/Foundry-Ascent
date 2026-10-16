@@ -10,6 +10,12 @@ import {
 import { notebooksRepo, principalsRepo, sessionsRepo, type AppExecutor } from '@foundry/db';
 
 import { mentionsEir } from '../internal/eir-names.js';
+import {
+  LEFT_OFF_CONVERSATIONS,
+  LEFT_OFF_EXCHANGES,
+  type LeftOffData,
+  type LeftOffThreads,
+} from './continuity-prompt.js';
 
 /**
  * What the vEIR remembers when a turn starts (the specific pool): the founder's first name, the notebook of
@@ -139,4 +145,84 @@ export function openerProblem(text: string, guards: OpenerGuards): OpenerProblem
   }
   if (plain.length > MAX_OPENER_CHARS) return 'too_long';
   return openerChecks(plain, guards);
+}
+
+/**
+ * The data of "Where you left off" (orchestrator/continuity-prompt.ts) for a conversation of `principalId` in a
+ * venture with a persona: the person's own latest earlier conversation, and a teammate's when it is more recent,
+ * each with its digest when distilled and its last exchanges the digest does not cover yet. Two indexed
+ * statements (the conversations, then their exchanges); null for a temporary chat (it neither reads nor writes
+ * the vEIR's memory) and when there is no earlier conversation with a completed turn. Temporary and deleted
+ * conversations are never read; RLS keeps other ventures out.
+ */
+export async function loadLeftOff(
+  tx: AppExecutor,
+  args: {
+    readonly ventureId: string;
+    readonly personaId: string;
+    /** The current conversation (excluded); null when it does not exist yet (a new conversation's opener). */
+    readonly sessionId: string | null;
+    readonly principalId: string;
+    readonly privacy: 'standard' | 'ephemeral';
+    /** Only the person's own latest conversation, without exchanges (an opener needs no more). */
+    readonly ownOnly?: boolean;
+  },
+): Promise<LeftOffData | null> {
+  if (args.privacy === 'ephemeral') return null;
+  const recent = await sessionsRepo.listLeftOffConversations(tx, {
+    ventureId: args.ventureId,
+    personaId: args.personaId,
+    excludeSessionId: args.sessionId,
+    limit: 4,
+  });
+  const ownIndex = recent.findIndex((c) => c.startedBy === args.principalId);
+  const picked =
+    args.ownOnly === true
+      ? recent.slice(ownIndex, ownIndex < 0 ? 0 : ownIndex + 1)
+      : // The person's own latest, and the newest teammate conversation after it (or the newest of any).
+        (ownIndex < 0 ? recent.slice(0, 1) : [...recent.slice(0, ownIndex).slice(0, 1), recent[ownIndex]])
+          .filter((c): c is sessionsRepo.LeftOffConversation => c !== undefined)
+          .slice(0, LEFT_OFF_CONVERSATIONS);
+  if (picked.length === 0) return null;
+  const needExchanges =
+    args.ownOnly === true ? [] : picked.filter((c) => c.distillVersion < c.completedTurns);
+  const exchanges = await sessionsRepo.listLastExchanges(tx, {
+    sessionIds: needExchanges.map((c) => c.id),
+    perSession: LEFT_OFF_EXCHANGES,
+  });
+  return {
+    conversations: picked.map((c) => ({
+      sessionId: c.id,
+      withCaller: c.startedBy === args.principalId,
+      teammateFirstName:
+        c.startedBy === args.principalId || c.startedByName === null ? null : firstNameOf(c.startedByName),
+      title: c.title,
+      channel: c.hasCalls ? 'call' : 'chat',
+      lastActivityAt: c.lastActivityAt,
+      ended: c.status !== 'active',
+      digest:
+        c.digest === null
+          ? null
+          : {
+              summary: c.digest.summary,
+              topics: c.digest.topics,
+              commitments: c.digest.commitments,
+              openQuestions: c.digest.openQuestions,
+            },
+      // The completed turns the digest does not cover: the k-th from the end is turn completedTurns - k + 1.
+      exchanges: exchanges
+        .filter((x) => x.sessionId === c.id && c.completedTurns - x.fromEnd + 1 > c.distillVersion)
+        .map((x) => ({ founder: x.founderText, answer: x.answer })),
+    })),
+  };
+}
+
+/** Open threads of the notebook the turn already loaded (open commitments and open questions). */
+export function leftOffThreads(continuity: PromptContinuity): LeftOffThreads | null {
+  const nb = continuity.notebook ?? null;
+  if (nb === null) return null;
+  return {
+    commitments: nb.commitments.filter((c) => c.status === 'open').map((c) => ({ text: c.text, due: c.due })),
+    questions: nb.openQuestions.map((q) => q.text),
+  };
 }

@@ -109,10 +109,13 @@ export const CoreConfig = z.object({
        * job queued by the later turn covers it.
        */
       activeWindowSeconds: z.number().int().min(0).max(3_600),
+      /**
+       * Starting a conversation distils the person's previous one at once when its last turn is older than this
+       * (60 s), even inside the active window: they moved on, and their next call must find it distilled.
+       */
+      settleGraceSeconds: z.number().int().min(0).max(3_600),
       /** Conversations one backstop run (daily maintenance, or the sweep message) distils at most (50). */
       backstopBatch: z.number().int().min(1).max(500),
-      /** AI memory proposals nobody acted on for this many days expire (30). */
-      proposalTtlDays: z.number().int().min(1).max(365),
     })
     .refine((d) => d.activeWindowSeconds < d.turnDelaySeconds, {
       message: 'activeWindowSeconds must be shorter than turnDelaySeconds',
@@ -153,7 +156,12 @@ export const DEFAULT_CORE_CONFIG: CoreConfig = {
   uploads: { presignTtlSeconds: 5 * 60 },
   escalations: { businessTimeZone: 'America/New_York' },
   maintenance: { ephemeralIdleSeconds: 24 * 3_600 },
-  distillation: { turnDelaySeconds: 540, activeWindowSeconds: 480, backstopBatch: 50, proposalTtlDays: 30 },
+  distillation: {
+    turnDelaySeconds: 540,
+    activeWindowSeconds: 480,
+    settleGraceSeconds: 60,
+    backstopBatch: 50,
+  },
 };
 
 type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? Partial<T[K]> : T[K] };

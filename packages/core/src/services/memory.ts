@@ -74,11 +74,16 @@ export interface MemoryService {
   history(ctx: RequestContext, memoryId: string): Promise<MemoryEventViewValue[]>;
 }
 
-/** Where a memory candidate came from (stored as its first source ref). */
-export interface CandidateSource {
-  readonly kind: 'turn' | 'session';
-  readonly id: string;
-}
+/**
+ * Where a memory candidate came from: a turn (with its conversation) or a conversation. Stored as the first
+ * source refs: the conversation first, so the item names what it was learned from.
+ */
+export type CandidateSource =
+  | { readonly kind: 'turn'; readonly id: string; readonly sessionId: string }
+  | { readonly kind: 'session'; readonly id: string };
+
+/** Label of the source ref naming the conversation an AI item was learned from. */
+export const LEARNED_FROM_LABEL = 'Learned from the conversation';
 
 /** Evidence shown to the model, by key, used to turn candidate evidence ids into source refs. */
 export type EvidenceIndex = ReadonlyMap<
@@ -92,12 +97,12 @@ const DEDUPE_EXCERPT_CHARS = 1_000;
 
 /** What happened to a batch of AI memory candidates. */
 export interface ProposalResult {
-  /** New proposals plus pending proposals raised again: what the founder is asked to review. */
+  /** New items plus the AI items raised again: what the vEIR remembered from these candidates. */
   readonly records: memoryRepo.MemoryRecord[];
   readonly created: number;
-  /** Candidates that repeated a pending AI proposal, which got the new source instead of a duplicate. */
+  /** Candidates that repeated AI memory nobody approved or corrected, which got the new source instead. */
   readonly repeated: number;
-  /** Candidates that restated an item the venture already has or a person rejected. */
+  /** Candidates that restated an item a person made, approved or rejected. */
   readonly dropped: number;
 }
 
@@ -108,20 +113,31 @@ export interface CandidateConversation {
   readonly speakers: readonly string[];
 }
 
-/** Whether an item is a pending AI proposal drawn from one of `sources` (a conversation and its turns). */
-function proposedFrom(item: memoryRepo.MemoryRecord, sources: ReadonlySet<string>): boolean {
+/**
+ * AI memory nobody approved or corrected: a pending proposal, or an item the vEIR kept by itself. A candidate
+ * that restates one raises it again (new source) instead of becoming a duplicate.
+ */
+function unreviewedAi(item: memoryRepo.MemoryRecord): boolean {
   return (
     item.origin === 'ai' &&
-    item.status === 'proposed' &&
+    (item.status === 'proposed' ||
+      (item.status === 'confirmed' && item.keptAutomatically && item.approvedBy === null))
+  );
+}
+
+/** Whether an item is AI memory nobody reviewed, drawn from one of `sources` (a conversation and its turns). */
+function learnedFrom(item: memoryRepo.MemoryRecord, sources: ReadonlySet<string>): boolean {
+  return (
+    unreviewedAi(item) &&
     item.sourceRefs.some((r) => (r.kind === 'turn' || r.kind === 'session') && sources.has(r.id))
   );
 }
 
 /**
- * The existing item a candidate restates: lexically ({@link sameMemoryContent}); a pending AI proposal of the
- * same conversation the candidate adds nothing to ({@link addsNothingTo}, when `conversation` is given); or
- * else, when the candidate has an embedding, the closest embedded item at {@link MEMORY_DUPLICATE_COSINE} or
- * above. Null when it is new.
+ * The existing item a candidate restates: lexically ({@link sameMemoryContent}); AI memory of the same
+ * conversation the candidate adds nothing to ({@link addsNothingTo}, when `conversation` is given); or else,
+ * when the candidate has an embedding, the closest embedded item at {@link MEMORY_DUPLICATE_COSINE} or above.
+ * Null when it is new.
  */
 async function findDuplicate(
   tx: SqlExecutor,
@@ -139,7 +155,7 @@ async function findDuplicate(
   if (conversation !== undefined) {
     const restated = existing.find(
       (e) =>
-        proposedFrom(e, conversation.sourceIds) &&
+        learnedFrom(e, conversation.sourceIds) &&
         addsNothingTo(candidate.content, e.content, conversation.speakers),
     );
     if (restated !== undefined) return restated;
@@ -151,19 +167,22 @@ async function findDuplicate(
 }
 
 /**
- * Proposes AI memory candidates as `proposed` items (never auto-confirmed; the DB constraint backs this),
- * origin `ai`, with `visibility` until a founder approves (and optionally widens) them: `team` normally,
- * `founder_private` when they came from a turn or session that used founder_private evidence
- * (`candidateVisibility`), so they cannot restate a private item to the team. Evidence ids that are not in
- * the evidence pack are ignored.
+ * Keeps AI memory candidates (owner decision 2026-10-16: what a conversation teaches goes to memory by itself,
+ * without an "add to memory" step). Each new candidate becomes an item of origin `ai` that is kept
+ * automatically: `confirmed` with no approver and `auto_kept_at` (migration 0013), so the founder and their team
+ * see it in Knowledge at once and can correct, dispute or delete it like any item. Its source refs name the
+ * conversation it was learned from (and the turn, for a turn's candidates), so deleting that conversation
+ * erases it. `visibility` is `team` normally, `founder_private` when it came from a turn or session that used
+ * founder_private evidence (`candidateVisibility`), so it never restates a private item to the team. Evidence
+ * ids that are not in the evidence pack are ignored. Callers write nothing for a temporary chat.
  *
- * Hygiene before every insert: a candidate that restates a pending AI proposal of the same visibility raises
- * that proposal again (new source ref, fresh expiry clock) instead of adding a duplicate; one that restates
- * anything else the venture has (confirmed, disputed, a person's proposal, or something a person rejected)
- * is dropped. Comparison is lexical against the venture's recent items (`existing`, read here when not
- * given), by containment against the pending proposals of the same conversation (`conversation`), and by
- * cosine similarity when `embeddings` (one per candidate, unit-length) are given; new proposals store their
- * embedding.
+ * Hygiene before every insert: a candidate that restates AI memory nobody approved or corrected (an item kept
+ * automatically, or a pending proposal from before) of the same visibility adds its source to that item
+ * instead of a duplicate; one that restates anything else the venture has (an item a person made, approved,
+ * corrected or disputed, or something a person rejected) is dropped. Comparison is lexical against the
+ * venture's recent items (`existing`, read here when not given), by containment against the AI memory of the
+ * same conversation (`conversation`), and by cosine similarity when `embeddings` (one per candidate,
+ * unit-length) are given; new items store their embedding.
  */
 export async function proposeMemoryCandidates(
   tx: SqlExecutor,
@@ -195,12 +214,19 @@ export async function proposeMemoryCandidates(
   let created = 0;
   let repeated = 0;
   let dropped = 0;
+  const conversationRefs: SourceRef[] =
+    args.source.kind === 'turn'
+      ? [
+          { kind: 'session', id: args.source.sessionId, label: LEARNED_FROM_LABEL },
+          { kind: 'turn', id: args.source.id },
+        ]
+      : [{ kind: 'session', id: args.source.id, label: LEARNED_FROM_LABEL }];
   for (const [index, candidate] of args.candidates.entries()) {
     const title = candidate.title.trim().slice(0, 200);
     const content = candidate.content.trim().slice(0, 8000);
     if (title === '') continue;
     const keys = [...new Set(candidate.evidence_ids)].filter((k) => args.evidence.has(k));
-    const refs: SourceRef[] = [{ kind: args.source.kind, id: args.source.id, label: 'AI proposal' }];
+    const refs: SourceRef[] = [...conversationRefs];
     for (const key of keys) {
       const item = args.evidence.get(key);
       if (!item) continue;
@@ -219,19 +245,17 @@ export async function proposeMemoryCandidates(
       args.conversation,
     );
     if (duplicate !== null) {
-      const pendingAi =
-        duplicate.status === 'proposed' &&
-        duplicate.origin === 'ai' &&
+      const again =
+        unreviewedAi(duplicate) &&
         duplicate.visibility === args.visibility &&
-        !records.some((r) => r.id === duplicate.id);
-      const again = pendingAi
-        ? await memoryRepo.repeatProposal(tx, {
-            memoryId: duplicate.id,
-            actorId: args.createdBy,
-            sourceRefs: refs,
-            confidence,
-          })
-        : null;
+        !records.some((r) => r.id === duplicate.id)
+          ? await memoryRepo.repeatProposal(tx, {
+              memoryId: duplicate.id,
+              actorId: args.createdBy,
+              sourceRefs: refs,
+              confidence,
+            })
+          : null;
       if (again === null) {
         dropped += 1;
       } else {
@@ -246,7 +270,7 @@ export async function proposeMemoryCandidates(
       type: candidate.type,
       title,
       content,
-      status: 'proposed',
+      keptAutomatically: true,
       visibility: args.visibility,
       confidence,
       origin: 'ai',
@@ -263,8 +287,8 @@ export async function proposeMemoryCandidates(
 }
 
 /**
- * {@link proposeMemoryCandidates} for callers that only need the proposals to review (turns and recaps):
- * the new proposals and the pending ones raised again.
+ * {@link proposeMemoryCandidates} for callers that only need what was remembered (turns and recaps): the new
+ * items and the AI items raised again.
  */
 export async function persistMemoryCandidates(
   tx: SqlExecutor,

@@ -99,7 +99,7 @@ export function createCore(deps: CoreDeps): Core {
     distill,
     notebook: createNotebookService(kit, directory),
     veir: createVeirService(kit),
-    calls: createCallsService(kit, directory, speechKeys),
+    calls: createCallsService(kit, directory, speechKeys, distill),
     speech: createSpeechService(kit, speechKeys),
     personas: createPersonaManagementService(kit, directory),
     library: createKnowledgeLibraryService(kit),

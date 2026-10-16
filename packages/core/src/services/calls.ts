@@ -39,6 +39,7 @@ import {
 import { type RequestContext } from '../context.js';
 import { DomainError, fail, parseInput } from '../errors.js';
 import { type DirectoryCache } from '../internal/directory.js';
+import { type DistillService } from './distill.js';
 import { mentionsEir, personaNameClaimsEir, veirEirName } from '../internal/eir-names.js';
 import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
 import { secondsUntilUtcMidnight } from '../orchestrator/sampling.js';
@@ -198,6 +199,7 @@ async function summarize(ex: SqlExecutor, call: callsRepo.CallRecord): Promise<C
     turnCount: turns.length,
     durationSeconds: call.elapsedSeconds,
     memoryProposalIds: followUps.memoryProposalIds,
+    memoryKeptIds: followUps.memoryKeptIds,
     nextActions: distinctActions(turns.flatMap((t) => t.nextActions)),
     escalationIds: followUps.escalationIds,
   };
@@ -267,8 +269,18 @@ export function createCallsService(
   kit: Kit,
   directory: DirectoryCache,
   keys: PlatformKeyCache,
+  distill: Pick<DistillService, 'afterCallEnd'>,
 ): CallsService {
   const { logger } = kit.deps;
+
+  /**
+   * A call that ends settles what was said in it: once the change commits, its conversation is distilled now,
+   * however the call ended (hang-up, a server stop, replacement), as ending a chat does. The trigger never
+   * fails the request.
+   */
+  function settleAfterCommit(scope: RequestScope, sessionId: string): void {
+    scope.afterCommit(() => distill.afterCallEnd(scope.ctx, sessionId));
+  }
 
   /** The caller's own call; anyone else's (or none) is reported as not found. */
   async function ownCall(scope: RequestScope, callId: string): Promise<callsRepo.CallRecord> {
@@ -324,12 +336,16 @@ export function createCallsService(
     };
   }
 
-  /** Ends a live call for `cause` (audited with the change); returns the call as it now stands. */
+  /**
+   * Ends a live call for `cause` (audited with the change) and settles its conversation, unless `settle` is
+   * false (a new call is starting in that same conversation: it is not over); returns the call as it now stands.
+   */
   async function stop(
     scope: RequestScope,
     call: callsRepo.CallRecord,
     cause: CallStopCause | 'replaced',
     clientStats?: callsRepo.CallClientStats,
+    settle = true,
   ): Promise<callsRepo.CallRecord> {
     const ended = await callsRepo.endCall(scope.tx, {
       callId: call.id,
@@ -339,6 +355,7 @@ export function createCallsService(
       ...(clientStats === undefined ? {} : { clientStats }),
     });
     if (ended === null) return (await callsRepo.getCall(scope.tx, call.id)) ?? call;
+    if (settle) settleAfterCommit(scope, call.sessionId);
     await audit(scope, {
       action: cause === 'replaced' ? 'call.ended' : 'call.terminated',
       outcome: cause === 'replaced' ? 'succeeded' : 'blocked',
@@ -552,9 +569,12 @@ export function createCallsService(
         const previous = await callsRepo.getLiveCallOf(tx, ctx.principalId);
         let replaced: string | null = null;
         if (previous !== null) {
-          if (previous.idleSeconds > CALL_LIMITS.staleSeconds) await stop(scope, previous, 'stale_heartbeat');
-          else if (previous.sessionId === sessionId || input.replace === true) {
-            await stop(scope, previous, 'replaced');
+          // A call replaced in its own conversation (a reload, a second tab) leaves that conversation going.
+          const elsewhere = previous.sessionId !== sessionId;
+          if (previous.idleSeconds > CALL_LIMITS.staleSeconds) {
+            await stop(scope, previous, 'stale_heartbeat', undefined, elsewhere);
+          } else if (!elsewhere || input.replace === true) {
+            await stop(scope, previous, 'replaced', undefined, elsewhere);
             replaced = previous.id;
           } else {
             throw refuse(
@@ -738,6 +758,7 @@ export function createCallsService(
               ...(input.clientStats === undefined ? {} : { clientStats: input.clientStats }),
             });
             if (ended !== null) {
+              settleAfterCommit(scope, call.sessionId);
               await audit(scope, {
                 action: 'call.ended',
                 outcome: 'succeeded',

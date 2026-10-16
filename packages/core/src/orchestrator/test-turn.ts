@@ -374,6 +374,7 @@ export function createTestBench(kit: Kit, directory: DirectoryCache): TestBench 
           rehearsalCounterpart: input.rehearsalCounterpart ?? null,
           channel: 'text',
           continuity: { founderFirstName: null },
+          leftOff: '',
           evidence: pack.items,
           history,
           opener: null,

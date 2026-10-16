@@ -52,7 +52,14 @@ describe('escalation consent gate', () => {
     });
 
     // Only confirmed memory of this venture can be shared.
-    const proposed = (await h.core.memory.list(maya, ventureId, { status: 'proposed' })).items[0];
+    // A suggestion still awaiting the founder (the EIR's: what the vEIR learns is kept automatically).
+    const proposed = await h.core.memory.create(corin, ventureId, {
+      type: 'insight',
+      title: 'Pilot evidence',
+      content: 'Suggested by the EIR, not accepted yet.',
+      visibility: 'venture',
+    });
+    expect(proposed.status).toBe('proposed');
     const confirmed = (await h.core.memory.list(maya, ventureId, { status: 'confirmed' })).items.find(
       (m) => m.visibility === 'venture',
     );
@@ -61,7 +68,7 @@ describe('escalation consent gate', () => {
         status: 'confirmed',
       })
     ).items[0];
-    if (!proposed || !confirmed || !otherVenture) throw new Error('seed memory missing');
+    if (!confirmed || !otherVenture) throw new Error('seed memory missing');
     for (const bad of [proposed.id, otherVenture.id]) {
       await expect(
         h.core.escalations.act(maya, created.id, { action: 'approve_sharing', sharedMemoryIds: [bad] }),

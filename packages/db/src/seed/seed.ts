@@ -647,6 +647,7 @@ async function seedVenture(
      FROM ins`,
     { rows: p.json(memoryRows) },
   );
+  await keepLearnedMemory(sx);
 
   if (v.escalation) {
     const e = v.escalation;
@@ -791,4 +792,29 @@ export function seedConfigFromEnv(env: EnvLike = process.env): SeedConfig {
           }
         : null,
   };
+}
+
+/**
+ * What the vEIR learned (origin `ai`) is kept automatically (migration 0013): the seed's AI proposals are kept the
+ * way that migration keeps the proposals it finds, with a system event. On an older schema (a migration test that
+ * seeds before 0013) they stay proposals, which 0013 then keeps itself.
+ */
+async function keepLearnedMemory(sx: SystemExecutor): Promise<void> {
+  await sx.query(`DO $seed$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+              WHERE table_schema = 'public' AND table_name = 'memory_objects' AND column_name = 'auto_kept_at') THEN
+    EXECUTE $kept$
+      WITH kept AS (
+        UPDATE memory_objects m SET status = 'confirmed', auto_kept_at = now(), updated_at = now()
+         WHERE m.origin = 'ai' AND m.status = 'proposed'
+        RETURNING m.id, m.venture_id, m.created_by)
+      INSERT INTO memory_events (memory_id, venture_id, actor_id, action, diff)
+      SELECT kept.id, kept.venture_id, kept.created_by, 'approved',
+             '{"to": "confirmed", "system": true, "reason": "kept_automatically"}'::jsonb
+        FROM kept
+    $kept$;
+  END IF;
+END
+$seed$`);
 }

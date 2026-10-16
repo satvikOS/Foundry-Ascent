@@ -54,7 +54,8 @@ import { persistMemoryCandidates } from '../services/memory.js';
 import { historyAsHeard } from '../services/spoken-text.js';
 import { answerTurn, generationError } from './answer.js';
 import { blockedDetailOf, participantRiskLabel, participantTurnView, supportMessageFor } from './blocked.js';
-import { loadContinuity, type LoadedContinuity } from './continuity.js';
+import { leftOffThreads, loadContinuity, loadLeftOff, type LoadedContinuity } from './continuity.js';
+import { renderLeftOffSection, type LeftOffData } from './continuity-prompt.js';
 import { candidateVisibility } from './evidence.js';
 import { generationTotals, SpeechStream } from './generate.js';
 import { assertWithinSpendCaps } from './guards.js';
@@ -218,6 +219,36 @@ export function createOrchestrator(
         });
       }
     };
+  }
+
+  /**
+   * "Where you left off" for a turn (orchestrator/continuity.ts): null for a temporary chat, and when it cannot
+   * be read (logged without content; the turn goes on without it).
+   */
+  async function loadLeftOffFor(
+    ctx: RequestContext,
+    pre: Proceed,
+    personaId: string,
+  ): Promise<LeftOffData | null> {
+    if (pre.session.privacy !== 'standard') return null;
+    try {
+      return await kit.inRequest(ctx, ({ tx }) =>
+        loadLeftOff(tx, {
+          ventureId: pre.session.ventureId,
+          personaId,
+          sessionId: pre.session.id,
+          principalId: ctx.principalId,
+          privacy: pre.session.privacy,
+        }),
+      );
+    } catch (err) {
+      logger.warn('turn.left_off_unavailable', {
+        requestId: ctx.requestId,
+        sessionId: pre.session.id,
+        error: err instanceof Error ? err.name : 'unknown',
+      });
+      return null;
+    }
   }
 
   /**
@@ -664,8 +695,11 @@ export function createOrchestrator(
     if (active === null || coach === null)
       throw new DomainError('assignment_inactive', 'No active coach', { reason: 'no_assignment' });
 
-    // Step 3: authorized, scoped retrieval.
+    // Step 3: authorized, scoped retrieval. "Where you left off" (the latest earlier conversations, read as they
+    // were said when not distilled yet) loads alongside, in its own transaction: it never waits for the
+    // distillation worker, and the turn never waits for it longer than for retrieval.
     await emit({ event: 'turn.status', phase: 'retrieving', detail: null, evidenceCount: null });
+    const leftOff = loadLeftOffFor(ctx, pre, active.persona.id);
     const embedding = await (a.embedding ??
       embedRetrievalQuery(kit, ctx, { purpose: 'turn', ventureId }, a.query, signal));
     const pack = await kit.inRequest(ctx, async (scope) => {
@@ -708,6 +742,11 @@ export function createOrchestrator(
       detail: `memory:${pack.counts.memory},documents:${pack.counts.chunks},library:${pack.counts.shared + pack.counts.resources + pack.counts.patterns}`,
       evidenceCount: pack.items.length,
     });
+    const leftOffData = await leftOff;
+    const leftOffSection = renderLeftOffSection(leftOffData, {
+      now: kit.now(),
+      threads: leftOffThreads(coach.memory.continuity),
+    });
 
     // Steps 4–6: assemble the prompt, generate, validate (shared with the EIR studio's test bench).
     const answered = await answerTurn({
@@ -735,6 +774,7 @@ export function createOrchestrator(
       rehearsalCounterpart: input.rehearsalCounterpart ?? null,
       channel: pre.channel,
       continuity: coach.memory.continuity,
+      leftOff: leftOffSection,
       evidence: pack.items,
       history: coach.heardHistory,
       opener: coach.opener,
@@ -826,7 +866,7 @@ export function createOrchestrator(
               createdBy: ctx.principalId,
               candidates: checked.response.memory_candidates,
               evidence: evidenceIndex,
-              source: { kind: 'turn', id: turn.id },
+              source: { kind: 'turn', id: turn.id, sessionId: pre.session.id },
               visibility: candidateVisibility(pack),
             })
           : [];

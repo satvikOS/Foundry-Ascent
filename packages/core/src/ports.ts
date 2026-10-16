@@ -74,9 +74,9 @@ export const IngestionJob = z.discriminatedUnion('type', [IngestDocumentJob, Ing
 export type IngestionJob = z.infer<typeof IngestionJob>;
 
 /**
- * Distils one conversation into its digest, the vEIR notebook, memory proposals and lesson drafts. Sent after
- * each completed turn (delayed), when a conversation ends and when the person's next one starts; the worker
- * skips it cheaply when there is nothing new or the conversation is still active.
+ * Distils one conversation into its digest, the vEIR notebook, memory and lesson drafts. Sent after each
+ * completed turn (delayed), when a conversation or a call in it ends, and when the person's next conversation
+ * starts; the worker skips it cheaply when there is nothing new or the conversation is still active.
  */
 export const DistillSessionJob = z.object({
   type: z.literal('distill_session'),
@@ -88,6 +88,11 @@ export const DistillSessionJob = z.object({
    * again by its later turn, so this job is superseded and ends without a model call.
    */
   turns: z.number().int().min(0).optional(),
+  /**
+   * The conversation is settled: it ended, a call in it ended, or its person moved on to a new conversation.
+   * It is distilled now even though its last turn is recent (never skipped as active).
+   */
+  settled: z.boolean().optional(),
   /** Request that enqueued the job (correlation only). */
   requestId: z.string().max(128).nullable(),
 });

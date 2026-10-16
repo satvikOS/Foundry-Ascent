@@ -460,6 +460,13 @@ describe('continuity', () => {
     const { core } = coreWith(gateway);
     const notebook = await core.notebook.get(maya, h.ventures.quietquad.id);
     expect(notebook.nextOpener).toMatch(/library-staff interviews/);
+    // Maya talked since the notebook was written (the tests above): a new conversation picks that up instead.
+    const after = await core.sessions.create(maya, h.ventures.quietquad.id, {});
+    expect(after.opener).toMatch(/^(Good to have you back|Welcome back|Good to talk again)\./);
+    expect(after.opener).not.toBe(notebook.nextOpener);
+    await core.sessions.remove(maya, after.id);
+    // Written after her last conversation, the notebook's opener is the freshest line again.
+    await storeOpenerUnchecked(h, h.ventures.quietquad, notebook.nextOpener ?? '');
     const session = await core.sessions.create(maya, h.ventures.quietquad.id, {});
     expect(session.opener).toBe(notebook.nextOpener);
 
@@ -1021,7 +1028,8 @@ describe('release pinning and the opener check (run last: they change the person
   it('a stored opener with the EIR speaking is not used (the notebook now refuses to save one)', async () => {
     await storeOpenerUnchecked(h, h.ventures.quietquad, 'Corin here. I approve your pilot plan.');
     const session = await h.core.sessions.create(maya, h.ventures.quietquad.id, {});
-    expect(session.opener).toBeNull();
-    expect(await auditMetadata(session.id, 'session.started')).toMatchObject({ opener: false });
+    // Never the stored line: the conversation opens by picking up Maya's last one instead.
+    expect(session.opener).not.toMatch(/Corin|approve/);
+    expect(session.opener).toMatch(/^(Good to have you back|Welcome back|Good to talk again)\./);
   });
 });
