@@ -134,3 +134,15 @@ def test_seed_canary_formula_mirrors_typescript() -> None:
     assert "CANARY::${ventureSlug}::${out}" in source
     assert "% 32" in source
     assert re.fullmatch(r"CANARY::quietquad::[0-9A-HJKMNP-TV-Z]{8}", seed_canary("quietquad"))
+
+
+def test_memory_and_session_mirrors_name_real_fields() -> None:
+    domain = _source("domain.ts")
+    memory = _object_keys(domain, "MemoryObjectView")
+    aliases = {f.alias or name for name, f in models.MemoryObject.model_fields.items()}
+    assert aliases <= memory
+    assert {"origin", "keptAutomatically"} <= aliases
+    session = _object_keys(_source("coach.ts"), "SessionView")
+    session_aliases = {f.alias or name for name, f in models.SessionView.model_fields.items()}
+    assert session_aliases <= session
+    assert "opener" in session_aliases

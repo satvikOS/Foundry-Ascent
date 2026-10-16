@@ -13,11 +13,12 @@ notebooks and the distillation job that writes them come next (§8).
   program's neutral coach for ventures without a vEIR.
 - **Common pool**: what a vEIR brings to every venture it coaches — its approved release (doctrine and
   style), its knowledge library and its published lessons.
-- **Specific pool**: what a vEIR knows about one venture and its founders — venture memory and documents
-  (approval-gated, unchanged), conversation digests and the vEIR notebook.
-- **AI notes**: digests and notebook lines. They are visible, correctable and unverified. They are never
-  cited as facts and never become durable memory without a person approving them (the `memory_objects`
-  CHECK is unchanged).
+- **Specific pool**: what a vEIR knows about one venture and its founders — venture memory and documents,
+  conversation digests and the vEIR notebook. What a conversation teaches goes to memory by itself (kept
+  automatically, [ADR-0003](adr/0003-typed-memory-with-approval.md) amendment of 2026-10-16); the founder
+  and team edit or forget it.
+- **AI notes**: digests and notebook lines. They are visible, correctable and unverified, and never cited as
+  facts.
 
 ## 2. Who the founder talks to
 
@@ -278,14 +279,29 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
   assigned persona's lessons are retrieval candidates (`searchPatterns` with `personaId`).
 - **Prompt continuity**: the founder's first name, the notebook as "Your notes on this founder (unverified;
   confirm before relying on them)", the last three digests of other conversations and the open
-  commitments. A new standard conversation stores the notebook's next opener, validated, as its first vEIR
-  message (`coaching_sessions.opener`, with the conversation it came from).
+  commitments. Every turn of a standard conversation also starts its final user message with
+  **"## Where you left off"** (`orchestrator/continuity-prompt.ts`, data from `continuity.ts`): the person's
+  latest earlier conversation of the venture with this vEIR (and a teammate's when more recent), when it was
+  ("about 20 minutes ago", "yesterday"), on a call or not, ended or left open, its digest when distilled and
+  otherwise its last six exchanges as they were said, plus the notebook's open threads; escaped, untrusted
+  data within 4 000 characters. It is read in two indexed statements in a transaction of its own, alongside
+  retrieval, so it never waits for the distillation worker: a second call a minute after the first knows
+  what was said in it. Temporary and deleted conversations and other ventures are never read; a temporary
+  conversation reads nothing. A new standard conversation opens with the notebook's next opener when a person
+  wrote it, when it was drawn from the person's latest conversation or when nothing was said since it was
+  written; otherwise with a line built from that latest conversation ("Good to have you back. Last time
+  (about 3 minutes ago, on a call), you asked “…”"), validated like any opener and stored with the
+  conversation it came from (`coaching_sessions.opener`). A call says it after introducing itself.
 - **Distillation** (purpose `distill`, the daily caps and the kill switch) runs from jobs only the API
   enqueues (the worker has no `sqs:SendMessage`):
-  - after each completed turn, delayed 540 s; the worker skips while the conversation is active (a turn in
-    the last 480 s), and a job whose conversation has more turns since is `superseded`;
-  - when a conversation ends, immediately;
-  - for the person's previous conversation when they start the next one, if it is idle and undistilled;
+  - after each completed turn, delayed 540 s (the backstop of a conversation left open); the worker skips
+    while the conversation is active (a turn in the last 480 s), and a job whose conversation has more turns
+    since is `superseded`;
+  - when a conversation ends, and when a call in it ends however it ends (hang-up, a server stop, a
+    replacement from another conversation; calls the daily maintenance closes are distilled inline),
+    immediately and `settled`: never skipped as active;
+  - for the person's previous conversation when they start the next one, if it is undistilled and its last
+    turn is older than 60 s (`settleGraceSeconds`), also `settled`;
   - in daily maintenance, the backstop: up to 50 idle, undistilled conversations, three ventures at a time
     (one conversation per venture, which shares its notebook), while the run's time allows. When time runs
     out with conversations left, the maintenance message comes back after the queue's visibility timeout (up
@@ -300,13 +316,13 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
   against the version read
   (`saveNotebook` with `sourceSessionId`; suppressed lines skipped; lines a person edited since the last
   distillation pinned for one run; human-help advice kept until a person removes it or newer advice pushes
-  it out; a `NotebookIntegrityError` leaves the notebook untouched), memory candidates as proposals and
+  it out; a `NotebookIntegrityError` leaves the notebook untouched), memory candidates kept automatically and
   de-identified lesson candidates as `distilled` drafts that record their conversation.
 
-- **Memory hygiene**: a candidate that restates a pending AI proposal (same key, Jaccard ≥ 0.9, cosine ≥
-  0.92 once embedded, or all its content words in a proposal from the same conversation) raises that
-  proposal again instead of adding one; pending proposals of the venture are embedded before the comparison.
-  AI proposals nobody acts on expire after 30 days.
+- **Memory hygiene**: a candidate that restates AI memory nobody approved or corrected (same key, Jaccard ≥
+  0.9, cosine ≥ 0.92 once embedded, or all its content words in an item from the same conversation) adds its
+  sources to that item instead of a duplicate; one that restates what a person made, approved, corrected or
+  rejected is dropped. The venture's AI memory without a vector is embedded before the comparison.
 - **Deletion**: deleting a conversation also withdraws its lesson drafts still in `draft` and erases the
   copies of an opener drawn from it, or of unknown origin, on the venture's other conversations.
 

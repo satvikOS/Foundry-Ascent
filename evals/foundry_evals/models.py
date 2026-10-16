@@ -227,6 +227,8 @@ class SessionView(_Camel):
     disclosure: str
     started_by: PrincipalRef
     turn_count: int
+    #: The vEIR's opening line: picks up the person's latest conversation (null for a temporary chat).
+    opener: str | None = None
 
 
 class SessionDetail(_Camel):
@@ -350,6 +352,9 @@ class MemoryObject(_Camel):
     content: str
     status: str
     visibility: Literal["founder_private", "team", "venture", "advisors"]
+    origin: Literal["founder", "ai", "eir", "import"] | None = None
+    #: The vEIR kept it by itself, learned from a conversation (no "add to memory" approval).
+    kept_automatically: bool | None = None
 
 
 class DocumentView(_Camel):

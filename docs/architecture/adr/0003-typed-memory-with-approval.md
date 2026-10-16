@@ -57,3 +57,25 @@ old one; delete erases every version and redacts history (`app.soft_delete_memor
 - Never replaced by opaque chat history (03 §26 marks this foundational). Revisit the _approval rule_
   (e.g. auto-confirming founder-authored low-risk items) only with founder research evidence that review
   load harms continuity, and with the change recorded here.
+
+## Amendment 2026-10-16: memory the vEIR keeps by itself (owner decision)
+
+The revisit trigger fired: the platform owner found that review load harmed continuity ("the knowledge bucket
+is not filling up on every conversation") and decided that there is no "add to memory" step. What the vEIR
+learns from a standard conversation (a turn's memory candidates, a recap's, a distillation's) is **kept
+automatically**: `confirmed`, origin `ai`, no approver, with `auto_kept_at` recording that nobody approved it
+(migration 0013). The typed, source-linked model stays; only the approval gate moves:
+
+- The approval CHECK admits an AI item without an approver only when it records that it was kept
+  automatically; a model inference is still never durable without either a person or that record.
+- Every kept item names the conversation it was learned from first (`session` source ref, "Learned from the
+  conversation"), then its turn. The founder and team see it in Knowledge at once and correct, dispute or
+  delete it like any item; a correction is the corrector's (it has an approver), so it survives the
+  conversation's deletion.
+- Deleting a conversation erases what was kept from it alone (nobody approved or corrected it since); an item
+  other conversations also taught loses that conversation's sources and stays.
+- A temporary (private) conversation keeps nothing, as before.
+- An EIR's suggestions stay proposals for the founder to accept, and lessons for a vEIR's common pool keep
+  their curators' review: those are other people's words entering the venture's memory or a shared pool.
+- Pending AI proposals that existed were kept the same way, with an `approved` event marked `system`. The
+  daily expiry of AI proposals is gone.

@@ -91,7 +91,7 @@ async function escalationStatus(request: APIRequestContext, ventureId: string, i
 }
 
 test.describe('founder journey', () => {
-  test('a founder talks to their vEIR, keeps memory, follows citations and ends with a summary', async ({
+  test('a founder talks to their vEIR, which keeps what it learns, follows citations and ends with a summary', async ({
     page,
   }) => {
     test.setTimeout(120_000);
@@ -183,26 +183,31 @@ test.describe('founder journey', () => {
       ).toBeVisible();
     });
 
-    await test.step('keep what the vEIR suggests remembering', async () => {
+    await test.step('what the vEIR learns is kept by itself, with no Keep to press', async () => {
       const suggestion = page
         .getByRole('article', { name: 'Exchange 1' })
         .getByRole('list', { name: 'Memory suggestions' })
         .getByRole('listitem')
         .first();
-      // The row becomes actionable once the refreshed venture memory includes the proposal.
-      const keep = suggestion.getByRole('button', { name: /^Keep: / });
-      await expect(keep).toBeVisible({ timeout: 30_000 });
-      // Keep goes through the app's one review path (the batch route).
-      const reviewed = page.waitForResponse(
-        (response) => response.url().endsWith('/memory/batch') && response.request().method() === 'POST',
+      // Once the refreshed venture memory includes it, the row shows it as kept: nobody had to approve it.
+      await expect(suggestion.getByText('Kept')).toBeVisible({ timeout: 30_000 });
+      await expect(suggestion.getByRole('button', { name: /^Keep: / })).toHaveCount(0);
+      // Leave the venture's memory as the next run finds it: forget what this conversation taught.
+      const sessionId = /\/c\/([0-9a-f-]{36})/.exec(page.url())?.[1] ?? '';
+      const listed = await page.request.get(
+        `/api/v1/ventures/${ventureId}/memory?status=confirmed&limit=100`,
       );
-      await keep.click();
-      const review = await reviewed;
-      expect(review.status()).toBe(200);
-      await expect(suggestion.getByText('Kept')).toBeVisible();
-      // Leave the venture's memory as the next run finds it (the vEIR would not propose a kept fact again).
-      const { ids } = review.request().postDataJSON() as { ids: string[] };
-      for (const id of ids) {
+      expect(listed.status()).toBe(200);
+      const { items } = (await listed.json()) as {
+        items: { id: string; keptAutomatically?: boolean; sourceRefs: { kind: string; id: string }[] }[];
+      };
+      const learned = items.filter(
+        (m) =>
+          m.keptAutomatically === true &&
+          m.sourceRefs.some((r) => r.kind === 'session' && r.id === sessionId),
+      );
+      expect(learned.length).toBeGreaterThan(0);
+      for (const { id } of learned) {
         const removed = await page.request.patch(`/api/v1/memory/${id}`, {
           headers: { 'x-requested-with': 'foundry-ascent', 'content-type': 'application/json' },
           data: { action: 'delete' },

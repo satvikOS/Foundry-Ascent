@@ -246,7 +246,7 @@ test.describe('vEIR calls', () => {
 
   test('call from the sidebar: typed fallback, reply in captions, mini bar, summary', async ({ page }) => {
     await voiceNoticeSeen(page);
-    const ventureId = await openVenture(page);
+    await openVenture(page);
     const token = runToken();
     let sessionId = '';
     let callId = '';
@@ -347,38 +347,107 @@ test.describe('vEIR calls', () => {
       await expect(callScreen(page)).toBeVisible();
     });
 
-    await test.step('ending shows the summary; Keep needs the founder', async () => {
-      const ended = page.waitForRequest(
-        (request) => request.url().endsWith(`/calls/${callId}/end`) && request.method() === 'POST',
+    await test.step('ending shows the summary; what the call taught is kept without a Keep', async () => {
+      const ended = page.waitForResponse(
+        (response) =>
+          response.url().endsWith(`/calls/${callId}/end`) && response.request().method() === 'POST',
       );
       await callScreen(page).getByRole('button', { name: 'End call' }).click();
       const screen = callScreen(page);
       await expect(screen.getByRole('heading', { name: 'Call ended' })).toBeFocused();
-      expect((await ended).postDataJSON()).toMatchObject({ reason: 'user' });
+      const response = await ended;
+      expect(response.request().postDataJSON()).toMatchObject({ reason: 'user' });
       await expect(screen.getByRole('note', { name: 'AI disclosure' })).toHaveCount(1);
       await expectNoBareEirName(page, 'the after-call summary');
-      // The call's turn proposed what to remember; nothing is kept until the founder says so, through the
-      // app's one review path.
-      const keep = screen.getByRole('button', { name: /^Keep: / }).first();
-      await expect(keep).toBeVisible();
-      const approved = page.waitForResponse(
-        (response) =>
-          response.url().endsWith(`/ventures/${ventureId}/memory/batch`) &&
-          response.request().method() === 'POST',
-      );
-      await keep.click();
-      const review = await approved;
-      const sent = review.request().postDataJSON() as { ids: string[]; action: string };
-      expect(sent).toMatchObject({ action: 'approve' });
-      expect(sent.ids).toHaveLength(1);
-      await expect(screen.getByText('Kept').first()).toBeVisible();
+      // The call's turn taught the vEIR something: it went to memory by itself, so nothing asks to keep it.
+      const { summary } = (await response.json()) as {
+        summary: { memoryProposalIds: string[]; memoryKeptIds?: string[] };
+      };
+      expect(summary.memoryProposalIds).toEqual([]);
+      expect(summary.memoryKeptIds?.length).toBeGreaterThan(0);
+      await expect(screen.getByRole('button', { name: /^Keep: / })).toHaveCount(0);
+      const kept = await page.request.get(`/api/v1/memory/${summary.memoryKeptIds?.[0] ?? ''}`);
+      expect(kept.status(), 'GET /memory/:id').toBe(200);
+      expect(await kept.json()).toMatchObject({ origin: 'ai', status: 'confirmed', keptAutomatically: true });
       // Leave the venture's memory as it was.
-      for (const id of sent.ids) await deleteMemory(page.request, id);
+      for (const id of summary.memoryKeptIds ?? []) await deleteMemory(page.request, id);
       await screen.getByRole('button', { name: 'Back to conversation' }).click();
       await expect(callScreen(page)).toBeHidden();
       await expect(page).toHaveURL(new RegExp(`/c/${sessionId}$`));
       await expect(page.getByRole('region', { name: /^Call with / })).toHaveCount(0);
     });
+  });
+
+  test('a second call picks up the first, and so does the next chat', async ({ page }) => {
+    test.setTimeout(120_000);
+    await voiceNoticeSeen(page);
+    const token = runToken();
+    const calls = trackCalls(page);
+    /** Calls from the sidebar in a new conversation; returns the conversation and what the call said first. */
+    const callFromSidebar = async (): Promise<{ sessionId: string; intro: string }> => {
+      await openVenture(page);
+      const started = page.waitForResponse(
+        (response) => /\/sessions\/[0-9a-f-]{36}\/calls$/.test(response.url()) && response.status() === 201,
+      );
+      await page
+        .getByRole('navigation', { name: 'Main' })
+        .getByRole('link', { name: /^Call / })
+        .click();
+      await page.waitForURL(/\/c\/[0-9a-f-]{36}\?call=1$/);
+      const sessionId = /\/c\/([0-9a-f-]{36})/.exec(page.url())?.[1] ?? '';
+      const body = (await (await started).json()) as { intro: { text: string } | null };
+      const intro = body.intro?.text ?? '';
+      await expect(callScreen(page).getByRole('region', { name: 'Captions' })).toContainText(intro);
+      return { sessionId, intro };
+    };
+    const hangUp = async (): Promise<void> => {
+      const screen = callScreen(page);
+      await screen.getByRole('button', { name: 'End call' }).click();
+      await expect(screen.getByRole('heading', { name: 'Call ended' })).toBeVisible();
+      await screen.getByRole('button', { name: 'Back to conversation' }).click();
+      await expect(screen).toBeHidden();
+    };
+    try {
+      let first = '';
+      await test.step('a first call: the founder talks about pricing, then hangs up', async () => {
+        const { sessionId } = await callFromSidebar();
+        first = sessionId;
+        const reply = callScreen(page).getByRole('textbox', { name: /^Reply to / });
+        await reply.fill(`We are weighing per-library pricing for the pilot. ${token}`);
+        await reply.press('Enter');
+        await expect
+          .poll(async () => (await sessionTurns(page.request, first)).turns[0]?.response ?? null, {
+            timeout: 30_000,
+          })
+          .not.toBeNull();
+        await hangUp();
+      });
+
+      await test.step('a second call opens by picking up the first, not with the same greeting', async () => {
+        const { sessionId, intro } = await callFromSidebar();
+        expect(sessionId).not.toBe(first);
+        expect(intro).toMatch(/^Hi Maya, this is .+, an AI coach\. /);
+        expect(intro).not.toContain('What would you like to work on?');
+        expect(intro).toMatch(/last time|when we last talked|we were on|you asked|pric/i);
+        await expectNoBareEirName(page, 'the second call');
+        await hangUp();
+      });
+
+      await test.step('the next chat opens by picking up the calls too', async () => {
+        await openVenture(page);
+        const sessionId = await startConversation(page, `One more thing about the pilot. ${token}`);
+        const detail = (await (await page.request.get(`/api/v1/sessions/${sessionId}`)).json()) as {
+          session: { opener: string | null };
+        };
+        const opener = detail.session.opener ?? '';
+        expect(opener).toMatch(
+          /last time|when we last talked|we were on|you asked|welcome back|good to have you back/i,
+        );
+        await expect(page.getByRole('main').getByText(opener.slice(0, 40)).first()).toBeVisible();
+      });
+    } finally {
+      await endCalls(page, calls.ids);
+    }
   });
 
   test('the first call says how voice is handled, once per person and in any browser', async ({
