@@ -14,6 +14,10 @@ import {
   type ObjectStore,
   type PresignPutInput,
   type PresignedUpload,
+  SpeechSynthesisError,
+  type SpeechSynthesisInput,
+  type SpeechSynthesizer,
+  type SynthesizedSpeech,
   type TextExtractor,
 } from '../ports.js';
 
@@ -86,6 +90,39 @@ export class Utf8TextExtractor implements TextExtractor {
     const text = new TextDecoder('utf-8', { fatal: false }).decode(data);
     if (text.startsWith('%CORRUPT')) return Promise.reject(new ExtractionFailedError('unreadable document'));
     return Promise.resolve({ text });
+  }
+}
+
+/**
+ * Test speech synthesizer: "audio" is the UTF-8 text prefixed with `MP3:`; the first engine of the input is
+ * used unless `unsupported` lists it. `failNext` makes the next call fail like a service outage.
+ */
+export class FakeSpeechSynthesizer implements SpeechSynthesizer {
+  readonly calls: SpeechSynthesisInput[] = [];
+  failNext = false;
+  unsupported: readonly string[] = [];
+
+  synthesize(input: SpeechSynthesisInput): Promise<SynthesizedSpeech> {
+    this.calls.push(input);
+    if (this.failNext) {
+      this.failNext = false;
+      return Promise.reject(new SpeechSynthesisError('speech service unavailable'));
+    }
+    const engine = input.engines.find((e) => !this.unsupported.includes(e));
+    if (engine === undefined) return Promise.reject(new SpeechSynthesisError('no supported engine'));
+    const bytes = new TextEncoder().encode(`MP3:${input.text}`);
+    return Promise.resolve({
+      audio: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(bytes);
+          controller.close();
+        },
+      }),
+      contentType: 'audio/mpeg',
+      characters: input.text.length,
+      engine,
+      voiceId: input.voiceId,
+    });
   }
 }
 

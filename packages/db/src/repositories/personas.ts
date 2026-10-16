@@ -459,6 +459,25 @@ export function toConsentView(c: ConsentRecord): ConsentView {
   };
 }
 
+/**
+ * Assets the persona's consent covers right now (`app.persona_consent_assets`): readable by anyone in the
+ * tenant, unlike the consent record itself. Empty when there is no consent in force.
+ */
+export async function personaConsentAssets(
+  ex: SqlExecutor,
+  personaId: string,
+): Promise<(typeof CONSENT_ASSETS)[number][]> {
+  const row = await queryFirst(
+    ex,
+    'SELECT app.persona_consent_assets(:id) AS assets',
+    { id: p.uuid(personaId) },
+    (r) => col.textArray.decode(r.assets, 'assets'),
+  );
+  return (row ?? []).filter((a): a is (typeof CONSENT_ASSETS)[number] =>
+    (CONSENT_ASSETS as readonly string[]).includes(a),
+  );
+}
+
 /** Whether a consent is in force at `now` and covers `asset`. */
 export function consentCovers(
   consent: Pick<ConsentRecord, 'assetTypes' | 'revokedAt' | 'expiresAt'> | null,

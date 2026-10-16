@@ -486,6 +486,18 @@ DROP TRIGGER IF EXISTS personas_embodiment_consent ON personas;
 CREATE TRIGGER personas_embodiment_consent BEFORE INSERT OR UPDATE OF embodiment, consent_id ON personas
   FOR EACH ROW EXECUTE FUNCTION app.personas_embodiment_guard();
 
+-- The assets a persona's consent covers right now (empty when it has none, or it was revoked or expired): the
+-- people a persona coaches learn whether its voice or likeness may be used without reading the consent record.
+CREATE OR REPLACE FUNCTION app.persona_consent_assets(p_persona uuid) RETURNS text[]
+  LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
+  SELECT coalesce((SELECT c.asset_types FROM personas pe JOIN consents c ON c.id = pe.consent_id
+                   WHERE pe.id = p_persona AND pe.tenant_id = app.current_tenant()
+                     AND c.revoked_at IS NULL AND (c.expires_at IS NULL OR c.expires_at > now())),
+                  '{}'::text[])
+$$;
+REVOKE ALL ON FUNCTION app.persona_consent_assets(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app.persona_consent_assets(uuid) TO app_rls;
+
 -- Consent stays the subject's own act. The one exception is a synthetic EIR (a fictional EIR profile used for
 -- the pilot, whose principal cannot sign in): a program lead of the tenant records and revokes its consent.
 CREATE OR REPLACE FUNCTION app.is_synthetic_eir(p_principal uuid) RETURNS boolean

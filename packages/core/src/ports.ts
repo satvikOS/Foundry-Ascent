@@ -58,8 +58,55 @@ export const IngestDocumentJob = z.object({
 });
 export type IngestDocumentJob = z.infer<typeof IngestDocumentJob>;
 
-export const JobMessage = z.discriminatedUnion('type', [IngestDocumentJob]);
+/** Ingests a document uploaded to a persona's knowledge library (scope `persona`, no venture). */
+export const IngestKnowledgeSourceJob = z.object({
+  type: z.literal('ingest_knowledge_source'),
+  sourceId: z.uuid(),
+  tenantId: z.uuid(),
+  personaId: z.uuid(),
+  /** Request that enqueued the job (correlation only). */
+  requestId: z.string().max(128).nullable(),
+});
+export type IngestKnowledgeSourceJob = z.infer<typeof IngestKnowledgeSourceJob>;
+
+export const JobMessage = z.discriminatedUnion('type', [IngestDocumentJob, IngestKnowledgeSourceJob]);
 export type JobMessage = z.infer<typeof JobMessage>;
+
+/** Voice engines of the text-to-speech service, most natural first (Amazon Polly). */
+export type SpeechEngine = 'generative' | 'neural' | 'standard';
+
+export interface SpeechSynthesisInput {
+  /** Validated text to speak. Content: never log it. */
+  readonly text: string;
+  readonly voiceId: string;
+  /** Engines to try in order (the first one the voice supports in this Region wins). */
+  readonly engines: readonly SpeechEngine[];
+  readonly requestId: string;
+  readonly signal?: AbortSignal;
+}
+
+export interface SynthesizedSpeech {
+  /** MP3 audio, streamed as the service produces it. */
+  readonly audio: ReadableStream<Uint8Array>;
+  readonly contentType: 'audio/mpeg';
+  /** Characters billed (the input length). */
+  readonly characters: number;
+  readonly engine: SpeechEngine;
+  readonly voiceId: string;
+}
+
+/** Thrown when the speech service cannot synthesize (outage, throttling, unsupported voice). */
+export class SpeechSynthesisError extends Error {
+  override readonly name = 'SpeechSynthesisError';
+}
+
+/**
+ * Text-to-speech for calls (Amazon Polly in the API). Absent locally and in tests unless injected: the
+ * speech endpoint then answers `speech_unavailable` and the browser speaks the validated text itself.
+ */
+export interface SpeechSynthesizer {
+  synthesize(input: SpeechSynthesisInput): Promise<SynthesizedSpeech>;
+}
 
 export interface JobQueue {
   /** Enqueues a job. `deduplicationId` lets FIFO/idempotent consumers drop duplicates. */

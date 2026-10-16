@@ -426,6 +426,20 @@ export async function deleteChunksForSource(ex: SqlExecutor, sourceId: string): 
   return result.rowCount;
 }
 
+/** A source's chunks in order with the text to embed (heading + content, like the backfill). Content. */
+export function listChunkTexts(
+  ex: SqlExecutor,
+  sourceId: string,
+): Promise<{ readonly id: string; readonly text: string }[]> {
+  return queryRows(
+    ex,
+    `SELECT id, coalesce(heading || chr(10) || chr(10), '') || content AS text
+     FROM knowledge_chunks WHERE source_id = :id ORDER BY ordinal`,
+    { id: p.uuid(sourceId) },
+    (r) => ({ id: col.uuid.decode(r.id, 'id'), text: col.text.decode(r.text, 'text') }),
+  );
+}
+
 export interface EmbeddingBacklogItem {
   readonly id: string;
   /** Text to embed (heading + content for chunks, title + content for memory). Never log it. */

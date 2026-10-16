@@ -32,7 +32,8 @@ export class SqsJobQueue implements JobQueue {
         MessageAttributes: { jobType: { DataType: 'String', StringValue: job.type } },
         ...(this.#fifo
           ? {
-              MessageGroupId: job.ventureId,
+              // Jobs of one venture (or one persona library) are processed in order.
+              MessageGroupId: job.type === 'ingest_document' ? job.ventureId : job.personaId,
               ...(options.deduplicationId
                 ? { MessageDeduplicationId: options.deduplicationId.slice(0, 128) }
                 : {}),

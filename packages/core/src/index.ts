@@ -17,6 +17,7 @@ export { CoreConfig, DEFAULT_CORE_CONFIG, coreConfig, loadConfig, type EnvLike }
 export {
   ExtractionFailedError,
   IngestDocumentJob,
+  IngestKnowledgeSourceJob,
   JobMessage,
   ObjectNotFoundError,
   ObjectTooLargeError,
@@ -32,6 +33,11 @@ export {
   type ObjectStore,
   type PresignPutInput,
   type PresignedUpload,
+  SpeechSynthesisError,
+  type SpeechEngine,
+  type SpeechSynthesisInput,
+  type SpeechSynthesizer,
+  type SynthesizedSpeech,
   type TextExtractor,
 } from './ports.js';
 
@@ -40,7 +46,49 @@ export * from './authz/index.js';
 
 export { type MeService } from './services/me.js';
 export { type VenturesService } from './services/ventures.js';
-export { type SessionsService, type EndSessionResult } from './services/sessions.js';
+export { type SessionsService, type EndSessionResult, type SessionPageResult } from './services/sessions.js';
+export {
+  applyNotebookEdit,
+  isSuppressed,
+  notebookFingerprint,
+  type NotebookEditResult,
+  type NotebookService,
+} from './services/notebook.js';
+export {
+  callUsageToday,
+  callVoice,
+  embodimentView,
+  resolveVeir,
+  shortName,
+  type ResolvedVeir,
+  type VeirService,
+} from './services/veir.js';
+export { isSpeakable, speakableText, type SpeechService } from './services/speech.js';
+export {
+  CALL_GAP_SECONDS,
+  CALL_TAIL_SECONDS,
+  currentCallMinutes,
+  measureCalls,
+  remainingCallMinutes,
+  type CallSegment,
+  type CallUsage,
+  type VoiceTurnTime,
+} from './services/call-usage.js';
+export {
+  DEFAULT_SPEECH_VOICE,
+  SPEECH_PRICE_PER_MILLION_CHARS,
+  SPEECH_VOICES,
+  isSpeechVoice,
+  speechCostUsd,
+  speechEngines,
+} from './services/voices.js';
+export { type PersonaManagementService } from './services/personas.js';
+export {
+  personaSourceKey,
+  summarize as summarizeAuthoredText,
+  type KnowledgeLibraryService,
+} from './services/knowledge-library.js';
+export { type LessonsService } from './services/lessons.js';
 export { MEMORY_PAGE_DEFAULT, type MemoryPage, type MemoryService } from './services/memory.js';
 export { type MaintenanceReport, type MaintenanceService } from './services/maintenance.js';
 export { documentKey, storageFilename, type DocumentsService } from './services/documents.js';

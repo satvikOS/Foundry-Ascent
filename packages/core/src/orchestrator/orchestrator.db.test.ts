@@ -393,18 +393,20 @@ describe('gates', () => {
 
   it('persona suspension blocks new sessions and turns immediately, resume restores them', async () => {
     const lead = await h.ctxFor(h.people.lead);
+    // QuietQuad is coached by Corin's vEIR.
+    const personaId = h.ventures.quietquad.personaId;
     const session = await h.core.sessions.create(maya, h.ventures.quietquad.id, {});
-    await h.core.eir.suspendPersona(lead, h.seed.personaId, { reason: 'calibration incident review' });
+    await h.core.eir.suspendPersona(lead, personaId, { reason: 'calibration incident review' });
     try {
       await expect(h.core.sessions.create(maya, h.ventures.quietquad.id, {})).rejects.toMatchObject({
         code: 'persona_suspended',
       });
       const { outcome } = await runTurn(h.core, maya, session.id, { text: 'Next step for interviews?' });
       expect(outcome.error?.code).toBe('persona_suspended');
-      const persona = await h.t.db.system((sx) => personasRepo.getPersona(sx, h.seed.personaId));
+      const persona = await h.t.db.system((sx) => personasRepo.getPersona(sx, personaId));
       expect(persona?.status).toBe('suspended');
     } finally {
-      await h.core.eir.resumePersona(lead, h.seed.personaId);
+      await h.core.eir.resumePersona(lead, personaId);
     }
     const { outcome } = await runTurn(h.core, maya, session.id, { text: 'Next step for interviews?' });
     expect(outcome.status).toBe('completed');

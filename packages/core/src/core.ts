@@ -8,12 +8,18 @@ import { createAdminService, type AdminService } from './services/admin.js';
 import { createDocumentsService, type DocumentsService } from './services/documents.js';
 import { createEirStudioService, type EirStudioService } from './services/eir-studio.js';
 import { createEscalationsService, type EscalationsService } from './services/escalations.js';
+import { createKnowledgeLibraryService, type KnowledgeLibraryService } from './services/knowledge-library.js';
+import { createLessonsService, type LessonsService } from './services/lessons.js';
 import { createMaintenanceService, type MaintenanceService } from './services/maintenance.js';
 import { createMeService, type MeService } from './services/me.js';
 import { createMemoryService, type MemoryService } from './services/memory.js';
+import { createNotebookService, type NotebookService } from './services/notebook.js';
+import { createPersonaManagementService, type PersonaManagementService } from './services/personas.js';
 import { createProgramService, type ProgramService } from './services/program.js';
 import { createSessionsService, type SessionsService } from './services/sessions.js';
+import { createSpeechService, type SpeechService } from './services/speech.js';
 import { createTeamService, type TeamService } from './services/team.js';
+import { createVeirService, type VeirService } from './services/veir.js';
 import { createVenturesService, type VenturesService } from './services/ventures.js';
 
 /** Every domain service, bound to one set of dependencies. Create once per container. */
@@ -32,6 +38,18 @@ export interface Core {
   readonly program: ProgramService;
   readonly admin: AdminService;
   readonly maintenance: MaintenanceService;
+  /** The vEIR notebook of a venture (specific pool). */
+  readonly notebook: NotebookService;
+  /** The vEIR a venture talks to, call configuration and avatar sessions. */
+  readonly veir: VeirService;
+  /** Text-to-speech of validated replies during calls. */
+  readonly speech: SpeechService;
+  /** Persona lifecycle: EIR personas, consent, embodiment, assignments. */
+  readonly personas: PersonaManagementService;
+  /** A persona's knowledge library (common pool). */
+  readonly library: KnowledgeLibraryService;
+  /** Lessons of a persona's common pool. */
+  readonly lessons: LessonsService;
 }
 
 export function createCore(deps: CoreDeps): Core {
@@ -56,5 +74,11 @@ export function createCore(deps: CoreDeps): Core {
     program: createProgramService(kit, directory),
     admin: createAdminService(kit, onPrincipalChanged),
     maintenance: createMaintenanceService(kit),
+    notebook: createNotebookService(kit),
+    veir: createVeirService(kit),
+    speech: createSpeechService(kit),
+    personas: createPersonaManagementService(kit, directory),
+    library: createKnowledgeLibraryService(kit),
+    lessons: createLessonsService(kit),
   };
 }
