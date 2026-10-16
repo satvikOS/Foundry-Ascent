@@ -55,6 +55,8 @@ describe('Lambda bundles', () => {
       api: 'DOCUMENTS_BUCKET',
       worker: 'DOCUMENTS_BUCKET',
       migrate: 'OWNER_ACCESS_CODE_HASH',
+      // The insights function has no variables of its own: it needs the database's.
+      insights: 'DB_CLUSTER_ARN',
     };
     const { [required[name]]: _dropped, ...env } = handlerEnv(name);
     const result = await importCheck(bundle.outfile, env);

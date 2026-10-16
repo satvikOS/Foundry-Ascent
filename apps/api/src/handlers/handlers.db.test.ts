@@ -50,6 +50,7 @@ let ownerCode: string;
 let api: StreamifyHandler<LambdaFunctionURLEvent, void>;
 let worker: (event: SQSEvent, context: Context) => Promise<SQSBatchResponse>;
 let migrate: (event: CdkCustomResourceEvent, context: Context) => Promise<{ PhysicalResourceId?: string }>;
+let insights: (event: unknown) => Promise<{ kind: string }>;
 
 function lambdaContext(remainingMs = 50_000): Context {
   return {
@@ -137,6 +138,7 @@ beforeAll(async () => {
   api = (await import('./api.js')).handler;
   worker = (await import('./worker.js')).handler;
   migrate = (await import('./migrate.js')).handler;
+  insights = (await import('./insights.js')).handler;
 });
 afterAll(async () => {
   await t.cleanup();
@@ -266,5 +268,17 @@ describe('worker handler (SQS batch)', () => {
       lambdaContext(100_000),
     );
     expect(result.batchItemFailures).toEqual([]);
+  });
+});
+
+describe('insights handler (direct invocation)', () => {
+  it('answers a metadata request and refuses anything else with a code only', async () => {
+    const report = await insights({ scope: 'metadata', days: 1 });
+    expect(report.kind).toBe('metadata');
+    expect(await insights({ scope: 'metadata', days: 1, sql: 'SELECT 1' })).toEqual({
+      kind: 'error',
+      error: 'invalid_request',
+    });
+    expect(await insights('not an object')).toEqual({ kind: 'error', error: 'invalid_request' });
   });
 });

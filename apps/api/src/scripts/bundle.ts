@@ -16,7 +16,7 @@ import { build } from 'esbuild';
 
 import { ESM_REQUIRE_SHIM, environmentNames, LAMBDA_CONTRACT } from '../lambda-contract.js';
 
-export const HANDLERS = ['api', 'worker', 'migrate'] as const;
+export const HANDLERS = ['api', 'worker', 'migrate', 'insights'] as const;
 export type HandlerName = (typeof HANDLERS)[number];
 
 const SRC_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');

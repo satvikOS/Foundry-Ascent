@@ -20,8 +20,14 @@ export const LambdaContract = z.object({
     externalModules: z.array(z.string().min(1)),
     banner: z.array(z.string().min(1)).min(1),
   }),
-  /** Environment variable names per function (common to all three, plus each role's own). */
-  environment: z.object({ common: EnvNames, api: EnvNames, worker: EnvNames, migrate: EnvNames }),
+  /** Environment variable names per function (common to all, plus each role's own). */
+  environment: z.object({
+    common: EnvNames,
+    api: EnvNames,
+    worker: EnvNames,
+    migrate: EnvNames,
+    insights: EnvNames,
+  }),
   edgeHeaders: z.object({ viewerIp: HeaderName, viewerHost: HeaderName }),
   api: z.object({
     /** How long one database call of the API waits for Aurora to resume before 503 `database_resuming`. */
@@ -57,7 +63,7 @@ export const DAILY_MAINTENANCE_MESSAGE = LAMBDA_CONTRACT.worker.dailyMaintenance
 /** Body of the distillation sweep message (EventBridge Scheduler -> jobs queue -> worker). */
 export const DISTILL_SWEEP_MESSAGE = LAMBDA_CONTRACT.worker.distillSweepMessage;
 
-export type LambdaRole = 'api' | 'worker' | 'migrate';
+export type LambdaRole = 'api' | 'worker' | 'migrate' | 'insights';
 
 /** Every variable the deployed `role` function receives (CDK adds NODE_OPTIONS; Lambda adds AWS_*). */
 export function environmentNames(role: LambdaRole): readonly string[] {

@@ -9,7 +9,7 @@ import { z } from 'zod';
  */
 
 /** Which process is loading the configuration: decides which variables are mandatory. */
-export type ApiRole = 'api' | 'worker' | 'migrate' | 'dev';
+export type ApiRole = 'api' | 'worker' | 'migrate' | 'insights' | 'dev';
 
 export const LogLevel = z.enum(['debug', 'info', 'warn', 'error']);
 export type LogLevel = z.infer<typeof LogLevel>;

@@ -5,7 +5,7 @@ import { createDbFromEnv, type Db } from '@foundry/db';
 import { type ApiConfig } from '../config.js';
 import { createJsonLogger, type Logger } from '../logging.js';
 
-export type ProcessName = 'api' | 'worker' | 'migrate' | 'dev';
+export type ProcessName = 'api' | 'worker' | 'migrate' | 'insights' | 'dev';
 
 /** Root logger of a process: JSON lines tagged with service, process and version. */
 export function createProcessLogger(config: ApiConfig, process: ProcessName): Logger {
