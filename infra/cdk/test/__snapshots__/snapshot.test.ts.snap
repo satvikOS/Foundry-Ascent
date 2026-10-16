@@ -456,11 +456,11 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
                         "StackName": "FoundryAscent-Data",
                       },
                     },
-                    "/tenants/*",
+                    "/tenants/*/personas/*",
                   ],
                 ],
               },
-              "Sid": "DocumentsApiNeverReads",
+              "Sid": "DocumentsApiReadsOnlyVentureDocuments",
             },
             {
               "Action": [
@@ -3009,6 +3009,7 @@ exports[`template snapshots > FoundryAscent-Data 1`] = `
               ],
               "AllowedMethods": [
                 "PUT",
+                "GET",
               ],
               "AllowedOrigins": [
                 "https://*.cloudfront.net",

@@ -41,7 +41,7 @@ Region `us-east-1`, account taken from the deploying credentials. Every IAM role
   deletion protection, `SNAPSHOT` on delete, `postgresql` log export (30-day log group created before the
   cluster), security group with no ingress/egress. Secret `foundry-ascent/aurora-admin` (user `foundry_admin`).
 - Documents bucket: private, SSE-S3, TLS ≥ 1.2 only, unversioned, incomplete multipart uploads aborted
-  after 1 day, server access logs, CORS for presigned `PUT` (see [Design notes](#design-notes)).
+  after 1 day, server access logs, CORS for presigned `PUT` and `GET` (see [Design notes](#design-notes)).
 - Access-log bucket (90-day expiry) for S3 server access logs and VPC flow logs.
 - Jobs queue `FoundryAscent-Jobs` (SSE-SQS, visibility 720 s = 6 × worker timeout) and DLQ
   `FoundryAscent-Jobs-DLQ` (3 receives, 14-day retention), both TLS-only.
@@ -244,10 +244,12 @@ The deploy workflow then assumes the `GitHubDeployRoleArn` output through GitHub
 
 - **No stack cycles.** The CloudFront domain is generated, so nothing created before the distribution
   can reference it:
-  - _Upload CORS._ The documents bucket (Data stack, deployed first) allows `PUT` from
-    `https://*.cloudfront.net` (plus the custom domain when configured), headers `content-type`,
-    `content-md5`, `x-amz-*`. A presigned URL (one key, short-lived, signed by the API role) is the
-    authorization; CORS only decides which pages may use one from a browser.
+  - _Upload CORS._ The documents bucket (Data stack, deployed first) allows `PUT` (uploads) and `GET` (the
+    document viewer reads a file it was given a presigned URL for) from `https://*.cloudfront.net` (plus the
+    custom domain when configured), headers `content-type`, `content-md5`, `x-amz-*`. A presigned URL (one
+    key, short-lived, signed by the API role) is the authorization; CORS only decides which pages may use
+    one from a browser. The API role may sign GETs of venture documents only (`GET /documents/:id/file`,
+    after the venture check); objects of vEIR libraries stay denied to it.
   - _`SITE_ORIGIN`._ Distribution → Function URL → API function, so the function's environment cannot
     contain the distribution domain. Without a custom domain `SITE_ORIGIN` is not set; the `/api/*`
     viewer-request function sets `x-fa-viewer-host` to the Host the browser addressed (CloudFront only

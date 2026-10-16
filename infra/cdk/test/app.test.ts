@@ -199,7 +199,7 @@ describe('FoundryAscent-App', () => {
       expect(migrate.some((a) => a.startsWith('sqs:') || a.startsWith('s3:'))).toBe(false);
     });
 
-    it('narrows documents access per role: api puts and deletes, worker only reads', () => {
+    it('narrows documents access per role: api puts, deletes and signs venture-document reads, worker only reads', () => {
       const denied = (name: string): string[] =>
         rolePolicyStatements(name)
           .filter((s) => s.Effect === 'Deny')
@@ -209,7 +209,9 @@ describe('FoundryAscent-App', () => {
       expect(denied('FoundryAscent-Migrate')).toEqual([]);
       const deny = rolePolicyStatements('FoundryAscent-Api').find((s) => s.Effect === 'Deny');
       const resource = JSON.stringify(deny?.Resource);
-      expect(resource).toContain('/tenants/*');
+      // The api may sign GETs of venture documents (the document viewer), never of a vEIR's library.
+      expect(resource).toContain('/tenants/*/personas/*');
+      expect(resource).not.toContain('/ventures/');
       expect(resource).toContain('FoundryAscent-Data');
     });
 
