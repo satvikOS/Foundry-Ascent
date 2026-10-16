@@ -15,7 +15,7 @@ import {
  * composer never cover each other, and a chip never wipes what the founder was typing.
  */
 
-/** The composer's fade reaches this far above it (`before:-top-8` in conversation-page.tsx). */
+/** Room kept between the latest answer's actions and the glass composer area below them. */
 const FADE_PX = 32;
 
 /** Asks one question from New chat and waits for its answer, with its actions and follow-up chips. */
@@ -27,7 +27,7 @@ async function askFirstQuestion(page: Page): Promise<void> {
   await expect(page.getByRole('list', { name: 'Follow-up questions' })).toBeVisible();
 }
 
-/** The latest answer's action row (copy, thumbs) lies wholly above the chips and the composer's fade. */
+/** The latest answer's action row (copy, thumbs) lies wholly above the chips and the composer area. */
 async function expectActionsClearOfChips(page: Page, where: string): Promise<void> {
   const box = await page.evaluate(() => {
     const copy = [...document.querySelectorAll('button[aria-label="Copy answer"]')].at(-1);
@@ -46,7 +46,7 @@ async function expectActionsClearOfChips(page: Page, where: string): Promise<voi
   if (!box) throw new Error(`${where}: no action row or chips`);
   expect(box.rowTop, `${where}: the action row is on screen`).toBeGreaterThanOrEqual(0);
   expect(box.rowBottom, `${where}: the action row ends above the chips`).toBeLessThanOrEqual(box.chipsTop);
-  expect(box.rowBottom, `${where}: the action row ends above the composer's fade`).toBeLessThanOrEqual(
+  expect(box.rowBottom, `${where}: the action row ends clear of the composer area`).toBeLessThanOrEqual(
     box.dockTop - FADE_PX,
   );
 }
@@ -59,6 +59,9 @@ test.describe('conversation composer', () => {
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await askFirstQuestion(page);
+    // The composer area and the header are the shared glass surface over the transcript.
+    await expect(page.locator('[data-slot="composer-dock"]')).toHaveClass(/(^|\s)glass(\s|$)/);
+    await expect(page.getByRole('main').locator('header').first()).toHaveClass(/(^|\s)glass(\s|$)/);
     // The first answer fit until it finished: the page keeps its end in view, actions and chips together.
     await expectActionsClearOfChips(page, 'the first answer as it finished, 1440×900');
 

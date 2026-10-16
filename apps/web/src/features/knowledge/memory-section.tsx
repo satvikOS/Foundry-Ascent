@@ -411,30 +411,21 @@ function MemoryRow({
       <span className="col-start-2 line-clamp-2 text-small text-muted-foreground [overflow-wrap:anywhere]">
         {displayContent(item)}
       </span>
-      <span className="col-start-2 flex flex-wrap items-center gap-x-1.5 text-caption text-subtle-foreground">
-        <span>{memoryProvenance(item).text}</span>
-        <span aria-hidden>·</span>
-        <span>{MEMORY_TYPE_LABELS[item.type].label}</span>
+      {/* One line of plain text that wraps like a sentence: where it came from, then what it is. */}
+      <span className="col-start-2 text-caption text-subtle-foreground">
+        {memoryProvenance(item).text}
+        {' · '}
+        {MEMORY_TYPE_LABELS[item.type].label}
         {shownStatus ? (
           <>
-            <span aria-hidden>·</span>
+            {' · '}
             <span className={cn(shownStatus === 'disputed' && 'font-medium text-destructive')}>
               {getStatusDefinition('memory', shownStatus).label}
             </span>
           </>
         ) : null}
-        {summary ? (
-          <>
-            <span aria-hidden>·</span>
-            <span>{summary}</span>
-          </>
-        ) : null}
-        {item.visibility === 'founder_private' ? (
-          <>
-            <span aria-hidden>·</span>
-            <span>{VISIBILITY_LABELS.founder_private.label}</span>
-          </>
-        ) : null}
+        {summary ? ` · ${summary}` : null}
+        {item.visibility === 'founder_private' ? ` · ${VISIBILITY_LABELS.founder_private.label}` : null}
       </span>
     </button>
   );

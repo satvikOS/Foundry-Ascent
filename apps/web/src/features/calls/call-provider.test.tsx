@@ -466,6 +466,8 @@ describe('the mini call bar', () => {
 
   it('warns when the time is nearly up, and says when the call ended out of view', async () => {
     const { engine, bar } = await minimized();
+    // The bar floats over the page on the shared glass surface.
+    expect(bar).toHaveClass('glass-strong');
     const status = within(bar).getByRole('status');
     expect(status).toHaveTextContent('');
     act(() => {
