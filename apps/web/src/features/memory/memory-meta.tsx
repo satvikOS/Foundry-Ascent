@@ -177,16 +177,19 @@ export function ProvenanceLine({
   memory,
   tenant,
   ventureId,
+  withCalls,
   link = true,
   className,
 }: {
   memory: Pick<MemoryObjectView, 'origin' | 'createdAt' | 'createdBy' | 'sourceRefs'>;
   tenant: string;
   ventureId: string;
+  /** The venture's conversations that had a call ("Learned from the call on …"), when known. */
+  withCalls?: ReadonlySet<string>;
   link?: boolean;
   className?: string;
 }) {
-  const { text, sessionId } = memoryProvenance(memory);
+  const { text, sessionId } = memoryProvenance(memory, withCalls);
   if (link && sessionId) {
     return (
       <Link

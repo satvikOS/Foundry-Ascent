@@ -3,11 +3,12 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { memoryQueryOptions } from '@/lib/api/hooks/memory';
+import { sessionsQueryOptions } from '@/lib/api/hooks/sessions';
 
 import { MemorySection, typedSummary } from './memory-section';
 import type { KnowledgeSearch } from './search';
-import { renderWithRouter, testQueryClient } from './test-utils';
-import { IDS, makeMemory } from './testing';
+import { json, renderWithRouter, stubFetch, testQueryClient, urlOf } from './test-utils';
+import { IDS, makeMemory, makeSession } from './testing';
 
 const decision = makeMemory({
   id: IDS.memory,
@@ -30,9 +31,19 @@ const proposal = makeMemory({
   title: 'Data approval may be slow',
 });
 
-async function renderSection(search: KnowledgeSearch = {}, { withActions = false } = {}) {
+async function renderSection(
+  search: KnowledgeSearch = {},
+  {
+    withActions = false,
+    items = [decision, insight, proposal],
+    calls = [],
+  }: { withActions?: boolean; items?: ReturnType<typeof makeMemory>[]; calls?: string[] } = {},
+) {
   const client = testQueryClient();
-  const items = [decision, insight, proposal];
+  // The venture's conversations: those listed in `calls` had a call.
+  client.setQueryData(sessionsQueryOptions(IDS.venture).queryKey, {
+    items: calls.map((id) => makeSession({ id, hasCalls: true })),
+  });
   client.setQueryData(memoryQueryOptions(IDS.venture).queryKey, { items, nextCursor: null });
   client.setQueryData(memoryQueryOptions(IDS.venture, { type: search.type }).queryKey, {
     items: items.filter((item) => !search.type || item.type === search.type),
@@ -79,6 +90,48 @@ describe('MemorySection', () => {
     expect(screen.queryByRole('button', { name: /Approve|Reject|Keep/ })).toBeNull();
     // Filters stay minimal: search and type chips, no status picker.
     expect(screen.queryByRole('combobox')).toBeNull();
+  });
+
+  it('says an item was learned on a call when its conversation had one', async () => {
+    await renderSection({}, { calls: [IDS.session] });
+    const list = screen.getByRole('list', { name: 'Memory' });
+    const learned = within(list).getByRole('button', { name: /Data approval may be slow/ });
+    expect(learned).toHaveTextContent(/Learned from the call on /);
+  });
+
+  it('asks for the venture’s conversations only when an item names the one it was learned from', async () => {
+    const fetchMock = stubFetch().mockResolvedValue(json({ items: [] }));
+    const fromAnswer = makeMemory({
+      id: IDS.memory3,
+      status: 'proposed',
+      title: 'Data approval may be slow',
+      sourceRefs: [{ kind: 'turn', id: IDS.turn, label: 'AI proposal' }],
+    });
+    const client = testQueryClient();
+    client.setQueryData(memoryQueryOptions(IDS.venture).queryKey, { items: [fromAnswer], nextCursor: null });
+    client.setQueryData(memoryQueryOptions(IDS.venture, {}).queryKey, {
+      items: [fromAnswer],
+      nextCursor: null,
+    });
+    await renderWithRouter(
+      <MemorySection
+        ventureId={IDS.venture}
+        search={{}}
+        setSearch={vi.fn()}
+        onSelect={vi.fn()}
+        canEdit
+        onCreate={vi.fn()}
+        createLabel="Add memory"
+      />,
+      client,
+    );
+    expect(screen.getByRole('button', { name: /Data approval may be slow/ })).toHaveTextContent(
+      /Learned from a conversation on /,
+    );
+    await act(() => new Promise((resolve) => setTimeout(resolve, 30)));
+    expect(
+      fetchMock.mock.calls.map(([input]) => urlOf(input)).filter((url) => url.includes('/sessions')),
+    ).toEqual([]);
   });
 
   it('offers Edit and Forget for each item', async () => {

@@ -18,7 +18,11 @@ import { displayContent, useMemory } from '@/lib/api/hooks/memory';
 import { pluralize } from '@/lib/format';
 import { MEMORY_TYPE_LABELS, VISIBILITY_LABELS } from '@/lib/labels';
 import { cn } from '@/lib/utils';
-import { memoryProvenance } from '@/features/memory/provenance';
+import {
+  learnedFromConversation,
+  memoryProvenance,
+  useConversationsWithCalls,
+} from '@/features/memory/provenance';
 import { availableMemoryActions } from '@/features/memory/optimistic';
 import {
   actionAttributes,
@@ -106,6 +110,12 @@ export function MemorySection({
     [all.data],
   );
   const rows = useMemo(() => memoryListRows(memory.data ?? [], search.status), [memory.data, search.status]);
+  // "Learned from the call on …": the founders and team read the venture's conversations, which say which had a
+  // call. Asked for only when a row names the conversation it was learned from.
+  const withCalls = useConversationsWithCalls(
+    ventureId,
+    canEdit && rows.some((item) => learnedFromConversation(item) !== null),
+  );
 
   const filtered =
     search.type !== undefined ||
@@ -231,6 +241,7 @@ export function MemorySection({
             <li key={item.id} className="group/row relative">
               <MemoryRow
                 item={item}
+                withCalls={withCalls}
                 selected={item.id === search.m}
                 onSelect={() => {
                   onSelect(item.id);
@@ -375,10 +386,13 @@ function RowActions({
 
 function MemoryRow({
   item,
+  withCalls,
   selected,
   onSelect,
 }: {
   item: MemoryObjectView;
+  /** The venture's conversations that had a call. */
+  withCalls: ReadonlySet<string>;
   selected: boolean;
   onSelect: () => void;
 }) {
@@ -413,7 +427,7 @@ function MemoryRow({
       </span>
       {/* One line of plain text that wraps like a sentence: where it came from, then what it is. */}
       <span className="col-start-2 text-caption text-subtle-foreground">
-        {memoryProvenance(item).text}
+        {memoryProvenance(item, withCalls).text}
         {' · '}
         {MEMORY_TYPE_LABELS[item.type].label}
         {shownStatus ? (

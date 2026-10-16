@@ -11,6 +11,7 @@ import { formatDateTime, formatRelative, isoString } from '@/lib/format';
 import { MemoryActionBar } from './memory-action-bar';
 import { MemoryHistoryTimeline } from './memory-history';
 import { MemoryTypeLabel, PinnedMark, ProvenanceLine, SourceRefList, VisibilityLabel } from './memory-meta';
+import { learnedFromConversation, useConversationsWithCalls } from './provenance';
 import { attributeRows } from './typed/attributes';
 
 export function MemoryAttributesList({ attributes }: { attributes: Record<string, unknown> }) {
@@ -62,6 +63,8 @@ export function MemoryDetail({
   // Lists carry an excerpt of the content; the detail shows the full text (GET /memory/:id).
   const { memory: full } = useFullMemory(listed);
   const memory = full ?? listed;
+  // The founders and team read the venture's conversations: they see whether it was learned on a call.
+  const withCalls = useConversationsWithCalls(ventureId, canEdit && learnedFromConversation(memory) !== null);
   return (
     <div>
       <InspectorSection title="Memory" className="space-y-3">
@@ -79,7 +82,7 @@ export function MemoryDetail({
           {displayContent(memory)}
         </Markdown>
         <p className="mt-2 text-xs text-muted-foreground">
-          <ProvenanceLine memory={memory} tenant={tenant} ventureId={ventureId} />
+          <ProvenanceLine memory={memory} tenant={tenant} ventureId={ventureId} withCalls={withCalls} />
         </p>
         {canEdit ? (
           <MemoryActionBar

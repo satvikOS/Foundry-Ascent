@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { json, renderWithRouter, stubFetch, urlOf } from '@/features/knowledge/test-utils';
-import { IDS, makeMemory } from '@/features/knowledge/testing';
+import { IDS, makeMemory, makeSession } from '@/features/knowledge/testing';
 
 import { MemoryDetail } from './memory-detail';
 
@@ -42,6 +42,34 @@ describe('MemoryDetail', () => {
     expect(screen.getByRole('link', { name: 'Earlier memory' })).toBeInTheDocument();
     // Nothing waits for approval: no status badge for memory in use, no approve or reject.
     expect(screen.queryByText(/Proposed|Confirmed|approval/)).toBeNull();
+  });
+
+  it('says it was learned on the call when that conversation had one (asked of the venture’s conversations)', async () => {
+    const fetchMock = stubFetch().mockImplementation((input) =>
+      Promise.resolve(
+        urlOf(input).endsWith(`/ventures/${IDS.venture}/sessions`)
+          ? json({ items: [makeSession({ id: IDS.session, hasCalls: true })] })
+          : json({ items: [] }),
+      ),
+    );
+    await renderWithRouter(
+      <MemoryDetail
+        memory={makeMemory({
+          origin: 'ai',
+          status: 'confirmed',
+          sourceRefs: [
+            { kind: 'session', id: IDS.session, label: 'Learned from the conversation' },
+            { kind: 'turn', id: IDS.turn },
+          ],
+        })}
+        tenant="ain"
+        ventureId={IDS.venture}
+        canEdit
+      />,
+    );
+    const learned = await screen.findByRole('link', { name: /^Learned from the call on / });
+    expect(learned).toHaveAttribute('href', `/ain/app/v/${IDS.venture}/c/${IDS.session}`);
+    expect(fetchMock.mock.calls.filter(([input]) => urlOf(input).includes('/sessions'))).toHaveLength(1);
   });
 
   it('shows an older suggestion as known, with Edit, Pin where it applies, and Forget', async () => {

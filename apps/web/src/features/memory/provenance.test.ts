@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { IDS, makeMemory } from '@/features/knowledge/testing';
 
-import { memoryProvenance } from './provenance';
+import { learnedFromConversation, memoryProvenance } from './provenance';
 
 const MAYA = { id: IDS.principal, displayName: 'Maya Okafor-Lindqvist', title: null, synthetic: true };
 const ON = /on Oct 1, 2026$/;
@@ -23,23 +23,44 @@ describe('memoryProvenance', () => {
     expect(fromAnswer.sessionId).toBeNull();
   });
 
-  it('says it came from a call when the server records the channel', () => {
-    const call = memoryProvenance(
-      makeMemory({
-        origin: 'ai',
-        sourceRefs: [
-          { kind: 'session', id: IDS.session, label: 'call' },
-          { kind: 'turn', id: IDS.turn },
-        ],
-      }),
-    );
+  it('says it came from the call when its conversation had one (the conversation says so, not a label)', () => {
+    // As memory kept automatically names its source: the conversation, with a label, and the turn.
+    const learned = makeMemory({
+      origin: 'ai',
+      sourceRefs: [
+        { kind: 'session', id: IDS.session, label: 'Learned from the conversation' },
+        { kind: 'turn', id: IDS.turn },
+      ],
+    });
+    const call = memoryProvenance(learned, new Set([IDS.session]));
     expect(call.text).toMatch(/^Learned from the call on /);
+    expect(call.text).toMatch(ON);
     expect(call.sessionId).toBe(IDS.session);
+    // A conversation without a call, or one not known yet, reads as the conversation.
+    expect(memoryProvenance(learned, new Set([IDS.turn])).text).toMatch(/^Learned from the conversation on /);
+    expect(memoryProvenance(learned).text).toMatch(/^Learned from the conversation on /);
+    // A label alone never makes it a call.
     expect(
       memoryProvenance(
-        makeMemory({ origin: 'ai', sourceRefs: [{ kind: 'turn', id: IDS.turn, label: 'Call' }] }),
+        makeMemory({ origin: 'ai', sourceRefs: [{ kind: 'session', id: IDS.session, label: 'call' }] }),
       ).text,
-    ).toMatch(/^Learned from a call on /);
+    ).toMatch(/^Learned from the conversation on /);
+  });
+
+  it('names the conversation only for what the vEIR learned', () => {
+    expect(
+      learnedFromConversation(
+        makeMemory({ origin: 'ai', sourceRefs: [{ kind: 'session', id: IDS.session }] }),
+      ),
+    ).toBe(IDS.session);
+    expect(
+      learnedFromConversation(makeMemory({ origin: 'ai', sourceRefs: [{ kind: 'turn', id: IDS.turn }] })),
+    ).toBeNull();
+    expect(
+      learnedFromConversation(
+        makeMemory({ origin: 'founder', sourceRefs: [{ kind: 'session', id: IDS.session }] }),
+      ),
+    ).toBeNull();
   });
 
   it('never credits the vEIR’s memory to the founder whose conversation it came from', () => {
