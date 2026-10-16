@@ -137,7 +137,11 @@ describe('a second call minutes after the first', () => {
     await idle(first.id, 3);
     expect(await drawnFrom(first.id)).toMatchObject({ digests: 0 });
 
+    // New chat can greet with it before anything is sent: the preview is the line the conversation opens with.
+    const preview = await h.core.sessions.previewOpener(maya, quietquad());
+    expect(preview.lastConversation).toMatchObject({ sessionId: first.id, channel: 'call', title: question });
     const second = await h.core.sessions.create(maya, quietquad(), {});
+    expect(second.opener).toBe(preview.opener);
     expect(second.opener).toContain(question);
     expect(second.opener).toMatch(/about 3 minutes ago, on a call/i);
     // Starting it distils the first at once too (it is well inside the 8-minute active window).
@@ -291,7 +295,7 @@ describe('"Where you left off"', () => {
         },
       ),
     );
-    const long = `${'We went through the library budget line by line. '.repeat(30)}`;
+    const long = 'We went through the library budget line by line. '.repeat(30);
     const own = await h.core.sessions.create(maya, quietquad(), {});
     for (let i = 0; i < 7; i += 1) await talk(maya, own.id, `${String(i)} ${long}`);
     await idle(own.id, 30);

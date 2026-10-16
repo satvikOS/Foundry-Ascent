@@ -1,6 +1,7 @@
 import { DEFAULT_PERSONA_NAME, POLICY_VERSION, isModelGatewayError } from '@foundry/ai';
 import {
   CreateSessionRequest,
+  type ConversationOpenerResponse,
   type SessionDetailResponse,
   SessionListQuery,
   TurnFeedbackRequest,
@@ -33,7 +34,7 @@ import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.j
 import { meteredStructured } from '../internal/metered.js';
 import { participantTurnView, supportMessageFor } from '../orchestrator/blocked.js';
 import { loadLeftOff, validatedOpener } from '../orchestrator/continuity.js';
-import { continuityOpener } from '../orchestrator/continuity-prompt.js';
+import { continuityOpener, type LeftOffConversationData } from '../orchestrator/continuity-prompt.js';
 import { assertWithinSpendCaps } from '../orchestrator/guards.js';
 import { RECAP_SCHEMA_NAME, RecapDraft, buildRecapPrompt, sanitizeRecap } from '../orchestrator/recap.js';
 import { persistMemoryCandidates } from './memory.js';
@@ -63,6 +64,11 @@ export interface SessionsService {
     ventureId: string,
     input: z.input<typeof CreateSessionRequest>,
   ): Promise<SessionView>;
+  /**
+   * How the vEIR would open a new standard conversation of the caller in this venture now (founder/team): the
+   * opener `create` would store, and the latest earlier conversation it picks up. Nothing is written.
+   */
+  previewOpener(ctx: RequestContext, ventureId: string): Promise<ConversationOpenerResponse>;
   /** Sessions of a venture, latest activity first (founder/team). */
   list(ctx: RequestContext, ventureId: string): Promise<SessionView[]>;
   /**
@@ -128,20 +134,24 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
    *    without any model call from what was said, so it is right even before distillation ran
    *    (orchestrator/continuity-prompt.ts);
    * 4. an older notebook opener.
-   * Every line must pass the opener checks (identity, cross-venture); one that fails is skipped. Null when
-   * there is none (a first conversation). `seed` (the new conversation's id) varies the phrasing of 3.
+   * Every line must pass the opener checks (identity, cross-venture); one that fails is skipped. `opener` is
+   * null when there is none (a first conversation). The phrasing of 3 follows the conversation it picks up (and
+   * the person), so a preview and the conversation created next say the same, and each new conversation after
+   * another one opens differently.
    */
   async function openerFor(
     scope: RequestScope,
     ventureId: string,
     active: ActiveAssignment,
     guards: { readonly others: OtherVentures; readonly eirNames: readonly string[] },
-    seed: string,
   ): Promise<{
-    readonly text: string;
-    readonly sourceSessionId: string | null;
-    readonly byPerson: boolean;
-  } | null> {
+    readonly opener: {
+      readonly text: string;
+      readonly sourceSessionId: string | null;
+      readonly byPerson: boolean;
+    } | null;
+    readonly latest: LeftOffConversationData | null;
+  }> {
     const notebook = await notebooksRepo.getNotebook(scope.tx, { ventureId, personaId: active.persona.id });
     const openerGuards = {
       personaName: active.persona.name,
@@ -157,7 +167,6 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
     // means a person wrote it (the copy stays); a missing one means its origin is unknown, and deleting any
     // conversation of the venture erases the copy.
     const source = notebook?.content.nextOpenerSource;
-    if (stored !== null && source === null) return { text: stored, sourceSessionId: null, byPerson: true };
     const last = await loadLeftOff(scope.tx, {
       ventureId,
       personaId: active.persona.id,
@@ -167,21 +176,43 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
       ownOnly: true,
     });
     const latest = last?.conversations[0] ?? null;
+    const found = (
+      opener: {
+        readonly text: string;
+        readonly sourceSessionId: string | null;
+        readonly byPerson: boolean;
+      } | null,
+    ) => ({ opener, latest });
+    if (stored !== null && source === null) {
+      return found({ text: stored, sourceSessionId: null, byPerson: true });
+    }
     const current =
       latest === null ||
       source === latest.sessionId ||
       (notebook?.updatedAt != null && Date.parse(notebook.updatedAt) > Date.parse(latest.lastActivityAt));
     if (stored !== null && current) {
-      return { text: stored, sourceSessionId: source ?? null, byPerson: false };
+      return found({ text: stored, sourceSessionId: source ?? null, byPerson: false });
     }
     if (latest !== null) {
+      const seed = `${latest.sessionId}:${scope.ctx.principalId}`;
       const lines = continuityOpener(latest, { now: kit.now(), seed });
       for (const candidate of [lines.withTopic, lines.generic]) {
         const text = candidate === null ? null : validatedOpener(candidate, openerGuards);
-        if (text !== null) return { text, sourceSessionId: latest.sessionId, byPerson: false };
+        if (text !== null) return found({ text, sourceSessionId: latest.sessionId, byPerson: false });
       }
     }
-    return stored === null ? null : { text: stored, sourceSessionId: source ?? null, byPerson: false };
+    return found(stored === null ? null : { text: stored, sourceSessionId: source ?? null, byPerson: false });
+  }
+
+  /** The opener's guards, from the tenant directory (owner role, cached): read before a request transaction. */
+  async function openerGuards(
+    ctx: RequestContext,
+    ventureId: string,
+  ): Promise<{ readonly others: OtherVentures; readonly eirNames: readonly string[] }> {
+    return {
+      others: await directory.others(ctx.tenantId, ventureId),
+      eirNames: (await directory.get(ctx.tenantId)).eirNames,
+    };
   }
 
   /** The session (RLS-visible) of a founder/team request, or 404/403. */
@@ -226,21 +257,13 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
       });
       await assertWithinSpendCaps(kit, ctx, settings, { ventureId, operation: 'session' });
       // The opener's guards come from the tenant directory (owner role), read before the writing transaction.
-      const guards =
-        input.privacy === 'standard'
-          ? {
-              others: await directory.others(ctx.tenantId, ventureId),
-              eirNames: (await directory.get(ctx.tenantId)).eirNames,
-            }
-          : null;
+      const guards = input.privacy === 'standard' ? await openerGuards(ctx, ventureId) : null;
       return kit.inRequest(ctx, async (scope) => {
         // Re-resolved in the writing transaction: a suspension in between still blocks the session.
         const active = await requireAssignmentActive(scope, ventureId);
         requireModeAllowed(active, input.mode);
-        const id = kit.deps.ids.uuid();
-        const opener = guards === null ? null : await openerFor(scope, ventureId, active, guards, id);
+        const opener = guards === null ? null : (await openerFor(scope, ventureId, active, guards)).opener;
         const session = await sessionsRepo.createSession(scope.tx, {
-          id,
           tenantId: ctx.tenantId,
           ventureId,
           assignmentId: active.assignment.id,
@@ -272,6 +295,32 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
           },
         });
         return sessionView(scope.tx, session.id);
+      });
+    },
+
+    previewOpener: async (ctx, rawVentureId) => {
+      const ventureId = requireId(rawVentureId, 'Venture');
+      const guards = await openerGuards(ctx, ventureId);
+      return kit.inRequest(ctx, async (scope) => {
+        await requireVentureAccess(scope, ventureId, 'write', { objectType: 'session' });
+        const { opener, latest } = await openerFor(
+          scope,
+          ventureId,
+          await requireAssignmentActive(scope, ventureId),
+          guards,
+        );
+        return {
+          opener: opener?.text ?? null,
+          lastConversation:
+            latest === null
+              ? null
+              : {
+                  sessionId: latest.sessionId,
+                  lastActivityAt: latest.lastActivityAt,
+                  channel: latest.channel,
+                  title: latest.title,
+                },
+        };
       });
     },
 

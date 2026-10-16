@@ -146,3 +146,13 @@ def test_memory_and_session_mirrors_name_real_fields() -> None:
     session_aliases = {f.alias or name for name, f in models.SessionView.model_fields.items()}
     assert session_aliases <= session
     assert "opener" in session_aliases
+
+
+def test_conversation_opener_mirror() -> None:
+    api = _source("api.ts")
+    keys = _object_keys(api, "ConversationOpenerResponse")
+    assert keys == {f.alias or name for name, f in models.ConversationOpener.model_fields.items()}
+    match = re.search(r"lastConversation: z\s*\.object\(\{(.*?)\}\)", api, re.DOTALL)
+    assert match
+    nested = set(re.findall(r"^\s+(\w+):", match.group(1), re.MULTILINE))
+    assert nested == {f.alias or name for name, f in models.LastConversation.model_fields.items()}

@@ -231,6 +231,20 @@ class SessionView(_Camel):
     opener: str | None = None
 
 
+class LastConversation(_Camel):
+    session_id: str
+    last_activity_at: str
+    channel: Literal["call", "chat"]
+    title: str | None = None
+
+
+class ConversationOpener(_Camel):
+    """``GET /ventures/:id/opener``: how the vEIR would open a new conversation now."""
+
+    opener: str | None = None
+    last_conversation: LastConversation | None = None
+
+
 class SessionDetail(_Camel):
     session: SessionView
     turns: list[TurnView]
