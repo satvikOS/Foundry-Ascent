@@ -36,7 +36,7 @@ import { coachingAvailability } from '../coach/availability';
 import { AttachButton, AttachmentTray, useComposerAttachments } from './attachments';
 import { Composer, MAX_TURN_CHARS, modeToSend, type ComposerMode } from './composer';
 import { newConversationRequest, setPendingFirstMessage } from './first-message';
-import { PrivacyChoice, useStartPrivacy } from './privacy-choice';
+import { markChoiceInView, PrivacyChoice, useStartPrivacy } from './privacy-choice';
 import { newChatSuggestions, type Suggestion, type SuggestionIcon } from './suggestions';
 
 const routeApi = getRouteApi('/$tenant/app/v/$ventureId/');
@@ -299,6 +299,10 @@ function NewChat() {
                       params={{ tenant, ventureId }}
                       search={{ call: 1 }}
                       aria-label={`Call ${name}`}
+                      // Remember or Private is chosen right here, so the call starts at once with it.
+                      onClick={() => {
+                        markChoiceInView(ventureId);
+                      }}
                     >
                       <AudioLines aria-hidden />
                     </Link>

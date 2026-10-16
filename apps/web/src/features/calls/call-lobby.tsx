@@ -85,7 +85,8 @@ interface CallLobbyProps {
  * Before the call: start it (a click is what lets the browser play audio), or learn why it can't start.
  * When the person arrived by clicking Call, the call starts on its own and this shows only "Connecting";
  * the first call ever waits here so the founder reads how their voice is handled. A call that starts a new
- * conversation offers Remember (the default) or Private here.
+ * conversation offers Remember (the default) or Private here, and waits for Start call unless it came from
+ * New chat's Call button, beside the same choice.
  */
 export function CallLobby({
   engine,

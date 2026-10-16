@@ -28,7 +28,7 @@ import type { CallEngine } from '@/lib/realtime/call-engine';
 import { cn } from '@/lib/utils';
 
 import { newConversationRequest } from '../chat/first-message';
-import { startPrivacy, useStartPrivacy } from '../chat/privacy-choice';
+import { startPrivacy, takeChoiceInView, useStartPrivacy } from '../chat/privacy-choice';
 import { useLoadedCall } from './call-context';
 import { CallLive } from './call-live';
 import { callBlocker, CallLobby } from './call-lobby';
@@ -222,6 +222,20 @@ export function CallScreen() {
     if (!open) attempted.current = null;
   }, [open]);
 
+  /**
+   * Whether this opening of the screen came from New chat's Call button, beside Remember or Private. A call
+   * into a new conversation from anywhere else (the sidebar, ⌘K) waits on the start screen, which offers the
+   * choice first. Taken when the screen opens (before it can start a call), forgotten when it closes.
+   */
+  const choiceSeen = useRef(false);
+  useEffect(() => {
+    if (!open) {
+      choiceSeen.current = false;
+      return;
+    }
+    if (routeVenture !== null && takeChoiceInView(routeVenture)) choiceSeen.current = true;
+  }, [open, routeVenture]);
+
   // A call that could not start is forgotten once the screen closes. If it failed while minimized, the
   // screen that explains why was closed, so a toast says it instead.
   const failureShown = useRef(false);
@@ -262,11 +276,13 @@ export function CallScreen() {
 
   // Arrived by clicking Call: start without another click (the first call ever shows how voice is handled
   // first, and starts from its Start call). Back or Forward to a call's URL is not a click: it waits for
-  // Start call too.
+  // Start call too. A call into a new conversation starts at once only from New chat's Call button, where
+  // Remember or Private was in view; from anywhere else it waits for Start call, beside that choice.
   useEffect(() => {
     if (route?.open !== true || !ready || snapshot.phase !== 'idle' || createSession.isPending) return;
     const key = route.sessionId ?? `new:${route.ventureId}`;
     if (attempted.current === key || !noticeSeen || !hasUserActivation() || arrivedByHistory()) return;
+    if (route.sessionId === null && !choiceSeen.current) return;
     begin();
   }, [arrivedByHistory, begin, createSession.isPending, noticeSeen, ready, route, snapshot.phase]);
 

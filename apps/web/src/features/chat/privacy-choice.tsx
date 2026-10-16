@@ -35,6 +35,23 @@ export function setStartPrivacy(ventureId: string, privacy: ConversationPrivacy)
   for (const listener of listeners) listener();
 }
 
+/*
+ * A call that starts a new conversation offers the choice before it starts, on the call's own start screen,
+ * unless it was started from New chat's Call button, right beside the choice: that call starts at once with it.
+ * The mark is set by that button and taken (once) when the call screen opens.
+ */
+const choiceInView = new Set<string>();
+
+/** New chat's Call button: the founder saw Remember or Private beside it, so the call starts at once. */
+export function markChoiceInView(ventureId: string): void {
+  choiceInView.add(ventureId);
+}
+
+/** Whether the call screen opening now was opened beside the choice (and forgets it: one opening, one mark). */
+export function takeChoiceInView(ventureId: string): boolean {
+  return choiceInView.delete(ventureId);
+}
+
 /** The New chat choice for a venture, shared by New chat and its call screen. */
 export function useStartPrivacy(
   ventureId: string,

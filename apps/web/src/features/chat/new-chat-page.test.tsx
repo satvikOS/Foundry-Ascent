@@ -22,7 +22,7 @@ import { meQueryOptions } from '@/lib/api/hooks/auth';
 
 import { AttachmentTray, useComposerAttachments } from './attachments';
 import { NewChatPage } from './new-chat-page';
-import { startPrivacy } from './privacy-choice';
+import { startPrivacy, takeChoiceInView } from './privacy-choice';
 
 const A = '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c01';
 const B = '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c02';
@@ -65,7 +65,7 @@ function bodyOf(init: RequestInit | undefined): unknown {
 }
 
 /** The API as New chat reads it: each venture, its notebook, and an upload that stays in flight until aborted. */
-function stubApi(): Call[] {
+function stubApi({ calls: callsOn = false }: { calls?: boolean } = {}): Call[] {
   const calls: Call[] = [];
   stubFetch().mockImplementation((input, init) => {
     const url = input instanceof Request ? input.url : input.toString();
@@ -77,6 +77,35 @@ function stubApi(): Call[] {
       signal,
       body: method === 'POST' && !url.endsWith('/documents') ? bodyOf(init) : undefined,
     });
+    // Call settings with calls on (the composer then offers Call).
+    if (callsOn && method === 'GET' && url.endsWith('/call-config')) {
+      return Promise.resolve(
+        jsonResponse({
+          veir: {
+            personaId: SESSION,
+            name: 'Corin’s vEIR',
+            shortName: 'Corin',
+            kind: 'eir_persona',
+            eirDisplayName: 'Corin Halvorsen',
+            tagline: null,
+            disclosure: 'AI',
+            embodiment: {
+              provider: 'builtin',
+              voiceId: null,
+              portraitUrl: null,
+              voiceConsented: false,
+              likenessConsented: false,
+            },
+          },
+          provider: 'builtin',
+          maxMinutes: 20,
+          remainingMinutesToday: 40,
+          aiEnabled: true,
+          callsEnabled: true,
+          callNoticeAcknowledgedAt: null,
+        }),
+      );
+    }
     for (const [id, name, notebook] of [
       [A, 'QuietQuad', makeNotebook({ ventureId: A, nextOpener: NAMED_OPENER, greeting: null })],
       [B, 'BenchTally', makeNotebook({ ventureId: B, nextOpener: GREETING, greeting: GREETING })],
@@ -291,6 +320,21 @@ describe('New chat', () => {
     await screen.findByText('Conversation');
     const create = calls.find((c) => c.method === 'POST' && c.url === `/api/v1/ventures/${A}/sessions`);
     expect(create?.body).toMatchObject({ privacy: 'ephemeral' });
+  });
+
+  it('starts a call at once from its own Call button, beside the choice (and only that opening)', async () => {
+    stubApi({ calls: true });
+    const router = renderNewChat(A);
+    const call = await screen.findByRole('link', { name: /^Call / });
+    expect(call).toHaveAttribute('href', `/ain/app/v/${A}?call=1`);
+    expect(takeChoiceInView(A)).toBe(false);
+    await userEvent.setup().click(call);
+    await waitFor(() => {
+      expect(router.state.location.searchStr).toBe('?call=1');
+    });
+    // The call screen takes the mark when it opens; it is good for that one opening only.
+    expect(takeChoiceInView(A)).toBe(true);
+    expect(takeChoiceInView(A)).toBe(false);
   });
 
   it('is back to Remember on every fresh New chat (the choice is never stored)', async () => {

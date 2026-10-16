@@ -255,7 +255,12 @@ test.describe('vEIR calls', () => {
       if (request.url().endsWith('/api/v1/speech')) speech.push(request.url());
     });
 
-    await test.step('Call starts at once, in a new conversation', async () => {
+    await test.step('from the sidebar: Remember or Private first, then Start call, in a new conversation', async () => {
+      let created = 0;
+      page.on('request', (request) => {
+        if (request.method() === 'POST' && /\/ventures\/[0-9a-f-]{36}\/sessions$/.test(request.url()))
+          created += 1;
+      });
       const started = page.waitForResponse(
         (response) => /\/sessions\/[0-9a-f-]{36}\/calls$/.test(response.url()) && response.status() === 201,
       );
@@ -265,6 +270,15 @@ test.describe('vEIR calls', () => {
         .click();
       const screen = callScreen(page);
       await expect(screen).toBeVisible();
+      // Away from New chat's choice, the call waits on its start screen: Remember is chosen, Private a click away.
+      const memory = screen.getByRole('group', { name: 'Memory for this call' });
+      await expect(memory.getByRole('radio', { name: 'Remember this call' })).toBeChecked();
+      await expect(memory.getByRole('radio', { name: 'Private, a one-off' })).not.toBeChecked();
+      const start = screen.getByRole('button', { name: 'Start call' });
+      await expect(start).toBeEnabled();
+      await expect(start).toBeFocused();
+      expect(created, 'nothing is created before Start call').toBe(0);
+      await start.click();
       await page.waitForURL(/\/c\/[0-9a-f-]{36}\?call=1$/);
       sessionId = /\/c\/([0-9a-f-]{36})/.exec(page.url())?.[1] ?? '';
       const body = (await (await started).json()) as { call: { id: string }; intro: { text: string } | null };
