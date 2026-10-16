@@ -1,13 +1,6 @@
+import { CRISIS_SPOKEN_MESSAGE } from '@foundry/ai';
 import { SpeechRequest } from '@foundry/contracts';
-import {
-  auditRepo,
-  callsRepo,
-  personasRepo,
-  sessionsRepo,
-  settingsRepo,
-  turnsRepo,
-  usageRepo,
-} from '@foundry/db';
+import { auditRepo, callsRepo, personasRepo, sessionsRepo, settingsRepo, usageRepo } from '@foundry/db';
 import { type z } from 'zod';
 
 import { type PlatformKeyCache } from '../auth/keys.js';
@@ -21,17 +14,24 @@ import { SpeechSynthesisError, type SynthesizedSpeech } from '../ports.js';
 import { refusalError, timeLimitRefusal } from './call-admission.js';
 import { CALL_LIMITS, callSecondsToday, callTimeLeft } from './call-usage.js';
 import { voiceApproved } from './calls.js';
-import { speechCostUsd, speechEngines } from './voices.js';
+import { isCrisisMessage, speakableRun, speakableText } from './spoken-text.js';
+import { DEFAULT_SPEECH_VOICE, speechCostUsd, speechEngines } from './voices.js';
 
 /**
  * Text-to-speech for calls (`POST /speech`). Calls speak only validated text:
  *  - a signed unit: a `turn.speech` unit of a turn (or the call intro, which has no turn) whose signature over
  *    `sessionId|turnId|seq|text` verifies; units of a turn that was blocked or failed are never spoken;
  *  - or, unsigned, the stored `spoken` form of a completed turn of the conversation: the whole of it, or one
- *    or more consecutive whole sentences of it (never a fragment).
+ *    or more consecutive whole sentences of it (never a fragment); the stored words are what is spoken;
+ *  - or the fixed crisis support message of the caller's own crisis turn of a call (below).
  * Speech belongs to the caller's live call in that conversation and speaks with the call's voice. Every
  * synthesis is metered in the usage ledger (purpose `speech`, priced per character) and checked against the
  * kill switches, the daily spend caps, the call's time limits, the persona's status and its voice consent.
+ *
+ * Crisis support is never refused for call or budget reasons: the turn engine answers a crisis on a call with
+ * the fixed CRISIS_SPOKEN_MESSAGE (no model call) and marks the turn blocked. That message is spoken for the
+ * turn's author for a few minutes after the turn, a few times, whatever the call, the switches and the spend
+ * caps say, in the call's voice while it is approved and in the platform voice otherwise. It is still metered.
  */
 export interface SpeechService {
   synthesize(
@@ -41,88 +41,17 @@ export interface SpeechService {
   ): Promise<SynthesizedSpeech>;
 }
 
-/** Unsigned requests shorter than this must be the whole spoken reply (no one-word splicing). */
-export const MIN_UNSIGNED_SPEECH_CHARS = 12;
-
-/** Answer Markdown read as plain sentences: no citation keys, emphasis, headings, bullets or link targets. */
-export function speakableText(markdown: string): string {
-  return markdown
-    .replace(/\[(E\d+(?:\s*[,;]\s*E\d+)*)\]/g, ' ')
-    .replace(/\((E\d+(?:\s*[,;]\s*E\d+)*)\)/g, ' ')
-    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/^\s{0,3}(?:#{1,6}\s+|>\s?|[-*+]\s+|\d+[.)]\s+)/gm, '')
-    .replace(/[*_`~]+/g, '')
-    .replace(/\s+/g, ' ')
-    .replace(/\s+([,.;:!?])/g, '$1')
-    .trim();
-}
-
-/**
- * Sentences of plain text, in order: a sentence ends at `.`, `!`, `?` or `…` (with any closing quotes or
- * brackets) followed by whitespace, so "19.5%" or "e-mail.com" never split.
- */
-export function splitSentences(text: string): string[] {
-  return text
-    .split(/(?<=[.!?…]["'”’)\]]*)\s+/u)
-    .map((s) => s.trim())
-    .filter((s) => s !== '');
-}
-
-function comparable(text: string): string {
-  return text
-    .normalize('NFKC')
-    .replace(/[‘’‚′]/g, "'")
-    .replace(/[“”„″]/g, '"')
-    .replace(/[‐-―]/g, '-')
-    .replace(/…/g, '...')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
-}
-
-/**
- * Whether `requested` may be spoken for a turn whose validated spoken form is `spoken`: all of it, or one or
- * more consecutive whole sentences of it at least {@link MIN_UNSIGNED_SPEECH_CHARS} long. Arbitrary
- * substrings, reordered or skipped sentences are refused (pure; unit tested).
- */
-export function isSpeakableRun(requested: string, spoken: string | null): boolean {
-  if (spoken === null) return false;
-  const wanted = comparable(speakableText(requested));
-  if (wanted === '') return false;
-  const plain = speakableText(spoken);
-  if (wanted === comparable(plain)) return true;
-  if (wanted.length < MIN_UNSIGNED_SPEECH_CHARS) return false;
-  const sentences = splitSentences(plain).map(comparable);
-  for (let start = 0; start < sentences.length; start += 1) {
-    let run = '';
-    for (let end = start; end < sentences.length; end += 1) {
-      run = end === start ? (sentences[end] ?? '') : `${run} ${sentences[end] ?? ''}`;
-      if (run === wanted) return true;
-      if (run.length >= wanted.length) break;
-    }
-  }
-  return false;
-}
-
-/**
- * What the founder heard of a spoken reply they interrupted after unit `heardSeq` (`turns.heard_seq`), when its
- * units are the reply's sentences in order: the conversation history replays this instead of the whole reply.
- * Empty when they heard nothing.
- */
-export function heardPortion(spoken: string, heardSeq: number): string {
-  if (heardSeq < 0) return '';
-  return splitSentences(speakableText(spoken))
-    .slice(0, heardSeq + 1)
-    .join(' ');
-}
-
 interface SpeechPlan {
   readonly ventureId: string;
   readonly callId: string;
   readonly voiceId: string;
-  readonly settings: { dailyUsdCapGlobal: number; dailyUsdCapPerPrincipal: number };
+  /** The words synthesized: the signed unit, or the stored words a request matched. */
+  readonly text: string;
+  /** The daily spend caps to check; null for crisis support, which no cap stops. */
+  readonly settings: { dailyUsdCapGlobal: number; dailyUsdCapPerPrincipal: number } | null;
   readonly objectType: 'turn' | 'call';
   readonly objectId: string;
+  readonly crisis: boolean;
 }
 
 export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechService {
@@ -142,6 +71,44 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
     ]);
   }
 
+  /**
+   * The plan for the crisis support message of `turn`, when the caller may hear it: their own crisis turn of a
+   * call in this conversation, sent a few minutes ago at most. Null otherwise (the ordinary rules then apply).
+   */
+  async function crisisPlan(
+    scope: RequestScope,
+    turn: callsRepo.SpokenTurn,
+    signatureValid: boolean,
+  ): Promise<SpeechPlan | null> {
+    if (
+      !turn.crisisSupport ||
+      turn.status !== 'blocked' ||
+      turn.callId === null ||
+      turn.authorId !== scope.ctx.principalId ||
+      turn.ageSeconds > CALL_LIMITS.crisisSpeechWindowSeconds
+    ) {
+      return null;
+    }
+    if (!signatureValid) refuseText(scope, turn.ventureId, turn.turnId, 'signature_invalid');
+    const call = await callsRepo.getCall(scope.tx, turn.callId);
+    const persona = call === null ? null : await personasRepo.getPersona(scope.tx, call.personaId);
+    const assets = persona === null ? [] : await personasRepo.personaConsentAssets(scope.tx, persona.id);
+    const voiceId =
+      call !== null && persona !== null && voiceApproved(call.voiceId, persona, assets)
+        ? call.voiceId
+        : DEFAULT_SPEECH_VOICE;
+    return {
+      ventureId: turn.ventureId,
+      callId: turn.callId,
+      voiceId,
+      text: speakableText(CRISIS_SPOKEN_MESSAGE),
+      settings: null,
+      objectType: 'turn',
+      objectId: turn.turnId,
+      crisis: true,
+    };
+  }
+
   return {
     synthesize: async (ctx, rawInput, options = {}) => {
       const input = parseInput(SpeechRequest, rawInput);
@@ -157,7 +124,14 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
           { path: 'sig', message: 'Required for the call intro' },
         ]);
       }
-      const verificationKeys = input.sig === undefined ? [] : await keys.verificationKeys();
+      const signed = input.sig !== undefined;
+      const signatureValid =
+        input.sig !== undefined &&
+        verifySpeechUnit(
+          await keys.verificationKeys(),
+          { sessionId, turnId, seq: input.seq ?? 0, text: input.text },
+          input.sig,
+        );
 
       const plan = await kit.inRequest(ctx, async (scope): Promise<SpeechPlan> => {
         const { tx } = scope;
@@ -167,14 +141,19 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
           objectType: 'session',
           objectId: sessionId,
         });
+        const turn = turnId === null ? null : await callsRepo.getSpokenTurn(tx, turnId);
+        if (turnId !== null && turn?.sessionId !== sessionId) throw fail.notFound('Turn');
+        if (turn !== null && isCrisisMessage(input.text)) {
+          const crisis = await crisisPlan(scope, turn, !signed || signatureValid);
+          if (crisis !== null) return crisis;
+        }
+
         const settings = await settingsRepo.getPlatformSettings(tx);
         if (!settings.aiEnabled) {
           throw new DomainError(
             'ai_disabled',
             'AI coaching is paused by the program. Please try again later.',
-            {
-              reason: 'kill_switch',
-            },
+            { reason: 'kill_switch' },
           );
         }
         if (!settings.callsEnabled) {
@@ -208,43 +187,50 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
         );
         if (timeUp !== null) throw refusalError(timeUp, kit.now());
 
-        if (turnId !== null) {
-          const source = await turnsRepo.getSpeechSource(tx, turnId);
-          if (source?.sessionId !== sessionId) throw fail.notFound('Turn');
-          if (input.sig === undefined) {
-            if (source.status !== 'completed') {
+        let text = speakableText(input.text);
+        if (turn !== null) {
+          if (!signed) {
+            if (turn.status !== 'completed') {
               throw fail.conflict('Only a completed reply can be spoken', 'turn_not_completed');
             }
-            if (!isSpeakableRun(input.text, source.spoken)) {
-              refuseText(scope, session.ventureId, turnId, 'text_not_validated');
-            }
-          } else if (source.status === 'blocked' || source.status === 'failed') {
+            const stored = speakableRun(input.text, turn.spoken);
+            if (stored === null) refuseText(scope, session.ventureId, turnId, 'text_not_validated');
+            text = stored;
+          } else if (turn.status === 'blocked' || turn.status === 'failed') {
             // A unit passed the sentence gate, but the whole reply did not: it is never spoken again.
             throw fail.conflict('This reply can no longer be spoken.', 'turn_not_speakable');
           }
         }
-        if (
-          input.sig !== undefined &&
-          !verifySpeechUnit(
-            verificationKeys,
-            { sessionId, turnId, seq: input.seq ?? 0, text: input.text },
-            input.sig,
-          )
-        ) {
-          refuseText(scope, session.ventureId, turnId, 'signature_invalid');
-        }
+        if (signed && !signatureValid) refuseText(scope, session.ventureId, turnId, 'signature_invalid');
         return {
           ventureId: session.ventureId,
           callId: call.id,
           voiceId: call.voiceId,
+          text,
           settings,
           objectType: turnId === null ? 'call' : 'turn',
           objectId: turnId ?? call.id,
+          crisis: false,
         };
       });
 
-      // Checked after authorization and validation: callers learn nothing about a conversation they cannot
-      // open, and a valid request tells the client to speak the text itself.
+      // Every check runs before the 501 below: a valid request tells the client to speak the text itself.
+      if (plan.settings !== null) {
+        await assertWithinSpendCaps(kit, ctx, plan.settings, {
+          ventureId: plan.ventureId,
+          operation: 'speech',
+        });
+      } else {
+        const replays = await kit.system((sx) =>
+          callsRepo.countTurnSyntheses(sx, {
+            turnId: plan.objectId,
+            windowSeconds: CALL_LIMITS.crisisSpeechWindowSeconds,
+          }),
+        );
+        if (replays >= CALL_LIMITS.crisisSpeechReplays) {
+          throw fail.conflict('This message was already played. It stays on screen.', 'crisis_speech_limit');
+        }
+      }
       const synthesizer = kit.deps.speech;
       if (synthesizer === undefined) {
         throw new DomainError(
@@ -254,16 +240,10 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
         );
       }
 
-      await assertWithinSpendCaps(kit, ctx, plan.settings, {
-        ventureId: plan.ventureId,
-        operation: 'speech',
-      });
-
-      const text = speakableText(input.text);
       let speech: SynthesizedSpeech;
       try {
         speech = await synthesizer.synthesize({
-          text,
+          text: plan.text,
           voiceId: plan.voiceId,
           engines: speechEngines(plan.voiceId),
           requestId: ctx.requestId,
@@ -314,12 +294,13 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
               requestId: ctx.requestId,
               objectType: plan.objectType,
               objectId: plan.objectId,
+              ...(plan.crisis ? { policyReason: 'crisis_support' } : {}),
               metadata: {
                 callId: plan.callId,
                 characters: speech.characters,
                 engine: speech.engine,
                 voiceId: speech.voiceId,
-                signed: input.sig !== undefined,
+                signed,
               },
             });
           },

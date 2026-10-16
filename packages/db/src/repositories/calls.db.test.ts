@@ -1,13 +1,15 @@
 /**
  * Voice calls (migration 0008): one live call per person, a call's fixed identity and limits, minute
- * accounting by the database clock, who sees and changes calls (RLS), turns joining their call, barge-in
- * records, the call summary's follow-ups and reaping calls whose client went away.
+ * accounting by the database clock, microphone seconds and speech-to-text grants, who sees and changes calls
+ * (RLS), turns joining their call, barge-in records and their redaction, what a call may speak of a turn, the
+ * call summary's follow-ups and reaping calls whose client went away.
  */
 import { randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { DbError } from '../errors.js';
+import { appendAudit } from './audit.js';
 import { p } from '../params.js';
 import { type SeedResult } from '../seed/seed.js';
 import { createTestDatabase, makeContext, type TestDatabase } from '../testing/test-database.js';
@@ -214,21 +216,20 @@ describe('one live call per person', () => {
 });
 
 describe('call minutes', () => {
-  it('counts ended calls, live calls until now, and abandoned calls until their last heartbeat', async () => {
+  const GRACE = 30;
+  const secondsToday = (ctx: Ctx, principalId: string) =>
+    t.db.withContext(ctx, (tx) => callsRepo.callSecondsToday(tx, { principalId, graceSeconds: GRACE }));
+
+  it('counts ended calls, live calls until now, and abandoned calls until shortly after their last heartbeat', async () => {
     const ctx = makeContext(must(seed.principals.tomasz), seed.tenantId);
-    const before = await t.db.withContext(ctx, (tx) =>
-      callsRepo.callSecondsToday(tx, { principalId: ctx.principalId, staleSeconds: 60 }),
-    );
-    expect(before).toBe(0);
+    expect(await secondsToday(ctx, ctx.principalId)).toBe(0);
     const sessionId = await newSession(ctx, 'benchtally');
     const ended = await startCall(ctx, sessionId, 'benchtally');
     await backdate(ended.id, 12, 2);
     await endCall(ctx, ended.id);
     const live = await startCall(ctx, sessionId, 'benchtally');
     await backdate(live.id, 5, 0);
-    const seconds = await t.db.withContext(ctx, (tx) =>
-      callsRepo.callSecondsToday(tx, { principalId: ctx.principalId, staleSeconds: 60 }),
-    );
+    const seconds = await secondsToday(ctx, ctx.principalId);
     const startOfDay = await t.db.system(async (sx) => {
       const r = await sx.query(
         `SELECT floor(extract(epoch FROM now() - (date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')))::integer AS s`,
@@ -238,19 +239,53 @@ describe('call minutes', () => {
     // Near midnight UTC part of each call fell on yesterday; otherwise 12 + 5 minutes.
     expect(seconds).toBeGreaterThanOrEqual(Math.min(17 * 60, startOfDay) - 2);
     expect(seconds).toBeLessThanOrEqual(17 * 60 + 2);
-    // The live call's client went away 4 minutes ago: it counts until a minute after its last heartbeat.
+    // The live call's client went away 4 minutes ago: it counts until the grace after its last heartbeat …
     await backdate(live.id, 5, 4);
-    const abandoned = await t.db.withContext(ctx, (tx) =>
-      callsRepo.callSecondsToday(tx, { principalId: ctx.principalId, staleSeconds: 60 }),
-    );
-    expect(abandoned).toBeLessThanOrEqual(seconds - 3 * 60 + 2);
+    const abandoned = await secondsToday(ctx, ctx.principalId);
+    expect(abandoned).toBeLessThanOrEqual(seconds - 4 * 60 + GRACE + 2);
+    expect(abandoned).toBeGreaterThanOrEqual(seconds - 4 * 60 + GRACE - 2);
+    // … which is where reaping closes it: the count is the same before and after.
+    await t.db.system((sx) => callsRepo.reapStaleCalls(sx, { staleSeconds: 60, graceSeconds: GRACE }));
+    expect(await secondsToday(ctx, ctx.principalId)).toBe(abandoned);
     // Other people's minutes are their own.
-    expect(
-      await t.db.withContext(maya, (tx) =>
-        callsRepo.callSecondsToday(tx, { principalId: ctx.principalId, staleSeconds: 60 }),
-      ),
-    ).toBe(0);
-    await t.db.system((sx) => callsRepo.reapStaleCalls(sx, { staleSeconds: 60, graceSeconds: 15 }));
+    expect(await secondsToday(maya, ctx.principalId)).toBe(0);
+  });
+
+  it('adds the microphone seconds a heartbeat reports, never beyond the wall time since the previous one', async () => {
+    const ctx = makeContext(must(seed.principals.priya), seed.tenantId);
+    const session = await newSession(ctx, 'benchtally');
+    const call = await startCall(ctx, session, 'benchtally');
+    const beat = (mic: number) =>
+      t.db.withContext(ctx, async (tx) =>
+        must(
+          await callsRepo.recordHeartbeat(tx, { callId: call.id, state: 'listening', micOpenSeconds: mic }),
+        ),
+      );
+    // Fresh call, a few seconds old: a client claiming an hour gets the wall time plus the slack.
+    const first = await beat(3600);
+    expect(first.micSecondsAdded).toBeLessThanOrEqual(callsRepo.MIC_SECONDS_SLACK + 2);
+    expect(first.call.micOpenSeconds).toBe(first.micSecondsAdded);
+    expect(first.call.lastHeartbeatAt).not.toBeNull();
+    expect(first.call.idleSeconds).toBeLessThan(5);
+    // Twenty seconds later the honest total (+12) is taken whole; a lower total adds nothing.
+    await t.db.system((sx) =>
+      sx.query(`UPDATE calls SET last_heartbeat_at = now() - interval '20 seconds' WHERE id = :id`, {
+        id: p.uuid(call.id),
+      }),
+    );
+    const second = await beat(first.call.micOpenSeconds + 12);
+    expect(second.micSecondsAdded).toBe(12);
+    expect((await beat(0)).micSecondsAdded).toBe(0);
+    await endCall(ctx, call.id);
+    // Speech-to-text grants of the calls the person started today.
+    await t.db.withContext(ctx, async (tx) => {
+      const other = await callsRepo.startCall(tx, startInput(ctx, session, 'benchtally'));
+      await callsRepo.recordSttGrant(tx, { callId: other.id, maxGrants: 20 });
+      await callsRepo.recordSttGrant(tx, { callId: other.id, maxGrants: 20 });
+      expect(await callsRepo.sttGrantsToday(tx, ctx.principalId)).toBe(2);
+      expect(await callsRepo.sttGrantsToday(tx, maya.principalId)).toBe(0);
+      await callsRepo.endCall(tx, { callId: other.id, reason: 'user', detail: 'client_user' });
+    });
   });
 });
 
@@ -281,8 +316,8 @@ describe('who sees and changes calls', () => {
       const beat = must(
         await callsRepo.recordHeartbeat(tx, { callId: call.id, state: 'listening', micOpenSeconds: 30 }),
       );
-      expect(beat.lastHeartbeatAt).not.toBeNull();
-      expect(beat.idleSeconds).toBeLessThan(5);
+      expect(beat.call.lastHeartbeatAt).not.toBeNull();
+      expect(beat.call.idleSeconds).toBeLessThan(5);
       const granted = must(await callsRepo.recordSttGrant(tx, { callId: call.id, maxGrants: 2 }));
       expect(granted.sttGrants).toBe(1);
       expect(must(await callsRepo.recordSttGrant(tx, { callId: call.id, maxGrants: 2 })).sttGrants).toBe(2);
@@ -337,9 +372,10 @@ describe('turns of a call', () => {
           callId: call.id,
           authorId: maya.principalId,
           heardSeq: 0,
+          heardText: 'Run it in exam weeks.',
         }),
       );
-      expect(marked.heardSeq).toBe(0);
+      expect(marked).toMatchObject({ heardSeq: 0, heardText: 'Run it in exam weeks.' });
       // The first record wins.
       const again = must(
         await callsRepo.markTurnInterrupted(tx, {
@@ -347,6 +383,7 @@ describe('turns of a call', () => {
           callId: call.id,
           authorId: maya.principalId,
           heardSeq: 3,
+          heardText: 'Run it in exam weeks. Then compare.',
         }),
       );
       expect(again).toEqual(marked);
@@ -357,6 +394,7 @@ describe('turns of a call', () => {
           callId: call.id,
           authorId: maya.principalId,
           heardSeq: 1,
+          heardText: null,
         }),
       ).toBeNull();
       const interruptions = await callsRepo.listTurnInterruptions(tx, [first.id, before.id, explicit.id]);
@@ -369,11 +407,22 @@ describe('turns of a call', () => {
         await callsRepo.countRecentVoiceTurns(tx, { authorId: maya.principalId, windowSeconds: 600 }),
       ).toBeGreaterThanOrEqual(3);
     });
-    // The turn's checks hold in the database too.
+    // The turn's checks hold in the database too: no heard record without its time, no words for a reply
+    // the founder heard none of.
     expect(
       await sqlState(
         t.db.system((sx) =>
           sx.query('UPDATE turns SET heard_seq = 2 WHERE id = :id', { id: p.uuid(before.id) }),
+        ),
+      ),
+    ).toBe('23514');
+    expect(
+      await sqlState(
+        t.db.system((sx) =>
+          sx.query(
+            `UPDATE turns SET heard_seq = -1, interrupted_at = now(), heard_text = 'Words' WHERE id = :id`,
+            { id: p.uuid(before.id) },
+          ),
         ),
       ),
     ).toBe('23514');
@@ -413,6 +462,141 @@ describe('turns of a call', () => {
     await backdate(call.id, 3, 2);
     expect((await addTurn(devin, session)).callId).toBeNull();
     await endCall(devin, call.id);
+  });
+});
+
+describe('what the founder heard', () => {
+  const heardOf = (turnId: string) =>
+    t.db.system(async (sx) => (await callsRepo.listTurnInterruptions(sx, [turnId])).get(turnId) ?? null);
+
+  async function interrupted(ctx: Ctx, privacy: 'standard' | 'ephemeral' = 'standard') {
+    const v = venture('quietquad');
+    const session = await t.db.withContext(ctx, async (tx) => {
+      const resolved = must(await assignmentsRepo.resolveActiveAssignment(tx, v.id));
+      return (
+        await sessionsRepo.createSession(tx, {
+          tenantId: seed.tenantId,
+          ventureId: v.id,
+          assignmentId: resolved.assignment.id,
+          personaReleaseId: must(resolved.release).id,
+          startedBy: ctx.principalId,
+          mode: 'coach',
+          privacy,
+          policyVersion: 'test',
+        })
+      ).id;
+    });
+    const call = await startCall(ctx, session);
+    const turn = await addTurn(ctx, session, {
+      answer: { answer: 'Run it.', spoken: 'Run it. Then compare.' },
+    });
+    await t.db.withContext(ctx, async (tx) => {
+      must(
+        await callsRepo.markTurnInterrupted(tx, {
+          turnId: turn.id,
+          callId: call.id,
+          authorId: ctx.principalId,
+          heardSeq: 0,
+          heardText: 'Run it.',
+        }),
+      );
+    });
+    return { session, call, turn };
+  }
+
+  it('goes with the conversation’s words when they are redacted or deleted', async () => {
+    // A deleted conversation.
+    const deleted = await interrupted(maya);
+    expect((await heardOf(deleted.turn.id))?.heardText).toBe('Run it.');
+    await endCall(maya, deleted.call.id);
+    expect(await t.db.withContext(maya, (tx) => sessionsRepo.softDeleteSession(tx, deleted.session))).toBe(
+      true,
+    );
+    expect(await heardOf(deleted.turn.id)).toMatchObject({ heardSeq: 0, heardText: null });
+    // An ended temporary chat.
+    const temporary = await interrupted(devin, 'ephemeral');
+    await endCall(devin, temporary.call.id);
+    await t.db.withContext(devin, (tx) => turnsRepo.redactSessionTurns(tx, temporary.session));
+    expect(await heardOf(temporary.turn.id)).toMatchObject({ heardSeq: 0, heardText: null });
+  });
+
+  it('is recorded only while the conversation is active', async () => {
+    const { session, call, turn } = await interrupted(devin);
+    const other = await addTurn(devin, session, { answer: { answer: 'More.', spoken: 'More.' } });
+    await t.db.withContext(devin, async (tx) => {
+      await sessionsRepo.endSession(tx, { sessionId: session, recap: null });
+      expect(
+        await callsRepo.markTurnInterrupted(tx, {
+          turnId: other.id,
+          callId: call.id,
+          authorId: devin.principalId,
+          heardSeq: 0,
+          heardText: 'More.',
+        }),
+      ).toBeNull();
+    });
+    expect(await heardOf(other.id)).toBeNull();
+    expect((await heardOf(turn.id))?.heardText).toBe('Run it.');
+    await endCall(devin, call.id);
+  });
+});
+
+describe('what a call may speak of a turn', () => {
+  it('reads a turn’s spoken form, its call and whether it was answered with crisis support', async () => {
+    const session = await newSession(maya);
+    const call = await startCall(maya, session);
+    const turn = await addTurn(maya, session, {
+      answer: { answer: 'The **full** answer [E1].', spoken: 'The short spoken answer.' },
+    });
+    await t.db.withContext(maya, async (tx) => {
+      const spoken = must(await callsRepo.getSpokenTurn(tx, turn.id));
+      expect(spoken).toMatchObject({
+        turnId: turn.id,
+        sessionId: session,
+        ventureId: venture('quietquad').id,
+        authorId: maya.principalId,
+        callId: call.id,
+        status: 'completed',
+        spoken: 'The short spoken answer.',
+        crisisSupport: false,
+      });
+      expect(spoken.ageSeconds).toBeLessThan(5);
+    });
+    await t.db.system((sx) =>
+      sx.query(
+        `UPDATE turns SET status = 'blocked', validator_results = '{"notes": ["crisis_support", "no_model_call"]}'
+         WHERE id = :id`,
+        { id: p.uuid(turn.id) },
+      ),
+    );
+    await t.db.withContext(maya, async (tx) => {
+      expect(await callsRepo.getSpokenTurn(tx, turn.id)).toMatchObject({
+        status: 'blocked',
+        crisisSupport: true,
+      });
+    });
+    // Another venture's founder sees nothing.
+    await t.db.withContext(amara, async (tx) => {
+      expect(await callsRepo.getSpokenTurn(tx, turn.id)).toBeNull();
+    });
+    // Syntheses of the turn are counted from the audit trail.
+    await t.db.system(async (sx) => {
+      expect(await callsRepo.countTurnSyntheses(sx, { turnId: turn.id, windowSeconds: 600 })).toBe(0);
+      for (let i = 0; i < 2; i += 1) {
+        await appendAudit(sx, {
+          action: 'speech.synthesized',
+          outcome: 'succeeded',
+          tenantId: seed.tenantId,
+          ventureId: venture('quietquad').id,
+          actorId: maya.principalId,
+          objectType: 'turn',
+          objectId: turn.id,
+          metadata: { characters: 10 },
+        });
+      }
+      expect(await callsRepo.countTurnSyntheses(sx, { turnId: turn.id, windowSeconds: 600 })).toBe(2);
+    });
+    await endCall(maya, call.id);
   });
 });
 

@@ -37,9 +37,13 @@ function uriEscape(value: string): string {
  * Speech-to-text grants for calls (core `SttGrantIssuer` port): a SigV4-presigned URL for Amazon Transcribe
  * streaming over WebSocket, which the browser opens directly; the founder's audio never passes through our
  * API. Signed with the API role's own credentials (credential provider chain; no keys in code or config), so
- * the role needs `transcribe:StartStreamTranscriptionWebSocket`. The URL authorizes exactly one stream
- * request with these parameters (US English, 16 kHz PCM, stabilized partial results) for at most five
- * minutes; it carries the role's temporary session token, never its secret key. URLs are never logged.
+ * the role needs `transcribe:StartStreamTranscriptionWebSocket`.
+ *
+ * The URL fixes the stream's parameters (US English, 16 kHz PCM, stabilized partial results). Like any
+ * presigned URL it can open any number of streams until it expires, and a stream outlives the URL: the expiry
+ * only bounds the handshake. Calls therefore ask for a short expiry (seconds), and the calls service counts
+ * grants per call and per person and meters the microphone time heartbeats report. The URL carries the role's
+ * temporary session token, never its secret key. URLs are never logged.
  */
 export class TranscribeStreamingPresigner implements SttGrantIssuer {
   readonly #signer: SignatureV4;

@@ -1,6 +1,6 @@
 import { createHash, createHmac } from 'node:crypto';
 
-import { SttGrantError } from '@foundry/core';
+import { CALL_LIMITS, SttGrantError } from '@foundry/core';
 import { describe, expect, it } from 'vitest';
 
 import { loadApiConfig } from '../config.js';
@@ -96,6 +96,17 @@ describe('Transcribe streaming presigner', () => {
     // The URL carries the temporary session token, never the secret key.
     expect(grant.url).not.toContain(CREDENTIALS.secretAccessKey);
     expect(grant.url).not.toContain(encodeURIComponent(CREDENTIALS.secretAccessKey));
+  });
+
+  it('presigns the short-lived grant calls ask for', async () => {
+    const presigner = new TranscribeStreamingPresigner({
+      region: 'us-east-1',
+      credentials: CREDENTIALS,
+      now: () => NOW,
+    });
+    const grant = await presigner.issue({ ...REQUEST, expiresInSeconds: CALL_LIMITS.sttGrantSeconds });
+    expect(new URL(grant.url).searchParams.get('X-Amz-Expires')).toBe(String(CALL_LIMITS.sttGrantSeconds));
+    expect(Date.parse(grant.expiresAt) - NOW.getTime()).toBe(CALL_LIMITS.sttGrantSeconds * 1000);
   });
 
   it('never presigns for longer than Transcribe allows', async () => {

@@ -14,7 +14,7 @@ import { DomainError, parseInput } from '../errors.js';
 import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
 import { secondsUntilUtcMidnight } from '../orchestrator/sampling.js';
 import { CALL_LIMITS, callSecondsToday, remainingDailyMinutes, remainingDailySeconds } from './call-usage.js';
-import { DEFAULT_SPEECH_VOICE } from './voices.js';
+import { callVoiceFor } from './calls.js';
 
 /**
  * Who a founder talks to (the venture's vEIR as shown in chat and calls) and what a call may use: the
@@ -52,11 +52,6 @@ export function embodimentView(
     voiceConsented,
     likenessConsented,
   };
-}
-
-/** The voice a call speaks with: the persona's (consented) voice, else the platform voice. */
-export function callVoice(embodiment: PersonaEmbodiment): string {
-  return embodiment.voiceId ?? DEFAULT_SPEECH_VOICE;
 }
 
 /** "Corin" for Corin's vEIR (the EIR's first name), the persona name for the neutral guide. */
@@ -129,6 +124,7 @@ export function createVeirService(kit: Kit): VeirService {
           maxMinutes: settings.maxCallMinutes,
           remainingMinutesToday: remainingDailyMinutes(used, settings.dailyCallMinutesPerPrincipal),
           aiEnabled: settings.aiEnabled,
+          callsEnabled: settings.callsEnabled,
         };
       });
     },
@@ -148,8 +144,26 @@ export function createVeirService(kit: Kit): VeirService {
             },
           );
         }
-        await requireAssignmentActive(scope, ventureId);
+        if (!settings.callsEnabled) {
+          throw new DomainError('ai_disabled', 'Calls are paused by the program. You can keep chatting.', {
+            reason: 'calls_disabled',
+          });
+        }
+        const active = await requireAssignmentActive(scope, ventureId);
         const { identity } = await requireVeir(scope, ventureId);
+        const persona = await personasRepo.getPersona(scope.tx, active.persona.id);
+        // The same voice rule as calls: an EIR's own voice only under voice consent, never another voice.
+        const voiceId =
+          persona === null
+            ? null
+            : callVoiceFor(persona, await personasRepo.personaConsentAssets(scope.tx, persona.id));
+        if (voiceId === null) {
+          throw new DomainError(
+            'persona_suspended',
+            'This vEIR’s voice consent is not in force, so calls are paused.',
+            { reason: 'voice_consent' },
+          );
+        }
         const used = await callSecondsToday(scope.tx, ctx.principalId);
         if (
           remainingDailySeconds(used, settings.dailyCallMinutesPerPrincipal) < CALL_LIMITS.minStartSeconds
@@ -175,7 +189,7 @@ export function createVeirService(kit: Kit): VeirService {
           provider: identity.embodiment.provider,
           token: null,
           expiresAt: null,
-          voiceId: callVoice(identity.embodiment),
+          voiceId,
         };
       });
     },

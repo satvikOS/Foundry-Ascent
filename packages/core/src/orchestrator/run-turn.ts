@@ -9,7 +9,6 @@ import {
   riskLabel,
   validateCoachResponse,
   type GenerateStructuredResult,
-  type HistoryTurn,
   type ModelAttempt,
   type RiskClassification,
 } from '@foundry/ai';
@@ -23,7 +22,7 @@ import {
   type TurnView,
   type ValidatorResults,
 } from '@foundry/contracts';
-import { escalationsRepo, sessionsRepo, settingsRepo, turnsRepo, venturesRepo } from '@foundry/db';
+import { callsRepo, escalationsRepo, sessionsRepo, settingsRepo, turnsRepo, venturesRepo } from '@foundry/db';
 import type { z } from 'zod';
 
 import {
@@ -37,6 +36,7 @@ import { type DirectoryCache, type OtherVentures } from '../internal/directory.j
 import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
 import { createDraftEscalation } from '../services/escalations.js';
 import { persistMemoryCandidates } from '../services/memory.js';
+import { historyAsHeard } from '../services/spoken-text.js';
 import { blockedDetailOf, participantRiskLabel, participantTurnView, supportMessageFor } from './blocked.js';
 import { assembleContext } from './context-budget.js';
 import { candidateVisibility, type KeyedEvidence } from './evidence.js';
@@ -545,10 +545,14 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
       }
       return {
         pack: evidencePack,
-        history: recent.map((t): HistoryTurn => ({
-          founderText: t.founderText,
-          answer: t.response?.answer ?? null,
-        })),
+        // Replies the founder spoke over during a call are replayed as the words they heard (calls.md §2.6).
+        history: historyAsHeard(
+          recent,
+          await callsRepo.listTurnInterruptions(
+            scope.tx,
+            recent.map((t) => t.id),
+          ),
+        ),
       };
     });
     await emit({

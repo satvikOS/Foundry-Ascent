@@ -154,6 +154,8 @@ export const CallConfigResponse = z.object({
   /** Minutes this person may still use today. */
   remainingMinutesToday: z.number().min(0),
   aiEnabled: z.boolean(),
+  /** The calls switch (`calls_enabled`); always sent by the server. Calls also need `aiEnabled`. */
+  callsEnabled: z.boolean().optional(),
 });
 export type CallConfigResponse = z.infer<typeof CallConfigResponse>;
 

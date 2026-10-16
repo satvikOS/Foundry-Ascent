@@ -59,14 +59,20 @@ export {
   type NotebookService,
 } from './services/notebook.js';
 export {
-  callVoice,
   embodimentView,
   resolveVeir,
   shortName,
   type ResolvedVeir,
   type VeirService,
 } from './services/veir.js';
-export { heardPortion, isSpeakableRun, speakableText, type SpeechService } from './services/speech.js';
+export { type SpeechService } from './services/speech.js';
+export {
+  historyAsHeard,
+  isCrisisMessage,
+  speakableRun,
+  speakableText,
+  splitSentences,
+} from './services/spoken-text.js';
 export { CALL_LIMITS } from './services/call-usage.js';
 export { admitVoiceTurn, type AdmitVoiceTurn, type VoiceTurnAdmission } from './services/call-admission.js';
 export { STT_LANGUAGE, STT_SAMPLE_RATE_HERTZ, type CallsService } from './services/calls.js';

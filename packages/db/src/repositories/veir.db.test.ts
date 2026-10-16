@@ -204,29 +204,6 @@ describe('conversations', () => {
       ).toBe(false);
     });
   });
-
-  it('speaks only the stored validated text of a turn', async () => {
-    const id = await newSession(maya);
-    const turnId = await addTurn(maya, id, 'Spoken question', {
-      channel: 'voice',
-      answer: { answer: 'The **full** answer [E1].', spoken: 'The short spoken answer.' },
-    });
-    await t.db.withContext(maya, async (tx) => {
-      expect(await turnsRepo.getSpeechSource(tx, turnId)).toEqual({
-        turnId,
-        sessionId: id,
-        ventureId: quietquad.id,
-        status: 'completed',
-        spoken: 'The short spoken answer.',
-        answer: 'The **full** answer [E1].',
-      });
-    });
-    // Another venture's founder sees neither.
-    const amara = makeContext(must(seed.principals.amara), seed.tenantId);
-    await t.db.withContext(amara, async (tx) => {
-      expect(await turnsRepo.getSpeechSource(tx, turnId)).toBeNull();
-    });
-  });
 });
 
 describe('the vEIR notebook', () => {

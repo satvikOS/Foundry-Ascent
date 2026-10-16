@@ -9,11 +9,12 @@
 --     Visible to the person who started it, the venture's founders and team (summaries), and the venture's
 --     assigned EIR (like the conversation itself); written only by the person who started it.
 --  2. Turns: the call a turn belongs to (a turn a person sends in a conversation while their call there is live
---     joins that call), and barge-in: the last speech unit the founder heard before interrupting.
+--     joins that call), and barge-in: the last speech unit the founder heard before interrupting and its words,
+--     which are redacted with the turn's other content.
 --  3. Settings: the `calls_enabled` kill switch (on; the AI kill switch still stops calls).
 --
 -- Call minutes are measured from this table (per call, and per person per UTC day): a live call counts until
--- now, or until a minute after its last heartbeat when the client went away.
+-- now, or until shortly after its last heartbeat when the client went away (the time it is closed at).
 
 -- ---------------------------------------------------------------------------------------------------
 -- 1. Calls
@@ -132,14 +133,44 @@ CREATE POLICY calls_update ON calls FOR UPDATE TO app_rls
 -- ---------------------------------------------------------------------------------------------------
 
 ALTER TABLE turns ADD COLUMN IF NOT EXISTS call_id uuid REFERENCES calls (id);
--- Barge-in: the last speech unit (seq) the founder heard before speaking over the vEIR (-1: none), and when.
+-- Barge-in: the last speech unit (seq) the founder heard before speaking over the vEIR (-1: none), when, and
+-- the words of units 0…heard_seq as played (verified against their signatures; null when the client did not
+-- send them). The conversation history replays only these words of an interrupted reply.
 ALTER TABLE turns ADD COLUMN IF NOT EXISTS heard_seq integer;
 ALTER TABLE turns ADD COLUMN IF NOT EXISTS interrupted_at timestamptz;
-ALTER TABLE turns DROP CONSTRAINT IF EXISTS turns_heard_seq_check;
-ALTER TABLE turns ADD CONSTRAINT turns_heard_seq_check
-  CHECK ((heard_seq IS NULL AND interrupted_at IS NULL)
-         OR (heard_seq BETWEEN -1 AND 10000 AND interrupted_at IS NOT NULL));
+ALTER TABLE turns ADD COLUMN IF NOT EXISTS heard_text text;
+-- Added NOT VALID and validated separately, so the deploy never holds turns' exclusive lock for a full scan.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                 WHERE conrelid = 'public.turns'::regclass AND conname = 'turns_heard_seq_check') THEN
+    ALTER TABLE turns ADD CONSTRAINT turns_heard_seq_check
+      CHECK ((heard_seq IS NULL AND interrupted_at IS NULL AND heard_text IS NULL)
+             OR (heard_seq BETWEEN -1 AND 10000 AND interrupted_at IS NOT NULL
+                 AND (heard_text IS NULL OR (heard_seq >= 0 AND length(heard_text) BETWEEN 1 AND 40000))))
+      NOT VALID;
+  END IF;
+END
+$$;
+ALTER TABLE turns VALIDATE CONSTRAINT turns_heard_seq_check;
 CREATE INDEX IF NOT EXISTS turns_call_idx ON turns (call_id, ordinal) WHERE call_id IS NOT NULL;
+
+-- What the founder heard is conversation content: whenever a turn's words are redacted (an ended temporary
+-- chat, a deleted conversation), the heard words go with them.
+CREATE OR REPLACE FUNCTION app.turns_redact_heard() RETURNS trigger
+  LANGUAGE plpgsql SET search_path = public, pg_temp AS $$
+BEGIN
+  IF NEW.heard_text IS NOT NULL
+     AND (NEW.founder_text IS DISTINCT FROM OLD.founder_text OR (NEW.response IS NULL AND OLD.response IS NOT NULL)) THEN
+    NEW.heard_text := NULL;
+  END IF;
+  RETURN NEW;
+END
+$$;
+REVOKE ALL ON FUNCTION app.turns_redact_heard() FROM PUBLIC;
+DROP TRIGGER IF EXISTS turns_redact_heard ON turns;
+CREATE TRIGGER turns_redact_heard BEFORE UPDATE OF founder_text, response ON turns
+  FOR EACH ROW EXECUTE FUNCTION app.turns_redact_heard();
 
 -- A turn joins the live call of its author in its conversation: named explicitly (it must then be that call),
 -- or implicitly while the call is alive (a heartbeat within the last minute).

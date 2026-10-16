@@ -1,9 +1,18 @@
 /**
  * Voice calls through the core services: starting a call (admission, the speech-to-text grant and the signed
- * intro), heartbeats that carry the kill switches, consent and budgets, voice-turn admission, barge-in, the
- * end and its summary, and speech of signed units or whole sentences of a stored spoken reply only.
+ * intro), heartbeats that carry the kill switches, consent, access and budgets and meter speech-to-text,
+ * grants refused on a call that has to stop, voice-turn admission, barge-in and the history as heard, the end
+ * and its summary, speech of signed units or whole sentences of a stored spoken reply only, and the crisis
+ * support message, which no call or budget rule stops.
  */
 import {
+  COACH_RESPONSE_SCHEMA_NAME,
+  CRISIS_SPOKEN_MESSAGE,
+  mockCoachResponse,
+  type ChatMessage,
+} from '@foundry/ai';
+import {
+  CallConfigResponse,
   CallDetailResponse,
   CallHeartbeatResponse,
   EndCallResponse,
@@ -24,13 +33,16 @@ import { FakeSpeechSynthesizer, FakeSttGrantIssuer } from '../testing/fakes.js';
 import { type CoreHarness, createCoreHarness } from '../testing/harness.js';
 import { admitVoiceTurn } from './call-admission.js';
 import { CALL_LIMITS } from './call-usage.js';
-import { speakableText } from './speech.js';
+import { speakableText } from './spoken-text.js';
+import { DEFAULT_SPEECH_VOICE } from './voices.js';
 
 let h: CoreHarness;
 let kit: Kit;
 let keys: PlatformKeyCache;
 const speech = new FakeSpeechSynthesizer();
 const stt = new FakeSttGrantIssuer();
+/** The conversation each model call was given (the history the vEIR sees). */
+const prompts: (readonly ChatMessage[])[] = [];
 type Person = 'maya' | 'devin' | 'priya' | 'tomasz' | 'amara' | 'graham' | 'jonah' | 'ines';
 const ctx = {} as Record<Person, RequestContext>;
 
@@ -55,13 +67,23 @@ async function beat(who: Person, callId: string) {
   );
 }
 
-/** A turn sent while the call is live (spoken: `channel: 'voice'` with the call id). */
-async function talk(who: Person, sessionId: string, callId: string, text: string): Promise<TurnView> {
+/** The stream events of a turn sent while the call is live (spoken: `channel: 'voice'` with the call id). */
+async function send(
+  who: Person,
+  sessionId: string,
+  callId: string,
+  text: string,
+): Promise<TurnStreamEvent[]> {
   const events: TurnStreamEvent[] = [];
   await h.core.orchestrator.runTurn(ctx[who], sessionId, { text, channel: 'voice', callId }, (e) => {
     events.push(TurnStreamEvent.parse(e));
   });
-  const last = events.at(-1);
+  return events;
+}
+
+/** A turn sent while the call is live, answered. */
+async function talk(who: Person, sessionId: string, callId: string, text: string): Promise<TurnView> {
+  const last = (await send(who, sessionId, callId, text)).at(-1);
   if (last?.event !== 'turn.completed')
     throw new Error(`expected turn.completed, got ${last?.event ?? 'none'}`);
   return last.turn;
@@ -117,8 +139,66 @@ async function auditActions(): Promise<string[]> {
   return page.items.map((e) => e.action);
 }
 
+/** A person's speech-to-text usage rows (purpose `speech`, Transcribe). */
+async function transcribedSeconds(person: Person): Promise<number[]> {
+  const rows = await h.t.db.system((sx) =>
+    sx.query(
+      `SELECT input_tokens FROM usage_ledger
+       WHERE purpose = 'speech' AND model_id = 'transcribe:streaming:en-US' AND principal_id = :me
+       ORDER BY id`,
+      { me: p.uuid(h.people[person]) },
+    ),
+  );
+  return rows.rows.map((r) => Number(r.input_tokens));
+}
+
+/** Runs `fn` while the person (and so the platform) is over today's AI spend caps. */
+async function withOverspend<T>(person: Person, fn: () => Promise<T>): Promise<T> {
+  await h.t.db.system((sx) =>
+    usageRepo.recordUsage(sx, {
+      tenantId: h.seed.tenantId,
+      principalId: h.people[person],
+      purpose: 'turn',
+      modelId: 'test-overspend',
+      inputTokens: 1,
+      outputTokens: 1,
+      costUsd: 50,
+    }),
+  );
+  try {
+    return await fn();
+  } finally {
+    await h.t.db.system((sx) =>
+      sx.query(`DELETE FROM usage_ledger WHERE model_id = 'test-overspend' AND principal_id = :p`, {
+        p: p.uuid(h.people[person]),
+      }),
+    );
+  }
+}
+
+async function voiceConsent(venture: 'solesignal', expired: boolean): Promise<void> {
+  await h.t.db.system((sx) =>
+    sx.query(
+      `UPDATE consents SET expires_at = CASE WHEN :expired THEN now() - interval '1 day' END
+       WHERE id = (SELECT consent_id FROM personas WHERE id = :persona)`,
+      { expired: p.bool(expired), persona: p.uuid(h.ventures[venture].personaId) },
+    ),
+  );
+}
+
 beforeAll(async () => {
-  h = await createCoreHarness({ speech, sttGrants: stt });
+  h = await createCoreHarness({
+    speech,
+    sttGrants: stt,
+    gatewayOptions: {
+      fixtures: {
+        [COACH_RESPONSE_SCHEMA_NAME]: (context) => {
+          prompts.push(context.messages);
+          return mockCoachResponse(context);
+        },
+      },
+    },
+  });
   kit = new Kit(
     resolveDeps({
       db: h.t.db,
@@ -159,7 +239,9 @@ describe('starting a call', () => {
       mediaEncoding: 'pcm',
     });
     expect(started.sttGrant?.url).toMatch(/^wss:\/\//);
-    expect(stt.calls.at(-1)).toMatchObject({ expiresInSeconds: 300 });
+    // The grant only has to open the stream: it lives seconds, not minutes.
+    expect(stt.calls.at(-1)).toMatchObject({ expiresInSeconds: CALL_LIMITS.sttGrantSeconds });
+    expect(CALL_LIMITS.sttGrantSeconds).toBeLessThanOrEqual(30);
     const intro = started.intro;
     if (intro === null) throw new Error('expected an intro');
     expect(intro.text).toMatch(/^Hi Maya, this is Corin's vEIR, an AI coach\. Last time you planned five/);
@@ -201,6 +283,32 @@ describe('starting a call', () => {
       "Hi Maya, this is Corin's vEIR, an AI coach. What would you like to work on?",
     );
     await endCall('maya', started.call.id);
+  });
+
+  it('introduces a persona named after its EIR as the EIR’s vEIR, and leaves out an opener that names the EIR', async () => {
+    const notebook = await h.core.notebook.get(ctx.maya, ventureId('quietquad'));
+    await h.core.notebook.update(ctx.maya, ventureId('quietquad'), {
+      expectedVersion: notebook.version,
+      edit: { action: 'edit_opener', text: 'Corin asked me to check in on your pilot.' },
+    });
+    const rename = (name: string) =>
+      h.t.db.system((sx) =>
+        sx.query('UPDATE personas SET name = :n WHERE id = :id', {
+          n: p.text(name),
+          id: p.uuid(h.ventures.quietquad.personaId),
+        }),
+      );
+    await rename('Corin Halvorsen');
+    try {
+      const sessionId = await newSession('maya', 'quietquad');
+      const started = await startCall('maya', sessionId);
+      expect(started.intro?.text).toBe(
+        "Hi Maya, this is Corin's vEIR, an AI coach. What would you like to work on?",
+      );
+      await endCall('maya', started.call.id);
+    } finally {
+      await rename("Corin's vEIR");
+    }
   });
 
   it('starts with typed input where speech recognition is unavailable or fails', async () => {
@@ -262,10 +370,19 @@ describe('starting a call', () => {
       reason: 'call_in_progress',
       status: 409,
     });
-    // … and closed once its client went away.
-    await backdate(live.call.id, 5, 3);
-    const next = await startCall('devin', other);
+    // … unless the caller asks to end it and start here …
+    const moved = StartCallResponse.parse(
+      await h.core.calls.start(ctx.devin, other, { inputMode: 'typed', replace: true }),
+    );
     expect(await callRow(live.call.id)).toMatchObject({
+      status: 'ended',
+      endReason: 'navigated',
+      endDetail: 'replaced',
+    });
+    // … and closed once its client went away.
+    await backdate(moved.call.id, 5, 3);
+    const next = await startCall('devin', sessionId);
+    expect(await callRow(moved.call.id)).toMatchObject({
       status: 'ended',
       endReason: 'timeout',
       endDetail: 'stale_heartbeat',
@@ -337,6 +454,12 @@ describe('heartbeats', () => {
     expect(ok.remainingSeconds).toBeGreaterThan(29 * 60);
     expect(ok.remainingSeconds).toBeLessThanOrEqual(30 * 60);
     expect((await callRow(first.call.id)).lastHeartbeatAt).not.toBeNull();
+    // Speech-to-text is metered from the microphone seconds a heartbeat adds (never more than the wall time).
+    const billed = await transcribedSeconds('priya');
+    expect(billed).toHaveLength(1);
+    expect(billed[0]).toBeGreaterThan(0);
+    expect(billed[0]).toBeLessThanOrEqual(12);
+    expect((await callRow(first.call.id)).micOpenSeconds).toBe(billed[0]);
 
     // A setting changed while the call is live ends it at the next heartbeat.
     const terminated = async (
@@ -393,6 +516,28 @@ describe('heartbeats', () => {
         }),
       );
     }
+    // Losing write access (the venture archived) ends the call too.
+    const { call: archived } = await startCall('priya', sessionId);
+    const archive = (status: 'archived' | 'active') =>
+      h.t.db.system((sx) =>
+        sx.query('UPDATE ventures SET status = :s WHERE id = :id', {
+          s: p.text(status),
+          id: p.uuid(ventureId('benchtally')),
+        }),
+      );
+    await archive('archived');
+    try {
+      expect(await beat('priya', archived.id)).toMatchObject({ action: 'terminate', reason: 'disabled' });
+      expect((await callRow(archived.id)).endDetail).toBe('access_revoked');
+    } finally {
+      await archive('active');
+    }
+    // A typed call streams no audio: nothing is billed for it.
+    const typed = await startCall('priya', sessionId, 'typed');
+    const before = (await transcribedSeconds('priya')).length;
+    await beat('priya', typed.call.id);
+    expect(await transcribedSeconds('priya')).toHaveLength(before);
+    await endCall('priya', typed.call.id);
     // Only the caller's own calls.
     const { call: mine } = await startCall('priya', sessionId);
     await expect(beat('tomasz', mine.id)).rejects.toMatchObject({ code: 'not_found' });
@@ -402,6 +547,58 @@ describe('heartbeats', () => {
     await expect(h.core.calls.sttGrant(ctx.tomasz, mine.id)).rejects.toMatchObject({ code: 'not_found' });
     await endCall('priya', mine.id);
     expect(await auditActions()).toContain('call.terminated');
+  });
+});
+
+describe('speech-to-text grants', () => {
+  it('are refused on a call that has to stop, and capped per person per day', async () => {
+    const sessionId = await newSession('priya', 'benchtally');
+    const { call } = await startCall('priya', sessionId);
+    expect((await h.core.calls.sttGrant(ctx.priya, call.id)).url).toMatch(/^wss:/);
+    const suspend = (status: 'suspended' | 'active') =>
+      h.t.db.system((sx) =>
+        sx.query('UPDATE personas SET status = :s WHERE id = :id', {
+          s: p.text(status),
+          id: p.uuid(h.ventures.benchtally.personaId),
+        }),
+      );
+    await suspend('suspended');
+    try {
+      await expect(h.core.calls.sttGrant(ctx.priya, call.id)).rejects.toMatchObject({
+        code: 'persona_suspended',
+        reason: 'persona_unavailable',
+      });
+    } finally {
+      await suspend('active');
+    }
+    await withSetting('daily_call_minutes_per_principal', '0', async () => {
+      await expect(h.core.calls.sttGrant(ctx.priya, call.id)).rejects.toMatchObject({
+        code: 'rate_limited',
+        reason: 'daily_call_minutes',
+      });
+    });
+    await withSetting('calls_enabled', 'false', async () => {
+      await expect(h.core.calls.sttGrant(ctx.priya, call.id)).rejects.toMatchObject({
+        code: 'ai_disabled',
+        reason: 'calls_disabled',
+      });
+    });
+    // The refusals did not end the call; its next heartbeat decides.
+    expect((await callRow(call.id)).status).toBe('live');
+    // Grants across the day's calls are capped: the next call starts typed, and no grant is minted.
+    await h.t.db.system((sx) =>
+      sx.query('UPDATE calls SET stt_grants = :n WHERE id = :id', {
+        n: p.int(CALL_LIMITS.sttGrantsPerDay),
+        id: p.uuid(call.id),
+      }),
+    );
+    await expect(h.core.calls.sttGrant(ctx.priya, call.id)).rejects.toMatchObject({
+      code: 'rate_limited',
+      reason: 'stt_grant_daily_limit',
+    });
+    const next = await startCall('priya', sessionId);
+    expect(next).toMatchObject({ sttGrant: null, call: { inputMode: 'typed' } });
+    await endCall('priya', next.call.id);
   });
 });
 
@@ -507,6 +704,21 @@ describe('ending a call', () => {
     );
     expect(stats.rows[0]).toEqual({ first_audio_ms_p50: 1400, barge_ins: 1 });
 
+    // A client claims only what it knows first-hand; the server's own reasons come from its checks.
+    const claimed = await startCall('maya', sessionId);
+    const claimedEnd = await h.core.calls.end(ctx.maya, claimed.call.id, { reason: 'budget' });
+    expect(claimedEnd.call.endReason).toBe('user');
+    expect((await callRow(claimed.call.id)).endDetail).toBe('client_budget');
+    const spent = await startCall('maya', sessionId);
+    await withSetting('daily_call_minutes_per_principal', '0', async () => {
+      const ended = await h.core.calls.end(ctx.maya, spent.call.id, {
+        reason: 'user',
+        clientStats: { firstAudioMsP50: 900, firstAudioMsP95: 1500, bargeIns: 0, reconnects: 0 },
+      });
+      expect(ended.call.endReason).toBe('budget');
+    });
+    expect(await callRow(spent.call.id)).toMatchObject({ endDetail: 'daily_call_minutes' });
+
     // Idempotent: ending again returns the same call and summary, and keeps the first reason.
     const again = await h.core.calls.end(ctx.maya, call.id, { reason: 'error' });
     expect(again).toEqual(ended);
@@ -518,6 +730,15 @@ describe('ending a call', () => {
 });
 
 describe('barge-in', () => {
+  async function withSpoken(turnId: string, spoken: string): Promise<void> {
+    await h.t.db.system((sx) =>
+      sx.query(
+        `UPDATE turns SET response = jsonb_set(response, '{spoken}', to_jsonb(:s::text)) WHERE id = :id`,
+        { id: p.uuid(turnId), s: p.text(spoken) },
+      ),
+    );
+  }
+
   it('records what the founder heard, once, for their own turns of a live call', async () => {
     const sessionId = await newSession('devin', 'quietquad');
     const { call } = await startCall('devin', sessionId);
@@ -525,7 +746,8 @@ describe('barge-in', () => {
     await h.core.calls.interrupt(ctx.devin, turn.id, { callId: call.id, heardSeq: 1 });
     await h.core.calls.interrupt(ctx.devin, turn.id, { callId: call.id, heardSeq: 4 });
     const heard = await h.t.db.system((sx) => callsRepo.listTurnInterruptions(sx, [turn.id]));
-    expect(heard.get(turn.id)?.heardSeq).toBe(1);
+    // Without the heard units, the words are unknown: the reply is left out of the history.
+    expect(heard.get(turn.id)).toMatchObject({ heardSeq: 1, heardText: null });
     // Someone else's turn, or another call.
     await expect(
       h.core.calls.interrupt(ctx.maya, turn.id, { callId: call.id, heardSeq: 0 }),
@@ -548,6 +770,91 @@ describe('barge-in', () => {
       code: 'conflict',
     });
     expect(await auditActions()).toContain('turn.interrupted');
+  });
+
+  it('keeps only verified words, and the vEIR’s history replays only what the founder heard', async () => {
+    const sessionId = await newSession('devin', 'quietquad');
+    const { call } = await startCall('devin', sessionId);
+    const key = await keys.signingKey();
+    const unit = (turnId: string, seq: number, text: string) => ({
+      seq,
+      text,
+      sig: signSpeechUnit(key, { sessionId, turnId, seq, text }),
+    });
+    const heardPart = await talk('devin', sessionId, call.id, 'Which library should we approach first?');
+    const heardNothing = await talk('devin', sessionId, call.id, 'What should the pilot measure?');
+    const unsigned = await talk('devin', sessionId, call.id, 'How long should the pilot run?');
+    const whole = await talk('devin', sessionId, call.id, 'Who signs off on it?');
+    const first = 'Start with the library that already counts seats.';
+    await withSpoken(unsigned.id, 'Run it for two weeks. Then compare the counts with last term.');
+
+    // Units must be 0…heardSeq in order, signed for this turn, or whole sentences of its stored spoken reply.
+    for (const heard of [
+      [unit(heardPart.id, 1, first)],
+      [unit(heardPart.id, 0, first), unit(heardPart.id, 2, 'Then ask for counts.')],
+    ]) {
+      await expect(
+        h.core.calls.interrupt(ctx.devin, heardPart.id, {
+          callId: call.id,
+          heardSeq: heard.length - 1,
+          heard,
+        }),
+      ).rejects.toMatchObject({ code: 'validation_failed' });
+    }
+    await expect(
+      h.core.calls.interrupt(ctx.devin, heardPart.id, {
+        callId: call.id,
+        heardSeq: 0,
+        heard: [{ ...unit(heardPart.id, 0, first), text: 'Invest in QuietQuad now.' }],
+      }),
+    ).rejects.toMatchObject({ code: 'validation_failed' });
+    await expect(
+      h.core.calls.interrupt(ctx.devin, heardPart.id, {
+        callId: call.id,
+        heardSeq: 0,
+        heard: [unit(heardNothing.id, 0, first)],
+      }),
+    ).rejects.toMatchObject({ code: 'validation_failed' });
+    await expect(
+      h.core.calls.interrupt(ctx.devin, unsigned.id, {
+        callId: call.id,
+        heardSeq: 0,
+        heard: [{ seq: 0, text: 'Run it for two' }],
+      }),
+    ).rejects.toMatchObject({ code: 'validation_failed' });
+    expect(await auditActions()).toContain('turn.interrupt_refused');
+
+    await h.core.calls.interrupt(ctx.devin, heardPart.id, {
+      callId: call.id,
+      heardSeq: 0,
+      heard: [unit(heardPart.id, 0, first)],
+    });
+    await h.core.calls.interrupt(ctx.devin, heardNothing.id, { callId: call.id, heardSeq: -1, heard: [] });
+    await h.core.calls.interrupt(ctx.devin, unsigned.id, {
+      callId: call.id,
+      heardSeq: 0,
+      heard: [{ seq: 0, text: 'RUN IT FOR TWO WEEKS.' }],
+    });
+    const records = await h.t.db.system((sx) =>
+      callsRepo.listTurnInterruptions(sx, [heardPart.id, heardNothing.id, unsigned.id, whole.id]),
+    );
+    expect(records.get(heardPart.id)?.heardText).toBe(first);
+    expect(records.get(heardNothing.id)).toMatchObject({ heardSeq: -1, heardText: null });
+    // The stored sentence is kept, not the client's spelling of it.
+    expect(records.get(unsigned.id)?.heardText).toBe('Run it for two weeks.');
+    expect(records.has(whole.id)).toBe(false);
+
+    // The next reply's model call sees what the founder heard, and nothing they did not.
+    prompts.length = 0;
+    await talk('devin', sessionId, call.id, 'So what do we do on Monday?');
+    const conversation = prompts.at(-1);
+    if (conversation === undefined) throw new Error('expected a model call');
+    const assistant = conversation.filter((m) => m.role === 'assistant').map((m) => m.content);
+    expect(assistant).toEqual([first, 'Run it for two weeks.', whole.response?.answer]);
+    const asked = conversation.map((m) => m.content).join('\n');
+    expect(asked).toContain('Which library should we approach first?');
+    expect(asked).not.toContain('What should the pilot measure?');
+    await endCall('devin', call.id);
   });
 });
 
@@ -641,6 +948,9 @@ describe('speech', () => {
     const say = (text: string) => h.core.speech.synthesize(ctx.tomasz, { sessionId, turnId: turn.id, text });
     await say(SPOKEN);
     await say('Ask for two weeks of hourly counts first.');
+    // Another spelling of a stored sentence is spoken in the stored words.
+    await say('ASK FOR TWO WEEKS OF HOURLY COUNTS FIRST.');
+    expect(speech.calls.at(-1)?.text).toBe('Ask for two weeks of hourly counts first.');
     for (const text of [
       'the library that already counts seats',
       'Ask for two weeks',
@@ -674,21 +984,141 @@ describe('speech', () => {
     ).rejects.toMatchObject({ code: 'validation_failed' });
     speech.failNext = true;
     await expect(say(SPOKEN)).rejects.toMatchObject({ code: 'model_unavailable' });
-    await h.t.db.system((sx) =>
-      usageRepo.recordUsage(sx, {
-        tenantId: h.seed.tenantId,
-        principalId: h.people.tomasz,
-        purpose: 'turn',
-        modelId: 'test',
-        inputTokens: 1,
-        outputTokens: 1,
-        costUsd: 5,
-      }),
-    );
-    await expect(say(SPOKEN)).rejects.toMatchObject({ code: 'spend_cap_reached' });
-    // A heartbeat now ends the call for the budget, and speech stops with it.
-    expect(await beat('tomasz', call.id)).toMatchObject({ action: 'terminate', reason: 'budget' });
+    await withOverspend('tomasz', async () => {
+      await expect(say(SPOKEN)).rejects.toMatchObject({ code: 'spend_cap_reached' });
+      // The spend caps are checked before a server without speech answers 501.
+      await expect(
+        bare.speech.synthesize(ctx.tomasz, { sessionId, turnId: turn.id, text: SPOKEN }),
+      ).rejects.toMatchObject({ code: 'spend_cap_reached' });
+      // A heartbeat now ends the call for the budget, and speech stops with it.
+      expect(await beat('tomasz', call.id)).toMatchObject({ action: 'terminate', reason: 'budget' });
+    });
     await expect(say(SPOKEN)).rejects.toMatchObject({ code: 'conflict', reason: 'call_not_active' });
     expect(await auditActions()).toContain('speech.refused');
+  });
+});
+
+describe('crisis support on a call', () => {
+  const CRISIS = 'I want to kill myself tonight.';
+
+  it('speaks the fixed support message of the founder’s own crisis turn whatever the call, switches and caps', async () => {
+    const sessionId = await newSession('maya', 'quietquad');
+    const { call } = await startCall('maya', sessionId);
+    const events = await send('maya', sessionId, call.id, CRISIS);
+    const blocked = events.at(-1);
+    if (blocked?.event !== 'turn.blocked') throw new Error('expected the crisis path');
+    expect(blocked.reason).toBe('crisis_support');
+    const turnId = blocked.turnId;
+    const sig = signSpeechUnit(await keys.signingKey(), {
+      sessionId,
+      turnId,
+      seq: 0,
+      text: CRISIS_SPOKEN_MESSAGE,
+    });
+    const crisisUnit = { sessionId, turnId, seq: 0, text: CRISIS_SPOKEN_MESSAGE, sig };
+    const voice = (await callRow(call.id)).voiceId;
+
+    // The signed unit the turn engine streams, in the call's voice, metered.
+    await h.core.speech.synthesize(ctx.maya, crisisUnit);
+    expect(speech.calls.at(-1)).toMatchObject({ text: CRISIS_SPOKEN_MESSAGE, voiceId: voice });
+    // A changed text under its signature is refused; the message itself unsigned is the same message.
+    await expect(h.core.speech.synthesize(ctx.maya, { ...crisisUnit, seq: 1 })).rejects.toMatchObject({
+      code: 'validation_failed',
+    });
+    // Spend caps, the kill switches and the call's end do not stand between the founder and support.
+    await withOverspend('maya', () =>
+      withSetting('ai_enabled', 'false', () =>
+        withSetting('calls_enabled', 'false', () =>
+          h.core.speech.synthesize(ctx.maya, { sessionId, turnId, text: CRISIS_SPOKEN_MESSAGE }),
+        ),
+      ),
+    );
+    await endCall('maya', call.id);
+    await h.core.speech.synthesize(ctx.maya, crisisUnit);
+    // Someone else, other words of the turn, or another turn of the conversation: the ordinary rules apply.
+    await expect(
+      h.core.speech.synthesize(ctx.devin, { sessionId, turnId, text: CRISIS_SPOKEN_MESSAGE }),
+    ).rejects.toMatchObject({ code: 'conflict', reason: 'call_not_active' });
+    // A server without speech answers 501 once the checks pass.
+    const bare = createCore({
+      db: h.t.db,
+      gateway: h.gateway,
+      config: h.config,
+      objectStore: h.objectStore,
+      jobQueue: h.jobQueue,
+    });
+    await expect(bare.speech.synthesize(ctx.maya, crisisUnit)).rejects.toMatchObject({
+      code: 'speech_unavailable',
+    });
+    // Played a few times at most (reconnects), then it stays on screen.
+    await h.core.speech.synthesize(ctx.maya, crisisUnit);
+    await h.core.speech.synthesize(ctx.maya, crisisUnit);
+    await expect(h.core.speech.synthesize(ctx.maya, crisisUnit)).rejects.toMatchObject({
+      code: 'conflict',
+      reason: 'crisis_speech_limit',
+    });
+    const syntheses = await h.t.db.system((sx) =>
+      sx.query(
+        `SELECT count(*)::int AS n FROM audit_events
+         WHERE action = 'speech.synthesized' AND object_id = :t AND policy_reason = 'crisis_support'`,
+        { t: p.text(turnId) },
+      ),
+    );
+    expect(syntheses.rows[0]).toEqual({ n: CALL_LIMITS.crisisSpeechReplays });
+    // Long after the turn, the ordinary rules apply again.
+    await h.t.db.system((sx) =>
+      sx.query(`UPDATE turns SET created_at = now() - interval '11 minutes' WHERE id = :id`, {
+        id: p.uuid(turnId),
+      }),
+    );
+    await expect(h.core.speech.synthesize(ctx.maya, crisisUnit)).rejects.toMatchObject({ code: 'conflict' });
+    expect(h.logger.dump()).not.toContain(CRISIS_SPOKEN_MESSAGE);
+  });
+
+  it('speaks it in the platform voice once the EIR’s voice consent lapsed', async () => {
+    const sessionId = await newSession('amara', 'solesignal');
+    const { call } = await startCall('amara', sessionId);
+    expect((await callRow(call.id)).voiceId).toBe('Matthew');
+    const blocked = (await send('amara', sessionId, call.id, CRISIS)).at(-1);
+    if (blocked?.event !== 'turn.blocked') throw new Error('expected the crisis path');
+    await voiceConsent('solesignal', true);
+    try {
+      await h.core.speech.synthesize(ctx.amara, {
+        sessionId,
+        turnId: blocked.turnId,
+        text: CRISIS_SPOKEN_MESSAGE,
+      });
+      expect(speech.calls.at(-1)).toMatchObject({
+        text: CRISIS_SPOKEN_MESSAGE,
+        voiceId: DEFAULT_SPEECH_VOICE,
+      });
+    } finally {
+      await voiceConsent('solesignal', false);
+    }
+    await endCall('amara', call.id);
+  });
+});
+
+describe('call configuration and avatar sessions', () => {
+  it('report the calls switch and follow the call voice rule', async () => {
+    const config = CallConfigResponse.parse(await h.core.veir.callConfig(ctx.amara, ventureId('solesignal')));
+    expect(config).toMatchObject({ aiEnabled: true, callsEnabled: true });
+    await withSetting('calls_enabled', 'false', async () => {
+      expect((await h.core.veir.callConfig(ctx.amara, ventureId('solesignal'))).callsEnabled).toBe(false);
+      await expect(
+        h.core.veir.avatarSession(ctx.amara, { ventureId: ventureId('solesignal') }),
+      ).rejects.toMatchObject({ code: 'ai_disabled', reason: 'calls_disabled' });
+    });
+    expect(await h.core.veir.avatarSession(ctx.amara, { ventureId: ventureId('solesignal') })).toMatchObject({
+      voiceId: 'Matthew',
+    });
+    await voiceConsent('solesignal', true);
+    try {
+      await expect(
+        h.core.veir.avatarSession(ctx.amara, { ventureId: ventureId('solesignal') }),
+      ).rejects.toMatchObject({ code: 'persona_suspended', reason: 'voice_consent' });
+    } finally {
+      await voiceConsent('solesignal', false);
+    }
   });
 });

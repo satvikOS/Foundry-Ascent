@@ -41,7 +41,10 @@ export const CallView = z.object({
 });
 export type CallView = z.infer<typeof CallView>;
 
-/** Presigned Amazon Transcribe streaming URL for the browser (valid for at most 5 minutes). */
+/**
+ * Presigned Amazon Transcribe streaming URL for the browser. It only opens the stream and expires within
+ * seconds (`expiresAt`); a stream already open keeps running. Ask for a fresh one to reconnect.
+ */
 export const SttGrant = z.object({
   url: z.url(),
   expiresAt: Timestamp,
@@ -61,6 +64,11 @@ export type SpeechUnit = z.infer<typeof SpeechUnit>;
 /** `POST /sessions/:id/calls` */
 export const StartCallRequest = z.object({
   inputMode: CallInputMode.default('transcribe'),
+  /**
+   * End the caller's live call in another conversation (as `navigated`) instead of answering 409. Without it,
+   * a live call elsewhere refuses the start.
+   */
+  replace: z.boolean().optional(),
 });
 export type StartCallRequest = z.infer<typeof StartCallRequest>;
 
@@ -123,10 +131,24 @@ export type EndCallResponse = z.infer<typeof EndCallResponse>;
 
 export const CallDetailResponse = z.object({ call: CallView, summary: CallSummary.nullable() });
 
+/** A unit the founder heard to its end, as played: streamed units carry their `turn.speech` signature. */
+export const HeardUnit = z.object({
+  seq: z.number().int().min(0).max(10_000),
+  text: z.string().trim().min(1).max(600),
+  sig: z.string().min(16).max(200).optional(),
+});
+export type HeardUnit = z.infer<typeof HeardUnit>;
+
 /** `POST /turns/:id/interrupt` — barge-in: the founder spoke over the vEIR. */
 export const InterruptTurnRequest = z.object({
   callId: Id,
   /** The last speech unit the founder actually heard (-1 when none). */
   heardSeq: z.number().int().min(-1),
+  /**
+   * Units 0…`heardSeq` in order, as played. The server verifies them (signatures, or whole sentences of the
+   * stored spoken reply) and replays only their words in the conversation history. Without them, the reply is
+   * left out of the history.
+   */
+  heard: z.array(HeardUnit).max(64).optional(),
 });
 export type InterruptTurnRequest = z.infer<typeof InterruptTurnRequest>;

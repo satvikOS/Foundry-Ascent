@@ -42,6 +42,8 @@ export interface CallRecord {
   readonly endDetail: string | null;
   readonly sttGrants: number;
   readonly speechCharacters: number;
+  /** Seconds the client's microphone was open for speech-to-text (heartbeats; never more than wall time). */
+  readonly micOpenSeconds: number;
   /** Whole seconds from the start to the end (to now while live), by the database clock. */
   readonly elapsedSeconds: number;
   /** Whole seconds since the last heartbeat (since the start when none came yet), by the database clock. */
@@ -50,7 +52,7 @@ export interface CallRecord {
 
 const COLUMNS = `c.id, c.tenant_id, c.venture_id, c.session_id, c.persona_id, c.started_by, c.status, c.provider,
   c.input_mode, c.voice_id, c.max_seconds, c.started_at, c.last_heartbeat_at, c.ended_at, c.end_reason, c.end_detail,
-  c.stt_grants, c.speech_characters,
+  c.stt_grants, c.speech_characters, c.mic_open_seconds,
   floor(extract(epoch FROM coalesce(c.ended_at, now()) - c.started_at))::integer AS elapsed_seconds,
   floor(extract(epoch FROM now() - coalesce(c.last_heartbeat_at, c.started_at)))::integer AS idle_seconds`;
 
@@ -74,6 +76,7 @@ function decodeCall(r: RawRow): CallRecord {
     endDetail: col.text.nullable.decode(r.end_detail, 'end_detail'),
     sttGrants: col.int.decode(r.stt_grants, 'stt_grants'),
     speechCharacters: col.int.decode(r.speech_characters, 'speech_characters'),
+    micOpenSeconds: col.int.decode(r.mic_open_seconds, 'mic_open_seconds'),
     elapsedSeconds: Math.max(0, col.int.decode(r.elapsed_seconds, 'elapsed_seconds')),
     idleSeconds: Math.max(0, col.int.decode(r.idle_seconds, 'idle_seconds')),
   };
@@ -207,23 +210,46 @@ export function endCall(ex: SqlExecutor, input: EndCallInput): Promise<CallRecor
   );
 }
 
-/** Records a heartbeat of a live call. Null when the call is not live or not the caller's. */
+/** Seconds a client may report beyond the wall time since its previous heartbeat (clock and rounding drift). */
+export const MIC_SECONDS_SLACK = 5;
+
+export interface Heartbeat {
+  readonly call: CallRecord;
+  /** Microphone seconds this heartbeat added (what speech-to-text is billed for). */
+  readonly micSecondsAdded: number;
+}
+
+/**
+ * Records a heartbeat of a live call with the client's running total of microphone seconds. The total only
+ * grows, and never by more than the wall time since the previous heartbeat (plus a little slack), whatever the
+ * client reports; concurrent heartbeats are serialised so each second is added once. Null when the call is not
+ * live or not the caller's.
+ */
 export function recordHeartbeat(
   ex: SqlExecutor,
   input: { readonly callId: string; readonly state: CallStateValue; readonly micOpenSeconds: number },
-): Promise<CallRecord | null> {
+): Promise<Heartbeat | null> {
   return queryFirst(
     ex,
-    `UPDATE calls AS c SET last_heartbeat_at = now(), last_state = :state,
-                           mic_open_seconds = greatest(c.mic_open_seconds, :mic)
-     WHERE c.id = :id AND c.status = 'live'
-     RETURNING ${COLUMNS}`,
+    `WITH prev AS (
+       SELECT x.id, x.mic_open_seconds AS before,
+              ceil(extract(epoch FROM now() - coalesce(x.last_heartbeat_at, x.started_at)))::integer AS gap
+       FROM calls x WHERE x.id = :id AND x.status = 'live' FOR UPDATE)
+     UPDATE calls AS c SET last_heartbeat_at = now(), last_state = :state,
+                           mic_open_seconds = least(86400, greatest(c.mic_open_seconds,
+                                                                    least(:mic, prev.before + prev.gap + :slack)))
+     FROM prev WHERE c.id = prev.id
+     RETURNING ${COLUMNS}, (c.mic_open_seconds - prev.before)::integer AS mic_added`,
     {
       id: p.uuid(input.callId),
       state: p.text(input.state),
       mic: p.int(Math.min(86_400, Math.max(0, Math.floor(input.micOpenSeconds)))),
+      slack: p.int(MIC_SECONDS_SLACK),
     },
-    decodeCall,
+    (r) => ({
+      call: decodeCall(r),
+      micSecondsAdded: Math.max(0, col.int.decode(r.mic_added, 'mic_added')),
+    }),
   );
 }
 
@@ -245,6 +271,17 @@ export function recordSttGrant(
   );
 }
 
+/** Speech-to-text grants minted for a person's calls started today (UTC, by the database clock). */
+export function sttGrantsToday(ex: SqlExecutor, principalId: string): Promise<number> {
+  return queryNumber(
+    ex,
+    `SELECT coalesce(sum(c.stt_grants), 0)::integer AS n FROM calls c
+     WHERE c.started_by = :principal
+       AND c.started_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
+    { principal: p.uuid(principalId) },
+  );
+}
+
 /** Adds synthesized characters to a call (metering detail; the ledger holds the cost). */
 export async function addSpeechCharacters(
   ex: SqlExecutor,
@@ -258,11 +295,13 @@ export async function addSpeechCharacters(
 
 /**
  * Seconds a person spent in calls during the current UTC day (by the database clock): ended calls until they
- * ended, live calls until now or until `staleSeconds` after their last heartbeat when the client went away.
+ * ended, live calls until now but never more than `graceSeconds` after their last sign of life, which is also
+ * where a call whose client went away is closed (`endCall` with `atLastHeartbeat`, `reapStaleCalls`): the count
+ * is the same before and after the close.
  */
 export function callSecondsToday(
   ex: SqlExecutor,
-  input: { readonly principalId: string; readonly staleSeconds: number },
+  input: { readonly principalId: string; readonly graceSeconds: number },
 ): Promise<number> {
   return queryNumber(
     ex,
@@ -270,13 +309,13 @@ export function callSecondsToday(
      SELECT coalesce(floor(sum(greatest(0, extract(epoch FROM
               least(coalesce(c.ended_at,
                              least(now(), coalesce(c.last_heartbeat_at, c.started_at)
-                                          + make_interval(secs => :stale::integer))),
+                                          + make_interval(secs => :grace::integer))),
                     day.start_at + interval '1 day')
               - greatest(c.started_at, day.start_at))))), 0)::integer AS n
      FROM calls c, day
      WHERE c.started_by = :principal AND c.started_at < day.start_at + interval '1 day'
        AND (c.ended_at IS NULL OR c.ended_at > day.start_at)`,
-    { principal: p.uuid(input.principalId), stale: p.int(input.staleSeconds) },
+    { principal: p.uuid(input.principalId), grace: p.int(input.graceSeconds) },
   );
 }
 
@@ -360,18 +399,26 @@ export async function callFollowUps(
 
 /** Largest speech unit sequence number a turn can have (`turns_heard_seq_check`). */
 export const MAX_SPEECH_SEQ = 10_000;
+/** Longest record of what the founder heard of one reply (`turns_heard_seq_check`). */
+export const MAX_HEARD_CHARS = 40_000;
 
 export interface TurnInterruption {
   readonly turnId: string;
   /** The last speech unit the founder heard (-1: none). */
   readonly heardSeq: number;
+  /**
+   * The words of units 0…`heardSeq` as played, verified when recorded; null when the founder heard nothing,
+   * the client did not send them, or the conversation's content was redacted since.
+   */
+  readonly heardText: string | null;
   readonly interruptedAt: string;
 }
 
 /**
- * Records that the founder spoke over the reply of a turn of their call after hearing units 0…`heardSeq`. The
- * first record wins (a retried interrupt changes nothing). Null when the turn is not that person's turn in
- * that call (or not visible).
+ * Records that the founder spoke over the reply of a turn of their call after hearing units 0…`heardSeq`
+ * (whose words are `heardText`, already verified by the caller). The first record wins (a retried interrupt
+ * changes nothing). Null when the turn is not that person's turn in that call, not visible, or its conversation
+ * is no longer active (its content may have been redacted).
  */
 export function markTurnInterrupted(
   ex: SqlExecutor,
@@ -380,18 +427,24 @@ export function markTurnInterrupted(
     readonly callId: string;
     readonly authorId: string;
     readonly heardSeq: number;
+    readonly heardText: string | null;
   },
 ): Promise<TurnInterruption | null> {
   return queryFirst(
     ex,
-    `UPDATE turns AS t SET heard_seq = coalesce(t.heard_seq, :seq), interrupted_at = coalesce(t.interrupted_at, now())
+    `UPDATE turns AS t SET heard_seq = coalesce(t.heard_seq, :seq),
+                           heard_text = CASE WHEN t.interrupted_at IS NULL THEN :heard ELSE t.heard_text END,
+                           interrupted_at = coalesce(t.interrupted_at, now())
      WHERE t.id = :id AND t.call_id = :callId AND t.author_id = :authorId
-     RETURNING t.id, t.heard_seq, t.interrupted_at`,
+       AND EXISTS (SELECT 1 FROM coaching_sessions s
+                   WHERE s.id = t.session_id AND s.status = 'active' AND s.deleted_at IS NULL)
+     RETURNING t.id, t.heard_seq, t.heard_text, t.interrupted_at`,
     {
       id: p.uuid(input.turnId),
       callId: p.uuid(input.callId),
       authorId: p.uuid(input.authorId),
       seq: p.int(input.heardSeq),
+      heard: p.nullable.text(input.heardText),
     },
     decodeInterruption,
   );
@@ -401,6 +454,7 @@ function decodeInterruption(r: RawRow): TurnInterruption {
   return {
     turnId: col.uuid.decode(r.id, 'id'),
     heardSeq: col.int.decode(r.heard_seq, 'heard_seq'),
+    heardText: col.text.nullable.decode(r.heard_text, 'heard_text'),
     interruptedAt: col.ts.decode(r.interrupted_at, 'interrupted_at'),
   };
 }
@@ -416,12 +470,71 @@ export async function listTurnInterruptions(
   if (turnIds.length === 0) return new Map();
   const rows = await queryRows(
     ex,
-    `SELECT t.id, t.heard_seq, t.interrupted_at FROM turns t
+    `SELECT t.id, t.heard_seq, t.heard_text, t.interrupted_at FROM turns t
      WHERE t.id = ANY (:ids) AND t.interrupted_at IS NOT NULL`,
     { ids: p.uuidArray(turnIds) },
     decodeInterruption,
   );
   return new Map(rows.map((r) => [r.turnId, r]));
+}
+
+// ------------------------------------------------------------------------------------------------
+// Speech
+// ------------------------------------------------------------------------------------------------
+
+/** What `POST /speech` needs to know about a turn whose words a call would speak (no content but `spoken`). */
+export interface SpokenTurn {
+  readonly turnId: string;
+  readonly sessionId: string;
+  readonly ventureId: string;
+  readonly authorId: string;
+  /** The call the turn was sent in (null: outside a call). */
+  readonly callId: string | null;
+  readonly status: z.infer<typeof TurnStatus>;
+  /** The reply's validated spoken form (null when it has none). */
+  readonly spoken: string | null;
+  /** The turn was answered with the fixed crisis support message (no model call). */
+  readonly crisisSupport: boolean;
+  /** Whole seconds since the turn was sent, by the database clock. */
+  readonly ageSeconds: number;
+}
+
+export function getSpokenTurn(ex: SqlExecutor, turnId: string): Promise<SpokenTurn | null> {
+  return queryFirst(
+    ex,
+    `SELECT t.id, t.session_id, t.venture_id, t.author_id, t.call_id, t.status,
+            CASE WHEN jsonb_typeof(t.response -> 'spoken') = 'string' THEN t.response ->> 'spoken' END AS spoken,
+            coalesce(jsonb_typeof(t.validator_results -> 'notes') = 'array'
+                     AND (t.validator_results -> 'notes') @> '["crisis_support"]'::jsonb, false) AS crisis_support,
+            floor(extract(epoch FROM now() - t.created_at))::integer AS age_seconds
+     FROM turns t WHERE t.id = :id`,
+    { id: p.uuid(turnId) },
+    (r) => ({
+      turnId: col.uuid.decode(r.id, 'id'),
+      sessionId: col.uuid.decode(r.session_id, 'session_id'),
+      ventureId: col.uuid.decode(r.venture_id, 'venture_id'),
+      authorId: col.uuid.decode(r.author_id, 'author_id'),
+      callId: col.uuid.nullable.decode(r.call_id, 'call_id'),
+      status: col.enum(TurnStatus.options).decode(r.status, 'status'),
+      spoken: col.text.nullable.decode(r.spoken, 'spoken'),
+      crisisSupport: col.bool.decode(r.crisis_support, 'crisis_support'),
+      ageSeconds: Math.max(0, col.int.decode(r.age_seconds, 'age_seconds')),
+    }),
+  );
+}
+
+/** Syntheses of a turn's words in the last `windowSeconds` (from the audit trail; owner role). */
+export function countTurnSyntheses(
+  sx: SystemExecutor,
+  input: { readonly turnId: string; readonly windowSeconds: number },
+): Promise<number> {
+  return queryNumber(
+    sx,
+    `SELECT count(*) AS n FROM audit_events
+     WHERE action = 'speech.synthesized' AND at > now() - make_interval(secs => :window)
+       AND object_type = 'turn' AND object_id = :turn`,
+    { turn: p.text(input.turnId), window: p.int(input.windowSeconds) },
+  );
 }
 
 // ------------------------------------------------------------------------------------------------

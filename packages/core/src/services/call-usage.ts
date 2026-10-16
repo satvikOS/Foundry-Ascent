@@ -3,8 +3,9 @@ import { callsRepo, type SqlExecutor } from '@foundry/db';
 
 /**
  * Call limits, minute accounting and the rules that end a call (docs/architecture/calls.md §2). Minutes come
- * from the `calls` table: ended calls count until they ended, live calls until now (or until a minute after
- * their last heartbeat when the client went away). The rules are pure and unit tested.
+ * from the `calls` table: ended calls count until they ended, live calls until now, but never more than
+ * {@link CALL_LIMITS.staleGraceSeconds} after their last heartbeat (where a call whose client went away is
+ * closed). The rules are pure and unit tested.
  */
 export const CALL_LIMITS = {
   /** Clients send a heartbeat this often. */
@@ -14,14 +15,26 @@ export const CALL_LIMITS = {
    * trigger of migration 0008 uses the same 60 s window.
    */
   staleSeconds: 60,
-  /** A call ended because its client went away counts until this long after its last heartbeat. */
-  staleGraceSeconds: 15,
+  /**
+   * A live call counts until at most this long after its last heartbeat (two heartbeats), and a call whose
+   * client went away is closed there: its minutes are the same before and after it is closed.
+   */
+  staleGraceSeconds: 30,
   /** A call needs at least this much time left to start. */
   minStartSeconds: 60,
-  /** Lifetime of a speech-to-text grant (Amazon Transcribe allows at most 300 s). */
-  sttGrantSeconds: 300,
+  /**
+   * Lifetime of a speech-to-text grant. The presigned URL only has to open the stream, and it can open any
+   * number of streams until it expires, so it lives just long enough for the browser to connect.
+   */
+  sttGrantSeconds: 30,
   /** Speech-to-text grants one call may mint (reconnects and unmutes re-mint). */
   sttGrantsPerCall: 20,
+  /** Speech-to-text grants one person may mint per UTC day, across calls. */
+  sttGrantsPerDay: 100,
+  /** The fixed crisis support message of a crisis turn may be spoken this many times … */
+  crisisSpeechReplays: 5,
+  /** … within this long after the turn was sent. */
+  crisisSpeechWindowSeconds: 600,
   /** Spoken turns one person may send per window (typed chat has its own limit). */
   voiceTurnRateLimit: 40,
   voiceTurnRateWindowSeconds: 600,
@@ -35,7 +48,15 @@ export type CallCaps = Required<
 
 /** Seconds the person spent in calls today (UTC), by the database clock. */
 export function callSecondsToday(ex: SqlExecutor, principalId: string): Promise<number> {
-  return callsRepo.callSecondsToday(ex, { principalId, staleSeconds: CALL_LIMITS.staleSeconds });
+  return callsRepo.callSecondsToday(ex, { principalId, graceSeconds: CALL_LIMITS.staleGraceSeconds });
+}
+
+/** Amazon Transcribe streaming, US English, in USD per second of audio (us-east-1, first pricing tier). */
+export const TRANSCRIBE_USD_PER_SECOND = 0.024 / 60;
+
+/** Estimated cost of `seconds` of speech-to-text (the microphone seconds the client reports). */
+export function transcriptionCostUsd(seconds: number): number {
+  return Math.max(0, seconds) * TRANSCRIBE_USD_PER_SECOND;
 }
 
 /** Seconds left today under the daily cap (never negative). */
@@ -82,6 +103,7 @@ export type CallStopCause =
   | 'kill_switch'
   | 'calls_disabled'
   | 'session_closed'
+  | 'access_revoked'
   | 'persona_unavailable'
   | 'voice_consent'
   | 'stale_heartbeat'
@@ -94,6 +116,7 @@ export const STOP_REASON: Readonly<Record<CallStopCause, CallEndReason>> = {
   kill_switch: 'disabled',
   calls_disabled: 'disabled',
   session_closed: 'user',
+  access_revoked: 'disabled',
   persona_unavailable: 'disabled',
   voice_consent: 'disabled',
   stale_heartbeat: 'timeout',
@@ -107,6 +130,8 @@ export interface CallConditions {
   readonly callsEnabled: boolean;
   /** The conversation is still active (not ended or deleted). */
   readonly sessionActive: boolean;
+  /** The caller may still write to the venture (a founder or team member of a venture not archived). */
+  readonly canWrite: boolean;
   /** The venture's vEIR is still this call's persona, active, with an approved release. */
   readonly personaAvailable: boolean;
   /** The call's voice is still approved (stock voice, or the EIR's voice under consent in force). */
@@ -122,6 +147,7 @@ export function callStopCause(c: CallConditions): CallStopCause | null {
   if (!c.aiEnabled) return 'kill_switch';
   if (!c.callsEnabled) return 'calls_disabled';
   if (!c.sessionActive) return 'session_closed';
+  if (!c.canWrite) return 'access_revoked';
   if (!c.personaAvailable) return 'persona_unavailable';
   if (!c.voiceApproved) return 'voice_consent';
   if (c.idleSeconds > CALL_LIMITS.staleSeconds) return 'stale_heartbeat';
