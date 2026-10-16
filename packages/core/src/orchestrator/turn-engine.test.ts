@@ -269,6 +269,65 @@ describe('SpeechStream', () => {
     expect(speech.sent).toBe(3);
   });
 
+  it('sends each unit of a streamed reply at once, and marks only a closing unit final', async () => {
+    const events: TurnStreamEvent[] = [];
+    const speech = new SpeechStream(
+      Promise.resolve(key),
+      ids,
+      (e) => {
+        events.push(e);
+        return Promise.resolve();
+      },
+      () => undefined,
+      undefined,
+      { eager: true },
+    );
+    await speech.queue('Start with five interviews.');
+    // Said while the model is still writing the rest: nothing waits for the next unit.
+    expect(events.map((e) => (e.event === 'turn.speech' ? [e.seq, e.text, e.final] : null))).toEqual([
+      [0, 'Start with five interviews.', false],
+    ]);
+    await speech.queue('Which library first?');
+    expect(speech.sent).toBe(2);
+    await speech.finish('A quick caveat.');
+    await speech.finish();
+    const units = events.flatMap((e) => (e.event === 'turn.speech' ? [e] : []));
+    expect(units.map((u) => [u.seq, u.text, u.final])).toEqual([
+      [0, 'Start with five interviews.', false],
+      [1, 'Which library first?', false],
+      [2, 'A quick caveat.', true],
+    ]);
+    for (const u of units) {
+      expect(
+        verifySpeechUnit(
+          [key],
+          { sessionId: ids.sessionId, turnId: ids.turnId, seq: u.seq, text: u.text },
+          u.sig,
+        ),
+      ).toBe(true);
+    }
+
+    // Once the caller stopped listening (barge-in), nothing more is sent.
+    const stop = new AbortController();
+    const after: TurnStreamEvent[] = [];
+    const listening = new SpeechStream(
+      Promise.resolve(key),
+      ids,
+      (e) => {
+        after.push(e);
+        return Promise.resolve();
+      },
+      () => undefined,
+      stop.signal,
+      { eager: true },
+    );
+    await listening.queue('One.');
+    stop.abort();
+    await listening.queue('Two.');
+    await listening.finish('Caveat.');
+    expect(after).toHaveLength(1);
+  });
+
   it('drops the held unit of a blocked turn and stops speaking when signing fails', async () => {
     const events: TurnStreamEvent[] = [];
     const emit = (e: TurnStreamEvent): Promise<void> => {

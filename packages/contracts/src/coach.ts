@@ -270,6 +270,11 @@ export const TurnStreamEvent = z.discriminatedUnion('event', [
     seq: z.number().int().min(0),
     text: z.string().min(1).max(600),
     sig: z.string().min(16).max(200),
+    /**
+     * The turn's last unit, when that is known as it is sent: the end of a reply said whole (the crisis support
+     * message, a reply written whole), or a closing unit after a streamed reply (the spoken narrowing caveat).
+     * A streamed reply's units are sent the moment each is validated, so none of them is marked final.
+     */
     final: z.boolean(),
   }),
   z.object({ event: z.literal('turn.completed'), turn: TurnView }),

@@ -10,6 +10,7 @@ import {
   CRISIS_SUPPORT_MESSAGE,
   CROSS_VENTURE_BLOCK_ANSWER,
   MockModelGateway,
+  SPOKEN_NARROWING_CAVEAT,
   mockCoachResponse,
   type EmbedOptions,
   type EmbedResult,
@@ -566,7 +567,11 @@ describe('spoken turns', () => {
     const units = speechUnits(events);
     expect(units.length).toBeGreaterThan(0);
     expect(units.map((u) => u.seq)).toEqual(units.map((_, i) => i));
-    expect(units.map((u) => u.final)).toEqual(units.map((_, i) => i === units.length - 1));
+    // Each unit was said as soon as the gate released it: none waited for the end to be marked final.
+    expect(units.filter((u) => u.final).map((u) => u.text)).toEqual(
+      units.filter((u) => u.final && u.text === SPOKEN_NARROWING_CAVEAT).map((u) => u.text),
+    );
+    expect(units[0]?.final).toBe(false);
     const keys = await new PlatformKeyCache(kit, 3_600).verificationKeys();
     const turn = completed(events);
     for (const u of units) {
@@ -682,7 +687,7 @@ describe('spoken turns', () => {
     expect(typed.outcome.error).toMatchObject({ code: 'rate_limited', reason: 'turn_rate_limit' });
   });
 
-  it('a stream that breaks on a call drops the abandoned reply’s held unit and says the regenerated reply', async () => {
+  it('a stream that breaks on a call keeps what was already said and then says the regenerated reply', async () => {
     const sentences = [
       'Three interviews is a solid start for the exam-week pilot.',
       'The staff answers point at seats running out after seven.',
@@ -709,7 +714,8 @@ describe('spoken turns', () => {
     const units = speechUnits(events);
     expect(units.length).toBeGreaterThan(1);
     expect(units.map((u) => u.seq)).toEqual(units.map((_, i) => i));
-    expect(units.map((u) => u.final)).toEqual(units.map((_, i) => i === units.length - 1));
+    // Streamed units are sent at once (none is marked final); the regenerated reply follows them.
+    expect(units.every((u) => !u.final)).toBe(true);
     // What was said before the break stays said; the call then says the validated, regenerated reply.
     for (const u of units.slice(0, -1)) expect(sentences).toContain(u.text);
     expect(units.at(-1)?.text).toBe(turn.response?.spoken);

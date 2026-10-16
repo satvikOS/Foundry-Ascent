@@ -83,11 +83,17 @@ export class GenerationFailure extends Error {
 const MAX_SPEECH_UNIT_CHARS = 600;
 
 /**
- * The signed `turn.speech` units of one voice turn. Each unit is held until the next one is ready, so the
- * last unit can carry `final: true`; `finish` sends it (after an optional closing unit such as the spoken
- * narrowing caveat), `discard` drops it when the turn is blocked. Signing failures stop speech for the turn
- * (the reply stays readable) and are logged with ids only. Nothing is sent once `signal` (the caller's) is
- * aborted: the founder spoke over the vEIR or went away, and would never hear it.
+ * The signed `turn.speech` units of one voice turn. Signing failures stop speech for the turn (the reply
+ * stays readable) and are logged with ids only. Nothing is sent once `signal` (the caller's) is aborted: the
+ * founder spoke over the vEIR or went away, and would never hear it.
+ *
+ * A reply said whole (the crisis support message, a validated spoken reply) is queued, then finished: each
+ * unit is held until the next one is ready, so the last one carries `final: true`; `discard` drops the held
+ * unit when the turn is blocked. A streamed reply (`eager`) sends each unit the moment the sentence gate
+ * released it, so the founder hears its first sentence while the model is still writing and its last one
+ * without waiting for the annotations and the final validation (docs/runbooks/latency.md); only a closing
+ * unit sent by `finish` (the spoken narrowing caveat) is then marked final. Every unit was validated by the
+ * sentence gate either way.
  */
 export class SpeechStream {
   #held: string | null = null;
@@ -100,6 +106,7 @@ export class SpeechStream {
     private readonly emit: (event: TurnStreamEvent) => Promise<void>,
     private readonly onError: (fields: Record<string, string | number>) => void,
     private readonly signal?: AbortSignal,
+    private readonly options: { readonly eager?: boolean } = {},
   ) {}
 
   /** Units sent so far. */
@@ -110,11 +117,20 @@ export class SpeechStream {
   async queue(text: string): Promise<void> {
     const unit = clampWords(text, Number.MAX_SAFE_INTEGER, MAX_SPEECH_UNIT_CHARS).text;
     if (unit === '' || this.#broken) return;
+    if (this.options.eager === true) {
+      await this.#send(unit, false);
+      return;
+    }
     if (this.#held !== null) await this.#send(this.#held, false);
     this.#held = unit;
   }
 
   async finish(closing?: string): Promise<void> {
+    if (this.options.eager === true) {
+      const unit = closing ? clampWords(closing, Number.MAX_SAFE_INTEGER, MAX_SPEECH_UNIT_CHARS).text : '';
+      if (unit !== '' && !this.#broken) await this.#send(unit, true);
+      return;
+    }
     if (closing) await this.queue(closing);
     const last = this.#held;
     this.#held = null;
@@ -276,6 +292,8 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
             logger.error('turn.speech_unsigned', fields);
           },
           a.signal,
+          // Each validated sentence is spoken as soon as the gate releases it.
+          { eager: true },
         )
       : null;
   const stop = new AbortController();

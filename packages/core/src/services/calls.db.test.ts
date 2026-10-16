@@ -1369,7 +1369,8 @@ describe('the turn engine and the calls service together', () => {
     const units = unitsOf(events);
     expect(units.length).toBeGreaterThan(0);
     expect(units.map((u) => u.seq)).toEqual(units.map((_, i) => i));
-    expect(units.at(-1)?.final).toBe(true);
+    // Streamed: each unit is sent the moment it is validated, so none waits to be marked final.
+    expect(units.at(0)?.final).toBe(false);
     // Signed by the turn engine, verified with the platform key the calls and speech services use.
     const verification = await keys.verificationKeys();
     for (const u of units) {
