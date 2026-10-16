@@ -1,9 +1,10 @@
 import {
+  DocumentFileQuery,
   type DocumentFileResponse,
   type SourcePassage,
   SourceTextQuery,
   type SourceTextResponse,
-} from '@foundry/contracts';
+} from '@foundry/contracts/viewer';
 import { assignmentsRepo, documentsRepo, knowledgeRepo, readerRepo } from '@foundry/db';
 import { type z } from 'zod';
 
@@ -17,15 +18,22 @@ import { classificationsFor } from '../orchestrator/evidence.js';
 /**
  * The document viewer: a venture document's original file (short-lived presigned GETs, never the bytes
  * through the API) and the text of any source the venture's vEIR can cite to the reader. Both are read
- * under RLS after the venture check, and each opening is audited with identifiers only.
+ * under RLS after the venture check, and each opening is audited with identifiers only: a signed URL is the
+ * authorization to read the file, so one is signed only for what the reader asked for (to show it, or to
+ * save it), and each one is audited as that.
  */
 export interface DocumentReaderService {
   /**
-   * Presigned GETs of a venture document's file: one shown inline, one saved under the file's own name
-   * (venture readers: members of any role and the assigned EIR). 404 for a document the caller cannot
-   * read; 409 while its file has not arrived (upload unfinished, or the object went missing).
+   * A presigned GET of a venture document's file (venture readers: members of any role and the assigned
+   * EIR): shown inline (`document.file_opened`), or saved under the file's own name with `disposition:
+   * 'attachment'` (`document.file_downloaded`). 404 for a document the caller cannot read; 409 while its
+   * file has not arrived (upload unfinished, or the object went missing).
    */
-  documentFile(ctx: RequestContext, documentId: string): Promise<DocumentFileResponse>;
+  documentFile(
+    ctx: RequestContext,
+    documentId: string,
+    query?: z.input<typeof DocumentFileQuery>,
+  ): Promise<DocumentFileResponse>;
   /**
    * The text of a source the venture's vEIR can cite: one of the venture's own documents, or a program or
    * public source within the venture's data class (as retrieval sees them). A vEIR's own library is read by
@@ -39,7 +47,7 @@ export interface DocumentReaderService {
   ): Promise<SourceTextResponse>;
 }
 
-/** Lifetime of the viewer's presigned GETs: it fetches at once, and Download asks for fresh ones. */
+/** Lifetime of the viewer's presigned GETs: it fetches at once, and Download signs its own at the click. */
 export const FILE_URL_TTL_SECONDS = 120;
 
 /**
@@ -150,8 +158,9 @@ export function createDocumentReaderService(kit: Kit): DocumentReaderService {
   }
 
   return {
-    documentFile: async (ctx, rawDocumentId) => {
+    documentFile: async (ctx, rawDocumentId, rawQuery = {}) => {
       const documentId = requireId(rawDocumentId, 'Document');
+      const { disposition } = parseInput(DocumentFileQuery, rawQuery);
       const doc = await kit.inRequest(ctx, async (scope) => {
         const current = await documentsRepo.getDocument(scope.tx, documentId);
         if (current === null || current.status === 'deleted') throw fail.notFound('Document');
@@ -163,7 +172,7 @@ export function createDocumentReaderService(kit: Kit): DocumentReaderService {
           throw fail.conflict('The file of this document has not been uploaded', 'file_not_stored');
         }
         await audit(scope, {
-          action: 'document.file_opened',
+          action: disposition === 'inline' ? 'document.file_opened' : 'document.file_downloaded',
           outcome: 'succeeded',
           ventureId: current.ventureId,
           objectType: 'document',
@@ -171,21 +180,14 @@ export function createDocumentReaderService(kit: Kit): DocumentReaderService {
         });
         return current;
       });
-      const signed = { key: doc.s3Key, filename: doc.filename, contentType: doc.contentType };
-      const [view, download] = await Promise.all([
-        objectStore.presignGet({
-          ...signed,
-          disposition: 'inline',
-          expiresInSeconds: FILE_URL_TTL_SECONDS,
-        }),
-        objectStore.presignGet({
-          ...signed,
-          disposition: 'attachment',
-          expiresInSeconds: FILE_URL_TTL_SECONDS,
-        }),
-      ]);
-      const expiresAt = view.expiresAt < download.expiresAt ? view.expiresAt : download.expiresAt;
-      return { url: view.url, downloadUrl: download.url, expiresAt };
+      const signed = await objectStore.presignGet({
+        key: doc.s3Key,
+        filename: doc.filename,
+        contentType: doc.contentType,
+        disposition,
+        expiresInSeconds: FILE_URL_TTL_SECONDS,
+      });
+      return { url: signed.url, expiresAt: signed.expiresAt };
     },
 
     sourceText: async (ctx, rawVentureId, rawSourceId, rawQuery = {}) => {

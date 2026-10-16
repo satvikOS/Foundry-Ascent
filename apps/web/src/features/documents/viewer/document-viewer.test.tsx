@@ -1,5 +1,6 @@
-import type { DocumentView, SourceTextResponse } from '@foundry/contracts';
-import { QueryClientProvider } from '@tanstack/react-query';
+import type { DocumentView } from '@foundry/contracts';
+import type { SourceTextResponse } from '@foundry/contracts/viewer';
+import { focusManager, QueryClientProvider } from '@tanstack/react-query';
 import {
   createMemoryHistory,
   createRootRoute,
@@ -23,14 +24,26 @@ import { DocumentViewerHost } from './document-viewer-host';
 import type { PdfReport } from './pdf-reader';
 import { type OpenDocumentInput, viewerSearchFor } from './viewer-search';
 
-// pdf.js does not run in jsdom: a stand-in reports what the real reader reports.
+// pdf.js does not run in jsdom: a stand-in reports what the real reader reports (or, with `error` set,
+// fails to open the file the way the real one does).
+const pdfStub = vi.hoisted(() => ({ error: null as string | null }));
 vi.mock('./pdf-reader', () => ({
-  default: function PdfStub(props: { onReport: (r: PdfReport) => void; zoom: number }) {
-    const { onReport } = props;
+  default: function PdfStub(props: {
+    onReport: (r: PdfReport) => void;
+    onError: (message: string) => void;
+    zoom: number;
+    citedText: string | null;
+  }) {
+    const { onReport, onError, citedText } = props;
     useEffect(() => {
-      onReport({ pages: 3, page: 1, matches: 0, textReady: true, cited: false });
-    }, [onReport]);
-    return <p data-testid="pdf-stub">PDF pages at {props.zoom}</p>;
+      if (pdfStub.error !== null) onError(pdfStub.error);
+      else onReport({ pages: 3, page: 1, matches: 0, textReady: true, cited: citedText !== null });
+    }, [onReport, onError, citedText]);
+    return pdfStub.error === null ? (
+      <p data-testid="pdf-stub">PDF pages at {props.zoom}</p>
+    ) : (
+      <p role="status">Opening the PDF…</p>
+    );
   },
 }));
 
@@ -39,13 +52,32 @@ const PASSAGE = '22222222-2222-4222-8222-222222222222';
 const PDF_ID = '33333333-3333-4333-8333-333333333333';
 const WORD_ID = '44444444-4444-4444-8444-444444444444';
 const LIBRARY = '55555555-5555-4555-8555-555555555555';
+const LOCKED_ID = '66666666-6666-4666-8666-666666666666';
+const PROCESSING_ID = '77777777-7777-4777-8777-777777777777';
 
 const NOTES = makeDocument({ filename: 'exam-week-interviews.md', sourceId: SOURCE });
+const PDF_SOURCE = '88888888-8888-4888-8888-888888888888';
 const PDF = makeDocument({
   id: PDF_ID,
   filename: 'seat-survey.pdf',
   contentType: 'application/pdf',
   sizeBytes: 2_200_000,
+  sourceId: PDF_SOURCE,
+});
+/** A PDF ingestion could not read (as a password-protected one fails), which pdf.js cannot open either. */
+const LOCKED = makeDocument({
+  id: LOCKED_ID,
+  filename: 'locked.pdf',
+  contentType: 'application/pdf',
+  status: 'failed',
+  failureReason: 'extract_failed',
+  chunkCount: 0,
+});
+const PROCESSING = makeDocument({
+  id: PROCESSING_ID,
+  filename: 'field-notes.md',
+  status: 'processing',
+  chunkCount: 0,
 });
 const WORD = makeDocument({
   id: WORD_ID,
@@ -92,21 +124,32 @@ function sourceText(overrides: Partial<SourceTextResponse> = {}): SourceTextResp
 }
 
 let requests: string[] = [];
+/** Answers `GET /documents/:id/file?disposition=attachment` with this status instead (0: signs it). */
+let downloadFails = 0;
 
-function stubApi(documents: DocumentView[] = [NOTES, PDF, WORD]) {
+/** The API's requests for a document's file (`inline` ones, or with `?disposition=attachment`). */
+const fileRequests = (id: string, disposition: 'inline' | 'attachment' = 'inline') =>
+  requests.filter(
+    (r) =>
+      r.includes(`/documents/${id}/file`) &&
+      (disposition === 'attachment') === r.includes('disposition=attachment'),
+  );
+
+function stubApi(documents: DocumentView[] = [NOTES, PDF, WORD, LOCKED, PROCESSING]) {
   requests = [];
+  downloadFails = 0;
   stubFetch().mockImplementation((input) => {
     const url = urlOf(input);
     requests.push(url);
     if (url.startsWith('https://docs.test/')) return Promise.resolve(new Response(MARKDOWN));
     if (url.endsWith(`/ventures/${IDS.venture}/documents`))
       return Promise.resolve(json({ items: documents }));
-    const file = /\/documents\/([0-9a-f-]+)\/file$/.exec(url);
+    const file = /\/documents\/([0-9a-f-]+)\/file(\?disposition=attachment)?$/.exec(url);
     if (file) {
+      if (file[2] && downloadFails !== 0) return Promise.resolve(problem(downloadFails, 'conflict'));
       return Promise.resolve(
         json({
-          url: `https://docs.test/${file[1] ?? ''}/view`,
-          downloadUrl: `https://docs.test/${file[1] ?? ''}/download`,
+          url: `https://docs.test/${file[1] ?? ''}/${file[2] ? 'download' : 'view'}`,
           expiresAt: new Date(Date.now() + 120_000).toISOString(),
         }),
       );
@@ -127,6 +170,9 @@ function stubApi(documents: DocumentView[] = [NOTES, PDF, WORD]) {
           }),
         ),
       );
+    }
+    if (url.includes(`/sources/${PDF_SOURCE}/text`)) {
+      return Promise.resolve(json(sourceText({ passages: sourceText().passages.slice(1) })));
     }
     if (url.includes(`/sources/${SOURCE}/text`)) {
       if (url.includes('passage=')) {
@@ -225,6 +271,7 @@ function screenWidth(wide: boolean) {
 }
 
 beforeEach(() => {
+  pdfStub.error = null;
   window.localStorage.clear();
   scrolled.mockReset();
   Element.prototype.scrollIntoView = scrolled;
@@ -233,7 +280,17 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
+
+/** Captures what a link the viewer clicks for itself (a download) points at. */
+function followedLinks() {
+  const followed: { href: string; download: string }[] = [];
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+    followed.push({ href: this.href, download: this.download });
+  });
+  return followed;
+}
 
 describe('document viewer', () => {
   it('opens over the page as a modal dialog named by the file, and Escape returns focus to the opener', async () => {
@@ -344,10 +401,10 @@ describe('document viewer', () => {
       expect(dialog.querySelector('[data-cited]')).toHaveTextContent(CITED);
     });
     expect(within(dialog).getByRole('heading', { name: 'Findings' })).toBeInTheDocument();
-    // Word files are never fetched to be shown.
-    expect(requests.some((r) => r.includes(`/documents/${WORD_ID}/file`) && r.includes('docs.test'))).toBe(
-      false,
-    );
+    // Word files are never fetched to be shown (nor signed for: no "opened" is recorded for them).
+    expect(requests).not.toContain(`https://docs.test/${WORD_ID}/view`);
+    expect(fileRequests(WORD_ID)).toEqual([]);
+    expect(within(dialog).getByRole('button', { name: 'Download' })).toBeInTheDocument();
   });
 
   it('pages and zooms a PDF, and offers it in a new tab and as a download', async () => {
@@ -360,14 +417,94 @@ describe('document viewer', () => {
     await user.click(within(zoom).getByRole('button', { name: 'Zoom in' }));
     expect(within(dialog).getByTestId('pdf-stub')).toHaveTextContent('PDF pages at 1.25');
     expect(zoom).toHaveTextContent('125%');
+    // A new tab gets the link the viewer read the file through; no download is signed until asked for.
     await waitFor(() => {
       expect(within(dialog).getByRole('link', { name: 'Open in a new tab' })).toHaveAttribute(
         'href',
         `https://docs.test/${PDF_ID}/view`,
       );
     });
-    const download = within(dialog).getByRole('link', { name: 'Download' });
-    expect(download).toHaveAttribute('href', `https://docs.test/${PDF_ID}/download`);
+    expect(fileRequests(PDF_ID)).toHaveLength(1);
+    expect(fileRequests(PDF_ID, 'attachment')).toEqual([]);
+
+    const followed = followedLinks();
+    await user.click(within(dialog).getByRole('button', { name: 'Download' }));
+    await waitFor(() => {
+      expect(followed).toEqual([
+        { href: `https://docs.test/${PDF_ID}/download`, download: 'seat-survey.pdf' },
+      ]);
+    });
+    expect(fileRequests(PDF_ID, 'attachment')).toHaveLength(1);
+    expect(fileRequests(PDF_ID)).toHaveLength(1);
+  });
+
+  it('asks for the file once however long it stays open, and never in the background', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { dialog } = await openViewer({ documentId: PDF_ID });
+    expect(await within(dialog).findByTestId('pdf-stub')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(within(dialog).getByRole('link', { name: 'Open in a new tab' })).toHaveAttribute(
+        'href',
+        `https://docs.test/${PDF_ID}/view`,
+      );
+    });
+    // Ten minutes of reading, leaving the window and coming back now and then.
+    for (let minute = 0; minute < 10; minute += 1) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+        focusManager.setFocused(false);
+        focusManager.setFocused(true);
+      });
+    }
+    focusManager.setFocused(undefined);
+    expect(fileRequests(PDF_ID)).toHaveLength(1);
+    expect(fileRequests(PDF_ID, 'attachment')).toEqual([]);
+  });
+
+  it('says so where the status shows when a download cannot start', async () => {
+    const { dialog, user } = await openViewer({ documentId: IDS.document });
+    await within(dialog).findByRole('heading', { name: 'Exam week interviews' });
+    downloadFails = 409;
+    const followed = followedLinks();
+    await user.click(within(dialog).getByRole('button', { name: 'Download' }));
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert).toHaveTextContent('The download couldn’t start. Try again.');
+    expect(alert.closest('[data-viewer-dock]')).not.toBeNull();
+    expect(followed).toEqual([]);
+  });
+
+  it('says why a PDF it cannot open is not shown, and offers the download, when there is no text either', async () => {
+    pdfStub.error = 'This PDF is password-protected, so it can’t be shown here.';
+    const { dialog } = await openViewer({ documentId: LOCKED_ID });
+    const message = await within(dialog).findByText(
+      'This PDF is password-protected, so it can’t be shown here.',
+    );
+    expect(within(dialog).queryByText('Opening the PDF…')).toBeNull();
+    const body = message.parentElement;
+    if (!body) throw new Error('the message has no container');
+    expect(within(body).getByText('Download it to open it in another app.')).toBeInTheDocument();
+    expect(within(body).getByRole('button', { name: 'Download' })).toBeInTheDocument();
+    // The document's own status still says what went wrong in processing.
+    expect(within(dialog).getByRole('status')).toHaveTextContent(
+      'Text couldn’t be extracted from this file.',
+    );
+  });
+
+  it('shows a document’s status at the bottom of a wide screen', async () => {
+    const { dialog } = await openViewer({ documentId: PROCESSING_ID });
+    const status = await within(dialog).findByText(/^Processing\. .+ can cite it once it’s ready\.$/);
+    expect(status).toHaveAttribute('role', 'status');
+    expect(status.closest('[data-viewer-dock]')).not.toBeNull();
+    expect(dialog.querySelector('.viewer-pill-dock')?.contains(status)).toBe(true);
+  });
+
+  it('shows a document’s status above the toolbar on a phone', async () => {
+    screenWidth(false);
+    const { dialog } = await openViewer({ documentId: PROCESSING_ID });
+    const status = await within(dialog).findByText(/^Processing\. /);
+    const dock = status.closest('[data-viewer-dock]');
+    expect(dock).not.toBeNull();
+    expect(dock?.contains(within(dialog).getByRole('toolbar', { name: 'Document controls' }))).toBe(true);
   });
 
   it('puts the controls in a bottom toolbar on a phone', async () => {
@@ -377,11 +514,38 @@ describe('document viewer', () => {
     const toolbar = within(dialog).getByRole('toolbar', { name: 'Document controls' });
     expect(within(toolbar).getByRole('button', { name: 'Find in document' })).toBeInTheDocument();
     expect(within(toolbar).getByRole('button', { name: 'Larger text' })).toBeInTheDocument();
-    expect(within(toolbar).getByRole('link', { name: 'Download' })).toBeInTheDocument();
+    expect(within(toolbar).getByRole('button', { name: 'Download' })).toBeInTheDocument();
     // The width toggle is for wide screens only.
     expect(within(dialog).queryByRole('button', { name: 'Wide page' })).toBeNull();
     await user.click(within(toolbar).getByRole('button', { name: 'Find in document' }));
     expect(within(dialog).getByRole('searchbox', { name: 'Find in document' })).toHaveFocus();
+  });
+
+  it('keeps a phone’s toolbar to what fits its width when a PDF opens from a citation', async () => {
+    screenWidth(false);
+    const { dialog } = await openViewer({ documentId: PDF_ID, passageId: PASSAGE });
+    await within(dialog).findByTestId('pdf-stub');
+    const toolbar = within(dialog).getByRole('toolbar', { name: 'Document controls' });
+    await waitFor(() => {
+      expect(within(toolbar).getByRole('button', { name: 'Jump to cited passage' })).toBeInTheDocument();
+    });
+    const controls = within(toolbar)
+      .getAllByRole('button')
+      .map((b) => b.getAttribute('aria-label'));
+    expect(controls).toEqual([
+      'Find in document',
+      'Zoom out',
+      'Zoom in',
+      'Previous page',
+      'Next page',
+      'Jump to cited passage',
+      'Download',
+    ]);
+    // Icons only on a phone, and no separate tab (Download opens the file there).
+    expect(within(toolbar).getByRole('button', { name: 'Jump to cited passage' })).not.toHaveTextContent(
+      'Cited passage',
+    );
+    expect(within(dialog).queryByRole('link', { name: 'Open in a new tab' })).toBeNull();
   });
 
   it('reads program material from its written text', async () => {
@@ -393,7 +557,7 @@ describe('document viewer', () => {
     expect(
       await within(dialog).findByText('Talk to five students before you build anything.'),
     ).toBeInTheDocument();
-    expect(within(dialog).queryByRole('link', { name: 'Download' })).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: 'Download' })).toBeNull();
   });
 
   it('says so when the document is no longer here', async () => {

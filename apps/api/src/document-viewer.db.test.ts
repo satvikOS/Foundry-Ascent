@@ -8,7 +8,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { DocumentFileResponse, ProblemDetails, SourceTextResponse } from '@foundry/contracts';
+import { ProblemDetails } from '@foundry/contracts';
+import { DocumentFileResponse, SourceTextResponse } from '@foundry/contracts/viewer';
 import { type IngestDocumentJob } from '@foundry/core';
 import { documentsRepo } from '@foundry/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -64,13 +65,25 @@ async function readyDocument(body: string): Promise<{ documentId: string; source
 }
 
 describe('GET /documents/:id/file', () => {
-  it('returns presigned GETs to a venture reader, and 404 to anyone else', async () => {
+  it('returns a presigned GET to a venture reader (to show, or to save), and 404 to anyone else', async () => {
     const { documentId } = await readyDocument('# Library visits\n\nFive of six left without a seat.\n');
     const res = await api.request(`/documents/${documentId}/file`, { cookie: maya });
     expect(res.status).toBe(200);
     expect(res.headers.get('cache-control')).toBe('no-store');
     const file = DocumentFileResponse.parse(await res.json());
-    expect(file.url).not.toBe(file.downloadUrl);
+    expect(file.url).toContain('disposition=inline');
+    const saved = DocumentFileResponse.parse(
+      await (
+        await api.request(`/documents/${documentId}/file?disposition=attachment`, { cookie: maya })
+      ).json(),
+    );
+    expect(saved.url).toContain('disposition=attachment');
+    expect(
+      await problemCode(
+        await api.request(`/documents/${documentId}/file?disposition=preview`, { cookie: maya }),
+        422,
+      ),
+    ).toBe('validation_failed');
     expect(
       await problemCode(await api.request(`/documents/${documentId}/file`, { cookie: priya }), 404),
     ).toBe('not_found');

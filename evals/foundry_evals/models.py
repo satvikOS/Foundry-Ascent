@@ -370,11 +370,17 @@ class CreateDocumentResponse(_Camel):
     upload: UploadTarget
 
 
+DOCUMENT_FILE_DISPOSITIONS: tuple[str, ...] = ("inline", "attachment")
+
+
 class DocumentFileResponse(_Camel):
-    """``GET /documents/:id/file``: short-lived presigned GETs of a venture document's original file."""
+    """``GET /documents/:id/file?disposition=``: one short-lived presigned GET of a document's file.
+
+    ``inline`` (the default) shows it and is audited as opened; ``attachment`` saves it and is audited as a
+    download.
+    """
 
     url: str
-    download_url: str
     expires_at: str
 
 

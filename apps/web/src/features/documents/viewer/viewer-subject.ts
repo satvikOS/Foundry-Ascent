@@ -1,4 +1,5 @@
-import { type DocumentView, type SourceTextResponse } from '@foundry/contracts';
+import { type DocumentView } from '@foundry/contracts';
+import { type SourceTextResponse } from '@foundry/contracts/viewer';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 

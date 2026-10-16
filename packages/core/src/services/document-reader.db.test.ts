@@ -1,4 +1,4 @@
-import { DocumentFileResponse, SourceTextResponse } from '@foundry/contracts';
+import { DocumentFileResponse, SourceTextResponse } from '@foundry/contracts/viewer';
 import { p, venturesRepo } from '@foundry/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -117,12 +117,13 @@ afterAll(async () => {
 });
 
 describe('document file (presigned GET)', () => {
-  it('signs an inline and an attachment GET of the stored file for venture readers, audited by id', async () => {
+  it('signs one GET of the stored file to show it for venture readers, audited by id as opened', async () => {
     const documentId = await uploadDocument('Seat notes.md', '# Seat notes\n\nThe east wing fills first.\n');
     const before = h.objectStore.presignedGets.length;
     const file = DocumentFileResponse.parse(await h.core.reader.documentFile(maya, documentId));
     const signed = h.objectStore.presignedGets.slice(before);
-    expect(signed.map((s) => s.disposition).sort()).toEqual(['attachment', 'inline']);
+    // Only what was asked for is signed: the file to show, not a download nobody asked for.
+    expect(signed.map((s) => s.disposition)).toEqual(['inline']);
     for (const s of signed) {
       expect(s.key).toMatch(new RegExp(`^tenants/[0-9a-f-]+/ventures/${ventureId}/documents/${documentId}/`));
       expect(s.filename).toBe('Seat notes.md');
@@ -130,7 +131,6 @@ describe('document file (presigned GET)', () => {
       expect(s.expiresInSeconds).toBeLessThanOrEqual(120);
     }
     expect(file.url).toContain('disposition=inline');
-    expect(file.downloadUrl).toContain('disposition=attachment');
 
     // Every reader of the venture may open it: an advisor and the assigned EIR too.
     await expect(codeOf(h.core.reader.documentFile(graham, documentId))).resolves.toBe('ok');
@@ -142,6 +142,23 @@ describe('document file (presigned GET)', () => {
       expect(e).toMatchObject({ venture_id: ventureId, object_type: 'document', outcome: 'succeeded' });
       expect(e.metadata).not.toContain('east wing');
     }
+    expect(await auditOf('document.file_downloaded', documentId)).toHaveLength(0);
+  });
+
+  it('signs a download only when one is asked for, audited as a download', async () => {
+    const documentId = await uploadDocument('Seat plan.md', '# Seat plan\n\nThe annex opens at nine.\n');
+    const before = h.objectStore.presignedGets.length;
+    const file = DocumentFileResponse.parse(
+      await h.core.reader.documentFile(maya, documentId, { disposition: 'attachment' }),
+    );
+    expect(h.objectStore.presignedGets.slice(before).map((s) => s.disposition)).toEqual(['attachment']);
+    expect(file.url).toContain('disposition=attachment');
+    expect(await auditOf('document.file_downloaded', documentId)).toHaveLength(1);
+    expect(await auditOf('document.file_opened', documentId)).toHaveLength(0);
+    await expect(
+      codeOf(h.core.reader.documentFile(maya, documentId, { disposition: 'preview' as 'inline' })),
+    ).resolves.toBe('validation_failed');
+    expect(h.objectStore.presignedGets.length).toBe(before + 1);
   });
 
   it('is not found for anyone outside the venture, and signs nothing for them', async () => {

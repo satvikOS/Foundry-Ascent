@@ -1,4 +1,4 @@
-import { DocumentFileResponse, SourceTextResponse } from '@foundry/contracts';
+import { DocumentFileResponse, SourceTextResponse } from '@foundry/contracts/viewer';
 import { type QueryClient, queryOptions } from '@tanstack/react-query';
 
 import { api, path } from '../client';
@@ -14,13 +14,13 @@ export const viewerKeys = {
   /** `GET /ventures/:id/sources/:sourceId/text` (`passage`: only that one). */
   sourceText: (ventureId: string, sourceId: string, passage: string | null = null) =>
     [...queryKeys.venture.scope(ventureId), 'source-text', sourceId, passage ?? 'all'] as const,
-  /** `GET /documents/:id/file`: short-lived presigned GETs of the document's original file. */
+  /** `GET /documents/:id/file`: a short-lived presigned GET of the document's original file, to show it. */
   file: (documentId: string) => [...queryKeys.all, 'document', documentId, 'file'] as const,
   /** The original file's bytes, read through its presigned GET. */
   body: (documentId: string) => [...queryKeys.all, 'document', documentId, 'body'] as const,
 };
 
-/** The server signs the file's URLs for two minutes: fresh for one, then asked for again. */
+/** The server signs the file's URL for two minutes: fresh for one, then asked for again when followed. */
 const FILE_URLS_FRESH_MS = 60_000;
 
 /** Client errors (no access, not uploaded yet) are answers, not blips: never retried. */
@@ -29,15 +29,31 @@ function retryServerErrors(failures: number, error: unknown): boolean {
   return failures < 1;
 }
 
-/** `GET /documents/:id/file`: presigned GETs of the original file (shown inline, or saved). */
+/**
+ * `GET /documents/:id/file`: a presigned GET of the original file to show it (the server audits each one as
+ * the file being opened). Never refreshed in the background: the viewer reads the file once, and a link
+ * about to expire is renewed only when someone follows it.
+ */
 export const documentFileQueryOptions = (documentId: string) =>
   queryOptions({
     queryKey: viewerKeys.file(documentId),
     queryFn: ({ signal }) => api.get(path`/documents/${documentId}/file`, DocumentFileResponse, { signal }),
     staleTime: FILE_URLS_FRESH_MS,
     gcTime: FILE_URLS_FRESH_MS,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     retry: retryServerErrors,
   });
+
+/**
+ * `GET /documents/:id/file?disposition=attachment`: a presigned GET that saves the file under its own name,
+ * signed (and audited as a download) only when someone asks to download it.
+ */
+export function fetchDocumentDownload(documentId: string): Promise<DocumentFileResponse> {
+  return api.get(path`/documents/${documentId}/file`, DocumentFileResponse, {
+    query: { disposition: 'attachment' },
+  });
+}
 
 /**
  * `GET /ventures/:id/sources/:sourceId/text`: a cited source's passages in reading order, or (with a

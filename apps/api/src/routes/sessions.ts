@@ -2,10 +2,10 @@ import {
   CreateDocumentRequest,
   CreateSessionRequest,
   SessionListQuery,
-  SourceTextQuery,
   TurnFeedbackRequest,
   UpdateSessionRequest,
 } from '@foundry/contracts';
+import { DocumentFileQuery, SourceTextQuery } from '@foundry/contracts/viewer';
 import { type Core } from '@foundry/core';
 
 import { jsonBody, pathParam, queryParams } from '../http/input.js';
@@ -99,9 +99,10 @@ export function registerSessionRoutes(
     await core.documents.remove(ctx, pathParam(c, 'id'));
     return c.body(null, 204);
   });
-  // The document viewer: short-lived presigned GETs of the original file (never the bytes through here).
+  // The document viewer: a short-lived presigned GET of the original file, to show it or (`?disposition=
+  // attachment`) to save it (never the bytes through here).
   r.get('/documents/:id/file', async (c, ctx) =>
-    c.json(await core.reader.documentFile(ctx, pathParam(c, 'id'))),
+    c.json(await core.reader.documentFile(ctx, pathParam(c, 'id'), queryParams(c, DocumentFileQuery))),
   );
   // The text of a source the venture's vEIR can cite (a venture document, program or public material).
   r.get('/ventures/:id/sources/:sourceId/text', async (c, ctx) =>

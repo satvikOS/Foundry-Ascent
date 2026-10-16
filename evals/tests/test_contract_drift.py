@@ -115,7 +115,8 @@ def test_http_constants() -> None:
 
 
 def test_document_viewer_views() -> None:
-    api = _source("api.ts")
+    api = _source("viewer.ts")
+    assert tuple(_enum(api, "DocumentFileDisposition")) == models.DOCUMENT_FILE_DISPOSITIONS
     for model, name in (
         (models.DocumentFileResponse, "DocumentFileResponse"),
         (models.SourcePassage, "SourcePassage"),

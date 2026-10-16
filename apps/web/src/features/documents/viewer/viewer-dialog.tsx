@@ -1,6 +1,7 @@
 import './viewer.css';
 
-import { type DocumentView, type SourceTextResponse } from '@foundry/contracts';
+import { type DocumentView } from '@foundry/contracts';
+import { type SourceTextResponse } from '@foundry/contracts/viewer';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ChevronLeft,
@@ -38,7 +39,7 @@ import { Button } from '@/components/ui/button';
 import { ErrorState } from '@/components/ui/error-state';
 import { getStatusDefinition } from '@/components/ui/status-badge';
 import { SimpleTooltip } from '@/components/ui/tooltip';
-import { documentFileQueryOptions } from '@/lib/api/hooks/document-viewer';
+import { documentFileQueryOptions, fetchDocumentDownload } from '@/lib/api/hooks/document-viewer';
 import { BREAKPOINTS, useMediaQuery } from '@/lib/hooks/use-media-query';
 import { isStaleUpload } from '@/lib/api/hooks/documents';
 import { formatBytes, formatRelative } from '@/lib/format';
@@ -128,6 +129,8 @@ export default function DocumentViewerDialog({ ventureId, target, onClose, retur
   const [jump, setJump] = useState(0);
   const [pageRequest, setPageRequest] = useState<{ page: number; seq: number } | null>(null);
   const [scrollRoot, setScrollRoot] = useState<HTMLDivElement | null>(null);
+  /** A download that could not start (said at the bottom, where the document's status shows). */
+  const [notice, setNotice] = useState<string | null>(null);
   const panel = useRef<HTMLDivElement | null>(null);
   const header = useRef<HTMLDivElement | null>(null);
   const footer = useRef<HTMLDivElement | null>(null);
@@ -147,13 +150,15 @@ export default function DocumentViewerDialog({ ventureId, target, onClose, retur
     setPdf(next);
   }, []);
 
-  // The bars are glass over the page: the page scrolls under them, padded by their height.
+  // The bars are glass over the page: the page scrolls under them, padded by their height (and by the
+  // floating dock at the bottom of a wide screen, so the end of the page can scroll clear of it).
   useLayoutEffect(() => {
     const el = panel.current;
     if (!el) return;
     const measure = () => {
       el.style.setProperty('--viewer-header', `${String(header.current?.offsetHeight ?? 56)}px`);
-      el.style.setProperty('--viewer-footer', `${String(footer.current?.offsetHeight ?? 0)}px`);
+      const bottom = footer.current?.offsetHeight ?? 0;
+      el.style.setProperty('--viewer-footer', `${String(bottom > 0 && desktop ? bottom + 20 : bottom)}px`);
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -291,7 +296,7 @@ export default function DocumentViewerDialog({ ventureId, target, onClose, retur
     passageId !== null && citedShown ? (
       <Button
         variant="subtle"
-        size="sm"
+        size={desktop ? 'sm' : 'icon-sm'}
         onClick={() => {
           setJump((n) => n + 1);
         }}
@@ -301,7 +306,25 @@ export default function DocumentViewerDialog({ ventureId, target, onClose, retur
         {desktop ? 'Cited passage' : null}
       </Button>
     ) : null;
-  const fileActions = document_ ? <FileActions document={document_} pdf={isPdf} /> : null;
+  // A phone's toolbar keeps to what fits its width: no separate tab there (Download opens the file).
+  const fileActions =
+    document_ && hasStoredFile(document_) ? (
+      <FileActions document={document_} newTab={isPdf && desktop} onError={setNotice} />
+    ) : null;
+  const statusLine = document_ ? documentStatus(document_, veirName) : null;
+  const status = statusLine ? (
+    <p
+      role="status"
+      className={cn('text-small', statusLine.failed ? 'text-destructive' : 'text-muted-foreground')}
+    >
+      {statusLine.text}
+    </p>
+  ) : null;
+  const noticeLine = notice ? (
+    <p role="alert" className="viewer-notice text-small text-destructive">
+      {notice}
+    </p>
+  ) : null;
   const pageCount = pdf?.pages ?? 0;
   const pageNav =
     isPdf && pageCount > 0 ? (
@@ -371,6 +394,7 @@ export default function DocumentViewerDialog({ ventureId, target, onClose, retur
               onPdfReport={onPdfReport}
               onZoom={setZoom}
               onRetryClose={onClose}
+              onNotice={setNotice}
             />
           </div>
 
@@ -445,7 +469,7 @@ export default function DocumentViewerDialog({ ventureId, target, onClose, retur
                 <span
                   role="status"
                   aria-live="polite"
-                  className="tabular shrink-0 text-small text-muted-foreground"
+                  className="tabular shrink-0 text-small text-foreground"
                 >
                   {findStatus}
                 </span>
@@ -468,25 +492,41 @@ export default function DocumentViewerDialog({ ventureId, target, onClose, retur
                 <IconButton label="Close find" icon={X} onClick={closeFind} />
               </div>
             ) : null}
-            {document_ ? <DocumentStatus document={document_} veirName={veirName} /> : null}
           </div>
 
-          {desktop && pageNav ? (
-            <div className="viewer-pill-dock">
-              <div className="glass-strong viewer-pill rounded-full border px-1.5 py-1 shadow-lg">
-                {pageNav}
-              </div>
+          {desktop && (pageNav || status || noticeLine) ? (
+            <div ref={footer} className="viewer-pill-dock" data-viewer-dock>
+              {status || noticeLine ? (
+                <div className="glass-strong viewer-pill viewer-status-pill rounded-2xl border px-3.5 py-1.5 shadow-lg">
+                  {status}
+                  {noticeLine}
+                </div>
+              ) : null}
+              {pageNav ? (
+                <div className="glass-strong viewer-pill rounded-full border px-1.5 py-1 shadow-lg">
+                  {pageNav}
+                </div>
+              ) : null}
             </div>
           ) : null}
 
           {desktop ? null : (
             <div
               ref={footer}
-              role="toolbar"
-              aria-label="Document controls"
               className="glass-strong viewer-toolbar absolute inset-x-0 bottom-0 z-20 border-t"
+              data-viewer-dock
             >
-              <div className="flex h-14 items-center justify-between gap-1 overflow-x-auto px-2">
+              {status || noticeLine ? (
+                <div className="border-b px-4 py-2">
+                  {status}
+                  {noticeLine}
+                </div>
+              ) : null}
+              <div
+                role="toolbar"
+                aria-label="Document controls"
+                className="viewer-toolbar-row flex h-14 items-center justify-between gap-1 overflow-x-auto px-2"
+              >
                 <IconButton
                   label="Find in document"
                   icon={Search}
@@ -568,10 +608,7 @@ function SizeControls({
       >
         {pdf ? <ZoomOut aria-hidden /> : <span aria-hidden>A−</span>}
       </Button>
-      <span
-        className="viewer-size-label tabular text-center text-caption text-muted-foreground"
-        aria-live="polite"
-      >
+      <span className="viewer-size-label tabular text-center text-caption text-foreground" aria-live="polite">
         {label}
       </span>
       <Button
@@ -610,10 +647,7 @@ function PageNav({
       >
         <ChevronLeft aria-hidden />
       </Button>
-      <span
-        className="viewer-page-label tabular text-center text-small text-muted-foreground"
-        aria-live="polite"
-      >
+      <span className="viewer-page-label tabular text-center text-small text-foreground" aria-live="polite">
         <span className="sr-only">Page </span>
         {page} / {pages}
       </span>
@@ -642,8 +676,11 @@ function Meta({ subject, veirName }: { subject: ReturnType<typeof useViewerSubje
   );
 }
 
-/** A document that is not ready says where it is: uploading, being processed, or what went wrong. */
-function DocumentStatus({ document: doc, veirName }: { document: DocumentView; veirName: string }) {
+/**
+ * Where a document that is not ready is: uploading, being processed, or what went wrong (null when it is
+ * ready). Shown at the bottom of the viewer.
+ */
+function documentStatus(doc: DocumentView, veirName: string): { text: string; failed: boolean } | null {
   if (doc.status === 'ready') return null;
   const stale = isStaleUpload(doc);
   const failed = doc.status === 'failed' || stale;
@@ -652,69 +689,128 @@ function DocumentStatus({ document: doc, veirName }: { document: DocumentView; v
     : doc.status === 'processing'
       ? `${getStatusDefinition('document', 'processing').label}. ${sentenceStart(veirName)} can cite it once it’s ready.`
       : `${getStatusDefinition('document', doc.status).label}…`;
+  return { text, failed };
+}
+
+/** Follows a short-lived link to a document's file: in a new tab, or (a download) where the page is. */
+function followFileLink(url: string, newTab: boolean, filename: string): void {
+  if (newTab) {
+    window.open(url, '_blank', 'noopener,noreferrer');
+    return;
+  }
+  const link = document.createElement('a');
+  link.href = url;
+  link.rel = 'noopener';
+  link.download = filename;
+  link.click();
+}
+
+/** A link this close to its expiry is renewed before it is followed (an expired one shows an error page). */
+const LINK_RENEW_MS = 15_000;
+
+/**
+ * Download: the file saved under its own name, through a link signed when the button is pressed (the
+ * server records each one as a download), never ahead of it.
+ */
+function DownloadButton({
+  document: doc,
+  labelled = false,
+  onError,
+}: {
+  document: DocumentView;
+  /** A labelled button (in a message) rather than an icon in a bar. */
+  labelled?: boolean;
+  onError: (message: string | null) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const download = () => {
+    if (busy) return;
+    setBusy(true);
+    onError(null);
+    fetchDocumentDownload(doc.id)
+      .then((file) => {
+        followFileLink(file.url, false, doc.filename);
+      })
+      .catch(() => {
+        onError('The download couldn’t start. Try again.');
+      })
+      .finally(() => {
+        setBusy(false);
+      });
+  };
+  if (labelled) {
+    return (
+      <Button variant="secondary" size="sm" onClick={download} aria-busy={busy || undefined}>
+        <Download aria-hidden />
+        Download
+      </Button>
+    );
+  }
   return (
-    <p
-      role="status"
-      className={cn('border-t px-4 py-2 text-small', failed ? 'text-destructive' : 'text-muted-foreground')}
-    >
-      {text}
-    </p>
+    <SimpleTooltip content="Download">
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Download"
+        aria-busy={busy || undefined}
+        onClick={download}
+      >
+        <Download aria-hidden />
+      </Button>
+    </SimpleTooltip>
   );
 }
 
-/** Download, and (PDFs) open in a new tab: short-lived links, refreshed while the viewer is open. */
-function FileActions({ document: doc, pdf }: { document: DocumentView; pdf: boolean }) {
+/**
+ * The PDF in a new tab: the link the viewer read it through (asked for once, when the viewer opened it;
+ * never refreshed in the background), renewed only if it is about to expire when it is followed.
+ */
+function OpenInNewTab({ document: doc }: { document: DocumentView }) {
   const client = useQueryClient();
-  const stored = hasStoredFile(doc);
-  const file = useQuery({ ...documentFileQueryOptions(doc.id), enabled: stored, refetchInterval: 50_000 });
-  if (!stored) return null;
-  const fresh = file.data !== undefined && Date.parse(file.data.expiresAt) - Date.now() > 15_000;
-  /** A link about to expire is renewed first (an expired one would leave the app for an error page). */
-  const follow = (pick: 'url' | 'downloadUrl', newTab: boolean) => (event: MouseEvent) => {
-    if (fresh) return;
+  const shown = useQuery({ ...documentFileQueryOptions(doc.id), enabled: false });
+  const follow = (event: MouseEvent) => {
+    const current = shown.data;
+    if (current !== undefined && Date.parse(current.expiresAt) - Date.now() > LINK_RENEW_MS) return;
     event.preventDefault();
     void client
       .query({ ...documentFileQueryOptions(doc.id), staleTime: 0 })
-      .then((urls) => {
-        if (newTab) window.open(urls[pick], '_blank', 'noopener,noreferrer');
-        else {
-          const link = document.createElement('a');
-          link.href = urls[pick];
-          link.rel = 'noopener';
-          link.click();
-        }
+      .then((file) => {
+        followFileLink(file.url, true, doc.filename);
       })
       .catch(() => undefined);
   };
   return (
+    <SimpleTooltip content="Open in a new tab">
+      <Button variant="ghost" size="icon-sm" asChild>
+        <a
+          href={shown.data?.url ?? '#'}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Open in a new tab"
+          onClick={follow}
+        >
+          <ExternalLink aria-hidden />
+        </a>
+      </Button>
+    </SimpleTooltip>
+  );
+}
+
+/** A stored document's file actions: Download, and (a PDF on a wide screen) the file in a new tab. */
+function FileActions({
+  document: doc,
+  newTab,
+  onError,
+}: {
+  document: DocumentView;
+  newTab: boolean;
+  onError: (message: string | null) => void;
+}) {
+  if (!hasStoredFile(doc)) return null;
+  return (
     <>
-      {pdf ? (
-        <SimpleTooltip content="Open in a new tab">
-          <Button variant="ghost" size="icon-sm" asChild>
-            <a
-              href={file.data?.url ?? '#'}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Open in a new tab"
-              onClick={follow('url', true)}
-            >
-              <ExternalLink aria-hidden />
-            </a>
-          </Button>
-        </SimpleTooltip>
-      ) : null}
-      <SimpleTooltip content="Download">
-        <Button variant="ghost" size="icon-sm" asChild>
-          <a
-            href={file.data?.downloadUrl ?? '#'}
-            download={doc.filename}
-            aria-label="Download"
-            onClick={follow('downloadUrl', false)}
-          >
-            <Download aria-hidden />
-          </a>
-        </Button>
-      </SimpleTooltip>
+      {newTab ? <OpenInNewTab document={doc} /> : null}
+      <DownloadButton document={doc} onError={onError} />
     </>
   );
 }
@@ -736,6 +832,8 @@ interface BodyProps {
   onPdfReport: (report: PdfReport) => void;
   onZoom: (zoom: number) => void;
   onRetryClose: () => void;
+  /** Says something at the bottom of the viewer (a download that could not start); null clears it. */
+  onNotice: (message: string | null) => void;
 }
 
 function Centered({ children }: { children: ReactNode }) {
@@ -867,6 +965,21 @@ function DocumentBody(props: BodyProps & { document: DocumentView }) {
           onReport={props.onReport}
         />
       </Column>
+    );
+  }
+
+  // A PDF that pdf.js cannot open (password-protected, damaged) and has no extracted text to show instead.
+  if (pdfError !== null) {
+    return (
+      <Centered>
+        <p className="max-w-md font-serif text-subheading">{pdfError}</p>
+        <p className="mt-2 max-w-sm text-small text-muted-foreground">
+          Download it to open it in another app.
+        </p>
+        <div className="mt-5">
+          <DownloadButton document={doc} labelled onError={props.onNotice} />
+        </div>
+      </Centered>
     );
   }
 
