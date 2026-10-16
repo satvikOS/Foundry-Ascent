@@ -7,7 +7,7 @@ import { formatPercent } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { FreshnessBadge } from '@/features/venture/freshness';
 
-export const EVIDENCE_KIND: Record<EvidenceItem['kind'], { label: string; icon: LucideIcon }> = {
+const EVIDENCE_KIND: Record<EvidenceItem['kind'], { label: string; icon: LucideIcon }> = {
   memory: { label: 'Venture memory', icon: Brain },
   chunk: { label: 'Venture document', icon: FileText },
   doctrine: { label: 'Program guidance', icon: BookOpen },

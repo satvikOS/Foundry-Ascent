@@ -33,7 +33,7 @@ export function RouteErrorBoundary({ error, reset }: ErrorComponentProps) {
           headingLevel={1}
           icon={Lock}
           title="You don’t have access to this area"
-          description="Access is based on your role and venture membership. Ask a program lead if you think you should have access."
+          description="Ask a program lead if you need access."
           action={
             <Button asChild variant="secondary">
               <Link to="/">
@@ -71,7 +71,7 @@ export function NotFoundState() {
         headingLevel={1}
         icon={Compass}
         title="We couldn’t find that page"
-        description="The link may be out of date, or the item may have been removed or never shared with you."
+        description="It may have moved or been removed."
         action={
           <Button asChild variant="secondary">
             <Link to="/">

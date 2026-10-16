@@ -1,14 +1,15 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { act, renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { IDS, makeTurn } from '@/features/coach/testing';
 
+import { queryKeys } from '../query-keys';
 import {
+  joinStreamUnits,
   MAX_PENDING_REPLAYS,
   retryAtFrom,
-  turnPhaseLabel,
   turnStreamReducer,
   useTurnStream,
   type TurnStreamState,
@@ -25,6 +26,8 @@ const IDLE: TurnStreamState = {
   blocked: null,
   error: null,
   autoRetryAt: null,
+  units: [],
+  streamedText: '',
 };
 const TURN_ID = '7d1f2c4e-1a2b-4c3d-8e9f-0a1b2c3d4e5f';
 
@@ -119,12 +122,79 @@ describe('turnStreamReducer', () => {
     expect(turnStreamReducer(streaming, { type: 'cancelled' }).status).toBe('cancelled');
   });
 
-  it('labels phases for the live region', () => {
-    expect(turnPhaseLabel({ phase: 'retrieving', evidenceCount: 1 })).toBe('Gathering evidence · 1 source');
-    expect(turnPhaseLabel({ phase: 'retrieving', evidenceCount: 4 })).toBe('Gathering evidence · 4 sources');
-    expect(turnPhaseLabel({ phase: 'validating', evidenceCount: null })).toBe(
-      'Checking claims against evidence',
+  it('appends validated answer units in seq order, once each, for the current turn only', () => {
+    let state = turnStreamReducer(IDLE, { type: 'start', text: 'What next?' });
+    state = turnStreamReducer(state, {
+      type: 'event',
+      event: { event: 'turn.accepted', turnId: TURN_ID, ordinal: 1 },
+    });
+    const delta = (seq: number, text: string, turnId = TURN_ID) =>
+      ({ type: 'event', event: { event: 'turn.delta', turnId, seq, text } }) as const;
+    state = turnStreamReducer(state, delta(1, 'Then talk to five library staff.'));
+    state = turnStreamReducer(state, delta(0, 'Start with the people who feel the pain.'));
+    // A unit delivered twice is kept once; a unit of another turn is ignored.
+    state = turnStreamReducer(state, delta(1, 'Then talk to five library staff.'));
+    state = turnStreamReducer(state, delta(2, 'Not this.', '8e2f3d5f-2b3c-4d4e-9f0a-1b2c3d4e5f60'));
+    expect(state.units.map((unit) => unit.seq)).toEqual([0, 1]);
+    expect(state.streamedText).toBe(
+      'Start with the people who feel the pain. Then talk to five library staff.',
     );
+    expect(state.status).toBe('streaming');
+  });
+
+  it('keeps streamed text until the stored answer arrives, and discards it when the turn does not finish', () => {
+    const streaming = turnStreamReducer(turnStreamReducer(IDLE, { type: 'start', text: 'x' }), {
+      type: 'event',
+      event: { event: 'turn.delta', turnId: TURN_ID, seq: 0, text: 'A first sentence.' },
+    });
+    expect(streaming.streamedText).toBe('A first sentence.');
+    const turn = makeTurn({ id: TURN_ID });
+    const completed = turnStreamReducer(streaming, {
+      type: 'event',
+      event: { event: 'turn.completed', turn },
+    });
+    // The stored answer is authoritative (the view renders `turn`); the streamed text is only a bridge.
+    expect(completed).toMatchObject({ status: 'completed', turn: { id: TURN_ID } });
+
+    const blocked = turnStreamReducer(streaming, {
+      type: 'event',
+      event: {
+        event: 'turn.blocked',
+        turnId: TURN_ID,
+        reason: 'policy',
+        escalationId: null,
+        supportMessage: null,
+      },
+    });
+    expect(blocked).toMatchObject({ status: 'blocked', units: [], streamedText: '' });
+    const failed = turnStreamReducer(streaming, {
+      type: 'event',
+      event: { event: 'turn.error', turnId: TURN_ID, code: 'internal', message: 'x', retryable: true },
+    });
+    expect(failed).toMatchObject({ status: 'failed', streamedText: '' });
+    expect(turnStreamReducer(streaming, { type: 'cancelled' })).toMatchObject({
+      status: 'cancelled',
+      streamedText: '',
+    });
+    // Units arriving after the turn ended are ignored.
+    expect(
+      turnStreamReducer(completed, {
+        type: 'event',
+        event: { event: 'turn.delta', turnId: TURN_ID, seq: 1, text: 'Late.' },
+      }),
+    ).toBe(completed);
+  });
+
+  it('joins units without running sentences together or doubling spaces', () => {
+    expect(joinStreamUnits([])).toBe('');
+    expect(
+      joinStreamUnits([
+        { seq: 0, text: 'One.' },
+        { seq: 1, text: ' Two.' },
+        { seq: 2, text: '\n\nThree.' },
+        { seq: 3, text: 'Four.' },
+      ]),
+    ).toBe('One. Two.\n\nThree. Four.');
   });
 });
 
@@ -138,6 +208,105 @@ function sse(...events: object[]): Response {
 function idempotencyKeyOf(call: Parameters<typeof fetch> | undefined): string | null {
   return new Headers(call?.[1]?.headers).get('idempotency-key');
 }
+
+describe('useTurnStream streaming', () => {
+  it('shows validated units while the turn runs, then keeps the stored answer as authoritative', async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal('fetch', fetchMock);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(queryKeys.session.detail(IDS.session), {
+      session: { turnCount: 0 },
+      turns: [],
+    });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    const final = makeTurn({ id: IDS.turn, sessionId: IDS.session, ordinal: 1 });
+    const seen: string[] = [];
+    const { result } = renderHook(
+      () =>
+        useTurnStream(IDS.session, {
+          ventureId: IDS.venture,
+          onEvent: (event) => {
+            if (event.event === 'turn.delta') seen.push(event.text);
+          },
+        }),
+      { wrapper },
+    );
+    fetchMock.mockResolvedValueOnce(
+      sse(
+        { event: 'turn.accepted', turnId: IDS.turn, ordinal: 1 },
+        { event: 'turn.delta', turnId: IDS.turn, seq: 0, text: 'A streamed first sentence.' },
+        { event: 'turn.delta', turnId: IDS.turn, seq: 1, text: 'A second one.' },
+        { event: 'turn.completed', turn: final },
+      ),
+    );
+    await act(async () => {
+      await result.current.send({ text: 'What is my riskiest assumption?' });
+    });
+    expect(seen).toEqual(['A streamed first sentence.', 'A second one.']);
+    expect(result.current.state.status).toBe('completed');
+    // The stored answer (not the streamed units) is what the conversation now shows.
+    const cached = client.getQueryData<{ turns: { id: string; response: { answer: string } | null }[] }>(
+      queryKeys.session.detail(IDS.session),
+    );
+    expect(cached?.turns.map((t) => t.id)).toEqual([IDS.turn]);
+    expect(cached?.turns[0]?.response?.answer).toBe(final.response?.answer);
+  });
+});
+
+describe('useTurnStream venture refresh', () => {
+  it('cancels a venture read that was in flight when the turn finished, then reads again', async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal('fetch', fetchMock);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    // The memory list the conversation binds suggestions to: its first read starts before the turn is
+    // saved and is still pending when the turn completes (it would return the list without the new item).
+    let resolveFirst: (items: string[]) => void = () => undefined;
+    const memoryFn = vi
+      .fn<() => Promise<string[]>>()
+      .mockImplementationOnce(
+        () =>
+          new Promise<string[]>((resolve) => {
+            resolveFirst = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(['proposed from this turn']);
+    const turn = makeTurn({ id: IDS.turn, sessionId: IDS.session, ordinal: 1 });
+    fetchMock.mockResolvedValue(
+      sse({ event: 'turn.accepted', turnId: IDS.turn, ordinal: 1 }, { event: 'turn.completed', turn }),
+    );
+    const { result } = renderHook(
+      () => ({
+        stream: useTurnStream(IDS.session, { ventureId: IDS.venture }),
+        memory: useQuery({ queryKey: queryKeys.venture.memory(IDS.venture), queryFn: memoryFn }),
+      }),
+      { wrapper },
+    );
+    expect(memoryFn).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await result.current.stream.send({ text: 'What should we test?' });
+    });
+    // The stale first read finishing late must not win over the fresh one.
+    await act(async () => {
+      resolveFirst(['stale list']);
+      await Promise.resolve();
+    });
+    for (let i = 0; i < 50 && result.current.memory.data?.[0] !== 'proposed from this turn'; i++) {
+      await act(async () => {
+        await new Promise<void>((resolve) => {
+          setImmediate(resolve);
+        });
+      });
+    }
+    expect(memoryFn).toHaveBeenCalledTimes(2);
+    expect(result.current.memory.data).toEqual(['proposed from this turn']);
+  });
+});
 
 describe('useTurnStream idempotency', () => {
   function setup() {

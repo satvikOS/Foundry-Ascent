@@ -67,14 +67,6 @@ const PRINCIPLES: { title: string; body: string }[] = [
     body: 'Program staff can pause a vEIR for one venture, or everywhere, instantly.',
   },
   {
-    title: 'Memory you can see',
-    body: 'Everything a vEIR remembers is visible, sourced and correctable by the venture team.',
-  },
-  {
-    title: 'Synthetic data only',
-    body: 'This environment contains synthetic ventures and identities. No real founder data is used.',
-  },
-  {
     title: 'Accessible by design',
     body: 'Built to WCAG 2.2 AA: full keyboard use, screen-reader support, visible focus and reduced motion.',
   },
@@ -169,9 +161,9 @@ function LandingPage() {
                 when to call a human.
               </h1>
               <p className="mt-8 max-w-[56ch] text-[1.0625rem] leading-relaxed text-muted-foreground">
-                Foundry Ascent gives every venture a <span className="text-foreground">vEIR</span> — an AI
-                built from an entrepreneur-in-residence’s approved doctrine and style — grounded in your own
-                documents and decisions, with memory you approve and a clear path to the people who can help.
+                Chat or call your <span className="text-foreground">vEIR</span>: an AI mentor built, with
+                consent, from an entrepreneur-in-residence’s approved doctrine and style. It remembers your
+                venture, cites your documents and brings in a person when it matters.
               </p>
               <div className="mt-10 flex flex-wrap items-center gap-3">
                 {primaryCta}

@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 
 import {
   composer,
+  expectDisclosureInView,
   expectNoHorizontalScroll,
   expectReachable,
   FOUNDER_STATE,
@@ -41,6 +42,7 @@ test.describe('mobile 390×844', () => {
       for (const name of ['Knowledge', 'Documents', 'Human help', 'Team']) {
         await expectReachable(page, sheet.getByRole('link', { name: new RegExp(`^${name}`) }));
       }
+      await expectReachable(page, sheet.getByRole('link', { name: /^Call / }));
       await expectReachable(page, sheet.getByRole('button', { name: /^Account menu for / }));
       await sheet.getByRole('link', { name: /^Knowledge/ }).click();
       await expect(sheet).toBeHidden();
@@ -54,19 +56,47 @@ test.describe('mobile 390×844', () => {
       const box = composer(page);
       await expectReachable(page, box);
       await expectReachable(page, page.getByRole('combobox', { name: 'Mode for the next message' }));
+      await expectReachable(page, page.getByRole('button', { name: 'Add documents' }));
+      await expectReachable(page, page.getByRole('button', { name: 'Temporary' }));
 
       await box.fill(`What is our riskiest assumption? ${token}`);
       await expectReachable(page, page.getByRole('button', { name: 'Send message' }));
       await page.getByRole('button', { name: 'Send message' }).click();
       await page.waitForURL(/\/c\/[0-9a-f-]{36}/);
       const answer = page.getByRole('article', { name: 'Exchange 1' });
-      await expect(answer.getByRole('list', { name: 'Claims and their sources' })).toBeVisible({
+      await expect(answer.getByRole('button', { name: /^Sources & reasoning/ })).toBeVisible({
         timeout: 30_000,
       });
       await expectNoHorizontalScroll(page);
       await expectReachable(page, composer(page));
-      await expectReachable(page, page.getByRole('button', { name: 'End session' }));
-      await expectReachable(page, answer.getByRole('button', { name: /^Evidence E1: / }).first());
+      await expectDisclosureInView(page);
+      // One bar on a phone: the conversation's header carries the menu, its title, Call and New chat.
+      const bar = page.locator('header').filter({ has: page.getByRole('heading', { level: 1 }) });
+      await expect(page.locator('header:visible')).toHaveCount(1);
+      await expectReachable(page, bar.getByRole('button', { name: 'Open navigation' }));
+      await expect(bar).toContainText('AI');
+      await expectReachable(page, bar.getByRole('link', { name: /^Call / }));
+      await expectReachable(page, bar.getByRole('link', { name: 'New chat' }));
+      await expectReachable(page, page.getByRole('button', { name: 'Conversation options' }));
+
+      // A citation opens the sources as a sheet.
+      const chip = answer.getByRole('button', { name: /^Evidence E1: / }).first();
+      await expectReachable(page, chip);
+      await chip.click();
+      const panel = page.getByRole('dialog', { name: 'Context' });
+      await expect(panel.getByRole('tab', { name: 'Sources' })).toHaveAttribute('aria-selected', 'true');
+      await expectReachable(page, panel.getByRole('tab', { name: 'Human help' }));
+      await page.keyboard.press('Escape');
+      await expect(panel).toBeHidden();
+
+      // The panel also opens from the conversation's menu, and the header opens the navigation sheet.
+      await page.getByRole('button', { name: 'Conversation options' }).click();
+      await page.getByRole('menuitem', { name: 'Sources and notes' }).click();
+      await expect(panel.getByRole('tab', { name: 'Sources' })).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(panel).toBeHidden();
+      await page.getByRole('button', { name: 'Open navigation' }).click();
+      await expect(page.getByRole('dialog', { name: 'Navigation' })).toBeVisible();
     });
   });
 });

@@ -58,15 +58,15 @@ e2e/                       Playwright suite (journey, documents, safety, accessi
 One shell for every role. A venture is a workspace of conversations; EIR studio, Program and Admin are
 staff workspaces in the same shell (the sidebar switcher moves between them).
 
-| URL                                                                                                                                            | What                                                                                                             |
-| ---------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `/`, `/sign-in`                                                                                                                                | landing, sign-in (in the main bundle: never wait for a route chunk)                                              |
-| `/$tenant/app`                                                                                                                                 | opens the last venture's New chat (members) or the main staff workspace; otherwise "nothing to open yet"         |
-| `/$tenant/app/v/$ventureId`                                                                                                                    | **New chat**: the vEIR's face and greeting, starting points, the composer (`?call=1` is read by the call screen) |
-| `/$tenant/app/v/$ventureId/c/$sessionId`                                                                                                       | a conversation (`?view=recap\|transcript` once ended)                                                            |
-| `/$tenant/app/v/$ventureId/{knowledge,documents,help,team,settings}`                                                                           | Knowledge (`?type=&status=&q=&view=proposed`), Documents, Human help (`?id=`), Team, Venture settings            |
-| `/$tenant/app/eir/{personas,reviews,inbox}`, `/program/{portfolio,ventures,resources,escalations}`, `/admin/{principals,settings,usage,audit}` | staff workspaces (guards in each `route.tsx`)                                                                    |
-| `/$tenant/app/ventures/…`, `/admin/…`                                                                                                          | redirects from before the redesign, keeping ids and query (`lib/legacy-routes.ts`)                               |
+| URL                                                                                                                                            | What                                                                                                                                      |
+| ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`, `/sign-in`                                                                                                                                | landing, sign-in (in the main bundle: never wait for a route chunk)                                                                       |
+| `/$tenant/app`                                                                                                                                 | opens the last venture's New chat (members) or the main staff workspace; otherwise "nothing to open yet"                                  |
+| `/$tenant/app/v/$ventureId`                                                                                                                    | **New chat**: the vEIR's face and greeting, starting points, the composer; read-only roles see where they can go (`?call=1` opens a call) |
+| `/$tenant/app/v/$ventureId/c/$sessionId`                                                                                                       | a conversation; an ended one ends with its summary (`?view=digest` opens it there; `?call=1` opens a call)                                |
+| `/$tenant/app/v/$ventureId/{knowledge,documents,help,team,settings}`                                                                           | Knowledge (`?type=&status=&q=&view=proposed`), Documents, Human help (`?id=`), Team, Venture settings                                     |
+| `/$tenant/app/eir/{personas,reviews,inbox}`, `/program/{portfolio,ventures,resources,escalations}`, `/admin/{principals,settings,usage,audit}` | staff workspaces (guards in each `route.tsx`)                                                                                             |
+| `/$tenant/app/ventures/…`, `/admin/…`                                                                                                          | redirects from before the redesign, keeping ids and query (`lib/legacy-routes.ts`)                                                        |
 
 Folder layouts: if a section switches to a folder (`memory/index.tsx`), delete the flat file
 (`memory.tsx`) in the same change — having both makes the flat file a layout without an `<Outlet/>`.
@@ -117,29 +117,31 @@ loader: ({ context, params }) =>
 
 ### Hook index
 
-| Area        | Hooks                                                                                                                                                                                                                   |
-| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Health      | `useHealth` (not polled — polling would keep Aurora awake)                                                                                                                                                              |
-| Auth        | `useMe` (null when signed out), `useSignIn`, `useSignOut`; `useRequiredMe` in `lib/auth/use-me`                                                                                                                         |
-| Ventures    | `useVentures`, `useVenture`, `useVentureOverview`, `useUpdateVenture`                                                                                                                                                   |
-| Sessions    | `useSessions`, `useRecentConversations` (sidebar; swap its one source line to `GET /sessions?scope=mine`), `useSession`, `useCreateSession`, `useEndSession`, `useTurnFeedback`, `useTurnEvidence`, **`useTurnStream`** |
-| Notebook    | `useNotebook` (`GET /ventures/:id/notebook`; `null` on 404 — optional context for the New chat greeting)                                                                                                                |
-| Memory      | `useMemory(ventureId, filters)`, `useCreateMemory`, `useMemoryAction`, `useMemoryHistory`                                                                                                                               |
-| Documents   | `useDocuments` (polls while processing), `useUploadDocument` (create → presigned PUT with progress → complete), `useCompleteDocument`, `useDeleteDocument`, `documentContentType`, `DOCUMENT_ACCEPT`                    |
-| Escalations | `useVentureEscalations`, `useCreateEscalation`, `useEscalationAction`, `useInboxEscalations`                                                                                                                            |
-| Team        | `useTeam`, `useInviteMember` (one-time code; `gcTime: 0`, never cache/log it)                                                                                                                                           |
-| EIR studio  | `usePersonas`, `usePersona`, `usePersonaRelease`, `useCreatePersonaRelease`, `useApprovePersonaRelease`, `useSuspendPersona`, `useResumePersona`, `useReviewQueue`, `useSubmitReview`                                   |
-| Program     | `usePortfolio`, `useProgramVentures`, `useCreateProgramVenture`, `useResources`, `useCreateResource`, `useUpdateResource`, `useProgramEscalations`, `useEscalationAssignees`, `useRouteEscalation`                      |
-| Admin       | `usePrincipals`, `useCreatePrincipal`, `useIssueAccessCode` (one-time code), `useRevokeAccessCode`, `usePlatformSettings`, `useUpdatePlatformSettings`, `useAuditLog` (infinite), `useUsage`                            |
+| Area        | Hooks                                                                                                                                                                                                                                                                                                                                          |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Health      | `useHealth` (not polled — polling would keep Aurora awake)                                                                                                                                                                                                                                                                                     |
+| Auth        | `useMe` (null when signed out), `useSignIn`, `useSignOut`; `useRequiredMe` in `lib/auth/use-me`                                                                                                                                                                                                                                                |
+| Ventures    | `useVentures`, `useVenture`, `useVentureOverview`, `useUpdateVenture`                                                                                                                                                                                                                                                                          |
+| Sessions    | `conversationsQueryOptions` / `useRecentConversations` (`GET /sessions?scope=mine`, paged, across ventures; never enabled for read-only roles), `useSession` (re-read while a digest is being written), `useCreateSession`, `useRenameSession`, `useDeleteSession`, `useEndSession`, `useDeleteDigest`, `useTurnFeedback`, **`useTurnStream`** |
+| Notebook    | `useNotebook` (`GET /ventures/:id/notebook`; `null` on 404 — optional context for the New chat greeting)                                                                                                                                                                                                                                       |
+| Memory      | `useMemory(ventureId, filters)`, `useCreateMemory`, `useMemoryAction`, `useMemoryHistory`, `useBatchMemoryAction` (`POST /ventures/:id/memory/batch`)                                                                                                                                                                                          |
+| Documents   | `useDocuments` (polls while processing), `useUploadDocument` (create → presigned PUT with progress → complete), `useCompleteDocument`, `useDeleteDocument`, `documentContentType`, `DOCUMENT_ACCEPT`                                                                                                                                           |
+| Escalations | `useVentureEscalations`, `useCreateEscalation`, `useEscalationAction`, `useInboxEscalations`                                                                                                                                                                                                                                                   |
+| Team        | `useTeam`, `useInviteMember` (one-time code; `gcTime: 0`, never cache/log it)                                                                                                                                                                                                                                                                  |
+| EIR studio  | `usePersonas`, `usePersona`, `usePersonaRelease`, `useCreatePersonaRelease`, `useApprovePersonaRelease`, `useSuspendPersona`, `useResumePersona`, `useReviewQueue`, `useSubmitReview`                                                                                                                                                          |
+| Program     | `usePortfolio`, `useProgramVentures`, `useCreateProgramVenture`, `useResources`, `useCreateResource`, `useUpdateResource`, `useProgramEscalations`, `useEscalationAssignees`, `useRouteEscalation`                                                                                                                                             |
+| Admin       | `usePrincipals`, `useCreatePrincipal`, `useIssueAccessCode` (one-time code), `useRevokeAccessCode`, `usePlatformSettings`, `useUpdatePlatformSettings`, `useAuditLog` (infinite), `useUsage`                                                                                                                                                   |
 
 **Turn streaming:**
 
 ```tsx
 const { state, send, retry, cancel, isStreaming } = useTurnStream(sessionId, { ventureId });
-await send({ text, mode: 'challenge' });
+await send({ text }); // Auto: no mode, the vEIR picks; or { text, mode: 'challenge' }
 await retry(); // same body; same Idempotency-Key when the last outcome is unknown
 // state.status: idle | streaming | completed | blocked | failed | cancelled
-// state.steps → progress (render turnPhaseLabel(step) in an aria-live="polite" region)
+// state.steps → progress (features/coach: deriveTurnProgress + TurnProgressList announce politely)
+// state.streamedText → validated `turn.delta` units joined in seq order, shown while the turn runs;
+//   dropped when it is blocked, fails or is stopped, and replaced in place by the stored answer
 // state.turn (TurnView) on completion — also merged into the session query cache
 // state.blocked (reason, supportMessage, escalationId) · state.error (code, message, retryable,
 //   requestId, retryAt) · state.autoRetryAt (a still-pending turn is replayed automatically)
@@ -239,18 +241,27 @@ document upload and axe checks) and `mobile` (390 × 844 smoke). One worker, bec
   access code to the seeded founder (Maya Okafor-Lindqvist, QuietQuad) → sign out → founder sign-in lands
   in New chat → the first message creates the conversation, with live progress steps (the download is
   throttled through DevTools so the steps are observable) → cited, structured answer, listed in the
-  sidebar's recents → sources panel from a citation → approve the proposed memory → end → recap →
-  Knowledge shows the approved item (also through an old `/ventures/<id>/memory` link) → New chat again:
-  a high-risk (IP) question is escalated and the founder approves sharing.
+  sidebar's recents under its own title → Sources panel from a citation, Notebook tab, reasoning
+  expanded → keep the suggested memory → a follow-up from the conversation composer (Auto: no mode is
+  sent) → rename → end and read the summary (disclosure still in view) → an old `/ventures/<id>/memory`
+  link → save the current goal in venture settings → New chat again: a high-risk (IP) question is
+  handed to a person, the founder approves sharing, and the conversation is deleted from its sidebar row.
+  A read-only advisor opens their venture, and the assigned EIR opens the venture and a link to one of
+  the founder's conversations, without any conversation, notebook or escalation request or refusal.
 - **Documents** — upload a Markdown file (presigned PUT to the dev server's local S3 stand-in through the
   preview proxy) → `complete` (202 while processing) → the list polls until it is Ready → delete.
 - **Safety** — a crisis message (the first of a new chat) is blocked with human-support resources, live
-  and after a reload; a consented specialist request is routed by a program lead.
+  and after a reload, and never becomes the conversation's title; a temporary chat offers no attach and
+  nothing to remember, ends with nothing kept and leaves the recents; a consented specialist request is
+  routed by a program lead.
 - **Accessibility** — `@axe-core/playwright` with WCAG 2.0/2.1/2.2 A + AA tags on landing, sign-in, New
-  chat, a conversation (with an answer), Knowledge and People & access (reached through the old `/admin`
-  URL), in dark **and** light themes: zero serious or critical violations; the account menu by keyboard.
-- **Mobile** — landing, sign-in, the navigation sheet and New chat → conversation: no horizontal scroll,
-  no text clipped at the right edge, primary controls inside the viewport with ≥ 24 px targets.
+  chat, a conversation (with an answer and its reasoning open), the Sources and To review panel tabs, an
+  ended conversation's summary, Knowledge and People & access (reached through the old `/admin` URL), in
+  dark **and** light themes: zero serious or critical violations; the account menu by keyboard.
+- **Mobile** — landing, sign-in, the navigation sheet and New chat → conversation (with the sources sheet
+  from a citation): no horizontal scroll, no text clipped at the right edge, primary controls inside the
+  viewport with ≥ 24 px targets; the conversation's header is the only bar (menu, Call, New chat,
+  options), and the whole disclosure summary is in view.
 
 Run locally against a scratch database (never the shared `foundry` one):
 
@@ -306,10 +317,10 @@ Rules:
 
 `button` (variants default/secondary/outline/ghost/subtle/destructive/destructive-outline/link, sizes
 xs–lg/icon, `loading`, `asChild`) · `input` · `textarea` (autosize) · `label` · `field` (label +
-description + error wired to the control) · `card` · `badge` · `status-badge` · `stage-chip` ·
+description + error wired to the control) · `badge` · `status-badge` · `stage-chip` ·
 `dialog` · `alert-dialog` · `sheet` · `inspector-panel` · `dropdown-menu` · `tooltip`
 (`SimpleTooltip`) · `tabs` (pill/underline) · `select` · `switch` · `checkbox` · `radio-group` ·
-`separator` · `skeleton` (+ `SkeletonText`, `LoadingRegion`) · `command` (cmdk) · `toast` (`<Toaster/>` is mounted; import `toast`) · `alert` · `progress` · `table`
+`skeleton` (+ `SkeletonText`, `LoadingRegion`) · `command` (cmdk) · `toast` (`<Toaster/>` is mounted; import `toast`) · `alert` · `progress` · `table`
 (+ `SortableTableHead`, `sortRows`) · `kbd` · `empty-state` · `error-state` · `page-header`
 (`PageHeader`, `PageContainer`) · `section-card` · `metric-tile` · `copy-button` · `markdown`.
 
@@ -407,13 +418,15 @@ Only one `<Inspector>` should be mounted per page. Section pages get the venture
 Every conversation view, call and export shows the AI disclosure — once:
 
 ```tsx
-<DisclosureBanner variant="line" text={session.disclosure} />  // the one line under the composer
+<DisclosureBanner variant="line" text={session.disclosure} veirName={session.personaName} /> // under the composer
 <DisclosureBanner variant="inline" text={PUBLIC_DISCLOSURE} /> // callout (public pages)
 <DisclosureBanner variant="print" text={session.disclosure} /> // exports / print views
 ```
 
-The `Composer` renders the line itself; a conversation without a composer (ended, read-only) renders it
-at the end of the page.
+The line never truncates: it shows a complete summary ("Corin's vEIR is an AI, not a person. No human
+wrote or approved its answers.") and "More" shows the persona's own disclosure, which screen readers
+always get in full. The `Composer` renders the line itself; an ended conversation renders it under its
+header, so it stays in view. Every transcript prints with the print variant at its top.
 
 Text precedence: `text` prop → `Me.disclosure` → `DEFAULT_DISCLOSURE`. It is not dismissible.
 

@@ -10,6 +10,12 @@ export interface MemoryFilters {
   pinned?: boolean | undefined;
 }
 
+/** `GET /sessions` filters (the caller's conversations; see `SessionListQuery`). */
+export interface ConversationFilters {
+  scope: 'mine' | 'all';
+  ventureId?: string | undefined;
+}
+
 export interface AuditFilters {
   action?: string | undefined;
   outcome?: string | undefined;
@@ -30,7 +36,6 @@ export const queryKeys = {
     scope: (ventureId: string) => [ROOT, 'venture', ventureId] as const,
     detail: (ventureId: string) => [ROOT, 'venture', ventureId, 'detail'] as const,
     overview: (ventureId: string) => [ROOT, 'venture', ventureId, 'overview'] as const,
-    sessions: (ventureId: string) => [ROOT, 'venture', ventureId, 'sessions'] as const,
     memoryAll: (ventureId: string) => [ROOT, 'venture', ventureId, 'memory'] as const,
     memory: (ventureId: string, filters: MemoryFilters = {}) =>
       [ROOT, 'venture', ventureId, 'memory', filters] as const,
@@ -38,12 +43,15 @@ export const queryKeys = {
     escalations: (ventureId: string) => [ROOT, 'venture', ventureId, 'escalations'] as const,
     team: (ventureId: string) => [ROOT, 'venture', ventureId, 'team'] as const,
     notebook: (ventureId: string) => [ROOT, 'venture', ventureId, 'notebook'] as const,
+    /** `GET /ventures/:id/sessions`: one venture's conversations (Knowledge reads their digests). */
+    sessions: (ventureId: string) => [ROOT, 'venture', ventureId, 'sessions'] as const,
   },
   session: {
     detail: (sessionId: string) => [ROOT, 'session', sessionId] as const,
   },
-  turn: {
-    evidence: (turnId: string) => [ROOT, 'turn', turnId, 'evidence'] as const,
+  conversations: {
+    all: () => [ROOT, 'conversations'] as const,
+    list: (filters: ConversationFilters) => [ROOT, 'conversations', filters] as const,
   },
   memory: {
     history: (memoryId: string) => [ROOT, 'memory', memoryId, 'history'] as const,

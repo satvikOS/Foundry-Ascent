@@ -55,7 +55,8 @@ export interface StaffWorkspace {
   to: '/$tenant/app/eir' | '/$tenant/app/program' | '/$tenant/app/admin';
 }
 
-const STAFF_WORKSPACES: readonly StaffWorkspace[] = [
+/** The staff workspaces; their `shortcut` drives both the key binding and the shortcuts list. */
+export const STAFF_WORKSPACES: readonly StaffWorkspace[] = [
   { id: 'eir', label: 'EIR studio', icon: BookOpenCheck, shortcut: 'g e', to: '/$tenant/app/eir' },
   { id: 'program', label: 'Program', icon: LayoutDashboard, shortcut: 'g p', to: '/$tenant/app/program' },
   { id: 'admin', label: 'Admin', icon: ShieldCheck, shortcut: 'g a', to: '/$tenant/app/admin' },
@@ -92,7 +93,7 @@ export interface VentureDestination {
     | '/$tenant/app/v/$ventureId/team';
 }
 
-/** The venture's pages, under the conversations in the sidebar. */
+/** The venture's pages, under the conversations in the sidebar (`shortcut`: binding and shortcuts list). */
 export const VENTURE_DESTINATIONS: readonly VentureDestination[] = [
   {
     id: 'knowledge',

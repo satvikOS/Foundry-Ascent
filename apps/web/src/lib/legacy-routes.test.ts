@@ -12,11 +12,16 @@ describe('legacyVentureTarget', () => {
     expect(legacyVentureTarget('coach/', {})).toEqual({ page: 'chat' });
   });
 
-  it('keeps the session id and a valid view for conversations', () => {
+  it('keeps the session id and opens an old recap link at the summary', () => {
     expect(legacyVentureTarget(`coach/${SESSION}`, { view: 'recap', junk: 1 })).toEqual({
       page: 'conversation',
       sessionId: SESSION,
-      search: { view: 'recap' },
+      search: { view: 'digest' },
+    });
+    expect(legacyVentureTarget(`coach/${SESSION}`, { view: 'transcript' })).toEqual({
+      page: 'conversation',
+      sessionId: SESSION,
+      search: {},
     });
     expect(legacyVentureTarget(`coach/${SESSION.toUpperCase()}`, { view: 'bogus' })).toEqual({
       page: 'conversation',

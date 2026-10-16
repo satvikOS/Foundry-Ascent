@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './dialog';
 
-export function Command({ className, ...props }: ComponentProps<typeof CommandPrimitive>) {
+function Command({ className, ...props }: ComponentProps<typeof CommandPrimitive>) {
   return (
     <CommandPrimitive
       data-slot="command"

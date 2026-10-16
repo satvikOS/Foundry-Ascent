@@ -182,7 +182,7 @@ export function AccountMenu({
           <LogOut aria-hidden />
           {pending ? 'Signing out…' : 'Sign out'}
         </DropdownMenuItem>
-        <MenuFooter synthetic={me.principal.synthetic} />
+        <MenuFooter />
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -194,20 +194,22 @@ export function shortVersion(version: string): string {
 }
 
 /**
- * The one synthetic-data notice, and the deployed API version from the public `GET /health` (never
- * touches the database, so it cannot wake Aurora). Mounted only while the menu is open.
+ * The one synthetic-data notice (this deployment holds synthetic ventures and people only, for everyone
+ * who signs in) and the deployed API version from the public `GET /health`, which never touches the
+ * database, so it cannot wake Aurora. Mounted only while the menu is open.
  */
-function MenuFooter({ synthetic }: { synthetic: boolean }) {
+function MenuFooter() {
   const health = useHealth();
-  if (!synthetic && !health.data) return null;
   return (
     <p className="flex flex-wrap items-center gap-x-1.5 px-2 pt-2 pb-1 text-caption text-subtle-foreground">
-      {synthetic ? <span>Synthetic data environment</span> : null}
-      {synthetic && health.data ? <span aria-hidden>·</span> : null}
+      <span>Synthetic data only</span>
       {health.data ? (
-        <span>
-          Version <span className="font-mono">{shortVersion(health.data.version)}</span>
-        </span>
+        <>
+          <span aria-hidden>·</span>
+          <span>
+            Version <span className="font-mono">{shortVersion(health.data.version)}</span>
+          </span>
+        </>
       ) : null}
     </p>
   );

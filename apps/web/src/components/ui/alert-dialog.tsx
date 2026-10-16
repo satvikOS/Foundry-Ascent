@@ -7,8 +7,7 @@ import { buttonVariants } from './button';
 import { overlayClasses } from './dialog';
 
 export const AlertDialog = AlertDialogPrimitive.Root;
-export const AlertDialogTrigger = AlertDialogPrimitive.Trigger;
-export const AlertDialogPortal = AlertDialogPrimitive.Portal;
+const AlertDialogPortal = AlertDialogPrimitive.Portal;
 
 export function AlertDialogContent({
   className,

@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 
 import { announce } from '@/components/a11y/live-announcer';
 
-export const APP_NAME = 'Foundry Ascent';
+const APP_NAME = 'Foundry Ascent';
 
 /** Compose a document title. */
 export function documentTitle(title: string | undefined): string {

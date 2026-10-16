@@ -8,8 +8,12 @@ describe('shortPersonaName', () => {
     expect(shortPersonaName('Ruth’s vEIR', 'eir_persona', null)).toBe('Ruth');
   });
 
-  it('falls back to the EIR first name for other EIR persona names', () => {
+  it('uses the first name of the persona’s own consented EIR profile for other EIR persona names', () => {
     expect(shortPersonaName('Deep-tech pathway mentor', 'eir_persona', 'Ruth Abernathy-Song')).toBe('Ruth');
+  });
+
+  it('keeps the persona’s own name when its EIR profile is unknown', () => {
+    expect(shortPersonaName('Deep-tech pathway mentor', 'eir_persona')).toBe('Deep-tech pathway mentor');
   });
 
   it('keeps the neutral guide name whole', () => {
@@ -19,8 +23,30 @@ describe('shortPersonaName', () => {
 
 describe('veirDisplay', () => {
   it('is null without a persona', () => {
-    expect(veirDisplay({ persona: null, assignedEir: null })).toBeNull();
+    expect(veirDisplay({ persona: null })).toBeNull();
     expect(veirDisplay(undefined)).toBeNull();
+  });
+
+  it('never names a vEIR after the assignment’s reviewing EIR', () => {
+    // A persona built from Ruth but reviewed by Corin: the reviewing EIR's name must not appear.
+    const venture = {
+      persona: {
+        personaId: '00000000-0000-4000-8000-000000000001',
+        releaseId: '00000000-0000-4000-8000-000000000002',
+        name: 'Deep-tech pathway mentor',
+        kind: 'eir_persona' as const,
+        version: 1,
+        status: 'active' as const,
+        disclosure: 'An AI.',
+        allowedModes: ['diagnose' as const],
+      },
+      assignedEir: {
+        id: '00000000-0000-4000-8000-000000000003',
+        displayName: 'Corin Halvorsen',
+        synthetic: true,
+      },
+    };
+    expect(veirDisplay(venture)?.shortName).toBe('Deep-tech pathway mentor');
   });
 
   it('never offers a portrait until likeness consent supplies one', () => {
@@ -34,11 +60,6 @@ describe('veirDisplay', () => {
         status: 'active',
         disclosure: 'Corin’s vEIR is an AI.',
         allowedModes: ['diagnose'],
-      },
-      assignedEir: {
-        id: '00000000-0000-4000-8000-000000000003',
-        displayName: 'Corin Halvorsen',
-        synthetic: true,
       },
     });
     expect(veir).toMatchObject({ shortName: 'Corin', portraitUrl: null, kind: 'eir_persona' });

@@ -1,8 +1,5 @@
 import type { CoachMode } from '@foundry/contracts';
 
-import { MODE_LABELS } from '@/lib/labels';
-import { cn } from '@/lib/utils';
-
 /** Display order of the six coaching modes. */
 export const COACH_MODES: readonly CoachMode[] = [
   'diagnose',
@@ -40,21 +37,3 @@ export const MODE_DETAILS: Record<CoachMode, { whenToUse: string; example: strin
     example: 'Who can help with university IP licensing?',
   },
 };
-
-/** Mode as icon + label (neutral chip — a mode is not a status). */
-export function ModeBadge({ mode, className }: { mode: CoachMode; className?: string }) {
-  const def = MODE_LABELS[mode];
-  const Icon = def.icon;
-  return (
-    <span
-      data-slot="mode-badge"
-      className={cn(
-        'inline-flex h-5 w-fit shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-xs font-medium whitespace-nowrap text-foreground',
-        className,
-      )}
-    >
-      <Icon aria-hidden className="size-3 text-muted-foreground" />
-      {def.label}
-    </span>
-  );
-}

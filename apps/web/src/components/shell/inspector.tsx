@@ -170,7 +170,7 @@ export function InspectorRegion() {
 }
 
 /** Page-header button that opens/closes the context panel (hidden when the page has no panel). */
-export function InspectorToggle() {
+export function InspectorToggle({ className }: { className?: string }) {
   const { meta, open, setOpen } = useInspectorContext();
   if (!meta) return null;
   const label = open ? `Hide ${meta.title.toLowerCase()} panel` : `Show ${meta.title.toLowerCase()} panel`;
@@ -179,6 +179,7 @@ export function InspectorToggle() {
       <Button
         variant="ghost"
         size="icon-sm"
+        className={className}
         aria-label={label}
         aria-expanded={open}
         onClick={() => {

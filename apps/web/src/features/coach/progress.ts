@@ -29,7 +29,7 @@ export interface TurnProgress {
   outcome: TurnOutcome;
 }
 
-export const PROGRESS_STEP_ORDER: readonly ProgressStepId[] = [
+const PROGRESS_STEP_ORDER: readonly ProgressStepId[] = [
   'understanding',
   'retrieving',
   'reasoning',
@@ -214,24 +214,12 @@ export const PROGRESS_STATUS_TEXT: Record<ProgressStepStatus, string> = {
  * Returns null when nothing new should be announced.
  */
 export function progressAnnouncement(progress: TurnProgress): string | null {
-  switch (progress.outcome) {
-    case 'completed':
-      return 'Response ready.';
-    case 'blocked':
-      return 'This needs a person. Support options are shown.';
-    case 'failed':
-      return 'The response could not be completed.';
-    case 'cancelled':
-      return 'Stopped.';
-    case 'idle':
-      return null;
-    case 'running': {
-      const active = progress.steps.find((step) => step.status === 'active');
-      if (!active) return null;
-      if (active.id === 'retrieving' && active.evidenceCount !== null) {
-        return `Retrieving evidence: ${active.evidenceCount} source${active.evidenceCount === 1 ? '' : 's'} found.`;
-      }
-      return `${progressStepLabel(active)}…`;
-    }
+  // Terminal outcomes are announced by the conversation page, which outlives the progress list.
+  if (progress.outcome !== 'running') return null;
+  const active = progress.steps.find((step) => step.status === 'active');
+  if (!active) return null;
+  if (active.id === 'retrieving' && active.evidenceCount !== null) {
+    return `Retrieving evidence: ${active.evidenceCount} source${active.evidenceCount === 1 ? '' : 's'} found.`;
   }
+  return `${progressStepLabel(active)}…`;
 }

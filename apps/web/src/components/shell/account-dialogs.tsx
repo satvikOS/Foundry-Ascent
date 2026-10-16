@@ -51,25 +51,23 @@ export function DataUseDialog({
           </Section>
           <Section title="What is remembered">
             <p>
-              Nothing becomes venture memory until someone on your team approves it. Your vEIR also keeps
-              short notes on past conversations so it can pick up where you left off; your team can see,
-              correct or delete them, and they are never treated as facts. Temporary chats keep nothing.
+              Nothing becomes venture memory until someone on your team keeps it. Your vEIR also keeps notes
+              between conversations (its notebook and conversation summaries) so it can pick up where you left
+              off. Your team can see, correct and delete them, and they are never treated as facts.
+            </p>
+            <p className="mt-2">
+              Temporary chats are never remembered. They are erased when they end, or after 24 hours idle.
             </p>
           </Section>
           <Section title="Who can see your venture">
             <p>
-              Conversations, memory and documents are visible to your venture team and its assigned EIR.
-              Program staff see aggregate numbers, not your conversations. Nothing goes to a person outside
-              your venture unless you approve it in a help request.
+              Your venture team sees its conversations, memory and documents. Advisors on your venture can
+              read the memory and documents shared with them, not your conversations. Your assigned EIR can
+              also read your vEIR’s notes, and reviews a sample of answers, not whole conversations. Program
+              staff see aggregate numbers. Nothing goes to anyone else unless you approve it in a help
+              request.
             </p>
           </Section>
-          {me.principal.synthetic ? (
-            <Section title="Synthetic data">
-              <p>
-                This environment holds synthetic ventures and people only. Don’t enter real personal data.
-              </p>
-            </Section>
-          ) : null}
         </div>
         <DialogFooter>
           <Button

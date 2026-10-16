@@ -11,7 +11,7 @@ import { formatNumber } from '@/lib/format';
 import { MODE_LABELS } from '@/lib/labels';
 import { cn } from '@/lib/utils';
 
-import { COACH_MODES } from './modes';
+import { COACH_MODES } from '../coach/modes';
 
 export const MAX_TURN_CHARS = CreateTurnRequest.shape.text.maxLength ?? 8000;
 const COUNTERPART_MAX = 120;
@@ -19,18 +19,23 @@ const COUNTERPART_MAX = 120;
 /** "Auto": the vEIR picks how to help (no mode is sent with the message). */
 export type ComposerMode = CoachMode | 'auto';
 
+/** The `mode` to send with a message: none for Auto. */
+export function modeToSend(mode: ComposerMode): CoachMode | undefined {
+  return mode === 'auto' ? undefined : mode;
+}
+
 interface ComposerProps {
   value: string;
   onChange: (value: string) => void;
   /** The vEIR's short name ("Corin"): names the message box and its placeholder. */
   personaName: string;
-  /** Persona release disclosure, shown as the conversation's one AI disclosure line. */
+  /** The persona release's disclosure, shown as the view's one AI disclosure line. */
   disclosure?: string | null | undefined;
+  /** The vEIR's full name ("Corin's vEIR"), named in the disclosure line. */
+  veirName?: string | null | undefined;
   mode: ComposerMode;
   onModeChange: (mode: ComposerMode) => void;
-  /** Offer "Auto" (the vEIR picks the approach) as the first mode. */
-  allowAuto?: boolean;
-  /** Modes the persona release allows (all six when undefined). */
+  /** Modes the persona release allows (all six when undefined). Auto is always offered. */
   allowedModes?: readonly CoachMode[] | undefined;
   counterpart: string;
   onCounterpartChange: (value: string) => void;
@@ -42,24 +47,28 @@ interface ComposerProps {
   onSend: () => void;
   onStop: () => void;
   textareaRef?: Ref<HTMLTextAreaElement>;
-  /** Extra controls in the toolbar, before the send button (e.g. "Temporary chat"). */
-  toolbarExtra?: ReactNode;
+  /** Above the message box (attachments being uploaded). */
+  top?: ReactNode;
+  /** Toolbar controls after the mode chip (attach, temporary chat). */
+  tools?: ReactNode;
+  /** Toolbar controls just before Send (the call button). */
+  actions?: ReactNode;
   className?: string;
 }
 
 /**
  * Message composer: Enter sends, Shift+Enter adds a line, Escape stops an answer being written. A
- * compact mode chip, the rehearsal counterpart (rehearse mode), a character count only near the limit,
- * and under it the conversation's single AI disclosure line.
+ * compact mode chip (Auto by default), the rehearsal counterpart in Rehearse, a character count only
+ * near the limit, and under it the view's single AI disclosure line.
  */
 export function Composer({
   value,
   onChange,
   personaName,
   disclosure,
+  veirName,
   mode,
   onModeChange,
-  allowAuto = false,
   allowedModes,
   counterpart,
   onCounterpartChange,
@@ -69,7 +78,9 @@ export function Composer({
   onSend,
   onStop,
   textareaRef,
-  toolbarExtra,
+  top,
+  tools,
+  actions,
   className,
 }: ComposerProps) {
   const ids = { input: useId(), hint: useId(), count: useId(), mode: useId(), counterpart: useId() };
@@ -93,16 +104,17 @@ export function Composer({
   };
 
   return (
-    <div data-slot="composer-region" className={cn('grid gap-2', className)}>
+    <div data-slot="composer-region" className={cn('grid gap-2.5', className)}>
       <div
         data-slot="composer"
         className={cn(
-          'rounded-2xl border bg-card shadow-sm transition-[border-color,box-shadow] duration-150',
-          'focus-within:border-ring/60 focus-within:shadow-md',
+          'rounded-[1.25rem] border bg-card transition-colors duration-150',
+          'focus-within:border-input',
           tooLong ? 'border-destructive' : 'border-border-strong',
-          disabled && 'opacity-80',
+          disabled && 'bg-muted/40',
         )}
       >
+        {top}
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -122,18 +134,19 @@ export function Composer({
               onChange(event.target.value);
             }}
             onKeyDown={onKeyDown}
-            minRows={2}
+            minRows={1}
             maxRows={10}
             disabled={disabled}
             aria-describedby={`${ids.hint} ${ids.count}`}
             aria-invalid={tooLong || undefined}
-            placeholder={disabledReason ?? `Message ${personaName}…`}
-            className="min-h-14 resize-none border-0 bg-transparent px-4 pt-3.5 text-body shadow-none hover:border-0 focus-visible:ring-0"
+            placeholder={disabledReason ?? `Message ${personaName}`}
+            className="min-h-13 resize-none border-0 bg-transparent px-4 pt-3.5 pb-1 text-[0.9375rem] leading-6 shadow-none hover:border-0 focus-visible:ring-0 focus-visible:outline-none disabled:bg-transparent"
           />
           <p id={ids.hint} className="sr-only">
             {streaming ? 'Press Escape to stop the answer.' : 'Enter sends. Shift and Enter adds a new line.'}
           </p>
-          <div className="flex flex-wrap items-center gap-1.5 px-2.5 pt-1 pb-2.5">
+          <div className="flex flex-wrap items-center gap-1 px-2 pt-1 pb-2">
+            {tools}
             <label htmlFor={ids.mode} className="sr-only">
               Mode for the next message
             </label>
@@ -147,17 +160,15 @@ export function Composer({
               <SelectTrigger
                 id={ids.mode}
                 size="sm"
-                className="h-8 rounded-full border-border bg-transparent px-3 text-small shadow-none hover:border-border-strong"
+                className="h-8 w-auto gap-1.5 rounded-full border-transparent bg-transparent px-2.5 text-small text-muted-foreground shadow-none hover:border-transparent hover:bg-accent hover:text-foreground data-[state=open]:bg-accent"
               >
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
-                {allowAuto ? (
-                  <SelectItem value="auto">
-                    <Sparkles aria-hidden className="size-4 text-muted-foreground" />
-                    Auto
-                  </SelectItem>
-                ) : null}
+              <SelectContent align="start">
+                <SelectItem value="auto">
+                  <Sparkles aria-hidden className="size-4 text-muted-foreground" />
+                  Auto
+                </SelectItem>
                 {modes.map((m) => {
                   const Icon = MODE_LABELS[m].icon;
                   return (
@@ -185,17 +196,16 @@ export function Composer({
                   onChange={(event) => {
                     onCounterpartChange(event.target.value);
                   }}
-                  placeholder="e.g. Seed investor"
-                  className="h-8 sm:w-48"
+                  placeholder="A role, e.g. seed investor"
+                  className="h-8 sm:w-52"
                 />
               </div>
             ) : null}
-            {toolbarExtra}
-            <div className="ml-auto flex items-center gap-3">
+            <div className="ml-auto flex items-center gap-1">
               <p
                 id={ids.count}
                 className={cn(
-                  'tabular text-caption',
+                  'tabular mr-1 text-caption',
                   nearLimit ? '' : 'sr-only',
                   tooLong ? 'font-medium text-destructive' : 'text-warning',
                 )}
@@ -203,16 +213,10 @@ export function Composer({
                 {nearLimit ? `${formatNumber(length)}/${formatNumber(MAX_TURN_CHARS)}` : null}
                 {tooLong ? <span className="sr-only"> characters — too long to send</span> : null}
               </p>
+              {actions}
               {streaming ? (
-                <Button
-                  type="submit"
-                  size="sm"
-                  variant="secondary"
-                  aria-label="Stop generating"
-                  className="rounded-full"
-                >
-                  <Square aria-hidden className="size-3.5 fill-current" />
-                  Stop
+                <Button type="submit" size="icon-sm" aria-label="Stop generating" className="rounded-full">
+                  <Square aria-hidden className="size-3 fill-current" />
                 </Button>
               ) : (
                 <Button
@@ -230,7 +234,7 @@ export function Composer({
           </div>
         </form>
       </div>
-      <DisclosureBanner variant="line" text={disclosure} />
+      <DisclosureBanner variant="line" text={disclosure} veirName={veirName} />
     </div>
   );
 }
