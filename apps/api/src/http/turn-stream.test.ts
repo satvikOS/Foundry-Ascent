@@ -84,6 +84,62 @@ describe('turn SSE stream', () => {
     expect(comments.filter((c) => c === 'keep-alive').length).toBeGreaterThanOrEqual(2);
   });
 
+  it('writes each validated unit as soon as it is emitted, in order, before the terminal event', async () => {
+    let more: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      more = resolve;
+    });
+    const { app } = appFor(async (_input, emit) => {
+      await emit(acceptedEvent());
+      await emit({ event: 'turn.status', phase: 'reasoning', detail: null, evidenceCount: 1 });
+      await emit({ event: 'turn.delta', turnId: TURN_ID, seq: 0, text: 'Start with five interviews.' });
+      await held;
+      await emit({ event: 'turn.delta', turnId: TURN_ID, seq: 1, text: ' Which library first?' });
+      await emit({
+        event: 'turn.speech',
+        turnId: TURN_ID,
+        seq: 0,
+        text: 'Start with five interviews. Which library first?',
+        sig: `su1.${TURN_ID}.${'a'.repeat(43)}`,
+        final: true,
+      });
+      await emit({
+        event: 'turn.blocked',
+        turnId: TURN_ID,
+        reason: 'policy',
+        escalationId: null,
+        supportMessage: null,
+      });
+      return ok('blocked');
+    });
+    const res = await app.request(post());
+    const reader = (res.body as ReadableStream<Uint8Array> | null)?.getReader();
+    if (!reader) throw new Error('no body');
+    const decoder = new TextDecoder();
+    let text = '';
+    const readMore = async (): Promise<boolean> => {
+      const chunk = await reader.read();
+      if (chunk.done) return false;
+      text += decoder.decode(chunk.value, { stream: true });
+      return true;
+    };
+    // The first unit reaches the client while the turn is still being answered.
+    while (!text.includes('Start with five interviews.') && (await readMore()));
+    expect(text).toContain('event: turn.delta');
+    expect(text).not.toContain('Which library first?');
+    more();
+    while (await readMore());
+    const events = parseSse(text).frames.map((f) => TurnStreamEvent.parse(JSON.parse(f.data)));
+    expect(events.map((e) => e.event)).toEqual([
+      'turn.accepted',
+      'turn.status',
+      'turn.delta',
+      'turn.delta',
+      'turn.speech',
+      'turn.blocked',
+    ]);
+  });
+
   it('answers a pre-acceptance refusal with problem+json (status, Retry-After)', async () => {
     const error = new DomainError('rate_limited', 'Slow down', {
       retryAfterSeconds: 600,
