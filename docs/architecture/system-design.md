@@ -308,8 +308,10 @@ One testable orchestrator with deterministic validators (ADR-002). State machine
    session-turn and spend limits (crisis turns still count towards the per-principal rate limit).
 3. **Retrieve (authorized, scoped)**: per store, filtered by tenant + venture + visibility first, then
    hybrid score = `0.55·cosine + 0.25·ts_rank + 0.10·recency + 0.10·authority` with contradiction
-   flags. Budgets: memory 8, venture chunks 6, doctrine 4, resources 4, patterns 2. Evidence items get
-   stable IDs (`E1…En`) and are returned to the client.
+   flags. Budgets: memory 8, venture chunks 6, doctrine 4, resources 4, patterns 2; a call's turn at most
+   6, 3, 2, 1, 1 (a spoken reply is two or three sentences). An item that repeats a higher-ranked one takes
+   no slot (memory is read 4 rows deep beyond its budget). Evidence items get stable IDs (`E1…En`) and are
+   returned to the client.
 4. **Assemble context** (≤ 12k input tokens): persona release (doctrine, style, red lines, disclosure),
    mode instructions, policy rules, evidence pack (content wrapped as _data_, never instructions),
    last 8 turns.
