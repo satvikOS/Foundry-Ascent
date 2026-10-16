@@ -2,7 +2,9 @@ import { POLICY_VERSION, isModelGatewayError } from '@foundry/ai';
 import {
   CreateSessionRequest,
   type SessionDetailResponse,
+  SessionListQuery,
   TurnFeedbackRequest,
+  UpdateSessionRequest,
   type EvidenceItem,
   type SessionRecap,
   type SessionView,
@@ -18,7 +20,7 @@ import {
 import { type RequestContext } from '../context.js';
 import { DomainError, fail, isDomainError, parseInput } from '../errors.js';
 import { type DirectoryCache } from '../internal/directory.js';
-import { audit, requireId, type Kit } from '../internal/kit.js';
+import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
 import { participantTurnView, supportMessageFor } from '../orchestrator/blocked.js';
 import { assertWithinSpendCaps } from '../orchestrator/guards.js';
 import { RECAP_SCHEMA_NAME, RecapDraft, buildRecapPrompt, sanitizeRecap } from '../orchestrator/recap.js';
@@ -31,6 +33,12 @@ export interface EndSessionResult {
   readonly recap: SessionRecap | null;
 }
 
+/** One page of the caller's conversations (`GET /sessions`). */
+export interface SessionPageResult {
+  readonly items: SessionView[];
+  readonly nextCursor: string | null;
+}
+
 export interface SessionsService {
   /**
    * Starts a session (founder/team). Resolves the active assignment and approved persona release
@@ -41,8 +49,26 @@ export interface SessionsService {
     ventureId: string,
     input: z.input<typeof CreateSessionRequest>,
   ): Promise<SessionView>;
-  /** Sessions of a venture, newest first (founder/team). */
+  /** Sessions of a venture, latest activity first (founder/team). */
   list(ctx: RequestContext, ventureId: string): Promise<SessionView[]>;
+  /**
+   * The caller's conversations across every venture they work on (founder/team), latest activity first, one
+   * page at a time: `mine` (started by the caller) or `all`, optionally for one venture.
+   */
+  listMine(ctx: RequestContext, query: z.input<typeof SessionListQuery>): Promise<SessionPageResult>;
+  /** Renames a conversation (founder/team). */
+  rename(
+    ctx: RequestContext,
+    sessionId: string,
+    input: z.input<typeof UpdateSessionRequest>,
+  ): Promise<SessionView>;
+  /**
+   * Deletes a conversation (founder/team): its content is erased like an ended temporary chat, pending AI
+   * memory proposals and notebook lines drawn from it are removed, and it disappears from every list.
+   */
+  remove(ctx: RequestContext, sessionId: string): Promise<void>;
+  /** Deletes a conversation's digest (founder/team); distillation never writes it again. */
+  deleteDigest(ctx: RequestContext, sessionId: string): Promise<SessionView>;
   /** Session with its turns and evidence (founder/team). */
   get(ctx: RequestContext, sessionId: string): Promise<SessionDetail>;
   /**
@@ -71,6 +97,20 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
     const view = await sessionsRepo.getSessionView(tx, id);
     if (view === null) throw fail.notFound('Session');
     return view;
+  }
+
+  /** The session (RLS-visible) of a founder/team request, or 404/403. */
+  async function writableSession(
+    scope: RequestScope,
+    sessionId: string,
+  ): Promise<sessionsRepo.SessionRecord> {
+    const session = await sessionsRepo.getSession(scope.tx, sessionId);
+    if (session === null) throw fail.notFound('Session');
+    await requireVentureAccess(scope, session.ventureId, 'write', {
+      objectType: 'session',
+      objectId: sessionId,
+    });
+    return session;
   }
 
   return {
@@ -114,6 +154,8 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
           privacy: input.privacy,
           goal: input.goal,
           policyVersion: POLICY_VERSION,
+          // Temporary chats keep no title (their content is erased when they end).
+          title: input.privacy === 'ephemeral' ? null : input.title,
         });
         await audit(scope, {
           action: 'session.started',
@@ -138,6 +180,80 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
       return await kit.inRequest(ctx, async (scope) => {
         await requireVentureAccess(scope, ventureId, 'write', { objectType: 'session' });
         return sessionsRepo.listSessionViews(scope.tx, { ventureId, limit: 100 });
+      });
+    },
+
+    listMine: async (ctx, rawQuery) => {
+      const query = parseInput(SessionListQuery, rawQuery);
+      const ventureId = query.ventureId === undefined ? null : requireId(query.ventureId, 'Venture');
+      if (query.cursor !== undefined && sessionsRepo.decodeSessionCursor(query.cursor) === null) {
+        throw fail.validation('The page cursor is not valid', [
+          { path: 'cursor', message: 'Invalid cursor' },
+        ]);
+      }
+      return await kit.inRequest(ctx, async (scope) => {
+        if (ventureId !== null) {
+          await requireVentureAccess(scope, ventureId, 'write', { objectType: 'session' });
+        }
+        return sessionsRepo.listSessionPage(scope.tx, {
+          principalId: ctx.principalId,
+          scope: query.scope,
+          ventureId,
+          cursor: query.cursor ?? null,
+          limit: query.limit,
+        });
+      });
+    },
+
+    rename: async (ctx, rawSessionId, rawInput) => {
+      const sessionId = requireId(rawSessionId, 'Session');
+      const input = parseInput(UpdateSessionRequest, rawInput);
+      return await kit.inRequest(ctx, async (scope) => {
+        const session = await writableSession(scope, sessionId);
+        if (input.title !== undefined) {
+          await sessionsRepo.renameSession(scope.tx, { sessionId, title: input.title });
+        }
+        await audit(scope, {
+          action: 'session.renamed',
+          outcome: 'succeeded',
+          ventureId: session.ventureId,
+          objectType: 'session',
+          objectId: sessionId,
+        });
+        return sessionView(scope.tx, sessionId);
+      });
+    },
+
+    remove: async (ctx, rawSessionId) => {
+      const sessionId = requireId(rawSessionId, 'Session');
+      await kit.inRequest(ctx, async (scope) => {
+        const session = await writableSession(scope, sessionId);
+        if (!(await sessionsRepo.softDeleteSession(scope.tx, sessionId))) throw fail.notFound('Session');
+        await audit(scope, {
+          action: 'session.deleted',
+          outcome: 'succeeded',
+          ventureId: session.ventureId,
+          objectType: 'session',
+          objectId: sessionId,
+          metadata: { privacy: session.privacy, status: session.status, hadDigest: session.digest !== null },
+        });
+      });
+    },
+
+    deleteDigest: async (ctx, rawSessionId) => {
+      const sessionId = requireId(rawSessionId, 'Session');
+      return await kit.inRequest(ctx, async (scope) => {
+        const session = await writableSession(scope, sessionId);
+        await sessionsRepo.deleteSessionDigest(scope.tx, sessionId);
+        await audit(scope, {
+          action: 'session.digest_deleted',
+          outcome: 'succeeded',
+          ventureId: session.ventureId,
+          objectType: 'session',
+          objectId: sessionId,
+          metadata: { hadDigest: session.digest !== null },
+        });
+        return sessionView(scope.tx, sessionId);
       });
     },
 

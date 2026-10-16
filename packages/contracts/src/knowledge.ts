@@ -281,3 +281,55 @@ export const UpdateEmbodimentRequest = z.object({
   voiceId: z.string().trim().max(64).nullable().optional(),
 });
 export type UpdateEmbodimentRequest = z.infer<typeof UpdateEmbodimentRequest>;
+
+/** `GET /personas/:id/consents` item and `POST /personas/:id/consents` 201 body. */
+export const ConsentView = z.object({
+  id: Id,
+  subjectPrincipalId: Id,
+  assetTypes: z.array(ConsentAssetType),
+  approvedUses: z.array(z.string()),
+  audiences: z.array(z.string()),
+  evidenceRef: z.string().nullable(),
+  grantedAt: Timestamp,
+  expiresAt: Timestamp.nullable(),
+  revokedAt: Timestamp.nullable(),
+});
+export type ConsentView = z.infer<typeof ConsentView>;
+export const ConsentListResponse = z.object({ items: z.array(ConsentView) });
+
+/**
+ * `POST /personas/:id/consents` — records the consent of the EIR the persona is built from and links it to
+ * the persona. The EIR records their own consent; a program lead may record it only for a synthetic EIR.
+ * `doctrine` is required before a release can be approved; `voice` / `likeness` before a voice or portrait.
+ */
+export const CreateConsentRequest = z.object({
+  assetTypes: z.array(ConsentAssetType).min(1).max(5),
+  approvedUses: z.array(z.string().trim().min(1).max(80)).max(10).default([]),
+  audiences: z.array(z.string().trim().min(1).max(80)).max(10).default([]),
+  /** Where the signed consent lives (form id, document reference). */
+  evidenceRef: z.string().trim().max(500).nullable().default(null),
+  expiresAt: Timestamp.nullable().default(null),
+});
+export type CreateConsentRequest = z.infer<typeof CreateConsentRequest>;
+
+/** `POST /consents/:id/revoke` 200 body: every persona that relied on the consent is suspended. */
+export const RevokeConsentResponse = z.object({
+  consent: ConsentView,
+  suspendedPersonaIds: z.array(Id),
+});
+export type RevokeConsentResponse = z.infer<typeof RevokeConsentResponse>;
+
+/**
+ * `POST /calls/avatar-session` — reserved for vendor avatar session tokens (HeyGen, Tavus, Simli). The
+ * built-in provider needs no token, so today the response carries the provider and voice only.
+ */
+export const AvatarSessionRequest = z.object({ ventureId: Id });
+export type AvatarSessionRequest = z.infer<typeof AvatarSessionRequest>;
+export const AvatarSessionResponse = z.object({
+  provider: AvatarProviderId,
+  /** Single-use vendor session token; never stored or replayed. Null for `builtin`. */
+  token: z.string().nullable(),
+  expiresAt: Timestamp.nullable(),
+  voiceId: z.string().nullable(),
+});
+export type AvatarSessionResponse = z.infer<typeof AvatarSessionResponse>;

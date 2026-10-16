@@ -7,7 +7,17 @@ import { type SystemExecutor } from '../executor.js';
 import { p } from '../params.js';
 import { clampLimit, queryNumber, queryRows } from './common.js';
 
-export type UsagePurpose = 'turn' | 'recap' | 'classification' | 'embedding' | 'ingestion' | 'eval' | 'seed';
+export type UsagePurpose =
+  | 'turn'
+  | 'recap'
+  | 'classification'
+  | 'embedding'
+  | 'ingestion'
+  | 'eval'
+  | 'seed'
+  | 'distill'
+  /** Text-to-speech for calls: `input_tokens` holds the characters synthesized. */
+  | 'speech';
 
 export interface UsageEntry {
   readonly tenantId?: string | null;

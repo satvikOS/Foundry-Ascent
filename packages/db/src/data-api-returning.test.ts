@@ -187,6 +187,7 @@ describe('Data API typed records: every RETURNING statement with arrays, jsonb, 
         cost_usd: s('0.000000'),
         latency_ms: NULL,
         sampled_for_review: b(false),
+        channel: s('voice'),
       });
       const turn = await db.withContext(ctx, (tx) =>
         turnsRepo.createTurn(tx, {
@@ -196,9 +197,16 @@ describe('Data API typed records: every RETURNING statement with arrays, jsonb, 
           authorId: ID,
           mode: 'coach',
           founderText: 'hello',
+          channel: 'voice',
         }),
       );
-      expect(turn).toMatchObject({ riskCategories: [], costUsd: 0, createdAt: TS_ISO, ordinal: 1 });
+      expect(turn).toMatchObject({
+        riskCategories: [],
+        costUsd: 0,
+        createdAt: TS_ISO,
+        ordinal: 1,
+        channel: 'voice',
+      });
     }
     const { db } = typedDb({
       ordinal: n(2),
@@ -228,6 +236,7 @@ describe('Data API typed records: every RETURNING statement with arrays, jsonb, 
       cost_usd: s('0.001234'),
       latency_ms: n(900),
       sampled_for_review: b(true),
+      channel: s('text'),
       completed_at: s(TS),
     });
     const finished = await db.withContext(ctx, (tx) =>
@@ -242,15 +251,29 @@ describe('Data API typed records: every RETURNING statement with arrays, jsonb, 
     });
   });
 
-  it('sessions: createSession, endSession (recap jsonb), setSessionStatus, setSessionMode', async () => {
+  it('sessions: createSession, endSession (recap jsonb), setSessionStatus, setSessionMode, rename, digest', async () => {
+    const digest = {
+      summary: 'A short summary.',
+      topics: ['pricing'],
+      commitments: [{ text: 'Call two labs', due: null }],
+      openQuestions: [],
+      generatedAt: TS_ISO,
+    };
     const { db } = typedDb({
       mode: s('coach'),
-      privacy: s('ephemeral'),
+      privacy: s('standard'),
       goal: NULL,
       status: s('ended'),
       policy_version: s('v1'),
       recap: NULL,
       ended_at: s(TS),
+      title: s('Pricing the pilot'),
+      last_activity_at: s(TS),
+      has_calls: b(true),
+      digest: s(JSON.stringify(digest)),
+      digest_deleted_at: NULL,
+      distilled_at: s(TS),
+      distill_version: n(4),
     });
     await db.withContext(ctx, async (tx) => {
       const created = await sessionsRepo.createSession(tx, {
@@ -263,10 +286,125 @@ describe('Data API typed records: every RETURNING statement with arrays, jsonb, 
         privacy: 'ephemeral',
         policyVersion: 'v1',
       });
-      expect(created).toMatchObject({ recap: null, endedAt: TS_ISO, startedAt: TS_ISO });
+      expect(created).toMatchObject({
+        recap: null,
+        endedAt: TS_ISO,
+        startedAt: TS_ISO,
+        title: 'Pricing the pilot',
+        lastActivityAt: TS_ISO,
+        hasCalls: true,
+        digest,
+        distilledAt: TS_ISO,
+        distillVersion: 4,
+      });
       expect(await sessionsRepo.endSession(tx, { sessionId: ID, recap: null })).not.toBeNull();
       expect(await sessionsRepo.setSessionStatus(tx, { sessionId: ID, status: 'ended' })).not.toBeNull();
       expect(await sessionsRepo.setSessionMode(tx, { sessionId: ID, mode: 'coach' })).not.toBeNull();
+      expect(await sessionsRepo.renameSession(tx, { sessionId: ID, title: 'x' })).toMatchObject({
+        title: 'Pricing the pilot',
+      });
+      expect(await sessionsRepo.deleteSessionDigest(tx, ID)).not.toBeNull();
+    });
+  });
+
+  it('personas: createPersona, setPersonaEmbodiment, setPersonaStatus (embodiment jsonb, tagline)', async () => {
+    const embodiment = { provider: 'builtin', voiceId: 'Matthew', portraitKey: null };
+    const { db } = typedDb({
+      name: s("Corin's vEIR"),
+      kind: s('eir_persona'),
+      status: s('active'),
+      suspended_reason: NULL,
+      tagline: s('Direct coaching'),
+      embodiment: s(JSON.stringify(embodiment)),
+    });
+    await db.withContext(ctx, async (tx) => {
+      const persona = await personasRepo.createPersona(tx, {
+        tenantId: ID,
+        name: "Corin's vEIR",
+        kind: 'eir_persona',
+        embodiment: { provider: 'builtin', voiceId: 'Matthew', portraitKey: null },
+      });
+      expect(persona).toMatchObject({ embodiment, tagline: 'Direct coaching', updatedAt: TS_ISO });
+      expect(
+        await personasRepo.setPersonaEmbodiment(tx, {
+          personaId: ID,
+          embodiment: { provider: 'builtin', voiceId: null, portraitKey: null },
+        }),
+      ).toMatchObject({ embodiment });
+      expect(await personasRepo.setPersonaConsent(tx, { personaId: ID, consentId: ID2 })).not.toBeNull();
+      expect(await personasRepo.revokeConsent(tx, ID)).toEqual([ID]);
+    });
+  });
+
+  it('patterns: createPattern and updatePattern (persona, origin, timestamps)', async () => {
+    const { db } = typedDb({
+      persona_id: s(ID2),
+      origin: s('distilled'),
+      title: s('Lesson'),
+      context: s('c'),
+      signal: s('s'),
+      intervention: s('i'),
+      outcome: s('o'),
+      limits: s('l'),
+      source_class: s('distilled'),
+      status: s('draft'),
+    });
+    await db.withContext(ctx, async (tx) => {
+      const created = await resourcesRepo.createPattern(tx, {
+        tenantId: ID,
+        personaId: ID2,
+        origin: 'distilled',
+        title: 'Lesson',
+        context: 'c',
+        signal: 's',
+        intervention: 'i',
+        outcome: 'o',
+        limits: 'l',
+        sourceClass: 'distilled',
+      });
+      expect(created).toMatchObject({ personaId: ID2, origin: 'distilled', updatedAt: TS_ISO });
+      expect(
+        await resourcesRepo.updatePattern(tx, ID, { status: 'published' }, { fromStatuses: ['draft'] }),
+      ).toMatchObject({ createdAt: TS_ISO });
+    });
+  });
+
+  it('knowledge sources: library fields and edits (kind, body, upload, timestamps)', async () => {
+    const { db } = typedDb({
+      scope: s('persona'),
+      title: s('Note'),
+      uri: NULL,
+      owner: NULL,
+      classification: s('program_internal'),
+      checksum: NULL,
+      license: NULL,
+      status: s('pending_upload'),
+      kind: s('document'),
+      summary: NULL,
+      body: NULL,
+      failure_reason: NULL,
+      filename: s('playbook.pdf'),
+      content_type: s('application/pdf'),
+      size_bytes: n(2048),
+      s3_key: s('tenants/x/personas/y/sources/z/playbook.pdf'),
+    });
+    await db.withContext(ctx, async (tx) => {
+      const source = await knowledgeRepo.createKnowledgeSource(tx, {
+        tenantId: ID,
+        scope: 'persona',
+        personaId: ID,
+        title: 'Note',
+        kind: 'document',
+        status: 'pending_upload',
+        upload: {
+          s3Key: 'tenants/x/personas/y/sources/z/playbook.pdf',
+          filename: 'playbook.pdf',
+          contentType: 'application/pdf',
+          sizeBytes: 2048,
+        },
+      });
+      expect(source).toMatchObject({ status: 'pending_upload', sizeBytes: 2048, updatedAt: TS_ISO });
+      expect(await knowledgeRepo.updateKnowledgeSource(tx, ID, { title: 'Note' })).not.toBeNull();
     });
   });
 
@@ -348,7 +486,9 @@ describe('Data API typed records: every RETURNING statement with arrays, jsonb, 
       checksum: NULL,
       license: NULL,
       slug: s('ain'),
-      kind: s('home'),
+      kind: s('document'),
+      summary: NULL,
+      body: NULL,
     });
     await db.withContext(ctx, async (tx) => {
       const venture = await venturesRepo.createVenture(tx, { tenantId: ID, name: 'Quiet Quad' });

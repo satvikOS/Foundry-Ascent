@@ -1,7 +1,13 @@
-import { CreateDocumentRequest, CreateSessionRequest, TurnFeedbackRequest } from '@foundry/contracts';
+import {
+  CreateDocumentRequest,
+  CreateSessionRequest,
+  SessionListQuery,
+  TurnFeedbackRequest,
+  UpdateSessionRequest,
+} from '@foundry/contracts';
 import { type Core } from '@foundry/core';
 
-import { jsonBody, pathParam } from '../http/input.js';
+import { jsonBody, pathParam, queryParams } from '../http/input.js';
 import { type RouteBuilder } from '../http/router.js';
 import { handleTurnRequest, type TurnStreamOptions } from '../http/turn-stream.js';
 
@@ -18,7 +24,23 @@ export function registerSessionRoutes(
   r.get('/ventures/:id/sessions', async (c, ctx) =>
     c.json({ items: await core.sessions.list(ctx, pathParam(c, 'id')) }),
   );
+  // The caller's conversations across their ventures, latest activity first (sidebar recents).
+  r.get('/sessions', async (c, ctx) => {
+    const page = await core.sessions.listMine(ctx, queryParams(c, SessionListQuery));
+    return c.json({ items: page.items, nextCursor: page.nextCursor });
+  });
   r.get('/sessions/:id', async (c, ctx) => c.json(await core.sessions.get(ctx, pathParam(c, 'id'))));
+  r.patch('/sessions/:id', async (c, ctx) =>
+    c.json(await core.sessions.rename(ctx, pathParam(c, 'id'), jsonBody(c, UpdateSessionRequest))),
+  );
+  // Erases the conversation's content (like an ended temporary chat) and removes it from every list.
+  r.delete('/sessions/:id', async (c, ctx) => {
+    await core.sessions.remove(ctx, pathParam(c, 'id'));
+    return c.body(null, 204);
+  });
+  r.delete('/sessions/:id/digest', async (c, ctx) =>
+    c.json(await core.sessions.deleteDigest(ctx, pathParam(c, 'id'))),
+  );
   r.post(
     '/sessions/:id/turns',
     (c, ctx) => handleTurnRequest(c, ctx, { ...turnOptions, orchestrator: core.orchestrator }),

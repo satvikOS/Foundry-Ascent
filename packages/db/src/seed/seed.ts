@@ -8,6 +8,8 @@
  *   owner's display name and code hash follow the deploy configuration. Demo principals get no codes.
  * - Documents and knowledge chunks are stored without embeddings; the migrate handler backfills them
  *   (`knowledgeRepo.listChunksMissingEmbeddings` / `setChunkEmbeddings`).
+ * - Demo ventures are coached by vEIR personas built from the synthetic EIRs (`./veir.ts`); Foundry Guide
+ *   stays the program's neutral guide for new ventures.
  */
 import { col } from '../columns.js';
 import { type Db, type EnvLike } from '../db.js';
@@ -24,6 +26,7 @@ import {
 } from './doctrine.js';
 import { seedId, ventureCanary } from './ids.js';
 import { SEED_PATTERNS, SEED_RESOURCES } from './resources.js';
+import { hasVeirSchema, seedVeirs, type SeededVeir } from './veir.js';
 import {
   SEED_EIRS,
   SEED_FOUNDERS,
@@ -53,8 +56,12 @@ export interface SeededVenture {
   readonly name: string;
   readonly canary: string;
   readonly members: readonly { readonly key: string; readonly principalId: string; readonly role: string }[];
+  /** EIR of the venture's active assignment (the EIR its vEIR is built from). */
   readonly eirKey: string;
+  /** The venture's active assignment (its vEIR's, once re-pointed). */
   readonly assignmentId: string;
+  /** Persona of the active assignment. */
+  readonly personaId: string;
   readonly documentIds: readonly string[];
   readonly memoryIds: Readonly<Record<string, string>>;
 }
@@ -73,6 +80,8 @@ export interface SeedResult {
     readonly principalId: string;
   }[];
   readonly ventures: readonly SeededVenture[];
+  /** vEIR personas (empty without demo data or before migration 0004). */
+  readonly veirs: readonly SeededVeir[];
 }
 
 type ColumnType = 'uuid' | 'text' | 'text[]' | 'jsonb' | 'integer' | 'numeric' | 'boolean' | 'timestamptz';
@@ -189,7 +198,8 @@ export async function seed(sx: SystemExecutor, config: SeedConfig): Promise<Seed
 
   let programLeadId: string | null = null;
   const eirs: { key: string; profileId: string; principalId: string }[] = [];
-  const ventures: SeededVenture[] = [];
+  let ventures: SeededVenture[] = [];
+  let veirs: readonly SeededVeir[] = [];
 
   if (demo) {
     const people = [SEED_PROGRAM_LEAD, ...SEED_EIRS, ...SEED_FOUNDERS];
@@ -392,14 +402,38 @@ export async function seed(sx: SystemExecutor, config: SeedConfig): Promise<Seed
   ]);
 
   if (demo) {
-    const day = dayFn(config.now ?? new Date());
+    const now = config.now ?? new Date();
+    const day = dayFn(now);
     const seedVentures = buildSeedVentures(day);
     for (const v of seedVentures)
       ventures.push(await seedVenture(sx, { v, tenantId, id, principals, personaId, approver }));
     await seedResources(sx, { tenantId, id, ownerOrLead: approver });
+    if (await hasVeirSchema(sx)) {
+      const result = await seedVeirs(sx, {
+        tenantId,
+        id,
+        principals,
+        eirs: SEED_EIRS,
+        guidePersonaId: personaId,
+        approver,
+        ventures,
+        memoryIds: Object.fromEntries(ventures.map((v) => [v.key, v.memoryIds])),
+        day,
+        now,
+        insertRows: (ex, table, columns, rows) => insertRows(ex, table, columns, rows),
+      });
+      veirs = result.veirs;
+      ventures = ventures.map((v) => {
+        const active = result.assignments[v.key];
+        const veir = active ? result.veirs.find((x) => x.personaId === active.personaId) : undefined;
+        return active && veir
+          ? { ...v, assignmentId: active.id, personaId: active.personaId, eirKey: veir.eirKey }
+          : v;
+      });
+    }
   }
 
-  return { tenantId, ownerId, programLeadId, personaId, releaseId, principals, eirs, ventures };
+  return { tenantId, ownerId, programLeadId, personaId, releaseId, principals, eirs, ventures, veirs };
 }
 
 async function bindOwnerCode(
@@ -703,6 +737,7 @@ async function seedVenture(
     members: v.members.map((m) => ({ key: m.person, principalId: person(m.person), role: m.role })),
     eirKey: v.eir,
     assignmentId,
+    personaId: args.personaId,
     documentIds,
     memoryIds,
   };

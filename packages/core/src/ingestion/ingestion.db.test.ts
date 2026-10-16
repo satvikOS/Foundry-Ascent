@@ -58,7 +58,9 @@ async function upload(
   const done = await h.core.documents.complete(maya, created.document.id);
   expect(done.status).toBe('processing');
   const jobs = h.jobQueue.drain();
-  const job = jobs.find((j) => j.documentId === created.document.id);
+  const job = jobs.find(
+    (j): j is IngestDocumentJob => j.type === 'ingest_document' && j.documentId === created.document.id,
+  );
   if (!job) throw new Error('job not enqueued');
   return { documentId: created.document.id, key: presigned.key, job };
 }

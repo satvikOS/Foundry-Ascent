@@ -123,6 +123,7 @@ async function processRecord(
     });
     log.info('worker.ingestion_done', {
       documentId: result.documentId,
+      sourceId: result.sourceId ?? null,
       status: result.status,
       chunks: result.chunks,
       reason: result.reason,

@@ -200,6 +200,8 @@ export function errorMessage(error: unknown): string {
       return 'That file is too large. The limit is 10 MB.';
     case 'unsupported_media_type':
       return 'That file type isn’t supported. Upload a PDF, DOCX, TXT or Markdown file.';
+    case 'speech_unavailable':
+      return 'Spoken replies aren’t available here, so your browser reads them aloud instead.';
     case 'stream_interrupted':
       return 'The response was interrupted. Try sending again.';
     case 'invalid_response':

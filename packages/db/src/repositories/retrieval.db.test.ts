@@ -248,6 +248,9 @@ describe('shared corpora', () => {
   it('uses the HNSW index for the shared ANN candidate scan', async () => {
     const plan = await t.db.system(async (sx) => {
       await sx.query(`SELECT set_config('enable_seqscan', 'off', true)`);
+      // The shared corpora are small enough that sorting them would win; the question is whether the ANN
+      // query shape can use the partial HNSW index at all.
+      await sx.query(`SELECT set_config('enable_sort', 'off', true)`);
       const r = await sx.query(
         `EXPLAIN SELECT c.id FROM knowledge_chunks c
          WHERE c.venture_id IS NULL AND c.tenant_id = :t AND c.scope = ANY (:scopes) AND :e IS NOT NULL

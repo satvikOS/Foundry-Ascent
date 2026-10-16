@@ -1,13 +1,22 @@
 import {
+  AssignPersonaRequest,
   AuditQuery,
+  CreateConsentRequest,
+  CreateDocumentRequest,
+  CreateEirPersonaRequest,
+  CreateLessonRequest,
+  CreatePersonaKnowledgeRequest,
   CreatePersonaReleaseRequest,
   CreatePrincipalRequest,
   CreateVentureRequest,
   IssueAccessCodeRequest,
+  LessonAction,
   RenameVentureRequest,
   RouteEscalationRequest,
   SubmitReviewRequest,
   SuspendPersonaRequest,
+  UpdateEmbodimentRequest,
+  UpdatePersonaKnowledgeRequest,
   UpdateSettingsRequest,
   UpsertResourceRequest,
 } from '@foundry/contracts';
@@ -44,6 +53,79 @@ export function registerStudioRoutes(r: RouteBuilder, core: Core): void {
     c.json(await core.eir.submitReview(ctx, pathParam(c, 'turnId'), jsonBody(c, SubmitReviewRequest)), 201),
   );
   r.get('/eir/profiles', async (c, ctx) => c.json({ items: await core.eir.listEirProfiles(ctx) }));
+
+  // Persona lifecycle: EIR personas, consent, embodiment, assignment ------------------------------------
+  r.post('/personas', async (c, ctx) =>
+    c.json(await core.personas.createEirPersona(ctx, jsonBody(c, CreateEirPersonaRequest)), 201),
+  );
+  r.get('/personas/:id/consents', async (c, ctx) =>
+    c.json({ items: await core.personas.listConsents(ctx, pathParam(c, 'id')) }),
+  );
+  r.post('/personas/:id/consents', async (c, ctx) =>
+    c.json(
+      await core.personas.recordConsent(ctx, pathParam(c, 'id'), jsonBody(c, CreateConsentRequest)),
+      201,
+    ),
+  );
+  // Revoking suspends every persona that relies on the consent.
+  r.post('/consents/:id/revoke', async (c, ctx) =>
+    c.json(await core.personas.revokeConsent(ctx, pathParam(c, 'id'))),
+  );
+  r.get('/personas/:id/embodiment', async (c, ctx) =>
+    c.json(await core.personas.getEmbodiment(ctx, pathParam(c, 'id'))),
+  );
+  r.patch('/personas/:id/embodiment', async (c, ctx) =>
+    c.json(
+      await core.personas.updateEmbodiment(ctx, pathParam(c, 'id'), jsonBody(c, UpdateEmbodimentRequest)),
+    ),
+  );
+  r.post('/ventures/:id/assignment', async (c, ctx) =>
+    c.json(await core.personas.assignVenture(ctx, pathParam(c, 'id'), jsonBody(c, AssignPersonaRequest))),
+  );
+
+  // Common pool: knowledge library ------------------------------------------------------------------
+  r.get('/personas/:id/knowledge', async (c, ctx) =>
+    c.json({ items: await core.library.list(ctx, pathParam(c, 'id')) }),
+  );
+  r.post('/personas/:id/knowledge', async (c, ctx) =>
+    c.json(
+      await core.library.create(ctx, pathParam(c, 'id'), jsonBody(c, CreatePersonaKnowledgeRequest)),
+      201,
+    ),
+  );
+  r.post('/personas/:id/knowledge/uploads', async (c, ctx) =>
+    c.json(await core.library.createUpload(ctx, pathParam(c, 'id'), jsonBody(c, CreateDocumentRequest)), 201),
+  );
+  // 202 while ingestion runs in the worker; 200 when the upload was already processed.
+  r.post('/personas/:id/knowledge/:sourceId/complete', async (c, ctx) => {
+    const source = await core.library.completeUpload(ctx, pathParam(c, 'id'), pathParam(c, 'sourceId'));
+    return c.json(source, source.status === 'processing' ? 202 : 200);
+  });
+  r.patch('/personas/:id/knowledge/:sourceId', async (c, ctx) =>
+    c.json(
+      await core.library.update(
+        ctx,
+        pathParam(c, 'id'),
+        pathParam(c, 'sourceId'),
+        jsonBody(c, UpdatePersonaKnowledgeRequest),
+      ),
+    ),
+  );
+  r.delete('/personas/:id/knowledge/:sourceId', async (c, ctx) => {
+    await core.library.remove(ctx, pathParam(c, 'id'), pathParam(c, 'sourceId'));
+    return c.body(null, 204);
+  });
+
+  // Common pool: lessons ------------------------------------------------------------------------------
+  r.get('/personas/:id/lessons', async (c, ctx) =>
+    c.json({ items: await core.lessons.list(ctx, pathParam(c, 'id')) }),
+  );
+  r.post('/personas/:id/lessons', async (c, ctx) =>
+    c.json(await core.lessons.create(ctx, pathParam(c, 'id'), jsonBody(c, CreateLessonRequest)), 201),
+  );
+  r.post('/lessons/:id/actions', async (c, ctx) =>
+    c.json(await core.lessons.act(ctx, pathParam(c, 'id'), jsonBody(c, LessonAction))),
+  );
 
   // Program -------------------------------------------------------------------------------------------
   r.get('/program/portfolio', async (c, ctx) => c.json(await core.program.portfolio(ctx)));

@@ -1,12 +1,23 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { p } from '../params.js';
-import { authRepo, memoryRepo, personasRepo, venturesRepo } from '../repositories/index.js';
+import {
+  assignmentsRepo,
+  authRepo,
+  knowledgeRepo,
+  memoryRepo,
+  notebooksRepo,
+  personasRepo,
+  resourcesRepo,
+  sessionsRepo,
+  venturesRepo,
+} from '../repositories/index.js';
 import { createTestDatabase, makeContext, type TestDatabase } from '../testing/test-database.js';
 import { verifyAccessCode } from './access-code.js';
 import { seedDatabase, type SeedConfig } from './seed.js';
 import { SEED_EIRS, SEED_FOUNDERS, SEED_PROGRAM_LEAD } from './ventures.js';
 import { ventureCanary } from './ids.js';
+import { CORIN_VEIR, RUTH_VEIR, VEIR_ASSIGNMENTS } from './veir-content.js';
 
 let t: TestDatabase;
 beforeAll(async () => {
@@ -35,6 +46,11 @@ const TABLES = [
   'escalations',
   'resources',
   'patterns',
+  'consents',
+  'veir_notebooks',
+  'coaching_sessions',
+  'turns',
+  'turn_evidence',
 ] as const;
 
 async function counts(): Promise<Record<string, number>> {
@@ -135,6 +151,73 @@ describe('seed', () => {
       sx.query(`SELECT count(DISTINCT venture_id) AS n FROM assignments WHERE status = 'active'`),
     );
     expect(Number(assigned.rows[0]?.n)).toBe(4);
+  });
+
+  it('coaches the demo ventures with consented vEIRs built from the synthetic EIRs', async () => {
+    const seed = t.seed;
+    if (!seed) throw new Error('seed missing');
+    expect(seed.veirs.map((v) => v.name)).toEqual([CORIN_VEIR.name, RUTH_VEIR.name]);
+    const lead = makeContext(seed.programLeadId ?? '', seed.tenantId);
+    await t.db.withContext(lead, async (tx) => {
+      for (const v of seed.veirs) {
+        const persona = await personasRepo.getPersona(tx, v.personaId);
+        expect(persona).toMatchObject({ kind: 'eir_persona', status: 'active', consentId: v.consentId });
+        expect(persona?.embodiment.voiceId).toMatch(/^(Matthew|Ruth)$/);
+        const consent = await personasRepo.getConsent(tx, v.consentId);
+        expect(consent?.assetTypes).toEqual(['doctrine', 'style', 'voice', 'cases']);
+        const release = await personasRepo.getActiveRelease(tx, v.personaId);
+        expect(release).toMatchObject({ version: 1, status: 'approved' });
+        expect(release?.disclosureText).toMatch(/AI coach.*not a person, and no human EIR/);
+        const library = await knowledgeRepo.listPersonaLibrary(tx, { personaId: v.personaId });
+        expect(library.length).toBeGreaterThanOrEqual(6);
+        expect(new Set(library.map((s) => s.kind))).toEqual(new Set(['note', 'case', 'faq', 'transcript']));
+        expect(library.every((s) => s.chunkCount > 0 && s.status === 'active')).toBe(true);
+        const lessons = await resourcesRepo.listLessons(tx, {
+          tenantId: seed.tenantId,
+          personaId: v.personaId,
+        });
+        expect(lessons.length).toBeGreaterThanOrEqual(2);
+        expect(lessons.every((l) => l.status === 'published')).toBe(true);
+      }
+      // The two personas are genuinely different coaches.
+      const [corin, ruth] = await Promise.all(
+        seed.veirs.map((v) => personasRepo.getActiveRelease(tx, v.personaId)),
+      );
+      expect(corin?.style.directness).toBe('direct');
+      expect(ruth?.style.warmth).toBe('warm');
+      expect(corin?.doctrine.summary).not.toEqual(ruth?.doctrine.summary);
+    });
+    for (const v of seed.ventures) {
+      const eirKey = VEIR_ASSIGNMENTS[v.key];
+      const veir = seed.veirs.find((x) => x.eirKey === eirKey);
+      expect(v.personaId).toBe(veir?.personaId);
+      expect(v.eirKey).toBe(eirKey);
+      const founder = v.members.find((m) => m.role === 'founder');
+      if (!founder) throw new Error('no founder');
+      await t.db.withContext(makeContext(founder.principalId, seed.tenantId), async (tx) => {
+        const resolved = await assignmentsRepo.resolveActiveAssignment(tx, v.id);
+        expect(resolved?.assignment.id).toBe(v.assignmentId);
+        expect(resolved?.persona.name).toBe(veir?.name);
+        expect(resolved?.eir?.displayName).toBe(SEED_EIRS.find((e) => e.key === eirKey)?.displayName);
+        // Every venture × vEIR pair has a notebook; QuietQuad's carries a past conversation and its digest.
+        const notebook = await notebooksRepo.getNotebook(tx, { ventureId: v.id, personaId: v.personaId });
+        expect(notebook).not.toBeNull();
+        const sessions = await sessionsRepo.listSessionViews(tx, { ventureId: v.id });
+        if (v.key === 'quietquad') {
+          expect(notebook?.content.commitments.length).toBeGreaterThan(0);
+          expect(notebook?.content.nextOpener).toMatch(/library-staff interviews/);
+          expect(sessions).toHaveLength(1);
+          expect(sessions[0]).toMatchObject({ status: 'ended', turnCount: 2, personaName: CORIN_VEIR.name });
+          expect(sessions[0]?.digest?.commitments.length).toBe(3);
+          expect(notebook?.content.commitments.every((c) => c.sourceSessionId === sessions[0]?.id)).toBe(
+            true,
+          );
+        } else {
+          expect(notebook?.version).toBe(0);
+          expect(sessions).toEqual([]);
+        }
+      });
+    }
   });
 
   it('embeds a unique deterministic canary per venture in one memory item and one chunk', async () => {

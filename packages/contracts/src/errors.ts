@@ -22,6 +22,7 @@ export const ErrorCode = z.enum([
   'model_unavailable',
   'upload_too_large',
   'unsupported_media_type',
+  'speech_unavailable',
   'internal',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
@@ -60,5 +61,7 @@ export const ERROR_STATUS: Record<ErrorCode, number> = {
   model_unavailable: 503,
   upload_too_large: 413,
   unsupported_media_type: 415,
+  /** Server-side speech synthesis is not configured here (local development): the client speaks itself. */
+  speech_unavailable: 501,
   internal: 500,
 };

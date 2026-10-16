@@ -13,6 +13,7 @@ import {
   type IdGenerator,
   type JobQueue,
   type ObjectStore,
+  type SpeechSynthesizer,
   type TextExtractor,
 } from './ports.js';
 
@@ -26,6 +27,8 @@ export interface CoreDeps {
   readonly jobQueue: JobQueue;
   /** Required by the ingestion worker only. */
   readonly textExtractor?: TextExtractor;
+  /** Text-to-speech for calls (API only). Absent: the speech endpoint answers `speech_unavailable`. */
+  readonly speech?: SpeechSynthesizer;
   readonly clock?: Clock;
   readonly ids?: IdGenerator;
   readonly logger?: CoreLogger;

@@ -297,6 +297,9 @@ describe('usage, idempotency, settings (system executor)', () => {
       // Seeded by migration 0003 (upload quota per person and UTC day).
       dailyUploadDocumentsPerPrincipal: 20,
       dailyUploadBytesPerPrincipal: 52_428_800,
+      // Seeded by migration 0004 (call caps).
+      maxCallMinutes: 30,
+      dailyCallMinutesPerPrincipal: 60,
     });
     const updated = await t.db.system((sx) =>
       settingsRepo.updatePlatformSettings(sx, { aiEnabled: false, dailyUsdCapGlobal: 3.5 }, seed.ownerId),
@@ -339,10 +342,12 @@ describe('personas and resources', () => {
       });
       expect(suspended).toMatchObject({ status: 'suspended', suspendedReason: 'Calibration review' });
       const views = await personasRepo.listPersonaViews(tx, seed.tenantId);
-      expect(views).toHaveLength(1);
-      expect(PersonaView.safeParse(views[0]).success).toBe(true);
-      // Four seeded ventures plus the one created by the program-lead test above.
-      expect(views[0]).toMatchObject({ assignedVentureCount: 5, hasConsent: false, status: 'suspended' });
+      // The neutral guide first, then the seeded vEIRs by name.
+      expect(views.map((v) => v.name)).toEqual(['Foundry Guide', "Corin's vEIR", "Ruth's vEIR"]);
+      expect(views.every((v) => PersonaView.safeParse(v).success)).toBe(true);
+      // The seeded ventures are coached by vEIRs; the guide keeps the venture the program-lead test created.
+      expect(views[0]).toMatchObject({ assignedVentureCount: 1, hasConsent: false, status: 'suspended' });
+      expect(views[1]).toMatchObject({ kind: 'eir_persona', assignedVentureCount: 2, hasConsent: true });
       expect(views[0]?.activeRelease?.version).toBe(2);
       const resumed = await personasRepo.setPersonaStatus(tx, {
         personaId: seed.personaId,
@@ -381,7 +386,10 @@ describe('personas and resources', () => {
       expect(
         (await resourcesRepo.listResources(tx, { tenantId: seed.tenantId })).some((r) => r.id === created.id),
       ).toBe(false);
-      expect(await resourcesRepo.listPatterns(tx, { tenantId: seed.tenantId })).toHaveLength(3);
+      // Three program-wide lessons plus the seeded vEIR lessons (three and two).
+      const patterns = await resourcesRepo.listPatterns(tx, { tenantId: seed.tenantId });
+      expect(patterns).toHaveLength(8);
+      expect(patterns.filter((x) => x.personaId === null)).toHaveLength(3);
     });
   });
 });
@@ -565,7 +573,7 @@ describe('documents, sessions, turns, escalations', () => {
       expect(views[0]?.usage).toMatchObject({ modelId: 'mock', latencyMs: 120 });
       const view = await sessionsRepo.getSessionView(tx, sessionId);
       expect(SessionView.safeParse(view).success).toBe(true);
-      expect(view).toMatchObject({ personaName: 'Foundry Guide', turnCount: 2, status: 'active' });
+      expect(view).toMatchObject({ personaName: "Corin's vEIR", turnCount: 2, status: 'active' });
       const ended = await sessionsRepo.endSession(tx, {
         sessionId,
         recap: {

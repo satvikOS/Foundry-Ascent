@@ -143,6 +143,32 @@ All methods: `(ctx, …) => Promise<…>`; return types are the `@foundry/contra
 | `GET /admin/audit?action&outcome&cursor&limit`  | `admin.listAudit(ctx, AuditQuery) → { items, nextCursor }`                                                                     | platform admin                                                                                         |
 | `GET /admin/usage`                              | `admin.usageSummary(ctx) → UsageSummary`                                                                                       | platform admin                                                                                         |
 
+vEIR knowledge pools, conversations and calls (docs/architecture/knowledge-pools.md):
+
+| Endpoint                                              | Call                                                                        | Who                                            |
+| ----------------------------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------- |
+| `GET /sessions?scope&ventureId&cursor&limit`          | `sessions.listMine(ctx, SessionListQuery) → {items, nextCursor}`            | write (per venture)                            |
+| `PATCH /sessions/:id`                                 | `sessions.rename(ctx, id, UpdateSessionRequest) → SessionView`              | write                                          |
+| `DELETE /sessions/:id` · `/sessions/:id/digest`       | `sessions.remove(ctx, id)` · `sessions.deleteDigest(ctx, id) → SessionView` | write                                          |
+| `GET` / `PATCH /ventures/:id/notebook`                | `notebook.get(ctx, id)` · `notebook.update(ctx, id, UpdateNotebookRequest)` | read: write or assigned EIR; edit: write       |
+| `GET /ventures/:id/veir`                              | `veir.identity(ctx, id) → VeirIdentity`                                     | read                                           |
+| `GET /ventures/:id/call-config`                       | `veir.callConfig(ctx, id) → CallConfigResponse`                             | write                                          |
+| `POST /calls/avatar-session`                          | `veir.avatarSession(ctx, AvatarSessionRequest)`                             | write; kill switch, coach active, minutes left |
+| `POST /speech`                                        | `speech.synthesize(ctx, SpeechRequest, {signal}) → SynthesizedSpeech`       | write; validated text only, caps, kill switch  |
+| `POST /personas`                                      | `personas.createEirPersona(ctx, CreateEirPersonaRequest) → PersonaView`     | program lead                                   |
+| `GET` / `POST /personas/:id/consents`                 | `personas.listConsents` · `personas.recordConsent → ConsentView`            | program lead or the persona's EIR              |
+| `POST /consents/:id/revoke`                           | `personas.revokeConsent(ctx, id) → RevokeConsentResponse`                   | subject, or program lead (synthetic EIR)       |
+| `GET` / `PATCH /personas/:id/embodiment`              | `personas.getEmbodiment` · `personas.updateEmbodiment → PersonaEmbodiment`  | studio roles · curators                        |
+| `POST /ventures/:id/assignment`                       | `personas.assignVenture(ctx, id, AssignPersonaRequest) → ProgramVentureRow` | program lead                                   |
+| `GET` / `POST /personas/:id/knowledge`                | `library.list` · `library.create → PersonaKnowledgeSourceView`              | studio roles · curators                        |
+| `PATCH` / `DELETE /personas/:id/knowledge/:sid`       | `library.update` · `library.remove`                                         | curators                                       |
+| `POST /personas/:id/knowledge/uploads` (+ `complete`) | `library.createUpload` · `library.completeUpload`                           | curators; daily upload quota                   |
+| `GET` / `POST /personas/:id/lessons`                  | `lessons.list` · `lessons.create → LessonView`                              | studio roles · curators                        |
+| `POST /lessons/:id/actions`                           | `lessons.act(ctx, id, LessonAction) → LessonView`                           | curators                                       |
+
+Curators of a persona: program leads of the tenant and the EIR the persona is built from (the same rule
+RLS applies, `app.can_curate_persona`).
+
 `UpdateResourceRequest` and `ResourceFilter` are exported by core (not yet in contracts).
 
 Idempotency (`Idempotency-Key`) for non-SSE writes is the API's job (`idempotencyRepo`, system
@@ -189,8 +215,11 @@ type TurnEmitter = (event: TurnStreamEvent) => void | Promise<void>;
 process(job: unknown, { requestId, attempt?, maxAttempts? }) → Promise<IngestionResult { status: 'ready'|'failed'|'skipped', documentId, chunks, reason }>
 ```
 
-- `job` is the SQS message body (`JobMessage` / `IngestDocumentJob`: `{ type: 'ingest_document', documentId,
-tenantId, ventureId, requestId }`, enqueued by `documents.complete`). Invalid jobs are skipped.
+- `job` is the SQS message body (`JobMessage`): `IngestDocumentJob` `{ type: 'ingest_document', documentId,
+tenantId, ventureId, requestId }` (enqueued by `documents.complete`) or `IngestKnowledgeSourceJob`
+  `{ type: 'ingest_knowledge_source', sourceId, tenantId, personaId, requestId }` (enqueued by
+  `library.completeUpload`; chunks go to scope `persona`, the source becomes `active`/`failed`). Invalid jobs
+  are skipped.
 - Runs with the owner role but re-validates the job against the `documents` row and its venture; every
   write uses the row's tenant/venture ids (`scope_mismatch` → skipped + `ingestion.rejected` audit).
 - Reads the object (`ObjectStore.getObject`, ≤ 10 MB) → `TextExtractor.extract` → heading-aware chunks
@@ -212,6 +241,7 @@ interface ObjectStore {
 }
 interface JobQueue { enqueue(job: JobMessage, options?: { deduplicationId? }): Promise<void> }
 interface TextExtractor { extract(data: Uint8Array, contentType: DocumentContentType): Promise<{ text: string }> } // throw ExtractionFailedError
+interface SpeechSynthesizer { synthesize(input: { text; voiceId; engines; requestId; signal? }): Promise<SynthesizedSpeech> } // optional (API: Polly); throw SpeechSynthesisError
 interface Clock { now(): Date }              // optional (systemClock)
 interface IdGenerator { uuid(): string }     // optional (randomUUID)
 interface CoreLogger { info/warn/error(event: string, fields: CoreLogFields): void } // optional; ids/counts/codes only

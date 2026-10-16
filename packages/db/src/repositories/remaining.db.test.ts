@@ -98,7 +98,8 @@ describe('remaining repository functions', () => {
         approvedUses: ['coaching'],
       });
       expect((await personasRepo.getConsent(tx, consent.id))?.assetTypes).toEqual(['doctrine', 'style']);
-      expect(await personasRepo.listConsents(tx, corin.principalId)).toHaveLength(1);
+      // The seeded vEIR consent and this one.
+      expect(await personasRepo.listConsents(tx, corin.principalId)).toHaveLength(2);
     });
     const { personaId, consentId } = await t.db.withContext(lead, async (tx) => {
       expect(await eirRepo.listEirProfiles(tx, { tenantId: seed.tenantId })).toHaveLength(2);
@@ -107,7 +108,9 @@ describe('remaining repository functions', () => {
         displayName: 'Profile Only',
       });
       expect(profile.synthetic).toBe(true);
-      const consents = await personasRepo.listConsents(tx, corin.principalId);
+      const consents = (await personasRepo.listConsents(tx, corin.principalId)).filter((c) =>
+        c.approvedUses.includes('coaching'),
+      );
       const persona = await personasRepo.createPersona(tx, {
         tenantId: seed.tenantId,
         name: 'Corin persona (synthetic)',
@@ -132,7 +135,9 @@ describe('remaining repository functions', () => {
       return { personaId: persona.id, consentId: consents[0]?.id ?? '' };
     });
     // Revoking the consent suspends the persona that relies on it.
-    expect(await t.db.withContext(corin, (tx) => personasRepo.revokeConsent(tx, consentId))).toBe(1);
+    expect(await t.db.withContext(corin, (tx) => personasRepo.revokeConsent(tx, consentId))).toEqual([
+      personaId,
+    ]);
     await t.db.withContext(lead, async (tx) => {
       expect(await personasRepo.getPersona(tx, personaId)).toMatchObject({
         status: 'suspended',

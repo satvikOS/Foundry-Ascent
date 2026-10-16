@@ -1,8 +1,17 @@
-import { auditRepo, memoryRepo, principalsRepo, tenantsRepo, venturesRepo } from '@foundry/db';
+import {
+  auditRepo,
+  memoryRepo,
+  notebooksRepo,
+  principalsRepo,
+  tenantsRepo,
+  turnsRepo,
+  venturesRepo,
+} from '@foundry/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createRequestContext, type RequestContext } from '../context.js';
 import { isDomainError } from '../errors.js';
+import { FakeSpeechSynthesizer } from '../testing/fakes.js';
 import { createCoreHarness, type CoreHarness } from '../testing/harness.js';
 
 /**
@@ -40,7 +49,7 @@ let sampledTurnId: string;
 let visibleMemoryId: string;
 
 beforeAll(async () => {
-  h = await createCoreHarness({ random: () => 0.99 });
+  h = await createCoreHarness({ random: () => 0.99, speech: new FakeSpeechSynthesizer() });
   ventureId = h.ventures.quietquad.id;
   const { adminOnly, partnerPrincipal, partnerTenant } = await h.t.db.system(async (sx) => {
     await venturesRepo.addMembership(sx, { ventureId, principalId: h.people.graham, role: 'advisor' });
@@ -132,9 +141,28 @@ async function freshProposal(): Promise<string> {
 
 type Op = (c: RequestContext) => Promise<unknown>;
 
+/** QuietQuad's vEIR (Corin's): Corin is its EIR and the venture's assigned EIR. */
+const personaId = (): string => h.ventures.quietquad.personaId;
+
+async function notebookVersion(): Promise<number> {
+  const notebook = await h.t.db.system((sx) =>
+    notebooksRepo.getNotebook(sx, { ventureId, personaId: personaId() }),
+  );
+  return notebook?.version ?? 0;
+}
+
+/** The first sentence of the plain turn's validated answer (what a call may speak). */
+async function spokenPassage(): Promise<string> {
+  const turn = await h.t.db.system((sx) => turnsRepo.getSpeechSource(sx, plainTurnId));
+  return (turn?.answer ?? '').replace(/\[E\d+\]/g, '').split(/(?<=[.?!])\s+/)[0] ?? '';
+}
+
 const ALL_DENIED: readonly Who[] = [];
 const MEMBERS_READ: readonly Who[] = ['founder', 'team', 'advisor', 'eirAssigned'];
 const WRITERS: readonly Who[] = ['founder', 'team'];
+
+const STUDIO: readonly Who[] = ['eirAssigned', 'eirUnassigned', 'programLead', 'admin'];
+const CURATORS: readonly Who[] = ['eirAssigned', 'programLead'];
 
 const MATRIX: readonly { name: string; allowed: readonly Who[]; op: Op }[] = [
   { name: 'ventures.get', allowed: MEMBERS_READ, op: (c) => h.core.ventures.get(c, ventureId) },
@@ -255,6 +283,102 @@ const MATRIX: readonly { name: string; allowed: readonly Who[]; op: Op }[] = [
     allowed: ALL_DENIED,
     op: (c) =>
       h.core.eir.suspendPersona(c, '00000000-0000-4000-8000-000000000000', { reason: 'not a real persona' }),
+  },
+  {
+    name: 'notebook.get',
+    allowed: [...WRITERS, 'eirAssigned'],
+    op: (c) => h.core.notebook.get(c, ventureId),
+  },
+  {
+    name: 'notebook.update',
+    allowed: WRITERS,
+    op: async (c) =>
+      h.core.notebook.update(c, ventureId, {
+        expectedVersion: await notebookVersion(),
+        edit: { action: 'edit_summary', summary: 'Edited in the matrix test.' },
+      }),
+  },
+  {
+    name: 'sessions.listMine (venture)',
+    allowed: WRITERS,
+    op: (c) => h.core.sessions.listMine(c, { ventureId }),
+  },
+  {
+    name: 'sessions.rename',
+    allowed: WRITERS,
+    op: (c) => h.core.sessions.rename(c, sessionId, { title: 'Matrix title' }),
+  },
+  { name: 'sessions.deleteDigest', allowed: WRITERS, op: (c) => h.core.sessions.deleteDigest(c, sessionId) },
+  { name: 'veir.identity', allowed: MEMBERS_READ, op: (c) => h.core.veir.identity(c, ventureId) },
+  { name: 'veir.callConfig', allowed: WRITERS, op: (c) => h.core.veir.callConfig(c, ventureId) },
+  { name: 'veir.avatarSession', allowed: WRITERS, op: (c) => h.core.veir.avatarSession(c, { ventureId }) },
+  {
+    name: 'speech.synthesize',
+    allowed: WRITERS,
+    op: async (c) =>
+      h.core.speech.synthesize(c, { sessionId, turnId: plainTurnId, text: await spokenPassage() }),
+  },
+  { name: 'library.list', allowed: STUDIO, op: (c) => h.core.library.list(c, personaId()) },
+  {
+    name: 'library.create',
+    allowed: CURATORS,
+    op: (c) =>
+      h.core.library.create(c, personaId(), {
+        kind: 'note',
+        title: 'Matrix note',
+        body: 'A note written in the authorization matrix test.',
+      }),
+  },
+  { name: 'lessons.list', allowed: STUDIO, op: (c) => h.core.lessons.list(c, personaId()) },
+  {
+    name: 'lessons.create',
+    allowed: CURATORS,
+    op: (c) =>
+      h.core.lessons.create(c, personaId(), {
+        title: 'Matrix lesson',
+        context: 'Context.',
+        signal: 'Signal.',
+        intervention: 'Intervention.',
+        outcome: 'Outcome.',
+        limits: 'Limits.',
+      }),
+  },
+  {
+    name: 'personas.getEmbodiment',
+    allowed: STUDIO,
+    op: (c) => h.core.personas.getEmbodiment(c, personaId()),
+  },
+  {
+    name: 'personas.updateEmbodiment',
+    allowed: CURATORS,
+    op: (c) => h.core.personas.updateEmbodiment(c, personaId(), { voiceId: 'Matthew' }),
+  },
+  {
+    name: 'personas.listConsents',
+    allowed: CURATORS,
+    op: (c) => h.core.personas.listConsents(c, personaId()),
+  },
+  {
+    name: 'personas.createEirPersona (unknown EIR)',
+    allowed: ALL_DENIED,
+    op: async (c) => {
+      const release = await h.core.eir.getRelease(
+        ctx.programLead,
+        (await h.core.eir.getPersona(ctx.programLead, personaId())).activeRelease?.id ?? '',
+      );
+      return h.core.personas.createEirPersona(c, {
+        eirProfileId: '00000000-0000-4000-8000-000000000000',
+        name: 'Matrix persona',
+        doctrine: release.doctrine,
+        style: release.style,
+        disclosureText: 'Matrix persona disclosure: an AI coach, not a person.',
+      });
+    },
+  },
+  {
+    name: 'personas.assignVenture',
+    allowed: ['programLead'],
+    op: (c) => h.core.personas.assignVenture(c, ventureId, { personaId: personaId(), eirProfileId: null }),
   },
 ];
 

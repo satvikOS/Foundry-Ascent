@@ -1,5 +1,7 @@
 import {
+  AvatarProviderId,
   CoachMode,
+  type ConsentView,
   Doctrine,
   PersonaKind,
   PersonaReleaseStatus,
@@ -9,12 +11,33 @@ import {
   type PersonaView,
 } from '@foundry/contracts';
 
+import { z } from 'zod';
+
 import { camelRow, col, type CamelRow, type RawRow } from '../columns.js';
 import { type SqlExecutor } from '../executor.js';
 import { p } from '../params.js';
 import { principalFrom, principalSelect, queryFirst, queryOne, queryRows } from './common.js';
 
 type CoachModeValue = (typeof CoachMode.options)[number];
+
+/**
+ * How a persona is embodied in calls (`personas.embodiment`): the avatar provider, the text-to-speech voice
+ * and the portrait object key. An EIR persona may only carry a voice / portrait its consent covers (enforced
+ * by the `personas_embodiment_consent` trigger).
+ */
+export const StoredEmbodiment = z.object({
+  provider: AvatarProviderId.catch('builtin'),
+  voiceId: z.string().max(64).nullable().catch(null),
+  portraitKey: z.string().max(512).nullable().catch(null),
+});
+export type StoredEmbodiment = z.infer<typeof StoredEmbodiment>;
+export const DEFAULT_EMBODIMENT: StoredEmbodiment = { provider: 'builtin', voiceId: null, portraitKey: null };
+
+function decodeEmbodiment(raw: unknown): StoredEmbodiment {
+  const value = col.json().nullable.decode(raw, 'embodiment');
+  const parsed = StoredEmbodiment.safeParse(value ?? {});
+  return parsed.success ? parsed.data : DEFAULT_EMBODIMENT;
+}
 
 // ------------------------------------------------------------------------------------------------
 // Personas
@@ -29,17 +52,49 @@ const personaShape = {
   status: col.enum(PersonaStatus.options),
   consent_id: col.uuid.nullable,
   suspended_reason: col.text.nullable,
+  tagline: col.text.nullable,
   created_at: col.ts,
   updated_at: col.ts,
 };
 const personaCodec = camelRow(personaShape);
-export type PersonaRecord = CamelRow<typeof personaShape>;
+export type PersonaRecord = CamelRow<typeof personaShape> & { readonly embodiment: StoredEmbodiment };
 const PERSONA_COLUMNS =
-  'id, tenant_id, eir_profile_id, name, kind, status, consent_id, suspended_reason, created_at, updated_at';
+  'id, tenant_id, eir_profile_id, name, kind, status, consent_id, suspended_reason, tagline, embodiment, created_at, updated_at';
+
+function decodePersona(r: RawRow): PersonaRecord {
+  return { ...personaCodec.decode(r), embodiment: decodeEmbodiment(r.embodiment) };
+}
 
 export function getPersona(ex: SqlExecutor, id: string): Promise<PersonaRecord | null> {
-  return queryFirst(ex, `SELECT ${PERSONA_COLUMNS} FROM personas WHERE id = :id`, { id: p.uuid(id) }, (r) =>
-    personaCodec.decode(r),
+  return queryFirst(
+    ex,
+    `SELECT ${PERSONA_COLUMNS} FROM personas WHERE id = :id`,
+    { id: p.uuid(id) },
+    decodePersona,
+  );
+}
+
+/** Personas of a tenant with this name (case-insensitive, trimmed), for duplicate checks. */
+export function findPersonasByName(
+  ex: SqlExecutor,
+  args: { tenantId: string; name: string },
+): Promise<PersonaRecord[]> {
+  return queryRows(
+    ex,
+    `SELECT ${PERSONA_COLUMNS} FROM personas
+     WHERE tenant_id = :tenantId AND lower(btrim(name)) = lower(btrim(:name)) ORDER BY created_at`,
+    { tenantId: p.uuid(args.tenantId), name: p.text(args.name) },
+    decodePersona,
+  );
+}
+
+/** Personas built from an EIR profile, oldest first. */
+export function listPersonasForEirProfile(ex: SqlExecutor, eirProfileId: string): Promise<PersonaRecord[]> {
+  return queryRows(
+    ex,
+    `SELECT ${PERSONA_COLUMNS} FROM personas WHERE eir_profile_id = :id ORDER BY created_at, id`,
+    { id: p.uuid(eirProfileId) },
+    decodePersona,
   );
 }
 
@@ -51,13 +106,16 @@ export interface CreatePersonaInput {
   readonly eirProfileId?: string | null;
   readonly consentId?: string | null;
   readonly status?: PersonaRecord['status'];
+  readonly tagline?: string | null;
+  readonly embodiment?: StoredEmbodiment;
 }
 
 export function createPersona(ex: SqlExecutor, input: CreatePersonaInput): Promise<PersonaRecord> {
   return queryOne(
     ex,
-    `INSERT INTO personas (id, tenant_id, eir_profile_id, name, kind, status, consent_id)
-     VALUES (coalesce(:id, gen_random_uuid()), :tenantId, :eirProfileId, :name, :kind, coalesce(:status, 'draft'), :consentId)
+    `INSERT INTO personas (id, tenant_id, eir_profile_id, name, kind, status, consent_id, tagline, embodiment)
+     VALUES (coalesce(:id, gen_random_uuid()), :tenantId, :eirProfileId, :name, :kind, coalesce(:status, 'draft'),
+             :consentId, :tagline, coalesce(:embodiment, '{"provider": "builtin", "voiceId": null, "portraitKey": null}'::jsonb))
      RETURNING ${PERSONA_COLUMNS}`,
     {
       id: p.nullable.uuid(input.id),
@@ -67,9 +125,40 @@ export function createPersona(ex: SqlExecutor, input: CreatePersonaInput): Promi
       kind: p.text(input.kind),
       status: p.nullable.text(input.status),
       consentId: p.nullable.uuid(input.consentId),
+      tagline: p.nullable.text(input.tagline),
+      embodiment: p.nullable.json(input.embodiment),
     },
-    (r) => personaCodec.decode(r),
+    decodePersona,
     'createPersona',
+  );
+}
+
+/**
+ * Replaces a persona's embodiment (program lead or the persona's EIR under RLS). The database refuses a voice
+ * or portrait the persona's consent does not cover (SQLSTATE 23514). Null when not visible/updatable.
+ */
+export function setPersonaEmbodiment(
+  ex: SqlExecutor,
+  args: { personaId: string; embodiment: StoredEmbodiment },
+): Promise<PersonaRecord | null> {
+  return queryFirst(
+    ex,
+    `UPDATE personas SET embodiment = :embodiment, updated_at = now() WHERE id = :id RETURNING ${PERSONA_COLUMNS}`,
+    { id: p.uuid(args.personaId), embodiment: p.json(StoredEmbodiment.parse(args.embodiment)) },
+    decodePersona,
+  );
+}
+
+/** Links a consent record to a persona (program lead or the persona's EIR under RLS). */
+export function setPersonaConsent(
+  ex: SqlExecutor,
+  args: { personaId: string; consentId: string },
+): Promise<PersonaRecord | null> {
+  return queryFirst(
+    ex,
+    `UPDATE personas SET consent_id = :consentId, updated_at = now() WHERE id = :id RETURNING ${PERSONA_COLUMNS}`,
+    { id: p.uuid(args.personaId), consentId: p.uuid(args.consentId) },
+    decodePersona,
   );
 }
 
@@ -90,7 +179,7 @@ export function setPersonaStatus(
      WHERE id = :id
      RETURNING ${PERSONA_COLUMNS}`,
     { id: p.uuid(args.personaId), status: p.text(args.status), reason: p.nullable.text(args.reason) },
-    (r) => personaCodec.decode(r),
+    decodePersona,
   );
 }
 
@@ -350,6 +439,58 @@ const consentShape = {
 };
 const consentCodec = camelRow(consentShape);
 export type ConsentRecord = CamelRow<typeof consentShape>;
+
+const CONSENT_ASSETS = ['doctrine', 'style', 'voice', 'likeness', 'cases'] as const;
+
+/** Contract view of a consent record. */
+export function toConsentView(c: ConsentRecord): ConsentView {
+  return {
+    id: c.id,
+    subjectPrincipalId: c.subjectPrincipalId,
+    assetTypes: c.assetTypes.filter((a): a is (typeof CONSENT_ASSETS)[number] =>
+      (CONSENT_ASSETS as readonly string[]).includes(a),
+    ),
+    approvedUses: c.approvedUses,
+    audiences: c.audiences,
+    evidenceRef: c.evidenceRef,
+    grantedAt: c.grantedAt,
+    expiresAt: c.expiresAt,
+    revokedAt: c.revokedAt,
+  };
+}
+
+/**
+ * Assets the persona's consent covers right now (`app.persona_consent_assets`): readable by anyone in the
+ * tenant, unlike the consent record itself. Empty when there is no consent in force.
+ */
+export async function personaConsentAssets(
+  ex: SqlExecutor,
+  personaId: string,
+): Promise<(typeof CONSENT_ASSETS)[number][]> {
+  const row = await queryFirst(
+    ex,
+    'SELECT app.persona_consent_assets(:id) AS assets',
+    { id: p.uuid(personaId) },
+    (r) => col.textArray.decode(r.assets, 'assets'),
+  );
+  return (row ?? []).filter((a): a is (typeof CONSENT_ASSETS)[number] =>
+    (CONSENT_ASSETS as readonly string[]).includes(a),
+  );
+}
+
+/** Whether a consent is in force at `now` and covers `asset`. */
+export function consentCovers(
+  consent: Pick<ConsentRecord, 'assetTypes' | 'revokedAt' | 'expiresAt'> | null,
+  asset: (typeof CONSENT_ASSETS)[number],
+  now: Date,
+): boolean {
+  return (
+    consent !== null &&
+    consent.revokedAt === null &&
+    (consent.expiresAt === null || Date.parse(consent.expiresAt) > now.getTime()) &&
+    consent.assetTypes.includes(asset)
+  );
+}
 const CONSENT_COLUMNS =
   'id, tenant_id, subject_principal_id, asset_types, approved_uses, audiences, evidence_ref, granted_at, expires_at, revoked_at';
 
@@ -403,9 +544,9 @@ export function listConsents(ex: SqlExecutor, subjectPrincipalId: string): Promi
 
 /**
  * Revokes a consent and suspends every active persona that relies on it (no persona may run without
- * consent). Returns the number of personas suspended, or null when the consent was not revocable.
+ * consent). Returns the ids of the personas suspended, or null when the consent was not revocable.
  */
-export async function revokeConsent(ex: SqlExecutor, consentId: string): Promise<number | null> {
+export async function revokeConsent(ex: SqlExecutor, consentId: string): Promise<string[] | null> {
   const revoked = await ex.query(
     'UPDATE consents SET revoked_at = now() WHERE id = :id AND revoked_at IS NULL',
     {
@@ -413,10 +554,12 @@ export async function revokeConsent(ex: SqlExecutor, consentId: string): Promise
     },
   );
   if (revoked.rowCount === 0) return null;
-  const suspended = await ex.query(
+  return queryRows(
+    ex,
     `UPDATE personas SET status = 'suspended', suspended_reason = 'consent revoked', updated_at = now()
-     WHERE consent_id = :id AND status = 'active'`,
+     WHERE consent_id = :id AND status = 'active'
+     RETURNING id`,
     { id: p.uuid(consentId) },
+    (r) => col.uuid.decode(r.id, 'id'),
   );
-  return suspended.rowCount;
 }

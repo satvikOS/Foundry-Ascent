@@ -3,7 +3,9 @@ import {
   CreateDocumentResponse,
   EscalationQueueResponse,
   EscalationView,
+  LessonListResponse,
   MemoryObjectView,
+  PersonaKnowledgeListResponse,
   PersonaReleaseView,
   ProblemDetails,
   ResourceView,
@@ -129,6 +131,21 @@ beforeAll(async () => {
     200,
   );
   ids.queued = queue.items[0]?.id ?? '00000000-0000-4000-8000-000000000000';
+  // QuietQuad's vEIR (Corin's): its library, lessons and consent.
+  ids.persona = api.h.ventures.quietquad.personaId;
+  ids.consent = api.h.seed.veirs.find((v) => v.personaId === ids.persona)?.consentId ?? '';
+  const library = await ok(
+    await api.request(`/personas/${ids.persona}/knowledge`, { cookie: lead }),
+    PersonaKnowledgeListResponse,
+    200,
+  );
+  ids.source = library.items[0]?.id ?? '';
+  const lessons = await ok(
+    await api.request(`/personas/${ids.persona}/lessons`, { cookie: lead }),
+    LessonListResponse,
+    200,
+  );
+  ids.lesson = lessons.items[0]?.id ?? '';
 });
 afterAll(async () => {
   await api.cleanup();
@@ -173,6 +190,21 @@ const ventureCases = (): Case[] => {
     ['jonah', 'POST', `/documents/${ids.document ?? ''}/complete`],
     ['jonah', 'GET', `/ventures/${v}/documents`],
     ['jonah', 'DELETE', `/documents/${ids.document ?? ''}`],
+    ['jonah', 'GET', `/ventures/${v}/notebook`],
+    ['jonah', 'PATCH', `/ventures/${v}/notebook`, { expectedVersion: 1, edit: { action: 'clear' } }],
+    ['jonah', 'GET', `/ventures/${v}/veir`],
+    ['jonah', 'GET', `/ventures/${v}/call-config`],
+    ['jonah', 'POST', '/calls/avatar-session', { ventureId: v }],
+    ['jonah', 'GET', `/sessions?ventureId=${v}`],
+    ['jonah', 'PATCH', `/sessions/${ids.session ?? ''}`, { title: 'Not mine' }],
+    ['jonah', 'DELETE', `/sessions/${ids.session ?? ''}/digest`],
+    ['jonah', 'DELETE', `/sessions/${ids.session ?? ''}`],
+    [
+      'jonah',
+      'POST',
+      '/speech',
+      { sessionId: ids.session ?? '', turnId: ids.turn ?? '', text: 'Hello there.' },
+    ],
   ];
 };
 
@@ -208,6 +240,58 @@ const studioCases = (): Case[] => [
   ['maya', 'POST', '/admin/principals', { displayName: 'x' }],
   ['maya', 'POST', `/admin/principals/${api.h.people.devin}/access-codes`, {}],
   ['maya', 'DELETE', `/admin/access-codes/${ids.code ?? ''}`],
+  [
+    'maya',
+    'POST',
+    '/personas',
+    {
+      eirProfileId: api.h.seed.eirs[0]?.profileId ?? '',
+      name: 'Founder-made vEIR',
+      doctrine: GUIDE_DOCTRINE,
+      style: GUIDE_STYLE,
+      disclosureText: 'x'.repeat(50),
+    },
+  ],
+  ['maya', 'GET', `/personas/${ids.persona ?? ''}/consents`],
+  ['maya', 'POST', `/personas/${ids.persona ?? ''}/consents`, { assetTypes: ['voice'] }],
+  ['maya', 'POST', `/consents/${ids.consent ?? ''}/revoke`],
+  ['maya', 'GET', `/personas/${ids.persona ?? ''}/embodiment`],
+  ['maya', 'PATCH', `/personas/${ids.persona ?? ''}/embodiment`, { voiceId: 'Joanna' }],
+  [
+    'maya',
+    'POST',
+    `/ventures/${ids.venture ?? ''}/assignment`,
+    { personaId: ids.persona ?? '', eirProfileId: null },
+  ],
+  ['maya', 'GET', `/personas/${ids.persona ?? ''}/knowledge`],
+  [
+    'maya',
+    'POST',
+    `/personas/${ids.persona ?? ''}/knowledge`,
+    { kind: 'note', title: 'x'.repeat(5), body: 'y'.repeat(30) },
+  ],
+  [
+    'maya',
+    'POST',
+    `/personas/${ids.persona ?? ''}/knowledge/uploads`,
+    { filename: 'a.md', contentType: 'text/markdown', sizeBytes: 3 },
+  ],
+  [
+    'maya',
+    'PATCH',
+    `/personas/${ids.persona ?? ''}/knowledge/${ids.source ?? ''}`,
+    { title: 'Founder edit' },
+  ],
+  ['maya', 'DELETE', `/personas/${ids.persona ?? ''}/knowledge/${ids.source ?? ''}`],
+  ['maya', 'POST', `/personas/${ids.persona ?? ''}/knowledge/${ids.source ?? ''}/complete`],
+  ['maya', 'GET', `/personas/${ids.persona ?? ''}/lessons`],
+  [
+    'maya',
+    'POST',
+    `/personas/${ids.persona ?? ''}/lessons`,
+    { title: 'xxx', context: 'xxx', signal: 'xxx', intervention: 'xxx', outcome: 'xxx', limits: 'xxx' },
+  ],
+  ['maya', 'POST', `/lessons/${ids.lesson ?? ''}/actions`, { action: 'withdraw' }],
   ['lead', 'GET', '/admin/settings'],
   ['lead', 'PATCH', '/admin/settings', { aiEnabled: false }],
   ['lead', 'GET', '/admin/audit'],

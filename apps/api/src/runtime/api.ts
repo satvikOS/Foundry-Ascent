@@ -1,5 +1,6 @@
-import { createCore, type EnvLike } from '@foundry/core';
+import { createCore, type EnvLike, type SpeechSynthesizer } from '@foundry/core';
 
+import { PollySpeechSynthesizer } from '../adapters/polly-speech.js';
 import { S3ObjectStore } from '../adapters/s3-object-store.js';
 import { SqsJobQueue } from '../adapters/sqs-job-queue.js';
 import { type ApiApp, createApp } from '../app.js';
@@ -18,8 +19,19 @@ export interface ApiRuntime {
 }
 
 /**
+ * Text-to-speech for calls: Amazon Polly wherever the models run on Bedrock (the deployed stacks). Local
+ * development and tests run the mock model and get none: `POST /speech` answers 501 `speech_unavailable` and
+ * the browser reads validated replies aloud itself. No network I/O at construction.
+ */
+export function speechFor(env: EnvLike, config: ApiConfig): { speech?: SpeechSynthesizer } {
+  return env.MODEL_PROVIDER?.trim().toLowerCase() === 'bedrock'
+    ? { speech: new PollySpeechSynthesizer({ region: config.awsRegion }) }
+    : {};
+}
+
+/**
  * Everything the API Lambda needs, built once per container (cold start): config, logger, Data API
- * database, model gateway, S3/SQS adapters, core and the Hono app. No network I/O happens here.
+ * database, model gateway, S3/SQS/Polly adapters, core and the Hono app. No network I/O happens here.
  */
 export function createApiRuntime(env: EnvLike): ApiRuntime {
   const config = loadApiConfig(env, 'api');
@@ -45,6 +57,7 @@ export function createApiRuntime(env: EnvLike): ApiRuntime {
       region: config.awsRegion,
     }),
     logger: logger.child({ component: 'core' }),
+    ...speechFor(env, config),
   });
   const app = createApp({
     core,

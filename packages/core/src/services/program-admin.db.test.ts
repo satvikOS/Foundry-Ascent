@@ -45,7 +45,8 @@ describe('me and ventures', () => {
     const eir = await h.core.me.get(corin);
     expect(eir.roles).toEqual(['eir']);
     expect([...eir.assignedVentureIds].sort()).toEqual(
-      [h.ventures.benchtally.id, h.ventures.quietquad.id].sort(),
+      // Corin's vEIR coaches QuietQuad and SoleSignal; Corin reviews its sampled turns there.
+      [h.ventures.solesignal.id, h.ventures.quietquad.id].sort(),
     );
   });
 
@@ -54,7 +55,7 @@ describe('me and ventures', () => {
     expect(list.map((v) => v.name)).toEqual(['QuietQuad']);
     expect(list[0]?.pendingMemory).toBeGreaterThan(0);
     const detail = VentureDetail.parse(await h.core.ventures.get(maya, h.ventures.quietquad.id));
-    expect(detail.persona).toMatchObject({ name: 'Foundry Guide', kind: 'neutral_guide', status: 'active' });
+    expect(detail.persona).toMatchObject({ name: "Corin's vEIR", kind: 'eir_persona', status: 'active' });
     expect(detail.assignedEir?.displayName).toBe('Corin Halvorsen');
 
     const overview = VentureOverview.parse(await h.core.ventures.overview(maya, h.ventures.quietquad.id));
@@ -186,18 +187,19 @@ describe('EIR studio', () => {
     doctrine: GUIDE_DOCTRINE,
     style: GUIDE_STYLE,
     disclosureText:
-      'You are working with Foundry Guide, an AI coach. It is not a person, and no human EIR authored or approved these responses.',
+      'You are working with an AI coach built from approved frameworks. It is not a person, and no human EIR authored or approved these responses.',
     allowedModes: ['diagnose', 'coach', 'challenge'] as ('diagnose' | 'coach' | 'challenge')[],
   };
 
   it('program leads draft and approve releases; new sessions use the new version', async () => {
-    const draft = await h.core.eir.createRelease(lead, h.seed.personaId, release);
+    const personaId = h.ventures.quietquad.personaId;
+    const draft = await h.core.eir.createRelease(lead, personaId, release);
     expect(draft).toMatchObject({ status: 'draft', version: 2 });
     await expect(h.core.eir.approveRelease(maya, draft.id)).rejects.toMatchObject({ code: 'forbidden' });
     const approved = await h.core.eir.approveRelease(lead, draft.id);
     expect(approved).toMatchObject({ status: 'approved', version: 2 });
     await expect(h.core.eir.approveRelease(lead, draft.id)).rejects.toMatchObject({ code: 'conflict' });
-    const persona = await h.core.eir.getPersona(corin, h.seed.personaId);
+    const persona = await h.core.eir.getPersona(corin, personaId);
     expect(persona.activeRelease?.version).toBe(2);
     expect(persona.releases.find((r) => r.version === 1)?.status).toBe('superseded');
     const session = await h.core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });

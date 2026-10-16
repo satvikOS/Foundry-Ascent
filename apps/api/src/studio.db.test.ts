@@ -102,8 +102,10 @@ describe('EIR studio', () => {
     );
     expect(approved.status).toBe('approved');
 
+    // QuietQuad is coached by Corin's vEIR: suspending it pauses that venture's coach.
+    const coach = api.h.ventures.quietquad.personaId;
     const suspended = await json(
-      await api.request(`/personas/${api.h.seed.personaId}/suspend`, {
+      await api.request(`/personas/${coach}/suspend`, {
         body: { reason: 'Calibration review' },
         cookie: lead,
       }),
@@ -117,7 +119,7 @@ describe('EIR studio', () => {
     });
     expect(await problemCode(blocked, 423)).toBe('persona_suspended');
     const resumed = await json(
-      await api.request(`/personas/${api.h.seed.personaId}/resume`, { method: 'POST', cookie: lead }),
+      await api.request(`/personas/${coach}/resume`, { method: 'POST', cookie: lead }),
       PersonaView,
     );
     expect(resumed.status).toBe('active');
