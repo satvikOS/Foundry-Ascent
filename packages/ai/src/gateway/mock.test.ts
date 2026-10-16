@@ -334,10 +334,11 @@ describe('mock conversation realism', () => {
     expect(checked.response.answer).toBe(value.answer);
   });
 
-  it('picks up an open commitment from the notes at the start of a conversation', async () => {
+  it('never presents the notebook’s older lines as "last time" (production recited a seeded notebook)', async () => {
     const gw = new MockModelGateway();
     const first = await gw.generateStructured(veirTurn({ text: 'Where should we focus this week?' }));
-    expect(first.value.answer).toContain('Last time you planned to interview five library staff');
+    expect(first.value.answer).not.toMatch(/last time/i);
+    expect(first.value.answer).not.toContain('interview five library staff');
     const later = await gw.generateStructured(
       veirTurn({
         text: 'Where should we focus this week?',

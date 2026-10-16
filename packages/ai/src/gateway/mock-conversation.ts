@@ -17,10 +17,18 @@ export interface PreviousConversation {
   /** When, relative ("about 20 minutes ago", "yesterday"), or null. */
   readonly when: string | null;
   readonly channel: 'call' | 'chat' | null;
-  /** What the founder planned to do, as a verb phrase ("call facilities about the budget"), or null. */
+  /**
+   * What the founder planned in that conversation, as a verb phrase ("call facilities about the budget"), or null.
+   * Never a notebook line: those are older notes, not "last time".
+   */
   readonly plan: string | null;
-  /** How the vEIR opened that conversation, when the prompt shows it. */
+  /** The vEIR's first line the prompt shows from that conversation, when it shows one. */
   readonly opening: string | null;
+  /**
+   * Every vEIR line the prompt shows from that conversation: a recap of its last exchanges does not always reach
+   * back to how it opened, so a new greeting avoids all of them.
+   */
+  readonly openings: readonly string[];
   /** The text it was read from (seeds the mock's choices, so each new conversation varies). */
   readonly source: string;
 }
@@ -162,13 +170,12 @@ function fromSection(
     firstMatch(where, /(?:commitments?|plans?|next steps?|open threads?)\s*[:：]?\s*\n\s*[-*]\s*([^\n]+)/i) ??
     firstMatch(where, /<(?:commitments|open_commitments)>\n\s*-\s*([^\n]+)/) ??
     firstMatch(where, /<commitment[^>]*>([\s\S]*?)<\/commitment>/);
-  // What the last conversation itself planned comes before the notebook's older open threads.
+  // Only what the last conversation itself planned: the notebook's open threads after it are older notes.
   const scopedPlan = planIn(scope);
-  const planLine = scopedPlan ?? (scope === text ? null : planIn(text));
   const stated = founderLines.map((l) => COMMITMENT.exec(l)?.[1]).find((c) => c !== undefined) ?? null;
   const anything =
     founderLines.length + veirLines.length > 0 || topics !== null || summary !== null || title !== null;
-  if (!anything && planLine === null) {
+  if (!anything && scopedPlan === null) {
     // A section in a shape this reader does not know still says something, unless it says there is nothing.
     const letters = text.replace(/[^\p{L}]/gu, '').length;
     if (NOTHING_YET.test(text) || letters < 40) return null;
@@ -183,7 +190,7 @@ function fromSection(
       when: RELATIVE_TIME.exec(text)?.[0] ? normaliseWhen(RELATIVE_TIME.exec(text)?.[0] ?? '') : null,
       channel: channelIn(text),
       plan: COMMITMENT.exec(text)?.[1] ?? null,
-      opening: null,
+      openings: [],
       source: text,
     });
   }
@@ -198,8 +205,8 @@ function fromSection(
     gist: founderLines[0] ?? null,
     when: relative !== null ? normaliseWhen(relative) : date !== null ? whenFromDate(date, today) : null,
     channel,
-    plan: scopedPlan ?? stated ?? planLine,
-    opening: veirLines[0] ?? null,
+    plan: scopedPlan ?? stated,
+    openings: veirLines,
     source: text,
   });
 }
@@ -250,7 +257,7 @@ function build(args: {
   when: string | null;
   channel: 'call' | 'chat' | null;
   plan: string | null;
-  opening: string | null;
+  openings: readonly string[];
   source: string;
 }): PreviousConversation {
   const bank = topicOf(args.topicText);
@@ -269,18 +276,22 @@ function build(args: {
     when: args.when,
     channel: args.channel,
     plan: args.plan === null ? null : asPlan(args.plan),
-    opening: args.opening,
+    opening: args.openings[0] ?? null,
+    openings: args.openings,
     source: args.source,
   };
 }
 
-/** The most recent digest in the vEIR's notes (`<your_notes>`), with the notebook's first open commitment. */
+/**
+ * The most recent dated conversation digest in the vEIR's notes (`<your_notes>`), or null. The notebook's own lines
+ * (summary, open commitments, the opener) are older notes and venture facts, never "last time": with no digest, the
+ * notes say nothing about the last conversation (production recited a seeded notebook as "last time").
+ */
 function fromNotes(notes: string, today: string | null): PreviousConversation | null {
   const conversation = /<conversation ([^>]*)>([\s\S]*?)<\/conversation>/.exec(notes);
-  const openCommitment = firstMatch(notes, /<open_commitments>\n-\s*([^\n]+)/);
-  if (conversation === null && openCommitment === null) return null;
-  const attrs = conversation?.[1] ?? '';
-  const body = conversation?.[2] ?? '';
+  if (conversation === null) return null;
+  const attrs = conversation[1] ?? '';
+  const body = conversation[2] ?? '';
   const date = firstMatch(attrs, /date="(\d{4}-\d{2}-\d{2})"/);
   const title = firstMatch(attrs, /title="([^"]*)"/);
   const topics = firstMatch(body, /<topics>([\s\S]*?)<\/topics>/);
@@ -291,9 +302,9 @@ function fromNotes(notes: string, today: string | null): PreviousConversation | 
     topicLabel: topics?.split(';')[0]?.trim() ?? null,
     gist: null,
     when: date !== null ? whenFromDate(date, today) : null,
-    channel: attrs.includes('kind="call"') ? 'call' : conversation !== null ? 'chat' : null,
-    plan: digestCommitment ?? openCommitment,
-    opening: null,
+    channel: attrs.includes('kind="call"') ? 'call' : 'chat',
+    plan: digestCommitment,
+    openings: [],
     source: notes,
   });
 }

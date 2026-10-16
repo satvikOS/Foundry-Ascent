@@ -232,7 +232,7 @@ describe('the mock reads where the last conversation left off', () => {
     });
   });
 
-  it('prefers what the last conversation planned over the notebook’s older open threads', () => {
+  it('takes the plan from the last conversation only, never the notebook’s older open threads', () => {
     const withThreads = RENDERED_RAW.replace(
       '</where_you_left_off>',
       '<open_threads>\n- planned: Email facilities about the door-counter totals (due 2026-10-20)\n</open_threads>\n</where_you_left_off>',
@@ -240,14 +240,15 @@ describe('the mock reads where the last conversation left off', () => {
     expect(
       previousConversationIn('', [{ role: 'user', content: withThreads }], 'Maya', '2026-10-16')?.plan,
     ).toBe('call facilities about the library budget tomorrow');
-    // With nothing planned in the conversation itself, the open thread is what is left to pick up.
+    // With nothing planned in the conversation itself, nothing was planned "last time": the notebook's thread
+    // is an older note.
     const quiet = withThreads.replace(
       "I'll call facilities about the library budget tomorrow.",
       'Facilities pays.',
     );
-    expect(previousConversationIn('', [{ role: 'user', content: quiet }], 'Maya', '2026-10-16')?.plan).toBe(
-      'email facilities about the door-counter totals',
-    );
+    const previous = previousConversationIn('', [{ role: 'user', content: quiet }], 'Maya', '2026-10-16');
+    expect(previous?.topic).toBe('pricing');
+    expect(previous?.plan).toBeNull();
   });
 
   it('takes "nothing yet" at its word', () => {
@@ -355,10 +356,36 @@ describe('openings', () => {
       ...req.messages,
     ];
     const { value } = await gw.generateStructured({ ...req, messages });
-    expect(value.answer).toBe(
-      'Hi Maya. Good to pick this up again. When we talked yesterday, we were on per-library pricing.',
+    expect(value.answer).toMatch(
+      /^(?:Hi Maya\. Good to pick this up again|Hey Maya, nice to have you back|Hello Maya\. Glad you came back to it|Hi Maya, good to hear from you)\. When we talked yesterday, we were on per-library pricing\.$/,
     );
     expectSocial(value);
+  });
+
+  it('says hello after the opener differently from one conversation to the next (seeded by its opener)', async () => {
+    const hellos = new Set<string>();
+    for (const opener of [
+      'Welcome back. Yesterday, we were on per-library pricing. Where did you land on it?',
+      'Good to have you back. Last time (yesterday), we were on per-library pricing. Shall we carry on?',
+      'Good to talk again. When we last talked (yesterday), we were on per-library pricing. Where did you land?',
+      'Welcome back. Yesterday, we were on per-library pricing. Want to pick that up?',
+      'Good to have you back. Want to pick up where we left off yesterday?',
+      'Good to talk again. When we last talked (yesterday), we were on pricing. Want to pick that up?',
+    ]) {
+      const req = request({ text: 'Hi', section: DIGEST_CHAT });
+      const messages = [
+        {
+          role: 'user' as const,
+          content: '[The conversation started with your message below; the founder replies after it.]',
+        },
+        { role: 'assistant' as const, content: opener },
+        ...req.messages,
+      ];
+      const { value } = await new MockModelGateway().generateStructured({ ...req, messages });
+      expect(value.answer).not.toContain('?');
+      hellos.add(value.answer.split(' When we')[0] ?? '');
+    }
+    expect(hellos.size).toBeGreaterThan(1);
   });
 
   it('greets a first-time founder without inventing a past', async () => {
@@ -368,6 +395,31 @@ describe('openings', () => {
     );
     expect(value.answer).toContain("What's on your mind today?");
     expect(value.answer).not.toMatch(/last time|again|back/i);
+  });
+
+  it('never greets the way any line the recap shows of the last conversation opened', async () => {
+    // A recap of the last exchanges may not reach back to the first reply: every line shown counts.
+    for (const template of GREETINGS.warm.returning) {
+      const used = template.replace('{ name}', ' Maya').replace('{, name}', ', Maya');
+      const others = GREETINGS.warm.returning
+        .filter((t) => t !== template)
+        .map((t) => t.replace('{ name}', ' Maya').replace('{, name}', ', Maya'));
+      const section = [
+        '## Where you left off',
+        '<conversation when="yesterday" kind="chat" with="you" status="ended">',
+        '<last_exchanges note="as said; not summarised yet">',
+        '<founder>How should we price per library?</founder>',
+        `<you>${others[0] ?? ''} Pricing is an evidence question.</you>`,
+        '<founder>Ok.</founder>',
+        `<you>${used} Then ask who holds the budget.</you>`,
+        '</last_exchanges>',
+        '</conversation>',
+      ].join('\n');
+      const value = await reply({ text: 'Hi', section });
+      const head = (text: string) => text.split(/[,.]/)[0] ?? '';
+      expect(head(value.answer)).not.toBe(head(used));
+      expect(head(value.answer)).not.toBe(head(others[0] ?? ''));
+    }
   });
 
   it('opens each conversation differently, and never the way the last one opened', async () => {
@@ -447,7 +499,8 @@ describe('topic moves within a conversation', () => {
       text: "Honestly I'm overwhelmed, the pilot fell through and I don't know what to do.",
       history,
     });
-    expect(value.answer).toMatch(/^(?:That sounds like a lot landing at once|That's a heavy week)/);
+    // Named plainly, never with a stock reflection ("It sounds like…").
+    expect(value.answer).toMatch(/^(?:That's a lot landing at once|That's a heavy week)/);
   });
 
   it('does not ask another question right after a reply that asked one', async () => {
@@ -551,6 +604,161 @@ describe('social turns', () => {
     const a = await reply({ text: 'Do you remember what we talked about last time?', section: RAW_CALL });
     const b = await reply({ text: 'Do you remember what we talked about last time?', section: RAW_CALL });
     expect(a).toEqual(b);
+  });
+});
+
+describe('what production got wrong (insights report, Oct 6-16)', () => {
+  const pricing: HistoryTurn[] = [
+    {
+      founderText: 'How should we price per library?',
+      answer: 'Run a small paid pilot at one clear price and see who says yes.',
+    },
+  ];
+
+  /** The seeded notebook's line, with no conversation before: production answered recall with it. */
+  const SEEDED_NOTES: PromptContinuity = {
+    founderFirstName: 'Maya',
+    notebook: {
+      summary: 'Maya is preparing the regulatory pathway question for the advisor.',
+      founderProfile: [],
+      commitments: [
+        {
+          id: 'c-advisor',
+          text: 'Book the advisor meeting about the regulatory pathway',
+          due: '2026-10-20',
+          status: 'open',
+          sourceSessionId: null,
+          createdAt: '2026-10-01T00:00:00.000Z',
+        },
+      ],
+      openQuestions: [],
+      lastAdvice: [],
+      nextOpener: null,
+      updatedAt: '2026-10-16T16:20:36.000Z',
+    },
+  };
+
+  it('answers "do you remember" with nothing from before when only the notebook has lines, never reciting them', async () => {
+    const value = await reply({
+      text: 'Do you remember what we talked about last time?',
+      continuity: SEEDED_NOTES,
+    });
+    expect(value.answer).toBe(
+      "This is our first conversation, so I don't have anything from before yet. What would you like to start with?",
+    );
+    expect(value.answer).not.toMatch(/advisor|regulatory|last time we/i);
+    // And the greeting does not pass the notebook off as last time either.
+    const hello = await reply({ text: 'Hi!', continuity: SEEDED_NOTES });
+    expect(hello.answer).not.toMatch(/advisor|regulatory|last time|you were going to/i);
+  });
+
+  it('recalls what the last conversation itself planned, never the notebook’s open threads in the section', async () => {
+    const withThreads = RENDERED_RAW.replace(
+      "I'll call facilities about the library budget tomorrow.",
+      'Facilities pays.',
+    ).replace(
+      '</where_you_left_off>',
+      '<open_threads>\n- planned: Book the advisor meeting about the regulatory pathway\n</open_threads>\n</where_you_left_off>',
+    );
+    const value = await reply({
+      text: 'Do you remember what we talked about last time?',
+      section: withThreads,
+      sectionIn: 'message',
+    });
+    expect(value.answer).toMatch(
+      /^(?:Yes|I do|Sure)\. When we spoke about 20 minutes ago, we were on pricing\./,
+    );
+    expect(value.answer).not.toMatch(/advisor|regulatory/i);
+  });
+
+  it('answers the founder’s actual question however short ("Sure, but who pays?")', async () => {
+    const value = await reply({ text: 'Sure, but who pays?', history: pricing });
+    expect(value.answer).not.toMatch(/^(?:Good|Okay|Right)\. Then the next step is/);
+    // Answered as coaching on what the conversation is on (pricing), not deflected to a next step.
+    expect(value.claims.length).toBeGreaterThan(0);
+    expect(value.answer).toMatch(/pay|price|pric|budget|buyer/i);
+    // A social question stays social.
+    const hello = await reply({ text: 'Hi, how are you?', history: pricing });
+    expect(hello.claims).toEqual([]);
+  });
+
+  it('never signs off on ordinary talk ("We need to run a pilot…") or calls it stress', async () => {
+    for (const text of [
+      'We need to run a pilot with two labs first.',
+      'I have to run the numbers on the per-seat price first.',
+      'Students are frustrated with finding seats during exams.',
+    ]) {
+      const value = await reply({ text, history: pricing });
+      expect(value.answer, text).not.toMatch(/Good talking with you|Talk soon|Speak soon|Good luck with it/);
+      expect(value.answer, text).not.toMatch(/That's a lot landing at once|That's a heavy week/);
+      expect(value.claims.length, text).toBeGreaterThan(0);
+    }
+  });
+
+  it('answers "are you a man or a woman?" in one short AI sentence, then helps with the request', async () => {
+    const value = await reply({
+      text: 'Are you a man or a woman? Also, could you help me write the email to facilities about the library budget?',
+      history: pricing,
+    });
+    expect(value.answer).toMatch(/^I'm an AI, so neither: I'm Corin's vEIR, not Corin\. /);
+    expect(value.answer).not.toContain(DEFAULT_DISCLOSURE);
+    expect(value.claims.length).toBeGreaterThan(0);
+    const alone = await reply({ text: 'Are you a real person?', history: pricing });
+    expect(alone.answer).toMatch(/^I'm an AI, not a person: I'm Corin's vEIR, not Corin\./);
+    expectSocial(alone);
+  });
+
+  it('says a call reply as speech that hands the turn back, and keeps its transcript free of evidence keys', async () => {
+    const turns: HistoryTurn[] = [];
+    for (const text of [
+      'How should we price per library? We have two libraries.',
+      'Facilities holds the budget, I think.',
+      'We tried a free trial last term and nobody converted.',
+      'What would you charge for the first pilot?',
+    ]) {
+      const value = await reply({ text, channel: 'voice', history: [...turns] });
+      const spoken = value.spoken ?? '';
+      expect(spoken.split(/\s+/).length, text).toBeLessThanOrEqual(70);
+      expect(spoken, text).not.toMatch(/\[E\d|\*|#|\n|caveat/i);
+      // The last sentence hands the turn back: a question, or an invitation to go on.
+      const last = spoken.split(/(?<=[.!?])\s+/).at(-1) ?? '';
+      expect(last, text).toMatch(/\?$|^(?:Tell me|Walk me through|Your turn)/);
+      expect(value.answer, text).toBe(spoken);
+      turns.push({ founderText: text, answer: value.answer });
+    }
+  });
+
+  it('never gives the same advice or asks the same question twice in a conversation', async () => {
+    const grams = (text: string): Set<string> => {
+      const words = text
+        .toLowerCase()
+        .replace(/\[e\d+(?:, e\d+)*\]/g, '')
+        .replace(/[^\p{L}\p{N}\s']/gu, ' ')
+        .split(/\s+/)
+        .filter((w) => w !== '');
+      return new Set(words.slice(0, -3).map((_, i) => words.slice(i, i + 4).join(' ')));
+    };
+    const turns: HistoryTurn[] = [];
+    const questions: string[] = [];
+    for (const text of [
+      'How should we price per library? We have two libraries interested.',
+      'We could charge per seat or a flat fee per library, not sure which is better for them.',
+      'The libraries said a flat fee is easier for their budget approval, if that helps decide.',
+      'And what would you put as the flat fee for the first pilot, roughly speaking?',
+    ]) {
+      const value = await reply({ text, history: [...turns] });
+      const previous = turns.at(-1)?.answer ?? null;
+      if (previous !== null) {
+        const now = grams(value.answer);
+        const shared = [...now].filter((g) => grams(previous).has(g)).length;
+        expect(shared / Math.max(1, now.size), text).toBeLessThan(0.4);
+      }
+      for (const q of value.answer.split(/(?<=[.!?])\s+/).filter((x) => x.endsWith('?'))) {
+        expect(questions, q).not.toContain(q);
+        questions.push(q);
+      }
+      turns.push({ founderText: text, answer: value.answer });
+    }
   });
 });
 

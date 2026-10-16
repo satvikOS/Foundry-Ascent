@@ -464,7 +464,7 @@ export const SHORT_ACKS = ['Good.', 'Okay.', 'Right.'] as const;
 
 /** Said first when the founder sounds stressed or discouraged (named plainly, without cheerleading). */
 export const STRESS_LINES = [
-  "That sounds like a lot landing at once. Let's make the next step smaller.",
+  "That's a lot landing at once. Let's make the next step smaller.",
   "That's a heavy week. Let's take one piece at a time.",
 ] as const;
 
@@ -476,6 +476,27 @@ export const HUMOUR_LINES = ['Ha, fair.', 'Ha, I like that.'] as const;
 
 /** How a recall answer starts when there is something to recall. */
 export const RECALL_LEADS = ['Yes.', 'I do.', 'Sure.'] as const;
+
+/**
+ * The reply to a hello right after the vEIR's opener (which already greeted and asked how things went): a hello
+ * back and a line before saying where we were. `{ name}` adds " Maya" when the name is known.
+ */
+export const HELLO_AFTER_OPENER = [
+  'Hi{ name}. Good to pick this up again.',
+  'Hey{ name}, nice to have you back.',
+  'Hello{ name}. Glad you came back to it.',
+  'Hi{ name}, good to hear from you.',
+] as const;
+
+/**
+ * How a spoken reply hands the turn back when it does not end on a question (a call must not stop mid-thought).
+ * Never "I'm listening": nobody is.
+ */
+export const HAND_BACKS = [
+  'Tell me how that sits with you.',
+  'Walk me through what you have so far.',
+  'Your turn: what do you make of it?',
+] as const;
 
 /** Teaching steps, used in teach mode. */
 export const TEACH_STEPS = [
@@ -508,6 +529,8 @@ export const BANK_PROPER_NOUNS: ReadonlySet<string> = new Set(
     REPAIR_LINES,
     HUMOUR_LINES,
     RECALL_LEADS,
+    HELLO_AFTER_OPENER,
+    HAND_BACKS,
   ]
     .flatMap(bankTexts)
     .flatMap((text) => [...text.matchAll(/(?<=[\p{Ll}\p{N},;:] )\p{Lu}\p{Ll}+/gu)].map((m) => m[0])),

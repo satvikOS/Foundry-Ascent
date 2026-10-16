@@ -93,7 +93,9 @@ test.describe('continuity across conversations', () => {
           page.getByRole('article', { name: 'Exchange 1' }).getByRole('button', { name: 'Copy answer' }),
         ).toBeVisible({ timeout: 30_000 });
         const hello = await answerOf(page.request, id, 1);
-        expect(hello).toMatch(/^Hi Maya\./);
+        // A hello back that varies per conversation, then where we were.
+        expect(hello).toMatch(/^(?:Hi|Hey|Hello) Maya[.,]/);
+        expect(hello).toMatch(/we were on pricing/i);
         // The reply to the hello does not ask the opener's question again.
         expect(hello).not.toContain('?');
       });
