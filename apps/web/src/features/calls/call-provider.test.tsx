@@ -135,6 +135,8 @@ const CALL_CONFIG = {
   remainingMinutesToday: 40,
   aiEnabled: true,
   callsEnabled: true,
+  // This person acknowledged the first-call notice already (the server keeps it with the person).
+  callNoticeAcknowledgedAt: '2026-10-01T11:00:00.000Z',
 };
 
 function liveCall(sessionId: string): CallView {
@@ -233,7 +235,6 @@ function renderApp(entries: string[], snapshot: Partial<CallSnapshot> = {}) {
 
 let fetchMock: ReturnType<typeof stubFetch>;
 beforeEach(() => {
-  window.localStorage.setItem('fa.call.voice-notice', '1');
   signOutNow = null;
   fetchMock = stubFetch();
   fetchMock.mockImplementation((input) => {
