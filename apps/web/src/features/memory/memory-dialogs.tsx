@@ -36,6 +36,7 @@ import { MEMORY_TYPE_LABELS, VISIBILITY_LABELS } from '@/lib/labels';
 import { useFullMemory } from '@/lib/api/hooks/memory';
 import { FieldSelect, type FieldSelectOption } from '@/features/venture/field-select';
 import { applyFieldErrors } from '@/features/venture/form-errors';
+import { reviewFailure, reviewMessage, useMemoryReview } from '@/features/knowledge/review-api';
 import { sentenceStart, useVeirName } from '@/features/venture/veir-name';
 
 import { useCreateVentureMemory, useMemoryActions } from './api';
@@ -121,7 +122,8 @@ export function CorrectMemoryDialog({
   // Lists carry an excerpt: the form is filled (and can be saved) only once the full text is loaded,
   // otherwise a correction would replace the content with its excerpt.
   const { memory, complete } = useFullMemory(open ? listed : null);
-  const { mutation, run } = useMemoryActions(ventureId);
+  const { mutation } = useMemoryActions(ventureId);
+  const review = useMemoryReview(ventureId);
   const [formError, setFormError] = useState<string | null>(null);
   const form = useForm<CorrectInput, unknown, CorrectOutput>({
     resolver: zodResolver(CorrectSchema),
@@ -153,6 +155,24 @@ export function CorrectMemoryDialog({
   if (!memory) return null;
   const isProposed = memory.status === 'proposed';
 
+  // Approving goes through the one review path, like the queue and the action bar.
+  const approve = (memoryId: string, successMessage: string) => {
+    review.mutate(
+      { ids: [memoryId], action: 'approve' },
+      {
+        onSuccess: (result) => {
+          const message = result.items.length > 0 ? successMessage : reviewMessage('approve', result);
+          toast.success(message);
+          announce(message);
+        },
+        onError: (error) => {
+          const failure = reviewFailure('approve', [memoryId], error);
+          toast.error(failure.title, { description: failure.description });
+        },
+      },
+    );
+  };
+
   const onSubmit = handleSubmit((values) => {
     setFormError(null);
     if (!complete) return;
@@ -164,7 +184,7 @@ export function CorrectMemoryDialog({
     if (Math.abs(confidence - memory.confidence) > 0.001) patch.confidence = confidence;
     if (Object.keys(patch).length === 0) {
       if (isProposed && values.approveAfter) {
-        run(memory.id, { action: 'approve' });
+        approve(memory.id, 'Approved');
         onOpenChange(false);
         return;
       }
@@ -181,7 +201,7 @@ export function CorrectMemoryDialog({
           // `correct` always answers with the new version; only `delete` is body-less (204).
           const corrected = result ?? memory;
           if (isProposed && values.approveAfter && corrected.status === 'proposed') {
-            run(corrected.id, { action: 'approve' }, { successMessage: 'Corrected and approved' });
+            approve(corrected.id, 'Corrected and approved');
           } else {
             toast.success('Correction saved as a new version');
             announce('Correction saved');

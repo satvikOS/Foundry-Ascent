@@ -9,11 +9,20 @@ import type { ReactElement } from 'react';
 import { vi } from 'vitest';
 
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { queryKeys } from '@/lib/api/query-keys';
 
+import { IDS, makeVenture } from './testing';
+
+/**
+ * A fresh query client with the test venture (and its vEIR, Corin's vEIR) already loaded, so screens
+ * that name the vEIR send no request for it.
+ */
 export function testQueryClient(): QueryClient {
-  return new QueryClient({
+  const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } },
   });
+  client.setQueryData(queryKeys.venture.detail(IDS.venture), makeVenture());
+  return client;
 }
 
 /** Renders `ui` as the root route of a memory router, so `<Link>`s work. */

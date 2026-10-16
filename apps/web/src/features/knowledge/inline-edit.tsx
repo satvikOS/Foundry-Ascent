@@ -108,14 +108,12 @@ export function LineActions({
   onEdit,
   onRemove,
   editRef,
-  disabled = false,
 }: {
   /** Id of the line's text, so "Edit" and "Remove" are announced with it. */
   describedBy: string;
   onEdit: () => void;
   onRemove: () => void;
   editRef?: Ref<HTMLButtonElement>;
-  disabled?: boolean;
 }) {
   return (
     <div
@@ -130,7 +128,6 @@ export function LineActions({
         size="icon-xs"
         aria-label="Edit"
         aria-describedby={describedBy}
-        disabled={disabled}
         onClick={onEdit}
       >
         <Pencil aria-hidden />
@@ -140,7 +137,6 @@ export function LineActions({
         size="icon-xs"
         aria-label="Remove"
         aria-describedby={describedBy}
-        disabled={disabled}
         onClick={onRemove}
       >
         <X aria-hidden />

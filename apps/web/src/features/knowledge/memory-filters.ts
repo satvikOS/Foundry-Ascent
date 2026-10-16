@@ -53,8 +53,3 @@ export function typeChips(items: readonly MemoryObjectView[], selected: MemoryTy
     .filter((type) => counts.has(type) || type === selected)
     .map((type) => ({ type, count: counts.get(type) ?? 0 }));
 }
-
-/** How many items wait for review (proposals only). */
-export function pendingCount(items: readonly MemoryObjectView[]): number {
-  return items.filter((item) => item.status === 'proposed').length;
-}

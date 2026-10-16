@@ -40,11 +40,27 @@ function sourceTitle(title: string): string {
   return cut === -1 ? title : title.slice(0, cut);
 }
 
-/** The venture document a cited chunk belongs to (chunks carry their document's filename as title). */
-function documentFor(item: EvidenceItem, documents: readonly DocumentView[]): DocumentView | null {
+type DocumentMatch =
+  /** Exactly one of the venture's documents has this name: the citation is credited to it. */
+  | { kind: 'document'; document: DocumentView }
+  /** Several of the venture's documents share the name: counted once, credited to none of them. */
+  | { kind: 'ambiguous'; filename: string }
+  /** Only deleted documents have the name: a passage of a removed file, not counted. */
+  | { kind: 'deleted' };
+
+/**
+ * The venture document a cited passage belongs to. Evidence carries no document id, only the source's
+ * title, which is the document's filename, so a name shared by two live documents is not guessed at.
+ */
+function documentFor(item: EvidenceItem, documents: readonly DocumentView[]): DocumentMatch | null {
   if (item.kind !== 'chunk') return null;
   const source = sourceTitle(item.title);
-  return documents.find((doc) => doc.filename === source) ?? null;
+  const named = documents.filter((doc) => doc.filename === source);
+  const live = named.filter((doc) => doc.status !== 'deleted');
+  const [only] = live;
+  if (only && live.length === 1) return { kind: 'document', document: only };
+  if (live.length > 1) return { kind: 'ambiguous', filename: source };
+  return named.length > 0 ? { kind: 'deleted' } : null;
 }
 
 export function buildEvidenceSources(input: {
@@ -57,17 +73,37 @@ export function buildEvidenceSources(input: {
   const documents = input.documents.filter((doc) => doc.status !== 'deleted');
   const citations = new Map<string, number>();
   const program = new Map<string, EvidenceSource>();
+  const shared = new Map<string, EvidenceSource>();
 
   for (const turn of input.turns) {
     // One answer citing two passages of the same source counts once for that source.
     const cited = new Set<string>();
     for (const item of turn.evidence) {
       // Deleted documents are matched too, so their passages are not mistaken for program guidance.
-      const document = documentFor(item, input.documents);
-      if (document) {
-        if (document.status !== 'deleted') cited.add(`document:${document.id}`);
+      const match = documentFor(item, input.documents);
+      if (match?.kind === 'document') {
+        cited.add(`document:${match.document.id}`);
         continue;
       }
+      if (match?.kind === 'ambiguous') {
+        const key = `document-name:${match.filename}`;
+        cited.add(key);
+        if (!shared.has(key)) {
+          shared.set(key, {
+            key,
+            kind: 'document',
+            programKind: null,
+            title: match.filename,
+            excerpt: 'More than one document has this name.',
+            freshnessAt: item.freshnessAt,
+            citations: 0,
+            document: null,
+            memory: null,
+          });
+        }
+        continue;
+      }
+      if (match?.kind === 'deleted') continue;
       if (item.kind === 'memory') {
         cited.add(`memory:${item.refId}`);
         continue;
@@ -124,6 +160,7 @@ export function buildEvidenceSources(input: {
         document: null,
         memory,
       })),
+    ...shared.values(),
     ...program.values(),
   ].map((row) => ({ ...row, citations: citations.get(row.key) ?? 0 }));
 

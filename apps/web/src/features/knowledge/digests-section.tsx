@@ -23,7 +23,7 @@ import { useSessions } from '@/lib/api/hooks/sessions';
 import { conversationTitle, lastActivity } from '@/lib/conversations';
 import { formatDateTime, formatRelative, isoString } from '@/lib/format';
 import { formatIsoDate } from '@/features/memory/typed/attributes';
-import { sentenceStart } from '@/features/venture/veir-name';
+import { sentenceStart, useVeirAuthor } from '@/features/venture/veir-name';
 
 import { useDeleteDigest } from './digest-api';
 
@@ -39,16 +39,17 @@ export function digestedConversations(sessions: readonly SessionView[]): Digeste
 interface DigestsSectionProps {
   ventureId: string;
   tenant: string;
-  veirName: string;
   canEdit: boolean;
 }
 
 /**
  * What the vEIR took from each conversation: the digest's summary, topics and commitments, linking back
- * to the conversation. A digest can be deleted; the conversation stays.
+ * to the conversation. Digests are AI notes, labelled as such; one can be deleted and the conversation
+ * stays.
  */
-export function DigestsSection({ ventureId, tenant, veirName, canEdit }: DigestsSectionProps) {
+export function DigestsSection({ ventureId, tenant, canEdit }: DigestsSectionProps) {
   const sessions = useSessions(ventureId);
+  const author = useVeirAuthor(ventureId);
   const remove = useDeleteDigest(ventureId);
   const [confirm, setConfirm] = useState<Digested | null>(null);
   const rows = useMemo(() => digestedConversations(sessions.data ?? []), [sessions.data]);
@@ -63,7 +64,7 @@ export function DigestsSection({ ventureId, tenant, veirName, canEdit }: Digests
         icon={MessagesSquare}
         headingLevel={2}
         title="No digests yet"
-        description={`When a conversation ends or goes quiet, ${veirName} writes a short digest of it here. Temporary chats never get one.`}
+        description={`When a conversation ends or goes quiet, ${author} writes a short digest of it here. Temporary chats never get one.`}
       />
     );
   }
@@ -83,6 +84,13 @@ export function DigestsSection({ ventureId, tenant, veirName, canEdit }: Digests
 
   return (
     <>
+      <div className="grid gap-1.5 pb-2">
+        <p className="label-mono">AI notes</p>
+        <p className="max-w-[60ch] text-small text-muted-foreground">
+          What {author} took from each conversation. Your team can see and delete them. They’re never treated
+          as facts.
+        </p>
+      </div>
       <ul aria-label="Conversation digests" className="divide-y divide-border border-b border-border">
         {rows.map((session) => {
           const title = conversationTitle(session);
@@ -130,8 +138,8 @@ export function DigestsSection({ ventureId, tenant, veirName, canEdit }: Digests
                 <div className="grid gap-1">
                   <p className="label-mono">Commitments</p>
                   <ul className="grid gap-1 text-small">
-                    {digest.commitments.map((commitment) => (
-                      <li key={commitment.text} className="flex flex-wrap gap-x-2">
+                    {digest.commitments.map((commitment, index) => (
+                      <li key={`${index}-${commitment.text}`} className="flex flex-wrap gap-x-2">
                         <span>{commitment.text}</span>
                         {commitment.due ? (
                           <span className="text-subtle-foreground">Due {formatIsoDate(commitment.due)}</span>
@@ -172,7 +180,7 @@ export function DigestsSection({ ventureId, tenant, veirName, canEdit }: Digests
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this digest?</AlertDialogTitle>
             <AlertDialogDescription>
-              {sentenceStart(veirName)} stops drawing on it in later conversations, and it won’t be written
+              {sentenceStart(author)} stops drawing on it in later conversations, and it won’t be written
               again. The conversation stays.
             </AlertDialogDescription>
           </AlertDialogHeader>

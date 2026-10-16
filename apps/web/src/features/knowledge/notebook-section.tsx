@@ -31,7 +31,7 @@ import { useNotebook } from '@/lib/api/hooks/notebook';
 import { formatDateTime, formatRelative, isoString } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { daysUntil, formatIsoDate } from '@/features/memory/typed/attributes';
-import { sentenceStart } from '@/features/venture/veir-name';
+import { sentenceStart, useVeirAuthor } from '@/features/venture/veir-name';
 
 import { InlineEditForm, LineActions, useReturnFocus } from './inline-edit';
 import { isNotebookConflict, useNotebookEdit } from './notebook-api';
@@ -69,6 +69,7 @@ interface NotebookEditorProps {
 export function NotebookEditor({ ventureId, veirName, canEdit }: NotebookEditorProps) {
   const notebook = useNotebook(ventureId);
   const edit = useNotebookEdit(ventureId);
+  const author = useVeirAuthor(ventureId);
   const [confirmClear, setConfirmClear] = useState(false);
 
   if (notebook.isPending) return <HairlineSkeleton rows={4} label="Loading the notebook…" />;
@@ -91,7 +92,6 @@ export function NotebookEditor({ ventureId, veirName, canEdit }: NotebookEditorP
     edit.mutate(change);
   };
   const empty = isNotebookEmpty(data);
-  const Name = sentenceStart(veirName);
 
   return (
     <div className="grid gap-8">
@@ -101,12 +101,12 @@ export function NotebookEditor({ ventureId, veirName, canEdit }: NotebookEditorP
           <p className="label-mono">AI notes</p>
           <h2 className="font-serif text-subheading font-normal">What {veirName} knows</h2>
           <p className="max-w-[60ch] text-small text-muted-foreground">
-            {Name}’s notes from your conversations. Your team can see and correct them. They’re never treated
-            as facts.
+            Notes {author} keeps from your conversations. Your team can see and correct them. They’re never
+            treated as facts.
           </p>
           {data.updatedAt ? (
             <p className="text-caption text-subtle-foreground">
-              {data.lastEditedBy === 'person' ? 'Edited by your team' : `Updated by ${veirName}`}{' '}
+              {data.lastEditedBy === 'person' ? 'Edited by your team' : `Updated by ${author}`}{' '}
               <time dateTime={isoString(data.updatedAt)} title={formatDateTime(data.updatedAt)}>
                 {formatRelative(data.updatedAt)}
               </time>
@@ -142,7 +142,7 @@ export function NotebookEditor({ ventureId, veirName, canEdit }: NotebookEditorP
           icon={NotebookPen}
           headingLevel={3}
           title="Nothing noted yet"
-          description={`After a conversation, ${veirName} notes what you’re working on, your commitments and open questions. You can correct any of it here.`}
+          description={`After a conversation, ${author} notes what you’re working on, your commitments and open questions. You can correct any of it here.`}
         />
       ) : (
         <div className="grid gap-7">
@@ -200,7 +200,7 @@ export function NotebookEditor({ ventureId, veirName, canEdit }: NotebookEditorP
           {data.nextOpener ? (
             <OpenerBlock
               opener={data.nextOpener}
-              veirName={veirName}
+              author={author}
               canEdit={canEdit}
               onSave={(text) => {
                 save({ action: 'edit_opener', text });
@@ -233,7 +233,7 @@ export function NotebookEditor({ ventureId, veirName, canEdit }: NotebookEditorP
           <AlertDialogHeader>
             <AlertDialogTitle>Clear the notebook?</AlertDialogTitle>
             <AlertDialogDescription>
-              Every note goes, and {veirName} won’t write the same notes back. Conversations, memory and
+              Every note goes, and {author} won’t write the same notes back. Conversations, memory and
               documents stay as they are.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -587,13 +587,14 @@ function CommitmentLine({
 
 function OpenerBlock({
   opener,
-  veirName,
+  author,
   canEdit,
   onSave,
   onRemove,
 }: {
   opener: string;
-  veirName: string;
+  /** Who writes the opening line ("Corin’s vEIR"). */
+  author: string;
   canEdit: boolean;
   onSave: (text: string) => void;
   onRemove: () => void;
@@ -607,7 +608,7 @@ function OpenerBlock({
   };
   return (
     <Group title="Next conversation">
-      <p className="text-small text-muted-foreground">{sentenceStart(veirName)} may open with:</p>
+      <p className="text-small text-muted-foreground">{sentenceStart(author)} may open with:</p>
       {editing ? (
         <InlineEditForm
           value={opener}

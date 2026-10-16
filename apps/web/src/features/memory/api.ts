@@ -23,7 +23,8 @@ interface Snapshot {
   data: MemoryListData | undefined;
 }
 
-function filtersFromKey(key: QueryKey): MemoryFilters | undefined {
+/** The filters of a cached memory list, from its query key. */
+export function filtersFromKey(key: QueryKey): MemoryFilters | undefined {
   // queryKeys.venture.memory(ventureId, filters) → ['fa', 'venture', id, 'memory', filters]
   const filters = key[4];
   return typeof filters === 'object' && filters !== null ? filters : undefined;
@@ -38,7 +39,10 @@ export function useInvalidateVentureMemory(ventureId: string) {
       void client.invalidateQueries({ queryKey: queryKeys.venture.overview(ventureId) });
       void client.invalidateQueries({ queryKey: queryKeys.venture.detail(ventureId) });
       void client.invalidateQueries({ queryKey: queryKeys.ventures.list() });
-      for (const id of memoryIds) void client.invalidateQueries({ queryKey: queryKeys.memory.history(id) });
+      for (const id of memoryIds) {
+        void client.invalidateQueries({ queryKey: queryKeys.memory.history(id) });
+        void client.invalidateQueries({ queryKey: queryKeys.memory.item(id) });
+      }
     },
     [client, ventureId],
   );

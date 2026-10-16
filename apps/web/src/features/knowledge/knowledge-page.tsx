@@ -1,10 +1,11 @@
 import type { MemoryObjectView } from '@foundry/contracts';
 import { getRouteApi } from '@tanstack/react-router';
 import { Plus } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Inspector, useInspector } from '@/components/shell/inspector';
 import { Button } from '@/components/ui/button';
+import { ErrorState } from '@/components/ui/error-state';
 import { InspectorSection } from '@/components/ui/inspector-panel';
 import { PageContainer, PageHeader } from '@/components/ui/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -23,6 +24,7 @@ import { EvidenceSection } from './evidence-section';
 import { MemorySection } from './memory-section';
 import { NotebookEditor } from './notebook-section';
 import { ReviewQueue } from './review-queue';
+import { useSelectedMemory } from './selected-memory';
 import type { KnowledgeSearch, KnowledgeView } from './search';
 
 const routeApi = getRouteApi('/$tenant/app/v/$ventureId/knowledge');
@@ -73,15 +75,17 @@ export function KnowledgePage() {
   const requested: Tab = search.view ?? 'memory';
   const tab: Tab = tabs.some((t) => t.value === requested) ? requested : 'memory';
 
-  // The detail panel looks the item up in the cached lists (kept memory and proposals).
-  const all = useMemory(ventureId);
+  // Keep the selected tab in view when the strip scrolls (phones).
+  const strip = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    strip.current
+      ?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [tab]);
+
+  const selection = useSelectedMemory(ventureId, search);
+  const selected = selection.state === 'ready' ? selection.memory : null;
   const proposed = useMemory(ventureId, { status: 'proposed' });
-  const selected =
-    search.m === undefined
-      ? null
-      : (all.data?.find((item) => item.id === search.m) ??
-        proposed.data?.find((item) => item.id === search.m) ??
-        null);
   const pending = proposed.data?.length ?? venture.data?.pendingMemory ?? 0;
 
   const kind = typedKind(search.type);
@@ -116,7 +120,11 @@ export function KnowledgePage() {
             ) : null
           }
         >
-          <div className="-mx-4 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:px-0">
+          {/* On phones the strip scrolls; its edges fade so the next tab shows there is more. */}
+          <div
+            ref={strip}
+            className="-mx-4 overflow-x-auto pr-8 pl-4 [mask-image:linear-gradient(to_right,transparent,black_1rem,black_calc(100%-2rem),transparent)] [scrollbar-width:none] sm:mx-0 sm:px-0 sm:[mask-image:none]"
+          >
             <TabsList variant="underline" aria-label="Knowledge sections" className="min-w-max gap-5">
               {tabs.map((t) => (
                 <TabsTrigger key={t.value} value={t.value}>
@@ -147,13 +155,7 @@ export function KnowledgePage() {
           />
         </TabsContent>
         <TabsContent value="proposed">
-          <ReviewQueue
-            ventureId={ventureId}
-            tenant={tenant}
-            canEdit={team}
-            veirName={veirName}
-            onOpenDetail={select}
-          />
+          <ReviewQueue ventureId={ventureId} tenant={tenant} canEdit={team} onOpenDetail={select} />
         </TabsContent>
         {notebookVisible ? (
           <TabsContent value="notebook">
@@ -162,7 +164,7 @@ export function KnowledgePage() {
         ) : null}
         {team ? (
           <TabsContent value="conversations">
-            <DigestsSection ventureId={ventureId} tenant={tenant} veirName={veirName} canEdit={team} />
+            <DigestsSection ventureId={ventureId} tenant={tenant} canEdit={team} />
           </TabsContent>
         ) : null}
         <TabsContent value="evidence">
@@ -194,7 +196,9 @@ export function KnowledgePage() {
                 select(undefined);
               }}
             />
-          ) : all.isPending || proposed.isPending ? (
+          ) : selection.state === 'error' ? (
+            <ErrorState error={selection.error} onRetry={selection.retry} headingLevel={2} />
+          ) : selection.state === 'loading' ? (
             <div className="grid gap-3 p-4" aria-busy="true">
               <Skeleton className="h-5 w-24" />
               <Skeleton className="h-6 w-3/4" />

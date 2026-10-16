@@ -5,9 +5,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { memoryQueryOptions } from '@/lib/api/hooks/memory';
 
+import { REVIEW_BATCH_MAX } from './review-api';
 import { ReviewQueue } from './review-queue';
-import { bodyOf, json, renderWithRouter, stubFetch, testQueryClient, urlOf } from './test-utils';
-import { IDS, makeMemory } from './testing';
+import { bodyOf, json, problem, renderWithRouter, stubFetch, testQueryClient, urlOf } from './test-utils';
+import { IDS, makeMemory, manyIds } from './testing';
 
 let fetchMock: ReturnType<typeof stubFetch>;
 
@@ -45,13 +46,7 @@ async function renderQueue(items: MemoryObjectView[], canEdit = true) {
   const ctx = seed(items);
   const onOpenDetail = vi.fn<(id: string) => void>();
   await renderWithRouter(
-    <ReviewQueue
-      ventureId={IDS.venture}
-      tenant="ain"
-      canEdit={canEdit}
-      veirName="Corin"
-      onOpenDetail={onOpenDetail}
-    />,
+    <ReviewQueue ventureId={IDS.venture} tenant="ain" canEdit={canEdit} onOpenDetail={onOpenDetail} />,
     ctx.client,
   );
   return { ...ctx, onOpenDetail, user: userEvent.setup() };
@@ -122,6 +117,63 @@ describe('ReviewQueue', () => {
       expect(batchCalls()).toHaveLength(1);
     });
     expect(bodyOf(batchCalls()[0]?.[1])).toEqual({ ids: [IDS.memory2], action: 'approve' });
+  });
+
+  it('acts on the row whose checkbox has focus, not the last row the keyboard moved to', async () => {
+    respond('rejected', [first, second]);
+    const { user } = await renderQueue([first, second, third]);
+    // A mouse user ticks the third suggestion; the first row is still the keyboard's active row.
+    await user.click(screen.getByRole('checkbox', { name: 'Libraries count doors' }));
+    await user.keyboard('r');
+    await waitFor(() => {
+      expect(batchCalls()).toHaveLength(1);
+    });
+    expect(bodyOf(batchCalls()[0]?.[1])).toEqual({ ids: [IDS.memory3], action: 'reject' });
+  });
+
+  it('approves a selection larger than one request in parts, and undoes only the part that failed', async () => {
+    const items = manyIds(REVIEW_BATCH_MAX + 1).map((id, index) =>
+      makeMemory({ id, title: `Suggestion ${index + 1}` }),
+    );
+    fetchMock.mockImplementation((_input, init) => {
+      if (init?.method !== 'POST') return new Promise<Response>(() => undefined); // lists stay as shown
+      const { ids } = bodyOf(init) as { ids: string[] };
+      if (ids.length < REVIEW_BATCH_MAX) return Promise.resolve(problem(503, 'unavailable'));
+      return Promise.resolve(
+        json({ items: ids.map((id) => makeMemory({ id, status: 'confirmed' })), skippedIds: [] }),
+      );
+    });
+    const { user } = await renderQueue(items);
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select all' }));
+    await user.click(screen.getByRole('button', { name: `Approve ${items.length}` }));
+
+    await waitFor(() => {
+      expect(batchCalls()).toHaveLength(2);
+    });
+    expect(batchCalls().map(([, init]) => (bodyOf(init) as { ids: string[] }).ids.length)).toEqual([
+      REVIEW_BATCH_MAX,
+      1,
+    ]);
+    // The first 50 stay approved; only the last suggestion is back in the queue, still selected.
+    await waitFor(() => {
+      expect(rows()).toHaveLength(1);
+    });
+    expect(rows()[0]).toHaveTextContent(`Suggestion ${items.length}`);
+    expect(screen.getByText('1 of 1 suggestion selected')).toBeInTheDocument();
+  });
+
+  it('credits AI suggestions to the vEIR, never to the human EIR', async () => {
+    const byEir = makeMemory({
+      id: IDS.memory2,
+      title: 'Doors are counted hourly',
+      origin: 'eir',
+      createdBy: { id: IDS.eir, displayName: 'Corin Halvorsen', title: null, synthetic: true },
+    });
+    await renderQueue([first, byEir]);
+    const [ai, human] = rows();
+    expect(ai).toHaveTextContent('Suggested by Corin’s vEIR');
+    expect(human).toHaveTextContent('Added by Corin Halvorsen');
   });
 
   it('shows read-only viewers the queue without decisions; Enter opens the detail', async () => {

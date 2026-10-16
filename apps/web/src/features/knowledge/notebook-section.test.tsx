@@ -134,6 +134,101 @@ describe('NotebookEditor', () => {
     });
   });
 
+  it('after a queued edit fails, the next edit sends the version the server last saved', async () => {
+    const notebook = makeNotebook();
+    const done = { ...notebook, version: 4, commitments: [{ ...notebook.commitments[0], status: 'done' }] };
+    let releaseFirst: (response: Response) => void = () => undefined;
+    let patchCount = 0;
+    fetchMock.mockImplementation((_input, init) => {
+      if (init?.method !== 'PATCH') return Promise.resolve(json(done)); // the reload after the failure
+      patchCount += 1;
+      if (patchCount === 1) {
+        return new Promise<Response>((resolve) => {
+          releaseFirst = resolve;
+        });
+      }
+      if (patchCount === 2) return Promise.resolve(problem(503, 'unavailable'));
+      return Promise.resolve(json({ ...done, version: 5, nextOpener: null }));
+    });
+    const { user, client } = await renderNotebook(notebook);
+    const key = queryKeys.venture.notebook(IDS.venture);
+
+    // Edit 1 is saving while edit 2 is made on top of it.
+    await user.click(
+      within(screen.getByRole('region', { name: 'Commitments' })).getByRole('checkbox', { name: 'Done' }),
+    );
+    await user.click(
+      within(screen.getByRole('region', { name: 'Next conversation' })).getByRole('button', {
+        name: 'Remove',
+      }),
+    );
+    expect(patches()).toHaveLength(1);
+    releaseFirst(json(done));
+
+    // Edit 2 fails: the screen shows the notebook edit 1 saved (version 4), not the one from before it.
+    await waitFor(() => {
+      expect(patches()).toHaveLength(2);
+    });
+    expect(bodyOf(patches()[1]?.[1])).toEqual({ expectedVersion: 4, edit: { action: 'remove_opener' } });
+    await waitFor(() => {
+      expect(screen.getByRole('region', { name: 'Next conversation' })).toBeInTheDocument();
+    });
+    expect(client.getQueryData<VeirNotebook>(key)?.version).toBe(4);
+
+    // Trying again sends version 4, so it is accepted instead of failing as a false conflict.
+    await user.click(
+      within(screen.getByRole('region', { name: 'Next conversation' })).getByRole('button', {
+        name: 'Remove',
+      }),
+    );
+    await waitFor(() => {
+      expect(patches()).toHaveLength(3);
+    });
+    expect(bodyOf(patches()[2]?.[1])).toEqual({ expectedVersion: 4, edit: { action: 'remove_opener' } });
+    await waitFor(() => {
+      expect(client.getQueryData<VeirNotebook>(key)?.version).toBe(5);
+    });
+    expect(screen.queryByText('The notebook changed')).toBeNull();
+  });
+
+  it('drops an edit made on top of one the server refused as stale, without sending it', async () => {
+    const notebook = makeNotebook();
+    const latest = makeNotebook({ version: 6, summary: 'A teammate rewrote the summary.' });
+    let refuseFirst: (response: Response) => void = () => undefined;
+    fetchMock.mockImplementation((_input, init) => {
+      if (init?.method !== 'PATCH') return Promise.resolve(json(latest));
+      return new Promise<Response>((resolve) => {
+        refuseFirst = resolve;
+      });
+    });
+    const { user, client } = await renderNotebook(notebook);
+
+    await user.click(
+      within(screen.getByRole('region', { name: 'Commitments' })).getByRole('checkbox', { name: 'Done' }),
+    );
+    await user.click(
+      within(screen.getByRole('region', { name: 'Next conversation' })).getByRole('button', {
+        name: 'Remove',
+      }),
+    );
+    refuseFirst(problem(409, 'conflict'));
+
+    expect(await screen.findByText('The notebook changed')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(client.getQueryData<VeirNotebook>(queryKeys.venture.notebook(IDS.venture))?.version).toBe(6);
+    });
+    // The second edit was never sent against the teammate's notebook.
+    expect(patches()).toHaveLength(1);
+    expect(screen.getByText('A teammate rewrote the summary.')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Next conversation' })).toBeInTheDocument();
+  });
+
+  it('credits the notes to the vEIR, not to the human EIR', async () => {
+    await renderNotebook(makeNotebook());
+    expect(screen.getByText(/^Updated by Corin’s vEIR/)).toBeInTheDocument();
+    expect(screen.getByText(/Notes Corin’s vEIR keeps from your conversations/)).toBeInTheDocument();
+  });
+
   it('asks before clearing the whole notebook', async () => {
     const notebook = makeNotebook();
     fetchMock.mockResolvedValue(

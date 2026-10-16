@@ -20,14 +20,20 @@ import { ErrorState } from '@/components/ui/error-state';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { HairlineSkeleton } from '@/components/ui/page-section';
 import { toast } from '@/components/ui/toast';
-import { errorMessage } from '@/lib/api/errors';
 import { displayContent, useMemory } from '@/lib/api/hooks/memory';
 import { formatDateTime, formatRelative, isoString, pluralize } from '@/lib/format';
 import { MEMORY_TYPE_LABELS } from '@/lib/labels';
 import { cn } from '@/lib/utils';
 import { CorrectMemoryDialog } from '@/features/memory/memory-dialogs';
+import { useVeirAuthor } from '@/features/venture/veir-name';
 
-import { reviewMessage, useMemoryReview, type ReviewAction } from './review-api';
+import {
+  PartialReviewError,
+  reviewFailure,
+  reviewMessage,
+  useMemoryReview,
+  type ReviewAction,
+} from './review-api';
 
 const SEQUENCE_PREFIX_MS = 1000;
 
@@ -43,8 +49,6 @@ interface ReviewQueueProps {
   tenant: string;
   /** Founders and the team decide; others only see the queue. */
   canEdit: boolean;
-  /** The vEIR's short name, for copy. */
-  veirName: string;
   /** Open an item's full detail (provenance, history). */
   onOpenDetail: (memoryId: string) => void;
 }
@@ -54,9 +58,10 @@ interface ReviewQueueProps {
  * or reject one item, or select several and decide them together. Keyboard: J/K or the arrows move,
  * X selects, A approves, R rejects, E edits, Enter opens the detail.
  */
-export function ReviewQueue({ ventureId, tenant, canEdit, veirName, onOpenDetail }: ReviewQueueProps) {
+export function ReviewQueue({ ventureId, tenant, canEdit, onOpenDetail }: ReviewQueueProps) {
   const proposed = useMemory(ventureId, { status: 'proposed' });
   const review = useMemoryReview(ventureId);
+  const author = useVeirAuthor(ventureId);
   const items = useMemo(() => proposed.data ?? [], [proposed.data]);
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -75,7 +80,6 @@ export function ReviewQueue({ ventureId, tenant, canEdit, veirName, onOpenDetail
     0,
     items.findIndex((item) => item.id === activeId),
   );
-  const active = items[activeIndex] ?? null;
 
   const focusRow = useCallback((id: string) => {
     requestAnimationFrame(() => {
@@ -93,6 +97,10 @@ export function ReviewQueue({ ventureId, tenant, canEdit, veirName, onOpenDetail
     if (keyboard.current) focusRow(next.id);
   }, [items, activeId, focusRow]);
 
+  const deselect = (ids: readonly string[]) => {
+    setSelected((previous) => new Set([...previous].filter((id) => !ids.includes(id))));
+  };
+
   const decide = (ids: readonly string[], action: ReviewAction) => {
     if (ids.length === 0) return;
     const first = items.findIndex((item) => ids.includes(item.id));
@@ -105,10 +113,15 @@ export function ReviewQueue({ ventureId, tenant, canEdit, veirName, onOpenDetail
           const left = items.length - result.items.length - result.skippedIds.length;
           toast.success(message);
           announce(`${message} ${left <= 0 ? 'All caught up.' : `${pluralize(left, 'item')} left.`}`);
-          setSelected((previous) => new Set([...previous].filter((id) => !ids.includes(id))));
+          deselect(ids);
         },
         onError: (error) => {
-          toast.error('Couldn’t update memory', { description: errorMessage(error) });
+          const failure = reviewFailure(action, ids, error);
+          toast.error(failure.title, { description: failure.description });
+          announce(failure.title, 'assertive');
+          if (error instanceof PartialReviewError) {
+            deselect([...error.done.items.map((item) => item.id), ...error.done.skippedIds]);
+          }
         },
       },
     );
@@ -133,6 +146,12 @@ export function ReviewQueue({ ventureId, tenant, canEdit, veirName, onOpenDetail
     focusRow(next.id);
   };
 
+  const rowOf = (target: EventTarget): MemoryObjectView | null => {
+    if (!(target instanceof Element)) return null;
+    const id = target.closest<HTMLElement>('li[data-id]')?.dataset.id;
+    return items.find((item) => item.id === id) ?? null;
+  };
+
   const onKeyDown = (event: KeyboardEvent<HTMLUListElement>) => {
     if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
     if (isTypingTarget(event.target)) return;
@@ -152,27 +171,29 @@ export function ReviewQueue({ ventureId, tenant, canEdit, veirName, onOpenDetail
       move(-1);
       return;
     }
-    if (!active) return;
+    // Shortcuts act on the row that holds the focus (the row itself, or its checkbox or a button).
+    const row = rowOf(event.target);
+    if (!row) return;
     if (key === 'enter') {
       // Enter on a button inside the row presses that button.
-      if (event.target !== rowRefs.current.get(active.id)) return;
+      if (event.target !== rowRefs.current.get(row.id)) return;
       event.preventDefault();
-      onOpenDetail(active.id);
+      onOpenDetail(row.id);
       return;
     }
     if (!canEdit) return;
     if (key === 'a') {
       event.preventDefault();
-      decide([active.id], 'approve');
+      decide([row.id], 'approve');
     } else if (key === 'r') {
       event.preventDefault();
-      decide([active.id], 'reject');
+      decide([row.id], 'reject');
     } else if (key === 'e') {
       event.preventDefault();
-      setEditing(active);
+      setEditing(row);
     } else if (key === 'x') {
       event.preventDefault();
-      toggle(active.id, !selected.has(active.id));
+      toggle(row.id, !selected.has(row.id));
     }
   };
 
@@ -186,7 +207,7 @@ export function ReviewQueue({ ventureId, tenant, canEdit, veirName, onOpenDetail
         icon={CheckCheck}
         headingLevel={2}
         title="Nothing to review"
-        description={`When ${veirName} suggests something to remember, it waits here until someone on your team decides.`}
+        description={`When ${author} suggests something to remember, it waits here until someone on your team decides.`}
       />
     );
   }
@@ -259,14 +280,14 @@ export function ReviewQueue({ ventureId, tenant, canEdit, veirName, onOpenDetail
                 if (node) rowRefs.current.set(item.id, node);
                 else rowRefs.current.delete(item.id);
               }}
+              data-id={item.id}
               tabIndex={isActive ? 0 : -1}
               aria-labelledby={`${checkboxId}-title`}
               aria-current={isActive ? 'true' : undefined}
-              onFocus={(event) => {
-                if (event.target === event.currentTarget) {
-                  setActiveId(item.id);
-                  lastIndex.current = index;
-                }
+              onFocus={() => {
+                // Focus anywhere in the row (its checkbox or a button too) makes it the active row.
+                setActiveId(item.id);
+                lastIndex.current = index;
               }}
               className={cn(
                 'grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 py-4 outline-none sm:grid-cols-[auto_minmax(0,1fr)_auto]',
@@ -300,7 +321,7 @@ export function ReviewQueue({ ventureId, tenant, canEdit, veirName, onOpenDetail
                   <span aria-hidden>·</span>
                   <span>
                     {item.origin === 'ai'
-                      ? `Suggested by ${veirName}`
+                      ? `Suggested by ${author}`
                       : `Added by ${item.createdBy.displayName}`}
                   </span>
                   {session ? (

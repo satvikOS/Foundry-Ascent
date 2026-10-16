@@ -12,9 +12,13 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { announce } from '@/components/a11y/live-announcer';
 import { toast } from '@/components/ui/toast';
-import { errorMessage } from '@/lib/api/errors';
 import { cn } from '@/lib/utils';
-import { reviewMessage, useMemoryReview, type ReviewAction } from '@/features/knowledge/review-api';
+import {
+  reviewFailure,
+  reviewMessage,
+  useMemoryReview,
+  type ReviewAction,
+} from '@/features/knowledge/review-api';
 
 import { useMemoryActions } from './api';
 import { ConfirmDeleteMemoryDialog, CorrectMemoryDialog, DisputeMemoryDialog } from './memory-dialogs';
@@ -62,7 +66,8 @@ export function MemoryActionBar({
           announce(message);
         },
         onError: (error) => {
-          toast.error('Couldn’t update memory', { description: errorMessage(error) });
+          const failure = reviewFailure(action, [memory.id], error);
+          toast.error(failure.title, { description: failure.description });
         },
       },
     );

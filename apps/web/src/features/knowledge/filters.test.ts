@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildEvidenceSources } from './evidence';
-import { memoryListRows, pendingCount, typeChips } from './memory-filters';
+import { memoryListRows, typeChips } from './memory-filters';
 import { validateKnowledgeSearch } from './search';
 import { IDS, makeDocument, makeEvidence, makeMemory, makeTurnWithEvidence } from './testing';
 
@@ -66,7 +66,6 @@ describe('memory list filters', () => {
       IDS.memory,
     ]);
     expect(memoryListRows([kept, proposal, pinned], 'disputed').map((m) => m.id)).toEqual([IDS.memory2]);
-    expect(pendingCount([kept, proposal, pinned])).toBe(1);
   });
 
   it('offers a chip per kept type with its count, and keeps the selected chip visible', () => {
@@ -133,5 +132,34 @@ describe('buildEvidenceSources', () => {
       ]),
     );
     expect(sources).toHaveLength(3);
+  });
+
+  it('credits a re-uploaded document, not the deleted one with the same name', () => {
+    const removed = makeDocument({ id: IDS.document, status: 'deleted' });
+    const current = makeDocument({ id: IDS.resource });
+    const turns = [
+      makeTurnWithEvidence([
+        makeEvidence({ key: 'E1', kind: 'chunk', refId: IDS.chunk, title: `${current.filename} — Findings` }),
+      ]),
+    ];
+    const sources = buildEvidenceSources({ documents: [removed, current], memory: [], turns });
+    expect(sources.map((s) => [s.key, s.citations])).toEqual([[`document:${current.id}`, 1]]);
+  });
+
+  it('never guesses between two documents with the same name', () => {
+    const one = makeDocument({ id: IDS.document });
+    const two = makeDocument({ id: IDS.resource });
+    const turns = [
+      makeTurnWithEvidence([
+        makeEvidence({ key: 'E1', kind: 'chunk', refId: IDS.chunk, title: `${one.filename} — Findings` }),
+      ]),
+    ];
+    const sources = buildEvidenceSources({ documents: [one, two], memory: [], turns });
+    const byKey = new Map(sources.map((s) => [s.key, s]));
+    expect(byKey.get(`document:${one.id}`)?.citations).toBe(0);
+    expect(byKey.get(`document:${two.id}`)?.citations).toBe(0);
+    const shared = byKey.get(`document-name:${one.filename}`);
+    expect(shared).toMatchObject({ kind: 'document', title: one.filename, citations: 1, document: null });
+    expect(sources.some((s) => s.kind === 'program')).toBe(false);
   });
 });

@@ -9,6 +9,7 @@ import type {
   SessionView,
   TurnView,
   VeirNotebook,
+  VentureDetail,
 } from '@foundry/contracts';
 
 export const IDS = {
@@ -25,10 +26,53 @@ export const IDS = {
   chunk: 'a0b1c2d3-e4f5-4a6b-8c7d-9e0f1a2b3c11',
   resource: 'b1c2d3e4-f5a6-4b7c-9d8e-0f1a2b3c4d12',
   escalation: 'c2d3e4f5-a6b7-4c8d-8e9f-1a2b3c4d5e13',
+  release: 'd3e4f5a6-b7c8-4d9e-9f0a-2b3c4d5e6f14',
+  eir: 'e4f5a6b7-c8d9-4e0f-8a1b-3c4d5e6f7a15',
 } as const;
 
 export const NOW = '2026-10-01T12:00:00.000Z';
+
+/** `count` distinct, valid ids (for selections larger than one request takes). */
+export function manyIds(count: number): string[] {
+  return Array.from(
+    { length: count },
+    (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+  );
+}
 const person = { id: IDS.principal, displayName: 'Maya Okafor-Lindqvist', title: null, synthetic: true };
+
+/** QuietQuad-like venture with Corin's vEIR assigned (what the vEIR's name and author copy read). */
+export function makeVenture(overrides: Partial<VentureDetail> = {}): VentureDetail {
+  return {
+    id: IDS.venture,
+    name: 'QuietQuad',
+    oneLiner: 'Live study-seat map for exam weeks.',
+    stage: 'validation',
+    domain: 'consumer',
+    status: 'active',
+    myRole: 'founder',
+    lastSessionAt: NOW,
+    openActions: 0,
+    pendingMemory: 0,
+    openEscalations: 0,
+    cohort: null,
+    classification: 'synthetic',
+    currentGoal: null,
+    persona: {
+      personaId: IDS.persona,
+      releaseId: IDS.release,
+      name: 'Corin’s vEIR',
+      kind: 'eir_persona',
+      version: 1,
+      status: 'active',
+      disclosure: 'Corin’s vEIR is an AI coach.',
+      allowedModes: ['diagnose', 'coach'],
+    },
+    assignedEir: { id: IDS.eir, displayName: 'Corin Halvorsen', synthetic: true },
+    createdAt: NOW,
+    ...overrides,
+  };
+}
 
 export function makeMemory(overrides: Partial<MemoryObjectView> = {}): MemoryObjectView {
   return {
