@@ -163,6 +163,32 @@ async function minimizedCall(page: Page): Promise<{ sessionId: string; bar: Loca
 }
 
 /**
+ * Keeps the page's AudioContexts reachable (`window.__callAudio`), so a test can suspend the call's sound the
+ * way an interruption does (a phone call on iOS, another app taking the audio).
+ */
+async function trackCallAudio(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const contexts: AudioContext[] = [];
+    (window as unknown as { __callAudio: AudioContext[] }).__callAudio = contexts;
+    const Original = window.AudioContext;
+    window.AudioContext = class extends Original {
+      constructor(options?: AudioContextOptions) {
+        super(options);
+        contexts.push(this);
+      }
+    };
+  });
+}
+
+/** Suspends every AudioContext of the page, as an interruption does. */
+async function interruptCallAudio(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const contexts = (window as unknown as { __callAudio?: AudioContext[] }).__callAudio ?? [];
+    await Promise.all(contexts.map((context) => context.suspend()));
+  });
+}
+
+/**
  * The mini bar and the conversation's sticky header never cover each other, scrolled or not: the header sits
  * below the bar, and each one's controls are the element under the pointer at their centre.
  */
@@ -716,6 +742,32 @@ test.describe('vEIR calls', () => {
     }
   });
 
+  test('a minimized call whose sound was interrupted offers Turn on sound in the mini bar', async ({
+    page,
+  }) => {
+    const calls = trackCalls(page);
+    try {
+      await trackCallAudio(page);
+      const { bar } = await minimizedCall(page);
+      await expect(bar.getByRole('button', { name: 'Turn on sound' })).toHaveCount(0);
+      await interruptCallAudio(page);
+      const turnOn = bar.getByRole('button', { name: 'Turn on sound' });
+      await expect(turnOn).toBeVisible();
+      await expect(bar).toContainText('Sound is off');
+      await expect(bar.getByRole('status')).toHaveText('Sound is off. Turn on sound to hear replies.');
+      // The vEIR stays marked as AI next to its name.
+      await expect(bar).toContainText('vEIR · AI');
+      await turnOn.click();
+      await expect(turnOn).toHaveCount(0);
+      await expect(bar).not.toContainText('Sound is off');
+      await bar.getByRole('button', { name: 'End call' }).click();
+      await expect(bar).toContainText('Call ended');
+      await bar.getByRole('button', { name: 'Dismiss' }).click();
+    } finally {
+      await endCalls(page, calls.ids);
+    }
+  });
+
   test('a minimized call that ends out of view says so, and why', async ({ page, baseURL }) => {
     const calls = trackCalls(page);
     try {
@@ -764,6 +816,29 @@ test.describe('vEIR calls', () => {
         const { bar } = await minimizedCall(page);
         await expectBarAndHeaderApart(page, bar);
         await expectNoHorizontalScroll(page);
+        await bar.getByRole('button', { name: 'End call' }).click();
+        await expect(bar).toContainText('Call ended');
+        await bar.getByRole('button', { name: 'Dismiss' }).click();
+      } finally {
+        await endCalls(page, calls.ids);
+      }
+    });
+
+    test('Turn on sound fits in the mini bar beside its controls and the AI marker', async ({ page }) => {
+      const calls = trackCalls(page);
+      try {
+        await trackCallAudio(page);
+        const { bar } = await minimizedCall(page);
+        await interruptCallAudio(page);
+        const turnOn = bar.getByRole('button', { name: 'Turn on sound' });
+        await expect(turnOn).toBeVisible();
+        await expect(bar).toContainText('vEIR · AI');
+        await expectNoHorizontalScroll(page);
+        for (const name of ['Turn on sound', 'Return to call', 'End call']) {
+          await expectReachable(page, bar.getByRole('button', { name }));
+        }
+        await turnOn.click();
+        await expect(turnOn).toHaveCount(0);
         await bar.getByRole('button', { name: 'End call' }).click();
         await expect(bar).toContainText('Call ended');
         await bar.getByRole('button', { name: 'Dismiss' }).click();
