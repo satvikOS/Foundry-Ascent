@@ -218,6 +218,24 @@ React moved into a chunk it preloads). Landing page, signed out: ready at about 
 | Status banners: CSS transitions instead of `motion` (the only importer of `motion`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | `components/shell/status-banners.tsx` (w4-theme)            | first load 957 → 832 kB (125 kB, 42 kB compressed, less script to parse before the first paint)           |
 | Landing page: the 80 px headline (leading 1.0, `text-balance`) sets 6 lines in the fallback serif and 5 in Newsreader, so when the display face arrives (about 5 ms after the first render locally) the paragraph, buttons and preview card move up 88 px: layout shift 0.16–0.18. Preloading either face or sizing the fallback like Newsreader does not change the line count (§6); reserve the headline's height (a minimum of its 5-line height at each breakpoint) or set it in the sans face until the serif has loaded.                                        | landing (w4-theme)                                          | layout shift 0.18 → below 0.02                                                                            |
 
+### Taken up at integration (wave 4)
+
+- **Done:** status banners fade with CSS instead of `motion`: first-load script 957,559 → 830,829 bytes
+  (gzip 308,434 → 266,832); the first-load budget is now 860,000 bytes, so `motion` coming back fails the build.
+- **Already done on the merged tree:** nothing is spoken after a streamed reply (`generate.ts`, this stream);
+  "Where you left off" loads in its own transaction alongside the embedding and retrieval (`run-turn.ts`,
+  w4-memory); the lexicon's word set is built on first use (`isEnglishWord`).
+- **Not taken:**
+  - starting the embedding before admission: it would buy a model call for a message the rate or in-flight
+    limit then refuses, which the turn engine deliberately never does;
+  - history in a parallel transaction (the prototype deadlocked the pool), the persisted view and the overview's
+    single statement (estimates, not measured), the prompt reordering and phase B's shorter prompt (production
+    only), the audit lock (concurrency only);
+  - replaying the generic call intro as the first message: the call's opener is already replayed when there is
+    one, and a first reply written as structured output now streams anyway;
+  - the landing headline's layout shift (0.16–0.18, reported, not asserted): reserving the fallback's taller
+    height leaves a blank line once the display face loads; open for the landing page's owner.
+
 ## 8. What only production can show
 
 - Whether the first turn of every call now streams: `turn.completed` audits with `stream = structured_output`
