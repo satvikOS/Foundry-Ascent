@@ -316,8 +316,12 @@ Access codes are typed with `fillSecret()` so they never appear in step titles o
 ## Design system
 
 Tokens live in `src/styles/globals.css`, each declared once as `light-dark(<light>, <dark>)`:
-dark-first (`#0B0B0B` canvas, `#151515` raised, `#303030` border, `#F4F4F2` text, `#A6A6A3`
-secondary, `#FFFFFF` focus) with a matching light theme. Use the semantic Tailwind colours
+dark-first and OLED (`#000000` canvas and sidebar, `#0A0A0A` raised, `#141414` overlays, white hairline
+borders at 8–20 % alpha, `#F4F4F2` text, `#A6A6A3` secondary, `#FFFFFF` focus) with a matching light
+theme. `.glass` (bars in the page) and `.glass-strong` (menus, popovers, the command palette, toasts) are
+the translucent surfaces; dialogs and sheets stay solid over a dimmed, blurred backdrop, so glass never
+stacks on glass. `src/styles/tokens.test.ts` recomputes every text/surface contrast ratio from the CSS
+(glass composited over each surface) and fails below WCAG AA. Use the semantic Tailwind colours
 (`bg-background`, `bg-card`, `text-muted-foreground`, `border-border`, `text-success`, `bg-warning/10`,
 `bg-sidebar`…), never raw hex. Theme: `useTheme()` / `setTheme('system'|'dark'|'light')` (persisted,
 works before JS via `color-scheme`).
