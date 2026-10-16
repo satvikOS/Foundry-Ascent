@@ -1,6 +1,16 @@
+import { join } from 'node:path';
+
 import { expect, type APIRequestContext, type Page } from '@playwright/test';
 
-import { FOUNDER_STATE, composer, openVenture, runToken, startConversation, test } from './support/fixtures';
+import {
+  FOUNDER_STATE,
+  composer,
+  openVenture,
+  runToken,
+  startConversation,
+  test,
+  useTheme,
+} from './support/fixtures';
 
 /*
  * The owner's failure, end to end: after one conversation, the next one must know what it was about. The
@@ -10,6 +20,8 @@ import { FOUNDER_STATE, composer, openVenture, runToken, startConversation, test
  */
 
 const WRITE_HEADERS = { 'x-requested-with': 'foundry-ascent', 'content-type': 'application/json' };
+/** Where screenshots of the second conversation go when set (desktop and phone, light and dark). */
+const SHOTS = process.env.E2E_SHOTS_DIR;
 
 interface SessionDetail {
   session: { id: string; opener: string | null; digest: { summary: string } | null };
@@ -97,6 +109,23 @@ test.describe('continuity across conversations', () => {
         // A memory question is social: nothing to cite, plan or remember.
         await expect(recall.getByRole('region', { name: 'Suggested next steps' })).toHaveCount(0);
       });
+
+      if (SHOTS) {
+        await test.step('screenshots of the remembered conversation', async () => {
+          for (const [label, size] of [
+            ['desktop', { width: 1440, height: 900 }],
+            ['mobile', { width: 390, height: 844 }],
+          ] as const) {
+            await page.setViewportSize(size);
+            for (const scheme of ['light', 'dark'] as const) {
+              await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
+              await useTheme(page, scheme);
+              await page.getByRole('article', { name: 'Exchange 2' }).scrollIntoViewIfNeeded();
+              await page.screenshot({ path: join(SHOTS, `continuity-${label}-${scheme}.png`) });
+            }
+          }
+        });
+      }
     } finally {
       for (const id of created) {
         const removed = await page.request.delete(`/api/v1/sessions/${id}`, { headers: WRITE_HEADERS });
