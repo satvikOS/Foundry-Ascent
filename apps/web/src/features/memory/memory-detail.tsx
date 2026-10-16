@@ -61,6 +61,9 @@ export function MemoryDetail({
   const { memory: full } = useFullMemory(listed);
   const memory = full ?? listed;
   const statusDef = getStatusDefinition('memory', memory.status);
+  // The vEIR suggested it: its creator is only the person whose conversation it came from, who did not write
+  // it. A person keeping (approving) the suggestion is named on its own row.
+  const suggested = memory.origin === 'ai';
   return (
     <div>
       <InspectorSection title="Memory" className="space-y-3">
@@ -118,7 +121,7 @@ export function MemoryDetail({
           <div className="flex items-center justify-between gap-3">
             <dt className="text-muted-foreground">Created</dt>
             <dd className="text-right">
-              {memory.createdBy.displayName} ·{' '}
+              {suggested ? 'Suggested by AI' : memory.createdBy.displayName} ·{' '}
               <time dateTime={isoString(memory.createdAt)} title={formatDateTime(memory.createdAt)}>
                 {formatRelative(memory.createdAt)}
               </time>
@@ -126,7 +129,7 @@ export function MemoryDetail({
           </div>
           {memory.approvedAt ? (
             <div className="flex items-center justify-between gap-3">
-              <dt className="text-muted-foreground">Approved</dt>
+              <dt className="text-muted-foreground">{suggested ? 'Kept' : 'Approved'}</dt>
               <dd className="text-right">
                 {memory.approvedBy ? `${memory.approvedBy.displayName} · ` : ''}
                 <time dateTime={isoString(memory.approvedAt)} title={formatDateTime(memory.approvedAt)}>
