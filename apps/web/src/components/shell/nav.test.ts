@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   defaultLanding,
   STAFF_SECTIONS,
+  staffSections,
   staffWorkspaces,
   ventureDestinations,
   workspaceFromPath,
@@ -59,9 +60,10 @@ describe('staffWorkspaces', () => {
 });
 
 describe('STAFF_SECTIONS', () => {
-  it('gives lesson review a place in the EIR studio and assignments a place in Program', () => {
+  it('gives EIRs and lesson review a place in the EIR studio and assignments a place in Program', () => {
     expect(STAFF_SECTIONS.eir.map((s) => s.label)).toEqual([
       'Personas & knowledge',
+      'EIRs',
       'Lessons to review',
       'Calibration reviews',
       'Inbox',
@@ -73,6 +75,23 @@ describe('STAFF_SECTIONS', () => {
       'Resources',
       'Escalations',
     ]);
+  });
+});
+
+describe('staffSections', () => {
+  it('shows EIRs only to those who add and edit them (program leads and platform admins)', () => {
+    const labels = (roles: Me['roles']) => staffSections(me({ roles }), 'eir').map((s) => s.label);
+    expect(labels(['eir'])).not.toContain('EIRs');
+    expect(labels(['program_lead'])).toContain('EIRs');
+    expect(labels(['platform_admin', 'eir'])).toContain('EIRs');
+    // Everything else of the studio is everyone's in it.
+    expect(labels(['eir'])).toEqual([
+      'Personas & knowledge',
+      'Lessons to review',
+      'Calibration reviews',
+      'Inbox',
+    ]);
+    expect(staffSections(me({ roles: ['program_lead'] }), 'program')).toEqual(STAFF_SECTIONS.program);
   });
 });
 

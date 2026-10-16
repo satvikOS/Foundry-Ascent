@@ -38,7 +38,7 @@ import { useTheme } from '@/lib/theme';
 import { veirDisplay } from '@/lib/veir';
 
 import { useSignOutAndRedirect } from './account-menu';
-import { STAFF_SECTIONS, staffWorkspaces, ventureDestinations, type Workspace } from './nav';
+import { staffSections, staffWorkspaces, ventureDestinations, type Workspace } from './nav';
 
 interface CommandPaletteProps {
   me: Me;
@@ -247,7 +247,7 @@ export function CommandPalette({ me, workspace, open, onOpenChange, onOpenShortc
 
         {staffWorkspaces(me).map((item) => (
           <CommandGroup key={item.id} heading={item.label}>
-            {STAFF_SECTIONS[item.id].map((section) => (
+            {staffSections(me, item.id).map((section) => (
               <CommandItem
                 key={`${item.id}-${section.id}`}
                 value={`${item.label} ${section.label}`}

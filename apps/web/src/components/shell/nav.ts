@@ -1,4 +1,4 @@
-import type { Me } from '@foundry/contracts';
+import type { Me, PlatformRole } from '@foundry/contracts';
 import {
   BookOpenCheck,
   Briefcase,
@@ -7,6 +7,7 @@ import {
   FileText,
   Flag,
   Gauge,
+  IdCard,
   Inbox,
   LayoutDashboard,
   Library,
@@ -25,6 +26,7 @@ import {
 import {
   canAccessVenture,
   canManageAnyTeam,
+  hasAnyRole,
   canUseAdminConsole,
   canUseEirStudio,
   canUseProgramConsole,
@@ -130,8 +132,11 @@ export interface StaffSection {
   id: string;
   label: string;
   icon: LucideIcon;
+  /** Shown only to these roles (the API refuses everyone else); absent: everyone in the workspace. */
+  roles?: readonly PlatformRole[];
   to:
     | '/$tenant/app/eir/personas'
+    | '/$tenant/app/eir/eirs'
     | '/$tenant/app/eir/lessons'
     | '/$tenant/app/eir/reviews'
     | '/$tenant/app/eir/inbox'
@@ -149,6 +154,14 @@ export interface StaffSection {
 export const STAFF_SECTIONS: Record<StaffWorkspaceId, readonly StaffSection[]> = {
   eir: [
     { id: 'personas', label: 'Personas & knowledge', icon: UserSquare, to: '/$tenant/app/eir/personas' },
+    // The people vEIRs are built from: program leads and platform admins add and edit them.
+    {
+      id: 'eirs',
+      label: 'EIRs',
+      icon: IdCard,
+      roles: ['program_lead', 'platform_admin'],
+      to: '/$tenant/app/eir/eirs',
+    },
     { id: 'lessons', label: 'Lessons to review', icon: Lightbulb, to: '/$tenant/app/eir/lessons' },
     { id: 'reviews', label: 'Calibration reviews', icon: ClipboardCheck, to: '/$tenant/app/eir/reviews' },
     { id: 'inbox', label: 'Inbox', icon: Inbox, to: '/$tenant/app/eir/inbox' },
@@ -172,6 +185,11 @@ export const STAFF_SECTIONS: Record<StaffWorkspaceId, readonly StaffSection[]> =
     { id: 'audit', label: 'Audit log', icon: ScrollText, to: '/$tenant/app/admin/audit' },
   ],
 };
+
+/** The sections of a staff workspace this person sees (display only; the API and RLS decide access). */
+export function staffSections(me: Me, workspace: StaffWorkspaceId): readonly StaffSection[] {
+  return STAFF_SECTIONS[workspace].filter((section) => !section.roles || hasAnyRole(me, section.roles));
+}
 
 export type Landing = { kind: 'venture'; ventureId: string } | { kind: StaffWorkspaceId } | null;
 

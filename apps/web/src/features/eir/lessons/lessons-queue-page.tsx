@@ -7,10 +7,9 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
 import { PageContainer, PageHeader } from '@/components/ui/page-header';
 import { LoadingRegion, Skeleton } from '@/components/ui/skeleton';
-import { DistilledBadge, LessonStatusBadge, needsReview } from '@/features/eir/personas/lesson-labels';
-import { usePersonas } from '@/lib/api/hooks/eir';
-import { useLessonsOfPersonas } from '@/lib/api/hooks/veir-pools';
-import { formatRelative, pluralize } from '@/lib/format';
+import { DistilledBadge, LessonStatusBadge } from '@/features/eir/personas/lesson-labels';
+import { useLessonsToReview, usePersonas } from '@/lib/api/hooks/eir';
+import { formatNumber, formatRelative, pluralize } from '@/lib/format';
 import { veirName } from '@/lib/veir';
 
 function PersonaGroup({
@@ -61,38 +60,46 @@ function PersonaGroup({
 }
 
 /**
- * EIR studio → Lessons to review: draft lessons of every vEIR the person curates, distilled from
- * conversations or written by a colleague. Each opens in its vEIR's Lessons section.
+ * EIR studio → Lessons to review: lessons waiting for review in every vEIR the person curates, distilled from
+ * conversations or written by a colleague, fetched in one request and grouped by vEIR. Each opens in its vEIR's
+ * Lessons section.
  */
 export function LessonsQueuePage({ tenant }: { tenant: string }) {
   const personas = usePersonas();
+  const queue = useLessonsToReview();
   const curated = (personas.data ?? []).filter((p) => p.canCurate === true && p.status !== 'retired');
-  const results = useLessonsOfPersonas(curated.map((p) => p.id));
-  const loading = personas.isPending || results.some((r) => r.isPending);
+  const loading = personas.isPending || queue.isPending;
+  const lessons = queue.data?.items ?? [];
+  // In the order the vEIRs are listed; the server sends only lessons of vEIRs the person curates.
   const groups = curated
-    .map((persona, index) => ({
-      persona,
-      result: results[index],
-      lessons: (results[index]?.data?.items ?? []).filter(needsReview),
-    }))
-    .filter((group) => group.result?.isError === true || group.lessons.length > 0);
-  const total = groups.reduce((sum, g) => sum + g.lessons.length, 0);
+    .map((persona) => ({ persona, lessons: lessons.filter((lesson) => lesson.personaId === persona.id) }))
+    .filter((group) => group.lessons.length > 0);
+  const total = queue.data?.total ?? 0;
+  const shown = groups.reduce((sum, g) => sum + g.lessons.length, 0);
+  const error = personas.error ?? queue.error;
 
   return (
     <PageContainer size="narrow">
       <PageHeader
         title="Lessons to review"
-        description={loading || total === 0 ? undefined : `${pluralize(total, 'lesson')} waiting for you.`}
+        description={
+          loading || total === 0
+            ? undefined
+            : `${pluralize(total, 'lesson')} waiting for you.${shown < total ? ` The ${formatNumber(shown)} most recent are shown.` : ''}`
+        }
       />
       {loading ? (
         <LoadingRegion label="Loading lessons">
           <Skeleton className="h-48 rounded-xl" />
         </LoadingRegion>
-      ) : personas.isError ? (
+      ) : error ? (
         <ErrorState
-          error={personas.error}
-          onRetry={() => void personas.refetch()}
-          retrying={personas.isRefetching}
+          error={error}
+          onRetry={() => {
+            void personas.refetch();
+            void queue.refetch();
+          }}
+          retrying={personas.isRefetching || queue.isRefetching}
         />
       ) : curated.length === 0 ? (
         <EmptyState
@@ -108,19 +115,9 @@ export function LessonsQueuePage({ tenant }: { tenant: string }) {
         />
       ) : (
         <div className="grid gap-10">
-          {groups.map(({ persona, result, lessons }) =>
-            result?.isError ? (
-              <ErrorState
-                key={persona.id}
-                size="sm"
-                title={`Couldn’t load ${persona.name}’s lessons`}
-                error={result.error}
-                onRetry={() => void result.refetch()}
-              />
-            ) : (
-              <PersonaGroup key={persona.id} tenant={tenant} persona={persona} lessons={lessons} />
-            ),
-          )}
+          {groups.map(({ persona, lessons: items }) => (
+            <PersonaGroup key={persona.id} tenant={tenant} persona={persona} lessons={items} />
+          ))}
         </div>
       )}
     </PageContainer>

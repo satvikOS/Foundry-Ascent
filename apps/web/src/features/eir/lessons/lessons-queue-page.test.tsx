@@ -16,25 +16,25 @@ function renderPage() {
   renderWithProviders(<RouterProvider router={router} />);
 }
 
+const urlOf = (input: RequestInfo | URL) => (input instanceof Request ? input.url : input.toString());
+const RUTH_DRAFT = '2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f';
+
 describe('LessonsQueuePage (EIR studio → Lessons to review)', () => {
-  it('lists drafts of the vEIRs the person curates, linking each to its review', async () => {
+  it('fetches the drafts of every curated vEIR in one request and groups them by vEIR', async () => {
     const fetchMock = stubFetch();
     fetchMock.mockImplementation((input) => {
-      const url = input instanceof Request ? input.url : input.toString();
+      const url = urlOf(input);
       if (url === '/api/v1/personas') {
-        return Promise.resolve(jsonResponse({ items: [GUIDE, persona(), { ...RUTH, canCurate: false }] }));
+        return Promise.resolve(jsonResponse({ items: [GUIDE, persona(), RUTH] }));
       }
-      if (url === `/api/v1/personas/${IDS.corin}/lessons`) {
+      if (url.startsWith('/api/v1/lessons?')) {
         return Promise.resolve(
           jsonResponse({
             items: [
               lesson(),
-              lesson({
-                id: '2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f',
-                title: 'Already live',
-                status: 'published',
-              }),
+              lesson({ id: RUTH_DRAFT, personaId: IDS.ruth, title: 'Price the pilot', origin: 'authored' }),
             ],
+            total: 2,
           }),
         );
       }
@@ -42,28 +42,58 @@ describe('LessonsQueuePage (EIR studio → Lessons to review)', () => {
     });
     renderPage();
 
-    const group = await screen.findByRole('region', { name: /Corin's vEIR/ });
-    const link = within(group).getByRole('link', { name: 'Polite interest is not demand' });
+    const corin = await screen.findByRole('region', { name: /Corin's vEIR/ });
+    const link = within(corin).getByRole('link', { name: 'Polite interest is not demand' });
     expect(link).toHaveAttribute(
       'href',
       `/ain/app/eir/personas/${IDS.corin}?tab=lessons&lesson=${IDS.lesson}`,
     );
-    expect(within(group).getByText('Distilled')).toBeVisible();
-    expect(screen.queryByText('Already live')).toBeNull();
-    expect(screen.getByText('1 lesson waiting for you.')).toBeVisible();
-    // Lessons of a vEIR the person doesn't curate are never requested.
-    const urls = fetchMock.mock.calls.map(([input]) =>
-      input instanceof Request ? input.url : input.toString(),
-    );
-    expect(urls).not.toContain(`/api/v1/personas/${IDS.ruth}/lessons`);
+    expect(within(corin).getByText('Distilled')).toBeVisible();
+    const ruth = screen.getByRole('region', { name: /Ruth's vEIR/ });
+    expect(within(ruth).getByRole('link', { name: 'Price the pilot' })).toBeVisible();
+    expect(screen.getByText('2 lessons waiting for you.')).toBeVisible();
+
+    // One request for the personas and one for the lessons, however many vEIRs: never one per vEIR.
+    const urls = fetchMock.mock.calls.map(([input]) => urlOf(input));
+    expect(urls.filter((url) => url.includes('/lessons'))).toEqual([
+      '/api/v1/lessons?status=draft%2Cin_review',
+    ]);
+    expect(urls.some((url) => /\/personas\/[^/]+\/lessons/.test(url))).toBe(false);
+  });
+
+  it('says how many wait when more are waiting than are listed', async () => {
+    stubFetch().mockImplementation((input) => {
+      const url = urlOf(input);
+      if (url === '/api/v1/personas') return Promise.resolve(jsonResponse({ items: [persona()] }));
+      return Promise.resolve(jsonResponse({ items: [lesson()], total: 140 }));
+    });
+    renderPage();
+    expect(
+      await screen.findByText('140 lessons waiting for you. The 1 most recent are shown.'),
+    ).toBeVisible();
   });
 
   it('says so when nothing waits', async () => {
     stubFetch().mockImplementation((input) => {
-      const url = input instanceof Request ? input.url : input.toString();
-      return Promise.resolve(jsonResponse({ items: url === '/api/v1/personas' ? [persona()] : [] }));
+      const url = urlOf(input);
+      return Promise.resolve(
+        jsonResponse(url === '/api/v1/personas' ? { items: [persona()] } : { items: [], total: 0 }),
+      );
     });
     renderPage();
     expect(await screen.findByRole('heading', { name: 'Nothing to review' })).toBeVisible();
+  });
+
+  it('says so when the person curates no vEIR', async () => {
+    stubFetch().mockImplementation((input) => {
+      const url = urlOf(input);
+      return Promise.resolve(
+        jsonResponse(
+          url === '/api/v1/personas' ? { items: [{ ...RUTH, canCurate: false }] } : { items: [], total: 0 },
+        ),
+      );
+    });
+    renderPage();
+    expect(await screen.findByRole('heading', { name: 'No vEIRs to curate' })).toBeVisible();
   });
 });

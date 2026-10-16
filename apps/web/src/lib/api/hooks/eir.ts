@@ -1,5 +1,6 @@
 import {
   ApprovePersonaReleaseResponse,
+  LessonListResponse,
   WithdrawPersonaReleaseResponse,
   CreatePersonaReleaseRequest,
   CreatePersonaReleaseResponse,
@@ -31,6 +32,22 @@ export const personasQueryOptions = () =>
 
 export function usePersonas() {
   return useQuery({ ...personasQueryOptions(), select: (data) => data.items });
+}
+
+/**
+ * GET /lessons?status=draft,in_review — the lessons waiting for review in every vEIR the person curates, in
+ * one request (the "Lessons to review" page and the sidebar's count share it).
+ */
+export const lessonsToReviewQueryOptions = () =>
+  queryOptions({
+    queryKey: queryKeys.personas.lessonsToReview(),
+    queryFn: ({ signal }) =>
+      api.get('/lessons', LessonListResponse, { signal, query: { status: 'draft,in_review' } }),
+    staleTime: 60_000,
+  });
+
+export function useLessonsToReview(options: { enabled?: boolean } = {}) {
+  return useQuery({ ...lessonsToReviewQueryOptions(), enabled: options.enabled ?? true });
 }
 
 /** GET /personas/:id */
