@@ -33,15 +33,17 @@ interface RecentConversationsProps {
 type RowDialog = { kind: 'rename' | 'delete'; session: SessionView; title: string } | null;
 
 /**
- * The person's conversations across their ventures, newest first, grouped Today / Previous 7 days / Older.
+ * The person's conversations across their ventures, newest first, grouped Today / Previous 7 days / Older
+ * (one that is still empty shows only while it is open).
  * Calls are marked with a phone, temporary chats with a closed eye. Each row has a menu: rename, open the
  * summary (ended conversations) and delete.
  */
 export function RecentConversations({ tenant, ventureNames, onNavigate }: RecentConversationsProps) {
-  const recents = useRecentConversations({ enabled: true });
-  const groups = useMemo(() => groupByRecency(recents.items), [recents.items]);
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const openId = /\/c\/([^/]+)/.exec(pathname)?.[1] ?? null;
+  const recents = useRecentConversations({ enabled: true, openId });
+  const groups = useMemo(() => groupByRecency(recents.items), [recents.items]);
   const [dialog, setDialog] = useState<RowDialog>(null);
 
   if (recents.isPending) {

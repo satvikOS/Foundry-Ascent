@@ -57,15 +57,23 @@ const conversationsQueryOptions = (filters: ConversationFilters) =>
   });
 
 /**
- * The person's own conversations for the sidebar and ⌘K (ended temporary chats, which keep nothing, are
- * left out). Read-only roles (advisors, assigned EIRs) never start conversations, so callers pass
- * `enabled: false` for them and nothing is requested.
+ * The person's own conversations for the sidebar and ⌘K, without ended temporary chats or empty ones
+ * (except `openId`, the conversation open now). Read-only roles (advisors, assigned EIRs) never start
+ * conversations, so callers pass `enabled: false` for them and nothing is requested.
  */
-export function useRecentConversations({ enabled }: { enabled: boolean }) {
+export function useRecentConversations({
+  enabled,
+  openId = null,
+}: {
+  enabled: boolean;
+  openId?: string | null;
+}) {
   const query = useInfiniteQuery({ ...conversationsQueryOptions({ scope: 'mine' }), enabled });
   const items = useMemo(
-    () => query.data?.pages.flatMap((page) => page.items.filter(listedInRecents)) ?? [],
-    [query.data],
+    () =>
+      query.data?.pages.flatMap((page) => page.items.filter((session) => listedInRecents(session, openId))) ??
+      [],
+    [query.data, openId],
   );
   return { ...query, items };
 }

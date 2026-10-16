@@ -246,19 +246,22 @@ document upload and axe checks) and `mobile` (390 × 844 smoke). One worker, bec
   sent) → rename → end and read the summary (disclosure still in view) → an old `/ventures/<id>/memory`
   link → save the current goal in venture settings → New chat again: a high-risk (IP) question is
   handed to a person, the founder approves sharing, and the conversation is deleted from its sidebar row.
-  A read-only advisor opens their venture without any conversation, notebook or escalation request.
+  A read-only advisor opens their venture, and the assigned EIR opens the venture and a link to one of
+  the founder's conversations, without any conversation, notebook or escalation request or refusal.
 - **Documents** — upload a Markdown file (presigned PUT to the dev server's local S3 stand-in through the
   preview proxy) → `complete` (202 while processing) → the list polls until it is Ready → delete.
 - **Safety** — a crisis message (the first of a new chat) is blocked with human-support resources, live
-  and after a reload; a temporary chat offers nothing to remember and ends with nothing kept; a consented
-  specialist request is routed by a program lead.
+  and after a reload, and never becomes the conversation's title; a temporary chat offers no attach and
+  nothing to remember, ends with nothing kept and leaves the recents; a consented specialist request is
+  routed by a program lead.
 - **Accessibility** — `@axe-core/playwright` with WCAG 2.0/2.1/2.2 A + AA tags on landing, sign-in, New
   chat, a conversation (with an answer and its reasoning open), the Sources and To review panel tabs, an
   ended conversation's summary, Knowledge and People & access (reached through the old `/admin` URL), in
   dark **and** light themes: zero serious or critical violations; the account menu by keyboard.
 - **Mobile** — landing, sign-in, the navigation sheet and New chat → conversation (with the sources sheet
   from a citation): no horizontal scroll, no text clipped at the right edge, primary controls inside the
-  viewport with ≥ 24 px targets, the disclosure in view.
+  viewport with ≥ 24 px targets; the conversation's header is the only bar (menu, Call, New chat,
+  options), and the whole disclosure summary is in view.
 
 Run locally against a scratch database (never the shared `foundry` one):
 
@@ -415,13 +418,15 @@ Only one `<Inspector>` should be mounted per page. Section pages get the venture
 Every conversation view, call and export shows the AI disclosure — once:
 
 ```tsx
-<DisclosureBanner variant="line" text={session.disclosure} />  // the one line under the composer
+<DisclosureBanner variant="line" text={session.disclosure} veirName={session.personaName} /> // under the composer
 <DisclosureBanner variant="inline" text={PUBLIC_DISCLOSURE} /> // callout (public pages)
 <DisclosureBanner variant="print" text={session.disclosure} /> // exports / print views
 ```
 
-The `Composer` renders the line itself; a conversation without a composer (ended, read-only) renders it
-at the end of the page.
+The line never truncates: it shows a complete summary ("Corin's vEIR is an AI, not a person. No human
+wrote or approved its answers.") and "More" shows the persona's own disclosure, which screen readers
+always get in full. The `Composer` renders the line itself; an ended conversation renders it under its
+header, so it stays in view. Every transcript prints with the print variant at its top.
 
 Text precedence: `text` prop → `Me.disclosure` → `DEFAULT_DISCLOSURE`. It is not dismissible.
 

@@ -59,11 +59,15 @@ export function conversationTitle(
 }
 
 /**
- * Whether a conversation belongs in the recents. An ended temporary chat is left out: its content is erased
- * and nothing from it was kept, so there is nothing to go back to.
+ * Whether a conversation belongs in the recents. Left out: an ended temporary chat (its content is erased
+ * and nothing was kept) and one where nothing was said yet, unless it is the one open now.
  */
-export function listedInRecents(session: Pick<SessionView, 'privacy' | 'status'>): boolean {
-  return !(session.privacy === 'ephemeral' && session.status === 'ended');
+export function listedInRecents(
+  session: Pick<SessionView, 'id' | 'privacy' | 'status' | 'turnCount'>,
+  openId: string | null = null,
+): boolean {
+  if (session.privacy === 'ephemeral' && session.status === 'ended') return false;
+  return session.turnCount > 0 || session.id === openId;
 }
 
 /** When a conversation last moved: its latest turn, else when it ended or started. */

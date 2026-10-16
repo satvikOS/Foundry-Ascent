@@ -89,10 +89,18 @@ describe('startStamp', () => {
 });
 
 describe('listedInRecents', () => {
+  const said = { id: 'a', privacy: 'standard' as const, status: 'active' as const, turnCount: 2 };
+
   it('leaves out ended temporary chats, which keep nothing', () => {
-    expect(listedInRecents({ privacy: 'ephemeral', status: 'ended' })).toBe(false);
-    expect(listedInRecents({ privacy: 'ephemeral', status: 'active' })).toBe(true);
-    expect(listedInRecents({ privacy: 'standard', status: 'ended' })).toBe(true);
+    expect(listedInRecents({ ...said, privacy: 'ephemeral', status: 'ended' })).toBe(false);
+    expect(listedInRecents({ ...said, privacy: 'ephemeral' })).toBe(true);
+    expect(listedInRecents({ ...said, status: 'ended' })).toBe(true);
+  });
+
+  it('leaves out a conversation where nothing was said, unless it is open', () => {
+    expect(listedInRecents({ ...said, turnCount: 0 })).toBe(false);
+    expect(listedInRecents({ ...said, turnCount: 0 }, 'a')).toBe(true);
+    expect(listedInRecents({ ...said, turnCount: 0 }, 'b')).toBe(false);
   });
 });
 
