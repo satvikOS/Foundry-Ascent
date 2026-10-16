@@ -40,6 +40,8 @@ let whileAnswering: (() => Promise<void>) | null = null;
 /** The next model call of the scripted core fails with this error (billed like a real failed attempt). */
 let failNext: Error | null = null;
 let scriptedCore: Core;
+/** The model of the scripted core (answers with `scripted`). */
+let scriptedGateway: ModelGateway;
 
 const quietquad = (): string => h.ventures.quietquad.id;
 const corinPersona = (): string => h.ventures.quietquad.personaId;
@@ -203,6 +205,7 @@ beforeAll(async () => {
     streamText: (request, onText) => mock.streamText(request, onText),
     embed: (texts, options) => mock.embed(texts, options),
   };
+  scriptedGateway = gateway;
   scriptedCore = createCore({
     db: h.t.db,
     gateway,
@@ -885,6 +888,69 @@ describe('memory hygiene', () => {
         }),
       ),
     ).rejects.toThrow();
+  });
+
+  it('the backstop distils several ventures at once, one conversation per venture at a time', async () => {
+    // Idle, undistilled conversations of three ventures, two of them in one venture.
+    const jonah = await h.ctxFor(h.people.jonah);
+    const amara = await h.ctxFor(h.people.amara);
+    const ids = [
+      await conversation(priya, ['Should we sell to the lab managers first?'], {
+        ventureId: h.ventures.benchtally.id,
+      }),
+      await conversation(priya, ['What does a lab pay for a pilot?'], {
+        ventureId: h.ventures.benchtally.id,
+      }),
+      await conversation(jonah, ['Which kiln studios should we call first?'], {
+        ventureId: h.ventures.emberloop.id,
+      }),
+      await conversation(amara, ['How do we price the insoles?'], { ventureId: h.ventures.solesignal.id }),
+    ];
+    for (const id of ids) await idle(id, 60);
+    // A model that takes a moment, recording which ventures it is answering for at once.
+    let inFlight: string[] = [];
+    let mostAtOnce = 0;
+    let sameVentureAtOnce = false;
+    whileAnswering = null;
+    scripted = (context) => {
+      const venture =
+        /<name>([^<]+)<\/name>/.exec(context.messages.map((m) => m.content).join('\n'))?.[1] ?? '';
+      if (inFlight.includes(venture)) sameVentureAtOnce = true;
+      inFlight = [...inFlight, venture];
+      mostAtOnce = Math.max(mostAtOnce, inFlight.length);
+      return mockDistillDraft(context);
+    };
+    const slow = createCore({
+      db: h.t.db,
+      gateway: {
+        info: h.gateway.info,
+        generateStructured: async <T>(request: GenerateStructuredRequest<T>) => {
+          const result = await scriptedGateway.generateStructured(request);
+          await new Promise((resolve) => setTimeout(resolve, 150));
+          const venture = /<name>([^<]+)<\/name>/.exec(
+            request.messages.map((m) => m.content).join('\n'),
+          )?.[1];
+          inFlight = inFlight.filter((v, i) => v !== venture || inFlight.indexOf(v) !== i);
+          return result;
+        },
+        streamText: (request, onText) => h.gateway.streamText(request, onText),
+        embed: (texts, options) => h.gateway.embed(texts, options),
+      },
+      config: h.config,
+      objectStore: h.objectStore,
+      jobQueue: h.jobQueue,
+      logger: h.logger,
+    });
+    try {
+      const report = await slow.distill.backstop({ requestId: 'backstop-lanes' });
+      expect(report.deferred).toBe(0);
+      expect(report.distilled).toBeGreaterThanOrEqual(ids.length);
+    } finally {
+      scripted = null;
+    }
+    for (const id of ids) expect((await session(id))?.distillVersion).toBe(1);
+    expect(mostAtOnce).toBeGreaterThanOrEqual(2);
+    expect(sameVentureAtOnce).toBe(false);
   });
 
   it('daily maintenance distils idle conversations no trigger covered (the backstop)', async () => {

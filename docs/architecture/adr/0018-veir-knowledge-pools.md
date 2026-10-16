@@ -88,7 +88,8 @@ Knowledge comes in three trust levels, and the prompt labels each one:
   - lazily when the next conversation starts and the previous digest is still missing.
 
   The daily maintenance job is the backstop: it distills a bounded number of conversations that are
-  idle and still undistilled (for example after a failed job).
+  idle and still undistilled (for example after a failed job, or jobs skipped on a kill-switch or spend-cap
+  day), several ventures at once, and comes back the same day while its time runs out with some left.
 
 - One structured model call (usage purpose `distill`, under the daily caps and the kill switch) returns
   the digest, a notebook delta, at most 3 memory candidates and at most 2 lesson candidates.

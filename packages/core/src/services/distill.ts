@@ -97,7 +97,8 @@ export interface DistillService {
   distillSession(job: DistillJobInput, options?: DistillRunOptions): Promise<DistillOutcome>;
   /**
    * The backstop: distils up to `backstopBatch` standard conversations that are idle (or ended) and have
-   * turns no digest covers, oldest first, while the deadline leaves time for another one.
+   * turns no digest covers, oldest first, a few ventures at once, while the deadline leaves time for
+   * another one. `deferred` counts the ones left for the next run.
    */
   backstop(options: {
     readonly requestId: string;
@@ -165,6 +166,12 @@ export class RetryableDistillError extends Error {
 
 /** Time a distillation needs to start (model call with its fallback, plus the writes). */
 const MIN_DISTILL_BUDGET_MS = 45_000;
+/**
+ * Conversations the backstop distils at once (each a model call at a time), from different ventures. Its
+ * spend per run stays bounded: at most `backstopBatch` conversations of MAX_PARTS_PER_JOB parts each, all
+ * within the daily caps (checked before every part).
+ */
+const BACKSTOP_LANES = 3;
 /** Margin kept before a deadline: the model call is cancelled this long before it. */
 const DEADLINE_MARGIN_MS = 5_000;
 /** How long a run without a deadline holds its claim on the conversation (a run with one: past it). */
@@ -964,11 +971,7 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
         { transaction: false },
       );
       report.candidates = candidates.length;
-      for (const [index, candidate] of candidates.entries()) {
-        if (deadline !== undefined && deadline - Date.now() < MIN_DISTILL_BUDGET_MS) {
-          report.deferred = candidates.length - index;
-          break;
-        }
+      const distilOne = async (candidate: sessionsRepo.DistillationCandidate): Promise<void> => {
         try {
           const outcome = await distillSession(
             { sessionId: candidate.sessionId, requestId },
@@ -983,7 +986,28 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
             error: err instanceof Error ? err.name : 'unknown',
           });
         }
+      };
+      // Oldest first, several ventures at once so the run drains what its time allows, but one conversation
+      // per venture at a time: a venture's conversations share its notebook, and concurrent writes would only
+      // make each other run again. A conversation starts only while the deadline leaves time for it.
+      const queue = [...candidates];
+      const running = new Map<string, Promise<void>>();
+      const timeLeft = (): boolean =>
+        deadline === undefined || deadline - Date.now() >= MIN_DISTILL_BUDGET_MS;
+      while (queue.length > 0 && timeLeft()) {
+        const index = queue.findIndex((c) => !running.has(c.ventureId));
+        const candidate = running.size < BACKSTOP_LANES && index >= 0 ? queue.splice(index, 1)[0] : undefined;
+        if (candidate === undefined) {
+          await Promise.race(running.values());
+          continue;
+        }
+        running.set(
+          candidate.ventureId,
+          distilOne(candidate).finally(() => running.delete(candidate.ventureId)),
+        );
       }
+      await Promise.all(running.values());
+      report.deferred = queue.length;
       logger.info('distill.backstop_done', { requestId, ...report });
       return report;
     },

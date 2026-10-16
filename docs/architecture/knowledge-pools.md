@@ -259,8 +259,11 @@ Migration 0005 (`0005_wave1_fixes`, expand-only and re-runnable, `migrate-0005.d
     the last 480 s), and a job whose conversation has more turns since is `superseded`;
   - when a conversation ends, immediately;
   - for the person's previous conversation when they start the next one, if it is idle and undistilled;
-  - in daily maintenance, the backstop: a bounded number of idle, undistilled conversations. The 15-minute
-    `DistillSweep` schedule ships **disabled** ([ADR-0018](adr/0018-veir-knowledge-pools.md)).
+  - in daily maintenance, the backstop: up to 50 idle, undistilled conversations, three ventures at a time
+    (one conversation per venture, which shares its notebook), while the run's time allows. When time runs
+    out with conversations left, the maintenance message comes back after the queue's visibility timeout (up
+    to its last receive), so a backlog (after a kill-switch or spend-cap day) drains the same day. The
+    15-minute `DistillSweep` schedule ships **disabled** ([ADR-0018](adr/0018-veir-knowledge-pools.md)).
 
   One run claims the conversation, checks the persona and its consent, and distils it in parts of at most 16
   turns, oldest first: each part's prompt carries the digest of the turns before it, and the digest written
