@@ -176,7 +176,7 @@ describe('migration 0004_veir_knowledge', () => {
   it('applies cleanly on top of 0001–0003 with existing data, as the non-superuser owner', async () => {
     const report = await migrate(t.db);
     // The later migrations follow in the same run (their own suites cover them).
-    expect(report.applied).toEqual(MIGRATIONS.slice(3).map((m) => m.version));
+    expect(report.applied).toEqual(MIGRATIONS.map((m) => m.version).filter((v) => v >= '0004'));
     expect(report.applied[0]).toBe('0004_veir_knowledge');
     expect(VEIR && splitStatements(VEIR.sql).length).toBeGreaterThan(40);
   });

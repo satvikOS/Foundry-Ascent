@@ -313,14 +313,17 @@ export function createPattern(
     readonly expiresAt?: string | Date | null;
     readonly personaId?: string | null;
     readonly origin?: PatternRecord['origin'];
+    /** The conversation a distilled draft came from (migration 0007): deleting it withdraws the draft. */
+    readonly sourceSessionId?: string | null;
   },
 ): Promise<PatternRecord> {
   return queryOne(
     ex,
     `INSERT INTO patterns (id, tenant_id, persona_id, origin, title, context, signal, intervention, outcome, limits,
-                           source_class, status, owner_id, expires_at)
+                           source_class, status, owner_id, expires_at, source_session_id)
      VALUES (coalesce(:id, gen_random_uuid()), :tenantId, :personaId, coalesce(:origin, 'authored'), :title, :context,
-             :signal, :intervention, :outcome, :limits, :sourceClass, coalesce(:status, 'draft'), :ownerId, :expiresAt)
+             :signal, :intervention, :outcome, :limits, :sourceClass, coalesce(:status, 'draft'), :ownerId, :expiresAt,
+             :sourceSessionId)
      RETURNING ${PATTERN_COLUMNS}`,
     {
       id: p.nullable.uuid(input.id),
@@ -337,6 +340,7 @@ export function createPattern(
       status: p.nullable.text(input.status),
       ownerId: p.nullable.uuid(input.ownerId),
       expiresAt: p.nullable.ts(input.expiresAt),
+      sourceSessionId: p.nullable.uuid(input.sourceSessionId),
     },
     decodePattern,
     'createPattern',

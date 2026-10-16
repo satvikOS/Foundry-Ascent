@@ -96,6 +96,27 @@ export const CoreConfig = z.object({
       .min(3_600)
       .max(30 * 86_400),
   }),
+  distillation: z
+    .object({
+      /**
+       * Delay of the distillation queued after every completed turn (9 min, under Aurora's 10-minute
+       * auto-pause, so the job finds the database awake). Each turn queues its own job; only the last one of
+       * a conversation finds it idle.
+       */
+      turnDelaySeconds: z.number().int().min(1).max(900),
+      /**
+       * A conversation with a turn this recent is still active (8 min): a delayed job skips it, because the
+       * job queued by the later turn covers it.
+       */
+      activeWindowSeconds: z.number().int().min(0).max(3_600),
+      /** Conversations one backstop run (daily maintenance, or the sweep message) distils at most (50). */
+      backstopBatch: z.number().int().min(1).max(500),
+      /** AI memory proposals nobody acted on for this many days expire (30). */
+      proposalTtlDays: z.number().int().min(1).max(365),
+    })
+    .refine((d) => d.activeWindowSeconds < d.turnDelaySeconds, {
+      message: 'activeWindowSeconds must be shorter than turnDelaySeconds',
+    }),
 });
 export type CoreConfig = z.infer<typeof CoreConfig>;
 
@@ -132,6 +153,7 @@ export const DEFAULT_CORE_CONFIG: CoreConfig = {
   uploads: { presignTtlSeconds: 5 * 60 },
   escalations: { businessTimeZone: 'America/New_York' },
   maintenance: { ephemeralIdleSeconds: 24 * 3_600 },
+  distillation: { turnDelaySeconds: 540, activeWindowSeconds: 480, backstopBatch: 50, proposalTtlDays: 30 },
 };
 
 type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? Partial<T[K]> : T[K] };
@@ -167,7 +189,8 @@ function intFrom(env: EnvLike, name: string, fallback: number): number {
 /**
  * The single place where packages/core reads environment variables (runtime contract): APP_ENV,
  * APP_VERSION, HOME_TENANT_SLUG, SITE_ORIGIN, plus optional tuning knobs
- * (CORE_TURN_RATE_LIMIT, CORE_REVIEW_SAMPLE_RATE_PCT, CORE_SESSION_CACHE_SECONDS).
+ * (CORE_TURN_RATE_LIMIT, CORE_REVIEW_SAMPLE_RATE_PCT, CORE_SESSION_CACHE_SECONDS, and for local demos
+ * CORE_DISTILL_DELAY_SECONDS / CORE_DISTILL_ACTIVE_SECONDS).
  */
 export function loadConfig(env: EnvLike): CoreConfig {
   const appEnv = env.APP_ENV ?? 'development';
@@ -188,6 +211,18 @@ export function loadConfig(env: EnvLike): CoreConfig {
       rateLimit: intFrom(env, 'CORE_TURN_RATE_LIMIT', DEFAULT_CORE_CONFIG.turns.rateLimit),
       reviewSampleRate:
         intFrom(env, 'CORE_REVIEW_SAMPLE_RATE_PCT', DEFAULT_CORE_CONFIG.turns.reviewSampleRate * 100) / 100,
+    },
+    distillation: {
+      turnDelaySeconds: intFrom(
+        env,
+        'CORE_DISTILL_DELAY_SECONDS',
+        DEFAULT_CORE_CONFIG.distillation.turnDelaySeconds,
+      ),
+      activeWindowSeconds: intFrom(
+        env,
+        'CORE_DISTILL_ACTIVE_SECONDS',
+        DEFAULT_CORE_CONFIG.distillation.activeWindowSeconds,
+      ),
     },
   });
 }

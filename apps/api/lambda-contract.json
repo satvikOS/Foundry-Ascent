@@ -57,7 +57,7 @@
     "sseKeepAliveSeconds": 15
   },
   "worker": {
-    "$comment": "Bodies of the jobs-queue messages the EventBridge Scheduler schedules send (infra app-stack.ts). dailyMaintenanceMessage: once a day, ephemeral-session expiry and redaction (a maintenance job). distillSweepMessage: every few minutes (config/production.json distillation), the worker enqueues distillation for conversations that went idle.",
+    "$comment": "Bodies of the jobs-queue messages the EventBridge Scheduler schedules send (infra app-stack.ts). dailyMaintenanceMessage: once a day, ephemeral-session expiry and redaction (a maintenance job). distillSweepMessage: on the distillation schedule when enabled (config/production.json distillation), the worker distils a bounded batch of idle, undistilled conversations inline (it never enqueues).",
     "dailyMaintenanceMessage": { "type": "maintenance", "task": "daily" },
     "distillSweepMessage": { "type": "distill_sweep" }
   }

@@ -11,7 +11,7 @@ import { type z } from 'zod';
 import { col, type RawRow } from '../columns.js';
 import { type SqlExecutor, type SystemExecutor } from '../executor.js';
 import { p } from '../params.js';
-import { clampLimit, fetchByIdsInBatches, queryFirst, queryOne, queryRows } from './common.js';
+import { clampLimit, fetchByIdsInBatches, queryFirst, queryNumber, queryOne, queryRows } from './common.js';
 import { EPHEMERAL_REDACTION_TEXT } from './turns.js';
 
 type CoachModeValue = z.infer<typeof CoachMode>;
@@ -513,6 +513,149 @@ export function listDistillationCandidates(
       tenantId: col.uuid.decode(r.tenant_id, 'tenant_id'),
       ventureId: col.uuid.decode(r.venture_id, 'venture_id'),
       turnCount: col.int.decode(r.turn_count, 'turn_count'),
+    }),
+  );
+}
+
+/** A conversation as distillation sees it (system executor: deleted conversations included). */
+export interface DistillState extends SessionRecord {
+  readonly deletedAt: string | null;
+  /** The persona of the conversation's pinned release (whose notebook it feeds). */
+  readonly personaId: string;
+  /** Completed turns now; the digest covers `distillVersion` of them. */
+  readonly completedTurns: number;
+}
+
+/**
+ * The distillation state of a conversation, or null when it does not exist. `lock` takes a row lock for the
+ * rest of the transaction, so a concurrent delete, digest deletion or second distillation waits for it.
+ */
+export function getDistillState(
+  ex: SqlExecutor,
+  sessionId: string,
+  options: { readonly lock?: boolean } = {},
+): Promise<DistillState | null> {
+  return queryFirst(
+    ex,
+    `SELECT ${COLUMNS}, s.deleted_at, r.persona_id,
+            (SELECT count(*) FROM turns t WHERE t.session_id = s.id AND t.status = 'completed') AS completed_turns
+     FROM coaching_sessions s
+     JOIN persona_releases r ON r.id = s.persona_release_id
+     WHERE s.id = :id${options.lock ? '\n     FOR UPDATE OF s' : ''}`,
+    { id: p.uuid(sessionId) },
+    (r) => ({
+      ...decodeSession(r),
+      deletedAt: col.ts.nullable.decode(r.deleted_at, 'deleted_at'),
+      personaId: col.uuid.decode(r.persona_id, 'persona_id'),
+      completedTurns: col.int.decode(r.completed_turns, 'completed_turns'),
+    }),
+  );
+}
+
+/**
+ * Records that distillation covered `distillVersion` turns without a new digest (nothing worth keeping, or
+ * the result was blocked), so neither the delayed trigger nor the backstop retries it until a new turn.
+ * Returns whether it was recorded.
+ */
+export async function markSessionDistilled(
+  ex: SqlExecutor,
+  args: { sessionId: string; distillVersion: number },
+): Promise<boolean> {
+  const result = await ex.query(
+    `UPDATE coaching_sessions AS s
+     SET distilled_at = now(), distill_version = greatest(s.distill_version, :version)
+     WHERE s.id = :id AND s.privacy = 'standard' AND s.deleted_at IS NULL`,
+    { id: p.uuid(args.sessionId), version: p.int(Math.max(0, Math.trunc(args.distillVersion))) },
+  );
+  return result.rowCount > 0;
+}
+
+/**
+ * Claims a conversation for one distillation run (migration 0007) until `seconds` from now: only when it
+ * still has turns no digest covers (`turns` > its distill version) and no other run holds an unexpired claim.
+ * Returns whether this run got it. The claim is released by {@link releaseDistillClaim}, or lapses.
+ */
+export async function claimDistillation(
+  sx: SystemExecutor,
+  args: { sessionId: string; claimId: string; turns: number; seconds: number },
+): Promise<boolean> {
+  const result = await sx.query(
+    `UPDATE coaching_sessions AS s
+     SET distill_claim_id = :claim, distill_claimed_until = now() + make_interval(secs => :secs)
+     WHERE s.id = :id AND s.deleted_at IS NULL AND s.distill_version < :turns
+       AND (s.distill_claimed_until IS NULL OR s.distill_claimed_until <= now())`,
+    {
+      id: p.uuid(args.sessionId),
+      claim: p.uuid(args.claimId),
+      turns: p.int(args.turns),
+      secs: p.int(Math.max(1, Math.trunc(args.seconds))),
+    },
+  );
+  return result.rowCount > 0;
+}
+
+/** Releases a run's claim (no-op when the claim lapsed and another run took it). */
+export async function releaseDistillClaim(
+  sx: SystemExecutor,
+  args: { sessionId: string; claimId: string },
+): Promise<void> {
+  await sx.query(
+    `UPDATE coaching_sessions AS s SET distill_claim_id = NULL, distill_claimed_until = NULL
+     WHERE s.id = :id AND s.distill_claim_id = :claim`,
+    { id: p.uuid(args.sessionId), claim: p.uuid(args.claimId) },
+  );
+}
+
+/** Completed turns of a conversation (as visible to the executor). */
+export function countCompletedTurns(ex: SqlExecutor, sessionId: string): Promise<number> {
+  return queryNumber(
+    ex,
+    `SELECT count(*) AS n FROM turns t WHERE t.session_id = :id AND t.status = 'completed'`,
+    { id: p.uuid(sessionId) },
+  );
+}
+
+/** The latest earlier conversation of a person in a venture, with what distillation needs to decide on it. */
+export interface PreviousConversation {
+  readonly id: string;
+  readonly status: SessionRecord['status'];
+  readonly privacy: SessionRecord['privacy'];
+  readonly lastActivityAt: string;
+  readonly distillVersion: number;
+  readonly digestDeleted: boolean;
+  readonly completedTurns: number;
+}
+
+/**
+ * The person's most recent other conversation in the venture (deleted ones are hidden by RLS and excluded
+ * for the system executor), or null.
+ */
+export function getPreviousConversation(
+  ex: SqlExecutor,
+  args: { ventureId: string; startedBy: string; excludeSessionId: string },
+): Promise<PreviousConversation | null> {
+  return queryFirst(
+    ex,
+    `SELECT s.id, s.status, s.privacy, s.last_activity_at, s.distill_version,
+            s.digest_deleted_at IS NOT NULL AS digest_deleted,
+            (SELECT count(*) FROM turns t WHERE t.session_id = s.id AND t.status = 'completed') AS completed_turns
+     FROM coaching_sessions s
+     WHERE s.venture_id = :ventureId AND s.started_by = :startedBy AND s.id <> :except AND s.deleted_at IS NULL
+     ORDER BY s.last_activity_at DESC, s.id DESC
+     LIMIT 1`,
+    {
+      ventureId: p.uuid(args.ventureId),
+      startedBy: p.uuid(args.startedBy),
+      except: p.uuid(args.excludeSessionId),
+    },
+    (r) => ({
+      id: col.uuid.decode(r.id, 'id'),
+      status: col.enum(SessionStatus.options).decode(r.status, 'status'),
+      privacy: col.enum(SessionPrivacy.options).decode(r.privacy, 'privacy'),
+      lastActivityAt: col.ts.decode(r.last_activity_at, 'last_activity_at'),
+      distillVersion: col.int.decode(r.distill_version, 'distill_version'),
+      digestDeleted: col.bool.decode(r.digest_deleted, 'digest_deleted'),
+      completedTurns: col.int.decode(r.completed_turns, 'completed_turns'),
     }),
   );
 }

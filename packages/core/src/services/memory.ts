@@ -1,4 +1,6 @@
 import {
+  BatchMemoryActionRequest,
+  type BatchMemoryActionResponse,
   CreateMemoryRequest,
   MEMORY_LIST_EXCERPT_CHARS,
   MemoryAction,
@@ -14,9 +16,10 @@ import { type z } from 'zod';
 import { requireVentureAccess } from '../authz/venture-access.js';
 import { type RequestContext } from '../context.js';
 import { fail, parseInput } from '../errors.js';
-import { embedMemoryBestEffort } from '../internal/embeddings.js';
+import { embedMemoryBestEffort, type EmbeddableMemory } from '../internal/embeddings.js';
 import { audit, requireId, type Kit } from '../internal/kit.js';
 import { toMemoryView } from '../internal/views.js';
+import { addsNothingTo, MEMORY_DUPLICATE_COSINE, sameMemoryContent } from './memory-dedupe.js';
 
 type MemoryEventViewValue = z.infer<typeof MemoryEventView>;
 
@@ -57,6 +60,16 @@ export interface MemoryService {
     memoryId: string,
     action: z.input<typeof MemoryAction>,
   ): Promise<MemoryObjectView | null>;
+  /**
+   * Approves or rejects several pending proposals of one venture at once (founder/team, the "To review"
+   * queue), with the same authorization and audit as single actions. Ids that are not pending proposals of
+   * this venture visible to the caller are reported in `skippedIds`; the others change.
+   */
+  batch(
+    ctx: RequestContext,
+    ventureId: string,
+    input: z.input<typeof BatchMemoryActionRequest>,
+  ): Promise<BatchMemoryActionResponse>;
   /** Correction history across all versions (read). */
   history(ctx: RequestContext, memoryId: string): Promise<MemoryEventViewValue[]>;
 }
@@ -73,14 +86,86 @@ export type EvidenceIndex = ReadonlyMap<
   { readonly kind: string; readonly refId: string; readonly title: string }
 >;
 
+/** Venture items a new AI candidate is compared against (most recent first, content cut to an excerpt). */
+const DEDUPE_SCAN_LIMIT = 200;
+const DEDUPE_EXCERPT_CHARS = 1_000;
+
+/** What happened to a batch of AI memory candidates. */
+export interface ProposalResult {
+  /** New proposals plus pending proposals raised again: what the founder is asked to review. */
+  readonly records: memoryRepo.MemoryRecord[];
+  readonly created: number;
+  /** Candidates that repeated a pending AI proposal, which got the new source instead of a duplicate. */
+  readonly repeated: number;
+  /** Candidates that restated an item the venture already has or a person rejected. */
+  readonly dropped: number;
+}
+
+/** The conversation candidates are drawn from: its id and its turns' ids, and who spoke in it. */
+export interface CandidateConversation {
+  readonly sourceIds: ReadonlySet<string>;
+  /** Names the founder goes by in it (a candidate may name them where a turn said "I"). */
+  readonly speakers: readonly string[];
+}
+
+/** Whether an item is a pending AI proposal drawn from one of `sources` (a conversation and its turns). */
+function proposedFrom(item: memoryRepo.MemoryRecord, sources: ReadonlySet<string>): boolean {
+  return (
+    item.origin === 'ai' &&
+    item.status === 'proposed' &&
+    item.sourceRefs.some((r) => (r.kind === 'turn' || r.kind === 'session') && sources.has(r.id))
+  );
+}
+
 /**
- * Persists AI memory candidates as `proposed` items (never auto-confirmed; DB constraint backs this),
+ * The existing item a candidate restates: lexically ({@link sameMemoryContent}); a pending AI proposal of the
+ * same conversation the candidate adds nothing to ({@link addsNothingTo}, when `conversation` is given); or
+ * else, when the candidate has an embedding, the closest embedded item at {@link MEMORY_DUPLICATE_COSINE} or
+ * above. Null when it is new.
+ */
+async function findDuplicate(
+  tx: SqlExecutor,
+  ventureId: string,
+  candidate: {
+    readonly title: string;
+    readonly content: string;
+    readonly embedding: readonly number[] | null;
+  },
+  existing: readonly memoryRepo.MemoryRecord[],
+  conversation: CandidateConversation | undefined,
+): Promise<memoryRepo.MemoryRecord | null> {
+  const lexical = existing.find((e) => sameMemoryContent(e.content, candidate.content));
+  if (lexical !== undefined) return lexical;
+  if (conversation !== undefined) {
+    const restated = existing.find(
+      (e) =>
+        proposedFrom(e, conversation.sourceIds) &&
+        addsNothingTo(candidate.content, e.content, conversation.speakers),
+    );
+    if (restated !== undefined) return restated;
+  }
+  if (candidate.embedding === null) return null;
+  const [nearest] = await memoryRepo.nearestMemory(tx, { ventureId, embedding: candidate.embedding });
+  if (nearest === undefined || nearest.similarity < MEMORY_DUPLICATE_COSINE) return null;
+  return existing.find((e) => e.id === nearest.id) ?? (await memoryRepo.getMemory(tx, nearest.id)) ?? null;
+}
+
+/**
+ * Proposes AI memory candidates as `proposed` items (never auto-confirmed; the DB constraint backs this),
  * origin `ai`, with `visibility` until a founder approves (and optionally widens) them: `team` normally,
  * `founder_private` when they came from a turn or session that used founder_private evidence
- * (`candidateVisibility`), so they cannot restate a private item to the team. Evidence ids that are not
- * in the turn's evidence pack are ignored.
+ * (`candidateVisibility`), so they cannot restate a private item to the team. Evidence ids that are not in
+ * the evidence pack are ignored.
+ *
+ * Hygiene before every insert: a candidate that restates a pending AI proposal of the same visibility raises
+ * that proposal again (new source ref, fresh expiry clock) instead of adding a duplicate; one that restates
+ * anything else the venture has (confirmed, disputed, a person's proposal, or something a person rejected)
+ * is dropped. Comparison is lexical against the venture's recent items (`existing`, read here when not
+ * given), by containment against the pending proposals of the same conversation (`conversation`), and by
+ * cosine similarity when `embeddings` (one per candidate, unit-length) are given; new proposals store their
+ * embedding.
  */
-export async function persistMemoryCandidates(
+export async function proposeMemoryCandidates(
   tx: SqlExecutor,
   args: {
     readonly tenantId: string;
@@ -90,10 +175,27 @@ export async function persistMemoryCandidates(
     readonly evidence: EvidenceIndex;
     readonly source: CandidateSource;
     readonly visibility: 'founder_private' | 'team';
+    readonly existing?: readonly memoryRepo.MemoryRecord[];
+    readonly embeddings?: readonly (readonly number[] | null)[];
+    readonly conversation?: CandidateConversation;
   },
-): Promise<memoryRepo.MemoryRecord[]> {
-  const created: memoryRepo.MemoryRecord[] = [];
-  for (const candidate of args.candidates) {
+): Promise<ProposalResult> {
+  const usable = args.candidates.filter((c) => c.title.trim() !== '');
+  if (usable.length === 0) return { records: [], created: 0, repeated: 0, dropped: 0 };
+  const existing = [
+    ...(args.existing ??
+      (await memoryRepo.listMemory(tx, {
+        ventureId: args.ventureId,
+        statuses: memoryRepo.DEDUPE_MEMORY_STATUSES,
+        limit: DEDUPE_SCAN_LIMIT,
+        excerptChars: DEDUPE_EXCERPT_CHARS,
+      }))),
+  ];
+  const records: memoryRepo.MemoryRecord[] = [];
+  let created = 0;
+  let repeated = 0;
+  let dropped = 0;
+  for (const [index, candidate] of args.candidates.entries()) {
     const title = candidate.title.trim().slice(0, 200);
     const content = candidate.content.trim().slice(0, 8000);
     if (title === '') continue;
@@ -105,26 +207,70 @@ export async function persistMemoryCandidates(
       if (item.kind === 'memory') refs.push({ kind: 'memory', id: item.refId, label: key });
       else if (item.kind === 'chunk') refs.push({ kind: 'chunk', id: item.refId, label: key });
     }
-    created.push(
-      await memoryRepo.createMemory(tx, {
-        tenantId: args.tenantId,
-        ventureId: args.ventureId,
-        type: candidate.type,
-        title,
-        content,
-        status: 'proposed',
-        visibility: args.visibility,
-        confidence: Number.isFinite(candidate.confidence)
-          ? Math.min(1, Math.max(0, candidate.confidence))
-          : 0.5,
-        origin: 'ai',
-        createdBy: args.createdBy,
-        sourceRefs: refs,
-        attributes: { evidence_keys: keys },
-      }),
+    const confidence = Number.isFinite(candidate.confidence)
+      ? Math.min(1, Math.max(0, candidate.confidence))
+      : 0.5;
+    const embedding = args.embeddings?.[index] ?? null;
+    const duplicate = await findDuplicate(
+      tx,
+      args.ventureId,
+      { title, content, embedding },
+      existing,
+      args.conversation,
     );
+    if (duplicate !== null) {
+      const pendingAi =
+        duplicate.status === 'proposed' &&
+        duplicate.origin === 'ai' &&
+        duplicate.visibility === args.visibility &&
+        !records.some((r) => r.id === duplicate.id);
+      const again = pendingAi
+        ? await memoryRepo.repeatProposal(tx, {
+            memoryId: duplicate.id,
+            actorId: args.createdBy,
+            sourceRefs: refs,
+            confidence,
+          })
+        : null;
+      if (again === null) {
+        dropped += 1;
+      } else {
+        records.push(again);
+        repeated += 1;
+      }
+      continue;
+    }
+    const record = await memoryRepo.createMemory(tx, {
+      tenantId: args.tenantId,
+      ventureId: args.ventureId,
+      type: candidate.type,
+      title,
+      content,
+      status: 'proposed',
+      visibility: args.visibility,
+      confidence,
+      origin: 'ai',
+      createdBy: args.createdBy,
+      sourceRefs: refs,
+      attributes: { evidence_keys: keys },
+      embedding,
+    });
+    records.push(record);
+    existing.unshift(record);
+    created += 1;
   }
-  return created;
+  return { records, created, repeated, dropped };
+}
+
+/**
+ * {@link proposeMemoryCandidates} for callers that only need the proposals to review (turns and recaps):
+ * the new proposals and the pending ones raised again.
+ */
+export async function persistMemoryCandidates(
+  tx: SqlExecutor,
+  args: Parameters<typeof proposeMemoryCandidates>[1],
+): Promise<memoryRepo.MemoryRecord[]> {
+  return (await proposeMemoryCandidates(tx, args)).records;
 }
 
 const ACTION_EVENTS = {
@@ -346,6 +492,49 @@ export function createMemoryService(kit: Kit): MemoryService {
           scope.afterCommit(() => embedMemoryBestEffort(kit, ctx, [item]));
         }
         return result ? toMemoryView(result) : null;
+      });
+    },
+
+    batch: async (ctx, rawVentureId, rawInput) => {
+      const ventureId = requireId(rawVentureId, 'Venture');
+      const input = parseInput(BatchMemoryActionRequest, rawInput);
+      const ids = [...new Set(input.ids.map((id) => id.toLowerCase()))];
+      return kit.inRequest(ctx, async (scope) => {
+        const { tx } = scope;
+        await requireVentureAccess(scope, ventureId, 'write', { objectType: 'memory' });
+        const visible = new Map((await memoryRepo.getMemoryByIds(tx, ids)).map((m) => [m.id, m]));
+        const items: MemoryObjectView[] = [];
+        const skippedIds: string[] = [];
+        const confirmed: EmbeddableMemory[] = [];
+        for (const memoryId of ids) {
+          const current = visible.get(memoryId);
+          if (current?.ventureId !== ventureId || current.status !== 'proposed') {
+            skippedIds.push(memoryId);
+            continue;
+          }
+          const result =
+            input.action === 'approve'
+              ? await memoryRepo.approveMemory(tx, { memoryId, actorId: ctx.principalId })
+              : await memoryRepo.rejectMemory(tx, { memoryId, actorId: ctx.principalId, reason: null });
+          if (result === null) {
+            skippedIds.push(memoryId);
+            continue;
+          }
+          await audit(scope, {
+            action: ACTION_EVENTS[input.action],
+            outcome: 'succeeded',
+            ventureId,
+            objectType: 'memory',
+            objectId: memoryId,
+            metadata: { from: current.status, to: result.status, version: result.version, batch: true },
+          });
+          items.push(toMemoryView(result));
+          if (result.status === 'confirmed') {
+            confirmed.push({ id: result.id, ventureId, title: result.title, content: result.content });
+          }
+        }
+        if (confirmed.length > 0) scope.afterCommit(() => embedMemoryBestEffort(kit, ctx, confirmed));
+        return { items, skippedIds };
       });
     },
 

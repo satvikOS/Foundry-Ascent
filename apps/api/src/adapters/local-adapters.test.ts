@@ -2,13 +2,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import {
-  type JobMessage,
-  ObjectNotFoundError,
-  ObjectTooLargeError,
-  RetryableIngestionError,
-} from '@foundry/core';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { type JobMessage, ObjectNotFoundError, ObjectTooLargeError } from '@foundry/core';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { silentLogger } from '../logging.js';
 import { InlineJobQueue } from './inline-job-queue.js';
@@ -101,13 +96,20 @@ describe('InlineJobQueue', () => {
     ventureId: '22222222-2222-4222-8222-222222222222',
     requestId: 'req-1',
   };
+  const distill: JobMessage = {
+    type: 'distill_session',
+    sessionId: '44444444-4444-4444-8444-444444444444',
+    tenantId: '11111111-1111-4111-8111-111111111111',
+    ventureId: '22222222-2222-4222-8222-222222222222',
+    requestId: 'req-2',
+  };
 
-  it('processes jobs after enqueue returns and retries transient failures', async () => {
+  it('processes jobs after enqueue returns and retries the ones that ask for it', async () => {
     const queue = new InlineJobQueue({ logger: silentLogger, retryDelayMs: 1 });
     const attempts: number[] = [];
     queue.attach((_job, { attempt }) => {
       attempts.push(attempt);
-      return attempt < 2 ? Promise.reject(new RetryableIngestionError('transient')) : Promise.resolve();
+      return Promise.resolve(attempt < 2 ? 'retry' : 'done');
     });
     await queue.enqueue(job);
     expect(attempts).toEqual([]);
@@ -115,16 +117,69 @@ describe('InlineJobQueue', () => {
     expect(attempts).toEqual([1, 2]);
   });
 
-  it('does not retry permanent failures and refuses jobs without a processor', async () => {
+  it('stops after a crash and refuses jobs without a processor', async () => {
     const queue = new InlineJobQueue({ logger: silentLogger, retryDelayMs: 1 });
     await expect(queue.enqueue(job)).rejects.toThrow();
     let calls = 0;
     queue.attach(() => {
       calls += 1;
-      return Promise.reject(new Error('permanent'));
+      return Promise.reject(new Error('bug'));
     });
     await queue.enqueue(job);
     await queue.idle();
     expect(calls).toBe(1);
+  });
+
+  it('gives up after the last attempt', async () => {
+    const queue = new InlineJobQueue({ logger: silentLogger, retryDelayMs: 1, maxAttempts: 2 });
+    let calls = 0;
+    queue.attach(() => {
+      calls += 1;
+      return Promise.resolve('retry');
+    });
+    await queue.enqueue(job);
+    await queue.idle();
+    expect(calls).toBe(2);
+  });
+
+  it('runs a delayed job after its delay, like an SQS message with DelaySeconds', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const queue = new InlineJobQueue({ logger: silentLogger, retryDelayMs: 1 });
+      const seen: string[] = [];
+      queue.attach((j) => {
+        seen.push(j.type);
+        return Promise.resolve('done');
+      });
+      await queue.enqueue(distill, { delaySeconds: 540 });
+      await vi.advanceTimersByTimeAsync(539_000);
+      expect(seen).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1_000);
+      await queue.idle();
+      expect(seen).toEqual(['distill_session']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('drops delayed jobs on stop, refuses new ones and rejects delays SQS would refuse', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const queue = new InlineJobQueue({ logger: silentLogger, retryDelayMs: 1 });
+      let calls = 0;
+      queue.attach(() => {
+        calls += 1;
+        return Promise.resolve('done');
+      });
+      await expect(queue.enqueue(distill, { delaySeconds: 901 })).rejects.toThrow(RangeError);
+      await queue.enqueue(distill, { delaySeconds: 60 });
+      queue.stop();
+      await expect(queue.enqueue(job)).rejects.toThrow(/stopped/);
+      await vi.advanceTimersByTimeAsync(120_000);
+      await queue.idle();
+      expect(calls).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

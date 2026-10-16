@@ -72,7 +72,9 @@ describe('migration 0006_turn_engine', () => {
   it('applies on top of the previous migrations', async () => {
     expect(await settingValue('daily_usd_cap_global')).toBe(2);
     const report = await migrate(t.db);
-    expect(report.applied).toEqual(['0006_turn_engine']);
+    // The later migrations follow in the same run (their own suites cover them).
+    expect(report.applied).toEqual(MIGRATIONS.map((m) => m.version).filter((v) => v >= '0006'));
+    expect(report.applied[0]).toBe('0006_turn_engine');
   });
 
   it('raises the spend caps only where the old default is still stored', async () => {

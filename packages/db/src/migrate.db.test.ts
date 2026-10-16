@@ -17,14 +17,17 @@ afterAll(async () => {
 
 describe('migrate', () => {
   it('applies all bundled migrations as a non-superuser, then is a no-op', async () => {
-    const all = MIGRATIONS.map((m) => m.version);
-    expect(all.slice(0, 4)).toEqual([
+    const versions = MIGRATIONS.map((m) => m.version);
+    // Every shipped migration, pinned in version order (a missing one fails here); later ones follow.
+    expect(versions.slice(0, 6)).toEqual([
       '0001_init',
       '0002_rls_helpers',
       '0003_security_hardening',
       '0004_veir_knowledge',
+      '0006_turn_engine',
+      '0007_distillation',
     ]);
-    expect(t.migrations?.applied).toEqual(all);
+    expect(t.migrations?.applied).toEqual(versions);
     const role = await t.db.system((sx) =>
       sx.query('SELECT rolsuper, rolcreaterole FROM pg_roles WHERE rolname = current_user'),
     );
@@ -32,7 +35,7 @@ describe('migrate', () => {
     const events: MigrationEvent[] = [];
     const again = await migrate(t.db, { onEvent: (e) => events.push(e) });
     expect(again.applied).toEqual([]);
-    expect(again.alreadyApplied).toEqual(all);
+    expect(again.alreadyApplied).toEqual(versions);
     expect(again.unknown).toEqual([]);
     expect(events.every((e) => e.type === 'already_applied')).toBe(true);
     const rows = await t.db.system((sx) =>

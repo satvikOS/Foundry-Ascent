@@ -16,6 +16,7 @@ import { fail, parseInput } from '../errors.js';
 import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
 import { toEscalationView } from '../internal/views.js';
 import { assemblePacket, dueAtFor } from './escalation-packet.js';
+import { addResolutionToNotebook } from './notebook-advice.js';
 
 type RequestedRoleValue = escalationsRepo.EscalationRecord['requestedRole'];
 
@@ -304,6 +305,18 @@ export function createEscalationsService(kit: Kit): EscalationsService {
         }
         if (updated === null)
           throw fail.conflict('The escalation cannot change in its current state', 'invalid_transition');
+        if (action.action === 'resolve') {
+          // The advice reaches the vEIR notebook once the resolution is committed (owner role: the
+          // assignee cannot write the venture's notebook).
+          const resolved = updated;
+          scope.afterCommit(async () => {
+            await addResolutionToNotebook(kit, {
+              requestId: ctx.requestId,
+              escalation: resolved,
+              resolverId: ctx.principalId,
+            });
+          });
+        }
         metadata.to = updated.status;
         await audit(scope, {
           action: `escalation.${action.action}`,

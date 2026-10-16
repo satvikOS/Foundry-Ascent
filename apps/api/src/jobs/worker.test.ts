@@ -1,10 +1,26 @@
-import { type IngestionResult, RetryableIngestionError } from '@foundry/core';
+import {
+  type DistillBackstopReport,
+  type DistillJobInput,
+  type DistillOutcome,
+  type DistillRunOptions,
+  type IngestionResult,
+  type MaintenanceReport,
+  RetryableDistillError,
+  RetryableIngestionError,
+} from '@foundry/core';
 import type { SQSEvent, SQSRecord } from 'aws-lambda';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createJsonLogger } from '../logging.js';
 import { type BackfillReport } from './embedding-backfill.js';
-import { DAILY_MAINTENANCE_MESSAGE, processSqsBatch, type WorkerDeps } from './worker.js';
+import {
+  DAILY_MAINTENANCE_MESSAGE,
+  DISTILL_SWEEP_MESSAGE,
+  dispatchJob,
+  parseJob,
+  processSqsBatch,
+  type WorkerDeps,
+} from './worker.js';
 
 const job = (documentId: string) =>
   JSON.stringify({
@@ -54,18 +70,66 @@ function deps(lines: string[] = []) {
     },
   );
   const backfill = vi.fn(() => Promise.resolve(backfillReport));
-  const maintenance = vi.fn((_options: { readonly requestId: string }) =>
-    Promise.resolve({ ephemeralSessionsEnded: 1, ephemeralTurnsRedacted: 2 }),
+  const sweep: DistillBackstopReport = {
+    candidates: 2,
+    distilled: 1,
+    skipped: 1,
+    dropped: 0,
+    failed: 0,
+    deferred: 0,
+  };
+  const maintenance = vi.fn(
+    (_options: { readonly requestId: string; readonly deadline?: number }): Promise<MaintenanceReport> =>
+      Promise.resolve({
+        ephemeralSessionsEnded: 1,
+        ephemeralTurnsRedacted: 2,
+        proposalsExpired: 3,
+        distillation: sweep,
+      }),
+  );
+  const distillSession = vi.fn(
+    (job: DistillJobInput, _options?: DistillRunOptions): Promise<DistillOutcome> =>
+      job.sessionId === SESSION_RETRY
+        ? Promise.reject(new RetryableDistillError('model_unavailable'))
+        : Promise.resolve({
+            sessionId: job.sessionId,
+            status: 'distilled',
+            reason: null,
+            turns: 4,
+            notebookVersion: 2,
+            memoryProposed: 1,
+            memoryRepeated: 0,
+            lessonsDrafted: 1,
+          }),
+  );
+  const backstop = vi.fn(
+    (_options: { readonly requestId: string; readonly deadline?: number }): Promise<DistillBackstopReport> =>
+      Promise.resolve(sweep),
   );
   const value: WorkerDeps = {
     ingestion: { process },
+    distill: { distillSession, backstop },
     backfill,
     maintenance,
     logger: createJsonLogger({ level: 'debug', write: (l) => lines.push(l) }),
     maxReceiveCount: 3,
+    now: () => NOW,
   };
-  return { value, process, backfill, maintenance };
+  return { value, process, backfill, maintenance, distillSession, backstop };
 }
+
+const NOW = Date.parse('2026-10-16T12:00:00Z');
+const SESSION_OK = '55555555-5555-4555-8555-000000000001';
+const SESSION_RETRY = '55555555-5555-4555-8555-000000000002';
+const distillJob = (sessionId: string, turns?: number) =>
+  JSON.stringify({
+    type: 'distill_session',
+    sessionId,
+    tenantId: '11111111-1111-4111-8111-111111111111',
+    ventureId: '22222222-2222-4222-8222-222222222222',
+    ...(turns === undefined ? {} : { turns }),
+    requestId: null,
+  });
 
 describe('processSqsBatch', () => {
   it('reports only transient failures as batch item failures and passes SQS attempt counts', async () => {
@@ -103,6 +167,38 @@ describe('processSqsBatch', () => {
     expect(process).not.toHaveBeenCalled();
   });
 
+  it('runs daily maintenance first, so distillations never push it past its receive count', async () => {
+    const { value, maintenance, distillSession } = deps();
+    let remaining = 60_000;
+    distillSession.mockImplementation((j: DistillJobInput) => {
+      remaining = 20_000; // the first record used up the invocation
+      return Promise.resolve({
+        sessionId: j.sessionId,
+        status: 'distilled',
+        reason: null,
+        turns: 1,
+        notebookVersion: 1,
+        memoryProposed: 0,
+        memoryRepeated: 0,
+        lessonsDrafted: 0,
+      });
+    });
+    const result = await processSqsBatch(
+      value,
+      {
+        Records: [
+          record('d1', distillJob(SESSION_OK)),
+          record('d2', distillJob(SESSION_OK)),
+          record('m1', JSON.stringify(DAILY_MAINTENANCE_MESSAGE)),
+        ],
+      },
+      { remainingMs: () => remaining },
+    );
+    expect(maintenance).toHaveBeenCalledTimes(1);
+    expect(distillSession).toHaveBeenCalledTimes(1);
+    expect(result.batchItemFailures).toEqual([{ itemIdentifier: 'd2' }]);
+  });
+
   it('runs backfill jobs within the invocation budget and never retries them', async () => {
     const { value, backfill } = deps();
     backfill.mockRejectedValueOnce(new Error('bedrock throttled'));
@@ -123,7 +219,8 @@ describe('daily maintenance message (EventBridge schedule → jobs queue)', () =
     const body = JSON.stringify(DAILY_MAINTENANCE_MESSAGE);
     const ok = await processSqsBatch(value, { Records: [record('m1', body)] }, { remainingMs: () => 60_000 });
     expect(ok.batchItemFailures).toEqual([]);
-    expect(maintenance).toHaveBeenCalledWith({ requestId: 'sqs-m1' });
+    // The deadline leaves a margin before the Lambda timeout for the distillation backstop.
+    expect(maintenance).toHaveBeenCalledWith({ requestId: 'sqs-m1', deadline: NOW + 50_000 });
     expect(process).not.toHaveBeenCalled();
     expect(lines.join('\n')).toContain('worker.maintenance_done');
 
@@ -145,5 +242,98 @@ describe('daily maintenance message (EventBridge schedule → jobs queue)', () =
     );
     expect(result.batchItemFailures).toEqual([]);
     expect(maintenance).not.toHaveBeenCalled();
+  });
+});
+
+describe('distillation jobs', () => {
+  it('distils a queued conversation with the invocation deadline and retries transient failures', async () => {
+    const lines: string[] = [];
+    const { value, distillSession, process } = deps(lines);
+    const result = await processSqsBatch(
+      value,
+      { Records: [record('d1', distillJob(SESSION_OK, 4)), record('d2', distillJob(SESSION_RETRY), 2)] },
+      { remainingMs: () => 100_000 },
+    );
+    expect(result.batchItemFailures).toEqual([{ itemIdentifier: 'd2' }]);
+    // The turn count it was queued at (a later turn's job supersedes it) and the delivery attempt.
+    expect(distillSession).toHaveBeenNthCalledWith(
+      1,
+      { sessionId: SESSION_OK, requestId: 'sqs-d1', queuedTurns: 4 },
+      { deadline: NOW + 90_000, attempt: 1, maxAttempts: 3 },
+    );
+    expect(distillSession).toHaveBeenNthCalledWith(
+      2,
+      { sessionId: SESSION_RETRY, requestId: 'sqs-d2' },
+      { deadline: NOW + 90_000, attempt: 2, maxAttempts: 3 },
+    );
+    expect(process).not.toHaveBeenCalled();
+    const done = lines
+      .map((l) => JSON.parse(l) as Record<string, unknown>)
+      .find((l) => l.event === 'worker.distill_done');
+    expect(done).toMatchObject({
+      sessionId: SESSION_OK,
+      status: 'distilled',
+      memoryProposed: 1,
+      lessonsDrafted: 1,
+    });
+    expect(lines.join('\n')).toContain('worker.distill_retry');
+  });
+
+  it('runs the sweep message inline (bounded backstop) and retries it when it fails', async () => {
+    const lines: string[] = [];
+    const { value, backstop } = deps(lines);
+    expect(DISTILL_SWEEP_MESSAGE).toEqual({ type: 'distill_sweep' });
+    const body = JSON.stringify(DISTILL_SWEEP_MESSAGE);
+    const ok = await processSqsBatch(value, { Records: [record('s1', body)] }, { remainingMs: () => 60_000 });
+    expect(ok.batchItemFailures).toEqual([]);
+    expect(backstop).toHaveBeenCalledWith({ requestId: 'sqs-s1', deadline: NOW + 50_000 });
+    expect(lines.join('\n')).toContain('worker.distill_sweep_done');
+
+    backstop.mockRejectedValueOnce(new Error('database still resuming'));
+    const failed = await processSqsBatch(
+      value,
+      { Records: [record('s2', body)] },
+      { remainingMs: () => 60_000 },
+    );
+    expect(failed.batchItemFailures).toEqual([{ itemIdentifier: 's2' }]);
+  });
+
+  it('drops distillation messages without a valid session id', async () => {
+    const { value, distillSession } = deps();
+    const result = await processSqsBatch(
+      value,
+      { Records: [record('d3', JSON.stringify({ type: 'distill_session', sessionId: 'abc' }))] },
+      { remainingMs: () => 60_000 },
+    );
+    expect(result.batchItemFailures).toEqual([]);
+    expect(distillSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('dispatchJob (shared by the worker and the local dev server)', () => {
+  it('handles every job type the worker parses', async () => {
+    const { value, process, distillSession, backstop, maintenance, backfill } = deps();
+    const ctx = { requestId: 'r', attempt: 1, deadline: NOW + 60_000, log: value.logger };
+    const bodies = [job(DOC_OK), distillJob(SESSION_OK), JSON.stringify(DISTILL_SWEEP_MESSAGE)];
+    bodies.push(JSON.stringify(DAILY_MAINTENANCE_MESSAGE), JSON.stringify({ type: 'backfill_embeddings' }));
+    bodies.push(
+      JSON.stringify({
+        type: 'ingest_knowledge_source',
+        sourceId: DOC_OK,
+        tenantId: '11111111-1111-4111-8111-111111111111',
+        personaId: '22222222-2222-4222-8222-222222222222',
+        requestId: null,
+      }),
+    );
+    for (const body of bodies) {
+      const parsed = parseJob(body);
+      expect(parsed, body).not.toBeNull();
+      if (parsed) expect((await dispatchJob(value, parsed, ctx)).outcome).toBe('done');
+    }
+    expect(process).toHaveBeenCalledTimes(2);
+    expect(distillSession).toHaveBeenCalledTimes(1);
+    expect(backstop).toHaveBeenCalledTimes(1);
+    expect(maintenance).toHaveBeenCalledTimes(1);
+    expect(backfill).toHaveBeenCalledTimes(1);
   });
 });

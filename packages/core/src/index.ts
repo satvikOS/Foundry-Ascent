@@ -19,6 +19,7 @@ export {
   IngestDocumentJob,
   IngestKnowledgeSourceJob,
   JobMessage,
+  MAX_JOB_DELAY_SECONDS,
   ObjectNotFoundError,
   ObjectTooLargeError,
   noopCoreLogger,
@@ -27,6 +28,7 @@ export {
   type Clock,
   type CoreLogFields,
   type CoreLogger,
+  type EnqueueOptions,
   type ExtractedText,
   type IdGenerator,
   type JobQueue,
@@ -91,6 +93,14 @@ export {
 export { type LessonsService } from './services/lessons.js';
 export { MEMORY_PAGE_DEFAULT, type MemoryPage, type MemoryService } from './services/memory.js';
 export { type MaintenanceReport, type MaintenanceService } from './services/maintenance.js';
+export {
+  RetryableDistillError,
+  type DistillBackstopReport,
+  type DistillJobInput,
+  type DistillOutcome,
+  type DistillRunOptions,
+  type DistillService,
+} from './services/distill.js';
 export { documentKey, storageFilename, type DocumentsService } from './services/documents.js';
 export { type EscalationsService } from './services/escalations.js';
 export { assemblePacket, dueAtFor, type PacketInput } from './services/escalation-packet.js';
