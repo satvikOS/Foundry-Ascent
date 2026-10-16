@@ -281,7 +281,8 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
   confirm before relying on them)", the last three digests of other conversations and the open
   commitments. Every turn of a standard conversation also starts its final user message with
   **"## Where you left off"** (`orchestrator/continuity-prompt.ts`, data from `continuity.ts`): the person's
-  latest earlier conversation of the venture with this vEIR (and a teammate's when more recent), when it was
+  latest earlier conversation of the venture with any of its vEIRs (and a teammate's when more recent; one with a
+  previous coach is carried over as the founder's history, never as this vEIR's own), when it was
   ("about 20 minutes ago", "yesterday"), on a call or not, ended or left open, its digest when distilled and
   otherwise its last six exchanges as they were said, plus the notebook's open threads; escaped, untrusted
   data within 4 000 characters. It is read in two indexed statements in a transaction of its own, alongside
@@ -289,9 +290,12 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
   what was said in it. Temporary and deleted conversations and other ventures are never read; a temporary
   conversation reads nothing. A new standard conversation opens with the notebook's next opener when a person
   wrote it, when it was drawn from the person's latest conversation or when nothing was said since it was
-  written; otherwise with a line built from that latest conversation ("Good to have you back. Last time
+  written (never when it only repeats the question that conversation ended on); otherwise with a line built from
+  that latest conversation ("Good to have you back. Last time
   (about 3 minutes ago, on a call), you asked “…”"), validated like any opener and stored with the
-  conversation it came from (`coaching_sessions.opener`). A call says it after introducing itself.
+  conversation it came from (`coaching_sessions.opener`). A call says it after introducing itself; a call that
+  starts a conversation nobody has said anything in chooses the line again at call start and keeps it as the
+  conversation's first message. `GET /ventures/:id/opener` previews it for New chat.
 - **Distillation** (purpose `distill`, the daily caps and the kill switch) runs from jobs only the API
   enqueues (the worker has no `sqs:SendMessage`):
   - after each completed turn, delayed 540 s (the backstop of a conversation left open); the worker skips
@@ -322,7 +326,9 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
 - **Memory hygiene**: a candidate that restates AI memory nobody approved or corrected (same key, Jaccard ≥
   0.9, cosine ≥ 0.92 once embedded, or all its content words in an item from the same conversation) adds its
   sources to that item instead of a duplicate; one that restates what a person made, approved, corrected or
-  rejected is dropped. The venture's AI memory without a vector is embedded before the comparison.
+  rejected is dropped. A turn embeds its candidates before keeping them; the venture's AI memory still without a
+  vector is embedded before a distillation compares. A candidate that nothing the founder said (or agreed to)
+  supports and that cites none of the venture's records is the coach's own advice and is not kept.
 - **Deletion**: deleting a conversation also withdraws its lesson drafts still in `draft` and erases the
   copies of an opener drawn from it, or of unknown origin, on the venture's other conversations.
 
