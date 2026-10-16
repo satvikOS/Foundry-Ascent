@@ -36,7 +36,7 @@ export function callBlocker(input: {
   if (!config.aiEnabled) {
     return {
       title: 'Calls are paused',
-      message: 'AI coaching is turned off for now. Your conversations are still here.',
+      message: 'AI is paused by an administrator. Your conversations are still here.',
       retry: false,
     };
   }

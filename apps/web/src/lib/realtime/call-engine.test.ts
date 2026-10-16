@@ -292,7 +292,10 @@ describe('CallEngine · typed fallback', () => {
     );
     await startLive(h);
     expect(h.state().phase).toBe('failed');
-    expect(h.state().error).toEqual({ message: expect.stringMatching(/turned off/) as string, retry: false });
+    expect(h.state().error).toEqual({
+      message: expect.stringMatching(/paused by an administrator/) as string,
+      retry: false,
+    });
     expect(h.context.closed).toBe(true);
     expect(h.track.stop).toHaveBeenCalled();
   });
