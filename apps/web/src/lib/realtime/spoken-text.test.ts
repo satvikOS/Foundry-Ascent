@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { openingText, speakableSentences, speakableText, splitSentences } from './spoken-text';
+import {
+  MIN_PASSAGE_CHARS,
+  openingText,
+  speakableSentences,
+  speakableText,
+  splitSentences,
+} from './spoken-text';
 
 describe('spoken text', () => {
   it('reads Markdown as plain text without citation keys', () => {
@@ -20,6 +26,20 @@ describe('spoken text', () => {
       'Done?',
     ]);
     expect(speakableSentences('   ')).toEqual([]);
+  });
+
+  it('joins a short sentence to its neighbour, since the server voices short passages only whole', () => {
+    expect(speakableSentences('Good. Pilot with one library first. Then ask. Yes.')).toEqual([
+      'Good. Pilot with one library first.',
+      'Then ask. Yes.',
+    ]);
+    expect(speakableSentences('Pilot with one library first. Yes.')).toEqual([
+      'Pilot with one library first. Yes.',
+    ]);
+    expect(speakableSentences('Yes. No.')).toEqual(['Yes. No.']);
+    for (const passage of speakableSentences('Sure. Ok. Try the pilot. Done. Fine.')) {
+      expect(passage.length).toBeGreaterThanOrEqual(MIN_PASSAGE_CHARS);
+    }
   });
 
   it('keeps the first sentences of a long answer', () => {

@@ -1,7 +1,8 @@
 /**
  * A reply as a call says it: plain sentences without citation keys or Markdown. The rules are the server's
- * (`speakableText` and `splitSentences` in core's spoken text), because an unsigned `POST /speech` passage must
- * be whole sentences of the stored spoken reply exactly as the server splits it.
+ * (`speakableText`, and the sentence rules of the calls backend), because `POST /speech` voices an unsigned
+ * passage only when it is whole sentences of the stored spoken reply read that way, and an interrupted
+ * reply's heard units are checked the same way.
  */
 
 /** Answer Markdown read as plain text: no citation keys, emphasis, headings, bullets or link targets. */
@@ -58,9 +59,28 @@ export function splitSentences(text: string): string[] {
   return sentences;
 }
 
-/** The sentences of a stored spoken reply, each a passage `POST /speech` accepts on its own. */
+/** The server voices a shorter unsigned passage only when it is the whole reply (no one-word splicing). */
+export const MIN_PASSAGE_CHARS = 12;
+
+/**
+ * The passages of a stored spoken reply, in order, each one `POST /speech` accepts on its own: a sentence,
+ * or a short sentence ("Good.") joined to the next so no passage is shorter than {@link MIN_PASSAGE_CHARS}.
+ */
 export function speakableSentences(spoken: string): string[] {
-  return splitSentences(speakableText(spoken));
+  const passages: string[] = [];
+  let open = '';
+  for (const sentence of splitSentences(speakableText(spoken))) {
+    open = open === '' ? sentence : `${open} ${sentence}`;
+    if (open.length >= MIN_PASSAGE_CHARS) {
+      passages.push(open);
+      open = '';
+    }
+  }
+  if (open === '') return passages;
+  // A short last sentence joins the passage before it.
+  const last = passages.pop();
+  passages.push(last === undefined ? open : `${last} ${open}`);
+  return passages;
 }
 
 /** The opening of a reply that has no spoken form: its first sentences (shown, never voiced). */
