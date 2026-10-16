@@ -488,7 +488,11 @@ describe('test bench: admission like a founder message', () => {
         response: null,
         evidence: [],
         blocked: { reason: 'crisis_support', supportMessage: CRISIS_SUPPORT_MESSAGE },
-        validator: { notes: ['crisis_support', 'no_model_call'] },
+        validator: {
+          notes: ['crisis_support', 'no_model_call'],
+          riskCategories: ['safety_wellbeing'],
+          escalationForced: true,
+        },
       });
       // No escalation, no turn, no usage: only the two audit events.
       expect(changed(before, await tableCounts())).toEqual({ audit_events: 2 });

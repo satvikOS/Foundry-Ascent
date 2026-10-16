@@ -272,7 +272,7 @@ export function createTestBench(kit: Kit, directory: DirectoryCache): TestBench 
     }
   }
 
-  function crisisResponse(admitted: Admitted, risk: RiskClassification | null): TestTurnResponse {
+  function crisisResponse(admitted: Admitted, risk: RiskClassification): TestTurnResponse {
     return {
       release: {
         id: admitted.release.id,
@@ -290,7 +290,7 @@ export function createTestBench(kit: Kit, directory: DirectoryCache): TestBench 
         escalationForced: true,
         identityViolation: false,
         crossVentureViolation: false,
-        riskCategories: risk?.categories ?? ['safety_wellbeing'],
+        riskCategories: risk.categories,
         notes: ['crisis_support', 'no_model_call'],
       }),
       blocked: { reason: 'crisis_support', supportMessage: CRISIS_SUPPORT_MESSAGE },
@@ -304,12 +304,13 @@ export function createTestBench(kit: Kit, directory: DirectoryCache): TestBench 
       const input = parseInput(TestTurnRequest, rawInput);
       const releaseId = requireId(input.releaseId, 'Persona release');
       // Crisis detection does not depend on venture names; it decides which gates apply.
-      const crisis = classifyRisk(input.text).crisis;
+      const firstRisk = classifyRisk(input.text);
+      const crisis = firstRisk.crisis;
       const runId = randomUUID();
       const admitted = await admit(ctx, { personaId, releaseId, runId, input, crisis });
       if (crisis) {
         await finished(ctx, runId, 'blocked', 'crisis', { modelCalled: false });
-        return crisisResponse(admitted, null);
+        return crisisResponse(admitted, firstRisk);
       }
 
       let outcome: auditRepo.AuditOutcome = 'failed';
