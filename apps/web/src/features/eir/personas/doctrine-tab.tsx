@@ -11,17 +11,9 @@ import { toast } from '@/components/ui/toast';
 import { useCreatePersonaRelease, usePersonaRelease } from '@/lib/api/hooks/eir';
 import { formatDate } from '@/lib/format';
 
+import { pendingDrafts } from './release-drafts';
 import { ReleaseEditor } from './release-editor';
 import { ReleaseContent } from './release-view';
-
-function newestDraftOf(persona: PersonaView) {
-  const activeVersion = persona.activeRelease?.version ?? 0;
-  return (
-    [...persona.releases]
-      .filter((r) => r.status === 'draft' && r.version > activeVersion)
-      .sort((a, b) => b.version - a.version)[0] ?? null
-  );
-}
 
 /**
  * Doctrine & style: what the vEIR believes and how it talks, as approved. Curators edit it here; an edit
@@ -37,7 +29,7 @@ export function DoctrineTab({
   const [editing, setEditing] = useState(false);
   const create = useCreatePersonaRelease(persona.id);
   const active = persona.activeRelease;
-  const draft = newestDraftOf(persona);
+  const draft = pendingDrafts(persona)[0] ?? null;
   // Edits continue from the newest draft when there is one, so nobody's unapproved work is lost.
   const draftRelease = usePersonaRelease(editing && draft ? draft.id : null);
   const nextVersion = Math.max(0, ...persona.releases.map((r) => r.version)) + 1;

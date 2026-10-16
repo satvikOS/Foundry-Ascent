@@ -11,6 +11,7 @@ import { ConsentIndicator } from './consent-indicator';
 import { needsReview } from './lesson-labels';
 import { librarySummary } from './library-labels';
 import type { PersonaTab } from './persona-tabs';
+import { pendingDrafts } from './release-drafts';
 
 function PoolTile({
   label,
@@ -67,9 +68,7 @@ export function OverviewTab({
   const library = usePersonaLibrary(persona.id);
   const lessons = usePersonaLessons(persona.id);
   const active = persona.activeRelease;
-  const drafts = persona.releases.filter(
-    (r) => r.status === 'draft' && r.version > (active?.version ?? 0),
-  ).length;
+  const drafts = pendingDrafts(persona).length;
   const pool = library.data ? librarySummary(library.data) : null;
   const published = lessons.data?.filter((l) => l.status === 'published').length;
   const toReview = lessons.data?.filter(needsReview).length ?? 0;

@@ -72,7 +72,8 @@ function AssignForm({
   const persona = options.find((p) => p.id === personaId) ?? null;
   const request = persona ? assignmentRequest(persona, eirId === NOBODY ? null : eirId) : null;
   const unchanged = request !== null && isCurrentAssignment(venture, request);
-  const changesVeir = persona !== null && persona.id !== venture.personaId;
+  // Any change, the reviewer alone included, starts a new assignment, which ends open conversations.
+  const endingWith = request !== null && !unchanged ? venture.personaName : null;
   const reviewers = eirProfiles.filter((e) => e.status === 'active');
 
   return (
@@ -98,8 +99,8 @@ function AssignForm({
       <DialogHeader>
         <DialogTitle>vEIR for {venture.name}</DialogTitle>
         <DialogDescription>
-          {changesVeir && venture.personaName
-            ? `Open conversations with ${venture.personaName} end at their next message.`
+          {endingWith
+            ? `Open conversations with ${endingWith} end at their next message.`
             : 'Who coaches this venture, and who reviews it.'}
         </DialogDescription>
       </DialogHeader>

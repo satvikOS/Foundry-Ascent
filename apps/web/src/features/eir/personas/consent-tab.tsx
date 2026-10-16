@@ -43,6 +43,7 @@ import {
   consentStatus,
   consentToForm,
   formToConsent,
+  reliedOnConsent,
   type ConsentFormValues,
 } from './consent-form';
 import { ConsentIndicator } from './consent-indicator';
@@ -91,8 +92,9 @@ function RecordConsentDialog({
         <DialogHeader>
           <DialogTitle>Record {eirName}’s consent</DialogTitle>
           <DialogDescription>
-            {current ? 'It replaces the consent in force. ' : ''}A voice or portrait it no longer covers is
-            removed.
+            {current
+              ? `${persona.name} relies on the new record from now on and drops a voice or portrait it doesn’t cover. The current record stays in force until revoked.`
+              : `${persona.name} relies on it from now on.`}
           </DialogDescription>
         </DialogHeader>
         <form
@@ -136,7 +138,8 @@ function RecordConsentDialog({
                         id={id}
                         className="mt-0.5"
                         ref={index === 0 ? field.ref : undefined}
-                        checked={field.value.includes(asset.value)}
+                        checked={asset.required === true || field.value.includes(asset.value)}
+                        disabled={asset.required === true}
                         aria-describedby={`${id}-desc`}
                         onCheckedChange={(checked) => {
                           field.onChange(
@@ -303,61 +306,73 @@ export function ConsentTab({ persona }: { persona: PersonaView }) {
   }
 
   const items = consents.data;
-  const current = items.find((c) => consentStatus(c) === 'in_force') ?? null;
+  const relied = reliedOnConsent(persona.id, items);
+  // The record a new one starts from: the one in use while it is in force, else any in force.
+  const current =
+    relied.state === 'in_force' || relied.state === 'no_doctrine'
+      ? relied.consent
+      : (items.find((c) => consentStatus(c) === 'in_force') ?? null);
   const activeDependents = (revoking?.personas ?? []).filter((p) => p.status === 'active');
+  const recordButton = canManage ? (
+    <Button
+      onClick={() => {
+        setRecording(true);
+      }}
+    >
+      <FilePlus2 aria-hidden />
+      Record consent
+    </Button>
+  ) : null;
 
   return (
     <div className="grid gap-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="flex items-center gap-2 text-small text-muted-foreground">
-          {current ? (
-            <FileCheck aria-hidden className="size-4 text-foreground" />
-          ) : (
-            <FileX aria-hidden className="size-4 text-warning" />
-          )}
-          {current
-            ? `${eirName}’s consent is in force.`
-            : `No consent in force. ${persona.name} can’t run without one.`}
-        </p>
-        {canManage ? (
-          <Button
-            onClick={() => {
-              setRecording(true);
-            }}
-          >
-            <FilePlus2 aria-hidden />
-            Record consent
-          </Button>
-        ) : null}
-      </div>
-      {canManage ? null : (
-        <p className="text-small text-muted-foreground">Only {eirName} can record or revoke their consent.</p>
-      )}
-
       {items.length === 0 ? (
         <EmptyState
           icon={FileX}
           size="sm"
           headingLevel={2}
           title="No consent recorded"
-          description={`${eirName} records consent before ${persona.name} can be approved or speak.`}
+          description={`${canManage ? '' : `Only ${eirName} can record it. `}${persona.name} can’t be approved or speak without it.`}
+          action={recordButton}
         />
       ) : (
-        <ul
-          aria-label="Consent records"
-          className="divide-y divide-border rounded-xl border border-border bg-card"
-        >
-          {items.map((consent) => (
-            <ConsentItem
-              key={consent.id}
-              consent={consent}
-              canRevoke={canManage}
-              onRevoke={() => {
-                setRevoking(consent);
-              }}
-            />
-          ))}
-        </ul>
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="grid gap-1">
+              <p className="flex items-center gap-2 text-small text-muted-foreground">
+                {relied.state === 'in_force' ? (
+                  <FileCheck aria-hidden className="size-4 text-foreground" />
+                ) : (
+                  <FileX aria-hidden className="size-4 text-warning" />
+                )}
+                {relied.state === 'in_force'
+                  ? `${eirName}’s consent is in force.`
+                  : relied.state === 'no_doctrine'
+                    ? `The consent in use doesn’t cover doctrine, so ${persona.name} can’t be approved or resumed.`
+                    : `No consent in force. ${persona.name} can’t run without one.`}
+              </p>
+              {canManage ? null : (
+                <p className="text-small text-muted-foreground">Only {eirName} can record or revoke it.</p>
+              )}
+            </div>
+            {recordButton}
+          </div>
+          <ul
+            aria-label="Consent records"
+            className="divide-y divide-border rounded-xl border border-border bg-card"
+          >
+            {items.map((consent) => (
+              <ConsentItem
+                key={consent.id}
+                consent={consent}
+                canRevoke={canManage}
+                onRevoke={() => {
+                  setRevoking(consent);
+                }}
+              />
+            ))}
+          </ul>
+        </>
       )}
 
       {canManage ? (

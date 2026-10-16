@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { defaultVeirName, eirsWithoutVeir, veirDisclosure } from './new-persona';
+import { defaultVeirName, eirsWithoutVeir, veirDisclosure, veirNameProblem } from './new-persona';
 import { eirProfile, GUIDE, IDS, persona, RUTH } from './test-fixtures';
 
 describe('new vEIR', () => {
@@ -32,5 +32,20 @@ describe('new vEIR', () => {
     expect(disclosure).toContain('It is not a person');
     expect(disclosure).toContain('including Noor');
     expect(disclosure.length).toBeLessThanOrEqual(500);
+  });
+
+  it('refuses a name founders could take for the EIR in person', () => {
+    const taken = [GUIDE, persona(), RUTH];
+    for (const name of ['Noor Example', 'Noor', 'noor example', 'Noor here', 'Noor Example (AI)']) {
+      expect(veirNameProblem(name, 'Noor Example', taken)).toBe(
+        "Include “vEIR” so founders never take it for Noor, e.g. Noor's vEIR.",
+      );
+    }
+    expect(veirNameProblem("Noor's vEIR", 'Noor Example', taken)).toBeNull();
+    expect(veirNameProblem('Noor Example VEIR', 'Noor Example', taken)).toBeNull();
+    expect(veirNameProblem("corin's veir", 'Noor Example', taken)).toBe(
+      'Another persona already uses this name.',
+    );
+    expect(veirNameProblem('ab', 'Noor Example', taken)).toBe('Use 3 to 80 characters.');
   });
 });

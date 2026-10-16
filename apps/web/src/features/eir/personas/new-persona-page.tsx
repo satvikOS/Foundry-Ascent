@@ -17,7 +17,7 @@ import { SelectField } from '@/features/admin/shared/form';
 import { usePersonas } from '@/lib/api/hooks/eir';
 import { useCreateEirPersona, useEirProfiles } from '@/lib/api/hooks/veir-pools';
 
-import { defaultVeirName, eirsWithoutVeir, veirDisclosure } from './new-persona';
+import { defaultVeirName, eirsWithoutVeir, veirDisclosure, veirNameProblem } from './new-persona';
 import { ReleaseEditor } from './release-editor';
 
 /**
@@ -76,16 +76,9 @@ export function NewPersonaPage({ tenant }: { tenant: string }) {
 
   const continueToDoctrine = () => {
     if (!eir) return;
-    if (trimmed.length < 3 || trimmed.length > 80) {
-      setNameError('Use 3 to 80 characters.');
-      return;
-    }
-    if (personas.data.some((p) => p.name.toLowerCase() === trimmed.toLowerCase())) {
-      setNameError('Another persona already uses this name.');
-      return;
-    }
-    setNameError(undefined);
-    setStep('doctrine');
+    const problem = veirNameProblem(trimmed, eir.displayName, personas.data);
+    setNameError(problem ?? undefined);
+    if (problem === null) setStep('doctrine');
   };
 
   return (

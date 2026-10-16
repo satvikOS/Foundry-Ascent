@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { jsonResponse, renderWithProviders, sentJson, stubFetch } from '@/features/admin/shared/test-utils';
 
-import { consentStatus, consentToForm, formToConsent } from './consent-form';
+import { ConsentForm, consentStatus, consentToForm, formToConsent, reliedOnConsent } from './consent-form';
 import { ConsentTab } from './consent-tab';
 import { IDS, persona } from './test-fixtures';
 
@@ -32,6 +32,31 @@ describe('consent form', () => {
       evidenceRef: null,
       expiresAt: null,
     });
+  });
+
+  it('always covers doctrine: a vEIR can’t coach on material its EIR hasn’t consented to', () => {
+    const styleOnly = { ...consentToForm(null), assetTypes: ['style'] as ConsentView['assetTypes'] };
+    expect(ConsentForm.safeParse(styleOnly).success).toBe(false);
+    expect(ConsentForm.safeParse(consentToForm(null)).success).toBe(true);
+    // A legacy record without doctrine still prefills a valid one.
+    expect(consentToForm({ ...CONSENT, assetTypes: ['style', 'voice'] }).assetTypes).toEqual([
+      'doctrine',
+      'style',
+      'voice',
+    ]);
+  });
+
+  it('judges the consent the persona relies on, not just any record in force', () => {
+    const now = Date.parse('2026-10-20T00:00:00Z');
+    const unlinked = { ...CONSENT, id: 'e3f40516-b7c8-4d9e-8f01-2b3c4d5e6f70', personas: [] };
+    expect(reliedOnConsent(IDS.corin, [CONSENT], now).state).toBe('in_force');
+    expect(reliedOnConsent(IDS.corin, [unlinked], now)).toEqual({ consent: null, state: 'none' });
+    expect(reliedOnConsent(IDS.corin, [{ ...CONSENT, assetTypes: ['style'] }, unlinked], now).state).toBe(
+      'no_doctrine',
+    );
+    expect(
+      reliedOnConsent(IDS.corin, [{ ...CONSENT, revokedAt: '2026-10-18T00:00:00Z' }, unlinked], now).state,
+    ).toBe('lapsed');
   });
 
   it('tells consent in force from revoked and expired', () => {
@@ -87,7 +112,11 @@ describe('ConsentTab', () => {
     renderWithProviders(<ConsentTab persona={persona()} />);
     await user.click(await screen.findByRole('button', { name: 'Record consent' }));
     const dialog = screen.getByRole('dialog', { name: 'Record Corin Halvorsen’s consent' });
-    // Prefilled from the consent in force.
+    expect(within(dialog).getByText(/The current record stays in force until revoked/)).toBeVisible();
+    // Doctrine is locked on; the rest is prefilled from the consent in use.
+    const doctrine = within(dialog).getByRole('checkbox', { name: 'Doctrine' });
+    expect(doctrine).toBeChecked();
+    expect(doctrine).toBeDisabled();
     expect(within(dialog).getByRole('checkbox', { name: 'Voice' })).toBeChecked();
     await user.click(within(dialog).getByRole('checkbox', { name: 'Likeness' }));
     await user.click(within(dialog).getByRole('button', { name: 'Record consent' }));
@@ -105,6 +134,36 @@ describe('ConsentTab', () => {
     });
   });
 
+  it('does not call a consent without doctrine in force', async () => {
+    stubFetch().mockResolvedValue(jsonResponse({ items: [{ ...CONSENT, assetTypes: ['style'] }] }));
+    renderWithProviders(<ConsentTab persona={persona({ hasConsent: false })} />);
+    expect(
+      await screen.findByText(
+        "The consent in use doesn’t cover doctrine, so Corin's vEIR can’t be approved or resumed.",
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText(/consent is in force/)).toBeNull();
+  });
+
+  it('says once that there is no consent, with the action where it applies', async () => {
+    // A fresh response per request: a body can be read once.
+    stubFetch().mockImplementation(() => Promise.resolve(jsonResponse({ items: [] })));
+    const first = renderWithProviders(<ConsentTab persona={persona({ hasConsent: false })} />);
+    expect(await screen.findByRole('heading', { name: 'No consent recorded' })).toBeVisible();
+    expect(screen.getByText("Corin's vEIR can’t be approved or speak without it.")).toBeVisible();
+    expect(screen.queryByText(/No consent in force/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Record consent' })).toBeVisible();
+    first.unmount();
+
+    renderWithProviders(<ConsentTab persona={persona({ hasConsent: false, canManageConsent: false })} />);
+    expect(
+      await screen.findByText(
+        "Only Corin Halvorsen can record it. Corin's vEIR can’t be approved or speak without it.",
+      ),
+    ).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Record consent' })).toBeNull();
+  });
+
   it('never asks for records the viewer may not see, and hides actions they may not take', async () => {
     const fetchMock = stubFetch();
     fetchMock.mockResolvedValue(jsonResponse({ items: [CONSENT] }));
@@ -116,7 +175,7 @@ describe('ConsentTab', () => {
     first.unmount();
 
     renderWithProviders(<ConsentTab persona={persona({ canManageConsent: false })} />);
-    expect(await screen.findByText('Only Corin Halvorsen can record or revoke their consent.')).toBeVisible();
+    expect(await screen.findByText('Only Corin Halvorsen can record or revoke it.')).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Record consent' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Revoke…' })).toBeNull();
   });

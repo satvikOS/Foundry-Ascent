@@ -80,6 +80,29 @@ describe('AssignDialog (vEIRs & assignments)', () => {
     expect(sentJson(init)).toEqual({ personaId: IDS.ruth, eirProfileId: IDS.ruthEir });
   });
 
+  it('warns that a reviewer-only change also ends open conversations', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <AssignDialog
+        venture={{
+          ...QUIETQUAD,
+          personaId: IDS.guide,
+          personaName: 'Foundry Guide',
+          reviewingEir: { id: IDS.ruthEir, displayName: 'Ruth Abernathy-Song' },
+        }}
+        personas={[GUIDE, persona(), RUTH]}
+        eirProfiles={PROFILES}
+        onClose={vi.fn()}
+      />,
+    );
+    const warning = 'Open conversations with Foundry Guide end at their next message.';
+    expect(screen.queryByText(warning)).toBeNull();
+    await user.click(screen.getByRole('combobox', { name: 'Reviewed by' }));
+    await user.click(screen.getByRole('option', { name: 'Corin Halvorsen' }));
+    expect(screen.getByText(warning)).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Assign' })).toBeEnabled();
+  });
+
   it('lets the program guide be reviewed by a chosen EIR or by nobody', async () => {
     const fetchMock = stubFetch();
     fetchMock.mockResolvedValue(jsonResponse({ ...QUIETQUAD, personaId: IDS.guide, reviewingEir: null }));

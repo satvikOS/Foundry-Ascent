@@ -4,11 +4,18 @@ import { z } from 'zod';
 import { dateInputToIso, parseCommaList } from '@/features/admin/shared/form';
 import { type RecordConsentInput } from '@/lib/api/hooks/veir-pools';
 
-export const CONSENT_ASSETS: readonly { value: ConsentAssetType; label: string; description: string }[] = [
+export const CONSENT_ASSETS: readonly {
+  value: ConsentAssetType;
+  label: string;
+  description: string;
+  /** Every record covers it: the vEIR can't coach without it. */
+  required?: true;
+}[] = [
   {
     value: 'doctrine',
     label: 'Doctrine',
-    description: 'The frameworks and judgement the vEIR is built from.',
+    description: 'Required. The frameworks and judgement the vEIR is built from.',
+    required: true,
   },
   { value: 'style', label: 'Style', description: 'How the EIR talks.' },
   { value: 'cases', label: 'Cases', description: 'Examples from the EIR’s own experience.' },
@@ -31,7 +38,9 @@ const list = (label: string) =>
 
 /** Record-consent form (mirrors CreateConsentRequest; the API validates again). */
 export const ConsentForm = z.object({
-  assetTypes: z.array(ConsentAssetType).min(1, 'Choose at least one thing the consent covers.'),
+  assetTypes: z
+    .array(ConsentAssetType)
+    .refine((assets) => assets.includes('doctrine'), 'A vEIR can’t coach without consent to its doctrine.'),
   approvedUses: list('uses'),
   audiences: list('audiences'),
   evidenceRef: z.string().trim().max(500, 'Use 500 characters or fewer.'),
@@ -42,10 +51,12 @@ export const ConsentForm = z.object({
 });
 export type ConsentFormValues = z.infer<typeof ConsentForm>;
 
-/** Prefill from the consent in force (a new record replaces it), or start with doctrine and style. */
+/** Prefill from the consent in use (the vEIR relies on the new record instead), or doctrine and style. */
 export function consentToForm(current: ConsentView | null): ConsentFormValues {
   return {
-    assetTypes: current ? [...current.assetTypes] : ['doctrine', 'style'],
+    assetTypes: current
+      ? ['doctrine', ...current.assetTypes.filter((a) => a !== 'doctrine')]
+      : ['doctrine', 'style'],
     approvedUses: current ? current.approvedUses.join(', ') : '',
     audiences: current ? current.audiences.join(', ') : '',
     evidenceRef: current?.evidenceRef ?? '',
@@ -65,7 +76,22 @@ export function formToConsent(values: ConsentFormValues): RecordConsentInput {
   };
 }
 
-export type ConsentState = 'in_force' | 'revoked' | 'expired';
+/**
+ * What the persona can run on: the consent it relies on (the one listing it as a dependent), and whether
+ * that record is in force and covers doctrine, as approval and resume require.
+ */
+export function reliedOnConsent(
+  personaId: string,
+  consents: readonly ConsentView[],
+  now = Date.now(),
+): { consent: ConsentView | null; state: 'in_force' | 'no_doctrine' | 'lapsed' | 'none' } {
+  const consent = consents.find((c) => c.personas?.some((p) => p.id === personaId)) ?? null;
+  if (consent === null) return { consent, state: 'none' };
+  if (consentStatus(consent, now) !== 'in_force') return { consent, state: 'lapsed' };
+  return { consent, state: consent.assetTypes.includes('doctrine') ? 'in_force' : 'no_doctrine' };
+}
+
+type ConsentState = 'in_force' | 'revoked' | 'expired';
 
 export function consentStatus(
   consent: Pick<ConsentView, 'revokedAt' | 'expiresAt'>,

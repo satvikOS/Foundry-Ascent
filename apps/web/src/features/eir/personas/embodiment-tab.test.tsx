@@ -1,4 +1,4 @@
-import type { PersonaEmbodiment } from '@foundry/contracts';
+import { DEFAULT_SPEECH_VOICE_ID, SPEECH_VOICE_IDS, type PersonaEmbodiment } from '@foundry/contracts';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
@@ -38,6 +38,20 @@ describe('EmbodimentTab (voice & face)', () => {
     const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
     expect(patch?.[0]).toBe(`/api/v1/personas/${IDS.corin}/embodiment`);
     expect(sentJson(patch?.[1])).toEqual({ voiceId: 'Ruth' });
+  });
+
+  it('offers every voice the speech service accepts, and still shows a saved voice it has dropped', async () => {
+    stubFetch().mockResolvedValue(jsonResponse({ ...EMBODIMENT, voiceId: 'Brian' }));
+    const user = userEvent.setup();
+    renderWithProviders(<EmbodimentTab persona={persona()} shortName="Corin" onOpenConsent={vi.fn()} />);
+    const voice = await screen.findByRole('combobox', { name: 'Voice on calls' });
+    expect(voice).toHaveTextContent('Brian (retired)');
+    await user.click(voice);
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual([
+      `Platform default (${DEFAULT_SPEECH_VOICE_ID})`,
+      ...SPEECH_VOICE_IDS,
+      'Brian (retired)',
+    ]);
   });
 
   it('keeps the platform voice until the consent covers voice', async () => {

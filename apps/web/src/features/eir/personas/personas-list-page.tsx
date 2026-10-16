@@ -17,6 +17,7 @@ import { shortPersonaName } from '@/lib/veir';
 import { ConsentIndicator } from './consent-indicator';
 import { eirsWithoutVeir } from './new-persona';
 import { PERSONA_KIND_LABELS } from './persona-labels';
+import { pendingDrafts } from './release-drafts';
 
 /** EIR studio → Personas: every vEIR and the program guide, with status, release, reach and consent. */
 export function PersonasListPage({ tenant, canCreate }: { tenant: string; canCreate: boolean }) {
@@ -52,7 +53,7 @@ export function PersonasListPage({ tenant, canCreate }: { tenant: string; canCre
         <EmptyState
           icon={UserSquare}
           title="No personas yet"
-          description="Create a vEIR to get started."
+          description={newVeir ? 'Create a vEIR to get started.' : undefined}
           action={newVeir}
         />
       ) : (
@@ -77,10 +78,7 @@ export function PersonasListPage({ tenant, canCreate }: { tenant: string; canCre
           </TableHeader>
           <TableBody>
             {personas.data.map((persona) => {
-              const activeVersion = persona.activeRelease?.version ?? 0;
-              const drafts = persona.releases.filter(
-                (r) => r.status === 'draft' && r.version > activeVersion,
-              ).length;
+              const drafts = pendingDrafts(persona).length;
               return (
                 <TableRow key={persona.id} className="relative">
                   <TableCell className="min-w-48">

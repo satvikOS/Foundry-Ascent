@@ -10,20 +10,24 @@ import { STATUS_DEFINITIONS } from '@/components/ui/status-badge';
 import { usePersonaRelease } from '@/lib/api/hooks/eir';
 import { formatDate } from '@/lib/format';
 
+import { isOutdatedDraft, pendingDrafts } from './release-drafts';
 import { ApproveReleaseDialog, approvalBlocker, ReleaseHistory } from './release-history';
 import { ReleaseContent } from './release-view';
 
 /**
  * A release opened for review: the newest draft by default, or any earlier release picked in the history.
  * Its full content comes from `GET /persona-releases/:id`, so a reviewer sees exactly what they approve.
- * `onApprove` is absent for people who can't approve (only the persona's curators can).
+ * `onApprove` is absent for people who can't approve (only the persona's curators can). A draft older than
+ * the active release is view only.
  */
 export function ReleaseReview({
+  persona,
   releaseId,
   blocker,
   onApprove,
   onClose,
 }: {
+  persona: Pick<PersonaView, 'activeRelease'>;
   releaseId: string;
   blocker: string | null;
   onApprove?: (release: PersonaReleaseView) => void;
@@ -55,20 +59,25 @@ export function ReleaseReview({
     );
   }
   const r = release.data;
-  const draft = r.status === 'draft';
+  const outdated = isOutdatedDraft(persona, r);
+  const draft = r.status === 'draft' && !outdated;
   return (
     <SectionCard
       title={
-        draft
-          ? `Draft v${String(r.version)} — ready for review`
-          : `Release v${String(r.version)} · ${STATUS_DEFINITIONS.personaRelease[r.status].label}`
+        outdated
+          ? `Draft v${String(r.version)} · outdated`
+          : draft
+            ? `Draft v${String(r.version)} — ready for review`
+            : `Release v${String(r.version)} · ${STATUS_DEFINITIONS.personaRelease[r.status].label}`
       }
       description={
-        draft
-          ? `Not live yet${r.createdBy ? ` · drafted by ${r.createdBy.displayName}` : ''}`
-          : r.approvedAt
-            ? `Approved ${formatDate(r.approvedAt)}${r.approvedBy ? ` by ${r.approvedBy.displayName}` : ''}`
-            : `Created ${formatDate(r.createdAt)}`
+        outdated
+          ? `Older than the active v${String(persona.activeRelease?.version ?? '')}, so it can’t be approved.`
+          : draft
+            ? `Not live yet${r.createdBy ? ` · drafted by ${r.createdBy.displayName}` : ''}`
+            : r.approvedAt
+              ? `Approved ${formatDate(r.approvedAt)}${r.approvedBy ? ` by ${r.approvedBy.displayName}` : ''}`
+              : `Created ${formatDate(r.createdAt)}`
       }
       className={draft ? 'border-dashed border-border-strong' : undefined}
       actions={
@@ -101,9 +110,7 @@ export function ReleaseReview({
 export function ReleasesTab({ persona }: { persona: PersonaView }) {
   const [pickedId, setPickedId] = useState<string | null>(null);
   const [approving, setApproving] = useState<PersonaReleaseView | null>(null);
-  const newestDraft =
-    [...persona.releases].filter((r) => r.status === 'draft').sort((a, b) => b.version - a.version)[0] ??
-    null;
+  const newestDraft = pendingDrafts(persona)[0] ?? null;
   const picked =
     pickedId !== null &&
     pickedId !== persona.activeRelease?.id &&
@@ -119,6 +126,7 @@ export function ReleasesTab({ persona }: { persona: PersonaView }) {
       {reviewId ? (
         <ReleaseReview
           key={reviewId}
+          persona={persona}
           releaseId={reviewId}
           blocker={approvalBlocker(persona)}
           onApprove={canApprove ? setApproving : undefined}

@@ -1,4 +1,4 @@
-import type { PersonaView } from '@foundry/contracts';
+import { DEFAULT_SPEECH_VOICE_ID, SPEECH_VOICE_IDS, type PersonaView } from '@foundry/contracts';
 import { useState } from 'react';
 
 import { announce } from '@/components/a11y/live-announcer';
@@ -10,29 +10,17 @@ import { toast } from '@/components/ui/toast';
 import { MutationErrorAlert, SelectField } from '@/features/admin/shared/form';
 import { usePersonaEmbodiment, useUpdateEmbodiment } from '@/lib/api/hooks/veir-pools';
 
-/**
- * Voices the speech service accepts (Amazon Polly; packages/core/src/services/voices.ts is the authority
- * and refuses anything else). The first six use the generative engine, the rest neural.
- */
-export const SPEECH_VOICES = [
-  'Danielle',
-  'Joanna',
-  'Matthew',
-  'Ruth',
-  'Salli',
-  'Stephen',
-  'Gregory',
-  'Joey',
-  'Kendra',
-  'Kimberly',
-] as const;
-const DEFAULT_VOICE = 'Danielle';
 const PLATFORM_DEFAULT = 'default';
 
-const VOICE_OPTIONS = [
-  { value: PLATFORM_DEFAULT, label: `Platform default (${DEFAULT_VOICE})` },
-  ...SPEECH_VOICES.map((voice) => ({ value: voice, label: voice })),
-];
+/** The platform default, then every voice the speech service accepts (and a saved one it no longer does). */
+function voiceOptions(saved: string | null): { value: string; label: string }[] {
+  const offered: readonly string[] = SPEECH_VOICE_IDS;
+  return [
+    { value: PLATFORM_DEFAULT, label: `Platform default (${DEFAULT_SPEECH_VOICE_ID})` },
+    ...offered.map((voice) => ({ value: voice, label: voice })),
+    ...(saved !== null && !offered.includes(saved) ? [{ value: saved, label: `${saved} (retired)` }] : []),
+  ];
+}
 
 /** Voice & face: how the vEIR appears and sounds on calls. A chosen voice needs voice consent. */
 export function EmbodimentTab({
@@ -96,7 +84,7 @@ export function EmbodimentTab({
             setVoice(next);
             update.reset();
           }}
-          options={VOICE_OPTIONS}
+          options={voiceOptions(e.voiceId)}
           disabled={!canEdit || needsConsent}
           description={
             needsConsent

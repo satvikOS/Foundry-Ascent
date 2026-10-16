@@ -21,6 +21,7 @@ import { useApprovePersonaRelease } from '@/lib/api/hooks/eir';
 import { formatDate, pluralize } from '@/lib/format';
 
 import { CONSENT_NEEDED, consentState } from './persona-labels';
+import { isOutdatedDraft } from './release-drafts';
 
 type ReleaseSummary = PersonaView['releases'][number];
 
@@ -91,7 +92,7 @@ export function ApproveReleaseDialog({ persona, release, onClose, onApproved }: 
 
 /**
  * Every version of the persona with its status. Any release other than the active one can be opened for
- * review; drafts are approved from the review panel.
+ * review; drafts newer than the active release are approved from the review panel.
  */
 export function ReleaseHistory({
   persona,
@@ -112,12 +113,14 @@ export function ReleaseHistory({
         <ol aria-label="Releases" className="divide-y divide-border">
           {releases.map((release) => {
             const active = persona.activeRelease?.id === release.id;
+            const outdated = isOutdatedDraft(persona, release);
             const reviewing = reviewingId === release.id;
             return (
               <li key={release.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-5 py-3">
                 <span className="tabular w-8 text-small font-semibold">v{release.version}</span>
                 <StatusBadge kind="personaRelease" status={release.status} withTitle />
                 {active ? <Badge variant="outline">Active</Badge> : null}
+                {outdated ? <Badge variant="muted">Outdated</Badge> : null}
                 <span className="text-caption text-muted-foreground">
                   {release.approvedAt
                     ? `Approved ${formatDate(release.approvedAt)}`
@@ -134,7 +137,7 @@ export function ReleaseHistory({
                     }}
                   >
                     <Eye aria-hidden />
-                    {release.status === 'draft' ? 'Review' : 'View'}
+                    {release.status === 'draft' && !outdated ? 'Review' : 'View'}
                     <span className="sr-only"> v{release.version}</span>
                   </Button>
                 )}
