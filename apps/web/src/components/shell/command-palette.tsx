@@ -27,6 +27,7 @@ import {
   CommandShortcut,
 } from '@/components/ui/command';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
+import { useCallsAvailable } from '@/features/calls/calls-available';
 import { useRecentConversations } from '@/lib/api/hooks/sessions';
 import { ventureQueryOptions, useVentures } from '@/lib/api/hooks/ventures';
 import { canWrite, writesAnyVenture } from '@/lib/auth/roles';
@@ -85,6 +86,7 @@ export function CommandPalette({ me, workspace, open, onOpenChange, onOpenShortc
   }, [recents.items, searching]);
   const otherVentures = ventures.filter((v) => v.id !== ventureId);
   const writable = ventureId !== null && canWrite(me, ventureId);
+  const callable = useCallsAvailable(ventureId, writable);
 
   const run = (action: () => void) => {
     onOpenChange(false);
@@ -125,7 +127,7 @@ export function CommandPalette({ me, workspace, open, onOpenChange, onOpenShortc
                 <Hotkey binding="g n" />
               </CommandItem>
             ) : null}
-            {writable && veir ? (
+            {callable && veir ? (
               <CommandItem
                 value={`call ${veir.name} voice`}
                 onSelect={() => {

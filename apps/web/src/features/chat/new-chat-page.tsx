@@ -31,6 +31,7 @@ import { useHotkeys } from '@/lib/hooks/use-hotkeys';
 import { cn } from '@/lib/utils';
 import { veirDisplay } from '@/lib/veir';
 
+import { useCallsAvailable } from '../calls/calls-available';
 import { coachingAvailability } from '../coach/availability';
 import { AttachButton, AttachmentTray, useComposerAttachments } from './attachments';
 import { Composer, MAX_TURN_CHARS, modeToSend, type ComposerMode } from './composer';
@@ -128,6 +129,8 @@ function NewChat() {
   const veir = veirDisplay(venture.data);
   const notebook = useNotebook(ventureId, { enabled: veir !== null });
   const availability = venture.data ? coachingAvailability(me, venture.data) : null;
+  // New chat is for the venture team; its Call entry shows only while calls are on.
+  const callsAvailable = useCallsAvailable(ventureId, true);
   const createSession = useCreateSession(ventureId);
   const attachments = useComposerAttachments(ventureId);
 
@@ -298,7 +301,7 @@ function NewChat() {
             // Attached files go into the venture's Documents, which last: a temporary chat offers none.
             tools={temporary ? null : <AttachButton onFiles={attachments.attach} disabled={!available} />}
             actions={
-              available && veir ? (
+              available && callsAvailable && veir ? (
                 <SimpleTooltip content={`Call ${name}`}>
                   <Button asChild variant="subtle" size="icon-sm" className="rounded-full">
                     <Link

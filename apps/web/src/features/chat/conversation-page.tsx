@@ -28,6 +28,7 @@ import { useMemory } from '@/lib/api/hooks/memory';
 import { useEndSession, useSession } from '@/lib/api/hooks/sessions';
 import { useTurnStream } from '@/lib/api/hooks/turn-stream';
 import { useVenture } from '@/lib/api/hooks/ventures';
+import { useCallsAvailable } from '@/features/calls/calls-available';
 import { canWrite } from '@/lib/auth/roles';
 import { useRequiredMe } from '@/lib/auth/use-me';
 import { conversationTitle } from '@/lib/conversations';
@@ -142,6 +143,8 @@ function Conversation() {
   const turns = useMemo(() => detail.data?.turns ?? [], [detail.data]);
   const availability = venture.data && session ? coachingAvailability(me, venture.data, session) : null;
   const canSend = Boolean(availability?.available);
+  // Call entries show only while calls are on for this venture (no link to a call that cannot start).
+  const callable = useCallsAvailable(ventureId, canWrite(me, ventureId)) && canSend;
   const { state } = stream;
   const progress = deriveTurnProgress(state);
   const veir = veirDisplay(venture.data);
@@ -345,7 +348,7 @@ function Conversation() {
         personaKind={veir?.kind ?? 'neutral_guide'}
         portraitUrl={veir?.portraitUrl}
         canEdit
-        canCall={!ended && canSend}
+        canCall={!ended && callable}
         onAction={onMenu}
       >
         {ended ? (
@@ -485,7 +488,7 @@ function Conversation() {
                 )
               }
               actions={
-                canSend ? (
+                callable ? (
                   <SimpleTooltip content={`Call ${personaName}`}>
                     <Button asChild variant="subtle" size="icon-sm" className="rounded-full">
                       <Link

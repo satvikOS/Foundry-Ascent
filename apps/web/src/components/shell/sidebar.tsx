@@ -7,6 +7,7 @@ import { useMemo, type ComponentProps, type ReactNode } from 'react';
 import { VentureMark } from '@/components/faces/user-avatar';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { SimpleTooltip } from '@/components/ui/tooltip';
+import { useCallsAvailable } from '@/features/calls/calls-available';
 import { ventureQueryOptions, useVentures } from '@/lib/api/hooks/ventures';
 import { canWrite, writesAnyVenture } from '@/lib/auth/roles';
 import { cn, isMac } from '@/lib/utils';
@@ -116,6 +117,7 @@ export function SidebarContent({
   const venture = useQuery({ ...ventureQueryOptions(ventureId ?? ''), enabled: ventureId !== null });
   const veir = veirDisplay(venture.data);
   const writable = ventureId !== null && canWrite(me, ventureId);
+  const callable = useCallsAvailable(ventureId, writable);
   // Only founders and team members hold conversations; read-only roles never request them.
   const hasConversations = writesAnyVenture(me);
   const ventureNames = useMemo(
@@ -172,7 +174,7 @@ export function SidebarContent({
             />
           </Tip>
         ) : null}
-        {ventureId && writable && veir ? (
+        {ventureId && callable && veir ? (
           <Tip show={collapsed} label={`Call ${veir.name}`}>
             <SidebarLink
               to="/$tenant/app/v/$ventureId"
