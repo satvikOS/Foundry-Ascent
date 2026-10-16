@@ -57,7 +57,7 @@ export function RecentConversations({ tenant, ventureId, onNavigate }: RecentCon
   return (
     <nav aria-label="Recent conversations" className="grid gap-1">
       {groups.map((group) => (
-        <section key={group.id} aria-labelledby={`recents-${group.id}`}>
+        <div key={group.id} role="group" aria-labelledby={`recents-${group.id}`}>
           <h2
             id={`recents-${group.id}`}
             className="px-2.5 pt-4 pb-1 text-caption font-medium text-sidebar-muted"
@@ -98,7 +98,7 @@ export function RecentConversations({ tenant, ventureId, onNavigate }: RecentCon
               );
             })}
           </ul>
-        </section>
+        </div>
       ))}
     </nav>
   );

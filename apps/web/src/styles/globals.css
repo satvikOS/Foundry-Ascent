@@ -359,11 +359,6 @@
     overscroll-behavior: contain;
   }
 
-  .noscript-message {
-    padding: 2rem;
-    font-family: system-ui, sans-serif;
-  }
-
   [hidden] {
     display: none !important;
   }
@@ -443,15 +438,25 @@
 .boot-shell {
   display: flex;
   min-height: 100dvh;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.625rem;
+  gap: 1rem;
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
+}
+.boot-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
   font-size: 0.9375rem;
   font-weight: 600;
   letter-spacing: -0.01em;
+}
+.boot-note {
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
 }
 .boot-shell svg {
   width: 1.75rem;

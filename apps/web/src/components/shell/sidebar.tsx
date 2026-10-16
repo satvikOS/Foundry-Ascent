@@ -207,7 +207,7 @@ export function SidebarContent({
           <RecentConversations tenant={tenant} ventureId={ventureId} onNavigate={onNavigate} />
         ) : null}
         {assigned.length > 0 && !collapsed ? (
-          <section aria-labelledby="sidebar-assigned" className="pt-2">
+          <div role="group" aria-labelledby="sidebar-assigned" className="pt-2">
             <h2
               id="sidebar-assigned"
               className="px-2.5 pt-4 pb-1 text-caption font-medium text-sidebar-muted"
@@ -227,7 +227,7 @@ export function SidebarContent({
                 </li>
               ))}
             </ul>
-          </section>
+          </div>
         ) : null}
       </div>
 

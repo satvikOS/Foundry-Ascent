@@ -2,6 +2,7 @@ import { VentureStatus } from '@foundry/contracts';
 import { Briefcase, PencilLine, Plus, Search, SearchX, UserPlus } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 
+import { VentureMark } from '@/components/faces/user-avatar';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
@@ -206,7 +207,12 @@ export function ProgramVenturesPage() {
               const status = VentureStatus.safeParse(row.status);
               return (
                 <TableRow key={row.id}>
-                  <TableCell className="font-medium">{row.name}</TableCell>
+                  <TableCell className="font-medium">
+                    <span className="flex items-center gap-2.5">
+                      <VentureMark name={row.name} size="sm" />
+                      {row.name}
+                    </span>
+                  </TableCell>
                   <TableCell>
                     <StageChip stage={row.stage} />
                   </TableCell>
