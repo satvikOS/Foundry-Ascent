@@ -109,19 +109,28 @@ one ([owner actions](owner-actions.md)): `FoundryAscent-Api-Errors`, `FoundryAsc
 two speech backstops:
 
 - `FoundryAscent-Speech-Characters`: more than 100,000 characters synthesized by Polly in one hour (about
-  $1.60 neural): a burst several full calls wide.
+  $1.60 neural, at most $3 generative): a burst several full calls wide.
 - `FoundryAscent-Speech-Characters-Daily`: more than the global daily cap's worth of characters in one day
-  (937,500 neural characters at $15): a steady leak below the burst threshold.
+  (500,000 characters, $15 at the generative price): a steady leak below the burst threshold.
+
+Both are priced at the costliest engine any selectable voice is billed on (generative, $30 per million),
+not at `speech.engine`: a persona may speak with a voice the deployment's engine lacks (Tiffany is
+generative only), and Polly then bills it on the engine it has. Speech all on neural reaches the daily
+alarm at about $8, below the cap; no mix of voices reaches it above the cap.
 
 Either one means the in-app metering did not hold, or the cap was raised without updating
-`speech.dailyAlarmUsd`. Check **Admin → Usage** (purpose `speech`) and the API logs; switch calls off
+`speech.dailyAlarmUsd`. Check **Admin → Usage**: it has no breakdown by purpose, so speech shows as its
+model rows, `polly:<engine>:<voice>` (text-to-speech) and `transcribe:streaming:en-US` (speech-to-text),
+listed by their model id under "Other" in the by-model table (the last 30 days; `GET /api/v1/admin/usage`
+returns the same by-day and by-model figures, no purpose). Then check the API logs; switch calls off
 (`callsEnabled`) or use the kill switch if in doubt.
 
 ## Routine checks (weekly, 5 minutes)
 
 - Cost Explorer month-to-date and last month by service (or `python ops/aws/inventory.py` locally with
   read-only credentials; its CI workflow used the deleted stage-0 key).
-- **Admin → Usage**: spend by day, model and purpose; look for one principal or venture dominating.
+- **Admin → Usage**: spend by day and by model (no breakdown by purpose, principal or venture; call speech
+  is the `polly:*` and `transcribe:streaming:en-US` model rows); look for a model or a day out of line.
 - Aurora is pausing: CloudWatch metric `AWS/RDS ServerlessDatabaseCapacity` for `foundry-ascent` should drop
   to 0 overnight:
   ```bash

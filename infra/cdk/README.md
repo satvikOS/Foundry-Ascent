@@ -120,9 +120,11 @@ Region `us-east-1`, account taken from the deploying credentials. Every IAM role
   API errors ≥ 1 and throttles ≥ 1 (5 min), worker errors ≥ 1, DLQ visible messages > 0, CloudFront
   `5xxErrorRate` > 5 % in 2 of 3 five-minute periods, and while `speech.enabled` two backstops for the
   in-app speech metering on Polly `RequestCharacters` for `SynthesizeSpeech`: more than 100,000 in one hour
-  (`FoundryAscent-Speech-Characters`) and more than `speech.dailyAlarmUsd` worth at the engine's price in
-  one day (`FoundryAscent-Speech-Characters-Daily`, 937,500 at $15 on neural). The price is read from
-  `packages/core/speech-voices.json`, the file the API meters speech with (`src/lib/speech-voices.ts`).
+  (`FoundryAscent-Speech-Characters`) and more than `speech.dailyAlarmUsd` worth in one day
+  (`FoundryAscent-Speech-Characters-Daily`, 500,000 at $15). Both are priced at the costliest engine any
+  listed voice can be billed on (generative, $30 per million), not at `speech.engine`: a persona may speak
+  with a voice that lacks the deployment's engine (Tiffany is generative only). Voices and prices are read
+  from `packages/core/speech-voices.json`, the file the API meters speech with (`src/lib/speech-voices.ts`).
 - Outputs: `SiteUrl`, `DistributionId`, `ApiFunctionName`, `ClusterArn`, `SecretArn`, `DocumentsBucket`,
   `JobsQueueUrl`, `AlarmTopicArn`.
 
@@ -192,7 +194,7 @@ an absent section means off.
 | ----------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `speech.enabled`                    | `true`     | `SPEECH_ENABLED`; when `false` the API role has no Polly or Transcribe permission and neither speech alarm exists                                                                                |
 | `speech.engine`                     | `neural`   | `SPEECH_ENGINE` (`neural` or `generative`), the engine the API tries first. Neural: lower latency, USD 16 per million characters; generative USD 30 and a residual hallucination risk (ADR-0010) |
-| `speech.dailyAlarmUsd`              | `15`       | threshold of `FoundryAscent-Speech-Characters-Daily`, converted to characters at the engine's price; keep it equal to the global daily AI cap                                                    |
+| `speech.dailyAlarmUsd`              | `15`       | threshold of `FoundryAscent-Speech-Characters-Daily`, converted to characters at the costliest engine a listed voice is billed on (generative); keep it equal to the global daily AI cap         |
 | `distillation.sweepEnabled`         | `false`    | `DistillSweep` schedule state (`ENABLED`/`DISABLED`); keep it off (see above)                                                                                                                    |
 | `distillation.sweepIntervalMinutes` | `15`       | sweep rate (5–60 minutes) if it is ever enabled                                                                                                                                                  |
 
@@ -307,11 +309,13 @@ derives IAM5 finding ids from the policy values themselves. They are attached to
   sends none. A sweep querying Aurora every 15 minutes would keep it awake about two thirds of the time
   (ADR-0018 "Cost").
 - Amazon Polly (voice calls): per character synthesized (neural USD 16, generative USD 30 per million;
-  a 70-word spoken reply is about 420 characters, ≈ USD 0.007 neural). Metered in `usage_ledger` under
-  the daily caps; the two speech alarms are the backstop.
-- Amazon Transcribe streaming (voice calls): USD 0.01 per minute while the browser's stream is open. The
-  call-minute caps bound only a well-behaved client; an open socket is out of the API's reach, so AWS's
-  25-concurrent-stream quota and the AWS Budget are the backstops
+  a 70-word spoken reply is about 420 characters, ≈ USD 0.007 neural). Metered in `usage_ledger` (purpose
+  `speech`) under the global daily cap, not a person's own AI cap; the two speech alarms are the backstop.
+- Amazon Transcribe streaming (voice calls): billed while the browser's stream is open, silence included.
+  AWS lists about USD 0.01 per minute; the app meters the microphone time each heartbeat reports at USD
+  0.024 per minute (purpose `speech`, under the global daily cap), which errs high; the owner confirms the
+  real rate in Billing. Streams a modified client opens beyond what it reports are out of the API's reach,
+  so AWS's 25-concurrent-stream quota and the AWS Budget are the backstops
   ([cost controls](../../docs/runbooks/cost-controls.md#where-the-money-goes)).
 - Reserved concurrency is off by default (see [Reserved concurrency](#reserved-concurrency)); the daily
   AI spend caps are the cost guardrail.

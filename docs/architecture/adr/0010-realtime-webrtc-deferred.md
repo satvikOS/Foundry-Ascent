@@ -74,8 +74,9 @@ Chosen option: **1**. The flow, endpoints and client engine are specified in
    AI kill switch, per-call and daily minute caps, persona status and consent) and returns the call, an
    STT grant and the signed intro (the notebook's next opener). The grant is a SigV4-presigned
    `wss://transcribestreaming.us-east-1.amazonaws.com:8443/stream-transcription-websocket` URL signed with
-   the API role's credentials and valid for at most 5 minutes (`X-Amz-Expires` ≤ 300 s bounds the
-   handshake only). `POST /calls/:id/stt-grant` mints a new one on reconnect or unmute.
+   the API role's credentials and valid for 30 s (`CALL_LIMITS.sttGrantSeconds`; the presigner clamps any
+   request at 300 s), which bounds the handshake only. `POST /calls/:id/stt-grant` mints a new one on
+   reconnect or unmute.
 2. **Listen.** The echo-cancelled microphone track feeds an AudioWorklet loaded from a same-origin static
    file, which sends 16 kHz 16-bit PCM in event-stream frames to Transcribe. Partial results are the
    founder's live captions; a stable partial plus about 600 ms of silence ends the turn. Typing is always
@@ -163,15 +164,15 @@ voice launch with real students.
 
 ### Infrastructure and cost
 
-| Item               | Setting                                                                                                                                                                                                                                                                             |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Permissions-Policy | `camera=(), microphone=(self), geolocation=()`: the microphone for this origin only; the browser still asks the person first                                                                                                                                                        |
-| CSP                | `media-src 'self' blob:` (speech played from blob URLs); `connect-src` adds exactly `wss://transcribestreaming.us-east-1.amazonaws.com:8443`. The AudioWorklet is a same-origin file, which `script-src 'self'` already allows (checked in Chromium, Firefox and WebKit)            |
-| IAM                | API role only, pinned with `aws:RequestedRegion = us-east-1`: `polly:SynthesizeSpeech` and `polly:DescribeVoices` on `*` (no resource-level permissions without a lexicon); `transcribe:StartStreamTranscriptionWebSocket` on `*` (the action has no resource types)                |
-| Runtime contract   | `SPEECH_ENABLED`, `SPEECH_ENGINE` (api) from `infra/cdk/config/production.json` → `speech`; `speech.enabled: false` removes the Polly and Transcribe grants and the speech alarms, and the API then offers neither (no speech-to-text grant, `/speech` answers 501)                 |
-| Spend              | Polly per character (neural $16, generative $30 per million; a 70-word reply ≈ 420 characters ≈ $0.007 neural), metered as usage purpose `speech` under the daily caps; Transcribe streaming $0.01 per minute while a socket is open, outside the app's metering (see Consequences) |
-| Kill switches      | `calls_enabled = false` refuses new calls and ends live ones at the next heartbeat; `ai_enabled = false` stops calls with every other AI path. Both reach the browser, which closes its Transcribe socket; neither can close it from the server                                     |
-| Alarms             | `FoundryAscent-Speech-Characters` (more than 100,000 Polly characters in an hour) and `FoundryAscent-Speech-Characters-Daily` (more than the global daily AI cap's worth in a day): backstops for the in-app metering                                                               |
+| Item               | Setting                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Permissions-Policy | `camera=(), microphone=(self), geolocation=()`: the microphone for this origin only; the browser still asks the person first                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| CSP                | `media-src 'self' blob:` (speech played from blob URLs); `connect-src` adds exactly `wss://transcribestreaming.us-east-1.amazonaws.com:8443`. The AudioWorklet is a same-origin file, which `script-src 'self'` already allows (checked in Chromium, Firefox and WebKit)                                                                                                                                                                                                                                                                                                                                                        |
+| IAM                | API role only, pinned with `aws:RequestedRegion = us-east-1`: `polly:SynthesizeSpeech` and `polly:DescribeVoices` on `*` (no resource-level permissions without a lexicon); `transcribe:StartStreamTranscriptionWebSocket` on `*` (the action has no resource types)                                                                                                                                                                                                                                                                                                                                                            |
+| Runtime contract   | `SPEECH_ENABLED`, `SPEECH_ENGINE` (api) from `infra/cdk/config/production.json` → `speech`; `speech.enabled: false` removes the Polly and Transcribe grants and the speech alarms, and the API then offers neither (no speech-to-text grant, `/speech` answers 501)                                                                                                                                                                                                                                                                                                                                                             |
+| Spend              | Polly per character (neural $16, generative $30 per million; a 70-word reply ≈ 420 characters ≈ $0.007 neural), metered as usage purpose `speech` under the global daily cap (not a person's own AI cap). Transcribe streaming is billed while a socket is open, silence included: AWS lists about $0.01 per minute; the app meters the microphone seconds each heartbeat reports at $0.024 per minute (purpose `speech`, model `transcribe:streaming:en-US`, under the global daily cap), which errs high; the owner confirms the real rate in Billing. Streams beyond what the client reports go unmetered (see Consequences) |
+| Kill switches      | `calls_enabled = false` refuses new calls and ends live ones at the next heartbeat; `ai_enabled = false` stops calls with every other AI path. Both reach the browser, which closes its Transcribe socket; neither can close it from the server                                                                                                                                                                                                                                                                                                                                                                                 |
+| Alarms             | `FoundryAscent-Speech-Characters` (more than 100,000 Polly characters in an hour) and `FoundryAscent-Speech-Characters-Daily` (more than the global daily AI cap's worth in a day, priced at the costliest engine any listed voice is billed on, generative): backstops for the in-app metering                                                                                                                                                                                                                                                                                                                                 |
 
 ### Consequences
 
@@ -187,13 +188,17 @@ voice launch with real students.
   P95 ≤ 1.2 s) is not met.
 - Bad: `connect-src` names Transcribe's shared endpoint, which serves every AWS account, so the CSP cannot
   pin it to ours; `script-src 'self'` is what keeps injected code from using it.
-- Bad: Transcribe bills the whole time a socket is open, silence included, and the minute caps bound only
-  a well-behaved client. The API mints grants only for a live call, a limited number per call, and the
-  5-minute expiry bounds only the handshake: once open, the browser's socket to AWS is out of the
-  platform's reach. Heartbeats, minute caps and `calls_enabled` cannot close it, Transcribe use is not in
-  `usage_ledger`, and AWS publishes no per-stream duration metric to alarm on. A modified client can keep
-  streaming for hours. The real bounds are AWS's quota of 25 concurrent streams per account in
-  `us-east-1` (at most about $360 a day at $0.01 a minute), the AWS Budget with Cost Anomaly Detection
+- Bad: Transcribe bills the whole time a socket is open, silence included, and the app meters only what the
+  client reports. The API mints grants only for a live call that passes every heartbeat check (at most 20
+  per call and 100 per person a day), and a grant's 30 s expiry (the presigner clamps at 300 s) bounds only
+  the handshake: once open, the browser's socket to AWS is out of the platform's reach. Each heartbeat
+  meters the microphone seconds the client reports, bounded by the call's wall time, in `usage_ledger`
+  (purpose `speech`, model `transcribe:streaming:en-US`), which the global daily cap counts; a person's own
+  AI cap does not. Heartbeats, minute caps and `calls_enabled` cannot close an open socket, streams a
+  modified client opens or keeps open beyond what it reports are not metered, and AWS publishes no
+  per-stream duration metric to alarm on. A modified client can keep streaming for hours. The real bounds
+  on that are AWS's quota of 25 concurrent streams per account in `us-east-1` (at most about $360 a day at
+  about $0.01 a minute), the AWS Budget with Cost Anomaly Detection
   ([owner actions](../../runbooks/owner-actions.md) §2), and `speech.enabled: false`, which stops new
   sockets but not open ones.
 - Neutral: rehearsal (pitch practice) can now be spoken.
