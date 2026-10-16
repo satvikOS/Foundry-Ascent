@@ -108,6 +108,7 @@ export { type EscalationsService } from './services/escalations.js';
 export { assemblePacket, dueAtFor, type PacketInput } from './services/escalation-packet.js';
 export { type TeamService } from './services/team.js';
 export { type EirStudioService } from './services/eir-studio.js';
+export { type EirProfilesService } from './services/eir-profiles.js';
 export { ResourceFilter, UpdateResourceRequest, type ProgramService } from './services/program.js';
 export { type AdminService, type AuditPage } from './services/admin.js';
 

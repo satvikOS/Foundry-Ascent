@@ -9,6 +9,7 @@ import { createAdminService, type AdminService } from './services/admin.js';
 import { createCallsService, type CallsService } from './services/calls.js';
 import { createDistillService, type DistillService } from './services/distill.js';
 import { createDocumentsService, type DocumentsService } from './services/documents.js';
+import { createEirProfilesService, type EirProfilesService } from './services/eir-profiles.js';
 import { createEirStudioService, type EirStudioService } from './services/eir-studio.js';
 import { createEscalationsService, type EscalationsService } from './services/escalations.js';
 import { createKnowledgeLibraryService, type KnowledgeLibraryService } from './services/knowledge-library.js';
@@ -38,6 +39,8 @@ export interface Core {
   readonly escalations: EscalationsService;
   readonly team: TeamService;
   readonly eir: EirStudioService;
+  /** The EIR registry: profiles of the people vEIRs are built from (program lead or platform admin). */
+  readonly eirProfiles: EirProfilesService;
   readonly program: ProgramService;
   readonly admin: AdminService;
   readonly maintenance: MaintenanceService;
@@ -85,6 +88,7 @@ export function createCore(deps: CoreDeps): Core {
     escalations: createEscalationsService(kit),
     team: createTeamService(kit, onPrincipalChanged),
     eir: createEirStudioService(kit),
+    eirProfiles: createEirProfilesService(kit, directory),
     program: createProgramService(kit, directory),
     admin: createAdminService(kit, onPrincipalChanged),
     maintenance: createMaintenanceService(kit, distill),
