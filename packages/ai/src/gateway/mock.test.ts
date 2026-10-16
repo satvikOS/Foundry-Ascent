@@ -388,7 +388,10 @@ describe('mock conversation realism', () => {
     expect(value.spoken).toBeTruthy();
     expect((value.spoken ?? '').split(/\s+/).length).toBeLessThanOrEqual(70);
     expect(value.spoken).not.toMatch(/\[E\d+\]|\*|#|\n/);
-    expect(value.spoken?.startsWith('Maya, ')).toBe(true);
+    // The first reply of a conversation says hello first, by name.
+    expect(value.spoken).toMatch(
+      /^(?:Hi Maya|Hello Maya|Welcome back, Maya|Hey Maya|Good to have you back, Maya)/,
+    );
     const checked = validate(value, 'voice');
     expect(checked.blocked).toBe(false);
     expect(checked.response.spoken).toBe(value.spoken);

@@ -187,6 +187,22 @@ function evidenceIn(messages: readonly ChatMessage[], system: string): MockEvide
   return items;
 }
 
+/**
+ * Picks deterministically from a non-empty list, skipping items whose first sentence is already in `said` (what
+ * the vEIR said earlier in the conversation); when every item was said, the seeded one.
+ */
+function fresh(items: readonly string[], seed: number, said: string): string {
+  for (let i = 0; i < items.length; i += 1) {
+    const item = pick(items, seed + i);
+    const head = firstSentence(item)
+      .replace(/\{cite\}/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!said.includes(head.slice(0, 60))) return item;
+  }
+  return pick(items, seed);
+}
+
 /** Picks deterministically from a non-empty list. */
 function pick<T>(items: readonly T[], seed: number): T {
   const item = items[seed % items.length];
@@ -536,7 +552,12 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
       opening.push(name !== null && seed % 2 === 0 ? `${name}, ${lowerFirst(lead, names)}` : lead);
   }
 
-  const insight = pick(bank.insights, seed >>> 5).replace('{cite}', first !== undefined ? ` [${first}]` : '');
+  // Never the same observation or question twice in a conversation: skip what an earlier reply already said.
+  const said = reading.priorReplies.join('\n');
+  const insight = fresh(bank.insights, seed >>> 5, said).replace(
+    '{cite}',
+    first !== undefined ? ` [${first}]` : '',
+  );
   const paragraphs = [[...opening, insight].join(' ')];
   // Mirror the founder: a short follow-up gets a short reply.
   const compact = !reading.firstMessage && wordsIn(context.founderText) <= 8;
@@ -616,12 +637,18 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
     ? null
     : mode === 'teach'
       ? `How would you apply the first step to ${bank.phrase} this week?`
-      : pick(bank.questions, seed >>> 7);
+      : fresh(bank.questions, seed >>> 7, said);
   if (question !== null) paragraphs.push(question);
 
+  // Said aloud: the same opening (greeting, repair, acknowledgement), else now and then the founder's name, never
+  // on two replies in a row.
+  const lastSpokeName = name !== null && (reading.priorReplies.at(-1) ?? '').startsWith(`${name}, `);
+  const named =
+    opening.length === 0 && name !== null && !lastSpokeName && (reading.firstMessage || seed % 3 === 0);
+  const sentence = firstSentence(insight);
   const spokenParts = [
-    ...(moves.includes('repair') ? [pick(REPAIR_LINES, seed)] : []),
-    `${name !== null ? `${name}, ` : ''}${name !== null ? lowerFirst(firstSentence(insight), names) : firstSentence(insight)}`,
+    ...opening,
+    named ? `${name}, ${lowerFirst(sentence, names)}` : sentence,
     area !== null ? "I've flagged part of this for a qualified person." : '',
     question ?? `A good next step: ${lowerFirst(bank.action, names)}`,
   ].filter((p) => p !== '');

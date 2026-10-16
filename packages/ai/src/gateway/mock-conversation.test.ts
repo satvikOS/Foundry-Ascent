@@ -446,6 +446,35 @@ describe('topic moves within a conversation', () => {
     }
   });
 
+  it('never says the same thing twice on a call: openings and observations vary turn to turn', async () => {
+    const first = await reply({
+      text: 'How should we price per library? We have two libraries.',
+      channel: 'voice',
+    });
+    const second = await reply({
+      text: "Facilities holds the budget, I think. I'll call facilities about it tomorrow.",
+      channel: 'voice',
+      history: [
+        {
+          founderText: 'How should we price per library? We have two libraries.',
+          answer: first.spoken ?? '',
+        },
+      ],
+    });
+    const head = (text: string | null | undefined) => (text ?? '').split(/\s+/).slice(0, 3).join(' ');
+    expect(head(second.spoken)).not.toBe(head(first.spoken));
+    // Sentences compared without case or a leading "Maya, ".
+    const sentences = (text: string | null | undefined) =>
+      new Set(
+        (text ?? '')
+          .split(/(?<=[.!?])\s+/)
+          .filter((x) => x !== '')
+          .map((x) => x.toLowerCase().replace(/^maya, /, '')),
+      );
+    const repeated = [...sentences(second.spoken)].filter((x) => sentences(first.spoken).has(x));
+    expect(repeated).toEqual([]);
+  });
+
   it('mirrors a short follow-up with a shorter reply', async () => {
     const long = await reply({
       text: 'We ran the pilot in two libraries for three weeks and usage dropped in week three; how should we read that before we price it?',
