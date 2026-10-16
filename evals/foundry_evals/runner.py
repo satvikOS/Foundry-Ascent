@@ -23,6 +23,7 @@ from foundry_evals.environment import Actor, Environment, VentureState
 from foundry_evals.graders import grade_turn_safety
 from foundry_evals.graders.base import Finding, GradingContext, Severity
 from foundry_evals.graders.behaviours import TurnSignals, check_behaviours
+from foundry_evals.graders.conversation import ConversationReply, grade_conversation, reply_of
 from foundry_evals.graders.cross_venture import find_secret
 from foundry_evals.graders.disclosure import grade_disclosure
 from foundry_evals.graders.escalation import TurnEscalation, findings_for, observe, turn_escalation
@@ -71,6 +72,8 @@ class RunnerOptions:
     max_wait_seconds: float = 900.0
     document_ready_timeout: float = 240.0
     retry_failed_turns: bool = True
+    #: Pause between the sessions of a multi-session conversation (the founder calling back a little later).
+    session_gap_seconds: float = 2.0
 
 
 class Runner:
@@ -122,6 +125,8 @@ class Runner:
         venture, note = self._venture_for(case)
         if venture is None:
             return _skipped(case, "no_actor_for_venture")
+        if case.conversation is not None:
+            return self._run_conversation(case, venture, note)
         try:
             values = self._values(case, venture)
             rendered_setup = [render(t, values) for t in case.setup_turns]
@@ -262,6 +267,133 @@ class Runner:
         result.finalize()
         return result
 
+    def _run_conversation(self, case: CaseSpec, venture: VentureState, note: str | None) -> CaseResult:
+        """A conversation case: its sessions in order (standard sessions when it spans several, so the later
+        ones can remember the earlier), every reply graded for safety and then the whole case for conversation
+        craft. Every session it created is deleted at the end, which erases everything derived from it."""
+        conversation = case.conversation
+        if conversation is None:  # pragma: no cover - run_case only calls this for conversation cases
+            return _skipped(case, "not_a_conversation")
+        try:
+            values = self._values(case, venture)
+            rendered = [[render(t.text, values) for t in s.turns] for s in conversation.sessions]
+        except KeyError as exc:
+            return _skipped(case, f"placeholder_unavailable:{exc.args[0]}")
+        actor = self._pick_actor(venture, case.turn_count)
+        result = CaseResult(
+            suite=case.suite,
+            case_id=case.id,
+            group=case.group,
+            category=case.category,
+            technique=None,
+            venture_key=venture.key,
+            actor=actor.label,
+            status="passed",
+            severity=case.severity,
+        )
+        if note:
+            result.notes.append(note)
+        ctx = self.env.grading_context(venture, prompt_texts=tuple(t for s in rendered for t in s))
+        privacy = "standard" if conversation.kind == "multi_session" else "ephemeral"
+        created: list[str] = []
+        replies: list[ConversationReply] = []
+        openings: list[tuple[int, str]] = []
+        case_turn = 0
+        try:
+            for s_index, (spec, texts) in enumerate(
+                zip(conversation.sessions, rendered, strict=True), start=1
+            ):
+                session = actor.client.create_session(venture.id, mode=case.mode, privacy=privacy)
+                created.append(session.id)
+                result.session_ids.append(session.id)
+                result.sessions_created += 1
+                disclosure = grade_disclosure(session.disclosure)
+                result.findings += disclosure
+                if not disclosure:
+                    result.sessions_with_disclosure += 1
+                opening = session.opener
+                call_id: str | None = None
+                if spec.channel == "voice":
+                    call_id, intro = self._start_conversation_call(actor, session.id, result, ctx, case_turn)
+                    if call_id is None:
+                        return result
+                    opening = intro or opening
+                try:
+                    for t_index, (turn, text) in enumerate(zip(spec.turns, texts, strict=True), start=1):
+                        case_turn += 1
+                        # No mode: the vEIR picks one (auto), as the app sends every message.
+                        outcome = self._turn(actor, session.id, text, None, None, call_id)
+                        record = _record(case_turn, True, outcome)
+                        result.turns.append(record)
+                        fields = turn_fields(outcome.turn, support_message=outcome.support_message)
+                        fields += speech_fields(outcome.speech)
+                        result.findings += grade_turn_safety(fields, ctx, case_turn)
+                        self._write_transcript(case, case_turn, text, outcome)
+                        if outcome.kind == "error":
+                            result.status, result.reason = "error", f"turn_error:{outcome.error_code}"
+                            return result
+                        stats, evidence_findings = grade_evidence(outcome.turn, case_turn)
+                        record.facts, record.grounded_facts = stats.facts, stats.grounded
+                        result.findings += evidence_findings
+                        reply = reply_of(
+                            outcome.turn,
+                            session=s_index,
+                            index=t_index,
+                            case_turn=case_turn,
+                            speech=outcome.speech,
+                            check=turn.check,
+                            expect_any=turn.expect_any,
+                            voice=call_id is not None,
+                        )
+                        if reply is not None:
+                            replies.append(reply)
+                            if opening is None:
+                                opening = reply.answer
+                finally:
+                    if call_id is not None:
+                        self._end_call(actor, call_id, result)
+                if opening:
+                    openings.append((s_index, opening))
+                actor.client.end_session(session.id)
+                if s_index < len(conversation.sessions):
+                    self._sleep(self.options.session_gap_seconds)
+        except BudgetExhaustedError:
+            result.status, result.reason = "skipped", "budget"
+            self.aborted = "budget"
+        except CASE_ERRORS as exc:
+            result.status, result.reason = "error", _error_code(exc)
+        finally:
+            for session_id in created:
+                try:
+                    actor.client.delete_session(session_id)
+                except CASE_ERRORS as exc:
+                    result.notes.append(f"delete_session_failed:{_error_code(exc)}")
+                    self._log(f"warning: a session of {case.id} could not be deleted ({_error_code(exc)})")
+        if result.status not in ("error", "skipped"):
+            grade = grade_conversation(replies, openings=openings)
+            result.findings += grade.findings
+            result.recall_checked, result.recall_passed = grade.recall_checked, grade.recall_passed
+            result.resume_checked, result.resume_passed = grade.resume_checked, grade.resume_passed
+        result.finalize()
+        return result
+
+    def _start_conversation_call(
+        self, actor: Actor, session_id: str, result: CaseResult, ctx: GradingContext, turn: int
+    ) -> tuple[str | None, str | None]:
+        """Starts a typed-input call; returns its id and the intro it spoke (graded for safety)."""
+        try:
+            started = actor.client.start_call(session_id)
+        except ApiError as exc:
+            if exc.code == "spend_cap_reached":
+                raise RunAbortedError(exc.code) from exc
+            result.status, result.reason = "skipped", f"voice_unavailable:{exc.code}"
+            return None, None
+        result.notes.append("call_started")
+        intro = started.intro.text if started.intro is not None else None
+        if intro is not None:
+            result.findings += grade_turn_safety(speech_fields([intro], location="intro"), ctx, turn)
+        return started.call.id, intro
+
     def _venture_for(self, case: CaseSpec) -> tuple[VentureState | None, str | None]:
         ventures = self.env.actor_ventures()
         if not ventures:
@@ -337,7 +469,7 @@ class Runner:
         actor: Actor,
         session_id: str,
         text: str,
-        mode: str,
+        mode: str | None,
         counterpart: str | None,
         call_id: str | None = None,
     ) -> TurnOutcome:

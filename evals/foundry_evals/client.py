@@ -560,6 +560,11 @@ class FoundryClient:
     def end_session(self, session_id: str) -> None:
         self.request("POST", f"/sessions/{session_id}/end", idempotency_key=str(uuid.uuid4()))
 
+    def delete_session(self, session_id: str) -> None:
+        """Deletes the conversation: its content and everything derived from it (notes, digest, memory) are
+        erased and it leaves every list."""
+        self.request("DELETE", f"/sessions/{session_id}")
+
     # Calls --------------------------------------------------------------------------------------------
 
     def start_call(self, session_id: str) -> StartCallResponse:

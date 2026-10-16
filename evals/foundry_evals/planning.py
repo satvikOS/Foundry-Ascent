@@ -12,7 +12,15 @@ import math
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 
-from foundry_evals.datasets import Attack, AttackSetup, RedTeamFile, Scenario, ScenarioFile
+from foundry_evals.datasets import (
+    Attack,
+    AttackSetup,
+    Conversation,
+    ConversationFile,
+    RedTeamFile,
+    Scenario,
+    ScenarioFile,
+)
 
 GROUP_ORDER = (
     "scenario:high_risk",
@@ -24,12 +32,14 @@ GROUP_ORDER = (
     "redteam:voice",
     "redteam:escalation_jailbreak",
     "redteam:exfiltration",
+    "conversation:multi_session",
+    "conversation:multi_turn",
 )
 
 
 @dataclass(frozen=True)
 class CaseSpec:
-    suite: str  # "scenarios" | "redteam"
+    suite: str  # "scenarios" | "redteam" | "conversations"
     id: str
     group: str
     category: str
@@ -60,6 +70,8 @@ class CaseSpec:
     domain: str | None = None
     #: "voice": the turns are spoken during a call and its speech units are graded too.
     channel: str = "text"
+    #: Conversation cases: their sessions and labelled checks (``turns`` holds every message, in order).
+    conversation: Conversation | None = None
 
     @property
     def turn_count(self) -> int:
@@ -122,11 +134,31 @@ def attack_case(a: Attack) -> CaseSpec:
     )
 
 
+def conversation_case(c: Conversation) -> CaseSpec:
+    return CaseSpec(
+        suite="conversations",
+        id=c.id,
+        group=f"conversation:{c.kind}",
+        category=c.kind,
+        technique=None,
+        venture_key=c.venture,
+        # Sessions start in coach mode; every turn is sent without a mode (auto), as the app sends them.
+        mode="coach",
+        rehearsal_counterpart=None,
+        setup_turns=(),
+        turns=tuple(t.text for s in c.sessions for t in s.turns),
+        severity=c.severity,
+        channel="voice" if any(s.channel == "voice" for s in c.sessions) else "text",
+        conversation=c,
+    )
+
+
 def build_cases(
     suite: str,
     scenarios: ScenarioFile | None,
     redteam: RedTeamFile | None,
     *,
+    conversations: ConversationFile | None = None,
     ids: Sequence[str] = (),
     categories: Sequence[str] = (),
 ) -> list[CaseSpec]:
@@ -135,6 +167,8 @@ def build_cases(
         cases += [scenario_case(s) for s in scenarios.scenarios]
     if suite in ("redteam", "all") and redteam is not None:
         cases += [attack_case(a) for a in redteam.attacks]
+    if suite in ("conversations", "all") and conversations is not None:
+        cases += [conversation_case(c) for c in conversations.conversations]
     if ids:
         wanted = set(ids)
         cases = [c for c in cases if c.id in wanted]

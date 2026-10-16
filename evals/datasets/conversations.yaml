@@ -1,0 +1,133 @@
+# Conversation craft: multi-turn and multi-session conversations graded for how human the vEIR is
+# (foundry_evals.graders.conversation). Every reply is also graded for safety like any other turn.
+#
+# Checks every reply gets: no canned openers or generic praise, at most one question, spoken replies plain and
+# at most 70 words, sessions never opening alike, not every reply ending in a question. Labelled checks:
+#   recall        "do you remember…?" names what the last conversation was about (any of expect_any)
+#   topic_return  "where were we?" names the parked thread (any of expect_any)
+#   social        thanks / a greeting: no next steps, claims or memory proposals
+#   closing       a wrap-up: as social, and no new question
+#
+# Multi-session cases use standard (remembered) sessions in synthetic ventures; the runner deletes every
+# session it creates afterwards, which erases everything derived from them.
+version: 1
+conversations:
+  - id: CO-001
+    title: A second call remembers the first (the owner's failure)
+    kind: multi_session
+    venture: quietquad
+    severity: high
+    sessions:
+      - channel: voice
+        turns:
+          - text: How should we price per library? We have two libraries interested in the quiet-seat app.
+          - text: "Facilities holds the budget, I think. I'll call facilities about the library budget tomorrow."
+      - channel: voice
+        turns:
+          - text: Hi, it's me again.
+          - text: Do you remember what we talked about last time?
+            check: recall
+            expect_any: [pric, budget, facilities, librar]
+
+  - id: CO-002
+    title: A chat after a chat picks up the thread and opens differently
+    kind: multi_session
+    venture: benchtally
+    sessions:
+      - turns:
+          - text: We want to run a pilot with two labs next month. How do we design it so it actually tells us something?
+          - text: "Makes sense. We'll write down the stop condition before we start."
+      - turns:
+          - text: Hey!
+          - text: What did we discuss last time?
+            check: recall
+            expect_any: [pilot, stop condition, threshold, labs]
+
+  - id: CO-003
+    title: A chat after a call remembers the call
+    kind: multi_session
+    venture: solesignal
+    severity: high
+    sessions:
+      - channel: voice
+        turns:
+          - text: Should we raise a pre-seed round now or wait until the clinic study reads out?
+      - turns:
+          - text: Remind me where we landed on fundraising?
+            check: recall
+            expect_any: [rais, round, fundrais, investor, pre-seed, clinic]
+
+  - id: CO-004
+    title: Topic change, then "where were we?"
+    kind: multi_turn
+    venture: emberloop
+    sessions:
+      - turns:
+          - text: How should we price the heat-pump retrofit kit for small landlords?
+          - text: By the way, my co-founder wants to hire a field technician. Should we?
+          - text: Ok, where were we?
+            check: topic_return
+            expect_any: [pric, landlord, retrofit, kit]
+
+  - id: CO-005
+    title: Thanks gets a thank-you, not a report
+    kind: multi_turn
+    venture: quietquad
+    sessions:
+      - turns:
+          - text: What should I ask in the next round of student interviews?
+          - text: Thanks, that's really helpful!
+            check: social
+
+  - id: CO-006
+    title: A wrap-up closes warmly without a new question
+    kind: multi_turn
+    venture: benchtally
+    sessions:
+      - turns:
+          - text: How many lab managers should we interview before we build the scheduling feature?
+          - text: Great, thanks. That's all for today, I have to run. Talk soon!
+            check: closing
+
+  - id: CO-007
+    title: Four turns without stacked questions or a question every time
+    kind: multi_turn
+    venture: solesignal
+    sessions:
+      - turns:
+          - text: Our insole prototype gets good feedback from physiotherapists but nobody has paid yet.
+          - text: Mostly in two clinics, about a dozen patients each.
+          - text: The clinic owners decide, the physios just recommend.
+          - text: ok
+            check: social
+
+  - id: CO-008
+    title: A call speaks plainly
+    kind: multi_turn
+    venture: emberloop
+    sessions:
+      - channel: voice
+        turns:
+          - text: What's the cheapest way to test whether landlords will pay for the retrofit?
+          - text: And how many landlords would I need to talk to?
+          - text: Got it, thanks.
+            check: social
+
+  - id: CO-009
+    title: A misunderstanding is repaired in one beat
+    kind: multi_turn
+    venture: quietquad
+    sessions:
+      - turns:
+          - text: What should we charge for the pilot?
+          - text: No, I meant the per-seat price for students, not the pilot fee.
+
+  - id: CO-010
+    title: A greeting is answered as a greeting
+    kind: multi_turn
+    venture: benchtally
+    sessions:
+      - turns:
+          - text: Good morning!
+            check: social
+          - text: I'm a bit stressed, the lab pilot fell through yesterday and I don't know what to do next.

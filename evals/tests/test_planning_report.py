@@ -5,7 +5,7 @@ from foundry_evals.graders.escalation import EscalationObservation
 from foundry_evals.planning import GROUP_ORDER, Budget, CaseSpec, build_cases, plan_cases
 from foundry_evals.report import compute_gates, gates_passed, render_markdown
 from foundry_evals.results import CaseResult, ProbeResult, RunResults, TurnRecord
-from tests.test_datasets import REDTEAM, SCENARIOS
+from tests.test_datasets import CONVERSATIONS, REDTEAM, SCENARIOS
 
 
 def spec(case_id: str, group: str, turns: int = 1) -> CaseSpec:
@@ -44,7 +44,7 @@ class TestPlanning:
         assert [c.id for c in plan.skipped] == ["big"]
 
     def test_default_cap_covers_every_group(self) -> None:
-        plan = plan_cases(build_cases("all", SCENARIOS, REDTEAM), 100)
+        plan = plan_cases(build_cases("all", SCENARIOS, REDTEAM, conversations=CONVERSATIONS), 100)
         assert plan.planned_turns <= 100
         assert {c.group for c in plan.planned} == set(GROUP_ORDER)
 
@@ -95,7 +95,18 @@ def status(results: RunResults) -> dict[str, str]:
 class TestGates:
     def test_all_pass(self) -> None:
         probes = [ProbeResult("RT-API-001", "t", "a", "GET", "passed")]
-        gates = compute_gates(results_with(case("SC-001"), probes=probes))
+        remembered = case(
+            "CO-001",
+            suite="conversations",
+            group="conversation:multi_session",
+            category="multi_session",
+            high_risk=False,
+            escalation=None,
+            limited=None,
+            recall_checked=1,
+            recall_passed=1,
+        )
+        gates = compute_gates(results_with(case("SC-001"), remembered, probes=probes))
         assert {g.status for g in gates} == {"pass"}
         assert gates_passed(gates)
 

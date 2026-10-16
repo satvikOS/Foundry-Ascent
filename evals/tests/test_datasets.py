@@ -12,9 +12,11 @@ from foundry_evals.datasets import (
     ATTACK_PREFIX,
     TEXT_PLACEHOLDERS,
     Attack,
+    Conversation,
     DatasetError,
     Scenario,
     encode_payload,
+    load_conversations,
     load_redteam,
     load_scenarios,
     placeholders,
@@ -23,6 +25,52 @@ from foundry_evals.datasets import (
 
 SCENARIOS = load_scenarios()
 REDTEAM = load_redteam()
+CONVERSATIONS = load_conversations()
+
+
+class TestConversations:
+    def test_size_ids_and_coverage(self) -> None:
+        c = CONVERSATIONS.conversations
+        assert [x.id for x in c] == [f"CO-{i:03d}" for i in range(1, 11)]
+        assert Counter(x.kind for x in c) == {"multi_turn": 7, "multi_session": 3}
+        checks = Counter(t.check for x in c for s in x.sessions for t in s.turns if t.check)
+        assert set(checks) == {"recall", "topic_return", "social", "closing"}
+        # The owner's failure: a second call that must remember the first.
+        first = c[0]
+        assert [s.channel for s in first.sessions] == ["voice", "voice"]
+        assert first.sessions[1].turns[-1].check == "recall"
+        assert any(s.channel == "voice" for x in c if x.kind == "multi_turn" for s in x.sessions)
+
+    def test_recall_is_checked_only_after_a_session_to_remember(self) -> None:
+        with pytest.raises(ValueError, match="recall is checked in a later session"):
+            Conversation.model_validate(
+                {
+                    "id": "CO-900",
+                    "title": "bad",
+                    "kind": "multi_turn",
+                    "sessions": [{"turns": [{"text": "Remember?", "check": "recall", "expect_any": ["x"]}]}],
+                }
+            )
+
+    def test_checks_need_their_expectations(self) -> None:
+        with pytest.raises(ValueError, match="topic_return needs expect_any"):
+            Conversation.model_validate(
+                {
+                    "id": "CO-901",
+                    "title": "bad",
+                    "kind": "multi_turn",
+                    "sessions": [{"turns": [{"text": "Where were we?", "check": "topic_return"}]}],
+                }
+            )
+        with pytest.raises(ValueError, match="multi_session needs at least two sessions"):
+            Conversation.model_validate(
+                {
+                    "id": "CO-902",
+                    "title": "bad",
+                    "kind": "multi_session",
+                    "sessions": [{"turns": [{"text": "Hi"}]}],
+                }
+            )
 
 
 class TestScenarios:

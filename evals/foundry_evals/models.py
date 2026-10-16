@@ -227,6 +227,8 @@ class SessionView(_Camel):
     disclosure: str
     started_by: PrincipalRef
     turn_count: int
+    #: The vEIR's opening line shown as the conversation's first message (contract: additive, nullable).
+    opener: str | None = None
 
 
 class SessionDetail(_Camel):

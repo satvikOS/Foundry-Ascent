@@ -25,7 +25,7 @@ on:
       suite:
         description: Which suite to run
         type: choice
-        options: [all, scenarios, redteam]
+        options: [all, scenarios, redteam, conversations]
         default: all
       max_turns:
         description: Hard cap on model turns (each costs one Bedrock call)
