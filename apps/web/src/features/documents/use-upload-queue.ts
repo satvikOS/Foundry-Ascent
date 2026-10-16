@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { announce } from '@/components/a11y/live-announcer';
-import { api, createIdempotencyKey, path } from '@/lib/api/client';
 import { errorMessage, isAbortError, isApiError } from '@/lib/api/errors';
-import { UPLOAD_CANCELLED, useUploadDocument, type UploadResume } from '@/lib/api/hooks/documents';
+import {
+  UPLOAD_CANCELLED,
+  useDeleteDocument,
+  useUploadDocument,
+  type UploadResume,
+} from '@/lib/api/hooks/documents';
 
 import type { UploadCandidate } from './upload-validation';
 
@@ -34,14 +38,6 @@ export interface QueuedUpload extends UploadCandidate {
   resume?: UploadResume | null;
 }
 
-/** Best-effort DELETE of a document whose upload the person gave up on (it has no file to keep). */
-function discard(resume: UploadResume | null): void {
-  if (!resume || resume.uploaded) return;
-  void api
-    .delete(path`/documents/${resume.documentId}`, { idempotencyKey: createIdempotencyKey() })
-    .catch(() => undefined);
-}
-
 let counter = 0;
 const nextId = () => `upload-${Date.now().toString(36)}-${(counter++).toString(36)}`;
 
@@ -55,6 +51,7 @@ const nextId = () => `upload-${Date.now().toString(36)}-${(counter++).toString(3
 export function useUploadQueue(ventureId: string) {
   const upload = useUploadDocument(ventureId);
   const { mutateAsync } = upload;
+  const { mutate: deleteDocument } = useDeleteDocument(ventureId);
   const [items, setItems] = useState<UploadItem[]>([]);
   // The items as last rendered, for actions that act on an item's document (never inside a state updater).
   const current = useRef(items);
@@ -66,6 +63,17 @@ export function useUploadQueue(ventureId: string) {
   const patch = useCallback((id: string, next: Partial<UploadItem>) => {
     setItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...next } : item)));
   }, []);
+
+  /**
+   * Deletes the document of an upload the person gave up on, when its file never arrived (best effort: daily
+   * maintenance marks a leftover unfinished). A document whose file arrived is kept: it can still be processed.
+   */
+  const discard = useCallback(
+    (resume: UploadResume | null) => {
+      if (resume && !resume.uploaded) deleteDocument(resume.documentId);
+    },
+    [deleteDocument],
+  );
 
   const add = useCallback((candidates: readonly QueuedUpload[]) => {
     if (candidates.length === 0) return;
@@ -94,7 +102,7 @@ export function useUploadQueue(ventureId: string) {
       discard(current.current.find((item) => item.id === id)?.resume ?? null);
       patch(id, { status: 'cancelled', resume: null });
     },
-    [patch],
+    [discard, patch],
   );
 
   const retry = useCallback(
@@ -104,11 +112,14 @@ export function useUploadQueue(ventureId: string) {
     [patch],
   );
 
-  const dismiss = useCallback((id: string) => {
-    const item = current.current.find((candidate) => candidate.id === id);
-    if (item?.status === 'failed') discard(item.resume);
-    setItems((prev) => prev.filter((candidate) => candidate.id !== id));
-  }, []);
+  const dismiss = useCallback(
+    (id: string) => {
+      const item = current.current.find((candidate) => candidate.id === id);
+      if (item?.status === 'failed') discard(item.resume);
+      setItems((prev) => prev.filter((candidate) => candidate.id !== id));
+    },
+    [discard],
+  );
 
   // Process the next queued item whenever nothing is uploading.
   useEffect(() => {
