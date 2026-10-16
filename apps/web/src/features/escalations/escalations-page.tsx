@@ -80,7 +80,7 @@ export function EscalationsPage() {
   return (
     <PageContainer size="wide">
       <PageHeader
-        title="Escalations"
+        title="Human help"
         description="Requests for a person to weigh in. Packets are drafted by AI — nothing is shared until you review it and consent."
         actions={
           canEdit ? (
@@ -143,7 +143,7 @@ export function EscalationsPage() {
                 description="When a conversation suggests a person should weigh in — or you ask for one — the request appears here."
               />
             ) : (
-              <ul aria-label="Escalations" className="grid gap-2">
+              <ul aria-label="Help requests" className="grid gap-2">
                 {rows.map((e) => (
                   <li key={e.id}>
                     <button
