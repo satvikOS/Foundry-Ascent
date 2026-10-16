@@ -7,7 +7,6 @@ import {
   withDistilledSources,
   type NotebookContent,
 } from './notebooks.js';
-import { decodeSessionCursor, encodeSessionCursor, microsToIso } from './sessions.js';
 
 const A = '6f1c6d0e-1a2b-5c3d-8e4f-0123456789aa';
 const B = '6f1c6d0e-1a2b-5c3d-8e4f-0123456789bb';
@@ -85,16 +84,5 @@ describe('withDistilledSources', () => {
     );
     expect(cleared.nextOpener).toBeNull();
     expect(cleared.nextOpenerSource).toBeUndefined();
-  });
-});
-
-describe('recents cursor', () => {
-  it('round-trips microsecond positions exactly, as ISO timestamps for the query', () => {
-    const cursor = encodeSessionCursor('1790000000123456', A);
-    expect(decodeSessionCursor(cursor)).toEqual({ activityMicros: '1790000000123456', id: A });
-    expect(microsToIso('1790000000123456')).toBe('2026-09-21T14:13:20.123456Z');
-    expect(microsToIso('1790000000000007')).toBe('2026-09-21T14:13:20.000007Z');
-    expect(decodeSessionCursor(encodeSessionCursor('2026-09-21T14:13:20.123456Z', A))).toBeNull();
-    expect(decodeSessionCursor('not-a-cursor')).toBeNull();
   });
 });

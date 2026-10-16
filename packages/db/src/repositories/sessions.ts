@@ -386,6 +386,8 @@ export interface SessionPage {
  */
 const ACTIVITY_MICROS_SQL = `(extract(epoch FROM s.last_activity_at) * 1000000)::bigint::text`;
 const MICROS = /^\d{1,16}$/;
+/** The position of cursors issued before it was numeric: the activity as `…ss.ffffffZ` in UTC. */
+const ISO_MICROS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/;
 const UUID_TEXT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Encodes a keyset position (latest activity in microseconds since the epoch, id) as an opaque cursor. */
@@ -393,12 +395,19 @@ export function encodeSessionCursor(activityMicros: string, id: string): string 
   return Buffer.from(`${activityMicros}|${id}`, 'utf8').toString('base64url');
 }
 
-/** Decodes a cursor; null when it is malformed. */
+/**
+ * Decodes a cursor; null when it is malformed. A cursor in the earlier ISO form is read as the same
+ * position, so a list paging across the deploy that changed the form keeps its place.
+ */
 export function decodeSessionCursor(cursor: string): { activityMicros: string; id: string } | null {
-  const [activityMicros, id] = Buffer.from(cursor, 'base64url').toString('utf8').split('|');
-  if (activityMicros === undefined || id === undefined) return null;
-  if (!MICROS.test(activityMicros) || !UUID_TEXT.test(id)) return null;
-  return { activityMicros, id: id.toLowerCase() };
+  const [position, id] = Buffer.from(cursor, 'base64url').toString('utf8').split('|');
+  if (position === undefined || id === undefined || !UUID_TEXT.test(id)) return null;
+  const activityMicros = MICROS.test(position)
+    ? position
+    : ISO_MICROS.test(position)
+      ? isoToMicros(position)
+      : null;
+  return activityMicros === null ? null : { activityMicros, id: id.toLowerCase() };
 }
 
 /** Microseconds since the epoch as an exact ISO timestamp (`…ss.ffffffZ`). */
@@ -406,6 +415,14 @@ export function microsToIso(micros: string): string {
   const value = BigInt(micros);
   const millis = new Date(Number(value / 1000n)).toISOString();
   return `${millis.slice(0, -1)}${(value % 1000n).toString().padStart(3, '0')}Z`;
+}
+
+/** An exact `…ss.ffffffZ` timestamp as microseconds since the epoch; null for an impossible date. */
+function isoToMicros(iso: string): string | null {
+  const millis = Date.parse(`${iso.slice(0, 23)}Z`);
+  if (Number.isNaN(millis) || millis < 0) return null;
+  const micros = (BigInt(millis) * 1000n + BigInt(iso.slice(23, 26))).toString();
+  return microsToIso(micros) === iso ? micros : null;
 }
 
 /**
