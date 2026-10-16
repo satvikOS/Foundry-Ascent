@@ -15,6 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { toast } from '@/components/ui/toast';
 import { SimpleTooltip } from '@/components/ui/tooltip';
 import { errorMessage } from '@/lib/api/errors';
 import { useCreateSession } from '@/lib/api/hooks/sessions';
@@ -130,6 +131,15 @@ export function CallScreen() {
   /** Removes a conversation created for a call that never started, so no empty conversation is left. */
   const discard = useCallback(
     (sessionId: string, target: string) => {
+      // Minimized while connecting, the page may show that conversation: go back to New chat first.
+      if (routeNow.current?.sessionId === sessionId) {
+        void navigate({
+          to: '/$tenant/app/v/$ventureId',
+          params: { tenant, ventureId: target },
+          search: {},
+          replace: true,
+        });
+      }
       void discardConversation(sessionId)
         .catch(() => undefined)
         .finally(() => {
@@ -137,7 +147,7 @@ export function CallScreen() {
           void queryClient.invalidateQueries({ queryKey: queryKeys.venture.sessions(target) });
         });
     },
-    [queryClient],
+    [navigate, queryClient, tenant],
   );
 
   const begin = useCallback(() => {
@@ -195,6 +205,24 @@ export function CallScreen() {
   useEffect(() => {
     if (!open) attempted.current = null;
   }, [open]);
+
+  // A call that could not start is forgotten once the screen closes. If it failed while minimized, the
+  // screen that explains why was closed, so a toast says it instead.
+  const failureShown = useRef(false);
+  useEffect(() => {
+    if (snapshot.phase !== 'failed') {
+      failureShown.current = false;
+      return;
+    }
+    if (open) {
+      failureShown.current = true;
+      return;
+    }
+    if (!failureShown.current && snapshot.error) {
+      toast.error('The call didn’t start', { description: snapshot.error.message });
+    }
+    engine.reset();
+  }, [engine, open, snapshot.error, snapshot.phase]);
 
   // Opened on a different conversation than the live call: show the live one (one call at a time).
   // A finished call of another conversation is forgotten.

@@ -43,6 +43,8 @@ async function sessionTurns(request: APIRequestContext, sessionId: string): Prom
 interface StubOptions {
   /** How POST /sessions/:id/calls answers: a live call, or the kill switch's refusal. */
   start?: 'live' | 'ai_disabled';
+  /** How long POST /sessions/:id/calls takes to answer. */
+  startDelayMs?: number;
   /** The status of the n-th POST /speech (0-based); 501 (no server voice in mock mode) otherwise. */
   speechStatus?: (n: number) => number;
 }
@@ -71,6 +73,7 @@ async function stubCallsBackend(page: Page, options: StubOptions = {}): Promise<
 
   await page.route(/\/api\/v1\/sessions\/[0-9a-f-]{36}\/calls$/, async (route) => {
     const sessionId = /sessions\/([0-9a-f-]{36})\/calls$/.exec(route.request().url())?.[1] ?? '';
+    if (options.startDelayMs) await new Promise((resolve) => setTimeout(resolve, options.startDelayMs));
     if (options.start === 'ai_disabled') {
       await route.fulfill({
         status: 503,
@@ -410,6 +413,46 @@ test.describe('vEIR calls', () => {
     await screen.getByRole('button', { name: 'Back to chat' }).click();
     await expect(screen).toBeHidden();
     await expect(page).toHaveURL(new RegExp(`/v/${ventureId}$`));
+  });
+
+  test('a call refused after it was minimized says why and leaves no empty conversation', async ({
+    page,
+  }) => {
+    await voiceNoticeSeen(page);
+    // CALLS-BACKEND-STUB: the refusal arrives late, so the call can be minimized while it connects.
+    await stubCallsBackend(page, { start: 'ai_disabled', startDelayMs: 2_000 });
+    const ventureId = await openVenture(page);
+    const created = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/ventures/${ventureId}/sessions`) && response.request().method() === 'POST',
+    );
+    await page
+      .getByRole('main')
+      .getByRole('link', { name: /^Call / })
+      .click();
+    const sessionId = ((await (await created).json()) as { id: string }).id;
+    await callScreen(page).getByRole('button', { name: 'Minimize call' }).click();
+    // Minimized while connecting: the page is the call's conversation, with the mini bar.
+    await expect(page).toHaveURL(new RegExp(`/c/${sessionId}$`));
+    await expect(page.getByRole('region', { name: /^Call with / })).toBeVisible();
+    // The refusal: a toast says why, and the page returns to New chat without the conversation.
+    await expect(page.getByText('Calls are paused by the program. You can keep chatting.')).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(page).toHaveURL(new RegExp(`/v/${ventureId}$`));
+    await expect(page.getByRole('region', { name: /^Call with / })).toHaveCount(0);
+    await expect(callScreen(page)).toHaveCount(0);
+    await expect
+      .poll(
+        async () => {
+          const list = (await (await page.request.get(`/api/v1/ventures/${ventureId}/sessions`)).json()) as {
+            items: { id: string }[];
+          };
+          return list.items.some((item) => item.id === sessionId);
+        },
+        { timeout: 10_000 },
+      )
+      .toBe(false);
   });
 
   test('the call screen is keyboard and screen-reader friendly in both themes', async ({ page }) => {

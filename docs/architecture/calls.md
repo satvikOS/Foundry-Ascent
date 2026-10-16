@@ -43,9 +43,10 @@ click is what lets the browser play audio); a reloaded `?call=1` shows **Start c
 the first call in a browser, which first says how the founder's voice is handled (Amazon Transcribe turns
 it into text, no audio is kept, the transcript is saved like chat, typing works throughout). When a call
 cannot start, the screen says why (calls are for the venture team; AI paused; no minutes left today; the
-API's own refusal in its own words) and offers **Try again** only when trying again may help. A call from
-New chat that never starts (refused, cancelled, closed while connecting) deletes the conversation it
-created, so no empty conversation is left in Recents.
+API's own refusal in its own words) and offers **Try again** only when trying again may help; a call
+minimized while it connects says why in a toast. A call from New chat that never starts (refused,
+cancelled, closed while connecting) deletes the conversation it created, so no empty conversation is left
+in Recents.
 
 ### 3.2 The call screen
 
@@ -105,9 +106,10 @@ mic ─ getUserMedia (echo cancellation, noise suppression) ─ AudioWorklet /wo
   unlocks (or Turn on sound, when the browser kept it suspended; `statechange` is watched for the whole
   call). Calls speak only validated text: signed `turn.speech` units, the signed intro (`turnId: null`,
   seq 0), or, when no units streamed (streaming switched off), the sentences of the completed turn's stored
-  `spoken` reply, split by the server's own sentence rules (unsigned passages `POST /speech` checks against
-  the stored turn). A reply without a spoken form is shown, never voiced. On `501 speech_unavailable`
-  (local development only) the browser's `speechSynthesis` reads the same validated text for the rest of
+  `spoken` reply, split by the server's own sentence rules (`POST /speech` checks each unsigned passage
+  against the stored turn; a sentence under 12 characters joins its neighbour, since the server voices a
+  passage that short only as the whole reply). A reply without a spoken form is shown, never voiced. On
+  `501 speech_unavailable` (local development only) the browser's `speechSynthesis` reads the same validated text for the rest of
   the call. Any other failure never brings a substitute voice: a failure that may pass (network, 5xx, a
   busy synthesiser, a unit the server will not voice, undecodable audio) shows that sentence on screen and
   the next one asks for the voice again; a refusal for the whole call (`ai_disabled`, spend or minute caps,
@@ -120,8 +122,9 @@ mic ─ getUserMedia (echo cancellation, noise suppression) ─ AudioWorklet /wo
   backchannel ("yeah", "mm-hmm", "right", "got it"). That stops the audio, aborts the turn stream and sends
   `POST /turns/:id/interrupt {callId, heardSeq, heard}`, where `heardSeq` is the last unit heard to its end
   (-1 for none) and `heard` the units 0…heardSeq as played (sent once the contract carries it). Echo and
-  backchannels never become a turn. A duck no word confirms restores the volume; after three, the call
-  suggests push to talk. Typing while it speaks, Esc and Interrupt do the same.
+  backchannels never become a turn, also when heard between the reply's sentences. A duck no word confirms
+  restores the volume; after three, the call suggests push to talk. Typing while it speaks, Esc and
+  Interrupt do the same.
 - **Half duplex** (iOS and iPadOS, where echo cancellation does not reliably keep the vEIR out of the
   microphone): the microphone sends silence and transcripts are ignored while the vEIR speaks; a large
   Interrupt button (or Esc) takes the floor.
