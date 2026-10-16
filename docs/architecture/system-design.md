@@ -436,7 +436,7 @@ Stacks (all `FoundryAscent-*`, termination protection on Foundation and Data, ta
    `foundry-ascent/aurora-admin`, documents bucket (private, SSE-S3, enforce SSL, CORS `PUT` from
    `https://*.cloudfront.net` plus the custom domain when set — the presigned URL is the authorization,
    lifecycle for incomplete uploads), SQS jobs queue + DLQ (SSE-SQS).
-3. **App** — API Lambda (Node 24, ARM64, 1024 MB, 60 s, no reserved concurrency in production — see §2,
+3. **App** — API Lambda (Node 24, ARM64, 1,769 MB (`api.memoryMb`: one full vCPU), 60 s, no reserved concurrency in production — see §2,
    Function URL `AWS_IAM` + `RESPONSE_STREAM`), worker Lambda (SQS, batch 5, at most 2 concurrent pollers), migrate custom resource
    (applies `packages/db/migrations` via Data API with an advisory lock, then seeds synthetic data and the
    owner principal, then backfills embeddings; API, worker and site wait for it), site bucket + two

@@ -13,6 +13,11 @@ of model calls, a leaked access code used by a bot, a misconfigured stack creati
 provisioned database, or a compromised pipeline launching instances. The target is an idle bill of about
 $1–3/month and a hard ceiling on AI spend per day, enforced without human attention.
 
+> **Update (2026-10-16):** production now keeps Aurora awake at 0.5 ACU (`aurora.minCapacityAcu`, about
+> $44 a month, idle ≈ $45–47) because the first request after an idle pause waited 15–20 s
+> ([latency](../../runbooks/latency.md)). `aurora.minCapacityAcu: 0` restores the $1–3 idle target; every
+> other guardrail here is unchanged.
+
 ## Decision drivers
 
 - Guardrails must hold even if application code or the CI pipeline is wrong or compromised.

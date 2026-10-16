@@ -57,10 +57,12 @@ flowchart LR
   cdk --> migrate["Migrate custom resource<br/>migrations · seed · embeddings"] --> db
 ```
 
-Region `us-east-1`. No VPC for Lambdas and no NAT: the API reaches Aurora through the Data API, and Aurora
-pauses to zero capacity after 10 idle minutes (idle bill ≈ $1–3/month). The first request after a pause
-waits ~15 s while Aurora resumes; the app shows a "Waking up your workspace…" banner and retries. The
-public health check never touches the database, so monitoring cannot keep it awake. Every IAM role carries
+Region `us-east-1`. No VPC for Lambdas and no NAT: the API reaches Aurora through the Data API. Aurora is
+kept awake at 0.5 ACU (idle bill ≈ $45–47/month) so no request waits for it to resume
+([latency](docs/runbooks/latency.md)). With `aurora.minCapacityAcu: 0` it pauses to zero capacity after 10
+idle minutes (idle bill ≈ $1–3/month) and the first request after a pause waits ~15 s while Aurora resumes;
+the app then shows a "Waking up your workspace…" banner and retries. The public health check never touches
+the database, so monitoring cannot keep it awake. Every IAM role carries
 the `FoundryAscent-Boundary` permissions boundary. Details: [system design](docs/architecture/system-design.md)
 and [`infra/cdk/README.md`](infra/cdk/README.md).
 

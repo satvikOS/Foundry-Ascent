@@ -54,7 +54,7 @@ Region `us-east-1`, account taken from the deploying credentials. Every IAM role
 
 - Lambdas (Node 24, ARM64, ESM bundles with source maps, log groups with 30-day retention, roles without
   AWS managed policies):
-  - `FoundryAscent-Api` (`apps/api/src/handlers/api.ts`): 1024 MB, 60 s, no reserved concurrency by
+  - `FoundryAscent-Api` (`apps/api/src/handlers/api.ts`): 1,769 MB (`api.memoryMb`: one full vCPU), 60 s, no reserved concurrency by
     default (see [Reserved concurrency](#reserved-concurrency)), Function URL `AWS_IAM` + `RESPONSE_STREAM`.
     Database policy, documents `PutObject` (presigned uploads) + `DeleteObject` (an explicit deny removes
     `GetObject`), `sqs:SendMessage` (the only role that enqueues jobs), Bedrock, and while
