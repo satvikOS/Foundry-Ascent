@@ -425,6 +425,9 @@ for (const scheme of ['dark', 'light'] as const) {
 
       await page.goto(`/${TENANT}/app/admin/usage`);
       await expect(page.getByRole('heading', { level: 1, name: 'Usage' })).toBeVisible();
+      // Conversations and memory: counts only (GET /admin/insights).
+      const insights = page.getByRole('region', { name: 'Conversations and memory' });
+      await expect(insights.getByRole('table', { name: 'What each venture’s vEIR remembers' })).toBeVisible();
       await expectNoSeriousA11yViolations(page, `admin usage (${scheme})`);
 
       await page.goto(`/${TENANT}/app/admin/audit`);

@@ -9,6 +9,7 @@ import {
   RevokeAccessCodeResponse,
   UpdateSettingsRequest,
   UsageSummary,
+  AdminInsights,
 } from '@foundry/contracts';
 import {
   infiniteQueryOptions,
@@ -150,4 +151,17 @@ export const usageQueryOptions = () =>
 
 export function useUsage() {
   return useQuery(usageQueryOptions());
+}
+
+export type Insights = z.infer<typeof AdminInsights>;
+
+/** GET /admin/insights */
+export const insightsQueryOptions = () =>
+  queryOptions({
+    queryKey: queryKeys.admin.insights(),
+    queryFn: ({ signal }) => api.get('/admin/insights', AdminInsights, { signal }),
+  });
+
+export function useInsights() {
+  return useQuery(insightsQueryOptions());
 }

@@ -91,6 +91,7 @@ export const queryKeys = {
     principals: () => [ROOT, 'admin', 'principals'] as const,
     settings: () => [ROOT, 'admin', 'settings'] as const,
     usage: () => [ROOT, 'admin', 'usage'] as const,
+    insights: () => [ROOT, 'admin', 'insights'] as const,
     audit: (filters: AuditFilters = {}) => [ROOT, 'admin', 'audit', filters] as const,
   },
 } as const;

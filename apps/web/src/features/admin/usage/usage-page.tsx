@@ -34,6 +34,7 @@ import { formatCompact, formatNumber, formatPercent, formatUsd } from '@/lib/for
 import { cn } from '@/lib/utils';
 
 import { DailySpendChart } from './daily-spend-chart';
+import { InsightsSection } from './insights-section';
 import { capState, describeModel, fillDays, isSpeechModel, purposeLabel } from './usage-model';
 
 const CAP_COPY = {
@@ -246,11 +247,13 @@ function UsageDashboard({ usage }: { usage: Usage }) {
       <SectionCard title="By model" description="Last 30 days" icon={Cpu} flush>
         <ModelTable usage={usage} />
       </SectionCard>
+
+      <InsightsSection />
     </div>
   );
 }
 
-/** Admin → Usage: AI spend against the daily cap, by day, purpose and model. */
+/** Admin → Usage: AI spend against the daily cap, by day, purpose and model; then conversations and memory. */
 export function UsagePage() {
   const { tenant } = useParams({ from: '/$tenant/app/admin' });
   const usage = useUsage();
