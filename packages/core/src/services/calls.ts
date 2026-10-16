@@ -39,6 +39,7 @@ import {
 import { type RequestContext } from '../context.js';
 import { DomainError, fail, parseInput } from '../errors.js';
 import { type DirectoryCache } from '../internal/directory.js';
+import { chooseOpener } from '../orchestrator/continuity.js';
 import { type DistillService } from './distill.js';
 import { mentionsEir, personaNameClaimsEir, veirEirName } from '../internal/eir-names.js';
 import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
@@ -256,6 +257,9 @@ export function stopRefusal(cause: CallStopCause, now: Date): DomainError {
 interface Started {
   readonly call: callsRepo.CallRecord;
   readonly ventureId: string;
+  readonly personaId: string;
+  /** Whether the conversation is standard (remembered); a temporary one opens with nothing picked up. */
+  readonly standard: boolean;
   readonly personaName: string;
   readonly personaKind: personasRepo.PersonaRecord['kind'];
   readonly eirDisplayName: string | null;
@@ -366,6 +370,52 @@ export function createCallsService(
       metadata: { durationSeconds: ended.elapsedSeconds, reason: ended.endReason },
     });
     return ended;
+  }
+
+  /**
+   * A call that starts a conversation nobody has said anything in opens with what is true now: the opener is chosen
+   * again at call start (the founder may have talked elsewhere since the conversation was created, e.g. a call
+   * from New chat right after another call), and the conversation keeps that line as its first message, so the
+   * vEIR's history says what the call said. Unchanged for a temporary conversation or one already under way;
+   * on any failure the stored opener stands.
+   */
+  async function withFreshOpener(ctx: RequestContext, started: Started): Promise<Started> {
+    if (!started.standard || started.conversationStarted) return started;
+    try {
+      const { eirNames } = await directory.get(ctx.tenantId);
+      const others = await directory.others(ctx.tenantId, started.ventureId);
+      const opener = await kit.inRequest(ctx, async ({ tx }) => {
+        const { opener: chosen } = await chooseOpener(tx, {
+          ventureId: started.ventureId,
+          persona: { id: started.personaId, name: started.personaName },
+          principalId: ctx.principalId,
+          guards: {
+            eirNames,
+            otherVentureNames: others.names,
+            otherVentureCanaries: others.canaries,
+            otherVentureMemberNames: others.memberNames,
+          },
+          now: kit.now(),
+        });
+        const text = chosen?.text ?? null;
+        if (text === started.opener) return text;
+        const stored = await sessionsRepo.setSessionOpener(tx, {
+          sessionId: started.call.sessionId,
+          opener: text,
+          sourceSessionId: chosen?.sourceSessionId ?? null,
+          byPerson: chosen?.byPerson ?? false,
+        });
+        return stored ? text : started.opener;
+      });
+      return { ...started, opener };
+    } catch (err) {
+      logger.warn('call.opener_refresh_failed', {
+        requestId: ctx.requestId,
+        callId: started.call.id,
+        error: err instanceof Error ? err.name : 'unknown',
+      });
+      return started;
+    }
   }
 
   /** The signed intro (null when it cannot be produced; the call then simply starts listening). */
@@ -639,6 +689,8 @@ export function createCallsService(
         return {
           call,
           ventureId,
+          personaId: persona.id,
+          standard: session.privacy === 'standard',
           personaName: persona.name,
           personaKind: persona.kind,
           // The vEIR introduces itself after its own EIR, never after the venture's reviewing EIR.
@@ -651,7 +703,7 @@ export function createCallsService(
         };
       });
 
-      const intro = await introFor(ctx, started);
+      const intro = await introFor(ctx, await withFreshOpener(ctx, started));
       let sttGrant: SttGrant | null = null;
       if (started.call.inputMode === 'transcribe') {
         // The call works without it (typed input); the client can ask again through `stt-grant`.

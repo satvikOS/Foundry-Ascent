@@ -791,7 +791,7 @@ describe('memory hygiene', () => {
       }),
     );
 
-    const id = await conversation(maya, ['Pricing per room seems right.']);
+    const id = await conversation(maya, ['Pricing per room seems right; occupancy is the other worry.']);
     const fromTurn = (await proposalsFrom(id)).length;
     await idle(id, 15);
     const candidate = (

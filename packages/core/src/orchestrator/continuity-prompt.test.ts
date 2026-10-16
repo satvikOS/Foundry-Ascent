@@ -20,6 +20,7 @@ function conversation(over: Partial<LeftOffConversationData> = {}): LeftOffConve
     sessionId: '11111111-1111-4111-8111-111111111111',
     withCaller: true,
     teammateFirstName: null,
+    withThisVeir: true,
     title: 'Should we price per library or per seat?',
     channel: 'call',
     lastActivityAt: ago(20),
@@ -159,6 +160,23 @@ describe('renderLeftOffSection', () => {
     const small = renderLeftOffSection({ conversations: [own] }, { now: NOW, maxChars: 1_000 });
     expect(small.length).toBeLessThanOrEqual(1_000);
     expect(small.endsWith('</where_you_left_off>')).toBe(true);
+  });
+});
+
+describe('a conversation with the venture’s previous coach', () => {
+  it('is carried over as the founder’s history, never as this vEIR’s own conversation', () => {
+    const earlier = conversation({ withThisVeir: false });
+    const section = renderLeftOffSection({ conversations: [earlier] }, { now: NOW });
+    expect(section).toContain('coach="another coach of this venture"');
+    expect(section).toContain('<other_coach>Ask what budget line pays for it.</other_coach>');
+    expect(section).not.toContain('<you>');
+    const line = continuityOpener(earlier, { now: NOW, seed: 'a' });
+    expect(line.withTopic).toBe(
+      'Good to have you here. Your last conversation here (about 20 minutes ago, on a call) was about “Should we price per library or per seat?” Want to pick that up, or start somewhere new?',
+    );
+    expect(line.withTopic).not.toMatch(/\bwe (were|talked)\b/i);
+    expect(validatedOpener(line.withTopic, GUARDS)).toBe(line.withTopic);
+    expect(validatedOpener(line.generic, GUARDS)).toBe(line.generic);
   });
 });
 

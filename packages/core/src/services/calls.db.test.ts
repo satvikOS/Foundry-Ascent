@@ -1700,7 +1700,7 @@ describe('the turn engine and the calls service together', () => {
     }
   });
 
-  it('opens a call with the conversation’s stored opener, never a notebook line written since, and none in a temporary chat', async () => {
+  it('opens a call with the line that is true when it starts, keeps it as the conversation’s opener, and none in a temporary chat', async () => {
     const quietquad = ventureId('quietquad');
     const editOpener = async (text: string) => {
       const notebook = await h.core.notebook.get(ctx.maya, quietquad);
@@ -1713,12 +1713,15 @@ describe('the turn engine and the calls service together', () => {
     await editOpener(stored);
     const session = await h.core.sessions.create(ctx.maya, quietquad, {});
     expect(session.opener).toBe(stored);
-    await editOpener('What did the second library say about the seat counts?');
+    // A line written since the conversation was created (nothing was said in it yet): the call opens with it.
+    const since = 'What did the second library say about the seat counts?';
+    await editOpener(since);
     const started = await startCall('maya', session.id, 'typed');
     const intro = started.intro;
     if (intro === null) throw new Error('expected an intro');
-    // What the vEIR believes it opened with (its first history message) is what the call says.
-    expect(intro.text).toBe(`Hi Maya, this is Corin's vEIR, an AI coach. ${stored}`);
+    expect(intro.text).toBe(`Hi Maya, this is Corin's vEIR, an AI coach. ${since}`);
+    // What the vEIR believes it opened with (its first history message) is what the call said.
+    expect((await h.core.sessions.get(ctx.maya, session.id)).session.opener).toBe(since);
     expect(
       verifySpeechUnit(
         await keys.verificationKeys(),

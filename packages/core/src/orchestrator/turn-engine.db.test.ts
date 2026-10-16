@@ -192,12 +192,13 @@ describe('streamed turns', () => {
     expect(turn.response?.claims.length).toBeGreaterThan(0);
     expect(turn.usage?.firstTokenMs).toEqual(expect.any(Number));
 
-    // One streamed answer, one annotation call; both metered.
+    // One streamed answer, one annotation call, then the vectors of what it taught (kept by meaning); all metered.
     const made = h.gateway.calls.slice(calls);
     expect(made.map((c) => `${c.kind}:${c.schemaName ?? ''}`)).toEqual([
       'embed:',
       'stream:',
       'generate:CoachAnnotations',
+      'embed:',
     ]);
     const record = await h.t.db.system((sx) => turnsRepo.getTurn(sx, turn.id));
     expect(record?.firstTokenMs).toEqual(turn.usage?.firstTokenMs);
@@ -283,6 +284,7 @@ describe('streamed turns', () => {
       expect(h.gateway.calls.slice(calls).map((c) => `${c.kind}:${c.schemaName ?? ''}`)).toEqual([
         'embed:',
         'generate:CoachResponse',
+        'embed:',
       ]);
     } finally {
       await h.core.admin.updateSettings(owner, { streamingEnabled: true });
@@ -381,6 +383,7 @@ describe('failures', () => {
       'embed:',
       'stream:',
       'generate:CoachResponse',
+      'embed:',
     ]);
   });
 
@@ -402,6 +405,7 @@ describe('failures', () => {
       'embed:',
       'stream:',
       'generate:CoachResponse',
+      'embed:',
     ]);
   });
 
@@ -426,6 +430,7 @@ describe('failures', () => {
       'embed:',
       'stream:',
       'generate:CoachResponse',
+      'embed:',
     ]);
     expect(await auditMetadata(turn.id, 'turn.completed')).toMatchObject({
       stream: 'structured_output',
@@ -485,7 +490,8 @@ describe('continuity', () => {
     // The mock does not greet again: the opener already did.
     expect(context.historyTurns).toBe(1);
     // The short reply is retrieved together with the opener's question it answers.
-    expect(gateway.embedded.at(-1)).toContain('How many have you done');
+    // (The turn's last embedding is what it taught, embedded to be kept by meaning.)
+    expect(gateway.embedded.some((text) => text.includes('How many have you done'))).toBe(true);
   });
 
   it('temporary chats have no opener and use no notes', async () => {

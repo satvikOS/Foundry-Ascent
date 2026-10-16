@@ -1,18 +1,22 @@
 import {
   MAX_PROMPT_DIGESTS,
   firstNameOf,
+  isNearDuplicate,
+  lastQuestionOf,
   rewriteIdentity,
   sanitizePlainText,
   textsContainOtherVenture,
   truncate,
   type PromptContinuity,
 } from '@foundry/ai';
-import { notebooksRepo, principalsRepo, sessionsRepo, type AppExecutor } from '@foundry/db';
+import { notebooksRepo, personasRepo, principalsRepo, sessionsRepo, type AppExecutor } from '@foundry/db';
 
 import { mentionsEir } from '../internal/eir-names.js';
 import {
   LEFT_OFF_CONVERSATIONS,
   LEFT_OFF_EXCHANGES,
+  continuityOpener,
+  type LeftOffConversationData,
   type LeftOffData,
   type LeftOffThreads,
 } from './continuity-prompt.js';
@@ -47,9 +51,9 @@ export async function loadContinuity(
     ventureId: args.ventureId,
     personaId: args.personaId,
   });
+  // The venture's conversations with any of its vEIRs: a vEIR assigned later still knows what was said before.
   const digests = await sessionsRepo.listRecentDigests(tx, {
     ventureId: args.ventureId,
-    personaId: args.personaId,
     excludeSessionId: args.sessionId,
     limit: MAX_PROMPT_DIGESTS,
   });
@@ -149,7 +153,9 @@ export function openerProblem(text: string, guards: OpenerGuards): OpenerProblem
 
 /**
  * The data of "Where you left off" (orchestrator/continuity-prompt.ts) for a conversation of `principalId` in a
- * venture with a persona: the person's own latest earlier conversation, and a teammate's when it is more recent,
+ * venture: keyed by the venture and the person, not by the vEIR (a venture's vEIR can change; each conversation
+ * says whether it was with `personaId`). The person's own latest earlier conversation, and a teammate's when it
+ * is more recent,
  * each with its digest when distilled and its last exchanges the digest does not cover yet. Two indexed
  * statements (the conversations, then their exchanges); null for a temporary chat (it neither reads nor writes
  * the vEIR's memory) and when there is no earlier conversation with a completed turn. Temporary and deleted
@@ -171,7 +177,6 @@ export async function loadLeftOff(
   if (args.privacy === 'ephemeral') return null;
   const recent = await sessionsRepo.listLeftOffConversations(tx, {
     ventureId: args.ventureId,
-    personaId: args.personaId,
     excludeSessionId: args.sessionId,
     limit: 4,
   });
@@ -194,6 +199,7 @@ export async function loadLeftOff(
     conversations: picked.map((c) => ({
       sessionId: c.id,
       withCaller: c.startedBy === args.principalId,
+      withThisVeir: c.personaId === args.personaId,
       teammateFirstName:
         c.startedBy === args.principalId || c.startedByName === null ? null : firstNameOf(c.startedByName),
       title: c.title,
@@ -225,4 +231,106 @@ export function leftOffThreads(continuity: PromptContinuity): LeftOffThreads | n
     commitments: nb.commitments.filter((c) => c.status === 'open').map((c) => ({ text: c.text, due: c.due })),
     questions: nb.openQuestions.map((q) => q.text),
   };
+}
+
+/** The opening line of a new conversation, and where it came from (`coaching_sessions.opener` and its source). */
+export interface ChosenOpener {
+  readonly text: string;
+  /** The conversation it was drawn from (deleting it erases this copy); null when a person wrote it. */
+  readonly sourceSessionId: string | null;
+  readonly byPerson: boolean;
+}
+
+/** Exchanges read to tell whether a stored opener only repeats a question the vEIR already asked. */
+const OPENER_ECHO_EXCHANGES = 3;
+
+/**
+ * The vEIR's opening line for a new standard conversation of `principalId` (its first bubble, and what a call says
+ * after introducing itself), in this order:
+ * 1. the notebook's next opener when a person wrote it (they chose what to open with);
+ * 2. the notebook's next opener when distillation drew it from the person's latest conversation with this vEIR,
+ *    or the notebook was written after that conversation's last turn (nothing was said since it was written),
+ *    unless it only repeats a question the vEIR asked at the end of that conversation (production: call 3 opened
+ *    with call 2's closing question, verbatim);
+ * 3. a line that picks up the person's latest conversation itself, with any of the venture's vEIRs (when it was,
+ *    what about), built without a model call from what was said, so it is right even before distillation ran
+ *    (orchestrator/continuity-prompt.ts); its phrasing follows that conversation and the person, so each new
+ *    conversation after another opens differently, and a preview says what the conversation then opens with;
+ * 4. an older notebook opener.
+ * Every line must pass the opener checks (identity, cross-venture): one that fails is skipped. `opener` is null
+ * when there is none (a first conversation); `latest` is the conversation it picks up.
+ */
+export async function chooseOpener(
+  tx: AppExecutor,
+  args: {
+    readonly ventureId: string;
+    readonly persona: { readonly id: string; readonly name: string };
+    readonly principalId: string;
+    readonly guards: Omit<OpenerGuards, 'personaName' | 'personaEirName'>;
+    readonly now: Date;
+  },
+): Promise<{ readonly opener: ChosenOpener | null; readonly latest: LeftOffConversationData | null }> {
+  const notebook = await notebooksRepo.getNotebook(tx, {
+    ventureId: args.ventureId,
+    personaId: args.persona.id,
+  });
+  const guards: OpenerGuards = {
+    ...args.guards,
+    personaName: args.persona.name,
+    personaEirName: await personasRepo.getPersonaEirName(tx, args.persona.id),
+  };
+  const next = notebook?.content.nextOpener ?? null;
+  const stored = next === null ? null : validatedOpener(next, guards);
+  // The conversation it was drawn from, so deleting that conversation erases this copy too. A null source means
+  // a person wrote it (the copy stays); a missing one means its origin is unknown, and deleting any conversation
+  // of the venture erases the copy.
+  const source = notebook?.content.nextOpenerSource;
+  const last = await loadLeftOff(tx, {
+    ventureId: args.ventureId,
+    personaId: args.persona.id,
+    sessionId: null,
+    principalId: args.principalId,
+    privacy: 'standard',
+    ownOnly: true,
+  });
+  const latest = last?.conversations[0] ?? null;
+  const found = (opener: ChosenOpener | null) => ({ opener, latest });
+  if (stored !== null && source === null)
+    return found({ text: stored, sourceSessionId: null, byPerson: true });
+  const current =
+    latest === null ||
+    source === latest.sessionId ||
+    (latest.withThisVeir &&
+      notebook?.updatedAt != null &&
+      Date.parse(notebook.updatedAt) > Date.parse(latest.lastActivityAt));
+  if (
+    stored !== null &&
+    current &&
+    !(latest !== null && (await askedAtTheEnd(tx, latest.sessionId, stored)))
+  ) {
+    return found({ text: stored, sourceSessionId: source ?? null, byPerson: false });
+  }
+  if (latest !== null) {
+    const lines = continuityOpener(latest, {
+      now: args.now,
+      seed: `${latest.sessionId}:${args.principalId}`,
+    });
+    for (const candidate of [lines.withTopic, lines.generic]) {
+      const text = candidate === null ? null : validatedOpener(candidate, guards);
+      if (text !== null) return found({ text, sourceSessionId: latest.sessionId, byPerson: false });
+    }
+  }
+  return found(stored === null ? null : { text: stored, sourceSessionId: source ?? null, byPerson: false });
+}
+
+/** Whether `opener` repeats a question the vEIR asked in one of the last answers of the conversation. */
+async function askedAtTheEnd(tx: AppExecutor, sessionId: string, opener: string): Promise<boolean> {
+  const exchanges = await sessionsRepo.listLastExchanges(tx, {
+    sessionIds: [sessionId],
+    perSession: OPENER_ECHO_EXCHANGES,
+  });
+  return exchanges.some((x) => {
+    const question = x.answer === null ? null : lastQuestionOf(x.answer);
+    return question !== null && (isNearDuplicate(opener, question, 0.6) || opener.includes(question));
+  });
 }

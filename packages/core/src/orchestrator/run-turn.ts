@@ -25,6 +25,7 @@ import {
 import {
   callsRepo,
   escalationsRepo,
+  knowledgeRepo,
   personasRepo,
   sessionsRepo,
   settingsRepo,
@@ -49,8 +50,11 @@ import {
   isLiveCallOf,
   type AdmitVoiceTurn,
 } from '../services/call-admission.js';
+import { memoryEmbeddingText } from '../internal/embeddings.js';
+import { meteredEmbed } from '../internal/metered.js';
 import { createDraftEscalation } from '../services/escalations.js';
 import { persistMemoryCandidates } from '../services/memory.js';
+import { conversationGrounding } from '../services/memory-dedupe.js';
 import { historyAsHeard } from '../services/spoken-text.js';
 import { answerTurn, generationError } from './answer.js';
 import { blockedDetailOf, participantRiskLabel, participantTurnView, supportMessageFor } from './blocked.js';
@@ -192,6 +196,9 @@ interface Replay {
   readonly escalationId: string | null;
 }
 
+/** How long a turn waits for its memory candidates' vectors before keeping them without (lexical dedupe). */
+const CANDIDATE_EMBED_TIMEOUT_MS = 2_000;
+
 export function createOrchestrator(
   kit: Kit,
   directory: DirectoryCache,
@@ -219,6 +226,44 @@ export function createOrchestrator(
         });
       }
     };
+  }
+
+  /**
+   * Vectors of a turn's memory candidates (one metered call), so they are deduplicated by meaning before they are
+   * kept and found by meaning later. Best effort and bounded: without them (a failure, or slower than
+   * {@link CANDIDATE_EMBED_TIMEOUT_MS}), deduplication is lexical and distillation embeds them later.
+   */
+  async function embedCandidates(
+    ctx: RequestContext,
+    ventureId: string,
+    candidates: readonly { readonly title: string; readonly content: string }[],
+  ): Promise<(number[] | null)[] | undefined> {
+    if (candidates.length === 0) return undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const embedded = await Promise.race([
+        meteredEmbed(kit, { ctx, ventureId, purpose: 'embedding' }, candidates.map(memoryEmbeddingText)),
+        new Promise<null>((resolve) => {
+          timer = setTimeout(() => {
+            resolve(null);
+          }, CANDIDATE_EMBED_TIMEOUT_MS);
+        }),
+      ]);
+      if (embedded === null) return undefined;
+      return candidates.map((_, i) => {
+        const vector = embedded.vectors[i];
+        return vector?.length === knowledgeRepo.EMBEDDING_DIMENSIONS ? vector : null;
+      });
+    } catch (err) {
+      logger.warn('turn.memory_embedding_deferred', {
+        requestId: ctx.requestId,
+        candidates: candidates.length,
+        error: err instanceof Error ? err.name : 'unknown',
+      });
+      return undefined;
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
   }
 
   /**
@@ -793,6 +838,11 @@ export function createOrchestrator(
     }
     const { context, shown, generation, checked } = answered;
     const status = checked.blocked ? 'blocked' : 'completed';
+    // What the turn taught is kept automatically: embedded first (best effort, bounded, while the reply is still
+    // being said) so it is compared with the venture's memory by meaning before it is kept.
+    const keepable =
+      !checked.blocked && pre.session.privacy === 'standard' ? checked.response.memory_candidates : [];
+    const candidateVectors = embedCandidates(ctx, ventureId, keepable);
     // A call ends a streamed reply with its last unit (and a caveat when the answer was narrowed). A reply
     // written whole (streaming off, or a stream that broke, was empty or was not prose) is said as its
     // validated spoken form. A blocked turn says nothing more.
@@ -827,6 +877,7 @@ export function createOrchestrator(
     const evidenceIndex = new Map(shown.map((k) => [k.item.key, k.item] as const));
     const totals = generationTotals(generation);
     const firstTokenMs = generation.stream?.firstDeltaMs ?? null;
+    const vectors = await candidateVectors;
     const persisted = await kit.inRequest(ctx, async (scope) => {
       const { tx } = scope;
       const finished = await turnsRepo.finishTurn(tx, {
@@ -859,15 +910,21 @@ export function createOrchestrator(
         })),
       );
       const candidates =
-        !checked.blocked && pre.session.privacy === 'standard'
+        keepable.length > 0
           ? await persistMemoryCandidates(tx, {
               tenantId: ctx.tenantId,
               ventureId,
               createdBy: ctx.principalId,
-              candidates: checked.response.memory_candidates,
+              candidates: keepable,
               evidence: evidenceIndex,
               source: { kind: 'turn', id: turn.id, sessionId: pre.session.id },
               visibility: candidateVisibility(pack),
+              // The coach's own advice is never kept as a fact unless the founder said or agreed to it.
+              grounding: conversationGrounding([
+                ...coach.history.map((t) => ({ founder: t.founderText, answer: t.response?.answer ?? null })),
+                { founder: turn.founderText, answer: checked.response.answer },
+              ]),
+              ...(vectors === undefined ? {} : { embeddings: vectors }),
             })
           : [];
       const esc = checked.response.escalation;

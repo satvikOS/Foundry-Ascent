@@ -55,6 +55,7 @@ import {
   staleWriteReason,
 } from './distill-rules.js';
 import { proposeMemoryCandidates } from './memory.js';
+import { conversationGrounding } from './memory-dedupe.js';
 
 /**
  * Distillation: how a vEIR's specific pool grows from conversations (docs/architecture/knowledge-pools.md).
@@ -756,6 +757,10 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
           sourceIds: new Set([sessionId, ...source.turnIds]),
           speakers: source.founderFirstName === null ? [] : [source.founderFirstName],
         },
+        // The coach's own advice is never kept as a fact unless the founder said or agreed to it.
+        grounding: conversationGrounding(
+          source.turns.map((t) => ({ founder: t.founderText, answer: t.response?.answer ?? null })),
+        ),
         ...(vectors.candidates ? { embeddings: vectors.candidates } : {}),
       });
 

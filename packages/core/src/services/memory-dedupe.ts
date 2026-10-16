@@ -89,3 +89,55 @@ export function addsNothingTo(
   const known = contentTokens(existing);
   return own.every((t) => known.has(t));
 }
+
+/** What the founder said in a conversation, for judging where a memory candidate came from. */
+export interface ConversationGrounding {
+  /** The founder's own words, and the coach's advice the founder agreed to ("Sounds good, let's do that"). */
+  readonly founder: readonly string[];
+}
+
+/** A founder message that agrees with what the coach just said. */
+const AGREEMENT =
+  /^\s*(?:yes|yeah|yep|yup|sure|ok(?:ay)?|agreed|i agree|deal|perfect|great|good idea|sounds good|makes sense|let'?s do (?:it|that)|will do|right|exactly|absolutely|definitely)\b/i;
+
+/**
+ * The grounding of a conversation's turns (oldest first): every founder message, plus each answer the next founder
+ * message agreed to.
+ */
+export function conversationGrounding(
+  turns: readonly { readonly founder: string; readonly answer: string | null }[],
+): ConversationGrounding {
+  const founder: string[] = [];
+  turns.forEach((turn, i) => {
+    founder.push(turn.founder);
+    const previous = turns[i - 1]?.answer ?? null;
+    if (previous !== null && AGREEMENT.test(turn.founder)) founder.push(previous);
+  });
+  return { founder };
+}
+
+/** Content words a candidate needs before it can be judged (shorter notes are kept). */
+const MIN_ECHO_WORDS = 3;
+
+/**
+ * Whether a memory candidate is only the coach's own advice or framing, which is never kept as a fact about the
+ * venture (production: the same advice was kept four times while the founder's own goal was missed): none of its
+ * content words come from the founder (or advice they agreed to), and it cites none of the venture's records
+ * (`cited`: evidence the turn was shown). Anything the founder said, even reworded or said back by the coach,
+ * shares a word with them and is kept.
+ */
+export function isCoachEcho(
+  candidate: { readonly title: string; readonly content: string },
+  grounding: ConversationGrounding,
+  options: { readonly speakers?: readonly string[]; readonly cited: boolean },
+): boolean {
+  if (options.cited) return false;
+  const framing = new Set([
+    ...FRAMING_WORDS,
+    ...(options.speakers ?? []).flatMap((name) => [...contentTokens(name)]),
+  ]);
+  const words = [...contentTokens(`${candidate.title} ${candidate.content}`)].filter((t) => !framing.has(t));
+  if (words.length < MIN_ECHO_WORDS) return false;
+  const founder = contentTokens(grounding.founder.join(' '));
+  return !words.some((t) => founder.has(t));
+}

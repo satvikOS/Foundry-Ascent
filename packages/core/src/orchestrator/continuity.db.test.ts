@@ -7,13 +7,22 @@
  * behind; "Where you left off" reads only the venture's own standard, undeleted conversations and stays within
  * its budget; and what the vEIR learns is kept without an approval, for the founder to edit or forget.
  */
-import { type MockGenerateContext } from '@foundry/ai';
-import { StartCallResponse, TurnStreamEvent, type TurnView } from '@foundry/contracts';
-import { p } from '@foundry/db';
+import {
+  COACH_ANNOTATIONS_SCHEMA_NAME,
+  MockModelGateway,
+  mockCoachResponse,
+  type EmbedOptions,
+  type EmbedResult,
+  type MockGenerateContext,
+} from '@foundry/ai';
+import { StartCallResponse, TurnStreamEvent, type MemoryCandidate, type TurnView } from '@foundry/contracts';
+import { lastQuestionOf } from '@foundry/ai';
+import { memoryRepo, notebooksRepo, p } from '@foundry/db';
 import { makeContext } from '@foundry/db/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { type RequestContext } from '../context.js';
+import { createCore } from '../core.js';
 import { type CoreHarness, createCoreHarness } from '../testing/harness.js';
 import { LEFT_OFF_HEADING, LEFT_OFF_MAX_CHARS, renderLeftOffSection } from './continuity-prompt.js';
 import { loadLeftOff } from './continuity.js';
@@ -60,7 +69,7 @@ async function talk(
   );
   const last = events.at(-1);
   if (last?.event !== 'turn.completed')
-    throw new Error(`expected turn.completed, got ${last?.event ?? 'none'}`);
+    throw new Error(`expected turn.completed, got ${JSON.stringify(last)}`);
   return last.turn;
 }
 
@@ -114,7 +123,11 @@ async function drawnFrom(sessionId: string): Promise<Record<string, number>> {
 }
 
 beforeAll(async () => {
-  h = await createCoreHarness({ gatewayOptions: { streamFixture: recallingModel } });
+  // Many messages from one founder in a few minutes: the per-person message limit is not what is tested here.
+  h = await createCoreHarness({
+    gatewayOptions: { streamFixture: recallingModel },
+    config: { turns: { rateLimit: 500 } },
+  });
   maya = await h.ctxFor(h.people.maya);
   devin = await h.ctxFor(h.people.devin);
   priya = await h.ctxFor(h.people.priya);
@@ -412,5 +425,167 @@ describe('memory kept automatically', () => {
     if (learned === undefined) throw new Error('nothing kept');
     expect(await h.core.memory.act(maya, learned.id, { action: 'delete' })).toBeNull();
     await expect(h.core.memory.get(maya, learned.id)).rejects.toMatchObject({ code: 'not_found' });
+  });
+});
+
+describe('what the vEIR keeps', () => {
+  /** Candidates the model proposes for a founder message (by its first word), with the mock's other fields. */
+  const proposals: Record<string, MemoryCandidate[]> = {};
+  /** Embeddings that know two wordings of the pilot budget mean the same thing. */
+  class MeaningGateway extends MockModelGateway {
+    override async embed(texts: readonly string[], options: EmbedOptions): Promise<EmbedResult> {
+      const result = await super.embed(texts, options);
+      const budget = result.vectors[0]?.map((_, i) => (i === 0 ? 1 : 0)) ?? [];
+      return {
+        ...result,
+        vectors: result.vectors.map((v, i) => (/pilot (budget|spend)/i.test(texts[i] ?? '') ? budget : v)),
+      };
+    }
+  }
+  const candidate = (title: string, content: string): MemoryCandidate => ({
+    type: 'fact',
+    title,
+    content,
+    evidence_ids: [],
+    confidence: 0.7,
+  });
+
+  it('keeps the founder’s own words, never the coach’s advice alone, and each thing once by meaning', async () => {
+    const gateway = new MeaningGateway({
+      streamDelayMs: 0,
+      fixtures: {
+        [COACH_ANNOTATIONS_SCHEMA_NAME]: (context: MockGenerateContext) => {
+          const { answer: _answer, spoken: _spoken, ...annotations } = mockCoachResponse(context);
+          const key = context.founderText.split(/\s+/)[0] ?? '';
+          return { ...annotations, memory_candidates: proposals[key] ?? [] };
+        },
+      },
+    });
+    const core = createCore({
+      db: h.t.db,
+      gateway,
+      config: h.config,
+      objectStore: h.objectStore,
+      jobQueue: h.jobQueue,
+      logger: h.logger,
+    });
+    const say = async (sessionId: string, text: string): Promise<TurnView> => {
+      const events: TurnStreamEvent[] = [];
+      await core.orchestrator.runTurn(maya, sessionId, { text }, (e) => {
+        events.push(TurnStreamEvent.parse(e));
+      });
+      const last = events.at(-1);
+      if (last?.event !== 'turn.completed')
+        throw new Error(`expected turn.completed, got ${last?.event ?? 'none'}`);
+      return last.turn;
+    };
+    const learnedFrom = async (turnId: string) =>
+      (await h.t.db.system((sx) => memoryRepo.listMemory(sx, { ventureId: quietquad(), limit: 500 }))).filter(
+        (m) => m.sourceRefs.some((r) => r.kind === 'turn' && r.id === turnId),
+      );
+
+    // The founder's own goal is kept (embedded, so "do you remember…" finds it by meaning); the coach's
+    // standing advice, which nothing the founder said supports, is not.
+    proposals.Honestly = [
+      candidate('Personal goal', 'Maya wants the startup to make her rich quickly.'),
+      candidate(
+        'Regulatory pathway undecided',
+        'The regulatory classification and reimbursement pathway are undecided.',
+      ),
+    ];
+    const first = await core.sessions.create(maya, quietquad(), {});
+    const goalTurn = await say(first.id, 'Honestly I just want this startup to make me rich, quickly.');
+    const kept = await learnedFrom(goalTurn.id);
+    expect(kept.map((m) => m.title)).toEqual(['Personal goal']);
+    expect(kept[0]).toMatchObject({ keptAutomatically: true, hasEmbedding: true });
+
+    // The same thing said another way in a later conversation is not kept twice: it names the new conversation.
+    proposals.Our = [candidate('Pilot budget', 'The pilot budget is capped at five thousand.')];
+    const budgetTurn = await say(first.id, 'Our pilot budget is capped at five thousand.');
+    const [budget] = await learnedFrom(budgetTurn.id);
+    if (budget === undefined) throw new Error('the budget was not kept');
+    proposals.We = [candidate('Pilot spending limit', 'Pilot spending cannot go beyond the cap we agreed.')];
+    const second = await core.sessions.create(maya, quietquad(), {});
+    const againTurn = await say(second.id, 'We cannot let pilot spending go beyond the cap.');
+    const again = await learnedFrom(againTurn.id);
+    expect(again.map((m) => m.id)).toEqual([budget.id]);
+    expect(again[0]?.sourceRefs).toEqual(
+      expect.arrayContaining([{ kind: 'session', id: second.id, label: 'Learned from the conversation' }]),
+    );
+  });
+});
+
+describe('how a new conversation opens', () => {
+  /** Everything said in QuietQuad so far happened days ago (each test starts from a clean recent history). */
+  async function ageEverything(days: number): Promise<void> {
+    await h.t.db.system((sx) =>
+      sx.query(
+        `UPDATE coaching_sessions SET last_activity_at = now() - make_interval(days => :d) WHERE venture_id = :v`,
+        { v: p.uuid(quietquad()), d: p.int(days) },
+      ),
+    );
+  }
+
+  it('a call started later in a conversation created earlier opens with what is true now', async () => {
+    await ageEverything(3);
+    const empty = await h.core.sessions.create(maya, quietquad(), {});
+    const meanwhile = await h.core.sessions.create(maya, quietquad(), {});
+    await talk(maya, meanwhile.id, 'We booked the auditorium for demo day.');
+    const call = await startCall(maya, empty.id);
+    expect(call.intro?.text).toContain('“We booked the auditorium for demo day”');
+    // The conversation keeps that line as its first message: the vEIR's history says what the call said.
+    const opener = (await h.core.sessions.get(maya, empty.id)).session.opener ?? '';
+    expect(call.intro?.text.endsWith(opener)).toBe(true);
+    await h.core.calls.end(maya, call.call.id, { reason: 'user' });
+    h.jobQueue.drain();
+  });
+
+  it('never opens by repeating the question the last conversation ended on', async () => {
+    await ageEverything(3);
+    const last = await h.core.sessions.create(maya, quietquad(), {});
+    const turn = await talk(maya, last.id, 'Should we charge libraries per seat?');
+    const question = lastQuestionOf(turn.response?.answer ?? '');
+    if (question === null) throw new Error('the answer asks nothing');
+    // The notebook's opener, drawn from that conversation, is its closing question word for word.
+    await h.t.db.system(async (sx) => {
+      const key = { ventureId: quietquad(), personaId: h.ventures.quietquad.personaId };
+      const current = await notebooksRepo.getNotebook(sx, key);
+      await notebooksRepo.saveNotebook(sx, {
+        tenantId: h.seed.tenantId,
+        ...key,
+        expectedVersion: current?.version ?? 0,
+        content: { ...(current?.content ?? notebooksRepo.EMPTY_NOTEBOOK), nextOpener: question },
+        suppressed: current?.suppressed ?? [],
+        editedBy: 'veir',
+        sourceSessionId: last.id,
+      });
+    });
+    const next = await h.core.sessions.create(maya, quietquad(), {});
+    expect(next.opener).not.toBe(question);
+    expect(next.opener).toContain('“Should we charge libraries per seat?”');
+  });
+
+  it('carries over a conversation the venture had with its previous coach, as the founder’s, never as its own', async () => {
+    await ageEverything(3);
+    const before = await h.core.sessions.create(maya, quietquad(), {});
+    await talk(maya, before.id, 'Our goal is ten paying libraries by June.');
+    // The venture talked to the program guide then (its vEIR changed since).
+    await h.t.db.system((sx) =>
+      sx.query(
+        `UPDATE coaching_sessions SET persona_release_id = (
+           SELECT r.id FROM persona_releases r JOIN personas pe ON pe.id = r.persona_id
+           WHERE pe.kind = 'neutral_guide' AND r.status = 'approved' ORDER BY r.version DESC LIMIT 1)
+         WHERE id = :id`,
+        { id: p.uuid(before.id) },
+      ),
+    );
+    const now = await h.core.sessions.create(maya, quietquad(), {});
+    expect(now.opener).toMatch(/^Good to have you here\. Your last conversation here \(a moment ago\)/);
+    expect(now.opener).toContain('“Our goal is ten paying libraries by June”');
+    await talk(maya, now.id, 'Do you remember my goal?');
+    const prompt = seen.at(-1)?.messages.at(-1)?.content ?? '';
+    expect(prompt).toContain('coach="another coach of this venture"');
+    expect(prompt).toContain('<founder>Our goal is ten paying libraries by June.</founder>');
+    expect(prompt).toMatch(/<other_coach>[^<]+<\/other_coach>/);
   });
 });

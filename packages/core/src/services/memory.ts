@@ -19,7 +19,13 @@ import { fail, parseInput } from '../errors.js';
 import { embedMemoryBestEffort, type EmbeddableMemory } from '../internal/embeddings.js';
 import { audit, requireId, type Kit } from '../internal/kit.js';
 import { toMemoryView } from '../internal/views.js';
-import { addsNothingTo, MEMORY_DUPLICATE_COSINE, sameMemoryContent } from './memory-dedupe.js';
+import {
+  addsNothingTo,
+  isCoachEcho,
+  MEMORY_DUPLICATE_COSINE,
+  sameMemoryContent,
+  type ConversationGrounding,
+} from './memory-dedupe.js';
 
 type MemoryEventViewValue = z.infer<typeof MemoryEventView>;
 
@@ -102,7 +108,10 @@ export interface ProposalResult {
   readonly created: number;
   /** Candidates that repeated AI memory nobody approved or corrected, which got the new source instead. */
   readonly repeated: number;
-  /** Candidates that restated an item a person made, approved or rejected. */
+  /**
+   * Candidates that restated an item a person made, approved or rejected, or that were only the coach's own
+   * advice ({@link isCoachEcho}).
+   */
   readonly dropped: number;
 }
 
@@ -176,6 +185,10 @@ async function findDuplicate(
  * founder_private evidence (`candidateVisibility`), so it never restates a private item to the team. Evidence
  * ids that are not in the evidence pack are ignored. Callers write nothing for a temporary chat.
  *
+ * A candidate that is only the coach's own advice or framing (nothing of it comes from the founder or advice they
+ * agreed to, and it cites none of the venture's records: {@link isCoachEcho}) is never kept as a fact about the
+ * venture.
+ *
  * Hygiene before every insert: a candidate that restates AI memory nobody approved or corrected (an item kept
  * automatically, or a pending proposal from before) of the same visibility adds its source to that item
  * instead of a duplicate; one that restates anything else the venture has (an item a person made, approved,
@@ -197,6 +210,8 @@ export async function proposeMemoryCandidates(
     readonly existing?: readonly memoryRepo.MemoryRecord[];
     readonly embeddings?: readonly (readonly number[] | null)[];
     readonly conversation?: CandidateConversation;
+    /** What was said where the candidates come from (the founder's words and the coach's). */
+    readonly grounding?: ConversationGrounding;
   },
 ): Promise<ProposalResult> {
   const usable = args.candidates.filter((c) => c.title.trim() !== '');
@@ -226,6 +241,16 @@ export async function proposeMemoryCandidates(
     const content = candidate.content.trim().slice(0, 8000);
     if (title === '') continue;
     const keys = [...new Set(candidate.evidence_ids)].filter((k) => args.evidence.has(k));
+    if (
+      args.grounding !== undefined &&
+      isCoachEcho({ title, content }, args.grounding, {
+        speakers: args.conversation?.speakers ?? [],
+        cited: keys.length > 0,
+      })
+    ) {
+      dropped += 1;
+      continue;
+    }
     const refs: SourceRef[] = [...conversationRefs];
     for (const key of keys) {
       const item = args.evidence.get(key);

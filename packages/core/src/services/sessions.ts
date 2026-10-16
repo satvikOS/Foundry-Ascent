@@ -12,7 +12,6 @@ import {
 } from '@foundry/contracts';
 import {
   escalationsRepo,
-  notebooksRepo,
   personasRepo,
   sessionsRepo,
   settingsRepo,
@@ -33,11 +32,11 @@ import { type DirectoryCache, type OtherVentures } from '../internal/directory.j
 import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
 import { meteredStructured } from '../internal/metered.js';
 import { participantTurnView, supportMessageFor } from '../orchestrator/blocked.js';
-import { loadLeftOff, validatedOpener } from '../orchestrator/continuity.js';
-import { continuityOpener, type LeftOffConversationData } from '../orchestrator/continuity-prompt.js';
+import { chooseOpener } from '../orchestrator/continuity.js';
 import { assertWithinSpendCaps } from '../orchestrator/guards.js';
 import { RECAP_SCHEMA_NAME, RecapDraft, buildRecapPrompt, sanitizeRecap } from '../orchestrator/recap.js';
 import { persistMemoryCandidates } from './memory.js';
+import { conversationGrounding } from './memory-dedupe.js';
 
 type SessionDetail = z.infer<typeof SessionDetailResponse>;
 
@@ -124,84 +123,25 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
     return view;
   }
 
-  /**
-   * The vEIR's opening line for a new standard conversation (its first bubble, and what a call says after
-   * introducing itself), in this order:
-   * 1. the notebook's next opener when a person wrote it (they chose what to open with);
-   * 2. the notebook's next opener when distillation drew it from the person's latest conversation, or the
-   *    notebook was written after that conversation's last turn (nothing was said since it was written);
-   * 3. a line that picks up the person's latest conversation itself (when it was, what it was about), built
-   *    without any model call from what was said, so it is right even before distillation ran
-   *    (orchestrator/continuity-prompt.ts);
-   * 4. an older notebook opener.
-   * Every line must pass the opener checks (identity, cross-venture); one that fails is skipped. `opener` is
-   * null when there is none (a first conversation). The phrasing of 3 follows the conversation it picks up (and
-   * the person), so a preview and the conversation created next say the same, and each new conversation after
-   * another one opens differently.
-   */
-  async function openerFor(
+  /** The opening line of a new conversation of the caller (orchestrator/continuity.ts `chooseOpener`). */
+  function openerFor(
     scope: RequestScope,
     ventureId: string,
     active: ActiveAssignment,
     guards: { readonly others: OtherVentures; readonly eirNames: readonly string[] },
-  ): Promise<{
-    readonly opener: {
-      readonly text: string;
-      readonly sourceSessionId: string | null;
-      readonly byPerson: boolean;
-    } | null;
-    readonly latest: LeftOffConversationData | null;
-  }> {
-    const notebook = await notebooksRepo.getNotebook(scope.tx, { ventureId, personaId: active.persona.id });
-    const openerGuards = {
-      personaName: active.persona.name,
-      personaEirName: await personasRepo.getPersonaEirName(scope.tx, active.persona.id),
-      eirNames: guards.eirNames,
-      otherVentureNames: guards.others.names,
-      otherVentureCanaries: guards.others.canaries,
-      otherVentureMemberNames: guards.others.memberNames,
-    };
-    const next = notebook?.content.nextOpener ?? null;
-    const stored = next === null ? null : validatedOpener(next, openerGuards);
-    // The conversation it was drawn from, so deleting that conversation erases this copy too. A null source
-    // means a person wrote it (the copy stays); a missing one means its origin is unknown, and deleting any
-    // conversation of the venture erases the copy.
-    const source = notebook?.content.nextOpenerSource;
-    const last = await loadLeftOff(scope.tx, {
+  ): ReturnType<typeof chooseOpener> {
+    return chooseOpener(scope.tx, {
       ventureId,
-      personaId: active.persona.id,
-      sessionId: null,
+      persona: { id: active.persona.id, name: active.persona.name },
       principalId: scope.ctx.principalId,
-      privacy: 'standard',
-      ownOnly: true,
+      guards: {
+        eirNames: guards.eirNames,
+        otherVentureNames: guards.others.names,
+        otherVentureCanaries: guards.others.canaries,
+        otherVentureMemberNames: guards.others.memberNames,
+      },
+      now: kit.now(),
     });
-    const latest = last?.conversations[0] ?? null;
-    const found = (
-      opener: {
-        readonly text: string;
-        readonly sourceSessionId: string | null;
-        readonly byPerson: boolean;
-      } | null,
-    ) => ({ opener, latest });
-    if (stored !== null && source === null) {
-      return found({ text: stored, sourceSessionId: null, byPerson: true });
-    }
-    const current =
-      latest === null ||
-      source === latest.sessionId ||
-      (notebook?.updatedAt != null && Date.parse(notebook.updatedAt) > Date.parse(latest.lastActivityAt));
-    if (stored !== null && current) {
-      return found({ text: stored, sourceSessionId: source ?? null, byPerson: false });
-    }
-    if (latest !== null) {
-      const seed = `${latest.sessionId}:${scope.ctx.principalId}`;
-      const lines = continuityOpener(latest, { now: kit.now(), seed });
-      for (const candidate of [lines.withTopic, lines.generic]) {
-        const text = candidate === null ? null : validatedOpener(candidate, openerGuards);
-        if (text !== null) return found({ text, sourceSessionId: latest.sessionId, byPerson: false });
-      }
-    }
-    return found(stored === null ? null : { text: stored, sourceSessionId: source ?? null, byPerson: false });
   }
 
   /** The opener's guards, from the tenant directory (owner role, cached): read before a request transaction. */
@@ -545,6 +485,10 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
             // Turn evidence can never cite a founder_private item (retrieval excludes them and the
             // turn_evidence insert policy rejects them), so a recap's candidates are team items.
             visibility: 'team',
+            // The coach's own advice is never kept as a fact unless the founder said or agreed to it.
+            grounding: conversationGrounding(
+              turns.map((t) => ({ founder: t.founderText, answer: t.response?.answer ?? null })),
+            ),
           });
           candidateCount = created.length;
           recap = {
