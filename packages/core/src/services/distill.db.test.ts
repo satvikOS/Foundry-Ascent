@@ -1202,6 +1202,13 @@ describe('temporary chats keep nothing', () => {
     expect(await escalationsOf(session.id)).toEqual([
       { status: 'withdrawn', question: '[temporary chat ended]', shared: false },
     ]);
+    // Idempotent: the next day's sweep finds nothing left to erase.
+    const again = await h.t.db.system((sx) =>
+      sessionsRepo.expireStaleEphemeralSessions(sx, {
+        idleSeconds: h.config.maintenance.ephemeralIdleSeconds,
+      }),
+    );
+    expect(again.escalationsErased).toBe(0);
   });
 });
 

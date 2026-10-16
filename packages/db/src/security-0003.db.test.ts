@@ -254,7 +254,7 @@ describe('ephemeral sessions are never part of EIR review (finding 11b)', () => 
     const again = await t.db.system((sx) =>
       sessionsRepo.expireStaleEphemeralSessions(sx, { idleSeconds: 86_400 }),
     );
-    expect(again).toEqual({ sessionsEnded: 0, turnsRedacted: 0 });
+    expect(again).toEqual({ sessionsEnded: 0, turnsRedacted: 0, escalationsErased: 0 });
   });
 });
 
