@@ -1,52 +1,56 @@
 # Foundry Ascent
 
-A persistent, evidence-grounded AI venture coach for university founders, with founder-approved memory
-and human-led escalation.
+AI venture coaching for university founders. Each venture works with a **vEIR**: an AI coach built, with
+consent, from an Entrepreneur-in-Residence's approved frameworks and coaching style. Founders talk to it
+in chat or on a voice call, and it remembers their venture.
+
+**Live:** <https://d38hejyf9iw77e.cloudfront.net/> (sign in with an access code from the platform owner).
 
 [![CI](https://github.com/satvikOS/Foundry-Ascent/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/satvikOS/Foundry-Ascent/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/satvikOS/Foundry-Ascent/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/satvikOS/Foundry-Ascent/actions/workflows/codeql.yml)
 [![Security](https://github.com/satvikOS/Foundry-Ascent/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/satvikOS/Foundry-Ascent/actions/workflows/security.yml)
 
 > **All data in this system is synthetic.** Ventures, founders, EIRs and documents are invented
-> ([ADR-0006](docs/architecture/adr/0006-synthetic-and-authorized-data-only.md)). Foundry Guide is an AI
-> coach: it is not a person, and no human EIR authored or approved its responses.
+> ([ADR-0006](docs/architecture/adr/0006-synthetic-and-authorized-data-only.md)). A vEIR is an AI: it is
+> not the EIR it was built from, and no human EIR wrote or approved its responses.
 
 ## What it does
 
-Each venture gets a private workspace and a coach, **Foundry Guide**, that remembers the venture across
-sessions and works in six modes: diagnose, challenge, coach, teach, rehearse and route.
-
-- **Evidence before eloquence.** Every substantive answer cites evidence from the venture's own memory and
-  documents or the program's corpus, and labels each claim as fact, inference, hypothesis or
-  recommendation, with uncertainty stated.
-- **Memory you can see and correct.** The coach proposes typed memory (facts, decisions, experiments,
-  risks, actions, …) with source links; founders approve, correct, pin or delete it.
-- **Escalation is a feature.** IP, legal, investment, clinical, safety and conflict topics get educational
-  framing and a structured handoff packet that the founder approves before it reaches a human EIR or
-  program lead.
+- **A conversation-first console.** New chat and Call are one click away; past conversations sit in the
+  sidebar, as in ChatGPT, Claude or Gemini. EIRs, program leads and admins work in the same shell.
+- **Voice calls.** The founder's speech goes from the browser straight to Amazon Transcribe; the vEIR
+  answers with validated text spoken by Amazon Polly, with live captions and a typed fallback
+  ([ADR-0010](docs/architecture/adr/0010-realtime-webrtc-deferred.md)).
+- **Knowledge pools.** Each vEIR has a common pool (the EIR's doctrine, style, knowledge library and
+  published lessons) and a pool per venture (approved memory, documents, conversation digests and its
+  notebook), which grows from conversations so the vEIR picks up where the founder left off
+  ([ADR-0018](docs/architecture/adr/0018-veir-knowledge-pools.md)).
+- **Evidence before eloquence.** Substantive answers cite the venture's memory and documents or the
+  program's corpus, and label each claim as fact, inference, hypothesis or recommendation.
+- **Memory you can see and correct.** The vEIR proposes typed memory with source links; people approve,
+  correct, pin or delete it. Its notebook and digests are notes, never cited as facts.
+- **Escalation is a feature.** IP, legal, investment, clinical, safety and conflict topics get
+  educational framing and a handoff packet the founder approves before it reaches a human.
 - **Venture-private by default.** Isolation is enforced in the service layer and by PostgreSQL row level
   security; no prompt is trusted to keep a secret.
 - **Human authority.** Program leads and EIRs can suspend a persona, and admins can switch off all AI,
-  without engineering help.
-- Consoles for EIRs (persona releases, calibration reviews, inbox), program leads (k-anonymous portfolio,
-  resources, escalation queue) and admins (access codes, kill switch, spend caps, usage, audit log).
-
-V1 is text-first; realtime voice and avatars are deliberately deferred
-([ADR-0007](docs/architecture/adr/0007-text-mode-complete-path.md), [ADR-0010](docs/architecture/adr/0010-realtime-webrtc-deferred.md)).
+  calls or streaming, without engineering help.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
   user(["Founder · EIR · program lead · admin"]) -->|HTTPS| cf["CloudFront<br/>security headers · SPA rewrite"]
+  user -->|"call audio, presigned WSS"| stt["Amazon Transcribe<br/>streaming"]
   cf -->|"/* via OAC"| site[("S3 site bucket<br/>Vite + React SPA")]
   cf -->|"/api/* via OAC (SigV4)"| url["Lambda Function URL<br/>response streaming (SSE)"]
   url --> api["API Lambda<br/>Hono · core · ai · db"]
   api -->|"RDS Data API"| db[("Aurora Serverless v2<br/>PostgreSQL 16 · pgvector · FTS · RLS")]
   api -->|"bedrock-runtime"| nova["Nova 2 Lite: us. profile (primary)<br/>global. profile (fallback)<br/>Titan embeddings v2"]
   api -.->|"bedrock-mantle, disabled"| luna["GPT-6 Luna<br/>(gated by AWS; models.luna.enabled = false)"]
+  api -->|"validated text"| polly["Amazon Polly<br/>call speech"]
   api -->|"presigned PUT"| docs[("S3 documents")]
-  api --> jobs["SQS jobs"] --> worker["Worker Lambda<br/>ingestion · recaps"]
+  api --> jobs["SQS jobs"] --> worker["Worker Lambda<br/>ingestion · distillation · maintenance"]
   worker --> db
   jobs -.->|"after 3 attempts"| dlq["DLQ"]
   gh["GitHub Actions<br/>CI · CodeQL · gitleaks"] -->|"OIDC"| cdk["CDK → CloudFormation"]
@@ -74,19 +78,19 @@ config change ([ADR-0014](docs/architecture/adr/0014-bedrock-models-luna-nova-ti
 | [`apps/web`](apps/web)                     | Vite 8 + React 19 SPA (TanStack Router/Query, Tailwind CSS 4, Radix)                                                                         |
 | [`packages/contracts`](packages/contracts) | Zod schemas shared by browser and server: domain, API DTOs, coach response, errors                                                           |
 | [`packages/db`](packages/db)               | SQL migrations with RLS, Data API and node-postgres drivers, repositories, synthetic seed                                                    |
-| [`packages/ai`](packages/ai)               | Model gateway (Nova, Titan, Luna, mock), prompts, risk classifier, validators                                                                |
-| [`packages/core`](packages/core)           | Domain services: auth, authorization, orchestrator, memory, retrieval, escalation, usage, audit                                              |
+| [`packages/ai`](packages/ai)               | Model gateway (Nova, Titan, Luna, mock), prompts, risk classifier, validators, distillation                                                  |
+| [`packages/core`](packages/core)           | Domain services: auth, authorization, orchestrator, memory, knowledge pools, calls, escalation, usage, audit                                 |
 | [`infra/cdk`](infra/cdk)                   | AWS CDK app: Foundation, Data and App stacks, cdk-nag, tests                                                                                 |
-| [`infra/iam`](infra/iam)                   | Stage-0 IAM policies and the permissions boundary                                                                                            |
+| [`infra/iam`](infra/iam)                   | The permissions boundary and the (retired) stage-0 IAM policies                                                                              |
 | [`evals`](evals)                           | Python scenario benchmark and red-team suite against a running API                                                                           |
 | [`ops/aws`](ops/aws)                       | Python ops tooling: inventory, access verification, legacy cleanup, policy upsert                                                            |
 | [`scripts/smoke.mjs`](scripts/smoke.mjs)   | Post-deploy smoke test                                                                                                                       |
 | [`docs`](docs)                             | [Blueprints](docs/blueprints), [system design](docs/architecture/system-design.md), [ADRs](docs/architecture/adr), [runbooks](docs/runbooks) |
 
-## Quick start
+## Local development
 
-Requires Node ≥ 22.12 (24 recommended), pnpm 10.28 (`corepack enable`) and PostgreSQL 16 with pgvector.
-Full instructions, Docker option and troubleshooting: [local development](docs/runbooks/local-development.md).
+Requires Node 24 (`.nvmrc`; ≥ 22.12 runs the app), pnpm 10.28 (`corepack enable`) and PostgreSQL 16 with
+pgvector. Full instructions, Docker option and troubleshooting: [local development](docs/runbooks/local-development.md).
 
 ```bash
 pnpm install
@@ -95,7 +99,8 @@ pnpm dev         # API on http://localhost:8787 (mock model), web on http://loca
 ```
 
 Open <http://localhost:5173/sign-in> and enter the printed code. The mock model is deterministic, so the
-whole product runs offline at no cost.
+whole product runs offline at no cost. Without AWS a call uses typed input and the browser reads replies
+aloud.
 
 ## Testing
 
@@ -114,54 +119,41 @@ the web route tree (`pnpm --filter @foundry/web build`).
 
 ## Deployment
 
-Pushes to `main` that pass CI deploy automatically to production through
-[`deploy.yml`](.github/workflows/deploy.yml): `cdk deploy --all` (Foundation → Data → App; database
+Pushes to `main` that pass CI deploy to production through GitHub OIDC
+([`deploy.yml`](.github/workflows/deploy.yml)): `cdk deploy --all` (Foundation → Data → App; database
 migrations and the synthetic seed run inside the deployment, before new code goes live), then the smoke
-test.
-
-1. **Stage 0 access** (done) — an account administrator attaches the stage-0 policy to the IAM user
-   ([`infra/iam/README.md`](infra/iam/README.md)) and adds its key as repository secrets; run
-   **Ops - verify AWS access**. Since the bootstrap the policy is read-only plus "assume the CDK roles";
-   the owner re-applies it with `infra/iam/apply-bootstrap-access.sh` in CloudShell.
-2. **Bootstrap** (done) — the permissions boundary is published and CDK is bootstrapped (`CDKToolkit`).
-   Both are account-owner actions in CloudShell (`infra/iam/apply-bootstrap-access.sh`,
-   `infra/iam/cdk-bootstrap.sh`).
-3. **Data stack first** (done) — **Platform - deploy data stack** created `FoundryAscent-Data` (Aurora,
-   documents bucket, jobs queue) on its own, because Aurora takes longest.
-4. **Full deploy** — merge to `main` (or run **Deploy** manually). It creates Foundation (GitHub OIDC
-   provider and deploy role) and App and updates Data in place. Before `cdk deploy` the workflow decides
-   whether Foundation creates, keeps or imports the GitHub OIDC provider, so an existing provider is never
-   duplicated and a managed one is never deleted.
-5. **Stage 1** — set the repository secret `AWS_DEPLOY_ROLE_ARN` to the `GitHubDeployRoleArn` output; later
-   deploys use GitHub OIDC and the access key is retired.
+test. How the account got there: [ADR-0016](docs/architecture/adr/0016-staged-iam-github-oidc.md).
 
 **Owner access code.** There is no Cognito: people sign in with access codes
 (`FA-XXXXX-XXXXX-XXXXX-XXXXX`). The owner's code is never in git: only its public prefix and scrypt hash
 are in `infra/cdk/config/production.json`, and every deploy binds them to the owner principal
 ([access codes](docs/runbooks/access-codes.md)).
 
-Rollback, failure handling and first-time settings: [deploy and rollback](docs/runbooks/deploy-and-rollback.md).
+Rollback and failure handling: [deploy and rollback](docs/runbooks/deploy-and-rollback.md). What only the
+owner can do (alarm subscriptions, budgets, GitHub settings, model access, reviews and consents):
+[owner actions](docs/runbooks/owner-actions.md).
 
 ## Security and privacy
 
 - **Data:** synthetic only until the University approves a data class. Venture content lives only in Aurora
   (encrypted at rest with AWS-managed keys) and the private documents bucket; models run on Amazon Bedrock
-  in `us-east-1`.
+  in `us-east-1`. Call audio goes from the browser to Amazon Transcribe and is not stored by the platform.
 - **Isolation:** service authorization on every request plus row level security under a dedicated
   `NOBYPASSRLS` role; retrieval always filters by venture before ranking; credential, ledger and audit
   tables are closed to request code.
 - **Identity:** per-person access codes stored as scrypt hashes; 12-hour `HttpOnly` `SameSite=Strict`
   session cookies; lockout after repeated failures; CSRF header on every write.
-- **Edge:** private origins behind CloudFront OAC, strict CSP, HSTS, `X-Frame-Options: DENY`.
+- **Edge:** private origins behind CloudFront OAC, strict CSP, HSTS, `X-Frame-Options: DENY`; the
+  microphone is allowed for this origin only and the camera never.
 - **Logging:** structured JSON with request ids; never prompts, model output, documents or memory content.
 - **AI safety:** deterministic risk pre-classifier, output validators, forced escalation for high-risk
   topics, persistent AI disclosure, kill switches.
 - **Cost:** the permissions boundary denies cost hazards (NAT, EC2, customer KMS keys, provisioned
-  capacity); daily AI spend caps ($2.00 platform-wide, $0.50 per person) and turn rate limits are checked
-  before every model call; alarms go to an SNS topic; an AWS Budget is recommended
+  capacity); daily AI spend caps (platform-wide and per person), call-minute caps and turn rate limits are
+  checked before every model call and every spoken reply; alarms go to an SNS topic
   ([cost controls](docs/runbooks/cost-controls.md)).
 - **Supply chain:** pinned actions (commit SHAs), frozen lockfile, Dependabot, gitleaks, CodeQL,
-  dependency audits; no long-lived cloud credentials after stage 1.
+  dependency audits; no long-lived cloud credentials (GitHub OIDC).
 
 Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 
@@ -171,5 +163,5 @@ Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
   blueprint · 03 technical architecture · 04 executive proposal · 05 partnership and platform blueprint)
 - [System design](docs/architecture/system-design.md) — the V1 build specification
 - [Architecture decision records](docs/architecture/adr/README.md)
-- [Runbooks](docs/runbooks/README.md)
+- [Runbooks](docs/runbooks/README.md), including [owner actions](docs/runbooks/owner-actions.md)
 - [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md)

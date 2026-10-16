@@ -55,8 +55,10 @@ behave as in production.
 | `TEST_DATABASE_ADMIN_URL` | `postgresql://postgres@localhost/postgres?host=/var/tmp&port=54329`           | superuser URL for `db:reset` and DB tests                          |
 | `LOCAL_DB_NAME`           | `foundry`                                                                     | database name used by `db:reset`                                   |
 
-Background jobs (document ingestion, recaps) run in-process right after they are queued. Documents are
-stored on disk; nothing leaves the machine with the mock model.
+Background jobs (document ingestion and the other worker jobs) run in-process instead of through SQS.
+Documents are stored on disk; nothing leaves the machine with the mock model. Calls work on the typed
+path: without AWS there is no Transcribe grant, and `POST /speech` answers `501`, so the browser reads
+replies aloud itself (local development only).
 
 **Real models locally (optional):** `MODEL_PROVIDER=bedrock BEDROCK_REGION=us-east-1
 MODEL_PRIMARY_ID=us.amazon.nova-2-lite-v1:0 MODEL_FALLBACK_ID=global.amazon.nova-2-lite-v1:0
@@ -109,3 +111,4 @@ bump them together.
 | Sign-in says the code is invalid           | codes from an earlier `db:reset` stop working after the next reset; run it again      |
 | Locked out after failed attempts           | wait 15 minutes, or `pnpm db:reset`                                                   |
 | Typecheck errors in `routeTree.gen.ts`     | run `pnpm --filter @foundry/web build` (or `dev`) to regenerate it                    |
+| Bundle tests fail on Node 26               | use Node 24 (`.nvmrc`), the Lambda runtime                                            |

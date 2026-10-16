@@ -1,4 +1,10 @@
-# Runbook: legacy AWS cleanup
+# Runbook: legacy AWS cleanup (archived)
+
+> **Archived: one-time, closed.** On 2026-10-06 `FoundryAscent-LegacyCleanup` was detached and the
+> stage-0 access key deleted ([`infra/iam/README.md`](../../infra/iam/README.md)), so the workflow below
+> can no longer authenticate. This page is kept as the record of what the tool does and how to recover
+> from it. Another cleanup would need its own reviewed credentials
+> ([ADR-0016](../architecture/adr/0016-staged-iam-github-oidc.md)).
 
 **Who:** platform owner with the stage-0 IAM user · **Workflow:** `.github/workflows/ops-aws-cleanup.yml`
 (**Ops - AWS legacy cleanup**) · **Code:** `ops/aws/cleanup.py`, tests `ops/aws/test_cleanup.py` ·

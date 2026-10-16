@@ -57,13 +57,14 @@ Region `us-east-1`, account taken from the deploying credentials. Every IAM role
   - `FoundryAscent-Api` (`apps/api/src/handlers/api.ts`): 1024 MB, 60 s, no reserved concurrency by
     default (see [Reserved concurrency](#reserved-concurrency)), Function URL `AWS_IAM` + `RESPONSE_STREAM`.
     Database policy, documents `PutObject` (presigned uploads) + `DeleteObject` (an explicit deny removes
-    `GetObject`), `sqs:SendMessage`, Bedrock, and (while `speech.enabled`, see
-    [Voice calls and distillation](#voice-calls-and-distillation)) `polly:SynthesizeSpeech` +
-    `polly:DescribeVoices` on `*` with `aws:RequestedRegion = us-east-1`.
+    `GetObject`), `sqs:SendMessage` (the only role that enqueues jobs), Bedrock, and while
+    `speech.enabled` (see [Voice calls and distillation](#voice-calls-and-distillation))
+    `polly:SynthesizeSpeech` + `polly:DescribeVoices` and `transcribe:StartStreamTranscriptionWebSocket`,
+    each on `*` with `aws:RequestedRegion = us-east-1`.
   - `FoundryAscent-Worker` (`worker.ts`): 1024 MB, 120 s, SQS event source (batch 5, partial batch
     failures, max 2 concurrent pollers), `JOBS_MAX_RECEIVE_COUNT=3` (the redrive count: the last delivery
     marks a document failed). Database policy, documents `GetObject` only (explicit deny on put/delete),
-    Bedrock.
+    Bedrock; no `sqs:SendMessage` and no `JOBS_QUEUE_URL`: the worker never enqueues.
   - `FoundryAscent-Migrate` (`migrate.ts`): 1024 MB, 10 min, `onEvent` handler of a custom-resource
     `Provider`. Database policy, Titan embeddings only. Waits up to 5 min (never more than the Lambda's
     remaining time minus 4 min) for Aurora to resume, applies migrations, seeds (owner from
@@ -96,10 +97,12 @@ Region `us-east-1`, account taken from the deploying credentials. Every IAM role
     `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`,
     `Permissions-Policy: camera=(), microphone=(self), geolocation=()` (the microphone for voice calls, on
     this origin only) and the CSP
-    `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' https://<documents bucket>.s3.us-east-1.amazonaws.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'`.
-    `connect-src` names the one documents bucket the presigned uploads use (a test forbids `*` anywhere in
-    the rendered policy); `media-src … blob:` lets the call screen play the speech it fetched from
-    `/api/v1/speech`.
+    `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' https://<documents bucket>.s3.us-east-1.amazonaws.com wss://transcribestreaming.us-east-1.amazonaws.com:8443; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'`.
+    `connect-src` names exactly the documents bucket the presigned uploads use and Transcribe streaming,
+    which the call screen's microphone streams to (a test forbids `*` anywhere in the rendered policy);
+    `media-src … blob:` lets the call screen play the speech it fetched from `/api/v1/speech`. The
+    microphone's AudioWorklet is a same-origin static file, which `script-src 'self'` covers.
+    `'unsafe-inline'` in `style-src` is only for a `<style>` element Radix injects (`src/constructs/edge.ts`).
   - Lambda permissions for the distribution: `lambda:InvokeFunctionUrl` and (required since October 2025)
     `lambda:InvokeFunction` with `InvokedViaFunctionUrl: true`.
 - EventBridge Scheduler schedules that send a fixed message (from `lambda-contract.json`) to the jobs
@@ -107,15 +110,18 @@ Region `us-east-1`, account taken from the deploying credentials. Every IAM role
   queue-policy statement in the Data stack):
   - `DailyMaintenance`, `rate(1 day)`: `{"type":"maintenance","task":"daily"}` (ephemeral-session expiry
     and redaction).
-  - `DistillSweep`, `rate(15 minutes)` (`distillation.sweepIntervalMinutes`): `{"type":"distill_sweep"}`,
-    the worker enqueues distillation for conversations that went idle
-    ([ADR-0018](../../docs/architecture/adr/0018-veir-knowledge-pools.md)). A sweep older than one
-    interval is dropped; `distillation.sweepEnabled: false` disables the schedule without removing it.
+  - `DistillSweep`, `rate(15 minutes)`: `{"type":"distill_sweep"}`, **disabled** in production
+    (`distillation.sweepEnabled: false`). Distillation runs from jobs the API enqueues (9 minutes after
+    each turn, at session end) plus the daily backstop, so nothing polls a paused Aurora
+    ([ADR-0018](../../docs/architecture/adr/0018-veir-knowledge-pools.md)). If enabled, the worker would
+    distill idle conversations inline, a bounded number per run; a sweep older than one interval is
+    dropped.
 - Alarms to SNS topic `FoundryAscent-Alarms` (no subscriptions; subscribe in the console or add one later):
   API errors ≥ 1 and throttles ≥ 1 (5 min), worker errors ≥ 1, DLQ visible messages > 0, CloudFront
-  `5xxErrorRate` > 5 % in 2 of 3 five-minute periods, and (while `speech.enabled`) Polly
-  `RequestCharacters` for `SynthesizeSpeech` > 100,000 in one hour, a backstop for the in-app speech
-  metering (`FoundryAscent-Speech-Characters`).
+  `5xxErrorRate` > 5 % in 2 of 3 five-minute periods, and while `speech.enabled` two backstops for the
+  in-app speech metering on Polly `RequestCharacters` for `SynthesizeSpeech`: more than 100,000 in one hour
+  (`FoundryAscent-Speech-Characters`) and more than `speech.dailyAlarmUsd` worth at the engine's price in
+  one day (`FoundryAscent-Speech-Characters-Daily`, 937,500 at $15 on neural).
 - Outputs: `SiteUrl`, `DistributionId`, `ApiFunctionName`, `ClusterArn`, `SecretArn`, `DocumentsBucket`,
   `JobsQueueUrl`, `AlarmTopicArn`.
 
@@ -126,7 +132,7 @@ the API (its bundle check starts each handler with exactly these variables); syn
 | Function | Variables                                                                                                                                                                                                                                           |
 | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | all      | `APP_ENV=production`, `APP_VERSION`, `LOG_LEVEL=info`, `DB_DRIVER=dataapi`, `DB_CLUSTER_ARN`, `DB_SECRET_ARN`, `DB_NAME=foundry`, `MODEL_PROVIDER=bedrock`, `MODEL_*_ID`, `BEDROCK_REGION`, `HOME_TENANT_SLUG`, `NODE_OPTIONS=--enable-source-maps` |
-| api      | `DOCUMENTS_BUCKET`, `JOBS_QUEUE_URL`, `DB_RESUME_BUDGET_MS=40000`, `SPEECH_ENABLED=true`, `SPEECH_DEFAULT_VOICE=Matthew`, `SPEECH_ENGINE=generative`; `SITE_ORIGIN` only with a custom domain                                                       |
+| api      | `DOCUMENTS_BUCKET`, `JOBS_QUEUE_URL`, `DB_RESUME_BUDGET_MS=40000`, `SPEECH_ENABLED=true`, `SPEECH_DEFAULT_VOICE=Matthew`, `SPEECH_ENGINE=neural`; `SITE_ORIGIN` only with a custom domain                                                           |
 | worker   | `DOCUMENTS_BUCKET`, `JOBS_MAX_RECEIVE_COUNT=3`                                                                                                                                                                                                      |
 | migrate  | `OWNER_ACCESS_CODE_PREFIX`, `OWNER_ACCESS_CODE_HASH`, `OWNER_DISPLAY_NAME`, `HOME_TENANT_NAME`                                                                                                                                                      |
 
@@ -181,17 +187,18 @@ config change plus a normal deploy.
 growth, [ADR-0018](../../docs/architecture/adr/0018-veir-knowledge-pools.md)). Both sections are optional;
 an absent section means off.
 
-| Key                                 | Production   | Effect                                                                                                                                                                                                                  |
-| ----------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `speech.enabled`                    | `true`       | `SPEECH_ENABLED`; when `false` the API role has no Polly permission and the speech alarm is not created                                                                                                                 |
-| `speech.defaultVoice`               | `Matthew`    | `SPEECH_DEFAULT_VOICE`: the Polly voice for personas without a consented voice of their own                                                                                                                             |
-| `speech.engine`                     | `generative` | `SPEECH_ENGINE` (`generative` or `neural`). Generative voices exist in `us-east-1` for, among others, Matthew, Ruth, Danielle, Joanna, Stephen, Salli and Tiffany (en-US); USD 30 per million characters, neural USD 16 |
-| `distillation.sweepEnabled`         | `true`       | `DistillSweep` schedule state (`ENABLED`/`DISABLED`)                                                                                                                                                                    |
-| `distillation.sweepIntervalMinutes` | `15`         | Sweep rate (5–60 minutes); a sweep older than one interval is dropped                                                                                                                                                   |
+| Key                                 | Production | Effect                                                                                                                                                                                                 |
+| ----------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `speech.enabled`                    | `true`     | `SPEECH_ENABLED`; when `false` the API role has no Polly or Transcribe permission and neither speech alarm exists                                                                                      |
+| `speech.engine`                     | `neural`   | `SPEECH_ENGINE` (`neural` or `generative`). Neural: lower latency, USD 16 per million characters; generative USD 30 and a residual hallucination risk (ADR-0010)                                       |
+| `speech.defaultVoice`               | `Matthew`  | `SPEECH_DEFAULT_VOICE`: the Polly voice for personas without a consented voice of their own; synth rejects a voice the engine lacks (adult US-English voices, `POLLY_EN_US_VOICES` in `src/config.ts`) |
+| `speech.dailyAlarmUsd`              | `15`       | threshold of `FoundryAscent-Speech-Characters-Daily`, converted to characters at the engine's price; keep it equal to the global daily AI cap                                                          |
+| `distillation.sweepEnabled`         | `false`    | `DistillSweep` schedule state (`ENABLED`/`DISABLED`); keep it off (see above)                                                                                                                          |
+| `distillation.sweepIntervalMinutes` | `15`       | sweep rate (5–60 minutes) if it is ever enabled                                                                                                                                                        |
 
 Changing any of them is a config change plus a normal deploy. The kill switch in the database
-(`ai_enabled`) is what stops calls and distillation at runtime; these keys are the infrastructure-level
-off switches (no permission, no schedule).
+(`ai_enabled`, plus `calls_enabled` for calls) is what stops calls and distillation at runtime; these keys
+are the infrastructure-level off switches (no permission, no schedule).
 
 ## Prerequisites
 
@@ -228,8 +235,8 @@ is **not deployable**: every stub handler throws, so the migrate custom resource
 rolls the App stack back before stub code serves traffic.
 
 First deploy order (handled by `--all`): Foundation → Data (~10 min, Aurora) → App (~10 min, CloudFront).
-After the Foundation stack exists, set the `GitHubDeployRoleArn` output as the role for the deploy workflow
-and retire the stage-0 access key (see `infra/iam/README.md`).
+The deploy workflow then assumes the `GitHubDeployRoleArn` output through GitHub OIDC
+([ADR-0016](../../docs/architecture/adr/0016-staged-iam-github-oidc.md)).
 
 ## Design notes
 
@@ -278,16 +285,16 @@ fails synthesis. cdk-nag 3 replaced `NagSuppressions` with `Validations.of(const
 acknowledgments go through `src/lib/nag.ts`, which requires a rule-specific id and a written reason and
 derives IAM5 finding ids from the policy values themselves. They are attached to the narrowest construct:
 
-| Finding                | Where                                                              | Why                                                                                                             |
-| ---------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
-| IAM5                   | GitHub deploy policy                                               | bootstrap role prefix, stack-id suffix, `ListStacks`/`ce` without resource scoping, platform log groups         |
-| IAM5                   | api/worker/migrate roles, documents policy                         | foundation models in all regions (cross-region/global profiles), Mantle on `*` (Luna only), `tenants/*` objects |
-| IAM5                   | api role                                                           | Polly on `*` (no resource-level permissions without a lexicon), pinned to `us-east-1` by `aws:RequestedRegion`  |
-| IAM4, IAM5, L1         | BucketDeployment handler, provider framework (aws-cdk-lib managed) | generated by the construct library                                                                              |
-| RDS6                   | Aurora                                                             | Data API only, no network path for IAM DB auth                                                                  |
-| SMG4                   | Aurora secret                                                      | rotation Lambda needs VPC endpoint/NAT (denied)                                                                 |
-| S1                     | site bucket                                                        | public build output, read only via OAC                                                                          |
-| CFR1, CFR2, CFR3, CFR4 | distribution                                                       | no geo policy, WAF denied, logging v1 needs ACLs, default certificate (CFR4 only without custom domain)         |
+| Finding                | Where                                                              | Why                                                                                                                                                         |
+| ---------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| IAM5                   | GitHub deploy policy                                               | bootstrap role prefix, stack-id suffix, `ListStacks`/`ce` without resource scoping, platform log groups                                                     |
+| IAM5                   | api/worker/migrate roles, documents policy                         | foundation models in all regions (cross-region/global profiles), Mantle on `*` (Luna only), `tenants/*` objects                                             |
+| IAM5                   | api role                                                           | Polly (no resource-level permissions without a lexicon) and Transcribe streaming (no resource types) on `*`, pinned to `us-east-1` by `aws:RequestedRegion` |
+| IAM4, IAM5, L1         | BucketDeployment handler, provider framework (aws-cdk-lib managed) | generated by the construct library                                                                                                                          |
+| RDS6                   | Aurora                                                             | Data API only, no network path for IAM DB auth                                                                                                              |
+| SMG4                   | Aurora secret                                                      | rotation Lambda needs VPC endpoint/NAT (denied)                                                                                                             |
+| S1                     | site bucket                                                        | public build output, read only via OAC                                                                                                                      |
+| CFR1, CFR2, CFR3, CFR4 | distribution                                                       | no geo policy, WAF denied, logging v1 needs ACLs, default certificate (CFR4 only without custom domain)                                                     |
 
 ## Cost notes (idle ≈ $1–3/month)
 
@@ -295,14 +302,15 @@ derives IAM5 finding ids from the policy values themselves. They are attached to
   ~15 s. Max 2 ACU caps the bill under load. Backups within the retention window of the cluster size are free.
 - No NAT gateway, EIP, VPC endpoint, customer KMS key, WAF, provisioned concurrency or Performance Insights.
 - Secrets Manager: one secret ($0.40/month). S3/CloudFront/SQS/SNS/CloudWatch alarms: cents at V1 traffic
-  (6 standard alarms ≈ $0.60/month). Log groups expire after 30 days; access logs after 90.
-- EventBridge Scheduler: the daily and the 15-minute schedules send about 3,000 messages a month, inside
-  the free tier. Each sweep runs the worker briefly; whether it also wakes Aurora depends on the handler,
-  which must not query a paused cluster for an empty sweep (ADR-0018 "Cost"): a database query every
-  15 minutes would keep the cluster awake about two thirds of the time.
-- Amazon Polly (voice calls): per character synthesized (generative USD 30, neural USD 16 per million;
-  a 70-word spoken reply is about 420 characters, ≈ USD 0.013 generative). Metered in `usage_ledger`
-  under the daily caps; the speech alarm is the backstop.
+  (7 standard alarms ≈ $0.70/month). Log groups expire after 30 days; access logs after 90.
+- EventBridge Scheduler: the daily schedule sends 30 messages a month (free tier); the disabled sweep
+  sends none. A sweep querying Aurora every 15 minutes would keep it awake about two thirds of the time
+  (ADR-0018 "Cost").
+- Amazon Polly (voice calls): per character synthesized (neural USD 16, generative USD 30 per million;
+  a 70-word spoken reply is about 420 characters, ≈ USD 0.007 neural). Metered in `usage_ledger` under
+  the daily caps; the two speech alarms are the backstop.
+- Amazon Transcribe streaming (voice calls): USD 0.01 per minute while the browser's stream is open,
+  bounded by the per-call and per-person call-minute caps.
 - Reserved concurrency is off by default (see [Reserved concurrency](#reserved-concurrency)); the daily
   AI spend caps are the cost guardrail.
 - Bedrock spend is capped per day in the database (`platform_settings`), outside this stack.

@@ -1,7 +1,7 @@
 # @foundry/api — HTTP API, Lambda handlers, local dev server
 
 The `/api/v1` HTTP API (Hono) on top of `@foundry/core`, the three Lambda handlers CDK deploys, the
-infrastructure adapters behind core's ports (S3, SQS, text extraction) and a local development server.
+infrastructure adapters behind core's ports (S3, SQS, Polly, text extraction) and a local development server.
 Contracts come from `@foundry/contracts`; every response body is a contract view, every error is RFC 9457
 `application/problem+json`.
 
@@ -12,8 +12,9 @@ src/
   logging.ts             JSON-lines logger (ids, counts, codes, timings only)
   http/                  middleware, problem+json, idempotency, input parsing, router, SSE turn stream
   routes/                system (health, auth, me), ventures (+memory/escalations/team), sessions (+turns,
-                         documents), studio (EIR, program, admin), local-uploads (development only)
-  adapters/              S3ObjectStore, SqsJobQueue, DocumentTextExtractor, LocalObjectStore, InlineJobQueue
+                         documents), veir (identity, notebook, call config, speech), studio (EIR, program,
+                         admin), local-uploads (development only)
+  adapters/              S3ObjectStore, SqsJobQueue, PollySpeechSynthesizer, DocumentTextExtractor, local stand-ins
   jobs/                  worker batch processing, embedding backfill, migrations custom resource
   runtime/               per-process wiring (api / worker / schema), InflightTracker
   handlers/              api.ts, worker.ts, migrate.ts (Lambda entry points)
@@ -162,14 +163,20 @@ acceptance; a retry is run with `expectedOrdinal` and core replays the stored tu
 | `handlers/migrate.ts` | CloudFormation custom resource (Provider `onEvent`) | Create/Update: wake Aurora (≤ 5 min, always leaving 4 min of the 10-min Lambda), `migrate`, idempotent `seedDatabase` with the deploy owner, embedding backfill for seed chunks/memory (≤ 5 000 items, ≤ 5 min, best effort, respects the AI kill switch; a failure such as Bedrock throttling only logs counts). Delete: no-op. PhysicalResourceId always `foundry-ascent-schema` |
 
 Environment (runtime contract): the per-function variable names live in
-[`lambda-contract.json`](lambda-contract.json) (shared with infra/cdk, which sets exactly those): common
-`APP_ENV`, `APP_VERSION`, `LOG_LEVEL`, `DB_DRIVER`, `DB_CLUSTER_ARN`, `DB_SECRET_ARN`, `DB_NAME`,
-`MODEL_PROVIDER`, `MODEL_PRIMARY_ID`, `MODEL_FALLBACK_ID`, `MODEL_EMBEDDINGS_ID`, `BEDROCK_REGION`,
-`HOME_TENANT_SLUG`; api `DOCUMENTS_BUCKET`, `JOBS_QUEUE_URL`, `DB_RESUME_BUDGET_MS` (+ `SITE_ORIGIN` with a
-custom domain); worker `DOCUMENTS_BUCKET`, `JOBS_MAX_RECEIVE_COUNT` (the queue's redrive `maxReceiveCount`);
-migrate `OWNER_ACCESS_CODE_PREFIX`, `OWNER_ACCESS_CODE_HASH`, `OWNER_DISPLAY_NAME`, `HOME_TENANT_NAME`.
-Locally `DATABASE_URL` (pg) and core's optional `CORE_*` knobs. A missing or invalid variable fails the cold
-start with its name (never its value).
+[`lambda-contract.json`](lambda-contract.json), shared with infra/cdk, which sets exactly those:
+
+| Role    | Variables                                                                                                                                                                                                                |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| all     | `APP_ENV`, `APP_VERSION`, `LOG_LEVEL`, `DB_DRIVER`, `DB_CLUSTER_ARN`, `DB_SECRET_ARN`, `DB_NAME`, `MODEL_PROVIDER`, `MODEL_PRIMARY_ID`, `MODEL_FALLBACK_ID`, `MODEL_EMBEDDINGS_ID`, `BEDROCK_REGION`, `HOME_TENANT_SLUG` |
+| api     | `DOCUMENTS_BUCKET`, `JOBS_QUEUE_URL`, `DB_RESUME_BUDGET_MS`, `SPEECH_ENABLED`, `SPEECH_DEFAULT_VOICE`, `SPEECH_ENGINE` (+ `SITE_ORIGIN` with a custom domain)                                                            |
+| worker  | `DOCUMENTS_BUCKET`, `JOBS_MAX_RECEIVE_COUNT` (the queue's redrive `maxReceiveCount`); no queue URL: the worker never enqueues                                                                                            |
+| migrate | `OWNER_ACCESS_CODE_PREFIX`, `OWNER_ACCESS_CODE_HASH`, `OWNER_DISPLAY_NAME`, `HOME_TENANT_NAME`                                                                                                                           |
+
+`SPEECH_*` come from `infra/cdk/config/production.json` → `speech` (ADR-0010): `SPEECH_ENABLED` is `false`
+when infra grants no Polly or Transcribe access, `SPEECH_ENGINE` is `neural` (or `generative`) and
+`SPEECH_DEFAULT_VOICE` a Polly voice that exists for that engine (`Matthew`). Locally `DATABASE_URL` (pg)
+and core's optional `CORE_*` knobs. A missing or invalid variable fails the cold start with its name (never
+its value).
 
 **Bundling.** CommonJS dependencies (mammoth, pg, parts of the AWS SDK) need the `createRequire` banner
 (`ESM_REQUIRE_SHIM`); without it every bundle fails at import with "Dynamic require of … is not supported".
@@ -192,7 +199,7 @@ runs the same check in the unit suite and also exercises unpdf + mammoth inside 
 - **SqsJobQueue** — JSON body (ids only), `jobType` attribute; FIFO fields only on `.fifo` queues (grouped
   by venture, or by persona for persona-library uploads).
 - **PollySpeechSynthesizer** — Amazon Polly `SynthesizeSpeech` (MP3, streamed) for `POST /speech`, trying
-  the generative engine and then neural; used wherever `MODEL_PROVIDER=bedrock` (needs
+  the engines in the order core gives; used wherever `MODEL_PROVIDER=bedrock` (needs
   `polly:SynthesizeSpeech` on the API role). Local development has none: `/speech` answers 501
   `speech_unavailable` and the web reads validated replies aloud with the browser's speech synthesis.
 - **DocumentTextExtractor** — PDF via unpdf `extractText` (copy of the bytes, ≤ 500 pages, `verbosity: 0`),
