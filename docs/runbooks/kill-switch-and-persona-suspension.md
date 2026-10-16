@@ -53,6 +53,17 @@ without changing `aiEnabled`. See [cost controls](cost-controls.md); after raisi
 
 Use **2a** when calls misbehave (speech, recognition, a call vendor or the call minutes) and chat should
 stay up; use **2b** when streamed sentences misbehave and whole, fully validated replies are enough.
+
+1. Sign in as a platform admin → **Admin → Settings → Calls and streaming**.
+2. **2a:** turn off **Voice calls**, then confirm **Turn off calls** in the "Turn off voice calls?" dialog.
+   Every Call entry point disappears for founders (sidebar, ⌘K, New chat, the conversation header and
+   composer); a call screen opened from an old link says calls are paused; live calls end at their next
+   heartbeat (≤ 15 s) with "Calls were paused by the program." in their summary.
+3. **2b:** turn off **Streamed replies** (no confirmation: nothing is lost). Replies arrive whole.
+4. Verify: the toast says "Voice calls off" or "Streamed replies off", and **Admin → Audit** lists the
+   settings change.
+5. Re-enable with the same switch once the cause is fixed.
+
 Through the API (same headers as above; the change is audited):
 
 ```bash

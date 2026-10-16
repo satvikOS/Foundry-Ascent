@@ -155,8 +155,11 @@ export function createPersonaManagementService(
             ...(await directory.get(ctx.tenantId)).eirNames,
           ])
         ) {
-          throw fail.validation('A vEIR\'s name says whose vEIR it is, such as "Corin\'s vEIR".', [
-            { path: 'name', message: 'Must not present the vEIR as an EIR' },
+          throw fail.validation('A vEIR’s name must not read as the EIR', [
+            {
+              path: 'name',
+              message: `Name it as whose vEIR it is, e.g. ${veirNameFor(profile.displayName)}, so founders never take it for the EIR.`,
+            },
           ]);
         }
         const persona = await personasRepo.createPersona(scope.tx, {

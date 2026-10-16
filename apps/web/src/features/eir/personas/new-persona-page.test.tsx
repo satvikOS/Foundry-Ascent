@@ -11,10 +11,28 @@ import { eirProfile, GUIDE, IDS, persona, RUTH } from './test-fixtures';
 const NOOR_EIR = '22222222-3333-4444-8555-666666666666';
 const NOOR = '33333333-4444-4555-8666-777777777777';
 
-function mockApi() {
+const NAME_REFUSAL = "Name it as whose vEIR it is, e.g. Noor's vEIR, so founders never take it for the EIR.";
+
+function mockApi(options: { refuseName?: boolean } = {}) {
   const fetchMock = stubFetch();
   fetchMock.mockImplementation((input, init) => {
     const url = input instanceof Request ? input.url : input.toString();
+    if (init?.method === 'POST' && options.refuseName) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            type: 'urn:foundry-ascent:problem:validation_failed',
+            title: 'Validation failed',
+            status: 422,
+            code: 'validation_failed',
+            detail: 'A vEIR’s name must not read as the EIR',
+            requestId: 'req-1',
+            errors: [{ path: 'name', message: NAME_REFUSAL }],
+          }),
+          { status: 422, headers: { 'content-type': 'application/problem+json' } },
+        ),
+      );
+    }
     if (init?.method === 'POST') {
       return Promise.resolve(
         jsonResponse(
@@ -109,5 +127,32 @@ describe('NewPersonaPage (program lead)', () => {
     ).toBeVisible();
     expect(screen.getByRole('heading', { level: 1, name: 'New vEIR' })).toBeVisible();
     expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false);
+  });
+
+  it('takes the person back to the name with the API’s reason when it refuses the name', async () => {
+    const { fetchMock } = mockApi({ refuseName: true });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('combobox', { name: 'EIR' }));
+    await user.click(screen.getByRole('option', { name: 'Noor Example' }));
+    const name = screen.getByRole('textbox', { name: 'Name' });
+    await user.clear(name);
+    // Says "vEIR", so the page lets it through; the API refuses it as reading like the EIR.
+    await user.paste('Coach Noor vEIR');
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    const fill = async (label: RegExp, value: string) => {
+      await user.click(await screen.findByRole('textbox', { name: label }));
+      await user.paste(value);
+    };
+    await fill(/^Summary/, 'Hardware founders prove manufacturability before scale.');
+    await fill(/^Evidence standard/, 'A working prototype and a quote from a supplier.');
+    await fill(/^Red lines/, 'Never claim to be Noor.');
+    await fill(/^Escalation topics/, 'Safety certification');
+    await fill(/^Feedback structure/, 'Risk first, then one next step.');
+    await user.click(screen.getByRole('button', { name: 'Create vEIR' }));
+
+    expect(await screen.findByText(NAME_REFUSAL)).toBeVisible();
+    expect(screen.getByRole('heading', { level: 1, name: 'New vEIR' })).toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('Coach Noor vEIR');
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
   });
 });

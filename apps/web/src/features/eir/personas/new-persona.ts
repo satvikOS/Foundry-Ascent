@@ -1,5 +1,6 @@
 import type { PersonaView } from '@foundry/contracts';
 
+import { isApiError } from '@/lib/api/errors';
 import type { EirProfile } from '@/lib/api/hooks/veir-pools';
 
 /** EIRs who can get a vEIR: active, and not already the source of a live one (one per EIR). */
@@ -54,4 +55,18 @@ export function veirDisclosure(veirName: string, eirDisplayName: string): string
     `You are talking with ${veirName}, an AI coach built from ${eirDisplayName}'s approved frameworks and ` +
     `coaching style. It is not a person, and no human EIR, including ${firstName(eirDisplayName)}, wrote or approved these responses.`
   );
+}
+
+/**
+ * The server's reason for refusing the name (422 at `name`: it would read as the EIR; 409 when another
+ * persona has it), so the form can take the person back to the name with that reason; null otherwise.
+ */
+export function serverNameProblem(error: unknown): string | null {
+  if (!isApiError(error)) return null;
+  const field = error.fieldErrors.find((f) => f.path === 'name');
+  if (error.code === 'validation_failed' && field) return field.message;
+  if (error.code === 'conflict' && error.status === 409 && /name/i.test(error.detail ?? '')) {
+    return 'Another persona already uses this name.';
+  }
+  return null;
 }

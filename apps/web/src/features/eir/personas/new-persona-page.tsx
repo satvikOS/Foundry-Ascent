@@ -17,7 +17,13 @@ import { SelectField } from '@/features/admin/shared/form';
 import { usePersonas } from '@/lib/api/hooks/eir';
 import { useCreateEirPersona, useEirProfiles } from '@/lib/api/hooks/veir-pools';
 
-import { defaultVeirName, eirsWithoutVeir, veirDisclosure, veirNameProblem } from './new-persona';
+import {
+  defaultVeirName,
+  eirsWithoutVeir,
+  serverNameProblem,
+  veirDisclosure,
+  veirNameProblem,
+} from './new-persona';
 import { ReleaseEditor } from './release-editor';
 
 /**
@@ -162,6 +168,15 @@ export function NewPersonaPage({ tenant }: { tenant: string }) {
                 allowedModes: release.allowedModes,
               },
               {
+                onError: (error) => {
+                  // The API refused the name (it would read as the EIR, or it is taken): back to the name,
+                  // with the reason under it.
+                  const problem = serverNameProblem(error);
+                  if (problem === null) return;
+                  create.reset();
+                  setNameError(problem);
+                  setStep('who');
+                },
                 onSuccess: (persona) => {
                   toast.success(`${persona.name} created as a draft`);
                   announce(`${persona.name} created. Record consent next.`);
