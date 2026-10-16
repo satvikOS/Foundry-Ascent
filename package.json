@@ -34,6 +34,9 @@
     "onlyBuiltDependencies": [
       "esbuild",
       "@tailwindcss/oxide"
+    ],
+    "ignoredOptionalDependencies": [
+      "@napi-rs/canvas"
     ]
   }
 }
