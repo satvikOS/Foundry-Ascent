@@ -29,7 +29,8 @@ No audio passes through our API: the browser streams the founder's voice straigh
 plays Polly audio that the API streams back for validated text only. The API stays request/response plus
 SSE, with no always-on infrastructure.
 
-**Latency budget** (end of the founder's speech to the first audible word; P50, warm; estimates to measure):
+**Latency budget** (end of the founder's speech to the first audible word; P50, warm; estimates to measure,
+now measurable stage by stage: [latency runbook](../runbooks/latency.md)):
 
 | Stage                                                | Budget          |
 | ---------------------------------------------------- | --------------- |
@@ -159,7 +160,8 @@ stream-transcription-websocket` URL (en-US, PCM, 16 kHz, partial-results stabili
   stream. So a grant lives 30 s (just long enough to connect), a grant is minted only under the heartbeat's
   checks, each call may mint 20 and each person 100 a day, and the microphone time heartbeats report is
   metered. What a modified client does with a URL inside those 30 s is not metered (§5).
-- **Signed units.** The turn engine streams each validated unit of the spoken reply as `turn.speech`, signed
+- **Signed units.** The turn engine streams each validated unit of the spoken reply as `turn.speech` the moment
+  the sentence gate releases it (nothing waits for the next unit or the annotations), signed
   (HMAC-SHA256, key derived by HKDF from the session-signing key) over `sessionId|turnId|seq|text`
   (`orchestrator/speech-units.ts`). The call intro is signed the same way with no turn and `seq` 0.
 - **`POST /speech`** speaks, during the caller's live call in that conversation and in the call's voice:
