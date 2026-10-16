@@ -19,12 +19,8 @@ export const MODEL_PURPOSES = [
 ] as const;
 /** Every purpose the gateway accepts and the ledger records (`MODEL_PURPOSES`). */
 export type GatewayPurpose = (typeof MODEL_PURPOSES)[number];
-/**
- * Purposes the database repository type (`UsagePurpose` in packages/db) accepted before migration 0004
- * added `distill` and `speech`. Kept as its own name so code typed against the ledger repository keeps
- * compiling; once that type includes the new purposes it is identical to {@link GatewayPurpose}.
- */
-export type ModelPurpose = Exclude<GatewayPurpose, 'distill' | 'speech'>;
+/** Purposes the usage ledger records; identical to {@link GatewayPurpose} since migration 0004. */
+export type ModelPurpose = GatewayPurpose;
 
 /** Which concrete backend served (or failed) an attempt. `polly` is text-to-speech (calls). */
 export type ModelProviderName = 'luna' | 'nova' | 'titan' | 'polly' | 'mock';

@@ -76,6 +76,13 @@ export function createSpeechService(kit: Kit): SpeechService {
     synthesize: async (ctx, rawInput, options = {}) => {
       const input = parseInput(SpeechRequest, rawInput);
       const sessionId = requireId(input.sessionId, 'Session');
+      // Signed streaming units (and the call intro, which has no turn) are verified by the calls service;
+      // until it is wired, only the stored reply of a completed turn can be spoken.
+      if (input.turnId === null || input.seq !== undefined || input.sig !== undefined) {
+        throw fail.validation('Only the coach’s validated reply can be spoken', [
+          { path: 'sig', message: 'Signed speech units are not accepted yet' },
+        ]);
+      }
       const turnId = requireId(input.turnId, 'Turn');
       const plan = await kit.inRequest(ctx, async (scope) => {
         const session = await sessionsRepo.getSession(scope.tx, sessionId);
