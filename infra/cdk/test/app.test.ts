@@ -646,7 +646,7 @@ describe('FoundryAscent-App', () => {
       });
     });
 
-    it('creates exactly the six alarms, all on the alarm topic', () => {
+    it('creates exactly the five platform alarms and the speech backstop', () => {
       template.resourceCountIs('AWS::CloudWatch::Alarm', 6);
     });
 
