@@ -161,7 +161,8 @@ CREATE OR REPLACE FUNCTION app.turns_redact_heard() RETURNS trigger
   LANGUAGE plpgsql SET search_path = public, pg_temp AS $$
 BEGIN
   IF NEW.heard_text IS NOT NULL
-     AND (NEW.founder_text IS DISTINCT FROM OLD.founder_text OR (NEW.response IS NULL AND OLD.response IS NOT NULL)) THEN
+     AND (NEW.founder_text IS DISTINCT FROM OLD.founder_text
+          OR (NEW.response IS NULL AND OLD.response IS NOT NULL)) THEN
     NEW.heard_text := NULL;
   END IF;
   RETURN NEW;
