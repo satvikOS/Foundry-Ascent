@@ -1,5 +1,6 @@
 import type { ChatMessage } from '../gateway/types.js';
 import { buildContinuityBlock, type PromptContinuity } from './continuity.js';
+import { deriveConversationState, renderConversationState } from './conversation-state.js';
 import { escapeData, truncate } from './escape.js';
 
 /** A completed earlier turn. Turns without an answer (blocked/failed) should be omitted by the caller or are skipped. */
@@ -25,6 +26,11 @@ export interface BuildMessagesOptions {
   maxHistoryTurns?: number;
   /** Per-message cap for history. Default 2 000 characters. */
   maxHistoryChars?: number;
+  /**
+   * Adds the `<conversation_state>` observations (the founder's move, parked threads, the vEIR's recent openings
+   * and questions), derived from every completed turn given, not only the ones kept. Default true.
+   */
+  conversationState?: boolean;
 }
 
 function wrapFounder(text: string): string {
@@ -33,8 +39,8 @@ function wrapFounder(text: string): string {
 
 /**
  * Builds the conversation for a turn: the last N completed turns (founder text wrapped and escaped
- * as data, previous answers as assistant messages), then the vEIR's notes, the evidence block and the
- * new founder message as the final user message. Notes and evidence live in the user turn — not the
+ * as data, previous answers as assistant messages), then the vEIR's notes, the evidence block, the
+ * conversation state and the new founder message as the final user message. Notes and evidence live in the user turn — not the
  * system prompt — so neither AI notes nor retrieved text ever gain system-level authority.
  */
 export function buildMessages(
@@ -58,7 +64,11 @@ export function buildMessages(
     ...(options.today !== undefined ? { today: options.today } : {}),
     ...(options.maxContinuityChars !== undefined ? { maxChars: options.maxContinuityChars } : {}),
   });
-  const parts = [notes, options.evidenceBlock, wrapFounder(founderText)].filter(
+  const state =
+    options.conversationState === false
+      ? ''
+      : renderConversationState(deriveConversationState(completed, founderText));
+  const parts = [notes, options.evidenceBlock, state, wrapFounder(founderText)].filter(
     (p): p is string => p !== undefined && p !== '',
   );
   messages.push({ role: 'user', content: parts.join('\n\n') });

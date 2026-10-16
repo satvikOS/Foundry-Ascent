@@ -190,9 +190,14 @@ describe('vEIR identity rules', () => {
 describe('how the persona talks', () => {
   it('asks for mentor-like conversation: short paragraphs, one question, no report headings', () => {
     const prompt = buildSystemPrompt(BASE);
-    expect(prompt).toContain('Talk like a seasoned mentor in a real conversation, not like a report.');
-    expect(prompt).toContain('One sharp question at a time, usually at the end.');
-    expect(prompt).toContain('No headings, report sections or bold labels unless the');
+    expect(prompt).toContain(
+      'Talk like a seasoned mentor in a real conversation, not like a report or a help desk.',
+    );
+    expect(prompt).toContain('At most one question per reply, never stacked, and not in every reply.');
+    expect(prompt).toContain('- Mirror their length: a line or two gets one to three sentences;');
+    expect(prompt).toContain(
+      'No headings, report sections or bold\n  labels unless the founder asks for a document',
+    );
     expect(prompt).toContain('Be direct: say plainly what you think and why, and name the gap first.');
     expect(prompt).toContain(
       'Use the feedback structure as the order of your thinking, not as visible headings.',
@@ -393,11 +398,14 @@ describe('continuity', () => {
     const last = messages.at(-1)?.content ?? '';
     expect(last.indexOf('<your_notes>')).toBe(0);
     expect(last.indexOf('<your_notes>')).toBeLessThan(last.indexOf('<evidence>'));
-    expect(last.indexOf('<evidence>')).toBeLessThan(last.indexOf('<founder_message>'));
-    // History never carries the notes.
+    expect(last.indexOf('<evidence>')).toBeLessThan(last.indexOf('<conversation_state>'));
+    expect(last.indexOf('<conversation_state>')).toBeLessThan(last.indexOf('<founder_message>'));
+    // History never carries the notes or the observations.
     expect(messages.slice(0, -1).some((m) => m.content.includes('<your_notes>'))).toBe(false);
-    expect(buildMessages([], 'Hi', { continuity: null }).at(-1)?.content).toBe(
-      '<founder_message>\nHi\n</founder_message>',
+    expect(messages.slice(0, -1).some((m) => m.content.includes('<conversation_state>'))).toBe(false);
+    // A first message with nothing notable about it goes alone.
+    expect(buildMessages([], 'How should we price it?', { continuity: null }).at(-1)?.content).toBe(
+      '<founder_message>\nHow should we price it?\n</founder_message>',
     );
   });
 });

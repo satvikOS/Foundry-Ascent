@@ -47,6 +47,9 @@ const SYSTEM = buildSystemPrompt({
   today: '2026-10-16',
 });
 
+/** Tokens of the system prompt alone (the context budget's estimate). */
+const estimateSystem = Math.ceil(SYSTEM.length / 3.6);
+
 const GUARDS: OpenerGuards = {
   personaName: "Corin's vEIR",
   personaEirName: 'Corin Halvorsen',
@@ -84,6 +87,16 @@ describe('streamed-turn prompts', () => {
     expect(prompt).toContain('at most 70 words');
     expect(prompt).toContain('Answer in the "coach" mode.');
     expect(prompt).not.toContain('[E#] citations after');
+  });
+
+  it('keeps the conversation craft in the streamed reply: social turns stay social, questions are optional', () => {
+    const text = answerSystemPrompt(SYSTEM, { channel: 'text', mode: null, allowedModes: ['coach'] });
+    expect(text).toContain('# Conversation craft');
+    expect(text).toContain('a social turn gets a short, natural reply, not advice; a reply need not end');
+    expect(text).not.toContain('End with at most one question');
+    const voice = answerSystemPrompt(SYSTEM, { channel: 'voice', mode: 'coach', allowedModes: ['coach'] });
+    expect(voice).toContain('- Speak the way people talk: contractions, short sentences with one idea each');
+    expect(voice).toContain('At most one question.');
   });
 
   it('replays the streamed reply before asking for its fields', () => {
@@ -138,6 +151,33 @@ describe('context with continuity and the opener', () => {
     expect(last).toContain('<your_notes>');
     expect(last).toContain('Interview five library staff (due 2026-10-10, overdue)');
     expect(last).toContain('They went well.');
+  });
+
+  it('sends the conversation state with the founder message: a parked thread survives a trimmed history', () => {
+    const history = [
+      {
+        founderText: 'How should we price per library? We have two interested.',
+        answer: 'Who holds the budget at each library?',
+      },
+      {
+        founderText: `By the way, should we hire a designer? ${'context '.repeat(400)}`,
+        answer: `Hire for the bottleneck. ${'reasoning '.repeat(400)}`,
+      },
+    ];
+    const context = assembleContext({
+      system: SYSTEM,
+      evidence: [],
+      history,
+      founderText: 'Where were we?',
+      maxInputTokens: estimateSystem + 1_200,
+      maxHistoryTurns: 8,
+    });
+    expect(context.historyTurns).toBeLessThan(2);
+    const last = context.messages.at(-1)?.content ?? '';
+    expect(last).toContain('<conversation_state>');
+    expect(last).toContain('wants to go back to an earlier thread');
+    expect(last).toContain('Parked, left before it was settled: "How should we price per library?"');
+    expect(last.indexOf('</conversation_state>')).toBeLessThan(last.indexOf('<founder_message>'));
   });
 
   it('drops the opener once older turns no longer fit', () => {

@@ -1,4 +1,9 @@
-import { COACH_ANNOTATIONS_SCHEMA_NAME, type ChatMessage, type CoachAnnotations } from '@foundry/ai';
+import {
+  COACH_ANNOTATIONS_SCHEMA_NAME,
+  SPOKEN_REGISTER,
+  type ChatMessage,
+  type CoachAnnotations,
+} from '@foundry/ai';
 import { type CoachMode, type TurnChannel } from '@foundry/contracts';
 
 /**
@@ -47,7 +52,8 @@ export function answerSystemPrompt(system: string, options: AnswerPromptOptions)
   if (options.channel === 'voice') {
     lines.push(
       '- This is a voice call: write only what you will say aloud, at most 70 words in one to four short plain',
-      '  sentences. No Markdown, lists, headings, citation ids like [E1] or URLs. End with at most one question.',
+      '  sentences. No Markdown, lists, headings, citation ids like [E1] or URLs. At most one question.',
+      `- ${SPOKEN_REGISTER}`,
     );
   } else {
     lines.push(
@@ -55,6 +61,10 @@ export function answerSystemPrompt(system: string, options: AnswerPromptOptions)
       '  rely on the evidence (ids from the <evidence> block only), and at most one question.',
     );
   }
+  lines.push(
+    '- Follow "Conversation craft": a social turn gets a short, natural reply, not advice; a reply need not end',
+    '  with a question.',
+  );
   return `${rules}\n${lines.join('\n')}`;
 }
 
