@@ -133,7 +133,7 @@ export function InspectorRegion() {
     return (
       <aside
         aria-label={`${meta.title} inspector`}
-        className="sticky top-0 hidden h-dvh w-(--inspector-width) shrink-0 border-l border-border bg-background xl:block"
+        className="sticky top-(--mini-call-height) hidden h-[calc(100dvh_-_var(--mini-call-height))] w-(--inspector-width) shrink-0 border-l border-border bg-background xl:block"
       >
         <InspectorPanel
           title={meta.title}

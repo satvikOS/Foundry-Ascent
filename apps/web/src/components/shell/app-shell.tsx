@@ -298,6 +298,7 @@ function MobileBar({
     <header
       className="sticky top-0 z-20 flex h-(--header-height) shrink-0 items-center gap-1 border-b border-border bg-background px-2 md:hidden"
       data-print="hide"
+      data-phone-bar=""
     >
       <Button
         variant="ghost"

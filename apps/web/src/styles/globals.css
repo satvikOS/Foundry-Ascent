@@ -89,11 +89,26 @@
 
   /* Layout. The mobile bar is the only top bar; desktop has none. */
   --header-height: 3.25rem;
+  /*
+   * Sticky offsets, 0 unless the bar is on the page: the phone bar (pages with a header of their own claim
+   * it) and the mini call bar, which page headers and the inspector sit below so neither hides the other.
+   */
+  --phone-bar-height: 0px;
+  --mini-call-bar-height: 3rem;
+  --mini-call-height: 0px;
   --sidebar-width: 16.5rem;
   --sidebar-width-collapsed: 3.5rem;
   --inspector-width: 24rem;
   /* Reading column for conversations and prose. */
   --content-width: 48rem;
+}
+
+:root:has([data-phone-bar]) {
+  --phone-bar-height: var(--header-height);
+}
+
+:root:has([data-mini-call-bar]) {
+  --mini-call-height: var(--mini-call-bar-height);
 }
 
 :root.dark {

@@ -32,7 +32,7 @@ function barAnnouncement(snapshot: CallSnapshot): string {
  * A call that continues while the person looks elsewhere: the vEIR's face and AI marker, the timer (and the
  * time left near the end), mute, back to the call and end. After a call ended out of view (its time ran out,
  * or the program paused calls), it says so and offers the summary instead. Rendered by `MiniCallBar` only
- * while there is a call to show.
+ * while there is a call to show; while shown, the page's sticky headers sit below it (`--mini-call-height`).
  */
 export function MiniCallBarView() {
   const { engine, snapshot, showCall } = useCall();
@@ -49,8 +49,11 @@ export function MiniCallBarView() {
     <section
       aria-label={`Call with ${veir.name}`}
       data-print="hide"
+      data-mini-call-bar=""
       className={cn(
-        'sticky top-(--header-height) z-20 flex h-12 shrink-0 items-center gap-2 border-b border-border bg-card/95 px-3 backdrop-blur-md supports-[backdrop-filter]:bg-card/80 sm:gap-3 sm:px-4 md:top-0',
+        // Below the phone bar when the page shows it, at the top otherwise (a conversation's own header
+        // replaces the phone bar, and sits below this bar).
+        'sticky top-(--phone-bar-height) z-20 flex h-(--mini-call-bar-height) shrink-0 items-center gap-2 border-b border-border bg-card/95 px-3 backdrop-blur-md supports-[backdrop-filter]:bg-card/80 sm:gap-3 sm:px-4 md:top-0',
       )}
     >
       <span role="status" className="sr-only">
