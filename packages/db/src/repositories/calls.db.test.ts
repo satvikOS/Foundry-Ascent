@@ -9,7 +9,6 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { DbError } from '../errors.js';
-import { appendAudit } from './audit.js';
 import { p } from '../params.js';
 import { type SeedResult } from '../seed/seed.js';
 import { createTestDatabase, makeContext, type TestDatabase } from '../testing/test-database.js';
@@ -623,24 +622,205 @@ describe('what a call may speak of a turn', () => {
     await t.db.withContext(amara, async (tx) => {
       expect(await callsRepo.getSpokenTurn(tx, turn.id)).toBeNull();
     });
-    // Syntheses of the turn are counted from the audit trail.
-    await t.db.system(async (sx) => {
-      expect(await callsRepo.countTurnSyntheses(sx, { turnId: turn.id, windowSeconds: 600 })).toBe(0);
-      for (let i = 0; i < 2; i += 1) {
-        await appendAudit(sx, {
-          action: 'speech.synthesized',
-          outcome: 'succeeded',
-          tenantId: seed.tenantId,
-          ventureId: venture('quietquad').id,
-          actorId: maya.principalId,
-          objectType: 'turn',
-          objectId: turn.id,
-          metadata: { characters: 10 },
-        });
-      }
-      expect(await callsRepo.countTurnSyntheses(sx, { turnId: turn.id, windowSeconds: 600 })).toBe(2);
-    });
     await endCall(maya, call.id);
+  });
+});
+
+describe('what a call synthesizes', () => {
+  const budget: callsRepo.SpeechBudget = {
+    charactersPerSecond: 15,
+    headroomCharacters: 100,
+    dailyCharacters: 1_000,
+  };
+  const tomasz = (): Ctx => makeContext(must(seed.principals.tomasz), seed.tenantId);
+  const reserve = (
+    ctx: Ctx,
+    callId: string,
+    unit: callsRepo.SpeechUnitKey,
+    characters: number,
+    options: { maxPlays?: number; budget?: callsRepo.SpeechBudget } = {},
+  ) =>
+    t.db.system((sx) =>
+      callsRepo.reserveCallSpeech(sx, {
+        callId,
+        principalId: ctx.principalId,
+        unit,
+        characters,
+        maxPlays: options.maxPlays ?? 1,
+        budget: options.budget ?? budget,
+      }),
+    );
+  const spoken = async (callId: string): Promise<number> =>
+    must(await t.db.system((sx) => callsRepo.getCall(sx, callId))).speechCharacters;
+  /** Moves the call's start back by `seconds` (owner role). */
+  const age = (callId: string, seconds: number) =>
+    t.db.system(async (sx) => {
+      await sx.query('ALTER TABLE calls DISABLE TRIGGER calls_guard');
+      await sx.query('UPDATE calls SET started_at = started_at - make_interval(secs => :s) WHERE id = :id', {
+        id: p.uuid(callId),
+        s: p.int(seconds),
+      });
+      await sx.query('ALTER TABLE calls ENABLE TRIGGER calls_guard');
+    });
+
+  it('speaks each unit its number of times, within the call’s and the day’s character budgets', async () => {
+    const ctx = tomasz();
+    const session = await newSession(ctx, 'benchtally');
+    const call = await startCall(ctx, session, 'benchtally');
+    const turnId = randomUUID();
+    // The intro once: a replay is refused and changes nothing.
+    expect(await reserve(ctx, call.id, { kind: 'intro' }, 60)).toEqual({ ok: true, plays: 1 });
+    expect(await reserve(ctx, call.id, { kind: 'intro' }, 60)).toEqual({
+      ok: false,
+      reason: 'already_played',
+    });
+    expect(await spoken(call.id)).toBe(60);
+    // A run of stored sentences as many times as allowed.
+    const run: callsRepo.SpeechUnitKey = { kind: 'run', turnId, first: 0, last: 1 };
+    expect(await reserve(ctx, call.id, run, 10, { maxPlays: 2 })).toEqual({ ok: true, plays: 1 });
+    expect(await reserve(ctx, call.id, run, 10, { maxPlays: 2 })).toEqual({ ok: true, plays: 2 });
+    expect(await reserve(ctx, call.id, run, 10, { maxPlays: 2 })).toEqual({
+      ok: false,
+      reason: 'already_played',
+    });
+    expect(await t.db.system((sx) => callsRepo.speechPlays(sx, { callId: call.id, unit: run }))).toBe(2);
+    // A call that has hardly started has the headroom only: 80 of 100 are used.
+    const unit = (seq: number): callsRepo.SpeechUnitKey => ({ kind: 'unit', turnId, seq });
+    expect(await reserve(ctx, call.id, unit(0), 21)).toEqual({ ok: false, reason: 'call_budget' });
+    expect(await reserve(ctx, call.id, unit(0), 20)).toEqual({ ok: true, plays: 1 });
+    expect(await spoken(call.id)).toBe(100);
+    // Ten seconds on, 150 more (15 a second), and not one more.
+    await age(call.id, 10);
+    expect(await reserve(ctx, call.id, unit(1), 151)).toEqual({ ok: false, reason: 'call_budget' });
+    expect(await reserve(ctx, call.id, unit(1), 150)).toEqual({ ok: true, plays: 1 });
+    // A synthesis that failed gives its play and characters back; one billed differently is corrected.
+    await t.db.system((sx) =>
+      callsRepo.settleCallSpeech(sx, {
+        callId: call.id,
+        unit: unit(1),
+        reservedCharacters: 150,
+        characters: null,
+      }),
+    );
+    expect(await spoken(call.id)).toBe(100);
+    expect(await reserve(ctx, call.id, unit(1), 150)).toEqual({ ok: true, plays: 1 });
+    await t.db.system((sx) =>
+      callsRepo.settleCallSpeech(sx, {
+        callId: call.id,
+        unit: unit(1),
+        reservedCharacters: 150,
+        characters: 140,
+      }),
+    );
+    expect(await spoken(call.id)).toBe(240);
+    // Only the caller's own live call.
+    expect(await reserve(maya, call.id, unit(2), 1)).toEqual({ ok: false, reason: 'call_not_active' });
+    await endCall(ctx, call.id);
+    expect(await reserve(ctx, call.id, unit(2), 1)).toEqual({ ok: false, reason: 'call_not_active' });
+    expect(await spoken(call.id)).toBe(240);
+
+    // However long a call lasts, never more than the rate over its time limit (here 4 s: 60 characters).
+    const short = await t.db.withContext(ctx, (tx) =>
+      callsRepo.startCall(tx, { ...startInput(ctx, session, 'benchtally'), maxSeconds: 4 }),
+    );
+    await age(short.id, 3_600);
+    expect(await reserve(ctx, short.id, unit(3), 61)).toEqual({ ok: false, reason: 'call_budget' });
+    expect(await reserve(ctx, short.id, unit(3), 60)).toEqual({ ok: true, plays: 1 });
+    await endCall(ctx, short.id);
+
+    // The person's day: what their other calls today synthesized counts (240 + 60 so far).
+    const next = await startCall(ctx, session, 'benchtally');
+    await age(next.id, 3_600);
+    const day = { ...budget, dailyCharacters: 400 };
+    expect(await reserve(ctx, next.id, unit(4), 101, { budget: day })).toEqual({
+      ok: false,
+      reason: 'daily_budget',
+    });
+    expect(await reserve(ctx, next.id, unit(4), 100, { budget: day })).toEqual({ ok: true, plays: 1 });
+    expect(await reserve(ctx, next.id, unit(5), 1, { budget: day })).toEqual({
+      ok: false,
+      reason: 'daily_budget',
+    });
+    // Someone else's day is their own.
+    const priya = makeContext(must(seed.principals.priya), seed.tenantId);
+    const theirs = await startCall(priya, await newSession(priya, 'benchtally'), 'benchtally');
+    expect(await reserve(priya, theirs.id, unit(4), 100, { budget: day })).toEqual({ ok: true, plays: 1 });
+    await endCall(priya, theirs.id);
+    await endCall(ctx, next.id);
+  });
+
+  it('serialises concurrent requests on two connections: a unit is not replayed and a budget not overrun', async () => {
+    const ctx = tomasz();
+    const session = await newSession(ctx, 'benchtally');
+    const call = await startCall(ctx, session, 'benchtally');
+    const turnId = randomUUID();
+    const unit = (seq: number): callsRepo.SpeechUnitKey => ({ kind: 'unit', turnId, seq });
+    /** Reserves on one connection and keeps the transaction (and the call's row lock) open for a while. */
+    const held = (key: callsRepo.SpeechUnitKey, characters: number) =>
+      t.db.system(async (sx) => {
+        const result = await callsRepo.reserveCallSpeech(sx, {
+          callId: call.id,
+          principalId: ctx.principalId,
+          unit: key,
+          characters,
+          maxPlays: 1,
+          budget,
+        });
+        await sx.query('SELECT pg_sleep(0.3)');
+        return result;
+      });
+    const later = <T>(fn: () => Promise<T>): Promise<T> =>
+      new Promise((resolve, reject) => {
+        setTimeout(() => {
+          fn().then(resolve, reject);
+        }, 50);
+      });
+    // The same unit twice at once: the second waits for the first, then finds it played.
+    const [first, second] = await Promise.all([
+      held(unit(0), 30),
+      later(() => reserve(ctx, call.id, unit(0), 30)),
+    ]);
+    expect(first).toEqual({ ok: true, plays: 1 });
+    expect(second).toEqual({ ok: false, reason: 'already_played' });
+    // Two units that each fit the headroom but not together: the second sees the first's characters.
+    const [a, b] = await Promise.all([held(unit(1), 60), later(() => reserve(ctx, call.id, unit(2), 60))]);
+    expect(a).toEqual({ ok: true, plays: 1 });
+    expect(b).toEqual({ ok: false, reason: 'call_budget' });
+    expect(await spoken(call.id)).toBe(90);
+    // Many at once: exactly one play of a unit.
+    const burst = await Promise.all(Array.from({ length: 12 }, () => reserve(ctx, call.id, unit(3), 1)));
+    expect(burst.filter((r) => r.ok)).toHaveLength(1);
+    await endCall(ctx, call.id);
+
+    // A crisis message on an ended call: at most `maxPlays`, however many ask at once.
+    const crisisTurn = randomUUID();
+    const crisis = await Promise.all(
+      Array.from({ length: 12 }, () =>
+        t.db.system((sx) =>
+          callsRepo.reserveCrisisSpeech(sx, {
+            callId: call.id,
+            principalId: ctx.principalId,
+            turnId: crisisTurn,
+            characters: 10,
+            maxPlays: 5,
+          }),
+        ),
+      ),
+    );
+    expect(crisis.filter((plays) => plays !== null).sort()).toEqual([1, 2, 3, 4, 5]);
+    expect(await spoken(call.id)).toBe(141);
+    // Only the turn's author.
+    expect(
+      await t.db.system((sx) =>
+        callsRepo.reserveCrisisSpeech(sx, {
+          callId: call.id,
+          principalId: maya.principalId,
+          turnId: randomUUID(),
+          characters: 10,
+          maxPlays: 5,
+        }),
+      ),
+    ).toBeNull();
   });
 });
 

@@ -33,7 +33,7 @@ export async function assertWithinSpendCaps(
   context: {
     readonly ventureId: string | null;
     readonly operation: string;
-    /** `global`: only the platform's cap applies (speech during calls, bounded by call minutes instead). */
+    /** `global`: only the platform's cap applies (call speech, bounded by call minutes and speech budgets). */
     readonly caps?: 'all' | 'global';
   },
 ): Promise<void> {

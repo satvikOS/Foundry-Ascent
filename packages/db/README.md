@@ -216,7 +216,9 @@ Added for calls (docs/architecture/calls.md, migration 0008): `callsRepo` (`star
 `recordHeartbeat` — microphone seconds clamped to wall time —, `recordSttGrant`, `sttGrantsToday`,
 `getLiveCallOf`, `callSecondsToday` — minutes by the database clock —, `countRecentVoiceTurns`,
 `listCallTurns`, `callFollowUps`, `markTurnInterrupted` and `listTurnInterruptions` — what the founder heard,
-redacted with the turn —, `getSpokenTurn`, `countTurnSyntheses`, `reapStaleCalls`, `toCallView`).
+redacted with the turn —, `getSpokenTurn`, `reserveCallSpeech` and `reserveCrisisSpeech` — each synthesis
+reserved in `call_speech` with the call's character budget before Polly is called —, `settleCallSpeech`,
+`speechPlays`, `reapStaleCalls`, `toCallView`).
 
 ### Role visibility enforced by RLS (verified by `rls.db.test.ts`)
 

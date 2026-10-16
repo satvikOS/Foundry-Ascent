@@ -104,23 +104,30 @@ export class Utf8TextExtractor implements TextExtractor {
 
 /**
  * Test speech synthesizer: "audio" is the UTF-8 text prefixed with `MP3:`; the first engine of the input is
- * used unless `unsupported` lists it. `failNext` makes the next call fail like a service outage.
+ * used unless `unsupported` lists it. `failNext` makes the next call fail like a service outage; `delayMs`
+ * makes every call take that long (concurrent requests then overlap like real ones).
  */
 export class FakeSpeechSynthesizer implements SpeechSynthesizer {
   readonly calls: SpeechSynthesisInput[] = [];
   failNext = false;
   unsupported: readonly string[] = [];
+  delayMs = 0;
 
-  synthesize(input: SpeechSynthesisInput): Promise<SynthesizedSpeech> {
+  async synthesize(input: SpeechSynthesisInput): Promise<SynthesizedSpeech> {
     this.calls.push(input);
+    if (this.delayMs > 0) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, this.delayMs);
+      });
+    }
     if (this.failNext) {
       this.failNext = false;
-      return Promise.reject(new SpeechSynthesisError('speech service unavailable'));
+      throw new SpeechSynthesisError('speech service unavailable');
     }
     const engine = input.engines.find((e) => !this.unsupported.includes(e));
-    if (engine === undefined) return Promise.reject(new SpeechSynthesisError('no supported engine'));
+    if (engine === undefined) throw new SpeechSynthesisError('no supported engine');
     const bytes = new TextEncoder().encode(`MP3:${input.text}`);
-    return Promise.resolve({
+    return {
       audio: new ReadableStream<Uint8Array>({
         start(controller) {
           controller.enqueue(bytes);
@@ -131,7 +138,7 @@ export class FakeSpeechSynthesizer implements SpeechSynthesizer {
       characters: input.text.length,
       engine,
       voiceId: input.voiceId,
-    });
+    };
   }
 }
 

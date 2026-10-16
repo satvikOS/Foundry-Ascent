@@ -76,30 +76,44 @@ function comparable(text: string): string {
     .toLowerCase();
 }
 
+/** A run of whole sentences of a stored spoken reply: its stored words and its sentence indices. */
+export interface SpeakableRun {
+  readonly text: string;
+  /** Index of its first and last sentence in the stored reply (`splitSentences` of its plain text). */
+  readonly first: number;
+  readonly last: number;
+}
+
 /**
  * The stored words to speak when `requested` asks for a turn whose validated spoken form is `spoken`: all of
- * it, or one or more consecutive whole sentences of it at least {@link MIN_UNSIGNED_SPEECH_CHARS} long. The
- * match ignores case, quote styles and spacing, and the stored sentences are returned (never the request's own
- * spelling). Null for arbitrary substrings, reordered or skipped sentences and anything else (pure; unit tested).
+ * it, or one or more consecutive whole sentences of it at least {@link MIN_UNSIGNED_SPEECH_CHARS} long, with
+ * the indices of those sentences. The match ignores case, quote styles and spacing, and the stored sentences
+ * are returned (never the request's own spelling). Null for arbitrary substrings, reordered or skipped
+ * sentences and anything else (pure; unit tested).
  */
-export function speakableRun(requested: string, spoken: string | null): string | null {
+export function speakableRunSpan(requested: string, spoken: string | null): SpeakableRun | null {
   if (spoken === null) return null;
   const wanted = comparable(speakableText(requested));
   if (wanted === '') return null;
   const plain = speakableText(spoken);
-  if (wanted === comparable(plain)) return plain;
-  if (wanted.length < MIN_UNSIGNED_SPEECH_CHARS) return null;
   const sentences = splitSentences(plain);
+  if (wanted === comparable(plain)) return { text: plain, first: 0, last: Math.max(0, sentences.length - 1) };
+  if (wanted.length < MIN_UNSIGNED_SPEECH_CHARS) return null;
   const keys = sentences.map(comparable);
   for (let start = 0; start < keys.length; start += 1) {
     let run = '';
     for (let end = start; end < keys.length; end += 1) {
       run = end === start ? (keys[end] ?? '') : `${run} ${keys[end] ?? ''}`;
-      if (run === wanted) return sentences.slice(start, end + 1).join(' ');
+      if (run === wanted) return { text: sentences.slice(start, end + 1).join(' '), first: start, last: end };
       if (run.length >= wanted.length) break;
     }
   }
   return null;
+}
+
+/** The stored words of {@link speakableRunSpan}. */
+export function speakableRun(requested: string, spoken: string | null): string | null {
+  return speakableRunSpan(requested, spoken)?.text ?? null;
 }
 
 /** Whether `text` is the fixed spoken crisis support message. */

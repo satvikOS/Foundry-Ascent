@@ -13,7 +13,10 @@
 --     which are redacted with the turn's other content.
 --  3. Settings: the `calls_enabled` kill switch (on; the AI kill switch still stops calls).
 --  4. Spend caps: a person's daily AI spend cap leaves out speech (Polly and Transcribe during calls), which the
---     call-minute caps bound instead; the platform's daily cap still counts everything.
+--     call-minute caps and the call speech budgets (5.) bound instead; the platform's daily cap still counts
+--     everything.
+--  5. Speech of a call: each thing a call had synthesized and how often, reserved before synthesis together
+--     with the call's character budget, so nothing is replayed without limit (owner role only).
 --
 -- Call minutes are measured from this table (per call, and per person per UTC day): a live call counts until
 -- now, or until shortly after its last heartbeat when the client went away (the time it is closed at).
@@ -209,7 +212,8 @@ INSERT INTO platform_settings (key, value) VALUES ('calls_enabled', 'true') ON C
 
 -- 0003's function with one change: the per-person sum leaves out purpose 'speech' (text-to-speech and
 -- speech-to-text of calls), so a call never ends early on the per-person AI budget; calls are bounded by their
--- minute caps (per call and per person per day) and by the platform cap, which counts every purpose.
+-- minute caps (per call and per person per day), their speech budgets (5.) and by the platform cap, which
+-- counts every purpose.
 -- usageRepo.spendToday counts the same way.
 CREATE OR REPLACE FUNCTION app.spend_cap_state(p_global_cap numeric, p_principal_cap numeric) RETURNS text
   LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
@@ -225,3 +229,28 @@ CREATE OR REPLACE FUNCTION app.spend_cap_state(p_global_cap numeric, p_principal
 $$;
 REVOKE ALL ON FUNCTION app.spend_cap_state(numeric, numeric) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app.spend_cap_state(numeric, numeric) TO app_rls;
+
+-- ---------------------------------------------------------------------------------------------------
+-- 5. Speech of a call
+-- ---------------------------------------------------------------------------------------------------
+
+-- What a call had synthesized and how often (identifiers and counts only, never words): the intro, each
+-- signed unit of a reply, each run of whole sentences of a stored reply, and a crisis turn's support message.
+-- POST /speech reserves a play here in the same statement that adds the characters to the call's budget
+-- (calls.speech_characters), before Amazon Polly is called; a synthesis that fails gives both back.
+-- Owner role only, like the usage ledger: app_rls has no privileges on it.
+CREATE TABLE IF NOT EXISTS call_speech (
+  call_id     uuid NOT NULL REFERENCES calls (id),
+  -- intro, unit.<turn id>.<seq>, run.<turn id>.<first sentence>.<last sentence> or crisis.<turn id>
+  unit        text NOT NULL,
+  plays       integer NOT NULL DEFAULT 1,
+  characters  integer NOT NULL DEFAULT 0,
+  first_at    timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (call_id, unit),
+  CONSTRAINT call_speech_unit_check CHECK (
+    unit = 'intro'
+    OR unit ~ '^(unit|run|crisis)[.][0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}([.][0-9]{1,5}){0,2}$'),
+  CONSTRAINT call_speech_counters_check CHECK (plays BETWEEN 0 AND 100 AND characters >= 0)
+);
+ALTER TABLE call_speech ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON call_speech FROM app_rls;

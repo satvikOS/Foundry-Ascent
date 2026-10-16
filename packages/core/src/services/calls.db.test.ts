@@ -164,6 +164,32 @@ async function transcribedSeconds(person: Person): Promise<number[]> {
   return rows.rows.map((r) => Number(r.input_tokens));
 }
 
+/** A person's text-to-speech usage rows (Polly). */
+async function pollyRows(person: Person): Promise<number> {
+  const rows = await h.t.db.system((sx) =>
+    sx.query(
+      `SELECT count(*)::int AS n FROM usage_ledger
+       WHERE purpose = 'speech' AND model_id LIKE 'polly%' AND principal_id = :me`,
+      { me: p.uuid(h.people[person]) },
+    ),
+  );
+  return Number(rows.rows[0]?.n);
+}
+
+/** Settles every request at once: what was spoken, and the reasons of the refusals. */
+async function concurrently<T>(
+  count: number,
+  fn: () => Promise<T>,
+): Promise<{ fulfilled: number; reasons: (string | undefined)[] }> {
+  const settled = await Promise.allSettled(Array.from({ length: count }, fn));
+  return {
+    fulfilled: settled.filter((r) => r.status === 'fulfilled').length,
+    reasons: settled.flatMap((r) =>
+      r.status === 'rejected' ? [(r.reason as { reason?: string }).reason] : [],
+    ),
+  };
+}
+
 /** Runs `fn` while the person (and so the platform) is over today's AI spend caps. */
 async function withOverspend<T>(person: Person, fn: () => Promise<T>): Promise<T> {
   await h.t.db.system((sx) =>
@@ -1032,6 +1058,125 @@ describe('speech', () => {
     await expect(say(SPOKEN)).rejects.toMatchObject({ code: 'conflict', reason: 'call_not_active' });
     expect(await auditActions()).toContain('speech.refused');
   });
+
+  it('speaks the intro and each signed unit once per call, however often or concurrently they are asked for', async () => {
+    const sessionId = await newSession('tomasz', 'benchtally');
+    const { call, intro } = await startCall('tomasz', sessionId);
+    if (intro === null) throw new Error('expected an intro');
+    const before = await pollyRows('tomasz');
+    const introUnit = { sessionId, turnId: null, seq: 0, text: intro.text, sig: intro.sig };
+    await h.core.speech.synthesize(ctx.tomasz, introUnit);
+    await expect(h.core.speech.synthesize(ctx.tomasz, introUnit)).rejects.toMatchObject({
+      code: 'conflict',
+      reason: 'speech_already_played',
+      status: 409,
+    });
+    // A unit of a reply, asked for twelve times at once: spoken (and billed) once.
+    const turn = await spokenTurn(sessionId, call.id);
+    const text = 'Start with the library that already counts seats.';
+    const sig = signSpeechUnit(await keys.signingKey(), { sessionId, turnId: turn.id, seq: 0, text });
+    const burst = await concurrently(12, () =>
+      h.core.speech.synthesize(ctx.tomasz, { sessionId, turnId: turn.id, seq: 0, text, sig }),
+    );
+    expect(burst.fulfilled).toBe(1);
+    expect(new Set(burst.reasons)).toEqual(new Set(['speech_already_played']));
+    expect((await pollyRows('tomasz')) - before).toBe(2);
+    expect((await callRow(call.id)).speechCharacters).toBe(speakableText(intro.text).length + text.length);
+    // A synthesis that failed can be asked for again: nothing was spoken or billed.
+    const next = signSpeechUnit(await keys.signingKey(), { sessionId, turnId: turn.id, seq: 1, text });
+    speech.failNext = true;
+    const failed = { sessionId, turnId: turn.id, seq: 1, text, sig: next };
+    await expect(h.core.speech.synthesize(ctx.tomasz, failed)).rejects.toMatchObject({
+      code: 'model_unavailable',
+    });
+    await h.core.speech.synthesize(ctx.tomasz, failed);
+    // A new call (a reload) has its own intro, spoken once again.
+    const again = await startCall('tomasz', sessionId);
+    if (again.intro === null) throw new Error('expected an intro');
+    const sameIntro = { ...introUnit, text: again.intro.text, sig: again.intro.sig };
+    await h.core.speech.synthesize(ctx.tomasz, sameIntro);
+    await expect(h.core.speech.synthesize(ctx.tomasz, sameIntro)).rejects.toMatchObject({
+      reason: 'speech_already_played',
+    });
+    await endCall('tomasz', again.call.id);
+  });
+
+  it('bounds what a call speaks by how long it has lasted, and what a person’s calls speak in a day', async () => {
+    const sentences = Array.from(
+      { length: 14 },
+      (_, i) =>
+        `In week ${String(i + 1)}, ask the staff of the second library for hourly seat counts and their busiest days.`,
+    );
+    const sessionId = await newSession('tomasz', 'benchtally');
+    const { call } = await startCall('tomasz', sessionId);
+    const turn = await talk('tomasz', sessionId, call.id, 'What should we ask the libraries?');
+    await h.t.db.system((sx) =>
+      sx.query(
+        `UPDATE turns SET response = jsonb_set(response, '{spoken}', to_jsonb(:s::text)) WHERE id = :id`,
+        { id: p.uuid(turn.id), s: p.text(sentences.join(' ')) },
+      ),
+    );
+    const say = (text: string) => h.core.speech.synthesize(ctx.tomasz, { sessionId, turnId: turn.id, text });
+    // Unsigned, the same stored words twice (once, and once more on request), then no more.
+    const [first = ''] = sentences;
+    await say(first);
+    await say(first);
+    await expect(say(first)).rejects.toMatchObject({ code: 'conflict', reason: 'speech_already_played' });
+    // Other runs of the reply, until the call has said all it may this soon after it started.
+    const runs: string[] = [];
+    for (let start = 1; start < sentences.length; start += 1) {
+      for (let end = start; end < sentences.length; end += 1)
+        runs.push(sentences.slice(start, end + 1).join(' '));
+    }
+    let refusal: unknown = null;
+    let refused = '';
+    for (const run of runs) {
+      try {
+        await say(run);
+      } catch (err) {
+        refusal = err;
+        refused = run;
+        break;
+      }
+    }
+    expect(refusal).toMatchObject({ code: 'rate_limited', reason: 'call_speech_limit', status: 429 });
+    const row = await callRow(call.id);
+    expect(row.speechCharacters).toBeLessThanOrEqual(
+      CALL_LIMITS.speechHeadroomCharacters + CALL_LIMITS.speechCharactersPerSecond * (row.elapsedSeconds + 1),
+    );
+    // Refused because it would not fit, not before.
+    expect(row.speechCharacters + refused.length).toBeGreaterThan(CALL_LIMITS.speechHeadroomCharacters);
+    // A minute later the call may say another minute's worth.
+    await backdateSeconds(call.id, 60, 0);
+    await say(sentences.slice(2, 5).join(' '));
+
+    // The person's calls of the day share one budget: the rate over the daily minute cap.
+    const dailyCap = await h.t.db.system(async (sx) => {
+      const r = await sx.query(
+        `SELECT value::text AS v FROM platform_settings WHERE key = 'daily_call_minutes_per_principal'`,
+      );
+      return Number(r.rows[0]?.v ?? 60);
+    });
+    const daily = CALL_LIMITS.speechCharactersPerSecond * dailyCap * 60;
+    const ended = await startCall('tomasz', sessionId, 'typed');
+    await endCall('tomasz', ended.call.id);
+    const fresh = await startCall('tomasz', sessionId, 'typed');
+    await h.t.db.system((sx) =>
+      sx.query('UPDATE calls SET speech_characters = :n WHERE id = :id', {
+        id: p.uuid(ended.call.id),
+        n: p.int(daily),
+      }),
+    );
+    const freshTurn = await spokenTurn(sessionId, fresh.call.id);
+    await expect(
+      h.core.speech.synthesize(ctx.tomasz, { sessionId, turnId: freshTurn.id, text: SPOKEN }),
+    ).rejects.toMatchObject({ code: 'rate_limited', reason: 'daily_speech_limit' });
+    await h.t.db.system((sx) =>
+      sx.query('UPDATE calls SET speech_characters = 0 WHERE id = :id', { id: p.uuid(ended.call.id) }),
+    );
+    await h.core.speech.synthesize(ctx.tomasz, { sessionId, turnId: freshTurn.id, text: SPOKEN });
+    await endCall('tomasz', fresh.call.id);
+  });
 });
 
 describe('crisis support on a call', () => {
@@ -1132,6 +1277,34 @@ describe('crisis support on a call', () => {
       await voiceConsent('solesignal', false);
     }
     await endCall('amara', call.id);
+  });
+
+  it('plays the support message at most five times, however many requests come at once', async () => {
+    const sessionId = await newSession('priya', 'benchtally');
+    const { call } = await startCall('priya', sessionId);
+    const blocked = (await send('priya', sessionId, call.id, CRISIS)).at(-1);
+    if (blocked?.event !== 'turn.blocked') throw new Error('expected the crisis path');
+    const turnId = blocked.turnId;
+    // Synthesis takes a while, as it does for real: every request is in flight before any finishes.
+    speech.delayMs = 100;
+    try {
+      const burst = await concurrently(20, () =>
+        h.core.speech.synthesize(ctx.priya, { sessionId, turnId, text: CRISIS_SPOKEN_MESSAGE }),
+      );
+      expect(burst.fulfilled).toBe(CALL_LIMITS.crisisSpeechReplays);
+      expect(new Set(burst.reasons)).toEqual(new Set(['crisis_speech_limit']));
+    } finally {
+      speech.delayMs = 0;
+    }
+    const syntheses = await h.t.db.system((sx) =>
+      sx.query(
+        `SELECT count(*)::int AS n FROM audit_events
+         WHERE action = 'speech.synthesized' AND object_id = :t AND policy_reason = 'crisis_support'`,
+        { t: p.text(turnId) },
+      ),
+    );
+    expect(syntheses.rows[0]).toEqual({ n: CALL_LIMITS.crisisSpeechReplays });
+    await endCall('priya', call.id);
   });
 });
 

@@ -19,7 +19,7 @@ on them.
 | Bedrock reasoning             | $0                                                                                                   | Nova 2 Lite (primary, `us.` profile; `global.` fallback): ≈ $0.007 per turn at ~12 k input / 1.5 k output tokens. GPT-6 Luna (≈ $0.002) is gated by AWS and disabled (`models.luna.enabled = false`) | daily caps, turn rate limit, session turn limit                                                         |
 | Bedrock embeddings (Titan v2) | $0                                                                                                   | ~$0.02 per million tokens (a 50-page document ≈ $0.001)                                                                                                                                              | ingestion only, kill switch                                                                             |
 | Distillation (worker)         | $0: jobs exist only after someone talked                                                             | one `distill` model call per conversation version (digest, notebook, memory and lesson candidates)                                                                                                   | daily caps, kill switch                                                                                 |
-| Amazon Polly (call speech)    | $0                                                                                                   | per character synthesized: neural $16, generative $30 per million (a 70-word spoken reply ≈ 420 characters ≈ $0.007 neural)                                                                          | global cap (metered as `speech`), minute caps, kill switches, two alarms                                |
+| Amazon Polly (call speech)    | $0                                                                                                   | per character synthesized: neural $16, generative $30 per million (a 70-word spoken reply ≈ 420 characters ≈ $0.007 neural)                                                                          | global cap (metered as `speech`), speech budgets per call and per day, kill switches, two alarms        |
 | Amazon Transcribe (call STT)  | $0                                                                                                   | billed per second while the browser's stream is open (silence included); the app meters the reported microphone time at $0.024 a minute                                                              | global cap (as reported), minute caps, AWS's stream quota, the AWS Budget, `speech.enabled` (see below) |
 | Lambda (ARM, 1 GB)            | $0                                                                                                   | fractions of a cent per turn                                                                                                                                                                         | no reserved concurrency (see below); ≤ 2 pollers (worker); spend caps                                   |
 | Secrets Manager               | $0.40/month (one secret)                                                                             | —                                                                                                                                                                                                    | —                                                                                                       |
@@ -29,9 +29,15 @@ on them.
 
 At the default global cap of **$15.00/day**, AI spend (models, embeddings, distillation and speech) is at
 most ≈ $450/month, about 2,100 Nova turns a day. The per-person cap is **$1.00/day** and counts a person's
-models, embeddings and distillation, **not call speech**: Polly and Transcribe (usage purpose `speech`) are
-bounded by the call-minute caps (30 per call, 60 per person per day) and the global cap, so a call never ends
-early on a founder's chat budget; the model spend of a call's spoken turns still counts toward it. A
+models, embeddings and distillation, **not call speech** (usage purpose `speech`), so a call never ends early
+on a founder's chat budget; the model spend of a call's spoken turns still counts toward it. Both kinds of
+call speech count toward the global cap. Transcribe is bounded by the call-minute caps (30 per call, 60 per
+person per day). Polly is bounded by speech budgets in line with them, reserved in the database before Polly
+is called: a call synthesizes at most 15 characters per second it has lasted (plus 2,000 for the intro and a
+reply fetched ahead), never more than 27,000 in a 30-minute call; a person's calls synthesize at most 54,000
+characters a day (15 a second over the 60-minute daily cap: about $0.86 neural, $1.62 generative); and the
+intro and each signed unit are synthesized once per call (whole sentences of a stored reply twice, the crisis
+support message five times). A
 streamed turn makes two model calls (the answer, then its annotations), about twice the input tokens of a
 whole reply (≈ $0.006 instead of ≈ $0.004 on Nova 2 Lite). A full 30-minute call meters about $0.72 of
 Transcribe at the app's $0.024 a minute (AWS's price list of 2026-09-11 gives $0.01; the app's figure errs

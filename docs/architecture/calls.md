@@ -64,17 +64,17 @@ Contracts in `packages/contracts/src/calls.ts`; errors are problem+json.
 
 Someone else's call or turn is 404, as is a conversation the caller cannot see. Refusals:
 
-| Status | Code                  | When                                                                                                                  |
-| ------ | --------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| 403    | `forbidden`           | The caller lost write access to the venture (archived, or no longer founder or team).                                 |
-| 409    | `conflict`            | A live call in another conversation (unless `replace`); the call ended or went silent; its time limit or 90-turn cap. |
-| 409    | `session_ended`       | The conversation has ended.                                                                                           |
-| 423    | `persona_suspended`   | The vEIR is suspended, or its own voice is no longer covered by voice consent.                                        |
-| 423    | `assignment_inactive` | No active assignment, or it changed since the conversation started.                                                   |
-| 429    | `rate_limited`        | Today's call minutes are used (`Retry-After`: midnight UTC); 40 spoken turns in 10 minutes; grant limits.             |
-| 429    | `spend_cap_reached`   | The daily AI spend caps.                                                                                              |
-| 503    | `ai_disabled`         | The AI kill switch, or `calls_enabled` is off.                                                                        |
-| 501    | `speech_unavailable`  | No speech service here (local development): the client types and the browser speaks. Sent after every other check.    |
+| Status | Code                  | When                                                                                                                                         |
+| ------ | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| 403    | `forbidden`           | The caller lost write access to the venture (archived, or no longer founder or team).                                                        |
+| 409    | `conflict`            | A live call in another conversation (unless `replace`); the call ended or went silent; its time limit or 90-turn cap; speech already played. |
+| 409    | `session_ended`       | The conversation has ended.                                                                                                                  |
+| 423    | `persona_suspended`   | The vEIR is suspended, or its own voice is no longer covered by voice consent.                                                               |
+| 423    | `assignment_inactive` | No active assignment, or it changed since the conversation started.                                                                          |
+| 429    | `rate_limited`        | Today's call minutes are used (`Retry-After`: midnight UTC); 40 spoken turns in 10 minutes; grant limits; the speech budgets.                |
+| 429    | `spend_cap_reached`   | The daily AI spend caps.                                                                                                                     |
+| 503    | `ai_disabled`         | The AI kill switch, or `calls_enabled` is off.                                                                                               |
+| 501    | `speech_unavailable`  | No speech service here (local development): the client types and the browser speaks. Sent after every other check.                           |
 
 A live call in another conversation is refused with 409 until its client goes quiet for 60 s; a client that
 lost track of it (a crashed tab) starts again with `replace: true`, which ends that call as `navigated`.
@@ -169,8 +169,23 @@ stream-transcription-websocket` URL (en-US, PCM, 16 kHz, partial-results stabili
     request's spelling; fragments, reordered or skipped sentences and the answer text are refused (422);
   - or the fixed crisis support message (§5).
 
-  It checks the kill switches, the active assignment, the voice consent, the call's time left and the daily
-  spend caps, and only then reports 501 where no speech service runs.
+  It checks the kill switches, the active assignment, the voice consent, the call's time left, the
+  platform's daily spend cap and the speech budgets, and only then reports 501 where no speech service runs.
+
+- **Speech budgets.** A person's own AI cap leaves call speech out, so `/speech` is bounded by what a call can
+  say instead. Before Polly is called, one statement (`callsRepo.reserveCallSpeech`, under the call's row
+  lock, so concurrent requests are serialised) reserves a play of what is spoken in `call_speech` and its
+  characters on the call (`calls.speech_characters`), and refuses:
+  - a replay: the intro and each signed unit are synthesized once per call, a run of whole sentences of a
+    stored reply twice (409 `speech_already_played`);
+  - more than 15 characters per second the call has lasted plus 2,000 (the intro and a reply fetched ahead
+    of playback), and never more than 15 a second over the call's time limit: 27,000 characters in a
+    30-minute call (429 `call_speech_limit`);
+  - more than 15 characters a second over the daily minute cap across the calls a person started that UTC
+    day: 54,000 at 60 minutes (429 `daily_speech_limit`, `Retry-After` midnight UTC).
+
+  A synthesis that fails gives its play and characters back; one billed differently is corrected to the
+  bill. Each refusal is audited (`speech.refused`).
 
 - **The intro** greets the founder by first name, says the vEIR is an AI coach, and continues with the
   conversation's opener before its first turn (`coaching_sessions.opener`: the notebook's next opener as it
@@ -198,8 +213,9 @@ turns sampled for review, sees the count and follow-ups of those turns.
 ### 2.7 Metering and audit
 
 - Each synthesis is a `usage_ledger` row with purpose `speech` (characters, Polly price per engine),
-  counted by the platform's daily cap (not by a person's own AI cap: call minutes bound speech), and is added
-  to `calls.speech_characters`.
+  counted by the platform's daily cap (not by a person's own AI cap: the speech budgets of §2.5 bound it), and
+  its characters are reserved on `calls.speech_characters` and its play in `call_speech` before Polly is
+  called.
 - Speech-to-text is a `usage_ledger` row with purpose `speech` and model `transcribe:streaming:en-US` for the
   microphone seconds each heartbeat adds (`input_tokens` holds the seconds; $0.024 a minute), so the
   platform's daily cap covers it, as reported. The last few seconds before the end are not metered.
@@ -250,11 +266,12 @@ Anam or HeyGen LiveAvatar adapter needs (CSP hosts, Secrets Manager key, token r
   is answered with fixed human-support text, no model call, and a P1 escalation draft the founder chooses to
   share. On a call the fixed spoken message is played for the turn's author whatever the call's state, the
   switches and the spend caps (it is not model output), in the call's voice while approved and in the
-  platform voice otherwise, for 10 minutes after the turn and at most 5 times; the written message stays on
-  screen.
+  platform voice otherwise, for 10 minutes after the turn and at most 5 times (reserved atomically before
+  each synthesis, so concurrent requests cannot exceed it); the written message stays on screen.
 - **Safety and cost.** Spoken turns go through the same validators, escalation and memory approval as typed
   ones. The AI kill switch, `calls_enabled`, the platform's daily spend cap (which counts speech and
   speech-to-text), the caller's own AI cap (which counts their model spend, not speech), the per-call and
-  daily minute caps and the spoken-turn rate limit always apply to everything but the crisis message.
+  daily minute caps, the speech budgets (§2.5) and the spoken-turn rate limit always apply to everything but
+  the crisis message.
 - **Before a production voice launch**, the University's privacy review covers student voice processing
   by Amazon Transcribe and the first-call notice.

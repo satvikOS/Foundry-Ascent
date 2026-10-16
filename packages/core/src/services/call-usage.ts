@@ -32,6 +32,21 @@ export const CALL_LIMITS = {
   crisisSpeechReplays: 5,
   /** … within this long after the turn was sent. */
   crisisSpeechWindowSeconds: 600,
+  /**
+   * Speech a call may synthesize: this many characters per second it has lasted, the most a voice says without
+   * a pause (Polly speaks about 150 words a minute) …
+   */
+  speechCharactersPerSecond: 15,
+  /**
+   * … plus this many before it has lasted long enough to pay for them (the intro and a reply fetched ahead of
+   * playback), and never more than the per-second rate over its time limit: 27,000 characters in a 30-minute
+   * call. A person's calls may synthesize the per-second rate over the daily minute cap in a UTC day.
+   */
+  speechHeadroomCharacters: 2_000,
+  /** Syntheses per call of the intro or of one signed unit: a unit is fetched once and played. */
+  speechUnitPlays: 1,
+  /** Syntheses per call of one run of whole sentences of a stored reply (unsigned): once, and once more. */
+  speechRunPlays: 2,
   /** Spoken turns one person may send per window (typed chat has its own limit). */
   voiceTurnRateLimit: 40,
   voiceTurnRateWindowSeconds: 600,
@@ -46,6 +61,21 @@ export type CallCaps = Required<
 /** Seconds the person spent in calls today (UTC), by the database clock. */
 export function callSecondsToday(ex: SqlExecutor, principalId: string): Promise<number> {
   return callsRepo.callSecondsToday(ex, { principalId, graceSeconds: CALL_LIMITS.staleSeconds });
+}
+
+/**
+ * The speech budget of the caller's calls (characters): {@link CALL_LIMITS.speechCharactersPerSecond} per
+ * second a call lasted plus the headroom, at most that rate over the call's time limit, and that rate over
+ * the daily minute cap across a person's calls of the day (54,000 characters at 60 minutes).
+ */
+export function speechBudget(caps: Pick<CallCaps, 'dailyCallMinutesPerPrincipal'>): callsRepo.SpeechBudget {
+  return {
+    charactersPerSecond: CALL_LIMITS.speechCharactersPerSecond,
+    headroomCharacters: CALL_LIMITS.speechHeadroomCharacters,
+    dailyCharacters: Math.floor(
+      CALL_LIMITS.speechCharactersPerSecond * caps.dailyCallMinutesPerPrincipal * 60,
+    ),
+  };
 }
 
 /** Amazon Transcribe streaming, US English, in USD per second of audio (us-east-1, first pricing tier). */

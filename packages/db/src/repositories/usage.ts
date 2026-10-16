@@ -59,7 +59,8 @@ const TODAY_START = `(date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE '
  */
 export function spendToday(sx: SystemExecutor, args: { principalId?: string | null } = {}): Promise<number> {
   // A person's spend is what their daily AI cap counts: speech (Polly and Transcribe during calls) is left out,
-  // bounded by the call-minute caps instead; the platform's spend counts everything (app.spend_cap_state).
+  // bounded by the call-minute caps and the call speech budgets instead (callsRepo.reserveCallSpeech); the
+  // platform's spend counts everything (app.spend_cap_state).
   return queryNumber(
     sx,
     `SELECT coalesce(sum(cost_usd), 0) AS n FROM usage_ledger
