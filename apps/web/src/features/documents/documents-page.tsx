@@ -50,7 +50,7 @@ import { cn } from '@/lib/utils';
 import { sentenceStart, useVeirName } from '@/features/venture/veir-name';
 
 import { isUnfinishedUpload, resumableUpload } from './unfinished-uploads';
-import { DOCUMENTS_ORIGIN, type UploadItem } from './upload-queue';
+import { DOCUMENTS_ORIGIN, isActiveUpload, type QueuedUpload, type UploadItem } from './upload-queue';
 import { SUPPORTED_FORMATS_LABEL, validateUploadFiles, type UploadRejection } from './upload-validation';
 import { useVentureUploads } from './venture-uploads';
 
@@ -144,9 +144,35 @@ function UploadRow({
 }
 
 /**
+ * A file picked to finish an unfinished upload: the server signed that upload for the document's own file
+ * (its size and type), so only that file can go into it. Anything else is explained instead.
+ */
+export function reuploadChoice(
+  files: readonly File[],
+  doc: DocumentView,
+  now = Date.now(),
+): { accepted: QueuedUpload } | { rejected: UploadRejection } | null {
+  const { accepted, rejected } = validateUploadFiles(files.slice(0, 1));
+  const problem = rejected[0];
+  if (problem) return { rejected: problem };
+  const candidate = accepted[0];
+  if (!candidate) return null;
+  const resume = resumableUpload(candidate, [doc], now);
+  if (resume) return { accepted: { ...candidate, resume } };
+  return {
+    rejected: {
+      name: candidate.file.name,
+      code: 'different_file',
+      message: `This isn’t ${doc.filename} (${formatBytes(doc.sizeBytes)}). Choose that file to finish its upload, or use Upload files to add this one.`,
+    },
+  };
+}
+
+/**
  * Documents: the venture's files the vEIR can cite. One action (upload, by button or by dropping files
  * on the page), the venture's uploads while they run (from here or from a conversation's composer), and
- * the files as hairline rows that update while they are processed.
+ * the files as hairline rows that update while they are processed. Retry on a document whose file never
+ * arrived asks for that file again and uploads it into the same document.
  */
 export function DocumentsPage() {
   const me = useRequiredMe();
@@ -162,6 +188,9 @@ export function DocumentsPage() {
   const [dragging, setDragging] = useState(false);
   const depth = useRef(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  // Retry on an unfinished upload: the file picker for that document's file, and the document it is for.
+  const reuploadRef = useRef<HTMLInputElement | null>(null);
+  const reuploadFor = useRef<DocumentView | null>(null);
   const hintId = useId();
 
   const rows = useMemo(
@@ -173,6 +202,14 @@ export function DocumentsPage() {
   );
   // Uploads left unfinished are neither waited for nor counted (the list stops polling for them).
   const processing = rows.filter((d) => isInFlight(d)).length;
+  // Documents an upload in the queue is going into right now (a retry of one left unfinished long ago).
+  const uploadingInto = useMemo(
+    () =>
+      new Set(
+        queue.items.flatMap((item) => (isActiveUpload(item) && item.resume ? [item.resume.documentId] : [])),
+      ),
+    [queue.items],
+  );
 
   const onFiles = (files: File[]) => {
     if (files.length === 0) return;
@@ -232,6 +269,26 @@ export function DocumentsPage() {
     });
   };
 
+  /** The file never arrived, so completing cannot help: ask for the file and upload it into the document. */
+  const askForFile = (doc: DocumentView) => {
+    reuploadFor.current = doc;
+    reuploadRef.current?.click();
+  };
+
+  const onReuploadFile = (files: File[]) => {
+    const doc = reuploadFor.current;
+    reuploadFor.current = null;
+    const choice = doc ? reuploadChoice(files, doc) : null;
+    if (!choice) return;
+    if ('rejected' in choice) {
+      setRejections([choice.rejected]);
+      announce('That file can’t finish this upload. See the list for the reason.', 'assertive');
+      return;
+    }
+    setRejections([]);
+    queue.add([choice.accepted], DOCUMENTS_ORIGIN);
+  };
+
   const retryProcessing = (doc: DocumentView) => {
     complete.mutate(doc.id, {
       onSuccess: () => {
@@ -270,6 +327,21 @@ export function DocumentsPage() {
             const files = Array.from(event.target.files ?? []);
             event.target.value = '';
             onFiles(files);
+          }}
+        />
+      ) : null}
+      {canEdit ? (
+        <input
+          ref={reuploadRef}
+          type="file"
+          accept={DOCUMENT_ACCEPT}
+          className="sr-only"
+          tabIndex={-1}
+          aria-hidden
+          onChange={(event) => {
+            const files = Array.from(event.target.files ?? []);
+            event.target.value = '';
+            onReuploadFile(files);
           }}
         />
       ) : null}
@@ -368,10 +440,12 @@ export function DocumentsPage() {
               key={doc.id}
               doc={doc}
               canEdit={canEdit}
+              uploading={uploadingInto.has(doc.id)}
               retrying={complete.isPending && complete.variables === doc.id}
               deleting={remove.isPending && remove.variables === doc.id}
               onRetry={() => {
-                retryProcessing(doc);
+                if (isUnfinishedUpload(doc)) askForFile(doc);
+                else retryProcessing(doc);
               }}
               onDelete={() => {
                 setConfirmDelete(doc);
@@ -420,6 +494,7 @@ export function DocumentsPage() {
 function DocumentRow({
   doc,
   canEdit,
+  uploading,
   retrying,
   deleting,
   onRetry,
@@ -427,6 +502,8 @@ function DocumentRow({
 }: {
   doc: DocumentView;
   canEdit: boolean;
+  /** The upload queue is uploading into this document now. */
+  uploading: boolean;
   retrying: boolean;
   deleting: boolean;
   onRetry: () => void;
@@ -434,8 +511,9 @@ function DocumentRow({
 }) {
   const type = TYPE_ICON[doc.contentType];
   const Icon = type.icon;
-  // An upload left unfinished long ago is not "Uploading": it won't move on by itself.
-  const stale = isStaleUpload(doc);
+  // An upload left unfinished long ago is not "Uploading": it won't move on by itself (unless it is being
+  // retried right now).
+  const stale = isStaleUpload(doc) && !uploading;
   const status = getStatusDefinition('document', doc.status);
   const label = stale ? 'Upload didn’t finish' : status.label;
   const failed = doc.status === 'failed' || stale;
@@ -478,7 +556,7 @@ function DocumentRow({
       </div>
       {canEdit ? (
         <div className="flex items-center gap-1">
-          {doc.status === 'failed' ? (
+          {(doc.status === 'failed' || stale) && !uploading ? (
             <Button size="xs" variant="ghost" loading={retrying} onClick={onRetry}>
               <RotateCcw aria-hidden />
               Retry

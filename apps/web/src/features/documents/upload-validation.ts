@@ -14,7 +14,7 @@ export const MAX_FILENAME_LENGTH = 200;
 export const SUPPORTED_FORMATS_LABEL = 'PDF, DOCX, TXT or Markdown';
 
 export type UploadRejectionCode =
-  'unsupported_type' | 'too_large' | 'empty' | 'invalid_name' | 'duplicate' | 'too_many';
+  'unsupported_type' | 'too_large' | 'empty' | 'invalid_name' | 'duplicate' | 'too_many' | 'different_file';
 
 export interface UploadCandidate {
   file: File;

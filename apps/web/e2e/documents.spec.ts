@@ -142,6 +142,58 @@ test('a cancelled upload leaves no document behind', async ({ page }) => {
   await page.unroute(UPLOAD_PUT);
 });
 
+/**
+ * Retry on a document whose file never arrived (an upload that failed, seen on a later visit) asks for the
+ * file again and uploads it into that document: a fresh upload URL for the same record, not "processing" a
+ * file that is not there.
+ */
+test('Retry on an unfinished document asks for the file and finishes it in the same document', async ({
+  page,
+}) => {
+  const token = runToken();
+  const filename = `unfinished-notes-${token}.md`;
+  const body = `# Seat counts (${token})\n\nThree of five reading rooms were full by noon.\n`;
+  const ventureId = await openVenture(page);
+  await page.goto(`/${TENANT}/app/v/${ventureId}/documents`);
+  await expect(page.getByRole('heading', { level: 1, name: 'Documents' })).toBeVisible();
+
+  await page.route(UPLOAD_PUT, (route) => route.abort('failed'));
+  await pickFile(page, filename, body);
+  const rows = page
+    .getByRole('list', { name: 'Venture documents' })
+    .getByRole('listitem')
+    .filter({ hasText: filename });
+  await expect(rows).toContainText('The upload didn’t finish. Upload the file again.');
+  await page.unroute(UPLOAD_PUT);
+
+  // A later visit: the upload list is gone, the document is still unfinished.
+  await page.reload();
+  await expect(page.getByRole('list', { name: 'Upload queue' })).toHaveCount(0);
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText('The upload didn’t finish. Upload the file again.');
+
+  const writes: string[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST') writes.push(new URL(request.url()).pathname);
+  });
+  const chooser = page.waitForEvent('filechooser');
+  await rows.getByRole('button', { name: 'Retry' }).click();
+  await (await chooser).setFiles({ name: filename, mimeType: 'text/markdown', buffer: Buffer.from(body) });
+  await expect(rows).toContainText('Ready', { timeout: 30_000 });
+  await expect(rows).toHaveCount(1);
+  // A fresh upload URL for the same document, then processing; no second document.
+  expect(writes.filter((p) => p.endsWith('/upload'))).toHaveLength(1);
+  expect(writes.filter((p) => p.endsWith('/complete'))).toHaveLength(1);
+  expect(writes.filter((p) => p.endsWith(`/ventures/${ventureId}/documents`))).toHaveLength(0);
+
+  await rows.getByRole('button', { name: `Delete ${filename}` }).click();
+  await page
+    .getByRole('alertdialog', { name: 'Delete this document?' })
+    .getByRole('button', { name: 'Delete' })
+    .click();
+  await expect(rows).toHaveCount(0);
+});
+
 /** Asks a question from New chat and waits for the answer; returns the conversation id. */
 async function conversationWithAnswer(page: Page, question: string): Promise<string> {
   await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'New chat' }).click();
