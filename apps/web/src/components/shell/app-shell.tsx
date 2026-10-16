@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { SimpleTooltip } from '@/components/ui/tooltip';
+import { MiniCallBar } from '@/features/calls/mini-call-bar';
 import { ventureQueryOptions } from '@/lib/api/hooks/ventures';
 import { canWrite } from '@/lib/auth/roles';
 import { useHotkeys } from '@/lib/hooks/use-hotkeys';
@@ -225,6 +226,7 @@ export function AppShell({ me, children }: AppShellProps) {
             onOpenNav={chrome.openNavigation}
           />
         )}
+        <MiniCallBar />
 
         <div data-print="hide">
           <DbWakingBanner />

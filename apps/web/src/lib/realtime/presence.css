@@ -1,0 +1,131 @@
+/*
+ * The built-in call presence (lib/realtime/presence.ts): an abstract, monochrome form around the vEIR's face.
+ * Only colour tokens are used, so it follows the theme. Levels arrive as --fa-veir and --fa-founder (0–1,
+ * set from script through the CSSOM, which the strict CSP allows); state arrives as data-state.
+ */
+.fa-presence {
+  --fa-veir: 0;
+  --fa-founder: 0;
+  --fa-ink: var(--foreground);
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  transition: opacity 360ms var(--ease-out-expo);
+}
+
+.fa-presence > * {
+  grid-area: 1 / 1;
+  aspect-ratio: 1;
+  border-radius: 9999px;
+}
+
+.fa-presence__halo {
+  width: 100%;
+  background: radial-gradient(
+    closest-side,
+    color-mix(in oklab, var(--fa-ink) 10%, transparent),
+    color-mix(in oklab, var(--fa-ink) 4%, transparent) 58%,
+    transparent
+  );
+  opacity: calc(0.45 + var(--fa-veir) * 0.55);
+  transform: scale(calc(0.84 + var(--fa-veir) * 0.16));
+}
+
+.fa-presence__ring-outer {
+  width: 76%;
+  border: 1px solid color-mix(in oklab, var(--fa-ink) 11%, transparent);
+  transform: scale(calc(1 + var(--fa-veir) * 0.12));
+  transition: border-color 360ms var(--ease-out-expo);
+}
+
+.fa-presence__ring-inner {
+  width: 58%;
+  border: 1px solid color-mix(in oklab, var(--fa-ink) 16%, transparent);
+  transform: scale(calc(1 + var(--fa-founder) * 0.07));
+  transition: border-color 360ms var(--ease-out-expo);
+}
+
+/* A hairline arc with a fading tail: turns while connecting and thinking. */
+.fa-presence__arc {
+  width: 58%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    color-mix(in oklab, var(--fa-ink) 70%, transparent) 300deg,
+    transparent 360deg
+  );
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 1.5px), #000 calc(100% - 1px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 1.5px), #000 calc(100% - 1px));
+  opacity: 0;
+  transition: opacity 240ms var(--ease-out-expo);
+}
+
+.fa-presence[data-state='listening'] .fa-presence__ring-inner {
+  border-color: color-mix(in oklab, var(--fa-ink) 34%, transparent);
+}
+
+.fa-presence[data-state='speaking'] .fa-presence__ring-outer {
+  border-color: color-mix(in oklab, var(--fa-ink) 24%, transparent);
+}
+
+.fa-presence[data-state='thinking'] .fa-presence__arc,
+.fa-presence[data-state='connecting'] .fa-presence__arc {
+  opacity: 1;
+  animation: fa-presence-turn 1.4s linear infinite;
+}
+
+.fa-presence[data-state='connecting'] .fa-presence__arc {
+  animation-duration: 2.4s;
+}
+
+.fa-presence[data-state='muted'],
+.fa-presence[data-state='idle'] {
+  opacity: 0.6;
+}
+
+.fa-presence[data-state='muted'] .fa-presence__ring-inner {
+  border-style: dashed;
+}
+
+/* Each sentence the vEIR starts gives the halo a soft lift. */
+.fa-presence.is-blooming .fa-presence__halo {
+  animation: fa-presence-bloom 720ms var(--ease-out-expo);
+}
+
+@keyframes fa-presence-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes fa-presence-bloom {
+  from {
+    opacity: 1;
+    transform: scale(1.02);
+  }
+}
+
+/* Reduced motion: a still form; the text label carries the state. */
+.fa-presence[data-motion='reduced'] *,
+.fa-presence[data-motion='reduced'] {
+  animation: none !important;
+  transition: none !important;
+}
+
+.fa-presence[data-motion='reduced'] > * {
+  transform: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fa-presence *,
+  .fa-presence {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .fa-presence > * {
+    transform: none !important;
+  }
+}
