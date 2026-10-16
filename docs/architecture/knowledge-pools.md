@@ -141,9 +141,12 @@ generated time), with `distilled_at` and `distill_version` (the number of comple
   conversation (`[]`, null); corrected text keeps where it was drawn from (`withPersonSources`). These
   fields stay in the stored document; the contract view does not show them.
 - **Deleting a conversation** removes the lines sourced from it, and clears the summary and the opener when
-  they were drawn from it. Text of unknown origin is cleared when the deleted conversation was distilled or a
-  line cites it: a summary is never kept on the chance it did not use the conversation. Text a person wrote
-  stays.
+  they were drawn from it. A summary of unknown origin is cleared when the deleted conversation was distilled
+  or a line cites it: a summary is never kept on the chance it did not use the conversation. An opener of
+  unknown origin is cleared whichever conversation of the venture is deleted, in every notebook of the
+  venture and in every conversation that opened with it (`coaching_sessions.opener_by_person` tells a copy a
+  person wrote from one of unknown origin): over-erasing it is harmless, the next distillation writes a new
+  one. Text a person wrote stays.
 - **Integrity.** The database checks the document against the contract (conversation ids, ISO timestamps).
   Should a stored notebook still not match a later contract, reads keep the readable lines and mark the
   record not intact; the notebook API fails loudly (500, logged with ids only) and `saveNotebook` refuses to
@@ -266,7 +269,7 @@ Migration 0005 (`0005_wave1_fixes`, expand-only and re-runnable, `migrate-0005.d
   proposal again instead of adding one; pending proposals of the venture are embedded before the comparison.
   AI proposals nobody acts on expire after 30 days.
 - **Deletion**: deleting a conversation also withdraws its lesson drafts still in `draft` and erases the
-  copies of an opener drawn from it on later conversations.
+  copies of an opener drawn from it, or of unknown origin, on the venture's other conversations.
 
 ## 9. Tests
 

@@ -11,6 +11,11 @@
 --     idempotent responses that carry what it erases without naming the conversation: the AI memory proposals
 --     drawn from it (a review or batch response holds their text) and the conversations whose copy of its
 --     opener is cleared (their start response holds the opener), as app.soft_delete_memory does.
+--  3. Openers of unknown origin are erased. A conversation records whether a person wrote the opener it copied
+--     (`opener_by_person`); a copy that has neither a source conversation nor that mark is of unknown origin
+--     (a legacy notebook opener), and deleting any conversation of the venture clears it, as it clears a
+--     notebook opener of unknown origin in every notebook of the venture. Over-erasing is harmless: the next
+--     distillation writes a new opener, and a conversation that already started keeps its turns.
 
 -- ---------------------------------------------------------------------------------------------------
 -- 1. Turns of deleted conversations, and titles from risky messages
@@ -60,20 +65,30 @@ $$;
 REVOKE ALL ON FUNCTION app.turns_touch_session() FROM PUBLIC;
 
 -- ---------------------------------------------------------------------------------------------------
--- 2. Deleting a conversation
+-- 2. Deleting a conversation (and 3. openers of unknown origin)
 -- ---------------------------------------------------------------------------------------------------
 
--- 0005's function, which erases what the vEIR drew from a conversation when it is deleted, with one addition:
+-- Whether a person wrote the opener a conversation copied (the notebook's `nextOpenerSource` was null). A copy
+-- with no source conversation and without this mark is of unknown origin. Existing rows hold false: their
+-- origin is unknown, and erasing such a copy is harmless.
+ALTER TABLE coaching_sessions ADD COLUMN IF NOT EXISTS opener_by_person boolean NOT NULL DEFAULT false;
+ALTER TABLE coaching_sessions DROP CONSTRAINT IF EXISTS coaching_sessions_opener_origin_check;
+ALTER TABLE coaching_sessions ADD CONSTRAINT coaching_sessions_opener_origin_check
+  CHECK (NOT opener_by_person OR opener_source_session_id IS NULL) NOT VALID;
+
+-- 0005's function, which erases what the vEIR drew from a conversation when it is deleted, with two changes:
 -- stored idempotent responses that carry an erased AI proposal are purged (they hold its title and content and
--- need not name the conversation). Internal (no grant): its callers authorize. It erases:
+-- need not name the conversation), and a notebook opener of unknown origin is cleared in every notebook of the
+-- venture (it may carry any of its conversations). Internal (no grant): its callers authorize. It erases:
 --   - AI memory proposals drawn from it that no person kept (pending, rejected or expired);
 --   - escalations drawn from it that the founder never shared: open ones are withdrawn, and the packet (their
 --     question verbatim) is erased. A shared one went to a person with the founder's consent and stays;
 --   - notebook lines sourced from it;
 --   - the notebook summary and opener when they were drawn from it. A missing `summarySources` or
 --     `nextOpenerSource` key means their origin is unknown; `[]` or null means no conversation (a person wrote
---     them). Text of unknown origin is cleared when the conversation was distilled or a notebook line cites
---     it (in that persona's notebook only): it may carry the conversation.
+--     them). A summary of unknown origin is cleared when the conversation was distilled or a notebook line
+--     cites it (in that persona's notebook only); an opener of unknown origin always (any notebook of the
+--     venture): it may carry the conversation, and the next distillation writes a new one.
 -- `p_actor` (the person who deleted the conversation) is recorded in the history of the erased proposals.
 CREATE OR REPLACE FUNCTION app.erase_drawn_from_session(p_session uuid, p_actor uuid) RETURNS void
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
@@ -154,8 +169,7 @@ BEGIN
                    AND (coalesce(c.summary_sources @> jsonb_build_array(v_id), false)
                         OR (c.summary_sources IS NULL AND c.own AND (v_distilled OR c.cites))) AS clear_summary,
                  c.opener IS NOT NULL
-                   AND (c.opener_source IS NOT DISTINCT FROM v_id
-                        OR (c.opener_source IS NULL AND c.own AND (v_distilled OR c.cites))) AS clear_opener
+                   AND (c.opener_source IS NOT DISTINCT FROM v_id OR c.opener_source IS NULL) AS clear_opener
             FROM (SELECT nb.id, nb.content ->> 'summary' AS summary, nb.content ->> 'nextOpener' AS opener,
                          -- SQL NULL when the key is missing (unknown); a JSON array or JSON null when known.
                          CASE WHEN jsonb_typeof(nb.content -> 'summarySources') = 'array'
@@ -173,16 +187,18 @@ END
 $$;
 REVOKE ALL ON FUNCTION app.erase_drawn_from_session(uuid, uuid) FROM PUBLIC;
 
--- 0006's trigger with one addition: the stored idempotent responses that mention a conversation whose copy of
--- the opener is cleared are purged too (a start response holds the opener).
+-- 0006's trigger with two additions: the venture's copies of an opener of unknown origin are cleared too (they
+-- may come from the deleted conversation), and the stored idempotent responses that mention a conversation
+-- whose copy is cleared are purged (a start response holds the opener).
 CREATE OR REPLACE FUNCTION app.sessions_erase_opener_copies() RETURNS trigger
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE
   v_cleared uuid[];
 BEGIN
   WITH cleared AS (
-    UPDATE coaching_sessions SET opener = NULL, opener_source_session_id = NULL
-     WHERE opener_source_session_id = NEW.id AND venture_id = NEW.venture_id
+    UPDATE coaching_sessions SET opener = NULL, opener_source_session_id = NULL, opener_by_person = false
+     WHERE venture_id = NEW.venture_id AND id <> NEW.id AND opener IS NOT NULL
+       AND (opener_source_session_id = NEW.id OR (opener_source_session_id IS NULL AND NOT opener_by_person))
     RETURNING id)
   SELECT coalesce(array_agg(cleared.id), '{}') INTO v_cleared FROM cleared;
   DELETE FROM idempotency_keys k

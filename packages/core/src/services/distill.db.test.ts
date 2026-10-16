@@ -1302,6 +1302,49 @@ describe('what a distillation draws from a conversation, and its deletion', () =
     expect(await openerOf(later.id)).toEqual({ opener: null, source: null });
   });
 
+  it('erases copies of an opener of unknown origin when any conversation of the venture is deleted; a person’s stay', async () => {
+    const writeOpener = async (nextOpener: string): Promise<void> => {
+      // A legacy write: the vEIR's opener without the conversation it came from (origin unknown).
+      const current = await notebook();
+      const saved = await h.t.db.system((sx) =>
+        notebooksRepo.saveNotebook(sx, {
+          tenantId: h.seed.tenantId,
+          ventureId: quietquad(),
+          personaId: corinPersona(),
+          expectedVersion: current?.version ?? 0,
+          content: { ...(current?.content ?? notebooksRepo.EMPTY_NOTEBOOK), nextOpener },
+          suppressed: current?.suppressed ?? [],
+          editedBy: 'veir',
+        }),
+      );
+      expect(saved?.content.nextOpenerSource).toBeUndefined();
+    };
+    const UNKNOWN = 'Did the library deposit question get an answer?';
+    await writeOpener(UNKNOWN);
+    const copied = await h.core.sessions.create(maya, quietquad(), { mode: 'diagnose' });
+    expect(await openerOf(copied.id)).toEqual({ opener: UNKNOWN, source: null });
+
+    // Deleting a conversation the opener may have come from, though nothing records it, erases the copy and
+    // the notebook's opener (the next distillation writes a new one).
+    const unrelated = await conversation(maya, ['A question about sensor housings.']);
+    await h.core.sessions.remove(maya, unrelated);
+    expect(await openerOf(copied.id)).toEqual({ opener: null, source: null });
+    expect((await notebook())?.content.nextOpener).toBeNull();
+
+    // An opener a person wrote is drawn from no conversation: it and its copies stay.
+    const current = await notebook();
+    const PERSONS = 'How did your call with the second library go?';
+    await h.core.notebook.update(maya, quietquad(), {
+      expectedVersion: current?.version ?? 0,
+      edit: { action: 'edit_opener', text: PERSONS },
+    });
+    const theirs = await h.core.sessions.create(maya, quietquad(), { mode: 'diagnose' });
+    expect(await openerOf(theirs.id)).toEqual({ opener: PERSONS, source: null });
+    await h.core.sessions.remove(maya, await conversation(maya, ['Another question about housings.']));
+    expect(await openerOf(theirs.id)).toEqual({ opener: PERSONS, source: null });
+    expect((await notebook())?.content.nextOpener).toBe(PERSONS);
+  });
+
   it('never writes over a notebook it cannot read in full, and still writes the digest', async () => {
     const id = await conversation(maya, ['What should the deposit be?']);
     await idle(id, 15);

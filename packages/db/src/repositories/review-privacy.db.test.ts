@@ -2,7 +2,8 @@
  * Migration 0009 (fixes from the review of 5105c40), against real transactions: a turn never lands on a
  * deleted conversation however the two interleave, risky first messages never title a conversation, and what
  * a founder heard of a reply is erased with the conversation even when a barge-in races the erasure, and
- * deleting a conversation purges the stored idempotent responses that carry what it erases.
+ * deleting a conversation purges the stored idempotent responses that carry what it erases and every opener
+ * of unknown origin.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -15,6 +16,7 @@ import * as assignmentsRepo from './assignments.js';
 import * as callsRepo from './calls.js';
 import * as idempotencyRepo from './idempotency.js';
 import * as memoryRepo from './memory.js';
+import * as notebooksRepo from './notebooks.js';
 import * as sessionsRepo from './sessions.js';
 import * as turnsRepo from './turns.js';
 
@@ -464,5 +466,88 @@ describe('stored idempotent responses of what a delete erases', () => {
     const copy = await t.db.withContext(maya, (tx) => sessionsRepo.getSession(tx, later.id));
     expect(copy?.opener).toBeNull();
     expect(await replayable(start)).toBe(false);
+  });
+});
+
+describe('openers of unknown origin', () => {
+  /** A conversation that opened with `opener`, recorded with where it came from. */
+  async function openedWith(
+    opener: string,
+    origin: { sourceSessionId?: string; byPerson?: boolean },
+  ): Promise<string> {
+    return t.db.withContext(maya, async (tx) => {
+      const resolved = must(await assignmentsRepo.resolveActiveAssignment(tx, quietquad.id));
+      const session = await sessionsRepo.createSession(tx, {
+        tenantId: seed.tenantId,
+        ventureId: quietquad.id,
+        assignmentId: resolved.assignment.id,
+        personaReleaseId: must(resolved.release).id,
+        startedBy: maya.principalId,
+        mode: 'coach',
+        privacy: 'standard',
+        policyVersion: 'test',
+        opener,
+        openerSourceSessionId: origin.sourceSessionId ?? null,
+        openerByPerson: origin.byPerson ?? false,
+      });
+      return session.id;
+    });
+  }
+
+  async function openerOf(sessionId: string): Promise<string | null> {
+    const r = await t.db.system((sx) =>
+      sx.query('SELECT opener FROM coaching_sessions WHERE id = :id', { id: p.uuid(sessionId) }),
+    );
+    return (must(r.rows[0]).opener as string | null) ?? null;
+  }
+
+  it('deleting any conversation of the venture erases them, in conversations and in the notebook', async () => {
+    const elsewhere = await newSession(maya, quietquad);
+    const unknown = await openedWith('Did the deposit question get an answer?', {});
+    const persons = await openedWith('How did the call with the second library go?', { byPerson: true });
+    const drawn = await openedWith('What did the staff interviews show?', { sourceSessionId: elsewhere });
+    // The notebook's own opener, written by distillation without a source (a legacy write).
+    const current = await t.db.system((sx) =>
+      notebooksRepo.getNotebook(sx, { ventureId: quietquad.id, personaId: quietquad.personaId }),
+    );
+    const saved = await t.db.system((sx) =>
+      notebooksRepo.saveNotebook(sx, {
+        tenantId: seed.tenantId,
+        ventureId: quietquad.id,
+        personaId: quietquad.personaId,
+        expectedVersion: current?.version ?? 0,
+        content: {
+          ...(current?.content ?? notebooksRepo.EMPTY_NOTEBOOK),
+          nextOpener: 'Did the deposit question get an answer?',
+        },
+        suppressed: current?.suppressed ?? [],
+        editedBy: 'veir',
+      }),
+    );
+    expect(saved?.content.nextOpenerSource).toBeUndefined();
+
+    // An undistilled conversation no line cites: before, nothing tied the openers to it.
+    const deleted = await newSession(maya, quietquad);
+    expect(await t.db.withContext(maya, (tx) => sessionsRepo.softDeleteSession(tx, deleted))).toBe(true);
+    expect(await openerOf(unknown)).toBeNull();
+    expect(await openerOf(persons)).toBe('How did the call with the second library go?');
+    expect(await openerOf(drawn)).toBe('What did the staff interviews show?');
+    const after = await t.db.system((sx) =>
+      notebooksRepo.getNotebook(sx, { ventureId: quietquad.id, personaId: quietquad.personaId }),
+    );
+    expect(after?.content.nextOpener).toBeNull();
+  });
+
+  it('a copy is never both drawn from a conversation and written by a person', async () => {
+    const source = await newSession(maya, quietquad);
+    await expect(
+      t.db.system((sx) =>
+        sx.query(
+          `UPDATE coaching_sessions SET opener = 'x', opener_source_session_id = :s, opener_by_person = true
+           WHERE id = :s`,
+          { s: p.uuid(source) },
+        ),
+      ),
+    ).rejects.toMatchObject({ sqlState: '23514' });
   });
 });

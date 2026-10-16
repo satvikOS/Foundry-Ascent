@@ -164,6 +164,12 @@ export interface CreateSessionInput {
    * conversation erases this copy too. Null when a person wrote it or its origin is unknown.
    */
   readonly openerSourceSessionId?: string | null;
+  /**
+   * True when a person wrote the opener (the notebook's `nextOpenerSource` is null): deleting a conversation
+   * leaves the copy. A copy with neither a source nor this mark is of unknown origin, and deleting any
+   * conversation of the venture erases it (migration 0009).
+   */
+  readonly openerByPerson?: boolean;
 }
 
 export function createSession(ex: SqlExecutor, input: CreateSessionInput): Promise<SessionRecord> {
@@ -171,10 +177,10 @@ export function createSession(ex: SqlExecutor, input: CreateSessionInput): Promi
     ex,
     `INSERT INTO coaching_sessions AS s (id, tenant_id, venture_id, assignment_id, persona_release_id, started_by, mode,
                                          privacy, goal, policy_version, title, title_source, opener,
-                                         opener_source_session_id)
+                                         opener_source_session_id, opener_by_person)
      VALUES (coalesce(:id, gen_random_uuid()), :tenantId, :ventureId, :assignmentId, :releaseId, :startedBy, :mode,
              :privacy, :goal, :policyVersion, :title, CASE WHEN :title IS NULL THEN 'auto' ELSE 'person' END,
-             :opener, :openerSource)
+             :opener, :openerSource, :openerByPerson)
      RETURNING ${COLUMNS}`,
     {
       id: p.nullable.uuid(input.id),
@@ -190,6 +196,11 @@ export function createSession(ex: SqlExecutor, input: CreateSessionInput): Promi
       title: p.nullable.text(input.title),
       opener: p.nullable.text(input.opener),
       openerSource: p.nullable.uuid(input.opener == null ? null : (input.openerSourceSessionId ?? null)),
+      openerByPerson: p.bool(
+        input.opener != null &&
+          (input.openerSourceSessionId ?? null) === null &&
+          input.openerByPerson === true,
+      ),
     },
     decodeSession,
     'createSession',

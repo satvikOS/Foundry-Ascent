@@ -125,7 +125,11 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
     ventureId: string,
     active: ActiveAssignment,
     guards: { readonly others: OtherVentures; readonly eirNames: readonly string[] },
-  ): Promise<{ readonly text: string; readonly sourceSessionId: string | null } | null> {
+  ): Promise<{
+    readonly text: string;
+    readonly sourceSessionId: string | null;
+    readonly byPerson: boolean;
+  } | null> {
     const notebook = await notebooksRepo.getNotebook(scope.tx, { ventureId, personaId: active.persona.id });
     const next = notebook?.content.nextOpener ?? null;
     if (next === null) return null;
@@ -137,9 +141,11 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
       otherVentureCanaries: guards.others.canaries,
       otherVentureMemberNames: guards.others.memberNames,
     });
-    // The conversation it was drawn from, so deleting that conversation erases this copy too (null: a
-    // person wrote it, or its origin is unknown).
-    return text === null ? null : { text, sourceSessionId: notebook?.content.nextOpenerSource ?? null };
+    // The conversation it was drawn from, so deleting that conversation erases this copy too. A null source
+    // means a person wrote it (the copy stays); a missing one means its origin is unknown, and deleting any
+    // conversation of the venture erases the copy.
+    const source = notebook?.content.nextOpenerSource;
+    return text === null ? null : { text, sourceSessionId: source ?? null, byPerson: source === null };
   }
 
   /** The session (RLS-visible) of a founder/team request, or 404/403. */
@@ -210,6 +216,7 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
           title: input.privacy === 'ephemeral' ? null : input.title,
           opener: opener?.text ?? null,
           openerSourceSessionId: opener?.sourceSessionId ?? null,
+          openerByPerson: opener?.byPerson ?? false,
         });
         await audit(scope, {
           action: 'session.started',
