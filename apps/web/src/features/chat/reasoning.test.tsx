@@ -43,6 +43,64 @@ describe('ReasoningDisclosure', () => {
   });
 });
 
+describe('a Sources link only where the answer cites something', () => {
+  const retrieved = Array.from({ length: 6 }, (_, n) => makeEvidence({ key: `E${n + 1}` }));
+  const social = makeResponse({
+    answer: 'Hi Maya, good to see you.',
+    claims: [],
+    uncertainty: [],
+    challenge: null,
+  });
+
+  it('shows nothing under a social reply that cites nothing, whatever retrieval found for its turn', () => {
+    const { container } = render(
+      <ReasoningDisclosure
+        response={social}
+        evidence={retrieved}
+        validator={null}
+        onOpenSource={vi.fn()}
+        onShowSources={vi.fn()}
+      />,
+    );
+    expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByRole('button', { name: /source/i })).toBeNull();
+  });
+
+  it('shows how many sources an answer without reasoning cites, and opens them', async () => {
+    const onShowSources = vi.fn();
+    render(
+      <ReasoningDisclosure
+        response={{ ...social, answer: 'Six of eight checked two buildings first [E2].' }}
+        evidence={retrieved}
+        validator={null}
+        onOpenSource={vi.fn()}
+        onShowSources={onShowSources}
+      />,
+    );
+    await userEvent.setup().click(screen.getByRole('button', { name: '1 source cited' }));
+    expect(onShowSources).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the reasoning of an answer that cites nothing, without an Open sources link', async () => {
+    render(
+      <ReasoningDisclosure
+        response={{
+          ...social,
+          answer: 'My guess: they pay for time saved.',
+          uncertainty: [{ item: 'Who pays.', level: 'medium' }],
+        }}
+        evidence={retrieved}
+        validator={null}
+        onOpenSource={vi.fn()}
+        onShowSources={vi.fn()}
+      />,
+    );
+    await userEvent.setup().click(screen.getByRole('button', { name: /^Sources & reasoning/ }));
+    expect(screen.getByText('Who pays.')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Open sources' })).toBeNull();
+  });
+});
+
 describe('citedSourceKeys', () => {
   it('counts what the answer cites, not everything that was retrieved', () => {
     const retrieved = Array.from({ length: 17 }, (_, n) => makeEvidence({ key: `E${n + 1}` }));

@@ -223,7 +223,9 @@ export function ReasoningDisclosure({
   const cited = citedSourceKeys(response, evidence).length;
   const hasDetails =
     response.claims.length > 0 || response.uncertainty.length > 0 || response.challenge !== null;
-  if (!hasDetails && evidence.length === 0) return null;
+  // An answer that cites nothing (a hello back, a thanks) has no sources to show, whatever retrieval found for
+  // its turn: no link that opens onto nothing. What was retrieved stays in the conversation's Sources panel.
+  if (!hasDetails && cited === 0) return null;
   const narrowed = validator?.narrowed === true;
   const summary = [
     cited > 0 ? pluralize(cited, 'source') : null,
@@ -244,11 +246,7 @@ export function ReasoningDisclosure({
     </button>
   );
   if (!hasDetails) {
-    return (
-      <div className="mt-4">
-        {sourcesButton(cited > 0 ? `${pluralize(cited, 'source')} cited` : 'Sources')}
-      </div>
-    );
+    return <div className="mt-4">{sourcesButton(`${pluralize(cited, 'source')} cited`)}</div>;
   }
   return (
     <div className="mt-4">
@@ -279,7 +277,7 @@ export function ReasoningDisclosure({
             validator={validator}
             onOpenSource={onOpenSource}
           />
-          {evidence.length > 0 ? sourcesButton('Open sources') : null}
+          {cited > 0 ? sourcesButton('Open sources') : null}
         </div>
       ) : null}
     </div>
