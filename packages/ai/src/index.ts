@@ -10,6 +10,7 @@ export {
   type ChatMessage,
   type EmbedOptions,
   type EmbedResult,
+  type GatewayPurpose,
   type GenerateStructuredRequest,
   type GenerateStructuredResult,
   type LogFields,
@@ -50,6 +51,7 @@ export {
   MOCK_MODEL_ID,
   MockModelGateway,
   mockCoachResponse,
+  mockDistillDraft,
   type MockCall,
   type MockGenerateContext,
   type MockModelGatewayOptions,
@@ -93,17 +95,27 @@ export { cosineSimilarity, hashEmbedding } from './gateway/hash-embedding.js';
 // Pricing -------------------------------------------------------------------------------------------
 export {
   DEFAULT_MODEL_PRICES,
+  DEFAULT_SPEECH_PRICES,
   costFor,
   createPricingTable,
   normalizeModelId,
   priceFor,
+  speechAttempt,
+  speechCharacters,
+  speechCostFor,
+  speechModelId,
   sumUsd,
   type ModelPrice,
   type PricingTable,
+  type SpeechEngine,
+  type SpeechPricingTable,
 } from './pricing.js';
 
 // Prompts -------------------------------------------------------------------------------------------
 export * from './prompts/index.js';
+
+// Distillation (digest, notebook, memory and lesson candidates) -------------------------------------
+export * from './distill/index.js';
 
 // Risk ------------------------------------------------------------------------------------------------
 export {
@@ -121,7 +133,7 @@ export {
   type RequestedRoleValue,
   type RiskEscalation,
 } from './risk/escalation-map.js';
-export { CRISIS_SUPPORT_MESSAGE, buildCrisisResponse } from './risk/crisis.js';
+export { CRISIS_SPOKEN_MESSAGE, CRISIS_SUPPORT_MESSAGE, buildCrisisResponse } from './risk/crisis.js';
 export { RISK_RULES, type RiskRule } from './risk/rules.js';
 export { COMMON_WORDS } from './risk/common-words.js';
 export { ventureNameProblem, ventureNameRegExp, type VentureNameProblem } from './risk/normalize.js';
@@ -133,9 +145,11 @@ export {
   EMPTY_ANSWER_FALLBACK,
   INVALID_RESPONSE_ANSWER,
   NARROWING_NOTE_PREFIX,
+  SPOKEN_NARROWING_CAVEAT,
   containsOtherVenture,
   forcedEscalationFor,
   responseStrings,
+  textsContainOtherVenture,
   validateCoachResponse,
   type CoachResponseBlockReason,
   type CoachResponseLimits,
@@ -149,8 +163,16 @@ export {
   type SanitizeReport,
 } from './validators/markdown.js';
 export {
+  identityReplacement,
   rewriteIdentity,
   type IdentityCheckOptions,
   type IdentityFinding,
   type IdentityViolationKind,
 } from './validators/identity.js';
+export {
+  SPOKEN_MAX_CHARS,
+  SPOKEN_MAX_WORDS,
+  clampWords,
+  deriveSpoken,
+  toSpeakable,
+} from './validators/speech.js';

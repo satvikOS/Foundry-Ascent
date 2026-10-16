@@ -1,7 +1,16 @@
-import { CoachResponse, DEFAULT_DISCLOSURE, type EvidenceItem, type RiskCategory } from '@foundry/contracts';
+import {
+  CoachResponse,
+  DEFAULT_DISCLOSURE,
+  type CoachMode,
+  type EvidenceItem,
+  type RiskCategory,
+} from '@foundry/contracts';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
+import { buildDistillPrompt } from '../distill/prompt.js';
+import { sanitizeDistill } from '../distill/sanitize.js';
+import { DISTILL_SCHEMA_NAME, DistillDraft } from '../distill/schema.js';
 import {
   buildEvidenceBlock,
   buildMessages,
@@ -232,6 +241,339 @@ describe('MockModelGateway.generateStructured', () => {
       },
       { kind: 'embed', purpose: 'ingestion', requestId: 'r2', schemaName: null, count: 2 },
     ]);
+  });
+});
+
+describe('mock conversation realism', () => {
+  const veirRelease: PromptRelease = {
+    ...RELEASE,
+    personaName: "Corin's vEIR",
+    eirName: 'Corin Halvorsen',
+    doctrine: { ...RELEASE.doctrine, summary: 'Customer evidence before building. Talk to buyers early.' },
+    style: { ...RELEASE.style, directness: 'direct' },
+  };
+  const continuity = {
+    founderFirstName: 'Maya',
+    notebook: {
+      summary: 'Maya is testing exam-week demand.',
+      founderProfile: [],
+      commitments: [
+        {
+          id: 'cm-1',
+          text: 'Interview five library staff',
+          due: '2026-10-10',
+          status: 'open' as const,
+          sourceSessionId: null,
+          createdAt: '2026-10-01T00:00:00.000Z',
+        },
+      ],
+      openQuestions: [],
+      lastAdvice: [],
+      nextOpener: null,
+      updatedAt: '2026-10-08T00:00:00.000Z',
+    },
+  };
+
+  function veirTurn(options: {
+    text: string;
+    mode?: CoachMode;
+    channel?: 'text' | 'voice';
+    history?: { founderText: string; answer: string }[];
+    withNotes?: boolean;
+    evidence?: EvidenceItem[];
+  }) {
+    const system = buildSystemPrompt({
+      release: veirRelease,
+      mode: options.mode ?? 'coach',
+      policy: { riskCategories: [], groundingThreshold: 0.6 },
+      ventureContext: { name: 'Acme', stage: 'discovery', domain: 'software', currentGoal: null },
+      today: '2026-10-16',
+      channel: options.channel ?? 'text',
+      continuity,
+    });
+    const messages = buildMessages(options.history ?? [], options.text, {
+      evidenceBlock: buildEvidenceBlock(options.evidence ?? [evidence('E1'), evidence('E2')]),
+      continuity: options.withNotes === false ? null : continuity,
+      today: '2026-10-16',
+    });
+    return { ...turn({}), system, messages };
+  }
+
+  const validate = (value: unknown, channel: 'text' | 'voice' = 'text') =>
+    validateCoachResponse(value, {
+      evidenceKeys: new Set(['E1', 'E2']),
+      preRisk: { categories: [] },
+      otherVentureNames: ['Other Venture'],
+      otherVentureCanaries: ['CANARY-abcdef'],
+      personaName: "Corin's vEIR",
+      eirNames: ['Corin Halvorsen', 'Ruth Abernathy-Song'],
+      coverageThreshold: 0.6,
+      channel,
+    });
+
+  it('talks like the persona: the founder’s name, the EIR in the third person, cited evidence, one closing question', async () => {
+    const gw = new MockModelGateway();
+    const { value } = await gw.generateStructured(
+      veirTurn({ text: 'How should we price the library pilot?' }),
+    );
+    expect(value.answer).not.toMatch(/mock/i);
+    expect(value.answer).toContain('Maya');
+    expect(value.answer).toContain("Corin's approach comes down to this: customer evidence before building.");
+    expect(value.answer).toMatch(/\[E1\]/);
+    expect(value.answer).not.toMatch(/^#/m);
+    const paragraphs = value.answer.split('\n\n');
+    expect(paragraphs.at(-1)?.trim().endsWith('?')).toBe(true);
+    expect(value.answer.match(/\?/g)).toHaveLength(1);
+    // Typed turns have nothing to say aloud (the strict schema's null arrives as an absent field).
+    expect(value.spoken ?? null).toBeNull();
+
+    const checked = validate(value);
+    expect(checked.blocked).toBe(false);
+    expect(checked.results.identityViolation).toBe(false);
+    expect(checked.response.answer).toBe(value.answer);
+  });
+
+  it('picks up an open commitment from the notes at the start of a conversation', async () => {
+    const gw = new MockModelGateway();
+    const first = await gw.generateStructured(veirTurn({ text: 'Where should we focus this week?' }));
+    expect(first.value.answer).toContain('Last time you planned to interview five library staff');
+    const later = await gw.generateStructured(
+      veirTurn({
+        text: 'Where should we focus this week?',
+        history: [{ founderText: 'Hi', answer: 'Hello Maya.' }],
+      }),
+    );
+    expect(later.value.answer).not.toContain('Last time you planned');
+  });
+
+  it('proposes a realistic memory candidate that still quotes the founder', async () => {
+    const gw = new MockModelGateway();
+    const { value } = await gw.generateStructured(
+      veirTurn({ text: 'How should we price the library pilot?' }),
+    );
+    const [memory] = value.memory_candidates;
+    expect(memory?.title).toBe('Pricing still to be tested with real buyers');
+    expect(memory?.title).not.toMatch(/[0-9a-f]{8}/);
+    expect(memory?.content).toContain('How should we price the library pilot?');
+  });
+
+  it('varies by topic and mode, deterministically', async () => {
+    const gw = new MockModelGateway();
+    const answers = new Set<string>();
+    for (const text of [
+      'How should we price it?',
+      'Should we raise a seed round now?',
+      'How do we design the pilot?',
+      'What should I ask in customer interviews?',
+      'How should my co-founder and I split roles?',
+    ]) {
+      for (const mode of ['diagnose', 'coach', 'teach'] as const) {
+        const a = await gw.generateStructured(veirTurn({ text, mode }));
+        const b = await gw.generateStructured(veirTurn({ text, mode }));
+        expect(a.value).toEqual(b.value);
+        expect(validate(a.value).blocked).toBe(false);
+        answers.add(a.value.answer);
+      }
+    }
+    expect(answers.size).toBe(15);
+  });
+
+  it('gives a short, plain spoken reply on a call', async () => {
+    const gw = new MockModelGateway();
+    const { value } = await gw.generateStructured(
+      veirTurn({ text: 'How should we price the library pilot?', channel: 'voice' }),
+    );
+    expect(value.spoken).toBeTruthy();
+    expect((value.spoken ?? '').split(/\s+/).length).toBeLessThanOrEqual(70);
+    expect(value.spoken).not.toMatch(/\[E\d+\]|\*|#|\n/);
+    expect(value.spoken?.startsWith('Maya, ')).toBe(true);
+    const checked = validate(value, 'voice');
+    expect(checked.blocked).toBe(false);
+    expect(checked.response.spoken).toBe(value.spoken);
+  });
+
+  it('recommends resources by title in route mode', async () => {
+    const gw = new MockModelGateway();
+    const resource: EvidenceItem = {
+      ...evidence('E2'),
+      kind: 'resource',
+      title: 'Customer discovery clinic',
+    };
+    const { value } = await gw.generateStructured(
+      veirTurn({
+        text: 'Is there a program resource for this?',
+        mode: 'route',
+        evidence: [evidence('E1'), resource],
+      }),
+    );
+    expect(value.answer).toContain('Customer discovery clinic [E2] looks like the best fit');
+    expect(value.challenge).toBeNull();
+  });
+});
+
+describe('MockModelGateway distillation and recap', () => {
+  const RecapDraft = z.object({
+    diagnosis: z.object({
+      stage: z.string(),
+      immediate_constraint: z.string(),
+      riskiest_assumption: z.string(),
+    }),
+    evidence: z.array(z.object({ evidence_key: z.string(), title: z.string(), note: z.string() })),
+    challenge: z.string(),
+    next_actions: z.array(
+      z.object({ owner: z.string(), action: z.string(), target_date: z.string().nullable() }),
+    ),
+    escalation: CoachResponse.shape.escalation,
+    memory_candidates: CoachResponse.shape.memory_candidates,
+  });
+
+  function distillRequest(turns: { founderText: string; answer: string }[]) {
+    const prompt = buildDistillPrompt({
+      personaName: "Corin's vEIR",
+      eirName: 'Corin Halvorsen',
+      founderFirstName: 'Maya',
+      venture: { name: 'Acme', stage: 'discovery', domain: 'software', currentGoal: null },
+      turns,
+      evidence: [evidence('E1')],
+      previousNotebook: {
+        summary: 'Earlier summary.',
+        founderProfile: [
+          {
+            id: 'fp-old',
+            text: 'Prefers short answers',
+            sourceSessionId: null,
+            createdAt: '2026-10-01T00:00:00.000Z',
+          },
+        ],
+        commitments: [
+          {
+            id: 'cm-old',
+            text: 'Interview five library staff',
+            due: '2026-10-10',
+            status: 'open',
+            sourceSessionId: null,
+            createdAt: '2026-10-01T00:00:00.000Z',
+          },
+        ],
+        openQuestions: [],
+        lastAdvice: [],
+        nextOpener: null,
+        updatedAt: '2026-10-08T00:00:00.000Z',
+      },
+      today: '2026-10-16',
+    });
+    return {
+      purpose: 'distill' as const,
+      ...prompt,
+      schemaName: DISTILL_SCHEMA_NAME,
+      zodSchema: DistillDraft,
+      requestId: 'req-distill',
+    };
+  }
+
+  it('writes a deterministic distillation that carries the previous notebook forward', async () => {
+    const gw = new MockModelGateway();
+    const turns = [
+      { founderText: 'How should we price the library pilot?', answer: 'Ask for a deposit.' },
+      { founderText: "OK. We'll ask three libraries for a deposit next week.", answer: 'Good plan.' },
+    ];
+    const a = await gw.generateStructured(distillRequest(turns));
+    const b = await gw.generateStructured(distillRequest(turns));
+    expect(a.value).toEqual(b.value);
+    const draft = a.value;
+    expect(draft.title).toBe('Pricing and willingness to pay');
+    expect(draft.digest.summary).toContain('Maya came in to talk about pricing.');
+    expect(draft.digest.commitments).toEqual([
+      { text: 'Ask three libraries for a deposit next week', due: '2026-10-23' },
+    ]);
+    expect(draft.notebook.founder_profile.map((e) => e.id)).toContain('fp-old');
+    expect(draft.notebook.commitments.map((c) => c.id)).toEqual(['cm-old', null]);
+    expect(draft.notebook.next_opener).toBe(
+      'Last time you planned to ask three libraries for a deposit next week. How did it go?',
+    );
+    expect(draft.lesson_candidates).toHaveLength(1);
+
+    const clean = sanitizeDistill(draft, {
+      sessionId: '00000000-0000-4000-8000-000000000009',
+      now: '2026-10-16T10:00:00.000Z',
+      personaName: "Corin's vEIR",
+      eirNames: ['Corin Halvorsen'],
+      previousNotebook: {
+        summary: 'Earlier summary.',
+        founderProfile: [
+          {
+            id: 'fp-old',
+            text: 'Prefers short answers',
+            sourceSessionId: null,
+            createdAt: '2026-10-01T00:00:00.000Z',
+          },
+        ],
+        commitments: [
+          {
+            id: 'cm-old',
+            text: 'Interview five library staff',
+            due: '2026-10-10',
+            status: 'open',
+            sourceSessionId: null,
+            createdAt: '2026-10-01T00:00:00.000Z',
+          },
+        ],
+        openQuestions: [],
+        lastAdvice: [],
+        nextOpener: null,
+      },
+      evidenceKeys: ['E1'],
+      otherVentureNames: ['BenchTally'],
+      otherVentureCanaries: ['CANARY::benchtally::R4T8Z1HC'],
+      lessons: { ventureNames: ['Acme'], personNames: ['Maya Okafor-Lindqvist'], canaries: [] },
+    });
+    expect(clean).not.toBeNull();
+    expect(clean?.lessonCandidates).toHaveLength(1);
+    expect(clean?.stats.lessonCandidatesDropped).toBe(0);
+    expect(clean?.notebookDelta.commitments.map((c) => c.id)[0]).toBe('cm-old');
+  });
+
+  it('proposes no lesson after a single exchange', async () => {
+    const gw = new MockModelGateway();
+    const { value } = await gw.generateStructured(
+      distillRequest([{ founderText: 'Quick question about hiring', answer: 'Sure.' }]),
+    );
+    expect(value.lesson_candidates).toEqual([]);
+    expect(value.title).toBe('Team roles and ownership');
+  });
+
+  it('writes a realistic recap, and falls back to a schema sample when the recap shape changes', async () => {
+    const gw = new MockModelGateway();
+    const recap = await gw.generateStructured({
+      ...turn({ text: 'How should we design the pilot?' }),
+      purpose: 'recap',
+      messages: [
+        {
+          role: 'user',
+          content:
+            '<venture_context>\n<stage>validation</stage>\n</venture_context>\n\n' +
+            buildEvidenceBlock([evidence('E1')]) +
+            '\n\n<session_transcript>\n<turn n="1">\n<founder>How should we design the pilot?</founder>\n<coach>Small.</coach>\n</turn>\n</session_transcript>\nToday: 2026-10-16',
+        },
+      ],
+      schemaName: 'SessionRecapDraft',
+      zodSchema: RecapDraft,
+    });
+    expect(recap.value.diagnosis.stage).toBe('Validation');
+    expect(recap.value.challenge).toBe('What result from the pilot would convince you that you were wrong?');
+    expect(recap.value.evidence).toEqual([
+      { evidence_key: 'E1', title: 'Item E1', note: 'The most relevant record for this conversation.' },
+    ]);
+    expect(recap.value.next_actions[0]?.target_date).toBe('2026-10-23');
+    expect(recap.value.memory_candidates).toHaveLength(1);
+
+    const Different = z.object({ summary: z.string().min(5) });
+    const sampled = await gw.generateStructured({
+      ...turn({}),
+      schemaName: 'SessionRecapDraft',
+      zodSchema: Different,
+    });
+    expect(Different.parse(sampled.value)).toEqual(sampled.value);
   });
 });
 
