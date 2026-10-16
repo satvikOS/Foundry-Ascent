@@ -1,7 +1,7 @@
 import { DEFAULT_DISCLOSURE } from '@foundry/contracts';
 import { useQuery } from '@tanstack/react-query';
 import { Bot } from 'lucide-react';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 
 import { meQueryOptions } from '@/lib/api/hooks/auth';
 import { cn } from '@/lib/utils';
@@ -19,6 +19,8 @@ interface DisclosureBannerProps {
    * otherwise the signed-in principal's `Me.disclosure`, then DEFAULT_DISCLOSURE, is used.
    */
   text?: string | null;
+  /** The vEIR's full name ("Corin's vEIR"), for the line's always-visible summary. */
+  veirName?: string | null | undefined;
   /**
    * "line" (one quiet line under a composer or a conversation header: the view's single disclosure),
    * "inline" (a callout on public pages and reviews), "print" (exports; serif, always visible).
@@ -28,11 +30,20 @@ interface DisclosureBannerProps {
 }
 
 /**
+ * The line's visible text: short enough to stay whole on a phone, and complete on its own. It says the vEIR
+ * is an AI, not a person, and that no human wrote or approved its answers (no endorsement).
+ */
+export function disclosureSummary(veirName?: string | null): string {
+  const name = veirName?.trim();
+  return `${name ? `${name} is an AI` : 'You are talking with an AI'}, not a person. No human wrote or approved its answers.`;
+}
+
+/**
  * Persistent AI disclosure (system-design §9; blueprint 01 F-09). REQUIRED in every conversation view, call
  * and export. It is not dismissible, uses a label + text (never colour alone), and is exposed as a note
  * named "AI disclosure" so assistive technology reads it in context.
  */
-export function DisclosureBanner({ text, variant = 'line', className }: DisclosureBannerProps) {
+export function DisclosureBanner({ text, veirName, variant = 'line', className }: DisclosureBannerProps) {
   // Read the cached principal only: public pages must not call GET /me (it would wake the paused DB).
   const { data: me } = useQuery({ ...meQueryOptions(), enabled: false });
   const message =
@@ -54,7 +65,9 @@ export function DisclosureBanner({ text, variant = 'line', className }: Disclosu
     );
   }
 
-  if (variant === 'line') return <DisclosureLine message={message} className={className} />;
+  if (variant === 'line') {
+    return <DisclosureLine message={message} summary={disclosureSummary(veirName)} className={className} />;
+  }
 
   return (
     <div
@@ -76,28 +89,21 @@ export function DisclosureBanner({ text, variant = 'line', className }: Disclosu
 }
 
 /**
- * One line: the label and the start of the disclosure. When the full text does not fit, "More" shows the
- * rest; screen readers always get the whole text.
+ * One quiet line: the label and a short summary that is never cut off (an AI, not a person; no human wrote
+ * or approved its answers). "More" shows the persona's own disclosure in full; screen readers always get
+ * the full text.
  */
-function DisclosureLine({ message, className }: { message: string; className?: string | undefined }) {
-  const textRef = useRef<HTMLSpanElement | null>(null);
+function DisclosureLine({
+  message,
+  summary,
+  className,
+}: {
+  message: string;
+  summary: string;
+  className?: string | undefined;
+}) {
   const [expanded, setExpanded] = useState(false);
-  const [clipped, setClipped] = useState(false);
-
-  useLayoutEffect(() => {
-    const el = textRef.current;
-    if (!el || expanded) return;
-    const measure = () => {
-      setClipped(el.scrollWidth > el.clientWidth + 1);
-    };
-    measure();
-    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
-    observer?.observe(el);
-    return () => {
-      observer?.disconnect();
-    };
-  }, [expanded, message]);
-
+  const expandable = message !== summary;
   return (
     <p
       role="note"
@@ -111,10 +117,17 @@ function DisclosureLine({ message, className }: { message: string; className?: s
       <span className="shrink-0 rounded-[0.25rem] border border-border-strong px-1 font-mono text-[0.625rem] leading-[1.125rem] font-medium tracking-[0.08em] text-foreground uppercase">
         AI
       </span>
-      <span ref={textRef} className={cn('min-w-0', expanded ? 'text-pretty' : 'truncate')}>
-        {message}
-      </span>
-      {clipped || expanded ? (
+      {expanded || !expandable ? (
+        <span className="min-w-0 text-pretty">{message}</span>
+      ) : (
+        <span className="min-w-0 text-pretty">
+          <span aria-hidden data-slot="disclosure-summary">
+            {summary}
+          </span>
+          <span className="sr-only">{message}</span>
+        </span>
+      )}
+      {expandable ? (
         <button
           type="button"
           aria-expanded={expanded}
@@ -123,8 +136,7 @@ function DisclosureLine({ message, className }: { message: string; className?: s
           }}
           className="shrink-0 font-medium text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground focus-visible:outline-2 focus-visible:outline-ring"
         >
-          {expanded ? 'Less' : 'More'}
-          <span className="sr-only"> of the AI disclosure</span>
+          {expanded ? 'Less' : 'More'} <span className="sr-only">of the AI disclosure</span>
         </button>
       ) : null}
     </p>

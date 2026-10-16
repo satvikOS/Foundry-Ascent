@@ -173,6 +173,20 @@ export async function startConversation(page: Page, firstMessage: string): Promi
   return id;
 }
 
+/**
+ * The view's one AI disclosure line shows its whole summary, never cut off: the vEIR is an AI, not a person,
+ * and no human wrote or approved its answers. It lies entirely inside the viewport.
+ */
+export async function expectDisclosureInView(page: Page): Promise<void> {
+  const note = page.getByRole('note', { name: 'AI disclosure' });
+  await expect(note).toHaveCount(1);
+  const summary = note.locator('[data-slot="disclosure-summary"]');
+  await expect(summary).toBeVisible();
+  await expect(summary).toContainText('is an AI, not a person.');
+  await expect(summary).toContainText('No human wrote or approved its answers.');
+  await expect(summary).toBeInViewport({ ratio: 1 });
+}
+
 const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
 
 /** Run axe (WCAG 2.2 AA) on the current page and fail on any serious or critical violation. */

@@ -31,6 +31,8 @@ interface ComposerProps {
   personaName: string;
   /** The persona release's disclosure, shown as the view's one AI disclosure line. */
   disclosure?: string | null | undefined;
+  /** The vEIR's full name ("Corin's vEIR"), named in the disclosure line. */
+  veirName?: string | null | undefined;
   mode: ComposerMode;
   onModeChange: (mode: ComposerMode) => void;
   /** Modes the persona release allows (all six when undefined). Auto is always offered. */
@@ -64,6 +66,7 @@ export function Composer({
   onChange,
   personaName,
   disclosure,
+  veirName,
   mode,
   onModeChange,
   allowedModes,
@@ -231,7 +234,7 @@ export function Composer({
           </div>
         </form>
       </div>
-      <DisclosureBanner variant="line" text={disclosure} />
+      <DisclosureBanner variant="line" text={disclosure} veirName={veirName} />
     </div>
   );
 }
