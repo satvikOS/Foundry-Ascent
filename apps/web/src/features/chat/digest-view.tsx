@@ -22,13 +22,13 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { toast } from '@/components/ui/toast';
 import { errorMessage } from '@/lib/api/errors';
 import { awaitingDigest, digestDeleted, useDeleteDigest } from '@/lib/api/hooks/sessions';
-import { formatDate, pluralize } from '@/lib/format';
+import { formatDate } from '@/lib/format';
 import { ESCALATION_CATEGORY_LABELS, REQUESTED_ROLE_LABELS } from '@/lib/labels';
 import { formatIsoDate } from '@/features/memory/typed/attributes';
 
 import { isActionSaved, useAddAction } from './actions';
+import { MemorySaved, savedByIds } from './memory-saved';
 import { NextStepList } from './next-steps';
-import { usePanelState } from './panel-state';
 import { ANSWER_PROSE } from './veir-answer';
 
 function Part({ title, children }: { title: string; children: ReactNode }) {
@@ -43,6 +43,7 @@ function Part({ title, children }: { title: string; children: ReactNode }) {
 interface DigestViewProps {
   session: SessionView;
   personaName: string;
+  tenant: string;
   canEdit: boolean;
   memoryItems: MemoryObjectView[] | undefined;
   escalations: EscalationView[] | undefined;
@@ -51,18 +52,19 @@ interface DigestViewProps {
 
 /**
  * The end of a conversation: the digest (a short summary, commitments and open questions, written by the
- * vEIR after the conversation ends) and the recap (diagnosis, challenge, next steps and any handoff).
- * Both are AI notes, never facts. Printable, with the disclosure on paper.
+ * vEIR after the conversation ends) and the recap (diagnosis, challenge, next steps and any handoff), with
+ * one quiet line for what the vEIR saved to Knowledge (kept automatically, nothing to review). Both are AI
+ * notes, never facts. Printable, with the disclosure on paper.
  */
 export function DigestView({
   session,
   personaName,
+  tenant,
   canEdit,
   memoryItems,
   escalations,
   onAskPerson,
 }: DigestViewProps) {
-  const { showTab } = usePanelState();
   const { add, savingKey } = useAddAction(session.ventureId);
   const deleteDigest = useDeleteDigest();
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -79,16 +81,14 @@ export function DigestView({
         className="scroll-mt-24 border-t border-border pt-6"
       >
         <h2 id="digest-title" className="font-serif text-subheading">
-          Temporary chat ended
+          Private chat ended
         </h2>
         <p className="mt-1 text-small text-muted-foreground">Nothing from it was kept.</p>
       </section>
     );
   }
 
-  const pendingSuggestions = (recap?.memory_candidate_ids ?? []).filter(
-    (id) => memoryItems?.find((m) => m.id === id)?.status === 'proposed',
-  ).length;
+  const saved = savedByIds(recap?.memory_candidate_ids ?? [], memoryItems);
   const sessionSource = { kind: 'session' as const, id: session.id };
 
   return (
@@ -138,20 +138,7 @@ export function DigestView({
         </p>
       ) : null}
 
-      {pendingSuggestions > 0 && canEdit ? (
-        <div>
-          <Button
-            variant="secondary"
-            size="sm"
-            data-print="hide"
-            onClick={() => {
-              showTab('review');
-            }}
-          >
-            Review {pluralize(pendingSuggestions, 'suggestion')} to remember
-          </Button>
-        </div>
-      ) : null}
+      {canEdit ? <MemorySaved tenant={tenant} ventureId={session.ventureId} memories={saved} /> : null}
 
       <div className="flex flex-wrap gap-1" data-print="hide">
         <Button

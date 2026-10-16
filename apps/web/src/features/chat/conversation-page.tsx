@@ -37,6 +37,7 @@ import { useHotkeys } from '@/lib/hooks/use-hotkeys';
 import { conversationVeir, veirDisplay } from '@/lib/veir';
 import { conversationOrigin } from '@/features/documents/upload-queue';
 import { EscalationFlowDialog, type EscalationDraft } from '@/features/escalations/escalation-flow-dialog';
+import { sentenceStart } from '@/features/venture/veir-name';
 
 import { coachingAvailability } from '../coach/availability';
 import { deriveTurnProgress } from '../coach/progress';
@@ -372,7 +373,6 @@ function Conversation() {
               canEdit
               latest={!showLive && turn.id === latest?.id}
               memoryItems={memory.data}
-              memoryLoading={memory.isPending}
               escalations={escalations.data}
               sendDisabledReason={ended ? 'This conversation has ended.' : sendDisabledReason}
               onRetry={send}
@@ -411,6 +411,7 @@ function Conversation() {
             <DigestView
               session={session}
               personaName={personaName}
+              tenant={tenant}
               canEdit
               memoryItems={memory.data}
               escalations={escalations.data}
@@ -423,7 +424,8 @@ function Conversation() {
       {ended ? null : (
         <div
           ref={composerDockRef}
-          className="sticky bottom-0 z-10 bg-background pt-1 pb-3 before:pointer-events-none before:absolute before:inset-x-0 before:-top-8 before:h-8 before:bg-gradient-to-t before:from-background before:to-background/0"
+          data-slot="composer-dock"
+          className="glass sticky bottom-0 z-10 pt-3 pb-3"
           data-print="hide"
         >
           <div className="mx-auto grid w-full max-w-(--content-width) gap-2.5 px-4 sm:px-6">
@@ -467,7 +469,7 @@ function Conversation() {
                   onDismiss={attachments.dismiss}
                 />
               }
-              // Attached files go into the venture's Documents, which last: a temporary chat offers none.
+              // Attached files go into the venture's Documents, which last: a private chat offers none.
               tools={
                 session.privacy === 'ephemeral' ? null : (
                   <AttachButton onFiles={attachments.attach} disabled={!canSend} />
@@ -516,8 +518,8 @@ function Conversation() {
             <AlertDialogTitle>End this conversation?</AlertDialogTitle>
             <AlertDialogDescription>
               {session.privacy === 'ephemeral'
-                ? 'It’s a temporary chat, so nothing from it is kept.'
-                : `${personaName} will write a summary and suggest what to remember.`}
+                ? 'It’s private, so nothing from it is kept.'
+                : `${sentenceStart(personaName)} will write a summary and remember what matters.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

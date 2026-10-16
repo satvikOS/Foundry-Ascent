@@ -3,9 +3,7 @@ import { getRouteApi, Link, useNavigate, useRouter } from '@tanstack/react-route
 import {
   AlarmClock,
   AudioLines,
-  EyeOff,
   FlaskConical,
-  Inbox,
   Lightbulb,
   LifeBuoy,
   Target,
@@ -38,12 +36,12 @@ import { coachingAvailability } from '../coach/availability';
 import { AttachButton, AttachmentTray, useComposerAttachments } from './attachments';
 import { Composer, MAX_TURN_CHARS, modeToSend, type ComposerMode } from './composer';
 import { newConversationRequest, setPendingFirstMessage } from './first-message';
+import { PrivacyChoice, useStartPrivacy } from './privacy-choice';
 import { newChatSuggestions, type Suggestion, type SuggestionIcon } from './suggestions';
 
 const routeApi = getRouteApi('/$tenant/app/v/$ventureId/');
 
 const SUGGESTION_ICONS: Record<SuggestionIcon, LucideIcon> = {
-  review: Inbox,
   overdue: AlarmClock,
   goal: Target,
   assumption: FlaskConical,
@@ -56,9 +54,10 @@ function firstName(displayName: string): string {
 }
 
 /**
- * New chat: the vEIR's face and a greeting (its notebook opener when it has one), the composer, and a
- * few starting points from the venture's state. The first message creates the conversation and opens it,
- * where that message is answered; there is no setup step. Read-only roles see where they can go instead.
+ * New chat: the vEIR's face and a greeting (its notebook opener when it has one), the composer, whether the
+ * conversation is remembered (the default) or private, and a few starting points from the venture's state.
+ * The first message creates the conversation and opens it, where that message is answered; there is no
+ * setup step. Read-only roles see where they can go instead.
  */
 export function NewChatPage() {
   const me = useRequiredMe();
@@ -141,7 +140,12 @@ function NewChat() {
   const [text, setText] = useState('');
   const [mode, setMode] = useState<ComposerMode>('auto');
   const [counterpart, setCounterpart] = useState('');
-  const [temporary, setTemporary] = useState(false);
+  // Remember or Private, shared with a call started from here. Every fresh New chat starts at Remember.
+  const [privacy, setPrivacy] = useStartPrivacy(ventureId);
+  const temporary = privacy === 'ephemeral';
+  useEffect(() => {
+    setPrivacy('standard');
+  }, [setPrivacy]);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Fetch the conversation screen's code while the person writes, so it opens the moment the first
@@ -186,7 +190,7 @@ function NewChat() {
     const chosenMode = modeToSend(mode);
     const rehearsalCounterpart =
       chosenMode === 'rehearse' && counterpart.trim() ? counterpart.trim() : undefined;
-    createSession.mutate(newConversationRequest({ mode: chosenMode, temporary }), {
+    createSession.mutate(newConversationRequest({ mode: chosenMode, privacy }), {
       onSuccess: (session) => {
         setPendingFirstMessage(session.id, { text: value, mode: chosenMode, rehearsalCounterpart });
         // Files still uploading go on, and show in the conversation's composer instead of this one.
@@ -238,28 +242,6 @@ function NewChat() {
 
   return (
     <div className="relative flex flex-1 flex-col">
-      <div className="absolute top-3 right-3 z-10 sm:top-4 sm:right-4">
-        <SimpleTooltip content={temporary ? 'Turn off temporary chat' : 'Temporary chat: not remembered'}>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            aria-pressed={temporary}
-            disabled={!available}
-            onClick={() => {
-              setTemporary((value) => !value);
-            }}
-            className={cn(
-              'rounded-full text-muted-foreground',
-              temporary && 'bg-accent text-foreground hover:bg-accent',
-            )}
-          >
-            <EyeOff aria-hidden />
-            Temporary
-          </Button>
-        </SimpleTooltip>
-      </div>
-
       <div className="mx-auto flex w-full max-w-(--content-width) flex-1 flex-col justify-center px-4 pt-16 pb-[min(14vh,7rem)] sm:px-6">
         {veir ? (
           <div className="flex flex-col items-center gap-3">
@@ -271,11 +253,11 @@ function NewChat() {
           </div>
         ) : null}
         <Greeting
-          title={temporary ? 'Temporary chat' : `${greeting()}, ${firstName(me.principal.displayName)}`}
+          title={temporary ? 'Private chat' : `${greeting()}, ${firstName(me.principal.displayName)}`}
         >
           <p className="mt-3 max-w-xl font-serif text-subheading text-pretty text-muted-foreground">
             {temporary
-              ? `${name} won’t remember it. It’s erased when it ends or after 24 hours idle.`
+              ? 'What’s on your mind?'
               : (opener ?? `What should we work on for ${venture.data?.name ?? 'your venture'} today?`)}
           </p>
         </Greeting>
@@ -306,7 +288,7 @@ function NewChat() {
                 onDismiss={attachments.dismiss}
               />
             }
-            // Attached files go into the venture's Documents, which last: a temporary chat offers none.
+            // Attached files go into the venture's Documents, which last: a private chat offers none.
             tools={temporary ? null : <AttachButton onFiles={attachments.attach} disabled={!available} />}
             actions={
               available && callsAvailable && veir ? (
@@ -329,6 +311,10 @@ function NewChat() {
             <p className="mt-3 text-center text-small text-muted-foreground" role="status">
               {availability.reason}
             </p>
+          ) : null}
+
+          {available ? (
+            <PrivacyChoice value={privacy} onChange={setPrivacy} veirName={name} className="mt-5" />
           ) : null}
 
           {suggestions.length > 0 ? (
@@ -375,13 +361,6 @@ function SuggestionChip({
       <span className="truncate">{suggestion.label}</span>
     </>
   );
-  if (suggestion.kind === 'review') {
-    return (
-      <Link to="/$tenant/app/v/$ventureId/knowledge" params={{ tenant, ventureId }} className={chipClasses}>
-        {content}
-      </Link>
-    );
-  }
   if (suggestion.kind === 'help') {
     return (
       <Link to="/$tenant/app/v/$ventureId/help" params={{ tenant, ventureId }} className={chipClasses}>

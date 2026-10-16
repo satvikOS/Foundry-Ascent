@@ -68,19 +68,13 @@ export function ConversationHeader({
   const openNavigation = usePageMobileBar();
   const inspector = useInspector();
   const active = session.status === 'active';
-  const temporary = session.privacy === 'ephemeral';
-  const phoneSubtitle = [
-    `${session.personaName} · AI`,
-    temporary ? 'Temporary' : null,
-    active ? null : 'Ended',
-  ]
+  // A private conversation (a one-off: nothing from it is remembered) says so while it lasts.
+  const isPrivate = session.privacy === 'ephemeral';
+  const phoneSubtitle = [`${session.personaName} · AI`, isPrivate ? 'Private' : null, active ? null : 'Ended']
     .filter(Boolean)
     .join(' · ');
   return (
-    <header
-      className="sticky top-(--mini-call-height) z-20 border-b border-border bg-background"
-      data-print="hide"
-    >
+    <header className="glass sticky top-(--mini-call-height) z-20 border-b" data-print="hide">
       <div className="mx-auto flex h-14 w-full max-w-(--content-width) items-center gap-2.5 px-4 sm:px-6">
         {openNavigation ? (
           <Button
@@ -117,10 +111,14 @@ export function ConversationHeader({
             </h1>
             <p className="truncate text-caption text-muted-foreground sm:hidden">{phoneSubtitle}</p>
           </div>
-          {temporary ? (
-            <span className="hidden shrink-0 items-center gap-1 text-caption text-muted-foreground sm:inline-flex">
+          {isPrivate ? (
+            <span
+              data-testid="private-indicator"
+              title="Private: nothing from this conversation is remembered"
+              className="hidden shrink-0 items-center gap-1 text-caption text-muted-foreground sm:inline-flex"
+            >
               <EyeOff aria-hidden className="size-3.5" />
-              Temporary
+              Private
             </span>
           ) : null}
           {active ? null : (

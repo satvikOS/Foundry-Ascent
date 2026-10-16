@@ -183,32 +183,27 @@ test.describe('founder journey', () => {
       ).toBeVisible();
     });
 
-    await test.step('keep what the vEIR suggests remembering', async () => {
-      const suggestion = page
-        .getByRole('article', { name: 'Exchange 1' })
-        .getByRole('list', { name: 'Memory suggestions' })
-        .getByRole('listitem')
-        .first();
-      // The row becomes actionable once the refreshed venture memory includes the proposal.
-      const keep = suggestion.getByRole('button', { name: /^Keep: / });
-      await expect(keep).toBeVisible({ timeout: 30_000 });
-      // Keep goes through the app's one review path (the batch route).
-      const reviewed = page.waitForResponse(
-        (response) => response.url().endsWith('/memory/batch') && response.request().method() === 'POST',
-      );
-      await keep.click();
-      const review = await reviewed;
-      expect(review.status()).toBe(200);
-      await expect(suggestion.getByText('Kept')).toBeVisible();
-      // Leave the venture's memory as the next run finds it (the vEIR would not propose a kept fact again).
-      const { ids } = review.request().postDataJSON() as { ids: string[] };
-      for (const id of ids) {
-        const removed = await page.request.patch(`/api/v1/memory/${id}`, {
-          headers: { 'x-requested-with': 'foundry-ascent', 'content-type': 'application/json' },
-          data: { action: 'delete' },
-        });
-        expect([200, 204]).toContain(removed.status());
-      }
+    await test.step('what the vEIR learned goes to Knowledge on its own: nothing to keep or approve', async () => {
+      const answer = page.getByRole('article', { name: 'Exchange 1' });
+      // One quiet line once the refreshed venture memory includes what the answer saved. No click needed.
+      const saved = answer.getByTestId('memory-saved');
+      await expect(saved).toBeVisible({ timeout: 30_000 });
+      await expect(saved).toContainText('Saved to Knowledge:');
+      await expect(answer.getByRole('button', { name: /^(Keep|Not now)/ })).toHaveCount(0);
+      await expect(answer.getByText(/would like to remember/)).toHaveCount(0);
+      const href = (await saved.getByRole('link').getAttribute('href')) ?? '';
+      const memoryId = /[?&]m=([0-9a-f-]{36})/.exec(href)?.[1];
+      expect(memoryId, 'the saved line links the item in Knowledge').toBeTruthy();
+      // It is in the venture's memory already, used by the vEIR without anyone approving it.
+      const item = await page.request.get(`/api/v1/memory/${memoryId ?? ''}`);
+      expect(item.status()).toBe(200);
+      expect(((await item.json()) as { status: string }).status).toMatch(/^(confirmed|proposed)$/);
+      // Leave the venture's memory as the next run finds it (the vEIR would not save a known fact again).
+      const removed = await page.request.patch(`/api/v1/memory/${memoryId ?? ''}`, {
+        headers: { 'x-requested-with': 'foundry-ascent', 'content-type': 'application/json' },
+        data: { action: 'delete' },
+      });
+      expect([200, 204]).toContain(removed.status());
     });
 
     await test.step('a follow-up from the conversation composer stays in Auto (no mode is sent)', async () => {

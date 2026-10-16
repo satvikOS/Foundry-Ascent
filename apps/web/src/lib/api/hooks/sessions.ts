@@ -204,8 +204,9 @@ export function useDeleteSession() {
 }
 
 /**
- * POST /sessions/:id/end → `{ session, recap }`. `recap` is null for temporary chats; its
- * `memory_candidate_ids` are proposals waiting for a person's approval. The digest follows asynchronously.
+ * POST /sessions/:id/end → `{ session, recap }`. `recap` is null for private chats; its
+ * `memory_candidate_ids` are the memory the vEIR saved from the conversation (kept automatically). The
+ * digest follows asynchronously.
  */
 export function useEndSession() {
   const client = useQueryClient();

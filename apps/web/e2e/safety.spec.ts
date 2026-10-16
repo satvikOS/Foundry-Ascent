@@ -73,33 +73,45 @@ test.describe('crisis support survives a reload', () => {
   });
 });
 
-test.describe('temporary chats', () => {
+test.describe('private chats', () => {
   test.use({ storageState: FOUNDER_STATE });
 
-  test('a temporary chat offers nothing to remember, keeps no title and ends with nothing kept', async ({
+  test('Remember is the default; a private chat keeps no title, nothing remembered, and ends with nothing kept', async ({
     page,
   }) => {
     const token = runToken();
     await openVenture(page);
-    const temporary = page.getByRole('button', { name: 'Temporary' });
+    const remember = page.getByRole('radio', { name: 'Remember this conversation' });
+    const isPrivate = page.getByRole('radio', { name: 'Private, a one-off' });
+    await expect(remember).toBeChecked();
     await expect(page.getByRole('button', { name: 'Add documents' })).toBeVisible();
-    await temporary.click();
-    await expect(temporary).toHaveAttribute('aria-pressed', 'true');
-    await expect(page.getByRole('heading', { level: 1, name: 'Temporary chat' })).toBeVisible();
-    // Attached files would go into the venture's Documents, which last: a temporary chat offers none.
+    // Keyboard: arrow keys move between the two choices.
+    await remember.focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(isPrivate).toBeChecked();
+    await expect(page.getByRole('heading', { level: 1, name: 'Private chat' })).toBeVisible();
+    await expect(page.getByRole('group', { name: 'Memory for this conversation' })).toContainText(
+      'nothing is remembered',
+    );
+    // Attached files would go into the venture's Documents, which last: a private chat offers none.
     await expect(page.getByRole('button', { name: 'Add documents' })).toHaveCount(0);
+    const created = page.waitForRequest(
+      (request) => request.method() === 'POST' && /\/ventures\/[0-9a-f-]{36}\/sessions$/.test(request.url()),
+    );
     const id = await startConversation(page, `Sketch a quick pricing test for libraries. ${token}`);
+    expect((await created).postDataJSON()).toMatchObject({ privacy: 'ephemeral' });
 
     const answer = page.getByRole('article', { name: 'Exchange 1' });
     await expect(answer.getByRole('button', { name: /^Sources & reasoning/ })).toBeVisible({
       timeout: 30_000,
     });
-    await expect(page.getByText('Temporary', { exact: true })).toBeVisible();
-    await expect(answer.getByRole('list', { name: 'Memory suggestions' })).toHaveCount(0);
+    await expect(page.getByTestId('private-indicator')).toHaveText('Private');
+    await expect(answer.getByTestId('memory-saved')).toHaveCount(0);
+    await expect(answer.getByRole('button', { name: /^(Keep|Not now)/ })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Add documents' })).toHaveCount(0);
-    // Listed as a temporary chat, named by when it started rather than by what was said.
+    // Listed as a private chat, named by when it started rather than by what was said.
     const row = page.getByRole('navigation', { name: 'Recent conversations' }).locator(`a[href$="/c/${id}"]`);
-    await expect(row).toContainText('Temporary chat ·');
+    await expect(row).toContainText('Private chat ·');
     await expect(row).not.toContainText(token);
 
     await page.getByRole('button', { name: 'Conversation options' }).click();
@@ -108,10 +120,14 @@ test.describe('temporary chats', () => {
     const confirm = page.getByRole('alertdialog', { name: 'End this conversation?' });
     await expect(confirm).toContainText('nothing from it is kept');
     await confirm.getByRole('button', { name: 'End conversation' }).click();
-    await expect(page.getByRole('heading', { name: 'Temporary chat ended' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Private chat ended' })).toBeVisible();
     await expect(page.getByText('Nothing from it was kept.')).toBeVisible();
     // Its content is erased, so it leaves the recents.
     await expect(row).toHaveCount(0);
+
+    // A fresh New chat starts at Remember again.
+    await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'New chat' }).click();
+    await expect(page.getByRole('radio', { name: 'Remember this conversation' })).toBeChecked();
   });
 });
 

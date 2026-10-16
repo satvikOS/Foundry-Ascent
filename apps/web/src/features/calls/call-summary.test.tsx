@@ -1,5 +1,5 @@
 import type { CallSummary, EscalationView, MemoryObjectView } from '@foundry/contracts';
-import { screen, waitFor, within } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -7,7 +7,7 @@ import type { CallEnded } from '@/lib/realtime/call-engine';
 import { IDS } from '@/lib/realtime/testing';
 
 import { CallSummaryPanel } from './call-summary';
-import { json, renderWithRouter, sentJson, stubFetch, urlOf } from './testing';
+import { json, renderWithRouter, stubFetch, urlOf } from './testing';
 import type { CallVeir } from './use-call-veir';
 
 const VEIR: CallVeir = {
@@ -89,7 +89,11 @@ function ended(summary: Partial<CallSummary> | null, overrides: Partial<CallEnde
   };
 }
 
-function renderSummary(value: CallEnded, canWrite = true) {
+function renderSummary(
+  value: CallEnded,
+  canWrite = true,
+  privacy: 'standard' | 'ephemeral' | null = 'standard',
+) {
   const callbacks = { back: vi.fn(), again: vi.fn(), leave: vi.fn() };
   renderWithRouter(
     <CallSummaryPanel
@@ -98,6 +102,7 @@ function renderSummary(value: CallEnded, canWrite = true) {
       veir={VEIR}
       ended={value}
       canWrite={canWrite}
+      privacy={privacy}
       onBackToConversation={callbacks.back}
       onCallAgain={callbacks.again}
       onLeave={callbacks.leave}
@@ -111,22 +116,13 @@ afterEach(() => {
 });
 
 describe('CallSummaryPanel', () => {
-  it('shows the call, asks before keeping anything and records Keep / Not now', async () => {
+  it('shows the call and says quietly what was saved to Knowledge, with nothing to keep or decline', async () => {
     const fetchMock = stubFetch();
-    const second = memory({ id: IDS.turn, title: 'Pilot with one library' });
-    fetchMock.mockImplementation((input, init) => {
+    const second = memory({ id: IDS.turn, title: 'Pilot with one library', status: 'confirmed' });
+    fetchMock.mockImplementation((input) => {
       const url = urlOf(input);
-      // Keep / Not now go through the app's one review path: POST /ventures/:id/memory/batch.
-      if (url.endsWith(`/ventures/${IDS.venture}/memory/batch`) && init?.method === 'POST') {
-        const body = sentJson(init) as { ids: string[]; action: 'approve' | 'reject' };
-        const items = body.ids.map((id) =>
-          id === IDS.memory
-            ? memory({ status: body.action === 'approve' ? 'confirmed' : 'rejected' })
-            : { ...second, status: body.action === 'approve' ? 'confirmed' : 'rejected' },
-        );
-        return Promise.resolve(json({ items, skippedIds: [] }));
-      }
-      if (url.endsWith(`/memory/${IDS.memory}`)) return Promise.resolve(json(memory()));
+      if (url.endsWith(`/memory/${IDS.memory}`))
+        return Promise.resolve(json(memory({ status: 'confirmed' })));
       if (url.endsWith(`/memory/${IDS.turn}`)) return Promise.resolve(json(second));
       if (url.endsWith('/escalations')) return Promise.resolve(json({ items: [escalation] }));
       return Promise.resolve(json({}, 404));
@@ -140,12 +136,23 @@ describe('CallSummaryPanel', () => {
     );
 
     expect(await screen.findByRole('heading', { name: 'Call ended' })).toHaveFocus();
-    // The summary carries the vEIR's proposals and actions, so it carries the AI disclosure too.
+    // The summary carries the vEIR's actions, so it carries the AI disclosure too.
     expect(screen.getAllByRole('note', { name: 'AI disclosure' })).toHaveLength(1);
     expect(screen.getByText(/4 minutes 12 seconds/)).toBeInTheDocument();
     expect(screen.getByText(/3 exchanges/)).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: "Corin's vEIR would like to remember" })).toBeInTheDocument();
-    expect(await screen.findByText('Noise is the top complaint')).toBeInTheDocument();
+    // One quiet line for what the call saved: no Keep, no Not now, nothing waiting for the founder.
+    const saved = await screen.findByTestId('memory-saved');
+    expect(saved).toHaveTextContent('Saved to Knowledge: 2 items');
+    expect(within(saved).getByRole('link', { name: '2 items' })).toHaveAttribute(
+      'href',
+      `/ain/app/v/${IDS.venture}/knowledge`,
+    );
+    expect(screen.queryByText(/would like to remember/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Keep/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Not now/ })).toBeNull();
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST' || init?.method === 'PATCH')).toBe(
+      false,
+    );
     expect(screen.getByText('Interview two more librarians')).toBeInTheDocument();
     expect(await screen.findByText('Legal')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Review' })).toHaveAttribute(
@@ -153,23 +160,49 @@ describe('CallSummaryPanel', () => {
       `/ain/app/v/${IDS.venture}/help`,
     );
 
-    await userEvent.click(screen.getByRole('button', { name: 'Keep: Noise is the top complaint' }));
-    await waitFor(() => {
-      expect(screen.getByText('Kept')).toBeInTheDocument();
-    });
-    const batch = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST');
-    expect(sentJson(batch?.[1])).toEqual({ ids: [IDS.memory], action: 'approve' });
-    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(false);
-
-    await userEvent.click(await screen.findByRole('button', { name: 'Not now: Pilot with one library' }));
-    await waitFor(() => {
-      expect(screen.getByText('Not kept')).toBeInTheDocument();
-    });
-
     await userEvent.click(screen.getByRole('button', { name: 'Back to conversation' }));
     expect(callbacks.back).toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: 'Call again' }));
     expect(callbacks.again).toHaveBeenCalled();
+  });
+
+  it('links the one thing a call saved straight to it in Knowledge', async () => {
+    stubFetch().mockImplementation((input) =>
+      Promise.resolve(urlOf(input).includes('/memory/') ? json(memory()) : json({ items: [] })),
+    );
+    renderSummary(ended({ memoryProposalIds: [IDS.memory] }));
+    const link = await screen.findByRole('link', { name: 'Noise is the top complaint' });
+    expect(link).toHaveAttribute('href', `/ain/app/v/${IDS.venture}/knowledge?m=${IDS.memory}`);
+  });
+
+  it('never claims something was saved that was forgotten or replaced since', async () => {
+    const statuses: Record<string, MemoryObjectView['status']> = {
+      [IDS.memory]: 'deleted',
+      [IDS.turn]: 'rejected',
+      [IDS.session]: 'superseded',
+    };
+    stubFetch().mockImplementation((input) => {
+      const id = Object.keys(statuses).find((key) => urlOf(input).endsWith(`/memory/${key}`));
+      return Promise.resolve(
+        id
+          ? json(memory({ id, title: `Item ${id.slice(0, 4)}`, status: statuses[id] }))
+          : json({ items: [] }),
+      );
+    });
+    renderSummary(ended({ memoryProposalIds: Object.keys(statuses) }));
+    expect(await screen.findByRole('heading', { name: 'Call ended' })).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByTestId('memory-saved')).toBeNull();
+  });
+
+  it('says a private call keeps nothing, and asks the server for none of its memory', async () => {
+    const fetchMock = stubFetch().mockResolvedValue(json({ items: [] }));
+    renderSummary(ended({ memoryProposalIds: [IDS.memory] }), true, 'ephemeral');
+    expect(await screen.findByTestId('call-private')).toHaveTextContent(
+      'Private call: nothing from it is remembered.',
+    );
+    expect(screen.queryByTestId('memory-saved')).toBeNull();
+    expect(fetchMock.mock.calls.some(([input]) => urlOf(input).includes('/memory/'))).toBe(false);
   });
 
   it('keeps the crisis support of a call that ended while it was shown, above the summary', async () => {
@@ -204,10 +237,12 @@ describe('CallSummaryPanel', () => {
     expect(callbacks.leave).toHaveBeenCalled();
   });
 
-  it('says when there is nothing to review', async () => {
+  it('adds nothing when the call saved nothing and suggested nothing', async () => {
     stubFetch().mockResolvedValue(json({ items: [] }));
     renderSummary(ended({}));
-    expect(await screen.findByText('Nothing new to review from this call.')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Call ended' })).toBeInTheDocument();
+    expect(screen.queryByTestId('memory-saved')).toBeNull();
+    expect(screen.queryByText(/to review/)).toBeNull();
   });
 
   it('keeps the call over when its summary could not load', async () => {
@@ -248,34 +283,14 @@ describe('CallSummaryPanel', () => {
     ).toBeInTheDocument();
   });
 
-  it('shows a proposal decided elsewhere by what happened to it', async () => {
-    const statuses: Record<string, MemoryObjectView['status']> = {
-      [IDS.memory]: 'confirmed',
-      [IDS.turn]: 'rejected',
-      [IDS.session]: 'superseded',
-    };
-    stubFetch().mockImplementation((input) => {
-      const id = Object.keys(statuses).find((key) => urlOf(input).endsWith(`/memory/${key}`));
-      return Promise.resolve(
-        id
-          ? json(memory({ id, title: `Proposal ${id.slice(0, 4)}`, status: statuses[id] }))
-          : json({ items: [] }),
-      );
-    });
-    renderSummary(ended({ memoryProposalIds: Object.keys(statuses) }));
-    expect(await screen.findByText('Kept')).toBeInTheDocument();
-    expect(await screen.findByText('Not kept')).toBeInTheDocument();
-    expect(await screen.findByText('Superseded')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^Keep/ })).toBeNull();
-  });
-
-  it('shows proposals without Keep / Not now to someone who cannot decide', async () => {
-    stubFetch().mockImplementation((input) =>
+  it('shows no saved line to someone who cannot open the venture’s memory', async () => {
+    const fetchMock = stubFetch().mockImplementation((input) =>
       Promise.resolve(urlOf(input).includes('/memory/') ? json(memory()) : json({ items: [] })),
     );
     renderSummary(ended({ memoryProposalIds: [IDS.memory] }), false);
-    expect(await screen.findByText('Noise is the top complaint')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^Keep/ })).toBeNull();
+    expect(await screen.findByRole('heading', { name: 'Call ended' })).toBeInTheDocument();
+    expect(screen.queryByTestId('memory-saved')).toBeNull();
+    expect(fetchMock.mock.calls.some(([input]) => urlOf(input).includes('/memory/'))).toBe(false);
     expect(screen.getByRole('button', { name: 'Call again' })).toBeDisabled();
   });
 });

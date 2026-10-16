@@ -35,7 +35,7 @@ type RowDialog = { kind: 'rename' | 'delete'; session: SessionView; title: strin
 /**
  * The person's conversations across their ventures, newest first, grouped Today / Previous 7 days / Older
  * (one that is still empty shows only while it is open).
- * Calls are marked with a phone, temporary chats with a closed eye. Each row has a menu: rename, open the
+ * Calls are marked with a phone, private chats with a closed eye. Each row has a menu: rename, open the
  * summary (ended conversations) and delete.
  */
 export function RecentConversations({ tenant, ventureNames, onNavigate }: RecentConversationsProps) {
@@ -117,7 +117,7 @@ export function RecentConversations({ tenant, ventureNames, onNavigate }: Recent
                       {session.privacy === 'ephemeral' ? (
                         <>
                           <EyeOff aria-hidden className="size-3.5 shrink-0 text-sidebar-muted" />
-                          <span className="sr-only">, temporary chat</span>
+                          <span className="sr-only">, private chat</span>
                         </>
                       ) : null}
                     </Link>

@@ -58,7 +58,8 @@ test.describe('mobile 390×844', () => {
       await expectReachable(page, box);
       await expectReachable(page, page.getByRole('combobox', { name: 'Mode for the next message' }));
       await expectReachable(page, page.getByRole('button', { name: 'Add documents' }));
-      await expectReachable(page, page.getByRole('button', { name: 'Temporary' }));
+      await expectReachable(page, page.getByRole('radio', { name: 'Remember this conversation' }));
+      await expectReachable(page, page.getByRole('radio', { name: 'Private, a one-off' }));
 
       await box.fill(`What is our riskiest assumption? ${token}`);
       await expectReachable(page, page.getByRole('button', { name: 'Send message' }));

@@ -20,18 +20,19 @@ export interface PendingFirstMessage {
 }
 
 /**
- * The body that starts a conversation from New chat. It never carries a title: the server names a standard
- * conversation after its first message unless that message was a crisis, so a message that is blocked never
- * becomes a title in anyone's list. Auto sends no mode.
+ * The body that starts a conversation from New chat (a chat, or a call's conversation). It never carries a
+ * title: the server names a standard conversation after its first message unless that message was a crisis,
+ * so a message that is blocked never becomes a title in anyone's list. Auto sends no mode. `privacy` is the
+ * founder's choice: remembered (`standard`, the default) or private (`ephemeral`, a one-off).
  */
 export function newConversationRequest({
   mode,
-  temporary,
+  privacy,
 }: {
   mode: CoachMode | undefined;
-  temporary: boolean;
+  privacy: SessionView['privacy'];
 }): { mode?: CoachMode; privacy: SessionView['privacy'] } {
-  return { ...(mode ? { mode } : {}), privacy: temporary ? 'ephemeral' : 'standard' };
+  return { ...(mode ? { mode } : {}), privacy };
 }
 
 const pending = new Map<string, PendingFirstMessage>();

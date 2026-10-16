@@ -51,7 +51,7 @@ describe('conversationTitle', () => {
     expect(morning).toMatch(/^Conversation · /);
     expect(morning).not.toBe(evening);
     expect(conversationTitle({ ...base, title: '   ' })).toBe(morning);
-    expect(conversationTitle({ ...base, privacy: 'ephemeral' })).toMatch(/^Temporary chat · /);
+    expect(conversationTitle({ ...base, privacy: 'ephemeral' })).toMatch(/^Private chat · /);
   });
 
   it('keeps the fallback short enough that the time survives the sidebar', () => {
@@ -61,7 +61,7 @@ describe('conversationTitle', () => {
     const second = conversationTitle({ ...base, privacy: 'ephemeral', startedAt: today(9, 10) }, now);
     expect(first).not.toBe(second);
     expect(first.length).toBeLessThanOrEqual(26);
-    expect(first).toBe(`Temporary chat · ${startStamp(today(6, 55), now)}`);
+    expect(first).toBe(`Private chat · ${startStamp(today(6, 55), now)}`);
   });
 });
 
@@ -88,7 +88,7 @@ describe('startStamp', () => {
 describe('listedInRecents', () => {
   const said = { id: 'a', privacy: 'standard' as const, status: 'active' as const, turnCount: 2 };
 
-  it('leaves out ended temporary chats, which keep nothing', () => {
+  it('leaves out ended private chats, which keep nothing', () => {
     expect(listedInRecents({ ...said, privacy: 'ephemeral', status: 'ended' })).toBe(false);
     expect(listedInRecents({ ...said, privacy: 'ephemeral' })).toBe(true);
     expect(listedInRecents({ ...said, status: 'ended' })).toBe(true);

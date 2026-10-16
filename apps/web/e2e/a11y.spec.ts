@@ -63,8 +63,9 @@ for (const scheme of ['dark', 'light'] as const) {
         const panel = page.getByRole('complementary', { name: 'Context inspector' });
         await expect(panel.getByRole('tab', { name: 'Sources' })).toHaveAttribute('aria-selected', 'true');
         await expectNoSeriousA11yViolations(page, `sources panel (${scheme})`);
-        await panel.getByRole('tab', { name: /^To review/ }).click();
-        await expectNoSeriousA11yViolations(page, `to-review panel (${scheme})`);
+        await panel.getByRole('tab', { name: 'Notebook' }).click();
+        await expectNoSeriousA11yViolations(page, `notebook panel (${scheme})`);
+        await expect(panel.getByRole('tab', { name: /^To review/ })).toHaveCount(0);
         await page.getByRole('button', { name: 'Hide context panel' }).click();
 
         await page.getByRole('button', { name: 'Conversation options' }).click();

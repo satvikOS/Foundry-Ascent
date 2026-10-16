@@ -12,7 +12,7 @@ import {
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useEffect } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { useSignOutAndRedirect } from '@/components/shell/account-menu';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -21,6 +21,7 @@ import type { StartCallOptions } from '@/lib/realtime/call-engine';
 import { IDLE_CALL, type CallSnapshot } from '@/lib/realtime/call-state';
 import { IDS } from '@/lib/realtime/testing';
 
+import { setStartPrivacy } from '../chat/privacy-choice';
 import { CallProvider } from './call-context';
 import { MiniCallBar } from './mini-call-bar';
 import { json, stubFetch, urlOf } from './testing';
@@ -245,7 +246,18 @@ beforeEach(() => {
 });
 afterEach(() => {
   window.localStorage.clear();
+  setStartPrivacy(VENTURE, 'standard');
 });
+
+/** The body of the `POST /ventures/:id/sessions` that created the call's conversation. */
+function createdSession(): unknown {
+  const call = fetchMock.mock.calls.find(
+    ([input, init]) => urlOf(input).endsWith(`/ventures/${VENTURE}/sessions`) && init?.method === 'POST',
+  );
+  const body = call?.[1]?.body;
+  if (body && ArrayBuffer.isView(body)) return JSON.parse(new TextDecoder().decode(body)) as unknown;
+  return typeof body === 'string' ? (JSON.parse(body) as unknown) : undefined;
+}
 
 describe('starting a call', () => {
   it('starts when the founder clicks Call, never when history comes back to the call’s URL', async () => {
@@ -343,6 +355,62 @@ describe('starting a call', () => {
       ).toBe(true);
     });
     expect(screen.queryByRole('heading', { name: 'Call ended' })).toBeNull();
+  });
+});
+
+describe('Remember or Private for a call from New chat', () => {
+  it('remembers the call’s conversation by default', async () => {
+    renderApp([BASE]);
+    await userEvent.click(await screen.findByRole('link', { name: 'Call from New chat' }));
+    await waitFor(() => {
+      expect(createdSession()).toMatchObject({ privacy: 'standard' });
+    });
+  });
+
+  it('makes the call private when New chat chose Private', async () => {
+    setStartPrivacy(VENTURE, 'ephemeral');
+    renderApp([BASE]);
+    await userEvent.click(await screen.findByRole('link', { name: 'Call from New chat' }));
+    await waitFor(() => {
+      expect(createdSession()).toMatchObject({ privacy: 'ephemeral' });
+    });
+  });
+
+  it('offers the choice before a New chat call that waits for Start call', async () => {
+    // A tab that has seen no click (a link opened later): the call waits for Start call.
+    Object.defineProperty(navigator, 'userActivation', {
+      configurable: true,
+      value: { hasBeenActive: false, isActive: false },
+    });
+    onTestFinished(() => {
+      Reflect.deleteProperty(navigator, 'userActivation');
+    });
+    fetchMock.mockImplementation((input, init) => {
+      const url = urlOf(input);
+      if (url.endsWith('/call-config')) return Promise.resolve(json(CALL_CONFIG));
+      if (url.endsWith(`/ventures/${VENTURE}/sessions`) && init?.method === 'POST') {
+        return new Promise<Response>(() => undefined);
+      }
+      return Promise.resolve(json({ code: 'not_found' }, 404));
+    });
+    renderApp([`${BASE}?call=1`]);
+    const start = await screen.findByRole('button', { name: 'Start call' });
+    await waitFor(() => {
+      expect(start).toBeEnabled();
+    });
+    const group = screen.getByRole('group', { name: 'Memory for this call' });
+    expect(within(group).getByRole('radio', { name: 'Remember this call' })).toBeChecked();
+    await userEvent.click(within(group).getByRole('radio', { name: 'Private, a one-off' }));
+    await userEvent.click(start);
+    await waitFor(() => {
+      expect(createdSession()).toMatchObject({ privacy: 'ephemeral' });
+    });
+  });
+
+  it('offers no choice for a call in an existing conversation', async () => {
+    renderApp([`${BASE}/c/${SESSION}?call=1`]);
+    await screen.findByRole('button', { name: 'Start call' });
+    expect(screen.queryByRole('group', { name: /Memory for this/ })).toBeNull();
   });
 });
 

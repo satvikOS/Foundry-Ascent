@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -31,6 +31,7 @@ describe('CallLobby', () => {
         failure={{ message: CALL_ELSEWHERE_MESSAGE, retry: false, elsewhere: true }}
         busy={false}
         voiceNotice={false}
+        privacy={null}
         onStart={vi.fn()}
         onRetry={onRetry}
         onMoveHere={onMoveHere}
@@ -49,5 +50,57 @@ describe('CallLobby', () => {
     expect(onRetry).not.toHaveBeenCalled();
     // The disclosure travels with every call view.
     expect(screen.getByRole('note', { name: 'AI disclosure' })).toHaveTextContent("Corin's vEIR is an AI");
+  });
+
+  it('offers Remember (preselected) or Private before a call that starts a new conversation', async () => {
+    const { asEngine } = fakeEngine();
+    const onChange = vi.fn();
+    const onStart = vi.fn();
+    renderWithRouter(
+      <CallLobby
+        engine={asEngine}
+        veir={VEIR}
+        config={undefined}
+        blocker={null}
+        failure={null}
+        busy={false}
+        voiceNotice
+        privacy={{ value: 'standard', onChange }}
+        onStart={onStart}
+        onRetry={vi.fn()}
+        onMoveHere={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    const group = await screen.findByRole('group', { name: 'Memory for this call' });
+    const remember = within(group).getByRole('radio', { name: 'Remember this call' });
+    expect(remember).toBeChecked();
+    expect(group).toHaveAccessibleDescription(
+      "Corin's vEIR will remember this call and pick up from it next time.",
+    );
+    await userEvent.click(within(group).getByRole('radio', { name: 'Private, a one-off' }));
+    expect(onChange).toHaveBeenCalledWith('ephemeral');
+  });
+
+  it('offers no choice for a call in an existing conversation, which keeps its own', async () => {
+    const { asEngine } = fakeEngine();
+    renderWithRouter(
+      <CallLobby
+        engine={asEngine}
+        veir={VEIR}
+        config={undefined}
+        blocker={null}
+        failure={null}
+        busy={false}
+        voiceNotice={false}
+        privacy={null}
+        onStart={vi.fn()}
+        onRetry={vi.fn()}
+        onMoveHere={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(await screen.findByRole('heading', { name: "Call Corin's vEIR" })).toBeInTheDocument();
+    expect(screen.queryByRole('radio')).toBeNull();
   });
 });

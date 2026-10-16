@@ -1,34 +1,23 @@
-import type {
-  EscalationView,
-  MemoryCandidate,
-  MemoryObjectView,
-  SessionView,
-  TurnView,
-} from '@foundry/contracts';
+import type { EscalationView, MemoryObjectView, SessionView, TurnView } from '@foundry/contracts';
 import { useNavigate } from '@tanstack/react-router';
 import { RotateCcw } from 'lucide-react';
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, type ReactNode } from 'react';
 
 import { PersonaAvatar } from '@/components/faces/persona-avatar';
 import { UserAvatar } from '@/components/faces/user-avatar';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Markdown } from '@/components/ui/markdown';
-import { toast } from '@/components/ui/toast';
-import { errorMessage } from '@/lib/api/errors';
 import type { TurnBlocked, TurnStreamError, TurnStreamState } from '@/lib/api/hooks/turn-stream';
 import { formatDateTime } from '@/lib/format';
 import { formatWait, useSecondsUntil } from '@/lib/hooks/use-countdown';
-import { useProposalDecision } from '@/features/knowledge/review-api';
-import { useCreateVentureMemory } from '@/features/memory/api';
-import { findMemoryForCandidate } from '@/features/memory/optimistic';
 
 import { BlockedPanel } from '../coach/blocked-panel';
 import type { TurnProgress } from '../coach/progress';
 import { CitationKey } from '../coach/response/evidence-chip';
 import { TurnProgressList } from '../coach/turn-progress';
 import { isActionSaved, useAddAction } from './actions';
-import type { CandidateBinding } from './memory-suggestions';
+import { savedFromTurn } from './memory-saved';
 import { usePanelState } from './panel-state';
 import { ANSWER_PROSE, VeirAnswer } from './veir-answer';
 
@@ -120,7 +109,6 @@ interface StoredExchangeProps {
   /** The conversation's latest exchange. */
   latest: boolean;
   memoryItems: MemoryObjectView[] | undefined;
-  memoryLoading: boolean;
   escalations: EscalationView[] | undefined;
   /** Null when a new message can be sent; otherwise why not. */
   sendDisabledReason: string | null;
@@ -141,7 +129,6 @@ export function StoredExchange({
   canEdit,
   latest,
   memoryItems,
-  memoryLoading,
   escalations,
   sendDisabledReason,
   onRetry,
@@ -150,10 +137,7 @@ export function StoredExchange({
 }: StoredExchangeProps) {
   const navigate = useNavigate();
   const { showSources } = usePanelState();
-  const { decide, pendingIds } = useProposalDecision(ventureId);
-  const { createMemory } = useCreateVentureMemory(ventureId);
   const { add, savingKey } = useAddAction(ventureId);
-  const [savingTitle, setSavingTitle] = useState<string | null>(null);
   const response = turn.response;
 
   const onOpenSource = useCallback(
@@ -163,12 +147,9 @@ export function StoredExchange({
     [showSources, turn.id],
   );
 
-  const bindings = useMemo<CandidateBinding[]>(
-    () =>
-      (response?.memory_candidates ?? []).map((candidate) => ({
-        candidate,
-        memory: memoryItems ? findMemoryForCandidate(memoryItems, turn.id, candidate) : null,
-      })),
+  // What the vEIR kept from this answer: saved to Knowledge automatically, never asked about.
+  const saved = useMemo(
+    () => savedFromTurn(response?.memory_candidates ?? [], memoryItems, turn.id),
     [response, memoryItems, turn.id],
   );
 
@@ -182,23 +163,6 @@ export function StoredExchange({
     { ...turnSource, label: `Answer ${turn.ordinal}` },
     { kind: 'session' as const, id: session.id, label: 'Conversation' },
   ];
-
-  const saveCandidate = async (candidate: MemoryCandidate) => {
-    setSavingTitle(candidate.title);
-    try {
-      const memory = await createMemory({
-        type: candidate.type,
-        title: candidate.title.slice(0, 200),
-        content: candidate.content,
-        sourceRefs,
-      });
-      toast.success(memory.status === 'proposed' ? 'Saved — waiting for approval' : 'Kept');
-    } catch (error) {
-      toast.error('Couldn’t keep this', { description: errorMessage(error) });
-    } finally {
-      setSavingTitle(null);
-    }
-  };
 
   const existingEscalation = escalations?.find((e) => e.turnId === turn.id) ?? null;
 
@@ -226,27 +190,7 @@ export function StoredExchange({
             void add(action, sourceRefs, `${turn.id}:${index}`);
           },
         }}
-        memory={
-          session.privacy === 'ephemeral' || !canEdit
-            ? null
-            : {
-                bindings,
-                controls: {
-                  loading: memoryLoading,
-                  pendingId: pendingIds[0] ?? null,
-                  savingTitle,
-                  onKeep: (memory) => {
-                    decide([memory.id], 'approve');
-                  },
-                  onDismiss: (memory) => {
-                    decide([memory.id], 'reject');
-                  },
-                  onSave: (candidate) => {
-                    void saveCandidate(candidate);
-                  },
-                },
-              }
-        }
+        saved={session.privacy === 'ephemeral' || !canEdit ? null : { tenant, ventureId, memories: saved }}
         escalation={{
           existing: existingEscalation,
           onRequest: canEdit

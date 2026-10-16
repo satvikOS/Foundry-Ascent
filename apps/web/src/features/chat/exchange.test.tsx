@@ -9,7 +9,7 @@ import type { TurnStreamError, TurnStreamState } from '@/lib/api/hooks/turn-stre
 import { InspectorProvider } from '@/components/shell/inspector';
 
 import { deriveTurnProgress } from '../coach/progress';
-import { IDS, makeSession, makeTurn } from '../coach/testing';
+import { IDS, makeMemory, makeSession, makeTurn } from '../coach/testing';
 import { LiveExchange, StoredExchange, TurnFailure } from './exchange';
 import { PanelStateProvider } from './panel-state';
 import { VeirAnswer, wasInterrupted, type VeirAnswerProps } from './veir-answer';
@@ -58,7 +58,7 @@ function answerProps(overrides: Partial<VeirAnswerProps> = {}): VeirAnswerProps 
     onOpenSource: vi.fn(),
     onShowSources: vi.fn(),
     nextActions: { saved: new Set(), savingIndex: null, onAdd: vi.fn() },
-    memory: null,
+    saved: null,
     escalation: { existing: null },
     ...overrides,
   };
@@ -250,20 +250,28 @@ describe('a call turn the founder interrupted', () => {
 });
 
 describe('StoredExchange', () => {
-  async function renderStored(turn: ReturnType<typeof makeTurn>) {
+  async function renderStored(
+    turn: ReturnType<typeof makeTurn>,
+    {
+      memoryItems = [],
+      privacy = 'standard',
+    }: { memoryItems?: ReturnType<typeof makeMemory>[]; privacy?: 'standard' | 'ephemeral' } = {},
+  ) {
     const ui = (
       <InspectorProvider>
         <PanelStateProvider>
           <StoredExchange
             turn={turn}
-            session={makeSession({ startedBy: { id: IDS.principal, displayName: 'Maya Example' } })}
+            session={makeSession({
+              privacy,
+              startedBy: { id: IDS.principal, displayName: 'Maya Example' },
+            })}
             personaName="Corin’s vEIR"
             tenant="ain"
             ventureId={IDS.venture}
             canEdit
             latest
-            memoryItems={[]}
-            memoryLoading={false}
+            memoryItems={memoryItems}
             escalations={[]}
             sendDisabledReason={null}
             onRetry={vi.fn()}
@@ -292,5 +300,37 @@ describe('StoredExchange', () => {
   it('falls back to the starter when the API names no author (an older API)', async () => {
     const { container } = await renderStored(makeTurn({ author: null }));
     expect(container.querySelector('[data-slot="user-avatar"]')).toHaveTextContent('ME');
+  });
+
+  it('says quietly what the vEIR saved from the answer, with nothing to keep or decline', async () => {
+    const saved = makeMemory({ status: 'confirmed' });
+    await renderStored(makeTurn(), { memoryItems: [saved] });
+    const cue = screen.getByTestId('memory-saved');
+    expect(cue).toHaveTextContent('Saved to Knowledge: Exam weeks drive demand');
+    expect(within(cue).getByRole('link', { name: 'Exam weeks drive demand' })).toHaveAttribute(
+      'href',
+      `/ain/app/v/${IDS.venture}/knowledge?m=${IDS.memory}`,
+    );
+    expect(screen.queryByText(/would like to remember/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Keep/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Not now/ })).toBeNull();
+  });
+
+  it('counts an item saved before memory was automatic as saved, and nothing forgotten since', async () => {
+    const { unmount } = await renderStored(makeTurn(), {
+      memoryItems: [makeMemory({ status: 'proposed' })],
+    });
+    expect(screen.getByTestId('memory-saved')).toBeInTheDocument();
+    unmount();
+    await renderStored(makeTurn(), { memoryItems: [makeMemory({ status: 'rejected' })] });
+    expect(screen.queryByTestId('memory-saved')).toBeNull();
+  });
+
+  it('says nothing about memory in a private conversation', async () => {
+    await renderStored(makeTurn(), {
+      memoryItems: [makeMemory({ status: 'confirmed' })],
+      privacy: 'ephemeral',
+    });
+    expect(screen.queryByTestId('memory-saved')).toBeNull();
   });
 });

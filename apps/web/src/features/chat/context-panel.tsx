@@ -1,7 +1,6 @@
 import {
   OPEN_ESCALATION_STATUSES,
   type EscalationView,
-  type MemoryObjectView,
   type NotebookEntry,
   type SessionView,
   type TurnView,
@@ -17,12 +16,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useVentureEscalations } from '@/lib/api/hooks/escalations';
-import { useMemory } from '@/lib/api/hooks/memory';
 import { useNotebook } from '@/lib/api/hooks/notebook';
 import { formatRelative, pluralize } from '@/lib/format';
 import { ESCALATION_CATEGORY_LABELS } from '@/lib/labels';
-import { useProposalDecision } from '@/features/knowledge/review-api';
-import { MemoryTypeLabel } from '@/features/memory/memory-meta';
 import { formatIsoDate } from '@/features/memory/typed/attributes';
 
 import { EvidenceItemCard } from '../coach/evidence-item';
@@ -39,7 +35,10 @@ interface ContextPanelProps {
   onAskPerson?: (() => void) | undefined;
 }
 
-/** The conversation's right panel: Sources · Notebook · To review · Human help. */
+/**
+ * The conversation's right panel: Sources · Notebook · Human help. Memory has no queue here: what the vEIR
+ * learns is kept automatically, and the founder edits or forgets it in Knowledge.
+ */
 export function ContextPanel({
   session,
   turns,
@@ -49,8 +48,6 @@ export function ContextPanel({
   onAskPerson,
 }: ContextPanelProps) {
   const { tab, setTab } = usePanelState();
-  const proposed = useMemory(ventureId, { status: 'proposed' });
-  const pending = proposed.data?.length ?? 0;
   return (
     <Tabs
       value={tab}
@@ -66,15 +63,6 @@ export function ContextPanel({
         >
           <TabsTrigger value="sources">Sources</TabsTrigger>
           <TabsTrigger value="notebook">Notebook</TabsTrigger>
-          <TabsTrigger value="review">
-            To review
-            {pending > 0 ? (
-              <span className="tabular text-subtle-foreground">
-                {pending}
-                <span className="sr-only"> waiting</span>
-              </span>
-            ) : null}
-          </TabsTrigger>
           <TabsTrigger value="help">Human help</TabsTrigger>
         </TabsList>
       </div>
@@ -83,9 +71,6 @@ export function ContextPanel({
       </TabsContent>
       <TabsContent value="notebook">
         <NotebookTab personaName={personaName} tenant={tenant} ventureId={ventureId} />
-      </TabsContent>
-      <TabsContent value="review">
-        <ReviewTab tenant={tenant} ventureId={ventureId} items={proposed.data} query={proposed} />
       </TabsContent>
       <TabsContent value="help">
         <HelpTab session={session} tenant={tenant} ventureId={ventureId} onAskPerson={onAskPerson} />
@@ -298,96 +283,6 @@ function NotebookTab({
       <Button asChild variant="link" size="sm" className="justify-self-start text-small">
         <Link to="/$tenant/app/v/$ventureId/knowledge" params={{ tenant, ventureId }}>
           Edit in Knowledge
-          <ArrowUpRight aria-hidden />
-        </Link>
-      </Button>
-    </PanelBody>
-  );
-}
-
-function ReviewTab({
-  tenant,
-  ventureId,
-  items,
-  query,
-}: {
-  tenant: string;
-  ventureId: string;
-  items: MemoryObjectView[] | undefined;
-  query: { isPending: boolean; isError: boolean; error: unknown; refetch: () => unknown };
-}) {
-  const { decide, pendingIds, isPending } = useProposalDecision(ventureId);
-  if (query.isPending) return <Loading />;
-  if (query.isError || !items) return <Failed error={query.error} onRetry={() => void query.refetch()} />;
-
-  const keepAll = () => {
-    decide(
-      items.map((m) => m.id),
-      'approve',
-    );
-  };
-
-  return (
-    <PanelBody>
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-small text-muted-foreground">
-          {items.length === 0
-            ? 'Nothing waiting. Suggestions to remember appear here.'
-            : 'Suggestions to remember for this venture. Nothing is kept until someone keeps it.'}
-        </p>
-        {items.length > 1 ? (
-          <Button
-            size="xs"
-            variant="secondary"
-            loading={isPending && pendingIds.length > 1}
-            onClick={keepAll}
-          >
-            Keep all
-          </Button>
-        ) : null}
-      </div>
-      {items.length > 0 ? (
-        <ul className="divide-y divide-border border-y border-border">
-          {items.map((memory) => {
-            const busy = pendingIds.includes(memory.id) || (isPending && pendingIds.length > 1);
-            return (
-              <li key={memory.id} className="grid gap-1.5 py-3">
-                <div className="flex items-center gap-1.5">
-                  <MemoryTypeLabel type={memory.type} iconOnly />
-                  <p className="min-w-0 text-small font-medium [overflow-wrap:anywhere]">{memory.title}</p>
-                </div>
-                <p className="line-clamp-3 text-caption leading-5 text-muted-foreground">{memory.content}</p>
-                <div className="flex gap-1.5">
-                  <Button
-                    size="xs"
-                    disabled={busy}
-                    aria-label={`Keep: ${memory.title}`}
-                    onClick={() => {
-                      decide([memory.id], 'approve');
-                    }}
-                  >
-                    Keep
-                  </Button>
-                  <Button
-                    size="xs"
-                    variant="ghost"
-                    disabled={busy}
-                    aria-label={`Not now: ${memory.title}`}
-                    onClick={() => {
-                      decide([memory.id], 'reject');
-                    }}
-                  >
-                    Not now
-                  </Button>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      ) : null}
-      <Button asChild variant="link" size="sm" className="justify-self-start text-small">
-        <Link to="/$tenant/app/v/$ventureId/knowledge" params={{ tenant, ventureId }}>
-          Open Knowledge
           <ArrowUpRight aria-hidden />
         </Link>
       </Button>

@@ -1,4 +1,10 @@
-import type { CoachResponse, EscalationView, NextAction, TurnView } from '@foundry/contracts';
+import type {
+  CoachResponse,
+  EscalationView,
+  MemoryObjectView,
+  NextAction,
+  TurnView,
+} from '@foundry/contracts';
 import { HandHelping, ShieldAlert } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 
@@ -9,11 +15,7 @@ import { ESCALATION_CATEGORY_LABELS, REQUESTED_ROLE_LABELS } from '@/lib/labels'
 import { cn } from '@/lib/utils';
 
 import { EvidenceChip } from '../coach/response/evidence-chip';
-import {
-  MemorySuggestions,
-  type CandidateBinding,
-  type MemorySuggestionControls,
-} from './memory-suggestions';
+import { MemorySaved } from './memory-saved';
 import { MessageActions } from './message-actions';
 import { NextStepList, type NextActionControls } from './next-steps';
 import { NarrowedNote, ReasoningDisclosure } from './reasoning';
@@ -35,16 +37,19 @@ export interface VeirAnswerProps {
   /** The conversation's latest answer: its actions stay visible. */
   latest: boolean;
   /**
-   * The conversation ended with a summary, which holds its next steps and what to remember: the answer is
-   * shown without its own next-step and memory rows, so nothing is offered twice.
+   * The conversation ended with a summary, which holds its next steps: the answer is shown without its own
+   * next-step rows, so nothing is offered twice.
    */
   summarised?: boolean;
   canEdit: boolean;
   onOpenSource: (key: string) => void;
   onShowSources: () => void;
   nextActions: NextActionControls;
-  /** Null for temporary chats (nothing is remembered from them). */
-  memory: { bindings: readonly CandidateBinding[]; controls: MemorySuggestionControls } | null;
+  /**
+   * What the vEIR kept from this answer (saved to Knowledge automatically), shown as one quiet line. Null for
+   * private chats, and for people who cannot open Knowledge's memory.
+   */
+  saved: { tenant: string; ventureId: string; memories: readonly MemoryObjectView[] } | null;
   escalation: EscalationControls;
 }
 
@@ -61,8 +66,8 @@ export function wasInterrupted(turn: Pick<TurnView, 'channel' | 'validator'>): b
 
 /**
  * One validated answer: prose with inline citations first; everything structured is either collapsed
- * (Sources & reasoning) or a compact row (next steps, memory suggestions). The handoff card is the only
- * block shown in full, because it is about safety.
+ * (Sources & reasoning) or a compact row (next steps), and what the vEIR kept from it is one quiet line.
+ * The handoff card is the only block shown in full, because it is about safety.
  */
 export function VeirAnswer({
   turn,
@@ -74,7 +79,7 @@ export function VeirAnswer({
   onOpenSource,
   onShowSources,
   nextActions,
-  memory,
+  saved,
   escalation,
 }: VeirAnswerProps) {
   const evidence = useMemo(() => new Map(turn.evidence.map((item) => [item.key, item])), [turn.evidence]);
@@ -109,8 +114,13 @@ export function VeirAnswer({
 
       <Handoff turnId={turn.id} response={response} validator={turn.validator} controls={escalation} />
 
-      {memory && !summarised ? (
-        <MemorySuggestions personaName={personaName} bindings={memory.bindings} controls={memory.controls} />
+      {saved ? (
+        <MemorySaved
+          tenant={saved.tenant}
+          ventureId={saved.ventureId}
+          memories={saved.memories}
+          className="mt-4"
+        />
       ) : null}
 
       <MessageActions
