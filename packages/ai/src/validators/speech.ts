@@ -22,8 +22,9 @@ export function toSpeakable(text: string): string {
     .replace(CITATION, '')
     .replace(URL, '')
     .split('\n')
-    .map((line) =>
-      line
+    .map((line) => ({
+      item: /^\s*(?:[-*+•]|\d{1,3}[.)])\s+/.test(line),
+      text: line
         .replace(/^\s*(?:[-*_]\s*){3,}$/, '') // horizontal rule
         .replace(/^\s{0,3}#{1,6}\s+/, '')
         .replace(/^\s*>\s?/, '')
@@ -35,11 +36,19 @@ export function toSpeakable(text: string): string {
         .replace(/[*_~`#]+/g, ' ')
         .replace(/\s+/g, ' ')
         .trim(),
-    )
-    .filter((line) => line !== '');
+    }))
+    .filter((line) => line.text !== '');
   // A line without closing punctuation (a heading, a list item) becomes its own sentence; a line ending
   // in a comma runs on ("Best,\nCorin" reads "Best, Corin.").
-  const joined = lines.map((line) => (/[.!?:;…,]$/.test(line) ? line : `${line}.`)).join(' ');
+  // Consecutive list items run on with commas ("People to ask: Ruth, Corin."), so a bare name in a list is
+  // never heard as a sign-off sentence.
+  const joined = lines
+    .map((line, i) =>
+      /[.!?:;…,]$/.test(line.text)
+        ? line.text
+        : `${line.text}${line.item && lines[i + 1]?.item === true && /^(?:\p{Lu}[\p{L}'’-]*\s*){1,4}$/u.test(line.text) ? ',' : '.'}`,
+    )
+    .join(' ');
   return sanitizePlainText(joined)
     .text.replace(/\s+([,.;:!?])/g, '$1')
     .replace(/([,;:])(?:[,;:])+/g, '$1')

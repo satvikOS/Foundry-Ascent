@@ -67,7 +67,7 @@ const APOS = "['’]";
 const NOT_POSSESSIVE = `(?!${APOS}s${E}|-)`;
 const EIR = '(?:eir|eirs|entrepreneur[- ]in[- ]residence)';
 /** A cleft ("It's Corin who would ask…") points at the EIR; it is not a self-introduction. */
-const NOT_RELATIVE = `(?!\\s+(?:who|whom|whose|that)${E})`;
+const NOT_RELATIVE = `(?!\\s+(?:who|whom|whose|that)${E}(?!(?:${APOS}s|\\s+(?:is|am|was))?\\s+(?:speaking|talking|chatting|writing|here|with you|on (?:the|this) call)${E}|\\s+(?:you${APOS}re|you are|you)\\s+(?:talking|speaking|chatting)${E}))`;
 
 function p(kind: IdentityViolationKind, rule: string, source: string, flags = 'giu'): IdentityPattern {
   return { kind, rule, pattern: new RegExp(`${S}(?:${source})${E}`, flags) };
@@ -228,6 +228,14 @@ const LEAD_GAP = '(?:[ \\t]*[,:—–])?\\s+';
 /** Closings that only end a message: "Best, Corin" is a signature wherever it ends a line. */
 const CLOSINGS = [
   'all the best',
+  'all my best',
+  'with best wishes',
+  'with best regards',
+  'warmest regards',
+  'kindest regards',
+  'warmest wishes',
+  'warm wishes',
+  'very best',
   'best regards',
   'best wishes',
   'kind regards',
@@ -274,14 +282,16 @@ const PRESENT_TAIL = `(?:\\s+(?:with (?:us|you)|right now|now|today|too|as well|
 /** The clause ends: punctuation, a spaced dash, a line break or the end of the text. */
 const CLAUSE_END = '(?=\\s*(?:[,.;:!?…)—–]|-\\s|\\n|$))';
 /** Whom or what a doctrine listens to ("listening for evidence", "listening to customers"): not presence. */
-const LISTEN_DOCTRINE = `(?:for|to\\s+(?:(?:the|their|those|these|real|early|potential|actual|target|prospective|paying|more)\\s+)?(?:customers?|founders?|users?|buyers?|people|clinicians?|patients?|nurses?|doctors?|stakeholders?|interviewees?|prospects?|markets?|data|evidence|objections?|complaints?|feedback|signals?|pain))${E}`;
+const PRESENCE_MARK =
+  '(?:right now|as we speak|on (?:the|this) (?:call|line)|with (?:us|you)|in (?:this|the) (?:call|room|conversation|session))';
+const LISTEN_DOCTRINE = `(?:for(?!\\s+(?:your|you|anything|whatever|what you)${E})|to\\s+(?:(?:the|their|those|these|real|early|potential|actual|target|prospective|paying|more)\\s+)?(?:customers?|founders?|users?|buyers?|people|clinicians?|patients?|nurses?|doctors?|stakeholders?|interviewees?|prospects?|markets?|data|evidence|objections?|complaints?|feedback|signals?|pain))${E}(?![^.!?\\n]{0,160}?${PRESENCE_MARK})`;
 /**
  * After a name: "is here", "is on the call", "is listening" (unless a doctrine follows: "is listening
  * for evidence"), and the contraction "'s here / listening / on the call". The contraction is also a
  * possessive ("Corin's listening checklist", "Corin's here-and-now rule"), so after "'s" the phrase must
  * end the clause, go on with a presence tail ("with us", "right now") or say how ("listening closely").
  */
-const PRESENT_AFTER = `(?:\\s+is\\s+(?:here(?!-)|listening(?!-|\\s+${LISTEN_DOCTRINE})|${PRESENT_PLACE})|${APOS}s\\s+(?:(?:here|listening|${PRESENT_PLACE})${PRESENT_TAIL}${CLAUSE_END}|listening\\s+(?:closely|carefully|attentively|intently|quietly|actively|as we (?:speak|talk))))`;
+const PRESENT_AFTER = `(?:\\s+has\\s+joined\\s+(?:us|you|the call|this call)|\\s+can\\s+hear\\s+you|\\s+is\\s+(?:(?:also|now|still|right|currently|already|actually|really)\\s+)?(?:with (?:you|us)${E}|here(?!-)|listening(?!-|\\s+${LISTEN_DOCTRINE})|${PRESENT_PLACE})|${APOS}s\\s+(?:(?:here|listening|${PRESENT_PLACE})${PRESENT_TAIL}${CLAUSE_END}|listening\\s+(?:closely|carefully|attentively|intently|quietly|actively|as we (?:speak|talk))))`;
 /**
  * "<name> here / speaking / out" ends the clause, meets a symbol ("Corin here 👋") or goes on as a
  * greeting ("Corin here and ready to help"). "Corin here would ask…" and "Corin out of office" do not.
@@ -376,12 +386,15 @@ function governs(before: readonly string[]): boolean {
   const at = (i: number): string => (i >= 0 ? (w[i] ?? '') : '');
   const n = w.length;
   const last = at(n - 1);
-  if (CONDITION.test(last) || NEGATION.test(last)) return true;
+  // "believe it or not", "like it or not" are idioms, not a negation of the claim.
+  const orNot = /^not$/iu.test(last) && /^or$/iu.test(at(n - 2));
+  if (CONDITION.test(last) || (NEGATION.test(last) && !orNot)) return true;
   if (/^when$/iu.test(last) && /^(?:and|or)$/iu.test(at(n - 2)) && CONDITION.test(at(n - 3))) return true;
   if (/^as$/iu.test(last) && /^(?:soon|long)$/iu.test(at(n - 2))) return true;
   for (let j = n - 1; j >= Math.max(0, n - 3); j -= 1) {
     if (FRAME.test(at(j)) && (NEGATION.test(at(j - 1)) || NEGATION.test(at(j - 2)))) return true;
-    if (DOUBT.test(at(j)) && !NEGATION.test(at(j - 1))) return true;
+    // "no doubt", "without a doubt", "nobody can deny": a negation up to three words back cancels the doubt.
+    if (DOUBT.test(at(j)) && ![1, 2, 3].some((k) => NEGATION.test(at(j - k)))) return true;
   }
   return false;
 }
@@ -466,9 +479,11 @@ function previousLine(text: string, index: number): string | null {
 
 /** Whether `index` opens a sentence: the start of the text or a line, or after . ! ? … or ":". */
 function opensSentence(text: string, index: number): boolean {
-  const before = text.slice(0, index).replace(/[ \t"“‘'(*_]+$/u, '');
-  return before === '' || /[.!?…:\n]$/u.test(before);
+  let i = index;
+  while (i > 0 && OPENER_SKIP.has(text.charAt(i - 1))) i -= 1;
+  return i === 0 || /[.!?…:\n]/u.test(text.charAt(i - 1));
 }
+const OPENER_SKIP = new Set([' ', '\t', '"', '“', '‘', "'", '(', '*', '_']);
 
 interface NameSpec {
   /** Full display name, normalised ("Corin Halvorsen"). */
@@ -587,9 +602,10 @@ function namePatterns(spec: NameSpec, ctx: PatternContext): IdentityPattern[] {
   /** A name alone on the last line closes a message after a sentence, not a list or a question. */
   const closesMessage = (text: string, m: RegExpExecArray): boolean => {
     if (!named(m)) return false;
-    if (spoken || /[*_]/.test(m[0])) return true;
+    if (spoken) return true;
     const before = previousLine(text, m.index + (m[0].startsWith('\n') ? 1 : 0));
-    return before !== null && !LIST_ITEM.test(before) && /[.!…,)]\s*$/u.test(before);
+    if (before === null) return /[*_]/.test(m[0]);
+    return !LIST_ITEM.test(before) && /[.!…,)]\s*$/u.test(before);
   };
   /**
    * A sign-off opens its sentence ("Good luck. Love, Corin."; never "the best, Corin"). "Best, Corin"
@@ -651,7 +667,9 @@ function namePatterns(spec: NameSpec, ctx: PatternContext): IdentityPattern[] {
     {
       kind: 'claims_eir',
       rule: 'named_eir_self',
-      pattern: compile(`${S}${CLEFT_LEADS}\\s+${name}${NOT_RELATIVE}`),
+      pattern: compile(
+        `${S}${CLEFT_LEADS}\\s+${name}${spec.rest.length > 0 ? `(?!\\s+${restRe})` : ''}${NOT_RELATIVE}`,
+      ),
       accept: selfIntro(false),
     },
     {
@@ -851,8 +869,12 @@ export function rewriteIdentity(
     // Offending sentences, merged where they overlap, each with its gravest (then earliest) violation.
     const spans: { start: number; end: number; hit: Hit }[] = [];
     for (const hit of hits.sort((a, b) => a.start - b.start || SEVERITY[a.kind] - SEVERITY[b.kind])) {
-      const span = sentenceSpan(current, hit.start, hit.end);
       const last = spans.at(-1);
+      if (last !== undefined && hit.end <= last.end) {
+        if (SEVERITY[hit.kind] < SEVERITY[last.hit.kind]) last.hit = hit;
+        continue;
+      }
+      const span = sentenceSpan(current, hit.start, hit.end);
       if (last !== undefined && span.start < last.end) {
         last.end = Math.max(last.end, span.end);
         if (SEVERITY[hit.kind] < SEVERITY[last.hit.kind]) last.hit = hit;

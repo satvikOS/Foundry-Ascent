@@ -59,10 +59,21 @@ ROLE_LEADS = (
     r"(?:mentor|coach|eir|advisor|adviser|guide|program lead)"
 )
 LEAD_GAP = r"(?:[ \t]*[,:—–])?\s+"
-NOT_RELATIVE = rf"(?!\s+(?:who|whom|whose|that){E})"
+NOT_RELATIVE = (
+    rf"(?!\s+(?:who|whom|whose|that){E}(?!(?:{APOS}s|\s+(?:is|am|was))?\s+(?:speaking|talking|chatting|writing|here|with you|on (?:the|this) call){E}|"
+    rf"\s+(?:you{APOS}re|you are|you)\s+(?:talking|speaking|chatting){E}))"
+)
 #: Closings that only end a message.
 CLOSINGS = (
     "all the best",
+    "all my best",
+    "with best wishes",
+    "with best regards",
+    "warmest regards",
+    "kindest regards",
+    "warmest wishes",
+    "warm wishes",
+    "very best",
     "best regards",
     "best wishes",
     "kind regards",
@@ -112,15 +123,18 @@ PRESENT_TAIL = rf"(?:\s+(?:with (?:us|you)|right now|now|today|too|as well|live|
 #: The clause ends: punctuation, a spaced dash, a line break or the end of the text.
 CLAUSE_END = r"(?=\s*(?:[,.;:!?…)—–]|-\s|\n|\Z))"
 #: Whom or what a doctrine listens to ("listening for evidence", "listening to customers"): not presence.
+PRESENCE_MARK = r"(?:right now|as we speak|on (?:the|this) (?:call|line)|with (?:us|you)|in (?:this|the) (?:call|room|conversation|session))"
 LISTEN_DOCTRINE = (
-    r"(?:for|to\s+(?:(?:the|their|those|these|real|early|potential|actual|target|prospective|paying|more)\s+)?"
+    rf"(?:for(?!\s+(?:your|you|anything|whatever|what you){E})|to\s+(?:(?:the|their|those|these|real|early|potential|actual|target|prospective|paying|more)\s+)?"
     r"(?:customers?|founders?|users?|buyers?|people|clinicians?|patients?|nurses?|doctors?|stakeholders?|"
     rf"interviewees?|prospects?|markets?|data|evidence|objections?|complaints?|feedback|signals?|pain)){E}"
+    rf"(?![^.!?\n]{{0,160}}?{PRESENCE_MARK})"
 )
 #: After a name: "is here / listening / on the call", "'s here…"; after "'s" the phrase must end the clause,
 #: go on with a presence tail or say how ("listening closely"), since "'s" is also a possessive.
 PRESENT_AFTER = (
-    rf"(?:\s+is\s+(?:here(?!-)|listening(?!-|\s+{LISTEN_DOCTRINE})|{PRESENT_PLACE})|"
+    r"(?:\s+has\s+joined\s+(?:us|you|the call|this call)|\s+can\s+hear\s+you|"
+    rf"\s+is\s+(?:(?:also|now|still|right|currently|already|actually|really)\s+)?(?:with (?:you|us){E}|here(?!-)|listening(?!-|\s+{LISTEN_DOCTRINE})|{PRESENT_PLACE})|"
     rf"{APOS}s\s+(?:(?:here|listening|{PRESENT_PLACE}){PRESENT_TAIL}{CLAUSE_END}|"
     r"listening\s+(?:closely|carefully|attentively|intently|quietly|actively|as we (?:speak|talk))))"
 )
@@ -261,7 +275,8 @@ def _governs(before: Sequence[str]) -> bool:
         return w[i] if 0 <= i < n else ""
 
     last = at(n - 1)
-    if CONDITION.match(last) or NEGATION.search(last):
+    or_not = last.lower() == "not" and at(n - 2).lower() == "or"
+    if CONDITION.match(last) or (NEGATION.search(last) and not or_not):
         return True
     if last.lower() == "when" and at(n - 2).lower() in ("and", "or") and CONDITION.match(at(n - 3)):
         return True
@@ -270,7 +285,7 @@ def _governs(before: Sequence[str]) -> bool:
     for j in range(n - 1, max(0, n - 3) - 1, -1):
         if FRAME.match(at(j)) and (NEGATION.search(at(j - 1)) or NEGATION.search(at(j - 2))):
             return True
-        if DOUBT.match(at(j)) and not NEGATION.search(at(j - 1)):
+        if DOUBT.match(at(j)) and not any(NEGATION.search(at(j - k)) for k in (1, 2, 3)):
             return True
     return False
 
@@ -324,8 +339,10 @@ def _opens_clause(text: str, m: re.Match[str]) -> bool:
 
 
 def _opens_sentence(text: str, index: int) -> bool:
-    before = re.sub(r"[ \t\"“‘'(*_]+\Z", "", text[:index])
-    return before == "" or before[-1] in ".!?…:\n"
+    i = index
+    while i > 0 and text[i - 1] in " \t\"“‘'(*_":
+        i -= 1
+    return i == 0 or text[i - 1] in ".!?…:\n"
 
 
 def _previous_line(text: str, index: int) -> str | None:
@@ -518,14 +535,12 @@ def _first_name_patterns(first_name: str, rest: str, mode: _Mode) -> list[_Patte
     def closes_message(text: str, m: re.Match[str]) -> bool:
         if not case_fits(m):
             return False
-        if spoken or re.search(r"[*_]", m.group(0)):
+        if spoken:
             return True
         before = _previous_line(text, m.start() + (1 if m.group(0).startswith("\n") else 0))
-        return (
-            before is not None
-            and not LIST_ITEM.match(before)
-            and re.search(r"[.!…,)]\s*\Z", before) is not None
-        )
+        if before is None:
+            return re.search(r"[*_]", m.group(0)) is not None
+        return not LIST_ITEM.match(before) and re.search(r"[.!…,)]\s*\Z", before) is not None
 
     def after_sign_off(text: str, m: re.Match[str]) -> bool:
         return case_fits(m) and _opens_sentence(text, m.start())
@@ -568,7 +583,7 @@ def _first_name_patterns(first_name: str, rest: str, mode: _Mode) -> list[_Patte
         _raw(
             "claims_eir",
             "speaks_as_named_person",
-            rf"{S}{CLEFT_LEADS}\s+{name}{NOT_RELATIVE}",
+            rf"{S}{CLEFT_LEADS}\s+{name}" + (rf"(?!\s+{rest})" if rest else "") + NOT_RELATIVE,
             self_intro(False),
         ),
         _raw("claims_eir", "named_person_here", rf"{S}{name}(?:[ \t]*,)?\s+{HERE_WORDS}", here),
