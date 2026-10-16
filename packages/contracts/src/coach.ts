@@ -113,6 +113,11 @@ export const TurnUsage = z.object({
   outputTokens: z.number().int(),
   costUsd: z.number(),
   latencyMs: z.number().int(),
+  /**
+   * Streamed turns: milliseconds from the turn request to the first validated sentence shown; null for whole
+   * replies. Additive.
+   */
+  firstTokenMs: z.number().int().min(0).nullable().optional(),
 });
 
 /**

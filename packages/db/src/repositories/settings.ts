@@ -32,15 +32,15 @@ export const SETTING_KEYS = {
 export type ResolvedPlatformSettings = Required<PlatformSettingsValue>;
 
 /**
- * Values seeded by migrations 0001, 0003 and 0004; used when a key is missing. Fail closed for the kill
- * switch; the upload quota defaults are 20 documents and 50 MB per person per UTC day; calls last at most 30
- * minutes and one person may talk 60 minutes per UTC day. Streaming and calls are on unless switched off (the AI
- * kill switch still stops both).
+ * Values seeded by migrations 0001, 0003, 0004 and 0006; used when a key is missing. Fail closed for the kill
+ * switch; AI spend is capped at $15 per UTC day for the platform and $1 per person; the upload quota defaults
+ * are 20 documents and 50 MB per person per UTC day; calls last at most 30 minutes and one person may talk 60
+ * minutes per UTC day. Streaming and calls are on unless switched off (the AI kill switch still stops both).
  */
 export const DEFAULT_SETTINGS: ResolvedPlatformSettings = {
   aiEnabled: false,
-  dailyUsdCapGlobal: 2,
-  dailyUsdCapPerPrincipal: 0.5,
+  dailyUsdCapGlobal: 15,
+  dailyUsdCapPerPrincipal: 1,
   maxTurnsPerSession: 40,
   groundingCoverageThreshold: 0.6,
   portfolioMinGroupSize: 3,
