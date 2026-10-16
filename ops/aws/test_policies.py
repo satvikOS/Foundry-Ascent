@@ -256,6 +256,22 @@ def test_legacy_cleanup_can_no_longer_delete_platform_resources() -> None:
 AWS_CLI = re.compile(r"\baws\s+([a-z0-9-]+)\s+([a-z0-9-]+)")
 STAGE0_SECRET = "secrets.AWS_ACCESS_KEY_ID"
 
+# Workflows that run as an OIDC role of their own instead of the identity the manifest describes: the role they
+# assume and, for every AWS CLI call they make, the IAM action it needs (None: no permission needed). The role's
+# policy is defined in infra/cdk/src/stacks/foundation-stack.ts and pinned by infra/cdk/test/foundation.test.ts;
+# the test below keeps the workflow's calls and that policy in step.
+OWN_ROLE_WORKFLOWS: dict[str, tuple[str, str, dict[str, str | None]]] = {
+    "ops-insights.yml": (
+        "FoundryAscent-OpsInsights",
+        "OpsInsightsPolicy",
+        {
+            "sts:getcalleridentity": None,
+            "lambda:invoke": "lambda:InvokeFunction",
+            "logs:filterlogevents": "logs:FilterLogEvents",
+        },
+    ),
+}
+
 
 def workflow_aws_calls() -> list[tuple[str, str]]:
     calls: list[tuple[str, str]] = []
@@ -277,6 +293,8 @@ def test_every_aws_cli_call_in_the_workflows_is_in_the_manifest_and_allowed() ->
     entries = [e for e in manifest() if e.expect == "allowed" and e.policy is None]
     problems: list[str] = []
     for workflow, action in calls:
+        if workflow in OWN_ROLE_WORKFLOWS:
+            continue  # checked against its own role below
         relevant = [e for e in entries if action in {a.lower() for a in e.actions}]
         if not relevant:
             problems.append(f"{workflow}: {action} is not in infra/iam/required-actions.json")
@@ -286,6 +304,35 @@ def test_every_aws_cli_call_in_the_workflows_is_in_the_manifest_and_allowed() ->
                 if decide([operator()], action, v.render(resource, ACCOUNT, REGION)) != "allowed":
                     problems.append(f"{workflow}: {action} on {resource} is not allowed by bootstrap-operator.json")
     assert problems == []
+
+
+def role_policy_actions(policy_id: str) -> set[str]:
+    """The actions of an iam.Policy construct in foundation-stack.ts (from `new iam.Policy(this, '<id>'` to its
+    attachToRole call)."""
+    source = (REPO / "infra" / "cdk" / "src" / "stacks" / "foundation-stack.ts").read_text(encoding="utf-8")
+    start = source.index(f"new iam.Policy(this, '{policy_id}'")
+    end = source.index(".attachToRole(", start)
+    actions: set[str] = set()
+    for group in re.findall(r"actions:\s*\[([^\]]*)\]", source[start:end]):
+        actions.update(re.findall(r"'([a-z0-9-]+:[A-Za-z0-9*]+)'", group))
+    return actions
+
+
+def test_own_role_workflows_assume_their_role_and_call_exactly_what_its_policy_grants() -> None:
+    constants = (REPO / "infra" / "cdk" / "src" / "lib" / "constants.ts").read_text(encoding="utf-8")
+    calls = workflow_aws_calls()
+    for workflow, (role, policy_id, needs) in OWN_ROLE_WORKFLOWS.items():
+        text = (WORKFLOWS / workflow).read_text(encoding="utf-8")
+        assert f"role/{role}" in text, workflow
+        assert f"'{role}'" in constants, role
+        assert STAGE0_SECRET not in text, workflow
+        assert "id-token: write" in text and "environment: ops-insights" in text, workflow
+        assert "mask-aws-account-id: true" in text and "::add-mask::" in text, workflow
+        assert "persist-credentials: false" in text, workflow
+        made = {action for name, action in calls if name == workflow}
+        assert made == set(needs), (workflow, sorted(made ^ set(needs)))
+        granted = role_policy_actions(policy_id)
+        assert granted == {iam for iam in needs.values() if iam is not None}, (workflow, sorted(granted))
 
 
 def test_no_workflow_bootstraps_cdk_or_publishes_iam_policies() -> None:
