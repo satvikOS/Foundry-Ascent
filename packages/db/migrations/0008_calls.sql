@@ -12,6 +12,8 @@
 --     joins that call), and barge-in: the last speech unit the founder heard before interrupting and its words,
 --     which are redacted with the turn's other content.
 --  3. Settings: the `calls_enabled` kill switch (on; the AI kill switch still stops calls).
+--  4. Spend caps: a person's daily AI spend cap leaves out speech (Polly and Transcribe during calls), which the
+--     call-minute caps bound instead; the platform's daily cap still counts everything.
 --
 -- Call minutes are measured from this table (per call, and per person per UTC day): a live call counts until
 -- now, or until shortly after its last heartbeat when the client went away (the time it is closed at).
@@ -200,3 +202,26 @@ CREATE TRIGGER turns_link_call BEFORE INSERT ON turns FOR EACH ROW EXECUTE FUNCT
 -- ---------------------------------------------------------------------------------------------------
 
 INSERT INTO platform_settings (key, value) VALUES ('calls_enabled', 'true') ON CONFLICT (key) DO NOTHING;
+
+-- ---------------------------------------------------------------------------------------------------
+-- 4. Spend caps
+-- ---------------------------------------------------------------------------------------------------
+
+-- 0003's function with one change: the per-person sum leaves out purpose 'speech' (text-to-speech and
+-- speech-to-text of calls), so a call never ends early on the per-person AI budget; calls are bounded by their
+-- minute caps (per call and per person per day) and by the platform cap, which counts every purpose.
+-- usageRepo.spendToday counts the same way.
+CREATE OR REPLACE FUNCTION app.spend_cap_state(p_global_cap numeric, p_principal_cap numeric) RETURNS text
+  LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
+  WITH today AS (
+    SELECT coalesce(sum(u.cost_usd), 0) AS global_usd,
+           coalesce(sum(u.cost_usd) FILTER (WHERE u.principal_id = app.current_principal()
+                                              AND u.purpose <> 'speech'), 0) AS principal_usd
+    FROM usage_ledger u
+    WHERE u.at >= (date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'))
+  SELECT CASE WHEN today.global_usd >= p_global_cap THEN 'global'
+              WHEN today.principal_usd >= p_principal_cap THEN 'principal' END
+  FROM today
+$$;
+REVOKE ALL ON FUNCTION app.spend_cap_state(numeric, numeric) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app.spend_cap_state(numeric, numeric) TO app_rls;

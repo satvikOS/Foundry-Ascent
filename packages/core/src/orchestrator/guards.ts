@@ -30,12 +30,18 @@ export async function assertWithinSpendCaps(
   kit: Kit,
   ctx: RequestContext,
   settings: Pick<PlatformSettingsView, 'dailyUsdCapGlobal' | 'dailyUsdCapPerPrincipal'>,
-  context: { readonly ventureId: string | null; readonly operation: string },
+  context: {
+    readonly ventureId: string | null;
+    readonly operation: string;
+    /** `global`: only the platform's cap applies (speech during calls, bounded by call minutes instead). */
+    readonly caps?: 'all' | 'global';
+  },
 ): Promise<void> {
+  const globalOnly = context.caps === 'global';
   const state = await kit.system(
     async (sx) => ({
       globalUsd: await usageRepo.spendToday(sx),
-      principalUsd: await usageRepo.spendToday(sx, { principalId: ctx.principalId }),
+      principalUsd: globalOnly ? 0 : await usageRepo.spendToday(sx, { principalId: ctx.principalId }),
     }),
     { transaction: false },
   );

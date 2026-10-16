@@ -27,7 +27,9 @@ import { DEFAULT_SPEECH_VOICE, speechCostUsd, speechEngines } from './voices.js'
  *  - or the fixed crisis support message of the caller's own crisis turn of a call (below).
  * Speech belongs to the caller's live call in that conversation and speaks with the call's voice. Every
  * synthesis is metered in the usage ledger (purpose `speech`, priced per character) and checked against the
- * kill switches, the daily spend caps, the call's time limits, the persona's status and its voice consent.
+ * kill switches, the platform's daily spend cap, the call's time limits, the persona's status and its voice
+ * consent. The per-person AI cap leaves speech out: the call-minute caps (per call and per person per day)
+ * bound it instead, so a call never ends early on a founder's chat budget.
  *
  * Crisis support is never refused for call or budget reasons: the turn engine answers a crisis on a call with
  * the fixed CRISIS_SPOKEN_MESSAGE (no model call) and marks the turn blocked. That message is spoken for the
@@ -217,9 +219,11 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
 
       // Every check runs before the 501 below: a valid request tells the client to speak the text itself.
       if (plan.settings !== null) {
+        // Speech is bounded by the call's minute caps and the platform's daily cap, not the per-person AI cap.
         await assertWithinSpendCaps(kit, ctx, plan.settings, {
           ventureId: plan.ventureId,
           operation: 'speech',
+          caps: 'global',
         });
       } else {
         const replays = await kit.system((sx) =>

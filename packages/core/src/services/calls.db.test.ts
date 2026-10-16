@@ -1411,3 +1411,70 @@ describe('the turn engine and the calls service together', () => {
     expect(await auditActions()).toContain('maintenance.stale_calls');
   });
 });
+
+describe('spend caps on a call', () => {
+  /** Runs `fn` while `person` has spent `usd` today on `purpose` (removed afterwards). */
+  async function withSpend<T>(
+    person: Person,
+    purpose: 'speech' | 'turn',
+    usd: number,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    await h.t.db.system((sx) =>
+      usageRepo.recordUsage(sx, {
+        tenantId: h.seed.tenantId,
+        principalId: h.people[person],
+        purpose,
+        modelId: 'test-spend',
+        inputTokens: 1,
+        outputTokens: 0,
+        costUsd: usd,
+      }),
+    );
+    try {
+      return await fn();
+    } finally {
+      await h.t.db.system((sx) =>
+        sx.query(`DELETE FROM usage_ledger WHERE model_id = 'test-spend' AND principal_id = :p`, {
+          p: p.uuid(h.people[person]),
+        }),
+      );
+    }
+  }
+
+  it('leaves speech out of the per-person AI cap, so a call outlives it; model spend and the platform cap still count', async () => {
+    const sessionId = await newSession('maya', 'quietquad');
+    const { call } = await startCall('maya', sessionId, 'typed');
+    try {
+      // $5 of speech today (Polly and Transcribe): five times the $1 per-person cap, under the $15 platform cap.
+      await withSpend('maya', 'speech', 5, async () => {
+        expect(await beat('maya', call.id)).toMatchObject({ action: 'continue' });
+        const events = await send('maya', sessionId, call.id, 'What should we ask the librarians first?');
+        expect(events.at(-1)?.event).toBe('turn.completed');
+        const unit = events.find((e) => e.event === 'turn.speech');
+        if (unit?.event !== 'turn.speech') throw new Error('expected a speech unit');
+        await h.core.speech.synthesize(ctx.maya, {
+          sessionId,
+          turnId: unit.turnId,
+          seq: unit.seq,
+          text: unit.text,
+          sig: unit.sig,
+        });
+      });
+      // $5 of model spend is the founder's AI budget: the next heartbeat ends the call on it.
+      await withSpend('maya', 'turn', 5, async () => {
+        expect(await beat('maya', call.id)).toMatchObject({ action: 'terminate', reason: 'budget' });
+      });
+    } finally {
+      await endCall('maya', call.id);
+    }
+    // The platform cap counts every purpose: $20 of anyone's speech stops new calls.
+    const next = await newSession('maya', 'quietquad');
+    await withSpend('devin', 'speech', 20, async () => {
+      await expect(h.core.calls.start(ctx.maya, next, { inputMode: 'typed' })).rejects.toMatchObject({
+        code: 'spend_cap_reached',
+        reason: 'global_daily_cap',
+      });
+    });
+  });
+});
