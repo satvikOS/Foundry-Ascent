@@ -1,12 +1,12 @@
 import { type AccessCodeIssued, InviteMemberRequest, type TeamMemberView } from '@foundry/contracts';
-import { auditRepo, principalsRepo, venturesRepo } from '@foundry/db';
+import { principalsRepo, venturesRepo } from '@foundry/db';
 import { type z } from 'zod';
 
-import { issueCodeForPrincipal } from '../auth/codes.js';
 import { hasAnyRole, loadPrincipalRoles, requireRole } from '../authz/roles.js';
 import { decideVentureAccess, requireVentureAccess } from '../authz/venture-access.js';
 import { type RequestContext } from '../context.js';
 import { fail, parseInput } from '../errors.js';
+import { expiryAfterDays, issueAndAuditAccessCode } from '../internal/access-codes.js';
 import { audit, requireId, type Kit } from '../internal/kit.js';
 
 type TeamMemberViewValue = z.infer<typeof TeamMemberView>;
@@ -16,8 +16,8 @@ export interface TeamService {
   /** Active members (read access, or a program lead of the tenant). */
   list(ctx: RequestContext, ventureId: string): Promise<TeamMemberViewValue[]>;
   /**
-   * Program lead: creates a principal, an active membership (expiring after `expiresInDays`) and a
-   * one-time access code. The plaintext code is in the result exactly once.
+   * Program lead or platform admin of the tenant: creates a principal, an active membership (expiring after
+   * `expiresInDays`) and a one-time access code. The plaintext code is in the result exactly once.
    */
   invite(
     ctx: RequestContext,
@@ -48,13 +48,15 @@ export function createTeamService(kit: Kit, onPrincipalChanged: (principalId: st
     invite: async (ctx, rawVentureId, rawInput) => {
       const ventureId = requireId(rawVentureId, 'Venture');
       const input = parseInput(InviteMemberRequest, rawInput);
-      const now = kit.now();
-      const expiresAt =
-        input.expiresInDays === null ? null : new Date(now.getTime() + input.expiresInDays * 86_400_000);
+      const expiresAt = expiryAfterDays(kit.now(), input.expiresInDays);
       const principal = await kit.inRequest(ctx, async (scope) => {
-        await requireRole(scope, ['program_lead'], { objectType: 'venture', objectId: ventureId, ventureId });
-        const venture = await venturesRepo.getVenture(scope.tx, ventureId);
-        if (venture?.tenantId !== ctx.tenantId) throw fail.notFound('Venture');
+        const decision = await requireRole(scope, ['program_lead', 'platform_admin'], {
+          objectType: 'venture',
+          objectId: ventureId,
+          ventureId,
+        });
+        // A platform admin need not be able to read the venture, only to find it in the tenant.
+        if (!(await venturesRepo.ventureInCurrentTenant(scope.tx, ventureId))) throw fail.notFound('Venture');
         const created = await principalsRepo.createPrincipal(scope.tx, {
           tenantId: ctx.tenantId,
           displayName: input.displayName,
@@ -75,39 +77,24 @@ export function createTeamService(kit: Kit, onPrincipalChanged: (principalId: st
           ventureId,
           objectType: 'principal',
           objectId: created.id,
-          metadata: { role: input.role, expiresInDays: input.expiresInDays },
+          metadata: {
+            role: input.role,
+            expiresInDays: input.expiresInDays,
+            inviterRoles: [...decision.matched],
+          },
         });
         return created;
       });
-      // access_codes grants nothing to app_rls: the code is issued with the owner role after the
-      // program-lead check above, for the principal that transaction just created.
-      const issued = await kit.system(async (sx) => {
-        const result = await issueCodeForPrincipal(sx, {
-          principalId: principal.id,
-          label: `invitation (${input.role})`,
-          createdBy: ctx.principalId,
-          expiresAt,
-        });
-        await auditRepo.appendAudit(sx, {
-          action: 'access_code.issued',
-          outcome: 'succeeded',
-          tenantId: ctx.tenantId,
-          actorId: ctx.principalId,
-          requestId: ctx.requestId,
-          ventureId,
-          objectType: 'access_code',
-          objectId: result.record.id,
-          metadata: { principalId: principal.id, via: 'invitation' },
-        });
-        return result;
+      // Issued after the role check above, for the principal that transaction just created.
+      const issued = await issueAndAuditAccessCode(kit, ctx, {
+        principal,
+        label: `invitation (${input.role})`,
+        expiresAt,
+        ventureId,
+        metadata: { via: 'invitation' },
       });
       onPrincipalChanged(principal.id);
-      return {
-        accessCodeId: issued.record.id,
-        principal: principalsRepo.toPrincipalView(principal),
-        accessCode: issued.code,
-        expiresAt: issued.record.expiresAt,
-      };
+      return issued;
     },
   };
 }
