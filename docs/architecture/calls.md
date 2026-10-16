@@ -20,14 +20,160 @@ heartbeat, interrupt, end and summary, and what is metered and audited. -->
 
 ## 3. Client
 
-<!-- Owned by the web calls stream: CallProvider and the mini call bar, the call layout, CallEngine
-(AudioWorklet capture, end-of-turn detection, pipelined playback, barge-in, heartbeat, typed fallback),
-entry points, and the after-call summary. -->
+Code: `apps/web/src/lib/realtime/` (the engine; framework-free, unit-tested with fake WebSocket, Web Audio
+and fetch) and `apps/web/src/features/calls/` (the UI).
+
+### 3.1 Where calls live
+
+A call belongs to the person, not to a page. `CallProvider` wraps the app shell (`routes/$tenant/app/route.tsx`),
+so a call keeps going while the founder moves between conversations and venture pages. It loads the engine
+and the call screen on demand (warmed once the app is idle), so the shell's bundle does not carry them.
+
+| URL                                                 | What shows                                                                                              |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `/<tenant>/app/v/<venture>?call=1`                  | The call screen; the call creates its conversation first, then the URL becomes the conversation's.      |
+| `/<tenant>/app/v/<venture>/c/<conversation>?call=1` | The call screen, calling in this conversation.                                                          |
+| Any page while a call is live                       | The **mini call bar** at the top of the content: the vEIR's face, the timer, mute, Return to call, End. |
+| Any page after a call ended out of view             | The mini bar offers the summary (time limit, kill switch, lost connection).                             |
+
+Entry points all link to `?call=1`: the sidebar's **Call {vEIR}**, New chat's **Call {vEIR}** secondary
+action, the conversation header and the composer's voice button, and ⌘K. One call at a time: opening
+`?call=1` elsewhere during a call returns to the live one. Arriving by a click starts the call at once (the
+click is what lets the browser play audio); a reloaded `?call=1` shows **Start call** instead. When a call
+cannot start, the screen says why (calls are for the venture team; AI paused; no minutes left today; the
+API's own refusal) instead of showing a dead control.
+
+### 3.2 The call screen
+
+A focused, full-height surface (a modal dialog over the conversation, so focus and screen readers stay in
+it):
+
+- **Stage**: the avatar provider's form (the built-in presence) around the vEIR's monogram, or its portrait
+  when likeness consent and an image exist. Under it, the name with its "vEIR · AI" badge and the state in
+  words (`Connecting…`, `Listening`, `Thinking…`, `Speaking · Interrupt`, `Muted`, `Reconnecting…`,
+  `Hold to talk`), never colour or motion alone.
+- **Captions** (on by default; the choice is remembered per browser): the vEIR's current sentence in the
+  reading face and the founder's live partials. Not a live region: announcements carry state, never content.
+- **Dock**: Mute (`M`), Push to talk (`P`; hold the button or Space), Captions (`C`), Type instead (`T`),
+  Switch to chat, End. 48 px targets with names and pressed states. Esc interrupts the vEIR while it speaks,
+  otherwise minimizes. No single key ends a call.
+- **Timer** with the minutes left (from the heartbeat; the last two minutes count down and warn).
+- **One AI disclosure line**: the persona release's disclosure, `role="note"`, named "AI disclosure".
+- **Notices**: a failed turn (shown, never spoken), "Voice unavailable. Replies appear on screen.", lost voice
+  input, and a blocked turn, which stops the audio and puts the support resources first (`role="alert"`, with
+  Switch to chat).
+
+**Switch to chat** ends the media and returns to the conversation. **End** shows the summary.
+Neither ends the conversation.
+
+### 3.3 CallEngine
+
+```text
+mic ─ getUserMedia (echo cancellation, noise suppression) ─ AudioWorklet /worklets/pcm-capture.js
+    ─ 16 kHz s16le PCM, 50 ms frames + RMS ─ AWS event-stream AudioEvent ─ presigned Transcribe WSS (sttGrant)
+    ◄ TranscriptEvent partials (stabilised) ─ captions ─ end of turn
+    ─ POST /sessions/:id/turns {text, channel: 'voice', callId} (SSE)
+    ◄ turn.speech {seq, text, sig} ─ POST /speech {seq, sig} (next unit fetched while this one plays)
+    ─ decodeAudioData ─ AudioBufferSource ─ gain (duck) ─ analyser (presence) ─ speakers
+```
+
+- **Capture.** The worklet is a static file on our origin (`script-src 'self'`, no blob: URLs). It averages
+  each 16 kHz sample's span of input samples (a box filter) and transfers frames to the main thread. The
+  event-stream codec (CRC-32 prelude and message checksums) is ours: about a hundred lines for one message
+  type, instead of an SDK dependency. Muting closes the Transcribe socket, so muted minutes are not billed;
+  unmuting re-mints the grant (`POST /calls/:id/stt-grant`) when the old one is within 15 s of expiry.
+- **End of turn (hands-free).** A segment Transcribe finalised, a partial whose words are all marked stable,
+  or a partial unchanged for the silence window; plus ~600 ms without a voiced frame from the energy VAD
+  (adaptive noise floor, two-frame onset; no WASM, so no `wasm-unsafe-eval`). Updates of a segment already
+  sent only count for new trailing words. Push-to-talk sends silence until held and ends the turn 700 ms
+  after release. Lines finished while the vEIR is still answering wait and go together after it.
+- **Playback.** Units play in order through the call's one AudioContext, which the Start/Call click
+  unlocks. Calls speak only validated text: signed `turn.speech` units, the signed intro (`turnId: null`,
+  seq 0), or, when no units streamed (streaming kill switch, older server), the sentences of the completed
+  turn's stored `spoken` reply (unsigned passages `POST /speech` checks against the stored turn). On `501
+speech_unavailable` (local development only) the browser's `speechSynthesis` reads the same validated text
+  for the rest of the call; any other failure shows the words without a voice, never a substitute voice.
+- **Barge-in.** A VAD onset while the vEIR speaks ducks it to 20 % at once; a partial with a word that is not
+  in the sentence being played (the echo guard) stops the audio, aborts the turn stream and sends
+  `POST /turns/:id/interrupt {callId, heardSeq}`, where `heardSeq` is the last unit heard to its end (-1 for
+  none). Typing while it speaks, Esc and Interrupt do the same.
+- **Heartbeat** every 15 s (`POST /calls/:id/heartbeat {state, micOpenSeconds}`): `terminate` ends the call
+  with the server's reason; three missed heartbeats end it as `error`. The client also ends at its own
+  countdown (`timeout`) and warns two minutes before.
+- **Reconnect.** A dropped Transcribe socket reconnects with a fresh grant (0.5, 1, 2, 4 s backoff); after
+  30 s the call continues by typing.
+- **Typed fallback.** No `sttGrant` (mock and local development), a refused or missing microphone, or lost
+  voice input: the founder types; the line is still a `voice` turn and is answered aloud.
+- **Teardown.** End posts `POST /calls/:id/end` and shows its summary. Closing the tab ends the call with a
+  `keepalive` fetch prepared at call start (`navigator.sendBeacon` cannot send the CSRF header or the payload
+  hash CloudFront's origin access control signs). Leaving the app (sign-out) ends it the same way and
+  releases the microphone.
+- **Client stats** sent with End are numbers only: first-audio p50/p95, barge-ins, reconnects. Nothing on the
+  client logs content.
+
+### 3.4 After the call
+
+`POST /calls/:id/end` returns the summary, shown in place of the stage: the duration and exchanges, what the
+vEIR would like to remember (each proposal with **Keep** / **Not now**: nothing is kept without the founder),
+the next actions it suggested, and any request for a person it drafted (with a link to review and consent in
+Human help). The transcript is already in the conversation: spoken turns are ordinary turns. Buttons: Back to
+conversation, Call again.
 
 ## 4. Avatar provider seam
 
-<!-- Owned by the web calls stream: the AvatarProvider interface, the built-in presence orb, and what an
-Anam or HeyGen LiveAvatar adapter needs (CSP hosts, Secrets Manager key, token route, consent). -->
+The call engine owns the conversation (speech in, validated speech out); an avatar provider only embodies it.
+`apps/web/src/lib/realtime/avatar.ts` (the code is authoritative):
+
+```text
+AvatarProvider
+  id                         builtin | heygen | tavus | simli   (PersonaEmbodiment.provider)
+  drawsFace                  true when the provider renders its own face (vendor video)
+  mount(stage, options)      attach to the stage element; honours reduced motion
+  setState(state)            connecting | listening | thinking | speaking | muted | idle
+  setLevels({veir, founder}) both voices' loudness (0–1), every animation frame
+  speak({text})              a validated unit starts being heard
+  unmount()                  release the stage (and any vendor session)
+```
+
+`createAvatarProvider(id)` returns the registered adapter. Only `builtin` ships; a persona configured for a
+vendor keeps the presence until that vendor's adapter is registered.
+
+**Built-in presence** (`presence.ts`, `presence.css`): concentric hairlines and a soft halo drawn only from the
+colour tokens, so it follows the theme. The outer ring and halo follow the vEIR's voice (the playback
+`AnalyserNode`; a gentle synthetic pulse when the browser voice or captions-only mode leave nothing to
+measure), the inner ring follows the founder's microphone, an arc turns while connecting or thinking, and each
+sentence gives the halo a soft lift. Levels reach CSS as custom properties set through the CSSOM, which the
+strict CSP allows. With `prefers-reduced-motion` it is still and the state shows only in words. It implies no
+likeness: the face is the vEIR's monogram (serif initials in a hairline ring) unless the EIR consented to a
+portrait.
+
+**What a vendor adapter (Anam, HeyGen LiveAvatar FULL) needs.** Both fit as browser relay: the vendor renders
+and voices the face from text this platform validated; our turn endpoint stays the only brain.
+
+1. **Approval and consent.** The vendor approved (security, privacy, accessibility, procurement; audio
+   retention and training opt-out in its terms), and the EIR's `likeness` consent recorded, plus `voice` for a
+   cloned voice (ADR-0005). The persona's embodiment names the provider only once consent covers it
+   (`PersonaEmbodiment.likenessConsented` / `voiceConsented`); revoking consent suspends the persona and ends
+   its calls at the next heartbeat.
+2. **Key and token route.** The vendor API key in Secrets Manager (`foundry-ascent/media/<vendor>`,
+   AWS-managed encryption), readable by the API role only. `POST /api/v1/calls/avatar-session` (reserved; it
+   returns the built-in configuration today) mints the vendor's single-use session token for the call (Anam
+   `POST /v1/auth/session-token` with the custom-LLM mode that disables its own model; HeyGen
+   `POST /v1/sessions/token` in FULL mode with `max_session_duration` set to the call's `maxSeconds`). Tokens
+   are never stored or replayed.
+3. **Browser adapter.** The vendor SDK bundled from npm and loaded only with its adapter (`script-src 'self'`);
+   `mount` renders the vendor's `<video>` into the stage (`drawsFace: true`); `speak` hands each validated
+   unit's text to the vendor (Anam `createTalkMessageStream().streamMessageChunk`, HeyGen `avatar.speak_text`)
+   instead of `POST /speech`, so the engine's playback step routes to the provider; the vendor's own barge-in
+   event calls the engine's interrupt. The vendor never receives evidence, memory or the full response.
+4. **CSP and permissions.** The vendor's exact API, signalling and media hosts (Anam's WebRTC hosts; HeyGen's
+   API and LiveKit WSS host) added to `connect-src`, `media-src` and, if it renders in a frame, `frame-src`,
+   from the CDK config of the enabled vendor; a test forbids `*`. The camera stays off.
+5. **Latency and cost.** The vendor's voice and render add about 150–500 ms (vendor-reported) to our turn;
+   end of speech to an audible avatar is about 0.75–2 s across vendors, most of it our own turn. Vendor
+   minutes cost about $0.11–0.19 self-serve (Anam; HeyGen FULL ≈ $0.16–0.19) against ≈ $0.03–0.05 for the
+   built-in cascade (estimates in `research/avatars.md`). Measure from recorded audio, not vendor claims,
+   before a cohort. The kill switch, minute caps and heartbeat apply unchanged.
 
 ## 5. Privacy, consent and safety
 
