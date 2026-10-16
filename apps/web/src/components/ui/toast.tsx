@@ -28,16 +28,17 @@ export function Toaster() {
       }}
       style={
         {
-          '--normal-bg': 'var(--popover)',
+          // Glass (see the .glass-strong utility, which adds the blur and the solid fallback).
+          '--normal-bg': 'var(--glass-bg-strong)',
           '--normal-text': 'var(--popover-foreground)',
-          '--normal-border': 'var(--border)',
+          '--normal-border': 'var(--glass-border)',
           '--border-radius': 'var(--radius)',
           '--width': '360px',
         } as CSSProperties
       }
       toastOptions={{
         classNames: {
-          toast: 'font-sans shadow-lg',
+          toast: 'glass-strong font-sans shadow-lg',
           title: 'text-[13px] font-medium',
           description: '!text-muted-foreground text-[13px]',
           actionButton: '!bg-primary !text-primary-foreground !font-medium',

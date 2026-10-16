@@ -97,6 +97,9 @@
   --glass-bg-strong: light-dark(rgb(255 255 255 / 0.86), rgb(22 22 22 / 0.8));
   --glass-border: light-dark(rgb(17 17 16 / 0.08), rgb(255 255 255 / 0.08));
   --glass-blur: 20px;
+  /* The scrim behind modals (dims and lightly blurs the page), and the lighter one under a glass panel. */
+  --scrim: light-dark(rgb(17 17 16 / 0.32), rgb(0 0 0 / 0.72));
+  --scrim-soft: light-dark(rgb(17 17 16 / 0.12), rgb(0 0 0 / 0.5));
 
   --radius: 0.625rem;
   --scrollbar: light-dark(#cfcfcb, #2a2a2a);
@@ -442,12 +445,16 @@
     -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
     backdrop-filter: blur(var(--glass-blur)) saturate(140%);
   }
+  /* Toasts paint their own background from --normal-bg (components/ui/toast.tsx). */
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     .glass {
       background-color: var(--background);
     }
     .glass-strong {
       background-color: var(--popover);
+    }
+    [data-sonner-toast] {
+      --normal-bg: var(--popover);
     }
   }
   @media (prefers-reduced-transparency: reduce) {
@@ -456,6 +463,9 @@
     }
     .glass-strong {
       background-color: var(--popover);
+    }
+    [data-sonner-toast] {
+      --normal-bg: var(--popover);
     }
     .glass,
     .glass-strong {
