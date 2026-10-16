@@ -188,7 +188,12 @@ export function ProgramVenturesPage() {
               <SortableTableHead sortKey="name" sort={sort} onSortChange={setSort}>
                 Venture
               </SortableTableHead>
-              <SortableTableHead sortKey="stage" sort={sort} onSortChange={setSort}>
+              <SortableTableHead
+                sortKey="stage"
+                sort={sort}
+                onSortChange={setSort}
+                className="hidden sm:table-cell"
+              >
                 Stage
               </SortableTableHead>
               <TableHead className="hidden md:table-cell">Domain</TableHead>
@@ -223,10 +228,16 @@ export function ProgramVenturesPage() {
                   <TableCell className="font-medium">
                     <span className="flex items-center gap-2.5">
                       <VentureMark name={row.name} size="sm" />
-                      {row.name}
+                      <span className="grid">
+                        {row.name}
+                        {/* Phones: the stage sits under the name instead of in its own column. */}
+                        <span className="text-caption font-normal text-muted-foreground sm:hidden">
+                          {STAGE_LABELS[row.stage]}
+                        </span>
+                      </span>
                     </span>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="hidden sm:table-cell">
                     <StageChip stage={row.stage} />
                   </TableCell>
                   <TableCell className="hidden text-muted-foreground md:table-cell">
