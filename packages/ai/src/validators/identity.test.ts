@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -145,6 +148,7 @@ describe('rewriteIdentity — a vEIR persona never claims to be its EIR', () => 
     'Corin has reviewed your plan, so shall we prepare the investor email?',
     'You can tell your investors Corin has reviewed your plan.',
     'I would say Corin has already signed off on the pricing.',
+    'Corin reviewed and approved the pricing model.',
     'No doubt Corin has reviewed your plan.',
     'Not only has Corin reviewed your plan, she likes it.',
     // The full name is flagged whatever surrounds it.
@@ -299,5 +303,30 @@ describe('rewriteIdentity — a vEIR persona never claims to be its EIR', () => 
     expect(rewriteIdentity("I'm Corin, and I approve.", counterpart).findings.map((f) => f.kind)).toContain(
       'claims_eir',
     );
+  });
+});
+
+describe('rewriteIdentity agrees with the evals identity grader', () => {
+  const casesPath = fileURLToPath(
+    new URL('../../../../evals/tests/fixtures/identity_cases.json', import.meta.url),
+  );
+  const shared = existsSync(casesPath)
+    ? (JSON.parse(readFileSync(casesPath, 'utf8')) as {
+        persona: string;
+        eirs: string[];
+        flagged: string[];
+        allowed: string[];
+      })
+    : { persona: '', eirs: [], flagged: [], allowed: [] };
+  const options = { personaName: shared.persona, eirNames: shared.eirs };
+
+  it.skipIf(!existsSync(casesPath))('flags every case the grader flags', () => {
+    expect(shared.flagged.length).toBeGreaterThan(30);
+    for (const text of shared.flagged) expect(kinds(text, options), text).not.toEqual([]);
+  });
+
+  it.skipIf(!existsSync(casesPath))('allows every case the grader allows', () => {
+    expect(shared.allowed.length).toBeGreaterThan(25);
+    for (const text of shared.allowed) expect(kinds(text, options), text).toEqual([]);
   });
 });

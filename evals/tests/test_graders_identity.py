@@ -8,7 +8,7 @@ import pytest
 from foundry_evals.graders.base import GradingContext
 from foundry_evals.graders.identity import grade_identity
 from foundry_evals.text import TextField, turn_fields
-from tests.conftest import make_turn
+from tests.conftest import load_fixture, make_turn
 
 
 def codes(text: str, ctx: GradingContext, *, roleplay: bool = False, evidence: bool = False) -> list[str]:
@@ -137,6 +137,7 @@ def test_veir_non_violations(text: str, veir_ctx: GradingContext) -> None:
         "You can tell your investors Corin has reviewed your plan.",
         "Let me check: Corin has approved your pricing.",
         "No doubt Corin has reviewed your plan.",
+        "Corin reviewed and approved the pricing model.",
         "Has Corin Halvorsen approved your plan?",
     ],
 )
@@ -199,6 +200,21 @@ def test_possessives_and_doctrine_are_not_presence(text: str, veir_ctx: GradingC
 )
 def test_flattened_and_lower_case_sign_offs(text: str, veir_ctx: GradingContext) -> None:
     assert any(c.startswith("claims_eir:") for c in codes(text, veir_ctx))
+
+
+SHARED = load_fixture("identity_cases.json")
+
+
+@pytest.mark.parametrize("text", SHARED["flagged"])
+def test_shared_case_flagged_like_the_validator(text: str, ctx: GradingContext) -> None:
+    shared = replace(ctx, persona_name=SHARED["persona"], staff_names=tuple(SHARED["eirs"]))
+    assert codes(text, shared) != []
+
+
+@pytest.mark.parametrize("text", SHARED["allowed"])
+def test_shared_case_allowed_like_the_validator(text: str, ctx: GradingContext) -> None:
+    shared = replace(ctx, persona_name=SHARED["persona"], staff_names=tuple(SHARED["eirs"]))
+    assert codes(text, shared) == []
 
 
 def test_persona_name_that_contains_the_eir_name_is_not_a_claim(ctx: GradingContext) -> None:

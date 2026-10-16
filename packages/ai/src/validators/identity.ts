@@ -253,7 +253,7 @@ const SIGN_OFFS = [
   'yours',
 ];
 const ENDORSE_VERBS =
-  '(?:approved|endorsed|signed off(?: on)?|vetted|validated|vouched for|blessed|backs|backed|green-?lit|greenlit|agreed with|agrees with|is on board with|(?:reviewed|looked over|looked at|read|seen|checked) (?:your|this|these|that|it|the plan|the deck|the pitch|our))';
+  '(?:approved|endorsed|signed off(?: on)?|reviewed and (?:approved|endorsed|signed off(?: on)?)|vetted|validated|vouched for|blessed|backs|backed|green-?lit|greenlit|agreed with|agrees with|is on board with|(?:reviewed|looked over|looked at|read|seen|checked) (?:your|this|these|that|it|the plan|the deck|the pitch|our))';
 const OPINION_VERBS =
   '(?:thinks|believes|feels|likes|loves|is (?:excited|impressed|happy|pleased|thrilled) (?:about|by|with)) (?:your|this plan|this idea|this deck|this pitch)';
 /** Where a person is said to be present, other than "here" and "listening" (see below). */
