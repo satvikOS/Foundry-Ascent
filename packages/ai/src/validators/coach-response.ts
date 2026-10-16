@@ -650,10 +650,28 @@ export function responseStrings(r: CoachResponse): string[] {
   return out;
 }
 
+/** Characters of Markdown, HTML or a citation key that can sit inside a word ("Bench**Tally**"). */
+const MARKUP_CHARS = /[*_~`[\]<(]/;
+
+/**
+ * The text as it reads once rendered or said: emphasis and code markers, brackets, link targets, citation
+ * keys and HTML tags removed, so a name split by them ("Bench**Tally**", "[Bench](https://x.test)Tally",
+ * "Bench [E1]Tally", "Bench<b>Tally</b>") reads whole. Every pattern stops at the next character that could
+ * open another match, so this stays linear.
+ */
+export function withoutMarkup(text: string): string {
+  return text
+    .replace(/ ?[[(]\s*E\d+(?:\s*[,;]\s*E\d+)*\s*[\])]/gi, '')
+    .replace(/\]\([^()\s]*\)/g, '')
+    .replace(/<[^<>\n]{0,200}>/g, '')
+    .replace(/[*_~`[\]]+/g, '');
+}
+
 /**
  * Whether any other venture's distinctive name, member name or canary appears in any of `strings`
  * (the same matching as {@link containsOtherVenture}, for outputs that are not a `CoachResponse`, such
- * as recaps and distillations).
+ * as recaps and distillations). Each text is read as written and, when it holds Markdown or HTML, as it
+ * reads once rendered ({@link withoutMarkup}).
  */
 export function textsContainOtherVenture(
   strings: readonly string[],
@@ -668,19 +686,25 @@ export function textsContainOtherVenture(
   )
     return false;
   const text = strings.map(normalizeForMatching).join('\n');
-  const compact = text.replace(/[\s\u200B-\u200D]+/g, '');
-  for (const name of otherVentureNames) {
-    const pattern = ventureNameRegExp(name);
-    if (pattern?.test(text)) return true;
-  }
-  for (const name of otherVentureMemberNames) {
-    const pattern = personNameRegExp(name);
-    if (pattern?.test(text)) return true;
-  }
-  for (const canary of otherVentureCanaries) {
-    const needle = normalizeForMatching(canary);
-    if (needle.length < 4) continue;
-    if (text.includes(needle) || compact.includes(needle.replace(/\s+/g, ''))) return true;
+  const plain = strings.some((s) => MARKUP_CHARS.test(s))
+    ? strings.map((s) => normalizeForMatching(withoutMarkup(s))).join('\n')
+    : null;
+  const readings = plain === null || plain === text ? [text] : [text, plain];
+  for (const reading of readings) {
+    const compact = reading.replace(/[\s\u200B-\u200D]+/g, '');
+    for (const name of otherVentureNames) {
+      const pattern = ventureNameRegExp(name);
+      if (pattern?.test(reading)) return true;
+    }
+    for (const name of otherVentureMemberNames) {
+      const pattern = personNameRegExp(name);
+      if (pattern?.test(reading)) return true;
+    }
+    for (const canary of otherVentureCanaries) {
+      const needle = normalizeForMatching(canary);
+      if (needle.length < 4) continue;
+      if (reading.includes(needle) || compact.includes(needle.replace(/\s+/g, ''))) return true;
+    }
   }
   return false;
 }

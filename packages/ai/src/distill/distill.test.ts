@@ -445,13 +445,28 @@ describe('sanitizeDistill — notebook merge', () => {
   });
 
   it('checks an over-long note within its limit, fast', () => {
-    const summary = Array.from({ length: 2_000 }, () => 'I am Corin Halvorsen.').join(' ');
-    const started = performance.now();
-    const out = run(draft({ notebook: { ...draft().notebook, summary } }));
-    expect(performance.now() - started).toBeLessThan(200);
-    expect(out.notebookDelta.summary.length).toBeLessThanOrEqual(1_200);
-    expect(out.notebookDelta.summary).not.toContain('I am Corin Halvorsen');
-  });
+    const summaryOf = (sentences: number): string =>
+      Array.from({ length: sentences }, () => 'I am Corin Halvorsen.').join(' ');
+    const over = run(draft({ notebook: { ...draft().notebook, summary: summaryOf(2_000) } }));
+    expect(over.notebookDelta.summary.length).toBeLessThanOrEqual(1_200);
+    expect(over.notebookDelta.summary).not.toContain('I am Corin Halvorsen');
+    // Linear, not quadratic: eight times the note (both under the 2,800 characters the check reads) takes
+    // about eight times as long. Ratios of warm runs keep this independent of the machine; a quadratic check
+    // (one rewrite round per violation) takes about sixty-four times as long and fails it. Each measurement
+    // repeats the run so that the fixed allowance is small next to a quadratic cost.
+    const time = (sentences: number): number => {
+      const d = draft({ notebook: { ...draft().notebook, summary: summaryOf(sentences) } });
+      const started = performance.now();
+      for (let i = 0; i < 20; i += 1) run(d);
+      return performance.now() - started;
+    };
+    time(14);
+    time(112);
+    const small = Math.min(time(14), time(14));
+    const large = Math.min(time(112), time(112));
+    expect(summaryOf(112).length).toBeLessThan(2_800);
+    expect(large).toBeLessThan(16 * small + 100);
+  }, 30_000);
 
   it('closes commitments only explicitly and keeps the ones the model forgot', () => {
     const out = run();

@@ -1,6 +1,13 @@
 import { normalizeForMatching } from '../risk/normalize.js';
 import { textsContainOtherVenture } from './coach-response.js';
-import { rewriteIdentity, type IdentityCheckOptions, type IdentityViolationKind } from './identity.js';
+import {
+  identityFindingsAdded,
+  identityReplacementFor,
+  rewriteIdentity,
+  type IdentityCheckOptions,
+  type IdentityFinding,
+  type IdentityViolationKind,
+} from './identity.js';
 import { sanitizeMarkdown } from './markdown.js';
 import { clampWords, toSpeakable } from './speech.js';
 
@@ -15,10 +22,15 @@ import { clampWords, toSpeakable } from './speech.js';
  *    the rest of the answer is withheld from the preview (`turn.completed` brings it);
  * 2. citations: `[E#]` keys that were not shown to the model are removed;
  * 3. identity, per sentence: claims to be human are rewritten like the validator does; claims to be (or
- *    sign as) the EIR block the stream, as they block the turn;
+ *    sign as) the EIR block the stream, as they block the turn. Each unit is also read after a bounded tail
+ *    of the one before it (typed, and as heard on a call), so a claim split across units ("This is" then
+ *    "Corin.", "Has Corin approved your plan?" then "Yes, she has.") is judged whole: a unit that completes
+ *    a blocking claim stops the stream, one that completes another claim is replaced by the disclosure;
  * 4. cross-venture, cumulatively: another venture's name, canary or member name anywhere in the text so far
- *    blocks the stream. A unit is held back until enough text follows it (the hold-back window, at least
- *    twice the longest guarded string) that a guarded string starting inside it is complete when checked.
+ *    blocks the stream, read as written and as rendered (a name split by Markdown, "Bench**Tally**", counts).
+ *    A unit is held back until enough text follows it (the hold-back window, at least twice the longest
+ *    guarded string) that a guarded string starting inside it is complete when checked. On a call the spoken
+ *    form of each unit is checked too, after a bounded tail of what was said before it.
  *
  * Before the first unit, a reply that opens like structured output (JSON, a code fence, a field label such
  * as `answer:`) is not prose for the founder: the gate releases nothing and asks for the whole-reply path.
@@ -130,6 +142,23 @@ const MAX_HOLD_BACK = 200;
  */
 const CUMULATIVE_WINDOW_CHARS = 4 * MAX_HOLD_BACK;
 const MARKDOWN_WINDOW_CHARS = 2_048;
+/** How much of the previous unit a unit's identity check reads before it (cut at a word boundary). */
+const IDENTITY_TAIL_CHARS = 300;
+
+/** The end of a released unit that the next unit's identity check reads first. */
+function identityTail(text: string): string {
+  if (text.length <= IDENTITY_TAIL_CHARS) return text;
+  const cut = text.slice(-IDENTITY_TAIL_CHARS);
+  const space = cut.search(/\s/);
+  return space < 0 ? '' : cut.slice(space + 1);
+}
+
+/** The gravest finding first (claims to be the EIR, then human, then endorsements). */
+const GRAVITY: Readonly<Record<IdentityViolationKind, number>> = {
+  claims_eir: 0,
+  claims_human: 1,
+  endorsement: 2,
+};
 
 /**
  * Characters a unit is held back for: twice the longest guarded string (spacing and invisible characters
@@ -242,6 +271,11 @@ export class SentenceGate {
   #spokenWords = 0;
   /** Length of the stable text already checked for other ventures as a whole. */
   #leakCheckedTo = 0;
+  /** The end of the last unit released, as shown and as heard: the next unit's identity check reads it first. */
+  #tail = '';
+  #spokenTail = '';
+  /** The end of what was said on the call (spoken forms), read again with each unit for other ventures. */
+  #said = '';
   #stats = { units: 0, withheld: 0, identityRewrites: 0, citationsRemoved: 0, markdownRemovals: 0 };
 
   constructor(options: SentenceGateOptions) {
@@ -300,10 +334,14 @@ export class SentenceGate {
     return { units: [], blocked: this.#blocked, fallback: this.#fallback };
   }
 
-  /** Text that cannot change any more: all of it once ended, else up to the last whitespace. */
+  /**
+   * Text that cannot change any more: all of it once ended, else up to the last whitespace. Read from the end
+   * (only the last word), so a long stream of small chunks stays linear.
+   */
   #stable(): string {
     if (this.#ended) return this.#raw;
-    const cut = this.#raw.search(/\s\S*$/);
+    let cut = this.#raw.length - 1;
+    while (cut >= 0 && !/\s/.test(this.#raw.charAt(cut))) cut -= 1;
     return cut < 0 ? '' : this.#raw.slice(0, cut + 1);
   }
 
@@ -345,7 +383,7 @@ export class SentenceGate {
       }
       const unit = this.#process(this.#raw.slice(this.#cursor, end));
       this.#cursor = end;
-      if (unit === 'identity') return this.#block('identity', units);
+      if (unit === 'identity' || unit === 'cross_venture') return this.#block(unit, units);
       if (unit === null) continue;
       if (this.#leaks([this.#shown.slice(-CUMULATIVE_WINDOW_CHARS) + unit.text])) {
         return this.#block('cross_venture', units);
@@ -367,8 +405,12 @@ export class SentenceGate {
    * Whether the shown text followed by `text` contains Markdown the subset removes (built across units). Units
    * never end inside a link, image or tag, so such a construct can only open in the recent shown text: the
    * check reads a bounded tail of it. A construct the tail cuts in two can only withhold the preview.
+   *
+   * Every construct the subset removes ends in a letter (a tag or script name, a scheme), `>`, `)`, `]` or
+   * `:`. A unit with none of them (". ", "?!") cannot complete one, so the shown text is not read again for it.
    */
   #formsRemovedMarkdown(text: string): boolean {
+    if (!/[\p{L}<>)\]:]/u.test(text)) return false;
     const joined = sanitizeMarkdown(this.#shown.slice(-MARKDOWN_WINDOW_CHARS) + text);
     return joined.htmlRemoved + joined.unsafeLinksRemoved + joined.imagesRemoved > 0;
   }
@@ -378,7 +420,7 @@ export class SentenceGate {
     return { units, blocked: reason, fallback: null };
   }
 
-  #process(raw: string): GateUnit | 'identity' | null {
+  #process(raw: string): GateUnit | GateBlockReason | null {
     const core = raw.trimStart();
     const lead = this.#shown === '' ? '' : raw.slice(0, raw.length - core.length).replace(/\n{3,}/g, '\n\n');
     const md = sanitizeMarkdown(core);
@@ -400,9 +442,28 @@ export class SentenceGate {
     this.#stats.identityRewrites += identity.findings.length;
     text = identity.text.trim();
     if (text === '') return null;
+    const split = this.#splitClaim(this.#tail, lead === '' ? ' ' : lead, text, this.#identity);
+    if (split === null) return 'identity';
+    text = split;
     const spoken = this.#speak(text);
-    if (spoken === null) return 'identity';
-    return { text: `${lead}${text}`, spoken };
+    if ('blocked' in spoken) return spoken.blocked;
+    this.#tail = identityTail(text);
+    return { text: `${lead}${text}`, spoken: spoken.said };
+  }
+
+  /**
+   * The unit as released after `tail` (the end of the previous unit): itself, null when the two together
+   * make a blocking claim neither makes alone, or the disclosure sentence when they make another one. A unit
+   * without letters cannot complete a claim (every rule needs a name or a word), so it is not read again.
+   */
+  #splitClaim(tail: string, gap: string, unit: string, options: IdentityCheckOptions): string | null {
+    if (tail === '' || !/\p{L}/u.test(unit)) return unit;
+    const added = identityFindingsAdded(tail, `${tail}${gap}${unit}`, options);
+    if (added.length === 0) return unit;
+    if (added.some((f) => this.#blockOn.has(f.kind))) return null;
+    this.#stats.identityRewrites += added.length;
+    const gravest = added.reduce((a: IdentityFinding, b) => (GRAVITY[b.kind] < GRAVITY[a.kind] ? b : a));
+    return identityReplacementFor(gravest.kind, options);
   }
 
   get #identity(): IdentityCheckOptions {
@@ -415,22 +476,37 @@ export class SentenceGate {
     };
   }
 
-  /** The unit's spoken form within the word budget; null when, heard on a call, it speaks as the EIR. */
-  #speak(text: string): string | null {
+  /**
+   * The unit's spoken form within the word budget, or why it cannot be said: heard on a call, it speaks as
+   * the EIR, or it says another venture's name or canary (read after a bounded tail of what was said before,
+   * where Markdown, links and citations no longer split a word).
+   */
+  #speak(text: string): { said: string } | { blocked: GateBlockReason } {
     const budget = this.#options.spokenWordBudget;
     let speakable = toSpeakable(text);
     if (this.#options.spoken === true && speakable !== '') {
-      // Heard, not read: the spoken form is checked as speech before it is said.
-      const heard = rewriteIdentity(speakable, { ...this.#identity, spoken: true });
-      if (heard.findings.some((f) => this.#blockOn.has(f.kind))) return null;
+      // Heard, not read: the spoken form is checked as speech before it is said, alone and after the end of
+      // the unit said before it.
+      const options = { ...this.#identity, spoken: true };
+      const heard = rewriteIdentity(speakable, options);
+      if (heard.findings.some((f) => this.#blockOn.has(f.kind))) return { blocked: 'identity' };
       this.#stats.identityRewrites += heard.findings.length;
       speakable = heard.text.trim();
+      if (speakable !== '') {
+        const split = this.#splitClaim(this.#spokenTail, ' ', speakable, options);
+        if (split === null) return { blocked: 'identity' };
+        speakable = split;
+        this.#spokenTail = identityTail(speakable);
+        const said = `${this.#said.slice(-CUMULATIVE_WINDOW_CHARS)} ${speakable}`;
+        if (this.#leaks([said])) return { blocked: 'cross_venture' };
+        this.#said = said.slice(-CUMULATIVE_WINDOW_CHARS);
+      }
     }
-    if (budget === undefined || speakable === '') return speakable;
+    if (budget === undefined || speakable === '') return { said: speakable };
     const left = budget - this.#spokenWords;
-    if (left <= 0) return '';
+    if (left <= 0) return { said: '' };
     const clamped = words(speakable) > left ? clampWords(speakable, left).text : speakable;
     this.#spokenWords += words(clamped);
-    return clamped;
+    return { said: clamped };
   }
 }

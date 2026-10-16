@@ -361,7 +361,15 @@ runs, in order:
    not a person."). EIR impersonation blocks the turn (`identity`) by default (`blockOnIdentity`). A vEIR
    may say "I", use its persona name and refer to its EIR in the third person ("Corin's approach…"); the
    persona name never trips the named-EIR patterns, first names match case-sensitively, and questions,
-   negations and conditions ("Has Corin seen it?") are not endorsements. The persona's own EIR comes from
+   negations and conditions ("Has Corin seen it?") are not endorsements, unless the question still makes
+   the claim: it presupposes it ("…now that Corin has approved your plan?", "Ready to tell investors that
+   Corin reviewed it?"), asserts it ("Did you know…?", "Wouldn't you agree it's great that…?") or is
+   answered yes right after ("Has Corin approved it? Yes, she has."). Also flagged: what the EIR said or
+   thought about the founder ("Corin said your plan is strong", "As Corin mentioned, …", "Per Corin, …",
+   "Corin's feedback was…"), the AI offering to reach the EIR ("Want me to tell Corin…?", "I'll let Corin
+   know") or being with them ("I'm on the line with Corin"). Suggesting the founder talk to the human EIR
+   ("Should I ask Corin about pricing?", "Ask Corin at office hours") and citing her doctrine ("As Corin
+   puts it, …", "As Corin said in her keynote, …") are not. The persona's own EIR comes from
    `personaEirName` or the "<first name>'s vEIR" persona name. Rehearsal lines may speak in the first
    person in character but never as the EIR.
 7. Length bounds and ranges (answer ≤ 6 000 chars, ≤ 20 claims, ≤ 3 memory candidates, ≤ 5
@@ -370,7 +378,9 @@ runs, in order:
    pre-classified high-risk categories (category → P1 + requested role); a more urgent model
    escalation (P0) is kept.
 9. Cross-venture: any other venture name (whole phrase) or canary (substring, whitespace-insensitive)
-   anywhere in the output blocks the turn (`cross_venture`) and replaces the response.
+   anywhere in the output blocks the turn (`cross_venture`) and replaces the response. Each text is also
+   read as it renders, with emphasis, brackets, link targets, citation keys and HTML tags removed, so a
+   name split by Markdown ("Bench**Tally**", "[Bench](https://x.test)Tally") counts.
 
 `spoken` (option `channel`): on the text channel it is always null. On a call it goes through the same
 steps as the answer: made plain (`toSpeakable`: no Markdown, links, URLs or `[E#]` keys), derived from
