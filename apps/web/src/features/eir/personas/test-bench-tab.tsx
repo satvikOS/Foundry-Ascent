@@ -344,6 +344,7 @@ function ChecksDisclosure({ result }: { result: TestTurnResponse }) {
       </button>
       <ul
         id={panelId}
+        data-testid="bench-checks"
         hidden={!open}
         className="mt-2 grid max-w-[68ch] gap-1.5 border-l border-border pl-3 text-small leading-6 text-muted-foreground"
       >
