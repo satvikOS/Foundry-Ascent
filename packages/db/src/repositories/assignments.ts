@@ -48,10 +48,12 @@ export function getAssignment(ex: SqlExecutor, id: string): Promise<AssignmentRe
   );
 }
 
+/** Assignments of a venture: the active one first, then newest first. */
 export function listAssignments(ex: SqlExecutor, ventureId: string): Promise<AssignmentRecord[]> {
   return queryRows(
     ex,
-    `SELECT ${COLUMNS} FROM assignments WHERE venture_id = :ventureId ORDER BY created_at DESC`,
+    `SELECT ${COLUMNS} FROM assignments WHERE venture_id = :ventureId
+     ORDER BY CASE status WHEN 'active' THEN 0 WHEN 'suspended' THEN 1 ELSE 2 END, created_at DESC, id`,
     { ventureId: p.uuid(ventureId) },
     decodeAssignment,
   );

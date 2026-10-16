@@ -40,9 +40,9 @@ interface Actor {
 interface Fixture {
   readonly home: string;
   readonly partner: string;
-  readonly A: string; // quietquad — founder maya, team devin, EIR corin
-  readonly B: string; // benchtally — founders priya, tomasz, EIR corin
-  readonly C: string; // solesignal — founder amara, advisor graham, EIR ruth
+  readonly A: string; // quietquad — founder maya, team devin, Corin's vEIR (EIR corin)
+  readonly B: string; // benchtally — founders priya, tomasz, Ruth's vEIR (EIR ruth)
+  readonly C: string; // solesignal — founder amara, advisor graham, Corin's vEIR (EIR corin)
   readonly P: string; // partner tenant venture
   readonly maya: Actor;
   readonly devin: Actor;
@@ -69,6 +69,13 @@ function venture(key: string): string {
   const v = seed.ventures.find((x) => x.key === key);
   if (!v) throw new Error(`no venture ${key}`);
   return v.id;
+}
+
+/** Persona id of the vEIR built from an EIR. */
+function veir(eirKey: string): string {
+  const v = seed.veirs.find((x) => x.eirKey === eirKey);
+  if (!v) throw new Error(`no vEIR for ${eirKey}`);
+  return v.personaId;
 }
 
 function as<T>(db: Db, actor: Actor, fn: (tx: SqlExecutor) => Promise<T>): Promise<T> {
@@ -105,8 +112,8 @@ async function buildFixture(db: Db): Promise<Fixture> {
   const perVenture: Record<string, { session: string; turn: string; memory: string }> = {};
   for (const [ventureId, founder, eir] of [
     [A, maya, corin],
-    [B, priya, corin],
-    [C, amara, ruth],
+    [B, priya, ruth],
+    [C, amara, corin],
   ] as const) {
     const ids = await as(db, founder, async (tx) => {
       const resolved = await assignmentsRepo.resolveActiveAssignment(tx, ventureId);
@@ -453,6 +460,7 @@ const VENTURE_TABLES = [
   'feedback',
   'eir_reviews',
   'escalations',
+  'veir_notebooks',
 ] as const;
 
 /** Tables with a tenant_id column (and no venture_id) that app_rls can read. */
@@ -727,6 +735,23 @@ describe('founder isolation', () => {
         `INSERT INTO role_grants (principal_id, tenant_id, role) VALUES (:me, :h, 'program_lead')`,
         { me: p.uuid(f.maya.id), h: p.uuid(f.home) },
       ],
+      [
+        'veir_notebooks',
+        `INSERT INTO veir_notebooks (tenant_id, venture_id, persona_id) VALUES (:h, :b, :persona)`,
+        { h: p.uuid(f.home), b: B, persona: p.uuid(veir('eir-ruth')) },
+      ],
+      [
+        'knowledge_sources (persona)',
+        `INSERT INTO knowledge_sources (tenant_id, scope, persona_id, kind, title, body)
+         VALUES (:h, 'persona', :persona, 'note', 'x', 'x')`,
+        { h: p.uuid(f.home), persona: p.uuid(veir('eir-corin')) },
+      ],
+      [
+        'patterns (persona)',
+        `INSERT INTO patterns (tenant_id, persona_id, title, context, signal, intervention, outcome, limits, source_class)
+         VALUES (:h, :persona, 'x', 'x', 'x', 'x', 'x', 'x', 'x')`,
+        { h: p.uuid(f.home), persona: p.uuid(veir('eir-corin')) },
+      ],
     ];
     for (const [table, sql, params] of attempts) {
       const state = await sqlState(as(t.db, f.maya, (tx) => tx.query(sql, params)));
@@ -845,9 +870,9 @@ describe('role visibility', () => {
   it('assigned EIR sees assigned ventures’ shared memory and sampled turns only', async () => {
     await as(t.db, f.corin, async (tx) => {
       const ventures = await count(tx, 'SELECT count(DISTINCT venture_id) AS n FROM memory_objects');
-      expect(ventures).toBe(2); // A and B
+      expect(ventures).toBe(2); // A and C (Corin's vEIR)
       expect(
-        await count(tx, 'SELECT count(*) AS n FROM memory_objects WHERE venture_id = :c', { c: p.uuid(f.C) }),
+        await count(tx, 'SELECT count(*) AS n FROM memory_objects WHERE venture_id = :b', { b: p.uuid(f.B) }),
       ).toBe(0);
       expect(
         await count(
@@ -858,7 +883,7 @@ describe('role visibility', () => {
       expect(await count(tx, 'SELECT count(*) AS n FROM turns WHERE NOT sampled_for_review')).toBe(0);
       expect(await count(tx, 'SELECT count(*) AS n FROM turns')).toBe(2);
       const queue = await turnsRepo.listReviewQueue(tx, { reviewerId: f.corin.id });
-      expect(queue.map((q) => q.ventureId).sort()).toEqual([f.A, f.B].sort());
+      expect(queue.map((q) => q.ventureId).sort()).toEqual([f.A, f.C].sort());
       expect(queue.every((q) => q.reviewed)).toBe(true);
     });
   });
@@ -922,5 +947,271 @@ describe('role visibility', () => {
     );
     expect(row.rows[0]).toMatchObject({ actor_id: f.maya.id, tenant_id: f.home });
     expect(String(row.rows[0]?.request_id)).toMatch(/^test-/);
+  });
+});
+
+describe('vEIR knowledge pools and conversations', () => {
+  it('notebooks: read by the founder/team and the assigned EIR, written by the founder/team only', async () => {
+    const a = p.uuid(f.A);
+    for (const actor of [f.maya, f.devin]) {
+      await as(t.db, actor, async (tx) => {
+        expect(await count(tx, 'SELECT count(*) AS n FROM veir_notebooks')).toBe(1);
+        expect(
+          (await tx.query('UPDATE veir_notebooks SET version = version WHERE venture_id = :a', { a }))
+            .rowCount,
+        ).toBe(1);
+      });
+    }
+    // The assigned EIR reads the notebooks of the ventures their vEIR coaches but never edits them.
+    await as(t.db, f.corin, async (tx) => {
+      expect(await count(tx, 'SELECT count(*) AS n FROM veir_notebooks')).toBe(2);
+      expect((await tx.query('UPDATE veir_notebooks SET version = version')).rowCount).toBe(0);
+    });
+    // Advisors (who cannot read conversations) and program leads see no notebook.
+    for (const actor of [f.graham, f.lead]) {
+      await as(t.db, actor, async (tx) => {
+        expect(await count(tx, 'SELECT count(*) AS n FROM veir_notebooks')).toBe(0);
+      });
+    }
+    // Only for a persona the venture was assigned, and only in the validated shape.
+    expect(
+      await sqlState(
+        as(t.db, f.priya, (tx) =>
+          tx.query(
+            'INSERT INTO veir_notebooks (tenant_id, venture_id, persona_id) VALUES (:h, :b, :persona)',
+            {
+              h: p.uuid(f.home),
+              b: p.uuid(f.B),
+              persona: p.uuid(veir('eir-corin')),
+            },
+          ),
+        ),
+      ),
+    ).toBe('42501');
+    expect(
+      await sqlState(
+        as(t.db, f.maya, (tx) =>
+          tx.query(`UPDATE veir_notebooks SET content = '{"summary": 5}'::jsonb WHERE venture_id = :a`, {
+            a,
+          }),
+        ),
+      ),
+    ).toBe('23514');
+  });
+
+  it('persona corpora: written by their curators only; program corpora by program leads only', async () => {
+    const corinPersona = veir('eir-corin');
+    const insertNote = `INSERT INTO knowledge_sources (tenant_id, scope, persona_id, kind, title, body)
+      VALUES (:h, 'persona', :persona, 'note', 'Curator note', 'Body text of the curator note') RETURNING id`;
+    const sourceId = await as(t.db, f.corin, async (tx) => {
+      const r = await tx.query(insertNote, { h: p.uuid(f.home), persona: p.uuid(corinPersona) });
+      const id = String(r.rows[0]?.id);
+      await knowledgeRepo.insertChunks(tx, {
+        sourceId: id,
+        tenantId: f.home,
+        scope: 'persona',
+        personaId: corinPersona,
+        chunks: [{ ordinal: 1, content: 'Curator chunk' }],
+      });
+      return id;
+    });
+    // Another EIR cannot write, extend or prune this persona's corpus.
+    expect(
+      await sqlState(
+        as(t.db, f.ruth, (tx) => tx.query(insertNote, { h: p.uuid(f.home), persona: p.uuid(corinPersona) })),
+      ),
+    ).toBe('42501');
+    expect(
+      await sqlState(
+        as(t.db, f.ruth, (tx) =>
+          knowledgeRepo.insertChunks(tx, {
+            sourceId,
+            tenantId: f.home,
+            scope: 'persona',
+            personaId: corinPersona,
+            chunks: [{ ordinal: 2, content: 'Injected chunk' }],
+          }),
+        ),
+      ),
+    ).toBe('42501');
+    expect(await as(t.db, f.ruth, (tx) => knowledgeRepo.deleteChunksForSource(tx, sourceId))).toBe(0);
+    expect(
+      (
+        await as(t.db, f.ruth, (tx) =>
+          tx.query(`UPDATE knowledge_sources SET title = 'x' WHERE id = :s`, { s: p.uuid(sourceId) }),
+        )
+      ).rowCount,
+    ).toBe(0);
+    // Founders read persona corpora (retrieval runs as them) but cannot change them.
+    await as(t.db, f.maya, async (tx) => {
+      expect(
+        await count(tx, 'SELECT count(*) AS n FROM knowledge_chunks WHERE source_id = :s', {
+          s: p.uuid(sourceId),
+        }),
+      ).toBe(1);
+      expect(await knowledgeRepo.deleteChunksForSource(tx, sourceId)).toBe(0);
+      // No venture chunk is ever deleted through app_rls (documents go through app.soft_delete_document).
+      expect(
+        (await tx.query('DELETE FROM knowledge_chunks WHERE venture_id = :a', { a: p.uuid(f.A) })).rowCount,
+      ).toBe(0);
+    });
+    // Program leads curate every persona; the curator prunes its own chunks.
+    expect(
+      (
+        await as(t.db, f.lead, (tx) =>
+          tx.query(`UPDATE knowledge_sources SET title = 'Curated by the lead' WHERE id = :s`, {
+            s: p.uuid(sourceId),
+          }),
+        )
+      ).rowCount,
+    ).toBe(1);
+    expect(await as(t.db, f.corin, (tx) => knowledgeRepo.deleteChunksForSource(tx, sourceId))).toBe(1);
+    // The program corpus: program leads only (an EIR could write it before 0004).
+    const insertProgram = `INSERT INTO knowledge_sources (tenant_id, scope, title) VALUES (:h, 'program', 'Program note')`;
+    expect(await sqlState(as(t.db, f.corin, (tx) => tx.query(insertProgram, { h: p.uuid(f.home) })))).toBe(
+      '42501',
+    );
+    expect(
+      await sqlState(as(t.db, f.lead, (tx) => tx.query(insertProgram, { h: p.uuid(f.home) }))),
+    ).toBeNull();
+  });
+
+  it('lessons: drafts are seen and edited by program leads and the persona’s own EIR only', async () => {
+    const draft = await as(t.db, f.corin, (tx) =>
+      resourcesRepo.createPattern(tx, {
+        tenantId: f.home,
+        personaId: veir('eir-corin'),
+        title: 'Draft lesson',
+        context: 'c',
+        signal: 's',
+        intervention: 'i',
+        outcome: 'o',
+        limits: 'l',
+        sourceClass: 'authored',
+      }),
+    );
+    const visible = (actor: Actor): Promise<number> =>
+      as(t.db, actor, (tx) =>
+        count(tx, 'SELECT count(*) AS n FROM patterns WHERE id = :id', { id: p.uuid(draft.id) }),
+      );
+    expect(await visible(f.corin)).toBe(1);
+    expect(await visible(f.lead)).toBe(1);
+    expect(await visible(f.ruth)).toBe(0);
+    expect(await visible(f.maya)).toBe(0);
+    expect(
+      await as(t.db, f.ruth, (tx) => resourcesRepo.updatePattern(tx, draft.id, { status: 'published' })),
+    ).toBeNull();
+    // An EIR never writes program-wide lessons.
+    expect(
+      await sqlState(
+        as(t.db, f.corin, (tx) =>
+          resourcesRepo.createPattern(tx, {
+            tenantId: f.home,
+            title: 'Program lesson',
+            context: 'c',
+            signal: 's',
+            intervention: 'i',
+            outcome: 'o',
+            limits: 'l',
+            sourceClass: 'authored',
+          }),
+        ),
+      ),
+    ).toBe('42501');
+    expect(
+      await as(t.db, f.corin, (tx) => resourcesRepo.updatePattern(tx, draft.id, { status: 'published' })),
+    ).toMatchObject({ status: 'published' });
+    expect(await visible(f.maya)).toBe(1);
+  });
+
+  it('deleted conversations disappear for everyone; only the founder/team can delete one', async () => {
+    const sessionId = await as(t.db, f.maya, async (tx) => {
+      const resolved = await assignmentsRepo.resolveActiveAssignment(tx, f.A);
+      if (!resolved?.release) throw new Error('no assignment');
+      const session = await sessionsRepo.createSession(tx, {
+        tenantId: f.home,
+        ventureId: f.A,
+        assignmentId: resolved.assignment.id,
+        personaReleaseId: resolved.release.id,
+        startedBy: f.maya.id,
+        mode: 'coach',
+        privacy: 'standard',
+        policyVersion: 'test',
+      });
+      await turnsRepo.createTurn(tx, {
+        tenantId: f.home,
+        ventureId: f.A,
+        sessionId: session.id,
+        authorId: f.maya.id,
+        mode: 'coach',
+        founderText: 'Private conversation to delete',
+      });
+      return session.id;
+    });
+    // The assigned EIR may read the conversation but not delete it; an advisor cannot even see it.
+    expect(await sqlState(as(t.db, f.corin, (tx) => sessionsRepo.softDeleteSession(tx, sessionId)))).toBe(
+      '42501',
+    );
+    expect(await as(t.db, f.graham, (tx) => sessionsRepo.softDeleteSession(tx, sessionId))).toBe(false);
+    expect(await as(t.db, f.devin, (tx) => sessionsRepo.softDeleteSession(tx, sessionId))).toBe(true);
+    for (const actor of [f.maya, f.devin, f.corin]) {
+      await as(t.db, actor, async (tx) => {
+        expect(await sessionsRepo.getSession(tx, sessionId)).toBeNull();
+      });
+    }
+    expect(await as(t.db, f.maya, (tx) => sessionsRepo.softDeleteSession(tx, sessionId))).toBe(false);
+    const stored = await t.db.system((sx) =>
+      sx.query(
+        `SELECT s.title, s.goal, s.deleted_at IS NOT NULL AS deleted, t.founder_text, t.response
+         FROM coaching_sessions s JOIN turns t ON t.session_id = s.id WHERE s.id = :id`,
+        { id: p.uuid(sessionId) },
+      ),
+    );
+    expect(stored.rows).toEqual([
+      { title: null, goal: null, deleted: true, founder_text: '[deleted conversation]', response: null },
+    ]);
+  });
+
+  it('an assigned EIR cannot use the soft-delete functions on venture content it reads', async () => {
+    const memory = await t.db.system((sx) =>
+      sx.query(
+        `SELECT id FROM memory_objects WHERE venture_id = :a AND visibility = 'venture' AND status = 'confirmed'
+         ORDER BY id LIMIT 1`,
+        { a: p.uuid(f.A) },
+      ),
+    );
+    const memoryId = String(memory.rows[0]?.id);
+    const documentId = seed.ventures.find((v) => v.key === 'quietquad')?.documentIds[0] ?? '';
+    // Before 0004, app.can_write_venture answered NULL for the EIR and these functions let the call through.
+    expect(await sqlState(as(t.db, f.corin, (tx) => memoryRepo.deleteMemory(tx, memoryId)))).toBe('42501');
+    expect(await sqlState(as(t.db, f.corin, (tx) => documentsRepo.softDeleteDocument(tx, documentId)))).toBe(
+      '42501',
+    );
+    const intact = await t.db.system((sx) =>
+      sx.query(
+        `SELECT (SELECT status FROM memory_objects WHERE id = :m) AS memory,
+                (SELECT status FROM documents WHERE id = :d) AS document`,
+        { m: p.uuid(memoryId), d: p.uuid(documentId) },
+      ),
+    );
+    expect(intact.rows[0]).toEqual({ memory: 'confirmed', document: 'ready' });
+  });
+
+  it('consent is the subject’s own act, except a program lead recording a synthetic EIR’s', async () => {
+    const record = (actor: Actor, subject: string): Promise<string | null> =>
+      sqlState(
+        as(t.db, actor, (tx) =>
+          personasRepo.createConsent(tx, {
+            tenantId: f.home,
+            subjectPrincipalId: subject,
+            assetTypes: ['voice'],
+          }),
+        ),
+      );
+    expect(await record(f.ruth, f.ruth.id)).toBeNull();
+    expect(await record(f.lead, f.ruth.id)).toBeNull();
+    // Founders are synthetic in the demo too, but have no EIR profile: their consent is theirs alone.
+    expect(await record(f.lead, f.maya.id)).toBe('42501');
+    expect(await record(f.ruth, f.corin.id)).toBe('42501');
   });
 });

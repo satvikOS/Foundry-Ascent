@@ -1,4 +1,4 @@
-import { ResourceKind, VentureStage, type ResourceView } from '@foundry/contracts';
+import { ResourceKind, VentureStage, type LessonView, type ResourceView } from '@foundry/contracts';
 import { type z } from 'zod';
 
 import { col, type RawRow } from '../columns.js';
@@ -145,12 +145,18 @@ export async function updateResource(
 }
 
 // ------------------------------------------------------------------------------------------------
-// Patterns (read path in V1)
+// Patterns: de-identified lessons, program-wide (no persona) or part of one persona's common pool
 // ------------------------------------------------------------------------------------------------
+
+export type PatternStatus = 'draft' | 'in_review' | 'published' | 'withdrawn';
 
 export interface PatternRecord {
   readonly id: string;
   readonly tenantId: string;
+  /** The persona whose common pool holds the lesson; null for program-wide lessons. */
+  readonly personaId: string | null;
+  /** `distilled` from many conversations (always de-identified drafts first) or `authored` by a person. */
+  readonly origin: 'distilled' | 'authored';
   readonly title: string;
   readonly context: string;
   readonly signal: string;
@@ -158,16 +164,19 @@ export interface PatternRecord {
   readonly outcome: string;
   readonly limits: string;
   readonly sourceClass: string;
-  readonly status: 'draft' | 'in_review' | 'published' | 'withdrawn';
+  readonly status: PatternStatus;
   readonly ownerId: string | null;
   readonly expiresAt: string | null;
   readonly createdAt: string;
+  readonly updatedAt: string;
 }
 
 function decodePattern(r: RawRow): PatternRecord {
   return {
     id: col.uuid.decode(r.id, 'id'),
     tenantId: col.uuid.decode(r.tenant_id, 'tenant_id'),
+    personaId: col.uuid.nullable.decode(r.persona_id, 'persona_id'),
+    origin: col.enum(['distilled', 'authored'] as const).decode(r.origin, 'origin'),
     title: col.text.decode(r.title, 'title'),
     context: col.text.decode(r.context, 'context'),
     signal: col.text.decode(r.signal, 'signal'),
@@ -179,11 +188,102 @@ function decodePattern(r: RawRow): PatternRecord {
     ownerId: col.uuid.nullable.decode(r.owner_id, 'owner_id'),
     expiresAt: col.ts.nullable.decode(r.expires_at, 'expires_at'),
     createdAt: col.ts.decode(r.created_at, 'created_at'),
+    updatedAt: col.ts.decode(r.updated_at, 'updated_at'),
   };
 }
 
-const PATTERN_COLUMNS =
-  'id, tenant_id, title, context, signal, intervention, outcome, limits, source_class, status, owner_id, expires_at, created_at';
+const PATTERN_COLUMNS = `id, tenant_id, persona_id, origin, title, context, signal, intervention, outcome, limits, source_class,
+  status, owner_id, expires_at, created_at, updated_at`;
+
+/** Contract view of a lesson. */
+export function toLessonView(r: PatternRecord): LessonView {
+  return {
+    id: r.id,
+    personaId: r.personaId,
+    title: r.title,
+    context: r.context,
+    signal: r.signal,
+    intervention: r.intervention,
+    outcome: r.outcome,
+    limits: r.limits,
+    sourceClass: r.sourceClass,
+    status: r.status,
+    origin: r.origin,
+    createdAt: r.createdAt,
+  };
+}
+
+export function getPattern(ex: SqlExecutor, id: string): Promise<PatternRecord | null> {
+  return queryFirst(
+    ex,
+    `SELECT ${PATTERN_COLUMNS} FROM patterns WHERE id = :id`,
+    { id: p.uuid(id) },
+    decodePattern,
+  );
+}
+
+/**
+ * Lessons of one persona's common pool (or program-wide ones for `personaId: null`), drafts awaiting review
+ * first, then newest. RLS shows unpublished lessons to program leads and the persona's own EIR only.
+ */
+export function listLessons(
+  ex: SqlExecutor,
+  args: { tenantId: string; personaId: string | null; statuses?: readonly PatternStatus[] },
+): Promise<PatternRecord[]> {
+  return queryRows(
+    ex,
+    `SELECT ${PATTERN_COLUMNS} FROM patterns
+     WHERE tenant_id = :tenantId AND persona_id IS NOT DISTINCT FROM :personaId
+       AND (:statuses IS NULL OR status = ANY (:statuses))
+     ORDER BY CASE status WHEN 'draft' THEN 0 WHEN 'in_review' THEN 1 WHEN 'published' THEN 2 ELSE 3 END,
+              updated_at DESC, id`,
+    {
+      tenantId: p.uuid(args.tenantId),
+      personaId: p.nullable.uuid(args.personaId),
+      statuses: p.nullable.textArray(args.statuses),
+    },
+    decodePattern,
+  );
+}
+
+export interface UpdatePatternInput {
+  readonly title?: string;
+  readonly context?: string;
+  readonly signal?: string;
+  readonly intervention?: string;
+  readonly outcome?: string;
+  readonly limits?: string;
+  readonly status?: PatternStatus;
+}
+
+/**
+ * Edits or moves a lesson through review (curators under RLS). `fromStatuses` makes the change optimistic.
+ * Null when not visible/updatable or not in one of `fromStatuses`.
+ */
+export function updatePattern(
+  ex: SqlExecutor,
+  id: string,
+  patch: UpdatePatternInput,
+  options: { readonly fromStatuses?: readonly PatternStatus[] } = {},
+): Promise<PatternRecord | null> {
+  const set = setClause([
+    ['title', patch.title === undefined ? undefined : p.text(patch.title)],
+    ['context', patch.context === undefined ? undefined : p.text(patch.context)],
+    ['signal', patch.signal === undefined ? undefined : p.text(patch.signal)],
+    ['intervention', patch.intervention === undefined ? undefined : p.text(patch.intervention)],
+    ['outcome', patch.outcome === undefined ? undefined : p.text(patch.outcome)],
+    ['limits', patch.limits === undefined ? undefined : p.text(patch.limits)],
+    ['status', patch.status === undefined ? undefined : p.text(patch.status)],
+  ]);
+  return queryFirst(
+    ex,
+    `UPDATE patterns SET ${set.sql === '' ? '' : `${set.sql}, `}updated_at = now()
+     WHERE id = :id AND (:fromStatuses IS NULL OR status = ANY (:fromStatuses))
+     RETURNING ${PATTERN_COLUMNS}`,
+    { ...set.params, id: p.uuid(id), fromStatuses: p.nullable.textArray(options.fromStatuses) },
+    decodePattern,
+  );
+}
 
 /** Published, unexpired patterns of the tenant (program leads also see drafts with `includeUnpublished`). */
 export function listPatterns(
@@ -203,23 +303,30 @@ export function listPatterns(
 
 export function createPattern(
   ex: SqlExecutor,
-  input: Omit<PatternRecord, 'id' | 'createdAt' | 'status' | 'expiresAt' | 'ownerId'> & {
+  input: Omit<
+    PatternRecord,
+    'id' | 'createdAt' | 'updatedAt' | 'status' | 'expiresAt' | 'ownerId' | 'personaId' | 'origin'
+  > & {
     readonly id?: string;
     readonly status?: PatternRecord['status'];
     readonly ownerId?: string | null;
     readonly expiresAt?: string | Date | null;
+    readonly personaId?: string | null;
+    readonly origin?: PatternRecord['origin'];
   },
 ): Promise<PatternRecord> {
   return queryOne(
     ex,
-    `INSERT INTO patterns (id, tenant_id, title, context, signal, intervention, outcome, limits, source_class, status,
-                           owner_id, expires_at)
-     VALUES (coalesce(:id, gen_random_uuid()), :tenantId, :title, :context, :signal, :intervention, :outcome, :limits,
-             :sourceClass, coalesce(:status, 'draft'), :ownerId, :expiresAt)
+    `INSERT INTO patterns (id, tenant_id, persona_id, origin, title, context, signal, intervention, outcome, limits,
+                           source_class, status, owner_id, expires_at)
+     VALUES (coalesce(:id, gen_random_uuid()), :tenantId, :personaId, coalesce(:origin, 'authored'), :title, :context,
+             :signal, :intervention, :outcome, :limits, :sourceClass, coalesce(:status, 'draft'), :ownerId, :expiresAt)
      RETURNING ${PATTERN_COLUMNS}`,
     {
       id: p.nullable.uuid(input.id),
       tenantId: p.uuid(input.tenantId),
+      personaId: p.nullable.uuid(input.personaId),
+      origin: p.nullable.text(input.origin),
       title: p.text(input.title),
       context: p.text(input.context),
       signal: p.text(input.signal),

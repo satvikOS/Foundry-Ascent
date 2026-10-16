@@ -1,4 +1,11 @@
-import { CoachMode, SessionPrivacy, SessionRecap, SessionStatus, type SessionView } from '@foundry/contracts';
+import {
+  CoachMode,
+  ConversationDigest,
+  SessionPrivacy,
+  SessionRecap,
+  SessionStatus,
+  type SessionView,
+} from '@foundry/contracts';
 import { type z } from 'zod';
 
 import { col, type RawRow } from '../columns.js';
@@ -9,6 +16,7 @@ import { EPHEMERAL_REDACTION_TEXT } from './turns.js';
 
 type CoachModeValue = z.infer<typeof CoachMode>;
 type SessionRecapValue = z.infer<typeof SessionRecap>;
+type ConversationDigestValue = z.infer<typeof ConversationDigest>;
 
 export interface SessionRecord {
   readonly id: string;
@@ -25,16 +33,38 @@ export interface SessionRecord {
   readonly recap: SessionRecapValue | null;
   readonly startedAt: string;
   readonly endedAt: string | null;
+  /** Conversation title (from the first message, renamed by people, refined by distillation). */
+  readonly title: string | null;
+  /** Latest turn or the start (maintained by the `turns_touch_session` trigger). */
+  readonly lastActivityAt: string;
+  /** Whether any turn was spoken during a call. */
+  readonly hasCalls: boolean;
+  /** AI-written digest (never for temporary chats). Content: never log it. */
+  readonly digest: ConversationDigestValue | null;
+  /** Set when a person deleted the digest: distillation never writes one again. */
+  readonly digestDeletedAt: string | null;
+  readonly distilledAt: string | null;
+  /** Number of turns the stored digest covers (0: never distilled). */
+  readonly distillVersion: number;
 }
 
-const COLUMNS =
-  's.id, s.tenant_id, s.venture_id, s.assignment_id, s.persona_release_id, s.started_by, s.mode, s.privacy, s.goal, s.status, s.policy_version, s.recap, s.started_at, s.ended_at';
+const COLUMNS = `s.id, s.tenant_id, s.venture_id, s.assignment_id, s.persona_release_id, s.started_by, s.mode, s.privacy,
+  s.goal, s.status, s.policy_version, s.recap, s.started_at, s.ended_at, s.title, s.last_activity_at, s.has_calls,
+  s.digest, s.digest_deleted_at, s.distilled_at, s.distill_version`;
 
 /** Parses a stored recap; recaps that no longer match the contract are treated as absent. */
 function decodeRecap(raw: unknown): SessionRecapValue | null {
   const value = col.json().nullable.decode(raw, 'recap');
   if (value === null) return null;
   const parsed = SessionRecap.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+/** Parses a stored digest; digests that no longer match the contract are treated as absent. */
+function decodeDigest(raw: unknown): ConversationDigestValue | null {
+  const value = col.json().nullable.decode(raw, 'digest');
+  if (value === null) return null;
+  const parsed = ConversationDigest.safeParse(value);
   return parsed.success ? parsed.data : null;
 }
 
@@ -54,6 +84,13 @@ function decodeSession(r: RawRow): SessionRecord {
     recap: decodeRecap(r.recap),
     startedAt: col.ts.decode(r.started_at, 'started_at'),
     endedAt: col.ts.nullable.decode(r.ended_at, 'ended_at'),
+    title: col.text.nullable.decode(r.title, 'title'),
+    lastActivityAt: col.ts.decode(r.last_activity_at, 'last_activity_at'),
+    hasCalls: col.bool.decode(r.has_calls, 'has_calls'),
+    digest: decodeDigest(r.digest),
+    digestDeletedAt: col.ts.nullable.decode(r.digest_deleted_at, 'digest_deleted_at'),
+    distilledAt: col.ts.nullable.decode(r.distilled_at, 'distilled_at'),
+    distillVersion: col.int.decode(r.distill_version, 'distill_version'),
   };
 }
 
@@ -79,15 +116,17 @@ export interface CreateSessionInput {
   readonly goal?: string | null;
   /** Version tag of the policy/validator bundle in force (e.g. `2026-10-05.1`). */
   readonly policyVersion: string;
+  /** Title chosen by the person; otherwise the first message titles the conversation. */
+  readonly title?: string | null;
 }
 
 export function createSession(ex: SqlExecutor, input: CreateSessionInput): Promise<SessionRecord> {
   return queryOne(
     ex,
     `INSERT INTO coaching_sessions AS s (id, tenant_id, venture_id, assignment_id, persona_release_id, started_by, mode,
-                                         privacy, goal, policy_version)
+                                         privacy, goal, policy_version, title)
      VALUES (coalesce(:id, gen_random_uuid()), :tenantId, :ventureId, :assignmentId, :releaseId, :startedBy, :mode,
-             :privacy, :goal, :policyVersion)
+             :privacy, :goal, :policyVersion, :title)
      RETURNING ${COLUMNS}`,
     {
       id: p.nullable.uuid(input.id),
@@ -100,20 +139,26 @@ export function createSession(ex: SqlExecutor, input: CreateSessionInput): Promi
       privacy: p.text(input.privacy),
       goal: p.nullable.text(input.goal),
       policyVersion: p.text(input.policyVersion),
+      title: p.nullable.text(input.title),
     },
     decodeSession,
     'createSession',
   );
 }
 
-/** Ends an active session and stores the recap (null for ephemeral sessions). Null when not active/visible. */
+/**
+ * Ends an active session and stores the recap (null for ephemeral sessions, which also lose their title).
+ * Null when not active/visible.
+ */
 export function endSession(
   ex: SqlExecutor,
   args: { sessionId: string; recap: SessionRecapValue | null },
 ): Promise<SessionRecord | null> {
   return queryFirst(
     ex,
-    `UPDATE coaching_sessions AS s SET status = 'ended', ended_at = now(), recap = :recap
+    `UPDATE coaching_sessions AS s
+     SET status = 'ended', ended_at = now(), recap = :recap,
+         title = CASE WHEN s.privacy = 'ephemeral' THEN NULL ELSE s.title END
      WHERE s.id = :id AND s.status = 'active'
      RETURNING ${COLUMNS}`,
     { id: p.uuid(args.sessionId), recap: p.nullable.json(args.recap) },
@@ -148,12 +193,76 @@ export function setSessionMode(
   );
 }
 
+/** Renames a conversation (founder/team under RLS). Null when not visible. */
+export function renameSession(
+  ex: SqlExecutor,
+  args: { sessionId: string; title: string },
+): Promise<SessionRecord | null> {
+  return queryFirst(
+    ex,
+    `UPDATE coaching_sessions AS s SET title = :title WHERE s.id = :id RETURNING ${COLUMNS}`,
+    { id: p.uuid(args.sessionId), title: p.text(args.title) },
+    decodeSession,
+  );
+}
+
+/**
+ * Stores the distilled digest of a standard conversation and the number of turns it covers. Never writes a
+ * digest a person deleted, nor one for a temporary or deleted conversation. Returns whether it was stored.
+ */
+export async function setSessionDigest(
+  ex: SqlExecutor,
+  args: { sessionId: string; digest: ConversationDigestValue; distillVersion: number; title?: string | null },
+): Promise<boolean> {
+  const result = await ex.query(
+    `UPDATE coaching_sessions AS s
+     SET digest = :digest, distilled_at = now(), distill_version = :version, title = coalesce(:title, s.title)
+     WHERE s.id = :id AND s.privacy = 'standard' AND s.deleted_at IS NULL AND s.digest_deleted_at IS NULL`,
+    {
+      id: p.uuid(args.sessionId),
+      digest: p.json(ConversationDigest.parse(args.digest)),
+      version: p.int(Math.max(0, Math.trunc(args.distillVersion))),
+      title: p.nullable.text(args.title),
+    },
+  );
+  return result.rowCount > 0;
+}
+
+/**
+ * Deletes a conversation's digest at a person's request; distillation never writes it again. Null when the
+ * conversation is not visible/updatable.
+ */
+export function deleteSessionDigest(ex: SqlExecutor, sessionId: string): Promise<SessionRecord | null> {
+  return queryFirst(
+    ex,
+    `UPDATE coaching_sessions AS s SET digest = NULL, digest_deleted_at = coalesce(s.digest_deleted_at, now())
+     WHERE s.id = :id RETURNING ${COLUMNS}`,
+    { id: p.uuid(sessionId) },
+    decodeSession,
+  );
+}
+
+/**
+ * Deletes a conversation (`app.soft_delete_session`): its content is erased like an ended temporary chat and
+ * it disappears from every list. Returns false when it is unknown or not visible; raises 42501 for readers
+ * who may not write the venture.
+ */
+export async function softDeleteSession(ex: SqlExecutor, sessionId: string): Promise<boolean> {
+  const row = await queryFirst(
+    ex,
+    'SELECT app.soft_delete_session(:id) AS deleted',
+    { id: p.uuid(sessionId) },
+    (r) => col.bool.decode(r.deleted, 'deleted'),
+  );
+  return row ?? false;
+}
+
 // ------------------------------------------------------------------------------------------------
 // Views
 // ------------------------------------------------------------------------------------------------
 
 const VIEW_SELECT = `
-  SELECT ${COLUMNS}, pe.name AS persona_name, r.version AS persona_version, r.disclosure_text,
+  SELECT ${COLUMNS}, pe.id AS persona_id, pe.name AS persona_name, r.version AS persona_version, r.disclosure_text,
          st.display_name AS started_by_name,
          (SELECT count(*) FROM turns t WHERE t.session_id = s.id) AS turn_count
   FROM coaching_sessions s
@@ -181,11 +290,11 @@ function decodeView(r: RawRow): SessionView {
     endedAt: s.endedAt,
     turnCount: col.int.decode(r.turn_count, 'turn_count'),
     recap: s.recap,
-    title: null,
-    personaId: null,
-    lastActivityAt: null,
-    hasCalls: false,
-    digest: null,
+    title: s.title,
+    personaId: col.uuid.decode(r.persona_id, 'persona_id'),
+    lastActivityAt: s.lastActivityAt,
+    hasCalls: s.hasCalls,
+    digest: s.privacy === 'standard' ? s.digest : null,
   };
 }
 
@@ -193,10 +302,23 @@ export function getSessionView(ex: SqlExecutor, id: string): Promise<SessionView
   return queryFirst(ex, `${VIEW_SELECT} WHERE s.id = :id`, { id: p.uuid(id) }, decodeView);
 }
 
-/** Session views per statement: each carries its recap (≈15 kB at most), so 20 stay far below 1 MB. */
+/**
+ * Session views per statement: each carries its recap (≈15 kB at most) and digest (≈5 kB at most), so 20 stay
+ * far below 1 MB.
+ */
 const SESSION_BATCH_SIZE = 20;
 
-/** Sessions of a venture, newest first (contract `SessionView`; ids first, then batches for the Data API). */
+function viewsByIds(ex: SqlExecutor, ids: readonly string[]): Promise<SessionView[]> {
+  return fetchByIdsInBatches(
+    ids,
+    SESSION_BATCH_SIZE,
+    (batch) =>
+      queryRows(ex, `${VIEW_SELECT} WHERE s.id = ANY (:ids)`, { ids: p.uuidArray(batch) }, decodeView),
+    (view) => view.id,
+  );
+}
+
+/** Sessions of a venture, latest activity first (contract `SessionView`; ids first, then batches for the Data API). */
 export async function listSessionViews(
   ex: SqlExecutor,
   args: { ventureId: string; limit?: number; status?: SessionRecord['status'] },
@@ -205,7 +327,7 @@ export async function listSessionViews(
     ex,
     `SELECT s.id FROM coaching_sessions s
      WHERE s.venture_id = :ventureId AND (:status IS NULL OR s.status = :status)
-     ORDER BY s.started_at DESC, s.id
+     ORDER BY s.last_activity_at DESC, s.id DESC
      LIMIT :limit`,
     {
       ventureId: p.uuid(args.ventureId),
@@ -214,12 +336,157 @@ export async function listSessionViews(
     },
     (r) => col.uuid.decode(r.id, 'id'),
   );
-  return fetchByIdsInBatches(
-    ids,
-    SESSION_BATCH_SIZE,
-    (batch) =>
-      queryRows(ex, `${VIEW_SELECT} WHERE s.id = ANY (:ids)`, { ids: p.uuidArray(batch) }, decodeView),
-    (view) => view.id,
+  return viewsByIds(ex, ids);
+}
+
+export interface SessionPageQuery {
+  /** The caller (must be the request principal). */
+  readonly principalId: string;
+  /** `mine`: started by the caller; `all`: every conversation of ventures the caller works on. */
+  readonly scope: 'mine' | 'all';
+  readonly ventureId?: string | null;
+  /** Opaque cursor from the previous page. */
+  readonly cursor?: string | null;
+  readonly limit?: number;
+}
+
+export interface SessionPage {
+  readonly items: SessionView[];
+  readonly nextCursor: string | null;
+}
+
+/** Exact keyset position: the latest activity in UTC with microseconds (JS dates keep milliseconds only). */
+const ACTIVITY_KEY_SQL = `to_char(s.last_activity_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US') || 'Z'`;
+const ACTIVITY_KEY = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/;
+const UUID_TEXT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Encodes a keyset position (latest activity with microseconds, id) as an opaque cursor. */
+export function encodeSessionCursor(activityKey: string, id: string): string {
+  return Buffer.from(`${activityKey}|${id}`, 'utf8').toString('base64url');
+}
+
+/** Decodes a cursor; null when it is malformed (callers then read the first page). */
+export function decodeSessionCursor(cursor: string): { activityKey: string; id: string } | null {
+  const [activityKey, id] = Buffer.from(cursor, 'base64url').toString('utf8').split('|');
+  if (activityKey === undefined || id === undefined) return null;
+  if (!ACTIVITY_KEY.test(activityKey) || !UUID_TEXT.test(id)) return null;
+  return { activityKey, id: id.toLowerCase() };
+}
+
+/**
+ * The caller's conversations across every venture they work on (founder/team), latest activity first, one
+ * keyset page at a time (sidebar recents). Deleted conversations are hidden by RLS.
+ */
+export async function listSessionPage(ex: SqlExecutor, q: SessionPageQuery): Promise<SessionPage> {
+  const limit = clampLimit(q.limit, 30, 100);
+  const cursor = q.cursor ? decodeSessionCursor(q.cursor) : null;
+  const rows = await queryRows(
+    ex,
+    `SELECT s.id, ${ACTIVITY_KEY_SQL} AS activity_key FROM coaching_sessions s
+     WHERE app.can_write_venture(s.venture_id)
+       AND (:mine = false OR s.started_by = :principal)
+       AND (:ventureId IS NULL OR s.venture_id = :ventureId)
+       AND (:cursorAt IS NULL OR (s.last_activity_at, s.id) < ((:cursorAt)::timestamptz, :cursorId))
+     ORDER BY s.last_activity_at DESC, s.id DESC
+     LIMIT :limit`,
+    {
+      mine: p.bool(q.scope === 'mine'),
+      principal: p.uuid(q.principalId),
+      ventureId: p.nullable.uuid(q.ventureId),
+      cursorAt: p.nullable.text(cursor?.activityKey),
+      cursorId: p.nullable.uuid(cursor?.id),
+      limit: p.int(limit + 1),
+    },
+    (r) => ({
+      id: col.uuid.decode(r.id, 'id'),
+      activityKey: col.text.decode(r.activity_key, 'activity_key'),
+    }),
+  );
+  const page = rows.slice(0, limit);
+  const last = page[page.length - 1];
+  return {
+    items: await viewsByIds(
+      ex,
+      page.map((r) => r.id),
+    ),
+    nextCursor: rows.length > limit && last ? encodeSessionCursor(last.activityKey, last.id) : null,
+  };
+}
+
+export interface RecentDigest {
+  readonly sessionId: string;
+  readonly title: string | null;
+  readonly lastActivityAt: string;
+  readonly digest: ConversationDigestValue;
+}
+
+/**
+ * The latest digests of a venture's conversations with one persona ("Previous conversations" in the
+ * prompt), newest first. Temporary and deleted conversations never have one.
+ */
+export async function listRecentDigests(
+  ex: SqlExecutor,
+  args: { ventureId: string; personaId: string; excludeSessionId?: string | null; limit?: number },
+): Promise<RecentDigest[]> {
+  const rows = await queryRows(
+    ex,
+    `SELECT s.id, s.title, s.last_activity_at, s.digest
+     FROM coaching_sessions s
+     JOIN persona_releases r ON r.id = s.persona_release_id
+     WHERE s.venture_id = :ventureId AND r.persona_id = :personaId AND s.digest IS NOT NULL
+       AND s.privacy = 'standard' AND (:except IS NULL OR s.id <> :except)
+     ORDER BY s.last_activity_at DESC, s.id DESC
+     LIMIT :limit`,
+    {
+      ventureId: p.uuid(args.ventureId),
+      personaId: p.uuid(args.personaId),
+      except: p.nullable.uuid(args.excludeSessionId),
+      limit: p.int(clampLimit(args.limit, 3, 20)),
+    },
+    (r) => ({
+      sessionId: col.uuid.decode(r.id, 'id'),
+      title: col.text.nullable.decode(r.title, 'title'),
+      lastActivityAt: col.ts.decode(r.last_activity_at, 'last_activity_at'),
+      digest: decodeDigest(r.digest),
+    }),
+  );
+  return rows.flatMap((r) => (r.digest === null ? [] : [{ ...r, digest: r.digest }]));
+}
+
+export interface DistillationCandidate {
+  readonly sessionId: string;
+  readonly tenantId: string;
+  readonly ventureId: string;
+  /** Turns the conversation has now (the digest's `distill_version` once written). */
+  readonly turnCount: number;
+}
+
+/**
+ * Standard conversations whose digest is missing or older than their turns, that ended or have been idle
+ * for `idleSeconds` (system: the distillation sweep). Never temporary, deleted or digest-deleted ones.
+ */
+export function listDistillationCandidates(
+  sx: SystemExecutor,
+  args: { idleSeconds: number; limit?: number },
+): Promise<DistillationCandidate[]> {
+  return queryRows(
+    sx,
+    `SELECT x.id, x.tenant_id, x.venture_id, x.turn_count FROM (
+       SELECT s.id, s.tenant_id, s.venture_id, s.distill_version, s.last_activity_at,
+              (SELECT count(*) FROM turns t WHERE t.session_id = s.id AND t.status = 'completed') AS turn_count
+       FROM coaching_sessions s
+       WHERE s.privacy = 'standard' AND s.deleted_at IS NULL AND s.digest_deleted_at IS NULL
+         AND (s.status = 'ended' OR s.last_activity_at < now() - make_interval(secs => :idle))) x
+     WHERE x.turn_count > x.distill_version
+     ORDER BY x.last_activity_at
+     LIMIT :limit`,
+    { idle: p.num(args.idleSeconds), limit: p.int(clampLimit(args.limit, 25, 200)) },
+    (r) => ({
+      sessionId: col.uuid.decode(r.id, 'id'),
+      tenantId: col.uuid.decode(r.tenant_id, 'tenant_id'),
+      ventureId: col.uuid.decode(r.venture_id, 'venture_id'),
+      turnCount: col.int.decode(r.turn_count, 'turn_count'),
+    }),
   );
 }
 
@@ -241,12 +508,16 @@ export async function expireStaleEphemeralSessions(
   args: { idleSeconds: number },
 ): Promise<EphemeralCleanupResult> {
   const ended = await sx.query(
-    `UPDATE coaching_sessions s SET status = 'ended', ended_at = now(), recap = NULL
+    `UPDATE coaching_sessions s SET status = 'ended', ended_at = now(), recap = NULL, title = NULL
      WHERE s.privacy = 'ephemeral' AND s.status IN ('active', 'suspended')
        AND s.started_at < now() - make_interval(secs => :idle)
        AND NOT EXISTS (SELECT 1 FROM turns t
                        WHERE t.session_id = s.id AND t.created_at >= now() - make_interval(secs => :idle))`,
     { idle: p.num(args.idleSeconds) },
+  );
+  await sx.query(
+    `UPDATE coaching_sessions s SET title = NULL
+     WHERE s.privacy = 'ephemeral' AND s.status = 'ended' AND s.title IS NOT NULL`,
   );
   const redacted = await sx.query(
     `UPDATE turns t SET founder_text = :redacted, response = NULL

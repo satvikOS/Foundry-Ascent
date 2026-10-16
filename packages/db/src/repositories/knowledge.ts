@@ -1,11 +1,41 @@
-import { camelRow, col, type CamelRow } from '../columns.js';
+import {
+  DocumentContentType,
+  KnowledgeSourceKind,
+  type PersonaKnowledgeSourceView,
+} from '@foundry/contracts';
+
+import { camelRow, col, type CamelRow, type RawRow } from '../columns.js';
 import { SqlUsageError } from '../errors.js';
 import { type SqlExecutor, type SystemExecutor } from '../executor.js';
 import { encodeVectorLiteral, p } from '../params.js';
-import { queryFirst, queryNumber, queryOne, queryRows } from './common.js';
+import {
+  fetchByIdsInBatches,
+  principalFrom,
+  principalSelect,
+  queryFirst,
+  queryNumber,
+  queryOne,
+  queryRows,
+  setClause,
+} from './common.js';
 
 export type KnowledgeScope = 'public' | 'program' | 'persona' | 'venture';
 export type KnowledgeClassification = 'synthetic' | 'public' | 'program_internal' | 'venture_private';
+export type KnowledgeKind = (typeof KnowledgeSourceKind.options)[number];
+
+/**
+ * Source lifecycle. Authored notes and ingested venture documents are `active` (or `stale`, `withdrawn`);
+ * uploads to shared corpora go `pending_upload` → `processing` → `active` | `failed`.
+ */
+export const KNOWLEDGE_SOURCE_STATUSES = [
+  'pending_upload',
+  'processing',
+  'active',
+  'stale',
+  'failed',
+  'withdrawn',
+] as const;
+export type KnowledgeSourceStatusValue = (typeof KNOWLEDGE_SOURCE_STATUSES)[number];
 
 /** Embedding dimensions of `knowledge_chunks.embedding` / `memory_objects.embedding` (Titan V2). */
 export const EMBEDDING_DIMENSIONS = 1024;
@@ -22,15 +52,26 @@ const sourceShape = {
   classification: col.enum(['synthetic', 'public', 'program_internal', 'venture_private'] as const),
   checksum: col.text.nullable,
   license: col.text.nullable,
-  status: col.enum(['active', 'stale', 'withdrawn'] as const),
+  status: col.enum(KNOWLEDGE_SOURCE_STATUSES),
   freshness_at: col.ts,
   created_by: col.uuid.nullable,
   created_at: col.ts,
+  kind: col.enum(KnowledgeSourceKind.options),
+  summary: col.text.nullable,
+  body: col.text.nullable,
+  updated_at: col.ts,
+  failure_reason: col.text.nullable,
+  filename: col.text.nullable,
+  content_type: col.enum(DocumentContentType.options).nullable,
+  size_bytes: col.int.nullable,
+  s3_key: col.text.nullable,
 };
 const sourceCodec = camelRow(sourceShape);
+/** A knowledge source. `body` is authored content: never log it. */
 export type KnowledgeSourceRecord = CamelRow<typeof sourceShape>;
-const SOURCE_COLUMNS =
-  'id, tenant_id, scope, venture_id, persona_id, title, uri, owner, classification, checksum, license, status, freshness_at, created_by, created_at';
+const SOURCE_COLUMNS = `id, tenant_id, scope, venture_id, persona_id, title, uri, owner, classification, checksum, license,
+  status, freshness_at, created_by, created_at, kind, summary, body, updated_at, failure_reason, filename, content_type,
+  size_bytes, s3_key`;
 
 export interface CreateKnowledgeSourceInput {
   readonly id?: string;
@@ -48,6 +89,20 @@ export interface CreateKnowledgeSourceInput {
   readonly license?: string | null;
   readonly freshnessAt?: string | Date | null;
   readonly createdBy?: string | null;
+  /** Default `document`; notes, cases, FAQs and transcripts belong to persona or program corpora. */
+  readonly kind?: KnowledgeKind;
+  readonly summary?: string | null;
+  /** Authored text (notes, cases, FAQs, transcripts). */
+  readonly body?: string | null;
+  /** Default `active`; shared-corpus uploads start `pending_upload`. */
+  readonly status?: KnowledgeSourceStatusValue;
+  /** Upload of a shared-corpus document (all four together). */
+  readonly upload?: {
+    readonly s3Key: string;
+    readonly filename: string;
+    readonly contentType: (typeof DocumentContentType.options)[number];
+    readonly sizeBytes: number;
+  } | null;
 }
 
 export function createKnowledgeSource(
@@ -57,9 +112,12 @@ export function createKnowledgeSource(
   return queryOne(
     ex,
     `INSERT INTO knowledge_sources (id, tenant_id, scope, venture_id, persona_id, title, uri, owner, classification,
-                                    checksum, license, freshness_at, created_by)
+                                    checksum, license, freshness_at, created_by, kind, summary, body, status, s3_key,
+                                    filename, content_type, size_bytes)
      VALUES (coalesce(:id, gen_random_uuid()), :tenantId, :scope, :ventureId, :personaId, :title, :uri, :owner,
-             coalesce(:classification, 'synthetic'), :checksum, :license, coalesce(:freshnessAt, now()), :createdBy)
+             coalesce(:classification, 'synthetic'), :checksum, :license, coalesce(:freshnessAt, now()), :createdBy,
+             coalesce(:kind, 'document'), :summary, :body, coalesce(:status, 'active'), :s3Key, :filename,
+             :contentType, :sizeBytes)
      RETURNING ${SOURCE_COLUMNS}`,
     {
       id: p.nullable.uuid(input.id),
@@ -75,6 +133,14 @@ export function createKnowledgeSource(
       license: p.nullable.text(input.license),
       freshnessAt: p.nullable.ts(input.freshnessAt),
       createdBy: p.nullable.uuid(input.createdBy),
+      kind: p.nullable.text(input.kind),
+      summary: p.nullable.text(input.summary),
+      body: p.nullable.text(input.body),
+      status: p.nullable.text(input.status),
+      s3Key: p.nullable.text(input.upload?.s3Key),
+      filename: p.nullable.text(input.upload?.filename),
+      contentType: p.nullable.text(input.upload?.contentType),
+      sizeBytes: p.nullable.int(input.upload?.sizeBytes),
     },
     (r) => sourceCodec.decode(r),
     'createKnowledgeSource',
@@ -112,15 +178,147 @@ export function listKnowledgeSources(
   );
 }
 
+/**
+ * Moves a source through its lifecycle. `failureReason` is stored for `failed` and cleared otherwise;
+ * `fromStatuses` makes the change optimistic (no row matched → false).
+ */
 export async function setKnowledgeSourceStatus(
   ex: SqlExecutor,
-  args: { sourceId: string; status: KnowledgeSourceRecord['status']; freshnessAt?: string | Date | null },
+  args: {
+    sourceId: string;
+    status: KnowledgeSourceStatusValue;
+    freshnessAt?: string | Date | null;
+    failureReason?: string | null;
+    fromStatuses?: readonly KnowledgeSourceStatusValue[];
+    checksum?: string | null;
+  },
 ): Promise<boolean> {
   const result = await ex.query(
-    `UPDATE knowledge_sources SET status = :status, freshness_at = coalesce(:freshnessAt, freshness_at) WHERE id = :id`,
-    { id: p.uuid(args.sourceId), status: p.text(args.status), freshnessAt: p.nullable.ts(args.freshnessAt) },
+    `UPDATE knowledge_sources
+     SET status = :status, freshness_at = coalesce(:freshnessAt, freshness_at), updated_at = now(),
+         failure_reason = CASE WHEN :status = 'failed' THEN :reason ELSE NULL END,
+         checksum = coalesce(:checksum, checksum)
+     WHERE id = :id AND (:fromStatuses IS NULL OR status = ANY (:fromStatuses))`,
+    {
+      id: p.uuid(args.sourceId),
+      status: p.text(args.status),
+      freshnessAt: p.nullable.ts(args.freshnessAt),
+      reason: p.nullable.text(args.failureReason),
+      fromStatuses: p.nullable.textArray(args.fromStatuses),
+      checksum: p.nullable.text(args.checksum),
+    },
   );
   return result.rowCount > 0;
+}
+
+export interface UpdateKnowledgeSourceInput {
+  readonly title?: string;
+  readonly summary?: string | null;
+  readonly body?: string | null;
+  readonly status?: KnowledgeSourceStatusValue;
+}
+
+/** Edits a source (curators under RLS); `freshness_at` moves when the text changes. Null when not visible. */
+export function updateKnowledgeSource(
+  ex: SqlExecutor,
+  id: string,
+  patch: UpdateKnowledgeSourceInput,
+): Promise<KnowledgeSourceRecord | null> {
+  const set = setClause([
+    ['title', patch.title === undefined ? undefined : p.text(patch.title)],
+    ['summary', patch.summary === undefined ? undefined : p.nullable.text(patch.summary)],
+    ['body', patch.body === undefined ? undefined : p.nullable.text(patch.body)],
+    ['status', patch.status === undefined ? undefined : p.text(patch.status)],
+  ]);
+  const assignments = [set.sql, 'updated_at = now()'];
+  if (patch.body !== undefined || patch.title !== undefined) assignments.push('freshness_at = now()');
+  return queryFirst(
+    ex,
+    `UPDATE knowledge_sources SET ${assignments.filter((a) => a !== '').join(', ')}
+     WHERE id = :id RETURNING ${SOURCE_COLUMNS}`,
+    { ...set.params, id: p.uuid(id) },
+    (r) => sourceCodec.decode(r),
+  );
+}
+
+// ------------------------------------------------------------------------------------------------
+// Persona knowledge library (contract views)
+// ------------------------------------------------------------------------------------------------
+
+const LIBRARY_SELECT = `
+  SELECT s.id, s.persona_id, s.kind, s.title, s.summary, s.body, s.status, s.failure_reason, s.created_at,
+         s.updated_at, s.created_by, ${principalSelect('cb', 'cb')},
+         (SELECT count(*) FROM knowledge_chunks c WHERE c.source_id = s.id) AS chunk_count
+  FROM knowledge_sources s
+  LEFT JOIN principals cb ON cb.id = s.created_by`;
+
+function decodeLibraryView(r: RawRow): PersonaKnowledgeSourceView {
+  const status = col.enum(KNOWLEDGE_SOURCE_STATUSES).decode(r.status, 'status');
+  return {
+    id: col.uuid.decode(r.id, 'id'),
+    personaId: col.uuid.decode(r.persona_id, 'persona_id'),
+    kind: col.enum(KnowledgeSourceKind.options).decode(r.kind, 'kind'),
+    title: col.text.decode(r.title, 'title'),
+    summary: col.text.nullable.decode(r.summary, 'summary'),
+    body: col.text.nullable.decode(r.body, 'body'),
+    // An upload still waiting for its object is reported as processing.
+    status: status === 'pending_upload' ? 'processing' : status,
+    failureReason: col.text.nullable.decode(r.failure_reason, 'failure_reason'),
+    chunkCount: col.int.decode(r.chunk_count, 'chunk_count'),
+    createdBy: principalFrom(r, 'cb', col.uuid.nullable.decode(r.created_by, 'created_by')),
+    createdAt: col.ts.decode(r.created_at, 'created_at'),
+    updatedAt: col.ts.decode(r.updated_at, 'updated_at'),
+  };
+}
+
+/**
+ * Library rows per statement: an authored note holds up to 50 000 characters, so five per statement keep a
+ * result far below the RDS Data API's 1 MB limit.
+ */
+const LIBRARY_BATCH_SIZE = 5;
+
+/**
+ * A persona's knowledge library, most recently changed first: every source except uploads that never
+ * completed (and withdrawn ones unless asked).
+ */
+export async function listPersonaLibrary(
+  ex: SqlExecutor,
+  args: { personaId: string; includeWithdrawn?: boolean },
+): Promise<PersonaKnowledgeSourceView[]> {
+  const ids = await queryRows(
+    ex,
+    `SELECT s.id FROM knowledge_sources s
+     WHERE s.scope = 'persona' AND s.persona_id = :personaId AND s.status <> 'pending_upload'
+       AND (:withdrawn OR s.status <> 'withdrawn')
+     ORDER BY s.updated_at DESC, s.id`,
+    { personaId: p.uuid(args.personaId), withdrawn: p.bool(args.includeWithdrawn ?? false) },
+    (r) => col.uuid.decode(r.id, 'id'),
+  );
+  return fetchByIdsInBatches(
+    ids,
+    LIBRARY_BATCH_SIZE,
+    (batch) =>
+      queryRows(
+        ex,
+        `${LIBRARY_SELECT} WHERE s.id = ANY (:ids)`,
+        { ids: p.uuidArray(batch) },
+        decodeLibraryView,
+      ),
+    (view) => view.id,
+  );
+}
+
+/** One library source as the contract view (null when not visible or not a persona source). */
+export function getPersonaLibrarySource(
+  ex: SqlExecutor,
+  sourceId: string,
+): Promise<PersonaKnowledgeSourceView | null> {
+  return queryFirst(
+    ex,
+    `${LIBRARY_SELECT} WHERE s.id = :id AND s.scope = 'persona'`,
+    { id: p.uuid(sourceId) },
+    decodeLibraryView,
+  );
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -216,9 +414,13 @@ export function countChunks(ex: SqlExecutor, sourceId: string): Promise<number> 
   });
 }
 
-/** Removes every chunk of a source (re-ingestion). System only: app_rls cannot delete chunks. */
-export async function deleteChunksForSource(sx: SystemExecutor, sourceId: string): Promise<number> {
-  const result = await sx.query('DELETE FROM knowledge_chunks WHERE source_id = :id', {
+/**
+ * Removes every chunk of a source (re-ingestion, an edited note, a withdrawn source). Under RLS only a
+ * persona's curators (persona corpora) and program leads (program corpora) may delete; venture chunks are
+ * removed by `app.soft_delete_document` alone.
+ */
+export async function deleteChunksForSource(ex: SqlExecutor, sourceId: string): Promise<number> {
+  const result = await ex.query('DELETE FROM knowledge_chunks WHERE source_id = :id', {
     id: p.uuid(sourceId),
   });
   return result.rowCount;

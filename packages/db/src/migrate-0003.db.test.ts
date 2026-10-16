@@ -8,13 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type Db } from './db.js';
 import { MIGRATIONS, migrate } from './migrate.js';
 import { p } from './params.js';
-import {
-  assignmentsRepo,
-  escalationsRepo,
-  memoryRepo,
-  sessionsRepo,
-  turnsRepo,
-} from './repositories/index.js';
+import { assignmentsRepo, escalationsRepo, memoryRepo, turnsRepo } from './repositories/index.js';
 import { seedDatabase, type SeedResult } from './seed/seed.js';
 import { splitStatements } from './sql-lexer.js';
 import { createTestDatabase, type TestDatabase } from './testing/test-database.js';
@@ -71,38 +65,39 @@ async function writeLegacyData(db: Db): Promise<Legacy> {
       limit: 1,
     });
     if (!team || team.visibility === 'founder_private') throw new Error('no shared memory');
-    const session = async (privacy: 'standard' | 'ephemeral') =>
-      sessionsRepo.createSession(sx, {
-        tenantId: seed.tenantId,
-        ventureId: venture.id,
-        assignmentId: resolved.assignment.id,
-        personaReleaseId: resolved.release?.id ?? '',
-        startedBy: maya,
-        mode: 'coach',
-        privacy,
-        goal: null,
-        policyVersion: 'legacy',
-      });
+    // Sessions and turns as the code of that time wrote them (today's repositories write later columns).
+    const session = async (privacy: 'standard' | 'ephemeral') => {
+      const created = await sx.query(
+        `INSERT INTO coaching_sessions (tenant_id, venture_id, assignment_id, persona_release_id, started_by, mode,
+                                        privacy, policy_version)
+         VALUES (:tenant, :venture, :assignment, :release, :maya, 'coach', :privacy, 'legacy') RETURNING id`,
+        {
+          tenant: p.uuid(seed.tenantId),
+          venture: p.uuid(venture.id),
+          assignment: p.uuid(resolved.assignment.id),
+          release: p.uuid(resolved.release?.id ?? ''),
+          maya: p.uuid(maya),
+          privacy: p.text(privacy),
+        },
+      );
+      return { id: String(created.rows[0]?.id) };
+    };
     const turn = async (sessionId: string) => {
-      const created = await turnsRepo.createTurn(sx, {
-        tenantId: seed.tenantId,
-        ventureId: venture.id,
-        sessionId,
-        authorId: maya,
-        mode: 'coach',
-        founderText: 'How long is my runway?',
-      });
-      await turnsRepo.finishTurn(sx, {
-        turnId: created.id,
-        status: 'completed',
-        modelId: 'mock',
-        inputTokens: 1,
-        outputTokens: 1,
-        costUsd: 0,
-        latencyMs: 1,
-        sampledForReview: true,
-      });
-      return created.id;
+      const created = await sx.query(
+        `INSERT INTO turns (tenant_id, venture_id, session_id, ordinal, author_id, mode, founder_text, status,
+                            model_id, input_tokens, output_tokens, cost_usd, latency_ms, sampled_for_review,
+                            completed_at)
+         VALUES (:tenant, :venture, :session, 1, :maya, 'coach', 'How long is my runway?', 'completed', 'mock', 1, 1,
+                 0, 1, true, now())
+         RETURNING id`,
+        {
+          tenant: p.uuid(seed.tenantId),
+          venture: p.uuid(venture.id),
+          session: p.uuid(sessionId),
+          maya: p.uuid(maya),
+        },
+      );
+      return String(created.rows[0]?.id);
     };
     const standard = await session('standard');
     const ephemeral = await session('ephemeral');
@@ -220,13 +215,15 @@ describe('migration 0003_security_hardening', () => {
       '0001_init',
       '0002_rls_helpers',
       '0003_security_hardening',
+      '0004_veir_knowledge',
     ]);
     expect(HARDENING).toBeDefined();
   });
 
   it('applies cleanly on top of 0001 and 0002 with existing data, as the non-superuser owner', async () => {
     const report = await migrate(t.db);
-    expect(report.applied).toEqual(['0003_security_hardening']);
+    // 0004 follows in the same run (its own suite covers it).
+    expect(report.applied).toEqual(['0003_security_hardening', '0004_veir_knowledge']);
     expect(report.alreadyApplied).toEqual(['0001_init', '0002_rls_helpers']);
     const role = await t.db.system((sx) =>
       sx.query('SELECT rolsuper FROM pg_roles WHERE rolname = current_user'),
@@ -312,14 +309,24 @@ describe('migration 0003_security_hardening', () => {
     const before = await schemaFingerprint(t.db);
     const statements = splitStatements(HARDENING.sql);
     expect(statements.length).toBeGreaterThan(40);
+    // Later migrations replace some of 0003's policies and functions, so they are re-run after it (as a retry
+    // of the whole sequence would).
+    const later = MIGRATIONS.filter((m) => m.version > HARDENING.version).flatMap((m) =>
+      splitStatements(m.sql),
+    );
     // One statement per call, as the Data API runs them.
     await t.db.system(async (sx) => {
-      for (const statement of statements) await sx.query(statement);
+      for (const statement of [...statements, ...later]) await sx.query(statement);
     });
     expect(await schemaFingerprint(t.db)).toBe(before);
     const again = await migrate(t.db);
     expect(again.applied).toEqual([]);
-    expect(again.alreadyApplied).toEqual(['0001_init', '0002_rls_helpers', '0003_security_hardening']);
+    expect(again.alreadyApplied).toEqual([
+      '0001_init',
+      '0002_rls_helpers',
+      '0003_security_hardening',
+      '0004_veir_knowledge',
+    ]);
     const rows = await t.db.system((sx) =>
       sx.query('SELECT version, checksum FROM schema_migrations ORDER BY version'),
     );

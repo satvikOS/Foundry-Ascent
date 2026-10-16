@@ -22,13 +22,19 @@ export const SETTING_KEYS = {
   portfolioMinGroupSize: 'portfolio_min_group_size',
   dailyUploadDocumentsPerPrincipal: 'daily_upload_documents_per_principal',
   dailyUploadBytesPerPrincipal: 'daily_upload_bytes_per_principal',
+  maxCallMinutes: 'max_call_minutes',
+  dailyCallMinutesPerPrincipal: 'daily_call_minutes_per_principal',
 } as const satisfies Record<keyof PlatformSettingsValue, string>;
 
+/** Settings with every optional (additive) field present: what {@link getPlatformSettings} returns. */
+export type ResolvedPlatformSettings = Required<PlatformSettingsValue>;
+
 /**
- * Values seeded by migrations 0001 and 0003; used when a key is missing. Fail closed for the kill switch;
- * the upload quota defaults are 20 documents and 50 MB per person per UTC day.
+ * Values seeded by migrations 0001, 0003 and 0004; used when a key is missing. Fail closed for the kill
+ * switch; the upload quota defaults are 20 documents and 50 MB per person per UTC day; calls last at most 30
+ * minutes and one person may talk 60 minutes per UTC day.
  */
-export const DEFAULT_SETTINGS: PlatformSettingsValue = {
+export const DEFAULT_SETTINGS: ResolvedPlatformSettings = {
   aiEnabled: false,
   dailyUsdCapGlobal: 2,
   dailyUsdCapPerPrincipal: 0.5,
@@ -37,6 +43,8 @@ export const DEFAULT_SETTINGS: PlatformSettingsValue = {
   portfolioMinGroupSize: 3,
   dailyUploadDocumentsPerPrincipal: 20,
   dailyUploadBytesPerPrincipal: 50 * 1024 * 1024,
+  maxCallMinutes: 30,
+  dailyCallMinutesPerPrincipal: 60,
 };
 
 const Coerced = z.object({
@@ -48,10 +56,12 @@ const Coerced = z.object({
   portfolioMinGroupSize: z.coerce.number().int(),
   dailyUploadDocumentsPerPrincipal: z.coerce.number().int(),
   dailyUploadBytesPerPrincipal: z.coerce.number().int(),
+  maxCallMinutes: z.coerce.number().int(),
+  dailyCallMinutesPerPrincipal: z.coerce.number().int(),
 });
 
 /** Current settings as the contract view (missing or malformed keys fall back to {@link DEFAULT_SETTINGS}). */
-export async function getPlatformSettings(ex: SqlExecutor): Promise<PlatformSettingsValue> {
+export async function getPlatformSettings(ex: SqlExecutor): Promise<ResolvedPlatformSettings> {
   const rows = await queryRows(ex, 'SELECT key, value FROM platform_settings', {}, (r) => ({
     key: col.text.decode(r.key, 'key'),
     value: col.json().decode(r.value, 'value'),
@@ -63,7 +73,7 @@ export async function getPlatformSettings(ex: SqlExecutor): Promise<PlatformSett
     const parsed = fieldSchema.safeParse(byKey.get(key));
     out[field] = parsed.success ? parsed.data : DEFAULT_SETTINGS[field as keyof PlatformSettingsValue];
   }
-  return PlatformSettingsView.parse(out);
+  return PlatformSettingsView.required().parse(out);
 }
 
 /**
@@ -74,7 +84,7 @@ export async function updatePlatformSettings(
   sx: SystemExecutor,
   patch: Partial<PlatformSettingsValue>,
   updatedBy: string | null,
-): Promise<PlatformSettingsValue> {
+): Promise<ResolvedPlatformSettings> {
   const valid = PlatformSettingsView.partial().parse(patch);
   const rows: { key: string; value: unknown }[] = [];
   for (const [field, value] of Object.entries(valid) as [string, unknown][]) {

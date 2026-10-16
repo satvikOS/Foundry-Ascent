@@ -2,6 +2,7 @@ import {
   CoachMode,
   CoachResponse,
   EvidenceKind,
+  TurnChannel,
   TurnStatus,
   ValidatorResults,
   type EvidenceItem,
@@ -29,6 +30,7 @@ type CoachResponseValue = z.infer<typeof CoachResponse>;
 type ValidatorResultsValue = z.infer<typeof ValidatorResults>;
 type EvidenceItemValue = z.infer<typeof EvidenceItem>;
 type TurnStatusValue = z.infer<typeof TurnStatus>;
+type TurnChannelValue = z.infer<typeof TurnChannel>;
 
 export interface TurnRecord {
   readonly id: string;
@@ -52,13 +54,15 @@ export interface TurnRecord {
   readonly costUsd: number;
   readonly latencyMs: number | null;
   readonly sampledForReview: boolean;
+  /** Typed in chat or spoken during a call. */
+  readonly channel: TurnChannelValue;
   readonly createdAt: string;
   readonly completedAt: string | null;
 }
 
 const COLUMNS = `t.id, t.tenant_id, t.venture_id, t.session_id, t.ordinal, t.author_id, t.mode, t.founder_text, t.response,
   t.status, t.risk_label, t.risk_categories, t.validator_results, t.model_id, t.fallback_used, t.input_tokens,
-  t.output_tokens, t.cost_usd, t.latency_ms, t.sampled_for_review, t.created_at, t.completed_at`;
+  t.output_tokens, t.cost_usd, t.latency_ms, t.sampled_for_review, t.channel, t.created_at, t.completed_at`;
 
 function safeJson<T>(schema: z.ZodType<T>, raw: unknown, column: string): T | null {
   const value = col.json().nullable.decode(raw, column);
@@ -90,6 +94,7 @@ function decodeTurn(r: RawRow): TurnRecord {
     costUsd: col.num.decode(r.cost_usd, 'cost_usd'),
     latencyMs: col.int.nullable.decode(r.latency_ms, 'latency_ms'),
     sampledForReview: col.bool.decode(r.sampled_for_review, 'sampled_for_review'),
+    channel: col.enum(TurnChannel.options).decode(r.channel, 'channel'),
     createdAt: col.ts.decode(r.created_at, 'created_at'),
     completedAt: col.ts.nullable.decode(r.completed_at, 'completed_at'),
   };
@@ -233,20 +238,23 @@ export interface CreateTurnInput {
   readonly founderText: string;
   readonly riskLabel?: string | null;
   readonly riskCategories?: readonly string[];
+  /** `voice` for a message spoken during a call (default `text`). */
+  readonly channel?: TurnChannelValue;
 }
 
 /**
  * Creates a `pending` turn with the next ordinal of the session. Concurrent creates in the same session
- * fail with a unique violation (session_id, ordinal); callers may retry.
+ * fail with a unique violation (session_id, ordinal); callers may retry. The `turns_touch_session` trigger
+ * moves the conversation's last activity, marks spoken conversations and titles new ones.
  */
 export function createTurn(ex: SqlExecutor, input: CreateTurnInput): Promise<TurnRecord> {
   return queryOne(
     ex,
     `INSERT INTO turns AS t (id, tenant_id, venture_id, session_id, ordinal, author_id, mode, founder_text, risk_label,
-                             risk_categories)
+                             risk_categories, channel)
      SELECT coalesce(:id, gen_random_uuid()), :tenantId, :ventureId, :sessionId,
             coalesce((SELECT max(x.ordinal) FROM turns x WHERE x.session_id = :sessionId), 0) + 1,
-            :authorId, :mode, :text, :riskLabel, :riskCategories
+            :authorId, :mode, :text, :riskLabel, :riskCategories, coalesce(:channel, 'text')
      RETURNING ${COLUMNS}`,
     {
       id: p.nullable.uuid(input.id),
@@ -258,6 +266,7 @@ export function createTurn(ex: SqlExecutor, input: CreateTurnInput): Promise<Tur
       text: p.text(input.founderText),
       riskLabel: p.nullable.text(input.riskLabel),
       riskCategories: p.textArray(input.riskCategories ?? []),
+      channel: p.nullable.text(input.channel),
     },
     decodeTurn,
     'createTurn',
@@ -338,6 +347,61 @@ export async function redactSessionTurns(ex: SqlExecutor, sessionId: string): Pr
     { sessionId: p.uuid(sessionId), redacted: p.text(EPHEMERAL_REDACTION_TEXT) },
   );
   return result.rowCount;
+}
+
+// ------------------------------------------------------------------------------------------------
+// Calls: what may be spoken, and how long people talked
+// ------------------------------------------------------------------------------------------------
+
+export interface SpeechSource {
+  readonly turnId: string;
+  readonly sessionId: string;
+  readonly ventureId: string;
+  readonly status: TurnStatusValue;
+  /** The validated short spoken form of the answer (voice turns), when the response has one. */
+  readonly spoken: string | null;
+  /** The validated answer. */
+  readonly answer: string | null;
+}
+
+/**
+ * The validated text a turn may speak: its stored response's `spoken` form and `answer`, read straight from
+ * the stored JSON so the check does not depend on which response fields this build's contract knows.
+ * Content: never log it. Null when the turn is not visible.
+ */
+export function getSpeechSource(ex: SqlExecutor, turnId: string): Promise<SpeechSource | null> {
+  return queryFirst(
+    ex,
+    `SELECT t.id, t.session_id, t.venture_id, t.status,
+            CASE WHEN jsonb_typeof(t.response -> 'spoken') = 'string' THEN t.response ->> 'spoken' END AS spoken,
+            CASE WHEN jsonb_typeof(t.response -> 'answer') = 'string' THEN t.response ->> 'answer' END AS answer
+     FROM turns t WHERE t.id = :id`,
+    { id: p.uuid(turnId) },
+    (r) => ({
+      turnId: col.uuid.decode(r.id, 'id'),
+      sessionId: col.uuid.decode(r.session_id, 'session_id'),
+      ventureId: col.uuid.decode(r.venture_id, 'venture_id'),
+      status: col.enum(TurnStatus.options).decode(r.status, 'status'),
+      spoken: col.text.nullable.decode(r.spoken, 'spoken'),
+      answer: col.text.nullable.decode(r.answer, 'answer'),
+    }),
+  );
+}
+
+export interface VoiceTurnTime {
+  readonly sessionId: string;
+  readonly at: string;
+}
+
+/**
+ * When each turn the request principal spoke today (UTC) was sent, by conversation and time
+ * (`app.voice_turns_today()`): call minutes are computed from these. No content.
+ */
+export function listVoiceTurnsToday(ex: SqlExecutor): Promise<VoiceTurnTime[]> {
+  return queryRows(ex, 'SELECT session_id, at FROM app.voice_turns_today()', {}, (r) => ({
+    sessionId: col.uuid.decode(r.session_id, 'session_id'),
+    at: col.ts.decode(r.at, 'at'),
+  }));
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -491,7 +555,7 @@ export function toTurnView(
     createdAt: turn.createdAt,
     completedAt: turn.completedAt,
     blocked: turn.status === 'blocked' ? blocked : null,
-    channel: 'text',
+    channel: turn.channel,
   };
 }
 

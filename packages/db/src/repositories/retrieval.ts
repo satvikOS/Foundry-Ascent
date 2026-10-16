@@ -268,7 +268,7 @@ export function searchSharedChunks(ex: SqlExecutor, q: SharedChunkQuery): Promis
        JOIN knowledge_chunks c ON c.id = cand.id
        JOIN knowledge_sources s ON s.id = c.source_id
        CROSS JOIN q
-       WHERE ${scopeFilter} AND s.status <> 'withdrawn'
+       WHERE ${scopeFilter} AND s.status IN ('active', 'stale')
          AND (:classifications IS NULL OR s.classification = ANY (:classifications))
      ) x
      WHERE ${SCORE_SQL} >= :minScore
@@ -325,8 +325,19 @@ export function searchResources(ex: SqlExecutor, q: ResourceQuery): Promise<Retr
   );
 }
 
-/** Published, unexpired patterns (lexical over title/context/signal/intervention). */
-export function searchPatterns(ex: SqlExecutor, q: Omit<BaseQuery, 'embedding'>): Promise<RetrievedItem[]> {
+export interface PatternQuery extends Omit<BaseQuery, 'embedding'> {
+  /**
+   * The assigned persona: its published lessons are candidates alongside program-wide ones. Absent or null:
+   * program-wide lessons only (another persona's lessons are never retrieved).
+   */
+  readonly personaId?: string | null;
+}
+
+/**
+ * Published, unexpired lessons (lexical over title/context/signal/intervention): program-wide ones and those
+ * of the assigned persona.
+ */
+export function searchPatterns(ex: SqlExecutor, q: PatternQuery): Promise<RetrievedItem[]> {
   return queryRows(
     ex,
     `WITH q AS (SELECT ${orTsQuerySql('query')} AS tsq)
@@ -342,13 +353,14 @@ export function searchPatterns(ex: SqlExecutor, q: Omit<BaseQuery, 'embedding'>)
               1.0 AS authority
        FROM patterns pt CROSS JOIN q
        WHERE pt.tenant_id = :tenantId AND pt.status = 'published'
+         AND (pt.persona_id IS NULL OR pt.persona_id = :personaId)
          AND (pt.expires_at IS NULL OR pt.expires_at > now())
          AND to_tsvector('english', pt.title || ' ' || pt.context || ' ' || pt.signal || ' ' || pt.intervention) @@ q.tsq
      ) x
      WHERE ${SCORE_SQL} >= :minScore
      ORDER BY score DESC, x.id
      LIMIT :limit`,
-    baseParams({ ...q, embedding: null }, 2),
+    { ...baseParams({ ...q, embedding: null }, 2), personaId: p.nullable.uuid(q.personaId) },
     (r) => decodeItem('pattern', r),
   );
 }
