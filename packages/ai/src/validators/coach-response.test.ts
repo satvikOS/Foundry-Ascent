@@ -8,6 +8,7 @@ import {
   INVALID_RESPONSE_ANSWER,
   NARROWING_NOTE_PREFIX,
   SPOKEN_NARROWING_CAVEAT,
+  cutStructuredLeak,
   forcedEscalationFor,
   responseStrings,
   validateCoachResponse,
@@ -706,9 +707,11 @@ describe('spoken text (voice channel)', () => {
   it('keeps a clean spoken reply as is', () => {
     const spoken =
       'Your interviews point to real scheduling pain. Would clinics pay before the integration exists?';
-    const out = validateCoachResponse(base({ spoken }), voice());
+    // A call's answer is the transcript of what was said (no evidence keys; the claims carry them).
+    const answer = 'Your interviews point to scheduling pain. Consider a concierge test.';
+    const out = validateCoachResponse(base({ answer, spoken }), voice());
     expect(out.response.spoken).toBe(spoken);
-    expect(out.response.answer).toBe(base().answer); // the transcript keeps the full answer
+    expect(out.response.answer).toBe(answer); // the transcript is kept whole
     expect(out.results.notes).toEqual([]);
   });
 
@@ -763,6 +766,12 @@ describe('spoken text (voice channel)', () => {
     );
     expect(out.results.narrowed).toBe(true);
     expect(out.response.spoken).toBe(`${SPOKEN_NARROWING_CAVEAT} Run the pilot first.`);
+    // The call's transcript is what was said: no "Limited evidence" block quote and no evidence keys in it; the
+    // uncertainty item (Sources & reasoning) and `narrowed` carry it.
+    expect(out.response.answer).toBe('Your interviews point to scheduling pain. Consider a concierge test.');
+    expect(out.response.answer).not.toContain(NARROWING_NOTE_PREFIX);
+    expect(out.response.uncertainty[0]?.level).toBe('high');
+    expect(out.results.notes).toEqual(expect.arrayContaining(['narrowed', 'transcript_citations_removed']));
     // Said in plain words, not caveat boilerplate read out (production spoke "A quick caveat: …"), and still
     // honest that part of the answer is not from the venture's records.
     expect(SPOKEN_NARROWING_CAVEAT).not.toMatch(/caveat|disclaimer|limited evidence|note:/i);
@@ -783,6 +792,19 @@ describe('spoken text (voice channel)', () => {
     expect(eir.blocked).toBe(true);
     expect(eir.blockReason).toBe('identity');
     expect(eir.response.spoken).not.toContain('Corin here');
+  });
+
+  it('keeps evidence keys out of a call transcript, never out of a typed answer', () => {
+    const answer = 'Scheduling hurts [E1]. Pricing too [E1, E2]. See [the plan](https://example.com/plan).';
+    const call = validateCoachResponse(base({ answer, spoken: 'Scheduling hurts.' }), voice());
+    expect(call.response.answer).toBe(
+      'Scheduling hurts. Pricing too. See [the plan](https://example.com/plan).',
+    );
+    expect(call.response.claims[0]?.evidence_ids).toEqual(['E1']);
+    expect(call.results.notes).toContain('transcript_citations_removed');
+    const typed = validateCoachResponse(base({ answer }), opts());
+    expect(typed.response.answer).toBe(answer);
+    expect(typed.results.notes).not.toContain('transcript_citations_removed');
   });
 
   const corinCall = voice({ personaName: "Corin's vEIR", eirNames: ['Corin Halvorsen'] });
@@ -970,5 +992,43 @@ describe('vEIR personas', () => {
     );
     expect(out.blocked).toBe(true);
     expect(out.blockReason).toBe('identity');
+  });
+});
+
+describe('validateCoachResponse — structured-output leak', () => {
+  // Production, call 1 turn 3: the reply went on with the bare mode name and the internal claim lines.
+  const leaked = [
+    'Getting rich fast is a fine goal to name. The pilot is still the next step.',
+    '',
+    'coach',
+    'The founder has a memory item about the advisor meeting.',
+    'The founder wants to grow quickly.',
+  ].join('\n');
+
+  it('cuts the reply where the mode name or a field label begins, on calls and typed turns', () => {
+    for (const channel of ['text', 'voice'] as const) {
+      const out = validateCoachResponse(
+        base({ answer: leaked, spoken: channel === 'voice' ? 'The pilot is still the next step.' : null }),
+        opts({ channel }),
+      );
+      expect(out.response.answer).toBe(
+        'Getting rich fast is a fine goal to name. The pilot is still the next step.',
+      );
+      expect(out.results.notes).toContain('structured_leak_cut');
+    }
+    expect(cutStructuredLeak('Run the pilot.\nclaims: [{"text": "x"}]')).toEqual({
+      text: 'Run the pilot.',
+      cut: true,
+    });
+    expect(cutStructuredLeak('Run the pilot.\n**mode:** coach').text).toBe('Run the pilot.');
+  });
+
+  it("leaves a reply's own headings and labels alone, and never empties an answer", () => {
+    const own = 'Two things.\n\nNext actions: book the advisor.\n\n## Challenge\nCoach the team first.';
+    expect(cutStructuredLeak(own)).toEqual({ text: own, cut: false });
+    const out = validateCoachResponse(base({ answer: own }), opts());
+    expect(out.results.notes).not.toContain('structured_leak_cut');
+    // Nothing of the reply before the leaked line: left as it is (the schema check owns that case).
+    expect(cutStructuredLeak('coach\nRun the pilot.')).toEqual({ text: 'coach\nRun the pilot.', cut: false });
   });
 });

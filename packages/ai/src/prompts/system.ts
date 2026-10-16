@@ -259,7 +259,7 @@ const OUTPUT_RULES = (
     '  "founder_stated" (the founder said it, in any words), "founder_agreed" (you proposed it and the founder',
     '  explicitly took it up) or "coach_advice" (your own advice, warning or framing, which is never kept). Never label',
     '  your own advice as theirs, and never include secrets, personal data about third parties, or anything about',
-    '  other ventures. What they stated or agreed to is kept in memory automatically; use [] when nothing new and on social turns.',
+    '  other ventures. What they stated or agreed to is kept in memory automatically. [] on social turns.',
     "- follow_up_questions: 0-3 short messages the founder might send you next, in the founder's own words (they appear",
     '  as tap-to-send suggestions). Do not repeat the question you asked in the answer. [] on social turns and closings.',
     '- rehearsal: null unless mode is "rehearse".',

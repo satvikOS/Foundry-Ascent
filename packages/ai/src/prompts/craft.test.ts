@@ -125,7 +125,9 @@ describe('conversation craft in the system prompt', () => {
   it('keeps social turns free of claims, next actions, memory and follow-ups in the output fields too', () => {
     const output = prompt.slice(prompt.lastIndexOf('\nOutput:'));
     expect(output).toContain('Use [] when there is no clear step yet, and on social turns.');
-    expect(output).toContain('The founder sees them and can edit or remove them. [] on social turns.');
+    expect(output).toContain(
+      'What they stated or agreed to is kept in memory automatically. [] on social turns.',
+    );
     expect(output).toContain('[] on social turns and closings.');
     expect(section(prompt, 'Mode')).toContain('A social turn (a\ngreeting, thanks, small talk, wrapping up');
   });

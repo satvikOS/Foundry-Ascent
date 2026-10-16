@@ -1,6 +1,6 @@
 import {
+  CoachMode,
   CoachResponse,
-  type CoachMode,
   type EscalationCategory,
   type EscalationPriority,
   type EscalationProposal,
@@ -166,6 +166,37 @@ function emptyResponse(
   };
 }
 
+/**
+ * A line where the response's other fields begin inside the reply text (a structured-output leak): a bare
+ * lower-case mode name ("coach") or a field label as the schema writes it ("claims:", "next_actions:"). Prose
+ * capitalises a line's first word and never names a field this way, so a reply's own "Next actions:" or
+ * "## Challenge" never match. Production showed a call transcript that went on past the reply with the mode name
+ * and five claim lines (the streamed path cuts the same lines in core's reply-extract).
+ */
+const LEAKED_FIELD_LINE =
+  /^[ \t]*[*_]{0,2}"?(?:mode|answer|spoken|claims|next_actions|uncertainty|challenge|escalation|memory_candidates|follow_up_questions|rehearsal|evidence_ids)"?[*_]{0,2}[ \t]*:/;
+const LEAKED_MODE_LINE = new RegExp(
+  `^[ \\t]*[*_]{0,2}(?:${CoachMode.options.join('|')})[*_]{0,2}[ \\t]*[:.]?[ \\t]*$`,
+);
+
+/**
+ * The reply up to a leaked field or mode line (see {@link LEAKED_FIELD_LINE}); unchanged when there is none or
+ * when nothing of the reply comes before it.
+ */
+export function cutStructuredLeak(answer: string): { text: string; cut: boolean } {
+  const lines = answer.split('\n');
+  for (let i = 1; i < lines.length; i += 1) {
+    const line = lines[i] ?? '';
+    if (!LEAKED_FIELD_LINE.test(line) && !LEAKED_MODE_LINE.test(line)) continue;
+    const kept = lines.slice(0, i).join('\n').trimEnd();
+    return kept.trim() === '' ? { text: answer, cut: false } : { text: kept, cut: true };
+  }
+  return { text: answer, cut: false };
+}
+
+/** Inline evidence keys ("[E4]", "[E4, E6]"), with the space before them. */
+const INLINE_EVIDENCE_KEYS = / ?\[\s*E\d+(?:\s*[,;]\s*E\d+)*\s*\](?!\()/gi;
+
 function normalizeEvidenceId(raw: string): string {
   return raw
     .trim()
@@ -303,6 +334,11 @@ export function validateCoachResponse(
   // 3. Sanitise ---------------------------------------------------------------------------------------
   const md = sanitizeMarkdown(r.answer);
   r.answer = md.text;
+  const leak = cutStructuredLeak(r.answer);
+  if (leak.cut) {
+    r.answer = leak.text;
+    notes.push('structured_leak_cut');
+  }
   if (md.htmlRemoved > 0) notes.push(`html_removed:${md.htmlRemoved}`);
   if (md.unsafeLinksRemoved > 0) notes.push(`unsafe_links_removed:${md.unsafeLinksRemoved}`);
   if (md.imagesRemoved > 0) notes.push(`images_removed:${md.imagesRemoved}`);
@@ -395,6 +431,15 @@ export function validateCoachResponse(
     if (kept.length === 0) return '';
     return `${whole.startsWith(' ') ? ' ' : ''}[${[...new Set(kept)].join(', ')}]`;
   });
+  // On a call the answer is the transcript of what was said: no evidence keys in it (the claims carry them, and
+  // Sources & reasoning shows them). The prompt asks for none; this is the backstop.
+  if (channel === 'voice') {
+    const transcript = r.answer.replace(INLINE_EVIDENCE_KEYS, '');
+    if (transcript !== r.answer) {
+      r.answer = transcript;
+      notes.push('transcript_citations_removed');
+    }
+  }
   const factsBefore = r.claims.filter((c) => c.kind === 'fact').length;
   r.claims = r.claims.map((c) => ({ ...c, evidence_ids: filterIds(c.evidence_ids) }));
   r.memory_candidates = r.memory_candidates.map((m) => ({ ...m, evidence_ids: filterIds(m.evidence_ids) }));
@@ -429,7 +474,9 @@ export function validateCoachResponse(
       results.narrowed = true;
       notes.push('narrowed');
       const note = `${NARROWING_NOTE_PREFIX} only ${grounded} of ${factsBefore} factual statements in this answer are backed by your venture records. Treat the rest as unverified until you can check them.`;
-      r.answer = r.answer === '' ? note : `${note}\n\n${r.answer}`;
+      // A typed answer opens with the note. A call's transcript is what was said, so it carries no note: the
+      // uncertainty below (Sources & reasoning) and the validator's `narrowed` result say it instead.
+      if (channel !== 'voice') r.answer = r.answer === '' ? note : `${note}\n\n${r.answer}`;
       r.uncertainty = [
         {
           item: 'Several statements in this answer are not backed by evidence from your venture records.',
