@@ -97,6 +97,7 @@ const PURPOSES: Record<string, string> = {
   turn: 'Coaching replies',
   distill: 'Distillation',
   speech: 'Call speech',
+  test_bench: 'Test bench (EIR studio)',
   recap: 'Recaps',
   classification: 'Risk checks',
   embedding: 'Embeddings',

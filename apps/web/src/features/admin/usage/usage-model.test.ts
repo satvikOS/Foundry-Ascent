@@ -62,6 +62,7 @@ describe('usage model', () => {
     expect(purposeLabel('speech')).toBe('Call speech');
     expect(purposeLabel('distill')).toBe('Distillation');
     expect(purposeLabel('turn')).toBe('Coaching replies');
+    expect(purposeLabel('test_bench')).toBe('Test bench (EIR studio)');
     expect(purposeLabel('something_new')).toBe('something_new');
   });
 });
