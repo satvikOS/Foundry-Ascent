@@ -9,7 +9,8 @@
 --     conversations its summary and opener were drawn from. Rows that predate the stricter shape are repaired.
 --  3. Deleting a conversation also clears the notebook summary and opener drawn from it, and erases the AI
 --     memory proposals drawn from it that nobody kept (rejected or expired as well as pending). Escalation
---     packets stay: the founder consented to share them.
+--     packets stay: a shared one went to a person with the founder's consent, and a draft is the founder's
+--     to send or withdraw.
 --  4. Seeded knowledge: chunks that a seed re-run brought back under an edited or withdrawn source are
 --     removed (the seed now inserts chunks only together with a new source). The program method corpus
 --     becomes an authored note, as 0004 did for the persona corpora.
@@ -155,9 +156,9 @@ DROP FUNCTION IF EXISTS app.notebook_repair_entries(jsonb, timestamptz);
 --   - the notebook summary and opener when they were drawn from it. When the notebook does not record where
 --     they came from (written before sources were recorded), they are cleared if the conversation was
 --     distilled or any notebook line came from it.
--- Stored idempotent responses that mention it are purged. Escalation packets stay: the founder consented to
--- share them with a person. Security records (audit, usage, turn metadata) stay. Returns false when the
--- conversation does not exist or is not visible.
+-- Stored idempotent responses that mention it are purged. Escalation packets stay (a shared one went to a
+-- person with the founder's consent; a draft is the founder's to send or withdraw). Security records (audit,
+-- usage, turn metadata) stay. Returns false when the conversation does not exist or is not visible.
 CREATE OR REPLACE FUNCTION app.soft_delete_session(p_session uuid) RETURNS boolean
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE
