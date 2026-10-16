@@ -7,21 +7,36 @@ import {
   type PDFDocumentProxy,
   type RenderTask,
   TextLayer,
+  version as pdfjsVersion,
 } from 'pdfjs-dist';
 import type { TextContent, TextItem } from 'pdfjs-dist/types/src/display/api';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { scrollBehavior } from './motion';
+import { PDFJS_DATA_FOLDERS, pdfjsAssetDir } from './pdf-assets';
+import { drawingRatio } from './pdf-canvas';
 import { citedRuns, findInPages, type PageMatch, type PageRuns } from './pdf-text';
 
 /*
  * PDFs with pdf.js, loaded only when a PDF is opened (its own chunk). The worker is a same-origin asset
  * (CSP worker/script-src 'self'); pdf.js 6 has no eval path at all (the old `isEvalSupported` option is gone),
- * and WebAssembly decoders stay off (no 'wasm-unsafe-eval'). Pages render near the viewport only, each a
- * canvas plus a text layer that find and the cited passage mark.
+ * and WebAssembly decoders stay off (no 'wasm-unsafe-eval'): scanned pages (CCITT fax, JBIG2, JPEG 2000)
+ * decode with pdf.js's JavaScript decoders, and text in predefined CMaps (Chinese, Japanese, Korean) reads
+ * through pdf.js's CMap files, all same-origin assets of this site (see pdfjs-assets.plugin.ts). Pages
+ * render near the viewport only, each a canvas plus a text layer that find and the cited passage mark.
  */
 GlobalWorkerOptions.workerSrc = workerUrl;
+
+/** pdf.js's data folders on this site, as absolute URLs (its worker resolves them, not this page). */
+function pdfjsDataUrls(): Record<keyof typeof PDFJS_DATA_FOLDERS, string> {
+  const base = new URL(`${import.meta.env.BASE_URL}${pdfjsAssetDir(pdfjsVersion)}/`, document.baseURI).href;
+  return {
+    cMapUrl: `${base}${PDFJS_DATA_FOLDERS.cMapUrl}`,
+    standardFontDataUrl: `${base}${PDFJS_DATA_FOLDERS.standardFontDataUrl}`,
+    wasmUrl: `${base}${PDFJS_DATA_FOLDERS.wasmUrl}`,
+  };
+}
 
 /** Zoom limits (a multiple of "fit width"). */
 export const PDF_ZOOM_MIN = 0.5;
@@ -30,7 +45,6 @@ export const PDF_ZOOM_MAX = 4;
 const READING_PAGE_WIDTH = 860;
 const PAGE_GAP = 16;
 const SIDE_PADDING = 16;
-
 export interface PdfReport {
   readonly pages: number;
   /** 1-based page at the reading position. */
@@ -145,6 +159,8 @@ export default function PdfReader({
     const task = getDocument({
       data: new Uint8Array(data.slice(0)),
       useWasm: false,
+      ...pdfjsDataUrls(),
+      cMapPacked: true,
       enableXfa: false,
       disableAutoFetch: true,
       disableStream: true,
@@ -280,8 +296,9 @@ export default function PdfReader({
         const page = await pdf.getPage(index + 1);
         if (drawn.get(index) !== entry) return;
         const viewport = page.getViewport({ scale });
-        // Drawn at the screen's pixel density (at most 2x) and shown at the page's CSS size.
-        const ratio = Math.min(window.devicePixelRatio || 1, 2);
+        // Drawn at the screen's pixel density (at most 2x, and within the canvas limit), shown at the
+        // page's CSS size.
+        const ratio = drawingRatio(viewport.width, viewport.height, window.devicePixelRatio);
         const pixels = page.getViewport({ scale: scale * ratio });
         canvas.width = Math.floor(pixels.width);
         canvas.height = Math.floor(pixels.height);
