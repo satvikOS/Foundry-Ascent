@@ -418,26 +418,64 @@ export function autoModeFor(text: string, allowed: readonly CoachMode[]): CoachM
   return options.includes('diagnose') ? 'diagnose' : (options[0] ?? 'diagnose');
 }
 
-/** Greetings by warmth; `{name}` is the founder's first name. */
+/**
+ * Greetings for the first reply of a conversation, by warmth: to a founder the vEIR has talked with before
+ * (`returning`) or not (`first`). `{name}` is the founder's first name; `{, name}` adds ", Maya" when it is known.
+ * The mock never opens two conversations alike: it skips the template the previous conversation opened with.
+ */
 export const GREETINGS = {
-  warm: [
-    'Good to see you, {name}.',
-    'Hi {name}, glad you brought this.',
-    'Thanks for bringing this, {name}.',
-  ],
-  reserved: ['Hello {name}.', 'Thanks, {name}.', 'Good question, {name}.'],
+  warm: {
+    returning: [
+      'Hi{ name}, good to hear from you again.',
+      'Welcome back{, name}.',
+      'Hey{ name}, nice to pick this up again.',
+      'Good to have you back{, name}.',
+    ],
+    first: ['Hi{ name}, good to meet you.', "Hi{ name}, glad you're here.", 'Hello{ name}, welcome.'],
+  },
+  reserved: {
+    returning: ['Hello again{, name}.', 'Welcome back{, name}.', 'Hi{ name}, thanks for coming back.'],
+    first: ['Hello{ name}.', 'Hi{ name}, welcome.'],
+  },
 } as const;
 
-/** Bridges in direct and gentler styles. */
+/**
+ * Bridges in direct and gentler styles, used now and then on later turns (most replies start with the substance
+ * itself). Never the opening of the vEIR's previous reply.
+ */
 export const LEADS = {
-  direct: ["Here's my honest read.", "I'll be direct.", 'Short version first.'],
-  balanced: ["Here's how I'd think about it.", 'Let me share how I see it.', "Here's where I'd start."],
+  direct: ['Straight answer first.', "I'll be direct.", 'Short version:'],
+  balanced: ["Here's how I'd think about it.", 'Let me take that in order.', "Here's where I'd start."],
   gentle: [
-    "You're asking the right question.",
+    "That's a fair thing to be weighing.",
     "There's a good instinct behind this.",
     "You've already done useful work here.",
   ],
 } as const;
+
+/** Acknowledgements of thanks. */
+export const THANKS_REPLIES = ['Glad that helped.', 'Happy to help.', 'Any time.'] as const;
+
+/** Warm sign-offs for a founder who is wrapping up (never a name or a signature). */
+export const SIGN_OFFS = ['Talk soon.', 'Good luck with it.', 'Speak soon.'] as const;
+
+/** First words of a reply to a short "yes" / "ok". */
+export const SHORT_ACKS = ['Good.', 'Okay.', 'Right.'] as const;
+
+/** Said first when the founder sounds stressed or discouraged (named plainly, without cheerleading). */
+export const STRESS_LINES = [
+  "That sounds like a lot landing at once. Let's make the next step smaller.",
+  "That's a heavy week. Let's take one piece at a time.",
+] as const;
+
+/** Said first when the founder corrects what the vEIR understood (a one-beat repair). */
+export const REPAIR_LINES = ['Sorry, I misread that.', 'Ah, I got that wrong.'] as const;
+
+/** A light return when the founder jokes (only then). */
+export const HUMOUR_LINES = ['Ha, fair.', 'Ha, I like that.'] as const;
+
+/** How a recall answer starts when there is something to recall. */
+export const RECALL_LEADS = ['Yes.', 'I do.', 'Sure.'] as const;
 
 /** Teaching steps, used in teach mode. */
 export const TEACH_STEPS = [
@@ -458,7 +496,19 @@ function bankTexts(value: unknown): string[] {
  * The mock keeps their capital when it continues a sentence with a bank phrase that starts with one.
  */
 export const BANK_PROPER_NOUNS: ReadonlySet<string> = new Set(
-  [TOPICS, GREETINGS, LEADS, TEACH_STEPS]
+  [
+    TOPICS,
+    GREETINGS,
+    LEADS,
+    TEACH_STEPS,
+    THANKS_REPLIES,
+    SIGN_OFFS,
+    SHORT_ACKS,
+    STRESS_LINES,
+    REPAIR_LINES,
+    HUMOUR_LINES,
+    RECALL_LEADS,
+  ]
     .flatMap(bankTexts)
     .flatMap((text) => [...text.matchAll(/(?<=[\p{Ll}\p{N},;:] )\p{Lu}\p{Ll}+/gu)].map((m) => m[0])),
 );

@@ -2,6 +2,12 @@ import type { CoachMode, CoachResponse, CommitmentStatus, MemoryCandidate } from
 
 import { DISTILL_SCHEMA_NAME, type DistillDraft } from '../distill/schema.js';
 import { AUTO_MODE, parseControlBlock, type PromptControl } from '../prompts/control.js';
+import {
+  contentWords,
+  endsWithQuestion,
+  founderMoves,
+  type FounderMove,
+} from '../prompts/conversation-state.js';
 import { veirFirstName } from '../prompts/persona.js';
 import { COACH_RESPONSE_SCHEMA_NAME } from '../prompts/version.js';
 import { RISK_ESCALATION_MAP, primaryForcedCategory } from '../risk/escalation-map.js';
@@ -19,13 +25,27 @@ import {
   BANK_PROPER_NOUNS,
   ESCALATION_AREAS,
   GREETINGS,
+  HUMOUR_LINES,
   LEADS,
+  RECALL_LEADS,
+  REPAIR_LINES,
+  SHORT_ACKS,
+  SIGN_OFFS,
+  STRESS_LINES,
   TEACH_STEPS,
+  THANKS_REPLIES,
   TOPICS,
   autoModeFor,
   topicOf,
   type MockTopic,
 } from './mock-content.js';
+import {
+  conversationStateIn,
+  previousConversationIn,
+  unescapeData,
+  type PreviousConversation,
+  type StateReading,
+} from './mock-conversation.js';
 import { validateStructured } from './provider.js';
 import {
   EMBEDDING_DIMENSIONS,
@@ -104,12 +124,8 @@ function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
-function unescapeData(text: string): string {
-  return text
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&amp;/g, '&');
+function wordsIn(text: string): number {
+  return text.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
 }
 
 /** The newest message carrying the founder's words (later messages are follow-up instructions). */
@@ -226,27 +242,218 @@ function styleIn(system: string): { directness: keyof typeof LEADS; warmth: keyo
   };
 }
 
-/** What the vEIR's notes say to pick up: the first open commitment, else whether there is an opener. */
-function notesIn(messages: readonly ChatMessage[]): { commitment: string | null; opener: boolean } {
-  const last = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
-  const notes = /<your_notes>([\s\S]*?)<\/your_notes>/.exec(last)?.[1] ?? '';
-  const commitments = /<open_commitments>\n([\s\S]*?)\n<\/open_commitments>/.exec(notes)?.[1] ?? '';
-  const first = commitments.split('\n')[0]?.replace(/^- /, '') ?? '';
-  const commitment = unescapeData(first.replace(/\s*\(due [^)]*\)$/, '')).trim();
-  return { commitment: commitment === '' ? null : commitment, opener: notes.includes('<next_opener>') };
-}
-
 function quoteOf(text: string, max = 160): string {
   const flat = text.replace(/\s+/g, ' ').trim();
   return flat.length > max ? `${flat.slice(0, max - 1).trimEnd()}…` : flat;
 }
 
+/** The founder's earlier messages in the prompt (oldest first) and the vEIR's earlier replies (opener included). */
+interface ConversationReading {
+  readonly founderHistory: readonly string[];
+  readonly priorReplies: readonly string[];
+  /** The founder's first message of this conversation. */
+  readonly firstMessage: boolean;
+  /** The conversation opened with the vEIR's opener (it already greeted). */
+  readonly openerShown: boolean;
+  readonly previous: PreviousConversation | null;
+  readonly state: StateReading | null;
+  /** The vEIR's last reply ended with a question. */
+  readonly lastReplyAsked: boolean;
+}
+
+function readConversation(
+  context: MockGenerateContext,
+  name: string | null,
+  today: string | null,
+): ConversationReading {
+  const index = founderMessageIndex(context.messages);
+  const before = context.messages.slice(0, Math.max(0, index));
+  const founderHistory = before
+    .filter((m) => m.role === 'user' && m.content.includes('<founder_message>'))
+    .map((m) =>
+      unescapeData(/<founder_message>\n?([\s\S]*?)\n?<\/founder_message>/.exec(m.content)?.[1] ?? '').trim(),
+    );
+  const priorReplies = before.filter((m) => m.role === 'assistant').map((m) => m.content);
+  const state = conversationStateIn(context.messages);
+  const last = priorReplies.at(-1) ?? '';
+  return {
+    founderHistory,
+    priorReplies,
+    firstMessage: founderHistory.length === 0,
+    openerShown: founderHistory.length === 0 && priorReplies.length > 0,
+    previous: previousConversationIn(context.system, context.messages, name, today),
+    state,
+    lastReplyAsked: state !== null ? state.questionStreak > 0 : last !== '' && endsWithQuestion(last),
+  };
+}
+
+/** The first `n` words of a text, lower-cased, for comparing openings. */
+function headWords(text: string, n = 3): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s']/gu, ' ')
+    .split(/\s+/)
+    .filter((w) => w !== '')
+    .slice(0, n)
+    .join(' ');
+}
+
+function fillName(template: string, name: string | null): string {
+  return template
+    .replace('{ name}', name !== null ? ` ${name}` : '')
+    .replace('{, name}', name !== null ? `, ${name}` : '');
+}
+
 /**
- * Deterministic, conversational `CoachResponse` derived from the prompt: persona style, the founder's
- * first name, the mode, risk flags, the evidence shown (cited by id, referred to by title) and the
- * vEIR's notes. It reads like a mentor (short paragraphs, one question at the end) and fills every
- * structured field the validator and the UI use. Its memory candidate states what the topic leaves open,
- * never the founder's message quoted back.
+ * A greeting for the first reply of a conversation, seeded by what the prompt says about the last conversation (so
+ * each conversation opens differently), never the template the last conversation opened with.
+ */
+function greetingFor(
+  warmth: keyof typeof GREETINGS,
+  name: string | null,
+  previous: PreviousConversation | null,
+  seed: number,
+): string {
+  const templates = GREETINGS[warmth][previous !== null ? 'returning' : 'first'];
+  const avoid = previous?.opening ? headWords(previous.opening) : null;
+  for (let i = 0; i < templates.length; i += 1) {
+    const candidate = fillName(pick(templates, seed + i), name);
+    if (avoid === null || headWords(candidate) !== avoid) return candidate;
+  }
+  return fillName(pick(templates, seed), name);
+}
+
+/** "When we spoke about 20 minutes ago, we were on pricing." */
+function whereWeWere(previous: PreviousConversation): string {
+  const verb = previous.channel === 'call' ? 'spoke' : 'talked';
+  return previous.when !== null
+    ? `When we ${verb} ${previous.when}, we were on ${previous.topic}.`
+    : `Last time we were on ${previous.topic}.`;
+}
+
+/** The specific callback of a first reply: where we were, and how what they planned went. */
+function callbackTo(previous: PreviousConversation): string {
+  return previous.plan !== null
+    ? `${whereWeWere(previous)} You were going to ${withoutFinalStop(previous.plan)}. How did that go?`
+    : `${whereWeWere(previous)} Where did you land on it?`;
+}
+
+/** A thread named for the founder: the mock's phrase for its topic, or their own words quoted. */
+function threadPhrase(gist: string): string {
+  const topic = topicOf(gist);
+  return topic !== 'general' ? TOPICS[topic].phrase : `"${quoteOf(gist, 80)}"`;
+}
+
+/** The founder's last substantive topic in this conversation (their newest message first). */
+function lastTopicOf(texts: readonly string[]): MockTopic {
+  for (let i = texts.length - 1; i >= 0; i -= 1) {
+    const topic = topicOf(texts[i] ?? '');
+    if (topic !== 'general') return topic;
+  }
+  return 'general';
+}
+
+/**
+ * A social turn's reply (doctrine "Conversation craft"): recall, getting back to a thread, a greeting, thanks, a
+ * wrap-up or a short "yes". Null for a turn with venture substance (answered as coaching).
+ */
+function socialReply(args: {
+  readonly text: string;
+  readonly moves: readonly FounderMove[];
+  readonly reading: ConversationReading;
+  readonly name: string | null;
+  readonly warmth: keyof typeof GREETINGS;
+  readonly seed: number;
+  readonly names: readonly string[];
+}): string | null {
+  const { text, moves, reading, name, seed, names } = args;
+  const previous = reading.previous;
+  const content = contentWords(text).size;
+  const asks = moves.includes('question') && content >= 2;
+  const lastTopic = lastTopicOf(reading.founderHistory);
+  const nextStep = lowerFirst(withoutFinalStop(TOPICS[lastTopic].action), names);
+
+  if (moves.includes('recall')) {
+    if (previous !== null) {
+      const detail =
+        previous.plan !== null
+          ? `You were going to ${withoutFinalStop(previous.plan)}. How did that go?`
+          : 'Want to pick it up from there?';
+      return `${pick(RECALL_LEADS, seed)} ${whereWeWere(previous)} ${detail}`;
+    }
+    if (reading.founderHistory.length > 0) {
+      const first = reading.founderHistory.find((t) => contentWords(t).size >= 2);
+      return `I don't have anything from an earlier conversation with you yet, so this looks like our first one.${
+        first !== undefined ? ` So far today we've been on ${threadPhrase(first)}.` : ''
+      }`;
+    }
+    return "This is our first conversation, so I don't have anything from before yet. What would you like to start with?";
+  }
+  if (moves.includes('resume')) {
+    const target =
+      reading.state?.parked[0] ??
+      reading.state?.previous ??
+      [...reading.founderHistory].reverse().find((t) => contentWords(t).size >= 2) ??
+      null;
+    if (target !== null) {
+      const topic = topicOf(target);
+      const aside = reading.state?.parked[0] === target ? ', before we got sidetracked' : '';
+      return `We were on ${threadPhrase(target)}${aside}. ${pick(TOPICS[topic].questions, seed)}`;
+    }
+    if (previous !== null) return callbackTo(previous);
+    return "We hadn't got into anything yet. What's on your mind?";
+  }
+  if (moves.includes('closing') && !asks) {
+    const step = reading.founderHistory.length > 0 ? ` The one thing to hold onto: ${nextStep}.` : '';
+    return `Good talking with you${name !== null ? `, ${name}` : ''}.${step} ${pick(SIGN_OFFS, seed)}`;
+  }
+  if (moves.includes('thanks') && !asks && content < 3) {
+    const step = reading.founderHistory.length > 0 ? ` The next step stands: ${nextStep}.` : '';
+    return `${pick(THANKS_REPLIES, seed)}${step}`;
+  }
+  if (moves.includes('greeting') && !asks && content < 2) {
+    if (!reading.firstMessage)
+      return `Hi again${name !== null ? `, ${name}` : ''}. Where would you like to pick up?`;
+    const howAreYou = /\bhow(?:'s| is| are| have)\b/i.test(text) ? ' Thanks for asking.' : '';
+    const hello = reading.openerShown ? '' : `${greetingFor(args.warmth, name, previous, seed)}${howAreYou} `;
+    return `${hello}${previous !== null ? callbackTo(previous) : "What's on your mind today?"}`.trim();
+  }
+  if (moves.includes('short_reply') && !asks) {
+    if (reading.founderHistory.length === 0) return 'What would you like to work on?';
+    return `${pick(SHORT_ACKS, seed)} Then the next step is to ${nextStep}.`;
+  }
+  return null;
+}
+
+/** A social turn as a full response: the reply alone, nothing to cite, propose or remember. */
+function socialResponse(mode: CoachMode, answer: string, channel: string): CoachResponse {
+  return {
+    mode,
+    answer,
+    claims: [],
+    uncertainty: [],
+    challenge: null,
+    next_actions: [],
+    escalation: { required: false, category: null, priority: null, reason: null, requested_role: null },
+    memory_candidates: [],
+    follow_up_questions: [],
+    rehearsal: null,
+    spoken: channel === 'voice' ? clampWords(answer, 70).text : null,
+  };
+}
+
+/**
+ * Deterministic, conversational `CoachResponse` derived from the prompt, behaving the way the "Conversation
+ * craft" doctrine asks of a model: persona style, the founder's first name, the mode, risk flags, the evidence
+ * shown (cited by id, referred to by title), the last conversation (the "## Where you left off" section, else the
+ * vEIR's notes) and the `<conversation_state>` observations.
+ *
+ * - The first reply greets (differently in each conversation, never like the last one) and calls back to the
+ *   last conversation specifically; "do you remember…?" is answered from it, or plainly as a first conversation.
+ * - Social turns (greetings, thanks, wrapping up, a short "yes", "where were we?") get a short social reply with
+ *   nothing to cite, propose or remember.
+ * - Coaching replies mirror the founder's length, vary their opening, ask at most one question and not after a
+ *   reply that already asked one, offer to return to a parked thread on a topic change, and repair in one beat.
  */
 export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
   const control = context.control;
@@ -271,31 +478,64 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
   const eir = control?.persona ? veirFirstName(control.persona) : null;
   // Names keep their capital where a phrase continues a sentence.
   const names = [name, eir, ventureNameIn(context.system)].filter((n): n is string => n !== null);
+  const moves = founderMoves(context.founderText);
+  const reading = readConversation(context, name, today);
+  // Seeds that change with the conversation, so a new conversation never opens like the last one.
+  const openingSeed = fnv1a(
+    `${reading.previous?.source ?? ''}|${today ?? ''}|${name ?? ''}|${context.founderText}`,
+  );
 
-  // Opening: a greeting on the first turn, a pickup from the notes, or a short lead-in.
-  const opening: string[] = [];
-  if (context.historyTurns === 0 && name !== null) {
-    opening.push(pick(GREETINGS[style.warmth], seed).replace('{name}', name));
+  if (forced === null && mode !== 'rehearse') {
+    const social = socialReply({
+      text: context.founderText,
+      moves,
+      reading,
+      name,
+      warmth: style.warmth,
+      seed: openingSeed,
+      names,
+    });
+    if (social !== null) return socialResponse(mode, social, channel);
   }
-  if (context.historyTurns === 0) {
-    const notes = notesIn(context.messages);
-    if (notes.commitment !== null) {
+
+  // Opening: a greeting and a callback on the first reply, a one-beat repair or acknowledgement, or (now and
+  // then) a lead-in that differs from the last reply's opening.
+  const opening: string[] = [];
+  if (moves.includes('repair')) opening.push(pick(REPAIR_LINES, seed));
+  if (moves.includes('stress')) opening.push(pick(STRESS_LINES, seed));
+  if (moves.includes('humour')) opening.push(pick(HUMOUR_LINES, seed));
+  if (reading.firstMessage && !reading.openerShown && name !== null) {
+    opening.unshift(greetingFor(style.warmth, name, reading.previous, openingSeed));
+  }
+  const previous = reading.previous;
+  if (reading.firstMessage && previous !== null) {
+    if (previous.bank === topic && topic !== 'general') {
       opening.push(
-        `Last time you planned to ${lowerFirst(withoutFinalStop(notes.commitment), names)}, so let's keep that in view.`,
+        `That picks up right where we left off${previous.when !== null ? ` ${previous.when}` : ''}.`,
       );
-    } else if (notes.opener) {
-      opening.push("I've been thinking about where we left off last time.");
+    } else if (previous.plan !== null && !reading.openerShown) {
+      opening.push(
+        `Last time you planned to ${lowerFirst(withoutFinalStop(previous.plan), names)}, so let's keep that in view.`,
+      );
     }
   }
-  if (opening.length === 0) {
-    const lead = pick(LEADS[style.directness], seed >>> 3);
-    opening.push(name !== null && seed % 3 === 0 ? `${name}, ${lowerFirst(lead, names)}` : lead);
+  if (opening.length === 0 && (seed >>> 3) % 3 === 0) {
+    const lastOpening = headWords(reading.priorReplies.at(-1) ?? '');
+    const leads = LEADS[style.directness];
+    const lead = [0, 1, 2]
+      .map((i) => pick(leads, (seed >>> 4) + i))
+      .find((l) => headWords(l) !== lastOpening && !lastOpening.startsWith(headWords(l, 2)));
+    if (lead !== undefined)
+      opening.push(name !== null && seed % 2 === 0 ? `${name}, ${lowerFirst(lead, names)}` : lead);
   }
 
   const insight = pick(bank.insights, seed >>> 5).replace('{cite}', first !== undefined ? ` [${first}]` : '');
-  const paragraphs = [`${opening.join(' ')} ${insight}`];
+  const paragraphs = [[...opening, insight].join(' ')];
+  // Mirror the founder: a short follow-up gets a short reply.
+  const compact = !reading.firstMessage && wordsIn(context.founderText) <= 8;
   const doctrine = doctrineSummaryIn(context.system);
   if (
+    !compact &&
     eir !== null &&
     doctrine !== null &&
     (mode === 'diagnose' || mode === 'coach' || mode === 'challenge')
@@ -317,7 +557,9 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
       break;
     case 'coach':
       paragraphs.push(
-        `You could ${bank.options[0]}, or ${bank.options[1]}. I'd ${bank.options[0]}: it gets you real evidence fastest${cite2}. A good first step is to ${lowerFirst(bank.action, names)}`,
+        compact
+          ? `I'd ${bank.options[0]}${cite2}. A good first step is to ${lowerFirst(bank.action, names)}`
+          : `You could ${bank.options[0]}, or ${bank.options[1]}. I'd ${bank.options[0]}: it gets you real evidence fastest${cite2}. A good first step is to ${lowerFirst(bank.action, names)}`,
       );
       break;
     case 'teach':
@@ -356,16 +598,25 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
       `Part of this touches on ${area}, so I've flagged it for a qualified person to weigh in. I can only share general information on that part.`,
     );
   }
-  const question =
-    mode === 'teach'
+  // Topic change: follow the founder, and offer to come back to what they left.
+  const parked = moves.includes('topic_shift') ? reading.state?.parked[0] : undefined;
+  if (parked !== undefined) {
+    paragraphs.push(`Happy to come back to ${threadPhrase(parked)} after this.`);
+  }
+  // One question at most, and not right after a reply that already asked one.
+  const ask = reading.firstMessage || (!reading.lastReplyAsked && (seed >>> 9) % 3 !== 0);
+  const question = !ask
+    ? null
+    : mode === 'teach'
       ? `How would you apply the first step to ${bank.phrase} this week?`
       : pick(bank.questions, seed >>> 7);
-  paragraphs.push(question);
+  if (question !== null) paragraphs.push(question);
 
   const spokenParts = [
+    ...(moves.includes('repair') ? [pick(REPAIR_LINES, seed)] : []),
     `${name !== null ? `${name}, ` : ''}${name !== null ? lowerFirst(firstSentence(insight), names) : firstSentence(insight)}`,
     area !== null ? "I've flagged part of this for a qualified person." : '',
-    question,
+    question ?? `A good next step: ${lowerFirst(bank.action, names)}`,
   ].filter((p) => p !== '');
   const spoken = clampWords(spokenParts.join(' ').replace(/\s*\[E\d+(?:,\s*E\d+)*\]/g, ''), 70).text;
 

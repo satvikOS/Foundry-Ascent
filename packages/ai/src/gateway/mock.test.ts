@@ -111,8 +111,8 @@ describe('MockModelGateway.generateStructured', () => {
 
   it('varies with the founder text', async () => {
     const gw = new MockModelGateway();
-    const a = await gw.generateStructured(turn({ text: 'one' }));
-    const b = await gw.generateStructured(turn({ text: 'two' }));
+    const a = await gw.generateStructured(turn({ text: 'What should we try first?' }));
+    const b = await gw.generateStructured(turn({ text: 'What should we do this week?' }));
     expect(a.value.answer).not.toBe(b.value.answer);
   });
 
@@ -440,7 +440,7 @@ describe('mock conversation realism', () => {
   it('continues a sentence without lower-casing "I", acronyms or names', async () => {
     const gw = new MockModelGateway();
     const answers: string[] = [];
-    // Later turns open with the persona's lead-in, after the founder's name on every third seed.
+    // Later turns open with the persona's lead-in now and then, after the founder's name on every other seed.
     for (let n = 0; n < 60; n += 1) {
       const { value } = await gw.generateStructured(
         veirTurn({
@@ -451,7 +451,7 @@ describe('mock conversation realism', () => {
       answers.push(value.answer);
     }
     expect(answers.some((answer) => answer.startsWith("Maya, I'll be direct."))).toBe(true);
-    expect(answers.some((answer) => answer.startsWith("Maya, here's my honest read."))).toBe(true);
+    expect(answers.some((answer) => answer.startsWith('Maya, straight answer first.'))).toBe(true);
     for (const answer of answers) {
       expect(answer).not.toMatch(/(?:^|[\s,])i(?:['’](?:m|ll|d|ve))?\b/u);
     }
