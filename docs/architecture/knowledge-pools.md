@@ -94,6 +94,19 @@ Only through people: curators authoring and uploading, curators publishing lesso
 Never through raw venture text. Distilled lesson candidates (§8) arrive as drafts, already de-identified,
 and still need a curator to publish them.
 
+### 3.4 Test bench
+
+Curators try a release before approving it (`POST /personas/:id/test-turns`, the studio's Test bench tab):
+one message to the persona's active release or a draft, answered by the founder pipeline's answer stage
+(`answerTurn`: the release's doctrine and style, this common pool, the sentence gate, identity guard and
+validators) and the same crisis path, with an empty specific pool (no venture, memory, notebook, digests or
+documents). Nothing is stored: no conversation, turn, memory proposal, notebook line, escalation or review
+sample; the browser keeps the transcript and sends the last few exchanges back. Admission matches a
+founder's message (message and in-flight limits from the bench's own audit events, migration 0012; the daily
+caps; the kill switch; suspension; a consent covering doctrine), crisis support answers regardless, and every
+model call is metered once under purpose `test_bench`. The checks come back with the answer, without anything
+that says which names the cross-venture guard knows.
+
 ## 4. Specific pool
 
 ### 4.1 Conversation digests

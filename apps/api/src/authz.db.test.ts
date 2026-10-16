@@ -7,6 +7,7 @@ import {
   MemoryObjectView,
   PersonaKnowledgeListResponse,
   PersonaReleaseView,
+  PersonaView,
   ProblemDetails,
   ResourceView,
   SessionView,
@@ -146,6 +147,8 @@ beforeAll(async () => {
     200,
   );
   ids.lesson = lessons.items[0]?.id ?? '';
+  const persona = await ok(await api.request(`/personas/${ids.persona}`, { cookie: lead }), PersonaView, 200);
+  ids.activeRelease = persona.activeRelease?.id ?? '';
 });
 afterAll(async () => {
   await api.cleanup();
@@ -294,6 +297,19 @@ const studioCases = (): Case[] => [
     { title: 'xxx', context: 'xxx', signal: 'xxx', intervention: 'xxx', outcome: 'xxx', limits: 'xxx' },
   ],
   ['maya', 'POST', `/lessons/${ids.lesson ?? ''}/actions`, { action: 'withdraw' }],
+  // The test bench: curators only (founders of any venture, including the one it coaches, are refused).
+  [
+    'maya',
+    'POST',
+    `/personas/${ids.persona ?? ''}/test-turns`,
+    { releaseId: ids.activeRelease ?? '', text: 'How should we price this?' },
+  ],
+  [
+    'jonah',
+    'POST',
+    `/personas/${ids.persona ?? ''}/test-turns`,
+    { releaseId: ids.activeRelease ?? '', text: 'I want to end my life.' },
+  ],
   ['lead', 'GET', '/admin/settings'],
   ['lead', 'PATCH', '/admin/settings', { aiEnabled: false }],
   ['lead', 'GET', '/admin/audit'],

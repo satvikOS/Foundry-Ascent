@@ -15,6 +15,7 @@ import {
   RouteEscalationRequest,
   SubmitReviewRequest,
   SuspendPersonaRequest,
+  TestTurnRequest,
   UpdateEmbodimentRequest,
   UpdatePersonaKnowledgeRequest,
   UpdateSettingsRequest,
@@ -24,9 +25,18 @@ import { type Core, ResourceFilter, UpdateResourceRequest } from '@foundry/core'
 
 import { jsonBody, pathParam, queryParams } from '../http/input.js';
 import { type RouteBuilder } from '../http/router.js';
+import { lambdaRemainingMs } from '../http/turn-stream.js';
+
+export interface StudioRouteOptions {
+  /** Budget of a test bench message outside Lambda (Lambda uses its remaining time). */
+  readonly turnTimeoutMs: number;
+}
+
+/** Margin kept before the Lambda deadline so a cancelled test message still answers with a problem. */
+const LAMBDA_DEADLINE_MARGIN_MS = 4_000;
 
 /** EIR studio, program console and platform admin (system design §6). */
-export function registerStudioRoutes(r: RouteBuilder, core: Core): void {
+export function registerStudioRoutes(r: RouteBuilder, core: Core, options: StudioRouteOptions): void {
   // EIR studio ----------------------------------------------------------------------------------------
   r.get('/personas', async (c, ctx) => c.json({ items: await core.eir.listPersonas(ctx) }));
   r.get('/personas/:id', async (c, ctx) => c.json(await core.eir.getPersona(ctx, pathParam(c, 'id'))));
@@ -57,6 +67,23 @@ export function registerStudioRoutes(r: RouteBuilder, core: Core): void {
     c.json(await core.eir.submitReview(ctx, pathParam(c, 'turnId'), jsonBody(c, SubmitReviewRequest)), 201),
   );
   r.get('/eir/profiles', async (c, ctx) => c.json({ items: await core.eir.listEirProfiles(ctx) }));
+  // Test bench: a curator's message to a release of their vEIR (its active release or a draft), answered by the
+  // founder pipeline with no venture. Nothing is stored, so the answer (model output) is never kept for an
+  // idempotent replay either: a retry asks again and is metered again. A client that goes away, or the deadline,
+  // cancels the model call.
+  r.post(
+    '/personas/:id/test-turns',
+    async (c, ctx) => {
+      const remaining = lambdaRemainingMs(c);
+      const budget =
+        remaining === null ? options.turnTimeoutMs : Math.max(1_000, remaining - LAMBDA_DEADLINE_MARGIN_MS);
+      const signal = AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(budget)]);
+      return c.json(
+        await core.testBench.runTestTurn(ctx, pathParam(c, 'id'), jsonBody(c, TestTurnRequest), { signal }),
+      );
+    },
+    { idempotency: 'none' },
+  );
 
   // Persona lifecycle: EIR personas, consent, embodiment, assignment ------------------------------------
   r.post('/personas', async (c, ctx) =>
