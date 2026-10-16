@@ -9,6 +9,7 @@ import { createTestBench, type TestBench } from './orchestrator/test-turn.js';
 import { createAdminService, type AdminService } from './services/admin.js';
 import { createCallsService, type CallsService } from './services/calls.js';
 import { createDistillService, type DistillService } from './services/distill.js';
+import { createDocumentReaderService, type DocumentReaderService } from './services/document-reader.js';
 import { createDocumentsService, type DocumentsService } from './services/documents.js';
 import { createEirProfilesService, type EirProfilesService } from './services/eir-profiles.js';
 import { createEirStudioService, type EirStudioService } from './services/eir-studio.js';
@@ -38,6 +39,8 @@ export interface Core {
   readonly testBench: TestBench;
   readonly memory: MemoryService;
   readonly documents: DocumentsService;
+  /** The document viewer: a document's original file and the text of the sources a vEIR cites. */
+  readonly reader: DocumentReaderService;
   readonly ingestion: IngestionProcessor;
   readonly escalations: EscalationsService;
   readonly team: TeamService;
@@ -88,6 +91,7 @@ export function createCore(deps: CoreDeps): Core {
     testBench: createTestBench(kit, directory),
     memory: createMemoryService(kit),
     documents: createDocumentsService(kit),
+    reader: createDocumentReaderService(kit),
     ingestion: createIngestionProcessor(kit),
     escalations: createEscalationsService(kit),
     team: createTeamService(kit, onPrincipalChanged),

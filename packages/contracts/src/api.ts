@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { CoachResponse, SessionRecap, SessionView, TurnView, ValidatorResults } from './coach.js';
-import { PersonaKnowledgeSourceView, TurnChannel } from './knowledge.js';
+import { KnowledgeSourceKind, PersonaKnowledgeSourceView, TurnChannel } from './knowledge.js';
 import {
   CoachMode,
   Doctrine,
@@ -12,6 +12,7 @@ import {
   EscalationPriority,
   EscalationStatus,
   EvidenceItem,
+  EvidenceSourceScope,
   Id,
   MAX_DOCUMENT_BYTES,
   Me,
@@ -317,6 +318,60 @@ export const RenewDocumentUploadResponse = CreateDocumentResponse;
  * `failed` with `upload_incomplete`; a document already past `pending_upload` is returned as it is.
  */
 export const AbandonDocumentUploadResponse = DocumentView;
+
+// Document viewer ----------------------------------------------------------------------------------
+/**
+ * `GET /documents/:id/file` 200 body: short-lived presigned GETs of a venture document's original file
+ * (the venture's members and its assigned EIR). The viewer fetches `url` (the documents bucket allows GET
+ * from the app's origins); `downloadUrl` saves the file under its own name. 409 while the file has not
+ * finished uploading (or never arrived).
+ */
+export const DocumentFileResponse = z.object({
+  url: z.url(),
+  downloadUrl: z.url(),
+  expiresAt: Timestamp,
+});
+export type DocumentFileResponse = z.infer<typeof DocumentFileResponse>;
+
+/** One passage of a source's extracted text, in reading order. */
+export const SourcePassage = z.object({
+  /** The passage's knowledge chunk: what a cited passage's `EvidenceItem.refId` names. */
+  id: Id,
+  ordinal: z.number().int(),
+  heading: z.string().nullable(),
+  /** The passage's text, without the lines it repeats from the passage before it (passages overlap). */
+  text: z.string(),
+});
+export type SourcePassage = z.infer<typeof SourcePassage>;
+
+/** `GET /ventures/:id/sources/:sourceId/text` query: `passage` (a chunk id) returns only that passage. */
+export const SourceTextQuery = z.object({ passage: Id.optional() });
+export type SourceTextQuery = z.infer<typeof SourceTextQuery>;
+
+/**
+ * `GET /ventures/:id/sources/:sourceId/text` 200 body: the text of a source the venture's vEIR can cite to
+ * the caller: one of the venture's own documents, or a program or public source within the venture's data
+ * class. A vEIR's own library (scope `persona`) is read by EIR-studio roles only. 404 for anything else
+ * (unknown, withdrawn, another venture's, or outside the data class).
+ */
+export const SourceTextResponse = z.object({
+  source: z.object({
+    id: Id,
+    scope: EvidenceSourceScope,
+    kind: KnowledgeSourceKind,
+    title: z.string(),
+    /** The venture document behind a `venture` source; null for every other scope. */
+    documentId: Id.nullable(),
+    freshnessAt: Timestamp,
+  }),
+  /** Text written in the app (notes, cases, FAQs) as Markdown; null for uploaded files. */
+  body: z.string().nullable(),
+  /** The extracted text in reading order (only the asked-for passage with `?passage=`). */
+  passages: z.array(SourcePassage),
+  /** The passages stop at the reading limit; the rest of the source is not shown. */
+  truncated: z.boolean(),
+});
+export type SourceTextResponse = z.infer<typeof SourceTextResponse>;
 
 // Escalations --------------------------------------------------------------------------------------
 export const EscalationPacket = z.object({

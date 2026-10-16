@@ -370,6 +370,41 @@ class CreateDocumentResponse(_Camel):
     upload: UploadTarget
 
 
+class DocumentFileResponse(_Camel):
+    """``GET /documents/:id/file``: short-lived presigned GETs of a venture document's original file."""
+
+    url: str
+    download_url: str
+    expires_at: str
+
+
+class SourcePassage(_Camel):
+    """One passage of a source's text in reading order (``id`` is what a citation's ``refId`` names)."""
+
+    id: str
+    ordinal: int
+    heading: str | None
+    text: str
+
+
+class SourceTextSource(_Camel):
+    id: str
+    scope: Literal["venture", "program", "public", "persona"]
+    kind: str
+    title: str
+    document_id: str | None
+    freshness_at: str
+
+
+class SourceTextResponse(_Camel):
+    """``GET /ventures/:id/sources/:sourceId/text``: the text of a source the venture's vEIR can cite."""
+
+    source: SourceTextSource
+    body: str | None
+    passages: list[SourcePassage]
+    truncated: bool
+
+
 class HealthResponse(_Camel):
     """Public ``GET /health``: never queries the database (so polling it cannot keep Aurora awake).
 
