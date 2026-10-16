@@ -96,7 +96,7 @@ describe('TestBenchTab', () => {
     expect(await screen.findByText(/Start with ten interviews/)).toBeInTheDocument();
     expect(sent).toEqual([{ releaseId: DRAFT_ID, text: 'How should I test pricing?', history: [] }]);
     // The citation chip names its source.
-    expect(screen.getByText(/source E\d+: Last-time interviews/)).toBeInTheDocument();
+    expect(screen.getByText(/Source \d+: Last-time interviews/)).toBeInTheDocument();
 
     const checks = screen.getByRole('button', { name: 'What the checks did' });
     expect(checks).toHaveAttribute('aria-expanded', 'false');

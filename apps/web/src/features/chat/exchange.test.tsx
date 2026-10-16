@@ -87,9 +87,9 @@ describe('LiveExchange', () => {
     const prose = screen.getByText(/Talk to the people who feel the pain/).closest('[data-slot="markdown"]');
     expect(prose).not.toBeNull();
     // A quiet raised number, read to screen readers as the source it is.
-    expect(prose).toHaveTextContent('Talk to the people who feel the pain 1 (source E1). Then decide.');
+    expect(prose).toHaveTextContent('Talk to the people who feel the pain 1 (Source 1). Then decide.');
     // The key is not a button yet: the evidence list comes with the stored answer.
-    expect(screen.queryByRole('button', { name: /Evidence E1/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Source 1/ })).toBeNull();
   });
 
   it('lays the stored answer out exactly like the streamed one, so replacing it does not jump', () => {
@@ -123,7 +123,7 @@ describe('VeirAnswer', () => {
     const user = userEvent.setup();
     expect(screen.queryByRole('list', { name: 'Claims and their sources' })).toBeNull();
     await user.click(
-      screen.getByRole('button', { name: 'Evidence E1: 14 problem interviews with undergraduates' }),
+      screen.getByRole('button', { name: 'Source 1: 14 problem interviews with undergraduates' }),
     );
     expect(props.onOpenSource).toHaveBeenCalledWith('E1');
     await user.click(screen.getByRole('button', { name: /^Sources & reasoning/ }));
@@ -138,6 +138,28 @@ describe('VeirAnswer', () => {
       expect.objectContaining({ action: 'Interview five library staff' }),
       0,
     );
+  });
+
+  it('never shows a message with no words when the answer was only the narrowing note', () => {
+    const base = makeTurn();
+    if (!base.response || !base.validator) throw new Error('fixture has no response');
+    const turn = makeTurn({
+      response: {
+        ...base.response,
+        answer:
+          '> **Limited evidence:** only 0 of 2 factual statements in this answer are backed by your venture records. Treat the rest as unverified until you can check them.',
+      },
+      validator: { ...base.validator, narrowed: true, groundingCoverage: 0 },
+    });
+    if (!turn.response) throw new Error('no response');
+    renderWithProviders(<VeirAnswer {...answerProps({ turn, response: turn.response })} />);
+    const prose = screen
+      .getByText(/enough to give you a reliable answer yet/)
+      .closest('[data-slot="markdown"]');
+    expect(prose).toHaveTextContent(
+      "I don't have enough to give you a reliable answer yet. Could you share a bit more detail about what you've observed so far?",
+    );
+    expect(prose).not.toHaveTextContent(/Limited evidence/);
   });
 
   it('reads as a conversation: no "Limited evidence" quote, grouped keys as quiet citations', async () => {
@@ -157,9 +179,9 @@ describe('VeirAnswer', () => {
       .closest('[data-slot="markdown"]');
     expect(prose).not.toHaveTextContent(/Limited evidence|\[E/);
     expect(screen.queryByTestId('narrowed-banner')).toBeNull();
-    // Each key is its own quiet citation, still named for screen readers.
-    expect(screen.getByRole('button', { name: /^Evidence E1: / })).toHaveTextContent(/^1$/);
-    expect(screen.getByRole('button', { name: /^Evidence E2: / })).toHaveTextContent(/^2$/);
+    // Each key is its own quiet citation, named for screen readers starting with the number it shows.
+    expect(screen.getByRole('button', { name: /^Source 1: / })).toHaveTextContent(/^1$/);
+    expect(screen.getByRole('button', { name: /^Source 2: / })).toHaveTextContent(/^2$/);
     // The information stays under Sources & reasoning.
     const toggle = screen.getByRole('button', { name: /^Sources & reasoning/ });
     expect(toggle).toHaveTextContent('limited evidence');

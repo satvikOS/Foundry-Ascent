@@ -26,19 +26,28 @@ export function citationNumber(evidenceKey: string): string {
   return evidenceKey.replace(/^E/, '');
 }
 
+/**
+ * The citation's name as assistive technology says it, starting with the number on screen ("Source 4: …"), so
+ * speech input ("click 4") reaches it (WCAG 2.5.3 Label in Name).
+ */
+export function citationName(evidenceKey: string, title?: string): string {
+  const name = `Source ${citationNumber(evidenceKey)}`;
+  return title === undefined ? name : `${name}: ${title}`;
+}
+
 /** A citation in an answer that is still streaming (its sources arrive with the finished answer). */
 export function CitationKey({ evidenceKey }: { evidenceKey: string }) {
   return (
     <span data-slot="evidence-chip" className={cn(CHIP, 'bg-muted text-muted-foreground')}>
       <span aria-hidden>{citationNumber(evidenceKey)}</span>
-      <span className="sr-only"> (source {evidenceKey})</span>
+      <span className="sr-only"> ({citationName(evidenceKey)})</span>
     </span>
   );
 }
 
 /**
- * Citation chip (shows "2" for E2). Opens the source in the conversation's Sources panel. The accessible name includes
- * the source title so screen-reader users hear what is cited, not just a code.
+ * Citation chip (shows "2" for E2). Opens the source in the conversation's Sources panel. Its accessible name starts
+ * with the number it shows and includes the source title, so screen-reader users hear what is cited.
  */
 export function EvidenceChip({ evidenceKey, item, onOpen, className }: EvidenceChipProps) {
   // Compact in running text; on touch screens it grows to a 24 px target (WCAG 2.5.8) without a layout jump
@@ -53,7 +62,7 @@ export function EvidenceChip({ evidenceKey, item, onOpen, className }: EvidenceC
         className={cn(base, 'border border-dashed border-border-strong text-muted-foreground', className)}
       >
         <span aria-hidden>{citationNumber(evidenceKey)}</span>
-        <span className="sr-only"> (source {evidenceKey} not available)</span>
+        <span className="sr-only"> ({citationName(evidenceKey)} not available)</span>
       </span>
     );
   }
@@ -65,10 +74,7 @@ export function EvidenceChip({ evidenceKey, item, onOpen, className }: EvidenceC
         className={cn(base, 'bg-muted text-muted-foreground', className)}
       >
         <span aria-hidden>{citationNumber(evidenceKey)}</span>
-        <span className="sr-only">
-          {' '}
-          (source {evidenceKey}: {item.title})
-        </span>
+        <span className="sr-only"> ({citationName(evidenceKey, item.title)})</span>
       </span>
     );
   }
@@ -76,7 +82,7 @@ export function EvidenceChip({ evidenceKey, item, onOpen, className }: EvidenceC
     <button
       type="button"
       data-slot="evidence-chip"
-      aria-label={`Evidence ${evidenceKey}: ${item.title}`}
+      aria-label={citationName(evidenceKey, item.title)}
       title={item.title}
       onClick={() => {
         onOpen(evidenceKey);

@@ -84,7 +84,7 @@ test.describe('mobile 390×844', () => {
       await expectReachable(page, page.getByRole('button', { name: 'Conversation options' }));
 
       // A citation opens the sources as a sheet.
-      const chip = answer.getByRole('button', { name: /^Evidence E1: / }).first();
+      const chip = answer.getByRole('button', { name: /^Source 1: / }).first();
       await expectReachable(page, chip);
       await chip.click();
       const panel = page.getByRole('dialog', { name: 'Context' });

@@ -18,6 +18,14 @@ export function hasNarrowingNote(answer: string): boolean {
   return NARROWING_NOTE.test(answer);
 }
 
+/**
+ * What the vEIR says when it has no answer to give: the server's own line for an empty answer (`packages/ai`
+ * EMPTY_ANSWER_FALLBACK, which a drift test pins). An answer that was empty before it was narrowed is stored as
+ * the note alone, so the server's guard against an empty answer never sees it.
+ */
+export const NO_ANSWER_YET =
+  "I don't have enough to give you a reliable answer yet. Could you share a bit more detail about what you've observed so far?";
+
 /** The answer without the narrowing note, each evidence key in its own citation. */
 export function conversationAnswer(answer: string): string {
   return answer.replace(NARROWING_NOTE, '').replace(GROUPED_KEYS, (_match, keys: string) =>
@@ -26,4 +34,14 @@ export function conversationAnswer(answer: string): string {
       .map((key) => `[${key}]`)
       .join(''),
   );
+}
+
+/**
+ * A finished answer as the conversation shows it: never a message with no words. When the answer was only the
+ * narrowing note, the vEIR says plainly that it has not enough yet (the note itself stays in Sources & reasoning).
+ * A streaming answer uses {@link conversationAnswer}: its text is still arriving.
+ */
+export function finishedAnswer(answer: string): string {
+  const shown = conversationAnswer(answer);
+  return shown.trim() === '' && hasNarrowingNote(answer) ? NO_ANSWER_YET : shown;
 }

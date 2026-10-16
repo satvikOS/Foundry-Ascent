@@ -152,9 +152,9 @@ test.describe('founder journey', () => {
       conversationId = result.conversationId;
       await expectDisclosureInView(page);
       await expect(page.getByRole('heading', { level: 1 })).toContainText('Which assumption should we test');
-      await expect(result.answer.getByRole('button', { name: /^Evidence E1: / }).first()).toBeVisible();
+      await expect(result.answer.getByRole('button', { name: /^Source 1: / }).first()).toBeVisible();
       // Citations are quiet numbers, and no report artefact (raw keys, a "Limited evidence" quote) shows.
-      await expect(result.answer.getByRole('button', { name: /^Evidence E1: / }).first()).toHaveText('1');
+      await expect(result.answer.getByRole('button', { name: /^Source 1: / }).first()).toHaveText('1');
       await expect(result.answer.locator('[data-slot="markdown"]').first()).not.toContainText(
         /\[E\d|Limited evidence/,
       );
@@ -169,8 +169,8 @@ test.describe('founder journey', () => {
 
     await test.step('a citation opens the Sources panel on that source; reasoning expands in place', async () => {
       const answer = page.getByRole('article', { name: 'Exchange 1' });
-      const chip = answer.getByRole('button', { name: /^Evidence E1: / }).first();
-      const title = ((await chip.getAttribute('aria-label')) ?? '').replace(/^Evidence E1: /, '');
+      const chip = answer.getByRole('button', { name: /^Source 1: / }).first();
+      const title = ((await chip.getAttribute('aria-label')) ?? '').replace(/^Source 1: /, '');
       await chip.click();
       const panel = page.getByRole('complementary', { name: 'Context inspector' });
       await expect(panel.getByRole('tab', { name: 'Sources' })).toHaveAttribute('aria-selected', 'true');

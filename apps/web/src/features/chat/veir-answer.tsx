@@ -15,7 +15,7 @@ import { ESCALATION_CATEGORY_LABELS, REQUESTED_ROLE_LABELS } from '@/lib/labels'
 import { cn } from '@/lib/utils';
 
 import { EvidenceChip } from '../coach/response/evidence-chip';
-import { conversationAnswer } from './answer-text';
+import { finishedAnswer } from './answer-text';
 import { MemorySaved } from './memory-saved';
 import { MessageActions } from './message-actions';
 import { NextStepList, type NextActionControls } from './next-steps';
@@ -84,9 +84,9 @@ export function VeirAnswer({
   escalation,
 }: VeirAnswerProps) {
   const evidence = useMemo(() => new Map(turn.evidence.map((item) => [item.key, item])), [turn.evidence]);
-  // As a conversation shows it: no "Limited evidence" block quote (it is under Sources & reasoning), and each
-  // evidence key a quiet citation.
-  const answer = useMemo(() => conversationAnswer(response.answer), [response.answer]);
+  // As a conversation shows it: no "Limited evidence" block quote (it is under Sources & reasoning), each
+  // evidence key a quiet citation, and never an empty message.
+  const answer = useMemo(() => finishedAnswer(response.answer), [response.answer]);
   const reasoning = useMemo(() => ({ ...response, answer }), [response, answer]);
   const renderCitation = useCallback(
     (key: string) => <EvidenceChip evidenceKey={key} item={evidence.get(key)} onOpen={onOpenSource} />,

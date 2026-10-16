@@ -52,7 +52,7 @@ test('a founder uploads a document and it becomes searchable evidence', async ({
   await startConversation(page, `Six of eight students checked two buildings: what did ${token} show?`);
   const answer = page.getByRole('article', { name: 'Exchange 1' });
   await answer
-    .getByRole('button', { name: /^Evidence E\d+: / })
+    .getByRole('button', { name: /^Source \d+: / })
     .first()
     .click({ timeout: 30_000 });
   const panel = page.getByRole('complementary', { name: 'Context inspector' });

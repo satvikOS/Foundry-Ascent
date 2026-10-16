@@ -57,7 +57,7 @@ for (const scheme of ['dark', 'light'] as const) {
         await expectNoSeriousA11yViolations(page, `conversation (${scheme})`);
 
         await answer
-          .getByRole('button', { name: /^Evidence E1: / })
+          .getByRole('button', { name: /^Source 1: / })
           .first()
           .click();
         const panel = page.getByRole('complementary', { name: 'Context inspector' });
