@@ -438,14 +438,14 @@ describe('calls', () => {
       turnId: turn.id,
       text: passage,
     });
-    expect(spoken).toMatchObject({ contentType: 'audio/mpeg', voiceId: 'Matthew', engine: 'generative' });
+    expect(spoken).toMatchObject({ contentType: 'audio/mpeg', voiceId: 'Matthew', engine: 'neural' });
     expect(new TextDecoder().decode(await new Response(spoken.audio).arrayBuffer())).toMatch(/^MP3:/);
-    expect(speech.calls.at(-1)?.engines).toEqual(['generative', 'neural']);
+    expect(speech.calls.at(-1)?.engines).toEqual(['neural', 'generative']);
     const usage = await h.t.db.system((sx) =>
       sx.query(`SELECT model_id, input_tokens, cost_usd FROM usage_ledger WHERE purpose = 'speech'`),
     );
     expect(usage.rows).toHaveLength(1);
-    expect(usage.rows[0]).toMatchObject({ model_id: 'polly:generative:Matthew' });
+    expect(usage.rows[0]).toMatchObject({ model_id: 'polly:neural:Matthew' });
 
     await expect(
       h.core.speech.synthesize(maya, {
