@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { SessionRecap, SessionView, TurnView } from './coach.js';
+import { TurnChannel } from './knowledge.js';
 import {
   CoachMode,
   Doctrine,
@@ -122,7 +123,12 @@ export const CreateSessionRequest = z.object({
   mode: CoachMode.default('diagnose'),
   goal: z.string().trim().max(500).nullable().default(null),
   privacy: SessionPrivacy.default('standard'),
+  /** Optional conversation title; the server derives one from the first message when absent. */
+  title: z.string().trim().min(1).max(120).nullable().default(null),
 });
+export const UpdateSessionRequest = z
+  .object({ title: z.string().trim().min(1).max(120).optional() })
+  .refine((value) => value.title !== undefined, 'Nothing to update');
 export const SessionListResponse = z.object({ items: z.array(SessionView) });
 /** `POST /ventures/:id/sessions` 201 body. */
 export const CreateSessionResponse = SessionView;
@@ -137,6 +143,8 @@ export const CreateTurnRequest = z.object({
    * different turn already holding that ordinal is answered with 409 `conflict`. Optional.
    */
   expectedOrdinal: z.number().int().min(1).max(100_000).optional(),
+  /** `voice` when the message was spoken during a call: the response then carries a short `spoken` form. */
+  channel: TurnChannel.optional(),
 });
 export const EndSessionResponse = z.object({ session: SessionView, recap: SessionRecap.nullable() });
 export const TurnFeedbackRequest = z.object({

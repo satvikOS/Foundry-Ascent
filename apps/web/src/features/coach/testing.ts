@@ -103,6 +103,7 @@ export function makeTurn(overrides: Partial<TurnView> = {}): TurnView {
     createdAt: NOW,
     completedAt: NOW,
     blocked: null,
+    channel: 'text',
     ...overrides,
   };
 }
@@ -123,6 +124,11 @@ export function makeSession(overrides: Partial<SessionView> = {}): SessionView {
     endedAt: null,
     turnCount: 1,
     recap: null,
+    title: null,
+    personaId: null,
+    lastActivityAt: null,
+    hasCalls: false,
+    digest: null,
     ...overrides,
   };
 }

@@ -11,6 +11,7 @@ import {
   RiskCategory,
   Timestamp,
 } from './domain.js';
+import { ConversationDigest, TurnChannel } from './knowledge.js';
 
 /**
  * The structured response contract the reasoning model must return before anything is shown
@@ -149,6 +150,8 @@ export const TurnView = z.object({
    * null.
    */
   blocked: TurnBlockedDetail.nullable().default(null),
+  /** Typed in chat or spoken during a call. Additive: older payloads parse as `text`. */
+  channel: TurnChannel.default('text'),
 });
 export type TurnView = z.infer<typeof TurnView>;
 
@@ -183,6 +186,16 @@ export const SessionView = z.object({
   endedAt: Timestamp.nullable(),
   turnCount: z.number().int(),
   recap: SessionRecap.nullable(),
+  /** Conversation title (from the first message, refined by distillation). Additive. */
+  title: z.string().nullable().default(null),
+  /** The vEIR persona of this conversation. Additive. */
+  personaId: Id.nullable().default(null),
+  /** Time of the latest turn, or the start time. Additive. */
+  lastActivityAt: Timestamp.nullable().default(null),
+  /** Whether any turn of this conversation was spoken during a call. Additive. */
+  hasCalls: z.boolean().default(false),
+  /** Conversation digest (never for temporary chats). Additive. */
+  digest: ConversationDigest.nullable().default(null),
 });
 export type SessionView = z.infer<typeof SessionView>;
 

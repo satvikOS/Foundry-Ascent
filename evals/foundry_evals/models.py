@@ -186,6 +186,8 @@ class TurnView(_Camel):
     completed_at: str | None
     # Set for blocked turns (absent from older APIs).
     blocked: TurnBlockedDetail | None = None
+    # Typed in chat or spoken during a call (absent from older APIs).
+    channel: Literal["text", "voice"] = "text"
 
 
 class PrincipalRef(_Camel):

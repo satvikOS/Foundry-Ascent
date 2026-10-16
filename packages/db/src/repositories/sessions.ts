@@ -181,6 +181,11 @@ function decodeView(r: RawRow): SessionView {
     endedAt: s.endedAt,
     turnCount: col.int.decode(r.turn_count, 'turn_count'),
     recap: s.recap,
+    title: null,
+    personaId: null,
+    lastActivityAt: null,
+    hasCalls: false,
+    digest: null,
   };
 }
 

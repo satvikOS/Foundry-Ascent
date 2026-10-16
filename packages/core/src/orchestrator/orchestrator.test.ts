@@ -343,6 +343,7 @@ describe('participant views (no cross-venture oracle)', () => {
       evidence: [],
       validator,
       usage: null,
+      channel: 'text',
       createdAt: '2026-10-05T12:00:00.000Z',
       completedAt: null,
       blocked: { reason: 'cross_venture', supportMessage: null, escalationId: null },

@@ -491,6 +491,7 @@ export function toTurnView(
     createdAt: turn.createdAt,
     completedAt: turn.completedAt,
     blocked: turn.status === 'blocked' ? blocked : null,
+    channel: 'text',
   };
 }
 
