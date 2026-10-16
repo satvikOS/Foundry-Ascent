@@ -6,18 +6,46 @@ export interface ModelPrice {
   outputPerMillionUsd: number;
   /** Fractional surcharge applied to the whole call (0.10 = +10 %), e.g. in-region Mantle premium. */
   premium?: number;
+  /**
+   * Extra surcharge when the call goes to a regional endpoint instead of the global one: a geography
+   * inference profile (`us.`, `eu.`, …) or the bare model id served in one region. Global profiles
+   * (`global.`) do not pay it.
+   */
+  regionalPremium?: number;
 }
 
 export type PricingTable = Readonly<Record<string, ModelPrice>>;
 
+/** Claude on Bedrock: list price at the global endpoint, +10 % at regional ones (Claude 4.5 and later). */
+function claude(inputPerMillionUsd: number, outputPerMillionUsd: number): ModelPrice {
+  return { inputPerMillionUsd, outputPerMillionUsd, regionalPremium: 0.1 };
+}
+
 /**
  * List prices (Amazon Bedrock, us-east-1) at the time of writing. Operators override them through
  * gateway configuration; do not edit code to change a price.
+ *
+ * Claude rows are Anthropic's list prices (platform.claude.com pricing, checked 2026-10-16), which Bedrock's
+ * global endpoints charge; regional endpoints add 10 %. Prompt-cache rates are not modelled (the gateway
+ * sends no cache breakpoints), and Claude Haiku 5.5 is priced at its rate for prompts up to 100,000 tokens
+ * (turn prompts stay far below). Bedrock serves Opus 4.6, Sonnet 4.6 and Haiku 4.5 through Converse with
+ * the ARN-versioned ids; later models use the short `anthropic.claude-…` ids.
  */
 export const DEFAULT_MODEL_PRICES: PricingTable = {
   'openai.gpt-6-luna': { inputPerMillionUsd: 0.1, outputPerMillionUsd: 0.5, premium: 0.1 },
   'amazon.nova-2-lite-v1:0': { inputPerMillionUsd: 0.3, outputPerMillionUsd: 2.5 },
   'amazon.titan-embed-text-v2:0': { inputPerMillionUsd: 0.02, outputPerMillionUsd: 0 },
+  'anthropic.claude-opus-4-6-v1': claude(5, 25),
+  'anthropic.claude-sonnet-4-6': claude(3, 15),
+  'anthropic.claude-haiku-4-5-20251001-v1:0': claude(1, 5),
+  'anthropic.claude-haiku-4-5': claude(1, 5),
+  'anthropic.claude-opus-4-7': claude(5, 25),
+  'anthropic.claude-opus-4-8': claude(5, 25),
+  'anthropic.claude-opus-5': claude(5, 25),
+  'anthropic.claude-opus-5-5': claude(4, 20),
+  'anthropic.claude-sonnet-5': claude(2, 10),
+  'anthropic.claude-sonnet-5-5': claude(2, 10),
+  'anthropic.claude-haiku-5-5': claude(0.1, 0.5),
   mock: { inputPerMillionUsd: 0, outputPerMillionUsd: 0 },
   'mock-fallback': { inputPerMillionUsd: 0, outputPerMillionUsd: 0 },
   'mock-embeddings': { inputPerMillionUsd: 0, outputPerMillionUsd: 0 },
@@ -25,17 +53,30 @@ export const DEFAULT_MODEL_PRICES: PricingTable = {
 
 const GEO_PREFIX = /^(?:us|eu|apac|jp|au|ca|us-gov|global)\./;
 
+function lastIdSegment(modelId: string): string {
+  return modelId.includes('/') ? (modelId.split('/').at(-1) ?? modelId) : modelId;
+}
+
 /** `us.amazon.nova-2-lite-v1:0` → `amazon.nova-2-lite-v1:0`; ARNs → their final id segment. */
 export function normalizeModelId(modelId: string): string {
-  const id = modelId.includes('/') ? (modelId.split('/').at(-1) ?? modelId) : modelId;
-  return id.replace(GEO_PREFIX, '');
+  return lastIdSegment(modelId).replace(GEO_PREFIX, '');
+}
+
+/** Whether a model id names a regional endpoint: anything but a `global.` inference profile. */
+export function isRegionalModelId(modelId: string): boolean {
+  return !lastIdSegment(modelId).startsWith('global.');
 }
 
 /** Merges price overrides (keys are model ids) over the defaults. */
 export function createPricingTable(overrides?: Readonly<Record<string, ModelPrice>>): PricingTable {
   const table: Record<string, ModelPrice> = { ...DEFAULT_MODEL_PRICES };
   for (const [id, price] of Object.entries(overrides ?? {})) {
-    if (!(price.inputPerMillionUsd >= 0 && price.outputPerMillionUsd >= 0 && (price.premium ?? 0) >= 0)) {
+    if (!(
+      price.inputPerMillionUsd >= 0 &&
+      price.outputPerMillionUsd >= 0 &&
+      (price.premium ?? 0) >= 0 &&
+      (price.regionalPremium ?? 0) >= 0
+    )) {
       throw new RangeError(`Invalid price for model ${id}`);
     }
     table[normalizeModelId(id)] = price;
@@ -43,8 +84,8 @@ export function createPricingTable(overrides?: Readonly<Record<string, ModelPric
   return table;
 }
 
-function effective(price: ModelPrice): { input: number; output: number } {
-  const factor = 1 + (price.premium ?? 0);
+function effective(price: ModelPrice, regional: boolean): { input: number; output: number } {
+  const factor = 1 + (price.premium ?? 0) + (regional ? (price.regionalPremium ?? 0) : 0);
   return { input: price.inputPerMillionUsd * factor, output: price.outputPerMillionUsd * factor };
 }
 
@@ -56,7 +97,7 @@ function conservativePrice(table: PricingTable): ModelPrice {
   let input = 0;
   let output = 0;
   for (const price of Object.values(table)) {
-    const e = effective(price);
+    const e = effective(price, true);
     input = Math.max(input, e.input);
     output = Math.max(output, e.output);
   }
@@ -81,7 +122,7 @@ export function costFor(
   table: PricingTable = DEFAULT_MODEL_PRICES,
 ): number {
   const { price } = priceFor(modelId, table);
-  const e = effective(price);
+  const e = effective(price, isRegionalModelId(modelId));
   const input = Math.max(0, usage.inputTokens);
   const output = Math.max(0, usage.outputTokens);
   const raw = (input * e.input + output * e.output) / 1_000_000;

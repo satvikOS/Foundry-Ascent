@@ -56,8 +56,31 @@ describe('pricing', () => {
   it('prices unknown models at the most expensive known rate', () => {
     const { known, price } = priceFor('some.unknown-model');
     expect(known).toBe(false);
-    expect(price.outputPerMillionUsd).toBe(2.5);
+    // Claude Opus at a regional endpoint: $25 per million output tokens plus 10 %.
+    expect(price.outputPerMillionUsd).toBeCloseTo(27.5, 9);
     expect(costFor('some.unknown-model', { inputTokens: M, outputTokens: 0 })).toBeGreaterThan(0);
+  });
+
+  it('prices Claude at list price on global endpoints and 10 % more on regional ones', () => {
+    const usage = { inputTokens: M, outputTokens: M };
+    expect(priceFor('global.anthropic.claude-sonnet-4-6').known).toBe(true);
+    expect(costFor('global.anthropic.claude-sonnet-4-6', usage)).toBeCloseTo(3 + 15, 9);
+    expect(costFor('us.anthropic.claude-sonnet-4-6', usage)).toBeCloseTo((3 + 15) * 1.1, 9);
+    expect(costFor('anthropic.claude-sonnet-4-6', usage)).toBeCloseTo((3 + 15) * 1.1, 9);
+    expect(
+      costFor(
+        'arn:aws:bedrock:us-east-1:123456789012:inference-profile/global.anthropic.claude-opus-4-6-v1',
+        usage,
+      ),
+    ).toBeCloseTo(5 + 25, 9);
+    expect(costFor('global.anthropic.claude-haiku-4-5-20251001-v1:0', usage)).toBeCloseTo(1 + 5, 9);
+    expect(costFor('global.anthropic.claude-opus-5-5', usage)).toBeCloseTo(4 + 20, 9);
+    expect(costFor('global.anthropic.claude-sonnet-5-5', usage)).toBeCloseTo(2 + 10, 9);
+    expect(costFor('global.anthropic.claude-haiku-5-5', usage)).toBeCloseTo(0.1 + 0.5, 9);
+    // Models without a regional premium are unaffected by the endpoint.
+    expect(costFor('us.amazon.nova-2-lite-v1:0', usage)).toBe(
+      costFor('global.amazon.nova-2-lite-v1:0', usage),
+    );
   });
 
   it('accepts configuration overrides and validates them', () => {
@@ -69,6 +92,9 @@ describe('pricing', () => {
     expect(() => createPricingTable({ x: { inputPerMillionUsd: -1, outputPerMillionUsd: 0 } })).toThrow(
       RangeError,
     );
+    expect(() =>
+      createPricingTable({ x: { inputPerMillionUsd: 1, outputPerMillionUsd: 1, regionalPremium: -0.1 } }),
+    ).toThrow(RangeError);
     expect(() =>
       createPricingTable({ x: { inputPerMillionUsd: Number.NaN, outputPerMillionUsd: 0 } }),
     ).toThrow(RangeError);
