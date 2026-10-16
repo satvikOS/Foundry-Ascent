@@ -81,6 +81,8 @@ export function assembleContext(args: {
             maxHistoryTurns: turns,
             ...(args.continuity ? { continuity: args.continuity } : {}),
             ...(args.today !== undefined ? { today: args.today } : {}),
+            // The founder's first message answers the replayed opener (<conversation_state> says so).
+            opener: replayOpener ? (args.opener ?? null) : null,
           }),
         ],
         args.leftOff ?? '',

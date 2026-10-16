@@ -169,6 +169,65 @@ describe('the questions the vEIR asked', () => {
   });
 });
 
+describe('the reply to the vEIR’s own opening line', () => {
+  const OPENER = 'Last time you planned to call facilities about the library budget. How did it go?';
+
+  it('reads the founder’s first message as the reply to the opener: its question, its opening', () => {
+    const hello = deriveConversationState([], 'Hi!', { opener: OPENER });
+    expect(hello).toMatchObject({
+      afterOpener: true,
+      askedQuestions: ['How did it go?'],
+      questionStreak: 1,
+      recentOpenings: ['Last time you planned to call…'],
+      // A hello does not answer "How did it go?": the question is still open.
+      openQuestion: true,
+    });
+    // An answer takes it up; later messages are past the opener.
+    expect(
+      deriveConversationState([], 'It went well, they have a budget line.', { opener: OPENER }).openQuestion,
+    ).toBe(false);
+    expect(
+      deriveConversationState(
+        [{ founderText: 'Hi!', answer: 'Hi Maya, good to see you.' }],
+        'It went well.',
+        {
+          opener: OPENER,
+        },
+      ).afterOpener,
+    ).toBe(false);
+    expect(deriveConversationState([], 'Hi!').afterOpener).toBe(false);
+  });
+
+  it('tells the model not to say the recall again, nor ask its question again', () => {
+    const block = renderConversationState(deriveConversationState([], 'Hi!', { opener: OPENER }));
+    expect(block).toContain(
+      '- It answers your opening line, which already picked up last time: never say that again.',
+    );
+    expect(block).toContain('- You already asked: "How did it go?"');
+    expect(block).toContain(
+      '- They did not take up your last question: answer what they said, and do not ask it again.',
+    );
+    // Even a plain first message that answers the opener is told so (no greeting needed).
+    expect(
+      renderConversationState(deriveConversationState([], 'It went well.', { opener: OPENER })),
+    ).toContain('never say that again');
+  });
+
+  it('never counts a hello as an answer to any question', () => {
+    const history = [{ founderText: 'How should we price?', answer: 'Who signs off on the budget?' }];
+    for (const hello of ['Hi!', 'Hey', 'Good morning!', "Hi, it's me again.", 'Hello, how are you?']) {
+      expect(deriveConversationState(history, hello).openQuestion, hello).toBe(true);
+    }
+    expect(deriveConversationState(history, 'Hi! Facilities signs off.').openQuestion).toBe(false);
+  });
+
+  it('reaches the prompt when the opener is replayed', () => {
+    const last = buildMessages([], 'Hi!', { opener: OPENER }).at(-1)?.content ?? '';
+    expect(last).toContain('never say that again');
+    expect(buildMessages([], 'Hi!').at(-1)?.content ?? '').not.toContain('never say that again');
+  });
+});
+
 describe('plain text in linear time', () => {
   it('strips links and images exactly like the expression it replaces', () => {
     const old = (text: string): string => text.replace(/!?\[([^\]\n]*)\]\([^)\n]*\)/g, '$1');

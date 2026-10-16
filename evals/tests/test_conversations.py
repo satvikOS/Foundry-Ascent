@@ -330,6 +330,67 @@ class TestConversationGraders:
         assert grade.findings[0].turn == 3
 
 
+class TestAfterOpener:
+    """The founder's hello right after the vEIR's opening line (wave-4 integration: "Hi!" got the recall again)."""
+
+    OPENER = "Last time you planned to call facilities about the library budget tomorrow. How did it go?"
+
+    def test_a_hello_back_passes(self) -> None:
+        for answer in ("Hi Maya, good to see you.", "Hey Maya! Glad you stopped by."):
+            assert grade_reply(reply(answer, check="after_opener", opener=self.OPENER)) == []
+
+    def test_the_recall_again_is_flagged(self) -> None:
+        again = reply(
+            "Hi Maya. Good to pick this up again. When we talked a moment ago, we were on pricing.",
+            check="after_opener",
+            opener=self.OPENER,
+        )
+        assert codes(grade_reply(again)) == ["opener_repeated"]
+        # The opening line's own words count too ("call facilities about the library budget").
+        echoed = reply(
+            "Hi! So, did you call facilities about the library budget?",
+            check="after_opener",
+            opener=self.OPENER,
+        )
+        assert codes(grade_reply(echoed)) == ["opener_repeated", "opener_reasked"]
+
+    def test_a_question_after_the_opener_is_flagged(self) -> None:
+        asked = reply("Hi Maya. How are you doing today?", check="after_opener", opener=self.OPENER)
+        assert codes(grade_reply(asked)) == ["opener_reasked"]
+
+    def test_a_call_intro_s_disclosure_is_not_the_opening_line(self) -> None:
+        intro = f"Hi Maya, this is Corin's vEIR, an AI coach. {self.OPENER}"
+        hello = reply("Hi Maya, this is good timing.", check="after_opener", opener=intro, voice=True)
+        hello.spoken = hello.answer
+        # "hi maya this is" is the disclosure sentence's, not the opening line's; no hand-back is needed.
+        assert grade_reply(hello) == []
+
+    def test_a_report_after_the_opener_is_flagged_like_any_social_turn(self) -> None:
+        report = reply("Hi Maya, good to see you.", check="after_opener", opener=self.OPENER, next_actions=1)
+        assert codes(grade_reply(report)) == ["social_turn_report"]
+
+    def test_no_opening_line_to_answer_is_flagged(self) -> None:
+        assert codes(grade_reply(reply("Hi Maya.", check="after_opener", opener=None))) == ["opener_missing"]
+
+    def test_the_label_is_only_for_the_first_message_of_a_later_session(self) -> None:
+        from foundry_evals.datasets import Conversation
+
+        first = {"turns": [{"text": "How should we price per library?"}]}
+        hello = {"turns": [{"text": "Hi!", "check": "after_opener"}]}
+        base = {"id": "CO-999", "title": "x after opener", "kind": "multi_session"}
+        Conversation.model_validate({**base, "sessions": [first, hello]})
+        for sessions in (
+            [hello, first],
+            [first, {"turns": [{"text": "Sure."}, {"text": "Hi!", "check": "after_opener"}]}],
+        ):
+            with pytest.raises(ValueError, match="after_opener"):
+                Conversation.model_validate({**base, "sessions": sessions})
+        with pytest.raises(ValueError, match="after_opener"):
+            Conversation.model_validate(
+                {**base, "kind": "multi_turn", "venture": "quietquad", "sessions": [hello]}
+            )
+
+
 def is_voice(api: FakeFoundryApi, session: dict[str, Any]) -> bool:
     return any(c["session_id"] == session.get("id") and c["status"] == "live" for c in api.calls.values())
 
@@ -385,6 +446,9 @@ def human_responder(api: FakeFoundryApi, venture: Venture, text: str, mode: str)
             "decision you need from them.",
             social,
         )
+    if not own and re.fullmatch(r"(?:hi|hey|hello)\b[^?]*", lower) and len(lower) < 40:
+        # A hello after the opening line: a hello back, and the founder answers the opener next.
+        return said("Good to hear from you." if voice else "Hi, good to see you.", social)
     if (
         re.search(r"\b(thanks|thank you|talk soon|good morning|hi|hey|ok|got it)\b", lower)
         and len(lower) < 80
@@ -393,7 +457,9 @@ def human_responder(api: FakeFoundryApi, venture: Venture, text: str, mode: str)
             # A hello on a call hands the turn back.
             return said("Good to hear from you. Where would you like to start?", social)
         return said(f"Glad to help. {'Talk soon.' if 'talk soon' in lower else 'Go well.'}", social)
-    index = len(own) % len(BODIES)
+    # Counted across the case's sessions, so the next conversation never repeats the last one's question.
+    earlier = api.remembered_sessions(venture.id, before=session.get("id", ""))
+    index = (len(own) + sum(len(api.turns[e["id"]]) for e in earlier)) % len(BODIES)
     body = BODIES[index].format(cite="" if voice else " [E1]")
     return said(f"{body} {QUESTIONS[index]}")
 
@@ -419,12 +485,12 @@ def test_a_human_coach_passes_the_conversation_suite(tmp_path: Path, monkeypatch
         (c["id"], f) for c in results["cases"] for f in c["findings"] if f["grader"] == "conversation"
     ]
     assert code == 0, [g for g in results["gates"] if g["status"] != "pass" and g["blocking"]]
-    assert results["summary"]["conversation"]["recall"] == {"checked": 3, "passed": 3}
+    assert results["summary"]["conversation"]["recall"] == {"checked": 4, "passed": 4}
     assert results["summary"]["conversation"]["topicReturn"] == {"checked": 1, "passed": 1}
     assert "## Conversation craft" in report
     # Remembered sessions ran in the memory venture only and were deleted; its notebook is empty again.
     standard = [s for s in api.sessions.values() if s["privacy"] == "standard"]
-    assert len(standard) == 6
+    assert len(standard) == 8
     assert {s["venture_id"] for s in standard} == {api.venture("memorylab").id}
     assert all(s["deleted"] for s in standard)
     lab = notebook_of(api, "memorylab")
@@ -459,7 +525,7 @@ def test_without_a_memory_venture_nothing_is_remembered(
     before = dict(notebook_of(api, "quietquad"))
     code, results, _ = run(api, tmp_path, monkeypatch, suite="conversations")
     remembered = [c for c in results["cases"] if c["group"] == "conversation:multi_session"]
-    assert len(remembered) == 3
+    assert len(remembered) == 4
     assert {(c["status"], c["reason"]) for c in remembered} == {("skipped", "needs_memory_venture")}
     assert all(s["privacy"] == "ephemeral" for s in api.sessions.values())
     assert not [r for r in api.requests if r.url.path.endswith("/notebook") and r.method != "GET"]
@@ -587,6 +653,44 @@ def test_a_blocked_recall_fails_the_recall_gate(tmp_path: Path, monkeypatch: pyt
     assert case["conversation"]["recall"] == {"checked": 1, "passed": 0}
     assert gate(results, "G12")["status"] == "fail"
     assert code == cli.EXIT_GATE_FAILED
+
+
+def test_a_hello_answered_with_the_recall_again_shows_up_in_the_craft_gate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The wave-4 integration's failure: after the opening line picked up last time, "Hi!" got the recall again."""
+
+    def recalls_again(api: FakeFoundryApi, venture: Venture, text: str, mode: str) -> dict[str, Any]:
+        response = human_responder(api, venture, text, mode)
+        if text == "Hi!":
+            return response | {"answer": "Hi Maya. When we talked a moment ago, we were on pricing."}
+        return response
+
+    _, results, _ = run(
+        FakeFoundryApi(recalls_again, intro_for=human_intro, memory_lab=True),
+        tmp_path,
+        monkeypatch,
+        *MEMORY,
+        "--case",
+        "CO-014",
+        "--no-data-ok",
+        suite="conversations",
+    )
+    case = results["cases"][0]
+    assert [f["code"] for f in case["findings"] if f["grader"] == "conversation"] == ["opener_repeated"]
+    assert gate(results, "G13")["status"] == "fail"
+    _, clean, _ = run(
+        FakeFoundryApi(human_responder, intro_for=human_intro, memory_lab=True),
+        tmp_path / "clean",
+        monkeypatch,
+        *MEMORY,
+        "--case",
+        "CO-014",
+        "--no-data-ok",
+        suite="conversations",
+    )
+    assert clean["cases"][0]["status"] == "passed", clean["cases"][0]["findings"]
+    assert gate(clean, "G13")["status"] == "pass"
 
 
 def test_a_robotic_coach_shows_up_in_the_craft_gate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -169,6 +169,37 @@ describe('context with continuity and the opener', () => {
     expect(last).toContain('They went well.');
   });
 
+  it('reads a hello after the replayed opener as its reply: say it again never, ask it again never', () => {
+    // Integration: the reply to "Hi!" repeated the opener's recall ("When we talked a moment ago, we were on
+    // pricing."). The state now says the founder is answering the opener, whose question is still open.
+    const opener = 'Last time you planned to call facilities about the library budget. How did it go?';
+    const context = assembleContext({
+      system: SYSTEM,
+      evidence: [],
+      history: [],
+      founderText: 'Hi!',
+      maxInputTokens: 16_000,
+      maxHistoryTurns: 8,
+      opener,
+    });
+    expect(context.openerReplayed).toBe(true);
+    const last = context.messages.at(-1)?.content ?? '';
+    expect(last).toContain(
+      '- It answers your opening line, which already picked up last time: never say that again.',
+    );
+    expect(last).toContain('- You already asked: "How did it go?"');
+    expect(last).toContain('did not take up your last question');
+    const without = assembleContext({
+      system: SYSTEM,
+      evidence: [],
+      history: [],
+      founderText: 'Hi!',
+      maxInputTokens: 16_000,
+      maxHistoryTurns: 8,
+    });
+    expect(without.messages.at(-1)?.content).not.toContain('opening line');
+  });
+
   it('sends the conversation state with the founder message: a parked thread survives a trimmed history', () => {
     const history = [
       {

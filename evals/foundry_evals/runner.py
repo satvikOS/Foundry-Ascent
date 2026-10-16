@@ -339,6 +339,9 @@ class Runner:
                     if call_id is None:
                         return result
                     opening = intro or opening
+                # What the vEIR opened the session with (its opener, or a call's intro): the founder's first
+                # message answers it, and an ``after_opener`` reply must not say it again.
+                opened_with = opening
                 try:
                     for t_index, (turn, text) in enumerate(zip(spec.turns, texts, strict=True), start=1):
                         case_turn += 1
@@ -369,6 +372,7 @@ class Runner:
                             forbid_any=turn.forbid_any,
                             voice=call_id is not None,
                             disclosure=session.disclosure,
+                            opener=opened_with if t_index == 1 else None,
                         )
                         if reply is not None:
                             replies.append(reply)

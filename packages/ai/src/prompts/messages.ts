@@ -31,6 +31,11 @@ export interface BuildMessagesOptions {
    * and questions), derived from every completed turn given, not only the ones kept. Default true.
    */
   conversationState?: boolean;
+  /**
+   * The conversation's opener when it is replayed as the vEIR's first message (the caller prepends it): the
+   * founder's first message is read as the reply to it in `<conversation_state>`.
+   */
+  opener?: string | null;
 }
 
 function wrapFounder(text: string): string {
@@ -43,20 +48,26 @@ function wrapFounder(text: string): string {
  */
 const stateBlocks = new WeakMap<
   readonly HistoryTurn[],
-  { readonly length: number; readonly founderText: string; readonly block: string }
+  {
+    readonly length: number;
+    readonly founderText: string;
+    readonly opener: string | null;
+    readonly block: string;
+  }
 >();
 
 function conversationStateBlock(
   history: readonly HistoryTurn[],
   completed: readonly HistoryTurn[],
   founderText: string,
+  opener: string | null,
 ): string {
   const cached = stateBlocks.get(history);
-  if (cached?.length === history.length && cached.founderText === founderText) {
+  if (cached?.length === history.length && cached.founderText === founderText && cached.opener === opener) {
     return cached.block;
   }
-  const block = renderConversationState(deriveConversationState(completed, founderText));
-  stateBlocks.set(history, { length: history.length, founderText, block });
+  const block = renderConversationState(deriveConversationState(completed, founderText, { opener }));
+  stateBlocks.set(history, { length: history.length, founderText, opener, block });
   return block;
 }
 
@@ -88,7 +99,9 @@ export function buildMessages(
     ...(options.maxContinuityChars !== undefined ? { maxChars: options.maxContinuityChars } : {}),
   });
   const state =
-    options.conversationState === false ? '' : conversationStateBlock(history, completed, founderText);
+    options.conversationState === false
+      ? ''
+      : conversationStateBlock(history, completed, founderText, options.opener ?? null);
   const parts = [notes, options.evidenceBlock, state, wrapFounder(founderText)].filter(
     (p): p is string => p !== undefined && p !== '',
   );

@@ -70,6 +70,14 @@ describe('conversation craft in the system prompt', () => {
     expect(craft).toContain('Never open the way the last conversation did');
   });
 
+  it('answers a hello after its own opener with a hello, never the recall or its question again', () => {
+    // Integration: the opener said "Last time you planned to call facilities… How did it go?" and the reply to
+    // "Hi!" said "When we talked a moment ago, we were on pricing." all over again.
+    expect(craft).toContain(
+      'If your opener did\n  this already, answer a hello with a brief, warm hello and nothing more.',
+    );
+  });
+
   it('answers "do you remember" only from the last conversation, never from older notes or venture facts', () => {
     // Production recited the seeded notebook (an advisor meeting, a regulatory question) as "last time".
     expect(craft).toContain(
@@ -195,6 +203,6 @@ describe('conversation craft in the system prompt', () => {
   });
 
   it('is part of the versioned policy', () => {
-    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-10-16.3');
+    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-10-16.4');
   });
 });

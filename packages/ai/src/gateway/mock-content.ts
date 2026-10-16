@@ -478,14 +478,15 @@ export const HUMOUR_LINES = ['Ha, fair.', 'Ha, I like that.'] as const;
 export const RECALL_LEADS = ['Yes.', 'I do.', 'Sure.'] as const;
 
 /**
- * The reply to a hello right after the vEIR's opener (which already greeted and asked how things went): a hello
- * back and a line before saying where we were. `{ name}` adds " Maya" when the name is known.
+ * The reply to a hello right after the vEIR's opener (which already picked up last time and asked how things
+ * went): a warm hello back, and nothing more, so the founder answers the opener next. `{ name}` adds " Maya"
+ * when the name is known.
  */
 export const HELLO_AFTER_OPENER = [
-  'Hi{ name}. Good to pick this up again.',
-  'Hey{ name}, nice to have you back.',
-  'Hello{ name}. Glad you came back to it.',
-  'Hi{ name}, good to hear from you.',
+  'Hi{ name}, good to see you.',
+  'Hey{ name}, good to have you here.',
+  'Hello{ name}, nice to hear from you.',
+  'Hi{ name}! Glad you stopped by.',
 ] as const;
 
 /**

@@ -343,23 +343,29 @@ describe('openings', () => {
     expectSocial(value);
   });
 
-  it('answers a hello after the opener without asking the opener’s question again', async () => {
+  it('answers a hello after the opener with a warm hello and nothing more (no recall, no question)', async () => {
+    // Integration: after "Last time you planned to call facilities… How did it go?", "Hi!" got "Hi Maya. Good to
+    // pick this up again. When we talked a moment ago, we were on pricing." (the recall, said twice).
     const opener = 'Last time you planned to call facilities about the library budget. How did it go?';
     const gw = new MockModelGateway();
-    const req = request({ text: 'Hi!', section: DIGEST_CHAT });
-    const messages = [
-      {
-        role: 'user' as const,
-        content: '[The conversation started with your message below; the founder replies after it.]',
-      },
-      { role: 'assistant' as const, content: opener },
-      ...req.messages,
-    ];
-    const { value } = await gw.generateStructured({ ...req, messages });
-    expect(value.answer).toMatch(
-      /^(?:Hi Maya\. Good to pick this up again|Hey Maya, nice to have you back|Hello Maya\. Glad you came back to it|Hi Maya, good to hear from you)\. When we talked yesterday, we were on per-library pricing\.$/,
-    );
-    expectSocial(value);
+    for (const text of ['Hi!', 'Hey', 'Hello, how are you?']) {
+      const req = request({ text, section: DIGEST_CHAT });
+      const messages = [
+        {
+          role: 'user' as const,
+          content: '[The conversation started with your message below; the founder replies after it.]',
+        },
+        { role: 'assistant' as const, content: opener },
+        ...req.messages,
+      ];
+      const { value } = await gw.generateStructured({ ...req, messages });
+      expect(value.answer).toMatch(
+        /^(?:Hi Maya, good to see you\.|Hey Maya, good to have you here\.|Hello Maya, nice to hear from you\.|Hi Maya! Glad you stopped by\.)(?: Thanks for asking\.)?$/,
+      );
+      expect(value.answer).not.toMatch(/last time|we were on|when we|pricing|facilities|budget/i);
+      expect(value.answer).not.toContain('?');
+      expectSocial(value);
+    }
   });
 
   it('says hello after the opener differently from one conversation to the next (seeded by its opener)', async () => {
@@ -383,9 +389,42 @@ describe('openings', () => {
       ];
       const { value } = await new MockModelGateway().generateStructured({ ...req, messages });
       expect(value.answer).not.toContain('?');
-      hellos.add(value.answer.split(' When we')[0] ?? '');
+      expect(value.answer).not.toMatch(/when we|we were on/i);
+      // Never in the opener's own words ("Good to have you back." is not answered "good to have you here").
+      const grams = (text: string): string[] => {
+        const words = text.toLowerCase().match(/[a-z']+/g) ?? [];
+        return words.slice(3).map((_, i) => words.slice(i, i + 4).join(' '));
+      };
+      expect(grams(value.answer).filter((g) => grams(opener).includes(g))).toEqual([]);
+      hellos.add(value.answer);
     }
     expect(hellos.size).toBeGreaterThan(1);
+  });
+
+  it('never answers the opener’s hello in the opener’s own words', async () => {
+    const grams = (text: string): string[] => {
+      const words = text.toLowerCase().match(/[a-z']+/g) ?? [];
+      return words.slice(3).map((_, i) => words.slice(i, i + 4).join(' '));
+    };
+    for (const greeting of ['Nice to hear from you again.', 'Good to have you back.']) {
+      for (const topic of ['pricing', 'the pilot', 'hiring', 'the survey', 'grants', 'the budget']) {
+        const opener = `${greeting} Last time, we talked about ${topic}. How has it gone since?`;
+        const req = request({ text: 'Hi', section: DIGEST_CHAT });
+        const messages = [
+          {
+            role: 'user' as const,
+            content: '[The conversation started with your message below; the founder replies after it.]',
+          },
+          { role: 'assistant' as const, content: opener },
+          ...req.messages,
+        ];
+        const { value } = await new MockModelGateway().generateStructured({ ...req, messages });
+        expect(
+          grams(value.answer).filter((g) => grams(opener).includes(g)),
+          value.answer,
+        ).toEqual([]);
+      }
+    }
   });
 
   it('greets a first-time founder without inventing a past', async () => {

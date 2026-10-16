@@ -13,6 +13,9 @@
 #                 the request asked with it (any of expect_any)
 #   social        thanks / a greeting: no next steps, claims or memory proposals
 #   closing       a wrap-up: as social, and no new question
+#   after_opener  the founder's first message of a later session, after the vEIR's opening line (its opener, or a
+#                 call's intro) already picked up last time: a hello back, as social, that neither says that line
+#                 again (a recall phrase or its words) nor asks a question
 # A labelled turn that gets no reply (blocked) fails its check; it is never dropped.
 #
 # expect_any / forbid_any match whole words or phrases; a trailing * matches a word prefix ("pric*"). Recall terms
@@ -40,6 +43,7 @@ conversations:
       - channel: voice
         turns:
           - text: Hi, it's me again.
+            check: after_opener
           - text: Do you remember what we talked about last time?
             check: recall
             expect_any: [pric*, per library, library budget, facilities]
@@ -57,6 +61,7 @@ conversations:
           - text: "Makes sense. We'll write down the stop condition before we start."
       - turns:
           - text: Hey!
+            check: after_opener
           - text: What did we discuss last time?
             check: recall
             expect_any: [pilot*, stop condition, two labs]
@@ -186,3 +191,22 @@ conversations:
           - text: How should we price per library? We have two libraries interested.
           - text: sure
           - text: Sure, but who pays?
+
+  - id: CO-014
+    title: A hello after the opener gets a hello back, not the recall again (wave-4 integration)
+    kind: multi_session
+    notes: >-
+      Older notes: the founder wanted a campus-wide survey before the spring term, and the student-union grant
+      application is still undecided.
+    sessions:
+      - turns:
+          - text: How should we price per library? We have two libraries interested.
+          - text: "Facilities holds the budget, I think. I'll call facilities about the library budget tomorrow."
+      - turns:
+          - text: Hi!
+            check: after_opener
+          - text: It went well. They have money set aside for study spaces.
+          - text: Remind me what we decided to test first?
+            check: recall
+            expect_any: [pric*, per library, facilities, library budget]
+            forbid_any: [survey, grant*, student-union, spring term]

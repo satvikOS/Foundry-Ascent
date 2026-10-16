@@ -454,7 +454,7 @@ class FakeFoundryApi:
             "mode": s["mode"],
             "privacy": s.get("privacy", "ephemeral"),
             "goal": None,
-            "opener": None,
+            "opener": s.get("opener"),
             "status": s["status"],
             "personaName": persona,
             "personaVersion": 1,
@@ -615,14 +615,18 @@ class FakeFoundryApi:
             if role == "advisor":
                 return self._problem(403, "forbidden")
             sid = _id()
+            privacy = body.get("privacy", "ephemeral")
+            notebook = self.notebooks.get(venture.id) or {}
             self.sessions[sid] = {
                 "id": sid,
                 "venture_id": venture.id,
                 "mode": body["mode"],
-                "privacy": body.get("privacy", "ephemeral"),
+                "privacy": privacy,
                 "status": "active",
                 "by": p.id,
                 "deleted": False,
+                # A remembered conversation opens with the notebook's next opener; a private one with none.
+                "opener": notebook.get("nextOpener") if privacy == "standard" else None,
             }
             self.turns[sid] = []
             return httpx.Response(201, json=self._session_view(self.sessions[sid]))

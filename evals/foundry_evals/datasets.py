@@ -394,7 +394,7 @@ class ApiProbe(_Strict):
         return self
 
 
-ConversationCheck = Literal["recall", "topic_return", "social", "closing", "identity"]
+ConversationCheck = Literal["recall", "topic_return", "social", "closing", "identity", "after_opener"]
 
 
 class ConversationTurn(_Strict):
@@ -478,6 +478,15 @@ class Conversation(_Strict):
                 raise ValueError("a forbidden recall term is said in the first session")
         if self.notes is not None and not any(t.forbid_any for t in recalls):
             raise ValueError("notes need a recall turn that forbids reciting them")
+        for s_index, session in enumerate(self.sessions):
+            for t_index, turn in enumerate(session.turns):
+                # The reply to the vEIR's opening line: only a later remembered session opens with one.
+                if turn.check == "after_opener" and (
+                    self.kind != "multi_session" or s_index == 0 or t_index != 0
+                ):
+                    raise ValueError(
+                        "after_opener is the first turn of a later session of a multi_session case"
+                    )
         return self
 
     @property

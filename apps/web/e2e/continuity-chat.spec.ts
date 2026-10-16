@@ -93,11 +93,15 @@ test.describe('continuity across conversations', () => {
           page.getByRole('article', { name: 'Exchange 1' }).getByRole('button', { name: 'Copy answer' }),
         ).toBeVisible({ timeout: 30_000 });
         const hello = await answerOf(page.request, id, 1);
-        // A hello back that varies per conversation, then where we were.
-        expect(hello).toMatch(/^(?:Hi|Hey|Hello) Maya[.,]/);
-        expect(hello).toMatch(/we were on pricing/i);
-        // The reply to the hello does not ask the opener's question again.
+        // The opener already picked up the first conversation and asked how it went: "Hi!" gets a warm hello
+        // back (varying per conversation) and nothing more, never the recall again nor its question.
+        expect(hello).toMatch(/^(?:Hi|Hey|Hello) Maya[.,!]/);
+        expect(hello).not.toMatch(/we were on|last time|when we (?:talked|spoke)|pric|facilities/i);
         expect(hello).not.toContain('?');
+        // It cites nothing, so no Sources link sits under it.
+        await expect(
+          page.getByRole('article', { name: 'Exchange 1' }).getByRole('button', { name: /source/i }),
+        ).toHaveCount(0);
       });
 
       await test.step('"do you remember what we talked about last time?" is answered from the first', async () => {

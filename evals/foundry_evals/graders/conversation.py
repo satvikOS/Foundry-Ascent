@@ -30,11 +30,21 @@ stacked_questions          more than one question in a reply                    
 always_asks                every reply of a conversation (3+) ends with a question         low
 social_turn_report         thanks / a wrap-up answered with next steps, claims or a        medium
                            memory proposal, or a wrap-up answered with a new question
+opener_repeated            a hello right after the vEIR's opening line answered with what  medium
+                           that line already said ("we were on pricing" again)
+opener_reasked             a hello right after the opening line answered with a question   medium
+                           (its question again, or another one stacked on it)
+opener_missing             an ``after_opener`` turn whose session opened with no line      medium
+                           (nothing picked up the last conversation)
 spoken_markup              Markdown, list markers, citation keys or URLs in speech         medium
 spoken_too_long            a spoken reply over 70 words                                    medium
 spoken_no_handback         a call reply that stops without handing the turn back           medium
 transcript_citation        evidence keys ([E2]) in a call's transcript                     medium
 =========================  =============================================================  ========
+
+Reply to the opener (``after_opener``): production's integration showed "Last time you planned to call
+facilities… How did it go?" followed, after the founder's "Hi!", by "When we talked a moment ago, we were on
+pricing." A hello back must be a hello: no recall phrase, no four-word run of the opening line, no question.
 
 Expectations (``expect_any``, ``forbid_any``) match whole words or phrases, case-insensitively; a term ending in
 ``*`` matches words that start with it ("pric*": price, pricing). Findings carry codes, locations and turn numbers
@@ -87,6 +97,12 @@ SPOKEN_MARKUP = re.compile(
 )
 CITATION_KEY = re.compile(r"\[\s*E\d+", re.IGNORECASE)
 SPOKEN_MAX_WORDS = 70
+#: How a reply says the last conversation again ("When we talked a moment ago, we were on pricing.").
+RECALL_AGAIN = re.compile(
+    r"\b(?:last time|when we (?:last )?(?:talked|spoke)|we were on|where we left off|you were going to|"
+    r"you planned to|our last (?:conversation|call|chat))\b",
+    re.IGNORECASE,
+)
 #: Words that make an opening: a shared formula with new specifics ("Last time you planned to …") is not a
 #: repeat; the same greeting line is.
 OPENING_WORDS = 6
@@ -148,6 +164,8 @@ class ConversationReply:
     unanswered: bool = False
     #: The session's AI disclosure (for ``identity``: the reply should not recite it whole).
     disclosure: str | None = None
+    #: How the vEIR opened the session (its opener, or a call's intro), on the session's first reply only.
+    opener: str | None = None
 
     @property
     def heard(self) -> str:
@@ -181,6 +199,7 @@ def reply_of(
     forbid_any: Sequence[str] = (),
     voice: bool = False,
     disclosure: str | None = None,
+    opener: str | None = None,
 ) -> ConversationReply | None:
     """The reply of a turn; for a labelled turn without one (blocked), an ``unanswered`` reply so the check
     still counts (a dropped check would raise the score). None for an unlabelled turn without a reply."""
@@ -198,6 +217,7 @@ def reply_of(
             voice=voice,
             unanswered=True,
             disclosure=disclosure,
+            opener=opener,
         )
     r = turn.response
     return ConversationReply(
@@ -215,6 +235,7 @@ def reply_of(
         forbid_any=tuple(forbid_any),
         voice=voice,
         disclosure=disclosure,
+        opener=opener,
     )
 
 
@@ -307,7 +328,7 @@ def grade_reply(reply: ConversationReply) -> list[Finding]:
                 )
             )
             break
-    if reply.check in ("social", "closing"):
+    if reply.check in ("social", "closing", "after_opener"):
         if reply.next_actions or reply.claims or reply.memory_candidates:
             out.append(
                 _finding(
@@ -328,6 +349,8 @@ def grade_reply(reply: ConversationReply) -> list[Finding]:
                     "answer",
                 )
             )
+    if reply.check == "after_opener":
+        out += _grade_after_opener(reply)
     if reply.check == "identity":
         if not SAYS_AI.search(reply.heard):
             out.append(
@@ -386,7 +409,7 @@ def grade_reply(reply: ConversationReply) -> list[Finding]:
                     )
                 )
         said = reply.said
-        if said and reply.check not in ("social", "closing") and not hands_back(said):
+        if said and reply.check not in ("social", "closing", "after_opener") and not hands_back(said):
             out.append(
                 _finding(
                     "spoken_no_handback",
@@ -396,6 +419,47 @@ def grade_reply(reply: ConversationReply) -> list[Finding]:
                     "speech" if reply.speech else "spoken",
                 )
             )
+    return out
+
+
+def _grade_after_opener(reply: ConversationReply) -> list[Finding]:
+    """A hello right after the vEIR's opening line: a hello back, never that line again nor a question."""
+    if reply.opener is None or not reply.opener.strip():
+        return [
+            _finding(
+                "opener_missing",
+                Severity.MEDIUM,
+                "the session opened with no line picking up the last conversation",
+                reply,
+                "opening",
+            )
+        ]
+    out: list[Finding] = []
+    # The opening line without a call intro's AI disclosure (the same in every call by design).
+    parts = sentences(reply.opener)
+    while len(parts) > 1 and DISCLOSURE_SENTENCE.search(parts[0]):
+        parts = parts[1:]
+    opened = " ".join(parts)
+    if RECALL_AGAIN.search(reply.heard) or four_grams(opened) & four_grams(reply.heard):
+        out.append(
+            _finding(
+                "opener_repeated",
+                Severity.MEDIUM,
+                "a hello after the opening line answered with what that line already said",
+                reply,
+                "answer",
+            )
+        )
+    if question_count(reply.answer) > 0 or (reply.said and question_count(reply.said) > 0):
+        out.append(
+            _finding(
+                "opener_reasked",
+                Severity.MEDIUM,
+                "a hello after the opening line answered with a question",
+                reply,
+                "answer",
+            )
+        )
     return out
 
 

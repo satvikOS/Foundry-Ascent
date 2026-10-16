@@ -527,12 +527,14 @@ function socialReply(args: {
       return `Hi again${name !== null ? `, ${name}` : ''}. Where would you like to pick up?`;
     const howAreYou = /\bhow(?:'s| is| are| have)\b/i.test(text) ? ' Thanks for asking.' : '';
     if (reading.openerShown) {
-      // The opener already asked how it went: say hello back and say where we were, without asking again. The
-      // hello varies per conversation (seeded by its opener).
-      const hi = fillName(pick(HELLO_AFTER_OPENER, seed), name);
-      return previous !== null
-        ? `${hi}${howAreYou} ${whereWeWere(previous)}`
-        : `${fillName('Hi{ name}.', name)}${howAreYou} Go ahead.`;
+      // The opener already picked up last time and asked how it went: a warm hello back and nothing more (never
+      // the recall again, never its question again); their answer to it comes next. The hello varies per
+      // conversation (seeded by its opener).
+      const opened = fourGrams(reading.priorReplies[0] ?? '');
+      const hellos = HELLO_AFTER_OPENER.map((_, i) => fillName(pick(HELLO_AFTER_OPENER, seed + i), name));
+      // Never in the opener's own words ("Nice to hear from you again." is not answered "nice to hear from you").
+      const hello = hellos.find((h) => ![...fourGrams(h)].some((g) => opened.has(g))) ?? hellos[0] ?? '';
+      return `${hello}${howAreYou}`;
     }
     const hello = `${greetingFor(args.warmth, name, previous, seed)}${howAreYou}`;
     return `${hello} ${previous !== null ? callbackTo(previous) : "What's on your mind today?"}`;

@@ -65,6 +65,11 @@ export interface ConversationState {
   readonly openQuestion: boolean;
   /** Completed exchanges in view. */
   readonly earlierTurns: number;
+  /**
+   * The new message is the founder's first reply to the vEIR's own opening line (the conversation's stored opener,
+   * which already picked up the last conversation): the reply must not say it again.
+   */
+  readonly afterOpener: boolean;
 }
 
 /** Longest gist of a thread. */
@@ -294,8 +299,20 @@ export function lastQuestionOf(answer: string): string | null {
   return null;
 }
 
+/** A hello and nothing else ("Hi!", "Good morning", "Hi, it's me again", "How are you?"). */
+function onlyGreets(text: string, moves: readonly FounderMove[]): boolean {
+  if (!moves.includes('greeting')) return false;
+  const rest = normalize(text).replace(
+    /\bgood (?:morning|afternoon|evening|day)\b|\b(?:morning|evening|howdy|hiya)\b/g,
+    ' ',
+  );
+  return contentWords(rest).size === 0;
+}
+
 /** Whether the founder's message takes up the vEIR's question: answers it, or at least says something to it. */
 function takesUp(question: string, text: string, moves: readonly FounderMove[]): boolean {
+  // A hello is not an answer: "Hi!" after "How did the facilities call go?" leaves the question open.
+  if (onlyGreets(text, moves)) return false;
   if (moves.includes('short_reply')) return true;
   if (moves.some((m) => m === 'topic_shift' || m === 'recall' || m === 'resume' || m === 'closing'))
     return false;
@@ -341,6 +358,13 @@ function median(values: readonly number[]): number | null {
 export function deriveConversationState(
   history: readonly StateTurn[],
   founderText: string,
+  options: {
+    /**
+     * The conversation's opener (the vEIR's first message, replayed before the history): on the founder's first
+     * message it counts as the vEIR's last reply (its question, how it opened).
+     */
+    readonly opener?: string | null;
+  } = {},
 ): ConversationState {
   const turns = history.filter(
     (t) => t.answer !== null && t.answer.trim() !== '' && t.founderText.trim() !== '',
@@ -414,7 +438,17 @@ export function deriveConversationState(
     const question = lastQuestionOf(turns[i]?.answer ?? '');
     if (question !== null && !asked.includes(question)) asked.push(question);
   }
-  const lastAsked = lastQuestionOf(turns.at(-1)?.answer ?? '');
+  // The founder's first message answers the opener: it is the vEIR's last reply so far.
+  const opener = options.opener?.trim() ?? '';
+  const afterOpener = turns.length === 0 && opener !== '';
+  if (afterOpener) {
+    const question = lastQuestionOf(opener);
+    if (question !== null) asked.push(question);
+    if (endsWithQuestion(opener)) streak = 1;
+    const opening = openingOf(opener);
+    if (opening !== '') openings.push(opening);
+  }
+  const lastAsked = lastQuestionOf(afterOpener ? opener : (turns.at(-1)?.answer ?? ''));
   const moves = founderMoves(founderText);
 
   const prev: Thread | null = previous;
@@ -431,6 +465,7 @@ export function deriveConversationState(
     askedQuestions: asked,
     openQuestion: lastAsked !== null && !takesUp(lastAsked, founderText, moves),
     earlierTurns: turns.length,
+    afterOpener,
   };
 }
 
@@ -475,13 +510,16 @@ function ago(n: number): string {
  */
 export function renderConversationState(state: ConversationState): string {
   const notable = state.moves.some((m) => NOTABLE.has(m));
-  if (state.earlierTurns === 0 && !notable) return '';
+  if (state.earlierTurns === 0 && !notable && !state.afterOpener) return '';
   const what = state.moves.map((m) => MOVE_LABELS[m]);
   const length =
     state.typicalWords === null
       ? `${state.words} words`
       : `${state.words} words (their messages usually run about ${state.typicalWords})`;
   const lines = [`- Their message${what.length > 0 ? ` ${what.join(', ')}` : ''}; ${length}.`];
+  if (state.afterOpener) {
+    lines.push('- It answers your opening line, which already picked up last time: never say that again.');
+  }
   if (state.previous !== null) lines.push(`- You were on: ${quoted(state.previous.gist)}.`);
   for (const p of state.parked) {
     lines.push(`- Parked, left before it was settled: ${quoted(p.gist)} (${ago(p.messagesAgo)}).`);
