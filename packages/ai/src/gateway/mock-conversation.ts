@@ -44,7 +44,7 @@ export function unescapeData(text: string): string {
 }
 
 const RELATIVE_TIME =
-  /\b(?:(?:about |around |roughly )?(?:\d+|a few|a couple of|an?) (?:seconds?|minutes?|mins?|hours?|days?|weeks?|months?) ago|just now|earlier today|this (?:morning|afternoon|evening)|last night|yesterday|last week|last month|today)\b/i;
+  /\b(?:(?:about |around |roughly )?(?:\d+|a few|a couple of|an?) (?:moments?|seconds?|minutes?|mins?|hours?|days?|weeks?|months?) ago|just now|earlier today|this (?:morning|afternoon|evening)|last night|yesterday|last week|last month|today|on \d{1,2} (?:January|February|March|April|May|June|July|August|September|October|November|December))\b/i;
 
 function firstMatch(text: string, pattern: RegExp): string | null {
   const value = pattern.exec(text)?.[1]?.trim() ?? '';
@@ -126,7 +126,7 @@ function fromSection(
     ...[...text.matchAll(speaker('you|veir|the veir|coach|assistant|you said'))].map((m) =>
       clean(m[1] ?? ''),
     ),
-    ...[...text.matchAll(/<(?:coach|veir|answer)>([\s\S]*?)<\/(?:coach|veir|answer)>/g)].map((m) =>
+    ...[...text.matchAll(/<(?:you|coach|veir|answer)>([\s\S]*?)<\/(?:you|coach|veir|answer)>/g)].map((m) =>
       clean(m[1] ?? ''),
     ),
   ].filter((l) => l !== '');
@@ -147,6 +147,7 @@ function fromSection(
       /(?:^|\n)\s*(?:[-*]\s*)?(?:commitments?|plans?|next steps?|open threads?|they planned|planned|promised)\s*[:：]\s*([^\n]+)/i,
     ) ??
     firstMatch(text, /(?:commitments?|plans?|next steps?|open threads?)\s*[:：]?\s*\n\s*[-*]\s*([^\n]+)/i) ??
+    firstMatch(text, /<(?:commitments|open_commitments)>\n\s*-\s*([^\n]+)/) ??
     firstMatch(text, /<commitment[^>]*>([\s\S]*?)<\/commitment>/);
   const stated = founderLines.map((l) => COMMITMENT.exec(l)?.[1]).find((c) => c !== undefined) ?? null;
   const anything =
@@ -209,7 +210,9 @@ function channelIn(text: string): 'call' | 'chat' | null {
 }
 
 function normaliseWhen(raw: string): string {
-  const when = raw.trim().toLowerCase();
+  const trimmed = raw.trim();
+  // Lower-case all but month names ("on 2 September").
+  const when = /^on \d/i.test(trimmed) ? `on ${trimmed.slice(3)}` : trimmed.toLowerCase();
   return /^\d/.test(when) ? `about ${when}` : when;
 }
 
