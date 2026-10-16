@@ -93,7 +93,7 @@ function RecordConsentDialog({
           <DialogTitle>Record {eirName}’s consent</DialogTitle>
           <DialogDescription>
             {current
-              ? `${persona.name} relies on the new record from now on and drops a voice or portrait it doesn’t cover. The current record stays in force until revoked.`
+              ? `${persona.name} switches to it and drops a voice or portrait it doesn’t cover. The current record stays in force until revoked.`
               : `${persona.name} relies on it from now on.`}
           </DialogDescription>
         </DialogHeader>

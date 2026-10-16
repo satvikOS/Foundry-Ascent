@@ -68,15 +68,18 @@ export function InboxPage({ selectedId, filter, onSelect, onFilterChange }: Inbo
   return (
     <PageContainer size="wide">
       <PageHeader title="Escalation inbox" description="Requests routed to you.">
-        <FilterChips<InboxFilter>
-          label="Filter escalations"
-          chips={[
-            { key: 'open', label: 'Open', count: inbox.isSuccess ? open.length : undefined },
-            { key: 'closed', label: 'Closed', count: inbox.isSuccess ? closed.length : undefined },
-          ]}
-          selected={filter}
-          onSelect={onFilterChange}
-        />
+        {/* Nothing to filter until something has been routed. */}
+        {all.length > 0 ? (
+          <FilterChips<InboxFilter>
+            label="Filter escalations"
+            chips={[
+              { key: 'open', label: 'Open', count: open.length },
+              { key: 'closed', label: 'Closed', count: closed.length },
+            ]}
+            selected={filter}
+            onSelect={onFilterChange}
+          />
+        ) : null}
       </PageHeader>
 
       {inbox.isPending ? (

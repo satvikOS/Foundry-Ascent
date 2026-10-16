@@ -70,12 +70,12 @@ export function ReviewsPage({ selectedTurnId, filter, onSelect, onFilterChange }
         title="Calibration reviews"
         description="Score sampled answers from your ventures. You see the venture, question, answer and evidence — not who asked."
       >
-        {isEir ? (
+        {samples.length > 0 ? (
           <FilterChips<ReviewFilter>
             label="Filter samples"
             chips={[
-              { key: 'pending', label: 'To review', count: queue.isSuccess ? pending.length : undefined },
-              { key: 'reviewed', label: 'Reviewed', count: queue.isSuccess ? reviewed.length : undefined },
+              { key: 'pending', label: 'To review', count: pending.length },
+              { key: 'reviewed', label: 'Reviewed', count: reviewed.length },
             ]}
             selected={filter}
             onSelect={onFilterChange}
