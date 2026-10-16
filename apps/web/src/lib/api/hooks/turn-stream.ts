@@ -347,7 +347,11 @@ export function useTurnStream(sessionId: string, { ventureId, onEvent }: UseTurn
             type: 'failed',
             error: {
               code: isApiError(error) ? error.code : 'internal',
-              message: errorMessage(error),
+              // A 429 (a budget or a rate limit) says which limit and until when in its own words.
+              message:
+                isApiError(error) && error.status === 429 && error.detail
+                  ? error.detail
+                  : errorMessage(error),
               retryable: isApiError(error) ? keepKey || error.isTransient : true,
               requestId: isApiError(error) ? error.requestId : undefined,
               retryAt: isApiError(error) ? retryAtFrom(error.retryAfter) : undefined,

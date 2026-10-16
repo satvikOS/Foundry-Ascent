@@ -359,6 +359,32 @@ describe('useTurnStream idempotency', () => {
     expect(idempotencyKeyOf(fetchMock.mock.calls[2])).not.toBe(first);
   });
 
+  it('shows a 429’s own detail: which limit was reached and until when', async () => {
+    const { fetchMock, result } = setup();
+    const detail = 'You have reached your daily AI coaching budget. It resets at midnight UTC.';
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          type: 'urn:foundry-ascent:problem:spend_cap_reached',
+          title: 'Daily AI budget reached',
+          status: 429,
+          code: 'spend_cap_reached',
+          detail,
+          requestId: 'req-1',
+          retryAfterSeconds: 3600,
+        }),
+        { status: 429, headers: { 'content-type': 'application/problem+json', 'retry-after': '3600' } },
+      ),
+    );
+    await act(async () => {
+      await result.current.send({ text: 'Where should I start?' });
+    });
+    expect(result.current.state).toMatchObject({
+      status: 'failed',
+      error: { code: 'spend_cap_reached', message: detail },
+    });
+  });
+
   it('uses a new key after the server reported the turn as failed', async () => {
     const { fetchMock, result } = setup();
     fetchMock
