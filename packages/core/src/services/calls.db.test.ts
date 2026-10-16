@@ -1386,4 +1386,27 @@ describe('the turn engine and the calls service together', () => {
     );
     await endCall('maya', call.call.id);
   });
+
+  it('daily maintenance closes calls whose client went away, without moving their minutes', async () => {
+    const sessionId = await newSession('devin', 'quietquad');
+    const { call } = await startCall('devin', sessionId, 'typed');
+    await backdate(call.id, 10, 5);
+    const minutes = () =>
+      h.t.db.system((sx) =>
+        callsRepo.callSecondsToday(sx, {
+          principalId: h.people.devin,
+          graceSeconds: CALL_LIMITS.staleGraceSeconds,
+        }),
+      );
+    const before = await minutes();
+    const report = await h.core.maintenance.runDaily({ requestId: 'maintenance-stale-calls' });
+    expect(report.staleCallsEnded).toBeGreaterThanOrEqual(1);
+    expect(await callRow(call.id)).toMatchObject({
+      status: 'ended',
+      endReason: 'timeout',
+      endDetail: 'stale_heartbeat',
+    });
+    expect(await minutes()).toBe(before);
+    expect(await auditActions()).toContain('maintenance.stale_calls');
+  });
 });

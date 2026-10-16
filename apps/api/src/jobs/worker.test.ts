@@ -83,6 +83,7 @@ function deps(lines: string[] = []) {
       Promise.resolve({
         ephemeralSessionsEnded: 1,
         ephemeralTurnsRedacted: 2,
+        staleCallsEnded: 1,
         proposalsExpired: 3,
         distillation: sweep,
       }),

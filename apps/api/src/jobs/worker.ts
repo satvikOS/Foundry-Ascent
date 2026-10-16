@@ -110,6 +110,7 @@ export async function dispatchJob(
         log.info('worker.maintenance_done', {
           ephemeralSessionsEnded: report.ephemeralSessionsEnded,
           ephemeralTurnsRedacted: report.ephemeralTurnsRedacted,
+          staleCallsEnded: report.staleCallsEnded,
           proposalsExpired: report.proposalsExpired,
           distillCandidates: report.distillation.candidates,
           distilled: report.distillation.distilled,
