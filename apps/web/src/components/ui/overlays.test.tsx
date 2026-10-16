@@ -37,7 +37,8 @@ describe('overlay surfaces', () => {
     expect(panel).toHaveAttribute('data-surface', 'solid');
     expect(panel).toHaveClass('bg-popover');
     expect(panel).not.toHaveClass('glass-strong');
-    expect(overlayOf()).toHaveClass('backdrop-blur-xs', 'bg-(--scrim)');
+    // Blurred from tablet width up; a full-screen blur is too costly on phones.
+    expect(overlayOf()).toHaveClass('sm:backdrop-blur-xs', 'bg-(--scrim)');
   });
 
   it('the command palette is a glass panel, and its scrim only dims (no glass over blur)', () => {
@@ -54,8 +55,8 @@ describe('overlay surfaces', () => {
     expect(panel).toHaveClass('glass-strong');
     expect(panel).not.toHaveClass('bg-popover');
     const overlay = overlayOf();
-    expect(overlay).toHaveClass('backdrop-blur-none', 'bg-(--scrim-soft)');
-    expect(overlay).not.toHaveClass('backdrop-blur-xs');
+    expect(overlay).toHaveClass('sm:backdrop-blur-none', 'bg-(--scrim-soft)');
+    expect(overlay).not.toHaveClass('sm:backdrop-blur-xs');
   });
 
   it('a menu is glass; its submenu, which overlaps it, is solid', async () => {

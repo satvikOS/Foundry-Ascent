@@ -8,12 +8,12 @@ export const Dialog = DialogPrimitive.Root;
 const DialogPortal = DialogPrimitive.Portal;
 
 /**
- * The scrim behind every modal: dims and softly blurs the page. Modal panels on it are solid (they hold
- * forms and body text), so glass never stacks on glass; only floating layers (menus, popovers, the
- * command palette, toasts) are glass.
+ * The scrim behind every modal: dims the page and, from tablet width up, softly blurs it (a full-screen
+ * blur costs too much on phones). Modal panels on it are solid (they hold forms and body text), so glass
+ * never stacks on glass; only floating layers (menus, popovers, the command palette, toasts) are glass.
  */
 export const overlayClasses =
-  'fixed inset-0 z-50 bg-(--scrim) backdrop-blur-xs data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0';
+  'fixed inset-0 z-50 bg-(--scrim) sm:backdrop-blur-xs data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0';
 
 /** The modal panel surface shared by dialogs and alert dialogs: solid, with a hairline edge. */
 export const modalPanelClasses =
@@ -52,7 +52,7 @@ export function DialogContent({
     <DialogPortal>
       <DialogOverlay
         data-surface={surface}
-        className={surface === 'glass' ? 'bg-(--scrim-soft) backdrop-blur-none' : undefined}
+        className={surface === 'glass' ? 'bg-(--scrim-soft) sm:backdrop-blur-none' : undefined}
       />
       <DialogPrimitive.Content
         data-slot="dialog-content"

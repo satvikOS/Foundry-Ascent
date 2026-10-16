@@ -37,7 +37,7 @@ interface SheetContentProps
 export function SheetContent({ className, children, side, hideClose = false, ...props }: SheetContentProps) {
   return (
     <SheetPrimitive.Portal>
-      <SheetPrimitive.Overlay className={overlayClasses} />
+      <SheetPrimitive.Overlay data-slot="sheet-overlay" className={overlayClasses} />
       <SheetPrimitive.Content
         data-slot="sheet-content"
         className={cn(sheetVariants({ side }), className)}
