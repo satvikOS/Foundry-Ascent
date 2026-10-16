@@ -31,7 +31,7 @@ import { useNotebook } from '@/lib/api/hooks/notebook';
 import { formatDateTime, formatRelative, isoString } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { daysUntil, formatIsoDate } from '@/features/memory/typed/attributes';
-import { sentenceStart, useVeirAuthor } from '@/features/venture/veir-name';
+import { sentenceStart, useVeirName } from '@/features/venture/veir-name';
 
 import { InlineEditForm, LineActions, useReturnFocus } from './inline-edit';
 import { isNotebookConflict, openerRefusal, useNotebookEdit } from './notebook-api';
@@ -54,7 +54,7 @@ const COMMITMENT_STATUS_LABEL: Record<CommitmentStatus, string> = {
 
 interface NotebookEditorProps {
   ventureId: string;
-  /** The vEIR's short name ("Corin", or "your vEIR"). */
+  /** The vEIR's name ("Corin’s vEIR", or "your vEIR"; lib/veir). */
   veirName: string;
   /** Founders and the team edit; the assigned EIR reads. */
   canEdit: boolean;
@@ -69,7 +69,7 @@ interface NotebookEditorProps {
 export function NotebookEditor({ ventureId, veirName, canEdit }: NotebookEditorProps) {
   const notebook = useNotebook(ventureId);
   const edit = useNotebookEdit(ventureId);
-  const author = useVeirAuthor(ventureId);
+  const author = useVeirName(ventureId);
   const [confirmClear, setConfirmClear] = useState(false);
 
   if (notebook.isPending) return <HairlineSkeleton rows={4} label="Loading the notebook…" />;

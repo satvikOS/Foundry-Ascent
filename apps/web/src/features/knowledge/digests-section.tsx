@@ -23,7 +23,7 @@ import { useSessions } from '@/lib/api/hooks/sessions';
 import { conversationTitle, lastActivity } from '@/lib/conversations';
 import { formatDateTime, formatRelative, isoString } from '@/lib/format';
 import { formatIsoDate } from '@/features/memory/typed/attributes';
-import { sentenceStart, useVeirAuthor } from '@/features/venture/veir-name';
+import { sentenceStart, useVeirName } from '@/features/venture/veir-name';
 
 import { useDeleteDigest } from './digest-api';
 
@@ -49,7 +49,7 @@ interface DigestsSectionProps {
  */
 export function DigestsSection({ ventureId, tenant, canEdit }: DigestsSectionProps) {
   const sessions = useSessions(ventureId);
-  const author = useVeirAuthor(ventureId);
+  const author = useVeirName(ventureId);
   const remove = useDeleteDigest(ventureId);
   const [confirm, setConfirm] = useState<Digested | null>(null);
   const rows = useMemo(() => digestedConversations(sessions.data ?? []), [sessions.data]);

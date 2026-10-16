@@ -41,8 +41,7 @@ import { formatClock, spokenDuration, useCallClock } from './use-call-clock';
 import { useCallConfig, useCallVeir, type CallVeir } from './use-call-veir';
 
 const FALLBACK_VEIR: CallVeir = {
-  name: 'Your vEIR',
-  shortName: 'your vEIR',
+  name: 'your vEIR',
   kind: 'eir_persona',
   disclosure: '',
   portraitUrl: null,
@@ -122,7 +121,7 @@ export function CallScreen() {
 
   const blocker = callBlocker({
     writable,
-    name: veir.shortName,
+    name: veir.name,
     config: config.data,
     configError: config.error ? errorMessage(config.error) : createError,
   });

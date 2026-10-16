@@ -64,7 +64,7 @@ function SourceStatus({ source }: { source: LibrarySource }) {
  * Knowledge library: the notes, cases, FAQs, transcripts and documents this vEIR draws on in every venture
  * it coaches (its common pool). Curators write and upload; everyone in the studio can read.
  */
-export function LibraryTab({ persona, shortName }: { persona: PersonaView; shortName: string }) {
+export function LibraryTab({ persona, displayName }: { persona: PersonaView; displayName: string }) {
   const library = usePersonaLibrary(persona.id);
   const upload = useUploadLibraryDocument(persona.id);
   const retry = useRetryLibraryUpload(persona.id);
@@ -209,7 +209,7 @@ export function LibraryTab({ persona, shortName }: { persona: PersonaView; short
         <EmptyState
           icon={Library}
           title="The library is empty"
-          description={`Notes, cases, FAQs and documents added here shape how ${shortName} coaches every venture.`}
+          description={`Notes, cases, FAQs and documents added here shape how ${displayName} coaches every venture.`}
           action={addMenu}
           headingLevel={2}
         />
@@ -308,7 +308,7 @@ export function LibraryTab({ persona, shortName }: { persona: PersonaView; short
 
       <LibrarySourceSheet
         personaId={persona.id}
-        shortName={shortName}
+        displayName={displayName}
         state={sheet}
         onClose={() => {
           setSheet({ mode: 'closed' });
@@ -327,7 +327,7 @@ export function LibraryTab({ persona, shortName }: { persona: PersonaView; short
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Remove “{removing?.title}”?</AlertDialogTitle>
-            <AlertDialogDescription>{shortName} stops drawing on it at once.</AlertDialogDescription>
+            <AlertDialogDescription>{displayName} stops drawing on it at once.</AlertDialogDescription>
           </AlertDialogHeader>
           <MutationErrorAlert error={remove.error} title="Not removed" />
           <AlertDialogFooter>

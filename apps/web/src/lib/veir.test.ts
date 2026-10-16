@@ -1,23 +1,23 @@
 import { describe, expect, it } from 'vitest';
 
-import { monogram, shortPersonaName, veirDisplay } from './veir';
+import { faceMonogram, monogram, veirDisplay, veirName } from './veir';
 
-describe('shortPersonaName', () => {
-  it('takes the EIR name from a possessive vEIR persona name', () => {
-    expect(shortPersonaName("Corin's vEIR", 'eir_persona', 'Corin Halvorsen')).toBe('Corin');
-    expect(shortPersonaName('Ruth’s vEIR', 'eir_persona', null)).toBe('Ruth');
+describe('veirName (the AI is always "<EIR first name>’s vEIR")', () => {
+  it('keeps a persona already named as a vEIR', () => {
+    expect(veirName("Corin's vEIR", 'eir_persona', 'Corin Halvorsen')).toBe("Corin's vEIR");
+    expect(veirName('Ruth’s vEIR', 'eir_persona', null)).toBe('Ruth’s vEIR');
+    expect(veirName('  Ruth’s   vEIR ', 'eir_persona')).toBe('Ruth’s vEIR');
   });
 
-  it('uses the first name of the persona’s own consented EIR profile for other EIR persona names', () => {
-    expect(shortPersonaName('Deep-tech pathway mentor', 'eir_persona', 'Ruth Abernathy-Song')).toBe('Ruth');
+  it('never lets an EIR persona read as the EIR: any other name becomes "<first name>’s vEIR"', () => {
+    expect(veirName('Corin Halvorsen', 'eir_persona')).toBe('Corin’s vEIR');
+    expect(veirName('Corin', 'eir_persona')).toBe('Corin’s vEIR');
+    // The first name of the persona's own consented EIR profile, when known.
+    expect(veirName('Deep-tech pathway mentor', 'eir_persona', 'Ruth Abernathy-Song')).toBe('Ruth’s vEIR');
   });
 
-  it('keeps the persona’s own name when its EIR profile is unknown', () => {
-    expect(shortPersonaName('Deep-tech pathway mentor', 'eir_persona')).toBe('Deep-tech pathway mentor');
-  });
-
-  it('keeps the neutral guide name whole', () => {
-    expect(shortPersonaName('Foundry Guide', 'neutral_guide', 'Corin Halvorsen')).toBe('Foundry Guide');
+  it('keeps a neutral guide’s own name', () => {
+    expect(veirName('Foundry Guide', 'neutral_guide', 'Corin Halvorsen')).toBe('Foundry Guide');
   });
 });
 
@@ -33,7 +33,7 @@ describe('veirDisplay', () => {
       persona: {
         personaId: '00000000-0000-4000-8000-000000000001',
         releaseId: '00000000-0000-4000-8000-000000000002',
-        name: 'Deep-tech pathway mentor',
+        name: 'Ruth’s vEIR',
         kind: 'eir_persona' as const,
         version: 1,
         status: 'active' as const,
@@ -46,10 +46,10 @@ describe('veirDisplay', () => {
         synthetic: true,
       },
     };
-    expect(veirDisplay(venture)?.shortName).toBe('Deep-tech pathway mentor');
+    expect(veirDisplay(venture)?.name).toBe('Ruth’s vEIR');
   });
 
-  it('never offers a portrait until likeness consent supplies one', () => {
+  it('names the AI as the vEIR and offers no portrait until likeness consent supplies one', () => {
     const veir = veirDisplay({
       persona: {
         personaId: '00000000-0000-4000-8000-000000000001',
@@ -62,7 +62,16 @@ describe('veirDisplay', () => {
         allowedModes: ['diagnose'],
       },
     });
-    expect(veir).toMatchObject({ shortName: 'Corin', portraitUrl: null, kind: 'eir_persona' });
+    expect(veir).toMatchObject({ name: "Corin's vEIR", portraitUrl: null, kind: 'eir_persona' });
+    expect(veir).not.toHaveProperty('shortName');
+  });
+});
+
+describe('faceMonogram', () => {
+  it('shows the EIR’s initial on a vEIR’s face and a guide’s initials', () => {
+    expect(faceMonogram('Corin’s vEIR')).toBe('C');
+    expect(faceMonogram("Ruth's vEIR")).toBe('R');
+    expect(faceMonogram('Foundry Guide')).toBe('FG');
   });
 });
 

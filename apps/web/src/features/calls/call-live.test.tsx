@@ -12,7 +12,6 @@ import type { CallVeir } from './use-call-veir';
 
 const VEIR: CallVeir = {
   name: "Corin's vEIR",
-  shortName: 'Corin',
   kind: 'eir_persona',
   disclosure: "You are talking with Corin's vEIR, an AI coach. It is not a person.",
   portraitUrl: null,
@@ -103,7 +102,7 @@ describe('CallLive', () => {
       captions: { veir: 'Twelve is a good start.', founder: 'We interviewed twelve', founderLive: true },
     });
     const captions = await screen.findByRole('region', { name: 'Captions' });
-    expect(captions).toHaveTextContent('Corin: Twelve is a good start.');
+    expect(captions).toHaveTextContent("Corin's vEIR: Twelve is a good start.");
     expect(captions).toHaveTextContent('YouWe interviewed twelve');
   });
 
@@ -115,7 +114,7 @@ describe('CallLive', () => {
 
   it('continues by typing when there is no voice input, and says why', async () => {
     const { engine } = renderLive({ input: 'typed', typedReason: 'mic_denied' });
-    const line = await screen.findByRole('textbox', { name: 'Reply to Corin' });
+    const line = await screen.findByRole('textbox', { name: "Reply to Corin's vEIR" });
     expect(line).toHaveFocus();
     // Said once, not three times: the status does not repeat "type".
     expect(screen.getByText(/microphone is blocked/)).toBeInTheDocument();
@@ -131,7 +130,7 @@ describe('CallLive', () => {
   it('opens a typed line during a voice call', async () => {
     const { engine } = renderLive();
     await userEvent.click(await screen.findByRole('button', { name: 'Type instead' }));
-    const line = screen.getByRole('textbox', { name: 'Reply to Corin' });
+    const line = screen.getByRole('textbox', { name: "Reply to Corin's vEIR" });
     expect(line).toHaveFocus();
     await userEvent.type(line, 'Quick note{Enter}');
     expect(engine.sendText).toHaveBeenCalledWith('Quick note');

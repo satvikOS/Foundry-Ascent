@@ -1,7 +1,7 @@
 import { cva, type VariantProps } from 'class-variance-authority';
 import { useState, type ComponentProps } from 'react';
 
-import { monogram } from '@/lib/veir';
+import { faceMonogram } from '@/lib/veir';
 import { cn } from '@/lib/utils';
 
 export type FaceSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl';
@@ -36,7 +36,7 @@ const MONOGRAM_TEXT: Record<FaceSize, string> = {
 
 interface PersonaAvatarProps
   extends Omit<ComponentProps<'span'>, 'children'>, VariantProps<typeof faceVariants> {
-  /** The vEIR's short name ("Corin"); its monogram is used when there is no portrait. */
+  /** The vEIR's name ("Corin’s vEIR"); its monogram is used when there is no portrait. */
   name: string;
   /**
    * Served portrait. Only pass one when the EIR consented to their likeness being used; without it
@@ -114,7 +114,7 @@ export function PersonaAvatar({
               'translate-y-[0.04em]',
             )}
           >
-            {monogram(name)}
+            {faceMonogram(name)}
           </span>
         )}
       </span>

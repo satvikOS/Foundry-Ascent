@@ -88,17 +88,17 @@ function ReadOnlyVenture() {
     <div className="mx-auto flex w-full max-w-(--content-width) flex-1 flex-col justify-center px-4 py-16 sm:px-6">
       {veir ? (
         <div className="flex flex-col items-center gap-3">
-          <PersonaAvatar name={veir.shortName} portraitUrl={veir.portraitUrl} size="xl" decorative />
+          <PersonaAvatar name={veir.name} portraitUrl={veir.portraitUrl} size="xl" decorative />
           <p className="flex items-center gap-2 text-small font-medium">
-            {veir.shortName}
+            {veir.name}
             <VeirBadge kind={veir.kind} />
           </p>
         </div>
       ) : null}
       <Greeting title={`${greeting()}, ${firstName(me.principal.displayName)}`}>
         <p className="mt-3 max-w-xl text-pretty text-muted-foreground">
-          You can read {name}’s knowledge and documents. Conversations with{' '}
-          {veir ? veir.shortName : 'its vEIR'} are private to the founders and team.
+          You can read {name}’s knowledge and documents. Conversations with {veir ? veir.name : 'its vEIR'}{' '}
+          are private to the founders and team.
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-2">
           <Button asChild variant="secondary">
@@ -204,7 +204,7 @@ function NewChat() {
     focusComposer();
   };
 
-  const name = veir?.shortName ?? 'your vEIR';
+  const name = veir?.name ?? 'your vEIR';
   const opener = notebook.data?.nextOpener?.trim() ?? null;
   const available = availability?.available === true;
   const suggestions = available && !temporary ? newChatSuggestions(overview.data ?? null) : [];
@@ -252,9 +252,9 @@ function NewChat() {
       <div className="mx-auto flex w-full max-w-(--content-width) flex-1 flex-col justify-center px-4 pt-16 pb-[min(14vh,7rem)] sm:px-6">
         {veir ? (
           <div className="flex flex-col items-center gap-3">
-            <PersonaAvatar name={veir.shortName} portraitUrl={veir.portraitUrl} size="xl" decorative />
+            <PersonaAvatar name={veir.name} portraitUrl={veir.portraitUrl} size="xl" decorative />
             <p className="flex items-center gap-2 text-small font-medium">
-              {veir.shortName}
+              {veir.name}
               <VeirBadge kind={veir.kind} />
             </p>
           </div>

@@ -1,16 +1,19 @@
 import type { PersonaSummary, VentureDetail } from '@foundry/contracts';
 
 /**
- * How the vEIR assigned to a venture is shown: its face (portrait or monogram), its short name in
- * buttons and greetings ("Call Corin"), and its disclosure. A vEIR is an AI built from an EIR's
- * approved doctrine and style; nothing here may suggest it is the human EIR.
+ * How the vEIR assigned to a venture is shown: its face (portrait or monogram), its name and its disclosure.
+ * A vEIR is an AI built from an EIR's approved doctrine and style; nothing here may suggest it is the human
+ * EIR.
+ *
+ * Naming rule (honesty invariant): wherever the AI acts or is addressed, it is "<EIR first name>’s vEIR"
+ * ("Corin’s vEIR"): in buttons ("Call Corin’s vEIR"), headers, the call stage, memory and notebook credits,
+ * aria-labels and announcements. A bare EIR name ("Corin", "Corin Halvorsen") only ever means the person. A
+ * neutral guide with no EIR keeps its own name ("Foundry Guide"). Every surface takes the name from here.
  */
 export interface VeirDisplay {
   personaId: string;
-  /** Persona name as released ("Corin's vEIR", "Foundry Guide"). */
+  /** What the AI is called everywhere: "Corin’s vEIR", or a neutral guide's own name. */
   name: string;
-  /** Short name for greetings and actions ("Corin", "Foundry Guide"). */
-  shortName: string;
   kind: PersonaSummary['kind'];
   /** The persona release's AI disclosure. */
   disclosure: string;
@@ -19,26 +22,24 @@ export interface VeirDisplay {
 }
 
 const POSSESSIVE_VEIR = /^(.+?)[’']s\s+vEIR$/i;
+const ENDS_WITH_VEIR = /\bvEIR$/i;
 
 /**
- * The short name of a persona: "Corin's vEIR" → "Corin". An EIR persona named otherwise takes the first
- * name of the EIR it was built from (`profileDisplayName`: the persona's own consented EIR profile, as in
- * `PersonaView.eirProfile`), and the persona's name when that is unknown. Never pass the venture
- * assignment's reviewing EIR: that person did not necessarily consent to this vEIR.
+ * The name of a vEIR (see {@link VeirDisplay}): a persona already called "…’s vEIR" (or "… vEIR") keeps its
+ * name; any other EIR persona becomes "<first name>’s vEIR", the first name taken from the persona's own
+ * consented EIR profile when known (`PersonaView.eirProfile`), else from its own name. Never pass the venture
+ * assignment's reviewing EIR: that person did not necessarily consent to this vEIR. A neutral guide keeps its
+ * own name.
  */
-export function shortPersonaName(
+export function veirName(
   personaName: string,
   kind: PersonaSummary['kind'],
   profileDisplayName?: string | null,
 ): string {
-  const name = personaName.trim();
-  const possessive = POSSESSIVE_VEIR.exec(name);
-  if (possessive?.[1]) return possessive[1].trim();
-  if (kind === 'eir_persona' && profileDisplayName) {
-    const first = profileDisplayName.trim().split(/\s+/)[0];
-    if (first) return first;
-  }
-  return name;
+  const name = personaName.trim().replace(/\s+/g, ' ');
+  if (kind !== 'eir_persona' || ENDS_WITH_VEIR.test(name)) return name;
+  const first = (profileDisplayName ?? name).trim().split(/\s+/)[0] ?? '';
+  return `${first === '' ? name : first}’s vEIR`;
 }
 
 /** The vEIR for a venture, or null when no persona is assigned. Named after the persona alone. */
@@ -47,12 +48,17 @@ export function veirDisplay(venture: Pick<VentureDetail, 'persona'> | null | und
   if (!persona) return null;
   return {
     personaId: persona.personaId,
-    name: persona.name,
-    shortName: shortPersonaName(persona.name, persona.kind),
+    name: veirName(persona.name, persona.kind),
     kind: persona.kind,
     disclosure: persona.disclosure,
     portraitUrl: null,
   };
+}
+
+/** The letters on a vEIR's face: its EIR's initial for "Corin’s vEIR" ("C"), a guide's initials ("FG"). */
+export function faceMonogram(name: string): string {
+  const possessive = POSSESSIVE_VEIR.exec(name.trim());
+  return possessive?.[1] ? monogram(possessive[1], 1) : monogram(name);
 }
 
 /**

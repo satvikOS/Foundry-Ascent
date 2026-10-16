@@ -17,7 +17,7 @@ interface BlockedPanelProps {
   reason: string | null;
   /** Escalation created automatically for this turn, if any. */
   escalationId: string | null;
-  /** The vEIR's short name ("Corin"). */
+  /** The vEIR's name ("Corin’s vEIR", lib/veir). */
   personaName: string;
   onRequestSupport?: (() => void) | undefined;
 }

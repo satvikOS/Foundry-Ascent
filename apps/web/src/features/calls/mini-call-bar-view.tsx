@@ -34,7 +34,7 @@ export function MiniCallBarView() {
       )}
     >
       <PersonaAvatar
-        name={veir.shortName}
+        name={veir.name}
         portraitUrl={veir.portraitUrl}
         size="sm"
         speaking={speaking}
@@ -48,7 +48,7 @@ export function MiniCallBarView() {
             ) : (
               <>
                 <span className="hidden sm:inline">Call with </span>
-                {veir.shortName}
+                {veir.name}
               </>
             )}
           </span>

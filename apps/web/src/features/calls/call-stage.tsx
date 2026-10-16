@@ -68,7 +68,7 @@ export function CallStage({ veir, engine, state, className }: CallStageProps) {
     >
       {provider.drawsFace ? null : (
         <PersonaAvatar
-          name={veir.shortName}
+          name={veir.name}
           portraitUrl={veir.portraitUrl}
           size="2xl"
           decorative

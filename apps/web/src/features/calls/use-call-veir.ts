@@ -4,7 +4,7 @@ import { queryOptions, useQuery } from '@tanstack/react-query';
 import { api, path } from '@/lib/api/client';
 import { ventureQueryOptions } from '@/lib/api/hooks/ventures';
 import { queryKeys } from '@/lib/api/query-keys';
-import { veirDisplay } from '@/lib/veir';
+import { veirDisplay, veirName } from '@/lib/veir';
 
 /**
  * `GET /ventures/:id/call-config`: the vEIR, its embodiment and today's call minutes. Keyed under the
@@ -24,8 +24,8 @@ export function useCallConfig(ventureId: string | null, enabled: boolean) {
 
 /** Who the founder is calling, as the call screen and mini bar show it. */
 export interface CallVeir {
+  /** "Corin’s vEIR" (lib/veir naming rule): the stage, the mini bar, captions and the summary use it. */
   readonly name: string;
-  readonly shortName: string;
   readonly kind: VeirIdentity['kind'];
   readonly disclosure: string;
   /** Only with likeness consent; otherwise the monogram is the face. */
@@ -41,8 +41,7 @@ export function useCallVeir(ventureId: string | null, config?: VeirIdentity | nu
   const venture = useQuery({ ...ventureQueryOptions(ventureId ?? ''), enabled: ventureId !== null });
   if (config) {
     return {
-      name: config.name,
-      shortName: config.shortName,
+      name: veirName(config.name, config.kind),
       kind: config.kind,
       disclosure: config.disclosure,
       portraitUrl: config.embodiment.likenessConsented ? config.embodiment.portraitUrl : null,
@@ -53,7 +52,6 @@ export function useCallVeir(ventureId: string | null, config?: VeirIdentity | nu
   if (!display) return null;
   return {
     name: display.name,
-    shortName: display.shortName,
     kind: display.kind,
     disclosure: display.disclosure,
     portraitUrl: display.portraitUrl,

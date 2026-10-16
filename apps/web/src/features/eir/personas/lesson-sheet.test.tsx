@@ -44,7 +44,7 @@ describe('LessonSheet', () => {
     renderWithProviders(
       <LessonSheet
         personaId={IDS.corin}
-        shortName="Corin"
+        displayName="Corin’s vEIR"
         canCurate
         state={{ mode: 'open', lesson: lesson() }}
         onClose={onClose}
@@ -77,7 +77,7 @@ describe('LessonSheet', () => {
     renderWithProviders(
       <LessonSheet
         personaId={IDS.corin}
-        shortName="Corin"
+        displayName="Corin’s vEIR"
         canCurate
         state={{ mode: 'open', lesson: lesson({ status: 'published', origin: 'authored' }) }}
         onClose={vi.fn()}
@@ -98,7 +98,7 @@ describe('LessonSheet', () => {
     const first = renderWithProviders(
       <LessonSheet
         personaId={IDS.corin}
-        shortName="Corin"
+        displayName="Corin’s vEIR"
         canCurate={false}
         state={{ mode: 'open', lesson: lesson({ status: 'published' }) }}
         onClose={vi.fn()}
@@ -112,7 +112,7 @@ describe('LessonSheet', () => {
     renderWithProviders(
       <LessonSheet
         personaId={IDS.corin}
-        shortName="Corin"
+        displayName="Corin’s vEIR"
         canCurate
         state={{ mode: 'open', lesson: lesson({ status: 'withdrawn' }) }}
         onClose={vi.fn()}
@@ -129,7 +129,7 @@ describe('LessonSheet', () => {
     renderWithProviders(
       <LessonSheet
         personaId={IDS.corin}
-        shortName="Corin"
+        displayName="Corin’s vEIR"
         canCurate
         state={{ mode: 'create' }}
         onClose={vi.fn()}

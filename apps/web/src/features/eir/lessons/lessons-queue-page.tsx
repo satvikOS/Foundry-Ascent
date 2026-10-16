@@ -11,7 +11,7 @@ import { DistilledBadge, LessonStatusBadge, needsReview } from '@/features/eir/p
 import { usePersonas } from '@/lib/api/hooks/eir';
 import { useLessonsOfPersonas } from '@/lib/api/hooks/veir-pools';
 import { formatRelative, pluralize } from '@/lib/format';
-import { shortPersonaName } from '@/lib/veir';
+import { veirName } from '@/lib/veir';
 
 function PersonaGroup({
   tenant,
@@ -27,7 +27,7 @@ function PersonaGroup({
     <section aria-labelledby={headingId} className="grid gap-3">
       <h2 id={headingId} className="flex items-center gap-2.5 text-body font-medium">
         <PersonaAvatar
-          name={shortPersonaName(persona.name, persona.kind, persona.eirProfile?.displayName)}
+          name={veirName(persona.name, persona.kind, persona.eirProfile?.displayName)}
           size="sm"
           decorative
         />

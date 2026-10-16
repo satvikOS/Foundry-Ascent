@@ -63,7 +63,7 @@ export function CallSummaryPanel({
 
   return (
     <div className="mx-auto flex w-full max-w-xl flex-col items-center px-4 pt-6 pb-8 text-center sm:pt-10">
-      <PersonaAvatar name={veir.shortName} portraitUrl={veir.portraitUrl} size="xl" decorative />
+      <PersonaAvatar name={veir.name} portraitUrl={veir.portraitUrl} size="xl" decorative />
       <h2 ref={headingRef} tabIndex={-1} className="mt-5 font-serif text-heading font-normal outline-none">
         Call ended
       </h2>
@@ -84,7 +84,7 @@ export function CallSummaryPanel({
         <SummaryDetails
           tenant={tenant}
           ventureId={ventureId}
-          veirName={veir.shortName}
+          veirName={veir.name}
           summary={summary}
           canWrite={canWrite}
           onLeave={onLeave}
@@ -104,7 +104,12 @@ export function CallSummaryPanel({
           Back to conversation
         </Button>
       </div>
-      <DisclosureBanner variant="line" text={veir.disclosure} className="mt-8 max-w-2xl text-center" />
+      <DisclosureBanner
+        variant="line"
+        text={veir.disclosure}
+        veirName={veir.name}
+        className="mt-8 max-w-2xl text-center"
+      />
     </div>
   );
 }

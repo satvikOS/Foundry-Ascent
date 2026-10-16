@@ -12,7 +12,6 @@ import type { CallVeir } from './use-call-veir';
 
 const VEIR: CallVeir = {
   name: "Corin's vEIR",
-  shortName: 'Corin',
   kind: 'eir_persona',
   disclosure: 'AI',
   portraitUrl: null,
@@ -144,7 +143,7 @@ describe('CallSummaryPanel', () => {
     expect(screen.getAllByRole('note', { name: 'AI disclosure' })).toHaveLength(1);
     expect(screen.getByText(/4 minutes 12 seconds/)).toBeInTheDocument();
     expect(screen.getByText(/3 exchanges/)).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Corin would like to remember' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: "Corin's vEIR would like to remember" })).toBeInTheDocument();
     expect(await screen.findByText('Noise is the top complaint')).toBeInTheDocument();
     expect(screen.getByText('Interview two more librarians')).toBeInTheDocument();
     expect(await screen.findByText('Legal')).toBeInTheDocument();

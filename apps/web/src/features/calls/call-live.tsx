@@ -162,7 +162,7 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: Cal
             tabIndex={-1}
             className="flex items-center gap-2 font-serif text-subheading font-normal outline-none"
           >
-            {veir.shortName}
+            {veir.name}
             <VeirBadge kind={veir.kind} mode="Live voice" />
           </h2>
           <p className="flex items-center gap-2 text-small text-muted-foreground">
@@ -223,12 +223,12 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: Cal
             tenant={tenant}
             ventureId={snapshot.ventureId}
             blocked={snapshot.blocked}
-            personaName={veir.shortName}
+            personaName={veir.name}
             onSwitchToChat={onSwitchToChat}
           />
         ) : captions ? (
           <CallCaptions
-            name={veir.shortName}
+            name={veir.name}
             veir={snapshot.captions.veir}
             founder={snapshot.captions.founder}
             founderLive={snapshot.captions.founderLive}
@@ -257,7 +257,7 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: Cal
         {typing ? (
           <TypeLine
             inputRef={typeRef}
-            name={veir.shortName}
+            name={veir.name}
             hint={snapshot.typedReason ? TYPED_REASONS[snapshot.typedReason] : null}
             queued={snapshot.queued}
             disabled={!live}
@@ -275,7 +275,7 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: Cal
           />
         ) : null}
         <CallDock
-          name={veir.shortName}
+          name={veir.name}
           voice={voice}
           muted={snapshot.muted}
           pushToTalk={pushToTalk}
@@ -293,7 +293,12 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: Cal
             void engine.end('user');
           }}
         />
-        <DisclosureBanner variant="line" text={veir.disclosure} className="max-w-2xl text-center" />
+        <DisclosureBanner
+          variant="line"
+          text={veir.disclosure}
+          veirName={veir.name}
+          className="max-w-2xl text-center"
+        />
       </div>
     </div>
   );

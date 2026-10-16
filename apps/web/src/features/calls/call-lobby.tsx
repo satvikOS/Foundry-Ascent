@@ -122,15 +122,13 @@ export function CallLobby({
         />
         <div className="flex max-w-md flex-col items-center gap-2">
           <h2 className="font-serif text-heading font-normal">
-            {problem ? problem.title : `Call ${veir.shortName}`}
+            {problem ? problem.title : `Call ${veir.name}`}
           </h2>
           <p role="status" className="text-body text-pretty text-muted-foreground">
             {busy ? 'Connecting…' : problem ? problem.message : (minutes ?? 'Getting ready…')}
           </p>
           {!problem && !busy ? (
-            <p className="text-small text-muted-foreground">
-              Headphones help {veir.shortName} hear you clearly.
-            </p>
+            <p className="text-small text-muted-foreground">Headphones help {veir.name} hear you clearly.</p>
           ) : null}
         </div>
         {voiceNotice && !problem ? (
@@ -169,7 +167,12 @@ export function CallLobby({
         </div>
       </div>
       <div className="flex shrink-0 justify-center px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))]">
-        <DisclosureBanner variant="line" text={veir.disclosure} className="max-w-2xl text-center" />
+        <DisclosureBanner
+          variant="line"
+          text={veir.disclosure}
+          veirName={veir.name}
+          className="max-w-2xl text-center"
+        />
       </div>
     </div>
   );

@@ -56,7 +56,7 @@ export type LibrarySheetState =
 interface LibrarySourceSheetProps {
   personaId: string;
   /** "Corin" — whose library this is. */
-  shortName: string;
+  displayName: string;
   state: LibrarySheetState;
   onClose: () => void;
 }
@@ -70,7 +70,7 @@ function kindNoun(kind: LibrarySource['kind']): string {
 }
 
 /** Write, edit or read one library source. Saving re-chunks it, so the vEIR draws on the new text at once. */
-export function LibrarySourceSheet({ personaId, shortName, state, onClose }: LibrarySourceSheetProps) {
+export function LibrarySourceSheet({ personaId, displayName, state, onClose }: LibrarySourceSheetProps) {
   const open = state.mode !== 'closed';
   const source = state.mode === 'edit' || state.mode === 'view' ? state.source : null;
   const authored = source === null || isAuthoredKind(source.kind);
@@ -158,7 +158,7 @@ export function LibrarySourceSheet({ personaId, shortName, state, onClose }: Lib
           <SheetDescription>
             {state.mode === 'view' && source
               ? `${SOURCE_KINDS[source.kind].label} · updated ${formatDate(source.updatedAt)}${source.createdBy ? ` · by ${source.createdBy.displayName}` : ''}`
-              : `${shortName} draws on it in every venture it coaches.`}
+              : `${displayName} draws on it in every venture it coaches.`}
           </SheetDescription>
         </SheetHeader>
         {state.mode === 'view' && source ? (

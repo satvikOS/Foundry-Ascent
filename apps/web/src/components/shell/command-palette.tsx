@@ -127,7 +127,7 @@ export function CommandPalette({ me, workspace, open, onOpenChange, onOpenShortc
             ) : null}
             {writable && veir ? (
               <CommandItem
-                value={`call ${veir.shortName} voice`}
+                value={`call ${veir.name} voice`}
                 onSelect={() => {
                   run(
                     () =>
@@ -140,7 +140,7 @@ export function CommandPalette({ me, workspace, open, onOpenChange, onOpenShortc
                 }}
               >
                 <Phone aria-hidden />
-                Call {veir.shortName}
+                Call {veir.name}
               </CommandItem>
             ) : null}
             {VENTURE_DESTINATIONS.map((destination) => (

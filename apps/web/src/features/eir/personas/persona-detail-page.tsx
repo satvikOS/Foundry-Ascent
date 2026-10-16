@@ -11,7 +11,7 @@ import { LoadingRegion, Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { usePersona } from '@/lib/api/hooks/eir';
-import { shortPersonaName } from '@/lib/veir';
+import { veirName } from '@/lib/veir';
 
 import { ConsentTab } from './consent-tab';
 import { DoctrineTab } from './doctrine-tab';
@@ -88,7 +88,7 @@ export function PersonaDetailPage({
   }
 
   const p = persona.data;
-  const shortName = shortPersonaName(p.name, p.kind, p.eirProfile?.displayName);
+  const displayName = veirName(p.name, p.kind, p.eirProfile?.displayName);
   const tabs = personaTabs(p);
   const current = tabs.some((t) => t.id === tab) ? tab : 'overview';
   const canCurate = p.canCurate === true;
@@ -99,7 +99,7 @@ export function PersonaDetailPage({
         eyebrow={back}
         title={
           <span className="flex items-center gap-3">
-            <PersonaAvatar name={shortName} size="lg" decorative />
+            <PersonaAvatar name={displayName} size="lg" decorative />
             {p.name}
           </span>
         }
@@ -177,12 +177,12 @@ export function PersonaDetailPage({
           />
         </TabsContent>
         <TabsContent value="library">
-          <LibraryTab persona={p} shortName={shortName} />
+          <LibraryTab persona={p} displayName={displayName} />
         </TabsContent>
         <TabsContent value="lessons">
           <LessonsTab
             persona={p}
-            shortName={shortName}
+            displayName={displayName}
             openLessonId={lessonId}
             onOpenLessonChange={onLessonChange}
           />
@@ -198,7 +198,7 @@ export function PersonaDetailPage({
         <TabsContent value="embodiment">
           <EmbodimentTab
             persona={p}
-            shortName={shortName}
+            displayName={displayName}
             onOpenConsent={() => {
               onTabChange('consent');
             }}

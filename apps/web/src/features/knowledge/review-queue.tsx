@@ -25,7 +25,7 @@ import { formatDateTime, formatRelative, isoString, pluralize } from '@/lib/form
 import { MEMORY_TYPE_LABELS } from '@/lib/labels';
 import { cn } from '@/lib/utils';
 import { CorrectMemoryDialog } from '@/features/memory/memory-dialogs';
-import { useVeirAuthor } from '@/features/venture/veir-name';
+import { useVeirName } from '@/features/venture/veir-name';
 
 import {
   PartialReviewError,
@@ -61,7 +61,7 @@ interface ReviewQueueProps {
 export function ReviewQueue({ ventureId, tenant, canEdit, onOpenDetail }: ReviewQueueProps) {
   const proposed = useMemory(ventureId, { status: 'proposed' });
   const review = useMemoryReview(ventureId);
-  const author = useVeirAuthor(ventureId);
+  const author = useVeirName(ventureId);
   const items = useMemo(() => proposed.data ?? [], [proposed.data]);
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
   const [activeId, setActiveId] = useState<string | null>(null);

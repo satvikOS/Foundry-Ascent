@@ -23,7 +23,7 @@ const FILTERS: { value: LessonFilter; label: string; match: (lesson: LessonView)
 
 interface LessonsTabProps {
   persona: PersonaView;
-  shortName: string;
+  displayName: string;
   /** The lesson open in the sheet (kept in the URL so the review queue can link to it). */
   openLessonId: string | undefined;
   onOpenLessonChange: (lessonId: string | undefined) => void;
@@ -33,7 +33,7 @@ interface LessonsTabProps {
  * Lessons: generalised, de-identified patterns in the vEIR's common pool. Distillation proposes drafts;
  * the curators edit, publish or withdraw them. Only published lessons are retrieved.
  */
-export function LessonsTab({ persona, shortName, openLessonId, onOpenLessonChange }: LessonsTabProps) {
+export function LessonsTab({ persona, displayName, openLessonId, onOpenLessonChange }: LessonsTabProps) {
   const lessons = usePersonaLessons(persona.id);
   const [chosen, setChosen] = useState<LessonFilter | null>(null);
   const [creating, setCreating] = useState(false);
@@ -99,7 +99,7 @@ export function LessonsTab({ persona, shortName, openLessonId, onOpenLessonChang
           }
           description={
             filter === 'published'
-              ? `Published lessons are what ${shortName} learned across conversations, without names.`
+              ? `Published lessons are what ${displayName} learned across conversations, without names.`
               : undefined
           }
         />
@@ -131,7 +131,7 @@ export function LessonsTab({ persona, shortName, openLessonId, onOpenLessonChang
 
       <LessonSheet
         personaId={persona.id}
-        shortName={shortName}
+        displayName={displayName}
         canCurate={canCurate}
         state={creating ? { mode: 'create' } : open ? { mode: 'open', lesson: open } : { mode: 'closed' }}
         onClose={() => {

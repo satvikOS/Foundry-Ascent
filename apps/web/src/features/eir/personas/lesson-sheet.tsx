@@ -48,7 +48,7 @@ type LessonSheetState = { mode: 'closed' } | { mode: 'create' } | { mode: 'open'
 
 interface LessonSheetProps {
   personaId: string;
-  shortName: string;
+  displayName: string;
   state: LessonSheetState;
   /** Curators edit, publish and withdraw; everyone else reads. */
   canCurate: boolean;
@@ -59,7 +59,7 @@ interface LessonSheetProps {
  * Review one lesson: edit its six parts, publish it (only published lessons are retrieved) or withdraw it.
  * A withdrawn lesson is read-only.
  */
-export function LessonSheet({ personaId, shortName, state, canCurate, onClose }: LessonSheetProps) {
+export function LessonSheet({ personaId, displayName, state, canCurate, onClose }: LessonSheetProps) {
   const [busy, setBusy] = useState(false);
   const lesson = state.mode === 'open' ? state.lesson : null;
   const title = state.mode === 'create' ? 'New lesson' : (lesson?.title ?? '');
@@ -82,7 +82,7 @@ export function LessonSheet({ personaId, shortName, state, canCurate, onClose }:
                   <span>Created {formatDate(lesson.createdAt)}</span>
                 </>
               ) : (
-                <span>Saved as a draft. {shortName} uses it once it’s published.</span>
+                <span>Saved as a draft. {displayName} uses it once it’s published.</span>
               )}
             </div>
           </SheetDescription>
@@ -92,7 +92,7 @@ export function LessonSheet({ personaId, shortName, state, canCurate, onClose }:
             // A fresh form for each lesson: background refetches never overwrite edits in progress.
             key={lesson?.id ?? 'new'}
             personaId={personaId}
-            shortName={shortName}
+            displayName={displayName}
             title={title}
             lesson={lesson}
             canCurate={canCurate}
@@ -107,7 +107,7 @@ export function LessonSheet({ personaId, shortName, state, canCurate, onClose }:
 
 function LessonBody({
   personaId,
-  shortName,
+  displayName,
   title,
   lesson,
   canCurate,
@@ -115,7 +115,7 @@ function LessonBody({
   onDone,
 }: {
   personaId: string;
-  shortName: string;
+  displayName: string;
   title: string;
   lesson: LessonView | null;
   canCurate: boolean;
@@ -184,7 +184,7 @@ function LessonBody({
       { lessonId: saved.id, action: { action: 'publish' } },
       {
         onSuccess: () => {
-          finish(`Published. ${shortName} can draw on it now.`);
+          finish(`Published. ${displayName} can draw on it now.`);
         },
         onError: fail,
       },
@@ -300,7 +300,7 @@ function LessonBody({
           <AlertDialogHeader>
             <AlertDialogTitle>Withdraw this lesson?</AlertDialogTitle>
             <AlertDialogDescription>
-              {shortName} stops using it. A withdrawn lesson can’t be published again.
+              {displayName} stops using it. A withdrawn lesson can’t be published again.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

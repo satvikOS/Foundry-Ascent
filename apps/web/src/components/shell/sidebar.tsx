@@ -173,7 +173,7 @@ export function SidebarContent({
           </Tip>
         ) : null}
         {ventureId && writable && veir ? (
-          <Tip show={collapsed} label={`Call ${veir.shortName}`}>
+          <Tip show={collapsed} label={`Call ${veir.name}`}>
             <SidebarLink
               to="/$tenant/app/v/$ventureId"
               params={{ tenant, ventureId }}
@@ -181,7 +181,7 @@ export function SidebarContent({
               activeOptions={{ exact: true }}
               onClick={onNavigate}
               icon={Phone}
-              label={`Call ${veir.shortName}`}
+              label={`Call ${veir.name}`}
               emphasis
               collapsed={collapsed}
             />

@@ -82,7 +82,9 @@ test.describe('what the vEIR knows', () => {
     try {
       await page.getByRole('tab', { name: 'Notebook' }).click();
       await expect(page).toHaveURL(/view=notebook/);
-      await expect(page.getByRole('heading', { level: 2, name: 'What Corin knows' })).toBeVisible();
+      await expect(
+        page.getByRole('heading', { level: 2, name: /^What Corin['’]s vEIR knows$/ }),
+      ).toBeVisible();
       await expect(page.getByText(/never treated as facts/)).toBeVisible();
 
       // Correct one line in place.
@@ -302,7 +304,7 @@ for (const scheme of ['dark', 'light'] as const) {
     await useTheme(page, scheme);
 
     await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?view=notebook`);
-    await expect(page.getByRole('heading', { level: 2, name: 'What Corin knows' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: /^What Corin['’]s vEIR knows$/ })).toBeVisible();
     await expectNoSeriousA11yViolations(page, `knowledge notebook (${scheme})`);
 
     await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?view=proposed`);

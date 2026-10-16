@@ -33,7 +33,7 @@ import { useRequiredMe } from '@/lib/auth/use-me';
 import { conversationTitle } from '@/lib/conversations';
 import { useDockedBottom } from '@/lib/hooks/use-docked-bottom';
 import { useHotkeys } from '@/lib/hooks/use-hotkeys';
-import { shortPersonaName, veirDisplay } from '@/lib/veir';
+import { veirName, veirDisplay } from '@/lib/veir';
 import { EscalationFlowDialog, type EscalationDraft } from '@/features/escalations/escalation-flow-dialog';
 
 import { coachingAvailability } from '../coach/availability';
@@ -147,10 +147,10 @@ function Conversation() {
   const veir = veirDisplay(venture.data);
   const personaName =
     session && veir?.personaId === session.personaId
-      ? veir.shortName
+      ? veir.name
       : session
-        ? shortPersonaName(session.personaName, veir?.kind ?? 'neutral_guide')
-        : (veir?.shortName ?? 'your vEIR');
+        ? veirName(session.personaName, veir?.kind ?? 'neutral_guide')
+        : (veir?.name ?? 'your vEIR');
 
   const setMode = useCallback(
     (next: ComposerMode) => {
@@ -352,7 +352,7 @@ function Conversation() {
           <DisclosureBanner
             variant="line"
             text={session.disclosure}
-            veirName={session.personaName}
+            veirName={personaName}
             className="justify-start"
           />
         ) : null}
@@ -457,7 +457,7 @@ function Conversation() {
               onChange={setText}
               personaName={personaName}
               disclosure={session.disclosure}
-              veirName={session.personaName}
+              veirName={personaName}
               mode={mode}
               onModeChange={setMode}
               allowedModes={venture.data?.persona?.allowedModes}

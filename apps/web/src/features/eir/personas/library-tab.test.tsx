@@ -41,7 +41,7 @@ describe('LibraryTab (common pool)', () => {
   it('lists sources with their state, and filters by kind', async () => {
     stubFetch().mockResolvedValue(jsonResponse({ items: [source({}), FAILED] }));
     const user = userEvent.setup();
-    renderWithProviders(<LibraryTab persona={persona()} shortName="Corin" />);
+    renderWithProviders(<LibraryTab persona={persona()} displayName="Corin’s vEIR" />);
     const list = await screen.findByRole('list', { name: 'Library sources' });
     expect(within(list).getByText('Running a last-time interview')).toBeVisible();
     expect(within(list).getByText('This file contains no readable text.')).toBeVisible();
@@ -62,7 +62,7 @@ describe('LibraryTab (common pool)', () => {
       ),
     );
     const user = userEvent.setup();
-    renderWithProviders(<LibraryTab persona={persona()} shortName="Corin" />);
+    renderWithProviders(<LibraryTab persona={persona()} displayName="Corin’s vEIR" />);
     await user.click(await screen.findByRole('button', { name: 'Add' }));
     await user.click(screen.getByRole('menuitem', { name: 'Note' }));
     const form = screen.getByRole('form', { name: 'New note' });
@@ -98,7 +98,7 @@ describe('LibraryTab (common pool)', () => {
       ),
     );
     const user = userEvent.setup();
-    const first = renderWithProviders(<LibraryTab persona={persona()} shortName="Corin" />);
+    const first = renderWithProviders(<LibraryTab persona={persona()} displayName="Corin’s vEIR" />);
     await user.click(await screen.findByRole('button', { name: 'Actions for pricing-notes.pdf' }));
     await user.click(screen.getByRole('menuitem', { name: 'Retry processing' }));
     await waitFor(() => {
@@ -109,7 +109,7 @@ describe('LibraryTab (common pool)', () => {
     );
     first.unmount();
 
-    renderWithProviders(<LibraryTab persona={persona({ canCurate: false })} shortName="Corin" />);
+    renderWithProviders(<LibraryTab persona={persona({ canCurate: false })} displayName="Corin’s vEIR" />);
     expect(await screen.findByText('pricing-notes.pdf')).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Add' })).toBeNull();
     expect(screen.queryByRole('button', { name: /^Actions for/ })).toBeNull();

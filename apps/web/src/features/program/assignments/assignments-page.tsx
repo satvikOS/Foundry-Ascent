@@ -15,7 +15,7 @@ import { usePersonas } from '@/lib/api/hooks/eir';
 import { type ProgramVenture, useProgramVentures } from '@/lib/api/hooks/program';
 import { useEirProfiles } from '@/lib/api/hooks/veir-pools';
 import { formatDate } from '@/lib/format';
-import { shortPersonaName } from '@/lib/veir';
+import { veirName } from '@/lib/veir';
 
 import { AssignDialog } from './assign-dialog';
 import { countByPersona } from './assignment';
@@ -149,7 +149,7 @@ function AssignmentsTable({
                   {persona ? (
                     <span className="flex items-center gap-2">
                       <PersonaAvatar
-                        name={shortPersonaName(persona.name, persona.kind, persona.eirProfile?.displayName)}
+                        name={veirName(persona.name, persona.kind, persona.eirProfile?.displayName)}
                         size="xs"
                         decorative
                       />

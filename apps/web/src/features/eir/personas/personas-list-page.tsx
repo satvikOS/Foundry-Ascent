@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { usePersonas } from '@/lib/api/hooks/eir';
 import { useEirProfiles } from '@/lib/api/hooks/veir-pools';
 import { formatNumber, pluralize } from '@/lib/format';
-import { shortPersonaName } from '@/lib/veir';
+import { veirName } from '@/lib/veir';
 
 import { ConsentIndicator } from './consent-indicator';
 import { eirsWithoutVeir } from './new-persona';
@@ -84,7 +84,7 @@ export function PersonasListPage({ tenant, canCreate }: { tenant: string; canCre
                   <TableCell className="min-w-48">
                     <div className="flex items-center gap-3">
                       <PersonaAvatar
-                        name={shortPersonaName(persona.name, persona.kind, persona.eirProfile?.displayName)}
+                        name={veirName(persona.name, persona.kind, persona.eirProfile?.displayName)}
                         size="md"
                         decorative
                       />

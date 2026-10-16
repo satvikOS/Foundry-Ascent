@@ -25,7 +25,9 @@ describe('EmbodimentTab (voice & face)', () => {
       ),
     );
     const user = userEvent.setup();
-    renderWithProviders(<EmbodimentTab persona={persona()} shortName="Corin" onOpenConsent={vi.fn()} />);
+    renderWithProviders(
+      <EmbodimentTab persona={persona()} displayName="Corin’s vEIR" onOpenConsent={vi.fn()} />,
+    );
     const voice = await screen.findByRole('combobox', { name: 'Voice on calls' });
     expect(voice).toHaveTextContent('Matthew');
     expect(screen.getByRole('button', { name: 'Save voice' })).toBeDisabled();
@@ -43,7 +45,9 @@ describe('EmbodimentTab (voice & face)', () => {
   it('offers every voice the speech service accepts, and still shows a saved voice it has dropped', async () => {
     stubFetch().mockResolvedValue(jsonResponse({ ...EMBODIMENT, voiceId: 'Brian' }));
     const user = userEvent.setup();
-    renderWithProviders(<EmbodimentTab persona={persona()} shortName="Corin" onOpenConsent={vi.fn()} />);
+    renderWithProviders(
+      <EmbodimentTab persona={persona()} displayName="Corin’s vEIR" onOpenConsent={vi.fn()} />,
+    );
     const voice = await screen.findByRole('combobox', { name: 'Voice on calls' });
     expect(voice).toHaveTextContent('Brian (retired)');
     await user.click(voice);
@@ -59,7 +63,7 @@ describe('EmbodimentTab (voice & face)', () => {
     const onOpenConsent = vi.fn();
     const user = userEvent.setup();
     renderWithProviders(
-      <EmbodimentTab persona={persona()} shortName="Corin" onOpenConsent={onOpenConsent} />,
+      <EmbodimentTab persona={persona()} displayName="Corin’s vEIR" onOpenConsent={onOpenConsent} />,
     );
     const voice = await screen.findByRole('combobox', { name: 'Voice on calls' });
     expect(voice).toBeDisabled();

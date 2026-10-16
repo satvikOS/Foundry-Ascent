@@ -25,11 +25,11 @@ function voiceOptions(saved: string | null): { value: string; label: string }[] 
 /** Voice & face: how the vEIR appears and sounds on calls. A chosen voice needs voice consent. */
 export function EmbodimentTab({
   persona,
-  shortName,
+  displayName,
   onOpenConsent,
 }: {
   persona: PersonaView;
-  shortName: string;
+  displayName: string;
   onOpenConsent: () => void;
 }) {
   const embodiment = usePersonaEmbodiment(persona.id);
@@ -66,7 +66,7 @@ export function EmbodimentTab({
           Face
         </h2>
         <div className="flex items-center gap-4">
-          <PersonaAvatar name={shortName} portraitUrl={e.portraitUrl} size="xl" decorative />
+          <PersonaAvatar name={displayName} portraitUrl={e.portraitUrl} size="xl" decorative />
           <p className="text-small text-muted-foreground">
             {e.portraitUrl ? 'Portrait' : 'Monogram'}, shown in chat and inside the built-in call presence.
           </p>

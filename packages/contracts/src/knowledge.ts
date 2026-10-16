@@ -156,7 +156,10 @@ export type PersonaEmbodiment = z.infer<typeof PersonaEmbodiment>;
 export const VeirIdentity = z.object({
   personaId: Id,
   name: z.string(),
-  /** Short name used in greetings and buttons ("Corin"). */
+  /**
+   * The EIR's first name ("Corin"), or the guide's name. It names the person, so it is never the AI's label:
+   * the AI is always called by `name` ("Corin's vEIR") wherever it acts or is addressed.
+   */
   shortName: z.string(),
   kind: z.enum(['neutral_guide', 'eir_persona']),
   eirDisplayName: z.string().nullable(),

@@ -35,7 +35,10 @@ interface DisclosureBannerProps {
  */
 export function disclosureSummary(veirName?: string | null): string {
   const name = veirName?.trim();
-  return `${name ? `${name} is an AI` : 'You are talking with an AI'}, not a person. No human wrote or approved its answers.`;
+  const subject = name
+    ? `${name.charAt(0).toUpperCase()}${name.slice(1)} is an AI`
+    : 'You are talking with an AI';
+  return `${subject}, not a person. No human wrote or approved its answers.`;
 }
 
 /**

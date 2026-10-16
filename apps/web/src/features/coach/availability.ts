@@ -1,7 +1,7 @@
 import type { Me, SessionView, VentureDetail } from '@foundry/contracts';
 
 import { canWrite } from '@/lib/auth/roles';
-import { shortPersonaName } from '@/lib/veir';
+import { veirName } from '@/lib/veir';
 
 export interface CoachingAvailability {
   /** Whether new conversations or messages can be started from this screen. */
@@ -42,7 +42,7 @@ export function coachingAvailability(
     };
   }
   if (venture.persona.status === 'suspended') {
-    const name = shortPersonaName(venture.persona.name, venture.persona.kind);
+    const name = veirName(venture.persona.name, venture.persona.kind);
     return {
       available: false,
       title: `${name} is paused`,

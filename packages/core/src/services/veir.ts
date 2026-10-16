@@ -54,7 +54,10 @@ export function embodimentView(
   };
 }
 
-/** "Corin" for Corin's vEIR (the EIR's first name), the persona name for the neutral guide. */
+/**
+ * "Corin" for Corin's vEIR (the EIR's first name), the persona name for the neutral guide. It is the EIR's
+ * name, so it is never a label for the AI: clients name the AI by `name` ("Corin's vEIR").
+ */
 export function shortName(persona: { kind: string; name: string }, eirDisplayName: string | null): string {
   if (persona.kind === 'eir_persona' && eirDisplayName) {
     const first = eirDisplayName.trim().split(/\s+/)[0];
@@ -75,7 +78,9 @@ export async function resolveVeir(ex: SqlExecutor, ventureId: string): Promise<R
   const persona = await personasRepo.getPersona(ex, resolved.persona.id);
   if (persona === null) return null;
   const assets = await personasRepo.personaConsentAssets(ex, persona.id);
-  const eirDisplayName = resolved.eir?.displayName ?? null;
+  // The EIR the persona is built from (its own consented profile), never the assignment's reviewer.
+  const eirDisplayName =
+    persona.kind === 'eir_persona' ? await personasRepo.getPersonaEirName(ex, persona.id) : null;
   return {
     assignment: resolved,
     identity: {
