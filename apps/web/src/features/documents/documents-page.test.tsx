@@ -46,6 +46,7 @@ const sameFile = () =>
   new File(['x'.repeat(UNFINISHED.sizeBytes)], UNFINISHED.filename, { type: 'text/markdown' });
 
 let calls: string[] = [];
+let lastRouter: { state: { location: { search: unknown } } } | null = null;
 
 function stubApi(documents: DocumentView[]) {
   calls = [];
@@ -102,6 +103,7 @@ async function renderDocuments() {
     routeTree: root.addChildren([venture.addChildren([documents])]),
     history: createMemoryHistory({ initialEntries: [`/ain/app/v/${IDS.venture}/documents`] }),
   });
+  lastRouter = router;
   await act(async () => {
     render(
       <QueryClientProvider client={client}>
@@ -132,6 +134,18 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+describe('Opening a document', () => {
+  it('opens it in the viewer from its name, over the Documents page', async () => {
+    stubApi([{ ...UNFINISHED, status: 'ready', failureReason: null }]);
+    const row = await renderDocuments();
+    const link = within(row).getByRole('link', { name: UNFINISHED.filename });
+    // A real link: it can open in a new tab too.
+    expect(link).toHaveAttribute('href', `/ain/app/v/${IDS.venture}/documents?doc=${IDS.document}`);
+    await userEvent.setup().click(link);
+    expect(lastRouter?.state.location.search).toEqual({ doc: IDS.document });
+  });
 });
 
 describe('Retry on a document whose upload never finished', () => {

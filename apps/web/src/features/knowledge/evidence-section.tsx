@@ -56,7 +56,8 @@ interface EvidenceSectionProps {
 
 /**
  * Everything the vEIR can cite for the venture (documents, kept memory) and the program sources it
- * cited lately, with freshness and how many recent answers cited each one.
+ * cited lately, with freshness and how many recent answers cited each one. Documents and program material
+ * open in the document viewer.
  */
 export function EvidenceSection({
   ventureId,
@@ -232,12 +233,18 @@ function SourceRow({
         {source.title}
       </Link>
     );
-  } else if (source.document) {
+  } else if (source.document || (source.programKind === 'guidance' && source.sourceId)) {
+    // Documents and program or public material open in the document viewer (a vEIR's own library is read
+    // in the studio, so its rows stay plain).
+    const documentId = source.document?.id;
+    const sourceId = documentId === undefined ? (source.sourceId ?? undefined) : undefined;
     title = (
       <Link
-        to="/$tenant/app/v/$ventureId/documents"
-        params={{ tenant, ventureId }}
-        search={{ source: source.sourceId ?? undefined }}
+        to="."
+        search={(previous) => ({ ...previous, doc: documentId, src: sourceId, passage: undefined })}
+        state={(previous) => ({ ...previous, documentViewer: true })}
+        resetScroll={false}
+        data-opens-document
         className={linkClass}
       >
         {source.title}
