@@ -119,6 +119,7 @@ export {
   type RunTurnOutcome,
   type TurnEmitter,
 } from './orchestrator/run-turn.js';
+export { type RunTestTurnInput, type TestBench } from './orchestrator/test-turn.js';
 export {
   buildEvidencePack,
   candidateVisibility,

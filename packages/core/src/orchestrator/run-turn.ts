@@ -7,7 +7,6 @@ import {
   buildRetrievalQuery,
   classifyRisk,
   deriveSpoken,
-  isModelGatewayError,
   riskLabel,
   type HistoryTurn,
   type ModelAttempt,
@@ -53,7 +52,7 @@ import {
 import { createDraftEscalation } from '../services/escalations.js';
 import { persistMemoryCandidates } from '../services/memory.js';
 import { historyAsHeard } from '../services/spoken-text.js';
-import { answerTurn } from './answer.js';
+import { answerTurn, generationError } from './answer.js';
 import { blockedDetailOf, participantRiskLabel, participantTurnView, supportMessageFor } from './blocked.js';
 import { loadContinuity, type LoadedContinuity } from './continuity.js';
 import { candidateVisibility } from './evidence.js';
@@ -126,17 +125,6 @@ const SAFE_INTERNAL = (cause: unknown): DomainError =>
 function asDomainError(err: unknown): DomainError {
   const mapped = toDomainError(err);
   return isDomainError(mapped) ? mapped : SAFE_INTERNAL(err);
-}
-
-/** What a failed generation is reported as: the model being unavailable, or the domain error it carried. */
-export function generationError(cause: unknown): DomainError {
-  return isModelGatewayError(cause)
-    ? new DomainError('model_unavailable', 'The coach could not answer right now. Please try again.', {
-        reason: cause.code,
-        retryAfterSeconds: 5,
-        cause,
-      })
-    : asDomainError(cause);
 }
 
 /**

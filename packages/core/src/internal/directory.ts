@@ -85,8 +85,11 @@ export class DirectoryCache {
     return dir.ventures.find((v) => v.id === ventureId)?.memberNames ?? [];
   }
 
-  /** Names and canaries of every venture of the tenant except `ventureId`. */
-  async others(tenantId: string, ventureId: string): Promise<OtherVentures> {
+  /**
+   * Names and canaries of every venture of the tenant except `ventureId`; of every venture when it is null (an
+   * EIR studio test conversation belongs to no venture, so it may name none of them).
+   */
+  async others(tenantId: string, ventureId: string | null): Promise<OtherVentures> {
     const dir = await this.get(tenantId);
     const own = dir.ventures.find((v) => v.id === ventureId);
     const others = dir.ventures.filter((v) => v.id !== ventureId);

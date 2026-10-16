@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { SessionRecap, SessionView, TurnView } from './coach.js';
+import { CoachResponse, SessionRecap, SessionView, TurnView, ValidatorResults } from './coach.js';
 import { PersonaKnowledgeSourceView, TurnChannel } from './knowledge.js';
 import {
   CoachMode,
@@ -20,6 +20,7 @@ import {
   MemoryObjectView,
   MemoryStatus,
   MemoryType,
+  PersonaReleaseStatus,
   PersonaReleaseView,
   PersonaView,
   PlatformRole,
@@ -466,6 +467,49 @@ export const SubmitReviewRequest = z.object({
   notes: z.string().trim().max(2000).nullable().default(null),
 });
 export const EirProfileListResponse = z.object({ items: z.array(EirProfileView) });
+
+/** Most earlier exchanges a test message carries (the client keeps the transcript; the server keeps none). */
+export const TEST_TURN_MAX_HISTORY = 6;
+/** One earlier exchange of a test conversation, as the client kept it. */
+export const TestTurnExchange = z.object({
+  text: z.string().trim().min(1).max(8000),
+  /** The answer shown for it; null when it was blocked or failed. */
+  answer: z.string().max(12_000).nullable(),
+});
+/**
+ * `POST /personas/:id/test-turns` — the EIR studio test bench: one message to a release of the persona (its
+ * active release or a draft), answered by the same pipeline as a founder's message (prompt from the release's
+ * doctrine and style and the persona's common pool, identity guard, validators, crisis support) with no venture
+ * attached. Nothing is stored: no conversation, turn, memory, notebook, escalation or review row. The client
+ * keeps the transcript and sends the last few exchanges back. Curators only (program leads and the EIR the
+ * persona is built from). Model calls are metered under purpose `test_bench`, within the daily caps.
+ */
+export const TestTurnRequest = z.object({
+  releaseId: Id,
+  text: z.string().trim().min(1).max(8000),
+  /** A fixed mode (one the release allows); without it the vEIR picks one, as for founders. */
+  mode: CoachMode.optional(),
+  rehearsalCounterpart: z.string().trim().max(120).optional(),
+  history: z.array(TestTurnExchange).max(TEST_TURN_MAX_HISTORY).default([]),
+});
+export type TestTurnRequest = z.input<typeof TestTurnRequest>;
+/** `POST /personas/:id/test-turns` 200 body. */
+export const TestTurnResponse = z.object({
+  release: z.object({ id: Id, version: z.number().int(), status: PersonaReleaseStatus }),
+  status: z.enum(['completed', 'blocked']),
+  /** The validated response, exactly as a founder would see it; null when blocked. */
+  response: CoachResponse.nullable(),
+  /** The sources the answer could cite (the persona's common pool; no venture's). */
+  evidence: z.array(EvidenceItem),
+  /**
+   * What the deterministic checks did. As in founder views, nothing says which names the cross-venture guard
+   * knows (no cross-venture flag, category or note); such a block reads as `policy`.
+   */
+  validator: ValidatorResults,
+  /** Why a founder would not see this answer, and the support offered instead (crisis lines). */
+  blocked: z.object({ reason: z.string(), supportMessage: z.string().nullable() }).nullable(),
+});
+export type TestTurnResponse = z.infer<typeof TestTurnResponse>;
 
 // Program ------------------------------------------------------------------------------------------
 export const PortfolioSummary = z.object({

@@ -18,3 +18,4 @@ export {
   type VentureAction,
   type VentureRelation,
 } from './venture-access.js';
+export { requirePersonaCurator, type CuratorVia } from './persona-curator.js';

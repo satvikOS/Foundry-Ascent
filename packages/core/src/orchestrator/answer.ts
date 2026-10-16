@@ -4,6 +4,7 @@ import {
   INVALID_RESPONSE_ANSWER,
   buildSystemPrompt,
   deriveSpoken,
+  isModelGatewayError,
   validateCoachResponse,
   type CoachResponseValidation,
   type GateBlockReason,
@@ -24,6 +25,7 @@ import {
 
 import { type SessionSigningKey } from '../auth/session-token.js';
 import { type RequestContext } from '../context.js';
+import { DomainError, isDomainError, toDomainError } from '../errors.js';
 import { type OtherVentures } from '../internal/directory.js';
 import { type Kit } from '../internal/kit.js';
 import { assembleContext, type AssembledContext } from './context-budget.js';
@@ -134,6 +136,24 @@ export function enforceGateBlock(
     blocked: true,
     blockReason: reason,
   };
+}
+
+/** What a failed generation is reported as: the model being unavailable, or the domain error it carried. */
+export function generationError(cause: unknown): DomainError {
+  if (isModelGatewayError(cause)) {
+    return new DomainError('model_unavailable', 'The coach could not answer right now. Please try again.', {
+      reason: cause.code,
+      retryAfterSeconds: 5,
+      cause,
+    });
+  }
+  const mapped = toDomainError(cause);
+  return isDomainError(mapped)
+    ? mapped
+    : new DomainError('internal', 'Something went wrong while answering. Please try again.', {
+        cause,
+        reason: 'internal',
+      });
 }
 
 /** Steps 4–6 (see {@link AnswerSpec}). Emits the `reasoning` and `validating` status events. */
