@@ -9,3 +9,5 @@
 -- recent turns (0.02 ms). turns_author_voice_idx (0004) stays for the spoken-turn limit it serves.
 
 CREATE INDEX IF NOT EXISTS turns_author_created_idx ON turns (author_id, created_at);
+COMMENT ON INDEX turns_author_created_idx IS
+  'Per-person turn limits: turnsRepo.countRecentTurnsByAuthor and countPendingTurnsByAuthor (0015).';
