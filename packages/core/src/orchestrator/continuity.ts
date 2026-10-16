@@ -9,6 +9,8 @@ import {
 } from '@foundry/ai';
 import { notebooksRepo, principalsRepo, sessionsRepo, type AppExecutor } from '@foundry/db';
 
+import { mentionsEir } from '../internal/eir-names.js';
+
 /**
  * What the vEIR remembers when a turn starts (the specific pool): the founder's first name, the notebook of
  * this venture × persona, the digests of the latest earlier conversations and, through the notebook, the open
@@ -81,8 +83,9 @@ export const MAX_OPENER_CHARS = 300;
 
 /**
  * The notebook's next opener as the vEIR may say it: plain text on one line, at most 300 characters. It is
- * dropped (null) when it would speak as the EIR, claim to be human or approve anything, or names another
- * venture, member or canary: a person can edit the notebook, and the opener is shown and spoken as the vEIR.
+ * dropped (null) when it would speak as the EIR, claim to be human or approve anything, names an EIR, or names
+ * another venture, member or canary: a person can edit the notebook, and the opener is shown and spoken as the
+ * vEIR (the first bubble of the conversation and the call intro).
  */
 export function validatedOpener(text: string | null | undefined, guards: OpenerGuards): string | null {
   if (!text) return null;
@@ -95,6 +98,9 @@ export function validatedOpener(text: string | null | undefined, guards: OpenerG
     personaEirName: guards.personaEirName,
   });
   if (identity.findings.length > 0) return null;
+  // The rewrite misses third-person endorsement, review and presence claims ("Corin asked me to check in"),
+  // so an opener that names an EIR at all is left out, as the call intro does (it speaks this opener).
+  if (mentionsEir(opener, guards.eirNames)) return null;
   if (
     textsContainOtherVenture(
       [opener],

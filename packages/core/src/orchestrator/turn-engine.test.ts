@@ -175,7 +175,21 @@ describe('validatedOpener', () => {
     expect(validatedOpener('I approve your plan, so go ahead.', GUARDS)).toBeNull();
     expect(validatedOpener('BenchTally ran the same test. How did yours go?', GUARDS)).toBeNull();
     expect(validatedOpener('Your code ZX-CANARY-4471 is ready.', GUARDS)).toBeNull();
-    expect(validatedOpener("Corin's approach says start small. How did it go?", GUARDS)).not.toBeNull();
+  });
+
+  it('drops an opener that names an EIR at all, the same rule the call intro applies when it speaks it', () => {
+    // Third-person endorsement, review and presence claims pass the identity rewrite; naming the EIR is the
+    // tell. A doctrine reference goes too: the opener is a one-line question, and fails safe to none.
+    for (const text of [
+      'Corin personally endorses your plan.',
+      'Corin and I reviewed your deck.',
+      'Corin asked me to check in on your pilot.',
+      'I spoke with Corin about your deck yesterday.',
+      "Corin's approach says start small. How did it go?",
+    ]) {
+      expect(validatedOpener(text, GUARDS), text).toBeNull();
+    }
+    expect(validatedOpener('Last time you planned five interviews. How did they go?', GUARDS)).not.toBeNull();
   });
 });
 

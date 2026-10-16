@@ -844,13 +844,20 @@ describe('barge-in', () => {
     expect(records.get(unsigned.id)?.heardText).toBe('Run it for two weeks.');
     expect(records.has(whole.id)).toBe(false);
 
-    // The next reply's model call sees what the founder heard, and nothing they did not.
+    // The next reply's model call sees what the founder heard, and nothing they did not. The first call of
+    // the turn writes the reply (the streamed answer); the second only annotates that new reply.
     prompts.length = 0;
     await talk('devin', sessionId, call.id, 'So what do we do on Monday?');
-    const conversation = prompts.at(-1);
+    const conversation = prompts[0];
     if (conversation === undefined) throw new Error('expected a model call');
     const assistant = conversation.filter((m) => m.role === 'assistant').map((m) => m.content);
-    expect(assistant).toEqual([first, 'Run it for two weeks.', whole.response?.answer]);
+    const { opener } = (await h.core.sessions.get(ctx.devin, sessionId)).session;
+    expect(assistant).toEqual([
+      ...(opener === null ? [] : [opener]),
+      first,
+      'Run it for two weeks.',
+      whole.response?.answer,
+    ]);
     const asked = conversation.map((m) => m.content).join('\n');
     expect(asked).toContain('Which library should we approach first?');
     expect(asked).not.toContain('What should the pilot measure?');
@@ -1120,5 +1127,44 @@ describe('call configuration and avatar sessions', () => {
     } finally {
       await voiceConsent('solesignal', false);
     }
+  });
+});
+
+describe('the turn engine and the calls service together', () => {
+  it('opens a call with the conversation’s stored opener, never a notebook line written since, and none in a temporary chat', async () => {
+    const quietquad = ventureId('quietquad');
+    const editOpener = async (text: string) => {
+      const notebook = await h.core.notebook.get(ctx.maya, quietquad);
+      await h.core.notebook.update(ctx.maya, quietquad, {
+        expectedVersion: notebook.version,
+        edit: { action: 'edit_opener', text },
+      });
+    };
+    const stored = 'Last time you planned five library-staff interviews. How did they go?';
+    await editOpener(stored);
+    const session = await h.core.sessions.create(ctx.maya, quietquad, {});
+    expect(session.opener).toBe(stored);
+    await editOpener('What did the second library say about the seat counts?');
+    const started = await startCall('maya', session.id, 'typed');
+    const intro = started.intro;
+    if (intro === null) throw new Error('expected an intro');
+    // What the vEIR believes it opened with (its first history message) is what the call says.
+    expect(intro.text).toBe(`Hi Maya, this is Corin's vEIR, an AI coach. ${stored}`);
+    expect(
+      verifySpeechUnit(
+        await keys.verificationKeys(),
+        { sessionId: session.id, turnId: null, seq: 0, text: intro.text },
+        intro.sig,
+      ),
+    ).toBe(true);
+    await endCall('maya', started.call.id);
+
+    const temporary = await h.core.sessions.create(ctx.maya, quietquad, { privacy: 'ephemeral' });
+    expect(temporary.opener).toBeNull();
+    const call = await startCall('maya', temporary.id, 'typed');
+    expect(call.intro?.text).toBe(
+      "Hi Maya, this is Corin's vEIR, an AI coach. What would you like to work on?",
+    );
+    await endCall('maya', call.call.id);
   });
 });

@@ -17,7 +17,6 @@ import {
 import {
   assignmentsRepo,
   callsRepo,
-  notebooksRepo,
   personasRepo,
   principalsRepo,
   sessionsRepo,
@@ -39,6 +38,7 @@ import {
 import { type RequestContext } from '../context.js';
 import { DomainError, fail, parseInput } from '../errors.js';
 import { type DirectoryCache } from '../internal/directory.js';
+import { eirNameWords, mentionsEir, normalizedName } from '../internal/eir-names.js';
 import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
 import { secondsUntilUtcMidnight } from '../orchestrator/sampling.js';
 import { signSpeechUnit, verifySpeechUnit } from '../orchestrator/speech-units.js';
@@ -116,31 +116,12 @@ export function voiceApproved(
   );
 }
 
+export { mentionsEir };
+
 /** The founder's first name for a greeting (null when the display name does not start with a plain name). */
 export function greetingName(displayName: string): string | null {
   const first = displayName.trim().split(/\s+/)[0] ?? '';
   return /^\p{L}[\p{L}'’-]{0,39}$/u.test(first) ? first : null;
-}
-
-function normalizedName(text: string): string {
-  return text.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
-}
-
-/** Words of the tenant's EIR names (three letters or more), lower-cased: first names, surnames, parts. */
-function eirNameWords(eirNames: readonly string[]): Set<string> {
-  const words = new Set<string>();
-  for (const name of eirNames) {
-    for (const word of normalizedName(name).split(/[^\p{L}]+/u)) if (word.length >= 3) words.add(word);
-  }
-  return words;
-}
-
-/** Whether `text` names one of the tenant's EIRs at all (a first name, a surname or a full name). */
-export function mentionsEir(text: string, eirNames: readonly string[]): boolean {
-  const words = eirNameWords(eirNames);
-  return normalizedName(text)
-    .split(/[^\p{L}]+/u)
-    .some((word) => words.has(word));
 }
 
 /**
@@ -171,7 +152,7 @@ export function introName(args: {
 }
 
 /**
- * The words a call opens with (plain text): a greeting that says the vEIR is an AI, then the notebook opener
+ * The words a call opens with (plain text): a greeting that says the vEIR is an AI, then the conversation's opener
  * on a fresh conversation, or an invitation to continue one already under way.
  */
 export function callIntroText(args: {
@@ -283,7 +264,7 @@ interface Started {
   readonly personaKind: personasRepo.PersonaRecord['kind'];
   readonly eirDisplayName: string | null;
   readonly firstName: string | null;
-  /** The notebook opener, offered only on a conversation without turns yet. */
+  /** The conversation's stored opener (`coaching_sessions.opener`), offered only before its first turn. */
   readonly opener: string | null;
   readonly conversationStarted: boolean;
 }
@@ -642,8 +623,6 @@ export function createCallsService(
           },
         });
         const turnCount = await turnsRepo.countSessionTurns(tx, sessionId);
-        const notebook =
-          turnCount === 0 ? await notebooksRepo.getNotebook(tx, { ventureId, personaId: persona.id }) : null;
         const principal = await principalsRepo.getPrincipal(tx, ctx.principalId);
         return {
           call,
@@ -652,7 +631,9 @@ export function createCallsService(
           personaKind: persona.kind,
           eirDisplayName: active.eir?.displayName ?? null,
           firstName: principal === null ? null : greetingName(principal.displayName),
-          opener: notebook?.content.nextOpener ?? null,
+          // The conversation's own opener, validated when it was created and replayed to the model as its first
+          // message, so the call says exactly what the vEIR believes it opened with (none for temporary chats).
+          opener: turnCount === 0 ? session.opener : null,
           conversationStarted: turnCount > 0,
         };
       });
