@@ -13,6 +13,7 @@ import {
   type ModelAttempt,
   type ModelPurpose,
   type SentenceGateOptions,
+  type StreamStopReason,
 } from '@foundry/ai';
 import { CoachResponse, type CoachMode, type TurnChannel, type TurnStreamEvent } from '@foundry/contracts';
 
@@ -20,6 +21,7 @@ import { type SessionSigningKey } from '../auth/session-token.js';
 import { type RequestContext } from '../context.js';
 import { type Kit } from '../internal/kit.js';
 import { signSpeechUnit } from './speech-units.js';
+import { ReplyExtractor } from './reply-extract.js';
 import { annotationMessages, answerSystemPrompt, emptyAnnotations } from './turn-prompts.js';
 
 /** What a turn's generation produced, before the deterministic validation (`validateCoachResponse`). */
@@ -43,8 +45,8 @@ export interface Generation {
 
 /**
  * Why a streamed turn's reply was written whole after all: the stream broke after text was shown
- * (`interrupted`), produced nothing presentable (`empty`), or opened like structured output instead of prose
- * (`structured_output`). Units already sent are superseded by `turn.completed`.
+ * (`interrupted`), produced nothing presentable (`empty`), or was structured output with no reply field the
+ * extractor could stream (`structured_output`). Units already sent are superseded by `turn.completed`.
  */
 export type StreamFallback = 'interrupted' | 'empty' | 'structured_output';
 
@@ -272,12 +274,14 @@ export async function generateWhole(
  * Validate-before-show streaming (phase A then phase B; see `turn-prompts.ts`).
  *
  * Phase A streams the reply through the sentence gate: each unit that passes goes out as `turn.delta` (and,
- * on a call, as a signed `turn.speech` unit). When the gate stops (cross-venture or identity), the model call
- * is cancelled and the turn ends blocked. When the stream fails before any text, the turn fails like a whole
- * reply would (the gateway already tried the fallback model). The reply is written whole instead (the
- * whole-reply path, with its own fallback model) when the stream breaks after text arrived, when it gives
- * nothing presentable, or when it opens like structured output instead of prose; `turn.completed` then
- * replaces whatever was streamed.
+ * on a call, as a signed `turn.speech` unit). The reply extractor reads the stream before the gate: when the
+ * model writes the reply as structured output, only its reply field is streamed (the model is stopped once
+ * that field ends), and a reply that runs on into the response's other fields ends where they begin. When the
+ * gate stops (cross-venture or identity), the model call is cancelled and the turn ends blocked. When the
+ * stream fails before any text, the turn fails like a whole reply would (the gateway already tried the
+ * fallback model). The reply is written whole instead (the whole-reply path, with its own fallback model)
+ * when the stream breaks after text arrived, when it gives nothing presentable, or when it is structured
+ * output with no reply field in it; `turn.completed` then replaces whatever was streamed.
  *
  * Phase B then produces the structured fields for exactly the streamed reply; when it fails, the reply stands
  * alone (`annotations_unavailable`). Phase B runs after phase A, not alongside it: claims, grounding coverage,
@@ -313,7 +317,7 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
       : null;
   const stop = new AbortController();
   const signal = a.signal ? AbortSignal.any([a.signal, stop.signal]) : stop.signal;
-  const timing = { firstDeltaAt: null as number | null, deltas: 0 };
+  const timing = { firstDeltaAt: null as number | null, deltas: 0, modelFirstTextAt: null as number | null };
 
   const release = async (result: GateResult): Promise<void> => {
     for (const unit of result.units) {
@@ -391,11 +395,18 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
     } satisfies Generation;
   };
 
-  // Phase A: the reply, streamed through the gate.
+  // Phase A: the reply, streamed through the gate. The reply extractor reads the stream first: it hands on
+  // prose as it comes, and the reply field of an answer written as structured output (reply-extract.ts).
   const phaseAStarted = performance.now();
-  let answer: Awaited<ReturnType<typeof gateway.streamText>>;
+  const reply = new ReplyExtractor();
+  let streamed: {
+    readonly modelId: string;
+    readonly fallbackUsed: boolean;
+    readonly firstTokenMs: number | null;
+    readonly stopReason: StreamStopReason | null;
+  };
   try {
-    answer = await gateway.streamText(
+    const answer = await gateway.streamText(
       {
         purpose: a.meter.purpose,
         system: answerSystemPrompt(a.system, {
@@ -410,12 +421,26 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
         signal,
       },
       async (chunk) => {
-        if (gate.blocked === null && gate.fallback === null) await release(gate.push(chunk));
+        timing.modelFirstTextAt ??= performance.now();
+        if (gate.blocked !== null || gate.fallback !== null || reply.isDone()) return;
+        const text = reply.push(chunk);
+        if (text !== '') await release(gate.push(text));
+        // The reply is complete and what follows is the response's other fields: stop the model.
+        if (reply.isDone()) stop.abort();
       },
     );
+    attempts.push(...answer.attempts);
+    await record(a, answer.attempts);
+    streamed = {
+      modelId: answer.modelId,
+      fallbackUsed: answer.fallbackUsed,
+      firstTokenMs: answer.firstTokenMs,
+      stopReason: answer.stopReason,
+    };
   } catch (err) {
-    attempts.push(...attemptsOf(err));
-    await record(a, attemptsOf(err));
+    const failed = attemptsOf(err);
+    attempts.push(...failed);
+    await record(a, failed);
     const phaseAMs = Math.round(performance.now() - phaseAStarted);
     if (gate.blocked !== null)
       return blockedBy(gate.blocked, attempts.at(-1)?.modelId ?? 'unknown', phaseAMs);
@@ -424,18 +449,38 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
     }
     if (a.signal?.aborted) throw new GenerationFailure(err, attempts);
     if (gate.fallback !== null) return wholeInstead(gate.fallback, phaseAMs, null);
-    if (gate.text === '') throw new GenerationFailure(err, attempts);
-    return wholeInstead('interrupted', phaseAMs, isModelGatewayError(err) ? err.code : 'unknown');
+    if (reply.isDone() && stop.signal.aborted) {
+      // Stopped here once the reply was complete: the reply stands as the stream gave it.
+      streamed = {
+        modelId: failed.at(-1)?.modelId ?? 'unknown',
+        fallbackUsed: failed.length > 1 && failed.at(-1)?.modelId !== failed[0]?.modelId,
+        firstTokenMs:
+          timing.modelFirstTextAt === null ? null : Math.round(timing.modelFirstTextAt - phaseAStarted),
+        stopReason: null,
+      };
+    } else {
+      if (gate.text === '') throw new GenerationFailure(err, attempts);
+      return wholeInstead('interrupted', phaseAMs, isModelGatewayError(err) ? err.code : 'unknown');
+    }
   }
-  attempts.push(...answer.attempts);
-  await record(a, answer.attempts);
-  if (gate.blocked === null && gate.fallback === null) await release(gate.end());
+  if (gate.blocked === null && gate.fallback === null) {
+    const rest = reply.end();
+    if (rest !== '') await release(gate.push(rest));
+    // Ends the gate (nothing more once that last push stopped it).
+    await release(gate.end());
+  }
   const phaseAMs = Math.round(performance.now() - phaseAStarted);
-  if (gate.blocked !== null) return blockedBy(gate.blocked, answer.modelId, phaseAMs);
+  if (gate.blocked !== null) return blockedBy(gate.blocked, streamed.modelId, phaseAMs);
   if (gate.fallback !== null) return wholeInstead(gate.fallback, phaseAMs, null);
+  // Structured output without a reply in it: the reply is written whole after all.
+  if (reply.missing) return wholeInstead('structured_output', phaseAMs, null);
   // Nothing presentable (an empty or whitespace reply, or one the Markdown subset removes entirely).
   if (gate.stats.units + gate.stats.withheld === 0) return wholeInstead('empty', phaseAMs, null);
-  if (answer.stopReason === 'max_tokens') notes.push('answer_truncated');
+  if (streamed.stopReason === 'max_tokens') notes.push('answer_truncated');
+  // The reply was taken out of structured output, or cut where the response's other fields began.
+  if (reply.shape !== 'prose') notes.push(`stream_structured_${reply.shape ?? 'unknown'}`);
+  else if (reply.isDone()) notes.push('stream_fields_cut');
+  const replyText = reply.text;
 
   // Phase B: the structured fields of exactly that reply.
   const phaseBStarted = performance.now();
@@ -447,7 +492,7 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
     const result = await gateway.generateStructured({
       purpose: a.meter.purpose,
       system: a.system,
-      messages: annotationMessages(a.messages, answer.text),
+      messages: annotationMessages(a.messages, replyText),
       schemaName: COACH_ANNOTATIONS_SCHEMA_NAME,
       zodSchema: CoachAnnotations,
       requestId: a.ctx.requestId,
@@ -486,14 +531,14 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
   const phaseBMs = Math.round(performance.now() - phaseBStarted);
 
   return {
-    raw: { ...annotations, answer: answer.text, spoken: voice ? answer.text : null },
-    modelId: answer.modelId,
-    fallbackUsed: answer.fallbackUsed,
+    raw: { ...annotations, answer: replyText, spoken: voice ? replyText : null },
+    modelId: streamed.modelId,
+    fallbackUsed: streamed.fallbackUsed,
     attempts,
     latencyMs: phaseAMs + phaseBMs,
     notes,
     gateBlocked: null,
-    stream: { ...details(phaseAMs, phaseBMs, answer.firstTokenMs), interrupted },
+    stream: { ...details(phaseAMs, phaseBMs, streamed.firstTokenMs), interrupted },
   };
 }
 

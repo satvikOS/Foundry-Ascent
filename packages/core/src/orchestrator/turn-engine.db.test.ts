@@ -408,11 +408,40 @@ describe('failures', () => {
     ]);
   });
 
-  it('a streamed reply that opens like JSON is stopped unseen and written whole', async () => {
+  it('a reply the model writes as JSON streams its answer field, and the model stops when the field ends', async () => {
     const gateway = new MockModelGateway({
       streamDelayMs: 0,
       streamFixture: () =>
-        '{"mode": "coach", "answer": "Start with the door counts. Then call the library. Then decide."}',
+        '{"mode": "coach", "answer": "Start with the door counts. Then call the library. Then decide.", "claims": [{"text": "The founder has a memory item.", "kind": "fact", "evidence_ids": []}], "next_actions": []}',
+    });
+    const { core } = coreWith(gateway);
+    const session = await core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+    const { events, outcome } = await run(core.orchestrator, session.id, {
+      text: 'What should we do first?',
+      mode: 'coach',
+    });
+    expect(outcome.status).toBe('completed');
+    expect(
+      deltas(events)
+        .map((d) => d.text)
+        .join(''),
+    ).toBe('Start with the door counts. Then call the library. Then decide.');
+    const turn = completed(events);
+    expect(turn.validator?.notes).toContain('stream_structured_json');
+    expect(turn.response?.answer).toBe('Start with the door counts. Then call the library. Then decide.');
+    // No whole reply: the stream, then the annotations of exactly that reply.
+    expect(gateway.calls.map((c) => `${c.kind}:${c.schemaName ?? ''}`)).toEqual([
+      'embed:',
+      'stream:',
+      'generate:CoachAnnotations',
+    ]);
+    expect(await auditMetadata(turn.id, 'turn.completed')).toMatchObject({ stream: 'streamed' });
+  });
+
+  it('a streamed reply that is structured output with no reply in it is stopped unseen and written whole', async () => {
+    const gateway = new MockModelGateway({
+      streamDelayMs: 0,
+      streamFixture: () => '{"mode": "coach", "claims": [], "next_actions": [], "follow_up_questions": []}',
     });
     const { core } = coreWith(gateway);
     const session = await core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
@@ -434,6 +463,29 @@ describe('failures', () => {
       stream: 'structured_output',
       firstTokenMs: null,
     });
+  });
+
+  it('a reply that runs on into the mode name and its claims ends where they begin', async () => {
+    const reply = 'Three interviews is a solid start. Which librarian can you reach first?';
+    const gateway = new MockModelGateway({
+      streamDelayMs: 0,
+      streamFixture: () =>
+        `${reply}\n\ncoach\nThe founder has a memory item about the advisor.\nThe venture has no pilot data yet.`,
+    });
+    const { core } = coreWith(gateway);
+    const session = await core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+    const { events, outcome } = await run(core.orchestrator, session.id, {
+      text: 'We did three of the library interviews.',
+      mode: 'coach',
+    });
+    expect(outcome.status).toBe('completed');
+    const shown = deltas(events)
+      .map((d) => d.text)
+      .join('');
+    expect(shown.trim()).toBe(reply);
+    const turn = completed(events);
+    expect(turn.response?.answer).not.toMatch(/founder has a memory item|^coach$/m);
+    expect(turn.validator?.notes).toContain('stream_fields_cut');
   });
 
   it('annotations that fail leave the streamed reply standing', async () => {
@@ -639,6 +691,40 @@ describe('spoken turns', () => {
     expect(validating).toBeGreaterThan(0);
     const lastUnit = events.findLastIndex((e) => e.event === 'turn.speech');
     expect(lastUnit).toBeLessThan(validating);
+  });
+
+  it('a call’s first reply written as JSON is still said sentence by sentence before the annotations', async () => {
+    // Production: the first turn of a call without an opener opened like structured output and went silent for
+    // a whole structured call (9.5 s).
+    const gateway = new MockModelGateway({
+      streamDelayMs: 0,
+      streamFixture: () =>
+        '{"mode": "coach", "answer": "Three interviews is a solid start. Which librarian can you reach first?", "spoken": "Three interviews is a solid start.", "claims": []}',
+    });
+    const { core, orchestrator } = coreWith(gateway);
+    const session = await core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+    const { events, outcome } = await run(orchestrator, session.id, {
+      text: 'Hi. We did three of the library interviews.',
+      mode: 'coach',
+      channel: 'voice',
+      callId: CALL_ID,
+    });
+    expect(outcome.status).toBe('completed');
+    const units = speechUnits(events);
+    expect(units.map((u) => u.text)).toEqual([
+      'Three interviews is a solid start.',
+      'Which librarian can you reach first?',
+    ]);
+    const validating = events.findIndex((e) => e.event === 'turn.status' && e.phase === 'validating');
+    expect(events.findIndex((e) => e.event === 'turn.speech')).toBeLessThan(validating);
+    const turn = completed(events);
+    expect(turn.validator?.notes).toContain('stream_structured_json');
+    expect(turn.validator?.notes).not.toContain('stream_structured_output');
+    expect(gateway.calls.map((c) => `${c.kind}:${c.schemaName ?? ''}`)).toEqual([
+      'embed:',
+      'stream:',
+      'generate:CoachAnnotations',
+    ]);
   });
 
   it('a crisis on a call speaks the fixed support message, without call admission or a model call', async () => {
