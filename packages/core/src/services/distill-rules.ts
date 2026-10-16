@@ -72,20 +72,26 @@ export function distillSkipReason(
   return null;
 }
 
-/** Model answers a queued job may get: an invalid or refused one is retried once through the queue. */
-const MODEL_ANSWER_ATTEMPTS = 2;
+/** Unusable answers (invalid or refused) a conversation's turns may get before the failure is recorded. */
+export const MODEL_ANSWER_ATTEMPTS = 2;
 
 /**
- * What a model failure means for a job on its `attempt`-th delivery (of `maxAttempts`): the failure code to
- * record, or null when another delivery may succeed (the model unavailable, throttled or timed out, or the
- * call cancelled at the deadline; an invalid or refused answer once). A configuration or request error never
- * gets better by retrying.
+ * What a model failure means for a job: the failure code to record, or null when another delivery may succeed
+ * (the model unavailable, throttled or timed out, or the call cancelled at the deadline; an invalid or refused
+ * answer once). An unusable answer is judged by `answers`, how many unusable answers the model gave for these
+ * turns including this one, never by how often the job was delivered (the worker defers deliveries it cannot
+ * start, which never reach the model); on the queue's last delivery (`lastDelivery`, and always for inline
+ * runs) it is recorded at once, since nothing would retry it. A configuration or request error never gets
+ * better by retrying.
  */
-export function modelFailure(err: ModelGatewayError, attempt: number, maxAttempts: number): string | null {
+export function modelFailure(
+  err: ModelGatewayError,
+  args: { readonly answers: number; readonly lastDelivery: boolean },
+): string | null {
   if (err instanceof ModelUnavailableError) {
     return err.retryable || err.reason === 'aborted' ? null : `${err.code}:${err.reason}`;
   }
-  return attempt < Math.min(maxAttempts, MODEL_ANSWER_ATTEMPTS) ? null : err.code;
+  return args.answers < MODEL_ANSWER_ATTEMPTS && !args.lastDelivery ? null : err.code;
 }
 
 /**

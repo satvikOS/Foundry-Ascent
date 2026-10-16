@@ -8,6 +8,7 @@ import {
   buildDistillPrompt,
   isModelGatewayError,
   isNearDuplicate,
+  ModelUnavailableError,
   sanitizeDistill,
   type DistillSanitizeContext,
   type SanitizedDistill,
@@ -116,7 +117,9 @@ export interface DistillRunOptions {
   readonly deadline?: number;
   /**
    * Delivery attempt of a queued job (1-based) and the queue's maximum. An invalid or refused model answer is
-   * tried once more through the queue before it is recorded; inline runs (the backstop) record it at once.
+   * tried once more through the queue before it is recorded, counted by the answers the model gave (a delivery
+   * the worker deferred never reached the model); the queue's last delivery and inline runs (the backstop)
+   * record it at once.
    */
   readonly attempt?: number;
   readonly maxAttempts?: number;
@@ -288,6 +291,10 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
       delaySeconds > 0 ? { delaySeconds } : {},
     );
     logger.info('distill.enqueued', { requestId, sessionId: session.id, trigger, turns, delaySeconds });
+  }
+
+  function countUnusableAnswer(sessionId: string): Promise<number> {
+    return kit.system((sx) => sessionsRepo.countUnusableDistillAnswer(sx, sessionId), { transaction: false });
   }
 
   /** Triggers never fail the request they follow: a lost job is caught by the backstop. */
@@ -584,7 +591,12 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
       draft = result.value;
     } catch (err) {
       if (!isModelGatewayError(err)) throw err;
-      const failure = modelFailure(err, options.attempt ?? 1, options.maxAttempts ?? 1);
+      // Only answers the model gave count towards the retry of an unusable one, never queue deliveries.
+      const answers = err instanceof ModelUnavailableError ? 0 : await countUnusableAnswer(sessionId);
+      const failure = modelFailure(err, {
+        answers,
+        lastDelivery: (options.attempt ?? 1) >= (options.maxAttempts ?? 1),
+      });
       if (failure === null) throw new RetryableDistillError(err.code);
       return recordWithoutDigest(state, requestId, 'failed', failure, upTo);
     }

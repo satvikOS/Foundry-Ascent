@@ -108,26 +108,40 @@ describe('personaCanDistill', () => {
 });
 
 describe('modelFailure (what a failed model call means for the queued job)', () => {
+  const queued = { answers: 0, lastDelivery: false };
+  const last = { answers: 0, lastDelivery: true };
+
   it('retries an unavailable, throttled or timed-out model, and a call cancelled at the deadline', () => {
-    expect(modelFailure(new ModelUnavailableError('throttled', 'm'), 3, 3)).toBeNull();
-    expect(modelFailure(new ModelUnavailableError('timeout', 'm'), 1, 1)).toBeNull();
-    expect(modelFailure(new ModelUnavailableError('aborted', 'm'), 1, 3)).toBeNull();
+    expect(modelFailure(new ModelUnavailableError('throttled', 'm'), last)).toBeNull();
+    expect(modelFailure(new ModelUnavailableError('timeout', 'm'), last)).toBeNull();
+    expect(modelFailure(new ModelUnavailableError('aborted', 'm'), queued)).toBeNull();
   });
 
   it('records a configuration or request error at once: retrying never helps', () => {
-    expect(modelFailure(new ModelUnavailableError('config', 'm'), 1, 3)).toBe('model_unavailable:config');
-    expect(modelFailure(new ModelUnavailableError('client_error', 'm'), 1, 3)).toBe(
+    expect(modelFailure(new ModelUnavailableError('config', 'm'), queued)).toBe('model_unavailable:config');
+    expect(modelFailure(new ModelUnavailableError('client_error', 'm'), queued)).toBe(
       'model_unavailable:client_error',
     );
   });
 
   it('gives an invalid or refused answer one more delivery, then records it; inline runs record at once', () => {
     const invalid = new ModelOutputInvalidError('m', ['(root): x']);
-    expect(modelFailure(invalid, 1, 3)).toBeNull();
-    expect(modelFailure(invalid, 2, 3)).toBe('model_output_invalid');
-    expect(modelFailure(new ModelRefusalError('m', 'model'), 1, 3)).toBeNull();
-    expect(modelFailure(new ModelRefusalError('m', 'model'), 2, 3)).toBe('model_refusal');
-    expect(modelFailure(invalid, 1, 1)).toBe('model_output_invalid');
+    expect(modelFailure(invalid, { answers: 1, lastDelivery: false })).toBeNull();
+    expect(modelFailure(invalid, { answers: 2, lastDelivery: false })).toBe('model_output_invalid');
+    expect(modelFailure(new ModelRefusalError('m', 'model'), { answers: 1, lastDelivery: false })).toBeNull();
+    expect(modelFailure(new ModelRefusalError('m', 'model'), { answers: 2, lastDelivery: false })).toBe(
+      'model_refusal',
+    );
+    // An inline run (the backstop) is its own last delivery.
+    expect(modelFailure(invalid, { answers: 1, lastDelivery: true })).toBe('model_output_invalid');
+  });
+
+  it('counts the answers the model gave, not the deliveries the worker deferred before calling it', () => {
+    const invalid = new ModelOutputInvalidError('m', ['(root): x']);
+    // A second delivery whose first was deferred unstarted: this is the first answer, so it is tried again.
+    expect(modelFailure(invalid, { answers: 1, lastDelivery: false })).toBeNull();
+    // The queue's last delivery records it whatever the count: nothing would retry it.
+    expect(modelFailure(invalid, { answers: 1, lastDelivery: true })).toBe('model_output_invalid');
   });
 });
 

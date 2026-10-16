@@ -323,7 +323,7 @@ export async function setSessionDigest(
 ): Promise<boolean> {
   const result = await ex.query(
     `UPDATE coaching_sessions AS s
-     SET digest = :digest, distilled_at = now(), distill_version = :version,
+     SET digest = :digest, distilled_at = now(), distill_version = :version, distill_unusable_answers = 0,
          title = CASE WHEN s.title_source = 'auto' THEN coalesce(:title, s.title) ELSE s.title END
      WHERE s.id = :id AND s.privacy = 'standard' AND s.deleted_at IS NULL AND s.digest_deleted_at IS NULL`,
     {
@@ -677,7 +677,7 @@ export async function markSessionDistilled(
 ): Promise<boolean> {
   const result = await ex.query(
     `UPDATE coaching_sessions AS s
-     SET distilled_at = now(), distill_version = greatest(s.distill_version, :version)
+     SET distilled_at = now(), distill_version = greatest(s.distill_version, :version), distill_unusable_answers = 0
      WHERE s.id = :id AND s.privacy = 'standard' AND s.deleted_at IS NULL`,
     { id: p.uuid(args.sessionId), version: p.int(Math.max(0, Math.trunc(args.distillVersion))) },
   );
@@ -706,6 +706,22 @@ export async function claimDistillation(
     },
   );
   return result.rowCount > 0;
+}
+
+/**
+ * Counts one unusable answer (invalid or refused) the model gave for the turns the digest does not cover yet,
+ * and returns how many it gave so far; the count restarts whenever the covered turns move on
+ * ({@link setSessionDigest}, {@link markSessionDistilled}). Only answers count, never queue deliveries.
+ */
+export async function countUnusableDistillAnswer(sx: SystemExecutor, sessionId: string): Promise<number> {
+  const row = await queryFirst(
+    sx,
+    `UPDATE coaching_sessions AS s SET distill_unusable_answers = s.distill_unusable_answers + 1
+     WHERE s.id = :id RETURNING s.distill_unusable_answers`,
+    { id: p.uuid(sessionId) },
+    (r) => col.int.decode(r.distill_unusable_answers, 'distill_unusable_answers'),
+  );
+  return row ?? 1;
 }
 
 /** Releases a run's claim (no-op when the claim lapsed and another run took it). */

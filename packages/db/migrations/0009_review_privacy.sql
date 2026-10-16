@@ -18,6 +18,8 @@
 --     (a legacy notebook opener), and deleting any conversation of the venture clears it, as it clears a
 --     notebook opener of unknown origin in every notebook of the venture. Over-erasing is harmless: the next
 --     distillation writes a new opener, and a conversation that already started keeps its turns.
+--  4. Distillation counts the unusable answers the model gave (invalid or refused) for the turns no digest covers
+--     yet (`distill_unusable_answers`), so a job the worker deferred unstarted never counts as a model attempt.
 
 -- ---------------------------------------------------------------------------------------------------
 -- 1. Turns of deleted conversations, and titles from risky messages
@@ -292,3 +294,15 @@ END
 $$;
 REVOKE ALL ON FUNCTION app.soft_delete_session(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app.soft_delete_session(uuid) TO app_rls;
+
+-- ---------------------------------------------------------------------------------------------------
+-- 4. Unusable distillation answers
+-- ---------------------------------------------------------------------------------------------------
+
+-- Invalid or refused answers the model gave for the turns the digest does not cover yet; reset whenever the
+-- covered turns move on. An unusable answer is tried once more through the queue, counted by these answers,
+-- not by queue deliveries (which also count deliveries the worker deferred before calling any model).
+ALTER TABLE coaching_sessions ADD COLUMN IF NOT EXISTS distill_unusable_answers integer NOT NULL DEFAULT 0;
+ALTER TABLE coaching_sessions DROP CONSTRAINT IF EXISTS coaching_sessions_distill_unusable_answers_check;
+ALTER TABLE coaching_sessions ADD CONSTRAINT coaching_sessions_distill_unusable_answers_check
+  CHECK (distill_unusable_answers >= 0) NOT VALID;

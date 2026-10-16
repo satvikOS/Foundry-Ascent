@@ -136,6 +136,8 @@ export async function dispatchJob(
 
     case 'distill_session':
       try {
+        // `attempt` is the receive count, which also counts deliveries processSqsBatch deferred unstarted:
+        // distillation counts the model's answers itself and uses it only to know the queue's last delivery.
         const result = await deps.distill.distillSession(
           {
             sessionId: job.sessionId,

@@ -549,6 +549,38 @@ describe('distillSession', () => {
     expect(event).toMatchObject({ outcome: 'failed', policy_reason: 'model_output_invalid' });
   });
 
+  it('counts the answers the model gave, never a delivery the worker deferred before calling it', async () => {
+    const id = await conversation(priya, ['The second library may share its booking logs.'], bench);
+    await idle(id, 15);
+    // The worker deferred the first delivery unstarted (no time left in its batch): the second delivery gets
+    // the model's first answer, which is unusable. It is tried once more, not recorded as final.
+    h.gateway.scriptNext('invalid_output');
+    await expect(
+      h.core.distill.distillSession(job(id), { attempt: 2, maxAttempts: 3 }),
+    ).rejects.toBeInstanceOf(RetryableDistillError);
+    expect((await session(id))?.distillVersion).toBe(0);
+    expect(await h.core.distill.distillSession(job(id), { attempt: 3, maxAttempts: 3 })).toMatchObject({
+      status: 'distilled',
+      turns: 1,
+    });
+    expect((await session(id))?.digest).not.toBeNull();
+
+    // The count starts again for new turns: their first unusable answer is tried once more too.
+    await completedTurn(priya, id, 'They said yes, with a data agreement.');
+    await idle(id, 15);
+    h.gateway.scriptNext('invalid_output');
+    await expect(
+      h.core.distill.distillSession(job(id), { attempt: 1, maxAttempts: 3 }),
+    ).rejects.toBeInstanceOf(RetryableDistillError);
+    // On the queue's last delivery an unusable answer is recorded, since nothing would retry it.
+    h.gateway.scriptNext('invalid_output');
+    expect(await h.core.distill.distillSession(job(id), { attempt: 3, maxAttempts: 3 })).toMatchObject({
+      status: 'failed',
+      reason: 'model_output_invalid',
+    });
+    expect((await session(id))?.distillVersion).toBe(2);
+  });
+
   it('records a configuration error at once, and retries a call cancelled at the deadline', async () => {
     const id = await conversation(devin, ['Is a semester pilot long enough?']);
     await idle(id, 15);
