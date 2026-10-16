@@ -74,6 +74,22 @@ describe('useCallNotice', () => {
     expect(result.current[0]).toBe(false);
   });
 
+  it('shows the notice to a second person on the same browser, whatever the first one acknowledged', () => {
+    const OTHER = '5a6b7c8d-9e0f-4a1b-8c3d-4e5f6a7b8c99';
+    window.localStorage.setItem(callNoticeCacheKey(ME), AT);
+    const client = new QueryClient();
+    const { result, rerender } = renderHook(
+      ({ config }: { config: CallConfigResponse | undefined }) => useCallNotice(OTHER, config),
+      { wrapper: wrapper(client), initialProps: { config: undefined as CallConfigResponse | undefined } },
+    );
+    // Before the call settings load (nothing cached for this person), and after (the server says not yet).
+    expect(result.current[0]).toBe(false);
+    rerender({ config: settings(null) });
+    expect(result.current[0]).toBe(false);
+    // The first person's cached answer is untouched.
+    expect(window.localStorage.getItem(callNoticeCacheKey(ME))).toBe(AT);
+  });
+
   it('stores the acknowledgement on the server and updates the loaded call settings', async () => {
     const fetchMock = stubFetch();
     fetchMock.mockResolvedValue(jsonResponse({ acknowledgedAt: AT }));
