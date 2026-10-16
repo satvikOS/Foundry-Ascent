@@ -50,7 +50,11 @@ export type {
  */
 
 export interface CallEngineApi {
-  startCall(sessionId: string, inputMode: 'transcribe' | 'typed'): Promise<StartCallResult>;
+  startCall(
+    sessionId: string,
+    inputMode: 'transcribe' | 'typed',
+    replace?: boolean,
+  ): Promise<StartCallResult>;
   refreshSttGrant(callId: string): Promise<SttGrant>;
   heartbeat(callId: string, body: HeartbeatBody): Promise<HeartbeatResult>;
   endCall(callId: string, body: EndCallBody): Promise<EndCallResult>;
@@ -142,6 +146,8 @@ export interface StartCallOptions {
    * whose echo cancellation does not reach the recogniser, where the vEIR would otherwise hear itself.
    */
   readonly halfDuplex?: boolean;
+  /** End the founder's live call in another conversation (they said yes to moving it here). */
+  readonly replace?: boolean;
 }
 
 interface ActiveTurn {
@@ -342,7 +348,11 @@ export class CallEngine {
 
     let started: StartCallResult;
     try {
-      started = await this.deps.api.startCall(options.sessionId, stream ? 'transcribe' : 'typed');
+      started = await this.deps.api.startCall(
+        options.sessionId,
+        stream ? 'transcribe' : 'typed',
+        options.replace === true,
+      );
     } catch (error) {
       stopStream(stream);
       if (epoch !== this.epoch) return;
@@ -567,6 +577,9 @@ export class CallEngine {
   // Speech-to-text ------------------------------------------------------------------------------------
 
   private async startCapture(stream: MediaStream, context: CallAudioContext, epoch: number): Promise<void> {
+    // The grant only opens a stream for a few seconds after it was minted: connect while the capture
+    // worklet loads instead of after it (frames are sent once both are ready).
+    const connecting = this.connectStt(epoch);
     try {
       const capture = await MicCapture.start(
         {
@@ -576,8 +589,10 @@ export class CallEngine {
         },
         stream,
       );
-      if (epoch !== this.epoch) {
+      // Ended, or switched to typing while the worklet loaded (speech-to-text refused): release the mic.
+      if (epoch !== this.epoch || this.snapshot.input !== 'voice') {
         capture.stop();
+        await connecting;
         return;
       }
       this.capture = capture;
@@ -588,9 +603,10 @@ export class CallEngine {
       stopStream(stream);
       if (epoch !== this.epoch) return;
       this.toTyped('mic_unavailable');
+      await connecting;
       return;
     }
-    await this.connectStt(epoch);
+    await connecting;
   }
 
   /** Speech-to-text should be connected and is not. */

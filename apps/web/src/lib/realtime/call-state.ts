@@ -23,6 +23,11 @@ export interface CallNotice {
 export interface CallFailure {
   readonly message: string;
   readonly retry: boolean;
+  /**
+   * The founder is already in a call in another conversation (409 on start). They are asked whether to move
+   * it here; yes starts again with `replace: true`, which ends the other call.
+   */
+  readonly elsewhere?: boolean;
 }
 
 export interface CallEnded {

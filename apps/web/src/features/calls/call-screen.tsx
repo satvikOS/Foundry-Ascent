@@ -149,56 +149,65 @@ export function CallScreen() {
     [navigate, queryClient, tenant],
   );
 
-  const begin = useCallback(() => {
-    if (!route) return;
-    const { ventureId: target, sessionId } = route;
-    const options = { ventureId: target, talkMode: storedTalkMode(), halfDuplex: prefersHalfDuplex() };
-    setCreateError(null);
-    acknowledgeNotice();
-    engine.reset();
-    if (sessionId) {
-      attempted.current = sessionId;
-      void engine.start({ ...options, sessionId }).catch(() => undefined);
-      return;
-    }
-    // New chat: the call gets a conversation of its own, which becomes the page once the call is live.
-    const key = `new:${target}`;
-    attempted.current = key;
-    createSession.mutate(
-      {},
-      {
-        onSuccess: (session) => {
-          if (attempted.current !== key) {
-            // The screen was closed while the conversation was being created.
-            discard(session.id, target);
-            return;
-          }
-          void engine
-            .start({ ...options, sessionId: session.id })
-            .catch(() => undefined)
-            .then(() => {
-              const { phase, sessionId: calling } = engine.getSnapshot();
-              if (calling !== session.id || phase === 'failed' || phase === 'idle') {
-                discard(session.id, target);
-                return;
-              }
-              const now = routeNow.current;
-              if (now?.open !== true || now.sessionId !== null || now.ventureId !== target) return;
-              attempted.current = session.id;
-              void navigate({
-                to: '/$tenant/app/v/$ventureId/c/$sessionId',
-                params: { tenant, ventureId: target, sessionId: session.id },
-                search: { call: 1 },
-                replace: true,
+  /** Starts the call; `replace` moves the founder's live call in another conversation here (asked first). */
+  const begin = useCallback(
+    (replace = false) => {
+      if (!route) return;
+      const { ventureId: target, sessionId } = route;
+      const options = {
+        ventureId: target,
+        talkMode: storedTalkMode(),
+        halfDuplex: prefersHalfDuplex(),
+        replace,
+      };
+      setCreateError(null);
+      acknowledgeNotice();
+      engine.reset();
+      if (sessionId) {
+        attempted.current = sessionId;
+        void engine.start({ ...options, sessionId }).catch(() => undefined);
+        return;
+      }
+      // New chat: the call gets a conversation of its own, which becomes the page once the call is live.
+      const key = `new:${target}`;
+      attempted.current = key;
+      createSession.mutate(
+        {},
+        {
+          onSuccess: (session) => {
+            if (attempted.current !== key) {
+              // The screen was closed while the conversation was being created.
+              discard(session.id, target);
+              return;
+            }
+            void engine
+              .start({ ...options, sessionId: session.id })
+              .catch(() => undefined)
+              .then(() => {
+                const { phase, sessionId: calling } = engine.getSnapshot();
+                if (calling !== session.id || phase === 'failed' || phase === 'idle') {
+                  discard(session.id, target);
+                  return;
+                }
+                const now = routeNow.current;
+                if (now?.open !== true || now.sessionId !== null || now.ventureId !== target) return;
+                attempted.current = session.id;
+                void navigate({
+                  to: '/$tenant/app/v/$ventureId/c/$sessionId',
+                  params: { tenant, ventureId: target, sessionId: session.id },
+                  search: { call: 1 },
+                  replace: true,
+                });
               });
-            });
+          },
+          onError: (error) => {
+            setCreateError(errorMessage(error));
+          },
         },
-        onError: (error) => {
-          setCreateError(errorMessage(error));
-        },
-      },
-    );
-  }, [acknowledgeNotice, createSession, discard, engine, navigate, route, tenant]);
+      );
+    },
+    [acknowledgeNotice, createSession, discard, engine, navigate, route, tenant],
+  );
 
   // Leaving the screen forgets what it tried, so the next Call starts afresh.
   useEffect(() => {
@@ -306,7 +315,9 @@ export function CallScreen() {
                 ended={ended}
                 canWrite={writable}
                 onBackToConversation={backToConversation}
-                onCallAgain={begin}
+                onCallAgain={() => {
+                  begin();
+                }}
                 onLeave={() => {
                   engine.reset();
                 }}
@@ -329,11 +340,16 @@ export function CallScreen() {
               failure={snapshot.phase === 'failed' ? snapshot.error : null}
               busy={createSession.isPending}
               voiceNotice={!noticeSeen}
-              onStart={begin}
+              onStart={() => {
+                begin();
+              }}
               onRetry={() => {
                 setCreateError(null);
                 if (config.error) void config.refetch();
                 else begin();
+              }}
+              onMoveHere={() => {
+                begin(true);
               }}
               onClose={() => {
                 // Forget the failed call first, so closing returns to the page (not to a call that never was).

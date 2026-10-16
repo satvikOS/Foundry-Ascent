@@ -70,6 +70,8 @@ interface CallLobbyProps {
   voiceNotice: boolean;
   onStart: () => void;
   onRetry: () => void;
+  /** Already in a call elsewhere and the founder said yes: start here, ending the other call. */
+  onMoveHere: () => void;
   onClose: () => void;
 }
 
@@ -88,6 +90,7 @@ export function CallLobby({
   voiceNotice,
   onStart,
   onRetry,
+  onMoveHere,
   onClose,
 }: CallLobbyProps) {
   const primaryRef = useRef<HTMLButtonElement | null>(null);
@@ -101,11 +104,16 @@ export function CallLobby({
     blocker ??
     (failure
       ? {
-          title: failure.retry ? 'The call didn’t connect' : 'Can’t call right now',
+          title: failure.elsewhere
+            ? 'You’re already in a call'
+            : failure.retry
+              ? 'The call didn’t connect'
+              : 'Can’t call right now',
           message: failure.message,
           retry: failure.retry,
         }
       : null);
+  const moveHere = failure?.elsewhere === true;
   const minutes =
     config && !problem
       ? `Up to ${String(config.maxMinutes)} minutes · ${String(Math.floor(config.remainingMinutesToday))} min left today`
@@ -145,7 +153,12 @@ export function CallLobby({
         ) : null}
         <div className="flex w-full max-w-xs flex-col gap-2 sm:max-w-none sm:flex-row sm:justify-center">
           {problem ? (
-            problem.retry ? (
+            moveHere ? (
+              <Button ref={primaryRef} size="lg" onClick={onMoveHere} loading={busy}>
+                <Phone aria-hidden />
+                Move the call here
+              </Button>
+            ) : problem.retry ? (
               <Button ref={primaryRef} size="lg" onClick={onRetry}>
                 Try again
               </Button>
@@ -157,12 +170,12 @@ export function CallLobby({
             </Button>
           )}
           <Button
-            ref={problem && !problem.retry ? primaryRef : undefined}
+            ref={problem && !problem.retry && !moveHere ? primaryRef : undefined}
             size="lg"
             variant="secondary"
             onClick={onClose}
           >
-            {problem ? 'Back to chat' : 'Not now'}
+            {problem && !moveHere ? 'Back to chat' : 'Not now'}
           </Button>
         </div>
       </div>

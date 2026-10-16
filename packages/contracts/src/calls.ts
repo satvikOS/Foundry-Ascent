@@ -66,7 +66,8 @@ export const StartCallRequest = z.object({
   inputMode: CallInputMode.default('transcribe'),
   /**
    * End the caller's live call in another conversation (as `navigated`) instead of answering 409. Without it,
-   * a live call elsewhere refuses the start.
+   * a live call elsewhere refuses the start with 409 `conflict` (the only conflict a start answers), and the
+   * client asks the founder whether to move the call here before sending `replace: true`.
    */
   replace: z.boolean().optional(),
 });

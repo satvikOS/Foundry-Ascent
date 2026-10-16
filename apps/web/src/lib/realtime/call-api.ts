@@ -29,16 +29,20 @@ export type EndCallResult = z.infer<typeof EndCallResponse>;
 export type EndCallBody = z.input<typeof EndCallRequest>;
 export type HeartbeatBody = z.input<typeof CallHeartbeatRequest>;
 
-/** `POST /sessions/:id/calls` */
+/**
+ * `POST /sessions/:id/calls`. `replace` ends the founder's live call in another conversation (asked first);
+ * without it such a call refuses the start with 409 `conflict`.
+ */
 export function startCall(
   sessionId: string,
   inputMode: z.input<typeof StartCallRequest>['inputMode'],
+  replace = false,
   signal?: AbortSignal,
 ): Promise<StartCallResult> {
   return api.post(
     path`/sessions/${sessionId}/calls`,
     StartCallResponse,
-    encodeBody(StartCallRequest, { inputMode }),
+    encodeBody(StartCallRequest, replace ? { inputMode, replace: true } : { inputMode }),
     { idempotencyKey: createIdempotencyKey(), signal },
   );
 }
@@ -170,8 +174,16 @@ export function callErrorMessage(error: unknown): string {
   return errorMessage(error);
 }
 
+/** What the founder is asked when they are already in a call in another conversation. */
+export const CALL_ELSEWHERE_MESSAGE =
+  'You’re in a call in another conversation. Move it here? That call ends, and what was said stays in its conversation.';
+
 /** Why a call could not start; trying again is offered only when it may help (a network or server hiccup). */
 export function startFailure(error: unknown): CallFailure {
+  // The one conflict a start answers: a live call in another conversation (`replace` moves it here).
+  if (isApiError(error) && error.status === 409 && error.code === 'conflict') {
+    return { message: CALL_ELSEWHERE_MESSAGE, retry: false, elsewhere: true };
+  }
   const transient =
     !isApiError(error) ||
     error.isTransient ||

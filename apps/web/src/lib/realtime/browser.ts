@@ -21,12 +21,14 @@ export function browserCallDeps(
     typeof mediaDevices?.getUserMedia === 'function'
       ? (constraints: MediaStreamConstraints) => mediaDevices.getUserMedia(constraints)
       : null;
-  const synthesis =
-    typeof window !== 'undefined' && 'speechSynthesis' in window ? window.speechSynthesis : null;
+  const synthesis = developmentSpeechSynthesis(
+    import.meta.env.DEV,
+    typeof window === 'undefined' ? undefined : window,
+  );
 
   return {
     api: {
-      startCall: (sessionId, inputMode) => startCall(sessionId, inputMode),
+      startCall: (sessionId, inputMode, replace) => startCall(sessionId, inputMode, replace),
       refreshSttGrant: (callId) => refreshSttGrant(callId),
       heartbeat: sendHeartbeat,
       endCall,
@@ -58,6 +60,20 @@ export function browserCallDeps(
     },
     onTurnSettled,
   };
+}
+
+/**
+ * The browser's speech synthesis for the call's reading fallback (a `501 speech_unavailable` from the server):
+ * development builds only. In production the browser never reads the vEIR's words aloud, because its voices
+ * can send the text to an online service and are not the vEIR's voice; the call shows captions instead. The
+ * player further limits the fallback to voices on the device (`localEnglishVoice`).
+ */
+export function developmentSpeechSynthesis(
+  development: boolean,
+  win: Pick<Window, 'speechSynthesis'> | undefined,
+): SpeechSynthesis | null {
+  if (!development || win === undefined || !('speechSynthesis' in win)) return null;
+  return win.speechSynthesis;
 }
 
 /**

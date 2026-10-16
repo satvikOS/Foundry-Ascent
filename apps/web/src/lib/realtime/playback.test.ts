@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  localEnglishVoice,
   readingTimeMs,
   SpeechPlayer,
   type PlayerAudio,
   type SpeechFetchResult,
   type SpeechUnitToPlay,
 } from './playback';
-import { FakeAudioContext, FakeSpeechSynthesis, FakeUtterance, flush } from './testing';
+import { FakeAudioContext, FakeSpeechSynthesis, FakeUtterance, fakeVoice, flush } from './testing';
 
 const TURN = '7d1f2c4e-1a2b-4c3d-8e9f-0a1b2c3d4e5f';
 
@@ -130,6 +131,36 @@ describe('SpeechPlayer', () => {
     expect(log).toContain('start 1 browser');
     expect(synthesis.spoken.map((u) => u.text)).toEqual(['Hello Maya.', 'How did the interviews go?']);
     expect(fetchSpeech).toHaveBeenCalledTimes(2);
+  });
+
+  it('never reads with an online browser voice: without a voice on the device, a 501 shows captions', async () => {
+    const { synthesis, pending, player, log } = setup();
+    // Chrome's "Google …" voices send the text to an online service.
+    synthesis.voices = [fakeVoice('Google US English', false)];
+    player.enqueue(unit(0, 'Hello Maya.'));
+    pending[0]?.resolve({ kind: 'unavailable' });
+    await flush();
+    expect(log).toEqual(['start 0 captions']);
+    expect(synthesis.spoken).toHaveLength(0);
+  });
+
+  it('shows captions for a 501 when no browser synthesis is offered (production builds)', async () => {
+    const { pending, player, log } = setup({ synthesis: false });
+    player.enqueue(unit(0, 'Hello Maya.'));
+    pending[0]?.resolve({ kind: 'unavailable' });
+    await flush();
+    expect(log).toEqual(['start 0 captions']);
+  });
+
+  it('picks the local English voice, never an online one', () => {
+    const synthesis = new FakeSpeechSynthesis();
+    synthesis.voices = [
+      fakeVoice('Google US English', false),
+      fakeVoice('Thomas', true, 'fr-FR'),
+      fakeVoice('Samantha', true),
+    ];
+    expect(localEnglishVoice(synthesis)?.name).toBe('Samantha');
+    expect(localEnglishVoice(null)).toBeNull();
   });
 
   it('finishes a browser utterance that never reports its end', async () => {

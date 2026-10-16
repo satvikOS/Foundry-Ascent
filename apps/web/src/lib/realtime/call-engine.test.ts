@@ -234,7 +234,7 @@ describe('CallEngine · typed fallback', () => {
     h.setSpeechResult({ kind: 'unavailable' });
     await startLive(h);
 
-    expect(h.api.startCall).toHaveBeenCalledWith(IDS.session, 'transcribe');
+    expect(h.api.startCall).toHaveBeenCalledWith(IDS.session, 'transcribe', false);
     expect(h.track.stop).toHaveBeenCalled();
     expect(h.state()).toMatchObject({ phase: 'live', input: 'typed', typedReason: 'stt_unavailable' });
     expect(FakeWebSocket.instances).toHaveLength(0);
@@ -281,7 +281,7 @@ describe('CallEngine · typed fallback', () => {
   it('asks for a typed call when the microphone is refused', async () => {
     const h = setup({ mic: 'denied' });
     await startLive(h);
-    expect(h.api.startCall).toHaveBeenCalledWith(IDS.session, 'typed');
+    expect(h.api.startCall).toHaveBeenCalledWith(IDS.session, 'typed', false);
     expect(h.state()).toMatchObject({ input: 'typed', typedReason: 'mic_denied' });
   });
 
@@ -301,7 +301,52 @@ describe('CallEngine · typed fallback', () => {
   });
 });
 
+describe('CallEngine · a call already live in another conversation', () => {
+  it('asks to move the call here instead of failing, and starts again with replace', async () => {
+    const h = setup({ grant: null });
+    h.api.startCall.mockRejectedValueOnce(
+      new ApiError({
+        status: 409,
+        code: 'conflict',
+        title: 'Conflict',
+        detail: 'You are already in a call in another conversation. End it to start this one.',
+      }),
+    );
+    await startLive(h);
+    expect(h.api.startCall).toHaveBeenLastCalledWith(IDS.session, 'transcribe', false);
+    expect(h.state()).toMatchObject({ phase: 'failed', error: { elsewhere: true, retry: false } });
+    expect(h.state().error?.message).toMatch(/Move it here\?/);
+
+    // The founder said yes.
+    h.engine.reset();
+    await h.engine.start({ ventureId: IDS.venture, sessionId: IDS.session, replace: true });
+    await flush(10);
+    expect(h.api.startCall).toHaveBeenLastCalledWith(IDS.session, 'transcribe', true);
+    expect(h.state().phase).toBe('live');
+  });
+});
+
 describe('CallEngine · voice', () => {
+  it('opens the speech-to-text socket while the capture worklet is still loading (the grant expires fast)', async () => {
+    const h = setup();
+    let loaded: () => void = () => undefined;
+    h.context.audioWorklet.addModule = (url: string) => {
+      h.context.modules.push(url);
+      return new Promise<void>((resolve) => {
+        loaded = resolve;
+      });
+    };
+    void h.engine.start({ ventureId: IDS.venture, sessionId: IDS.session });
+    await flush(10);
+    expect(h.context.modules).toEqual(['/worklets/pcm-capture.js']);
+    expect(h.context.worklets).toHaveLength(0);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    loaded();
+    await flush(10);
+    expect(h.context.worklets).toHaveLength(1);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+
   it('streams 16 kHz PCM to the presigned socket, captions partials and ends the turn after silence', async () => {
     const h = setup();
     await startLive(h);

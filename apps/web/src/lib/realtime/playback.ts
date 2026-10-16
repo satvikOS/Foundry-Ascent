@@ -7,8 +7,10 @@
  * presence reacts to it) → speakers, so `stop()` silences at once.
  *
  * Calls speak only validated text. When the server cannot synthesise in this environment (`501
- * speech_unavailable`, local development), the browser's own `speechSynthesis` reads the same validated
- * text. Any other failure shows the words without a voice ("captions only"), never a substitute voice: for
+ * speech_unavailable`, local development), a development build may let the browser read the same validated
+ * text, with a voice on this device only (`localService`): online browser voices send the text to a third
+ * party and are not the vEIR's voice. Production builds pass no synthesis, so a 501 shows captions. Any
+ * other failure shows the words without a voice ("captions only"), never a substitute voice: for
  * that unit alone when the failure may pass (a dropped connection, a busy synthesiser, audio that would not
  * decode), and for the rest of the call when the server refused the call's speech (kill switch, caps).
  */
@@ -76,6 +78,20 @@ interface Entry {
 const PREFETCH = 2;
 /** Duck level while the founder may be barging in. */
 const DUCK_GAIN = 0.2;
+
+/**
+ * An English voice the browser speaks with on this device (`localService`), or null. Online voices (Chrome's
+ * "Google …" voices) send the text to a third party, so they are never used.
+ */
+export function localEnglishVoice(
+  synthesis: Pick<SpeechSynthesis, 'getVoices'> | null,
+): SpeechSynthesisVoice | null {
+  if (synthesis === null) return null;
+  return (
+    synthesis.getVoices().find((voice) => voice.localService && voice.lang.toLowerCase().startsWith('en')) ??
+    null
+  );
+}
 
 /** Time to read a unit shown without a voice, and the guard for a browser voice that never ends. */
 export function readingTimeMs(text: string): number {
@@ -178,7 +194,7 @@ export class SpeechPlayer {
     }
     switch (result.kind) {
       case 'unavailable': {
-        const route = this.audio.synthesis ? 'browser' : 'captions';
+        const route = localEnglishVoice(this.audio.synthesis) ? 'browser' : 'captions';
         return { kind: route, sticky: route };
       }
       case 'refused':
@@ -279,11 +295,11 @@ export class SpeechPlayer {
       prepared.kind === 'browser' ? readingTimeMs(unit.text) * 2 : readingTimeMs(unit.text),
     );
     const synthesis = this.audio.synthesis;
-    if (prepared.kind === 'browser' && synthesis) {
+    const voice = prepared.kind === 'browser' ? localEnglishVoice(synthesis) : null;
+    if (synthesis && voice) {
       const utterance = this.audio.createUtterance(unit.text);
       utterance.lang = 'en-US';
-      const english = synthesis.getVoices().find((v) => v.lang.toLowerCase().startsWith('en'));
-      if (english) utterance.voice = english;
+      utterance.voice = voice;
       utterance.onend = () => {
         this.audio.clearTimeout(guard);
         settle(true);

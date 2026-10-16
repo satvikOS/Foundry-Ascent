@@ -293,9 +293,16 @@ export class FakeUtterance {
   constructor(readonly text: string) {}
 }
 
+/** A browser voice as `getVoices()` lists it. */
+export function fakeVoice(name: string, localService: boolean, lang = 'en-US'): SpeechSynthesisVoice {
+  return { name, lang, localService, default: false, voiceURI: name };
+}
+
 export class FakeSpeechSynthesis {
   spoken: FakeUtterance[] = [];
   cancelled = 0;
+  /** The device's voices (default: one local English voice; online voices are never used). */
+  voices: SpeechSynthesisVoice[] = [fakeVoice('Samantha', true)];
   speak(utterance: FakeUtterance): void {
     this.spoken.push(utterance);
   }
@@ -305,7 +312,7 @@ export class FakeSpeechSynthesis {
     current?.onerror?.();
   }
   getVoices(): SpeechSynthesisVoice[] {
-    return [];
+    return this.voices;
   }
   /** Test control: the current utterance finished. */
   finish(): void {
