@@ -76,6 +76,13 @@ export const CoachResponse = z.object({
   memory_candidates: z.array(MemoryCandidate),
   follow_up_questions: z.array(z.string()),
   rehearsal: RehearsalBlock.nullable(),
+  /*
+   * What a call speaks aloud: at most 70 words of plain sentences (no Markdown, no citation keys),
+   * null for typed turns. `answer` stays the full transcript text. Additive: optional so responses
+   * stored before calls existed still parse; the strict model schema still lists it as a required,
+   * nullable property (`toStrictJsonSchema`), and the validator always sets it (null or text).
+   */
+  spoken: z.string().nullable().optional(),
 });
 export type CoachResponse = z.infer<typeof CoachResponse>;
 
