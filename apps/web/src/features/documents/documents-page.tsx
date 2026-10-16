@@ -50,7 +50,7 @@ import { cn } from '@/lib/utils';
 import { SUPPORTED_FORMATS_LABEL, validateUploadFiles, type UploadRejection } from './upload-validation';
 import { useUploadQueue, type UploadItem } from './use-upload-queue';
 
-const routeApi = getRouteApi('/$tenant/app/ventures/$ventureId/documents');
+const routeApi = getRouteApi('/$tenant/app/v/$ventureId/documents');
 
 const TYPE_ICON: Record<DocumentView['contentType'], { icon: LucideIcon; label: string }> = {
   'application/pdf': { icon: FileType2, label: 'PDF' },

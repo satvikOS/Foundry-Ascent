@@ -5,6 +5,7 @@ export * from './eir';
 export * from './escalations';
 export * from './health';
 export * from './memory';
+export * from './notebook';
 export * from './program';
 export * from './sessions';
 export * from './team';

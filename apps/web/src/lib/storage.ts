@@ -33,6 +33,10 @@ export const STORAGE_KEYS = {
   sessionHint: 'fa.session-hint',
   /** Timestamp of the last access-code notice the person dismissed. */
   accessCodeNoticeDismissed: 'fa.notice.access-code',
+  /** The venture opened last (an id only), so the app opens there next time. */
+  lastVenture: 'fa.last-venture',
+  /** Right-hand panel left open on desktop ("1") or closed (default). */
+  inspectorOpen: 'fa.inspector.open',
 } as const;
 
 /**

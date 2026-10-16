@@ -12,9 +12,10 @@ function decisionSortKey(memory: MemoryObjectView): number {
 }
 
 /** Decisions log: what was decided, by whom and why — and what would reverse it. */
-export function DecisionsView() {
+export function DecisionsView({ embedded = false }: { embedded?: boolean }) {
   return (
     <TypedMemoryPage
+      embedded={embedded}
       kind="decision"
       title="Decisions"
       description="Decisions the team has made, with the rationale and the evidence that would change them."

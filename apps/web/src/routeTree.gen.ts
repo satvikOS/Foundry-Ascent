@@ -10,17 +10,19 @@
 
 import { Route as rootRouteImport } from './routes/__root';
 import { Route as IndexRouteImport } from './routes/index';
-import { Route as AdminRouteRouteImport } from './routes/admin/route';
 import { Route as SignInRouteImport } from './routes/sign-in';
 import { Route as TenantAppRouteRouteImport } from './routes/$tenant/app/route';
 import { Route as AdminIndexRouteImport } from './routes/admin/index';
-import { Route as AdminAuditRouteImport } from './routes/admin/audit';
-import { Route as AdminPrincipalsRouteImport } from './routes/admin/principals';
-import { Route as AdminSettingsRouteImport } from './routes/admin/settings';
-import { Route as AdminUsageRouteImport } from './routes/admin/usage';
+import { Route as AdminSplatRouteImport } from './routes/admin/$';
 import { Route as TenantAppIndexRouteImport } from './routes/$tenant/app/index';
+import { Route as TenantAppAdminRouteRouteImport } from './routes/$tenant/app/admin/route';
 import { Route as TenantAppEirRouteRouteImport } from './routes/$tenant/app/eir/route';
 import { Route as TenantAppProgramRouteRouteImport } from './routes/$tenant/app/program/route';
+import { Route as TenantAppAdminIndexRouteImport } from './routes/$tenant/app/admin/index';
+import { Route as TenantAppAdminAuditRouteImport } from './routes/$tenant/app/admin/audit';
+import { Route as TenantAppAdminPrincipalsRouteImport } from './routes/$tenant/app/admin/principals';
+import { Route as TenantAppAdminSettingsRouteImport } from './routes/$tenant/app/admin/settings';
+import { Route as TenantAppAdminUsageRouteImport } from './routes/$tenant/app/admin/usage';
 import { Route as TenantAppEirIndexRouteImport } from './routes/$tenant/app/eir/index';
 import { Route as TenantAppEirInboxRouteImport } from './routes/$tenant/app/eir/inbox';
 import { Route as TenantAppEirReviewsRouteImport } from './routes/$tenant/app/eir/reviews';
@@ -29,31 +31,23 @@ import { Route as TenantAppProgramEscalationsRouteImport } from './routes/$tenan
 import { Route as TenantAppProgramPortfolioRouteImport } from './routes/$tenant/app/program/portfolio';
 import { Route as TenantAppProgramResourcesRouteImport } from './routes/$tenant/app/program/resources';
 import { Route as TenantAppProgramVenturesRouteImport } from './routes/$tenant/app/program/ventures';
+import { Route as TenantAppVVentureIdRouteRouteImport } from './routes/$tenant/app/v/$ventureId/route';
 import { Route as TenantAppVenturesIndexRouteImport } from './routes/$tenant/app/ventures/index';
-import { Route as TenantAppVenturesVentureIdRouteRouteImport } from './routes/$tenant/app/ventures/$ventureId/route';
 import { Route as TenantAppEirPersonasIndexRouteImport } from './routes/$tenant/app/eir/personas/index';
 import { Route as TenantAppEirPersonasPersonaIdRouteImport } from './routes/$tenant/app/eir/personas/$personaId';
+import { Route as TenantAppVVentureIdIndexRouteImport } from './routes/$tenant/app/v/$ventureId/index';
+import { Route as TenantAppVVentureIdDocumentsRouteImport } from './routes/$tenant/app/v/$ventureId/documents';
+import { Route as TenantAppVVentureIdHelpRouteImport } from './routes/$tenant/app/v/$ventureId/help';
+import { Route as TenantAppVVentureIdKnowledgeRouteImport } from './routes/$tenant/app/v/$ventureId/knowledge';
+import { Route as TenantAppVVentureIdSettingsRouteImport } from './routes/$tenant/app/v/$ventureId/settings';
+import { Route as TenantAppVVentureIdTeamRouteImport } from './routes/$tenant/app/v/$ventureId/team';
 import { Route as TenantAppVenturesVentureIdIndexRouteImport } from './routes/$tenant/app/ventures/$ventureId/index';
-import { Route as TenantAppVenturesVentureIdDecisionsRouteImport } from './routes/$tenant/app/ventures/$ventureId/decisions';
-import { Route as TenantAppVenturesVentureIdDocumentsRouteImport } from './routes/$tenant/app/ventures/$ventureId/documents';
-import { Route as TenantAppVenturesVentureIdEscalationsRouteImport } from './routes/$tenant/app/ventures/$ventureId/escalations';
-import { Route as TenantAppVenturesVentureIdEvidenceRouteImport } from './routes/$tenant/app/ventures/$ventureId/evidence';
-import { Route as TenantAppVenturesVentureIdExperimentsRouteImport } from './routes/$tenant/app/ventures/$ventureId/experiments';
-import { Route as TenantAppVenturesVentureIdMemoryRouteImport } from './routes/$tenant/app/ventures/$ventureId/memory';
-import { Route as TenantAppVenturesVentureIdMilestonesRouteImport } from './routes/$tenant/app/ventures/$ventureId/milestones';
-import { Route as TenantAppVenturesVentureIdOverviewRouteImport } from './routes/$tenant/app/ventures/$ventureId/overview';
-import { Route as TenantAppVenturesVentureIdTeamRouteImport } from './routes/$tenant/app/ventures/$ventureId/team';
-import { Route as TenantAppVenturesVentureIdCoachIndexRouteImport } from './routes/$tenant/app/ventures/$ventureId/coach/index';
-import { Route as TenantAppVenturesVentureIdCoachSessionIdRouteImport } from './routes/$tenant/app/ventures/$ventureId/coach/$sessionId';
+import { Route as TenantAppVenturesVentureIdSplatRouteImport } from './routes/$tenant/app/ventures/$ventureId/$';
+import { Route as TenantAppVVentureIdCSessionIdRouteImport } from './routes/$tenant/app/v/$ventureId/c/$sessionId';
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any);
-const AdminRouteRoute = AdminRouteRouteImport.update({
-  id: '/admin',
-  path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any);
 const SignInRoute = SignInRouteImport.update({
@@ -67,33 +61,23 @@ const TenantAppRouteRoute = TenantAppRouteRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any);
 const AdminIndexRoute = AdminIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => AdminRouteRoute,
+  id: '/admin/',
+  path: '/admin/',
+  getParentRoute: () => rootRouteImport,
 } as any);
-const AdminAuditRoute = AdminAuditRouteImport.update({
-  id: '/audit',
-  path: '/audit',
-  getParentRoute: () => AdminRouteRoute,
-} as any);
-const AdminPrincipalsRoute = AdminPrincipalsRouteImport.update({
-  id: '/principals',
-  path: '/principals',
-  getParentRoute: () => AdminRouteRoute,
-} as any);
-const AdminSettingsRoute = AdminSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => AdminRouteRoute,
-} as any);
-const AdminUsageRoute = AdminUsageRouteImport.update({
-  id: '/usage',
-  path: '/usage',
-  getParentRoute: () => AdminRouteRoute,
+const AdminSplatRoute = AdminSplatRouteImport.update({
+  id: '/admin/$',
+  path: '/admin/$',
+  getParentRoute: () => rootRouteImport,
 } as any);
 const TenantAppIndexRoute = TenantAppIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => TenantAppRouteRoute,
+} as any);
+const TenantAppAdminRouteRoute = TenantAppAdminRouteRouteImport.update({
+  id: '/admin',
+  path: '/admin',
   getParentRoute: () => TenantAppRouteRoute,
 } as any);
 const TenantAppEirRouteRoute = TenantAppEirRouteRouteImport.update({
@@ -105,6 +89,32 @@ const TenantAppProgramRouteRoute = TenantAppProgramRouteRouteImport.update({
   id: '/program',
   path: '/program',
   getParentRoute: () => TenantAppRouteRoute,
+} as any);
+const TenantAppAdminIndexRoute = TenantAppAdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => TenantAppAdminRouteRoute,
+} as any);
+const TenantAppAdminAuditRoute = TenantAppAdminAuditRouteImport.update({
+  id: '/audit',
+  path: '/audit',
+  getParentRoute: () => TenantAppAdminRouteRoute,
+} as any);
+const TenantAppAdminPrincipalsRoute =
+  TenantAppAdminPrincipalsRouteImport.update({
+    id: '/principals',
+    path: '/principals',
+    getParentRoute: () => TenantAppAdminRouteRoute,
+  } as any);
+const TenantAppAdminSettingsRoute = TenantAppAdminSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => TenantAppAdminRouteRoute,
+} as any);
+const TenantAppAdminUsageRoute = TenantAppAdminUsageRouteImport.update({
+  id: '/usage',
+  path: '/usage',
+  getParentRoute: () => TenantAppAdminRouteRoute,
 } as any);
 const TenantAppEirIndexRoute = TenantAppEirIndexRouteImport.update({
   id: '/',
@@ -150,17 +160,17 @@ const TenantAppProgramVenturesRoute =
     path: '/ventures',
     getParentRoute: () => TenantAppProgramRouteRoute,
   } as any);
+const TenantAppVVentureIdRouteRoute =
+  TenantAppVVentureIdRouteRouteImport.update({
+    id: '/v/$ventureId',
+    path: '/v/$ventureId',
+    getParentRoute: () => TenantAppRouteRoute,
+  } as any);
 const TenantAppVenturesIndexRoute = TenantAppVenturesIndexRouteImport.update({
   id: '/ventures/',
   path: '/ventures/',
   getParentRoute: () => TenantAppRouteRoute,
 } as any);
-const TenantAppVenturesVentureIdRouteRoute =
-  TenantAppVenturesVentureIdRouteRouteImport.update({
-    id: '/ventures/$ventureId',
-    path: '/ventures/$ventureId',
-    getParentRoute: () => TenantAppRouteRoute,
-  } as any);
 const TenantAppEirPersonasIndexRoute =
   TenantAppEirPersonasIndexRouteImport.update({
     id: '/personas/',
@@ -173,306 +183,281 @@ const TenantAppEirPersonasPersonaIdRoute =
     path: '/personas/$personaId',
     getParentRoute: () => TenantAppEirRouteRoute,
   } as any);
-const TenantAppVenturesVentureIdIndexRoute =
-  TenantAppVenturesVentureIdIndexRouteImport.update({
+const TenantAppVVentureIdIndexRoute =
+  TenantAppVVentureIdIndexRouteImport.update({
     id: '/',
     path: '/',
-    getParentRoute: () => TenantAppVenturesVentureIdRouteRoute,
+    getParentRoute: () => TenantAppVVentureIdRouteRoute,
   } as any);
-const TenantAppVenturesVentureIdDecisionsRoute =
-  TenantAppVenturesVentureIdDecisionsRouteImport.update({
-    id: '/decisions',
-    path: '/decisions',
-    getParentRoute: () => TenantAppVenturesVentureIdRouteRoute,
-  } as any);
-const TenantAppVenturesVentureIdDocumentsRoute =
-  TenantAppVenturesVentureIdDocumentsRouteImport.update({
+const TenantAppVVentureIdDocumentsRoute =
+  TenantAppVVentureIdDocumentsRouteImport.update({
     id: '/documents',
     path: '/documents',
-    getParentRoute: () => TenantAppVenturesVentureIdRouteRoute,
+    getParentRoute: () => TenantAppVVentureIdRouteRoute,
   } as any);
-const TenantAppVenturesVentureIdEscalationsRoute =
-  TenantAppVenturesVentureIdEscalationsRouteImport.update({
-    id: '/escalations',
-    path: '/escalations',
-    getParentRoute: () => TenantAppVenturesVentureIdRouteRoute,
+const TenantAppVVentureIdHelpRoute = TenantAppVVentureIdHelpRouteImport.update({
+  id: '/help',
+  path: '/help',
+  getParentRoute: () => TenantAppVVentureIdRouteRoute,
+} as any);
+const TenantAppVVentureIdKnowledgeRoute =
+  TenantAppVVentureIdKnowledgeRouteImport.update({
+    id: '/knowledge',
+    path: '/knowledge',
+    getParentRoute: () => TenantAppVVentureIdRouteRoute,
   } as any);
-const TenantAppVenturesVentureIdEvidenceRoute =
-  TenantAppVenturesVentureIdEvidenceRouteImport.update({
-    id: '/evidence',
-    path: '/evidence',
-    getParentRoute: () => TenantAppVenturesVentureIdRouteRoute,
+const TenantAppVVentureIdSettingsRoute =
+  TenantAppVVentureIdSettingsRouteImport.update({
+    id: '/settings',
+    path: '/settings',
+    getParentRoute: () => TenantAppVVentureIdRouteRoute,
   } as any);
-const TenantAppVenturesVentureIdExperimentsRoute =
-  TenantAppVenturesVentureIdExperimentsRouteImport.update({
-    id: '/experiments',
-    path: '/experiments',
-    getParentRoute: () => TenantAppVenturesVentureIdRouteRoute,
+const TenantAppVVentureIdTeamRoute = TenantAppVVentureIdTeamRouteImport.update({
+  id: '/team',
+  path: '/team',
+  getParentRoute: () => TenantAppVVentureIdRouteRoute,
+} as any);
+const TenantAppVenturesVentureIdIndexRoute =
+  TenantAppVenturesVentureIdIndexRouteImport.update({
+    id: '/ventures/$ventureId/',
+    path: '/ventures/$ventureId/',
+    getParentRoute: () => TenantAppRouteRoute,
   } as any);
-const TenantAppVenturesVentureIdMemoryRoute =
-  TenantAppVenturesVentureIdMemoryRouteImport.update({
-    id: '/memory',
-    path: '/memory',
-    getParentRoute: () => TenantAppVenturesVentureIdRouteRoute,
+const TenantAppVenturesVentureIdSplatRoute =
+  TenantAppVenturesVentureIdSplatRouteImport.update({
+    id: '/ventures/$ventureId/$',
+    path: '/ventures/$ventureId/$',
+    getParentRoute: () => TenantAppRouteRoute,
   } as any);
-const TenantAppVenturesVentureIdMilestonesRoute =
-  TenantAppVenturesVentureIdMilestonesRouteImport.update({
-    id: '/milestones',
-    path: '/milestones',
-    getParentRoute: () => TenantAppVenturesVentureIdRouteRoute,
-  } as any);
-const TenantAppVenturesVentureIdOverviewRoute =
-  TenantAppVenturesVentureIdOverviewRouteImport.update({
-    id: '/overview',
-    path: '/overview',
-    getParentRoute: () => TenantAppVenturesVentureIdRouteRoute,
-  } as any);
-const TenantAppVenturesVentureIdTeamRoute =
-  TenantAppVenturesVentureIdTeamRouteImport.update({
-    id: '/team',
-    path: '/team',
-    getParentRoute: () => TenantAppVenturesVentureIdRouteRoute,
-  } as any);
-const TenantAppVenturesVentureIdCoachIndexRoute =
-  TenantAppVenturesVentureIdCoachIndexRouteImport.update({
-    id: '/coach/',
-    path: '/coach/',
-    getParentRoute: () => TenantAppVenturesVentureIdRouteRoute,
-  } as any);
-const TenantAppVenturesVentureIdCoachSessionIdRoute =
-  TenantAppVenturesVentureIdCoachSessionIdRouteImport.update({
-    id: '/coach/$sessionId',
-    path: '/coach/$sessionId',
-    getParentRoute: () => TenantAppVenturesVentureIdRouteRoute,
+const TenantAppVVentureIdCSessionIdRoute =
+  TenantAppVVentureIdCSessionIdRouteImport.update({
+    id: '/c/$sessionId',
+    path: '/c/$sessionId',
+    getParentRoute: () => TenantAppVVentureIdRouteRoute,
   } as any);
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute;
-  '/admin': typeof AdminRouteRouteWithChildren;
   '/sign-in': typeof SignInRoute;
   '/$tenant/app': typeof TenantAppRouteRouteWithChildren;
-  '/admin/audit': typeof AdminAuditRoute;
-  '/admin/principals': typeof AdminPrincipalsRoute;
-  '/admin/settings': typeof AdminSettingsRoute;
-  '/admin/usage': typeof AdminUsageRoute;
+  '/admin/$': typeof AdminSplatRoute;
   '/admin/': typeof AdminIndexRoute;
+  '/$tenant/app/admin': typeof TenantAppAdminRouteRouteWithChildren;
   '/$tenant/app/eir': typeof TenantAppEirRouteRouteWithChildren;
   '/$tenant/app/program': typeof TenantAppProgramRouteRouteWithChildren;
   '/$tenant/app/': typeof TenantAppIndexRoute;
-  '/$tenant/app/ventures/$ventureId': typeof TenantAppVenturesVentureIdRouteRouteWithChildren;
+  '/$tenant/app/v/$ventureId': typeof TenantAppVVentureIdRouteRouteWithChildren;
+  '/$tenant/app/admin/audit': typeof TenantAppAdminAuditRoute;
+  '/$tenant/app/admin/principals': typeof TenantAppAdminPrincipalsRoute;
+  '/$tenant/app/admin/settings': typeof TenantAppAdminSettingsRoute;
+  '/$tenant/app/admin/usage': typeof TenantAppAdminUsageRoute;
   '/$tenant/app/eir/inbox': typeof TenantAppEirInboxRoute;
   '/$tenant/app/eir/reviews': typeof TenantAppEirReviewsRoute;
   '/$tenant/app/program/escalations': typeof TenantAppProgramEscalationsRoute;
   '/$tenant/app/program/portfolio': typeof TenantAppProgramPortfolioRoute;
   '/$tenant/app/program/resources': typeof TenantAppProgramResourcesRoute;
   '/$tenant/app/program/ventures': typeof TenantAppProgramVenturesRoute;
+  '/$tenant/app/admin/': typeof TenantAppAdminIndexRoute;
   '/$tenant/app/eir/': typeof TenantAppEirIndexRoute;
   '/$tenant/app/program/': typeof TenantAppProgramIndexRoute;
   '/$tenant/app/ventures/': typeof TenantAppVenturesIndexRoute;
   '/$tenant/app/eir/personas/$personaId': typeof TenantAppEirPersonasPersonaIdRoute;
-  '/$tenant/app/ventures/$ventureId/decisions': typeof TenantAppVenturesVentureIdDecisionsRoute;
-  '/$tenant/app/ventures/$ventureId/documents': typeof TenantAppVenturesVentureIdDocumentsRoute;
-  '/$tenant/app/ventures/$ventureId/escalations': typeof TenantAppVenturesVentureIdEscalationsRoute;
-  '/$tenant/app/ventures/$ventureId/evidence': typeof TenantAppVenturesVentureIdEvidenceRoute;
-  '/$tenant/app/ventures/$ventureId/experiments': typeof TenantAppVenturesVentureIdExperimentsRoute;
-  '/$tenant/app/ventures/$ventureId/memory': typeof TenantAppVenturesVentureIdMemoryRoute;
-  '/$tenant/app/ventures/$ventureId/milestones': typeof TenantAppVenturesVentureIdMilestonesRoute;
-  '/$tenant/app/ventures/$ventureId/overview': typeof TenantAppVenturesVentureIdOverviewRoute;
-  '/$tenant/app/ventures/$ventureId/team': typeof TenantAppVenturesVentureIdTeamRoute;
+  '/$tenant/app/v/$ventureId/documents': typeof TenantAppVVentureIdDocumentsRoute;
+  '/$tenant/app/v/$ventureId/help': typeof TenantAppVVentureIdHelpRoute;
+  '/$tenant/app/v/$ventureId/knowledge': typeof TenantAppVVentureIdKnowledgeRoute;
+  '/$tenant/app/v/$ventureId/settings': typeof TenantAppVVentureIdSettingsRoute;
+  '/$tenant/app/v/$ventureId/team': typeof TenantAppVVentureIdTeamRoute;
+  '/$tenant/app/ventures/$ventureId/$': typeof TenantAppVenturesVentureIdSplatRoute;
   '/$tenant/app/eir/personas/': typeof TenantAppEirPersonasIndexRoute;
+  '/$tenant/app/v/$ventureId/': typeof TenantAppVVentureIdIndexRoute;
   '/$tenant/app/ventures/$ventureId/': typeof TenantAppVenturesVentureIdIndexRoute;
-  '/$tenant/app/ventures/$ventureId/coach/$sessionId': typeof TenantAppVenturesVentureIdCoachSessionIdRoute;
-  '/$tenant/app/ventures/$ventureId/coach/': typeof TenantAppVenturesVentureIdCoachIndexRoute;
+  '/$tenant/app/v/$ventureId/c/$sessionId': typeof TenantAppVVentureIdCSessionIdRoute;
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute;
   '/sign-in': typeof SignInRoute;
-  '/admin/audit': typeof AdminAuditRoute;
-  '/admin/principals': typeof AdminPrincipalsRoute;
-  '/admin/settings': typeof AdminSettingsRoute;
-  '/admin/usage': typeof AdminUsageRoute;
+  '/admin/$': typeof AdminSplatRoute;
   '/admin': typeof AdminIndexRoute;
   '/$tenant/app': typeof TenantAppIndexRoute;
+  '/$tenant/app/admin/audit': typeof TenantAppAdminAuditRoute;
+  '/$tenant/app/admin/principals': typeof TenantAppAdminPrincipalsRoute;
+  '/$tenant/app/admin/settings': typeof TenantAppAdminSettingsRoute;
+  '/$tenant/app/admin/usage': typeof TenantAppAdminUsageRoute;
   '/$tenant/app/eir/inbox': typeof TenantAppEirInboxRoute;
   '/$tenant/app/eir/reviews': typeof TenantAppEirReviewsRoute;
   '/$tenant/app/program/escalations': typeof TenantAppProgramEscalationsRoute;
   '/$tenant/app/program/portfolio': typeof TenantAppProgramPortfolioRoute;
   '/$tenant/app/program/resources': typeof TenantAppProgramResourcesRoute;
   '/$tenant/app/program/ventures': typeof TenantAppProgramVenturesRoute;
+  '/$tenant/app/admin': typeof TenantAppAdminIndexRoute;
   '/$tenant/app/eir': typeof TenantAppEirIndexRoute;
   '/$tenant/app/program': typeof TenantAppProgramIndexRoute;
   '/$tenant/app/ventures': typeof TenantAppVenturesIndexRoute;
   '/$tenant/app/eir/personas/$personaId': typeof TenantAppEirPersonasPersonaIdRoute;
-  '/$tenant/app/ventures/$ventureId/decisions': typeof TenantAppVenturesVentureIdDecisionsRoute;
-  '/$tenant/app/ventures/$ventureId/documents': typeof TenantAppVenturesVentureIdDocumentsRoute;
-  '/$tenant/app/ventures/$ventureId/escalations': typeof TenantAppVenturesVentureIdEscalationsRoute;
-  '/$tenant/app/ventures/$ventureId/evidence': typeof TenantAppVenturesVentureIdEvidenceRoute;
-  '/$tenant/app/ventures/$ventureId/experiments': typeof TenantAppVenturesVentureIdExperimentsRoute;
-  '/$tenant/app/ventures/$ventureId/memory': typeof TenantAppVenturesVentureIdMemoryRoute;
-  '/$tenant/app/ventures/$ventureId/milestones': typeof TenantAppVenturesVentureIdMilestonesRoute;
-  '/$tenant/app/ventures/$ventureId/overview': typeof TenantAppVenturesVentureIdOverviewRoute;
-  '/$tenant/app/ventures/$ventureId/team': typeof TenantAppVenturesVentureIdTeamRoute;
+  '/$tenant/app/v/$ventureId/documents': typeof TenantAppVVentureIdDocumentsRoute;
+  '/$tenant/app/v/$ventureId/help': typeof TenantAppVVentureIdHelpRoute;
+  '/$tenant/app/v/$ventureId/knowledge': typeof TenantAppVVentureIdKnowledgeRoute;
+  '/$tenant/app/v/$ventureId/settings': typeof TenantAppVVentureIdSettingsRoute;
+  '/$tenant/app/v/$ventureId/team': typeof TenantAppVVentureIdTeamRoute;
+  '/$tenant/app/ventures/$ventureId/$': typeof TenantAppVenturesVentureIdSplatRoute;
   '/$tenant/app/eir/personas': typeof TenantAppEirPersonasIndexRoute;
+  '/$tenant/app/v/$ventureId': typeof TenantAppVVentureIdIndexRoute;
   '/$tenant/app/ventures/$ventureId': typeof TenantAppVenturesVentureIdIndexRoute;
-  '/$tenant/app/ventures/$ventureId/coach/$sessionId': typeof TenantAppVenturesVentureIdCoachSessionIdRoute;
-  '/$tenant/app/ventures/$ventureId/coach': typeof TenantAppVenturesVentureIdCoachIndexRoute;
+  '/$tenant/app/v/$ventureId/c/$sessionId': typeof TenantAppVVentureIdCSessionIdRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   '/': typeof IndexRoute;
-  '/admin': typeof AdminRouteRouteWithChildren;
   '/sign-in': typeof SignInRoute;
   '/$tenant/app': typeof TenantAppRouteRouteWithChildren;
-  '/admin/audit': typeof AdminAuditRoute;
-  '/admin/principals': typeof AdminPrincipalsRoute;
-  '/admin/settings': typeof AdminSettingsRoute;
-  '/admin/usage': typeof AdminUsageRoute;
+  '/admin/$': typeof AdminSplatRoute;
   '/admin/': typeof AdminIndexRoute;
+  '/$tenant/app/admin': typeof TenantAppAdminRouteRouteWithChildren;
   '/$tenant/app/eir': typeof TenantAppEirRouteRouteWithChildren;
   '/$tenant/app/program': typeof TenantAppProgramRouteRouteWithChildren;
   '/$tenant/app/': typeof TenantAppIndexRoute;
-  '/$tenant/app/ventures/$ventureId': typeof TenantAppVenturesVentureIdRouteRouteWithChildren;
+  '/$tenant/app/v/$ventureId': typeof TenantAppVVentureIdRouteRouteWithChildren;
+  '/$tenant/app/admin/audit': typeof TenantAppAdminAuditRoute;
+  '/$tenant/app/admin/principals': typeof TenantAppAdminPrincipalsRoute;
+  '/$tenant/app/admin/settings': typeof TenantAppAdminSettingsRoute;
+  '/$tenant/app/admin/usage': typeof TenantAppAdminUsageRoute;
   '/$tenant/app/eir/inbox': typeof TenantAppEirInboxRoute;
   '/$tenant/app/eir/reviews': typeof TenantAppEirReviewsRoute;
   '/$tenant/app/program/escalations': typeof TenantAppProgramEscalationsRoute;
   '/$tenant/app/program/portfolio': typeof TenantAppProgramPortfolioRoute;
   '/$tenant/app/program/resources': typeof TenantAppProgramResourcesRoute;
   '/$tenant/app/program/ventures': typeof TenantAppProgramVenturesRoute;
+  '/$tenant/app/admin/': typeof TenantAppAdminIndexRoute;
   '/$tenant/app/eir/': typeof TenantAppEirIndexRoute;
   '/$tenant/app/program/': typeof TenantAppProgramIndexRoute;
   '/$tenant/app/ventures/': typeof TenantAppVenturesIndexRoute;
   '/$tenant/app/eir/personas/$personaId': typeof TenantAppEirPersonasPersonaIdRoute;
-  '/$tenant/app/ventures/$ventureId/decisions': typeof TenantAppVenturesVentureIdDecisionsRoute;
-  '/$tenant/app/ventures/$ventureId/documents': typeof TenantAppVenturesVentureIdDocumentsRoute;
-  '/$tenant/app/ventures/$ventureId/escalations': typeof TenantAppVenturesVentureIdEscalationsRoute;
-  '/$tenant/app/ventures/$ventureId/evidence': typeof TenantAppVenturesVentureIdEvidenceRoute;
-  '/$tenant/app/ventures/$ventureId/experiments': typeof TenantAppVenturesVentureIdExperimentsRoute;
-  '/$tenant/app/ventures/$ventureId/memory': typeof TenantAppVenturesVentureIdMemoryRoute;
-  '/$tenant/app/ventures/$ventureId/milestones': typeof TenantAppVenturesVentureIdMilestonesRoute;
-  '/$tenant/app/ventures/$ventureId/overview': typeof TenantAppVenturesVentureIdOverviewRoute;
-  '/$tenant/app/ventures/$ventureId/team': typeof TenantAppVenturesVentureIdTeamRoute;
+  '/$tenant/app/v/$ventureId/documents': typeof TenantAppVVentureIdDocumentsRoute;
+  '/$tenant/app/v/$ventureId/help': typeof TenantAppVVentureIdHelpRoute;
+  '/$tenant/app/v/$ventureId/knowledge': typeof TenantAppVVentureIdKnowledgeRoute;
+  '/$tenant/app/v/$ventureId/settings': typeof TenantAppVVentureIdSettingsRoute;
+  '/$tenant/app/v/$ventureId/team': typeof TenantAppVVentureIdTeamRoute;
+  '/$tenant/app/ventures/$ventureId/$': typeof TenantAppVenturesVentureIdSplatRoute;
   '/$tenant/app/eir/personas/': typeof TenantAppEirPersonasIndexRoute;
+  '/$tenant/app/v/$ventureId/': typeof TenantAppVVentureIdIndexRoute;
   '/$tenant/app/ventures/$ventureId/': typeof TenantAppVenturesVentureIdIndexRoute;
-  '/$tenant/app/ventures/$ventureId/coach/$sessionId': typeof TenantAppVenturesVentureIdCoachSessionIdRoute;
-  '/$tenant/app/ventures/$ventureId/coach/': typeof TenantAppVenturesVentureIdCoachIndexRoute;
+  '/$tenant/app/v/$ventureId/c/$sessionId': typeof TenantAppVVentureIdCSessionIdRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
   fullPaths:
     | '/'
-    | '/admin'
     | '/sign-in'
     | '/$tenant/app'
-    | '/admin/audit'
-    | '/admin/principals'
-    | '/admin/settings'
-    | '/admin/usage'
+    | '/admin/$'
     | '/admin/'
+    | '/$tenant/app/admin'
     | '/$tenant/app/eir'
     | '/$tenant/app/program'
     | '/$tenant/app/'
-    | '/$tenant/app/ventures/$ventureId'
+    | '/$tenant/app/v/$ventureId'
+    | '/$tenant/app/admin/audit'
+    | '/$tenant/app/admin/principals'
+    | '/$tenant/app/admin/settings'
+    | '/$tenant/app/admin/usage'
     | '/$tenant/app/eir/inbox'
     | '/$tenant/app/eir/reviews'
     | '/$tenant/app/program/escalations'
     | '/$tenant/app/program/portfolio'
     | '/$tenant/app/program/resources'
     | '/$tenant/app/program/ventures'
+    | '/$tenant/app/admin/'
     | '/$tenant/app/eir/'
     | '/$tenant/app/program/'
     | '/$tenant/app/ventures/'
     | '/$tenant/app/eir/personas/$personaId'
-    | '/$tenant/app/ventures/$ventureId/decisions'
-    | '/$tenant/app/ventures/$ventureId/documents'
-    | '/$tenant/app/ventures/$ventureId/escalations'
-    | '/$tenant/app/ventures/$ventureId/evidence'
-    | '/$tenant/app/ventures/$ventureId/experiments'
-    | '/$tenant/app/ventures/$ventureId/memory'
-    | '/$tenant/app/ventures/$ventureId/milestones'
-    | '/$tenant/app/ventures/$ventureId/overview'
-    | '/$tenant/app/ventures/$ventureId/team'
+    | '/$tenant/app/v/$ventureId/documents'
+    | '/$tenant/app/v/$ventureId/help'
+    | '/$tenant/app/v/$ventureId/knowledge'
+    | '/$tenant/app/v/$ventureId/settings'
+    | '/$tenant/app/v/$ventureId/team'
+    | '/$tenant/app/ventures/$ventureId/$'
     | '/$tenant/app/eir/personas/'
+    | '/$tenant/app/v/$ventureId/'
     | '/$tenant/app/ventures/$ventureId/'
-    | '/$tenant/app/ventures/$ventureId/coach/$sessionId'
-    | '/$tenant/app/ventures/$ventureId/coach/';
+    | '/$tenant/app/v/$ventureId/c/$sessionId';
   fileRoutesByTo: FileRoutesByTo;
   to:
     | '/'
     | '/sign-in'
-    | '/admin/audit'
-    | '/admin/principals'
-    | '/admin/settings'
-    | '/admin/usage'
+    | '/admin/$'
     | '/admin'
     | '/$tenant/app'
+    | '/$tenant/app/admin/audit'
+    | '/$tenant/app/admin/principals'
+    | '/$tenant/app/admin/settings'
+    | '/$tenant/app/admin/usage'
     | '/$tenant/app/eir/inbox'
     | '/$tenant/app/eir/reviews'
     | '/$tenant/app/program/escalations'
     | '/$tenant/app/program/portfolio'
     | '/$tenant/app/program/resources'
     | '/$tenant/app/program/ventures'
+    | '/$tenant/app/admin'
     | '/$tenant/app/eir'
     | '/$tenant/app/program'
     | '/$tenant/app/ventures'
     | '/$tenant/app/eir/personas/$personaId'
-    | '/$tenant/app/ventures/$ventureId/decisions'
-    | '/$tenant/app/ventures/$ventureId/documents'
-    | '/$tenant/app/ventures/$ventureId/escalations'
-    | '/$tenant/app/ventures/$ventureId/evidence'
-    | '/$tenant/app/ventures/$ventureId/experiments'
-    | '/$tenant/app/ventures/$ventureId/memory'
-    | '/$tenant/app/ventures/$ventureId/milestones'
-    | '/$tenant/app/ventures/$ventureId/overview'
-    | '/$tenant/app/ventures/$ventureId/team'
+    | '/$tenant/app/v/$ventureId/documents'
+    | '/$tenant/app/v/$ventureId/help'
+    | '/$tenant/app/v/$ventureId/knowledge'
+    | '/$tenant/app/v/$ventureId/settings'
+    | '/$tenant/app/v/$ventureId/team'
+    | '/$tenant/app/ventures/$ventureId/$'
     | '/$tenant/app/eir/personas'
+    | '/$tenant/app/v/$ventureId'
     | '/$tenant/app/ventures/$ventureId'
-    | '/$tenant/app/ventures/$ventureId/coach/$sessionId'
-    | '/$tenant/app/ventures/$ventureId/coach';
+    | '/$tenant/app/v/$ventureId/c/$sessionId';
   id:
     | '__root__'
     | '/'
-    | '/admin'
     | '/sign-in'
     | '/$tenant/app'
-    | '/admin/audit'
-    | '/admin/principals'
-    | '/admin/settings'
-    | '/admin/usage'
+    | '/admin/$'
     | '/admin/'
+    | '/$tenant/app/admin'
     | '/$tenant/app/eir'
     | '/$tenant/app/program'
     | '/$tenant/app/'
-    | '/$tenant/app/ventures/$ventureId'
+    | '/$tenant/app/v/$ventureId'
+    | '/$tenant/app/admin/audit'
+    | '/$tenant/app/admin/principals'
+    | '/$tenant/app/admin/settings'
+    | '/$tenant/app/admin/usage'
     | '/$tenant/app/eir/inbox'
     | '/$tenant/app/eir/reviews'
     | '/$tenant/app/program/escalations'
     | '/$tenant/app/program/portfolio'
     | '/$tenant/app/program/resources'
     | '/$tenant/app/program/ventures'
+    | '/$tenant/app/admin/'
     | '/$tenant/app/eir/'
     | '/$tenant/app/program/'
     | '/$tenant/app/ventures/'
     | '/$tenant/app/eir/personas/$personaId'
-    | '/$tenant/app/ventures/$ventureId/decisions'
-    | '/$tenant/app/ventures/$ventureId/documents'
-    | '/$tenant/app/ventures/$ventureId/escalations'
-    | '/$tenant/app/ventures/$ventureId/evidence'
-    | '/$tenant/app/ventures/$ventureId/experiments'
-    | '/$tenant/app/ventures/$ventureId/memory'
-    | '/$tenant/app/ventures/$ventureId/milestones'
-    | '/$tenant/app/ventures/$ventureId/overview'
-    | '/$tenant/app/ventures/$ventureId/team'
+    | '/$tenant/app/v/$ventureId/documents'
+    | '/$tenant/app/v/$ventureId/help'
+    | '/$tenant/app/v/$ventureId/knowledge'
+    | '/$tenant/app/v/$ventureId/settings'
+    | '/$tenant/app/v/$ventureId/team'
+    | '/$tenant/app/ventures/$ventureId/$'
     | '/$tenant/app/eir/personas/'
+    | '/$tenant/app/v/$ventureId/'
     | '/$tenant/app/ventures/$ventureId/'
-    | '/$tenant/app/ventures/$ventureId/coach/$sessionId'
-    | '/$tenant/app/ventures/$ventureId/coach/';
+    | '/$tenant/app/v/$ventureId/c/$sessionId';
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute;
-  AdminRouteRoute: typeof AdminRouteRouteWithChildren;
   SignInRoute: typeof SignInRoute;
   TenantAppRouteRoute: typeof TenantAppRouteRouteWithChildren;
+  AdminSplatRoute: typeof AdminSplatRoute;
+  AdminIndexRoute: typeof AdminIndexRoute;
 }
 
 declare module '@tanstack/react-router' {
@@ -482,13 +467,6 @@ declare module '@tanstack/react-router' {
       path: '/';
       fullPath: '/';
       preLoaderRoute: typeof IndexRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    '/admin': {
-      id: '/admin';
-      path: '/admin';
-      fullPath: '/admin';
-      preLoaderRoute: typeof AdminRouteRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     '/sign-in': {
@@ -507,44 +485,30 @@ declare module '@tanstack/react-router' {
     };
     '/admin/': {
       id: '/admin/';
-      path: '/';
+      path: '/admin';
       fullPath: '/admin/';
       preLoaderRoute: typeof AdminIndexRouteImport;
-      parentRoute: typeof AdminRouteRoute;
+      parentRoute: typeof rootRouteImport;
     };
-    '/admin/audit': {
-      id: '/admin/audit';
-      path: '/audit';
-      fullPath: '/admin/audit';
-      preLoaderRoute: typeof AdminAuditRouteImport;
-      parentRoute: typeof AdminRouteRoute;
-    };
-    '/admin/principals': {
-      id: '/admin/principals';
-      path: '/principals';
-      fullPath: '/admin/principals';
-      preLoaderRoute: typeof AdminPrincipalsRouteImport;
-      parentRoute: typeof AdminRouteRoute;
-    };
-    '/admin/settings': {
-      id: '/admin/settings';
-      path: '/settings';
-      fullPath: '/admin/settings';
-      preLoaderRoute: typeof AdminSettingsRouteImport;
-      parentRoute: typeof AdminRouteRoute;
-    };
-    '/admin/usage': {
-      id: '/admin/usage';
-      path: '/usage';
-      fullPath: '/admin/usage';
-      preLoaderRoute: typeof AdminUsageRouteImport;
-      parentRoute: typeof AdminRouteRoute;
+    '/admin/$': {
+      id: '/admin/$';
+      path: '/admin/$';
+      fullPath: '/admin/$';
+      preLoaderRoute: typeof AdminSplatRouteImport;
+      parentRoute: typeof rootRouteImport;
     };
     '/$tenant/app/': {
       id: '/$tenant/app/';
       path: '/';
       fullPath: '/$tenant/app/';
       preLoaderRoute: typeof TenantAppIndexRouteImport;
+      parentRoute: typeof TenantAppRouteRoute;
+    };
+    '/$tenant/app/admin': {
+      id: '/$tenant/app/admin';
+      path: '/admin';
+      fullPath: '/$tenant/app/admin';
+      preLoaderRoute: typeof TenantAppAdminRouteRouteImport;
       parentRoute: typeof TenantAppRouteRoute;
     };
     '/$tenant/app/eir': {
@@ -560,6 +524,41 @@ declare module '@tanstack/react-router' {
       fullPath: '/$tenant/app/program';
       preLoaderRoute: typeof TenantAppProgramRouteRouteImport;
       parentRoute: typeof TenantAppRouteRoute;
+    };
+    '/$tenant/app/admin/': {
+      id: '/$tenant/app/admin/';
+      path: '/';
+      fullPath: '/$tenant/app/admin/';
+      preLoaderRoute: typeof TenantAppAdminIndexRouteImport;
+      parentRoute: typeof TenantAppAdminRouteRoute;
+    };
+    '/$tenant/app/admin/audit': {
+      id: '/$tenant/app/admin/audit';
+      path: '/audit';
+      fullPath: '/$tenant/app/admin/audit';
+      preLoaderRoute: typeof TenantAppAdminAuditRouteImport;
+      parentRoute: typeof TenantAppAdminRouteRoute;
+    };
+    '/$tenant/app/admin/principals': {
+      id: '/$tenant/app/admin/principals';
+      path: '/principals';
+      fullPath: '/$tenant/app/admin/principals';
+      preLoaderRoute: typeof TenantAppAdminPrincipalsRouteImport;
+      parentRoute: typeof TenantAppAdminRouteRoute;
+    };
+    '/$tenant/app/admin/settings': {
+      id: '/$tenant/app/admin/settings';
+      path: '/settings';
+      fullPath: '/$tenant/app/admin/settings';
+      preLoaderRoute: typeof TenantAppAdminSettingsRouteImport;
+      parentRoute: typeof TenantAppAdminRouteRoute;
+    };
+    '/$tenant/app/admin/usage': {
+      id: '/$tenant/app/admin/usage';
+      path: '/usage';
+      fullPath: '/$tenant/app/admin/usage';
+      preLoaderRoute: typeof TenantAppAdminUsageRouteImport;
+      parentRoute: typeof TenantAppAdminRouteRoute;
     };
     '/$tenant/app/eir/': {
       id: '/$tenant/app/eir/';
@@ -617,18 +616,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TenantAppProgramVenturesRouteImport;
       parentRoute: typeof TenantAppProgramRouteRoute;
     };
+    '/$tenant/app/v/$ventureId': {
+      id: '/$tenant/app/v/$ventureId';
+      path: '/v/$ventureId';
+      fullPath: '/$tenant/app/v/$ventureId';
+      preLoaderRoute: typeof TenantAppVVentureIdRouteRouteImport;
+      parentRoute: typeof TenantAppRouteRoute;
+    };
     '/$tenant/app/ventures/': {
       id: '/$tenant/app/ventures/';
       path: '/ventures';
       fullPath: '/$tenant/app/ventures/';
       preLoaderRoute: typeof TenantAppVenturesIndexRouteImport;
-      parentRoute: typeof TenantAppRouteRoute;
-    };
-    '/$tenant/app/ventures/$ventureId': {
-      id: '/$tenant/app/ventures/$ventureId';
-      path: '/ventures/$ventureId';
-      fullPath: '/$tenant/app/ventures/$ventureId';
-      preLoaderRoute: typeof TenantAppVenturesVentureIdRouteRouteImport;
       parentRoute: typeof TenantAppRouteRoute;
     };
     '/$tenant/app/eir/personas/': {
@@ -645,112 +644,90 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TenantAppEirPersonasPersonaIdRouteImport;
       parentRoute: typeof TenantAppEirRouteRoute;
     };
+    '/$tenant/app/v/$ventureId/': {
+      id: '/$tenant/app/v/$ventureId/';
+      path: '/';
+      fullPath: '/$tenant/app/v/$ventureId/';
+      preLoaderRoute: typeof TenantAppVVentureIdIndexRouteImport;
+      parentRoute: typeof TenantAppVVentureIdRouteRoute;
+    };
+    '/$tenant/app/v/$ventureId/documents': {
+      id: '/$tenant/app/v/$ventureId/documents';
+      path: '/documents';
+      fullPath: '/$tenant/app/v/$ventureId/documents';
+      preLoaderRoute: typeof TenantAppVVentureIdDocumentsRouteImport;
+      parentRoute: typeof TenantAppVVentureIdRouteRoute;
+    };
+    '/$tenant/app/v/$ventureId/help': {
+      id: '/$tenant/app/v/$ventureId/help';
+      path: '/help';
+      fullPath: '/$tenant/app/v/$ventureId/help';
+      preLoaderRoute: typeof TenantAppVVentureIdHelpRouteImport;
+      parentRoute: typeof TenantAppVVentureIdRouteRoute;
+    };
+    '/$tenant/app/v/$ventureId/knowledge': {
+      id: '/$tenant/app/v/$ventureId/knowledge';
+      path: '/knowledge';
+      fullPath: '/$tenant/app/v/$ventureId/knowledge';
+      preLoaderRoute: typeof TenantAppVVentureIdKnowledgeRouteImport;
+      parentRoute: typeof TenantAppVVentureIdRouteRoute;
+    };
+    '/$tenant/app/v/$ventureId/settings': {
+      id: '/$tenant/app/v/$ventureId/settings';
+      path: '/settings';
+      fullPath: '/$tenant/app/v/$ventureId/settings';
+      preLoaderRoute: typeof TenantAppVVentureIdSettingsRouteImport;
+      parentRoute: typeof TenantAppVVentureIdRouteRoute;
+    };
+    '/$tenant/app/v/$ventureId/team': {
+      id: '/$tenant/app/v/$ventureId/team';
+      path: '/team';
+      fullPath: '/$tenant/app/v/$ventureId/team';
+      preLoaderRoute: typeof TenantAppVVentureIdTeamRouteImport;
+      parentRoute: typeof TenantAppVVentureIdRouteRoute;
+    };
     '/$tenant/app/ventures/$ventureId/': {
       id: '/$tenant/app/ventures/$ventureId/';
-      path: '/';
+      path: '/ventures/$ventureId';
       fullPath: '/$tenant/app/ventures/$ventureId/';
       preLoaderRoute: typeof TenantAppVenturesVentureIdIndexRouteImport;
-      parentRoute: typeof TenantAppVenturesVentureIdRouteRoute;
+      parentRoute: typeof TenantAppRouteRoute;
     };
-    '/$tenant/app/ventures/$ventureId/decisions': {
-      id: '/$tenant/app/ventures/$ventureId/decisions';
-      path: '/decisions';
-      fullPath: '/$tenant/app/ventures/$ventureId/decisions';
-      preLoaderRoute: typeof TenantAppVenturesVentureIdDecisionsRouteImport;
-      parentRoute: typeof TenantAppVenturesVentureIdRouteRoute;
+    '/$tenant/app/ventures/$ventureId/$': {
+      id: '/$tenant/app/ventures/$ventureId/$';
+      path: '/ventures/$ventureId/$';
+      fullPath: '/$tenant/app/ventures/$ventureId/$';
+      preLoaderRoute: typeof TenantAppVenturesVentureIdSplatRouteImport;
+      parentRoute: typeof TenantAppRouteRoute;
     };
-    '/$tenant/app/ventures/$ventureId/documents': {
-      id: '/$tenant/app/ventures/$ventureId/documents';
-      path: '/documents';
-      fullPath: '/$tenant/app/ventures/$ventureId/documents';
-      preLoaderRoute: typeof TenantAppVenturesVentureIdDocumentsRouteImport;
-      parentRoute: typeof TenantAppVenturesVentureIdRouteRoute;
-    };
-    '/$tenant/app/ventures/$ventureId/escalations': {
-      id: '/$tenant/app/ventures/$ventureId/escalations';
-      path: '/escalations';
-      fullPath: '/$tenant/app/ventures/$ventureId/escalations';
-      preLoaderRoute: typeof TenantAppVenturesVentureIdEscalationsRouteImport;
-      parentRoute: typeof TenantAppVenturesVentureIdRouteRoute;
-    };
-    '/$tenant/app/ventures/$ventureId/evidence': {
-      id: '/$tenant/app/ventures/$ventureId/evidence';
-      path: '/evidence';
-      fullPath: '/$tenant/app/ventures/$ventureId/evidence';
-      preLoaderRoute: typeof TenantAppVenturesVentureIdEvidenceRouteImport;
-      parentRoute: typeof TenantAppVenturesVentureIdRouteRoute;
-    };
-    '/$tenant/app/ventures/$ventureId/experiments': {
-      id: '/$tenant/app/ventures/$ventureId/experiments';
-      path: '/experiments';
-      fullPath: '/$tenant/app/ventures/$ventureId/experiments';
-      preLoaderRoute: typeof TenantAppVenturesVentureIdExperimentsRouteImport;
-      parentRoute: typeof TenantAppVenturesVentureIdRouteRoute;
-    };
-    '/$tenant/app/ventures/$ventureId/memory': {
-      id: '/$tenant/app/ventures/$ventureId/memory';
-      path: '/memory';
-      fullPath: '/$tenant/app/ventures/$ventureId/memory';
-      preLoaderRoute: typeof TenantAppVenturesVentureIdMemoryRouteImport;
-      parentRoute: typeof TenantAppVenturesVentureIdRouteRoute;
-    };
-    '/$tenant/app/ventures/$ventureId/milestones': {
-      id: '/$tenant/app/ventures/$ventureId/milestones';
-      path: '/milestones';
-      fullPath: '/$tenant/app/ventures/$ventureId/milestones';
-      preLoaderRoute: typeof TenantAppVenturesVentureIdMilestonesRouteImport;
-      parentRoute: typeof TenantAppVenturesVentureIdRouteRoute;
-    };
-    '/$tenant/app/ventures/$ventureId/overview': {
-      id: '/$tenant/app/ventures/$ventureId/overview';
-      path: '/overview';
-      fullPath: '/$tenant/app/ventures/$ventureId/overview';
-      preLoaderRoute: typeof TenantAppVenturesVentureIdOverviewRouteImport;
-      parentRoute: typeof TenantAppVenturesVentureIdRouteRoute;
-    };
-    '/$tenant/app/ventures/$ventureId/team': {
-      id: '/$tenant/app/ventures/$ventureId/team';
-      path: '/team';
-      fullPath: '/$tenant/app/ventures/$ventureId/team';
-      preLoaderRoute: typeof TenantAppVenturesVentureIdTeamRouteImport;
-      parentRoute: typeof TenantAppVenturesVentureIdRouteRoute;
-    };
-    '/$tenant/app/ventures/$ventureId/coach/': {
-      id: '/$tenant/app/ventures/$ventureId/coach/';
-      path: '/coach';
-      fullPath: '/$tenant/app/ventures/$ventureId/coach/';
-      preLoaderRoute: typeof TenantAppVenturesVentureIdCoachIndexRouteImport;
-      parentRoute: typeof TenantAppVenturesVentureIdRouteRoute;
-    };
-    '/$tenant/app/ventures/$ventureId/coach/$sessionId': {
-      id: '/$tenant/app/ventures/$ventureId/coach/$sessionId';
-      path: '/coach/$sessionId';
-      fullPath: '/$tenant/app/ventures/$ventureId/coach/$sessionId';
-      preLoaderRoute: typeof TenantAppVenturesVentureIdCoachSessionIdRouteImport;
-      parentRoute: typeof TenantAppVenturesVentureIdRouteRoute;
+    '/$tenant/app/v/$ventureId/c/$sessionId': {
+      id: '/$tenant/app/v/$ventureId/c/$sessionId';
+      path: '/c/$sessionId';
+      fullPath: '/$tenant/app/v/$ventureId/c/$sessionId';
+      preLoaderRoute: typeof TenantAppVVentureIdCSessionIdRouteImport;
+      parentRoute: typeof TenantAppVVentureIdRouteRoute;
     };
   }
 }
 
-interface AdminRouteRouteChildren {
-  AdminAuditRoute: typeof AdminAuditRoute;
-  AdminPrincipalsRoute: typeof AdminPrincipalsRoute;
-  AdminSettingsRoute: typeof AdminSettingsRoute;
-  AdminUsageRoute: typeof AdminUsageRoute;
-  AdminIndexRoute: typeof AdminIndexRoute;
+interface TenantAppAdminRouteRouteChildren {
+  TenantAppAdminAuditRoute: typeof TenantAppAdminAuditRoute;
+  TenantAppAdminPrincipalsRoute: typeof TenantAppAdminPrincipalsRoute;
+  TenantAppAdminSettingsRoute: typeof TenantAppAdminSettingsRoute;
+  TenantAppAdminUsageRoute: typeof TenantAppAdminUsageRoute;
+  TenantAppAdminIndexRoute: typeof TenantAppAdminIndexRoute;
 }
 
-const AdminRouteRouteChildren: AdminRouteRouteChildren = {
-  AdminAuditRoute: AdminAuditRoute,
-  AdminPrincipalsRoute: AdminPrincipalsRoute,
-  AdminSettingsRoute: AdminSettingsRoute,
-  AdminUsageRoute: AdminUsageRoute,
-  AdminIndexRoute: AdminIndexRoute,
+const TenantAppAdminRouteRouteChildren: TenantAppAdminRouteRouteChildren = {
+  TenantAppAdminAuditRoute: TenantAppAdminAuditRoute,
+  TenantAppAdminPrincipalsRoute: TenantAppAdminPrincipalsRoute,
+  TenantAppAdminSettingsRoute: TenantAppAdminSettingsRoute,
+  TenantAppAdminUsageRoute: TenantAppAdminUsageRoute,
+  TenantAppAdminIndexRoute: TenantAppAdminIndexRoute,
 };
 
-const AdminRouteRouteWithChildren = AdminRouteRoute._addFileChildren(
-  AdminRouteRouteChildren,
-);
+const TenantAppAdminRouteRouteWithChildren =
+  TenantAppAdminRouteRoute._addFileChildren(TenantAppAdminRouteRouteChildren);
 
 interface TenantAppEirRouteRouteChildren {
   TenantAppEirInboxRoute: typeof TenantAppEirInboxRoute;
@@ -792,67 +769,52 @@ const TenantAppProgramRouteRouteWithChildren =
     TenantAppProgramRouteRouteChildren,
   );
 
-interface TenantAppVenturesVentureIdRouteRouteChildren {
-  TenantAppVenturesVentureIdDecisionsRoute: typeof TenantAppVenturesVentureIdDecisionsRoute;
-  TenantAppVenturesVentureIdDocumentsRoute: typeof TenantAppVenturesVentureIdDocumentsRoute;
-  TenantAppVenturesVentureIdEscalationsRoute: typeof TenantAppVenturesVentureIdEscalationsRoute;
-  TenantAppVenturesVentureIdEvidenceRoute: typeof TenantAppVenturesVentureIdEvidenceRoute;
-  TenantAppVenturesVentureIdExperimentsRoute: typeof TenantAppVenturesVentureIdExperimentsRoute;
-  TenantAppVenturesVentureIdMemoryRoute: typeof TenantAppVenturesVentureIdMemoryRoute;
-  TenantAppVenturesVentureIdMilestonesRoute: typeof TenantAppVenturesVentureIdMilestonesRoute;
-  TenantAppVenturesVentureIdOverviewRoute: typeof TenantAppVenturesVentureIdOverviewRoute;
-  TenantAppVenturesVentureIdTeamRoute: typeof TenantAppVenturesVentureIdTeamRoute;
-  TenantAppVenturesVentureIdIndexRoute: typeof TenantAppVenturesVentureIdIndexRoute;
-  TenantAppVenturesVentureIdCoachSessionIdRoute: typeof TenantAppVenturesVentureIdCoachSessionIdRoute;
-  TenantAppVenturesVentureIdCoachIndexRoute: typeof TenantAppVenturesVentureIdCoachIndexRoute;
+interface TenantAppVVentureIdRouteRouteChildren {
+  TenantAppVVentureIdDocumentsRoute: typeof TenantAppVVentureIdDocumentsRoute;
+  TenantAppVVentureIdHelpRoute: typeof TenantAppVVentureIdHelpRoute;
+  TenantAppVVentureIdKnowledgeRoute: typeof TenantAppVVentureIdKnowledgeRoute;
+  TenantAppVVentureIdSettingsRoute: typeof TenantAppVVentureIdSettingsRoute;
+  TenantAppVVentureIdTeamRoute: typeof TenantAppVVentureIdTeamRoute;
+  TenantAppVVentureIdIndexRoute: typeof TenantAppVVentureIdIndexRoute;
+  TenantAppVVentureIdCSessionIdRoute: typeof TenantAppVVentureIdCSessionIdRoute;
 }
 
-const TenantAppVenturesVentureIdRouteRouteChildren: TenantAppVenturesVentureIdRouteRouteChildren =
+const TenantAppVVentureIdRouteRouteChildren: TenantAppVVentureIdRouteRouteChildren =
   {
-    TenantAppVenturesVentureIdDecisionsRoute:
-      TenantAppVenturesVentureIdDecisionsRoute,
-    TenantAppVenturesVentureIdDocumentsRoute:
-      TenantAppVenturesVentureIdDocumentsRoute,
-    TenantAppVenturesVentureIdEscalationsRoute:
-      TenantAppVenturesVentureIdEscalationsRoute,
-    TenantAppVenturesVentureIdEvidenceRoute:
-      TenantAppVenturesVentureIdEvidenceRoute,
-    TenantAppVenturesVentureIdExperimentsRoute:
-      TenantAppVenturesVentureIdExperimentsRoute,
-    TenantAppVenturesVentureIdMemoryRoute:
-      TenantAppVenturesVentureIdMemoryRoute,
-    TenantAppVenturesVentureIdMilestonesRoute:
-      TenantAppVenturesVentureIdMilestonesRoute,
-    TenantAppVenturesVentureIdOverviewRoute:
-      TenantAppVenturesVentureIdOverviewRoute,
-    TenantAppVenturesVentureIdTeamRoute: TenantAppVenturesVentureIdTeamRoute,
-    TenantAppVenturesVentureIdIndexRoute: TenantAppVenturesVentureIdIndexRoute,
-    TenantAppVenturesVentureIdCoachSessionIdRoute:
-      TenantAppVenturesVentureIdCoachSessionIdRoute,
-    TenantAppVenturesVentureIdCoachIndexRoute:
-      TenantAppVenturesVentureIdCoachIndexRoute,
+    TenantAppVVentureIdDocumentsRoute: TenantAppVVentureIdDocumentsRoute,
+    TenantAppVVentureIdHelpRoute: TenantAppVVentureIdHelpRoute,
+    TenantAppVVentureIdKnowledgeRoute: TenantAppVVentureIdKnowledgeRoute,
+    TenantAppVVentureIdSettingsRoute: TenantAppVVentureIdSettingsRoute,
+    TenantAppVVentureIdTeamRoute: TenantAppVVentureIdTeamRoute,
+    TenantAppVVentureIdIndexRoute: TenantAppVVentureIdIndexRoute,
+    TenantAppVVentureIdCSessionIdRoute: TenantAppVVentureIdCSessionIdRoute,
   };
 
-const TenantAppVenturesVentureIdRouteRouteWithChildren =
-  TenantAppVenturesVentureIdRouteRoute._addFileChildren(
-    TenantAppVenturesVentureIdRouteRouteChildren,
+const TenantAppVVentureIdRouteRouteWithChildren =
+  TenantAppVVentureIdRouteRoute._addFileChildren(
+    TenantAppVVentureIdRouteRouteChildren,
   );
 
 interface TenantAppRouteRouteChildren {
+  TenantAppAdminRouteRoute: typeof TenantAppAdminRouteRouteWithChildren;
   TenantAppEirRouteRoute: typeof TenantAppEirRouteRouteWithChildren;
   TenantAppProgramRouteRoute: typeof TenantAppProgramRouteRouteWithChildren;
   TenantAppIndexRoute: typeof TenantAppIndexRoute;
-  TenantAppVenturesVentureIdRouteRoute: typeof TenantAppVenturesVentureIdRouteRouteWithChildren;
+  TenantAppVVentureIdRouteRoute: typeof TenantAppVVentureIdRouteRouteWithChildren;
   TenantAppVenturesIndexRoute: typeof TenantAppVenturesIndexRoute;
+  TenantAppVenturesVentureIdSplatRoute: typeof TenantAppVenturesVentureIdSplatRoute;
+  TenantAppVenturesVentureIdIndexRoute: typeof TenantAppVenturesVentureIdIndexRoute;
 }
 
 const TenantAppRouteRouteChildren: TenantAppRouteRouteChildren = {
+  TenantAppAdminRouteRoute: TenantAppAdminRouteRouteWithChildren,
   TenantAppEirRouteRoute: TenantAppEirRouteRouteWithChildren,
   TenantAppProgramRouteRoute: TenantAppProgramRouteRouteWithChildren,
   TenantAppIndexRoute: TenantAppIndexRoute,
-  TenantAppVenturesVentureIdRouteRoute:
-    TenantAppVenturesVentureIdRouteRouteWithChildren,
+  TenantAppVVentureIdRouteRoute: TenantAppVVentureIdRouteRouteWithChildren,
   TenantAppVenturesIndexRoute: TenantAppVenturesIndexRoute,
+  TenantAppVenturesVentureIdSplatRoute: TenantAppVenturesVentureIdSplatRoute,
+  TenantAppVenturesVentureIdIndexRoute: TenantAppVenturesVentureIdIndexRoute,
 };
 
 const TenantAppRouteRouteWithChildren = TenantAppRouteRoute._addFileChildren(
@@ -861,9 +823,10 @@ const TenantAppRouteRouteWithChildren = TenantAppRouteRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AdminRouteRoute: AdminRouteRouteWithChildren,
   SignInRoute: SignInRoute,
   TenantAppRouteRoute: TenantAppRouteRouteWithChildren,
+  AdminSplatRoute: AdminSplatRoute,
+  AdminIndexRoute: AdminIndexRoute,
 };
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

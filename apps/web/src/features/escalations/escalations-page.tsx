@@ -38,7 +38,7 @@ import { EscalationFlowDialog } from './escalation-flow-dialog';
 import { EscalationPacketView } from './packet-view';
 import { EscalationTimeline } from './status-timeline';
 
-const routeApi = getRouteApi('/$tenant/app/ventures/$ventureId/escalations');
+const routeApi = getRouteApi('/$tenant/app/v/$ventureId/help');
 
 const OPEN: ReadonlySet<EscalationView['status']> = new Set(OPEN_ESCALATION_STATUSES);
 const WITHDRAWABLE = OPEN;

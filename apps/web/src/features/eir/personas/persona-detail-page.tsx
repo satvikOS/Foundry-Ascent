@@ -162,7 +162,6 @@ function PersonaOverview({ persona }: { persona: PersonaView }) {
             <dd className="grid gap-1.5">
               <span className="flex flex-wrap items-center gap-1.5 font-medium">
                 {persona.eirProfile.displayName}
-                {persona.eirProfile.synthetic ? <Badge variant="muted">Synthetic</Badge> : null}
               </span>
               {persona.eirProfile.expertiseTags.length > 0 ? (
                 <ul aria-label="Expertise" className="flex flex-wrap gap-1">

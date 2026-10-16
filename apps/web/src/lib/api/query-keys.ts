@@ -37,6 +37,7 @@ export const queryKeys = {
     documents: (ventureId: string) => [ROOT, 'venture', ventureId, 'documents'] as const,
     escalations: (ventureId: string) => [ROOT, 'venture', ventureId, 'escalations'] as const,
     team: (ventureId: string) => [ROOT, 'venture', ventureId, 'team'] as const,
+    notebook: (ventureId: string) => [ROOT, 'venture', ventureId, 'notebook'] as const,
   },
   session: {
     detail: (sessionId: string) => [ROOT, 'session', sessionId] as const,

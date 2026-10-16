@@ -191,11 +191,12 @@ function Board({ rows, ctx }: { rows: Row[]; ctx: TypedPageContext }) {
 }
 
 /** Milestones as a dated timeline (overdue first) or a status board. */
-export function MilestonesView() {
+export function MilestonesView({ embedded = false }: { embedded?: boolean }) {
   const [layout, setLayout] = useState<Layout>('timeline');
   const today = todayIso();
   return (
     <TypedMemoryPage
+      embedded={embedded}
       kind="milestone"
       title="Milestones"
       description="Dated goals with owners and dependencies. Overdue milestones surface in your overview and in coaching sessions."

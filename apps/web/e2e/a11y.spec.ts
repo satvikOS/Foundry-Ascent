@@ -6,7 +6,7 @@ import {
   openVenture,
   OWNER_STATE,
   runToken,
-  startSession,
+  startConversation,
   TENANT,
   useTheme,
 } from './support/fixtures';
@@ -37,39 +37,44 @@ for (const scheme of ['dark', 'light'] as const) {
     test.describe('founder', () => {
       test.use({ storageState: FOUNDER_STATE });
 
-      test('venture overview, session with an answer, and memory', async ({ page }) => {
+      test('new chat, a conversation with an answer, knowledge and the account menu', async ({ page }) => {
         const ventureId = await openVenture(page);
         await useTheme(page, scheme);
-        await expectNoSeriousA11yViolations(page, `overview (${scheme})`);
+        await expectNoSeriousA11yViolations(page, `new chat (${scheme})`);
 
         const token = runToken();
-        await startSession(page, `Accessibility check ${token}`);
-        await page
-          .getByRole('textbox', { name: 'Message Foundry Guide' })
-          .fill(`What should we test next? ${token}`);
-        await page.getByRole('button', { name: 'Send message' }).click();
+        await startConversation(page, `What should we test next? ${token}`);
         const answer = page.getByRole('article', { name: 'Exchange 1' });
         await expect(answer.getByRole('list', { name: 'Claims and their sources' })).toBeVisible({
           timeout: 30_000,
         });
-        await expectNoSeriousA11yViolations(page, `session (${scheme})`);
+        await expectNoSeriousA11yViolations(page, `conversation (${scheme})`);
 
-        await page.goto(`/${TENANT}/app/ventures/${ventureId}/memory`);
-        await expect(page.getByRole('heading', { level: 1, name: 'Memory' })).toBeVisible();
+        await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge`);
+        await expect(page.getByRole('heading', { level: 1, name: 'Knowledge' })).toBeVisible();
         await expect(page.getByRole('list', { name: 'Memory' })).toBeVisible();
-        await expectNoSeriousA11yViolations(page, `memory (${scheme})`);
+        await expectNoSeriousA11yViolations(page, `knowledge (${scheme})`);
+
+        // The account menu is reachable by keyboard and returns focus when closed.
+        const account = page.getByRole('button', { name: /^Account menu for / });
+        await account.focus();
+        await page.keyboard.press('Enter');
+        await expect(page.getByRole('menuitem', { name: 'Data use & privacy' })).toBeVisible();
+        await page.keyboard.press('Escape');
+        await expect(account).toBeFocused();
       });
     });
 
     test.describe('platform admin', () => {
       test.use({ storageState: OWNER_STATE });
 
-      test('admin principals', async ({ page }) => {
+      test('people & access, reached from the old admin URL', async ({ page }) => {
         await page.goto('/admin/principals');
+        await expect(page).toHaveURL(new RegExp(`/${TENANT}/app/admin/principals$`));
         await useTheme(page, scheme);
-        await expect(page.getByRole('heading', { level: 1, name: 'Principals' })).toBeVisible();
+        await expect(page.getByRole('heading', { level: 1, name: 'People & access' })).toBeVisible();
         await expect(page.getByRole('table')).toBeVisible();
-        await expectNoSeriousA11yViolations(page, `admin principals (${scheme})`);
+        await expectNoSeriousA11yViolations(page, `admin people & access (${scheme})`);
       });
     });
   });

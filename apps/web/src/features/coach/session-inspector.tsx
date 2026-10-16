@@ -162,7 +162,7 @@ function MemoryLine({
       <div className="flex items-center gap-1.5">
         <MemoryTypeLabel type={memory.type} iconOnly />
         <Link
-          to="/$tenant/app/ventures/$ventureId/memory"
+          to="/$tenant/app/v/$ventureId/knowledge"
           params={{ tenant, ventureId }}
           search={{ m: memory.id }}
           className="min-w-0 truncate text-[13px] font-medium hover:underline focus-visible:outline-2 focus-visible:outline-ring"
@@ -273,7 +273,7 @@ function ProposedTab({
       actions={
         <Button asChild variant="ghost" size="xs">
           <Link
-            to="/$tenant/app/ventures/$ventureId/memory"
+            to="/$tenant/app/v/$ventureId/knowledge"
             params={{ tenant, ventureId }}
             search={{ view: 'proposed' }}
           >
@@ -341,7 +341,7 @@ function EscalationLine({
   return (
     <li className="grid gap-1.5 py-2.5">
       <Link
-        to="/$tenant/app/ventures/$ventureId/escalations"
+        to="/$tenant/app/v/$ventureId/help"
         params={{ tenant, ventureId }}
         search={{ id: escalation.id }}
         className="text-[13px] font-medium hover:underline focus-visible:outline-2 focus-visible:outline-ring"

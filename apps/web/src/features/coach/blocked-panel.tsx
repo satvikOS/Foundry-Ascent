@@ -105,7 +105,7 @@ export function BlockedPanel({
             {escalationId ? (
               <Button asChild size="sm">
                 <Link
-                  to="/$tenant/app/ventures/$ventureId/escalations"
+                  to="/$tenant/app/v/$ventureId/help"
                   params={{ tenant, ventureId }}
                   search={{ id: escalationId }}
                 >

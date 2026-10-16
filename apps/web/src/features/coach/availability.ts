@@ -26,31 +26,31 @@ export function coachingAvailability(
     return {
       available: false,
       title: 'Read-only',
-      reason: 'You can read this venture’s sessions, but only founders and team members can coach in it.',
+      reason:
+        'You can read this venture’s conversations, but only founders and team members can start or continue them.',
     };
   }
   if (!me.aiEnabled) {
     return {
       available: false,
-      title: 'Coaching is paused',
+      title: 'AI coaching is paused',
       reason:
-        'An administrator has turned off AI coaching for now. Your workspace, memory and past sessions are still available.',
+        'An administrator has turned off AI coaching for now. Your knowledge, documents and past conversations are still here.',
     };
   }
   if (!venture.persona) {
     return {
       available: false,
-      title: 'No coach assigned',
-      reason:
-        'This venture doesn’t have an active coaching assignment yet. Your program lead can set one up.',
+      title: 'No vEIR assigned yet',
+      reason: 'This venture doesn’t have a vEIR yet. Your program lead can assign one.',
     };
   }
   if (venture.persona.status === 'suspended') {
     return {
       available: false,
-      title: 'Coach paused by a reviewer',
+      title: 'Paused by a reviewer',
       reason:
-        'A human reviewer has paused Foundry Guide for this venture. You can still read past sessions and escalate to a person.',
+        'A human reviewer has paused this vEIR for now. You can still read past conversations and ask a person for help.',
     };
   }
   if (venture.status === 'archived') {
@@ -59,15 +59,15 @@ export function coachingAvailability(
   if (session?.status === 'ended') {
     return {
       available: false,
-      title: 'Session ended',
-      reason: 'This session has ended. Start a new session to keep going.',
+      title: 'Conversation ended',
+      reason: 'This conversation has ended. Start a new chat to keep going.',
     };
   }
   if (session?.status === 'suspended') {
     return {
       available: false,
-      title: 'Session paused',
-      reason: 'A safety control paused this session. A person can help — use “Request human support”.',
+      title: 'Conversation paused',
+      reason: 'A safety control paused this conversation. A person can help — use “Request support”.',
     };
   }
   return OK;

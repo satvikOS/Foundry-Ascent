@@ -1,7 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import { ChevronRight, FilePen, UserSquare } from 'lucide-react';
 
-import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
 import { PageContainer, PageHeader } from '@/components/ui/page-header';
@@ -75,7 +74,6 @@ export function PersonasListPage({ tenant }: { tenant: string }) {
                         <>
                           <span aria-hidden>·</span>
                           {persona.eirProfile.displayName}
-                          {persona.eirProfile.synthetic ? <Badge variant="muted">Synthetic</Badge> : null}
                         </>
                       ) : null}
                     </p>

@@ -12,7 +12,8 @@ test('a founder uploads a document and it becomes searchable evidence', async ({
   const token = runToken();
   const filename = `customer-notes-${token}.md`;
   const ventureId = await openVenture(page);
-  await page.goto(`/${TENANT}/app/ventures/${ventureId}/documents`);
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Documents' }).click();
+  await expect(page).toHaveURL(new RegExp(`/${TENANT}/app/v/${ventureId}/documents$`));
   await expect(page.getByRole('heading', { level: 1, name: 'Documents' })).toBeVisible();
 
   const chooser = page.waitForEvent('filechooser');

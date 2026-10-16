@@ -7,9 +7,10 @@ import type {
   TurnView,
 } from '@foundry/contracts';
 import { useNavigate } from '@tanstack/react-router';
-import { Bot, RotateCcw, UserRound } from 'lucide-react';
+import { RotateCcw, UserRound } from 'lucide-react';
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 
+import { PersonaAvatar } from '@/components/faces/persona-avatar';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { CopyButton } from '@/components/ui/copy-button';
@@ -20,6 +21,7 @@ import { errorMessage } from '@/lib/api/errors';
 import type { TurnBlocked, TurnStreamError, TurnStreamState } from '@/lib/api/hooks/turn-stream';
 import { formatDateTime, formatRelative, isoString } from '@/lib/format';
 import { formatWait, useSecondsUntil } from '@/lib/hooks/use-countdown';
+import { shortPersonaName } from '@/lib/veir';
 import { useCreateVentureMemory, useMemoryActions } from '@/features/memory/api';
 import { findMemoryForCandidate } from '@/features/memory/optimistic';
 
@@ -42,12 +44,16 @@ function Speaker({
 }) {
   return (
     <div className="mb-2 flex flex-wrap items-center gap-2 text-[13px]">
-      <span
-        aria-hidden
-        className="flex size-6 items-center justify-center rounded-full border border-border bg-muted text-muted-foreground"
-      >
-        {kind === 'coach' ? <Bot className="size-3.5" /> : <UserRound className="size-3.5" />}
-      </span>
+      {kind === 'coach' ? (
+        <PersonaAvatar name={shortPersonaName(name, 'neutral_guide')} size="sm" decorative />
+      ) : (
+        <span
+          aria-hidden
+          className="flex size-6 items-center justify-center rounded-full border border-border bg-muted text-muted-foreground"
+        >
+          <UserRound className="size-3.5" />
+        </span>
+      )}
       <span className="font-semibold">{name}</span>
       {kind === 'coach' ? (
         <span className="rounded-sm border border-border-strong px-1 text-[10px] leading-4 font-semibold tracking-wide uppercase">
@@ -261,7 +267,7 @@ export function TurnItem({
             : undefined,
           onView: (escalation) =>
             void navigate({
-              to: '/$tenant/app/ventures/$ventureId/escalations',
+              to: '/$tenant/app/v/$ventureId/help',
               params: { tenant, ventureId },
               search: { id: escalation.id },
             }),

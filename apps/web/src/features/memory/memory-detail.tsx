@@ -141,7 +141,7 @@ export function MemoryDetail({ memory: listed, tenant, ventureId, canEdit, onRem
             <History aria-hidden className="size-3.5" />
             Replaces an{' '}
             <Link
-              to="/$tenant/app/ventures/$ventureId/memory"
+              to="/$tenant/app/v/$ventureId/knowledge"
               params={{ tenant, ventureId }}
               search={{ m: memory.supersedesId }}
               className="font-medium text-foreground underline decoration-border-strong underline-offset-[3px] hover:decoration-foreground"
