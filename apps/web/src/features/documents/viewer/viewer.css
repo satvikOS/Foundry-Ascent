@@ -381,12 +381,24 @@
   inset: 0;
   border-radius: 0;
 }
-/* Consecutive cited blocks join: the band covers the gap between them (the block's own top margin). */
-.reader-prose [data-cited] + [data-cited]::before {
+/*
+ * Consecutive cited blocks join into one band: a block's band covers the gap above it (its own top margin)
+ * when the block before is cited too, and that block's band stops at its edge, so nothing is tinted twice.
+ * A list whose first or last item is cited joins the cited block before or after it the same way.
+ */
+.reader-prose [data-cited] + [data-cited]::before,
+.reader-prose :is(ul, ol):has(> li[data-cited]:last-child) + [data-cited]::before {
   top: calc(-1 * var(--cited-gap, 0.9em));
   border-top-right-radius: 0;
 }
-.reader-prose [data-cited]:has(+ [data-cited])::before {
+.reader-prose [data-cited] + :is(ul, ol) > li[data-cited]:first-child::before {
+  top: -0.9em;
+  border-top-right-radius: 0;
+}
+.reader-prose [data-cited]:has(+ [data-cited])::before,
+.reader-prose [data-cited]:has(+ :is(ul, ol) > li[data-cited]:first-child)::before,
+.reader-prose :is(ul, ol):has(+ [data-cited]) > li[data-cited]:last-child::before {
+  bottom: 0;
   border-bottom-right-radius: 0;
 }
 .reader-prose .reader-h1[data-cited],

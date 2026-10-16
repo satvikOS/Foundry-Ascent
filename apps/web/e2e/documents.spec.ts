@@ -390,21 +390,31 @@ async function deleteDocument(page: Page, row: Locator, filename: string): Promi
 }
 
 /**
- * Where the cited passage's band draws its rule for each cited block (the band is the block's ::before):
- * every rule on one line, none outside the reading area.
+ * The cited passage's band (each cited block's ::before): its rule on one line for every block, none
+ * outside the reading area, and one continuous band with no gap and no doubly tinted overlap between
+ * consecutive cited blocks.
  */
 async function expectCitedBandAligned(viewer: Locator): Promise<void> {
-  const rules = await viewer.locator('[data-cited]').evaluateAll((elements) =>
+  const bands = await viewer.locator('[data-cited]').evaluateAll((elements) =>
     elements.map((element) => {
       const band = getComputedStyle(element, '::before');
-      return element.getBoundingClientRect().left + Number.parseFloat(band.left);
+      const box = element.getBoundingClientRect();
+      return {
+        left: box.left + Number.parseFloat(band.left),
+        top: box.top + Number.parseFloat(band.top),
+        bottom: box.bottom - Number.parseFloat(band.bottom),
+      };
     }),
   );
+  const rules = bands.map((band) => band.left);
   expect(rules.length).toBeGreaterThan(1);
   expect(rules.every(Number.isFinite)).toBe(true);
   expect(Math.max(...rules) - Math.min(...rules)).toBeLessThan(1);
   const area = await viewer.locator('[data-viewer-scroll]').evaluate((el) => el.getBoundingClientRect().left);
   expect(Math.min(...rules)).toBeGreaterThanOrEqual(area);
+  for (let i = 1; i < bands.length; i += 1) {
+    expect(Math.abs((bands[i]?.top ?? 0) - (bands[i - 1]?.bottom ?? 0))).toBeLessThan(1);
+  }
 }
 
 /**
