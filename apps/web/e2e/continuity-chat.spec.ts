@@ -105,7 +105,8 @@ test.describe('continuity across conversations', () => {
         await expect(recall).toContainText(/we were on pricing/i);
         await expect(recall).toContainText(/call facilities about the library budget/i);
         const answer = await answerOf(page.request, id, 2);
-        expect(answer).toMatch(/^(?:Yes|I do|Sure)\. When we talked earlier today, we were on pricing\./);
+        // "earlier today", "a moment ago": however the last conversation's time is told.
+        expect(answer).toMatch(/^(?:Yes|I do|Sure)\. When we (?:talked|spoke) [^,]+, we were on pricing\./);
         // A memory question is social: nothing to cite, plan or remember.
         await expect(recall.getByRole('region', { name: 'Suggested next steps' })).toHaveCount(0);
       });

@@ -232,6 +232,24 @@ describe('the mock reads where the last conversation left off', () => {
     });
   });
 
+  it('prefers what the last conversation planned over the notebook’s older open threads', () => {
+    const withThreads = RENDERED_RAW.replace(
+      '</where_you_left_off>',
+      '<open_threads>\n- planned: Email facilities about the door-counter totals (due 2026-10-20)\n</open_threads>\n</where_you_left_off>',
+    );
+    expect(
+      previousConversationIn('', [{ role: 'user', content: withThreads }], 'Maya', '2026-10-16')?.plan,
+    ).toBe('call facilities about the library budget tomorrow');
+    // With nothing planned in the conversation itself, the open thread is what is left to pick up.
+    const quiet = withThreads.replace(
+      "I'll call facilities about the library budget tomorrow.",
+      'Facilities pays.',
+    );
+    expect(previousConversationIn('', [{ role: 'user', content: quiet }], 'Maya', '2026-10-16')?.plan).toBe(
+      'email facilities about the door-counter totals',
+    );
+  });
+
   it('takes "nothing yet" at its word', () => {
     expect(previousConversationIn(NOTHING, [], 'Maya', '2026-10-16')).toBeNull();
   });

@@ -119,6 +119,8 @@ function fromSection(
   today: string | null,
 ): PreviousConversation | null {
   const text = unescapeData(section);
+  // The newest conversation's own element when the section lists them (its notebook threads come after it).
+  const scope = /<conversation\b[^>]*>[\s\S]*?<\/conversation>/.exec(text)?.[0] ?? text;
   const name = founderName ? founderName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : null;
   const speaker = (who: string): RegExp =>
     new RegExp(`(?:^|\\n)\\s*(?:[-*]\\s*)?(?:${who})(?: said)?\\s*[:：]\\s*([^\\n]+)`, 'gi');
@@ -130,36 +132,39 @@ function fromSection(
     ...(name ? [name, `${name} \\(founder\\)`] : []),
   ];
   const founderLines = [
-    ...[...text.matchAll(speaker(founderWho.join('|')))].map((m) => clean(m[1] ?? '')),
-    ...[...text.matchAll(/<founder>([\s\S]*?)<\/founder>/g)].map((m) => clean(m[1] ?? '')),
+    ...[...scope.matchAll(speaker(founderWho.join('|')))].map((m) => clean(m[1] ?? '')),
+    ...[...scope.matchAll(/<founder>([\s\S]*?)<\/founder>/g)].map((m) => clean(m[1] ?? '')),
   ].filter((l) => l !== '');
   const veirLines = [
-    ...[...text.matchAll(speaker('you|veir|the veir|coach|assistant|you said'))].map((m) =>
+    ...[...scope.matchAll(speaker('you|veir|the veir|coach|assistant|you said'))].map((m) =>
       clean(m[1] ?? ''),
     ),
-    ...[...text.matchAll(/<(?:you|coach|veir|answer)>([\s\S]*?)<\/(?:you|coach|veir|answer)>/g)].map((m) =>
+    ...[...scope.matchAll(/<(?:you|coach|veir|answer)>([\s\S]*?)<\/(?:you|coach|veir|answer)>/g)].map((m) =>
       clean(m[1] ?? ''),
     ),
   ].filter((l) => l !== '');
   const topics =
     firstMatch(
-      text,
+      scope,
       /(?:^|\n)\s*(?:[-*]\s*)?(?:topics?|about|subjects?|what you talked about)\s*[:：]\s*([^\n]+)/i,
-    ) ?? firstMatch(text, /<topics>([\s\S]*?)<\/topics>/);
+    ) ?? firstMatch(scope, /<topics>([\s\S]*?)<\/topics>/);
   const summary =
-    firstMatch(text, /(?:^|\n)\s*(?:[-*]\s*)?(?:summary|digest|recap)\s*[:：]\s*([^\n]+)/i) ??
-    firstMatch(text, /<summary>([\s\S]*?)<\/summary>/);
+    firstMatch(scope, /(?:^|\n)\s*(?:[-*]\s*)?(?:summary|digest|recap)\s*[:：]\s*([^\n]+)/i) ??
+    firstMatch(scope, /<summary>([\s\S]*?)<\/summary>/);
   const title =
-    firstMatch(text, /title="([^"]+)"/) ??
+    firstMatch(scope, /title="([^"]+)"/) ??
     firstMatch(text, /(?:^|\n)\s*(?:[-*]\s*)?title\s*[:：]\s*([^\n]+)/i);
-  const planLine =
+  const planIn = (where: string): string | null =>
     firstMatch(
-      text,
+      where,
       /(?:^|\n)\s*(?:[-*]\s*)?(?:commitments?|plans?|next steps?|open threads?|they planned|planned|promised)\s*[:：]\s*([^\n]+)/i,
     ) ??
-    firstMatch(text, /(?:commitments?|plans?|next steps?|open threads?)\s*[:：]?\s*\n\s*[-*]\s*([^\n]+)/i) ??
-    firstMatch(text, /<(?:commitments|open_commitments)>\n\s*-\s*([^\n]+)/) ??
-    firstMatch(text, /<commitment[^>]*>([\s\S]*?)<\/commitment>/);
+    firstMatch(where, /(?:commitments?|plans?|next steps?|open threads?)\s*[:：]?\s*\n\s*[-*]\s*([^\n]+)/i) ??
+    firstMatch(where, /<(?:commitments|open_commitments)>\n\s*-\s*([^\n]+)/) ??
+    firstMatch(where, /<commitment[^>]*>([\s\S]*?)<\/commitment>/);
+  // What the last conversation itself planned comes before the notebook's older open threads.
+  const scopedPlan = planIn(scope);
+  const planLine = scopedPlan ?? (scope === text ? null : planIn(text));
   const stated = founderLines.map((l) => COMMITMENT.exec(l)?.[1]).find((c) => c !== undefined) ?? null;
   const anything =
     founderLines.length + veirLines.length > 0 || topics !== null || summary !== null || title !== null;
@@ -182,9 +187,9 @@ function fromSection(
       source: text,
     });
   }
-  const relative = RELATIVE_TIME.exec(text)?.[0] ?? null;
-  const date = /\b(\d{4}-\d{2}-\d{2})\b/.exec(text)?.[1] ?? null;
-  const channel = channelIn(text);
+  const relative = RELATIVE_TIME.exec(scope)?.[0] ?? null;
+  const date = /\b(\d{4}-\d{2}-\d{2})\b/.exec(scope)?.[1] ?? null;
+  const channel = channelIn(scope);
   return build({
     topicText: [topics, title, founderLines.join(' '), summary]
       .filter((t): t is string => t !== null)
@@ -193,7 +198,7 @@ function fromSection(
     gist: founderLines[0] ?? null,
     when: relative !== null ? normaliseWhen(relative) : date !== null ? whenFromDate(date, today) : null,
     channel,
-    plan: planLine ?? stated,
+    plan: scopedPlan ?? stated ?? planLine,
     opening: veirLines[0] ?? null,
     source: text,
   });
