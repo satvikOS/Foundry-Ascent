@@ -15,11 +15,19 @@ describe('FoundryAscent-Foundation', () => {
     });
   });
 
+  const roleNamed = (name: string): Record<string, unknown> => {
+    const found = resourcesOfType(template, 'AWS::IAM::Role').find(([, r]) => r.RoleName === name);
+    if (!found) throw new Error(`role ${name} not found`);
+    return found[1];
+  };
+
+  it('has exactly two roles: the deploy role and the ops-insights role', () => {
+    const names = resourcesOfType(template, 'AWS::IAM::Role').map(([, r]) => r.RoleName);
+    expect(names.sort()).toEqual(['FoundryAscent-GitHubDeploy', 'FoundryAscent-OpsInsights']);
+  });
+
   it('trusts only the production environment of satvikOS/Foundry-Ascent (exact sub and aud), for one hour', () => {
-    const roles = resourcesOfType(template, 'AWS::IAM::Role');
-    expect(roles).toHaveLength(1);
-    const [, role] = roles[0] ?? ['', {}];
-    expect(role.RoleName).toBe('FoundryAscent-GitHubDeploy');
+    const role = roleNamed('FoundryAscent-GitHubDeploy');
     expect(role.MaxSessionDuration).toBe(3600);
     expect(role.AssumeRolePolicyDocument).toEqual({
       Version: '2012-10-17',
@@ -92,6 +100,69 @@ describe('FoundryAscent-Foundation', () => {
     expect(statements).not.toMatch(/"(iam|s3|cloudfront):|cloudformation:(Create|Update|Delete|Execute)/);
   });
 
+  it('lets only the ops-insights environment assume the insights role, for one hour', () => {
+    const role = roleNamed('FoundryAscent-OpsInsights');
+    expect(role.MaxSessionDuration).toBe(3600);
+    expect(role.AssumeRolePolicyDocument).toEqual({
+      Version: '2012-10-17',
+      Statement: [
+        {
+          Effect: 'Allow',
+          Action: 'sts:AssumeRoleWithWebIdentity',
+          Principal: { Federated: { Ref: expect.stringMatching(/^GitHubOidcProvider/) as unknown } },
+          Condition: {
+            StringEquals: {
+              'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com',
+              'token.actions.githubusercontent.com:sub':
+                'repo:satvikOS@228056784/Foundry-Ascent@1356439229:environment:ops-insights',
+            },
+          },
+        },
+      ],
+    });
+  });
+
+  it('lets the insights role invoke only the insights function and read platform logs', () => {
+    const policies = resourcesOfType(template, 'AWS::IAM::Policy').filter(([id]) =>
+      id.startsWith('OpsInsightsPolicy'),
+    );
+    expect(policies).toHaveLength(1);
+    const [, policy] = policies[0] ?? ['', {}];
+    expect(policy.Roles).toEqual([{ Ref: expect.stringMatching(/^OpsInsightsRole/) as unknown }]);
+    expect(policy.PolicyDocument).toEqual({
+      Version: '2012-10-17',
+      Statement: [
+        {
+          Sid: 'InvokeInsightsFunction',
+          Effect: 'Allow',
+          Action: 'lambda:InvokeFunction',
+          Resource: {
+            'Fn::Join': [
+              '',
+              ['arn:aws:lambda:us-east-1:', { Ref: 'AWS::AccountId' }, ':function:FoundryAscent-Insights'],
+            ],
+          },
+        },
+        {
+          Sid: 'ReadPlatformLambdaLogs',
+          Effect: 'Allow',
+          Action: 'logs:FilterLogEvents',
+          Resource: {
+            'Fn::Join': [
+              '',
+              ['arn:aws:logs:us-east-1:', { Ref: 'AWS::AccountId' }, ':log-group:/aws/lambda/FoundryAscent*'],
+            ],
+          },
+        },
+      ],
+    });
+    // The deploy role's policy does not mention the insights function: it is not widened.
+    const deploy = resourcesOfType(template, 'AWS::IAM::Policy').filter(([id]) =>
+      id.startsWith('GitHubDeployPolicy'),
+    );
+    expect(JSON.stringify(deploy)).not.toContain('lambda:');
+  });
+
   it('outputs the deploy role ARN', () => {
     template.hasOutput('GitHubDeployRoleArn', { Value: { 'Fn::GetAtt': [Match.anyValue(), 'Arn'] } });
   });
@@ -117,6 +188,11 @@ describe('FoundryAscent-Foundation with an existing OIDC provider', () => {
     const { templates } = synthesize({ githubOidcProviderArn: arn });
     templates.foundation.resourceCountIs('AWS::IAM::OIDCProvider', 0);
     templates.foundation.hasResourceProperties('AWS::IAM::Role', {
+      RoleName: 'FoundryAscent-GitHubDeploy',
+      AssumeRolePolicyDocument: { Statement: [Match.objectLike({ Principal: { Federated: arn } })] },
+    });
+    templates.foundation.hasResourceProperties('AWS::IAM::Role', {
+      RoleName: 'FoundryAscent-OpsInsights',
       AssumeRolePolicyDocument: { Statement: [Match.objectLike({ Principal: { Federated: arn } })] },
     });
   });

@@ -34,6 +34,7 @@ const FUNCTIONS = [
   ['FoundryAscent-Api', 'api'],
   ['FoundryAscent-Worker', 'worker'],
   ['FoundryAscent-Migrate', 'migrate'],
+  ['FoundryAscent-Insights', 'insights'],
 ] as const;
 
 type Props = Record<string, unknown>;
@@ -71,6 +72,7 @@ describe('FoundryAscent-App', () => {
       ['FoundryAscent-Api', 1024, 60],
       ['FoundryAscent-Worker', 1024, 120],
       ['FoundryAscent-Migrate', 1024, 600],
+      ['FoundryAscent-Insights', 1024, 300],
     ])('%s runs Node 24 on ARM64 (%i MB, %i s) with source maps', (name, memory, timeout) => {
       const [, props] = fn(name);
       expect(props).toMatchObject({
@@ -179,6 +181,22 @@ describe('FoundryAscent-App', () => {
       expect(managed('FoundryAscent-Migrate').map(outputName)).toEqual([
         expect.stringMatching(/DatabaseAccessPolicy/),
       ]);
+      expect(managed('FoundryAscent-Insights').map(outputName)).toEqual([
+        expect.stringMatching(/DatabaseAccessPolicy/),
+      ]);
+    });
+
+    it('gives the insights function nothing beyond the database and its own logs', () => {
+      const actions = rolePolicyStatements('FoundryAscent-Insights').flatMap((s) =>
+        Array.isArray(s.Action) ? (s.Action as string[]) : [s.Action as string],
+      );
+      expect(actions.sort()).toEqual(['logs:CreateLogStream', 'logs:PutLogEvents']);
+      // No resource policy: only identities granted lambda:InvokeFunction (the ops-insights role) may invoke it.
+      const [id] = fn('FoundryAscent-Insights');
+      const permissions = resourcesOfType(template, 'AWS::Lambda::Permission').filter(([, p]) =>
+        JSON.stringify(p.FunctionName).includes(id),
+      );
+      expect(permissions).toEqual([]);
     });
 
     it('lets the API send jobs and the worker consume them; migrate only embeds', () => {
@@ -266,7 +284,7 @@ describe('FoundryAscent-App', () => {
     });
 
     it('scopes each function role to its own log group (no AWS managed policies)', () => {
-      for (const name of ['FoundryAscent-Api', 'FoundryAscent-Worker', 'FoundryAscent-Migrate']) {
+      for (const name of FUNCTIONS.map(([n]) => n)) {
         const logs = rolePolicyStatements(name).find(
           (s) => Array.isArray(s.Action) && (s.Action as string[]).includes('logs:PutLogEvents'),
         );
@@ -295,11 +313,11 @@ describe('FoundryAscent-App', () => {
       });
     });
 
-    it('runs before the API, worker and site are updated', () => {
+    it('runs before the API, worker, insights and site are updated', () => {
       const [migrationsId] =
         Object.entries(all).find(([, r]) => r.Type === 'Custom::FoundryMigrations') ?? [];
       expect(migrationsId).toBeDefined();
-      for (const name of ['FoundryAscent-Api', 'FoundryAscent-Worker']) {
+      for (const name of ['FoundryAscent-Api', 'FoundryAscent-Worker', 'FoundryAscent-Insights']) {
         const [id] = fn(name);
         expect(all[id]?.DependsOn, name).toContain(migrationsId);
       }

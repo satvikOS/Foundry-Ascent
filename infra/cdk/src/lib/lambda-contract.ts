@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { REPO_ROOT } from '../paths.js';
 
-export type LambdaRole = 'api' | 'worker' | 'migrate';
+export type LambdaRole = 'api' | 'worker' | 'migrate' | 'insights';
 
 export interface LambdaContract {
   readonly bundling: {
@@ -96,7 +96,13 @@ export function parseLambdaContract(raw: unknown): LambdaContract {
       externalModules: strings(bundling.externalModules, '$.bundling.externalModules', /^[@a-z0-9./_-]+$/),
       banner: strings(bundling.banner, '$.bundling.banner', /^.+$/, 1),
     },
-    environment: { common: env('common'), api: env('api'), worker: env('worker'), migrate: env('migrate') },
+    environment: {
+      common: env('common'),
+      api: env('api'),
+      worker: env('worker'),
+      migrate: env('migrate'),
+      insights: env('insights'),
+    },
     edgeHeaders: {
       viewerIp: viewerIp ?? fail('$.edgeHeaders.viewerIp', 'is missing'),
       viewerHost: viewerHost ?? fail('$.edgeHeaders.viewerHost', 'is missing'),

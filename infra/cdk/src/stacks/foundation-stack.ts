@@ -4,11 +4,15 @@
  * The deploy role can do almost nothing by itself: it assumes the CDK bootstrap roles
  * (`cdk-hnb659fds-*`), whose CloudFormation execution role is capped by FoundryAscent-Boundary, and it
  * can read stack status, the platform's Lambda logs and Cost Explorer for post-deploy checks.
+ *
+ * The ops-insights role is separate and narrower (docs/runbooks/insights.md): trusted only from the
+ * `ops-insights` GitHub environment, it may invoke the read-only insights function and read the platform's
+ * Lambda logs, nothing else. The deploy role is not widened for it.
  */
 import { ArnFormat, CfnOutput, Duration, Stack, type StackProps } from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import type { Construct } from 'constructs';
-import { NAMES, STACK_PREFIX } from '../lib/constants.js';
+import { NAMES, OPS_INSIGHTS_ENVIRONMENT, STACK_PREFIX } from '../lib/constants.js';
 import { acknowledge, wildcardResource } from '../lib/nag.js';
 
 export const GITHUB_OIDC_HOST = 'token.actions.githubusercontent.com';
@@ -36,6 +40,11 @@ export interface FoundationStackProps extends StackProps {
   readonly githubBranch: string;
   /** GitHub environment allowed to deploy (`production`): the only subject the deploy role trusts. */
   readonly githubEnvironment: string;
+  /**
+   * GitHub environment of the ops-insights workflow (default `ops-insights`): the only subject the insights role
+   * trusts. Its deployment-branch rule must allow `main` only, like `production`'s.
+   */
+  readonly insightsEnvironment?: string;
   /**
    * ARN of an existing `token.actions.githubusercontent.com` provider. An account can hold only one
    * provider per URL; pass this instead of creating a second one when it already exists.
@@ -68,6 +77,7 @@ export function githubSubject(
 
 export class FoundationStack extends Stack {
   readonly deployRole: iam.Role;
+  readonly insightsRole: iam.Role;
 
   constructor(scope: Construct, id: string, props: FoundationStackProps) {
     super(scope, id, props);
@@ -171,6 +181,50 @@ export class FoundationStack extends Stack {
           'Read-only access to the log groups (and their streams) of the platform Lambda functions, all named FoundryAscent-*, for post-deploy smoke checks.',
       },
     );
+
+    // ---- Ops insights (read-only) ---------------------------------------------------------------------------
+    // Its own role and GitHub environment, as docs/runbooks/deploy-and-rollback.md asks of any ops task that
+    // needs more than the deploy role: invoke the one insights function (which reads the database in read-only
+    // transactions and seals content to the operator's key) and read the platform's Lambda logs (ids, counts,
+    // codes and timings by the logging contract). No database, secret, model or bucket access of its own.
+    const insightsEnvironment = props.insightsEnvironment ?? OPS_INSIGHTS_ENVIRONMENT;
+    this.insightsRole = new iam.Role(this, 'OpsInsightsRole', {
+      roleName: NAMES.opsInsightsRole,
+      description: `Read-only platform insights for ${props.githubRepository} (OIDC; ${insightsEnvironment} environment only)`,
+      maxSessionDuration: Duration.hours(1),
+      assumedBy: new iam.WebIdentityPrincipal(provider.oidcProviderArn, {
+        StringEquals: {
+          [`${GITHUB_OIDC_HOST}:aud`]: GITHUB_OIDC_AUDIENCE,
+          [`${GITHUB_OIDC_HOST}:sub`]: githubSubject({ ...props, githubEnvironment: insightsEnvironment }),
+        },
+      }),
+    });
+    const insightsFunction = this.formatArn({
+      service: 'lambda',
+      resource: 'function',
+      resourceName: NAMES.insightsFunction,
+      arnFormat: ArnFormat.COLON_RESOURCE_NAME,
+    });
+    const insightsPolicy = new iam.Policy(this, 'OpsInsightsPolicy', {
+      statements: [
+        new iam.PolicyStatement({
+          sid: 'InvokeInsightsFunction',
+          actions: ['lambda:InvokeFunction'],
+          resources: [insightsFunction],
+        }),
+        new iam.PolicyStatement({
+          sid: 'ReadPlatformLambdaLogs',
+          actions: ['logs:FilterLogEvents'],
+          resources: [lambdaLogGroups],
+        }),
+      ],
+    });
+    insightsPolicy.attachToRole(this.insightsRole);
+    acknowledge(insightsPolicy, {
+      id: wildcardResource(this, lambdaLogGroups),
+      reason:
+        'Read-only access to the log groups of the platform Lambda functions, all named FoundryAscent-*: the insights workflow counts distillation, call and request events (ids, codes and timings only by the logging contract).',
+    });
 
     new CfnOutput(this, 'GitHubDeployRoleArn', {
       value: this.deployRole.roleArn,

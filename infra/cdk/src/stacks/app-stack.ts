@@ -45,6 +45,7 @@ import {
   API_TIMING_MARGIN_SECONDS,
   DOCUMENTS_PREFIX,
   ENVIRONMENT_NAME,
+  INSIGHTS_TIMEOUT_MINUTES,
   JOBS_MAX_RECEIVE_COUNT,
   MIGRATE_TIMEOUT_MINUTES,
   NAMES,
@@ -105,6 +106,8 @@ export class AppStack extends Stack {
   readonly api: PlatformFunction;
   readonly worker: PlatformFunction;
   readonly migrate: PlatformFunction;
+  /** Operator insights (read-only), invoked only by the ops-insights role (Foundation stack). */
+  readonly insights: PlatformFunction;
   readonly functionUrl: lambda.FunctionUrl;
   readonly distribution: cloudfront.Distribution;
   readonly siteBucket: s3.Bucket;
@@ -211,6 +214,19 @@ export class AppStack extends Stack {
       reservedConcurrentExecutions: config.worker.reservedConcurrency,
       environment: environmentFor('worker'),
     });
+
+    // Read-only operator insights (apps/api/src/jobs/insights.ts): database access only (every read runs in a
+    // read-only transaction); no models, documents or queue. Its only invoker is the ops-insights role.
+    this.insights = new PlatformFunction(this, 'Insights', {
+      ...functionDefaults,
+      functionName: NAMES.insightsFunction,
+      description: 'Foundry Ascent operator insights (read-only metadata and the sealed transcript export)',
+      entry: assets.handlers.insights,
+      memorySize: 1024,
+      timeout: Duration.minutes(INSIGHTS_TIMEOUT_MINUTES),
+      environment: environmentFor('insights'),
+    });
+    this.insights.role.addManagedPolicy(props.databaseAccessPolicy);
 
     // ---- Permissions -------------------------------------------------------------------------------------
     // Database and document access are managed policies owned by the Data stack (next to the resources
@@ -419,6 +435,7 @@ export class AppStack extends Stack {
     });
     this.api.node.addDependency(migrations);
     this.worker.node.addDependency(migrations);
+    this.insights.node.addDependency(migrations);
     acknowledge(
       migrateProvider.node.findChild('framework-onEvent'),
       {

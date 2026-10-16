@@ -20,7 +20,17 @@ export const NAMES = {
   auroraUser: 'foundry_admin',
   databaseName: 'foundry',
   githubDeployRole: 'FoundryAscent-GitHubDeploy',
+  /** Read-only operator insights (invoked only by the ops-insights workflow's role). */
+  insightsFunction: 'FoundryAscent-Insights',
+  /** GitHub OIDC role of the ops-insights workflow: invoke the insights function, read platform logs. */
+  opsInsightsRole: 'FoundryAscent-OpsInsights',
 } as const;
+
+/** The GitHub environment whose jobs may assume the ops-insights role (deployment branch: main only). */
+export const OPS_INSIGHTS_ENVIRONMENT = 'ops-insights';
+
+/** Insights function timeout: an Aurora resume (up to 2 minutes) plus the reads of one export part. */
+export const INSIGHTS_TIMEOUT_MINUTES = 5;
 
 /** Worker Lambda timeout; the jobs queue visibility timeout is 6x this (AWS guidance for SQS event sources). */
 export const WORKER_TIMEOUT_SECONDS = 120;

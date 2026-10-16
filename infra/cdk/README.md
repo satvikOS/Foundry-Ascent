@@ -30,6 +30,9 @@ Region `us-east-1`, account taken from the deploying credentials. Every IAM role
   lookup roles (`cdk-hnb659fds-<kind>-<account>-<region>`, never the execution role), read-only CloudFormation on
   `FoundryAscent-*` and `CDKToolkit`, `logs:FilterLogEvents`/`GetLogEvents` on `/aws/lambda/FoundryAscent*`,
   `ce:GetCostAndUsage`. Everything else happens through the CDK bootstrap roles.
+- Role `FoundryAscent-OpsInsights` (1 h sessions), trusted only by the `ops-insights` GitHub environment
+  (`…:environment:ops-insights`): `lambda:InvokeFunction` on `FoundryAscent-Insights` and `logs:FilterLogEvents`
+  on `/aws/lambda/FoundryAscent*`, nothing else ([platform insights](../../docs/runbooks/insights.md)).
 - Outputs: `GitHubDeployRoleArn`, `GitHubOidcProviderArn`.
 
 ### `FoundryAscent-Data` (termination protected)
@@ -71,6 +74,9 @@ Region `us-east-1`, account taken from the deploying credentials. Every IAM role
     `OWNER_ACCESS_CODE_PREFIX`/`HASH`, home tenant from `HOME_TENANT_*`), then backfills Titan embeddings
     bounded by 5 000 items / 5 min; a backfill failure (e.g. Bedrock throttling) only logs counts and never
     fails the deploy. Delete is a no-op; the physical id is always `foundry-ascent-schema`.
+  - `FoundryAscent-Insights` (`insights.ts`): 1024 MB, 5 min, invoked only by the ops-insights role. Database policy
+    only; every read runs in a read-only transaction; content leaves it only sealed to the operator's public key
+    ([platform insights](../../docs/runbooks/insights.md)).
   - Bedrock access follows the effective models (see [Models](#models)): `bedrock:InvokeModel` and
     `bedrock:InvokeModelWithResponseStream` (Converse and ConverseStream authorize through these) on the
     inference profiles in `us-east-1` (`…:inference-profile/us.amazon.nova-2-lite-v1:0` and

@@ -20,8 +20,8 @@ export const REPO_ROOT = resolve(INFRA_ROOT, '..', '..');
 
 export const STUB_ASSETS_ENV = 'FA_SYNTH_STUB_ASSETS';
 
-export type HandlerName = 'api' | 'worker' | 'migrate';
-export const HANDLER_NAMES: readonly HandlerName[] = ['api', 'worker', 'migrate'];
+export type HandlerName = 'api' | 'worker' | 'migrate' | 'insights';
+export const HANDLER_NAMES: readonly HandlerName[] = ['api', 'worker', 'migrate', 'insights'];
 
 export interface AppAssets {
   /** Absolute path of each Lambda entry file (TypeScript, bundled by esbuild). */

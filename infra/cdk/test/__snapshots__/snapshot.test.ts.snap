@@ -1215,6 +1215,171 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
       },
       "Type": "AWS::Lambda::Permission",
     },
+    "InsightsFunctionFB25D0AF": {
+      "DependsOn": [
+        "InsightsRoleDefaultPolicy0931640B",
+        "InsightsRoleAEC280F2",
+        "Migrations",
+      ],
+      "Properties": {
+        "Architectures": [
+          "arm64",
+        ],
+        "Code": {
+          "S3Bucket": {
+            "Fn::Sub": "cdk-hnb659fds-assets-\${AWS::AccountId}-us-east-1",
+          },
+          "S3Key": "<sha256>.zip",
+        },
+        "Description": "Foundry Ascent operator insights (read-only metadata and the sealed transcript export)",
+        "Environment": {
+          "Variables": {
+            "APP_ENV": "production",
+            "APP_VERSION": "test-sha",
+            "BEDROCK_REGION": "us-east-1",
+            "DB_CLUSTER_ARN": {
+              "Fn::Join": [
+                "",
+                [
+                  "arn:aws:rds:us-east-1:",
+                  {
+                    "Ref": "AWS::AccountId",
+                  },
+                  ":cluster:",
+                  {
+                    "Fn::GetStackOutput": {
+                      "OutputName": "PublishOutputRefAurora2CBAB212879C7DB1",
+                      "Region": "us-east-1",
+                      "StackName": "FoundryAscent-Data",
+                    },
+                  },
+                ],
+              ],
+            },
+            "DB_DRIVER": "dataapi",
+            "DB_NAME": "foundry",
+            "DB_SECRET_ARN": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputRefAuroraSecretAttachmentEAAB0558CE8224A5",
+                "Region": "us-east-1",
+                "StackName": "FoundryAscent-Data",
+              },
+            },
+            "HOME_TENANT_SLUG": "ain",
+            "LOG_LEVEL": "info",
+            "MODEL_EMBEDDINGS_ID": "amazon.titan-embed-text-v2:0",
+            "MODEL_FALLBACK_ID": "global.amazon.nova-2-lite-v1:0",
+            "MODEL_PRIMARY_ID": "us.amazon.nova-2-lite-v1:0",
+            "MODEL_PROVIDER": "bedrock",
+            "NODE_OPTIONS": "--enable-source-maps",
+          },
+        },
+        "FunctionName": "FoundryAscent-Insights",
+        "Handler": "index.handler",
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "InsightsLogGroup6B1CDF37",
+          },
+        },
+        "MemorySize": 1024,
+        "RecursiveLoop": "Terminate",
+        "Role": {
+          "Fn::GetAtt": [
+            "InsightsRoleAEC280F2",
+            "Arn",
+          ],
+        },
+        "Runtime": "nodejs24.x",
+        "Timeout": 300,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "InsightsLogGroup6B1CDF37": {
+      "DeletionPolicy": "Delete",
+      "DependsOn": [
+        "Migrations",
+      ],
+      "Properties": {
+        "LogGroupName": "/aws/lambda/FoundryAscent-Insights",
+        "RetentionInDays": 30,
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "InsightsRoleAEC280F2": {
+      "DependsOn": [
+        "Migrations",
+      ],
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Description": "Execution role for FoundryAscent-Insights",
+        "ManagedPolicyArns": [
+          {
+            "Fn::GetStackOutput": {
+              "OutputName": "PublishOutputRefDatabaseAccessPolicy6F8810B6D4C131DB",
+              "Region": "us-east-1",
+              "StackName": "FoundryAscent-Data",
+            },
+          },
+        ],
+        "PermissionsBoundary": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:aws:iam::",
+              {
+                "Ref": "AWS::AccountId",
+              },
+              ":policy/FoundryAscent-Boundary",
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "InsightsRoleDefaultPolicy0931640B": {
+      "DependsOn": [
+        "Migrations",
+      ],
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "InsightsLogGroup6B1CDF37",
+                  "Arn",
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "InsightsRoleDefaultPolicy0931640B",
+        "Roles": [
+          {
+            "Ref": "InsightsRoleAEC280F2",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
     "JobsDlqAlarmD8B82FA4": {
       "Properties": {
         "AlarmActions": [
@@ -3719,6 +3884,96 @@ exports[`template snapshots > FoundryAscent-Foundation 1`] = `
         "Url": "https://token.actions.githubusercontent.com",
       },
       "Type": "AWS::IAM::OIDCProvider",
+    },
+    "OpsInsightsPolicy1F7DB93A": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "lambda:InvokeFunction",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:aws:lambda:us-east-1:",
+                    {
+                      "Ref": "AWS::AccountId",
+                    },
+                    ":function:FoundryAscent-Insights",
+                  ],
+                ],
+              },
+              "Sid": "InvokeInsightsFunction",
+            },
+            {
+              "Action": "logs:FilterLogEvents",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:aws:logs:us-east-1:",
+                    {
+                      "Ref": "AWS::AccountId",
+                    },
+                    ":log-group:/aws/lambda/FoundryAscent*",
+                  ],
+                ],
+              },
+              "Sid": "ReadPlatformLambdaLogs",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "OpsInsightsPolicy1F7DB93A",
+        "Roles": [
+          {
+            "Ref": "OpsInsightsRole68C55D42",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "OpsInsightsRole68C55D42": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRoleWithWebIdentity",
+              "Condition": {
+                "StringEquals": {
+                  "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+                  "token.actions.githubusercontent.com:sub": "repo:satvikOS@228056784/Foundry-Ascent@1356439229:environment:ops-insights",
+                },
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "Federated": {
+                  "Ref": "GitHubOidcProvider7EBF861F",
+                },
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Description": "Read-only platform insights for satvikOS/Foundry-Ascent (OIDC; ops-insights environment only)",
+        "MaxSessionDuration": 3600,
+        "PermissionsBoundary": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:aws:iam::",
+              {
+                "Ref": "AWS::AccountId",
+              },
+              ":policy/FoundryAscent-Boundary",
+            ],
+          ],
+        },
+        "RoleName": "FoundryAscent-OpsInsights",
+      },
+      "Type": "AWS::IAM::Role",
     },
   },
   "Rules": {
