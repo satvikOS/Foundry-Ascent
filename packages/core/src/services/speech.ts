@@ -1,5 +1,5 @@
 import { CRISIS_SPOKEN_MESSAGE } from '@foundry/ai';
-import { SpeechRequest } from '@foundry/contracts';
+import { type PlatformSettingsView, SpeechRequest } from '@foundry/contracts';
 import { auditRepo, callsRepo, personasRepo, sessionsRepo, settingsRepo } from '@foundry/db';
 import { type z } from 'zod';
 
@@ -10,12 +10,13 @@ import { DomainError, fail, parseInput } from '../errors.js';
 import { requireId, type Kit, type RequestScope } from '../internal/kit.js';
 import { metered } from '../internal/metered.js';
 import { assertWithinSpendCaps } from '../orchestrator/guards.js';
+import { secondsUntilUtcMidnight } from '../orchestrator/sampling.js';
 import { verifySpeechUnit } from '../orchestrator/speech-units.js';
 import { SpeechSynthesisError, type SynthesizedSpeech } from '../ports.js';
 import { refusalError, timeLimitRefusal } from './call-admission.js';
-import { CALL_LIMITS, callSecondsToday, callTimeLeft } from './call-usage.js';
+import { CALL_LIMITS, type CallCaps, callSecondsToday, callTimeLeft, speechBudget } from './call-usage.js';
 import { voiceApproved } from './calls.js';
-import { isCrisisMessage, speakableRun, speakableText } from './spoken-text.js';
+import { isCrisisMessage, speakableRunSpan, speakableText } from './spoken-text.js';
 import { DEFAULT_SPEECH_VOICE, speechCostUsd, speechEngines } from './voices.js';
 
 /**
@@ -28,13 +29,21 @@ import { DEFAULT_SPEECH_VOICE, speechCostUsd, speechEngines } from './voices.js'
  * Speech belongs to the caller's live call in that conversation and speaks with the call's voice. Every
  * synthesis is metered in the usage ledger (purpose `speech`, priced per character) and checked against the
  * kill switches, the platform's daily spend cap, the call's time limits, the persona's status and its voice
- * consent. The per-person AI cap leaves speech out: the call-minute caps (per call and per person per day)
- * bound it instead, so a call never ends early on a founder's chat budget.
+ * consent. The per-person AI cap leaves speech out, so a call never ends early on a founder's chat budget;
+ * speech is bounded by what calls can say instead, reserved atomically in the database before the speech
+ * service is called (`callsRepo.reserveCallSpeech`):
+ *  - the intro and each signed unit are synthesized once per call, a run of whole sentences of a stored reply
+ *    twice; a synthesis that fails gives its play back;
+ *  - a call synthesizes at most CALL_LIMITS.speechCharactersPerSecond characters per second it has lasted
+ *    (plus a headroom for the intro and a reply fetched ahead), never more than that rate over its time limit
+ *    (27,000 characters in a 30-minute call);
+ *  - a person's calls synthesize at most that rate over the daily minute cap in a UTC day.
  *
  * Crisis support is never refused for call or budget reasons: the turn engine answers a crisis on a call with
  * the fixed CRISIS_SPOKEN_MESSAGE (no model call) and marks the turn blocked. That message is spoken for the
- * turn's author for a few minutes after the turn, a few times, whatever the call, the switches and the spend
- * caps say, in the call's voice while it is approved and in the platform voice otherwise. It is still metered.
+ * turn's author for a few minutes after the turn, a few times (counted atomically), whatever the call, the
+ * switches and the spend caps say, in the call's voice while it is approved and in the platform voice
+ * otherwise. It is still metered.
  */
 export interface SpeechService {
   synthesize(
@@ -50,11 +59,50 @@ interface SpeechPlan {
   readonly voiceId: string;
   /** The words synthesized: the signed unit, or the stored words a request matched. */
   readonly text: string;
-  /** The daily spend caps to check; null for crisis support, which no cap stops. */
-  readonly settings: { dailyUsdCapGlobal: number; dailyUsdCapPerPrincipal: number } | null;
+  /** What the call speaks (its syntheses are counted per call). */
+  readonly unit: callsRepo.SpeechUnitKey;
+  /** The daily spend caps and the speech budget; null for crisis support, which no cap stops. */
+  readonly settings:
+    | (Pick<PlatformSettingsView, 'dailyUsdCapGlobal' | 'dailyUsdCapPerPrincipal'> &
+        Pick<CallCaps, 'dailyCallMinutesPerPrincipal'>)
+    | null;
   readonly objectType: 'turn' | 'call';
   readonly objectId: string;
   readonly crisis: boolean;
+}
+
+type SpeechRefusal = Exclude<callsRepo.SpeechReservation, { ok: true }>['reason'];
+
+function speechUnavailable(): DomainError {
+  return new DomainError(
+    'speech_unavailable',
+    'Spoken replies are not available on this server; the browser reads replies aloud instead.',
+    { reason: 'speech_not_configured' },
+  );
+}
+
+/** The refusal of a reservation (`now` dates a wait until the daily reset). */
+export function speechRefusal(reason: SpeechRefusal, crisis: boolean, now: Date): DomainError {
+  switch (reason) {
+    case 'call_not_active':
+      return fail.conflict('Speech is only available during a live call.', 'call_not_active');
+    case 'already_played':
+      return crisis
+        ? fail.conflict('This message was already played. It stays on screen.', 'crisis_speech_limit')
+        : fail.conflict('This was already spoken. It stays on screen.', 'speech_already_played');
+    case 'call_budget':
+      return new DomainError(
+        'rate_limited',
+        'The vEIR has spoken as much as this call allows for now. Its replies stay on screen.',
+        { reason: 'call_speech_limit', retryAfterSeconds: CALL_LIMITS.heartbeatSeconds },
+      );
+    case 'daily_budget':
+      return new DomainError(
+        'rate_limited',
+        'Spoken replies reached today’s limit. Replies stay on screen; speech resets at midnight UTC.',
+        { reason: 'daily_speech_limit', retryAfterSeconds: secondsUntilUtcMidnight(now) },
+      );
+  }
 }
 
 export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechService {
@@ -72,6 +120,84 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
     throw fail.validation('Only the vEIR’s validated words can be spoken', [
       { path: reason === 'signature_invalid' ? 'sig' : 'text', message: 'Not validated text of this call' },
     ]);
+  }
+
+  /**
+   * Reserves the synthesis of `plan` (`characters` long): a play of its unit and, outside crisis support, the
+   * characters within the call's and the person's speech budget. A refusal is audited and thrown. Where no
+   * speech service runs, a reservation that succeeded is rolled back with the 501 (the last check).
+   */
+  async function reserve(ctx: RequestContext, plan: SpeechPlan, characters: number): Promise<void> {
+    const refusal = await kit.system(async (sx): Promise<SpeechRefusal | null> => {
+      let refused: SpeechRefusal | null = null;
+      if (plan.settings === null) {
+        const plays = await callsRepo.reserveCrisisSpeech(sx, {
+          callId: plan.callId,
+          principalId: ctx.principalId,
+          turnId: plan.objectId,
+          characters,
+          maxPlays: CALL_LIMITS.crisisSpeechReplays,
+        });
+        if (plays === null) refused = 'already_played';
+      } else {
+        const reservation = await callsRepo.reserveCallSpeech(sx, {
+          callId: plan.callId,
+          principalId: ctx.principalId,
+          unit: plan.unit,
+          characters,
+          maxPlays: plan.unit.kind === 'run' ? CALL_LIMITS.speechRunPlays : CALL_LIMITS.speechUnitPlays,
+          budget: speechBudget(plan.settings),
+        });
+        if (!reservation.ok) refused = reservation.reason;
+      }
+      // Thrown inside the transaction, so nothing stays reserved for a synthesis that will not happen.
+      if (refused === null && kit.deps.speech === undefined) throw speechUnavailable();
+      return refused;
+    });
+    if (refusal === null) return;
+    const error = speechRefusal(refusal, plan.crisis, kit.now());
+    await kit.flushDeferred(ctx, [
+      {
+        action: 'speech.refused',
+        outcome: 'blocked',
+        ventureId: plan.ventureId,
+        objectType: plan.objectType,
+        objectId: plan.objectId,
+        policyReason: error.reason ?? error.code,
+        metadata: { callId: plan.callId },
+      },
+    ]);
+    throw error;
+  }
+
+  /**
+   * Settles a reservation: `characters` billed (the counters follow the bill), or null when synthesis failed
+   * (the play and the reserved characters are given back). Never throws.
+   */
+  async function settle(
+    ctx: RequestContext,
+    plan: SpeechPlan,
+    reserved: number,
+    characters: number | null,
+  ): Promise<void> {
+    try {
+      await kit.system(
+        (sx) =>
+          callsRepo.settleCallSpeech(sx, {
+            callId: plan.callId,
+            unit: plan.unit,
+            reservedCharacters: reserved,
+            characters,
+          }),
+        { transaction: false },
+      );
+    } catch (err) {
+      logger.error('speech.settle_failed', {
+        requestId: ctx.requestId,
+        callId: plan.callId,
+        error: err instanceof Error ? err.name : 'unknown',
+      });
+    }
   }
 
   /**
@@ -105,6 +231,7 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
       callId: turn.callId,
       voiceId,
       text: speakableText(CRISIS_SPOKEN_MESSAGE),
+      unit: { kind: 'crisis', turnId: turn.turnId },
       settings: null,
       objectType: 'turn',
       objectId: turn.turnId,
@@ -191,14 +318,17 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
         if (timeUp !== null) throw refusalError(timeUp, kit.now());
 
         let text = speakableText(input.text);
+        let unit: callsRepo.SpeechUnitKey =
+          turn === null ? { kind: 'intro' } : { kind: 'unit', turnId: turn.turnId, seq: input.seq ?? 0 };
         if (turn !== null) {
           if (!signed) {
             if (turn.status !== 'completed') {
               throw fail.conflict('Only a completed reply can be spoken', 'turn_not_completed');
             }
-            const stored = speakableRun(input.text, turn.spoken);
+            const stored = speakableRunSpan(input.text, turn.spoken);
             if (stored === null) refuseText(scope, session.ventureId, turnId, 'text_not_validated');
-            text = stored;
+            text = stored.text;
+            unit = { kind: 'run', turnId: turn.turnId, first: stored.first, last: stored.last };
           } else if (turn.status === 'blocked' || turn.status === 'failed') {
             // A unit passed the sentence gate, but the whole reply did not: it is never spoken again.
             throw fail.conflict('This reply can no longer be spoken.', 'turn_not_speakable');
@@ -210,6 +340,7 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
           callId: call.id,
           voiceId: call.voiceId,
           text,
+          unit,
           settings,
           objectType: turnId === null ? 'call' : 'turn',
           objectId: turnId ?? call.id,
@@ -219,31 +350,20 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
 
       // Every check runs before the 501 below: a valid request tells the client to speak the text itself.
       if (plan.settings !== null) {
-        // Speech is bounded by the call's minute caps and the platform's daily cap, not the per-person AI cap.
+        // The platform's daily cap counts speech; the per-person AI cap does not (the speech budget does).
         await assertWithinSpendCaps(kit, ctx, plan.settings, {
           ventureId: plan.ventureId,
           operation: 'speech',
           caps: 'global',
         });
-      } else {
-        const replays = await kit.system((sx) =>
-          callsRepo.countTurnSyntheses(sx, {
-            turnId: plan.objectId,
-            windowSeconds: CALL_LIMITS.crisisSpeechWindowSeconds,
-          }),
-        );
-        if (replays >= CALL_LIMITS.crisisSpeechReplays) {
-          throw fail.conflict('This message was already played. It stays on screen.', 'crisis_speech_limit');
-        }
       }
+      // The play and the characters are reserved before the speech service is called (one statement, so
+      // concurrent requests cannot replay a unit or overrun a budget). Where no speech service runs, the
+      // reservation is rolled back with the 501: it is the last check.
+      const reserved = plan.text.length;
+      await reserve(ctx, plan, reserved);
       const synthesizer = kit.deps.speech;
-      if (synthesizer === undefined) {
-        throw new DomainError(
-          'speech_unavailable',
-          'Spoken replies are not available on this server; the browser reads replies aloud instead.',
-          { reason: 'speech_not_configured' },
-        );
-      }
+      if (synthesizer === undefined) throw speechUnavailable();
 
       let speech: SynthesizedSpeech;
       try {
@@ -280,6 +400,8 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
           callId: plan.callId,
           error: err instanceof Error ? err.name : 'unknown',
         });
+        // Nothing was billed: the play and the characters go back, so the client may ask again.
+        await settle(ctx, plan, reserved, null);
         if (err instanceof SpeechSynthesisError || (err instanceof Error && err.name === 'AbortError')) {
           throw new DomainError(
             'model_unavailable',
@@ -294,12 +416,12 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
         throw err;
       }
 
-      // The call's speech counter and the audit (ids and counts only).
+      // The call's speech counter as billed, and the audit (ids and counts only).
+      await settle(ctx, plan, reserved, speech.characters);
       try {
         await kit.system(
-          async (sx) => {
-            await callsRepo.addSpeechCharacters(sx, { callId: plan.callId, characters: speech.characters });
-            await auditRepo.appendAudit(sx, {
+          (sx) =>
+            auditRepo.appendAudit(sx, {
               action: 'speech.synthesized',
               outcome: 'succeeded',
               tenantId: ctx.tenantId,
@@ -316,8 +438,7 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
                 voiceId: speech.voiceId,
                 signed,
               },
-            });
-          },
+            }),
           { transaction: false },
         );
       } catch (err) {

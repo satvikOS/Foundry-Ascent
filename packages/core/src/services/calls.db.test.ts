@@ -117,14 +117,23 @@ async function withSetting<T>(key: string, value: string, fn: () => Promise<T>):
 
 /** Moves a call back in time (owner role): started `minutes` ago, last heartbeat `beatMinutesAgo` ago. */
 async function backdate(callId: string, minutes: number, beatMinutesAgo: number | null): Promise<void> {
+  await backdateSeconds(callId, minutes * 60, beatMinutesAgo === null ? null : beatMinutesAgo * 60);
+}
+
+/** {@link backdate} in seconds. */
+async function backdateSeconds(
+  callId: string,
+  seconds: number,
+  beatSecondsAgo: number | null,
+): Promise<void> {
   await h.t.db.system(async (sx) => {
     await sx.query('ALTER TABLE calls DISABLE TRIGGER calls_guard');
     await sx.query(
-      `UPDATE calls SET started_at = now() - make_interval(mins => :m),
+      `UPDATE calls SET started_at = now() - make_interval(secs => :s),
               last_heartbeat_at = CASE WHEN :b::integer IS NULL THEN NULL
-                                       ELSE now() - make_interval(mins => :b::integer) END
+                                       ELSE now() - make_interval(secs => :b::integer) END
        WHERE id = :id`,
-      { id: p.uuid(callId), m: p.int(minutes), b: p.nullable.int(beatMinutesAgo) },
+      { id: p.uuid(callId), s: p.int(seconds), b: p.nullable.int(beatSecondsAgo) },
     );
     await sx.query('ALTER TABLE calls ENABLE TRIGGER calls_guard');
   });
@@ -153,6 +162,32 @@ async function transcribedSeconds(person: Person): Promise<number[]> {
     ),
   );
   return rows.rows.map((r) => Number(r.input_tokens));
+}
+
+/** A person's text-to-speech usage rows (Polly). */
+async function pollyRows(person: Person): Promise<number> {
+  const rows = await h.t.db.system((sx) =>
+    sx.query(
+      `SELECT count(*)::int AS n FROM usage_ledger
+       WHERE purpose = 'speech' AND model_id LIKE 'polly%' AND principal_id = :me`,
+      { me: p.uuid(h.people[person]) },
+    ),
+  );
+  return Number(rows.rows[0]?.n);
+}
+
+/** Settles every request at once: what was spoken, and the reasons of the refusals. */
+async function concurrently<T>(
+  count: number,
+  fn: () => Promise<T>,
+): Promise<{ fulfilled: number; reasons: (string | undefined)[] }> {
+  const settled = await Promise.allSettled(Array.from({ length: count }, fn));
+  return {
+    fulfilled: settled.filter((r) => r.status === 'fulfilled').length,
+    reasons: settled.flatMap((r) =>
+      r.status === 'rejected' ? [(r.reason as { reason?: string }).reason] : [],
+    ),
+  };
 }
 
 /** Runs `fn` while the person (and so the platform) is over today's AI spend caps. */
@@ -500,8 +535,9 @@ describe('heartbeats', () => {
     expect(await beat('priya', silent.id)).toMatchObject({ action: 'terminate', reason: 'timeout' });
     const reaped = await callRow(silent.id);
     expect(reaped.endDetail).toBe('stale_heartbeat');
-    // Charged until a little after the last heartbeat, not until now.
-    expect(reaped.elapsedSeconds).toBeLessThanOrEqual(4 * 60 + CALL_LIMITS.staleGraceSeconds + 1);
+    // Charged until the stale window after the last heartbeat (as long as it was usable), not until now.
+    expect(reaped.elapsedSeconds).toBeGreaterThanOrEqual(4 * 60 + CALL_LIMITS.staleSeconds - 1);
+    expect(reaped.elapsedSeconds).toBeLessThanOrEqual(4 * 60 + CALL_LIMITS.staleSeconds + 1);
     // A suspended vEIR ends the call.
     const { call: suspended } = await startCall('priya', sessionId);
     await h.t.db.system((sx) =>
@@ -550,6 +586,22 @@ describe('heartbeats', () => {
     await expect(h.core.calls.sttGrant(ctx.tomasz, mine.id)).rejects.toMatchObject({ code: 'not_found' });
     await endCall('priya', mine.id);
     expect(await auditActions()).toContain('call.terminated');
+  });
+
+  it('meter no more speech-to-text than the call has lasted, however fast or concurrently they come', async () => {
+    const sessionId = await newSession('ines', 'emberloop');
+    const { call } = await startCall('ines', sessionId);
+    const billed = async () => (await transcribedSeconds('ines')).reduce((a, b) => a + b, 0);
+    const before = await billed();
+    const claimDay = () =>
+      h.core.calls.heartbeat(ctx.ines, call.id, { state: 'listening', micOpenSeconds: 86_400 });
+    for (let i = 0; i < 40; i += 1) await claimDay();
+    await Promise.all(Array.from({ length: 8 }, claimDay));
+    const row = await callRow(call.id);
+    // Every second added is metered once, and the call has lasted a second or two: the platform cap is safe.
+    expect((await billed()) - before).toBe(row.micOpenSeconds);
+    expect(row.micOpenSeconds).toBeLessThanOrEqual(row.elapsedSeconds + 1 + callsRepo.MIC_SECONDS_SLACK);
+    await endCall('ines', call.id);
   });
 });
 
@@ -1006,6 +1058,125 @@ describe('speech', () => {
     await expect(say(SPOKEN)).rejects.toMatchObject({ code: 'conflict', reason: 'call_not_active' });
     expect(await auditActions()).toContain('speech.refused');
   });
+
+  it('speaks the intro and each signed unit once per call, however often or concurrently they are asked for', async () => {
+    const sessionId = await newSession('tomasz', 'benchtally');
+    const { call, intro } = await startCall('tomasz', sessionId);
+    if (intro === null) throw new Error('expected an intro');
+    const before = await pollyRows('tomasz');
+    const introUnit = { sessionId, turnId: null, seq: 0, text: intro.text, sig: intro.sig };
+    await h.core.speech.synthesize(ctx.tomasz, introUnit);
+    await expect(h.core.speech.synthesize(ctx.tomasz, introUnit)).rejects.toMatchObject({
+      code: 'conflict',
+      reason: 'speech_already_played',
+      status: 409,
+    });
+    // A unit of a reply, asked for twelve times at once: spoken (and billed) once.
+    const turn = await spokenTurn(sessionId, call.id);
+    const text = 'Start with the library that already counts seats.';
+    const sig = signSpeechUnit(await keys.signingKey(), { sessionId, turnId: turn.id, seq: 0, text });
+    const burst = await concurrently(12, () =>
+      h.core.speech.synthesize(ctx.tomasz, { sessionId, turnId: turn.id, seq: 0, text, sig }),
+    );
+    expect(burst.fulfilled).toBe(1);
+    expect(new Set(burst.reasons)).toEqual(new Set(['speech_already_played']));
+    expect((await pollyRows('tomasz')) - before).toBe(2);
+    expect((await callRow(call.id)).speechCharacters).toBe(speakableText(intro.text).length + text.length);
+    // A synthesis that failed can be asked for again: nothing was spoken or billed.
+    const next = signSpeechUnit(await keys.signingKey(), { sessionId, turnId: turn.id, seq: 1, text });
+    speech.failNext = true;
+    const failed = { sessionId, turnId: turn.id, seq: 1, text, sig: next };
+    await expect(h.core.speech.synthesize(ctx.tomasz, failed)).rejects.toMatchObject({
+      code: 'model_unavailable',
+    });
+    await h.core.speech.synthesize(ctx.tomasz, failed);
+    // A new call (a reload) has its own intro, spoken once again.
+    const again = await startCall('tomasz', sessionId);
+    if (again.intro === null) throw new Error('expected an intro');
+    const sameIntro = { ...introUnit, text: again.intro.text, sig: again.intro.sig };
+    await h.core.speech.synthesize(ctx.tomasz, sameIntro);
+    await expect(h.core.speech.synthesize(ctx.tomasz, sameIntro)).rejects.toMatchObject({
+      reason: 'speech_already_played',
+    });
+    await endCall('tomasz', again.call.id);
+  });
+
+  it('bounds what a call speaks by how long it has lasted, and what a person’s calls speak in a day', async () => {
+    const sentences = Array.from(
+      { length: 14 },
+      (_, i) =>
+        `In week ${String(i + 1)}, ask the staff of the second library for hourly seat counts and their busiest days.`,
+    );
+    const sessionId = await newSession('tomasz', 'benchtally');
+    const { call } = await startCall('tomasz', sessionId);
+    const turn = await talk('tomasz', sessionId, call.id, 'What should we ask the libraries?');
+    await h.t.db.system((sx) =>
+      sx.query(
+        `UPDATE turns SET response = jsonb_set(response, '{spoken}', to_jsonb(:s::text)) WHERE id = :id`,
+        { id: p.uuid(turn.id), s: p.text(sentences.join(' ')) },
+      ),
+    );
+    const say = (text: string) => h.core.speech.synthesize(ctx.tomasz, { sessionId, turnId: turn.id, text });
+    // Unsigned, the same stored words twice (once, and once more on request), then no more.
+    const [first = ''] = sentences;
+    await say(first);
+    await say(first);
+    await expect(say(first)).rejects.toMatchObject({ code: 'conflict', reason: 'speech_already_played' });
+    // Other runs of the reply, until the call has said all it may this soon after it started.
+    const runs: string[] = [];
+    for (let start = 1; start < sentences.length; start += 1) {
+      for (let end = start; end < sentences.length; end += 1)
+        runs.push(sentences.slice(start, end + 1).join(' '));
+    }
+    let refusal: unknown = null;
+    let refused = '';
+    for (const run of runs) {
+      try {
+        await say(run);
+      } catch (err) {
+        refusal = err;
+        refused = run;
+        break;
+      }
+    }
+    expect(refusal).toMatchObject({ code: 'rate_limited', reason: 'call_speech_limit', status: 429 });
+    const row = await callRow(call.id);
+    expect(row.speechCharacters).toBeLessThanOrEqual(
+      CALL_LIMITS.speechHeadroomCharacters + CALL_LIMITS.speechCharactersPerSecond * (row.elapsedSeconds + 1),
+    );
+    // Refused because it would not fit, not before.
+    expect(row.speechCharacters + refused.length).toBeGreaterThan(CALL_LIMITS.speechHeadroomCharacters);
+    // A minute later the call may say another minute's worth.
+    await backdateSeconds(call.id, 60, 0);
+    await say(sentences.slice(2, 5).join(' '));
+
+    // The person's calls of the day share one budget: the rate over the daily minute cap.
+    const dailyCap = await h.t.db.system(async (sx) => {
+      const r = await sx.query(
+        `SELECT value::text AS v FROM platform_settings WHERE key = 'daily_call_minutes_per_principal'`,
+      );
+      return Number(r.rows[0]?.v ?? 60);
+    });
+    const daily = CALL_LIMITS.speechCharactersPerSecond * dailyCap * 60;
+    const ended = await startCall('tomasz', sessionId, 'typed');
+    await endCall('tomasz', ended.call.id);
+    const fresh = await startCall('tomasz', sessionId, 'typed');
+    await h.t.db.system((sx) =>
+      sx.query('UPDATE calls SET speech_characters = :n WHERE id = :id', {
+        id: p.uuid(ended.call.id),
+        n: p.int(daily),
+      }),
+    );
+    const freshTurn = await spokenTurn(sessionId, fresh.call.id);
+    await expect(
+      h.core.speech.synthesize(ctx.tomasz, { sessionId, turnId: freshTurn.id, text: SPOKEN }),
+    ).rejects.toMatchObject({ code: 'rate_limited', reason: 'daily_speech_limit' });
+    await h.t.db.system((sx) =>
+      sx.query('UPDATE calls SET speech_characters = 0 WHERE id = :id', { id: p.uuid(ended.call.id) }),
+    );
+    await h.core.speech.synthesize(ctx.tomasz, { sessionId, turnId: freshTurn.id, text: SPOKEN });
+    await endCall('tomasz', fresh.call.id);
+  });
 });
 
 describe('crisis support on a call', () => {
@@ -1106,6 +1277,34 @@ describe('crisis support on a call', () => {
       await voiceConsent('solesignal', false);
     }
     await endCall('amara', call.id);
+  });
+
+  it('plays the support message at most five times, however many requests come at once', async () => {
+    const sessionId = await newSession('priya', 'benchtally');
+    const { call } = await startCall('priya', sessionId);
+    const blocked = (await send('priya', sessionId, call.id, CRISIS)).at(-1);
+    if (blocked?.event !== 'turn.blocked') throw new Error('expected the crisis path');
+    const turnId = blocked.turnId;
+    // Synthesis takes a while, as it does for real: every request is in flight before any finishes.
+    speech.delayMs = 100;
+    try {
+      const burst = await concurrently(20, () =>
+        h.core.speech.synthesize(ctx.priya, { sessionId, turnId, text: CRISIS_SPOKEN_MESSAGE }),
+      );
+      expect(burst.fulfilled).toBe(CALL_LIMITS.crisisSpeechReplays);
+      expect(new Set(burst.reasons)).toEqual(new Set(['crisis_speech_limit']));
+    } finally {
+      speech.delayMs = 0;
+    }
+    const syntheses = await h.t.db.system((sx) =>
+      sx.query(
+        `SELECT count(*)::int AS n FROM audit_events
+         WHERE action = 'speech.synthesized' AND object_id = :t AND policy_reason = 'crisis_support'`,
+        { t: p.text(turnId) },
+      ),
+    );
+    expect(syntheses.rows[0]).toEqual({ n: CALL_LIMITS.crisisSpeechReplays });
+    await endCall('priya', call.id);
   });
 });
 
@@ -1309,6 +1508,153 @@ describe('the turn engine and the calls service together', () => {
     }
   });
 
+  it('keeps a spoken turn the founder interrupted before it settled, and replays what they heard of it', async () => {
+    const sentences = [
+      'Start with the library that already counts seats.',
+      'Ask the staff for two weeks of hourly counts.',
+      'Compare those counts with your own tally.',
+      'Then book a call with the head librarian.',
+      'Bring the comparison to that call.',
+      'Which librarian can you reach first?',
+    ];
+    const seen: (readonly ChatMessage[])[] = [];
+    const gateway = new MockModelGateway({
+      streamDelayMs: 30,
+      streamFixture: (context) => {
+        seen.push(context.messages);
+        return sentences.join(' ');
+      },
+    });
+    const core = createCore({
+      db: h.t.db,
+      gateway,
+      config: h.config,
+      objectStore: h.objectStore,
+      jobQueue: h.jobQueue,
+      logger: h.logger,
+    });
+    const stored = (turnId: string) =>
+      h.t.db.system(async (sx) => {
+        const r = await sx.query(
+          `SELECT status, founder_text, response ->> 'answer' AS answer,
+                  coalesce((validator_results -> 'notes') @> '["interrupted"]'::jsonb, false) AS interrupted
+           FROM turns WHERE id = :id`,
+          { id: p.uuid(turnId) },
+        );
+        return r.rows[0];
+      });
+    /** A spoken turn whose request is cancelled (the client's barge-in) when `cut` says so. */
+    const interrupted = async (
+      sessionId: string,
+      callId: string,
+      text: string,
+      cut: (event: TurnStreamEvent, events: readonly TurnStreamEvent[]) => boolean,
+      channel: 'voice' | 'text' = 'voice',
+    ) => {
+      const barge = new AbortController();
+      const events: TurnStreamEvent[] = [];
+      let unitsAtCut = 0;
+      const outcome = await core.orchestrator.runTurn(
+        ctx.devin,
+        sessionId,
+        { text, channel, ...(channel === 'voice' ? { callId } : {}) },
+        (e) => {
+          const event = TurnStreamEvent.parse(e);
+          events.push(event);
+          if (!barge.signal.aborted && cut(event, events)) {
+            barge.abort();
+            unitsAtCut = unitsOf(events).length;
+          }
+        },
+        { signal: barge.signal },
+      );
+      // Nothing more is said once the founder spoke over the vEIR.
+      expect(unitsOf(events)).toHaveLength(unitsAtCut);
+      return { outcome, events, units: unitsOf(events) };
+    };
+    const sessionId = (await core.sessions.create(ctx.devin, ventureId('quietquad'), {})).id;
+    const { call } = await core.calls.start(ctx.devin, sessionId, { inputMode: 'typed' });
+    try {
+      // The founder speaks over the first unit while the reply is still streaming.
+      const early = await interrupted(
+        sessionId,
+        call.id,
+        'Which library should we approach first?',
+        (e) => e.event === 'turn.speech',
+      );
+      expect(early.outcome.status).toBe('completed');
+      const earlyId = early.outcome.turnId ?? '';
+      const [heard] = early.units;
+      if (heard === undefined) throw new Error('expected a unit');
+      expect(await stored(earlyId)).toMatchObject({
+        status: 'completed',
+        founder_text: 'Which library should we approach first?',
+        interrupted: true,
+      });
+      // The client records what was heard, as calls.md prescribes (stop audio, abort, interrupt).
+      await core.calls.interrupt(ctx.devin, earlyId, {
+        callId: call.id,
+        heardSeq: 0,
+        heard: [{ seq: heard.seq, text: heard.text, sig: heard.sig }],
+      });
+
+      // … and over the last unit, once the reply was written but before its annotations.
+      const late = await interrupted(
+        sessionId,
+        call.id,
+        'And after the counts?',
+        (_e, events) => events.filter((x) => x.event === 'turn.delta').length === sentences.length,
+      );
+      expect(late.outcome.status).toBe('completed');
+      expect(await stored(late.outcome.turnId ?? '')).toMatchObject({
+        status: 'completed',
+        answer: sentences.join(' '),
+        interrupted: true,
+      });
+
+      // The next reply's model call sees both questions, and of the first reply only what was heard.
+      seen.length = 0;
+      const next = await core.orchestrator.runTurn(
+        ctx.devin,
+        sessionId,
+        { text: 'So what do we do on Monday?', channel: 'voice', callId: call.id },
+        () => undefined,
+      );
+      expect(next.status).toBe('completed');
+      const history = seen[0];
+      if (history === undefined) throw new Error('expected the answer call');
+      const asked = history.map((m) => m.content).join('\n');
+      expect(asked).toContain('Which library should we approach first?');
+      expect(asked).toContain('And after the counts?');
+      const { opener } = (await core.sessions.get(ctx.devin, sessionId)).session;
+      expect(history.filter((m) => m.role === 'assistant').map((m) => m.content)).toEqual([
+        ...(opener === null ? [] : [opener]),
+        speakableText(heard.text),
+        sentences.join(' '),
+      ]);
+
+      // Cancelled before a word was spoken, or a typed message cancelled: the turn failed, as before.
+      const silent = await interrupted(
+        sessionId,
+        call.id,
+        'Wait, one more thing first.',
+        (e) => e.event === 'turn.delta',
+      );
+      expect(silent.units).toHaveLength(0);
+      expect(silent.outcome.status).toBe('failed');
+      const typed = await interrupted(
+        sessionId,
+        call.id,
+        'Never mind that.',
+        (e) => e.event === 'turn.delta',
+        'text',
+      );
+      expect(typed.outcome.status).toBe('failed');
+    } finally {
+      await core.calls.end(ctx.devin, call.id, { reason: 'user' });
+    }
+  });
+
   it('plays the crisis support unit the turn engine streamed, whatever the switches and budgets', async () => {
     const sessionId = await newSession('maya', 'quietquad');
     const { call } = await startCall('maya', sessionId, 'typed');
@@ -1396,7 +1742,7 @@ describe('the turn engine and the calls service together', () => {
       h.t.db.system((sx) =>
         callsRepo.callSecondsToday(sx, {
           principalId: h.people.devin,
-          graceSeconds: CALL_LIMITS.staleGraceSeconds,
+          graceSeconds: CALL_LIMITS.staleSeconds,
         }),
       );
     const before = await minutes();
@@ -1409,6 +1755,43 @@ describe('the turn engine and the calls service together', () => {
     });
     expect(await minutes()).toBe(before);
     expect(await auditActions()).toContain('maintenance.stale_calls');
+  });
+
+  it('charges every second a call could be used, so a client that never heartbeats gets no extra minutes', async () => {
+    const sessionId = await newSession('amara', 'solesignal');
+    const minutes = () =>
+      h.t.db.system((sx) =>
+        callsRepo.callSecondsToday(sx, {
+          principalId: h.people.amara,
+          graceSeconds: CALL_LIMITS.staleSeconds,
+        }),
+      );
+    const admit = (callId: string) =>
+      kit.inRequest(ctx.amara, (scope) => admitVoiceTurn(scope, { sessionId, callId, now: new Date() }));
+    // Never a heartbeat: a minute after the start the call still takes spoken turns …
+    const { call } = await startCall('amara', sessionId, 'typed');
+    await backdateSeconds(call.id, CALL_LIMITS.staleSeconds, null);
+    await admit(call.id);
+    // … and a second later it is over: closed at the next start, charged the whole minute it was usable.
+    await backdateSeconds(call.id, CALL_LIMITS.staleSeconds + 1, null);
+    const next = await startCall('amara', sessionId, 'typed');
+    expect(await callRow(call.id)).toMatchObject({
+      status: 'ended',
+      endDetail: 'stale_heartbeat',
+      elapsedSeconds: CALL_LIMITS.staleSeconds,
+    });
+    await endCall('amara', next.call.id);
+    // The same when daily maintenance closes it, and the minutes do not move when it does.
+    const reaped = await startCall('amara', sessionId, 'typed');
+    await backdateSeconds(reaped.call.id, 5 * 60, null);
+    const before = await minutes();
+    await h.core.maintenance.runDaily({ requestId: 'maintenance-unheartbeated-call' });
+    expect(await callRow(reaped.call.id)).toMatchObject({
+      status: 'ended',
+      endDetail: 'stale_heartbeat',
+      elapsedSeconds: CALL_LIMITS.staleSeconds,
+    });
+    expect(await minutes()).toBe(before);
   });
 });
 

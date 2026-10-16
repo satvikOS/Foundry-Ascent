@@ -329,9 +329,7 @@ export function createCallsService(
       callId: call.id,
       reason: cause === 'replaced' ? 'navigated' : STOP_REASON[cause],
       detail: cause,
-      ...(cause === 'stale_heartbeat'
-        ? { atLastHeartbeat: { graceSeconds: CALL_LIMITS.staleGraceSeconds } }
-        : {}),
+      ...(cause === 'stale_heartbeat' ? { atLastHeartbeat: { graceSeconds: CALL_LIMITS.staleSeconds } } : {}),
       ...(clientStats === undefined ? {} : { clientStats }),
     });
     if (ended === null) return (await callsRepo.getCall(scope.tx, call.id)) ?? call;

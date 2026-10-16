@@ -128,7 +128,8 @@ export class LunaProvider implements StructuredProvider {
   /**
    * Streams plain text (Chat Completions with `stream: true`, usage in the last chunk). A refusal or a
    * content filter ends the stream with a `ModelRefusalError`; any failure after text was delivered is
-   * marked `textDelivered`, and usage the stream never reported is estimated from the text.
+   * marked `textDelivered`. Usage the stream never reported (it ended early) is estimated once the request
+   * reached Mantle, with output at `maxOutputTokens` for the unseen reasoning (`estimatedStreamUsage`).
    */
   async streamText(request: ProviderStreamRequest): Promise<ProviderStreamResult> {
     const { deadline } = request;
@@ -137,13 +138,18 @@ export class LunaProvider implements StructuredProvider {
     let finish: string | null = null;
     let refused = false;
     let usage: { inputTokens: number; outputTokens: number } | null = null;
+    let opened = false;
+    const cancelledBeforeSend = deadline.aborted;
+    // Luna reasons before it writes and bills that reasoning as output (see estimatedStreamUsage).
     const attempt = (outcome: RawModelAttempt['outcome'], errorName: string | null): RawModelAttempt => ({
       provider: 'luna',
       modelId: this.modelId,
       kind: 'initial',
       outcome,
       latencyMs: Math.round(performance.now() - started),
-      usage: usage ?? estimatedStreamUsage(request, text),
+      usage:
+        usage ??
+        estimatedStreamUsage(request, text, { outcome, opened, cancelledBeforeSend, reasoning: true }),
       errorName,
     });
     const params: StreamParams = {
@@ -163,6 +169,7 @@ export class LunaProvider implements StructuredProvider {
         timeout: Math.max(1, deadline.remainingMs()),
         maxRetries: 0,
       });
+      opened = true;
       for await (const chunk of stream) {
         if (chunk.usage) {
           usage = { inputTokens: chunk.usage.prompt_tokens, outputTokens: chunk.usage.completion_tokens };
@@ -176,6 +183,11 @@ export class LunaProvider implements StructuredProvider {
           text += content;
           await request.onText(content);
         }
+      }
+      // The SDK ends a stream quietly when its request is aborted: a stream cut off by the deadline or the
+      // caller before the model finished is a timeout or a cancellation, never a successful answer.
+      if (finish === null && deadline.aborted) {
+        throw Object.assign(new Error('The stream was aborted'), { name: 'AbortError' });
       }
     } catch (error) {
       const mapped = mapOpenAIError(error, deadline, this.modelId);

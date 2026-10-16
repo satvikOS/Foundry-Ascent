@@ -210,7 +210,10 @@ export function endCall(ex: SqlExecutor, input: EndCallInput): Promise<CallRecor
   );
 }
 
-/** Seconds a client may report beyond the wall time since its previous heartbeat (clock and rounding drift). */
+/**
+ * Seconds a call's microphone total may exceed the call's own wall time (client clock and rounding drift).
+ * Granted once per call, never per heartbeat: heartbeats sent faster add nothing beyond the wall time.
+ */
 export const MIC_SECONDS_SLACK = 5;
 
 export interface Heartbeat {
@@ -221,9 +224,10 @@ export interface Heartbeat {
 
 /**
  * Records a heartbeat of a live call with the client's running total of microphone seconds. The total only
- * grows, and never by more than the wall time since the previous heartbeat (plus a little slack), whatever the
- * client reports; concurrent heartbeats are serialised so each second is added once. Null when the call is not
- * live or not the caller's.
+ * grows, never by more than the wall time since the previous heartbeat, and never beyond the wall time since
+ * the call started (plus {@link MIC_SECONDS_SLACK}, once per call), whatever the client reports and however
+ * often it beats, by the database clock. Concurrent heartbeats are serialised so each second is added once.
+ * Null when the call is not live or not the caller's.
  */
 export function recordHeartbeat(
   ex: SqlExecutor,
@@ -233,11 +237,13 @@ export function recordHeartbeat(
     ex,
     `WITH prev AS (
        SELECT x.id, x.mic_open_seconds AS before,
-              ceil(extract(epoch FROM now() - coalesce(x.last_heartbeat_at, x.started_at)))::integer AS gap
+              ceil(extract(epoch FROM now() - coalesce(x.last_heartbeat_at, x.started_at)))::integer AS gap,
+              ceil(extract(epoch FROM now() - x.started_at))::integer AS lasted
        FROM calls x WHERE x.id = :id AND x.status = 'live' FOR UPDATE)
      UPDATE calls AS c SET last_heartbeat_at = now(), last_state = :state,
                            mic_open_seconds = least(86400, greatest(c.mic_open_seconds,
-                                                                    least(:mic, prev.before + prev.gap + :slack)))
+                                                                    least(:mic, prev.before + prev.gap,
+                                                                          prev.lasted + :slack)))
      FROM prev WHERE c.id = prev.id
      RETURNING ${COLUMNS}, (c.mic_open_seconds - prev.before)::integer AS mic_added`,
     {
@@ -523,17 +529,211 @@ export function getSpokenTurn(ex: SqlExecutor, turnId: string): Promise<SpokenTu
   );
 }
 
-/** Syntheses of a turn's words in the last `windowSeconds` (from the audit trail; owner role). */
-export function countTurnSyntheses(
+/**
+ * What a call speaks, as `call_speech` keys it (identifiers only): the intro, a signed unit of a reply, a run
+ * of whole sentences of a stored reply (sentence indices, first to last), or a crisis turn's support message.
+ */
+export type SpeechUnitKey =
+  | { readonly kind: 'intro' }
+  | { readonly kind: 'unit'; readonly turnId: string; readonly seq: number }
+  | { readonly kind: 'run'; readonly turnId: string; readonly first: number; readonly last: number }
+  | { readonly kind: 'crisis'; readonly turnId: string };
+
+/** The `call_speech.unit` text of a key. */
+export function speechUnitKey(key: SpeechUnitKey): string {
+  switch (key.kind) {
+    case 'intro':
+      return 'intro';
+    case 'unit':
+      return `unit.${key.turnId.toLowerCase()}.${String(key.seq)}`;
+    case 'run':
+      return `run.${key.turnId.toLowerCase()}.${String(key.first)}.${String(key.last)}`;
+    case 'crisis':
+      return `crisis.${key.turnId.toLowerCase()}`;
+  }
+}
+
+/** How many characters a call, and a person's calls in a UTC day, may have synthesized. */
+export interface SpeechBudget {
+  /** Characters per second the call has lasted (and per second of its `max_seconds`, its ceiling). */
+  readonly charactersPerSecond: number;
+  /** Characters a call may synthesize before it has lasted long enough to pay for them. */
+  readonly headroomCharacters: number;
+  /** Characters the calls a person started today (UTC) may have synthesized together. */
+  readonly dailyCharacters: number;
+}
+
+export type SpeechReservation =
+  | { readonly ok: true; readonly plays: number }
+  | {
+      readonly ok: false;
+      /**
+       * `call_not_active`: not a live call of this person; `already_played`: the unit used its plays;
+       * `call_budget` / `daily_budget`: the characters would exceed the call's or the person's day's budget.
+       */
+      readonly reason: 'call_not_active' | 'already_played' | 'call_budget' | 'daily_budget';
+    };
+
+const TODAY_UTC = `date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`;
+
+/** The budget conditions of `reserveCallSpeech` on the call row `c` (whose own counter is current). */
+const CALL_BUDGET_OK = `c.speech_characters + :n
+       <= least(:rate * c.max_seconds, :headroom + :rate * floor(extract(epoch FROM now() - c.started_at))::integer)`;
+const DAY_BUDGET_OK = `c.speech_characters + :n
+       + (SELECT coalesce(sum(o.speech_characters), 0)::integer FROM calls o
+          WHERE o.started_by = c.started_by AND o.id <> c.id AND o.started_at >= ${TODAY_UTC}) <= :daily`;
+
+/**
+ * Reserves one synthesis of `unit` on the live call `callId` of `principalId`, before the speech service is
+ * called: one more play of the unit (at most `maxPlays` per call) and `characters` more on the call, within the
+ * call's budget (`headroomCharacters` + `charactersPerSecond` × the seconds it has lasted, and never more than
+ * `charactersPerSecond` × its `max_seconds`) and the person's budget for the day (`dailyCharacters` across the
+ * calls they started today, UTC). One statement: the call row is locked first, so concurrent requests are
+ * serialised and each sees the others' characters and plays (by the database clock). Owner role.
+ */
+export async function reserveCallSpeech(
   sx: SystemExecutor,
-  input: { readonly turnId: string; readonly windowSeconds: number },
+  input: {
+    readonly callId: string;
+    readonly principalId: string;
+    readonly unit: SpeechUnitKey;
+    readonly characters: number;
+    readonly maxPlays: number;
+    readonly budget: SpeechBudget;
+  },
+): Promise<SpeechReservation> {
+  const params = {
+    call: p.uuid(input.callId),
+    principal: p.uuid(input.principalId),
+    unit: p.text(speechUnitKey(input.unit)),
+    n: p.int(Math.max(0, Math.floor(input.characters))),
+    max: p.int(input.maxPlays),
+    rate: p.int(input.budget.charactersPerSecond),
+    headroom: p.int(input.budget.headroomCharacters),
+    daily: p.int(input.budget.dailyCharacters),
+  };
+  const reserved = await queryFirst(
+    sx,
+    `WITH me AS (
+       SELECT c.id FROM calls c
+       WHERE c.id = :call AND c.started_by = :principal AND c.status = 'live'
+         AND ${CALL_BUDGET_OK}
+         AND ${DAY_BUDGET_OK}
+       FOR UPDATE OF c),
+     play AS (
+       INSERT INTO call_speech AS s (call_id, unit, plays, characters)
+       SELECT me.id, :unit, 1, :n FROM me
+       ON CONFLICT (call_id, unit) DO UPDATE SET plays = s.plays + 1, characters = s.characters + EXCLUDED.characters
+         WHERE s.plays < :max
+       RETURNING s.call_id, s.plays),
+     counted AS (
+       UPDATE calls AS c SET speech_characters = c.speech_characters + :n FROM play
+       WHERE c.id = play.call_id RETURNING c.id)
+     SELECT play.plays FROM play, counted`,
+    params,
+    (r) => col.int.decode(r.plays, 'plays'),
+  );
+  if (reserved !== null) return { ok: true, plays: reserved };
+  // Refused: say why (read after the fact, for the message only).
+  const why = await queryFirst(
+    sx,
+    `SELECT (c.started_by = :principal AND c.status = 'live') AS live,
+            coalesce((SELECT s.plays FROM call_speech s WHERE s.call_id = c.id AND s.unit = :unit), 0) >= :max
+              AS played,
+            ${CALL_BUDGET_OK} AS call_ok
+     FROM calls c WHERE c.id = :call`,
+    params,
+    (r) => ({
+      live: col.bool.decode(r.live, 'live'),
+      played: col.bool.decode(r.played, 'played'),
+      callOk: col.bool.decode(r.call_ok, 'call_ok'),
+    }),
+  );
+  if (why?.live !== true) return { ok: false, reason: 'call_not_active' };
+  if (why.played) return { ok: false, reason: 'already_played' };
+  return { ok: false, reason: why.callOk ? 'daily_budget' : 'call_budget' };
+}
+
+/**
+ * Reserves one more play of a crisis turn's support message on the turn's call `callId` (live or not) of
+ * `principalId`, at most `maxPlays`, adding `characters` to the call's counter. No budget applies: support is
+ * never refused for call or budget reasons, only bounded in plays. Atomic (one statement). Owner role.
+ */
+export function reserveCrisisSpeech(
+  sx: SystemExecutor,
+  input: {
+    readonly callId: string;
+    readonly principalId: string;
+    readonly turnId: string;
+    readonly characters: number;
+    readonly maxPlays: number;
+  },
+): Promise<number | null> {
+  return queryFirst(
+    sx,
+    `WITH play AS (
+       INSERT INTO call_speech AS s (call_id, unit, plays, characters)
+       SELECT c.id, :unit, 1, :n FROM calls c WHERE c.id = :call AND c.started_by = :principal
+       ON CONFLICT (call_id, unit) DO UPDATE SET plays = s.plays + 1, characters = s.characters + EXCLUDED.characters
+         WHERE s.plays < :max
+       RETURNING s.call_id, s.plays),
+     counted AS (
+       UPDATE calls AS c SET speech_characters = c.speech_characters + :n FROM play
+       WHERE c.id = play.call_id RETURNING c.id)
+     SELECT play.plays FROM play, counted`,
+    {
+      call: p.uuid(input.callId),
+      principal: p.uuid(input.principalId),
+      unit: p.text(speechUnitKey({ kind: 'crisis', turnId: input.turnId })),
+      n: p.int(Math.max(0, Math.floor(input.characters))),
+      max: p.int(input.maxPlays),
+    },
+    (r) => col.int.decode(r.plays, 'plays'),
+  );
+}
+
+/**
+ * Settles a reservation once the speech service answered: `characters` is what it billed (the call's counter
+ * and the unit's are corrected by the difference), or null when synthesis failed (nothing billed): the play
+ * and the reserved characters are given back. Owner role.
+ */
+export async function settleCallSpeech(
+  sx: SystemExecutor,
+  input: {
+    readonly callId: string;
+    readonly unit: SpeechUnitKey;
+    readonly reservedCharacters: number;
+    readonly characters: number | null;
+  },
+): Promise<void> {
+  const delta = (input.characters ?? 0) - Math.max(0, Math.floor(input.reservedCharacters));
+  const giveBack = input.characters === null ? 1 : 0;
+  if (delta === 0 && giveBack === 0) return;
+  await sx.query(
+    `WITH play AS (
+       UPDATE call_speech AS s SET plays = greatest(0, s.plays - :back),
+                                   characters = greatest(0, s.characters + :delta)
+       WHERE s.call_id = :call AND s.unit = :unit RETURNING s.call_id)
+     UPDATE calls AS c SET speech_characters = greatest(0, c.speech_characters + :delta) FROM play
+     WHERE c.id = play.call_id`,
+    {
+      call: p.uuid(input.callId),
+      unit: p.text(speechUnitKey(input.unit)),
+      delta: p.int(Math.trunc(delta)),
+      back: p.int(giveBack),
+    },
+  );
+}
+
+/** Plays of a unit a call reserved so far (0 when none). */
+export function speechPlays(
+  ex: SqlExecutor | SystemExecutor,
+  input: { readonly callId: string; readonly unit: SpeechUnitKey },
 ): Promise<number> {
   return queryNumber(
-    sx,
-    `SELECT count(*) AS n FROM audit_events
-     WHERE action = 'speech.synthesized' AND at > now() - make_interval(secs => :window)
-       AND object_type = 'turn' AND object_id = :turn`,
-    { turn: p.text(input.turnId), window: p.int(input.windowSeconds) },
+    ex,
+    `SELECT coalesce((SELECT s.plays FROM call_speech s WHERE s.call_id = :call AND s.unit = :unit), 0) AS n`,
+    { call: p.uuid(input.callId), unit: p.text(speechUnitKey(input.unit)) },
   );
 }
 

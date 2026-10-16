@@ -3,8 +3,10 @@ import type { z } from 'zod';
 import type { Deadline } from './deadline.js';
 import { restoreOptionalNulls, type StrictJsonSchema } from './json-schema.js';
 import type {
+  AttemptOutcome,
   ChatMessage,
   ModelProviderName,
+  ModelUsage,
   RawModelAttempt,
   StreamStopReason,
   TextChunkHandler,
@@ -65,20 +67,50 @@ export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
+/** How a stream attempt whose usage the provider never reported ended (see {@link estimatedStreamUsage}). */
+export interface UnreportedStreamAttempt {
+  readonly outcome: AttemptOutcome;
+  /** The provider accepted the request: its stream opened (a response arrived), whatever happened next. */
+  readonly opened: boolean;
+  /** The request was never sent: the deadline or the caller had already cancelled it. */
+  readonly cancelledBeforeSend: boolean;
+  /**
+   * The model reasons before it writes, and the provider bills the hidden reasoning tokens as output (they
+   * never reach the stream, so only the request's output bound says how many there could have been).
+   */
+  readonly reasoning: boolean;
+}
+
 /**
- * Usage of a stream that ended before the provider reported it (cancelled or failed after text arrived):
- * the prompt was processed and the text generated, so both are billed. Estimated from character counts.
+ * Usage of a stream attempt that ended before the provider reported it (cancelled, timed out or failed),
+ * estimated so the spend caps stay conservative. Usage the provider did report is always used instead.
+ *
+ * The attempt is billed once the request reached the provider: its stream opened, text arrived, or it was
+ * cut off by our deadline or the caller (`timeout`, `aborted`) after it was sent, while the provider was
+ * working on it (a reasoning model can think for many seconds before its first visible word). Nothing is
+ * billed for a request the provider refused or never received: throttled, client or configuration errors,
+ * a network failure before the stream opened, or a request cancelled before it was sent.
+ *
+ * Input is estimated from the prompt's characters. Output is the visible text; for a reasoning model it is
+ * the request's `maxOutputTokens`, which bounds reasoning and visible output together: the most the attempt
+ * can have cost. Like the speech-to-text metering, this errs high rather than letting spend go unmetered.
  */
 export function estimatedStreamUsage(
-  request: Pick<ProviderStreamRequest, 'system' | 'messages'>,
+  request: Pick<ProviderStreamRequest, 'system' | 'messages' | 'maxOutputTokens'>,
   generated: string,
-): { inputTokens: number; outputTokens: number } {
-  if (generated === '') return { inputTokens: 0, outputTokens: 0 };
+  attempt: UnreportedStreamAttempt,
+): ModelUsage {
+  const reached =
+    attempt.opened ||
+    generated !== '' ||
+    (!attempt.cancelledBeforeSend && (attempt.outcome === 'aborted' || attempt.outcome === 'timeout'));
+  if (!reached) return { inputTokens: 0, outputTokens: 0 };
+  const visible = estimateTokens(generated);
   return {
     inputTokens:
       estimateTokens(request.system) +
       request.messages.reduce((acc, m) => acc + estimateTokens(m.content), 0),
-    outputTokens: estimateTokens(generated),
+    outputTokens: attempt.reasoning ? Math.max(visible, request.maxOutputTokens) : visible,
   };
 }
 

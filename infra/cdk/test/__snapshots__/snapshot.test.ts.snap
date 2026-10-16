@@ -1917,7 +1917,7 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
             "Ref": "AlarmTopicD01E77F9",
           },
         ],
-        "AlarmDescription": "More than 100000 characters synthesized by Amazon Polly in one hour (about USD 1.60 on the neural engine)",
+        "AlarmDescription": "More than 100000 characters synthesized by Amazon Polly in one hour (at most USD 3.00, at the generative price, the costliest engine a listed voice is billed on)",
         "AlarmName": "FoundryAscent-Speech-Characters",
         "ComparisonOperator": "GreaterThanThreshold",
         "Dimensions": [
@@ -1943,7 +1943,7 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
             "Ref": "AlarmTopicD01E77F9",
           },
         ],
-        "AlarmDescription": "More than 937500 characters synthesized by Amazon Polly in one day (USD 15.00 on the neural engine: the global daily AI cap speech is metered against)",
+        "AlarmDescription": "More than 500000 characters synthesized by Amazon Polly in one day (at most USD 15.00, at the generative price, the costliest engine a listed voice is billed on: the global daily AI cap speech is metered against)",
         "AlarmName": "FoundryAscent-Speech-Characters-Daily",
         "ComparisonOperator": "GreaterThanThreshold",
         "Dimensions": [
@@ -1957,7 +1957,7 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
         "Namespace": "AWS/Polly",
         "Period": 86400,
         "Statistic": "Sum",
-        "Threshold": 937500,
+        "Threshold": 500000,
         "TreatMissingData": "notBreaching",
       },
       "Type": "AWS::CloudWatch::Alarm",

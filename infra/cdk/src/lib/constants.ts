@@ -36,19 +36,31 @@ export function speechUsd(characters: number, engine: SpeechEngine): number {
 }
 
 /**
+ * Cost in USD of `characters` Polly characters at the costliest engine any listed voice can be billed on (the
+ * speech alarms' price: a persona may speak with a voice that lacks the deployment's engine).
+ */
+export function speechUsdAtMost(characters: number): number {
+  return (characters * SPEECH_VOICES.costliest.usdPerMillionCharacters) / 1_000_000;
+}
+
+/**
  * Amazon Polly characters in one hour above which the burst alarm fires: about USD 1.60 on the neural
- * engine (USD 3 generative). A call lasts at most 30 minutes, in which the vEIR can speak at most about
+ * engine, USD 3 at most (generative). A call lasts at most 30 minutes, in which the vEIR can speak at most about
  * 27,000 characters (15 a second without pause), so this takes several full calls in the same hour.
  */
 export const SPEECH_ALARM_CHARACTERS_PER_HOUR = 100_000;
 
 /**
  * Characters in one day above which the daily speech alarm fires: `dailyAlarmUsd` (the global daily AI
- * cap speech is metered against) at the engine's price. Speech alone reaching the whole cap means the
- * in-app metering did not hold, or the cap was raised without updating the alarm.
+ * cap speech is metered against) at the costliest engine any listed voice can be billed on (by default
+ * `SPEECH_VOICES.costliest`), so the alarm fires by then whatever voices personas chose. Speech alone reaching
+ * the whole cap means the in-app metering did not hold, or the cap was raised without updating the alarm.
  */
-export function speechAlarmCharactersPerDay(dailyAlarmUsd: number, engine: SpeechEngine): number {
-  return Math.floor((dailyAlarmUsd * 1_000_000) / SPEECH_VOICES.usdPerMillionCharacters[engine]);
+export function speechAlarmCharactersPerDay(
+  dailyAlarmUsd: number,
+  usdPerMillionCharacters: number = SPEECH_VOICES.costliest.usdPerMillionCharacters,
+): number {
+  return Math.floor((dailyAlarmUsd * 1_000_000) / usdPerMillionCharacters);
 }
 
 /** S3 key prefix that every venture document lives under (`tenants/{t}/ventures/{v}/documents/...`). */

@@ -1,8 +1,9 @@
 /**
  * The infra side of `packages/core/speech-voices.json`: the Amazon Polly voices the API speaks with and the
  * prices it meters speech at (packages/core `voices.ts` reads the same file). Validated at synth time, so a
- * deployment cannot choose an engine the platform voice lacks, and the speech alarms are priced exactly as the
- * API meters.
+ * deployment cannot choose an engine the platform voice lacks. A persona may speak with any listed voice, and a
+ * voice without the deployment's engine is synthesized (and billed) on one it has, so the speech alarms are
+ * priced at the costliest engine any listed voice can be billed on, not at the deployment's engine.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -24,6 +25,11 @@ export interface SpeechVoices {
   readonly usdPerMillionCharacters: Readonly<Record<SpeechEngine, number>>;
   /** Adult US-English voice id → the engines it has in us-east-1. */
   readonly voices: Readonly<Record<string, readonly string[]>>;
+  /**
+   * The costliest engine some listed voice can be billed on, and its price: whatever voices personas choose,
+   * Polly never bills more per character than this.
+   */
+  readonly costliest: { readonly engine: string; readonly usdPerMillionCharacters: number };
 }
 
 type Json = Record<string, unknown>;
@@ -65,7 +71,16 @@ export function parseSpeechVoices(raw: unknown): SpeechVoices {
     fail('$.platformVoice', 'must be one of $.voices');
   const missing = SPEECH_ENGINES.filter((engine) => !voices[platformVoice]?.includes(engine));
   if (missing.length > 0) fail('$.platformVoice', `has no ${missing.join(', ')} voice`);
-  return { platformVoice, usdPerMillionCharacters, voices };
+  let costliest: SpeechVoices['costliest'] | null = null;
+  for (const engine of new Set(Object.values(voices).flat())) {
+    const price = prices[engine];
+    if (typeof price !== 'number' || !(price > 0))
+      fail(`$.usdPerMillionCharacters.${engine}`, 'must be a positive number (a voice uses the engine)');
+    if (costliest === null || price > costliest.usdPerMillionCharacters)
+      costliest = { engine, usdPerMillionCharacters: price };
+  }
+  if (costliest === null) fail('$.voices', 'must list at least one voice');
+  return { platformVoice, usdPerMillionCharacters, voices, costliest };
 }
 
 export const SPEECH_VOICES: SpeechVoices = parseSpeechVoices(

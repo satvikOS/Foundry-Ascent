@@ -48,12 +48,12 @@ export function createMaintenanceService(
         });
         return ended;
       });
-      // Abandoned calls already count only to their last heartbeat + grace and never block a new call; this
-      // only closes them (the same window, so minutes do not move).
+      // Abandoned calls already count only to their last heartbeat + the stale window (as long as they were
+      // usable) and never block a new call; this only closes them (the same window, so minutes do not move).
       const staleCalls = await kit.system(async (sx) => {
         const count = await callsRepo.reapStaleCalls(sx, {
           staleSeconds: CALL_LIMITS.staleSeconds,
-          graceSeconds: CALL_LIMITS.staleGraceSeconds,
+          graceSeconds: CALL_LIMITS.staleSeconds,
         });
         await auditRepo.appendAudit(sx, {
           action: 'maintenance.stale_calls',
