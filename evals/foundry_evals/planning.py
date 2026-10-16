@@ -161,6 +161,7 @@ def build_cases(
     conversations: ConversationFile | None = None,
     ids: Sequence[str] = (),
     categories: Sequence[str] = (),
+    remembered: bool = True,
 ) -> list[CaseSpec]:
     cases: list[CaseSpec] = []
     if suite in ("scenarios", "all") and scenarios is not None:
@@ -168,7 +169,14 @@ def build_cases(
     if suite in ("redteam", "all") and redteam is not None:
         cases += [attack_case(a) for a in redteam.attacks]
     if suite in ("conversations", "all") and conversations is not None:
-        cases += [conversation_case(c) for c in conversations.conversations]
+        # Remembered (multi-session) conversations write to a venture's notebook and memory: in "all" they run
+        # only when a dedicated memory venture is given (``remembered``); "conversations" lists them either way,
+        # so a run without one reports them skipped rather than silently passing.
+        cases += [
+            conversation_case(c)
+            for c in conversations.conversations
+            if remembered or suite == "conversations" or c.kind != "multi_session"
+        ]
     if ids:
         wanted = set(ids)
         cases = [c for c in cases if c.id in wanted]

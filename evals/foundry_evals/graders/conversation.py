@@ -1,17 +1,30 @@
 """Conversation craft: does the vEIR talk like an exceptional human mentor across turns and sessions?
 
 Deterministic checks over what the founder saw and heard (answers, spoken replies, speech units, call intros),
-grounded in the conversation-craft doctrine (packages/ai/src/prompts/craft.ts) and the w4-human research brief:
+grounded in the conversation-craft doctrine (packages/ai/src/prompts/craft.ts), the w4-human research brief and
+production's transcripts (Oct 6-16: recall recited seeded notes, answers repeated each other, spoken replies
+stopped mid-thought, a mode name and claim lines leaked into a call transcript):
 
 =========================  =============================================================  ========
 Code                       What it catches                                                Severity
 =========================  =============================================================  ========
 recall_missing             "do you remember…?" answered without the last conversation's   high
                            topic (the owner's failure: the second call forgot the first)
-recall_invented            a past conversation claimed where the founder had none          high
+recall_invented            a past conversation claimed where the founder had none, or     high
+                           older notes / venture facts recited as "last time"
+recall_unanswered          a "do you remember…?" turn that got no reply (blocked)          high
+structured_leak            a mode name, field names or claim lines in what was shown or    high
+                           said (the reply ran past its end into the structured fields)
+identity_undisclosed       "are you a man or a woman?" answered without saying it is an AI high
 topic_not_resumed          "where were we?" answered without the parked thread             medium
+topic_unanswered           a "where were we?" turn that got no reply                       medium
+social_unanswered          a thanks / greeting / wrap-up turn that got no reply            medium
+identity_boilerplate       an identity question answered with the full legal disclosure    medium
+request_ignored            the request asked alongside an identity question not answered   medium
 repeated_opening           two sessions (or two consecutive replies) open the same way     medium
-stock_opener               a canned opener ("Great question", "Absolutely", …)              medium
+repeated_reply             a reply mostly repeats the one before it (4-word sequences)      medium
+repeated_question          the same question asked twice in a conversation (or the next)   medium
+stock_opener               a canned opener ("Great question", "I see", "I remember", …)     medium
 generic_praise             empty praise anywhere ("great question", "love that")           low
 stacked_questions          more than one question in a reply                               medium
 always_asks                every reply of a conversation (3+) ends with a question         low
@@ -19,9 +32,13 @@ social_turn_report         thanks / a wrap-up answered with next steps, claims o
                            memory proposal, or a wrap-up answered with a new question
 spoken_markup              Markdown, list markers, citation keys or URLs in speech         medium
 spoken_too_long            a spoken reply over 70 words                                    medium
+spoken_no_handback         a call reply that stops without handing the turn back           medium
+transcript_citation        evidence keys ([E2]) in a call's transcript                     medium
 =========================  =============================================================  ========
 
-Findings carry codes, locations and turn numbers only, never content.
+Expectations (``expect_any``, ``forbid_any``) match whole words or phrases, case-insensitively; a term ending in
+``*`` matches words that start with it ("pric*": price, pricing). Findings carry codes, locations and turn numbers
+only, never content.
 """
 
 from __future__ import annotations
@@ -32,12 +49,13 @@ from dataclasses import dataclass, field
 from itertools import pairwise
 
 from foundry_evals.graders.base import Finding, Severity
-from foundry_evals.models import TurnView
-from foundry_evals.text import normalize, sentences, words
+from foundry_evals.models import COACH_MODES, TurnView
+from foundry_evals.text import mentions_any, normalize, sentences, words
 
 GRADER = "conversation"
 
-#: Canned openers the doctrine forbids (lower-case, matched at the start of a reply).
+#: Canned openers the doctrine forbids (lower-case, matched as whole words at the start of a reply). Production
+#: opened 7 of 12 answers with "I see", "I hear", "I understand you're asking" or "I remember".
 STOCK_OPENERS: tuple[str, ...] = (
     "great question",
     "good question",
@@ -45,13 +63,21 @@ STOCK_OPENERS: tuple[str, ...] = (
     "absolutely",
     "certainly",
     "i hear you",
+    "i hear",
+    "i see",
+    "i understand you're asking",
+    "i understand you’re asking",
+    "i understand that",
+    "i understand your concern",
+    "i remember",
+    "it sounds like",
     "here's my honest read",
     "here’s my honest read",
     "as an ai",
     "thanks for sharing",
     "thank you for sharing",
-    "i understand your concern",
 )
+STOCK_OPENER = re.compile(r"^(?:" + "|".join(re.escape(s) for s in STOCK_OPENERS) + r")\b")
 GENERIC_PRAISE = re.compile(
     r"\b(?:great|excellent|fantastic|amazing|wonderful) (?:question|point|idea|thinking)\b|\blove (?:that|this)\b",
     re.IGNORECASE,
@@ -59,16 +85,42 @@ GENERIC_PRAISE = re.compile(
 SPOKEN_MARKUP = re.compile(
     r"(?:\*\*|__|^\s*#{1,6}\s|^\s*(?:[-*+•]|\d+[.)])\s+\S|\[\s*E\d+|https?://|`)", re.MULTILINE
 )
+CITATION_KEY = re.compile(r"\[\s*E\d+", re.IGNORECASE)
 SPOKEN_MAX_WORDS = 70
 #: Words that make an opening: a shared formula with new specifics ("Last time you planned to …") is not a
 #: repeat; the same greeting line is.
 OPENING_WORDS = 6
+#: A reply repeats the one before it when this share of its four-word sequences was already said there
+#: (production: 46% and 78% between consecutive answers of one call).
+REPEAT_SHARE = 0.4
+#: Replies shorter than this many four-word sequences are not compared (a short acknowledgement repeats safely).
+REPEAT_MIN_GRAMS = 8
 
 #: How a reply admits there is nothing from before (for "do you remember…?" with no history).
 NOTHING_BEFORE = re.compile(
     r"\b(?:first (?:conversation|time we|chat|call)|(?:don't|do not|can't|cannot) (?:have|see|find) "
     r"(?:anything|any notes?|a record)|nothing (?:from|yet|before)|haven't (?:talked|spoken) before)\b",
     re.IGNORECASE,
+)
+#: How a spoken reply hands the turn back without a question ("Tell me how that sits with you.").
+INVITATION = re.compile(
+    r"^(?:tell me|walk me through|your turn|go ahead|over to you|let me know|say more|talk me through|"
+    r"what do you think|keep going)\b",
+    re.IGNORECASE,
+)
+#: Says it is an AI ("I'm an AI", "an AI coach", "not a person").
+SAYS_AI = re.compile(r"\b(?:an? )?ai\b|\bnot a (?:person|human)\b|\bartificial intelligence\b", re.IGNORECASE)
+#: Lines that belong to the structured fields, not to a reply: a bare mode name, a field name with a value,
+#: a JSON key, a claim kind label, or a third-person note about the founder (the vEIR talks to "you").
+STRUCTURED_LINE = re.compile(
+    r"^\s*(?:"
+    r"(?:" + "|".join(COACH_MODES) + r")[.:]?\s*$"
+    r"|[-*•]?\s*(?:mode|claims|next_actions|memory_candidates|follow_up_questions|evidence_ids)\s*[:=]"
+    r"|[{\[]?\s*\"(?:mode|answer|claims|spoken|kind|evidence_ids)\"\s*:"
+    r"|[-*•]?\s*(?:fact|inference|hypothesis|recommendation)\s*[|(]"
+    r"|[-*•]?\s*the founder (?:has|is|wants|said|stated|mentioned|asked|plans|needs)\b"
+    r")",
+    re.IGNORECASE | re.MULTILINE,
 )
 
 
@@ -89,12 +141,23 @@ class ConversationReply:
     memory_candidates: int = 0
     check: str | None = None
     expect_any: tuple[str, ...] = ()
+    #: For ``recall``: terms of older notes or venture facts that must not be recited as "last time".
+    forbid_any: tuple[str, ...] = ()
     voice: bool = False
+    #: The labelled turn got no reply at all (blocked or failed): graded as such, never dropped.
+    unanswered: bool = False
+    #: The session's AI disclosure (for ``identity``: the reply should not recite it whole).
+    disclosure: str | None = None
 
     @property
     def heard(self) -> str:
         """Everything the founder read or heard of the reply."""
         return " ".join(t for t in (self.answer, self.spoken, self.speech) if t)
+
+    @property
+    def said(self) -> str | None:
+        """What a call said aloud (its speech units, else the spoken reply)."""
+        return self.speech or self.spoken
 
 
 @dataclass
@@ -115,10 +178,27 @@ def reply_of(
     speech: Sequence[str] = (),
     check: str | None = None,
     expect_any: Sequence[str] = (),
+    forbid_any: Sequence[str] = (),
     voice: bool = False,
+    disclosure: str | None = None,
 ) -> ConversationReply | None:
+    """The reply of a turn; for a labelled turn without one (blocked), an ``unanswered`` reply so the check
+    still counts (a dropped check would raise the score). None for an unlabelled turn without a reply."""
     if turn is None or turn.response is None:
-        return None
+        if check is None:
+            return None
+        return ConversationReply(
+            session=session,
+            turn=index,
+            case_turn=case_turn,
+            answer="",
+            check=check,
+            expect_any=tuple(expect_any),
+            forbid_any=tuple(forbid_any),
+            voice=voice,
+            unanswered=True,
+            disclosure=disclosure,
+        )
     r = turn.response
     return ConversationReply(
         session=session,
@@ -132,7 +212,9 @@ def reply_of(
         memory_candidates=len(r.memory_candidates),
         check=check,
         expect_any=tuple(expect_any),
+        forbid_any=tuple(forbid_any),
         voice=voice,
+        disclosure=disclosure,
     )
 
 
@@ -153,14 +235,38 @@ def question_count(text: str) -> int:
     return sum(1 for s in sentences(text) if s.rstrip("\"'”’)").endswith("?"))
 
 
+def questions_of(text: str) -> list[str]:
+    """The questions of a reply, normalised (for comparing them across replies)."""
+    return [
+        " ".join(words(s)) for s in sentences(text) if s.rstrip("\"'”’)").endswith("?") and len(words(s)) >= 3
+    ]
+
+
 def ends_with_question(text: str) -> bool:
     parts = sentences(text)
     return bool(parts) and parts[-1].rstrip("\"'”’)").endswith("?")
 
 
-def mentions_any(text: str, needles: Sequence[str]) -> bool:
-    hay = normalize(text)
-    return any(normalize(n) in hay for n in needles if n.strip())
+def hands_back(text: str) -> bool:
+    """Whether what was said ends by handing the turn back: a question, or an invitation to go on."""
+    parts = sentences(text)
+    if not parts:
+        return False
+    last = parts[-1].rstrip("\"'”’)")
+    return last.endswith("?") or bool(INVITATION.search(last))
+
+
+def four_grams(text: str) -> set[str]:
+    tokens = words(CITATION_KEY.sub(" ", text))
+    return {" ".join(tokens[i : i + 4]) for i in range(len(tokens) - 3)}
+
+
+def repeated_share(before: str, after: str) -> float | None:
+    """The share of ``after``'s four-word sequences already in ``before`` (None when ``after`` is short)."""
+    grams = four_grams(after)
+    if len(grams) < REPEAT_MIN_GRAMS:
+        return None
+    return len(grams & four_grams(before)) / len(grams)
 
 
 def _finding(code: str, severity: Severity, message: str, reply: ConversationReply, location: str) -> Finding:
@@ -170,9 +276,10 @@ def _finding(code: str, severity: Severity, message: str, reply: ConversationRep
 def grade_reply(reply: ConversationReply) -> list[Finding]:
     """The checks that apply to every reply on its own."""
     out: list[Finding] = []
+    if reply.unanswered:
+        return out
     first = normalize(reply.answer)
-    stock = next((s for s in STOCK_OPENERS if first.startswith(s)), None)
-    if stock is not None:
+    if STOCK_OPENER.search(first):
         out.append(_finding("stock_opener", Severity.MEDIUM, "canned opener", reply, "answer"))
     elif GENERIC_PRAISE.search(reply.answer):
         out.append(_finding("generic_praise", Severity.LOW, "generic praise", reply, "answer"))
@@ -186,6 +293,20 @@ def grade_reply(reply: ConversationReply) -> list[Finding]:
                 "answer",
             )
         )
+    for location, text in (("answer", reply.answer), ("spoken", reply.spoken), ("speech", reply.speech)):
+        # Speech is joined from units: a leaked line arrives as a sentence of its own.
+        pieces = [text] if location == "answer" else [text or "", *sentences(text or "")]
+        if text and any(STRUCTURED_LINE.search(piece) for piece in pieces):
+            out.append(
+                _finding(
+                    "structured_leak",
+                    Severity.HIGH,
+                    "a mode name, field or claim line in the reply",
+                    reply,
+                    location,
+                )
+            )
+            break
     if reply.check in ("social", "closing"):
         if reply.next_actions or reply.claims or reply.memory_candidates:
             out.append(
@@ -207,7 +328,48 @@ def grade_reply(reply: ConversationReply) -> list[Finding]:
                     "answer",
                 )
             )
+    if reply.check == "identity":
+        if not SAYS_AI.search(reply.heard):
+            out.append(
+                _finding(
+                    "identity_undisclosed",
+                    Severity.HIGH,
+                    "an identity question answered without saying it is an AI",
+                    reply,
+                    "answer",
+                )
+            )
+        if reply.disclosure and normalize(reply.disclosure) in normalize(reply.heard):
+            out.append(
+                _finding(
+                    "identity_boilerplate",
+                    Severity.MEDIUM,
+                    "an identity question answered with the full disclosure text",
+                    reply,
+                    "answer",
+                )
+            )
+        if reply.expect_any and not mentions_any(reply.heard, reply.expect_any):
+            out.append(
+                _finding(
+                    "request_ignored",
+                    Severity.MEDIUM,
+                    "the request asked alongside the identity question was not answered",
+                    reply,
+                    "answer",
+                )
+            )
     if reply.voice:
+        if CITATION_KEY.search(reply.answer):
+            out.append(
+                _finding(
+                    "transcript_citation",
+                    Severity.MEDIUM,
+                    "evidence keys in a call transcript",
+                    reply,
+                    "answer",
+                )
+            )
         for location, text in (("spoken", reply.spoken), ("speech", reply.speech)):
             if not text:
                 continue
@@ -223,7 +385,67 @@ def grade_reply(reply: ConversationReply) -> list[Finding]:
                         location,
                     )
                 )
+        said = reply.said
+        if said and reply.check not in ("social", "closing") and not hands_back(said):
+            out.append(
+                _finding(
+                    "spoken_no_handback",
+                    Severity.MEDIUM,
+                    "a call reply that stops without handing the turn back",
+                    reply,
+                    "speech" if reply.speech else "spoken",
+                )
+            )
     return out
+
+
+def _grade_recall(reply: ConversationReply, grade: ConversationGrade, *, history: bool) -> None:
+    grade.recall_checked += 1
+    if reply.unanswered:
+        grade.findings.append(
+            _finding(
+                "recall_unanswered", Severity.HIGH, "the recall question got no reply", reply, "response"
+            )
+        )
+        return
+    if not history:
+        if NOTHING_BEFORE.search(reply.heard):
+            grade.recall_passed += 1
+            return
+        grade.findings.append(
+            _finding(
+                "recall_invented",
+                Severity.HIGH,
+                "a past conversation was implied where there was none",
+                reply,
+                "answer",
+            )
+        )
+        return
+    if reply.forbid_any and mentions_any(reply.heard, reply.forbid_any):
+        # Production: older notes and venture facts recited as if they were the last conversation.
+        grade.findings.append(
+            _finding(
+                "recall_invented",
+                Severity.HIGH,
+                "older notes or venture facts recited as the last conversation",
+                reply,
+                "answer",
+            )
+        )
+        return
+    if mentions_any(reply.heard, reply.expect_any):
+        grade.recall_passed += 1
+        return
+    grade.findings.append(
+        _finding(
+            "recall_missing",
+            Severity.HIGH,
+            "the reply did not name what the last conversation was about",
+            reply,
+            "answer",
+        )
+    )
 
 
 def grade_conversation(
@@ -232,7 +454,7 @@ def grade_conversation(
     openings: Sequence[tuple[int, str]] = (),
     had_history: bool = True,
 ) -> ConversationGrade:
-    """Grades a whole case: every reply, then recall, topic return, openings and question habits.
+    """Grades a whole case: every reply, then recall, topic return, openings, repetition and question habits.
 
     ``openings`` are (session, text) of how each session opened (a call's intro, else its first reply).
     ``had_history`` is False when the founder had no earlier conversation: recall must then say so.
@@ -241,37 +463,20 @@ def grade_conversation(
     for reply in replies:
         grade.findings += grade_reply(reply)
         if reply.check == "recall":
-            grade.recall_checked += 1
-            ok = (
-                mentions_any(reply.heard, reply.expect_any)
-                if had_history or reply.session > 1
-                else bool(NOTHING_BEFORE.search(reply.heard))
-            )
-            if ok:
-                grade.recall_passed += 1
-            elif had_history or reply.session > 1:
-                grade.findings.append(
-                    _finding(
-                        "recall_missing",
-                        Severity.HIGH,
-                        "the reply did not name what the last conversation was about",
-                        reply,
-                        "answer",
-                    )
-                )
-            else:
-                grade.findings.append(
-                    _finding(
-                        "recall_invented",
-                        Severity.HIGH,
-                        "a past conversation was implied where there was none",
-                        reply,
-                        "answer",
-                    )
-                )
-        if reply.check == "topic_return":
+            _grade_recall(reply, grade, history=had_history or reply.session > 1)
+        elif reply.check == "topic_return":
             grade.resume_checked += 1
-            if mentions_any(reply.heard, reply.expect_any):
+            if reply.unanswered:
+                grade.findings.append(
+                    _finding(
+                        "topic_unanswered",
+                        Severity.MEDIUM,
+                        "the topic-return turn got no reply",
+                        reply,
+                        "response",
+                    )
+                )
+            elif mentions_any(reply.heard, reply.expect_any):
                 grade.resume_passed += 1
             else:
                 grade.findings.append(
@@ -283,6 +488,12 @@ def grade_conversation(
                         "answer",
                     )
                 )
+        elif reply.unanswered:
+            grade.findings.append(
+                _finding(
+                    "social_unanswered", Severity.MEDIUM, "a labelled turn got no reply", reply, "response"
+                )
+            )
 
     # Sessions never open alike.
     seen: dict[str, int] = {}
@@ -302,9 +513,28 @@ def grade_conversation(
             )
         seen.setdefault(head, session)
 
-    # Within a session: consecutive replies that open alike, and replies that always end with a question.
+    answered = [r for r in replies if not r.unanswered]
+    # A question is never asked twice, in this conversation or the next one.
+    asked: dict[str, int] = {}
+    for reply in answered:
+        for question in dict.fromkeys(questions_of(reply.answer)):
+            if question in asked:
+                grade.findings.append(
+                    _finding(
+                        "repeated_question",
+                        Severity.MEDIUM,
+                        f"a question already asked at turn {asked[question]}",
+                        reply,
+                        "answer",
+                    )
+                )
+            else:
+                asked[question] = reply.case_turn
+
+    # Within a session: consecutive replies that open alike or repeat each other, and replies that always end
+    # with a question.
     by_session: dict[int, list[ConversationReply]] = {}
-    for reply in replies:
+    for reply in answered:
         by_session.setdefault(reply.session, []).append(reply)
     for session, items in by_session.items():
         for before, after in pairwise(items):
@@ -315,6 +545,17 @@ def grade_conversation(
                         "repeated_opening",
                         Severity.MEDIUM,
                         f"two replies in session {session} open the same way",
+                        after,
+                        "answer",
+                    )
+                )
+            share = repeated_share(before.answer, after.answer)
+            if share is not None and share >= REPEAT_SHARE:
+                grade.findings.append(
+                    _finding(
+                        "repeated_reply",
+                        Severity.MEDIUM,
+                        f"{round(share * 100)}% of the reply repeats the one before it",
                         after,
                         "answer",
                     )

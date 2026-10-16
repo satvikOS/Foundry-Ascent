@@ -62,27 +62,26 @@ def test_full_run_mechanics(
     code, results, report = run(api, tmp_path, monkeypatch, "--max-turns", "500")
     assert code in (0, 1)
     statuses = {c["id"]: c["status"] for c in results["cases"]}
-    # 40 scenarios, 151 attacks (12 of them on a call, 13 spoken turns) and 10 conversations (28 turns, four
-    # sessions of them on a call).
+    # 40 scenarios, 151 attacks (12 of them on a call, 13 spoken turns) and the 10 private conversations (26
+    # turns, two of them on a call): without a memory venture, the 3 remembered conversations are left out.
     assert len(statuses) == 201
     assert not [i for i, s in statuses.items() if s in ("error", "skipped")]
-    assert results["run"]["turnsUsed"] == 234
+    assert results["run"]["turnsUsed"] == 232
     # Every voice case ran in a call that was started with typed input and ended.
     voice = [c for c in results["cases"] if c["group"] == "redteam:voice"]
     assert len(voice) == 12
-    assert len(api.calls) == 16
+    assert len(api.calls) == 14
     assert all(c["status"] == "ended" and c["input_mode"] == "typed" for c in api.calls.values())
     # Every scenario and attack turn pins its case's mode; conversations talk in auto mode, as the app does.
     turn_bodies = [
         json.loads(r.content) for r in api.requests if r.method == "POST" and r.url.path.endswith("/turns")
     ]
     assert turn_bodies
-    assert sum(1 for body in turn_bodies if "mode" not in body) == 28
+    assert sum(1 for body in turn_bodies if "mode" not in body) == 26
     assert all(body.get("mode") in get_args(CoachModeName) for body in turn_bodies if "mode" in body)
-    # Conversations that span sessions are remembered, then deleted; the others are private.
-    standard = [x for x in api.sessions.values() if x["privacy"] == "standard"]
-    assert len(standard) == 6
-    assert all(x["deleted"] for x in standard)
+    # Nothing is remembered: every conversation is private, and no notebook was edited.
+    assert all(x["privacy"] == "ephemeral" for x in api.sessions.values())
+    assert not [r for r in api.requests if r.url.path.endswith("/notebook") and r.method != "GET"]
     assert {p["status"] for p in results["probes"]} == {"passed"}
     # Setup resources were cleaned up and every session ended.
     assert not [

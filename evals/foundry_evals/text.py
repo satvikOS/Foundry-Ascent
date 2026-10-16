@@ -30,6 +30,22 @@ def words(text: str) -> list[str]:
     return WORD.findall(normalize(text))
 
 
+def term_pattern(term: str) -> re.Pattern[str]:
+    """A whole word or phrase of normalised text (spaces and hyphens interchangeable); a trailing ``*`` matches
+    a word prefix ("pric*": price, pricing). "round" never matches inside "around"."""
+    raw = normalize(term)
+    prefix = raw.endswith("*")
+    parts = [part for part in re.split(r"[\s-]+", raw.rstrip("*").strip()) if part]
+    body = r"[\s-]+".join(re.escape(part) for part in parts)
+    return re.compile(r"(?<![0-9a-z])" + body + (r"[0-9a-z'’-]*" if prefix else r"(?![0-9a-z])"))
+
+
+def mentions_any(text: str, terms: list[str] | tuple[str, ...]) -> bool:
+    """Whether ``text`` names any of ``terms`` as a whole word or phrase (see :func:`term_pattern`)."""
+    hay = normalize(text)
+    return any(term_pattern(t).search(hay) for t in terms if t.strip("* "))
+
+
 def shingle_hashes(text: str, size: int = SHINGLE_SIZE) -> set[str]:
     """Hashes of every run of ``size`` consecutive words. Only hashes are kept in memory or reports."""
     tokens = words(text)

@@ -31,10 +31,10 @@ CONVERSATIONS = load_conversations()
 class TestConversations:
     def test_size_ids_and_coverage(self) -> None:
         c = CONVERSATIONS.conversations
-        assert [x.id for x in c] == [f"CO-{i:03d}" for i in range(1, 11)]
-        assert Counter(x.kind for x in c) == {"multi_turn": 7, "multi_session": 3}
+        assert [x.id for x in c] == [f"CO-{i:03d}" for i in range(1, 14)]
+        assert Counter(x.kind for x in c) == {"multi_turn": 10, "multi_session": 3}
         checks = Counter(t.check for x in c for s in x.sessions for t in s.turns if t.check)
-        assert set(checks) == {"recall", "topic_return", "social", "closing"}
+        assert set(checks) == {"recall", "topic_return", "social", "closing", "identity"}
         # The owner's failure: a second call that must remember the first.
         first = c[0]
         assert [s.channel for s in first.sessions] == ["voice", "voice"]
@@ -48,7 +48,9 @@ class TestConversations:
                     "id": "CO-900",
                     "title": "bad",
                     "kind": "multi_turn",
-                    "sessions": [{"turns": [{"text": "Remember?", "check": "recall", "expect_any": ["x"]}]}],
+                    "sessions": [
+                        {"turns": [{"text": "Remember?", "check": "recall", "expect_any": ["pricing"]}]}
+                    ],
                 }
             )
 
@@ -69,6 +71,70 @@ class TestConversations:
                     "title": "bad",
                     "kind": "multi_session",
                     "sessions": [{"turns": [{"text": "Hi"}]}],
+                }
+            )
+
+    def test_remembered_cases_only_run_in_the_memory_venture_with_their_own_terms(self) -> None:
+        """Review findings: recall terms that seeded facts satisfy ("round" in "around", "labs" in the seed), and
+        remembered cases pinned to the shared seeded ventures."""
+        for x in CONVERSATIONS.conversations:
+            if x.kind == "multi_session":
+                assert x.venture is None
+                assert x.notes is not None
+                recall = next(t for s in x.sessions for t in s.turns if t.check == "recall")
+                assert recall.forbid_any
+
+        first = {"turns": [{"text": "How should we price per library?"}]}
+        recall = {
+            "text": "Do you remember?",
+            "check": "recall",
+            "expect_any": ["pric*"],
+            "forbid_any": ["advisor meeting"],
+        }
+
+        def case(**changes: object) -> dict[str, object]:
+            base: dict[str, object] = {
+                "id": "CO-910",
+                "title": "remembered",
+                "kind": "multi_session",
+                "notes": "Older notes: book the advisor meeting about the regulatory pathway.",
+                "sessions": [first, {"turns": [recall]}],
+            }
+            return base | changes
+
+        Conversation.model_validate(case())
+        with pytest.raises(ValueError, match="run in the dedicated memory venture"):
+            Conversation.model_validate(case(venture="quietquad"))
+        hello = {"turns": [{"text": "Hello there."}]}
+        with pytest.raises(ValueError, match="expected recall terms must come from the first session"):
+            Conversation.model_validate(case(sessions=[hello, {"turns": [recall]}]))
+        notes = "Older notes: pricing per library was the advisor meeting topic."
+        with pytest.raises(ValueError, match="an expected recall term is in the older notes"):
+            Conversation.model_validate(case(notes=notes))
+        unguarded = {"text": "Do you remember?", "check": "recall", "expect_any": ["pric*"]}
+        with pytest.raises(ValueError, match="notes need a recall turn that forbids"):
+            Conversation.model_validate(case(sessions=[first, {"turns": [unguarded]}]))
+        vague = {"text": "x", "check": "recall", "expect_any": ["pr"]}
+        with pytest.raises(ValueError, match="too short"):
+            Conversation.model_validate(case(sessions=[first, {"turns": [vague]}]))
+        with pytest.raises(ValueError, match="forbid_any is only for recall"):
+            Conversation.model_validate(
+                {
+                    "id": "CO-911",
+                    "title": "bad",
+                    "kind": "multi_turn",
+                    "sessions": [
+                        {"turns": [{"text": "Thanks", "check": "social", "forbid_any": ["advisor"]}]}
+                    ],
+                }
+            )
+        with pytest.raises(ValueError, match="identity needs expect_any"):
+            Conversation.model_validate(
+                {
+                    "id": "CO-912",
+                    "title": "bad",
+                    "kind": "multi_turn",
+                    "sessions": [{"turns": [{"text": "Are you a man or a woman?", "check": "identity"}]}],
                 }
             )
 

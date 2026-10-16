@@ -32,7 +32,7 @@ from foundry_evals.datasets import (
     load_redteam,
     load_scenarios,
 )
-from foundry_evals.environment import Environment, EnvironmentSetupError
+from foundry_evals.environment import SEED_VENTURE_SLUGS, Environment, EnvironmentSetupError
 from foundry_evals.graders.judge import JudgeNotAvailableError, load_judge
 from foundry_evals.planning import Budget, build_cases, plan_cases
 from foundry_evals.report import write_reports
@@ -42,6 +42,7 @@ from foundry_evals.runner import Runner, RunnerOptions
 EXIT_OK, EXIT_GATE_FAILED, EXIT_USAGE, EXIT_INFRA = 0, 1, 2, 3
 ACCESS_CODE_ENV = "FA_OWNER_ACCESS_CODE"
 BASE_URL_ENV = "FA_BASE_URL"
+MEMORY_VENTURE_ENV = "FA_EVALS_MEMORY_VENTURE"
 
 
 def _utc_now() -> dt.datetime:
@@ -99,6 +100,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument(
         "--category", action="append", default=[], metavar="NAME", help="run only these categories/groups"
+    )
+    run.add_argument(
+        "--memory-venture",
+        default=os.environ.get(MEMORY_VENTURE_ENV) or None,
+        metavar="KEY",
+        help=(
+            "key of a dedicated synthetic venture for the remembered (multi-session) conversations; they write to "
+            f"its vEIR notebook and memory, so never a seeded or shared venture (default: ${MEMORY_VENTURE_ENV}; "
+            "without one they are skipped)"
+        ),
     )
     run.add_argument("--skip-probes", action="store_true", help="do not run API authorization probes")
     run.add_argument(
@@ -189,9 +200,22 @@ def cmd_run(
     except DatasetError as exc:
         print(f"dataset error: {exc}", file=sys.stderr)
         return EXIT_USAGE
+    if args.memory_venture is not None and args.memory_venture in SEED_VENTURE_SLUGS:
+        print(
+            "--memory-venture must be a dedicated synthetic venture, never a seeded one: remembered conversations "
+            "write to its notebook and memory, and deleting them erases a notebook summary they contributed to",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
     budget = Budget(args.max_turns, args.max_cost_usd, args.est_cost_per_turn)
     cases = build_cases(
-        args.suite, scenarios, redteam, conversations=conversations, ids=args.case, categories=args.category
+        args.suite,
+        scenarios,
+        redteam,
+        conversations=conversations,
+        ids=args.case,
+        categories=args.category,
+        remembered=args.memory_venture is not None,
     )
     if not cases:
         print("no cases match the selection", file=sys.stderr)
@@ -280,6 +304,7 @@ def cmd_run(
                 max_cost_usd=args.max_cost_usd,
                 turn_rate_limit=args.turn_rate_limit,
                 max_wait_seconds=args.max_wait_seconds,
+                memory_venture=args.memory_venture,
             ),
             log=_log,
             sleep=sleep,

@@ -19,7 +19,7 @@ from pydantic import ValidationError
 
 from foundry_evals.client import ApiError, ApiUnreachableError, ContractError, FoundryClient, TurnOutcome
 from foundry_evals.datasets import ApiProbe, AttackSetup, encode_payload, render
-from foundry_evals.environment import Actor, Environment, VentureState
+from foundry_evals.environment import SEED_VENTURE_SLUGS, Actor, Environment, VentureState
 from foundry_evals.graders import grade_turn_safety
 from foundry_evals.graders.base import Finding, GradingContext, Severity
 from foundry_evals.graders.behaviours import TurnSignals, check_behaviours
@@ -74,6 +74,9 @@ class RunnerOptions:
     retry_failed_turns: bool = True
     #: Pause between the sessions of a multi-session conversation (the founder calling back a little later).
     session_gap_seconds: float = 2.0
+    #: Key of the dedicated synthetic venture where multi-session (remembered) conversations run; None skips them.
+    #: Never a seeded or shared venture: they write to its vEIR notebook and memory (see ``_run_conversation``).
+    memory_venture: str | None = None
 
 
 class Runner:
@@ -122,6 +125,17 @@ class Runner:
         return results
 
     def run_case(self, case: CaseSpec) -> CaseResult:
+        if case.conversation is not None and case.conversation.kind == "multi_session":
+            # Remembered sessions only ever run in the dedicated memory venture, never a seeded or shared one.
+            key = self.options.memory_venture
+            if key is None:
+                return _skipped(case, "needs_memory_venture")
+            if key in SEED_VENTURE_SLUGS:
+                return _skipped(case, "shared_venture_refused")
+            lab = self.env.venture_by_key(key)
+            if lab is None or not self.env.actors_for(lab.id):
+                return _skipped(case, "memory_venture_unavailable")
+            return self._run_conversation(case, lab, None)
         venture, note = self._venture_for(case)
         if venture is None:
             return _skipped(case, "no_actor_for_venture")
@@ -268,9 +282,12 @@ class Runner:
         return result
 
     def _run_conversation(self, case: CaseSpec, venture: VentureState, note: str | None) -> CaseResult:
-        """A conversation case: its sessions in order (standard sessions when it spans several, so the later
-        ones can remember the earlier), every reply graded for safety and then the whole case for conversation
-        craft. Every session it created is deleted at the end, which erases everything derived from it."""
+        """A conversation case: its sessions in order, every reply graded for safety and then the whole case for
+        conversation craft. A multi-turn case runs in a private session and writes nothing. A multi-session case
+        runs in standard (remembered) sessions of the dedicated memory venture so the later ones can remember the
+        earlier: it starts only when that venture's vEIR notebook is empty (nothing of anyone else's to erase),
+        writes the case's older ``notes`` as its summary, and at the end deletes every session it created (which
+        erases everything derived from them) and clears what is left of the notebook, back to empty."""
         conversation = case.conversation
         if conversation is None:  # pragma: no cover - run_case only calls this for conversation cases
             return _skipped(case, "not_a_conversation")
@@ -294,7 +311,11 @@ class Runner:
         if note:
             result.notes.append(note)
         ctx = self.env.grading_context(venture, prompt_texts=tuple(t for s in rendered for t in s))
-        privacy = "standard" if conversation.kind == "multi_session" else "ephemeral"
+        remembered = conversation.kind == "multi_session"
+        privacy = "standard" if remembered else "ephemeral"
+        if remembered and not self._prepare_notebook(actor, venture, conversation.notes, result):
+            result.finalize()
+            return result
         created: list[str] = []
         replies: list[ConversationReply] = []
         openings: list[tuple[int, str]] = []
@@ -335,19 +356,23 @@ class Runner:
                         stats, evidence_findings = grade_evidence(outcome.turn, case_turn)
                         record.facts, record.grounded_facts = stats.facts, stats.grounded
                         result.findings += evidence_findings
+                        # A blocked turn did not answer the founder (its stored text is the block's own): a
+                        # labelled one still counts, as unanswered, and is never dropped from its check.
                         reply = reply_of(
-                            outcome.turn,
+                            outcome.turn if outcome.kind == "completed" else None,
                             session=s_index,
                             index=t_index,
                             case_turn=case_turn,
                             speech=outcome.speech,
                             check=turn.check,
                             expect_any=turn.expect_any,
+                            forbid_any=turn.forbid_any,
                             voice=call_id is not None,
+                            disclosure=session.disclosure,
                         )
                         if reply is not None:
                             replies.append(reply)
-                            if opening is None:
+                            if opening is None and not reply.unanswered:
                                 opening = reply.answer
                 finally:
                     if call_id is not None:
@@ -369,6 +394,8 @@ class Runner:
                 except CASE_ERRORS as exc:
                     result.notes.append(f"delete_session_failed:{_error_code(exc)}")
                     self._log(f"warning: a session of {case.id} could not be deleted ({_error_code(exc)})")
+            if remembered:
+                self._clear_notebook(actor, venture, result, case.id)
         if result.status not in ("error", "skipped"):
             grade = grade_conversation(replies, openings=openings)
             result.findings += grade.findings
@@ -376,6 +403,38 @@ class Runner:
             result.resume_checked, result.resume_passed = grade.resume_checked, grade.resume_passed
         result.finalize()
         return result
+
+    def _prepare_notebook(
+        self, actor: Actor, venture: VentureState, notes: str | None, result: CaseResult
+    ) -> bool:
+        """Checks the memory venture's notebook is empty (so the case can only ever erase its own writes) and
+        writes the case's older notes as its summary. False (the case skipped or failed) otherwise."""
+        try:
+            notebook = actor.client.get_notebook(venture.id)
+            if not notebook.empty:
+                result.status, result.reason = "skipped", "notebook_not_empty"
+                self._log(f"warning: {result.case_id} skipped: the memory venture's notebook is not empty")
+                return False
+            if notes is not None:
+                actor.client.edit_notebook(
+                    venture.id, notebook.version, {"action": "edit_summary", "summary": notes}
+                )
+        except CASE_ERRORS as exc:
+            result.status, result.reason = "error", f"notebook:{_error_code(exc)}"
+            return False
+        return True
+
+    def _clear_notebook(self, actor: Actor, venture: VentureState, result: CaseResult, case_id: str) -> None:
+        """Back to the empty notebook the case started from (its notes, and anything its deleted sessions left)."""
+        try:
+            notebook = actor.client.get_notebook(venture.id)
+            if not notebook.empty:
+                actor.client.edit_notebook(venture.id, notebook.version, {"action": "clear"})
+        except CASE_ERRORS as exc:
+            result.notes.append(f"notebook_clear_failed:{_error_code(exc)}")
+            self._log(
+                f"warning: the notebook of {case_id}'s memory venture could not be cleared ({_error_code(exc)})"
+            )
 
     def _start_conversation_call(
         self, actor: Actor, session_id: str, result: CaseResult, ctx: GradingContext, turn: int

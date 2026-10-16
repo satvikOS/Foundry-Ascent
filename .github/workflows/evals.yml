@@ -11,6 +11,10 @@ name: Evals - scenario benchmark and red team
 #     synthetic principals only, and revokes them when the run ends.
 #   * Settings -> Secrets and variables -> Actions -> Variables: add FA_SITE_URL, the https origin of the
 #     deployed site (for example https://dxxxxxxxxxxxx.cloudfront.net).
+#   * Optional: FA_EVALS_MEMORY_VENTURE, the key of a dedicated synthetic venture (its own synthetic founder,
+#     never a seeded demo venture) for the remembered conversations of the conversations suite. They write to
+#     that venture's vEIR notebook and memory and erase it afterwards, so they never run in a shared venture;
+#     without the variable they are skipped (and "conversations" reports recall as not measured).
 #
 # The site URL is deliberately NOT a run input: the owner access code is sent to that URL, so whoever can
 # dispatch a run could otherwise point it at a server of their own and capture the code. Only a repository
@@ -84,7 +88,12 @@ jobs:
           HAS_CODE: ${{ secrets.FA_OWNER_ACCESS_CODE != '' }}
           MAX_TURNS: ${{ inputs.max_turns }}
           MAX_COST: ${{ inputs.max_cost_usd }}
+          MEMORY_VENTURE: ${{ vars.FA_EVALS_MEMORY_VENTURE }}
         run: |
+          if [ -n "${MEMORY_VENTURE}" ] && [[ ! "${MEMORY_VENTURE}" =~ ^[a-z0-9][a-z0-9_-]{0,62}$ ]]; then
+            echo "::error title=Invalid memory venture::FA_EVALS_MEMORY_VENTURE must be a venture key (lower-case letters, digits, - and _)."
+            exit 1
+          fi
           if [ "${HAS_CODE}" != "true" ]; then
             echo "::error title=Missing secret::Add FA_OWNER_ACCESS_CODE (the platform owner's access code) as a secret of the evals environment. See evals/README.md."
             exit 1
@@ -106,6 +115,7 @@ jobs:
         env:
           FA_OWNER_ACCESS_CODE: ${{ secrets.FA_OWNER_ACCESS_CODE }}
           FA_BASE_URL: ${{ vars.FA_SITE_URL }}
+          FA_EVALS_MEMORY_VENTURE: ${{ vars.FA_EVALS_MEMORY_VENTURE }}
           SUITE: ${{ inputs.suite }}
           MAX_TURNS: ${{ inputs.max_turns }}
           MAX_COST: ${{ inputs.max_cost_usd }}

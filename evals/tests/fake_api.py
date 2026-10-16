@@ -61,6 +61,11 @@ HIGH_RISK_WORDS = {
     "accent": "conflict_harassment",
 }
 CRISIS_WORDS = ("better off without me", "hopeless", "can't eat", "cannot eat")
+#: The seeded QuietQuad notebook (packages/db/src/seed/veir.ts), drawn from the owner's demo conversation.
+QUIETQUAD_NOTEBOOK_SUMMARY = (
+    "Maya and Devin are testing whether exam-week seat scarcity hurts enough for students to check a live map. "
+    "The open risk is data: library or facilities counts may need an approval that outlasts the pilot window."
+)
 
 
 def _id() -> str:
@@ -162,8 +167,13 @@ class FakeFoundryApi:
         calls_refusal: str | None = None,
         intro: str | None = None,
         intro_for: Callable[[FakeFoundryApi, dict[str, Any]], str] | None = None,
+        memory_lab: bool = False,
     ) -> None:
         self.responder = responder
+        # A fifth, unseeded synthetic venture for remembered conversations (``--memory-venture memorylab``).
+        self.memory_lab = memory_lab
+        # The vEIR notebook of each venture (one persona each): what distillation writes and deletion erases.
+        self.notebooks: dict[str, dict[str, Any]] = {}
         # Calls: a refusal code for every start (calls switched off, no voice consent), and the intro text.
         self.calls_refusal = calls_refusal
         self.intro = intro
@@ -242,10 +252,29 @@ class FakeFoundryApi:
                 [("Jonah Castellane", "founder"), ("Ines Varga-Molloy", "team")],
             ),
         ]
+        if self.memory_lab:
+            specs.append(
+                (
+                    "memorylab",
+                    "Memory Lab",
+                    "validation",
+                    "software",
+                    corin.name,
+                    [("Mina Halloway-Test", "founder")],
+                )
+            )
         for key, name, stage, domain, eir, members in specs:
             persona = f"{eir.split()[0]}'s vEIR"
             venture = Venture(_id(), key, name, stage, domain, eir, seed_canary(key), persona)
             self.ventures[venture.id] = venture
+            self.notebooks[venture.id] = {
+                # QuietQuad's vEIR starts with a seeded notebook built from the owner's past conversation.
+                "summary": QUIETQUAD_NOTEBOOK_SUMMARY if key == "quietquad" else "",
+                "summarySources": ["seeded-session"] if key == "quietquad" else [],
+                "commitments": [],
+                "nextOpener": None,
+                "version": 1 if key == "quietquad" else 0,
+            }
             for person, role in members:
                 self._principal(person, memberships=[(venture.id, role)])
             self._memory(
@@ -629,20 +658,94 @@ class FakeFoundryApi:
             )
         if sub in ("sessions", "escalations") and method == "GET":
             return httpx.Response(200, json={"items": []})
+        if sub == "notebook" and role != "advisor":
+            notebook = self.notebooks[venture.id]
+            if method == "PATCH":
+                if body.get("expectedVersion") != notebook["version"]:
+                    return self._problem(409, "conflict")
+                edit = body["edit"]
+                if edit["action"] == "edit_summary":
+                    notebook |= {"summary": edit["summary"], "summarySources": []}
+                elif edit["action"] == "clear":
+                    notebook |= {"summary": "", "summarySources": [], "commitments": [], "nextOpener": None}
+                else:
+                    return self._problem(400, "validation_failed")
+                notebook["version"] += 1
+            return httpx.Response(200, json=self._notebook_view(venture))
         return self._problem(404, "not_found")
+
+    def _notebook_view(self, v: Venture) -> dict[str, Any]:
+        n = self.notebooks[v.id]
+        return {
+            "ventureId": v.id,
+            "personaId": v.id,
+            "personaName": v.persona,
+            "summary": n["summary"],
+            "founderProfile": [],
+            "commitments": [
+                {
+                    "id": f"c-{i}",
+                    "text": c["text"],
+                    "due": None,
+                    "status": "open",
+                    "sourceSessionId": c["source"],
+                    "createdAt": NOW,
+                }
+                for i, c in enumerate(n["commitments"])
+            ],
+            "openQuestions": [],
+            "lastAdvice": [],
+            "nextOpener": n["nextOpener"],
+            "greeting": None,
+            "version": n["version"],
+            "updatedAt": NOW,
+            "lastEditedBy": "veir",
+        }
+
+    def _distill(self, s: dict[str, Any]) -> None:
+        """Ending a remembered conversation writes it into the vEIR's notebook (summary, commitments, opener)."""
+        if s.get("privacy") != "standard" or not self.turns[s["id"]]:
+            return
+        notebook = self.notebooks[s["venture_id"]]
+        first = self.turns[s["id"]][0]["founderText"]
+        notebook["summary"] = f"{notebook['summary']} Talked about: {first}".strip()
+        notebook["summarySources"] = [*notebook["summarySources"], s["id"]]
+        for turn in self.turns[s["id"]]:
+            if re.search(r"\b(?:I'll|we'll)\b", turn["founderText"], re.IGNORECASE):
+                notebook["commitments"].append({"text": turn["founderText"], "source": s["id"]})
+        notebook["nextOpener"] = f"Last time: {first}"
+        notebook["openerSource"] = s["id"]
+        notebook["version"] += 1
+
+    def _erase(self, s: dict[str, Any]) -> None:
+        """app.erase_drawn_from_session: a summary drawn from the conversation is cleared whole (it mixes
+        conversations), and so are its commitments and an opener drawn from it."""
+        notebook = self.notebooks[s["venture_id"]]
+        before = json.dumps(notebook, sort_keys=True)
+        if s["id"] in notebook["summarySources"]:
+            notebook |= {"summary": "", "summarySources": []}
+        notebook["commitments"] = [c for c in notebook["commitments"] if c["source"] != s["id"]]
+        if notebook.get("openerSource") == s["id"]:
+            notebook["nextOpener"] = None
+        if json.dumps(notebook, sort_keys=True) != before:
+            notebook["version"] += 1
 
     def _session_route(self, p: Principal, method: str, parts: list[str], body: Any) -> httpx.Response:
         s = self.sessions.get(parts[1])
         if s is None or self._role_in(p, s["venture_id"]) in (None, "advisor"):
             return self._problem(404, "not_found")
         if len(parts) == 2 and method == "DELETE":
-            # Erases the conversation and everything derived from it (here: it is never remembered again).
+            # Erases the conversation and everything derived from it: it is never remembered again, and what it
+            # added to the notebook goes (a summary it contributed to is cleared whole).
             s["deleted"] = True
             s["status"] = "ended"
+            self._erase(s)
             return httpx.Response(204)
         if len(parts) == 2:
             return httpx.Response(200, json={"session": self._session_view(s), "turns": self.turns[s["id"]]})
         if parts[2] == "end":
+            if s["status"] != "ended":
+                self._distill(s)
             s["status"] = "ended"
             return httpx.Response(200, json={"session": self._session_view(s), "recap": None})
         if parts[2] == "turns":
