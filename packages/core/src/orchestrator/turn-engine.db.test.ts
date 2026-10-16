@@ -8,8 +8,10 @@
 import {
   CRISIS_SPOKEN_MESSAGE,
   CRISIS_SUPPORT_MESSAGE,
+  COACH_ANNOTATIONS_SCHEMA_NAME,
   CROSS_VENTURE_BLOCK_ANSWER,
   MockModelGateway,
+  NARROWING_NOTE_PREFIX,
   SPOKEN_NARROWING_CAVEAT,
   mockCoachResponse,
   type EmbedOptions,
@@ -568,10 +570,7 @@ describe('spoken turns', () => {
     expect(units.length).toBeGreaterThan(0);
     expect(units.map((u) => u.seq)).toEqual(units.map((_, i) => i));
     // Each unit was said as soon as the gate released it: none waited for the end to be marked final.
-    expect(units.filter((u) => u.final).map((u) => u.text)).toEqual(
-      units.filter((u) => u.final && u.text === SPOKEN_NARROWING_CAVEAT).map((u) => u.text),
-    );
-    expect(units[0]?.final).toBe(false);
+    expect(units.every((u) => !u.final)).toBe(true);
     const keys = await new PlatformKeyCache(kit, 3_600).verificationKeys();
     const turn = completed(events);
     for (const u of units) {
@@ -590,6 +589,56 @@ describe('spoken turns', () => {
     expect(turn.channel).toBe('voice');
     expect(turn.response?.spoken).toEqual(expect.any(String));
     expect((await core.sessions.get(maya, session.id)).session.hasCalls).toBe(true);
+  });
+
+  it('a narrowed streamed reply on a call ends on its own last sentence: no caveat is said after it', async () => {
+    const sentences = [
+      'Three interviews is a solid start for the exam-week pilot.',
+      'Seats run out after seven in most libraries.',
+      'Which librarian can you reach first this week?',
+    ];
+    // Two factual claims without evidence: the validator narrows the answer.
+    const gateway = new MockModelGateway({
+      streamDelayMs: 0,
+      streamFixture: () => sentences.join(' '),
+      fixtures: {
+        [COACH_ANNOTATIONS_SCHEMA_NAME]: () => ({
+          mode: 'coach',
+          claims: [
+            { text: 'Seats run out after seven.', kind: 'fact', evidence_ids: [] },
+            { text: 'Exam week fills the libraries.', kind: 'fact', evidence_ids: [] },
+          ],
+          uncertainty: [],
+          challenge: null,
+          next_actions: [],
+          escalation: { required: false, category: null, priority: null, reason: null, requested_role: null },
+          memory_candidates: [],
+          follow_up_questions: [],
+          rehearsal: null,
+        }),
+      },
+    });
+    const { core, orchestrator } = coreWith(gateway);
+    const session = await core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+    const { events, outcome } = await run(orchestrator, session.id, {
+      text: 'We did three of the library interviews.',
+      mode: 'coach',
+      channel: 'voice',
+      callId: CALL_ID,
+    });
+    expect(outcome.status).toBe('completed');
+    const turn = completed(events);
+    expect(turn.validator?.narrowed).toBe(true);
+    // The transcript still says it plainly.
+    expect(turn.response?.answer).toContain(NARROWING_NOTE_PREFIX);
+    const units = speechUnits(events);
+    expect(units.map((u) => u.text)).toEqual(sentences);
+    expect(units.map((u) => u.text)).not.toContain(SPOKEN_NARROWING_CAVEAT);
+    // Nothing is said once the reply handed the turn back: every unit went out before the annotations.
+    const validating = events.findIndex((e) => e.event === 'turn.status' && e.phase === 'validating');
+    expect(validating).toBeGreaterThan(0);
+    const lastUnit = events.findLastIndex((e) => e.event === 'turn.speech');
+    expect(lastUnit).toBeLessThan(validating);
   });
 
   it('a crisis on a call speaks the fixed support message, without call admission or a model call', async () => {
@@ -714,8 +763,9 @@ describe('spoken turns', () => {
     const units = speechUnits(events);
     expect(units.length).toBeGreaterThan(1);
     expect(units.map((u) => u.seq)).toEqual(units.map((_, i) => i));
-    // Streamed units are sent at once (none is marked final); the regenerated reply follows them.
-    expect(units.every((u) => !u.final)).toBe(true);
+    // Streamed units were sent at once (none final); the regenerated reply follows them, said whole: its
+    // unit is the turn's last and is marked final.
+    expect(units.map((u) => u.final)).toEqual(units.map((_, i) => i === units.length - 1));
     // What was said before the break stays said; the call then says the validated, regenerated reply.
     for (const u of units.slice(0, -1)) expect(sentences).toContain(u.text);
     expect(units.at(-1)?.text).toBe(turn.response?.spoken);

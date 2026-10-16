@@ -57,7 +57,7 @@ export interface StreamDetails {
   readonly gate: GateStats;
   readonly phaseAMs: number;
   readonly phaseBMs: number;
-  /** Set when the reply was written whole after all (any speech unit still held was dropped). */
+  /** Set when the reply was written whole after all (its speech then holds and finishes like a whole reply). */
   readonly fallback: StreamFallback | null;
   /**
    * Voice: the founder spoke over the reply (the caller cancelled the turn after speech units were sent). The
@@ -91,14 +91,18 @@ const MAX_SPEECH_UNIT_CHARS = 600;
  * unit is held until the next one is ready, so the last one carries `final: true`; `discard` drops the held
  * unit when the turn is blocked. A streamed reply (`eager`) sends each unit the moment the sentence gate
  * released it, so the founder hears its first sentence while the model is still writing and its last one
- * without waiting for the annotations and the final validation (docs/runbooks/latency.md); only a closing
- * unit sent by `finish` (the spoken narrowing caveat) is then marked final. Every unit was validated by the
- * sentence gate either way.
+ * (usually the question that hands the turn back) without waiting for the annotations and the final
+ * validation (docs/runbooks/latency.md). None of its units is marked final (`turn.completed` ends the turn),
+ * and nothing is said after it: a closing unit offered to `finish` would come a whole model call after the
+ * hand-back, over or after the founder's answer, so it is not said (the written reply carries the narrowing
+ * note). When the stream is given up and the reply is written whole after all, `sayWhole` makes the stream
+ * hold and finish like a reply said whole. Every unit was validated by the sentence gate either way.
  */
 export class SpeechStream {
   #held: string | null = null;
   #seq = 0;
   #broken = false;
+  #eager: boolean;
 
   constructor(
     private readonly key: Promise<SessionSigningKey>,
@@ -106,8 +110,10 @@ export class SpeechStream {
     private readonly emit: (event: TurnStreamEvent) => Promise<void>,
     private readonly onError: (fields: Record<string, string | number>) => void,
     private readonly signal?: AbortSignal,
-    private readonly options: { readonly eager?: boolean } = {},
-  ) {}
+    options: { readonly eager?: boolean } = {},
+  ) {
+    this.#eager = options.eager === true;
+  }
 
   /** Units sent so far. */
   get sent(): number {
@@ -117,7 +123,7 @@ export class SpeechStream {
   async queue(text: string): Promise<void> {
     const unit = clampWords(text, Number.MAX_SAFE_INTEGER, MAX_SPEECH_UNIT_CHARS).text;
     if (unit === '' || this.#broken) return;
-    if (this.options.eager === true) {
+    if (this.#eager) {
       await this.#send(unit, false);
       return;
     }
@@ -125,12 +131,12 @@ export class SpeechStream {
     this.#held = unit;
   }
 
+  /**
+   * Ends the turn's speech. Held: `closing` (e.g. the spoken narrowing caveat) is said after the reply and the
+   * last unit is marked final. Eager (a streamed reply): everything was already said and nothing follows it.
+   */
   async finish(closing?: string): Promise<void> {
-    if (this.options.eager === true) {
-      const unit = closing ? clampWords(closing, Number.MAX_SAFE_INTEGER, MAX_SPEECH_UNIT_CHARS).text : '';
-      if (unit !== '' && !this.#broken) await this.#send(unit, true);
-      return;
-    }
+    if (this.#eager) return;
     if (closing) await this.queue(closing);
     const last = this.#held;
     this.#held = null;
@@ -139,6 +145,15 @@ export class SpeechStream {
 
   discard(): void {
     this.#held = null;
+  }
+
+  /**
+   * The reply is written whole after all (a stream given up after it began): what is queued from now on is
+   * held and finished like a reply said whole, so its last unit is final. Units already said stay said.
+   */
+  sayWhole(): void {
+    this.#held = null;
+    this.#eager = false;
   }
 
   async #send(text: string, final: boolean): Promise<void> {
@@ -357,9 +372,9 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
       stream: { ...details(phaseAMs, 0, null), interrupted: true },
     };
   };
-  /** The reply written whole after all; a speech unit still held from the stream is dropped. */
+  /** The reply written whole after all: it is said whole, after whatever the stream already said. */
   const wholeInstead = async (fallback: StreamFallback, phaseAMs: number, code: string | null) => {
-    speech?.discard();
+    speech?.sayWhole();
     logger.warn('turn.stream_fallback', {
       requestId: a.ctx.requestId,
       turnId: a.turnId,

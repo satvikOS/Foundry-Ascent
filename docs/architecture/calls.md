@@ -161,7 +161,10 @@ stream-transcription-websocket` URL (en-US, PCM, 16 kHz, partial-results stabili
   checks, each call may mint 20 and each person 100 a day, and the microphone time heartbeats report is
   metered. What a modified client does with a URL inside those 30 s is not metered (§5).
 - **Signed units.** The turn engine streams each validated unit of the spoken reply as `turn.speech` the moment
-  the sentence gate releases it (nothing waits for the next unit or the annotations), signed
+  the sentence gate releases it (nothing waits for the next unit or the annotations). Nothing is said after a
+  streamed reply's last unit, usually the question that hands the turn back: a narrowed answer's note stays
+  in the transcript instead of being spoken a whole model call later, over or after the founder's answer. A
+  reply written whole is said as one held reply whose last unit is `final`. Units are signed
   (HMAC-SHA256, key derived by HKDF from the session-signing key) over `sessionId|turnId|seq|text`
   (`orchestrator/speech-units.ts`). The call intro is signed the same way with no turn and `seq` 0.
 - **`POST /speech`** speaks, during the caller's live call in that conversation and in the call's voice:
