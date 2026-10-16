@@ -121,12 +121,13 @@ function deps(lines: string[] = []) {
 const NOW = Date.parse('2026-10-16T12:00:00Z');
 const SESSION_OK = '55555555-5555-4555-8555-000000000001';
 const SESSION_RETRY = '55555555-5555-4555-8555-000000000002';
-const distillJob = (sessionId: string) =>
+const distillJob = (sessionId: string, turns?: number) =>
   JSON.stringify({
     type: 'distill_session',
     sessionId,
     tenantId: '11111111-1111-4111-8111-111111111111',
     ventureId: '22222222-2222-4222-8222-222222222222',
+    ...(turns === undefined ? {} : { turns }),
     requestId: null,
   });
 
@@ -164,6 +165,38 @@ describe('processSqsBatch', () => {
     );
     expect(result.batchItemFailures).toEqual([{ itemIdentifier: 'a' }, { itemIdentifier: 'b' }]);
     expect(process).not.toHaveBeenCalled();
+  });
+
+  it('runs daily maintenance first, so distillations never push it past its receive count', async () => {
+    const { value, maintenance, distillSession } = deps();
+    let remaining = 60_000;
+    distillSession.mockImplementation((j: DistillJobInput) => {
+      remaining = 20_000; // the first record used up the invocation
+      return Promise.resolve({
+        sessionId: j.sessionId,
+        status: 'distilled',
+        reason: null,
+        turns: 1,
+        notebookVersion: 1,
+        memoryProposed: 0,
+        memoryRepeated: 0,
+        lessonsDrafted: 0,
+      });
+    });
+    const result = await processSqsBatch(
+      value,
+      {
+        Records: [
+          record('d1', distillJob(SESSION_OK)),
+          record('d2', distillJob(SESSION_OK)),
+          record('m1', JSON.stringify(DAILY_MAINTENANCE_MESSAGE)),
+        ],
+      },
+      { remainingMs: () => remaining },
+    );
+    expect(maintenance).toHaveBeenCalledTimes(1);
+    expect(distillSession).toHaveBeenCalledTimes(1);
+    expect(result.batchItemFailures).toEqual([{ itemIdentifier: 'd2' }]);
   });
 
   it('runs backfill jobs within the invocation budget and never retries them', async () => {
@@ -218,14 +251,20 @@ describe('distillation jobs', () => {
     const { value, distillSession, process } = deps(lines);
     const result = await processSqsBatch(
       value,
-      { Records: [record('d1', distillJob(SESSION_OK)), record('d2', distillJob(SESSION_RETRY), 2)] },
+      { Records: [record('d1', distillJob(SESSION_OK, 4)), record('d2', distillJob(SESSION_RETRY), 2)] },
       { remainingMs: () => 100_000 },
     );
     expect(result.batchItemFailures).toEqual([{ itemIdentifier: 'd2' }]);
+    // The turn count it was queued at (a later turn's job supersedes it) and the delivery attempt.
     expect(distillSession).toHaveBeenNthCalledWith(
       1,
-      { sessionId: SESSION_OK, requestId: 'sqs-d1' },
-      { deadline: NOW + 90_000 },
+      { sessionId: SESSION_OK, requestId: 'sqs-d1', queuedTurns: 4 },
+      { deadline: NOW + 90_000, attempt: 1, maxAttempts: 3 },
+    );
+    expect(distillSession).toHaveBeenNthCalledWith(
+      2,
+      { sessionId: SESSION_RETRY, requestId: 'sqs-d2' },
+      { deadline: NOW + 90_000, attempt: 2, maxAttempts: 3 },
     );
     expect(process).not.toHaveBeenCalled();
     const done = lines

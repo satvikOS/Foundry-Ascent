@@ -1,4 +1,5 @@
 import {
+  DISTILL_LIMITS,
   DISTILL_SCHEMA_NAME,
   DistillDraft,
   NOTEBOOK_OPENER_PIN,
@@ -25,6 +26,7 @@ import {
   settingsRepo,
   turnsRepo,
   venturesRepo,
+  type SqlExecutor,
   type SystemExecutor,
 } from '@foundry/db';
 
@@ -33,12 +35,16 @@ import { isDomainError } from '../errors.js';
 import { type DirectoryCache, type OtherVentures, type TenantDirectory } from '../internal/directory.js';
 import { memoryEmbeddingText } from '../internal/embeddings.js';
 import { type Kit } from '../internal/kit.js';
-import { meteredStructured } from '../internal/metered.js';
+import { meteredEmbed, meteredStructured } from '../internal/metered.js';
 import { assertWithinSpendCaps } from '../orchestrator/guards.js';
 import {
   distillSkipReason,
   dropSuppressed,
   filenameWords,
+  humanAdviceIds,
+  keepHumanAdvice,
+  modelFailure,
+  personaCanDistill,
   previousNeedsDistill,
   removedSince,
   sameNotebook,
@@ -58,14 +64,17 @@ import { proposeMemoryCandidates } from './memory.js';
  * - memory candidates, deduplicated against the venture's memory and proposed for a person to approve;
  * - de-identified lesson candidates, drafted in the persona's common pool for its curators to review.
  *
- * Everything is written in one transaction, idempotently per (conversation, completed-turn count). Audit
- * events and logs carry ids, counts and codes only.
+ * Everything is written in one transaction, idempotently per (conversation, completed-turn count), and only
+ * one run per conversation calls the model at a time (a claim taken before the call). Nothing is distilled
+ * for a persona that is no longer active or whose EIR's consent is not in force. Audit events and logs carry
+ * ids, counts and codes only.
  *
  * Triggers (the API calls them after the change commits): every completed turn of a standard conversation
  * queues a job delayed by `turnDelaySeconds`; ending a conversation queues one now; starting a conversation
- * queues the person's previous one when it was never distilled. A queued job skips cheaply when there is
- * nothing new or the conversation is still active. A bounded backstop (daily maintenance, and the
- * `distill_sweep` message) distils idle conversations that slipped through, inline: the worker never enqueues.
+ * queues the person's previous one when it was never distilled. Each job carries the turn count it was queued
+ * at, and skips cheaply when a later turn queued another, when there is nothing new or when the conversation
+ * is still active. A bounded backstop (daily maintenance, and the `distill_sweep` message) distils idle
+ * conversations that slipped through, inline: the worker never enqueues.
  */
 export interface DistillService {
   /** After a completed turn: queues the conversation's distillation, delayed (standard conversations). */
@@ -75,8 +84,9 @@ export interface DistillService {
   /** After a conversation started: queues the person's previous conversation when it is undistilled and idle. */
   afterCreate(ctx: RequestContext, session: Pick<SessionView, 'id' | 'ventureId'>): Promise<void>;
   /**
-   * Distils one conversation (worker, owner role). Throws {@link RetryableDistillError} for transient model
-   * failures and lets database errors through (the queue retries both); every other outcome is returned.
+   * Distils one conversation (worker, owner role). Throws {@link RetryableDistillError} for failures worth
+   * another delivery and lets database errors through (the queue retries both); every other outcome is
+   * returned.
    */
   distillSession(job: DistillJobInput, options?: DistillRunOptions): Promise<DistillOutcome>;
   /**
@@ -92,19 +102,28 @@ export interface DistillService {
 export interface DistillJobInput {
   readonly sessionId: string;
   readonly requestId: string;
+  /** Completed turns when the job was queued; a conversation with more by now is left to the later job. */
+  readonly queuedTurns?: number;
 }
 
 export interface DistillRunOptions {
   /** Epoch ms by which the call must be over (Lambda remaining time); the model call is cancelled then. */
   readonly deadline?: number;
+  /**
+   * Delivery attempt of a queued job (1-based) and the queue's maximum. An invalid or refused model answer is
+   * tried once more through the queue before it is recorded; inline runs (the backstop) record it at once.
+   */
+  readonly attempt?: number;
+  readonly maxAttempts?: number;
 }
 
 export interface DistillOutcome {
   readonly sessionId: string;
   /**
    * `distilled`: written. `skipped`: nothing to do now (see `reason`), retried by a later trigger.
-   * `dropped`: nothing worth keeping, or the result was blocked; recorded so it is not retried until a new
-   * turn. `failed`: the model gave no usable answer; recorded the same way.
+   * `dropped`: nothing worth keeping, the result was blocked, or there is no active persona to distil for;
+   * recorded so it is not retried until a new turn. `failed`: the model gave no usable answer; recorded the
+   * same way.
    */
   readonly status: 'distilled' | 'skipped' | 'dropped' | 'failed';
   /** Skip, drop or failure code; null when distilled. */
@@ -127,7 +146,7 @@ export interface DistillBackstopReport {
   readonly deferred: number;
 }
 
-/** A transient failure (the model was unavailable, throttled or timed out): the queue retries the job. */
+/** A failure worth another delivery (the model unavailable or out of time, a notebook racing): retried. */
 export class RetryableDistillError extends Error {
   override readonly name = 'RetryableDistillError';
 
@@ -137,26 +156,40 @@ export class RetryableDistillError extends Error {
 }
 
 /** Time a distillation needs to start (model call with its fallback, plus the writes). */
-export const MIN_DISTILL_BUDGET_MS = 45_000;
+const MIN_DISTILL_BUDGET_MS = 45_000;
 /** Margin kept before a deadline: the model call is cancelled this long before it. */
 const DEADLINE_MARGIN_MS = 5_000;
+/** How long a run without a deadline holds its claim on the conversation (a run with one: past it). */
+const DEFAULT_CLAIM_SECONDS = 600;
+const CLAIM_MARGIN_SECONDS = 30;
+const MAX_CLAIM_SECONDS = 1_800;
+/** Runs of one job when another distillation of the same notebook wrote meanwhile (each calls the model). */
+const NOTEBOOK_ROUNDS = 2;
 /** Notebook writes retried on a concurrent edit before the notebook is left for the next distillation. */
 const NOTEBOOK_WRITE_ATTEMPTS = 3;
 /** Evidence keys a distillation prompt may carry (the conversation's unique evidence, re-keyed E1…). */
 const MAX_SESSION_EVIDENCE = 20;
 /** Terms a lesson must never mention: the venture's relationships (customers, labs, sponsors) and documents. */
 const DENYLIST_MAX = 100;
+/** Pending AI proposals without an embedding that one distillation embeds before deduplicating. */
+const PENDING_EMBED_LIMIT = 20;
 /** Lesson `source_class` of distilled drafts. */
 const DISTILLED_SOURCE_CLASS = 'conversation';
+/** Lessons a new draft is compared with: everything curators kept or turned down. */
+const LESSON_DEDUPE_STATUSES = ['draft', 'in_review', 'published', 'withdrawn'] as const;
 
 /** Everything one distillation reads before its model call (owner role). */
 interface DistillSource {
   readonly venture: venturesRepo.VentureRecord;
   readonly persona: personasRepo.PersonaRecord;
+  readonly consent: personasRepo.ConsentRecord | null;
   readonly release: personasRepo.PersonaReleaseRecord;
   readonly eirName: string | null;
   readonly founderFirstName: string | null;
+  /** Completed turns the distillation reads (crisis turns left out). */
   readonly turns: readonly turnsRepo.TurnRecord[];
+  /** Every turn of the conversation: memory proposals drawn from any of them belong to it. */
+  readonly turnIds: readonly string[];
   readonly evidence: ReadonlyMap<string, EvidenceItem>;
   readonly notebook: notebooksRepo.NotebookRecord | null;
   readonly pins: readonly string[];
@@ -167,6 +200,23 @@ interface DistillSource {
   readonly directory: TenantDirectory;
   readonly others: OtherVentures;
 }
+
+/** Vectors for deduplication: one per memory candidate, and the pending proposals embedded with them. */
+interface DedupeVectors {
+  readonly candidates?: (readonly number[] | null)[];
+  readonly proposals: { readonly id: string; readonly embedding: readonly number[] }[];
+}
+
+type WriteResult =
+  | { readonly kind: 'stale'; readonly reason: string }
+  | { readonly kind: 'notebook_changed' }
+  | { readonly kind: 'recorded'; readonly outcome: DistillOutcome }
+  | {
+      readonly kind: 'written';
+      readonly notebookVersion: number | null;
+      readonly memory: { readonly created: number; readonly repeated: number };
+      readonly lessonsDrafted: number;
+    };
 
 function pinKey(edit: string): string {
   if (edit === notebooksRepo.SUMMARY_EDIT) return NOTEBOOK_SUMMARY_PIN;
@@ -198,12 +248,20 @@ function sessionEvidence(
   return evidence;
 }
 
+/** How long a run holds its claim: past its deadline, so a claim never lapses while its run can still write. */
+function claimSeconds(deadline: number | undefined): number {
+  if (deadline === undefined) return DEFAULT_CLAIM_SECONDS;
+  const remaining = Math.ceil((deadline - Date.now()) / 1000) + CLAIM_MARGIN_SECONDS;
+  return Math.min(MAX_CLAIM_SECONDS, Math.max(CLAIM_MARGIN_SECONDS, remaining));
+}
+
 export function createDistillService(kit: Kit, directory: DirectoryCache): DistillService {
   const { logger } = kit.deps;
   const cfg = kit.config.distillation;
 
   async function enqueue(
     session: Pick<sessionsRepo.SessionRecord, 'id' | 'tenantId' | 'ventureId'>,
+    turns: number,
     requestId: string,
     delaySeconds: number,
     trigger: 'turn' | 'end' | 'next_conversation',
@@ -214,11 +272,12 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
         sessionId: session.id,
         tenantId: session.tenantId,
         ventureId: session.ventureId,
+        turns,
         requestId,
       },
       delaySeconds > 0 ? { delaySeconds } : {},
     );
-    logger.info('distill.enqueued', { requestId, sessionId: session.id, trigger, delaySeconds });
+    logger.info('distill.enqueued', { requestId, sessionId: session.id, trigger, turns, delaySeconds });
   }
 
   /** Triggers never fail the request they follow: a lost job is caught by the backstop. */
@@ -240,12 +299,16 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
     }
   }
 
+  /** A standard conversation and its completed turns (the caller's view), or null for any other. */
   async function standardSession(
     ctx: RequestContext,
     sessionId: string,
-  ): Promise<sessionsRepo.SessionRecord | null> {
-    const session = await kit.inRequest(ctx, ({ tx }) => sessionsRepo.getSession(tx, sessionId));
-    return session?.privacy === 'standard' ? session : null;
+  ): Promise<{ session: sessionsRepo.SessionRecord; turns: number } | null> {
+    return kit.inRequest(ctx, async ({ tx }) => {
+      const session = await sessionsRepo.getSession(tx, sessionId);
+      if (session?.privacy !== 'standard') return null;
+      return { session, turns: await sessionsRepo.countCompletedTurns(tx, sessionId) };
+    });
   }
 
   async function loadSource(
@@ -258,23 +321,22 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
       personasRepo.getPersona(sx, state.personaId),
     ]);
     if (venture === null || release === null || persona === null) return null;
+    const consent = persona.consentId === null ? null : await personasRepo.getConsent(sx, persona.consentId);
     const eir =
       persona.kind === 'eir_persona' && persona.eirProfileId !== null
         ? await eirRepo.getEirProfile(sx, persona.eirProfileId)
         : null;
     const founder = await principalsRepo.getPrincipal(sx, state.startedBy);
+    const allTurns = await turnsRepo.listTurns(sx, state.id);
     // Crisis turns never feed notes, memory or lessons (their titles are never derived either).
-    const turns = (await turnsRepo.listTurns(sx, state.id)).filter(
-      (t) => t.status === 'completed' && t.riskLabel !== 'crisis',
-    );
+    const turns = allTurns.filter((t) => t.status === 'completed' && t.riskLabel !== 'crisis');
     const byTurn = await turnsRepo.listTurnEvidence(
       sx,
       turns.map((t) => t.id),
     );
-    const notebook = await notebooksRepo.getNotebook(sx, { ventureId: venture.id, personaId: persona.id });
-    const pins = notebook
-      ? await notebooksRepo.getPersonEdits(sx, { ventureId: venture.id, personaId: persona.id })
-      : [];
+    const scope = { ventureId: venture.id, personaId: persona.id };
+    const notebook = await notebooksRepo.getNotebook(sx, scope);
+    const marks = await notebooksRepo.getNotebookMarks(sx, scope);
     const relationships = await memoryRepo.listMemory(sx, {
       ventureId: venture.id,
       types: ['relationship'],
@@ -284,19 +346,21 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
     const lessons = await resourcesRepo.listLessons(sx, {
       tenantId: state.tenantId,
       personaId: persona.id,
-      statuses: ['draft', 'in_review', 'published'],
+      statuses: LESSON_DEDUPE_STATUSES,
     });
     const documents = await documentsRepo.listDocuments(sx, venture.id);
     return {
       venture,
       persona,
+      consent,
       release,
       eirName: eir?.displayName ?? null,
       founderFirstName: firstName(founder?.displayName),
       turns,
+      turnIds: allTurns.map((t) => t.id),
       evidence: sessionEvidence(turns, byTurn),
       notebook,
-      pins,
+      pins: marks.personEdits,
       relationships: relationships.map((m) => m.title),
       lessonTitles: lessons.map((l) => l.title),
       documentNames: documents.map((d) => filenameWords(d.filename)).filter((n) => n !== ''),
@@ -341,67 +405,46 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
     };
   }
 
-  /** Embeds the memory candidates (best effort: without vectors, deduplication is lexical only). */
-  async function embedCandidates(
+  /**
+   * Embeds the memory candidates, and the venture's pending AI proposals that have no vector yet (turns
+   * propose without one), in one metered call, so a candidate restating a proposal in other words is
+   * recognised. Best effort: without vectors, deduplication is lexical only.
+   */
+  async function dedupeVectors(
     ctx: RequestContext,
     ventureId: string,
     result: SanitizedDistill,
-  ): Promise<(readonly number[] | null)[] | undefined> {
-    if (result.memoryCandidates.length === 0) return undefined;
+  ): Promise<DedupeVectors> {
+    const candidates = result.memoryCandidates;
+    if (candidates.length === 0) return { proposals: [] };
     try {
-      const embedded = await kit.deps.gateway.embed(result.memoryCandidates.map(memoryEmbeddingText), {
-        purpose: 'embedding',
-        requestId: ctx.requestId,
-      });
-      await kit.recordUsage({
-        ctx,
-        ventureId,
-        purpose: 'embedding',
-        attempts: [{ modelId: embedded.modelId, usage: embedded.usage, costUsd: embedded.costUsd }],
-      });
-      return result.memoryCandidates.map((_, i) => {
-        const vector = embedded.vectors[i];
-        return vector?.length === knowledgeRepo.EMBEDDING_DIMENSIONS ? vector : null;
-      });
+      const pending = await kit.system(
+        (sx) => memoryRepo.listUnembeddedAiProposals(sx, { ventureId, limit: PENDING_EMBED_LIMIT }),
+        { transaction: false },
+      );
+      const embedded = await meteredEmbed(kit, { ctx, ventureId, purpose: 'embedding' }, [
+        ...candidates.map(memoryEmbeddingText),
+        ...pending.map(memoryEmbeddingText),
+      ]);
+      const vector = (i: number): number[] | null => {
+        const v = embedded.vectors[i];
+        return v?.length === knowledgeRepo.EMBEDDING_DIMENSIONS ? v : null;
+      };
+      return {
+        candidates: candidates.map((_, i) => vector(i)),
+        proposals: pending.flatMap((item, j) => {
+          const embedding = vector(candidates.length + j);
+          return embedding === null ? [] : [{ id: item.id, embedding }];
+        }),
+      };
     } catch (err) {
       logger.warn('distill.embedding_deferred', {
         requestId: ctx.requestId,
-        candidates: result.memoryCandidates.length,
+        candidates: candidates.length,
         error: err instanceof Error ? err.name : 'unknown',
       });
-      return undefined;
+      return { proposals: [] };
     }
-  }
-
-  /**
-   * Records an outcome that produced nothing to write (dropped or failed), so the conversation is not
-   * retried until a new turn, with an audit event (ids and codes only).
-   */
-  async function recordWithoutDigest(
-    state: sessionsRepo.DistillState,
-    requestId: string,
-    outcome: 'dropped' | 'failed',
-    reason: string,
-  ): Promise<DistillOutcome> {
-    await kit.system(async (sx) => {
-      await sessionsRepo.markSessionDistilled(sx, {
-        sessionId: state.id,
-        distillVersion: state.completedTurns,
-      });
-      await auditRepo.appendAudit(sx, {
-        action: outcome === 'failed' ? 'session.distill_failed' : 'session.distill_dropped',
-        outcome: outcome === 'failed' ? 'failed' : 'blocked',
-        tenantId: state.tenantId,
-        ventureId: state.ventureId,
-        objectType: 'session',
-        objectId: state.id,
-        requestId,
-        policyReason: reason,
-        metadata: { turns: state.completedTurns, personaId: state.personaId },
-      });
-    });
-    logger.info('distill.recorded', { requestId, sessionId: state.id, outcome, reason });
-    return { ...empty(state.id, outcome, reason), turns: state.completedTurns };
   }
 
   function empty(sessionId: string, status: DistillOutcome['status'], reason: string | null): DistillOutcome {
@@ -417,45 +460,61 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
     };
   }
 
-  async function distillSession(
-    job: DistillJobInput,
-    options: DistillRunOptions = {},
+  /**
+   * Records an outcome that produced nothing to write (dropped or failed) in `sx`, so the conversation is not
+   * retried until a new turn, with an audit event (ids and codes only).
+   */
+  async function recordWithoutDigestIn(
+    sx: SqlExecutor,
+    state: sessionsRepo.DistillState,
+    requestId: string,
+    outcome: 'dropped' | 'failed',
+    reason: string,
   ): Promise<DistillOutcome> {
-    const { sessionId, requestId } = job;
-    const state = await kit.system((sx) => sessionsRepo.getDistillState(sx, sessionId), {
-      transaction: false,
+    await sessionsRepo.markSessionDistilled(sx, {
+      sessionId: state.id,
+      distillVersion: state.completedTurns,
     });
-    const skip = distillSkipReason(state, kit.now(), cfg.activeWindowSeconds);
-    if (state === null || skip !== null) {
-      logger.info('distill.skipped', { requestId, sessionId, reason: skip ?? 'not_found' });
-      return empty(sessionId, 'skipped', skip ?? 'not_found');
-    }
-    const settings = await kit.system((sx) => settingsRepo.getPlatformSettings(sx), { transaction: false });
-    if (!settings.aiEnabled) {
-      logger.info('distill.skipped', { requestId, sessionId, reason: 'kill_switch' });
-      return empty(sessionId, 'skipped', 'kill_switch');
-    }
-    // Billed to the person whose conversation it is, within the daily caps like their turns.
-    const ctx: RequestContext = {
-      principalId: state.startedBy,
+    await auditRepo.appendAudit(sx, {
+      action: outcome === 'failed' ? 'session.distill_failed' : 'session.distill_dropped',
+      outcome: outcome === 'failed' ? 'failed' : 'blocked',
       tenantId: state.tenantId,
-      roles: [],
+      ventureId: state.ventureId,
+      objectType: 'session',
+      objectId: state.id,
       requestId,
-    };
-    try {
-      await assertWithinSpendCaps(kit, ctx, settings, { ventureId: state.ventureId, operation: 'distill' });
-    } catch (err) {
-      if (isDomainError(err) && err.code === 'spend_cap_reached') {
-        logger.info('distill.skipped', { requestId, sessionId, reason: 'spend_cap' });
-        return empty(sessionId, 'skipped', 'spend_cap');
-      }
-      throw err;
-    }
+      policyReason: reason,
+      metadata: { turns: state.completedTurns, personaId: state.personaId },
+    });
+    logger.info('distill.recorded', { requestId, sessionId: state.id, outcome, reason });
+    return { ...empty(state.id, outcome, reason), turns: state.completedTurns };
+  }
 
+  function recordWithoutDigest(
+    state: sessionsRepo.DistillState,
+    requestId: string,
+    outcome: 'dropped' | 'failed',
+    reason: string,
+  ): Promise<DistillOutcome> {
+    return kit.system((sx) => recordWithoutDigestIn(sx, state, requestId, outcome, reason));
+  }
+
+  /**
+   * One run: read, call the model, write. Returns `notebook_changed` (nothing written) when another
+   * distillation wrote the persona's notebook since it was read: merging over it would take that run's
+   * rewordings for removals, so the caller runs again on the new notebook.
+   */
+  async function runOnce(
+    state: sessionsRepo.DistillState,
+    ctx: RequestContext,
+    requestId: string,
+    options: DistillRunOptions,
+  ): Promise<DistillOutcome | 'notebook_changed'> {
+    const sessionId = state.id;
     const source = await kit.system((sx) => loadSource(sx, state), { transaction: false });
-    if (source === null) {
-      logger.warn('distill.context_unavailable', { requestId, sessionId });
-      return empty(sessionId, 'skipped', 'context_unavailable');
+    if (source === null) return recordWithoutDigest(state, requestId, 'dropped', 'context_unavailable');
+    if (!personaCanDistill(source.persona, source.consent, kit.now())) {
+      return recordWithoutDigest(state, requestId, 'dropped', 'persona_inactive');
     }
     if (source.turns.length === 0) return recordWithoutDigest(state, requestId, 'dropped', 'no_content');
 
@@ -500,57 +559,68 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
       );
       draft = result.value;
     } catch (err) {
-      if (isModelGatewayError(err)) {
-        // Unavailable, throttled, timed out or cancelled at the deadline: worth retrying later.
-        if (err.code === 'model_unavailable') throw new RetryableDistillError(err.code);
-        return recordWithoutDigest(state, requestId, 'failed', err.code);
-      }
-      throw err;
+      if (!isModelGatewayError(err)) throw err;
+      const failure = modelFailure(err, options.attempt ?? 1, options.maxAttempts ?? 1);
+      if (failure === null) throw new RetryableDistillError(err.code);
+      return recordWithoutDigest(state, requestId, 'failed', failure);
     }
 
     const nowIso = now.toISOString();
     const readContent = source.notebook?.content ?? null;
+    const readVersion = source.notebook?.version ?? 0;
     const sanitizeFor = (
       notebook: notebooksRepo.NotebookContent | null,
       pins: readonly string[],
       removed: readonly string[],
     ): SanitizedDistill | null =>
       sanitizeDistill(
-        withoutPinnedRewrites(draft, new Set(pins)),
+        // Human-help advice is kept as written (keepHumanAdvice), so the model cannot reword it either.
+        withoutPinnedRewrites(draft, new Set([...pins, ...humanAdviceIds(notebook)])),
         sanitizeContext(state, source, nowIso, notebook, pins, removed),
       );
     const result = sanitizeFor(readContent, source.pins, []);
     if (result === null) return recordWithoutDigest(state, requestId, 'dropped', 'cross_venture');
-    const embeddings = await embedCandidates(ctx, state.ventureId, result);
+    const vectors = await dedupeVectors(ctx, state.ventureId, result);
 
-    const written = await kit.system(async (sx) => {
+    const written = await kit.system(async (sx): Promise<WriteResult> => {
       const locked = await sessionsRepo.getDistillState(sx, sessionId, { lock: true });
       const stale = staleWriteReason(locked, state.completedTurns);
-      if (stale !== null) return { kind: 'stale' as const, reason: stale };
-      await sessionsRepo.setSessionDigest(sx, {
-        sessionId,
-        digest: result.digest,
-        distillVersion: state.completedTurns,
-        title: result.title,
-      });
+      if (stale !== null) return { kind: 'stale', reason: stale };
+      // Consent revoked or the persona suspended while the model was answering: nothing is written for it.
+      const persona = await personasRepo.getPersona(sx, state.personaId);
+      if (persona?.status !== 'active') {
+        return {
+          kind: 'recorded',
+          outcome: await recordWithoutDigestIn(sx, state, requestId, 'dropped', 'persona_inactive'),
+        };
+      }
 
-      // The notebook, written against the version read; a person's edit in between is merged, not lost.
+      // The notebook first, written against the version read; a person's edit in between is merged, not lost.
       const scope = { ventureId: state.ventureId, personaId: state.personaId };
       let notebookVersion: number | null = null;
       let suppressedDropped = 0;
       for (let attempt = 0; attempt < NOTEBOOK_WRITE_ATTEMPTS && notebookVersion === null; attempt += 1) {
         const current = await notebooksRepo.getNotebook(sx, scope);
+        const marks = await notebooksRepo.getNotebookMarks(sx, scope);
+        if (marks.veirVersion > readVersion) return { kind: 'notebook_changed' };
         const version = current?.version ?? 0;
+        const base = version === readVersion ? readContent : (current?.content ?? null);
+        const pins = version === readVersion ? source.pins : marks.personEdits;
+        // Only people wrote since the read (a distillation would have bumped `veirVersion`): what changed
+        // was removed or corrected by them.
         const merged =
-          version === (source.notebook?.version ?? 0)
-            ? result
-            : sanitizeFor(
-                current?.content ?? null,
-                await notebooksRepo.getPersonEdits(sx, scope),
-                removedSince(readContent, current?.content ?? null),
-              );
+          version === readVersion ? result : sanitizeFor(base, pins, removedSince(readContent, base));
         if (merged === null) break;
-        const filtered = dropSuppressed(merged.notebookDelta, current?.suppressed ?? []);
+        const delta = {
+          ...merged.notebookDelta,
+          lastAdvice: keepHumanAdvice(
+            merged.notebookDelta.lastAdvice,
+            base?.lastAdvice ?? [],
+            new Set(pins),
+            DISTILL_LIMITS.lastAdviceMax,
+          ),
+        };
+        const filtered = dropSuppressed(delta, current?.suppressed ?? []);
         suppressedDropped = filtered.dropped;
         if (sameNotebook(current?.content ?? notebooksRepo.EMPTY_NOTEBOOK, filtered.content)) {
           notebookVersion = version;
@@ -568,6 +638,15 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
         notebookVersion = saved?.version ?? null;
       }
 
+      await sessionsRepo.setSessionDigest(sx, {
+        sessionId,
+        digest: result.digest,
+        distillVersion: state.completedTurns,
+        title: result.title,
+      });
+
+      // Vectors of pending proposals first, so candidates are compared with them by meaning.
+      if (vectors.proposals.length > 0) await knowledgeRepo.setMemoryEmbeddings(sx, vectors.proposals);
       const memory = await proposeMemoryCandidates(sx, {
         tenantId: state.tenantId,
         ventureId: state.ventureId,
@@ -578,28 +657,33 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
         // Conversation evidence never cites a founder_private item (retrieval and the turn_evidence policy
         // exclude them), so these are team items, like a recap's.
         visibility: 'team',
-        ...(embeddings ? { embeddings } : {}),
+        conversation: {
+          sourceIds: new Set([sessionId, ...source.turnIds]),
+          speakers: source.founderFirstName === null ? [] : [source.founderFirstName],
+        },
+        ...(vectors.candidates ? { embeddings: vectors.candidates } : {}),
       });
 
       const titles = [...source.lessonTitles];
-      let lessonsDrafted = 0;
+      const lessonIds: string[] = [];
       let lessonsDuplicate = 0;
       for (const lesson of result.lessonCandidates) {
         if (titles.some((t) => isNearDuplicate(t, lesson.title))) {
           lessonsDuplicate += 1;
           continue;
         }
-        await resourcesRepo.createPattern(sx, {
+        const pattern = await resourcesRepo.createPattern(sx, {
           tenantId: state.tenantId,
           personaId: state.personaId,
           origin: 'distilled',
           status: 'draft',
           ownerId: null,
           sourceClass: DISTILLED_SOURCE_CLASS,
+          sourceSessionId: sessionId,
           ...lesson,
         });
         titles.push(lesson.title);
-        lessonsDrafted += 1;
+        lessonIds.push(pattern.id);
       }
 
       await auditRepo.appendAudit(sx, {
@@ -622,14 +706,18 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
           memoryProposed: memory.created,
           memoryRepeated: memory.repeated,
           memoryDropped: memory.dropped + result.stats.memoryCandidatesDropped,
-          lessonsDrafted,
+          proposalsEmbedded: vectors.proposals.length,
+          lessonsDrafted: lessonIds.length,
+          lessonIds,
           lessonsDropped: result.stats.lessonCandidatesDropped + lessonsDuplicate,
           lessonDropReasons: result.stats.lessonDropReasons,
         },
       });
-      return { kind: 'written' as const, notebookVersion, memory, lessonsDrafted };
+      return { kind: 'written', notebookVersion, memory, lessonsDrafted: lessonIds.length };
     });
 
+    if (written.kind === 'notebook_changed') return 'notebook_changed';
+    if (written.kind === 'recorded') return written.outcome;
     if (written.kind === 'stale') {
       logger.info('distill.skipped', { requestId, sessionId, reason: written.reason });
       return empty(sessionId, 'skipped', written.reason);
@@ -655,17 +743,86 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
     };
   }
 
+  async function distillSession(
+    job: DistillJobInput,
+    options: DistillRunOptions = {},
+  ): Promise<DistillOutcome> {
+    const { sessionId, requestId } = job;
+    const skipped = (reason: string): DistillOutcome => {
+      logger.info('distill.skipped', { requestId, sessionId, reason });
+      return empty(sessionId, 'skipped', reason);
+    };
+    const state = await kit.system((sx) => sessionsRepo.getDistillState(sx, sessionId), {
+      transaction: false,
+    });
+    const skip = distillSkipReason(state, kit.now(), cfg.activeWindowSeconds, job.queuedTurns);
+    if (state === null || skip !== null) return skipped(skip ?? 'not_found');
+    const settings = await kit.system((sx) => settingsRepo.getPlatformSettings(sx), { transaction: false });
+    if (!settings.aiEnabled) return skipped('kill_switch');
+    // Billed to the person whose conversation it is, within the daily caps like their turns.
+    const ctx: RequestContext = {
+      principalId: state.startedBy,
+      tenantId: state.tenantId,
+      roles: [],
+      requestId,
+    };
+    try {
+      await assertWithinSpendCaps(kit, ctx, settings, { ventureId: state.ventureId, operation: 'distill' });
+    } catch (err) {
+      if (isDomainError(err) && err.code === 'spend_cap_reached') return skipped('spend_cap');
+      throw err;
+    }
+
+    // One run per conversation calls the model: overlapping jobs (a turn's, the end's, the backstop) skip.
+    const claimId = kit.deps.ids.uuid();
+    const claimed = await kit.system(
+      (sx) =>
+        sessionsRepo.claimDistillation(sx, {
+          sessionId,
+          claimId,
+          turns: state.completedTurns,
+          seconds: claimSeconds(options.deadline),
+        }),
+      { transaction: false },
+    );
+    if (!claimed) return skipped('in_progress');
+    try {
+      for (let round = 1; ; round += 1) {
+        const outcome = await runOnce(state, ctx, requestId, options);
+        if (outcome !== 'notebook_changed') return outcome;
+        const late = options.deadline !== undefined && options.deadline - Date.now() < MIN_DISTILL_BUDGET_MS;
+        if (round >= NOTEBOOK_ROUNDS || late) throw new RetryableDistillError('notebook_changed');
+        logger.info('distill.notebook_changed', { requestId, sessionId, round });
+      }
+    } finally {
+      try {
+        await kit.system((sx) => sessionsRepo.releaseDistillClaim(sx, { sessionId, claimId }), {
+          transaction: false,
+        });
+      } catch (err) {
+        // The claim lapses on its own; a later job waits for it at most until then.
+        logger.warn('distill.release_failed', {
+          requestId,
+          sessionId,
+          error: err instanceof Error ? err.name : 'unknown',
+        });
+      }
+    }
+  }
+
   return {
     afterTurn: (ctx, sessionId) =>
       trigger(ctx, sessionId, 'turn', async () => {
-        const session = await standardSession(ctx, sessionId);
-        if (session !== null) await enqueue(session, ctx.requestId, cfg.turnDelaySeconds, 'turn');
+        const found = await standardSession(ctx, sessionId);
+        if (found !== null) {
+          await enqueue(found.session, found.turns, ctx.requestId, cfg.turnDelaySeconds, 'turn');
+        }
       }),
 
     afterEnd: (ctx, sessionId) =>
       trigger(ctx, sessionId, 'end', async () => {
-        const session = await standardSession(ctx, sessionId);
-        if (session !== null) await enqueue(session, ctx.requestId, 0, 'end');
+        const found = await standardSession(ctx, sessionId);
+        if (found !== null) await enqueue(found.session, found.turns, ctx.requestId, 0, 'end');
       }),
 
     afterCreate: (ctx, created) =>
@@ -680,6 +837,7 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
         if (previous === null || !previousNeedsDistill(previous, kit.now(), cfg.activeWindowSeconds)) return;
         await enqueue(
           { id: previous.id, tenantId: ctx.tenantId, ventureId: created.ventureId },
+          previous.completedTurns,
           ctx.requestId,
           0,
           'next_conversation',

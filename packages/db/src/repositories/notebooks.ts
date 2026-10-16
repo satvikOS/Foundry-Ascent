@@ -199,19 +199,34 @@ export function toNotebookView(
 export const SUMMARY_EDIT = 'summary';
 export const OPENER_EDIT = 'nextOpener';
 
-/**
- * What a person wrote or changed since the vEIR last wrote the notebook (migration 0007, kept by a trigger):
- * entry and commitment ids, plus {@link SUMMARY_EDIT} / {@link OPENER_EDIT}. Empty when there is no notebook.
- */
-export async function getPersonEdits(
+/** What distillation needs to know about the writes since it last wrote (migration 0007, kept by a trigger). */
+export interface NotebookMarks {
+  /**
+   * What a person wrote or changed since the vEIR last wrote the notebook: entry and commitment ids, plus
+   * {@link SUMMARY_EDIT} / {@link OPENER_EDIT}.
+   */
+  readonly personEdits: string[];
+  /** The notebook version the vEIR last wrote (0 before its first write). */
+  readonly veirVersion: number;
+}
+
+/** The notebook's {@link NotebookMarks}; empty marks when there is no notebook. */
+export async function getNotebookMarks(
   ex: SqlExecutor,
   args: { ventureId: string; personaId: string },
-): Promise<string[]> {
-  const raw = await queryFirst(
+): Promise<NotebookMarks> {
+  const marks = await queryFirst(
     ex,
-    `SELECT n.person_edits FROM veir_notebooks n WHERE n.venture_id = :ventureId AND n.persona_id = :personaId`,
+    `SELECT n.person_edits, n.veir_version FROM veir_notebooks n
+     WHERE n.venture_id = :ventureId AND n.persona_id = :personaId`,
     { ventureId: p.uuid(args.ventureId), personaId: p.uuid(args.personaId) },
-    (r) => col.json().decode(r.person_edits, 'person_edits'),
+    (r) => {
+      const edits = col.json().decode(r.person_edits, 'person_edits');
+      return {
+        personEdits: Array.isArray(edits) ? edits.filter((id): id is string => typeof id === 'string') : [],
+        veirVersion: col.int.decode(r.veir_version, 'veir_version'),
+      };
+    },
   );
-  return Array.isArray(raw) ? raw.filter((id): id is string => typeof id === 'string') : [];
+  return marks ?? { personEdits: [], veirVersion: 0 };
 }

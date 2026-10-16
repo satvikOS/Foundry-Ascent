@@ -10,7 +10,13 @@
 --     proposals nobody acted on for 30 days). An index serves that scan.
 --  2. The vEIR notebook records which lines a person edited since the last distillation (`person_edits`),
 --     maintained by a trigger from the content change itself. Distillation keeps those lines exactly as the
---     person left them; its own write clears the list.
+--     person left them; its own write clears the list. The same trigger records the version of the vEIR's
+--     last write (`veir_version`), so a distillation can tell another distillation's write from a person's
+--     edit.
+--  3. A distillation claims its conversation before the model call (`distill_claim_id`, `distill_claimed_until`):
+--     the jobs a conversation's triggers queue may overlap, and only one of them pays for a model call.
+--  4. Lesson drafts record the conversation they were distilled from (`patterns.source_session_id`); deleting
+--     the conversation withdraws the drafts nobody has taken up for review yet.
 
 -- ---------------------------------------------------------------------------------------------------
 -- 1. AI proposals may expire
@@ -53,8 +59,14 @@ ALTER TABLE veir_notebooks DROP CONSTRAINT IF EXISTS veir_notebooks_person_edits
 ALTER TABLE veir_notebooks ADD CONSTRAINT veir_notebooks_person_edits_check
   CHECK (jsonb_typeof(person_edits) = 'array' AND jsonb_array_length(person_edits) <= 200);
 
--- Computes `person_edits` on every write, whatever the writer sends:
--- - a write by the vEIR (distillation) clears it: those edits were respected by the write itself;
+-- The notebook version the vEIR (distillation) last wrote; 0 before its first write.
+ALTER TABLE veir_notebooks ADD COLUMN IF NOT EXISTS veir_version integer NOT NULL DEFAULT 0;
+ALTER TABLE veir_notebooks DROP CONSTRAINT IF EXISTS veir_notebooks_veir_version_check;
+ALTER TABLE veir_notebooks ADD CONSTRAINT veir_notebooks_veir_version_check CHECK (veir_version >= 0);
+
+-- Computes `person_edits` and `veir_version` on every write, whatever the writer sends:
+-- - a write by the vEIR (distillation) clears the edits (they were respected by the write itself) and records
+--   its version;
 -- - a write by a person adds every entry or commitment that is new or differs from before, the summary when it
 --   was rewritten (not when it was cleared) and the opener when it was set (not when it was removed). A removed
 --   line needs no mark: it is gone, and its fingerprint is in `suppressed`.
@@ -65,8 +77,12 @@ DECLARE
   v_old  jsonb := CASE WHEN TG_OP = 'UPDATE' THEN OLD.content ELSE '{}'::jsonb END;
   v_pins jsonb := CASE WHEN TG_OP = 'UPDATE' THEN OLD.person_edits ELSE '[]'::jsonb END;
 BEGIN
+  NEW.veir_version := CASE WHEN TG_OP = 'UPDATE' THEN OLD.veir_version ELSE 0 END;
   IF NEW.last_edited_by IS DISTINCT FROM 'person' THEN
     NEW.person_edits := '[]'::jsonb;
+    IF NEW.last_edited_by = 'veir' THEN
+      NEW.veir_version := NEW.version;
+    END IF;
     RETURN NEW;
   END IF;
   IF jsonb_typeof(v_pins) IS DISTINCT FROM 'array' THEN
@@ -108,3 +124,36 @@ REVOKE ALL ON FUNCTION app.notebook_track_person_edits() FROM PUBLIC;
 DROP TRIGGER IF EXISTS veir_notebooks_track_person_edits ON veir_notebooks;
 CREATE TRIGGER veir_notebooks_track_person_edits BEFORE INSERT OR UPDATE ON veir_notebooks
   FOR EACH ROW EXECUTE FUNCTION app.notebook_track_person_edits();
+
+-- ---------------------------------------------------------------------------------------------------
+-- 3. One distillation at a time per conversation
+-- ---------------------------------------------------------------------------------------------------
+
+-- Taken by a conditional UPDATE before the model call and released after the write; a run that never releases
+-- it (the process died) frees it when `distill_claimed_until` passes, which is after any run's deadline.
+ALTER TABLE coaching_sessions ADD COLUMN IF NOT EXISTS distill_claim_id uuid;
+ALTER TABLE coaching_sessions ADD COLUMN IF NOT EXISTS distill_claimed_until timestamptz;
+
+-- ---------------------------------------------------------------------------------------------------
+-- 4. Lesson drafts remember their conversation
+-- ---------------------------------------------------------------------------------------------------
+
+-- Ids only: the draft itself is de-identified and never names the conversation.
+ALTER TABLE patterns ADD COLUMN IF NOT EXISTS source_session_id uuid REFERENCES coaching_sessions (id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS patterns_source_session_idx ON patterns (source_session_id) WHERE source_session_id IS NOT NULL;
+
+-- Deleting a conversation removes everything the vEIR drew from it (app.soft_delete_session): its lesson drafts
+-- that are still drafts are withdrawn too. A draft a curator already took into review stays with the curator.
+CREATE OR REPLACE FUNCTION app.withdraw_distilled_drafts() RETURNS trigger
+  LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+BEGIN
+  UPDATE patterns p SET status = 'withdrawn', updated_at = now()
+   WHERE p.source_session_id = NEW.id AND p.origin = 'distilled' AND p.status = 'draft';
+  RETURN NULL;
+END
+$$;
+REVOKE ALL ON FUNCTION app.withdraw_distilled_drafts() FROM PUBLIC;
+DROP TRIGGER IF EXISTS coaching_sessions_withdraw_distilled_drafts ON coaching_sessions;
+CREATE TRIGGER coaching_sessions_withdraw_distilled_drafts AFTER UPDATE OF deleted_at ON coaching_sessions
+  FOR EACH ROW WHEN (OLD.deleted_at IS NULL AND NEW.deleted_at IS NOT NULL)
+  EXECUTE FUNCTION app.withdraw_distilled_drafts();

@@ -1,4 +1,9 @@
-import { type DistillDraft } from '@foundry/ai';
+import {
+  type DistillDraft,
+  ModelOutputInvalidError,
+  ModelRefusalError,
+  ModelUnavailableError,
+} from '@foundry/ai';
 import { type notebooksRepo, type sessionsRepo } from '@foundry/db';
 import { describe, expect, it } from 'vitest';
 
@@ -6,6 +11,10 @@ import {
   distillSkipReason,
   dropSuppressed,
   filenameWords,
+  humanAdviceIds,
+  keepHumanAdvice,
+  modelFailure,
+  personaCanDistill,
   previousNeedsDistill,
   removedSince,
   sameNotebook,
@@ -59,6 +68,16 @@ describe('distillSkipReason (the cheap checks of a queued distill_session)', () 
     ).toBeNull();
   });
 
+  it('leaves a job queued at fewer turns to the job of the later turn (one model call per burst)', () => {
+    const idle = { ...state, lastActivityAt: minutesAgo(9) };
+    expect(distillSkipReason(idle, NOW, ACTIVE_WINDOW, 3)).toBe('superseded');
+    expect(distillSkipReason(idle, NOW, ACTIVE_WINDOW, 4)).toBeNull();
+    // The backstop queues nothing: no turn count, no supersession.
+    expect(distillSkipReason(idle, NOW, ACTIVE_WINDOW)).toBeNull();
+    // Up to date wins over superseded (nothing to do either way, the cheaper reason is reported).
+    expect(distillSkipReason({ ...idle, distillVersion: 4 }, NOW, ACTIVE_WINDOW, 3)).toBe('up_to_date');
+  });
+
   it('the 9-minute delay of the last turn lands after its 8-minute active window', () => {
     const delay = 540;
     expect(
@@ -66,6 +85,49 @@ describe('distillSkipReason (the cheap checks of a queued distill_session)', () 
     ).toBeNull();
     // An earlier turn's job lands while a later turn is recent: skipped.
     expect(distillSkipReason({ ...state, lastActivityAt: minutesAgo(2) }, NOW, ACTIVE_WINDOW)).toBe('active');
+  });
+});
+
+describe('personaCanDistill', () => {
+  const consent = { revokedAt: null, expiresAt: null };
+  const eirPersona = { status: 'active' as const, kind: 'eir_persona' as const };
+
+  it('distils for an active persona whose EIR consent is in force', () => {
+    expect(personaCanDistill(eirPersona, consent, NOW)).toBe(true);
+    expect(personaCanDistill(eirPersona, { ...consent, expiresAt: minutesAgo(-60) }, NOW)).toBe(true);
+    expect(personaCanDistill({ status: 'active', kind: 'neutral_guide' }, null, NOW)).toBe(true);
+  });
+
+  it('never distils for a suspended or retired persona, or one whose consent was revoked or lapsed', () => {
+    expect(personaCanDistill({ ...eirPersona, status: 'suspended' }, consent, NOW)).toBe(false);
+    expect(personaCanDistill({ ...eirPersona, status: 'retired' }, consent, NOW)).toBe(false);
+    expect(personaCanDistill(eirPersona, null, NOW)).toBe(false);
+    expect(personaCanDistill(eirPersona, { ...consent, revokedAt: minutesAgo(5) }, NOW)).toBe(false);
+    expect(personaCanDistill(eirPersona, { ...consent, expiresAt: minutesAgo(1) }, NOW)).toBe(false);
+  });
+});
+
+describe('modelFailure (what a failed model call means for the queued job)', () => {
+  it('retries an unavailable, throttled or timed-out model, and a call cancelled at the deadline', () => {
+    expect(modelFailure(new ModelUnavailableError('throttled', 'm'), 3, 3)).toBeNull();
+    expect(modelFailure(new ModelUnavailableError('timeout', 'm'), 1, 1)).toBeNull();
+    expect(modelFailure(new ModelUnavailableError('aborted', 'm'), 1, 3)).toBeNull();
+  });
+
+  it('records a configuration or request error at once: retrying never helps', () => {
+    expect(modelFailure(new ModelUnavailableError('config', 'm'), 1, 3)).toBe('model_unavailable:config');
+    expect(modelFailure(new ModelUnavailableError('client_error', 'm'), 1, 3)).toBe(
+      'model_unavailable:client_error',
+    );
+  });
+
+  it('gives an invalid or refused answer one more delivery, then records it; inline runs record at once', () => {
+    const invalid = new ModelOutputInvalidError('m', ['(root): x']);
+    expect(modelFailure(invalid, 1, 3)).toBeNull();
+    expect(modelFailure(invalid, 2, 3)).toBe('model_output_invalid');
+    expect(modelFailure(new ModelRefusalError('m', 'model'), 1, 3)).toBeNull();
+    expect(modelFailure(new ModelRefusalError('m', 'model'), 2, 3)).toBe('model_refusal');
+    expect(modelFailure(invalid, 1, 1)).toBe('model_output_invalid');
   });
 });
 
@@ -224,6 +286,55 @@ describe('sameNotebook', () => {
     expect(sameNotebook(notebook, reordered)).toBe(true);
     expect(sameNotebook(notebook, { ...notebook, summary: 'other' })).toBe(false);
     expect(sameNotebook(null, notebook)).toBe(false);
+  });
+
+  it('compares the six content sections only, never bookkeeping the stored document carries', () => {
+    const stored = { ...notebook, summarySources: ['55555555-5555-4555-8555-000000000001'] };
+    expect(sameNotebook(stored as notebooksRepo.NotebookContent, notebook)).toBe(true);
+  });
+});
+
+describe('keepHumanAdvice (escalation advice outlives the distillation after it)', () => {
+  const advice = (id: string, text: string, createdAt: string) => ({
+    id,
+    text,
+    sourceSessionId: null,
+    createdAt,
+  });
+  const human = advice(
+    'esc-1',
+    'From Corin Halvorsen (human help): Wait for the pilot data before signing.',
+    '2026-10-12T10:00:00.000Z',
+  );
+  const older = advice('la-1', 'Price the pilot per room, not per seat', '2026-10-10T10:00:00.000Z');
+
+  it('finds the human-help lines of a notebook', () => {
+    expect(humanAdviceIds({ ...notebook, lastAdvice: [human, older] })).toEqual(['esc-1']);
+    expect(humanAdviceIds(null)).toEqual([]);
+  });
+
+  it('puts back the advice a person gave when the model left it out, newest first', () => {
+    const fresh = advice('la-9', 'Ask the second library for a letter of intent', '2026-10-16T12:00:00.000Z');
+    expect(keepHumanAdvice([fresh, older], [human, older], new Set(), 5).map((e) => e.id)).toEqual([
+      'la-9',
+      'esc-1',
+      'la-1',
+    ]);
+    // Already there: unchanged.
+    expect(keepHumanAdvice([human, older], [human, older], new Set(), 5)).toEqual([human, older]);
+  });
+
+  it('drops a model line that restates it, and lets newer advice push it out past the cap', () => {
+    const restated = advice('la-8', 'Wait for the pilot data before signing.', '2026-10-16T12:00:00.000Z');
+    expect(keepHumanAdvice([restated], [human], new Set(), 5)).toEqual([human]);
+    const newer = [1, 2, 3, 4, 5].map((n) =>
+      advice(`la-n${String(n)}`, `New advice number ${String(n)}`, '2026-10-16T12:00:00.000Z'),
+    );
+    expect(keepHumanAdvice(newer, [human], new Set(), 5).map((e) => e.id)).not.toContain('esc-1');
+    // A line a person edited is never the one pushed out.
+    const kept = keepHumanAdvice([...newer.slice(0, 4), older], [human, older], new Set(['la-1']), 5);
+    expect(kept.map((e) => e.id)).toContain('la-1');
+    expect(kept).toHaveLength(5);
   });
 });
 

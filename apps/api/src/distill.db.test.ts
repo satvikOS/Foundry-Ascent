@@ -88,6 +88,7 @@ describe('distillation triggers over HTTP', () => {
         sessionId: session.id,
         ventureId: quietquad(),
         tenantId: api.h.seed.tenantId,
+        turns: 1,
       },
       delaySeconds: 540,
     });
@@ -96,6 +97,44 @@ describe('distillation triggers over HTTP', () => {
       'true',
     );
     expect(api.h.jobQueue.jobs).toEqual([]);
+  });
+
+  it('a burst of turns pays for one distillation: the earlier jobs are superseded by the last', async () => {
+    const session = await startSession(maya);
+    api.h.jobQueue.drain();
+    for (const text of ['Rooms are full on Sundays.', 'Students book and then skip.', 'No-shows cost us.']) {
+      await turn(maya, session.id, text);
+    }
+    const jobs = api.h.jobQueue.drain();
+    expect(jobs.map((j) => ('turns' in j ? j.turns : null))).toEqual([1, 2, 3]);
+    await api.h.t.db.system((sx) =>
+      sx.query(
+        `UPDATE coaching_sessions SET last_activity_at = now() - interval '9 minutes' WHERE id = :id`,
+        { id: p.uuid(session.id) },
+      ),
+    );
+    const deps = workerDepsFor(api.h.core, {
+      db: api.h.t.db,
+      gateway: api.h.gateway,
+      logger: api.logger,
+      maxReceiveCount: 3,
+    });
+    const requestIds = jobs.map((_, i) => `burst-${String(i)}`);
+    for (const [i, job] of jobs.entries()) {
+      const ctx = {
+        requestId: requestIds[i] ?? '',
+        attempt: 1,
+        deadline: Date.now() + 60_000,
+        log: api.logger,
+      };
+      expect((await dispatchJob(deps, job, ctx)).outcome).toBe('done');
+    }
+    const billed = await api.h.t.db.system((sx) =>
+      sx.query(`SELECT request_id FROM usage_ledger WHERE purpose = 'distill' AND request_id = ANY (:ids)`, {
+        ids: p.textArray(requestIds),
+      }),
+    );
+    expect(billed.rows).toEqual([{ request_id: 'burst-2' }]);
   });
 
   it('queues it now when the conversation ends, and the next conversation queues an undistilled previous one', async () => {

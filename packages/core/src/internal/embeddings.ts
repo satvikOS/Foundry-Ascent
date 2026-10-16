@@ -2,6 +2,7 @@ import { knowledgeRepo, settingsRepo } from '@foundry/db';
 
 import { type RequestContext } from '../context.js';
 import { type Kit } from './kit.js';
+import { meteredEmbed } from './metered.js';
 
 export interface EmbeddableMemory {
   readonly id: string;
@@ -35,16 +36,11 @@ export async function embedMemoryBestEffort(
   try {
     const settings = await kit.inRequest(ctx, ({ tx }) => settingsRepo.getPlatformSettings(tx));
     if (!settings.aiEnabled) return;
-    const result = await kit.deps.gateway.embed(usable.map(memoryEmbeddingText), {
-      purpose: 'embedding',
-      requestId: ctx.requestId,
-    });
-    await kit.recordUsage({
-      ctx,
-      ventureId: usable[0]?.ventureId ?? null,
-      purpose: 'embedding',
-      attempts: [{ modelId: result.modelId, usage: result.usage, costUsd: result.costUsd }],
-    });
+    const result = await meteredEmbed(
+      kit,
+      { ctx, ventureId: usable[0]?.ventureId ?? null, purpose: 'embedding' },
+      usable.map(memoryEmbeddingText),
+    );
     const vectors = usable.flatMap((item, i) => {
       const embedding = result.vectors[i];
       return embedding?.length === knowledgeRepo.EMBEDDING_DIMENSIONS ? [{ id: item.id, embedding }] : [];

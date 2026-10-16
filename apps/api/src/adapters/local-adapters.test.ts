@@ -152,31 +152,34 @@ describe('InlineJobQueue', () => {
         return Promise.resolve('done');
       });
       await queue.enqueue(distill, { delaySeconds: 540 });
-      expect(queue.pending).toBe(1);
       await vi.advanceTimersByTimeAsync(539_000);
       expect(seen).toEqual([]);
       await vi.advanceTimersByTimeAsync(1_000);
       await queue.idle();
       expect(seen).toEqual(['distill_session']);
-      expect(queue.pending).toBe(0);
     } finally {
       vi.useRealTimers();
     }
   });
 
   it('drops delayed jobs on stop, refuses new ones and rejects delays SQS would refuse', async () => {
-    const queue = new InlineJobQueue({ logger: silentLogger, retryDelayMs: 1 });
-    let calls = 0;
-    queue.attach(() => {
-      calls += 1;
-      return Promise.resolve('done');
-    });
-    await expect(queue.enqueue(distill, { delaySeconds: 901 })).rejects.toThrow(RangeError);
-    await queue.enqueue(distill, { delaySeconds: 60 });
-    queue.stop();
-    expect(queue.pending).toBe(0);
-    await expect(queue.enqueue(job)).rejects.toThrow(/stopped/);
-    await queue.idle();
-    expect(calls).toBe(0);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const queue = new InlineJobQueue({ logger: silentLogger, retryDelayMs: 1 });
+      let calls = 0;
+      queue.attach(() => {
+        calls += 1;
+        return Promise.resolve('done');
+      });
+      await expect(queue.enqueue(distill, { delaySeconds: 901 })).rejects.toThrow(RangeError);
+      await queue.enqueue(distill, { delaySeconds: 60 });
+      queue.stop();
+      await expect(queue.enqueue(job)).rejects.toThrow(/stopped/);
+      await vi.advanceTimersByTimeAsync(120_000);
+      await queue.idle();
+      expect(calls).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

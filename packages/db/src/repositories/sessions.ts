@@ -11,7 +11,7 @@ import { type z } from 'zod';
 import { col, type RawRow } from '../columns.js';
 import { type SqlExecutor, type SystemExecutor } from '../executor.js';
 import { p } from '../params.js';
-import { clampLimit, fetchByIdsInBatches, queryFirst, queryOne, queryRows } from './common.js';
+import { clampLimit, fetchByIdsInBatches, queryFirst, queryNumber, queryOne, queryRows } from './common.js';
 import { EPHEMERAL_REDACTION_TEXT } from './turns.js';
 
 type CoachModeValue = z.infer<typeof CoachMode>;
@@ -542,6 +542,51 @@ export async function markSessionDistilled(
     { id: p.uuid(args.sessionId), version: p.int(Math.max(0, Math.trunc(args.distillVersion))) },
   );
   return result.rowCount > 0;
+}
+
+/**
+ * Claims a conversation for one distillation run (migration 0007) until `seconds` from now: only when it
+ * still has turns no digest covers (`turns` > its distill version) and no other run holds an unexpired claim.
+ * Returns whether this run got it. The claim is released by {@link releaseDistillClaim}, or lapses.
+ */
+export async function claimDistillation(
+  sx: SystemExecutor,
+  args: { sessionId: string; claimId: string; turns: number; seconds: number },
+): Promise<boolean> {
+  const result = await sx.query(
+    `UPDATE coaching_sessions AS s
+     SET distill_claim_id = :claim, distill_claimed_until = now() + make_interval(secs => :secs)
+     WHERE s.id = :id AND s.deleted_at IS NULL AND s.distill_version < :turns
+       AND (s.distill_claimed_until IS NULL OR s.distill_claimed_until <= now())`,
+    {
+      id: p.uuid(args.sessionId),
+      claim: p.uuid(args.claimId),
+      turns: p.int(args.turns),
+      secs: p.int(Math.max(1, Math.trunc(args.seconds))),
+    },
+  );
+  return result.rowCount > 0;
+}
+
+/** Releases a run's claim (no-op when the claim lapsed and another run took it). */
+export async function releaseDistillClaim(
+  sx: SystemExecutor,
+  args: { sessionId: string; claimId: string },
+): Promise<void> {
+  await sx.query(
+    `UPDATE coaching_sessions AS s SET distill_claim_id = NULL, distill_claimed_until = NULL
+     WHERE s.id = :id AND s.distill_claim_id = :claim`,
+    { id: p.uuid(args.sessionId), claim: p.uuid(args.claimId) },
+  );
+}
+
+/** Completed turns of a conversation (as visible to the executor). */
+export function countCompletedTurns(ex: SqlExecutor, sessionId: string): Promise<number> {
+  return queryNumber(
+    ex,
+    `SELECT count(*) AS n FROM turns t WHERE t.session_id = :id AND t.status = 'completed'`,
+    { id: p.uuid(sessionId) },
+  );
 }
 
 /** The latest earlier conversation of a person in a venture, with what distillation needs to decide on it. */

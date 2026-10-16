@@ -83,6 +83,11 @@ export const DistillSessionJob = z.object({
   sessionId: z.uuid(),
   tenantId: z.uuid(),
   ventureId: z.uuid(),
+  /**
+   * Completed turns when the job was queued: a conversation that has more by the time the job runs was queued
+   * again by its later turn, so this job is superseded and ends without a model call.
+   */
+  turns: z.number().int().min(0).optional(),
   /** Request that enqueued the job (correlation only). */
   requestId: z.string().max(128).nullable(),
 });

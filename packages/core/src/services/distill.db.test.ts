@@ -11,6 +11,8 @@ import {
   MockModelGateway,
   type MockGenerateContext,
   type ModelGateway,
+  ModelOutputInvalidError,
+  ModelUnavailableError,
   mockDistillDraft,
 } from '@foundry/ai';
 import { MemoryObjectView, TurnStreamEvent, type TurnView } from '@foundry/contracts';
@@ -35,6 +37,8 @@ let corin: RequestContext;
 let scripted: ((context: MockGenerateContext) => DistillDraft) | null = null;
 /** Runs after the scripted core's model answered and before the answer is returned (a concurrent edit). */
 let whileAnswering: (() => Promise<void>) | null = null;
+/** The next model call of the scripted core fails with this error (billed like a real failed attempt). */
+let failNext: Error | null = null;
 let scriptedCore: Core;
 
 const quietquad = (): string => h.ventures.quietquad.id;
@@ -89,10 +93,11 @@ function notebook(): Promise<notebooksRepo.NotebookRecord | null> {
   );
 }
 
-function personEdits(): Promise<string[]> {
-  return h.t.db.system((sx) =>
-    notebooksRepo.getPersonEdits(sx, { ventureId: quietquad(), personaId: corinPersona() }),
+async function personEdits(): Promise<string[]> {
+  const marks = await h.t.db.system((sx) =>
+    notebooksRepo.getNotebookMarks(sx, { ventureId: quietquad(), personaId: corinPersona() }),
   );
+  return marks.personEdits;
 }
 
 async function proposalsFrom(sessionId: string): Promise<{ id: string; status: string; origin: string }[]> {
@@ -107,17 +112,34 @@ async function proposalsFrom(sessionId: string): Promise<{ id: string; status: s
   return rows.rows as { id: string; status: string; origin: string }[];
 }
 
-async function distilledLessons(): Promise<
-  { id: string; status: string; title: string; owner_id: string | null }[]
-> {
+interface LessonRow extends Record<string, unknown> {
+  id: string;
+  status: string;
+  title: string;
+  owner_id: string | null;
+  source_session_id: string | null;
+}
+
+async function distilledLessons(): Promise<LessonRow[]> {
   const rows = await h.t.db.system((sx) =>
     sx.query(
-      `SELECT id, status, title, owner_id FROM patterns
+      `SELECT id, status, title, owner_id, source_session_id FROM patterns
        WHERE persona_id = :persona AND origin = 'distilled' ORDER BY created_at`,
       { persona: p.uuid(corinPersona()) },
     ),
   );
-  return rows.rows as { id: string; status: string; title: string; owner_id: string | null }[];
+  return rows.rows as LessonRow[];
+}
+
+/** Usage-ledger rows of one purpose written under the given request ids. */
+async function ledgerRows(purpose: string, requestIds: readonly string[]): Promise<number> {
+  const rows = await h.t.db.system((sx) =>
+    sx.query(
+      `SELECT count(*)::int AS n FROM usage_ledger WHERE purpose = :purpose AND request_id = ANY (:ids)`,
+      { purpose: p.text(purpose), ids: p.textArray(requestIds) },
+    ),
+  );
+  return (rows.rows[0] as { n: number }).n;
 }
 
 async function auditFor(action: string, objectId: string): Promise<Record<string, unknown>[]> {
@@ -169,6 +191,9 @@ beforeAll(async () => {
   const gateway: ModelGateway = {
     info: mock.info,
     generateStructured: async <T>(request: GenerateStructuredRequest<T>) => {
+      const failure = failNext;
+      failNext = null;
+      if (failure) throw failure;
       const result = await mock.generateStructured(request);
       const hook = whileAnswering;
       whileAnswering = null;
@@ -203,6 +228,7 @@ describe('triggers', () => {
           sessionId: id,
           tenantId: h.seed.tenantId,
           ventureId: quietquad(),
+          turns: 1,
           requestId: maya.requestId,
         },
         deduplicationId: null,
@@ -238,8 +264,13 @@ describe('triggers', () => {
     h.jobQueue.drain();
     await h.core.distill.afterCreate(devin, next);
     expect(
-      h.jobQueue.jobs.map((j) => [j.job.type, 'sessionId' in j.job ? j.job.sessionId : null, j.delaySeconds]),
-    ).toEqual([['distill_session', previous, 0]]);
+      h.jobQueue.jobs.map((j) => [
+        j.job.type,
+        'sessionId' in j.job ? j.job.sessionId : null,
+        'turns' in j.job ? j.job.turns : null,
+        j.delaySeconds,
+      ]),
+    ).toEqual([['distill_session', previous, 1, 0]]);
 
     // Still active (a turn 2 minutes ago): its own delayed job covers it.
     await completedTurn(devin, next.id, 'Rooms fill up during exam weeks.');
@@ -283,7 +314,9 @@ describe('distillSession', () => {
     await idle(sessionId, 10);
     const outcome = await h.core.distill.distillSession(job(sessionId));
     expect(outcome).toMatchObject({ status: 'distilled', reason: null, turns: 4, lessonsDrafted: 1 });
-    expect(outcome.memoryProposed).toBe(1);
+    // The candidate ("Maya plans to interview five library staff…") restates what the second turn proposed
+    // ("I will interview five library staff…"): that proposal is raised again instead of a duplicate.
+    expect(outcome).toMatchObject({ memoryProposed: 0, memoryRepeated: 1 });
 
     const stored = await session(sessionId);
     expect(stored?.distillVersion).toBe(4);
@@ -305,9 +338,22 @@ describe('distillSession', () => {
     const proposals = await proposalsFrom(sessionId);
     expect(proposals).toHaveLength(1);
     expect(proposals[0]).toMatchObject({ status: 'proposed', origin: 'ai' });
+    const raised = await h.core.memory.get(maya, proposals[0]?.id ?? '');
+    expect(raised.sourceRefs.map((r) => r.kind)).toEqual(expect.arrayContaining(['turn', 'session']));
+    expect(raised.content).toMatch(/I will interview five library staff/);
+    // The conversation's turn proposals were embedded for the comparison by meaning.
+    const unembedded = await h.t.db.system((sx) =>
+      sx.query(
+        `SELECT count(*)::int AS n FROM memory_objects m JOIN turns t ON m.source_refs @> jsonb_build_array(
+           jsonb_build_object('kind', 'turn', 'id', CAST(t.id AS text)))
+         WHERE t.session_id = :id AND m.status = 'proposed' AND m.embedding IS NULL`,
+        { id: p.uuid(sessionId) },
+      ),
+    );
+    expect(unembedded.rows[0]).toEqual({ n: 0 });
     const lessons = await distilledLessons();
     expect(lessons).toHaveLength(1);
-    expect(lessons[0]).toMatchObject({ status: 'draft', owner_id: null });
+    expect(lessons[0]).toMatchObject({ status: 'draft', owner_id: null, source_session_id: sessionId });
 
     // Metered as `distill`, billed to the founder whose conversation it is.
     const usage = await h.t.db.system((sx) =>
@@ -317,7 +363,13 @@ describe('distillSession', () => {
 
     // Audited with ids and counts only; nothing the founder said reaches the audit or the logs.
     const [event] = await auditFor('session.distilled', sessionId);
-    expect(event?.metadata).toMatchObject({ turns: 4, memoryProposed: 1, lessonsDrafted: 1 });
+    expect(event?.metadata).toMatchObject({
+      turns: 4,
+      memoryProposed: 0,
+      memoryRepeated: 1,
+      lessonsDrafted: 1,
+      lessonIds: [lessons[0]?.id],
+    });
     const leaked = JSON.stringify([event, h.logger.records]);
     expect(leaked).not.toMatch(/booking pain points|occupancy sensors|repeat use/);
   });
@@ -378,8 +430,15 @@ describe('distillSession', () => {
     await expect(h.core.distill.distillSession(job(id))).rejects.toBeInstanceOf(RetryableDistillError);
     expect((await session(id))?.distillVersion).toBe(0);
 
+    // An invalid answer gets one more delivery of the queued job, then it is recorded.
+    const delivery = (attempt: number) => ({ attempt, maxAttempts: 3 });
     h.gateway.scriptNext('invalid_output');
-    expect(await h.core.distill.distillSession(job(id))).toMatchObject({
+    await expect(h.core.distill.distillSession(job(id), delivery(1))).rejects.toBeInstanceOf(
+      RetryableDistillError,
+    );
+    expect((await session(id))?.distillVersion).toBe(0);
+    h.gateway.scriptNext('invalid_output');
+    expect(await h.core.distill.distillSession(job(id), delivery(2))).toMatchObject({
       status: 'failed',
       reason: 'model_output_invalid',
     });
@@ -388,6 +447,28 @@ describe('distillSession', () => {
     expect(after?.digest).toBeNull();
     const [event] = await auditFor('session.distill_failed', id);
     expect(event).toMatchObject({ outcome: 'failed', policy_reason: 'model_output_invalid' });
+  });
+
+  it('records a configuration error at once, and retries a call cancelled at the deadline', async () => {
+    const id = await conversation(devin, ['Is a semester pilot long enough?']);
+    await idle(id, 15);
+    failNext = new ModelUnavailableError('aborted', 'mock');
+    await expect(
+      scriptedCore.distill.distillSession(job(id), { attempt: 1, maxAttempts: 3 }),
+    ).rejects.toBeInstanceOf(RetryableDistillError);
+    expect((await session(id))?.distillVersion).toBe(0);
+    // Model access not granted: no delivery will fix it, so it does not wait in the queue and the backstop.
+    failNext = new ModelUnavailableError('config', 'mock');
+    expect(await scriptedCore.distill.distillSession(job(id), { attempt: 1, maxAttempts: 3 })).toMatchObject({
+      status: 'failed',
+      reason: 'model_unavailable:config',
+    });
+    expect((await session(id))?.distillVersion).toBe(1);
+    // A refused or invalid answer inline (the backstop has no second delivery) is recorded at once.
+    const inline = await conversation(devin, ['Should the pilot be free?']);
+    await idle(inline, 15);
+    failNext = new ModelOutputInvalidError('mock', ['(root): scripted']);
+    expect(await scriptedCore.distill.distillSession(job(inline))).toMatchObject({ status: 'failed' });
   });
 
   it('drops the whole result when it names another venture', async () => {
@@ -658,7 +739,12 @@ describe('memory hygiene', () => {
     const status = Object.fromEntries(items.map((m) => [m.id, m.status]));
     expect(status).toEqual({ [stale]: 'expired', [fresh]: 'proposed', [staleConfirmed.id]: 'confirmed' });
     const events = await h.t.db.system((sx) => memoryRepo.listMemoryHistory(sx, stale));
-    expect(events.at(-1)).toMatchObject({ action: 'expired', actor: { id: h.people.maya } });
+    // Nobody acted: the event says so (it names the person the proposal was for only as its subject).
+    expect(events.at(-1)).toMatchObject({
+      action: 'expired',
+      actor: { id: h.people.maya },
+      diff: { system: true, reason: 'not_reviewed' },
+    });
     // The approval CHECK still forbids a confirmed AI item without a person.
     await expect(
       h.t.db.system((sx) =>
@@ -789,5 +875,374 @@ describe('escalation resolutions feed the notebook', () => {
     const resolved = await resolvedEscalation('safety_wellbeing', 'Talked through the workload with Maya');
     expect(resolved.status).toBe('resolved');
     expect((await notebook())?.version).toBe(before);
+  });
+});
+
+describe('one model call per conversation', () => {
+  it('leaves a job queued at fewer turns to the later turn, without a model call', async () => {
+    const id = await conversation(devin, ['Rooms run out in exam weeks.', 'We could text students.']);
+    await idle(id, 15);
+    const calls = h.gateway.calls.length;
+    expect(await h.core.distill.distillSession({ ...job(id), queuedTurns: 1 })).toMatchObject({
+      status: 'skipped',
+      reason: 'superseded',
+    });
+    expect(h.gateway.calls.length).toBe(calls);
+    expect((await h.core.distill.distillSession({ ...job(id), queuedTurns: 2 })).status).toBe('distilled');
+  });
+
+  it('a job arriving while another distils the conversation skips, and pays for nothing', async () => {
+    const id = await conversation(devin, ['Booking pain peaks on Sunday nights.']);
+    await idle(id, 15);
+    const outer = job(id);
+    let inner: Awaited<ReturnType<Core['distill']['distillSession']>> | null = null;
+    const innerJob = job(id);
+    whileAnswering = async () => {
+      inner = await scriptedCore.distill.distillSession(innerJob);
+    };
+    expect((await scriptedCore.distill.distillSession(outer)).status).toBe('distilled');
+    expect(inner).toMatchObject({ status: 'skipped', reason: 'in_progress' });
+    expect(await ledgerRows('distill', [outer.requestId, innerJob.requestId])).toBe(1);
+    // The claim is released after the write.
+    const claim = await h.t.db.system((sx) =>
+      sx.query('SELECT distill_claim_id, distill_claimed_until FROM coaching_sessions WHERE id = :id', {
+        id: p.uuid(id),
+      }),
+    );
+    expect(claim.rows[0]).toEqual({ distill_claim_id: null, distill_claimed_until: null });
+  });
+
+  it('jobs started together call the model once', async () => {
+    const id = await conversation(devin, ['Two libraries asked for weekly reports.']);
+    await idle(id, 15);
+    const jobs = [job(id), job(id), job(id)];
+    const outcomes = await Promise.all(jobs.map((j) => h.core.distill.distillSession(j)));
+    expect(outcomes.filter((o) => o.status === 'distilled')).toHaveLength(1);
+    expect(
+      await ledgerRows(
+        'distill',
+        jobs.map((j) => j.requestId),
+      ),
+    ).toBe(1);
+  });
+
+  it('a claim left by a run that died lapses, and the next job distils', async () => {
+    const id = await conversation(devin, ['Weekend demand is flat.']);
+    await idle(id, 15);
+    const hold = (interval: string) =>
+      h.t.db.system((sx) =>
+        sx.query(
+          `UPDATE coaching_sessions SET distill_claim_id = gen_random_uuid(),
+             distill_claimed_until = now() + CAST(:i AS interval) WHERE id = :id`,
+          { id: p.uuid(id), i: p.text(interval) },
+        ),
+      );
+    await hold('5 minutes');
+    expect((await h.core.distill.distillSession(job(id))).reason).toBe('in_progress');
+    await hold('-1 second');
+    expect((await h.core.distill.distillSession(job(id))).status).toBe('distilled');
+  });
+});
+
+describe('the persona and its consent', () => {
+  const setPersonaStatus = (status: 'active' | 'suspended') =>
+    h.t.db.system((sx) =>
+      sx.query('UPDATE personas SET status = :status WHERE id = :id', {
+        id: p.uuid(corinPersona()),
+        status: p.text(status),
+      }),
+    );
+
+  async function expectNothingWritten(id: string, notebookVersion: number | undefined): Promise<void> {
+    expect((await session(id))?.digest).toBeNull();
+    // Recorded at its turn count: not retried until a new turn.
+    expect((await session(id))?.distillVersion).toBe(2);
+    expect((await notebook())?.version).toBe(notebookVersion);
+    expect((await distilledLessons()).filter((l) => l.source_session_id === id)).toEqual([]);
+    const [event] = await auditFor('session.distill_dropped', id);
+    expect(event).toMatchObject({ policy_reason: 'persona_inactive' });
+  }
+
+  it('never distils for a suspended persona: no model call, no notes, no lesson drafts', async () => {
+    const id = await conversation(devin, ['We should price per semester.', 'Libraries budget per term.']);
+    await idle(id, 15);
+    const version = (await notebook())?.version;
+    const calls = h.gateway.calls.length;
+    await setPersonaStatus('suspended');
+    try {
+      expect(await h.core.distill.distillSession(job(id))).toMatchObject({
+        status: 'dropped',
+        reason: 'persona_inactive',
+      });
+    } finally {
+      await setPersonaStatus('active');
+    }
+    expect(h.gateway.calls.length).toBe(calls);
+    await expectNothingWritten(id, version);
+  });
+
+  it('never distils once the EIR consent lapsed', async () => {
+    const id = await conversation(devin, ['Our pilot ends in May.', 'Renewal talks start in April.']);
+    await idle(id, 15);
+    const version = (await notebook())?.version;
+    const lapse = (expired: boolean) =>
+      h.t.db.system((sx) =>
+        sx.query(
+          `UPDATE consents SET expires_at = CASE WHEN :expired THEN now() - interval '1 day' ELSE NULL END
+           WHERE id = (SELECT consent_id FROM personas WHERE id = :persona)`,
+          { expired: p.bool(expired), persona: p.uuid(corinPersona()) },
+        ),
+      );
+    await lapse(true);
+    try {
+      expect((await h.core.distill.distillSession(job(id))).reason).toBe('persona_inactive');
+    } finally {
+      await lapse(false);
+    }
+    await expectNothingWritten(id, version);
+  });
+
+  it('writes nothing when the persona is suspended while the model answers', async () => {
+    const id = await conversation(devin, ['We need a second campus.', 'The north campus has two libraries.']);
+    await idle(id, 15);
+    const version = (await notebook())?.version;
+    whileAnswering = () => setPersonaStatus('suspended').then(() => undefined);
+    try {
+      expect((await scriptedCore.distill.distillSession(job(id))).reason).toBe('persona_inactive');
+    } finally {
+      await setPersonaStatus('active');
+    }
+    await expectNothingWritten(id, version);
+  });
+});
+
+describe('memory hygiene by meaning', () => {
+  it('embeds pending proposals first, so a candidate worded differently raises one again', async () => {
+    const content =
+      'Libraries want weekly occupancy reports for every study room in the main building during the exam period.';
+    const pending = await proposal(maya, 'Weekly occupancy reports', content);
+    const id = await conversation(maya, ['What should the reports look like?']);
+    await idle(id, 15);
+    scripted = (context) => ({
+      ...mockDistillDraft(context),
+      memory_candidates: [
+        {
+          type: 'fact',
+          title: 'Weekly occupancy reports',
+          content: content.replace('exam period', 'exam season'),
+          evidence_ids: [],
+          confidence: 0.7,
+        },
+      ],
+      lesson_candidates: [],
+    });
+    try {
+      expect(await scriptedCore.distill.distillSession(job(id))).toMatchObject({
+        status: 'distilled',
+        memoryProposed: 0,
+        memoryRepeated: 1,
+      });
+    } finally {
+      scripted = null;
+    }
+    const raised = await h.t.db.system((sx) => memoryRepo.getMemory(sx, pending));
+    expect(raised?.hasEmbedding).toBe(true);
+    expect(raised?.sourceRefs.map((r) => r.id)).toContain(id);
+  });
+});
+
+describe('lesson drafts follow their conversation', () => {
+  // De-identified like the mock's own lessons (the venture's partners and documents are denylisted).
+  const lesson = {
+    title: 'Ask for a small deposit before settling a price',
+    context:
+      'A founder was choosing a price for a first paid pilot before any customer had paid for a comparable solution.',
+    signal: 'Prospects praised the idea but became vague whenever payment came up.',
+    intervention: 'Ask for a small paid commitment early instead of asking whether people would pay.',
+    outcome: 'Talks moved from opinions to commitments.',
+    limits: 'Works best when the user and the buyer are the same person.',
+  };
+  const withLesson = (title: string) => (context: MockGenerateContext) => ({
+    ...mockDistillDraft(context),
+    lesson_candidates: [{ ...lesson, title }],
+  });
+
+  it('deleting the conversation withdraws its drafts; a draft in review stays with the curator', async () => {
+    const first = await conversation(devin, ['Renewal is in May.', 'The dean reads the report.']);
+    const second = await conversation(devin, ['The pilot ends soon.', 'The budget holder asks for value.']);
+    await idle(first, 15);
+    await idle(second, 15);
+    scripted = withLesson(lesson.title);
+    try {
+      expect((await scriptedCore.distill.distillSession(job(first))).lessonsDrafted).toBe(1);
+      scripted = withLesson('Turn praise into a paid commitment early');
+      expect((await scriptedCore.distill.distillSession(job(second))).lessonsDrafted).toBe(1);
+    } finally {
+      scripted = null;
+    }
+    const [draft] = (await distilledLessons()).filter((l) => l.source_session_id === first);
+    const [reviewed] = (await distilledLessons()).filter((l) => l.source_session_id === second);
+    if (draft === undefined || reviewed === undefined) throw new Error('drafts missing');
+    await h.t.db.system((sx) =>
+      sx.query(`UPDATE patterns SET status = 'in_review' WHERE id = :id`, { id: p.uuid(reviewed.id) }),
+    );
+    await h.core.sessions.remove(devin, first);
+    await h.core.sessions.remove(devin, second);
+    const after = new Map((await distilledLessons()).map((l) => [l.id, l.status]));
+    expect(after.get(draft.id)).toBe('withdrawn');
+    expect(after.get(reviewed.id)).toBe('in_review');
+  });
+
+  it('never drafts again a lesson a curator withdrew', async () => {
+    const id = await conversation(devin, ['Renewal again.', 'Same report question.']);
+    await idle(id, 15);
+    scripted = withLesson(lesson.title);
+    try {
+      expect(await scriptedCore.distill.distillSession(job(id))).toMatchObject({
+        status: 'distilled',
+        lessonsDrafted: 0,
+      });
+    } finally {
+      scripted = null;
+    }
+  });
+});
+
+describe('two distillations of one notebook', () => {
+  it('runs again on the notebook another distillation wrote meanwhile, losing neither', async () => {
+    const mine = await conversation(maya, ['We will add a second campus next term.']);
+    const theirs = await conversation(devin, ['Should we charge per room or per seat?']);
+    await idle(mine, 15);
+    await idle(theirs, 15);
+    const [reworded] = (await notebook())?.content.founderProfile ?? [];
+    if (reworded === undefined) throw new Error('notebook too small');
+    const run = job(mine);
+    whileAnswering = async () => {
+      // The other conversation's distillation rewords a line and adds an open question meanwhile.
+      scripted = (context) => {
+        const draft = mockDistillDraft(context);
+        const profile = draft.notebook.founder_profile.map((n) =>
+          n.id === reworded.id ? { id: n.id, text: 'Reasons from numbers before deciding' } : n,
+        );
+        return { ...draft, notebook: { ...draft.notebook, founder_profile: profile } };
+      };
+      try {
+        expect((await scriptedCore.distill.distillSession(job(theirs))).status).toBe('distilled');
+      } finally {
+        scripted = null;
+      }
+    };
+    expect((await scriptedCore.distill.distillSession(run)).status).toBe('distilled');
+
+    // Neither the rewording nor the question was taken for a person's removal.
+    const after = (await notebook())?.content;
+    const profile = after?.founderProfile.map((e) => e.text) ?? [];
+    expect(profile).toContain('Reasons from numbers before deciding');
+    expect(profile).not.toContain(reworded.text);
+    expect(after?.openQuestions.map((e) => e.text)).toContain('Should we charge per room or per seat?');
+    expect(after?.commitments.map((c) => c.text)).toContain('Add a second campus next term');
+    // The first answer was set aside (the notebook changed under it) and the model asked again.
+    expect(await ledgerRows('distill', [run.requestId])).toBe(2);
+    expect(h.logger.records.some((r) => r.event === 'distill.notebook_changed')).toBe(true);
+  });
+});
+
+describe('human help in the notebook', () => {
+  it('keeps the advice an EIR gave across distillations until newer advice pushes it out', async () => {
+    const created = await h.core.escalations.create(maya, quietquad(), {
+      category: 'expert_judgment',
+      priority: 'P2',
+      requestedRole: 'eir',
+      founderQuestion: 'Do we need a data agreement with each library?',
+    });
+    await h.core.escalations.act(maya, created.id, { action: 'approve_sharing', sharedMemoryIds: [] });
+    await h.core.escalations.act(corin, created.id, { action: 'acknowledge' });
+    await h.core.escalations.act(corin, created.id, {
+      action: 'resolve',
+      resolution: { summary: 'Use one data agreement template for every library', nextSteps: [] },
+    });
+    const line = resolutionEntryId(created.id);
+    const advice = async () => (await notebook())?.content.lastAdvice ?? [];
+    const original = (await advice()).find((e) => e.id === line);
+    expect(original).toBeDefined();
+
+    // Twice the model leaves it out (the second time it is no longer a fresh person edit).
+    for (const text of ['Data agreements again.', 'And the template?']) {
+      const id = await conversation(maya, [text]);
+      await idle(id, 15);
+      scripted = (context) => {
+        const draft = mockDistillDraft(context);
+        return { ...draft, notebook: { ...draft.notebook, last_advice: [] } };
+      };
+      try {
+        expect((await scriptedCore.distill.distillSession(job(id))).status).toBe('distilled');
+      } finally {
+        scripted = null;
+      }
+      expect((await advice()).find((e) => e.id === line)).toEqual(original);
+      expect(await personEdits()).toEqual([]);
+    }
+
+    // Five newer lines of advice push it out, oldest first.
+    const id = await conversation(maya, ['What else should we do?']);
+    await idle(id, 15);
+    scripted = (context) => {
+      const draft = mockDistillDraft(context);
+      const fresh = [
+        'Ship the report',
+        'Call the dean',
+        'Price per term',
+        'Recruit a second campus',
+        'Hire help',
+      ];
+      return {
+        ...draft,
+        notebook: { ...draft.notebook, last_advice: fresh.map((text) => ({ id: null, text })) },
+      };
+    };
+    try {
+      expect((await scriptedCore.distill.distillSession(job(id))).status).toBe('distilled');
+    } finally {
+      scripted = null;
+    }
+    expect((await advice()).map((e) => e.id)).not.toContain(line);
+    expect(await advice()).toHaveLength(5);
+  });
+});
+
+describe('daily maintenance', () => {
+  it('a failing proposal expiry never undoes the erasure of temporary chats', async () => {
+    const id = await conversation(maya, ['A private thought about co-founder equity.'], {
+      privacy: 'ephemeral',
+    });
+    const stale = await proposal(maya, 'Stale idea', 'Sell sensors to gyms.');
+    await h.t.db.system(async (sx) => {
+      await sx.query(`UPDATE coaching_sessions SET started_at = now() - interval '25 hours' WHERE id = :id`, {
+        id: p.uuid(id),
+      });
+      await sx.query(`UPDATE turns SET created_at = now() - interval '25 hours' WHERE session_id = :id`, {
+        id: p.uuid(id),
+      });
+      await sx.query(`UPDATE memory_objects SET updated_at = now() - interval '40 days' WHERE id = :id`, {
+        id: p.uuid(stale),
+      });
+      await sx.query(`CREATE OR REPLACE FUNCTION public.test_block_expiry() RETURNS trigger
+        LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'expiry blocked'; END $$`);
+      await sx.query(`CREATE TRIGGER test_block_expiry BEFORE UPDATE ON memory_objects FOR EACH ROW
+        WHEN (OLD.status = 'proposed' AND NEW.status = 'expired') EXECUTE FUNCTION public.test_block_expiry()`);
+    });
+    try {
+      await expect(h.core.maintenance.runDaily({ requestId: 'maintenance-blocked' })).rejects.toThrow();
+    } finally {
+      await h.t.db.system(async (sx) => {
+        await sx.query('DROP TRIGGER test_block_expiry ON memory_objects');
+        await sx.query('DROP FUNCTION public.test_block_expiry()');
+      });
+    }
+    const turns = await h.t.db.system((sx) =>
+      sx.query('SELECT founder_text FROM turns WHERE session_id = :id', { id: p.uuid(id) }),
+    );
+    expect(turns.rows).toEqual([{ founder_text: '[ephemeral session: content removed]' }]);
+    expect((await session(id))?.status).toBe('ended');
   });
 });

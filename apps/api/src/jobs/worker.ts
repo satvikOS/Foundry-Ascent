@@ -136,8 +136,12 @@ export async function dispatchJob(
     case 'distill_session':
       try {
         const result = await deps.distill.distillSession(
-          { sessionId: job.sessionId, requestId },
-          { deadline },
+          {
+            sessionId: job.sessionId,
+            requestId,
+            ...(job.turns === undefined ? {} : { queuedTurns: job.turns }),
+          },
+          { deadline, attempt: ctx.attempt, maxAttempts: deps.maxReceiveCount },
         );
         log.info('worker.distill_done', {
           sessionId: result.sessionId,
@@ -211,10 +215,10 @@ export function parseJob(body: string): WorkerJob | null {
 async function processRecord(
   deps: WorkerDeps,
   record: SQSRecord,
+  job: WorkerJob | null,
   invocation: WorkerInvocation,
   now: () => number,
 ): Promise<{ outcome: JobOutcome | 'dropped'; ingested: boolean }> {
-  const job = parseJob(record.body);
   const attempt = Math.max(1, Number.parseInt(record.attributes.ApproximateReceiveCount, 10) || 1);
   if (job === null) {
     // Malformed or unknown messages can never succeed: drop them (logged with ids only).
@@ -232,9 +236,10 @@ async function processRecord(
 }
 
 /**
- * SQS batch handler logic: records run sequentially (the batch is small and Aurora is capped at 2 ACU);
- * transient failures and records that cannot start within the remaining time are returned as
- * `batchItemFailures` (partial batch response), everything else is acknowledged.
+ * SQS batch handler logic: records run sequentially (the batch is small and Aurora is capped at 2 ACU), daily
+ * maintenance first (it erases ended temporary chats, and must not be deferred behind distillations until its
+ * receive count runs out); transient failures and records that cannot start within the remaining time are
+ * returned as `batchItemFailures` (partial batch response), everything else is acknowledged.
  */
 export async function processSqsBatch(
   deps: WorkerDeps,
@@ -245,13 +250,18 @@ export async function processSqsBatch(
   const batchId = randomUUID();
   const failures: SQSBatchItemFailure[] = [];
   let ingested = 0;
-  for (const record of event.Records) {
+  const parsed = event.Records.map((record) => ({ record, job: parseJob(record.body) }));
+  const ordered = [
+    ...parsed.filter((r) => r.job?.type === 'maintenance'),
+    ...parsed.filter((r) => r.job?.type !== 'maintenance'),
+  ];
+  for (const { record, job } of ordered) {
     if (invocation.remainingMs() < MIN_RECORD_BUDGET_MS) {
       deps.logger.warn('worker.deferred', { batchId, messageId: record.messageId });
       failures.push({ itemIdentifier: record.messageId });
       continue;
     }
-    const { outcome, ingested: ready } = await processRecord(deps, record, invocation, now);
+    const { outcome, ingested: ready } = await processRecord(deps, record, job, invocation, now);
     if (outcome === 'retry') failures.push({ itemIdentifier: record.messageId });
     if (ready) ingested += 1;
   }

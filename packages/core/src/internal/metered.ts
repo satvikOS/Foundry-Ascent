@@ -1,5 +1,6 @@
 import {
   isModelGatewayError,
+  type EmbedResult,
   type GenerateStructuredRequest,
   type GenerateStructuredResult,
   type ModelAttempt,
@@ -57,4 +58,18 @@ export function meteredStructured<T>(
       requestId: meter.ctx.requestId,
     }),
   );
+}
+
+/** `gateway.embed` for `meter.purpose` (`embedding`), metered as one call (see {@link metered}). */
+export async function meteredEmbed(kit: Kit, meter: Meter, texts: readonly string[]): Promise<EmbedResult> {
+  return metered(kit, meter, async () => {
+    const embedded = await kit.deps.gateway.embed(texts, {
+      purpose: meter.purpose,
+      requestId: meter.ctx.requestId,
+    });
+    return {
+      ...embedded,
+      attempts: [{ modelId: embedded.modelId, usage: embedded.usage, costUsd: embedded.costUsd }],
+    };
+  });
 }

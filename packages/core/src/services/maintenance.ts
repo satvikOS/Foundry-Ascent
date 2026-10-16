@@ -19,7 +19,8 @@ export interface MaintenanceService {
    * Daily housekeeping (the worker runs it for the scheduled `maintenance` message; the schedule already wakes
    * the database once a day): ends ephemeral sessions idle for 24 h and erases the content of every ended
    * ephemeral session's turns, expires stale AI memory proposals, then runs the bounded distillation
-   * backstop while `deadline` (epoch ms) leaves time. One audit event per step, with counts. Idempotent.
+   * backstop while `deadline` (epoch ms) leaves time. Each step commits on its own, the privacy erasure
+   * first, so a later step failing never undoes it. One audit event per step, with counts. Idempotent.
    */
   runDaily(options: { readonly requestId: string; readonly deadline?: number }): Promise<MaintenanceReport>;
 }
@@ -30,8 +31,8 @@ export function createMaintenanceService(
 ): MaintenanceService {
   return {
     runDaily: async ({ requestId, deadline }) => {
-      const result = await kit.system(async (sx) => {
-        const cleanup = await sessionsRepo.expireStaleEphemeralSessions(sx, {
+      const cleanup = await kit.system(async (sx) => {
+        const ended = await sessionsRepo.expireStaleEphemeralSessions(sx, {
           idleSeconds: kit.config.maintenance.ephemeralIdleSeconds,
         });
         await auditRepo.appendAudit(sx, {
@@ -39,20 +40,23 @@ export function createMaintenanceService(
           outcome: 'succeeded',
           requestId,
           objectType: 'coaching_session',
-          metadata: { ended: cleanup.sessionsEnded, redactedTurns: cleanup.turnsRedacted },
+          metadata: { ended: ended.sessionsEnded, redactedTurns: ended.turnsRedacted },
         });
-        const expired = await memoryRepo.expireStaleAiProposals(sx, {
-          olderThanDays: kit.config.distillation.proposalTtlDays,
-        });
+        return ended;
+      });
+      const ttlDays = kit.config.distillation.proposalTtlDays;
+      const expired = await kit.system(async (sx) => {
+        const count = await memoryRepo.expireStaleAiProposals(sx, { olderThanDays: ttlDays });
         await auditRepo.appendAudit(sx, {
           action: 'maintenance.memory_proposals',
           outcome: 'succeeded',
           requestId,
           objectType: 'memory',
-          metadata: { expired, ttlDays: kit.config.distillation.proposalTtlDays },
+          metadata: { expired: count, ttlDays },
         });
-        return { ...cleanup, expired };
+        return count;
       });
+      const result = { ...cleanup, expired };
       const distillation = await distill.backstop({
         requestId,
         ...(deadline === undefined ? {} : { deadline }),

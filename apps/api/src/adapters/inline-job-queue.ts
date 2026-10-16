@@ -70,11 +70,6 @@ export class InlineJobQueue implements JobQueue {
     return Promise.resolve();
   }
 
-  /** Delayed jobs that have not started yet. */
-  get pending(): number {
-    return this.#delayed.size;
-  }
-
   /** Resolves when every job started so far has finished (tests, shutdown); delayed jobs are not awaited. */
   async idle(): Promise<void> {
     while (this.#running.size > 0) await Promise.all([...this.#running]);

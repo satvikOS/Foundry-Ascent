@@ -3,13 +3,15 @@ import { type EscalationCategory } from '@foundry/contracts';
 import { assignmentsRepo, auditRepo, notebooksRepo, type escalationsRepo } from '@foundry/db';
 
 import { type Kit } from '../internal/kit.js';
+import { HUMAN_ADVICE_ID_PREFIX } from './distill-rules.js';
 import { notebookFingerprint } from './notebook.js';
 
 /**
  * Human help feeds the vEIR notebook: when an EIR or program lead resolves a founder's escalation, the
  * resolution becomes a `lastAdvice` line, attributed to the person who gave it, so the vEIR can pick the
  * thread up. It is an AI-notebook line like any other: visible to the venture team, correctable and removable,
- * never cited as a fact. Wellbeing and conflict cases stay out of the coaching notebook.
+ * never cited as a fact. Distillation keeps it as written until a person removes it or newer advice pushes
+ * it out (`keepHumanAdvice`). Wellbeing and conflict cases stay out of the coaching notebook.
  */
 
 /** Categories whose resolutions are personal matters, not venture advice: never written to the notebook. */
@@ -22,7 +24,7 @@ const ENTRY_MAX_CHARS = 400;
 
 /** The notebook entry id of an escalation's resolution (one line per escalation, so retries are no-ops). */
 export function resolutionEntryId(escalationId: string): string {
-  return `esc-${escalationId}`;
+  return `${HUMAN_ADVICE_ID_PREFIX}${escalationId}`;
 }
 
 /** Whole words up to `max` characters, with an ellipsis when cut. */
@@ -34,7 +36,7 @@ function clamp(text: string, max: number): string {
 }
 
 /** "From Corin Halvorsen (human help): <summary> Next: <step>; <step>" — plain text, at most 400 characters. */
-export function resolutionNote(
+function resolutionNote(
   resolverName: string,
   resolution: { readonly summary: string; readonly nextSteps: readonly string[] },
 ): string {
@@ -79,7 +81,7 @@ export async function addResolutionToNotebook(
       ) {
         return 'skipped';
       }
-      const edited = new Set(current ? await notebooksRepo.getPersonEdits(sx, scope) : []);
+      const edited = new Set((await notebooksRepo.getNotebookMarks(sx, scope)).personEdits);
       const lastAdvice = [
         { id, text, sourceSessionId: escalation.sessionId, createdAt: kit.now().toISOString() },
         ...content.lastAdvice,

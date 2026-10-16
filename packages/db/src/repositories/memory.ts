@@ -656,8 +656,9 @@ export async function repeatProposal(
 
 /**
  * Daily maintenance (system): AI proposals nobody approved, rejected or raised again for `olderThanDays`
- * become `expired` (allowed by the approval CHECK since migration 0007), at most `limit` per run, each with an
- * `expired` history event attributed to the person the proposal was made for. Returns the number expired.
+ * become `expired` (allowed by the approval CHECK since migration 0007), at most `limit` per run. Each gets an
+ * `expired` history event marked `system: true` (nobody acted: the event names the person the proposal was
+ * made for only because every event needs one). Returns the number expired.
  */
 export function expireStaleAiProposals(
   sx: SystemExecutor,
@@ -678,12 +679,44 @@ export function expireStaleAiProposals(
        RETURNING m.id, m.venture_id, m.created_by)
      , ev AS (
        INSERT INTO memory_events (memory_id, venture_id, actor_id, action, diff)
-       SELECT id, venture_id, created_by, 'expired', jsonb_build_object('reason', 'not_reviewed', 'days', :days)
+       SELECT id, venture_id, created_by, 'expired',
+              jsonb_build_object('system', true, 'reason', 'not_reviewed', 'days', :days)
          FROM upd)
      SELECT count(*) AS n FROM upd`,
     {
       days: p.int(Math.max(1, Math.trunc(args.olderThanDays))),
       limit: p.int(clampLimit(args.limit, 5_000, 50_000)),
     },
+  );
+}
+
+/** A pending AI proposal without an embedding: what distillation embeds before it deduplicates against it. */
+export interface UnembeddedProposal {
+  readonly id: string;
+  readonly title: string;
+  readonly content: string;
+}
+
+/**
+ * The venture's pending AI proposals that have no embedding yet, most recently raised first (turns propose
+ * without embedding; the backfill catches up later). Distillation embeds them so its candidates can be
+ * compared by meaning.
+ */
+export function listUnembeddedAiProposals(
+  ex: SqlExecutor,
+  args: { ventureId: string; limit?: number },
+): Promise<UnembeddedProposal[]> {
+  return queryRows(
+    ex,
+    `SELECT m.id, m.title, m.content FROM memory_objects m
+     WHERE m.venture_id = :ventureId AND m.origin = 'ai' AND m.status = 'proposed' AND m.embedding IS NULL
+     ORDER BY m.updated_at DESC, m.id
+     LIMIT :limit`,
+    { ventureId: p.uuid(args.ventureId), limit: p.int(clampLimit(args.limit, 20, 100)) },
+    (r) => ({
+      id: col.uuid.decode(r.id, 'id'),
+      title: col.text.decode(r.title, 'title'),
+      content: col.text.decode(r.content, 'content'),
+    }),
   );
 }

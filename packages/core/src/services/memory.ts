@@ -1,4 +1,3 @@
-import { jaccardSimilarity, textKey } from '@foundry/ai';
 import {
   BatchMemoryActionRequest,
   type BatchMemoryActionResponse,
@@ -20,6 +19,7 @@ import { fail, parseInput } from '../errors.js';
 import { embedMemoryBestEffort, type EmbeddableMemory } from '../internal/embeddings.js';
 import { audit, requireId, type Kit } from '../internal/kit.js';
 import { toMemoryView } from '../internal/views.js';
+import { addsNothingTo, MEMORY_DUPLICATE_COSINE, sameMemoryContent } from './memory-dedupe.js';
 
 type MemoryEventViewValue = z.infer<typeof MemoryEventView>;
 
@@ -89,24 +89,6 @@ export type EvidenceIndex = ReadonlyMap<
 /** Venture items a new AI candidate is compared against (most recent first, content cut to an excerpt). */
 const DEDUPE_SCAN_LIMIT = 200;
 const DEDUPE_EXCERPT_CHARS = 1_000;
-/**
- * Cosine similarity at or above which a candidate restates an existing item (embeddings are unit-length):
- * near-paraphrases only.
- */
-export const MEMORY_DUPLICATE_COSINE = 0.92;
-/**
- * Content-word overlap (Jaccard) at or above which two contents are the same statement. High on purpose: two
- * statements that differ in a specific detail (a number, a name, a code) are different memories. Titles are
- * labels and never decide on their own, and one text containing another is not enough either (a longer
- * statement that quotes a known fact says something more).
- */
-export const MEMORY_DUPLICATE_JACCARD = 0.9;
-
-/** Whether two memory contents are the same statement (see {@link MEMORY_DUPLICATE_JACCARD}). */
-export function sameMemoryContent(a: string, b: string): boolean {
-  const key = textKey(a);
-  return key !== '' && (key === textKey(b) || jaccardSimilarity(a, b) >= MEMORY_DUPLICATE_JACCARD);
-}
 
 /** What happened to a batch of AI memory candidates. */
 export interface ProposalResult {
@@ -119,9 +101,27 @@ export interface ProposalResult {
   readonly dropped: number;
 }
 
+/** The conversation candidates are drawn from: its id and its turns' ids, and who spoke in it. */
+export interface CandidateConversation {
+  readonly sourceIds: ReadonlySet<string>;
+  /** Names the founder goes by in it (a candidate may name them where a turn said "I"). */
+  readonly speakers: readonly string[];
+}
+
+/** Whether an item is a pending AI proposal drawn from one of `sources` (a conversation and its turns). */
+function proposedFrom(item: memoryRepo.MemoryRecord, sources: ReadonlySet<string>): boolean {
+  return (
+    item.origin === 'ai' &&
+    item.status === 'proposed' &&
+    item.sourceRefs.some((r) => (r.kind === 'turn' || r.kind === 'session') && sources.has(r.id))
+  );
+}
+
 /**
- * The existing item a candidate restates: lexically ({@link sameMemoryContent}), or else, when the candidate
- * has an embedding, the closest embedded item at {@link MEMORY_DUPLICATE_COSINE} or above. Null when it is new.
+ * The existing item a candidate restates: lexically ({@link sameMemoryContent}); a pending AI proposal of the
+ * same conversation the candidate adds nothing to ({@link addsNothingTo}, when `conversation` is given); or
+ * else, when the candidate has an embedding, the closest embedded item at {@link MEMORY_DUPLICATE_COSINE} or
+ * above. Null when it is new.
  */
 async function findDuplicate(
   tx: SqlExecutor,
@@ -132,9 +132,18 @@ async function findDuplicate(
     readonly embedding: readonly number[] | null;
   },
   existing: readonly memoryRepo.MemoryRecord[],
+  conversation: CandidateConversation | undefined,
 ): Promise<memoryRepo.MemoryRecord | null> {
   const lexical = existing.find((e) => sameMemoryContent(e.content, candidate.content));
   if (lexical !== undefined) return lexical;
+  if (conversation !== undefined) {
+    const restated = existing.find(
+      (e) =>
+        proposedFrom(e, conversation.sourceIds) &&
+        addsNothingTo(candidate.content, e.content, conversation.speakers),
+    );
+    if (restated !== undefined) return restated;
+  }
   if (candidate.embedding === null) return null;
   const [nearest] = await memoryRepo.nearestMemory(tx, { ventureId, embedding: candidate.embedding });
   if (nearest === undefined || nearest.similarity < MEMORY_DUPLICATE_COSINE) return null;
@@ -152,8 +161,9 @@ async function findDuplicate(
  * that proposal again (new source ref, fresh expiry clock) instead of adding a duplicate; one that restates
  * anything else the venture has (confirmed, disputed, a person's proposal, or something a person rejected)
  * is dropped. Comparison is lexical against the venture's recent items (`existing`, read here when not
- * given) and by cosine similarity when `embeddings` (one per candidate, unit-length) are given; new
- * proposals store their embedding.
+ * given), by containment against the pending proposals of the same conversation (`conversation`), and by
+ * cosine similarity when `embeddings` (one per candidate,
+ * unit-length) are given; new proposals store their embedding.
  */
 export async function proposeMemoryCandidates(
   tx: SqlExecutor,
@@ -167,6 +177,7 @@ export async function proposeMemoryCandidates(
     readonly visibility: 'founder_private' | 'team';
     readonly existing?: readonly memoryRepo.MemoryRecord[];
     readonly embeddings?: readonly (readonly number[] | null)[];
+    readonly conversation?: CandidateConversation;
   },
 ): Promise<ProposalResult> {
   const usable = args.candidates.filter((c) => c.title.trim() !== '');
@@ -200,7 +211,13 @@ export async function proposeMemoryCandidates(
       ? Math.min(1, Math.max(0, candidate.confidence))
       : 0.5;
     const embedding = args.embeddings?.[index] ?? null;
-    const duplicate = await findDuplicate(tx, args.ventureId, { title, content, embedding }, existing);
+    const duplicate = await findDuplicate(
+      tx,
+      args.ventureId,
+      { title, content, embedding },
+      existing,
+      args.conversation,
+    );
     if (duplicate !== null) {
       const pendingAi =
         duplicate.status === 'proposed' &&
