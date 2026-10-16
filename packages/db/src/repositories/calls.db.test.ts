@@ -268,11 +268,16 @@ describe('call minutes', () => {
     expect(first.call.lastHeartbeatAt).not.toBeNull();
     expect(first.call.idleSeconds).toBeLessThan(5);
     // Twenty seconds later the honest total (+12) is taken whole; a lower total adds nothing.
-    await t.db.system((sx) =>
-      sx.query(`UPDATE calls SET last_heartbeat_at = now() - interval '20 seconds' WHERE id = :id`, {
-        id: p.uuid(call.id),
-      }),
-    );
+    await t.db.system(async (sx) => {
+      await sx.query('ALTER TABLE calls DISABLE TRIGGER calls_guard');
+      await sx.query(
+        `UPDATE calls SET started_at = started_at - interval '20 seconds',
+                          last_heartbeat_at = now() - interval '20 seconds'
+         WHERE id = :id`,
+        { id: p.uuid(call.id) },
+      );
+      await sx.query('ALTER TABLE calls ENABLE TRIGGER calls_guard');
+    });
     const second = await beat(first.call.micOpenSeconds + 12);
     expect(second.micSecondsAdded).toBe(12);
     expect((await beat(0)).micSecondsAdded).toBe(0);
@@ -286,6 +291,45 @@ describe('call minutes', () => {
       expect(await callsRepo.sttGrantsToday(tx, maya.principalId)).toBe(0);
       await callsRepo.endCall(tx, { callId: other.id, reason: 'user', detail: 'client_user' });
     });
+  });
+
+  it('never credits more microphone seconds than the call has lasted, however fast or concurrent the heartbeats', async () => {
+    const ctx = makeContext(must(seed.principals.priya), seed.tenantId);
+    const session = await newSession(ctx, 'benchtally');
+    const call = await startCall(ctx, session, 'benchtally');
+    const beat = (mic: number, holdSeconds = 0) =>
+      t.db.withContext(ctx, async (tx) => {
+        const recorded = must(
+          await callsRepo.recordHeartbeat(tx, { callId: call.id, state: 'listening', micOpenSeconds: mic }),
+        );
+        // Keeps the row locked, so a concurrent heartbeat on another connection waits for this one.
+        if (holdSeconds > 0) await tx.query('SELECT pg_sleep(:s)', { s: p.num(holdSeconds) });
+        return recorded;
+      });
+    const lasted = async (): Promise<callsRepo.CallRecord> =>
+      must(await t.db.withContext(ctx, (tx) => callsRepo.getCall(tx, call.id)));
+    // A client claiming a whole day on every beat, beat after beat, gets the wall time plus one slack.
+    for (let i = 0; i < 30; i += 1) await beat(86_400);
+    // Two connections at once: the second waits for the first's lock, then is bounded the same way.
+    await Promise.all([beat(86_400, 0.3), beat(86_400), beat(86_400)]);
+    const now = await lasted();
+    expect(now.micOpenSeconds).toBeLessThanOrEqual(now.elapsedSeconds + 1 + callsRepo.MIC_SECONDS_SLACK);
+    // A minute on, that minute can be claimed, and still no more than the call has lasted.
+    await t.db.system(async (sx) => {
+      await sx.query('ALTER TABLE calls DISABLE TRIGGER calls_guard');
+      await sx.query(
+        `UPDATE calls SET started_at = started_at - interval '60 seconds',
+                          last_heartbeat_at = last_heartbeat_at - interval '60 seconds'
+         WHERE id = :id`,
+        { id: p.uuid(call.id) },
+      );
+      await sx.query('ALTER TABLE calls ENABLE TRIGGER calls_guard');
+    });
+    for (let i = 0; i < 10; i += 1) await beat(86_400);
+    const later = await lasted();
+    expect(later.micOpenSeconds).toBeGreaterThanOrEqual(60);
+    expect(later.micOpenSeconds).toBeLessThanOrEqual(later.elapsedSeconds + 1 + callsRepo.MIC_SECONDS_SLACK);
+    await endCall(ctx, call.id);
   });
 });
 

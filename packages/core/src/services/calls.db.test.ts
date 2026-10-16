@@ -551,6 +551,22 @@ describe('heartbeats', () => {
     await endCall('priya', mine.id);
     expect(await auditActions()).toContain('call.terminated');
   });
+
+  it('meter no more speech-to-text than the call has lasted, however fast or concurrently they come', async () => {
+    const sessionId = await newSession('ines', 'emberloop');
+    const { call } = await startCall('ines', sessionId);
+    const billed = async () => (await transcribedSeconds('ines')).reduce((a, b) => a + b, 0);
+    const before = await billed();
+    const claimDay = () =>
+      h.core.calls.heartbeat(ctx.ines, call.id, { state: 'listening', micOpenSeconds: 86_400 });
+    for (let i = 0; i < 40; i += 1) await claimDay();
+    await Promise.all(Array.from({ length: 8 }, claimDay));
+    const row = await callRow(call.id);
+    // Every second added is metered once, and the call has lasted a second or two: the platform cap is safe.
+    expect((await billed()) - before).toBe(row.micOpenSeconds);
+    expect(row.micOpenSeconds).toBeLessThanOrEqual(row.elapsedSeconds + 1 + callsRepo.MIC_SECONDS_SLACK);
+    await endCall('ines', call.id);
+  });
 });
 
 describe('speech-to-text grants', () => {

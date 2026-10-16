@@ -134,8 +134,9 @@ off therefore stops every built-in call within 15 s. A later heartbeat of an end
 `terminate`.
 
 Each heartbeat also carries the client's running total of microphone seconds. The total only grows, never by
-more than the wall time since the previous heartbeat, and on a call with speech-to-text what it adds is
-metered (§2.7).
+more than the wall time since the previous heartbeat, and never beyond the call's own wall time plus 5 s
+(granted once per call, so heartbeats sent faster add nothing), by the database clock. On a call with
+speech-to-text what it adds is metered (§2.7).
 
 `POST /calls/:id/end` applies the same checks first: a call that has to stop ends for the server's reason.
 Otherwise it ends for the client's, which can only be `user`, `navigated` or `error` (other claims are stored

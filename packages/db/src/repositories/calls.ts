@@ -210,7 +210,10 @@ export function endCall(ex: SqlExecutor, input: EndCallInput): Promise<CallRecor
   );
 }
 
-/** Seconds a client may report beyond the wall time since its previous heartbeat (clock and rounding drift). */
+/**
+ * Seconds a call's microphone total may exceed the call's own wall time (client clock and rounding drift).
+ * Granted once per call, never per heartbeat: heartbeats sent faster add nothing beyond the wall time.
+ */
 export const MIC_SECONDS_SLACK = 5;
 
 export interface Heartbeat {
@@ -221,9 +224,10 @@ export interface Heartbeat {
 
 /**
  * Records a heartbeat of a live call with the client's running total of microphone seconds. The total only
- * grows, and never by more than the wall time since the previous heartbeat (plus a little slack), whatever the
- * client reports; concurrent heartbeats are serialised so each second is added once. Null when the call is not
- * live or not the caller's.
+ * grows, never by more than the wall time since the previous heartbeat, and never beyond the wall time since
+ * the call started (plus {@link MIC_SECONDS_SLACK}, once per call), whatever the client reports and however
+ * often it beats, by the database clock. Concurrent heartbeats are serialised so each second is added once.
+ * Null when the call is not live or not the caller's.
  */
 export function recordHeartbeat(
   ex: SqlExecutor,
@@ -233,11 +237,13 @@ export function recordHeartbeat(
     ex,
     `WITH prev AS (
        SELECT x.id, x.mic_open_seconds AS before,
-              ceil(extract(epoch FROM now() - coalesce(x.last_heartbeat_at, x.started_at)))::integer AS gap
+              ceil(extract(epoch FROM now() - coalesce(x.last_heartbeat_at, x.started_at)))::integer AS gap,
+              ceil(extract(epoch FROM now() - x.started_at))::integer AS lasted
        FROM calls x WHERE x.id = :id AND x.status = 'live' FOR UPDATE)
      UPDATE calls AS c SET last_heartbeat_at = now(), last_state = :state,
                            mic_open_seconds = least(86400, greatest(c.mic_open_seconds,
-                                                                    least(:mic, prev.before + prev.gap + :slack)))
+                                                                    least(:mic, prev.before + prev.gap,
+                                                                          prev.lasted + :slack)))
      FROM prev WHERE c.id = prev.id
      RETURNING ${COLUMNS}, (c.mic_open_seconds - prev.before)::integer AS mic_added`,
     {
