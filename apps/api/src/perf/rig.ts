@@ -7,7 +7,14 @@ import {
   MemoryObjectStore,
   Utf8TextExtractor,
 } from '@foundry/core/testing';
-import { createDbFromDriver, createPgDriver, instrumentDriver, principalsRepo, type Db } from '@foundry/db';
+import {
+  createDbFromDriver,
+  createPgDriver,
+  instrumentDriver,
+  p,
+  principalsRepo,
+  type Db,
+} from '@foundry/db';
 import { createTestDatabase, type TestDatabase } from '@foundry/db/testing';
 
 import { type ApiApp, createApp } from '../app.js';
@@ -57,10 +64,37 @@ export function harnessReply(context: MockGenerateContext): string {
   return /^.*?[.!?](?=\s|$)/su.exec(text)?.[0] ?? text;
 }
 
-export async function createLatencyRig(latency: SimulatedLatency): Promise<LatencyRig> {
+export interface LatencyRigOptions {
+  /**
+   * Extra copies of each of the venture's three most recent confirmed memory items, as production's venture
+   * memory held them (the same advisor meeting four times): retrieval then meets the repeats a real turn does.
+   */
+  readonly duplicateMemory?: number;
+}
+
+export async function createLatencyRig(
+  latency: SimulatedLatency,
+  options: LatencyRigOptions = {},
+): Promise<LatencyRig> {
   const t = await createTestDatabase({ seed: true });
   const seed = t.seed;
   if (seed === null) throw new Error('the latency rig needs a seeded database');
+  const quietquad = seed.ventures.find((v) => v.key === 'quietquad');
+  const copies = options.duplicateMemory ?? 0;
+  if (quietquad !== undefined && copies > 0) {
+    await t.db.system((sx) =>
+      sx.query(
+        `INSERT INTO memory_objects (tenant_id, venture_id, type, title, content, attributes, status, visibility,
+                                     confidence, source_refs, origin, created_by, approved_by, approved_at, embedding)
+         SELECT m.tenant_id, m.venture_id, m.type, m.title, m.content, m.attributes, m.status, m.visibility,
+                m.confidence, m.source_refs, m.origin, m.created_by, m.approved_by, m.approved_at, m.embedding
+         FROM (SELECT * FROM memory_objects WHERE venture_id = :ventureId AND status = 'confirmed'
+               ORDER BY updated_at DESC, id LIMIT 3) m
+         CROSS JOIN generate_series(1, :copies)`,
+        { ventureId: p.uuid(quietquad.id), copies: p.int(copies) },
+      ),
+    );
+  }
   const db = createDbFromDriver(
     instrumentDriver(createPgDriver({ connectionString: t.url, max: 6 }), {
       onCall: recordDbCall,

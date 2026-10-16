@@ -14,7 +14,8 @@ let rig: LatencyRig;
 let result: ScenarioResult;
 
 beforeAll(async () => {
-  rig = await createLatencyRig(LATENCY_PROFILES.local);
+  // As production's venture memory was: some items repeated.
+  rig = await createLatencyRig(LATENCY_PROFILES.local, { duplicateMemory: 3 });
   result = await runScenario(rig, { textTurns: 2, voiceTurns: 2 });
 }, 120_000);
 afterAll(async () => {
@@ -73,11 +74,27 @@ describe('the latency harness', () => {
     for (const r of result.requests) expect(num(r.server?.dbRoundTrips)).toBeGreaterThan(0);
   });
 
+  it('measures the prompt each turn sent: its evidence and its size', () => {
+    for (const t of result.turns) {
+      expect(num(t.evidenceItems)).toBeGreaterThan(0);
+      expect(num(t.evidenceTokens)).toBeGreaterThan(0);
+      expect(num(t.inputTokens)).toBeGreaterThan(num(t.evidenceTokens));
+    }
+    const voice = result.turns.filter((t) => t.channel === 'voice');
+    const typed = result.turns.filter((t) => t.channel === 'text');
+    // A call's turn reads fewer items than a typed one (retrieval's voice caps), and no repeat takes a slot.
+    for (const t of voice) expect(num(t.evidenceItems)).toBeLessThanOrEqual(13);
+    expect(Math.max(...voice.map((t) => num(t.evidenceTokens)))).toBeLessThan(
+      Math.min(...typed.map((t) => num(t.evidenceTokens))),
+    );
+  });
+
   it('reports a table of every flow', () => {
     const table = markdownReport(reportRows(result), rig.latency, 'local');
     expect(table).toContain('| typed turn | client: first sentence (turn.delta) | 2 |');
     expect(table).toContain('| voice turn | client: first audio bytes | 2 |');
     expect(table).toContain('| call-intro-speech | server: database round trips | 1 |');
+    expect(table).toContain('| voice turn | prompt: evidence block (tokens, estimate) | 2 |');
   });
 
   it('logs numbers and identifiers only: no words of the conversation', () => {

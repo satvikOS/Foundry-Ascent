@@ -58,6 +58,9 @@ function turnRows(group: string, turns: readonly TurnSample[]): ReportRow[] {
     ['speech: first unit reserved (cumulative)', speech('reservedMs')],
     ['speech: first unit synthesized (cumulative)', speech('synthesizedMs')],
     ['speech: first unit first audio (cumulative)', speech('firstAudioMs')],
+    ['prompt: evidence items', turns.map((t) => t.evidenceItems)],
+    ['prompt: evidence block (tokens, estimate)', turns.map((t) => t.evidenceTokens)],
+    ['prompt: reply call input (tokens, estimate)', turns.map((t) => t.inputTokens)],
   ];
   return rows.map(([metric, values]) => ({ group, metric, summary: summarize(values) }));
 }

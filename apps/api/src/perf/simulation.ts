@@ -22,12 +22,24 @@ export interface SimulatedLatency {
 }
 
 /**
- * Profiles. `production` is an estimate (stated in the runbook, to be replaced by the production numbers the
- * new log fields report): Data API calls from Lambda in the same region, Nova 2 Lite streaming, Titan V2 and
- * Polly neural. `local` adds nothing: what the code itself costs on this machine.
+ * Profiles. `production` is calibrated on production's own numbers (docs/runbooks/latency.md §4: voice turns
+ * of 2026-10-16, first validated words p50 4.4 s, model time p50 4.6 s): with these values the harness, run
+ * on the code production ran, gives first words 4.4 s and model time 4.1–4.6 s. Its whole turn comes out
+ * shorter (about 7.4 s against 8.3 s) and a speech request longer (1.1 s against 0.8 s): one round-trip
+ * figure cannot fit both, so read the harness's differences, not its absolute numbers. `estimate` is the
+ * first guess it replaced (Data API 20 ms, model first token 650 ms). `local` adds nothing: what the code
+ * itself costs on this machine.
  */
 export const LATENCY_PROFILES = {
   production: {
+    dbRoundTripMs: 45,
+    modelFirstTokenMs: 2_000,
+    modelWordMs: 5,
+    structuredMs: 2_400,
+    embedMs: 200,
+    speechFirstByteMs: 200,
+  },
+  estimate: {
     dbRoundTripMs: 20,
     modelFirstTokenMs: 650,
     modelWordMs: 6,

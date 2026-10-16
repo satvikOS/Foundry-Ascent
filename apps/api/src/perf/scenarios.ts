@@ -1,4 +1,7 @@
-import { StartCallResponse, SessionView, TurnStreamEvent } from '@foundry/contracts';
+import { buildEvidenceBlock } from '@foundry/ai';
+import { StartCallResponse, SessionView, TurnStreamEvent, type TurnView } from '@foundry/contracts';
+import { estimateTokens } from '@foundry/core';
+import { p } from '@foundry/db';
 
 import { type RequestOptions } from '../testing/api-harness.js';
 import { QUICK_PREFIX, type LatencyRig } from './rig.js';
@@ -29,6 +32,12 @@ export interface TurnSample {
   readonly server: Readonly<Record<string, unknown>> | null;
   /** The `speech.timing` log line of the first unit's `/speech` request (voice). */
   readonly speech: Readonly<Record<string, unknown>> | null;
+  /** Evidence items the reply's prompt carried. */
+  readonly evidenceItems: number | null;
+  /** Their `<evidence>` block, in estimated tokens (read by both of the turn's model calls). */
+  readonly evidenceTokens: number | null;
+  /** The reply call's whole prompt, in estimated tokens (the turn's audit, `inputTokensEstimate`). */
+  readonly inputTokens: number | null;
 }
 
 /** One plain request (a page's data, a call start, the intro's speech). */
@@ -170,6 +179,7 @@ export async function turn(
     lastSpeech: null as number | null,
     completed: null as number | null,
   };
+  let finished: TurnView | null = null;
   let firstAudio: Promise<{ ms: number; requestId: string } | null> = Promise.resolve(null);
   const speechFetches: Promise<unknown>[] = [];
   await readEvents(res, started, (event, at) => {
@@ -212,6 +222,9 @@ export async function turn(
         break;
       }
       case 'turn.completed':
+        finished = event.turn;
+        marks.completed ??= at;
+        break;
       case 'turn.blocked':
       case 'turn.error':
         marks.completed ??= at;
@@ -222,6 +235,8 @@ export async function turn(
   });
   const audio = await firstAudio;
   await Promise.all(speechFetches);
+  const completedTurn = finished as TurnView | null;
+  const prompt = completedTurn === null ? null : await promptSize(rig, completedTurn);
   return {
     channel: voice ? 'voice' : 'text',
     headersMs,
@@ -234,7 +249,27 @@ export async function turn(
     completedMs: marks.completed,
     server: logLine(rig, requestId, 'turn.timing'),
     speech: audio === null ? null : logLine(rig, audio.requestId, 'speech.timing'),
+    evidenceItems: completedTurn?.evidence.length ?? null,
+    evidenceTokens: prompt?.evidenceTokens ?? null,
+    inputTokens: prompt?.inputTokens ?? null,
   };
+}
+
+/** The size of a completed turn's prompt: its evidence block and the whole reply prompt (estimates). */
+async function promptSize(
+  rig: LatencyRig,
+  turn: TurnView,
+): Promise<{ evidenceTokens: number; inputTokens: number | null }> {
+  const evidenceTokens = estimateTokens(buildEvidenceBlock(turn.evidence));
+  const r = await rig.t.db.system((sx) =>
+    sx.query("SELECT metadata FROM audit_events WHERE object_id = :id AND action = 'turn.completed'", {
+      id: p.text(turn.id),
+    }),
+  );
+  const raw: unknown = r.rows[0]?.metadata;
+  const metadata = (typeof raw === 'string' ? JSON.parse(raw) : raw) as Record<string, unknown> | undefined;
+  const estimate = metadata?.inputTokensEstimate;
+  return { evidenceTokens, inputTokens: typeof estimate === 'number' ? estimate : null };
 }
 
 export interface ScenarioResult {
