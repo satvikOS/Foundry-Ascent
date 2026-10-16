@@ -446,6 +446,23 @@ export const TEACH_STEPS = [
   'Decide in advance what result would change your plan.',
 ] as const;
 
+function bankTexts(value: unknown): string[] {
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value)) return value.flatMap(bankTexts);
+  if (value !== null && typeof value === 'object') return Object.values(value).flatMap(bankTexts);
+  return [];
+}
+
+/**
+ * Proper nouns the banks use: a word written with a capital inside a sentence ("the Amazon Transcribe step").
+ * The mock keeps their capital when it continues a sentence with a bank phrase that starts with one.
+ */
+export const BANK_PROPER_NOUNS: ReadonlySet<string> = new Set(
+  [TOPICS, GREETINGS, LEADS, TEACH_STEPS]
+    .flatMap(bankTexts)
+    .flatMap((text) => [...text.matchAll(/(?<=[\p{Ll}\p{N},;:] )\p{Lu}\p{Ll}+/gu)].map((m) => m[0])),
+);
+
 /** Area labels for the escalation sentence. */
 export const ESCALATION_AREAS: Readonly<Record<string, string>> = {
   ip_licensing: 'intellectual property',

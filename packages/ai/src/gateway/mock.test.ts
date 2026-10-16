@@ -21,7 +21,8 @@ import {
 import { validateCoachResponse } from '../validators/coach-response.js';
 import { ModelOutputInvalidError, ModelRefusalError, ModelUnavailableError } from './errors.js';
 import { cosineSimilarity, hashEmbedding } from './hash-embedding.js';
-import { MOCK_FALLBACK_MODEL_ID, MOCK_MODEL_ID, MockModelGateway } from './mock.js';
+import { lowerFirst, MOCK_FALLBACK_MODEL_ID, MOCK_MODEL_ID, MockModelGateway } from './mock.js';
+import { BANK_PROPER_NOUNS } from './mock-content.js';
 
 const RELEASE: PromptRelease = {
   version: 1,
@@ -434,6 +435,64 @@ describe('mock conversation realism', () => {
     );
     expect(value.answer).toContain('Customer discovery clinic [E2] looks like the best fit');
     expect(value.challenge).toBeNull();
+  });
+
+  it('continues a sentence without lower-casing "I", acronyms or names', async () => {
+    const gw = new MockModelGateway();
+    const answers: string[] = [];
+    // Later turns open with the persona's lead-in, after the founder's name on every third seed.
+    for (let n = 0; n < 60; n += 1) {
+      const { value } = await gw.generateStructured(
+        veirTurn({
+          text: `What should we try next with the library, take ${String(n)}?`,
+          history: [{ founderText: 'Hi', answer: 'Hello Maya.' }],
+        }),
+      );
+      answers.push(value.answer);
+    }
+    expect(answers.some((answer) => answer.startsWith("Maya, I'll be direct."))).toBe(true);
+    expect(answers.some((answer) => answer.startsWith("Maya, here's my honest read."))).toBe(true);
+    for (const answer of answers) {
+      expect(answer).not.toMatch(/(?:^|[\s,])i(?:['’](?:m|ll|d|ve))?\b/u);
+    }
+  });
+});
+
+describe('lowerFirst', () => {
+  it('lower-cases an ordinary first word so it continues a sentence', () => {
+    expect(lowerFirst("Here's my honest read.")).toBe("here's my honest read.");
+    expect(lowerFirst('Customer evidence before building.')).toBe('customer evidence before building.');
+    expect(lowerFirst('')).toBe('');
+  });
+
+  it('keeps the pronoun "I" and its contractions', () => {
+    for (const text of [
+      'I think so.',
+      "I'm sure.",
+      "I'll be direct.",
+      "I'd start there.",
+      "I've seen this.",
+    ]) {
+      expect(lowerFirst(text)).toBe(text);
+    }
+    expect(lowerFirst('I’ll be direct.')).toBe('I’ll be direct.');
+    // Only the pronoun: a word that merely starts with I is lowered.
+    expect(lowerFirst('Interview five library staff')).toBe('interview five library staff');
+    expect(lowerFirst('Its price matters')).toBe('its price matters');
+  });
+
+  it('keeps acronyms (second letter upper-case)', () => {
+    expect(lowerFirst('MVP scope first')).toBe('MVP scope first');
+    expect(lowerFirst('FDA clearance comes later')).toBe('FDA clearance comes later');
+    expect(lowerFirst('A narrower first claim')).toBe('a narrower first claim');
+  });
+
+  it('keeps proper nouns: the bank’s and the names it is given, possessives included', () => {
+    for (const noun of BANK_PROPER_NOUNS) expect(lowerFirst(`${noun} helps`)).toBe(`${noun} helps`);
+    expect(lowerFirst('Maya plans the pilot', ['Maya'])).toBe('Maya plans the pilot');
+    expect(lowerFirst("Corin's approach is simple", ['Corin'])).toBe("Corin's approach is simple");
+    expect(lowerFirst('Quiet Labs pays first', ['Quiet Labs'])).toBe('Quiet Labs pays first');
+    expect(lowerFirst('Customer evidence first', ['Maya', 'Acme'])).toBe('customer evidence first');
   });
 });
 
