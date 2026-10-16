@@ -83,6 +83,18 @@ function streamStopReason(reason: StopReason | undefined): StreamStopReason {
   return 'other';
 }
 
+/**
+ * The input tokens a Converse call billed. With prompt caching (Nova caches repeated prompt prefixes on its
+ * own, with or without cache points), `inputTokens` counts only the tokens neither read from nor written to
+ * the cache; the cached ones are reported apart and billed too (reads at a discount). All three are counted at
+ * the input rate, so the spend caps never under-count a call; the bill can only be lower.
+ */
+export function billedInputTokens(
+  usage: { inputTokens?: number; cacheReadInputTokens?: number; cacheWriteInputTokens?: number } | undefined,
+): number {
+  return (usage?.inputTokens ?? 0) + (usage?.cacheReadInputTokens ?? 0) + (usage?.cacheWriteInputTokens ?? 0);
+}
+
 /** Geographic inference-profile prefix for a region (`us-east-1` → `us.`). */
 export function inferenceProfilePrefix(region: string): string {
   if (region.startsWith('us-gov-')) return 'us-gov.';
@@ -233,7 +245,7 @@ export class NovaProvider implements StructuredProvider {
             stopReason = event.messageStop.stopReason;
           } else if (event.metadata?.usage) {
             usage = {
-              inputTokens: event.metadata.usage.inputTokens ?? 0,
+              inputTokens: billedInputTokens(event.metadata.usage),
               outputTokens: event.metadata.usage.outputTokens ?? 0,
             };
           }
@@ -324,7 +336,7 @@ export class NovaProvider implements StructuredProvider {
 
       const latencyMs = Math.round(performance.now() - started);
       const usage = {
-        inputTokens: output.usage?.inputTokens ?? 0,
+        inputTokens: billedInputTokens(output.usage),
         outputTokens: output.usage?.outputTokens ?? 0,
       };
       const record = (outcome: RawModelAttempt['outcome']): void => {

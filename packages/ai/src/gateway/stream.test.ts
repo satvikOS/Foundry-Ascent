@@ -106,6 +106,24 @@ describe('NovaProvider.streamText (ConverseStream)', () => {
     return { provider, inputs };
   }
 
+  it('bills the input the stream read from the prompt cache', async () => {
+    const { provider } = nova([
+      () =>
+        events([
+          textDelta('Hi.'),
+          stop('end_turn'),
+          {
+            metadata: {
+              usage: { inputTokens: 100, outputTokens: 5, totalTokens: 2_105, cacheReadInputTokens: 2_000 },
+              metrics: { latencyMs: 20 },
+            },
+          },
+        ]),
+    ]);
+    const result = await provider.streamText(streamRequest(() => undefined));
+    expect(result.rawAttempts[0]?.usage).toEqual({ inputTokens: 2_100, outputTokens: 5 });
+  });
+
   it('delivers text deltas in order and reports the usage of the stream', async () => {
     const { provider, inputs } = nova([
       () =>
