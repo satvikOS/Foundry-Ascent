@@ -197,6 +197,7 @@ class BedrockModelGateway implements ModelGateway {
         outcome: a.outcome,
         latencyMs: a.latencyMs,
         inputTokens: a.usage.inputTokens,
+        cachedInputTokens: a.cachedInputTokens,
         outputTokens: a.usage.outputTokens,
         costUsd: a.costUsd,
         errorName: a.errorName,

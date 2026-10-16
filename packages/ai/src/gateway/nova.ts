@@ -208,6 +208,7 @@ export class NovaProvider implements StructuredProvider {
       let text = '';
       let stopReason: StopReason | undefined;
       let usage: { inputTokens: number; outputTokens: number } | null = null;
+      let cached: number | undefined;
       let opened = false;
       const cancelledBeforeSend = deadline.aborted;
       const record = (outcome: RawModelAttempt['outcome'], errorName: string | null): void => {
@@ -220,6 +221,7 @@ export class NovaProvider implements StructuredProvider {
           usage:
             usage ??
             estimatedStreamUsage(request, text, { outcome, opened, cancelledBeforeSend, reasoning: false }),
+          ...(cached === undefined ? {} : { cachedInputTokens: cached }),
           errorName,
         });
       };
@@ -248,6 +250,7 @@ export class NovaProvider implements StructuredProvider {
               inputTokens: billedInputTokens(event.metadata.usage),
               outputTokens: event.metadata.usage.outputTokens ?? 0,
             };
+            cached = event.metadata.usage.cacheReadInputTokens;
           }
         }
       } catch (error) {
@@ -339,8 +342,18 @@ export class NovaProvider implements StructuredProvider {
         inputTokens: billedInputTokens(output.usage),
         outputTokens: output.usage?.outputTokens ?? 0,
       };
+      const cached = output.usage?.cacheReadInputTokens;
       const record = (outcome: RawModelAttempt['outcome']): void => {
-        rawAttempts.push({ provider: 'nova', modelId, kind, outcome, latencyMs, usage, errorName: null });
+        rawAttempts.push({
+          provider: 'nova',
+          modelId,
+          kind,
+          outcome,
+          latencyMs,
+          usage,
+          ...(cached === undefined ? {} : { cachedInputTokens: cached }),
+          errorName: null,
+        });
       };
 
       if (output.stopReason === 'content_filtered' || output.stopReason === 'guardrail_intervened') {

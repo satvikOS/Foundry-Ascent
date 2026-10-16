@@ -275,5 +275,6 @@ describe('NovaProvider metering with the prompt cache', () => {
     const provider = new NovaProvider({ modelId: 'amazon.nova-2-lite-v1:0', region: 'us-east-1', converse });
     const result = await provider.generate(providerRequest(Answer));
     expect(result.rawAttempts[0]?.usage).toEqual({ inputTokens: 3_120, outputTokens: 90 });
+    expect(result.rawAttempts[0]?.cachedInputTokens).toBe(3_000);
   });
 });
