@@ -1,7 +1,7 @@
 import { VentureStage, type VentureDetail } from '@foundry/contracts';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { getRouteApi } from '@tanstack/react-router';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 
@@ -68,7 +68,7 @@ export function VentureSettingsPage() {
         </div>
       ) : (
         <div className="grid gap-10">
-          <ProfileCard venture={venture.data} editable={editable} />
+          <VentureProfileCard venture={venture.data} editable={editable} />
           <GoalEditor ventureId={ventureId} goal={venture.data.currentGoal} canEdit={editable} />
         </div>
       )}
@@ -76,8 +76,14 @@ export function VentureSettingsPage() {
   );
 }
 
-function ProfileCard({ venture, editable }: { venture: VentureDetail; editable: boolean }) {
+/**
+ * The venture's profile: read-only for people who can't edit it. A refusal that names a field (e.g. a name
+ * another venture uses) is shown on that field only; the form-level alert is for failures that name none.
+ */
+export function VentureProfileCard({ venture, editable }: { venture: VentureDetail; editable: boolean }) {
   const update = useUpdateVenture(venture.id);
+  // Whether the last failure was placed on its fields (then no form-level alert repeats or contradicts it).
+  const [onFields, setOnFields] = useState(false);
   const { register, control, handleSubmit, formState, reset, setError } = useForm<ProfileValues>({
     resolver: zodResolver(ProfileForm),
     defaultValues: profileOf(venture),
@@ -104,7 +110,7 @@ function ProfileCard({ venture, editable }: { venture: VentureDetail; editable: 
         announce('Venture updated');
       },
       onError: (error) => {
-        applyFieldErrors(error, setError, PROFILE_FIELDS);
+        setOnFields(applyFieldErrors(error, setError, PROFILE_FIELDS));
       },
     });
   });
@@ -152,7 +158,10 @@ function ProfileCard({ venture, editable }: { venture: VentureDetail; editable: 
             />
           )}
         />
-        <MutationErrorAlert error={update.isError ? update.error : null} title="Couldn’t save the venture" />
+        <MutationErrorAlert
+          error={update.isError && !onFields ? update.error : null}
+          title="Couldn’t save the venture"
+        />
         <div className="flex justify-end gap-2">
           <Button
             variant="ghost"
