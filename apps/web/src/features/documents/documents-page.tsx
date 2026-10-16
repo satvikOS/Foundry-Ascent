@@ -12,7 +12,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { useId, useMemo, useRef, useState, type DragEvent } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type DragEvent } from 'react';
 
 import { announce } from '@/components/a11y/live-announcer';
 import { Alert } from '@/components/ui/alert';
@@ -150,6 +150,8 @@ function UploadRow({
 export function DocumentsPage() {
   const me = useRequiredMe();
   const { ventureId } = routeApi.useParams();
+  // A citation links here with its knowledge source: that document is shown highlighted.
+  const { source: linkedSource } = routeApi.useSearch();
   const canEdit = canWrite(me, ventureId);
   const veirName = useVeirName(ventureId);
   const documents = useDocuments(ventureId);
@@ -172,6 +174,7 @@ export function DocumentsPage() {
   );
   // Uploads left unfinished are neither waited for nor counted (the list stops polling for them).
   const processing = rows.filter((d) => isInFlight(d)).length;
+  const linked = linkedSource === undefined ? null : (rows.find((d) => d.sourceId === linkedSource) ?? null);
 
   const onFiles = (files: File[]) => {
     if (files.length === 0) return;
@@ -344,6 +347,12 @@ export function DocumentsPage() {
         </p>
       ) : null}
 
+      {linkedSource !== undefined && documents.isSuccess && linked === null ? (
+        <p className="mb-3 text-small text-muted-foreground" role="status">
+          The document that passage came from is no longer here.
+        </p>
+      ) : null}
+
       {documents.isError ? (
         <ErrorState error={documents.error} onRetry={() => void documents.refetch()} headingLevel={2} />
       ) : documents.isPending ? (
@@ -365,6 +374,7 @@ export function DocumentsPage() {
             <DocumentRow
               key={doc.id}
               doc={doc}
+              highlighted={linked?.id === doc.id}
               canEdit={canEdit}
               retrying={complete.isPending && complete.variables === doc.id}
               deleting={remove.isPending && remove.variables === doc.id}
@@ -417,6 +427,7 @@ export function DocumentsPage() {
 
 function DocumentRow({
   doc,
+  highlighted,
   canEdit,
   retrying,
   deleting,
@@ -424,12 +435,20 @@ function DocumentRow({
   onDelete,
 }: {
   doc: DocumentView;
+  /** A citation linked to this document. */
+  highlighted: boolean;
   canEdit: boolean;
   retrying: boolean;
   deleting: boolean;
   onRetry: () => void;
   onDelete: () => void;
 }) {
+  const row = useRef<HTMLLIElement | null>(null);
+  useEffect(() => {
+    if (!highlighted) return;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    row.current?.scrollIntoView({ block: 'center', behavior: reduce ? 'auto' : 'smooth' });
+  }, [highlighted]);
   const type = TYPE_ICON[doc.contentType];
   const Icon = type.icon;
   // An upload left unfinished long ago is not "Uploading": it won't move on by itself.
@@ -440,8 +459,14 @@ function DocumentRow({
   const nameId = `document-${doc.id}`;
   return (
     <li
+      ref={row}
       aria-labelledby={nameId}
-      className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 px-2 py-3.5"
+      aria-current={highlighted ? 'true' : undefined}
+      data-highlighted={highlighted || undefined}
+      className={cn(
+        'grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 px-2 py-3.5 transition-colors',
+        highlighted && 'rounded-md bg-accent/60',
+      )}
     >
       <Icon aria-hidden className="mt-0.5 size-4 text-muted-foreground" />
       <div className="grid min-w-0 gap-0.5">

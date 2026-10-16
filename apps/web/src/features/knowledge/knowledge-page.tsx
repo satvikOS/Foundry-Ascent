@@ -103,7 +103,14 @@ export function KnowledgePage() {
         value={tab}
         onValueChange={(value) => {
           // The open memory item belongs to the section it was opened from.
-          setSearch({ view: value === 'memory' ? undefined : (value as KnowledgeView), m: undefined }, false);
+          setSearch(
+            {
+              view: value === 'memory' ? undefined : (value as KnowledgeView),
+              m: undefined,
+              source: undefined,
+            },
+            false,
+          );
         }}
         className="gap-0"
       >
@@ -177,6 +184,7 @@ export function KnowledgePage() {
             tenant={tenant}
             veirName={veirName}
             canReadConversations={team}
+            highlight={search.source}
           />
         </TabsContent>
       </Tabs>

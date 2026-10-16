@@ -1,7 +1,7 @@
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { BookOpen, Brain, FileText, Library, Lightbulb, ScrollText, type LucideIcon } from 'lucide-react';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
@@ -50,13 +50,21 @@ interface EvidenceSectionProps {
   veirName: string;
   /** Conversations are read only by the team; others see sources without citation counts. */
   canReadConversations: boolean;
+  /** Knowledge source a citation linked to (`?source=`): its row is shown highlighted. */
+  highlight?: string | undefined;
 }
 
 /**
  * Everything the vEIR can cite for the venture (documents, kept memory) and the program sources it
  * cited lately, with freshness and how many recent answers cited each one.
  */
-export function EvidenceSection({ ventureId, tenant, veirName, canReadConversations }: EvidenceSectionProps) {
+export function EvidenceSection({
+  ventureId,
+  tenant,
+  veirName,
+  canReadConversations,
+  highlight,
+}: EvidenceSectionProps) {
   const documents = useDocuments(ventureId);
   const memory = useMemory(ventureId, { status: 'confirmed' });
   // Conversations are team-only (the list answers 403 to everyone else), so only the team asks.
@@ -169,6 +177,7 @@ export function EvidenceSection({ ventureId, tenant, veirName, canReadConversati
               ventureId={ventureId}
               veirName={veirName}
               showCitations={canReadConversations && !countsPending}
+              highlighted={highlight !== undefined && source.sourceId === highlight}
             />
           ))}
         </ul>
@@ -183,13 +192,22 @@ function SourceRow({
   ventureId,
   veirName,
   showCitations,
+  highlighted,
 }: {
   source: EvidenceSource;
   tenant: string;
   ventureId: string;
   veirName: string;
   showCitations: boolean;
+  highlighted: boolean;
 }) {
+  const row = useRef<HTMLLIElement | null>(null);
+  // A citation opened this source: bring its row into view once.
+  useEffect(() => {
+    if (!highlighted) return;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    row.current?.scrollIntoView({ block: 'center', behavior: reduce ? 'auto' : 'smooth' });
+  }, [highlighted]);
   const program = source.programKind ? programLabel(source.programKind, veirName) : null;
   const Icon =
     source.kind === 'document' ? FileText : source.kind === 'memory' ? Brain : (program?.icon ?? BookOpen);
@@ -216,7 +234,12 @@ function SourceRow({
     );
   } else if (source.document) {
     title = (
-      <Link to="/$tenant/app/v/$ventureId/documents" params={{ tenant, ventureId }} className={linkClass}>
+      <Link
+        to="/$tenant/app/v/$ventureId/documents"
+        params={{ tenant, ventureId }}
+        search={{ source: source.sourceId ?? undefined }}
+        className={linkClass}
+      >
         {source.title}
       </Link>
     );
@@ -232,7 +255,15 @@ function SourceRow({
     : source.excerpt;
 
   return (
-    <li className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 px-2 py-3.5">
+    <li
+      ref={row}
+      data-highlighted={highlighted || undefined}
+      aria-current={highlighted ? 'true' : undefined}
+      className={cn(
+        'grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 px-2 py-3.5 transition-colors',
+        highlighted && 'rounded-md bg-accent/60',
+      )}
+    >
       <Icon aria-hidden className="mt-0.5 size-4 text-muted-foreground" />
       <div className="flex min-w-0 items-center gap-2 text-[15px]">{title}</div>
       {excerpt ? (
