@@ -86,9 +86,14 @@ describe('sanitizeMarkdown', () => {
       for (let i = 0; i < 5; i += 1) sanitizeMarkdown(input);
       return performance.now() - started;
     };
+    // Interleaved, best of three: a burst of load on a shared runner slows one sample, not one size.
     time(625);
-    const small = Math.min(time(625), time(625));
-    const large = Math.min(time(5_000), time(5_000));
+    let small = Infinity;
+    let large = Infinity;
+    for (let round = 0; round < 3; round += 1) {
+      small = Math.min(small, time(625));
+      large = Math.min(large, time(5_000));
+    }
     expect(large).toBeLessThan(16 * small + 100);
   }, 30_000);
 

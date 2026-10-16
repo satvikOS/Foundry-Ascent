@@ -388,9 +388,14 @@ describe('rewriteIdentity — a vEIR persona never claims to be its EIR', () => 
       for (let i = 0; i < 5; i += 1) rewriteIdentity(input, CORIN);
       return performance.now() - started;
     };
+    // Interleaved, best of three: a burst of load on a shared runner slows one sample, not one size.
     time(150);
-    const small = Math.min(time(150), time(150));
-    const large = Math.min(time(1_200), time(1_200));
+    let small = Infinity;
+    let large = Infinity;
+    for (let round = 0; round < 3; round += 1) {
+      small = Math.min(small, time(150));
+      large = Math.min(large, time(1_200));
+    }
     expect(large).toBeLessThan(16 * small + 100);
   }, 30_000);
 
@@ -460,9 +465,14 @@ describe('rewriteIdentity — a vEIR persona never claims to be its EIR', () => 
       }
       return total;
     };
+    // Interleaved, best of three: a burst of load on a shared runner slows one sample, not one size.
     time(800);
-    const small = Math.min(time(800), time(800));
-    const large = Math.min(time(6_400), time(6_400));
+    let small = Infinity;
+    let large = Infinity;
+    for (let round = 0; round < 3; round += 1) {
+      small = Math.min(small, time(800));
+      large = Math.min(large, time(6_400));
+    }
     expect(large).toBeLessThan(16 * small + 100);
   }, 60_000);
 
@@ -510,9 +520,14 @@ describe('rewriteIdentity — a vEIR persona never claims to be its EIR', () => 
       }
       return total;
     };
+    // Interleaved, best of three: a burst of load on a shared runner slows one sample, not one size.
     time(2_500);
-    const small = Math.min(time(2_500), time(2_500));
-    const large = Math.min(time(20_000), time(20_000));
+    let small = Infinity;
+    let large = Infinity;
+    for (let round = 0; round < 3; round += 1) {
+      small = Math.min(small, time(2_500));
+      large = Math.min(large, time(20_000));
+    }
     expect(large).toBeLessThan(16 * small + 100);
   }, 60_000);
 

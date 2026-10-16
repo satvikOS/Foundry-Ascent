@@ -874,9 +874,14 @@ describe('spoken text (voice channel)', () => {
       return performance.now() - started;
     };
     expect(violations(400).length).toBeLessThan(6_000);
+    // Interleaved, best of three: a burst of load on a shared runner slows one sample, not one size.
     time(50);
-    const small = Math.min(time(50), time(50));
-    const large = Math.min(time(400), time(400));
+    let small = Infinity;
+    let large = Infinity;
+    for (let round = 0; round < 3; round += 1) {
+      small = Math.min(small, time(50));
+      large = Math.min(large, time(400));
+    }
     expect(large).toBeLessThan(16 * small + 100);
   }, 30_000);
 

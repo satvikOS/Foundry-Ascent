@@ -621,10 +621,14 @@ describe('sanitizeDistill — notebook merge', () => {
       for (let i = 0; i < 20; i += 1) run(d);
       return performance.now() - started;
     };
+    // Interleaved, best of three: a burst of load on a shared runner slows one sample, not one size.
     time(14);
-    time(112);
-    const small = Math.min(time(14), time(14));
-    const large = Math.min(time(112), time(112));
+    let small = Infinity;
+    let large = Infinity;
+    for (let round = 0; round < 3; round += 1) {
+      small = Math.min(small, time(14));
+      large = Math.min(large, time(112));
+    }
     expect(summaryOf(112).length).toBeLessThan(2_800);
     expect(large).toBeLessThan(16 * small + 100);
   }, 30_000);

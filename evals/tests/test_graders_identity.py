@@ -339,9 +339,12 @@ def test_question_relay_and_feedback_rules_stay_linear(veir_ctx: GradingContext)
                 total += time.perf_counter() - started
         return total
 
+    # Interleaved, best of three: a burst of load on a shared runner slows one sample, not one size.
     timed(2_500)
-    small = min(timed(2_500), timed(2_500))
-    large = min(timed(20_000), timed(20_000))
+    small = large = float("inf")
+    for _ in range(3):
+        small = min(small, timed(2_500))
+        large = min(large, timed(20_000))
     assert large < 16 * small + 0.1
 
 
