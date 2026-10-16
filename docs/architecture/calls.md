@@ -53,7 +53,7 @@ A focused, full-height surface (a modal dialog over the conversation, so focus a
 it):
 
 - **Stage**: the avatar provider's form (the built-in presence) around the vEIR's monogram, or its portrait
-  when likeness consent and an image exist. Under it, the name with its "vEIR · AI" badge and the state in
+  when likeness consent and an image exist. Under it, the name with its "vEIR · AI · Live voice" badge and the state in
   words (`Connecting…`, `Listening`, `Thinking…`, `Speaking · Interrupt`, `Replying on screen`, `Muted`,
   `On hold`, `Reconnecting…`, `Hold to talk`, `Your turn`), never colour or motion alone. When the browser
   kept the call's audio suspended (no gesture reached it, as iOS requires), a **Turn on sound** button

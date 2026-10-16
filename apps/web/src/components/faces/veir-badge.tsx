@@ -4,9 +4,18 @@ import { cn } from '@/lib/utils';
 
 /**
  * The marker that travels with a vEIR's name: "vEIR · AI" for an EIR persona, "AI" for the neutral
- * guide. Text, not colour, carries the meaning.
+ * guide. Text, not colour, carries the meaning. `mode` adds how the vEIR is present ("Live voice" on a
+ * call).
  */
-export function VeirBadge({ kind, className }: { kind: PersonaSummary['kind']; className?: string }) {
+export function VeirBadge({
+  kind,
+  mode,
+  className,
+}: {
+  kind: PersonaSummary['kind'];
+  mode?: string;
+  className?: string;
+}) {
   return (
     <span
       data-slot="veir-badge"
@@ -16,6 +25,7 @@ export function VeirBadge({ kind, className }: { kind: PersonaSummary['kind']; c
       )}
     >
       {kind === 'eir_persona' ? 'vEIR · AI' : 'AI'}
+      {mode ? ` · ${mode}` : null}
     </span>
   );
 }

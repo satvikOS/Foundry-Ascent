@@ -92,6 +92,11 @@ describe('callBlocker', () => {
         configError: null,
       })?.title,
     ).toBe('No call minutes left today');
+    // The calls switch, sent by servers whose call settings carry it.
+    const callsOff = { ...config, callsEnabled: false };
+    expect(callBlocker({ writable: true, name: 'Corin', config: callsOff, configError: null })).toMatchObject(
+      { title: 'Calls are paused', retry: false },
+    );
     expect(callBlocker({ writable: true, name: 'Corin', config, configError: 'Offline' })).toMatchObject({
       message: 'Offline',
       retry: true,

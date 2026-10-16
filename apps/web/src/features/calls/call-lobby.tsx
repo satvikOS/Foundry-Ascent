@@ -40,6 +40,14 @@ export function callBlocker(input: {
       retry: false,
     };
   }
+  // The calls switch (`calls_enabled`), once the call settings carry it.
+  if ('callsEnabled' in config && config.callsEnabled === false) {
+    return {
+      title: 'Calls are paused',
+      message: 'The program has paused calls for now. You can keep chatting.',
+      retry: false,
+    };
+  }
   if (config.remainingMinutesToday < 1) {
     return {
       title: 'No call minutes left today',

@@ -65,6 +65,7 @@ describe('CallLive', () => {
   it('shows the vEIR, its state, one AI disclosure and named controls', async () => {
     const { engine } = renderLive();
     expect(await screen.findByRole('heading', { name: /Corin/ })).toHaveFocus();
+    expect(screen.getByRole('heading', { name: /Corin/ })).toHaveTextContent('vEIR · AI · Live voice');
     expect(screen.getByRole('status')).toHaveTextContent('Listening');
     expect(screen.getAllByRole('note', { name: 'AI disclosure' })).toHaveLength(1);
 

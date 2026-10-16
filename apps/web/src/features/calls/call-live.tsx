@@ -163,7 +163,7 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: Cal
             className="flex items-center gap-2 font-serif text-subheading font-normal outline-none"
           >
             {veir.shortName}
-            <VeirBadge kind={veir.kind} />
+            <VeirBadge kind={veir.kind} mode="Live voice" />
           </h2>
           <p className="flex items-center gap-2 text-small text-muted-foreground">
             <span role="status" aria-live="polite">
