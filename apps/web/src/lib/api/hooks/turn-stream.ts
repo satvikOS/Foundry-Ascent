@@ -111,6 +111,10 @@ export function turnStreamReducer(state: TurnStreamState, action: Action): TurnS
               },
             ],
           };
+        case 'turn.delta':
+        case 'turn.speech':
+          // Streamed units are rendered by the conversation view; the turn state changes on completion.
+          return state;
         case 'turn.completed':
           return {
             ...state,

@@ -34,3 +34,6 @@ blob-report/
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Claude Code local state (agent worktrees live under .claude/worktrees)
+.claude/

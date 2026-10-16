@@ -158,8 +158,15 @@ export type CallConfigResponse = z.infer<typeof CallConfigResponse>;
 /** `POST /speech` — synthesize validated vEIR text; responds with `audio/mpeg`. */
 export const SpeechRequest = z.object({
   sessionId: Id,
-  turnId: Id,
+  /** Null only for a call's signed intro. */
+  turnId: Id.nullable(),
   text: z.string().trim().min(1).max(1500),
+  /**
+   * Streaming units carry the `seq` and `sig` of their `turn.speech` event (or the call intro); without
+   * them the text must be the stored, validated `spoken` form of a completed turn of the session.
+   */
+  seq: z.number().int().min(0).optional(),
+  sig: z.string().min(16).max(200).optional(),
 });
 export type SpeechRequest = z.infer<typeof SpeechRequest>;
 

@@ -213,6 +213,29 @@ export const TurnStreamEvent = z.discriminatedUnion('event', [
     detail: z.string().nullable(),
     evidenceCount: z.number().int().nullable(),
   }),
+  /**
+   * A validated unit of the answer prose (sentence-gated: identity, cross-venture and markdown checks ran
+   * on it), streamed before the turn completes. `turn.completed` stays authoritative and replaces the
+   * streamed text. Additive: older clients ignore it.
+   */
+  z.object({
+    event: z.literal('turn.delta'),
+    turnId: Id,
+    seq: z.number().int().min(0),
+    text: z.string(),
+  }),
+  /**
+   * Voice channel only: a validated unit the vEIR may speak, signed by the server so `POST /speech` voices
+   * nothing else. Additive.
+   */
+  z.object({
+    event: z.literal('turn.speech'),
+    turnId: Id,
+    seq: z.number().int().min(0),
+    text: z.string().min(1).max(600),
+    sig: z.string().min(16).max(200),
+    final: z.boolean(),
+  }),
   z.object({ event: z.literal('turn.completed'), turn: TurnView }),
   z.object({
     event: z.literal('turn.blocked'),

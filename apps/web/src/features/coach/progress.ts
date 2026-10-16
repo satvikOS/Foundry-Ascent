@@ -91,6 +91,9 @@ export function turnProgressReducer(state: TurnProgress, action: ProgressAction)
     case 'turn.accepted':
       if (state.outcome !== 'idle') return state;
       return turnProgressReducer(state, { event: 'local.start' });
+    case 'turn.delta':
+    case 'turn.speech':
+      return state;
     case 'turn.status': {
       if (state.outcome !== 'running' && state.outcome !== 'idle') return state;
       const base = state.outcome === 'idle' ? turnProgressReducer(state, { event: 'local.start' }) : state;

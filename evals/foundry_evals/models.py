@@ -34,6 +34,8 @@ ESCALATION_CATEGORIES: tuple[str, ...] = (
 TURN_STREAM_EVENTS: tuple[str, ...] = (
     "turn.accepted",
     "turn.status",
+    "turn.delta",
+    "turn.speech",
     "turn.completed",
     "turn.blocked",
     "turn.error",
@@ -365,6 +367,22 @@ class TurnStatus(_Camel):
     evidence_count: int | None = None
 
 
+class TurnDelta(_Camel):
+    event: Literal["turn.delta"]
+    turn_id: str
+    seq: int
+    text: str
+
+
+class TurnSpeech(_Camel):
+    event: Literal["turn.speech"]
+    turn_id: str
+    seq: int
+    text: str
+    sig: str
+    final: bool
+
+
 class TurnCompleted(_Camel):
     event: Literal["turn.completed"]
     turn: TurnView
@@ -389,7 +407,7 @@ class TurnError(_Camel):
 
 
 TurnStreamEvent = Annotated[
-    TurnAccepted | TurnStatus | TurnCompleted | TurnBlocked | TurnError,
+    TurnAccepted | TurnStatus | TurnDelta | TurnSpeech | TurnCompleted | TurnBlocked | TurnError,
     Field(discriminator="event"),
 ]
 TURN_STREAM_EVENT_ADAPTER: TypeAdapter[TurnStreamEvent] = TypeAdapter(TurnStreamEvent)
