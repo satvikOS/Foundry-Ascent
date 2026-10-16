@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { announce } from '@/components/a11y/live-announcer';
+import { api, createIdempotencyKey, path } from '@/lib/api/client';
 import { errorMessage, isAbortError, isApiError } from '@/lib/api/errors';
-import { useUploadDocument } from '@/lib/api/hooks/documents';
+import { UPLOAD_CANCELLED, useUploadDocument, type UploadResume } from '@/lib/api/hooks/documents';
 
 import type { UploadCandidate } from './upload-validation';
 
@@ -24,6 +25,21 @@ export interface UploadItem {
   /** 0–100 */
   progress: number;
   error: string | null;
+  /** The document an earlier attempt registered (Retry reuses it), or null before the first attempt. */
+  resume: UploadResume | null;
+}
+
+/** A file to upload, optionally into a document whose earlier upload never finished. */
+export interface QueuedUpload extends UploadCandidate {
+  resume?: UploadResume | null;
+}
+
+/** Best-effort DELETE of a document whose upload the person gave up on (it has no file to keep). */
+function discard(resume: UploadResume | null): void {
+  if (!resume || resume.uploaded) return;
+  void api
+    .delete(path`/documents/${resume.documentId}`, { idempotencyKey: createIdempotencyKey() })
+    .catch(() => undefined);
 }
 
 let counter = 0;
@@ -33,11 +49,16 @@ const nextId = () => `upload-${Date.now().toString(36)}-${(counter++).toString(3
  * Sequential upload queue on top of `useUploadDocument` (create → presigned PUT with progress →
  * complete). One file uploads at a time so progress is easy to follow and the API is not flooded.
  * Finished items disappear after a short delay; the documents list then shows their processing state.
+ * Cancel deletes the item's document; a failure keeps it (marked unfinished) and Retry uploads into it
+ * again; removing a failed item from the list deletes it; leaving the page leaves it marked unfinished.
  */
 export function useUploadQueue(ventureId: string) {
   const upload = useUploadDocument(ventureId);
   const { mutateAsync } = upload;
   const [items, setItems] = useState<UploadItem[]>([]);
+  // The items as last rendered, for actions that act on an item's document (never inside a state updater).
+  const current = useRef(items);
+  current.current = items;
   const controllers = useRef(new Map<string, AbortController>());
   const busy = useRef(false);
   const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
@@ -46,7 +67,7 @@ export function useUploadQueue(ventureId: string) {
     setItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...next } : item)));
   }, []);
 
-  const add = useCallback((candidates: readonly UploadCandidate[]) => {
+  const add = useCallback((candidates: readonly QueuedUpload[]) => {
     if (candidates.length === 0) return;
     setItems((prev) => [
       ...prev,
@@ -56,6 +77,7 @@ export function useUploadQueue(ventureId: string) {
         status: 'queued',
         progress: 0,
         error: null,
+        resume: c.resume ?? null,
       })),
     ]);
     announce(candidates.length === 1 ? 'Upload queued' : `${candidates.length} uploads queued`);
@@ -64,8 +86,13 @@ export function useUploadQueue(ventureId: string) {
   const cancel = useCallback(
     (id: string) => {
       const controller = controllers.current.get(id);
-      if (controller) controller.abort();
-      else patch(id, { status: 'cancelled' });
+      if (controller) {
+        // The upload deletes its document as it stops.
+        controller.abort(UPLOAD_CANCELLED);
+        return;
+      }
+      discard(current.current.find((item) => item.id === id)?.resume ?? null);
+      patch(id, { status: 'cancelled', resume: null });
     },
     [patch],
   );
@@ -78,7 +105,9 @@ export function useUploadQueue(ventureId: string) {
   );
 
   const dismiss = useCallback((id: string) => {
-    setItems((prev) => prev.filter((item) => item.id !== id));
+    const item = current.current.find((candidate) => candidate.id === id);
+    if (item?.status === 'failed') discard(item.resume);
+    setItems((prev) => prev.filter((candidate) => candidate.id !== id));
   }, []);
 
   // Process the next queued item whenever nothing is uploading.
@@ -93,6 +122,10 @@ export function useUploadQueue(ventureId: string) {
     void mutateAsync({
       file: next.file,
       signal: controller.signal,
+      resume: next.resume,
+      onResume: (resume) => {
+        patch(next.id, { resume });
+      },
       onProgress: (progress) => {
         patch(next.id, {
           progress: progress.percent,
@@ -111,7 +144,8 @@ export function useUploadQueue(ventureId: string) {
       })
       .catch((error: unknown) => {
         if (isAbortError(error) || controller.signal.aborted) {
-          patch(next.id, { status: 'cancelled', error: null });
+          // Cancelled: its document was deleted, so a retry registers the file again.
+          patch(next.id, { status: 'cancelled', error: null, resume: null });
           announce('Upload cancelled');
         } else {
           patch(next.id, { status: 'failed', error: uploadErrorMessage(error) });
