@@ -39,8 +39,10 @@ export function answerSystemPrompt(system: string, options: AnswerPromptOptions)
     options.mode === null
       ? `- First decide which mode fits best (one of ${options.allowedModes.map((m) => `"${m}"`).join(', ')}) and answer in that mode; you will name it in the next step.`
       : `- Answer in the "${options.mode}" mode.`,
-    '- Claims, uncertainty, next actions, memory suggestions and follow-up questions are collected in a separate',
-    '  step: do not list them in the reply. When a person needs to weigh in, say so in one plain sentence.',
+    '- The rules above that name response fields (`answer`, `spoken`, `claims`, `next_actions`, `mode` and the',
+    '  others) apply to a separate step that collects claims, uncertainty, next actions, memory suggestions and',
+    '  follow-up questions. Do not list those in the reply, and never start it with a label such as "Answer:".',
+    '  When a person needs to weigh in, say so in one plain sentence.',
   ];
   if (options.channel === 'voice') {
     lines.push(

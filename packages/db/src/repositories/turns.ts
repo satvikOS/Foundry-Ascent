@@ -221,21 +221,24 @@ export function countPendingTurnsByAuthor(
 
 /**
  * Turns authored by a principal in the last `windowSeconds` (per-principal rate limit), of one channel when
- * `channel` is given (typed messages and spoken turns have separate limits).
+ * `channel` is given (typed messages and spoken turns have separate limits). `includeCrisis` also counts
+ * crisis turns of every other channel: spoken crisis turns skip call admission, so they share the typed
+ * limit.
  */
 export function countRecentTurnsByAuthor(
   ex: SqlExecutor,
-  args: { authorId: string; windowSeconds: number; channel?: TurnChannelValue },
+  args: { authorId: string; windowSeconds: number; channel?: TurnChannelValue; includeCrisis?: boolean },
 ): Promise<number> {
   return queryNumber(
     ex,
     `SELECT count(*) AS n FROM turns
      WHERE author_id = :authorId AND created_at > now() - make_interval(secs => :window)
-       AND (:channel IS NULL OR channel = :channel)`,
+       AND (:channel IS NULL OR channel = :channel OR (:includeCrisis AND risk_label = 'crisis'))`,
     {
       authorId: p.uuid(args.authorId),
       window: p.num(args.windowSeconds),
       channel: p.nullable.text(args.channel),
+      includeCrisis: p.bool(args.includeCrisis ?? false),
     },
   );
 }

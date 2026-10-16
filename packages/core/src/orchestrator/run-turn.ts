@@ -54,7 +54,13 @@ import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.j
 import { admitVoiceTurn as callsAdmission, type AdmitVoiceTurn } from '../services/call-admission.js';
 import { createDraftEscalation } from '../services/escalations.js';
 import { persistMemoryCandidates } from '../services/memory.js';
-import { blockedDetailOf, participantRiskLabel, participantTurnView, supportMessageFor } from './blocked.js';
+import {
+  RATE_LIMITED_CRISIS_MESSAGE,
+  blockedDetailOf,
+  participantRiskLabel,
+  participantTurnView,
+  supportMessageFor,
+} from './blocked.js';
 import { assembleContext } from './context-budget.js';
 import { loadContinuity, type LoadedContinuity } from './continuity.js';
 import { candidateVisibility, type KeyedEvidence } from './evidence.js';
@@ -73,7 +79,8 @@ import { secondsUntilUtcMidnight, shouldSampleForReview } from './sampling.js';
 /**
  * POST /sessions/:id/turns body. `expectedOrdinal` (the client's retry key) is part of the contract: when
  * a turn with this ordinal already exists for the same author and text, it is replayed from storage
- * instead of re-running. Without `mode`, the model picks the mode within the allowed ones (auto mode).
+ * instead of re-running. Without `mode`, the model picks the mode within the allowed ones (auto mode),
+ * except that a `rehearsalCounterpart` asks for a rehearsal.
  */
 export const RunTurnInput = CreateTurnRequest;
 export type RunTurnInput = z.input<typeof RunTurnInput>;
@@ -288,6 +295,39 @@ export function createOrchestrator(
     return active.release;
   }
 
+  /**
+   * The per-person message limit. It covers typed messages and crisis messages on any channel (a spoken
+   * crisis message skips call admission, so it must not skip every limit); other spoken turns are limited by
+   * the calls service. A crisis message over the limit is refused with where to find a person, and writes
+   * nothing: no turn and no further escalation draft.
+   */
+  async function overMessageLimit(
+    scope: RequestScope,
+    args: { readonly channel: TurnChannel; readonly crisis: boolean },
+  ): Promise<{ code: 'rate_limited'; message: string; reason: string; retryAfterSeconds: number } | null> {
+    if (args.channel !== 'text' && !args.crisis) return null;
+    const recent = await turnsRepo.countRecentTurnsByAuthor(scope.tx, {
+      authorId: scope.ctx.principalId,
+      windowSeconds: cfg.turns.rateWindowSeconds,
+      channel: 'text',
+      includeCrisis: true,
+    });
+    if (recent < cfg.turns.rateLimit) return null;
+    return args.crisis
+      ? {
+          code: 'rate_limited',
+          message: RATE_LIMITED_CRISIS_MESSAGE,
+          reason: 'crisis_rate_limit',
+          retryAfterSeconds: cfg.turns.rateWindowSeconds,
+        }
+      : {
+          code: 'rate_limited',
+          message: 'You are sending messages very quickly. Please wait a few minutes.',
+          reason: 'turn_rate_limit',
+          retryAfterSeconds: cfg.turns.rateWindowSeconds,
+        };
+  }
+
   /** Step 1: authorize and check every gate except spend caps (owner-only ledger). */
   function preflight(
     ctx: RequestContext,
@@ -365,7 +405,8 @@ export function createOrchestrator(
         );
       }
       const settings = await settingsRepo.getPlatformSettings(tx);
-      const mode = input.mode ?? null;
+      // A counterpart is only used in a rehearsal, so sending one without a mode asks for that mode.
+      const mode = input.mode ?? (input.rehearsalCounterpart ? 'rehearse' : null);
       const channel: TurnChannel = input.channel ?? 'text';
       // The crisis path answers with a fixed human-support message and makes no model call, so the AI
       // gates (kill switch, coach persona/assignment, mode) never stand between a founder and support.
@@ -430,21 +471,9 @@ export function createOrchestrator(
           'ordinal_mismatch',
         );
       }
-      // Typed messages have the per-principal rate limit; spoken turns have the calls service's own.
-      if (channel === 'text') {
-        const recent = await turnsRepo.countRecentTurnsByAuthor(tx, {
-          authorId: ctx.principalId,
-          windowSeconds: cfg.turns.rateWindowSeconds,
-          channel: 'text',
-        });
-        if (recent >= cfg.turns.rateLimit) {
-          throw reject(
-            'rate_limited',
-            'You are sending messages very quickly. Please wait a few minutes.',
-            'turn_rate_limit',
-            cfg.turns.rateWindowSeconds,
-          );
-        }
+      const limited = await overMessageLimit(scope, { channel, crisis });
+      if (limited !== null) {
+        throw reject(limited.code, limited.message, limited.reason, limited.retryAfterSeconds);
       }
       const venture = await venturesRepo.getVenture(tx, session.ventureId);
       if (venture === null) throw fail.notFound('Venture');
@@ -548,6 +577,18 @@ export function createOrchestrator(
     }
   }
 
+  /** Signed `turn.speech` units of one voice turn. */
+  function speechStream(
+    ctx: RequestContext,
+    ids: { readonly sessionId: string; readonly turnId: string },
+    emit: (e: TurnStreamEvent) => Promise<void>,
+    key: Promise<SessionSigningKey>,
+  ): SpeechStream {
+    return new SpeechStream(key, { ...ids, requestId: ctx.requestId }, emit, (fields) => {
+      logger.error('turn.speech_unsigned', fields);
+    });
+  }
+
   async function crisisPath(
     ctx: RequestContext,
     turn: turnsRepo.TurnRecord,
@@ -603,14 +644,7 @@ export function createOrchestrator(
     });
     // On a call, the fixed spoken support message is said before the blocked panel appears.
     if (speechKey !== null) {
-      const speech = new SpeechStream(
-        speechKey,
-        { sessionId: pre.session.id, turnId: turn.id, requestId: ctx.requestId },
-        emit,
-        (fields) => {
-          logger.error('turn.speech_unsigned', fields);
-        },
-      );
+      const speech = speechStream(ctx, { sessionId: pre.session.id, turnId: turn.id }, emit, speechKey);
       await speech.queue(CRISIS_SPOKEN_MESSAGE);
       await speech.finish();
     }
@@ -857,12 +891,23 @@ export function createOrchestrator(
         ? validated
         : enforceGateBlock(validated, generation.gateBlocked, pre.channel);
     const status = checked.blocked ? 'blocked' : 'completed';
-    // A call ends its reply with the last unit (and a caveat when the answer was narrowed); a blocked turn
-    // says nothing more.
-    const speech = generation.stream?.speech ?? null;
+    // A call ends a streamed reply with its last unit (and a caveat when the answer was narrowed). A reply
+    // written whole (streaming off, or a stream that broke, was empty or was not prose) is said as its
+    // validated spoken form. A blocked turn says nothing more.
+    const stream = generation.stream;
+    const speech =
+      stream?.speech ??
+      (a.speechKey === null
+        ? null
+        : speechStream(ctx, { sessionId: pre.session.id, turnId: turn.id }, emit, a.speechKey));
+    // True as well when nothing was streamed (`stream` null).
+    const writtenWhole = stream?.fallback !== null;
     if (speech !== null) {
       if (checked.blocked) speech.discard();
-      else await speech.finish(checked.results.narrowed ? SPOKEN_NARROWING_CAVEAT : undefined);
+      else if (writtenWhole) {
+        await speech.queue(checked.response.spoken ?? deriveSpoken(checked.response.answer));
+        await speech.finish();
+      } else await speech.finish(checked.results.narrowed ? SPOKEN_NARROWING_CAVEAT : undefined);
     }
     // Ephemeral sessions are never shared with the assigned EIR (RLS turns_read enforces it as well).
     const sampled =
@@ -947,7 +992,6 @@ export function createOrchestrator(
       if (checked.response.mode !== pre.session.mode) {
         await sessionsRepo.setSessionMode(tx, { sessionId: pre.session.id, mode: checked.response.mode });
       }
-      const stream = generation.stream;
       await audit(scope, {
         action: checked.blocked ? 'turn.blocked' : 'turn.completed',
         outcome: checked.blocked ? 'blocked' : 'succeeded',
@@ -979,15 +1023,20 @@ export function createOrchestrator(
           notebook: coach.memory.notebook,
           digests: coach.memory.digests,
           openerReplayed: context.openerReplayed,
-          streamed: stream !== null,
+          // How the reply reached the founder: off (one whole reply), streamed, stopped by the gate, or the
+          // reason a stream was replaced by a whole reply.
+          stream:
+            stream === null
+              ? 'off'
+              : (stream.fallback ?? (generation.gateBlocked === null ? 'streamed' : 'gate_blocked')),
           firstTokenMs,
           modelFirstTokenMs: stream?.modelFirstTokenMs ?? null,
           totalMs: Math.round(performance.now() - a.startedAt),
           modelMs: generation.latencyMs,
           deltas: stream?.deltas ?? 0,
           speechUnits: speech?.sent ?? 0,
-          gateBlocked: generation.gateBlocked,
           gateIdentityRewrites: stream?.gate.identityRewrites ?? 0,
+          gateWithheld: stream?.gate.withheld ?? 0,
         },
       });
       const evidence = (await turnsRepo.listTurnEvidence(tx, [turn.id])).get(turn.id) ?? [];
@@ -1009,7 +1058,8 @@ export function createOrchestrator(
   /**
    * Per-principal turn admission inside the turn-creating transaction (see runTurn). Rejections are
    * audited after the rollback (deferred) and thrown as DomainErrors. Spoken turns are admitted by the calls
-   * service (live call, call caps, voice rate limit) instead of the typed-message rate limit.
+   * service (live call, call caps, voice rate limit) instead of the typed-message rate limit; spoken crisis
+   * messages skip call admission and pay the typed limit instead.
    */
   async function admitTurn(
     scope: RequestScope,
@@ -1040,20 +1090,9 @@ export function createOrchestrator(
       return new DomainError(code, message, { reason, retryAfterSeconds });
     };
     await turnsRepo.lockTurnAdmission(tx, ctx.principalId);
-    if (args.channel === 'text') {
-      const recent = await turnsRepo.countRecentTurnsByAuthor(tx, {
-        authorId: ctx.principalId,
-        windowSeconds: cfg.turns.rateWindowSeconds,
-        channel: 'text',
-      });
-      if (recent >= cfg.turns.rateLimit) {
-        throw reject(
-          'rate_limited',
-          'You are sending messages very quickly. Please wait a few minutes.',
-          'turn_rate_limit',
-          cfg.turns.rateWindowSeconds,
-        );
-      }
+    const limited = await overMessageLimit(scope, { channel: args.channel, crisis: args.crisis });
+    if (limited !== null) {
+      throw reject(limited.code, limited.message, limited.reason, limited.retryAfterSeconds);
     }
     const inFlight = await turnsRepo.countPendingTurnsByAuthor(tx, {
       authorId: ctx.principalId,
@@ -1128,15 +1167,19 @@ export function createOrchestrator(
         const parsed = input;
         const settings = pre.settings;
         const session = pre.session;
+        // A short reply answers the vEIR's last message: the previous answer, or the opener on the first turn.
+        const coach = pre.coach;
         query = buildRetrievalQuery({
           founderText: parsed.text,
-          previousAnswer: pre.coach?.history.at(-1)?.response?.answer ?? null,
+          previousAnswer:
+            coach === null
+              ? null
+              : coach.history.length > 0
+                ? (coach.history.at(-1)?.response?.answer ?? null)
+                : coach.opener,
           currentGoal: session.goal ?? pre.venture.currentGoal,
         });
-        // Latency: the query embedding and the speech key load while the turn is admitted.
-        if (!risk.crisis) {
-          embedding = embedQuery(ctx, session.ventureId, query, options.signal);
-        }
+        // Latency: the speech key loads while the turn is admitted.
         if (pre.channel === 'voice') {
           speechKey = speechKeys.signingKey();
           speechKey.catch(() => undefined); // a failure surfaces when a unit is signed
@@ -1190,6 +1233,9 @@ export function createOrchestrator(
           });
           return created;
         });
+        // The query embedding starts once the turn is admitted (a refused request buys no model call) and
+        // overlaps the accepted and classifying events.
+        if (!risk.crisis) embedding = embedQuery(ctx, session.ventureId, query, options.signal);
       } catch (err) {
         const error = asDomainError(err);
         if (error.code === 'internal') {
