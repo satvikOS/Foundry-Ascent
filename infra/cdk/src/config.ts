@@ -5,6 +5,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { API_DB_RESUME_BUDGET_SECONDS, API_TIMING_MARGIN_SECONDS } from './lib/constants.js';
+import { SPEECH_ENGINES, type SpeechEngine } from './lib/speech-voices.js';
 import { INFRA_ROOT } from './paths.js';
 
 export interface PlatformConfig {
@@ -59,9 +60,10 @@ export interface PlatformConfig {
    */
   readonly speech: {
     readonly enabled: boolean;
-    /** Polly voice id for personas without a consented voice of their own; must exist for `engine`. */
-    readonly defaultVoice: string;
-    /** Polly engine: `neural` (default: faster, half the price) or `generative` (see ADR-0010). */
+    /**
+     * Polly engine tried first: `neural` (default: faster, half the price) or `generative` (see ADR-0010).
+     * Voices and prices are `packages/core/speech-voices.json`, shared with the API.
+     */
     readonly engine: SpeechEngine;
     /**
      * Polly spend per day (USD) above which the daily speech alarm fires: the global daily AI cap
@@ -82,33 +84,8 @@ export interface PlatformConfig {
   readonly logRetentionDays: number;
 }
 
-/** Polly engines the call pipeline supports (standard voices sound robotic; long-form is not real-time). */
-export const SPEECH_ENGINES = ['neural', 'generative'] as const;
-export type SpeechEngine = (typeof SPEECH_ENGINES)[number];
-
-/**
- * Adult US-English Amazon Polly voices per engine, all available in us-east-1 (Polly developer guide,
- * "Available voices", checked 2026-10-16). A default voice the engine lacks would fail every
- * SynthesizeSpeech call at runtime (ValidationException), so synth refuses it.
- */
-export const POLLY_EN_US_VOICES: Readonly<Record<SpeechEngine, readonly string[]>> = {
-  neural: [
-    'Danielle',
-    'Gregory',
-    'Joanna',
-    'Joey',
-    'Kendra',
-    'Kimberly',
-    'Matthew',
-    'Ruth',
-    'Salli',
-    'Stephen',
-  ],
-  generative: ['Danielle', 'Joanna', 'Matthew', 'Ruth', 'Salli', 'Stephen', 'Tiffany'],
-};
-
-/** Used when `speech` is absent from the file: speech off; the voice, engine and alarm are then never used. */
-const SPEECH_OFF = { enabled: false, defaultVoice: 'Matthew', engine: 'neural', dailyAlarmUsd: 15 } as const;
+/** Used when `speech` is absent from the file: speech off; the engine and alarm are then never used. */
+const SPEECH_OFF = { enabled: false, engine: 'neural', dailyAlarmUsd: 15 } as const;
 /** Used when `distillation` is absent from the file. */
 const DISTILLATION_OFF = { sweepEnabled: false, sweepIntervalMinutes: 15 } as const;
 
@@ -219,19 +196,17 @@ function parseSpeech(raw: unknown): PlatformConfig['speech'] {
   if (!(SPEECH_ENGINES as readonly string[]).includes(engineName)) {
     throw new ConfigError('$.speech.engine', `must be one of ${SPEECH_ENGINES.join(', ')}`);
   }
-  const engine = engineName as SpeechEngine;
-  const defaultVoice = str(speech, 'defaultVoice', '$.speech');
-  const voices = POLLY_EN_US_VOICES[engine];
-  if (!voices.includes(defaultVoice)) {
+  // The platform voice lives in the voices file the API reads (it has every engine); a voice set here would
+  // reach nobody, so it is refused rather than ignored.
+  if (speech.defaultVoice !== undefined) {
     throw new ConfigError(
       '$.speech.defaultVoice',
-      `is not a US-English ${engine} voice (one of ${voices.join(', ')})`,
+      'is not read: the platform voice is platformVoice in packages/core/speech-voices.json',
     );
   }
   return {
     enabled: bool(speech, 'enabled', '$.speech'),
-    defaultVoice,
-    engine,
+    engine: engineName as SpeechEngine,
     // The admin settings accept a global daily cap of at most USD 100.
     dailyAlarmUsd: usd(speech, 'dailyAlarmUsd', '$.speech', 100),
   };

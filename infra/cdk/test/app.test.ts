@@ -121,12 +121,10 @@ describe('FoundryAscent-App', () => {
       );
       expect(envOf('FoundryAscent-Worker').JOBS_MAX_RECEIVE_COUNT).toBe(String(JOBS_MAX_RECEIVE_COUNT));
       expect(envOf('FoundryAscent-Worker')).not.toHaveProperty('JOBS_QUEUE_URL');
-      // Voice calls: only the API speaks, with the voice and engine from production.json (neural default).
-      expect(envOf('FoundryAscent-Api')).toMatchObject({
-        SPEECH_ENABLED: 'true',
-        SPEECH_DEFAULT_VOICE: 'Matthew',
-        SPEECH_ENGINE: 'neural',
-      });
+      // Voice calls: only the API speaks, with the engine from production.json (neural default). Voices are
+      // packages/core/speech-voices.json, which the API bundles, so no voice travels as a variable.
+      expect(envOf('FoundryAscent-Api')).toMatchObject({ SPEECH_ENABLED: 'true', SPEECH_ENGINE: 'neural' });
+      expect(envOf('FoundryAscent-Api')).not.toHaveProperty('SPEECH_DEFAULT_VOICE');
       for (const name of ['FoundryAscent-Worker', 'FoundryAscent-Migrate']) {
         expect(
           Object.keys(envOf(name)).filter((key) => key.startsWith('SPEECH_')),
@@ -835,11 +833,14 @@ describe('speech and distillation switches (config/production.json)', () => {
 describe('speech engine choice (config/production.json speech.engine)', () => {
   const base = loadConfig();
 
-  it('prices both speech alarms for the generative engine when it is chosen', () => {
-    const { templates } = synthesize(
-      {},
-      { ...base, speech: { ...base.speech, engine: 'generative', defaultVoice: 'Ruth' } },
-    );
+  it('passes the generative engine to the API and prices both speech alarms for it', () => {
+    const { templates } = synthesize({}, { ...base, speech: { ...base.speech, engine: 'generative' } });
+    const apiEnv = (
+      resourcesOfType(templates.app, 'AWS::Lambda::Function').find(
+        ([, p]) => p.FunctionName === 'FoundryAscent-Api',
+      )?.[1].Environment as { Variables: Record<string, string> }
+    ).Variables;
+    expect(apiEnv.SPEECH_ENGINE).toBe('generative');
     templates.app.hasResourceProperties('AWS::CloudWatch::Alarm', {
       AlarmName: 'FoundryAscent-Speech-Characters-Daily',
       Threshold: 500_000,

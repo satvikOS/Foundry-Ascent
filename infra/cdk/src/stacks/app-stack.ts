@@ -48,9 +48,9 @@ import {
   JOBS_MAX_RECEIVE_COUNT,
   MIGRATE_TIMEOUT_MINUTES,
   NAMES,
-  POLLY_USD_PER_MILLION_CHARACTERS,
   SPEECH_ALARM_CHARACTERS_PER_HOUR,
   speechAlarmCharactersPerDay,
+  speechUsd,
   WORKER_TIMEOUT_SECONDS,
 } from '../lib/constants.js';
 import { environmentNames, LAMBDA_CONTRACT, type LambdaRole } from '../lib/lambda-contract.js';
@@ -153,7 +153,6 @@ export class AppStack extends Stack {
       HOME_TENANT_SLUG: config.homeTenant.slug,
       HOME_TENANT_NAME: config.homeTenant.name,
       SPEECH_ENABLED: String(config.speech.enabled),
-      SPEECH_DEFAULT_VOICE: config.speech.defaultVoice,
       SPEECH_ENGINE: config.speech.engine,
     };
     const environmentFor = (role: LambdaRole): Record<string, string> =>
@@ -737,8 +736,7 @@ export class AppStack extends Stack {
           period,
           statistic: cloudwatch.Stats.SUM,
         });
-      const usdFor = (characters: number): string =>
-        ((characters * POLLY_USD_PER_MILLION_CHARACTERS[engine]) / 1_000_000).toFixed(2);
+      const usdFor = (characters: number): string => speechUsd(characters, engine).toFixed(2);
       const perDay = speechAlarmCharactersPerDay(dailyAlarmUsd, engine);
       alarms.push(
         new cloudwatch.Alarm(this, 'SpeechCharactersAlarm', {

@@ -16,7 +16,7 @@
     ]
   },
   "environment": {
-    "$comment": "Variables each function receives (infra sets exactly these; the bundle import-check runs each handler with exactly these). SITE_ORIGIN is added to the api only with a custom domain. SPEECH_* come from infra/cdk/config/production.json `speech` (voice calls: Amazon Polly synthesis of validated vEIR text).",
+    "$comment": "Variables each function receives (infra sets exactly these; the bundle import-check runs each handler with exactly these). SITE_ORIGIN is added to the api only with a custom domain. SPEECH_ENABLED and SPEECH_ENGINE come from infra/cdk/config/production.json `speech` (voice calls: whether the API may use Amazon Polly and Transcribe, and the Polly engine).",
     "common": [
       "APP_ENV",
       "APP_VERSION",
@@ -32,14 +32,7 @@
       "BEDROCK_REGION",
       "HOME_TENANT_SLUG"
     ],
-    "api": [
-      "DOCUMENTS_BUCKET",
-      "JOBS_QUEUE_URL",
-      "DB_RESUME_BUDGET_MS",
-      "SPEECH_ENABLED",
-      "SPEECH_DEFAULT_VOICE",
-      "SPEECH_ENGINE"
-    ],
+    "api": ["DOCUMENTS_BUCKET", "JOBS_QUEUE_URL", "DB_RESUME_BUDGET_MS", "SPEECH_ENABLED", "SPEECH_ENGINE"],
     "worker": ["DOCUMENTS_BUCKET", "JOBS_MAX_RECEIVE_COUNT"],
     "migrate": [
       "OWNER_ACCESS_CODE_PREFIX",
@@ -57,7 +50,7 @@
     "sseKeepAliveSeconds": 15
   },
   "worker": {
-    "$comment": "Bodies of the jobs-queue messages the EventBridge Scheduler schedules send (infra app-stack.ts). dailyMaintenanceMessage: once a day, ephemeral-session expiry and redaction (a maintenance job). distillSweepMessage: the optional distillation sweep (config/production.json distillation, disabled); when enabled the worker distills a bounded number of idle conversations inline. It never enqueues: the worker has no sqs:SendMessage, and distill_session jobs come from the API.",
+    "$comment": "Bodies of the jobs-queue messages the EventBridge Scheduler schedules send (infra app-stack.ts). dailyMaintenanceMessage: once a day, ephemeral-session expiry and redaction (a maintenance job). distillSweepMessage: on the distillation schedule when enabled (config/production.json distillation), the worker distils a bounded batch of idle, undistilled conversations inline (it never enqueues).",
     "dailyMaintenanceMessage": { "type": "maintenance", "task": "daily" },
     "distillSweepMessage": { "type": "distill_sweep" }
   }

@@ -141,7 +141,6 @@ const FAKE_ENV: Readonly<Record<string, string>> = {
   HOME_TENANT_SLUG: 'ain',
   HOME_TENANT_NAME: 'Ain Foundry',
   SPEECH_ENABLED: 'true',
-  SPEECH_DEFAULT_VOICE: 'Matthew',
   SPEECH_ENGINE: 'neural',
 };
 

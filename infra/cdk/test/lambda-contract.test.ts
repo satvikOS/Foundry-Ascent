@@ -27,8 +27,8 @@ describe('lambda contract', () => {
   });
 
   it('passes the speech settings to the API only', () => {
-    const speech = ['SPEECH_ENABLED', 'SPEECH_DEFAULT_VOICE', 'SPEECH_ENGINE'];
-    expect(environmentNames('api')).toEqual(expect.arrayContaining(speech));
+    const speech = ['SPEECH_ENABLED', 'SPEECH_ENGINE'];
+    expect(environmentNames('api').filter((name) => name.startsWith('SPEECH_'))).toEqual(speech);
     for (const role of ['worker', 'migrate'] as const) {
       expect(
         environmentNames(role).filter((name) => speech.includes(name)),

@@ -1,38 +1,46 @@
+import { z } from 'zod';
+
+import raw from '../../speech-voices.json' with { type: 'json' };
 import { type SpeechEngine } from '../ports.js';
 
+const Engine = z.enum(['neural', 'generative', 'standard']);
+
 /**
- * Voices a persona may speak with during calls: Amazon Polly's adult US-English voices, with the engines each
- * supports, most natural first (generative, then neural). Polly's generative and neural engines are both
- * available in us-east-1, where the API runs.
+ * `packages/core/speech-voices.json`, shared with infra/cdk (which checks the deployment's engine against it
+ * and prices the speech alarms with it), so the voices core speaks with and the prices it meters cannot drift
+ * from the infrastructure's.
  */
-export const SPEECH_VOICES: Readonly<Record<string, readonly SpeechEngine[]>> = {
-  Danielle: ['generative', 'neural'],
-  Joanna: ['generative', 'neural'],
-  Matthew: ['generative', 'neural'],
-  Ruth: ['generative', 'neural'],
-  Salli: ['generative', 'neural'],
-  Stephen: ['generative', 'neural'],
-  Gregory: ['neural'],
-  Joey: ['neural'],
-  Kendra: ['neural'],
-  Kimberly: ['neural'],
-};
+const SpeechCatalog = z
+  .object({
+    platformVoice: z.string(),
+    usdPerMillionCharacters: z.record(Engine, z.number().positive()),
+    voices: z.record(z.string().regex(/^[A-Z][a-z]+$/), z.array(Engine).min(1)),
+  })
+  .refine((c) => (['neural', 'generative'] as const).every((e) => c.voices[c.platformVoice]?.includes(e)), {
+    message: 'platformVoice must exist on the neural and generative engines',
+  });
+
+const catalog = SpeechCatalog.parse(raw);
+
+/**
+ * Voices a persona may speak with during calls: Amazon Polly's adult US-English voices in us-east-1, where the
+ * API runs, with the engines each supports (neural first). The API's Polly adapter tries the deployment's
+ * engine (`SPEECH_ENGINE`) first when the voice has it.
+ */
+export const SPEECH_VOICES: Readonly<Record<string, readonly SpeechEngine[]>> = catalog.voices;
 
 /** The platform voice: personas without a (consented) voice of their own, such as Foundry Guide. */
-export const DEFAULT_SPEECH_VOICE = 'Danielle';
+export const DEFAULT_SPEECH_VOICE: string = catalog.platformVoice;
 
 /** Polly prices in USD per million characters (us-east-1, on demand). */
-export const SPEECH_PRICE_PER_MILLION_CHARS: Readonly<Record<SpeechEngine, number>> = {
-  generative: 30,
-  neural: 16,
-  standard: 4,
-};
+export const SPEECH_PRICE_PER_MILLION_CHARS: Readonly<Record<SpeechEngine, number>> =
+  catalog.usdPerMillionCharacters;
 
 export function isSpeechVoice(voiceId: string): boolean {
   return Object.hasOwn(SPEECH_VOICES, voiceId);
 }
 
-/** The engines to try for a voice, most natural first (unknown voices get the platform default's). */
+/** The engines a voice supports, neural first (unknown voices get the platform voice's). */
 export function speechEngines(voiceId: string): readonly SpeechEngine[] {
   return SPEECH_VOICES[voiceId] ?? SPEECH_VOICES[DEFAULT_SPEECH_VOICE] ?? ['neural'];
 }

@@ -1,6 +1,6 @@
 /** Values shared by more than one stack; keep them here so the stacks cannot drift apart. */
-import type { SpeechEngine } from '../config.js';
 import { LAMBDA_CONTRACT } from './lambda-contract.js';
+import { SPEECH_VOICES, type SpeechEngine } from './speech-voices.js';
 
 export const PROJECT_TAG = 'foundry-ascent';
 export const ENVIRONMENT_NAME = 'production';
@@ -30,14 +30,10 @@ export const JOBS_MAX_RECEIVE_COUNT = 3;
 /** Migrate custom resource handler timeout (migrations + seed + seed embeddings). */
 export const MIGRATE_TIMEOUT_MINUTES = 10;
 
-/**
- * Amazon Polly list prices in us-east-1, USD per million characters (aws.amazon.com/polly/pricing,
- * checked 2026-10-16). The API meters speech with the same prices (packages/core voices.ts).
- */
-export const POLLY_USD_PER_MILLION_CHARACTERS: Readonly<Record<SpeechEngine, number>> = {
-  neural: 16,
-  generative: 30,
-};
+/** Cost in USD of `characters` Polly characters on `engine`, at the prices the API meters with. */
+export function speechUsd(characters: number, engine: SpeechEngine): number {
+  return (characters * SPEECH_VOICES.usdPerMillionCharacters[engine]) / 1_000_000;
+}
 
 /**
  * Amazon Polly characters in one hour above which the burst alarm fires: about USD 1.60 on the neural
@@ -52,7 +48,7 @@ export const SPEECH_ALARM_CHARACTERS_PER_HOUR = 100_000;
  * in-app metering did not hold, or the cap was raised without updating the alarm.
  */
 export function speechAlarmCharactersPerDay(dailyAlarmUsd: number, engine: SpeechEngine): number {
-  return Math.floor((dailyAlarmUsd * 1_000_000) / POLLY_USD_PER_MILLION_CHARACTERS[engine]);
+  return Math.floor((dailyAlarmUsd * 1_000_000) / SPEECH_VOICES.usdPerMillionCharacters[engine]);
 }
 
 /** S3 key prefix that every venture document lives under (`tenants/{t}/ventures/{v}/documents/...`). */

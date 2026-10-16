@@ -1,5 +1,6 @@
 import { PollyClient, SynthesizeSpeechCommand, type VoiceId } from '@aws-sdk/client-polly';
 import {
+  type SpeechEngine,
   SpeechSynthesisError,
   type SpeechSynthesisInput,
   type SpeechSynthesizer,
@@ -8,6 +9,8 @@ import {
 
 export interface PollySpeechSynthesizerOptions {
   readonly region: string;
+  /** The deployment's engine (`SPEECH_ENGINE`): tried first whenever the voice has it. */
+  readonly engine: SpeechEngine;
   /** Injected client (tests). */
   readonly client?: Pick<PollyClient, 'send'>;
 }
@@ -15,22 +18,33 @@ export interface PollySpeechSynthesizerOptions {
 /** Errors that mean "this voice cannot use this engine here": the next engine is tried. */
 const ENGINE_ERRORS = new Set(['EngineNotSupportedException', 'ValidationException']);
 
+/** `engines` with `preferred` moved to the front when present; otherwise unchanged (pure; unit tested). */
+export function preferEngine(
+  engines: readonly SpeechEngine[],
+  preferred: SpeechEngine,
+): readonly SpeechEngine[] {
+  return engines.includes(preferred) ? [preferred, ...engines.filter((e) => e !== preferred)] : engines;
+}
+
 /**
  * Text-to-speech for calls (core `SpeechSynthesizer` port) through Amazon Polly `SynthesizeSpeech`: MP3,
- * streamed to the caller as Polly produces it. Engines are tried in the order core gives (generative, then
- * neural); the text is validated reply text only, and is never logged. Needs `polly:SynthesizeSpeech` on the
- * API role.
+ * streamed to the caller as Polly produces it. Of the engines core gives for the voice, the deployment's
+ * engine is tried first, then the others in core's order; the text is validated reply text only, and is
+ * never logged. Needs `polly:SynthesizeSpeech` on the API role.
  */
 export class PollySpeechSynthesizer implements SpeechSynthesizer {
   readonly #client: Pick<PollyClient, 'send'>;
+  /** The deployment's engine, tried first. */
+  readonly engine: SpeechEngine;
 
   constructor(options: PollySpeechSynthesizerOptions) {
     this.#client = options.client ?? new PollyClient({ region: options.region });
+    this.engine = options.engine;
   }
 
   async synthesize(input: SpeechSynthesisInput): Promise<SynthesizedSpeech> {
     let lastError: unknown = null;
-    for (const engine of input.engines) {
+    for (const engine of preferEngine(input.engines, this.engine)) {
       try {
         const output = await this.#client.send(
           new SynthesizeSpeechCommand({
