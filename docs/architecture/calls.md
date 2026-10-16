@@ -12,7 +12,7 @@ pools), ADR-0019 (conversation-first console). Contracts: `packages/contracts/sr
 Browser                                     API (Lambda, /api/v1)                    AWS us-east-1
 ───────                                     ─────────────────────                    ─────────────
 Call ─► POST /sessions/:id/calls ─────────► admission, calls row, STT grant,
-        ◄─ { call, sttGrant, intro } ─────  signed intro (notebook opener)
+        ◄─ { call, sttGrant, intro } ─────  signed intro (conversation opener)
 mic ─► AudioWorklet, 16 kHz PCM frames ─── presigned wss (seconds to open) ───────► Transcribe streaming
         ◄────────────────────────── partial / stable / final transcripts ──────────┘
 end of utterance ─► POST /sessions/:id/turns ─► admitVoiceTurn ─► orchestrator ─► validators
@@ -114,7 +114,8 @@ A spoken turn (`channel: 'voice'`) passes `admitVoiceTurn` in the transaction th
 name a live call of that conversation started by the caller whose client is still there, calls must be on,
 time must be left (per call and today), the person may send at most 40 spoken turns in 10 minutes, and a
 call holds at most 90 turns. Typed chat keeps its own rate limit. Crisis turns are never refused for call
-reasons (§5).
+reasons (§5); one that names no live call of the caller in that conversation is answered and recorded as a
+typed message (no speech unit, no voice turn, no call marked on the conversation).
 
 **Minutes** come from the `calls` table, by the database clock: ended calls count until they ended, live
 calls until now, but never more than 30 s after their last heartbeat. A call whose client went away is
@@ -169,11 +170,13 @@ stream-transcription-websocket` URL (en-US, PCM, 16 kHz, partial-results stabili
   spend caps, and only then reports 501 where no speech service runs.
 
 - **The intro** greets the founder by first name, says the vEIR is an AI coach, and continues with the
-  notebook's opener on a fresh conversation ("What would you like to work on?" without one; "Where would
-  you like to pick up?" on a conversation under way). The vEIR introduces itself by its persona name unless
+  conversation's opener before its first turn (`coaching_sessions.opener`: the notebook's next opener as it
+  was when the conversation was created, which the turn engine replays as the vEIR's first message; none in
+  a temporary chat), "What would you like to work on?" without one, and "Where would you like to pick up?"
+  on a conversation under way. The vEIR introduces itself by its persona name unless
   that name presents it as an EIR ("Corin Halvorsen", "Coach Corin"); it then says "Corin's vEIR". The
-  opener is a person-editable note: it is spoken only if it names no EIR at all and passes the identity
-  rules and the cross-venture check; otherwise it is left out.
+  opener is a person-editable note: it is stored, shown and spoken only if it names no EIR at all and passes
+  the identity rules and the cross-venture check; otherwise it is left out.
 
 ### 2.6 Barge-in, end and summary
 
@@ -201,8 +204,8 @@ turns sampled for review, sees the count and follow-ups of those turns.
   `turn.interrupt_refused`, `turn.rejected` (voice admission), `speech.synthesized` (`crisis_support` for the
   crisis message), `speech.refused`.
 - Logs never carry grant URLs, intros, heard words, transcripts or spoken text.
-- `callsRepo.reapStaleCalls` ends calls whose client went away; the API also closes them lazily on the next
-  start, heartbeat or end.
+- Daily maintenance ends calls whose client went away (`callsRepo.reapStaleCalls`, audited
+  `maintenance.stale_calls`); the API also closes them lazily on the next start, heartbeat or end.
 
 ## 3. Client
 
