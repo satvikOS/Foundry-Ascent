@@ -12,7 +12,7 @@ import { FOUNDER_STATE, TENANT, test } from './support/fixtures';
  * timings are written to test-results/web-perf/ and printed, never asserted: they depend on the machine.
  * What is asserted does not: the signed-in page does not shift as it loads, nor as a route's skeleton gives way
  * to its content. The landing page is measured the
- * same way, signed out.
+ * same way, signed out, and does not shift either.
  */
 
 /** A modest real-world connection: 40 ms round trips, 20 Mbit/s down, 5 Mbit/s up. */
@@ -242,7 +242,12 @@ test.describe('page speed, signed out', () => {
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, `${result.label}.json`), JSON.stringify(result, null, 2));
     process.stdout.write(`web-perf-landing ${JSON.stringify(result)}\n`);
-    // Reported, not asserted: the landing page (its own stream's page) shifts as its display face swaps in.
     expect(landingAt).toBeGreaterThan(0);
+    // Machine-independent: the hero does not re-wrap as its display face swaps in (it shifted 0.17 before the
+    // metric-matched fallback faces in globals.css). What moved is in the message when it fails.
+    expect(
+      load.paints.cls,
+      `layout shift of the landing page: ${load.paints.shifted.join(', ')}`,
+    ).toBeLessThan(0.1);
   });
 });

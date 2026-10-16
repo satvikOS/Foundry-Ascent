@@ -16,6 +16,7 @@ import { createRoot } from 'react-dom/client';
 
 import { createQueryClient, setUnauthenticatedHandler } from '@/lib/api/query-client';
 import { safeRedirectPath } from '@/lib/auth/guards';
+import { displayFacesReady } from '@/lib/display-faces';
 import { initTheme } from '@/lib/theme';
 
 import { createAppRouter } from './router';
@@ -35,10 +36,14 @@ setUnauthenticatedHandler(() => {
 const container = document.getElementById('root');
 if (!container) throw new Error('Root element #root is missing from index.html');
 
-createRoot(container).render(
-  <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>
-  </StrictMode>,
-);
+// The landing page waits (briefly, capped) for its display faces so its hero never re-wraps as they swap in;
+// every other page renders at once (lib/display-faces.ts).
+void displayFacesReady(window.location.pathname).then(() => {
+  createRoot(container).render(
+    <StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    </StrictMode>,
+  );
+});

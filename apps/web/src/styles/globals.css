@@ -17,6 +17,32 @@
 @custom-variant dark (&:where(.dark, .dark *));
 @custom-variant light (&:where(.light, .light *));
 
+/*
+ * Metric-matched stand-ins for the self-hosted faces while they load (`font-display: swap`). A local Times
+ * New Roman (or a metric twin: Liberation Serif, Tinos) scaled to Newsreader's width, and Arial (Liberation
+ * Sans, Arimo) scaled to Geist's, with the real faces' ascent and descent: text set in the stand-in wraps
+ * where the real face will, so nothing moves when it swaps in (the landing page shifted 0.17 as its display
+ * heading re-wrapped). Measured in Chromium at 100px over the hero's own sentences: Newsreader 1.051× Times
+ * New Roman's width, ascent 0.74, descent 0.26; Geist 1.024× Arial's, ascent 1.01, descent 0.29. Overrides
+ * are divided by `size-adjust`, which scales them too. No download: `local()` only.
+ */
+@font-face {
+  font-family: 'Newsreader Fallback';
+  src: local('Times New Roman'), local('TimesNewRomanPSMT'), local('Liberation Serif'), local('Tinos');
+  size-adjust: 105.1%;
+  ascent-override: 70.4%;
+  descent-override: 24.7%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Geist Fallback';
+  src: local('Arial'), local('ArialMT'), local('Liberation Sans'), local('Arimo');
+  size-adjust: 102.4%;
+  ascent-override: 98.6%;
+  descent-override: 28.3%;
+  line-gap-override: 0%;
+}
+
 :root {
   color-scheme: dark light;
 
@@ -151,9 +177,10 @@
    *   Geist Mono   labels, keys and data
    */
   --font-sans:
-    'Geist Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
-    sans-serif;
-  --font-serif: 'Newsreader Variable', ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
+    'Geist Variable', 'Geist Fallback', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-serif:
+    'Newsreader Variable', 'Newsreader Fallback', ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
   --font-mono:
     'Geist Mono Variable', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono',
     monospace;
