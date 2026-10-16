@@ -22,9 +22,14 @@ describe('titleFromMessage', () => {
 });
 
 describe('conversationTitle', () => {
-  const base = { title: null, goal: null, mode: 'diagnose' as const };
+  const base = {
+    title: null,
+    goal: null,
+    privacy: 'standard' as const,
+    startedAt: '2026-10-16T14:05:00.000Z',
+  };
 
-  it('prefers the title, then the goal, then the first message, then the mode', () => {
+  it('prefers the title, then the goal, then the first message', () => {
     expect(conversationTitle({ ...base, title: 'Interview plan', goal: 'Goal' }, 'Hello')).toBe(
       'Interview plan',
     );
@@ -34,8 +39,15 @@ describe('conversationTitle', () => {
     expect(conversationTitle(base, 'Which assumption should we test first?')).toBe(
       'Which assumption should we test first?',
     );
-    expect(conversationTitle(base)).toBe('Diagnose conversation');
-    expect(conversationTitle({ ...base, title: '   ' }, '  ')).toBe('Diagnose conversation');
+  });
+
+  it('falls back to when it started, so untitled conversations never read the same', () => {
+    const morning = conversationTitle(base);
+    const evening = conversationTitle({ ...base, startedAt: '2026-10-16T19:40:00.000Z' });
+    expect(morning).toMatch(/^Conversation · /);
+    expect(morning).not.toBe(evening);
+    expect(conversationTitle({ ...base, title: '   ' }, '  ')).toBe(morning);
+    expect(conversationTitle({ ...base, privacy: 'ephemeral' })).toMatch(/^Temporary chat · /);
   });
 });
 

@@ -20,32 +20,35 @@ export interface VeirDisplay {
 
 const POSSESSIVE_VEIR = /^(.+?)[’']s\s+vEIR$/i;
 
-/** "Corin's vEIR" → "Corin"; an EIR persona without that form → the EIR's first name; else the name. */
+/**
+ * The short name of a persona: "Corin's vEIR" → "Corin". An EIR persona named otherwise takes the first
+ * name of the EIR it was built from (`profileDisplayName`: the persona's own consented EIR profile, as in
+ * `PersonaView.eirProfile`), and the persona's name when that is unknown. Never pass the venture
+ * assignment's reviewing EIR: that person did not necessarily consent to this vEIR.
+ */
 export function shortPersonaName(
   personaName: string,
   kind: PersonaSummary['kind'],
-  eirDisplayName?: string | null,
+  profileDisplayName?: string | null,
 ): string {
   const name = personaName.trim();
   const possessive = POSSESSIVE_VEIR.exec(name);
   if (possessive?.[1]) return possessive[1].trim();
-  if (kind === 'eir_persona' && eirDisplayName) {
-    const first = eirDisplayName.trim().split(/\s+/)[0];
+  if (kind === 'eir_persona' && profileDisplayName) {
+    const first = profileDisplayName.trim().split(/\s+/)[0];
     if (first) return first;
   }
   return name;
 }
 
-/** The vEIR for a venture, or null when no persona is assigned. */
-export function veirDisplay(
-  venture: Pick<VentureDetail, 'persona' | 'assignedEir'> | null | undefined,
-): VeirDisplay | null {
+/** The vEIR for a venture, or null when no persona is assigned. Named after the persona alone. */
+export function veirDisplay(venture: Pick<VentureDetail, 'persona'> | null | undefined): VeirDisplay | null {
   const persona = venture?.persona;
   if (!persona) return null;
   return {
     personaId: persona.personaId,
     name: persona.name,
-    shortName: shortPersonaName(persona.name, persona.kind, venture.assignedEir?.displayName ?? null),
+    shortName: shortPersonaName(persona.name, persona.kind),
     kind: persona.kind,
     disclosure: persona.disclosure,
     portraitUrl: null,

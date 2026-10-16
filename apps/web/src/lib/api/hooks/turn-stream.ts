@@ -49,6 +49,33 @@ export interface TurnStreamState {
    * Set after a `turn.error` `conflict` with `retryAfterSeconds`; the replay reuses the Idempotency-Key.
    */
   autoRetryAt: number | null;
+  /**
+   * Validated answer units (`turn.delta`) received so far, in `seq` order. Each passed the server's
+   * sentence gate; `turn.completed` stays authoritative and its stored answer replaces them. Discarded
+   * when the turn is blocked, fails or is stopped.
+   */
+  units: StreamUnit[];
+  /** The units joined into the answer prose shown while the turn streams ('' before the first unit). */
+  streamedText: string;
+}
+
+export interface StreamUnit {
+  seq: number;
+  text: string;
+}
+
+/**
+ * Joins streamed answer units in order. Units normally carry their own spacing; when one neither ends
+ * nor starts with whitespace, a single space keeps two sentences from running together.
+ */
+export function joinStreamUnits(units: readonly StreamUnit[]): string {
+  let text = '';
+  for (const unit of units) {
+    if (!unit.text) continue;
+    if (text && !/\s$/.test(text) && !/^\s/.test(unit.text)) text += ' ';
+    text += unit.text;
+  }
+  return text;
 }
 
 const INITIAL: TurnStreamState = {
@@ -62,7 +89,11 @@ const INITIAL: TurnStreamState = {
   blocked: null,
   error: null,
   autoRetryAt: null,
+  units: [],
+  streamedText: '',
 };
+
+const NO_UNITS = { units: [], streamedText: '' } satisfies Pick<TurnStreamState, 'units' | 'streamedText'>;
 
 type Action =
   | { type: 'start'; text: string }
@@ -86,12 +117,12 @@ export function turnStreamReducer(state: TurnStreamState, action: Action): TurnS
     case 'reset':
       return INITIAL;
     case 'cancelled':
-      if (state.status === 'streaming') return { ...state, status: 'cancelled', phase: null };
+      if (state.status === 'streaming') return { ...state, ...NO_UNITS, status: 'cancelled', phase: null };
       return state.autoRetryAt === null ? state : { ...state, autoRetryAt: null };
     case 'autoRetry':
       return { ...state, autoRetryAt: action.at };
     case 'failed':
-      return { ...state, status: 'failed', phase: null, error: action.error };
+      return { ...state, ...NO_UNITS, status: 'failed', phase: null, error: action.error };
     case 'event': {
       const event = action.event;
       switch (event.event) {
@@ -111,9 +142,17 @@ export function turnStreamReducer(state: TurnStreamState, action: Action): TurnS
               },
             ],
           };
-        case 'turn.delta':
+        case 'turn.delta': {
+          // Units of another turn (a late frame after a resend) or after the turn ended are ignored, and
+          // a unit delivered twice is kept once.
+          if (state.status !== 'streaming') return state;
+          if (state.turnId !== null && event.turnId !== state.turnId) return state;
+          if (state.units.some((unit) => unit.seq === event.seq)) return state;
+          const units = [...state.units, { seq: event.seq, text: event.text }].sort((a, b) => a.seq - b.seq);
+          return { ...state, turnId: event.turnId, units, streamedText: joinStreamUnits(units) };
+        }
         case 'turn.speech':
-          // Streamed units are rendered by the conversation view; the turn state changes on completion.
+          // Spoken units belong to a call (the call engine reads them through `onEvent`).
           return state;
         case 'turn.completed':
           return {
@@ -125,10 +164,18 @@ export function turnStreamReducer(state: TurnStreamState, action: Action): TurnS
             ordinal: event.turn.ordinal,
           };
         case 'turn.blocked':
-          return { ...state, status: 'blocked', phase: null, blocked: event, turnId: event.turnId };
+          return {
+            ...state,
+            ...NO_UNITS,
+            status: 'blocked',
+            phase: null,
+            blocked: event,
+            turnId: event.turnId,
+          };
         case 'turn.error':
           return {
             ...state,
+            ...NO_UNITS,
             status: 'failed',
             phase: null,
             turnId: event.turnId ?? state.turnId,
@@ -142,22 +189,6 @@ export function turnStreamReducer(state: TurnStreamState, action: Action): TurnS
           };
       }
     }
-  }
-}
-
-/** Human labels for progress steps (use with an aria-live="polite" region). */
-export function turnPhaseLabel(step: Pick<TurnProgressStep, 'phase' | 'evidenceCount'>): string {
-  switch (step.phase) {
-    case 'classifying':
-      return 'Checking your question';
-    case 'retrieving':
-      return step.evidenceCount === null
-        ? 'Gathering evidence'
-        : `Gathering evidence · ${step.evidenceCount} source${step.evidenceCount === 1 ? '' : 's'}`;
-    case 'reasoning':
-      return 'Thinking it through';
-    case 'validating':
-      return 'Checking claims against evidence';
   }
 }
 
@@ -347,6 +378,8 @@ export function useTurnStream(sessionId: string, { ventureId, onEvent }: UseTurn
             .cancelQueries({ queryKey: scope })
             .then(() => client.invalidateQueries({ queryKey: scope }));
           void client.invalidateQueries({ queryKey: queryKeys.ventures.list() });
+          // The first message titles the conversation and every turn moves it up the recents.
+          void client.invalidateQueries({ queryKey: queryKeys.conversations.all() });
         }
       }
       return final;

@@ -44,6 +44,11 @@ export function canWrite(me: Me | null | undefined, ventureId: string): boolean 
   return isMember(me, ventureId, ['founder', 'team']);
 }
 
+/** Whether the person is a founder or team member of any venture (holds conversations of their own). */
+export function writesAnyVenture(me: Me | null | undefined): boolean {
+  return Boolean(me?.memberships.some((m) => m.role === 'founder' || m.role === 'team'));
+}
+
 /** Founder-only actions (e.g. sharing consent on escalation packets). */
 export function isFounder(me: Me | null | undefined, ventureId: string): boolean {
   return isMember(me, ventureId, ['founder']);

@@ -1,6 +1,6 @@
 import type { SessionView } from '@foundry/contracts';
 
-import { MODE_LABELS } from './labels';
+import { formatDateTime } from './format';
 
 /** Longest title shown for a conversation derived from its first message. */
 const TITLE_MAX = 60;
@@ -16,10 +16,11 @@ export function titleFromMessage(text: string, max = TITLE_MAX): string {
 
 /**
  * The name of a conversation everywhere it is listed: its title (from the first message, refined by
- * distillation), else its goal, else the first message when known, else the mode it started in.
+ * distillation), else its goal, else the first message when known, else when it started ("Temporary chat ·
+ * Oct 16, 2026, 2:05 PM"), so two conversations never read the same.
  */
 export function conversationTitle(
-  session: Pick<SessionView, 'title' | 'goal' | 'mode'>,
+  session: Pick<SessionView, 'title' | 'goal' | 'privacy' | 'startedAt'>,
   firstMessage?: string | null,
 ): string {
   const title = session.title?.trim();
@@ -28,7 +29,7 @@ export function conversationTitle(
   if (goal) return goal;
   const fromMessage = firstMessage ? titleFromMessage(firstMessage) : '';
   if (fromMessage) return fromMessage;
-  return `${MODE_LABELS[session.mode].label} conversation`;
+  return `${session.privacy === 'ephemeral' ? 'Temporary chat' : 'Conversation'} · ${formatDateTime(session.startedAt)}`;
 }
 
 /** When a conversation last moved: its latest turn, else when it ended or started. */

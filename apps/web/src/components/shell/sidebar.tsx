@@ -2,13 +2,13 @@ import type { Me } from '@foundry/contracts';
 import { useQuery } from '@tanstack/react-query';
 import { createLink } from '@tanstack/react-router';
 import { Phone, Search, SquarePen, type LucideIcon } from 'lucide-react';
-import type { ComponentProps, ReactNode } from 'react';
+import { useMemo, type ComponentProps, type ReactNode } from 'react';
 
 import { VentureMark } from '@/components/faces/user-avatar';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { SimpleTooltip } from '@/components/ui/tooltip';
 import { ventureQueryOptions, useVentures } from '@/lib/api/hooks/ventures';
-import { canWrite } from '@/lib/auth/roles';
+import { canWrite, writesAnyVenture } from '@/lib/auth/roles';
 import { cn, isMac } from '@/lib/utils';
 import { veirDisplay } from '@/lib/veir';
 
@@ -116,6 +116,12 @@ export function SidebarContent({
   const venture = useQuery({ ...ventureQueryOptions(ventureId ?? ''), enabled: ventureId !== null });
   const veir = veirDisplay(venture.data);
   const writable = ventureId !== null && canWrite(me, ventureId);
+  // Only founders and team members hold conversations; read-only roles never request them.
+  const hasConversations = writesAnyVenture(me);
+  const ventureNames = useMemo(
+    () => new Map(me.memberships.map((m) => [m.ventureId, m.ventureName])),
+    [me.memberships],
+  );
   const staff = workspace.kind === 'eir' || workspace.kind === 'program' || workspace.kind === 'admin';
   const assigned =
     workspace.kind === 'eir' ? (ventures.data ?? []).filter((v) => me.assignedVentureIds.includes(v.id)) : [];
@@ -203,8 +209,8 @@ export function SidebarContent({
       ) : null}
 
       <div className={cn('min-h-0 flex-1 overflow-y-auto pb-2', collapsed ? 'px-2' : 'px-2')}>
-        {ventureId && !collapsed ? (
-          <RecentConversations tenant={tenant} ventureId={ventureId} onNavigate={onNavigate} />
+        {hasConversations && !collapsed ? (
+          <RecentConversations tenant={tenant} ventureNames={ventureNames} onNavigate={onNavigate} />
         ) : null}
         {assigned.length > 0 && !collapsed ? (
           <div role="group" aria-labelledby="sidebar-assigned" className="pt-2">

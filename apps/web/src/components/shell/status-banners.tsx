@@ -1,12 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { CirclePause, DatabaseZap, KeyRound, WifiOff } from 'lucide-react';
+import { CirclePause, DatabaseZap, KeyRound, ServerOff, WifiOff } from 'lucide-react';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 
 import { announce } from '@/components/a11y/live-announcer';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { meQueryOptions } from '@/lib/api/hooks/auth';
+import { healthQueryOptions } from '@/lib/api/hooks/health';
 import { resumingStore, useResumingState } from '@/lib/api/resuming';
 import { formatDate } from '@/lib/format';
 import { safeStorage, STORAGE_KEYS } from '@/lib/storage';
@@ -136,6 +137,42 @@ export function DbWakingBanner() {
   );
 }
 
+/** How often the public health route is re-read while it reports the database unavailable. */
+const DB_RECHECK_MS = 30_000;
+
+/**
+ * "Some of your workspace can't load right now" while `GET /health` reports the database unavailable (and
+ * it is not simply waking up, which DbWakingBanner covers). The health route never queries the
+ * database, so re-reading it while the outage lasts cannot keep Aurora awake.
+ */
+export function DbUnavailableBanner() {
+  const health = useQuery({
+    ...healthQueryOptions(),
+    refetchInterval: (query) => (query.state.data?.db === 'unavailable' ? DB_RECHECK_MS : false),
+  });
+  const { waiting } = useResumingState();
+  const show = health.data?.db === 'unavailable' && waiting === 0;
+  return (
+    <AnimatePresence initial={false}>
+      {show ? (
+        <BannerShell
+          key="db-unavailable"
+          live="polite"
+          tone="warning"
+          icon={<ServerOff aria-hidden className="size-4 text-warning" />}
+        >
+          <p>
+            <span className="font-medium">Some of your workspace can’t load right now.</span>{' '}
+            <span className="text-muted-foreground">
+              The database is unavailable. This clears on its own.
+            </span>
+          </p>
+        </BannerShell>
+      ) : null}
+    </AnimatePresence>
+  );
+}
+
 function subscribeOnline(listener: () => void) {
   window.addEventListener('online', listener);
   window.addEventListener('offline', listener);
@@ -200,10 +237,8 @@ export function AiDisabledBanner() {
           icon={<CirclePause aria-hidden className="size-4 text-warning" />}
         >
           <p>
-            <span className="font-medium">AI coaching is paused.</span>{' '}
-            <span className="text-muted-foreground">
-              An administrator turned off the coach. Your workspace, memory and documents remain available.
-            </span>
+            <span className="font-medium">AI is paused by an administrator.</span>{' '}
+            <span className="text-muted-foreground">Everything else still works.</span>
           </p>
         </BannerShell>
       ) : null}

@@ -1,11 +1,12 @@
 import type { Me, SessionView, VentureDetail } from '@foundry/contracts';
 
 import { canWrite } from '@/lib/auth/roles';
+import { shortPersonaName } from '@/lib/veir';
 
 export interface CoachingAvailability {
-  /** Whether new sessions or turns can be started from this screen. */
+  /** Whether new conversations or messages can be started from this screen. */
   available: boolean;
-  /** Short title for the banner explaining why not. */
+  /** Short title (the disabled composer's placeholder). */
   title: string | null;
   /** Plain-language reason, never blaming the founder. */
   reason: string | null;
@@ -14,8 +15,9 @@ export interface CoachingAvailability {
 const OK: CoachingAvailability = { available: true, title: null, reason: null };
 
 /**
- * UI-side check for coaching controls (the API enforces the same rules on every request): the
- * global kill switch, a suspended or missing persona, read-only roles and the session state.
+ * UI-side check for the chat controls (the API enforces the same rules on every request): read-only
+ * roles, the global kill switch, a missing or suspended vEIR, an archived venture and the conversation's
+ * own state.
  */
 export function coachingAvailability(
   me: Me,
@@ -23,51 +25,41 @@ export function coachingAvailability(
   session?: Pick<SessionView, 'status'> | null,
 ): CoachingAvailability {
   if (!canWrite(me, venture.id)) {
-    return {
-      available: false,
-      title: 'Read-only',
-      reason:
-        'You can read this venture’s conversations, but only founders and team members can start or continue them.',
-    };
+    return { available: false, title: 'Read-only', reason: 'Only founders and team members can chat here.' };
   }
   if (!me.aiEnabled) {
     return {
       available: false,
-      title: 'AI coaching is paused',
-      reason:
-        'An administrator has turned off AI coaching for now. Your knowledge, documents and past conversations are still here.',
+      title: 'AI is paused',
+      reason: 'AI is paused by an administrator. Everything else still works.',
     };
   }
   if (!venture.persona) {
     return {
       available: false,
-      title: 'No vEIR assigned yet',
-      reason: 'This venture doesn’t have a vEIR yet. Your program lead can assign one.',
+      title: 'No vEIR yet',
+      reason: 'No vEIR is assigned yet. Your program lead can assign one.',
     };
   }
   if (venture.persona.status === 'suspended') {
+    const name = shortPersonaName(venture.persona.name, venture.persona.kind);
     return {
       available: false,
-      title: 'Paused by a reviewer',
-      reason:
-        'A human reviewer has paused this vEIR for now. You can still read past conversations and ask a person for help.',
+      title: `${name} is paused`,
+      reason: `${name} is paused by a reviewer. Past conversations and human help still work.`,
     };
   }
   if (venture.status === 'archived') {
-    return { available: false, title: 'Archived venture', reason: 'This venture is archived and read-only.' };
+    return { available: false, title: 'Archived', reason: 'This venture is archived and read-only.' };
   }
   if (session?.status === 'ended') {
-    return {
-      available: false,
-      title: 'Conversation ended',
-      reason: 'This conversation has ended. Start a new chat to keep going.',
-    };
+    return { available: false, title: 'Ended', reason: 'This conversation has ended.' };
   }
   if (session?.status === 'suspended') {
     return {
       available: false,
-      title: 'Conversation paused',
-      reason: 'A safety control paused this conversation. A person can help — use “Request support”.',
+      title: 'Paused',
+      reason: 'A safety control paused this conversation. You can ask a person for help.',
     };
   }
   return OK;

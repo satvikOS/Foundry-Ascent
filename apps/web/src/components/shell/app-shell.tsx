@@ -24,7 +24,13 @@ import {
 } from './nav';
 import { ShortcutsDialog } from './shortcuts-dialog';
 import { SidebarContent } from './sidebar';
-import { AccessCodeNoticeBanner, AiDisabledBanner, DbWakingBanner, OfflineBanner } from './status-banners';
+import {
+  AccessCodeNoticeBanner,
+  AiDisabledBanner,
+  DbUnavailableBanner,
+  DbWakingBanner,
+  OfflineBanner,
+} from './status-banners';
 
 interface AppShellProps {
   me: Me;
@@ -200,6 +206,7 @@ export function AppShell({ me, children }: AppShellProps) {
 
         <div data-print="hide">
           <DbWakingBanner />
+          <DbUnavailableBanner />
           <OfflineBanner />
           <AiDisabledBanner />
           <AccessCodeNoticeBanner />
@@ -249,7 +256,7 @@ function MobileBar({
 
   return (
     <header
-      className="sticky top-0 z-20 flex h-(--header-height) shrink-0 items-center gap-1 border-b border-border bg-background/90 px-2 backdrop-blur-md supports-[backdrop-filter]:bg-background/75 md:hidden"
+      className="sticky top-0 z-20 flex h-(--header-height) shrink-0 items-center gap-1 border-b border-border bg-background px-2 md:hidden"
       data-print="hide"
     >
       <Button

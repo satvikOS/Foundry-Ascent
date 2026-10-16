@@ -5,7 +5,7 @@
  */
 export type LegacyVentureTarget =
   | { page: 'chat' }
-  | { page: 'conversation'; sessionId: string; search: { view?: 'recap' | 'transcript' } }
+  | { page: 'conversation'; sessionId: string; search: { view?: 'digest' } }
   | { page: 'knowledge'; search: Record<string, unknown> }
   | { page: 'documents' }
   | { page: 'help'; search: { id?: string } }
@@ -31,8 +31,9 @@ export function legacyVentureTarget(splat: string, search: Record<string, unknow
       return { page: 'chat' };
     case 'coach': {
       if (child && UUID.test(child)) {
-        const view = search.view === 'recap' || search.view === 'transcript' ? search.view : undefined;
-        return { page: 'conversation', sessionId: child.toLowerCase(), search: view ? { view } : {} };
+        // The old recap tab is the conversation's summary now; the transcript is the conversation itself.
+        const viewSearch = search.view === 'recap' ? { view: 'digest' as const } : {};
+        return { page: 'conversation', sessionId: child.toLowerCase(), search: viewSearch };
       }
       return { page: 'chat' };
     }

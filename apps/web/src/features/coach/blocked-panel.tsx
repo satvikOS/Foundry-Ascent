@@ -17,18 +17,20 @@ interface BlockedPanelProps {
   reason: string | null;
   /** Escalation created automatically for this turn, if any. */
   escalationId: string | null;
-  onRequestSupport?: () => void;
+  /** The vEIR's short name ("Corin"). */
+  personaName: string;
+  onRequestSupport?: (() => void) | undefined;
 }
 
 const SAFETY_REASON = /safety|wellbeing|crisis|harm/i;
 
 /** What the vEIR says when it did not answer, by reason (never blaming the founder). */
-function explanation(reason: string | null): { title: string; body: string } {
+function explanation(reason: string | null, personaName: string): { title: string; body: string } {
   switch (reason) {
     case 'crisis_support':
       return {
         title: 'You deserve support from a person',
-        body: 'Coaching is paused here so you can reach people who can help right now.',
+        body: 'Let’s get you to people who can help right now.',
       };
     // `policy` is what founders and teams receive for a privacy check (the specific reason stays with
     // program staff, so a held-back answer never confirms anything about other ventures).
@@ -36,17 +38,17 @@ function explanation(reason: string | null): { title: string; body: string } {
     case 'cross_venture':
       return {
         title: 'This answer was held back',
-        body: 'This answer was held back because it didn’t pass a privacy and safety check. Ask again about your own venture, or request a human.',
+        body: 'It didn’t pass a privacy and safety check. Ask again about your own venture, or ask a person.',
       };
     case 'identity':
       return {
         title: 'This answer was held back',
-        body: 'Your vEIR is an AI and must never speak as a person or as the EIR, so it stopped this answer. You can ask again, or request a human.',
+        body: `${personaName} is an AI and can’t speak as a real person, so it stopped this answer. Ask again, or ask a person.`,
       };
     case 'invalid_schema':
       return {
         title: 'This answer was held back',
-        body: 'A reliable answer couldn’t be produced this time. Please ask again, or rephrase your question.',
+        body: 'A reliable answer couldn’t be produced this time. Ask again, or rephrase your question.',
       };
     default:
       return {
@@ -67,15 +69,16 @@ export function BlockedPanel({
   supportMessage,
   reason,
   escalationId,
+  personaName,
   onRequestSupport,
 }: BlockedPanelProps) {
   const safety = reason !== null && SAFETY_REASON.test(reason);
   const titleId = useId();
-  const { title, body } = explanation(reason);
+  const { title, body } = explanation(reason, personaName);
   return (
     <section
       aria-labelledby={titleId}
-      className="rounded-xl border border-border-strong bg-card p-5 shadow-sm"
+      className="rounded-xl border border-border-strong bg-card p-5"
       data-testid="blocked-panel"
       data-reason={reason ?? undefined}
     >
@@ -115,7 +118,7 @@ export function BlockedPanel({
             ) : onRequestSupport ? (
               <Button size="sm" onClick={onRequestSupport}>
                 <HandHeart aria-hidden />
-                Request human support
+                Ask a person
               </Button>
             ) : null}
           </div>

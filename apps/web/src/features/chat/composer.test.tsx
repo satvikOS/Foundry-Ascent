@@ -7,15 +7,14 @@ import { LiveAnnouncer } from '@/components/a11y/live-announcer';
 import { renderWithProviders } from '@/features/admin/shared/test-utils';
 
 import { Composer, MAX_TURN_CHARS, type ComposerMode } from './composer';
-import { initialTurnProgress, turnProgressReducer } from './progress';
-import { TurnProgressList } from './turn-progress';
+import { initialTurnProgress, turnProgressReducer } from '../coach/progress';
+import { TurnProgressList } from '../coach/turn-progress';
 
 const DISCLOSURE = 'Foundry Guide is an AI coach. It is not a person.';
 
 function Harness({
   initialText = '',
   initialMode = 'diagnose',
-  allowAuto = false,
   streaming = false,
   disabledReason = null,
   onSend,
@@ -23,7 +22,6 @@ function Harness({
 }: {
   initialText?: string;
   initialMode?: ComposerMode;
-  allowAuto?: boolean;
   streaming?: boolean;
   disabledReason?: string | null;
   onSend: (text: string) => void;
@@ -40,7 +38,6 @@ function Harness({
       disclosure={DISCLOSURE}
       mode={mode}
       onModeChange={setMode}
-      allowAuto={allowAuto}
       counterpart={counterpart}
       onCounterpartChange={setCounterpart}
       streaming={streaming}
@@ -116,9 +113,9 @@ describe('Composer', () => {
     expect(screen.getByLabelText('Rehearsing with')).toBeInTheDocument();
   });
 
-  it('offers Auto first when the vEIR may pick the approach', async () => {
+  it('always offers Auto first, so the vEIR can pick the approach', async () => {
     const user = userEvent.setup();
-    renderWithProviders(<Harness onSend={vi.fn()} allowAuto initialMode="auto" />);
+    renderWithProviders(<Harness onSend={vi.fn()} initialMode="auto" />);
     const mode = screen.getByRole('combobox', { name: 'Mode for the next message' });
     expect(mode).toHaveTextContent('Auto');
     await user.click(mode);
@@ -128,12 +125,10 @@ describe('Composer', () => {
   });
 
   it('explains why it is disabled and always carries one AI disclosure line', () => {
-    renderWithProviders(
-      <Harness onSend={vi.fn()} disabledReason="Coaching is paused by an administrator." />,
-    );
+    renderWithProviders(<Harness onSend={vi.fn()} disabledReason="AI is paused" />);
     const input = screen.getByRole('textbox', { name: 'Message Foundry Guide' });
     expect(input).toBeDisabled();
-    expect(input).toHaveAttribute('placeholder', 'Coaching is paused by an administrator.');
+    expect(input).toHaveAttribute('placeholder', 'AI is paused');
     const notes = screen.getAllByRole('note', { name: 'AI disclosure' });
     expect(notes).toHaveLength(1);
     expect(notes[0]).toHaveTextContent(DISCLOSURE);
@@ -163,6 +158,8 @@ describe('TurnProgressList', () => {
         'Checking grounding & policy — not started',
       ]);
       expect(items[1]).toHaveAttribute('aria-current', 'step');
+      // One quiet line: only the step in progress is shown; the others stay for screen readers.
+      expect(items.filter((li) => li.className.includes('sr-only'))).toHaveLength(3);
       await act(async () => {
         await vi.advanceTimersByTimeAsync(100);
       });

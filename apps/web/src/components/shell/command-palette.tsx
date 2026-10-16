@@ -1,4 +1,5 @@
 import type { Me } from '@foundry/contracts';
+import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import {
   EyeOff,
@@ -27,12 +28,13 @@ import {
 } from '@/components/ui/command';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { useRecentConversations } from '@/lib/api/hooks/sessions';
-import { useVentures } from '@/lib/api/hooks/ventures';
-import { canWrite } from '@/lib/auth/roles';
+import { ventureQueryOptions, useVentures } from '@/lib/api/hooks/ventures';
+import { canWrite, writesAnyVenture } from '@/lib/auth/roles';
 import { conversationTitle, lastActivity } from '@/lib/conversations';
 import { formatHotkey } from '@/lib/hooks/use-hotkeys';
 import { STAGE_LABELS } from '@/lib/labels';
 import { useTheme } from '@/lib/theme';
+import { veirDisplay } from '@/lib/veir';
 
 import { useSignOutAndRedirect } from './account-menu';
 import { STAFF_SECTIONS, staffWorkspaces, VENTURE_DESTINATIONS, type Workspace } from './nav';
@@ -61,8 +63,8 @@ function Hotkey({ binding }: { binding: string }) {
 const RECENT_LIMIT = 6;
 
 /**
- * ⌘K: search conversations and jump anywhere — this venture's pages, other ventures, staff
- * workspaces — or change the theme and sign out. Starting a conversation always goes through New chat.
+ * ⌘K: search conversations and jump anywhere (this venture's pages, other ventures, staff workspaces),
+ * start a chat or a call, change the theme and sign out.
  */
 export function CommandPalette({ me, workspace, open, onOpenChange, onOpenShortcuts }: CommandPaletteProps) {
   const navigate = useNavigate();
@@ -70,15 +72,17 @@ export function CommandPalette({ me, workspace, open, onOpenChange, onOpenShortc
   const [search, setSearch] = useState('');
   const ventureId = workspace.kind === 'venture' ? workspace.ventureId : null;
   const { data: ventures = [] } = useVentures();
-  const recents = useRecentConversations(open ? ventureId : null);
+  const recents = useRecentConversations({ enabled: open && writesAnyVenture(me) });
+  const ventureDetail = useQuery({ ...ventureQueryOptions(ventureId ?? ''), enabled: ventureId !== null });
+  const veir = veirDisplay(ventureDetail.data);
   const { setTheme } = useTheme();
   const { signOut } = useSignOutAndRedirect();
   const searching = search.trim().length > 0;
 
   const conversations = useMemo(() => {
-    const sorted = [...(recents.data ?? [])].sort((a, b) => lastActivity(b) - lastActivity(a));
+    const sorted = [...recents.items].sort((a, b) => lastActivity(b) - lastActivity(a));
     return searching ? sorted : sorted.slice(0, RECENT_LIMIT);
-  }, [recents.data, searching]);
+  }, [recents.items, searching]);
   const otherVentures = ventures.filter((v) => v.id !== ventureId);
   const writable = ventureId !== null && canWrite(me, ventureId);
 
@@ -121,6 +125,24 @@ export function CommandPalette({ me, workspace, open, onOpenChange, onOpenShortc
                 <Hotkey binding="g n" />
               </CommandItem>
             ) : null}
+            {writable && veir ? (
+              <CommandItem
+                value={`call ${veir.shortName} voice`}
+                onSelect={() => {
+                  run(
+                    () =>
+                      void navigate({
+                        to: '/$tenant/app/v/$ventureId',
+                        params: { tenant, ventureId },
+                        search: { call: 1 },
+                      }),
+                  );
+                }}
+              >
+                <Phone aria-hidden />
+                Call {veir.shortName}
+              </CommandItem>
+            ) : null}
             {VENTURE_DESTINATIONS.map((destination) => (
               <CommandItem
                 key={destination.id}
@@ -154,7 +176,7 @@ export function CommandPalette({ me, workspace, open, onOpenChange, onOpenShortc
           </CommandGroup>
         ) : null}
 
-        {ventureId && conversations.length > 0 ? (
+        {conversations.length > 0 ? (
           <>
             <CommandSeparator />
             <CommandGroup heading={searching ? 'Conversations' : 'Recent conversations'}>
@@ -169,7 +191,7 @@ export function CommandPalette({ me, workspace, open, onOpenChange, onOpenShortc
                         () =>
                           void navigate({
                             to: '/$tenant/app/v/$ventureId/c/$sessionId',
-                            params: { tenant, ventureId, sessionId: session.id },
+                            params: { tenant, ventureId: session.ventureId, sessionId: session.id },
                           }),
                       );
                     }}
