@@ -277,9 +277,10 @@ stats }` or `null`:
 - at most 3 memory candidates citing only shown evidence, none repeating existing memory, a removed
   note or each other (`isNearDuplicate`, `repeatsNote` are exported for core's memory dedupe);
 - at most 2 lesson candidates, each passing `checkDeidentified`: no venture, person, customer, lab or
-  sponsor names (the tenant's names, canaries and a `denylist`), no emails, URLs, digits, money, dates,
-  and no unknown proper nouns or acronyms — anything doubtful is dropped (`stats.lessonDropReasons` holds
-  codes, never text);
+  sponsor names (the tenant's names, also written with or without their spaces, canaries and every
+  distinctive word of a `denylist` entry), no emails, URLs, digits, money, dates, and no unknown proper
+  nouns or acronyms, in a Title Case title too (each of its words must be everyday vocabulary) — anything
+  doubtful is dropped (`stats.lessonDropReasons` holds codes, never text);
 - `null` when anything newly written names another venture, one of its members or a canary (like a
   recap). `stats` holds counts for the audit log.
 

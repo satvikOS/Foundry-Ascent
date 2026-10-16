@@ -195,7 +195,7 @@ describe('checkDeidentified', () => {
     expect(checkDeidentified(fields, CTX, { titleIndex: 0 })).toEqual({ ok: true, reasons: [] });
   });
 
-  it('checks proper nouns in a sentence-case title but not the capitals of a Title Case one', () => {
+  it('checks proper nouns in a sentence-case title, and accepts the everyday capitals of a Title Case one', () => {
     expect(
       checkDeidentified(['Lessons from the pilot with Northwind'], CTX, { titleIndex: 0 }).reasons,
     ).toContain('proper_noun');
@@ -204,6 +204,65 @@ describe('checkDeidentified', () => {
     expect(checkDeidentified(['Lessons From The MIT Pilot'], CTX, { titleIndex: 0 }).reasons).toContain(
       'proper_noun',
     );
+  });
+
+  it.each([
+    'Test The Riskiest Assumption First',
+    'Anchor Pricing In Observed Payment, Not Stated Intent',
+    'Name Decision Owners Before Tension Builds',
+    'Compete With The Workaround, Not The Startups',
+    'Ask About The Last Time, Not The Next Time',
+  ])('accepts a Title Case title made of everyday words: %s', (title) => {
+    expect(checkDeidentified([title, ...GOOD.slice(1)], CTX, { titleIndex: 0 })).toEqual({
+      ok: true,
+      reasons: [],
+    });
+  });
+
+  // Any short title holding a two-word name crosses the Title Case threshold ("Selling to Mayo Clinic" has 3
+  // of 4 words capitalised), so Title Case must never switch the proper-noun check off.
+  it.each([
+    'Lessons From The Northfield Clinic Pilot',
+    'Selling To Kaiser',
+    'Selling to Mayo Clinic',
+    'Piloting with Boston Children Hospital',
+    'How Stanford Bought The Pilot',
+  ])('rejects a name in a Title Case title: %s', (title) => {
+    const result = checkDeidentified([title, ...GOOD.slice(1)], CTX, { titleIndex: 0 });
+    expect(result.ok).toBe(false);
+    expect(result.reasons).toContain('proper_noun');
+  });
+
+  it.each([
+    ['venture_name', 'What Quiet Quad Learned About Pricing'],
+    ['venture_name', 'The bench-tally founders priced the pilot.'],
+    ['venture_name', 'A kelpkinetics style of pilot.'],
+    ['person_name', 'Advice in the style of corinhalvorsen.'],
+  ])('rejects %s written with spaces it does not have, or without the ones it has: %s', (reason, text) => {
+    const result = checkDeidentified([text, ...GOOD.slice(1)], CTX, { titleIndex: 0 });
+    expect(result.ok).toBe(false);
+    expect(result.reasons).toContain(reason);
+  });
+
+  it('never finds a name inside a longer word or across words that only contain it', () => {
+    const ctx: LessonDeidentifyContext = { ventureNames: ['Tally'], personNames: [], canaries: [] };
+    expect(checkDeidentified(['The founder mentally tallied the costs.'], ctx).ok).toBe(true);
+  });
+
+  it('denies every distinctive word of a lower-case denylist entry, such as a document name', () => {
+    const ctx: LessonDeidentifyContext = { ...CTX, denylist: ['northfield pilot terms'] };
+    for (const text of [
+      'Lessons From The Northfield Clinic Pilot',
+      'The northfield buyers asked for terms.',
+    ]) {
+      expect(checkDeidentified([GOOD[0] ?? '', text], ctx, { titleIndex: 0 }).reasons, text).toContain(
+        'denylisted',
+      );
+    }
+    // Its everyday words alone identify no one.
+    expect(
+      checkDeidentified([GOOD[0] ?? '', 'The pilot terms were agreed early.'], ctx, { titleIndex: 0 }),
+    ).toEqual({ ok: true, reasons: [] });
   });
 
   it('reports codes only, sorted and without duplicates', () => {
