@@ -42,6 +42,8 @@ export function registerCallRoutes(r: RouteBuilder, core: Core): void {
   r.post('/calls/:id/end', async (c, ctx) =>
     c.json(await core.calls.end(ctx, pathParam(c, 'id'), jsonBody(c, EndCallRequest))),
   );
+  // The first-call privacy notice was read: stored with the person, once (idempotent, audited the first time).
+  r.post('/calls/notice/acknowledge', async (c, ctx) => c.json(await core.calls.acknowledgeNotice(ctx)));
   // Barge-in: the founder spoke over the reply; records what they heard.
   r.post('/turns/:id/interrupt', async (c, ctx) => {
     await core.calls.interrupt(ctx, pathParam(c, 'id'), jsonBody(c, InterruptTurnRequest));

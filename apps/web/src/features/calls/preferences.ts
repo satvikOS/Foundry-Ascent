@@ -12,7 +12,6 @@ const KEYS = {
   captionSize: 'fa.call.caption-size',
   announceCaptions: 'fa.call.announce-captions',
   talkMode: 'fa.call.talk-mode',
-  voiceNotice: 'fa.call.voice-notice',
 } as const;
 
 const listeners = new Set<() => void>();
@@ -85,16 +84,4 @@ export function useAnnounceCaptions(): [boolean, (on: boolean) => void] {
     write(KEYS.announceCaptions, next ? '1' : '0');
   }, []);
   return [on, update];
-}
-
-/**
- * Whether this person has seen how a call handles their voice (the first call shows it before starting).
- * Kept per browser until the acknowledgement is stored with the person's account.
- */
-export function useVoiceNoticeSeen(): [boolean, () => void] {
-  const seen = useStored(KEYS.voiceNotice) === '1';
-  const acknowledge = useCallback(() => {
-    write(KEYS.voiceNotice, '1');
-  }, []);
-  return [seen, acknowledge];
 }

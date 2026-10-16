@@ -212,7 +212,7 @@ afterAll(async () => {
 describe('migration 0003_security_hardening', () => {
   it('is bundled after 0001 and 0002, which it never changes', () => {
     const versions = MIGRATIONS.map((m) => m.version);
-    expect(versions.slice(0, 8)).toEqual([
+    expect(versions.slice(0, 9)).toEqual([
       '0001_init',
       '0002_rls_helpers',
       '0003_security_hardening',
@@ -221,6 +221,7 @@ describe('migration 0003_security_hardening', () => {
       '0006_turn_engine',
       '0007_distillation',
       '0008_calls',
+      '0010_call_notice',
     ]);
     expect(versions).toEqual([...versions].sort());
     expect(HARDENING).toBeDefined();

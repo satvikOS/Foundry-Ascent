@@ -220,6 +220,12 @@ redacted with the turn —, `getSpokenTurn`, `reserveCallSpeech` and `reserveCri
 reserved in `call_speech` with the call's character budget before Polly is called —, `settleCallSpeech`,
 `speechPlays`, `reapStaleCalls`, `toCallView`).
 
+Added for the first-call privacy notice (migration 0010): `principalsRepo.callNoticeAcknowledgedAt` and
+`acknowledgeCallNotice` (once; reports whether this call set it). `principals.call_notice_acknowledged_at` is the
+person's own value: app_rls holds column privileges on `principals` that leave it out, and reads and sets it only
+through `app.call_notice_acknowledged_at()` and `app.acknowledge_call_notice()`, for the request principal. A
+column added to `principals` later must be granted to app_rls explicitly.
+
 ### Role visibility enforced by RLS (verified by `rls.db.test.ts`)
 
 | Principal                 | Memory                                                     | Sessions/turns                                       | Documents/chunks           | Escalations                            |

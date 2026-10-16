@@ -99,7 +99,9 @@ afterAll(async () => {
 describe('migration 0008_calls', () => {
   it('applies cleanly on top of the earlier migrations with existing data, as the non-superuser owner', async () => {
     const report = await migrate(t.db);
-    expect(report.applied).toEqual(['0008_calls']);
+    // The later migrations follow in the same run (their own suites cover them).
+    expect(report.applied).toEqual(MIGRATIONS.map((m) => m.version).filter((v) => v >= '0008'));
+    expect(report.applied[0]).toBe('0008_calls');
     expect(CALLS && splitStatements(CALLS.sql).length).toBeGreaterThan(20);
   });
 

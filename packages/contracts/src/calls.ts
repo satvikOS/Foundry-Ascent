@@ -153,3 +153,11 @@ export const InterruptTurnRequest = z.object({
   heard: z.array(HeardUnit).max(64).optional(),
 });
 export type InterruptTurnRequest = z.infer<typeof InterruptTurnRequest>;
+
+/**
+ * `POST /calls/notice/acknowledge` — the person read how a call handles their voice (shown before their first
+ * call: the vEIR is an AI, their voice goes to Amazon Transcribe and is not kept, the call's text is kept like
+ * chat). Stored with the person, not the browser; idempotent: a repeat returns the first time.
+ */
+export const CallNoticeAcknowledgement = z.object({ acknowledgedAt: Timestamp });
+export type CallNoticeAcknowledgement = z.infer<typeof CallNoticeAcknowledgement>;

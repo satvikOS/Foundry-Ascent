@@ -5,7 +5,7 @@ import {
   type PersonaEmbodiment,
   type VeirIdentity,
 } from '@foundry/contracts';
-import { assignmentsRepo, personasRepo, settingsRepo, type SqlExecutor } from '@foundry/db';
+import { assignmentsRepo, personasRepo, principalsRepo, settingsRepo, type SqlExecutor } from '@foundry/db';
 import { type z } from 'zod';
 
 import { requireAssignmentActive, requireVentureAccess } from '../authz/venture-access.js';
@@ -130,6 +130,8 @@ export function createVeirService(kit: Kit): VeirService {
           remainingMinutesToday: remainingDailyMinutes(used, settings.dailyCallMinutesPerPrincipal),
           aiEnabled: settings.aiEnabled,
           callsEnabled: settings.callsEnabled,
+          // The caller's own acknowledgement of the first-call privacy notice (per person, not per browser).
+          callNoticeAcknowledgedAt: await principalsRepo.callNoticeAcknowledgedAt(scope.tx),
         };
       });
     },

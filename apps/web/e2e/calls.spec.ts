@@ -6,10 +6,13 @@ import {
   expectNoSeriousA11yViolations,
   expectReachable,
   FOUNDER_STATE,
+  OWNER_STATE,
   openVenture,
   runToken,
   setCallsEnabled,
+  signIn,
   startConversation,
+  TENANT,
   test,
   useTheme,
   expectNoBareEirName,
@@ -63,10 +66,32 @@ async function withCallsOff(baseURL: string | undefined, body: () => Promise<voi
   }
 }
 
-/** The first call in a browser explains how voice is handled; tests that are not about it skip it. */
+/**
+ * A person's first call explains how voice is handled, until they acknowledge it (stored with them on the
+ * server). Tests that are not about the notice acknowledge it for the signed-in person first (idempotent).
+ */
 async function voiceNoticeSeen(page: Page): Promise<void> {
+  const response = await page.request.post('/api/v1/calls/notice/acknowledge', { headers: WRITE_HEADERS });
+  expect(response.status(), 'POST /calls/notice/acknowledge').toBe(200);
+}
+
+/** The call settings of a venture as the signed-in person sees them. */
+async function callNoticeAcknowledgedAt(
+  request: APIRequestContext,
+  ventureId: string,
+): Promise<string | null> {
+  const response = await request.get(`/api/v1/ventures/${ventureId}/call-config`);
+  expect(response.status(), 'GET /ventures/:id/call-config').toBe(200);
+  return ((await response.json()) as { callNoticeAcknowledgedAt: string | null }).callNoticeAcknowledgedAt;
+}
+
+/** A page that has seen no click (a link opened later), so a call waits for Start call. */
+async function withoutUserActivation(page: Page): Promise<void> {
   await page.addInitScript(() => {
-    window.localStorage.setItem('fa.call.voice-notice', '1');
+    Object.defineProperty(navigator, 'userActivation', {
+      configurable: true,
+      value: { hasBeenActive: false, isActive: false },
+    });
   });
 }
 
@@ -89,6 +114,7 @@ test.describe('vEIR calls', () => {
   test.use({ storageState: FOUNDER_STATE });
 
   test('call from the sidebar: typed fallback, reply in captions, mini bar, summary', async ({ page }) => {
+    await voiceNoticeSeen(page);
     const ventureId = await openVenture(page);
     const token = runToken();
     let sessionId = '';
@@ -98,20 +124,16 @@ test.describe('vEIR calls', () => {
       if (request.url().endsWith('/api/v1/speech')) speech.push(request.url());
     });
 
-    await test.step('the first call says how voice is handled, then starts in a new conversation', async () => {
+    await test.step('Call starts at once, in a new conversation', async () => {
+      const started = page.waitForResponse(
+        (response) => /\/sessions\/[0-9a-f-]{36}\/calls$/.test(response.url()) && response.status() === 201,
+      );
       await page
         .getByRole('navigation', { name: 'Main' })
         .getByRole('link', { name: /^Call / })
         .click();
       const screen = callScreen(page);
       await expect(screen).toBeVisible();
-      await expect(screen.getByTestId('voice-notice')).toContainText('Amazon Transcribe');
-      await expect(screen.getByTestId('voice-notice')).toContainText('No audio is kept');
-      await expectNoSeriousA11yViolations(page, 'call pre-join');
-      const started = page.waitForResponse(
-        (response) => /\/sessions\/[0-9a-f-]{36}\/calls$/.test(response.url()) && response.status() === 201,
-      );
-      await screen.getByRole('button', { name: 'Start call' }).click();
       await page.waitForURL(/\/c\/[0-9a-f-]{36}\?call=1$/);
       sessionId = /\/c\/([0-9a-f-]{36})/.exec(page.url())?.[1] ?? '';
       const body = (await (await started).json()) as { call: { id: string }; intro: { text: string } | null };
@@ -228,6 +250,83 @@ test.describe('vEIR calls', () => {
     });
   });
 
+  test('the first call says how voice is handled, once per person and in any browser', async ({
+    browser,
+  }) => {
+    // Someone who has never called: a new teammate on EmberLoop (Ruth's vEIR, voice consented).
+    const owner = await browser.newContext({ storageState: OWNER_STATE });
+    const ventures = await owner.request.get('/api/v1/program/ventures');
+    expect(ventures.status(), 'GET /program/ventures').toBe(200);
+    const emberloop = ((await ventures.json()) as { items: { id: string; name: string }[] }).items.find(
+      (v) => v.name === 'EmberLoop',
+    );
+    if (!emberloop) throw new Error('EmberLoop is missing from the seed');
+    const invited = await owner.request.post(`/api/v1/ventures/${emberloop.id}/team/invitations`, {
+      headers: { ...WRITE_HEADERS, 'idempotency-key': runToken() },
+      data: { displayName: `Notice Tester ${runToken()}`, role: 'team', expiresInDays: 1 },
+    });
+    expect(invited.status(), 'POST /ventures/:id/team/invitations').toBe(201);
+    const accessCode = ((await invited.json()) as { accessCode: string }).accessCode;
+    await owner.close();
+
+    const first = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+    const page = await first.newPage();
+    await signIn(page, accessCode);
+    await page.waitForURL(new RegExp(`/v/${emberloop.id}$`));
+    expect(await callNoticeAcknowledgedAt(page.request, emberloop.id)).toBeNull();
+
+    await test.step('before the first call: AI, voice through Amazon Transcribe and not kept, text kept', async () => {
+      await page
+        .getByRole('navigation', { name: 'Main' })
+        .getByRole('link', { name: /^Call / })
+        .click();
+      const screen = callScreen(page);
+      const notice = screen.getByTestId('voice-notice');
+      await expect(notice).toContainText('Amazon Transcribe');
+      await expect(notice).toContainText('No audio is kept');
+      await expect(notice).toContainText('saved here like chat');
+      await expect(screen.getByRole('note', { name: 'AI disclosure' })).toContainText('not a person');
+      // The notice holds the call until the person starts it.
+      await expect(screen.getByRole('button', { name: 'Start call' })).toBeVisible();
+      await expectNoSeriousA11yViolations(page, 'call pre-join with the voice notice');
+    });
+
+    await test.step('Start call stores it with the person on the server', async () => {
+      const screen = callScreen(page);
+      const acknowledged = page.waitForResponse(
+        (response) =>
+          response.url().endsWith('/api/v1/calls/notice/acknowledge') && response.status() === 200,
+      );
+      await screen.getByRole('button', { name: 'Start call' }).click();
+      await acknowledged;
+      await expect(screen.getByRole('textbox', { name: /^Reply to / })).toBeVisible({ timeout: 20_000 });
+      await screen.getByRole('button', { name: 'End call' }).click();
+      await expect(screen.getByRole('heading', { name: 'Call ended' })).toBeVisible({ timeout: 20_000 });
+      expect(await callNoticeAcknowledgedAt(page.request, emberloop.id)).not.toBeNull();
+    });
+
+    await test.step('another browser (nothing stored in it) does not show it again', async () => {
+      // The same signed-in person, with none of the first browser's local storage.
+      const { cookies } = await first.storageState();
+      await first.close();
+      const second = await browser.newContext({ storageState: { cookies, origins: [] } });
+      const tab = await second.newPage();
+      await withoutUserActivation(tab);
+      await tab.goto(`/${TENANT}/app/v/${emberloop.id}?call=1`);
+      const screen = callScreen(tab);
+      await expect(screen.getByRole('button', { name: 'Start call' })).toBeVisible();
+      await expect(screen.getByRole('status').filter({ hasText: /min left today/ })).toBeVisible();
+      await expect(screen.getByTestId('voice-notice')).toHaveCount(0);
+      expect(
+        await tab.evaluate(() =>
+          Object.keys(window.localStorage).some((k) => k.startsWith('fa.call.notice.')),
+        ),
+      ).toBe(true);
+      await screen.getByRole('button', { name: 'Not now' }).click();
+      await second.close();
+    });
+  });
+
   test('a call opened in a fresh tab waits for Start call, then calls in that conversation', async ({
     page,
   }) => {
@@ -238,12 +337,7 @@ test.describe('vEIR calls', () => {
     // A tab that has seen no click may not play sound, so the call waits for Start call. Playwright marks
     // its pages as already activated, so a never-clicked tab is emulated.
     const tab = await page.context().newPage();
-    await tab.addInitScript(() => {
-      Object.defineProperty(navigator, 'userActivation', {
-        configurable: true,
-        value: { hasBeenActive: false, isActive: false },
-      });
-    });
+    await withoutUserActivation(tab);
     await voiceNoticeSeen(tab);
     await tab.goto(`${page.url().split('?')[0] ?? ''}?call=1`);
     const screen = callScreen(tab);
@@ -284,12 +378,7 @@ test.describe('vEIR calls', () => {
       (response) => response.url().endsWith(`/sessions/${sessionId}/calls`) && response.status() === 409,
     );
     // As a link opened later (a tab that has seen no click), so the call waits for Start call.
-    await tab.addInitScript(() => {
-      Object.defineProperty(navigator, 'userActivation', {
-        configurable: true,
-        value: { hasBeenActive: false, isActive: false },
-      });
-    });
+    await withoutUserActivation(tab);
     await tab.goto(`${tab.url().split('?')[0] ?? ''}?call=1`);
     const screen = callScreen(tab);
     await screen.getByRole('button', { name: 'Start call' }).click();

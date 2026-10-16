@@ -6,6 +6,7 @@
 import {
   AvatarSessionResponse,
   CallConfigResponse,
+  CallNoticeAcknowledgement,
   ConsentListResponse,
   ConsentView,
   CreatePersonaUploadResponse,
@@ -202,6 +203,48 @@ describe('vEIR identity and call configuration', () => {
       AvatarSessionResponse,
     );
     expect(session).toEqual({ provider: 'builtin', token: null, expiresAt: null, voiceId: 'Matthew' });
+  });
+
+  it('stores the first-call privacy notice with the person: once, theirs only, audited the first time', async () => {
+    const configFor = async (cookie: string) =>
+      json(await api.request(`/ventures/${quietquad()}/call-config`, { cookie }), CallConfigResponse);
+    const audited = async () =>
+      Number(
+        (
+          await api.h.t.db.system((sx) =>
+            sx.query(
+              `SELECT count(*) AS n FROM audit_events WHERE action = 'call.notice_acknowledged' AND actor_id = :id`,
+              { id: p.uuid(api.h.people.maya) },
+            ),
+          )
+        ).rows[0]?.n,
+      );
+    expect((await configFor(maya)).callNoticeAcknowledgedAt).toBeNull();
+
+    const first = await json(
+      await api.request('/calls/notice/acknowledge', { method: 'POST', cookie: maya }),
+      CallNoticeAcknowledgement,
+    );
+    expect(Date.parse(first.acknowledgedAt)).not.toBeNaN();
+    expect((await configFor(maya)).callNoticeAcknowledgedAt).toBe(first.acknowledgedAt);
+    expect(await audited()).toBe(1);
+
+    // Idempotent: a repeat (another browser, another key) keeps the first time and is not audited again.
+    const again = await json(
+      await api.request('/calls/notice/acknowledge', {
+        method: 'POST',
+        cookie: maya,
+        idempotencyKey: 'notice-key-0001',
+      }),
+      CallNoticeAcknowledgement,
+    );
+    expect(again).toEqual(first);
+    expect(await audited()).toBe(1);
+
+    // Per person: a teammate on the same venture has not acknowledged it.
+    expect((await configFor(devin)).callNoticeAcknowledgedAt).toBeNull();
+    // Signed out: refused.
+    expect((await api.request('/calls/notice/acknowledge', { method: 'POST' })).status).toBe(401);
   });
 });
 

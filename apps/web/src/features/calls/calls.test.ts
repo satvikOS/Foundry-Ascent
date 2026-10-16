@@ -68,6 +68,7 @@ describe('callBlocker', () => {
     maxMinutes: 20,
     remainingMinutesToday: 40,
     aiEnabled: true,
+    callNoticeAcknowledgedAt: null,
   };
 
   it('lets the team call when AI is on and minutes are left', () => {
