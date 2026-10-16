@@ -133,24 +133,22 @@ generated time), with `distilled_at` and `distill_version` (the number of comple
   fingerprint (never its text) in `suppressed`. Distillation must skip any line whose fingerprint is
   suppressed (`isSuppressed`) and writes with the version it read (`saveNotebook` returns null on a
   conflict), so a founder's correction is never silently overwritten.
-- **Sources.** Every line records the conversation it came from. The summary records the conversations it
+- **Sources.** Every line records the conversation it came from; a line a later distillation changed (an
+  entry reworded, a commitment reworded, re-dated or closed) records that conversation and keeps the earlier
+  ones (`sourceSessionIds`, at most 20): its words may carry theirs. The summary records the conversations it
   was drawn from (`summarySources`) and the opener the one it was drawn from (`nextOpenerSource`); a missing
   key means unknown. `saveNotebook` owns these fields and ignores what callers send. For distillation it
   keeps unchanged text's sources and adds `sourceSessionId` to rewritten text, which is of unknown origin
   without it (`withDistilledSources`). Text a person writes where there was none is drawn from no
   conversation (`[]`, null); corrected text keeps where it was drawn from (`withPersonSources`). These
   fields stay in the stored document; the contract view does not show them.
-- **Deleting a conversation** removes the lines sourced from it, and clears the summary and the opener when
-  they were drawn from it. Text of unknown origin is cleared when the deleted conversation was distilled or a
-  line cites it: a summary is never kept on the chance it did not use the conversation. Text a person wrote
-  stays.
-- **Known limitation: opener copies of unknown origin.** A conversation keeps the opener it started with
-  (`coaching_sessions.opener`, its first bubble and its call intro) with the conversation it was drawn from
-  (`opener_source_session_id`), and deleting that conversation erases those copies. A copy taken from a
-  notebook opener of unknown origin (a legacy notebook written before sources were recorded) has no source,
-  so deleting the conversation it actually came from cannot find it: it stays in the conversations that
-  opened with it until they are deleted. The notebook's own opener is still cleared
-  (unknown origin is cleared when the deleted conversation was distilled).
+- **Deleting a conversation** removes the lines drawn from it (as their source or an earlier one), and clears
+  the summary and the opener when they were drawn from it. A summary of unknown origin is cleared when the
+  deleted conversation was distilled or a line cites it: a summary is never kept on the chance it did not use
+  the conversation. An opener of unknown origin is cleared whichever conversation of the venture is deleted,
+  in every notebook of the venture and in every conversation that opened with it
+  (`coaching_sessions.opener_by_person` tells a copy a person wrote from one of unknown origin): over-erasing
+  it is harmless, the next distillation writes a new one. Text a person wrote stays.
 - **Integrity.** The database checks the document against the contract (conversation ids, ISO timestamps).
   Should a stored notebook still not match a later contract, reads keep the readable lines and mark the
   record not intact; the notebook API fails loudly (500, logged with ids only) and `saveNotebook` refuses to
@@ -159,11 +157,17 @@ generated time), with `distilled_at` and `distill_version` (the number of comple
 
 ## 5. Conversations
 
-- **Titles** come from the first non-crisis message (trigger `turns_touch_session`) and can be renamed
-  (`PATCH /sessions/:id`). `title_source` records who set them: `auto` (first message, distillation) or
+- **Titles** come from the first message the classifier found ordinary (`risk_label` `none`: never a crisis,
+  high-risk, injection or cross-venture one; trigger `turns_touch_session`), and a title taken from a turn
+  whose answer is then held back is withdrawn (`turns_untitle_blocked`); until then the client shows its
+  default "Conversation · date, time". Titles can be renamed (`PATCH /sessions/:id`). `title_source` records who set them: `auto` (first message, distillation) or
   `person` (a rename, or a title given at the start). Distillation (`setSessionDigest`) replaces only
   `auto` titles.
 - **Temporary chats never carry a title** (CHECK `coaching_sessions_title_privacy_check`); renaming one is 409.
+- **Temporary chats keep nothing.** They neither read nor write the vEIR notebook: a resolution of help asked
+  from one (or from a deleted conversation) is never written there. A crisis message still drafts its support
+  request, and the founder may share any request while the chat is open; when it ends (or daily maintenance
+  ends it after 24 h idle) the requests never shared are withdrawn and their packet erased, as a delete does.
 - **Titles and goals are the founder's own words.** Only the venture's founder/team read them: every read
   path that returns them (session views, recents, `listRecentDigests`) gives null to anyone else, such as
   the assigned EIR, who may read the conversation row itself (RLS) and its digest. System jobs read them as
@@ -181,8 +185,9 @@ generated time), with `distilled_at` and `distill_version` (the number of comple
 - `DELETE /sessions/:id` (founder/team) erases the content like an ended temporary chat: founder text and
   responses of every turn, title, goal, recap, digest, feedback comments, the AI memory proposals drawn from
   it that no person kept (pending, rejected or expired), the notebook lines, summary and opener drawn from
-  it (§4.2), and stored idempotent responses that mention it. Pending turns are failed so a late answer is
-  never stored. AI suggestions a person approved stay: they are the venture's memory now. Escalations the
+  it (§4.2), and stored idempotent responses that mention it or carry what it erases (its AI proposals,
+  later conversations' copies of its opener). Pending turns are failed so a late answer is never stored, and
+  a turn admitted while it is being deleted is refused. AI suggestions a person approved stay: they are the venture's memory now. Escalations the
   founder never shared (draft, awaiting consent, or withdrawn before sharing) are withdrawn and their packet
   erased: it held the founder's question verbatim. Escalations the founder shared stay: they went to a
   person with consent. The row stays for security records; RLS hides it from everyone.
@@ -210,7 +215,7 @@ generated time), with `distilled_at` and `distill_version` (the number of comple
   the same checks as a call (AI enabled, coach active, minutes left). Only `builtin` can be configured
   until a vendor adapter exists.
 
-## 7. Data model (migrations 0004 and 0005)
+## 7. Data model (migrations 0004, 0005 and 0009)
 
 | Object                              | Change                                                                                                                                                                                                                                                                                                                                                                           |
 | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -241,6 +246,19 @@ Migration 0005 (`0005_wave1_fixes`, expand-only and re-runnable, `migrate-0005.d
 | `venture_memberships` RLS | platform admins may add members (team invitations) and read the memberships of their tenant's ventures (the Team list)                                                                                                                                   |
 | `app.is_synthetic_eir`    | comment: the consent exception covers synthetic EIRs whether or not they can sign in                                                                                                                                                                     |
 
+Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-0009.db.test.ts`; behaviour in
+`repositories/review-privacy.db.test.ts`):
+
+| Object                             | Change                                                                                                                                                                     |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `turns_require_live_session`       | BEFORE INSERT on `turns`: locks the conversation like a delete does and refuses a turn on a deleted one (55000)                                                            |
+| `app.turns_touch_session`          | skips deleted conversations; titles only from a message labelled `none`; `turns_untitle_blocked` withdraws a title whose turn is held back; such titles cleared once       |
+| `app.soft_delete_session`          | also clears `heard_text` explicitly                                                                                                                                        |
+| `app.erase_drawn_from_session`     | purges stored responses of erased AI proposals; removes lines listing the conversation in `sourceSessionIds`; clears a notebook opener of unknown origin in every notebook |
+| `app.sessions_erase_opener_copies` | also clears copies of unknown origin on the venture's conversations, and purges stored responses of the conversations it clears                                            |
+| notebook CHECK                     | optional `sourceSessionIds` per line (at most 20 conversation ids)                                                                                                         |
+| `coaching_sessions`                | `opener_by_person` (a copy a person wrote), `distill_unusable_answers` (invalid or refused distillation answers for the uncovered turns); checks added NOT VALID           |
+
 ## 8. The turn pipeline and distillation (as built)
 
 - **Turns** write their `channel`; spoken turns pass voice-turn admission ([calls](calls.md) §2). The
@@ -255,12 +273,18 @@ Migration 0005 (`0005_wave1_fixes`, expand-only and re-runnable, `migrate-0005.d
     the last 480 s), and a job whose conversation has more turns since is `superseded`;
   - when a conversation ends, immediately;
   - for the person's previous conversation when they start the next one, if it is idle and undistilled;
-  - in daily maintenance, the backstop: a bounded number of idle, undistilled conversations. The 15-minute
-    `DistillSweep` schedule ships **disabled** ([ADR-0018](adr/0018-veir-knowledge-pools.md)).
+  - in daily maintenance, the backstop: up to 50 idle, undistilled conversations, three ventures at a time
+    (one conversation per venture, which shares its notebook), while the run's time allows. When time runs
+    out with conversations left, the maintenance message comes back after the queue's visibility timeout (up
+    to its last receive), so a backlog (after a kill-switch or spend-cap day) drains the same day. The
+    15-minute `DistillSweep` schedule ships **disabled** ([ADR-0018](adr/0018-veir-knowledge-pools.md)).
 
-  One run claims the conversation, checks the persona and its consent, calls the model once, and writes in
-  one transaction: the digest and title (`setSessionDigest`, never for temporary or digest-deleted
-  conversations; it keeps a person's title), the notebook delta merged against the version read
+  One run claims the conversation, checks the persona and its consent, and distils it in parts of at most 16
+  turns, oldest first: each part's prompt carries the digest of the turns before it, and the digest written
+  covers exactly the turns the model saw (`distill_version`), so a long conversation is never cut to its last
+  turns. Each part is one model call, written in one transaction: the digest and title (`setSessionDigest`,
+  never for temporary or digest-deleted conversations; it keeps a person's title), the notebook delta merged
+  against the version read
   (`saveNotebook` with `sourceSessionId`; suppressed lines skipped; lines a person edited since the last
   distillation pinned for one run; human-help advice kept until a person removes it or newer advice pushes
   it out; a `NotebookIntegrityError` leaves the notebook untouched), memory candidates as proposals and
@@ -271,7 +295,7 @@ Migration 0005 (`0005_wave1_fixes`, expand-only and re-runnable, `migrate-0005.d
   proposal again instead of adding one; pending proposals of the venture are embedded before the comparison.
   AI proposals nobody acts on expire after 30 days.
 - **Deletion**: deleting a conversation also withdraws its lesson drafts still in `draft` and erases the
-  copies of an opener drawn from it on later conversations.
+  copies of an opener drawn from it, or of unknown origin, on the venture's other conversations.
 
 ## 9. Tests
 

@@ -303,7 +303,8 @@ One testable orchestrator with deterministic validators (ADR-002). State machine
 2. **Pre-classify (deterministic)** with `packages/ai/risk`: high-risk categories (IP/licensing,
    legal/contracts, securities/valuation/investment, medical/clinical/FDA/human-subjects, safety/crisis/
    wellbeing, harassment/conflict) and prompt-injection/exfiltration heuristics. Crisis language →
-   immediate human-support response (no model call) + P1 escalation draft.
+   immediate human-support response (no model call) + P1 escalation draft, whatever the rate, in-flight,
+   session-turn and spend limits (crisis turns still count towards the per-principal rate limit).
 3. **Retrieve (authorized, scoped)**: per store, filtered by tenant + venture + visibility first, then
    hybrid score = `0.55·cosine + 0.25·ts_rank + 0.10·recency + 0.10·authority` with contradiction
    flags. Budgets: memory 8, venture chunks 6, doctrine 4, resources 4, patterns 2. Evidence items get

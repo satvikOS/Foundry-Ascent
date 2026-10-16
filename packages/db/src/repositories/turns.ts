@@ -360,13 +360,13 @@ export const EPHEMERAL_REDACTION_TEXT = '[ephemeral session: content removed]';
 
 /**
  * Removes the conversation content of every turn of a session (ephemeral sessions keep no content beyond
- * security records once they end): the founder text is replaced and the structured response dropped.
- * Run it in the caller's RLS transaction (the `turns_update` policy limits it to ventures the caller may
- * write). Returns the number of turns redacted.
+ * security records once they end): the founder text is replaced, and the structured response and what the
+ * founder heard of it during a call are dropped. Run it in the caller's RLS transaction (the `turns_update`
+ * policy limits it to ventures the caller may write). Returns the number of turns redacted.
  */
 export async function redactSessionTurns(ex: SqlExecutor, sessionId: string): Promise<number> {
   const result = await ex.query(
-    'UPDATE turns SET founder_text = :redacted, response = NULL WHERE session_id = :sessionId',
+    'UPDATE turns SET founder_text = :redacted, response = NULL, heard_text = NULL WHERE session_id = :sessionId',
     { sessionId: p.uuid(sessionId), redacted: p.text(EPHEMERAL_REDACTION_TEXT) },
   );
   return result.rowCount;
@@ -606,7 +606,8 @@ export interface ReviewQueueRow {
 
 /**
  * Sampled turns of ventures where `reviewerId` is the assigned EIR (explicit filter; RLS additionally
- * restricts EIRs to sampled turns of assigned ventures). Unreviewed first, newest first.
+ * restricts EIRs to sampled turns of assigned ventures), never of a deleted conversation. Unreviewed first,
+ * newest first.
  */
 export async function listReviewQueue(
   ex: SqlExecutor,
@@ -620,6 +621,7 @@ export async function listReviewQueue(
      FROM turns t
      JOIN ventures v ON v.id = t.venture_id
      WHERE t.sampled_for_review AND t.status = 'completed'
+       AND EXISTS (SELECT 1 FROM coaching_sessions s WHERE s.id = t.session_id AND s.deleted_at IS NULL)
        AND EXISTS (SELECT 1 FROM assignments a JOIN eir_profiles e ON e.id = a.eir_profile_id
                    WHERE a.venture_id = t.venture_id AND a.status = 'active' AND e.principal_id = :reviewerId
                      AND (a.expires_at IS NULL OR a.expires_at > now()))

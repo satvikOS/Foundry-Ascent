@@ -425,6 +425,11 @@ export interface TurnInterruption {
  * (whose words are `heardText`, already verified by the caller). The first record wins (a retried interrupt
  * changes nothing). Null when the turn is not that person's turn in that call, not visible, or its conversation
  * is no longer active (its content may have been redacted).
+ *
+ * The conversation is locked (FOR SHARE) while it is checked: deleting it or ending a temporary chat locks it
+ * too, so a barge-in that races the erasure either commits first (and its words are erased with the rest) or
+ * sees the conversation gone and records nothing. Without the lock, the check could read the conversation as
+ * it was before an erasure that was committing, and store the heard words on a redacted turn.
  */
 export function markTurnInterrupted(
   ex: SqlExecutor,
@@ -443,7 +448,8 @@ export function markTurnInterrupted(
                            interrupted_at = coalesce(t.interrupted_at, now())
      WHERE t.id = :id AND t.call_id = :callId AND t.author_id = :authorId
        AND EXISTS (SELECT 1 FROM coaching_sessions s
-                   WHERE s.id = t.session_id AND s.status = 'active' AND s.deleted_at IS NULL)
+                   WHERE s.id = t.session_id AND s.status = 'active' AND s.deleted_at IS NULL
+                   FOR SHARE OF s)
      RETURNING t.id, t.heard_seq, t.heard_text, t.interrupted_at`,
     {
       id: p.uuid(input.turnId),

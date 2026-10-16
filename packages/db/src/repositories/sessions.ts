@@ -12,6 +12,7 @@ import { col, type RawRow } from '../columns.js';
 import { type SqlExecutor, type SystemExecutor } from '../executor.js';
 import { p } from '../params.js';
 import { clampLimit, fetchByIdsInBatches, queryFirst, queryNumber, queryOne, queryRows } from './common.js';
+import { ERASED_PACKET_SQL, TEMPORARY_CHAT_ENDED_TEXT, UNSHARED_NOT_ERASED_SQL } from './escalations.js';
 import { EPHEMERAL_REDACTION_TEXT } from './turns.js';
 
 type CoachModeValue = z.infer<typeof CoachMode>;
@@ -122,6 +123,48 @@ export function getSession(ex: SqlExecutor, id: string): Promise<SessionRecord |
   );
 }
 
+/**
+ * Locks an active, undeleted conversation for the rest of the caller's transaction, before a turn is added
+ * to it. Deleting a conversation (`app.soft_delete_session`) and ending one lock the same row, so they
+ * serialise with the turn: a delete or end that committed first is seen here (false, nothing is written),
+ * and one that comes later waits for the turn and then erases it with the rest. The lock is the one the
+ * turn's insert takes anyway (`turns_touch_session`), so it adds no contention. Must run inside a
+ * transaction. Returns false when the conversation is not active, deleted or not visible.
+ */
+export async function lockSessionForTurn(ex: SqlExecutor, sessionId: string): Promise<boolean> {
+  const row = await queryFirst(
+    ex,
+    `SELECT s.id FROM coaching_sessions s
+     WHERE s.id = :id AND s.status = 'active' AND s.deleted_at IS NULL
+     FOR NO KEY UPDATE OF s`,
+    { id: p.uuid(sessionId) },
+    (r) => col.uuid.decode(r.id, 'id'),
+  );
+  return row !== null;
+}
+
+/**
+ * A conversation's privacy and whether it was deleted, locked (FOR SHARE) for the rest of the caller's
+ * transaction, for work that writes something drawn from it (owner role: deleted ones are seen). Deleting it
+ * locks the same row, so a delete that committed first is seen here, and one that comes later waits for the
+ * write and then erases it. Null when it does not exist or is not visible.
+ */
+export function lockSessionState(
+  ex: SqlExecutor,
+  sessionId: string,
+): Promise<{ readonly privacy: SessionRecord['privacy']; readonly deleted: boolean } | null> {
+  return queryFirst(
+    ex,
+    `SELECT s.privacy, s.deleted_at IS NOT NULL AS deleted FROM coaching_sessions s WHERE s.id = :id
+     FOR SHARE OF s`,
+    { id: p.uuid(sessionId) },
+    (r) => ({
+      privacy: col.enum(SessionPrivacy.options).decode(r.privacy, 'privacy'),
+      deleted: col.bool.decode(r.deleted, 'deleted'),
+    }),
+  );
+}
+
 export interface CreateSessionInput {
   readonly id?: string;
   readonly tenantId: string;
@@ -144,17 +187,27 @@ export interface CreateSessionInput {
    * conversation erases this copy too. Null when a person wrote it or its origin is unknown.
    */
   readonly openerSourceSessionId?: string | null;
+  /**
+   * True when a person wrote the opener (the notebook's `nextOpenerSource` is null): deleting a conversation
+   * leaves the copy. A copy with neither a source nor this mark is of unknown origin, and deleting any
+   * conversation of the venture erases it (migration 0009).
+   */
+  readonly openerByPerson?: boolean;
 }
 
 export function createSession(ex: SqlExecutor, input: CreateSessionInput): Promise<SessionRecord> {
+  const byPerson =
+    input.opener != null && (input.openerSourceSessionId ?? null) === null && input.openerByPerson === true;
+  // Only a copy a person wrote names `opener_by_person` (migration 0009; it defaults to false), so starting
+  // any other conversation writes exactly the columns of the previous schema.
   return queryOne(
     ex,
     `INSERT INTO coaching_sessions AS s (id, tenant_id, venture_id, assignment_id, persona_release_id, started_by, mode,
                                          privacy, goal, policy_version, title, title_source, opener,
-                                         opener_source_session_id)
+                                         opener_source_session_id${byPerson ? ', opener_by_person' : ''})
      VALUES (coalesce(:id, gen_random_uuid()), :tenantId, :ventureId, :assignmentId, :releaseId, :startedBy, :mode,
              :privacy, :goal, :policyVersion, :title, CASE WHEN :title IS NULL THEN 'auto' ELSE 'person' END,
-             :opener, :openerSource)
+             :opener, :openerSource${byPerson ? ', true' : ''})
      RETURNING ${COLUMNS}`,
     {
       id: p.nullable.uuid(input.id),
@@ -269,7 +322,7 @@ export async function setSessionDigest(
 ): Promise<boolean> {
   const result = await ex.query(
     `UPDATE coaching_sessions AS s
-     SET digest = :digest, distilled_at = now(), distill_version = :version,
+     SET digest = :digest, distilled_at = now(), distill_version = :version, distill_unusable_answers = 0,
          title = CASE WHEN s.title_source = 'auto' THEN coalesce(:title, s.title) ELSE s.title END
      WHERE s.id = :id AND s.privacy = 'standard' AND s.deleted_at IS NULL AND s.digest_deleted_at IS NULL`,
     {
@@ -623,7 +676,7 @@ export async function markSessionDistilled(
 ): Promise<boolean> {
   const result = await ex.query(
     `UPDATE coaching_sessions AS s
-     SET distilled_at = now(), distill_version = greatest(s.distill_version, :version)
+     SET distilled_at = now(), distill_version = greatest(s.distill_version, :version), distill_unusable_answers = 0
      WHERE s.id = :id AND s.privacy = 'standard' AND s.deleted_at IS NULL`,
     { id: p.uuid(args.sessionId), version: p.int(Math.max(0, Math.trunc(args.distillVersion))) },
   );
@@ -652,6 +705,22 @@ export async function claimDistillation(
     },
   );
   return result.rowCount > 0;
+}
+
+/**
+ * Counts one unusable answer (invalid or refused) the model gave for the turns the digest does not cover yet,
+ * and returns how many it gave so far; the count restarts whenever the covered turns move on
+ * ({@link setSessionDigest}, {@link markSessionDistilled}). Only answers count, never queue deliveries.
+ */
+export async function countUnusableDistillAnswer(sx: SystemExecutor, sessionId: string): Promise<number> {
+  const row = await queryFirst(
+    sx,
+    `UPDATE coaching_sessions AS s SET distill_unusable_answers = s.distill_unusable_answers + 1
+     WHERE s.id = :id RETURNING s.distill_unusable_answers`,
+    { id: p.uuid(sessionId) },
+    (r) => col.int.decode(r.distill_unusable_answers, 'distill_unusable_answers'),
+  );
+  return row ?? 1;
 }
 
 /** Releases a run's claim (no-op when the claim lapsed and another run took it). */
@@ -725,12 +794,16 @@ export interface EphemeralCleanupResult {
   readonly sessionsEnded: number;
   /** Turns of ended ephemeral sessions whose content was erased by this run. */
   readonly turnsRedacted: number;
+  /** Unshared escalations of ended ephemeral sessions withdrawn and erased by this run. */
+  readonly escalationsErased: number;
 }
 
 /**
  * Daily maintenance (system executor): ends every ephemeral session idle for `idleSeconds` (no turn and no
  * start inside the period) and erases the conversation content of every turn of an ephemeral session that
- * has ended, exactly as ending the session does (`turnsRepo.redactSessionTurns`). Covers
+ * has ended (founder text, response and what the founder heard of it), and the escalations drawn from it that
+ * the founder never shared, exactly as ending the session does (`turnsRepo.redactSessionTurns`,
+ * `escalationsRepo.eraseUnsharedEscalations`). Covers
  * sessions abandoned without "End session" and anything an earlier end could not redact. Idempotent.
  */
 export async function expireStaleEphemeralSessions(
@@ -750,13 +823,26 @@ export async function expireStaleEphemeralSessions(
      WHERE s.privacy = 'ephemeral' AND s.status = 'ended' AND s.title IS NOT NULL`,
   );
   const redacted = await sx.query(
-    `UPDATE turns t SET founder_text = :redacted, response = NULL
+    `UPDATE turns t SET founder_text = :redacted, response = NULL, heard_text = NULL
      FROM coaching_sessions s
      WHERE s.id = t.session_id AND s.privacy = 'ephemeral' AND s.status = 'ended'
-       AND (t.founder_text <> :redacted OR t.response IS NOT NULL)`,
+       AND (t.founder_text <> :redacted OR t.response IS NOT NULL OR t.heard_text IS NOT NULL)`,
     { redacted: p.text(EPHEMERAL_REDACTION_TEXT) },
   );
-  return { sessionsEnded: ended.rowCount, turnsRedacted: redacted.rowCount };
+  const escalations = await sx.query(
+    `UPDATE escalations AS e
+     SET status = CASE WHEN e.status IN ('draft', 'awaiting_consent') THEN 'withdrawn' ELSE e.status END,
+         packet = ${ERASED_PACKET_SQL}, updated_at = now()
+     FROM coaching_sessions s
+     WHERE s.id = e.session_id AND s.privacy = 'ephemeral' AND s.status = 'ended' AND s.deleted_at IS NULL
+       AND ${UNSHARED_NOT_ERASED_SQL}`,
+    { marker: p.text(TEMPORARY_CHAT_ENDED_TEXT) },
+  );
+  return {
+    sessionsEnded: ended.rowCount,
+    turnsRedacted: redacted.rowCount,
+    escalationsErased: escalations.rowCount,
+  };
 }
 
 /** Start of the most recent session of the venture (excluding `exceptSessionId`), or null. */

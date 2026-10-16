@@ -11,13 +11,6 @@ export function supportMessageFor(reason: string): string | null {
 }
 
 /**
- * The refusal text of a crisis message over the per-person message limit. Nothing is stored and no further
- * escalation draft is written, but the founder still reads where to find a person.
- */
-export const RATE_LIMITED_CRISIS_MESSAGE =
-  'You deserve support from a person right now. If anyone is in immediate danger, call your local emergency number (911 in the US). In the US you can call or text 988 at any time, and your university support service can help too.';
-
-/**
  * `TurnView.blocked` / `turn.blocked` fields of a stored turn, so a replayed or reloaded turn shows exactly
  * what the live stream showed. Null for turns that are not blocked. Carries no founder text and no blocked
  * model output.

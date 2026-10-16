@@ -200,7 +200,9 @@ type TurnEmitter = (event: TurnStreamEvent) => void | Promise<void>;
 - Pipeline: authorize (membership, session, kill switch, assignment + approved release, mode, turn limit,
   20 turns / 10 min per principal, daily spend caps) → deterministic risk pre-classifier → crisis path
   (fixed support message, **no model call**, P1 `safety_wellbeing` escalation draft; it bypasses the AI
-  gates: kill switch, spend caps, persona status) → query embedding (`gateway.embed`) → scoped hybrid
+  gates: kill switch, spend caps, persona status, and every limit: the message rate limit, the in-flight
+  limit, call admission and the session turn limit; crisis turns still count towards the message limit, and
+  past it a spoken one is answered as typed, without speech) → query embedding (`gateway.embed`) → scoped hybrid
   retrieval (memory 8, venture chunks 6, doctrine/program 4, resources 4, patterns 2; isolation
   re-filtered; `retrieval.authorized` audit) → context ≤ 12k tokens → `generateStructured(CoachResponse)`
   → `validateCoachResponse` (evidence ids, facts, grounding, identity, cross-venture names/canaries/member names,
@@ -208,6 +210,10 @@ type TurnEmitter = (event: TurnStreamEvent) => void | Promise<void>;
   candidates become `proposed` items (origin `ai`, visibility `team`); forced or P0/P1 escalations become
   `draft` escalations; all high-risk turns and 30 % of others are sampled for EIR review.
 - `signal` (client disconnect / deadline) cancels the model call; the turn is marked `failed`.
+- The turn is admitted under a lock on its conversation (`sessionsRepo.lockSessionForTurn`, the row lock a
+  delete and an end take): a conversation deleted or ended after preflight refuses the turn
+  (`session_ended`), and the database refuses any turn on a deleted conversation (trigger
+  `turns_require_live_session`).
 
 ## 5. Ingestion worker: `ingestion.process`
 
@@ -288,6 +294,8 @@ turn limit per session, the grounding threshold and k for the portfolio live in 
 
 - Cross-venture guard matches other venture **names** as whole phrases: a venture named with a common
   word would over-block; keep venture names distinctive.
-- Ephemeral sessions keep turn content until `sessions.end`, which erases it; abandoned ephemeral sessions
-  keep it (a cleanup job can end stale sessions).
+- Ephemeral sessions keep turn content until `sessions.end`, which erases it together with the escalations
+  drawn from them that the founder never shared (a shared one went to a person with consent and stays); daily
+  maintenance ends abandoned ones after 24 h and erases them the same way. Their escalation resolutions never
+  reach the vEIR notebook, nor do those of a deleted conversation.
 - Revocation in another container takes effect within the cache TTL (60 s), by design.

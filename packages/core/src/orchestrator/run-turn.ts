@@ -60,13 +60,7 @@ import {
 import { createDraftEscalation } from '../services/escalations.js';
 import { persistMemoryCandidates } from '../services/memory.js';
 import { historyAsHeard } from '../services/spoken-text.js';
-import {
-  RATE_LIMITED_CRISIS_MESSAGE,
-  blockedDetailOf,
-  participantRiskLabel,
-  participantTurnView,
-  supportMessageFor,
-} from './blocked.js';
+import { blockedDetailOf, participantRiskLabel, participantTurnView, supportMessageFor } from './blocked.js';
 import { assembleContext } from './context-budget.js';
 import { loadContinuity, type LoadedContinuity } from './continuity.js';
 import { candidateVisibility, type KeyedEvidence } from './evidence.js';
@@ -307,37 +301,25 @@ export function createOrchestrator(
   }
 
   /**
-   * The per-person message limit. It covers typed messages and crisis messages on any channel (a spoken
-   * crisis message skips call admission, so it must not skip every limit); other spoken turns are limited by
-   * the calls service. A crisis message over the limit is refused with where to find a person, and writes
-   * nothing: no turn and no further escalation draft.
+   * Whether the per-person message limit is reached. It counts typed messages and crisis messages on any
+   * channel; other spoken turns are limited by the calls service. Only an ordinary typed message is refused
+   * for it: a crisis message is always answered (see {@link admitTurn}).
    */
   async function overMessageLimit(
     scope: RequestScope,
     args: { readonly channel: TurnChannel; readonly crisis: boolean },
-  ): Promise<{ code: 'rate_limited'; message: string; reason: string; retryAfterSeconds: number } | null> {
-    if (args.channel !== 'text' && !args.crisis) return null;
+  ): Promise<boolean> {
+    if (args.channel !== 'text' && !args.crisis) return false;
     const recent = await turnsRepo.countRecentTurnsByAuthor(scope.tx, {
       authorId: scope.ctx.principalId,
       windowSeconds: cfg.turns.rateWindowSeconds,
       channel: 'text',
       includeCrisis: true,
     });
-    if (recent < cfg.turns.rateLimit) return null;
-    return args.crisis
-      ? {
-          code: 'rate_limited',
-          message: RATE_LIMITED_CRISIS_MESSAGE,
-          reason: 'crisis_rate_limit',
-          retryAfterSeconds: cfg.turns.rateWindowSeconds,
-        }
-      : {
-          code: 'rate_limited',
-          message: 'You are sending messages very quickly. Please wait a few minutes.',
-          reason: 'turn_rate_limit',
-          retryAfterSeconds: cfg.turns.rateWindowSeconds,
-        };
+    return recent >= cfg.turns.rateLimit;
   }
+
+  const MESSAGE_LIMIT_TEXT = 'You are sending messages very quickly. Please wait a few minutes.';
 
   /** Step 1: authorize and check every gate except spend caps (owner-only ledger). */
   function preflight(
@@ -481,7 +463,8 @@ export function createOrchestrator(
         };
       }
       const turnCount = await turnsRepo.countSessionTurns(tx, sessionId);
-      if (turnCount >= settings.maxTurnsPerSession) {
+      // The session turn limit stops runaway conversations, never a founder in crisis (no model call).
+      if (!crisis && turnCount >= settings.maxTurnsPerSession) {
         throw reject(
           'session_turn_limit',
           'This session reached its turn limit. Please end it and start a new one.',
@@ -495,9 +478,8 @@ export function createOrchestrator(
           'ordinal_mismatch',
         );
       }
-      const limited = await overMessageLimit(scope, { channel, crisis });
-      if (limited !== null) {
-        throw reject(limited.code, limited.message, limited.reason, limited.retryAfterSeconds);
+      if (!crisis && (await overMessageLimit(scope, { channel, crisis }))) {
+        throw reject('rate_limited', MESSAGE_LIMIT_TEXT, 'turn_rate_limit', cfg.turns.rateWindowSeconds);
       }
       const venture = await venturesRepo.getVenture(tx, session.ventureId);
       if (venture === null) throw fail.notFound('Venture');
@@ -723,6 +705,8 @@ export function createOrchestrator(
     readonly pre: Proceed;
     readonly input: z.output<typeof RunTurnInput>;
     readonly risk: RiskClassification;
+    /** Whether the admission treated the message as a crisis (no limits, no coach, no model call). */
+    readonly crisis: boolean;
     readonly others: OtherVentures;
     readonly eirNames: readonly string[];
     /** The founder and their team: names the reply may address ("Thanks, Ruth."). */
@@ -749,8 +733,9 @@ export function createOrchestrator(
       evidenceCount: null,
     });
 
-    // Step 2: crisis → human support, no model call.
-    if (risk.crisis) return crisisPath(ctx, turn, pre, risk, emit, a.speechKey);
+    // Step 2: crisis → human support, no model call. The admission decided on the same classification (the
+    // gates a crisis skips were skipped for it), so a turn admitted as a crisis always takes this path.
+    if (a.crisis || risk.crisis) return crisisPath(ctx, turn, pre, risk, emit, a.speechKey);
     const { active, coach } = pre;
     if (active === null || coach === null)
       throw new DomainError('assignment_inactive', 'No active coach', { reason: 'no_assignment' });
@@ -1095,8 +1080,16 @@ export function createOrchestrator(
   /**
    * Per-principal turn admission inside the turn-creating transaction (see runTurn). Rejections are
    * audited after the rollback (deferred) and thrown as DomainErrors. Spoken turns are admitted by the calls
-   * service (live call, call caps, voice rate limit) instead of the typed-message rate limit; spoken crisis
-   * messages skip call admission and pay the typed limit instead.
+   * service (live call, call caps, voice rate limit) instead of the typed-message rate limit.
+   *
+   * A crisis message is never refused for a limit: not the message limit, the in-flight limit, call
+   * admission or the spend caps (nor, in preflight, the session turn limit). It always gets the fixed support
+   * response and its escalation draft. This stays safe because the crisis path makes no model call and
+   * spends nothing; crisis messages are serialised per person by the admission lock and count towards the
+   * message limit, so a burst of them still stops that person's ordinary messages. Past the message limit a
+   * spoken crisis message is answered as a typed one (the support text stays on screen; its spoken form is
+   * not synthesised again), so a burst cannot become a burst of speech synthesis either. Returns the channel
+   * the turn is recorded with.
    */
   async function admitTurn(
     scope: RequestScope,
@@ -1108,7 +1101,7 @@ export function createOrchestrator(
       readonly channel: TurnChannel;
       readonly callId: string | undefined;
     },
-  ): Promise<void> {
+  ): Promise<TurnChannel> {
     const { tx, ctx } = scope;
     const reject = (
       code: DomainError['code'],
@@ -1127,9 +1120,26 @@ export function createOrchestrator(
       return new DomainError(code, message, { reason, retryAfterSeconds });
     };
     await turnsRepo.lockTurnAdmission(tx, ctx.principalId);
-    const limited = await overMessageLimit(scope, { channel: args.channel, crisis: args.crisis });
-    if (limited !== null) {
-      throw reject(limited.code, limited.message, limited.reason, limited.retryAfterSeconds);
+    // Preflight read the conversation in its own transaction. Deleting or ending it since then must win: the
+    // conversation is re-checked under the lock its delete and end take, so a turn admitted just after a
+    // delete is refused, and a delete that comes later waits for this turn and erases it with the rest.
+    if (!(await sessionsRepo.lockSessionForTurn(tx, args.sessionId))) {
+      scope.deferAudit({
+        action: 'turn.rejected',
+        outcome: 'blocked',
+        ventureId: args.ventureId,
+        objectType: 'session',
+        objectId: args.sessionId,
+        policyReason: 'session_not_active',
+      });
+      throw new DomainError('session_ended', 'This session has ended. Start a new session to continue.', {
+        reason: 'session_not_active',
+      });
+    }
+    const overLimit = await overMessageLimit(scope, { channel: args.channel, crisis: args.crisis });
+    if (args.crisis) return overLimit && args.channel === 'voice' ? 'text' : args.channel;
+    if (overLimit) {
+      throw reject('rate_limited', MESSAGE_LIMIT_TEXT, 'turn_rate_limit', cfg.turns.rateWindowSeconds);
     }
     const inFlight = await turnsRepo.countPendingTurnsByAuthor(tx, {
       authorId: ctx.principalId,
@@ -1143,28 +1153,25 @@ export function createOrchestrator(
         5,
       );
     }
-    // Crisis support is never refused for call reasons: it makes no model call and must always reach the
-    // founder.
-    if (args.channel === 'voice' && !args.crisis) {
+    if (args.channel === 'voice') {
       await admitVoiceTurn(scope, { sessionId: args.sessionId, callId: args.callId, now: kit.now() });
     }
     // Spend recorded by turns still in flight is not in the ledger yet; the in-flight limit bounds that.
-    if (!args.crisis) {
-      const cap = await turnsRepo.spendCapState(tx, {
-        globalUsd: args.settings.dailyUsdCapGlobal,
-        principalUsd: args.settings.dailyUsdCapPerPrincipal,
-      });
-      if (cap !== null) {
-        throw reject(
-          'spend_cap_reached',
-          cap === 'global'
-            ? 'The daily AI budget for the platform has been reached. Coaching resumes tomorrow (UTC).'
-            : 'You have reached your daily AI coaching budget. It resets at midnight UTC.',
-          `${cap}_daily_cap`,
-          secondsUntilUtcMidnight(kit.now()),
-        );
-      }
+    const cap = await turnsRepo.spendCapState(tx, {
+      globalUsd: args.settings.dailyUsdCapGlobal,
+      principalUsd: args.settings.dailyUsdCapPerPrincipal,
+    });
+    if (cap !== null) {
+      throw reject(
+        'spend_cap_reached',
+        cap === 'global'
+          ? 'The daily AI budget for the platform has been reached. Coaching resumes tomorrow (UTC).'
+          : 'You have reached your daily AI coaching budget. It resets at midnight UTC.',
+        `${cap}_daily_cap`,
+        secondsUntilUtcMidnight(kit.now()),
+      );
     }
+    return args.channel;
   }
 
   return {
@@ -1181,11 +1188,12 @@ export function createOrchestrator(
       let query: string;
       let embedding: Promise<number[] | null> | null = null;
       let speechKey: Promise<SessionSigningKey> | null = null;
+      let crisis = false;
       try {
         const sessionId = requireId(rawSessionId, 'Session');
         input = parseInput(RunTurnInput, rawInput);
         // Crisis detection does not depend on venture names; it decides which gates apply.
-        const crisis = classifyRisk(input.text).crisis;
+        crisis = classifyRisk(input.text).crisis;
         const checked = await preflight(ctx, sessionId, input, crisis);
         if (checked.kind === 'replay') return await replay(ctx, emit, checked);
         pre = checked;
@@ -1224,18 +1232,18 @@ export function createOrchestrator(
           speechKey = speechKeys.signingKey();
           speechKey.catch(() => undefined); // a failure surfaces when a unit is signed
         }
-        const channel = pre.channel;
         const turnMode = pre.turnMode;
+        let channel = pre.channel;
         turn = await kit.inRequest(ctx, async (scope) => {
           // Admission is atomic per principal: the rate limit, the in-flight limit and the spend caps are
           // checked under a transaction-scoped advisory lock in the same transaction that inserts the
           // pending turn, so parallel requests cannot all pass the checks before any turn exists.
-          await admitTurn(scope, {
+          channel = await admitTurn(scope, {
             crisis,
             ventureId: session.ventureId,
             sessionId: session.id,
             settings,
-            channel,
+            channel: pre.channel,
             callId: parsed.callId,
           });
           const created = await turnsRepo.createTurn(scope.tx, {
@@ -1273,9 +1281,14 @@ export function createOrchestrator(
           });
           return created;
         });
+        // A spoken crisis message admitted as a typed one (past the message limit) says nothing on the call.
+        if (channel !== pre.channel) {
+          pre = { ...pre, channel };
+          speechKey = null;
+        }
         // The query embedding starts once the turn is admitted (a refused request buys no model call) and
         // overlaps the accepted and classifying events.
-        if (!risk.crisis) embedding = embedQuery(ctx, session.ventureId, query, options.signal);
+        if (!crisis && !risk.crisis) embedding = embedQuery(ctx, session.ventureId, query, options.signal);
       } catch (err) {
         const error = asDomainError(err);
         if (error.code === 'internal') {
@@ -1296,6 +1309,7 @@ export function createOrchestrator(
           pre,
           input,
           risk,
+          crisis,
           others,
           eirNames,
           addressees,

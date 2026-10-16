@@ -2,11 +2,13 @@ import {
   DISTILL_LIMITS,
   DISTILL_SCHEMA_NAME,
   DistillDraft,
+  MAX_DISTILL_TURNS,
   NOTEBOOK_OPENER_PIN,
   NOTEBOOK_SUMMARY_PIN,
   buildDistillPrompt,
   isModelGatewayError,
   isNearDuplicate,
+  ModelUnavailableError,
   sanitizeDistill,
   type DistillSanitizeContext,
   type SanitizedDistill,
@@ -56,8 +58,10 @@ import { proposeMemoryCandidates } from './memory.js';
 
 /**
  * Distillation: how a vEIR's specific pool grows from conversations (docs/architecture/knowledge-pools.md).
- * One structured model call per conversation version (purpose `distill`, metered within the spend caps,
- * skipped while the kill switch is off) produces, after `sanitizeDistill`:
+ * One structured model call per part of a conversation (purpose `distill`, metered within the spend caps,
+ * skipped while the kill switch is off): the earliest completed turns no digest covers yet, at most
+ * MAX_DISTILL_TURNS, with the digest of the turns before them, so a long conversation is distilled whole and
+ * the digest only ever covers turns the model saw. Each part produces, after `sanitizeDistill`:
  *
  * - the conversation's digest and an improved title;
  * - the vEIR notebook, merged with what is there and keeping every line a person edited since the last
@@ -65,8 +69,9 @@ import { proposeMemoryCandidates } from './memory.js';
  * - memory candidates, deduplicated against the venture's memory and proposed for a person to approve;
  * - de-identified lesson candidates, drafted in the persona's common pool for its curators to review.
  *
- * Everything is written in one transaction, idempotently per (conversation, completed-turn count), and only
- * one run per conversation calls the model at a time (a claim taken before the call). Nothing is distilled
+ * Everything of a part is written in one transaction, idempotently per (conversation, covered-turn count), and
+ * only one run per conversation calls the model at a time (a claim taken before the call). A job distils up to
+ * four parts while time and the caps allow; the rest waits for the next trigger or the backstop. Nothing is distilled
  * for a persona that is no longer active or whose EIR's consent is not in force. Audit events and logs carry
  * ids, counts and codes only.
  *
@@ -92,7 +97,8 @@ export interface DistillService {
   distillSession(job: DistillJobInput, options?: DistillRunOptions): Promise<DistillOutcome>;
   /**
    * The backstop: distils up to `backstopBatch` standard conversations that are idle (or ended) and have
-   * turns no digest covers, oldest first, while the deadline leaves time for another one.
+   * turns no digest covers, oldest first, a few ventures at once, while the deadline leaves time for
+   * another one. `deferred` counts the ones left for the next run.
    */
   backstop(options: {
     readonly requestId: string;
@@ -112,7 +118,9 @@ export interface DistillRunOptions {
   readonly deadline?: number;
   /**
    * Delivery attempt of a queued job (1-based) and the queue's maximum. An invalid or refused model answer is
-   * tried once more through the queue before it is recorded; inline runs (the backstop) record it at once.
+   * tried once more through the queue before it is recorded, counted by the answers the model gave (a delivery
+   * the worker deferred never reached the model); the queue's last delivery and inline runs (the backstop)
+   * record it at once.
    */
   readonly attempt?: number;
   readonly maxAttempts?: number;
@@ -158,6 +166,12 @@ export class RetryableDistillError extends Error {
 
 /** Time a distillation needs to start (model call with its fallback, plus the writes). */
 const MIN_DISTILL_BUDGET_MS = 45_000;
+/**
+ * Conversations the backstop distils at once (each a model call at a time), from different ventures. Its
+ * spend per run stays bounded: at most `backstopBatch` conversations of MAX_PARTS_PER_JOB parts each, all
+ * within the daily caps (checked before every part).
+ */
+const BACKSTOP_LANES = 3;
 /** Margin kept before a deadline: the model call is cancelled this long before it. */
 const DEADLINE_MARGIN_MS = 5_000;
 /** How long a run without a deadline holds its claim on the conversation (a run with one: past it). */
@@ -166,6 +180,11 @@ const CLAIM_MARGIN_SECONDS = 30;
 const MAX_CLAIM_SECONDS = 1_800;
 /** Runs of one job when another distillation of the same notebook wrote meanwhile (each calls the model). */
 const NOTEBOOK_ROUNDS = 2;
+/**
+ * Parts of one conversation a job distils (each part is at most MAX_DISTILL_TURNS turns and one model call);
+ * the rest stays undistilled for the next trigger or the backstop.
+ */
+const MAX_PARTS_PER_JOB = 4;
 /** Notebook writes retried on a concurrent edit before the notebook is left for the next distillation. */
 const NOTEBOOK_WRITE_ATTEMPTS = 3;
 /** Evidence keys a distillation prompt may carry (the conversation's unique evidence, re-keyed E1…). */
@@ -279,6 +298,10 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
       delaySeconds > 0 ? { delaySeconds } : {},
     );
     logger.info('distill.enqueued', { requestId, sessionId: session.id, trigger, turns, delaySeconds });
+  }
+
+  function countUnusableAnswer(sessionId: string): Promise<number> {
+    return kit.system((sx) => sessionsRepo.countUnusableDistillAnswer(sx, sessionId), { transaction: false });
   }
 
   /** Triggers never fail the request they follow: a lost job is caught by the backstop. */
@@ -471,11 +494,9 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
     requestId: string,
     outcome: 'dropped' | 'failed',
     reason: string,
+    upTo: number = state.completedTurns,
   ): Promise<DistillOutcome> {
-    await sessionsRepo.markSessionDistilled(sx, {
-      sessionId: state.id,
-      distillVersion: state.completedTurns,
-    });
+    await sessionsRepo.markSessionDistilled(sx, { sessionId: state.id, distillVersion: upTo });
     await auditRepo.appendAudit(sx, {
       action: outcome === 'failed' ? 'session.distill_failed' : 'session.distill_dropped',
       outcome: outcome === 'failed' ? 'failed' : 'blocked',
@@ -485,25 +506,33 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
       objectId: state.id,
       requestId,
       policyReason: reason,
-      metadata: { turns: state.completedTurns, personaId: state.personaId },
+      metadata: { turns: upTo, personaId: state.personaId },
     });
-    logger.info('distill.recorded', { requestId, sessionId: state.id, outcome, reason });
-    return { ...empty(state.id, outcome, reason), turns: state.completedTurns };
+    logger.info('distill.recorded', { requestId, sessionId: state.id, outcome, reason, turns: upTo });
+    return { ...empty(state.id, outcome, reason), turns: upTo };
   }
 
+  /**
+   * Records an outcome without a digest. `upTo` (default: every completed turn) is how many turns it covers:
+   * a part of the conversation that failed or was blocked is recorded alone, the parts after it stay to do.
+   */
   function recordWithoutDigest(
     state: sessionsRepo.DistillState,
     requestId: string,
     outcome: 'dropped' | 'failed',
     reason: string,
+    upTo?: number,
   ): Promise<DistillOutcome> {
-    return kit.system((sx) => recordWithoutDigestIn(sx, state, requestId, outcome, reason));
+    return kit.system((sx) => recordWithoutDigestIn(sx, state, requestId, outcome, reason, upTo));
   }
 
   /**
-   * One run: read, call the model, write. Returns `notebook_changed` (nothing written) when another
-   * distillation wrote the persona's notebook since it was read: merging over it would take that run's
-   * rewordings for removals, so the caller runs again on the new notebook.
+   * One run over the next part of the conversation: the earliest completed turns no digest covers yet, at
+   * most MAX_DISTILL_TURNS, with the digest of the turns before them. Read, call the model, write; the digest
+   * then covers exactly the turns the model saw (`distill_version` never runs ahead of them). Returns
+   * `notebook_changed` (nothing written) when another distillation wrote the persona's notebook since it was
+   * read: merging over it would take that run's rewordings for removals, so the caller runs again on the new
+   * notebook.
    */
   async function runOnce(
     state: sessionsRepo.DistillState,
@@ -518,6 +547,10 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
       return recordWithoutDigest(state, requestId, 'dropped', 'persona_inactive');
     }
     if (source.turns.length === 0) return recordWithoutDigest(state, requestId, 'dropped', 'no_content');
+    // The part this run distils: what earlier runs covered stays summarised by the digest they wrote.
+    const covered = Math.min(state.distillVersion, source.turns.length, state.completedTurns);
+    const part = source.turns.slice(covered, Math.min(state.completedTurns, covered + MAX_DISTILL_TURNS));
+    if (part.length === 0) return recordWithoutDigest(state, requestId, 'dropped', 'no_content');
 
     const now = kit.now();
     const prompt = buildDistillPrompt({
@@ -531,17 +564,21 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
         currentGoal: source.venture.currentGoal,
       },
       sessionGoal: state.goal,
-      turns: source.turns.map((t) => ({
+      turns: part.map((t) => ({
         founderText: t.founderText,
         answer: t.response?.answer ?? null,
         channel: t.channel,
       })),
+      earlierTurns: covered,
+      previousDigest: covered > 0 ? state.digest : null,
       evidence: [...source.evidence.values()],
       previousNotebook: source.notebook
         ? { ...source.notebook.content, updatedAt: source.notebook.updatedAt }
         : null,
       today: now.toISOString().slice(0, 10),
     });
+    // The turns the model sees; the digest written from its answer covers no more than these.
+    const upTo = covered + prompt.turnsShown;
     const remaining =
       options.deadline === undefined ? null : options.deadline - Date.now() - DEADLINE_MARGIN_MS;
     let draft: DistillDraft;
@@ -561,9 +598,14 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
       draft = result.value;
     } catch (err) {
       if (!isModelGatewayError(err)) throw err;
-      const failure = modelFailure(err, options.attempt ?? 1, options.maxAttempts ?? 1);
+      // Only answers the model gave count towards the retry of an unusable one, never queue deliveries.
+      const answers = err instanceof ModelUnavailableError ? 0 : await countUnusableAnswer(sessionId);
+      const failure = modelFailure(err, {
+        answers,
+        lastDelivery: (options.attempt ?? 1) >= (options.maxAttempts ?? 1),
+      });
       if (failure === null) throw new RetryableDistillError(err.code);
-      return recordWithoutDigest(state, requestId, 'failed', failure);
+      return recordWithoutDigest(state, requestId, 'failed', failure, upTo);
     }
 
     const nowIso = now.toISOString();
@@ -581,12 +623,12 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
         sanitizeContext(state, source, nowIso, notebook, pins, removed),
       );
     const result = sanitizeFor(readContent, source.pins, []);
-    if (result === null) return recordWithoutDigest(state, requestId, 'dropped', 'cross_venture');
+    if (result === null) return recordWithoutDigest(state, requestId, 'dropped', 'cross_venture', upTo);
     const vectors = await dedupeVectors(ctx, state.ventureId, result);
 
     const written = await kit.system(async (sx): Promise<WriteResult> => {
       const locked = await sessionsRepo.getDistillState(sx, sessionId, { lock: true });
-      const stale = staleWriteReason(locked, state.completedTurns);
+      const stale = staleWriteReason(locked, upTo);
       if (stale !== null) return { kind: 'stale', reason: stale };
       // Consent revoked or the persona suspended while the model was answering: nothing is written for it.
       const persona = await personasRepo.getPersona(sx, state.personaId);
@@ -665,7 +707,7 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
       await sessionsRepo.setSessionDigest(sx, {
         sessionId,
         digest: result.digest,
-        distillVersion: state.completedTurns,
+        distillVersion: upTo,
         title: result.title,
       });
 
@@ -719,7 +761,8 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
         objectId: sessionId,
         requestId,
         metadata: {
-          turns: state.completedTurns,
+          turns: upTo,
+          fromTurn: covered + 1,
           personaId: state.personaId,
           titled: result.title !== null,
           notebookVersion,
@@ -750,7 +793,7 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
     logger.info('distill.done', {
       requestId,
       sessionId,
-      turns: state.completedTurns,
+      turns: upTo,
       notebookVersion: written.notebookVersion,
       memoryProposed: written.memory.created,
       memoryRepeated: written.memory.repeated,
@@ -760,7 +803,7 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
       sessionId,
       status: 'distilled',
       reason: null,
-      turns: state.completedTurns,
+      turns: upTo,
       notebookVersion: written.notebookVersion,
       memoryProposed: written.memory.created,
       memoryRepeated: written.memory.repeated,
@@ -811,13 +854,57 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
       { transaction: false },
     );
     if (!claimed) return skipped('in_progress');
-    try {
+    const late = (): boolean =>
+      options.deadline !== undefined && options.deadline - Date.now() < MIN_DISTILL_BUDGET_MS;
+    /** One part, run again on the new notebook when another distillation wrote it meanwhile. */
+    const runPart = async (current: sessionsRepo.DistillState): Promise<DistillOutcome> => {
       for (let round = 1; ; round += 1) {
-        const outcome = await runOnce(state, ctx, requestId, options);
+        const outcome = await runOnce(current, ctx, requestId, options);
         if (outcome !== 'notebook_changed') return outcome;
-        const late = options.deadline !== undefined && options.deadline - Date.now() < MIN_DISTILL_BUDGET_MS;
-        if (round >= NOTEBOOK_ROUNDS || late) throw new RetryableDistillError('notebook_changed');
+        if (round >= NOTEBOOK_ROUNDS || late()) throw new RetryableDistillError('notebook_changed');
         logger.info('distill.notebook_changed', { requestId, sessionId, round });
+      }
+    };
+    /** Whether the job may distil another part: still allowed, still within the caps, time left. */
+    const mayContinue = async (part: number): Promise<boolean> => {
+      if (part >= MAX_PARTS_PER_JOB || late()) return false;
+      const now = await kit.system((sx) => settingsRepo.getPlatformSettings(sx), { transaction: false });
+      if (!now.aiEnabled) return false;
+      try {
+        await assertWithinSpendCaps(kit, ctx, now, { ventureId: state.ventureId, operation: 'distill' });
+      } catch (err) {
+        if (isDomainError(err) && err.code === 'spend_cap_reached') return false;
+        throw err;
+      }
+      return true;
+    };
+    try {
+      // A long conversation is distilled in parts, oldest first; each covers only the turns its model call saw.
+      let current = state;
+      let total: DistillOutcome | null = null;
+      for (let part = 1; ; part += 1) {
+        const outcome = await runPart(current);
+        total =
+          total === null
+            ? outcome
+            : {
+                ...outcome,
+                notebookVersion: outcome.notebookVersion ?? total.notebookVersion,
+                memoryProposed: total.memoryProposed + outcome.memoryProposed,
+                memoryRepeated: total.memoryRepeated + outcome.memoryRepeated,
+                lessonsDrafted: total.lessonsDrafted + outcome.lessonsDrafted,
+              };
+        if (outcome.status !== 'distilled' || outcome.turns >= current.completedTurns) return total;
+        if (!(await mayContinue(part))) {
+          logger.info('distill.parts_left', { requestId, sessionId, turns: outcome.turns, parts: part });
+          return total;
+        }
+        const next = await kit.system((sx) => sessionsRepo.getDistillState(sx, sessionId), {
+          transaction: false,
+        });
+        if (next === null || distillSkipReason(next, kit.now(), cfg.activeWindowSeconds) !== null)
+          return total;
+        current = next;
       }
     } finally {
       try {
@@ -884,11 +971,7 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
         { transaction: false },
       );
       report.candidates = candidates.length;
-      for (const [index, candidate] of candidates.entries()) {
-        if (deadline !== undefined && deadline - Date.now() < MIN_DISTILL_BUDGET_MS) {
-          report.deferred = candidates.length - index;
-          break;
-        }
+      const distilOne = async (candidate: sessionsRepo.DistillationCandidate): Promise<void> => {
         try {
           const outcome = await distillSession(
             { sessionId: candidate.sessionId, requestId },
@@ -903,7 +986,28 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
             error: err instanceof Error ? err.name : 'unknown',
           });
         }
+      };
+      // Oldest first, several ventures at once so the run drains what its time allows, but one conversation
+      // per venture at a time: a venture's conversations share its notebook, and concurrent writes would only
+      // make each other run again. A conversation starts only while the deadline leaves time for it.
+      const queue = [...candidates];
+      const running = new Map<string, Promise<void>>();
+      const timeLeft = (): boolean =>
+        deadline === undefined || deadline - Date.now() >= MIN_DISTILL_BUDGET_MS;
+      while (queue.length > 0 && timeLeft()) {
+        const index = queue.findIndex((c) => !running.has(c.ventureId));
+        const candidate = running.size < BACKSTOP_LANES && index >= 0 ? queue.splice(index, 1)[0] : undefined;
+        if (candidate === undefined) {
+          await Promise.race(running.values());
+          continue;
+        }
+        running.set(
+          candidate.ventureId,
+          distilOne(candidate).finally(() => running.delete(candidate.ventureId)),
+        );
       }
+      await Promise.all(running.values());
+      report.deferred = queue.length;
       logger.info('distill.backstop_done', { requestId, ...report });
       return report;
     },

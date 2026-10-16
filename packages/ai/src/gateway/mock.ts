@@ -486,6 +486,17 @@ export function mockDistillDraft(context: MockGenerateContext): DistillDraft {
   });
   const questions = founderTexts.filter((t) => t.trim().endsWith('?')).map((t) => quoteOf(t, 200));
 
+  // A conversation distilled in parts: the digest of the earlier turns carries over into this one.
+  const earlierDigest = /<previous_digest[^>]*>([\s\S]*?)<\/previous_digest>/.exec(user)?.[1] ?? '';
+  const earlierCommitments = [
+    ...earlierDigest.matchAll(/<commitment due="([^"]+)">([\s\S]*?)<\/commitment>/g),
+  ].map((m) => ({
+    text: unescapeData(m[2] ?? ''),
+    due: m[1] === 'none' || m[1] === undefined ? null : m[1],
+  }));
+  const earlierQuestions = [...earlierDigest.matchAll(/<question>([\s\S]*?)<\/question>/g)].map((m) =>
+    unescapeData(m[1] ?? ''),
+  );
   const previous = sectionIn(user, 'previous_notebook');
   const prevProfile = entriesIn(sectionIn(previous, 'founder_profile'));
   const prevQuestions = entriesIn(sectionIn(previous, 'open_questions'));
@@ -521,8 +532,10 @@ export function mockDistillDraft(context: MockGenerateContext): DistillDraft {
     .filter((s) => s !== '')
     .join(' ');
 
-  const opener = stated[0]
-    ? `Last time you planned to ${lowerFirst(withoutFinalStop(stated[0]))}. How did it go?`
+  // The thread of the whole conversation: what the founder said now, or what an earlier part recorded.
+  const thread = stated[0] ?? earlierCommitments[0]?.text;
+  const opener = thread
+    ? `Last time you planned to ${lowerFirst(withoutFinalStop(thread))}. How did it go?`
     : `Last time we talked about ${bank.phrase}. Where did you land?`;
 
   const lesson = turns.length >= 2 ? [bank.lesson] : [];
@@ -530,7 +543,7 @@ export function mockDistillDraft(context: MockGenerateContext): DistillDraft {
     {
       type: bank.memory.type,
       title: bank.memory.title,
-      content: stated[0] ? `${who} plans to ${lowerFirst(withoutFinalStop(stated[0]))}.` : bank.memory.note,
+      content: thread ? `${who} plans to ${lowerFirst(withoutFinalStop(thread))}.` : bank.memory.note,
       evidence_ids: context.evidenceIds.slice(0, 1),
       confidence: 0.6,
     },
@@ -541,8 +554,14 @@ export function mockDistillDraft(context: MockGenerateContext): DistillDraft {
     digest: {
       summary,
       topics: topics.map((t) => TOPICS[t].phrase),
-      commitments: stated.map((text) => ({ text, due })),
-      open_questions: questions.slice(0, 4),
+      commitments: [
+        ...earlierCommitments.filter((c) => !stated.includes(c.text)),
+        ...stated.map((text) => ({ text, due })),
+      ].slice(0, 8),
+      open_questions: [...earlierQuestions, ...questions.filter((q) => !earlierQuestions.includes(q))].slice(
+        0,
+        4,
+      ),
     },
     notebook: {
       summary: `${who} is working on ${bank.phrase}. ${upperFirst(bank.memory.note)}`,

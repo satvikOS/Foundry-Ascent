@@ -28,7 +28,8 @@ export const BackfillEmbeddingsJob = z.object({
  * Daily maintenance, sent by the FoundryAscent-App EventBridge schedule (one rule, `rate(1 day)`) to the
  * jobs queue: ends ephemeral sessions idle for 24 h and erases their content, expires stale AI memory
  * proposals and runs the distillation backstop (core.maintenance.runDaily). The message carries no data;
- * every run is idempotent.
+ * every run is idempotent. While the backstop leaves conversations for lack of time, the message is
+ * redelivered (up to the queue's last receive), so a backlog drains the same day.
  */
 export const MaintenanceJob = z.object({
   type: z.literal('maintenance'),
@@ -117,6 +118,13 @@ export async function dispatchJob(
           distillFailed: report.distillation.failed,
           distillDeferred: report.distillation.deferred,
         });
+        // The backstop ran out of time with conversations left: the message comes back after the visibility
+        // timeout and the backlog keeps draining, without the sweep schedule (every step is idempotent). The
+        // queue's last delivery is acknowledged, so a backlog never sends the message to the dead-letter queue.
+        if (report.distillation.deferred > 0 && ctx.attempt < deps.maxReceiveCount) {
+          log.info('worker.maintenance_continues', { distillDeferred: report.distillation.deferred });
+          return { outcome: 'retry', ingested: false };
+        }
         return { outcome: 'done', ingested: false };
       } catch (err) {
         // Retried by SQS (e.g. Aurora still resuming); the redrive policy bounds the attempts.
@@ -136,6 +144,8 @@ export async function dispatchJob(
 
     case 'distill_session':
       try {
+        // `attempt` is the receive count, which also counts deliveries processSqsBatch deferred unstarted:
+        // distillation counts the model's answers itself and uses it only to know the queue's last delivery.
         const result = await deps.distill.distillSession(
           {
             sessionId: job.sessionId,

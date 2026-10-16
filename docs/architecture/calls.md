@@ -114,8 +114,9 @@ A spoken turn (`channel: 'voice'`) passes `admitVoiceTurn` in the transaction th
 name a live call of that conversation started by the caller whose client is still there, calls must be on,
 time must be left (per call and today), the person may send at most 40 spoken turns in 10 minutes, and a
 call holds at most 90 turns. Typed chat keeps its own rate limit. Crisis turns are never refused for call
-reasons (§5); one that names no live call of the caller in that conversation is answered and recorded as a
-typed message (no speech unit, no voice turn, no call marked on the conversation).
+reasons or any limit (§5); one that names no live call of the caller in that conversation, or that comes
+past the typed message limit (crisis turns count towards it), is answered and recorded as a typed message
+(no speech unit, no voice turn, no call marked on the conversation).
 
 **Minutes** come from the `calls` table, by the database clock: ended calls count until they ended, live
 calls until now, but never more than 60 s after their last heartbeat (or their start): as long as a call

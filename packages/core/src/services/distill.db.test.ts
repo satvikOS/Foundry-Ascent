@@ -40,6 +40,8 @@ let whileAnswering: (() => Promise<void>) | null = null;
 /** The next model call of the scripted core fails with this error (billed like a real failed attempt). */
 let failNext: Error | null = null;
 let scriptedCore: Core;
+/** The model of the scripted core (answers with `scripted`). */
+let scriptedGateway: ModelGateway;
 
 const quietquad = (): string => h.ventures.quietquad.id;
 const corinPersona = (): string => h.ventures.quietquad.personaId;
@@ -208,6 +210,7 @@ beforeAll(async () => {
     streamText: (request, onText) => mock.streamText(request, onText),
     embed: (texts, options) => mock.embed(texts, options),
   };
+  scriptedGateway = gateway;
   scriptedCore = createCore({
     db: h.t.db,
     gateway,
@@ -404,6 +407,105 @@ describe('distillSession', () => {
     expect(await distilledLessons()).toHaveLength(1);
   });
 
+  /** BenchTally (Priya's venture): its own notebook, so these parts leave QuietQuad's alone. */
+  const bench = { ventureId: '' };
+  beforeAll(() => {
+    bench.ventureId = h.ventures.benchtally.id;
+  });
+
+  /** The user message of every distillation the scripted core makes while `run` runs. */
+  async function distillPrompts(run: () => Promise<void>): Promise<string[]> {
+    const prompts: string[] = [];
+    scripted = (context) => {
+      prompts.push(context.messages.map((m) => m.content).join('\n'));
+      return mockDistillDraft(context);
+    };
+    try {
+      await run();
+    } finally {
+      scripted = null;
+    }
+    return prompts;
+  }
+
+  it('sends a continued conversation’s digest and only its new turns, and covers exactly those', async () => {
+    const id = await conversation(
+      priya,
+      ['I will ask the dean for the sensor budget before the term ends.', 'What should we charge per seat?'],
+      bench,
+    );
+    await idle(id, 15);
+    expect((await scriptedCore.distill.distillSession(job(id))).turns).toBe(2);
+    await completedTurn(priya, id, 'The dean wants a usage report first.');
+    await idle(id, 15);
+    let outcome: Awaited<ReturnType<Core['distill']['distillSession']>> | null = null;
+    const [prompt] = await distillPrompts(async () => {
+      outcome = await scriptedCore.distill.distillSession(job(id));
+    });
+    expect(outcome).toMatchObject({ status: 'distilled', turns: 3 });
+    expect(prompt).toContain('<previous_digest turns="1-2">');
+    expect(prompt).toContain('Ask the dean for the sensor budget before the term ends</commitment>');
+    expect(prompt?.match(/<turn n=/g)).toHaveLength(1);
+    expect(prompt).toContain('<turn n="3">\n<founder>The dean wants a usage report first.</founder>');
+    // The digest still holds the first part's commitment.
+    const stored = await session(id);
+    expect(stored?.distillVersion).toBe(3);
+    expect(stored?.digest?.commitments.map((c) => c.text)).toContain(
+      'Ask the dean for the sensor budget before the term ends',
+    );
+  });
+
+  it('distils a long conversation in parts, oldest first, so no turn is left out', async () => {
+    const texts = [
+      'I will send the pilot contract to the second library by Monday.',
+      ...Array.from({ length: 19 }, (_, i) => `Question ${i + 2} about the seat sensors?`),
+    ];
+    const id = await conversation(priya, texts, bench);
+    await idle(id, 15);
+    let outcome: Awaited<ReturnType<Core['distill']['distillSession']>> | null = null;
+    const prompts = await distillPrompts(async () => {
+      outcome = await scriptedCore.distill.distillSession(job(id));
+    });
+    expect(outcome).toMatchObject({ status: 'distilled', turns: 20 });
+    expect(prompts).toHaveLength(2);
+    expect(prompts[0]?.match(/<turn n=/g)).toHaveLength(16);
+    expect(prompts[0]).toContain('<turn n="1">\n<founder>I will send the pilot contract');
+    expect(prompts[0]).not.toContain('<previous_digest');
+    expect(prompts[1]?.match(/<turn n=/g)).toHaveLength(4);
+    expect(prompts[1]).toContain('<previous_digest turns="1-16">');
+    expect(prompts[1]).toContain('<turn n="17">\n<founder>Question 17 about the seat sensors?</founder>');
+    const stored = await session(id);
+    expect(stored?.distillVersion).toBe(20);
+    // The first turn's commitment survives into the digest of the whole conversation.
+    expect(stored?.digest?.commitments.map((c) => c.text)).toContain(
+      'Send the pilot contract to the second library by Monday',
+    );
+    // One metered model call per part.
+    expect(await auditFor('session.distilled', id)).toHaveLength(2);
+  });
+
+  it('stops between parts when the deadline is near, and the next job continues where it stopped', async () => {
+    const id = await conversation(
+      priya,
+      Array.from({ length: 18 }, (_, i) => `Note ${i + 1} on the library pilot.`),
+      bench,
+    );
+    await idle(id, 15);
+    // Enough time for one part, not for a second.
+    const first = await scriptedCore.distill.distillSession(job(id), { deadline: Date.now() + 44_000 });
+    expect(first).toMatchObject({ status: 'distilled', turns: 16 });
+    expect((await session(id))?.distillVersion).toBe(16);
+    const prompts = await distillPrompts(async () => {
+      expect(await scriptedCore.distill.distillSession(job(id))).toMatchObject({
+        status: 'distilled',
+        turns: 18,
+      });
+    });
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain('<previous_digest turns="1-16">');
+    expect(prompts[0]?.match(/<turn n=/g)).toHaveLength(2);
+  });
+
   it('skips while AI is paused and when the spend cap is reached, without touching the conversation', async () => {
     const id = await conversation(devin, ['Exam weeks double demand for rooms.']);
     await idle(id, 15);
@@ -453,6 +555,38 @@ describe('distillSession', () => {
     expect(after?.digest).toBeNull();
     const [event] = await auditFor('session.distill_failed', id);
     expect(event).toMatchObject({ outcome: 'failed', policy_reason: 'model_output_invalid' });
+  });
+
+  it('counts the answers the model gave, never a delivery the worker deferred before calling it', async () => {
+    const id = await conversation(priya, ['The second library may share its booking logs.'], bench);
+    await idle(id, 15);
+    // The worker deferred the first delivery unstarted (no time left in its batch): the second delivery gets
+    // the model's first answer, which is unusable. It is tried once more, not recorded as final.
+    h.gateway.scriptNext('invalid_output');
+    await expect(
+      h.core.distill.distillSession(job(id), { attempt: 2, maxAttempts: 3 }),
+    ).rejects.toBeInstanceOf(RetryableDistillError);
+    expect((await session(id))?.distillVersion).toBe(0);
+    expect(await h.core.distill.distillSession(job(id), { attempt: 3, maxAttempts: 3 })).toMatchObject({
+      status: 'distilled',
+      turns: 1,
+    });
+    expect((await session(id))?.digest).not.toBeNull();
+
+    // The count starts again for new turns: their first unusable answer is tried once more too.
+    await completedTurn(priya, id, 'They said yes, with a data agreement.');
+    await idle(id, 15);
+    h.gateway.scriptNext('invalid_output');
+    await expect(
+      h.core.distill.distillSession(job(id), { attempt: 1, maxAttempts: 3 }),
+    ).rejects.toBeInstanceOf(RetryableDistillError);
+    // On the queue's last delivery an unusable answer is recorded, since nothing would retry it.
+    h.gateway.scriptNext('invalid_output');
+    expect(await h.core.distill.distillSession(job(id), { attempt: 3, maxAttempts: 3 })).toMatchObject({
+      status: 'failed',
+      reason: 'model_output_invalid',
+    });
+    expect((await session(id))?.distillVersion).toBe(2);
   });
 
   it('records a configuration error at once, and retries a call cancelled at the deadline', async () => {
@@ -761,6 +895,69 @@ describe('memory hygiene', () => {
     ).rejects.toThrow();
   });
 
+  it('the backstop distils several ventures at once, one conversation per venture at a time', async () => {
+    // Idle, undistilled conversations of three ventures, two of them in one venture.
+    const jonah = await h.ctxFor(h.people.jonah);
+    const amara = await h.ctxFor(h.people.amara);
+    const ids = [
+      await conversation(priya, ['Should we sell to the lab managers first?'], {
+        ventureId: h.ventures.benchtally.id,
+      }),
+      await conversation(priya, ['What does a lab pay for a pilot?'], {
+        ventureId: h.ventures.benchtally.id,
+      }),
+      await conversation(jonah, ['Which kiln studios should we call first?'], {
+        ventureId: h.ventures.emberloop.id,
+      }),
+      await conversation(amara, ['How do we price the insoles?'], { ventureId: h.ventures.solesignal.id }),
+    ];
+    for (const id of ids) await idle(id, 60);
+    // A model that takes a moment, recording which ventures it is answering for at once.
+    let inFlight: string[] = [];
+    let mostAtOnce = 0;
+    let sameVentureAtOnce = false;
+    whileAnswering = null;
+    scripted = (context) => {
+      const venture =
+        /<name>([^<]+)<\/name>/.exec(context.messages.map((m) => m.content).join('\n'))?.[1] ?? '';
+      if (inFlight.includes(venture)) sameVentureAtOnce = true;
+      inFlight = [...inFlight, venture];
+      mostAtOnce = Math.max(mostAtOnce, inFlight.length);
+      return mockDistillDraft(context);
+    };
+    const slow = createCore({
+      db: h.t.db,
+      gateway: {
+        info: h.gateway.info,
+        generateStructured: async <T>(request: GenerateStructuredRequest<T>) => {
+          const result = await scriptedGateway.generateStructured(request);
+          await new Promise((resolve) => setTimeout(resolve, 150));
+          const venture = /<name>([^<]+)<\/name>/.exec(
+            request.messages.map((m) => m.content).join('\n'),
+          )?.[1];
+          inFlight = inFlight.filter((v, i) => v !== venture || inFlight.indexOf(v) !== i);
+          return result;
+        },
+        streamText: (request, onText) => h.gateway.streamText(request, onText),
+        embed: (texts, options) => h.gateway.embed(texts, options),
+      },
+      config: h.config,
+      objectStore: h.objectStore,
+      jobQueue: h.jobQueue,
+      logger: h.logger,
+    });
+    try {
+      const report = await slow.distill.backstop({ requestId: 'backstop-lanes' });
+      expect(report.deferred).toBe(0);
+      expect(report.distilled).toBeGreaterThanOrEqual(ids.length);
+    } finally {
+      scripted = null;
+    }
+    for (const id of ids) expect((await session(id))?.distillVersion).toBe(1);
+    expect(mostAtOnce).toBeGreaterThanOrEqual(2);
+    expect(sameVentureAtOnce).toBe(false);
+  });
+
   it('daily maintenance distils idle conversations no trigger covered (the backstop)', async () => {
     const id = await conversation(devin, ['Nobody ended this conversation.']);
     await idle(id, 60);
@@ -876,11 +1073,147 @@ describe('escalation resolutions feed the notebook', () => {
     expect(JSON.stringify(event)).not.toMatch(/pilot data/);
   });
 
+  /** An escalation of one of the conversation's turns, shared and acknowledged by Corin (not resolved yet). */
+  async function sharedFromTurn(sessionId: string, turnId: string): Promise<string> {
+    const created = await h.core.escalations.create(maya, quietquad(), {
+      category: 'expert_judgment',
+      priority: 'P2',
+      requestedRole: 'eir',
+      founderQuestion: 'Should we sign the second library before the pilot ends?',
+      turnId,
+    });
+    expect(created.sessionId).toBe(sessionId);
+    await h.core.escalations.act(maya, created.id, { action: 'approve_sharing', sharedMemoryIds: [] });
+    await h.core.escalations.act(corin, created.id, { action: 'acknowledge' });
+    return created.id;
+  }
+
+  const resolve = (escalationId: string) =>
+    h.core.escalations.act(corin, escalationId, {
+      action: 'resolve',
+      resolution: { summary: 'Sign the second library only after the pilot data', nextSteps: [] },
+    });
+
+  it('keeps help asked from a temporary chat out of the notebook (it neither writes nor reads it)', async () => {
+    const session = await h.core.sessions.create(maya, quietquad(), {
+      mode: 'diagnose',
+      privacy: 'ephemeral',
+    });
+    const turn = await completedTurn(maya, session.id, 'Should we sign the second library now?');
+    const escalationId = await sharedFromTurn(session.id, turn.id);
+    const before = await notebook();
+    expect((await resolve(escalationId)).status).toBe('resolved');
+    const after = await notebook();
+    expect(after?.version).toBe(before?.version);
+    expect(after?.content.lastAdvice.some((e) => e.id === resolutionEntryId(escalationId))).toBe(false);
+  });
+
+  it('keeps help asked from a deleted conversation out of the notebook', async () => {
+    const session = await h.core.sessions.create(maya, quietquad(), { mode: 'diagnose' });
+    const turn = await completedTurn(maya, session.id, 'Should we sign the second library now?');
+    const escalationId = await sharedFromTurn(session.id, turn.id);
+    // Shared with consent, it survives the delete; its resolution must not bring the conversation back.
+    await h.core.sessions.remove(maya, session.id);
+    const before = await notebook();
+    expect((await resolve(escalationId)).status).toBe('resolved');
+    const after = await notebook();
+    expect(after?.version).toBe(before?.version);
+    expect(after?.content.lastAdvice.some((e) => e.sourceSessionId === session.id)).toBe(false);
+  });
+
   it('keeps wellbeing matters out of the coaching notebook', async () => {
     const before = (await notebook())?.version;
     const resolved = await resolvedEscalation('safety_wellbeing', 'Talked through the workload with Maya');
     expect(resolved.status).toBe('resolved');
     expect((await notebook())?.version).toBe(before);
+  });
+});
+
+describe('temporary chats keep nothing', () => {
+  const CRISIS = 'Honestly, everyone would be better off without me.';
+
+  async function escalationsOf(
+    sessionId: string,
+  ): Promise<{ status: string; question: string; shared: boolean }[]> {
+    const rows = await h.t.db.system((sx) =>
+      sx.query(
+        `SELECT status, packet ->> 'founderQuestion' AS question, sharing_consent_at IS NOT NULL AS shared
+         FROM escalations WHERE session_id = :id ORDER BY created_at`,
+        { id: p.uuid(sessionId) },
+      ),
+    );
+    return rows.rows as { status: string; question: string; shared: boolean }[];
+  }
+
+  it('ending one erases the support requests drawn from it that were never shared, and keeps a shared one', async () => {
+    const session = await h.core.sessions.create(maya, quietquad(), {
+      mode: 'diagnose',
+      privacy: 'ephemeral',
+    });
+    // The crisis path still drafts its support request in a temporary chat.
+    const events: TurnStreamEvent[] = [];
+    await h.core.orchestrator.runTurn(maya, session.id, { text: CRISIS }, (e) => {
+      events.push(TurnStreamEvent.parse(e));
+    });
+    expect(events.at(-1)).toMatchObject({ event: 'turn.blocked', reason: 'crisis_support' });
+    const turn = await completedTurn(maya, session.id, 'Should we sign the second library now?');
+    const shared = await h.core.escalations.create(maya, quietquad(), {
+      category: 'expert_judgment',
+      priority: 'P2',
+      requestedRole: 'eir',
+      founderQuestion: 'Should we sign the second library before the pilot ends?',
+      turnId: turn.id,
+    });
+    await h.core.escalations.act(maya, shared.id, { action: 'approve_sharing', sharedMemoryIds: [] });
+    expect((await escalationsOf(session.id)).map((e) => e.question)).toEqual([
+      CRISIS,
+      'Should we sign the second library before the pilot ends?',
+    ]);
+
+    await h.core.sessions.end(maya, session.id);
+    expect(await escalationsOf(session.id)).toEqual([
+      { status: 'withdrawn', question: '[temporary chat ended]', shared: false },
+      {
+        status: 'routed',
+        question: 'Should we sign the second library before the pilot ends?',
+        shared: true,
+      },
+    ]);
+  });
+
+  it('the daily sweep erases them for a temporary chat that ended without its end request', async () => {
+    const session = await h.core.sessions.create(maya, quietquad(), {
+      mode: 'diagnose',
+      privacy: 'ephemeral',
+    });
+    await h.core.orchestrator.runTurn(maya, session.id, { text: CRISIS }, () => undefined);
+    expect((await escalationsOf(session.id)).map((e) => e.question)).toEqual([CRISIS]);
+    // Abandoned a day ago: the sweep ends it.
+    await h.t.db.system(async (sx) => {
+      await sx.query(`UPDATE coaching_sessions SET started_at = now() - interval '2 days' WHERE id = :id`, {
+        id: p.uuid(session.id),
+      });
+      await sx.query(`UPDATE turns SET created_at = now() - interval '2 days' WHERE session_id = :id`, {
+        id: p.uuid(session.id),
+      });
+    });
+    const swept = await h.t.db.system((sx) =>
+      sessionsRepo.expireStaleEphemeralSessions(sx, {
+        idleSeconds: h.config.maintenance.ephemeralIdleSeconds,
+      }),
+    );
+    expect(swept.sessionsEnded).toBeGreaterThanOrEqual(1);
+    expect(swept.escalationsErased).toBeGreaterThanOrEqual(1);
+    expect(await escalationsOf(session.id)).toEqual([
+      { status: 'withdrawn', question: '[temporary chat ended]', shared: false },
+    ]);
+    // Idempotent: the next day's sweep finds nothing left to erase.
+    const again = await h.t.db.system((sx) =>
+      sessionsRepo.expireStaleEphemeralSessions(sx, {
+        idleSeconds: h.config.maintenance.ephemeralIdleSeconds,
+      }),
+    );
+    expect(again.escalationsErased).toBe(0);
   });
 });
 
@@ -1305,6 +1638,95 @@ describe('what a distillation draws from a conversation, and its deletion', () =
     await h.core.sessions.remove(maya, drawn);
     expect((await notebook())?.content).toMatchObject({ nextOpener: null, summary: '' });
     expect(await openerOf(later.id)).toEqual({ opener: null, source: null });
+  });
+
+  it('a commitment a later conversation rewords keeps both conversations, and goes with either', async () => {
+    const withCommitment = (line: { id: string | null; text: string; due: string | null }) => {
+      scripted = (context) => {
+        const draft = mockDistillDraft(context);
+        return {
+          ...draft,
+          notebook: { ...draft.notebook, commitments: [{ ...line, status: 'open' as const }] },
+        };
+      };
+    };
+    const commitments = async () => (await notebook())?.content.commitments ?? [];
+    const first = await conversation(maya, ['I will call the clinic lead about the pilot.']);
+    await idle(first, 15);
+    withCommitment({ id: null, text: 'Call the clinic lead about the pilot', due: null });
+    try {
+      expect((await scriptedCore.distill.distillSession(job(first))).status).toBe('distilled');
+    } finally {
+      scripted = null;
+    }
+    const line = (await commitments()).find((c) => c.text === 'Call the clinic lead about the pilot');
+    if (line === undefined) throw new Error('the commitment was not written');
+    expect(line.sourceSessionId).toBe(first);
+
+    // The next conversation rewords it with its own details.
+    const second = await conversation(maya, ['Dr. Lee at Mercy General is on leave until November.']);
+    await idle(second, 15);
+    const REWORDED = 'Call Dr. Lee at Mercy General about the pilot after her leave';
+    withCommitment({ id: line.id, text: REWORDED, due: '2026-11-20' });
+    try {
+      expect((await scriptedCore.distill.distillSession(job(second))).status).toBe('distilled');
+    } finally {
+      scripted = null;
+    }
+    expect((await commitments()).find((c) => c.id === line.id)).toMatchObject({
+      text: REWORDED,
+      sourceSessionId: second,
+      sourceSessionIds: [first],
+    });
+
+    // Deleting the later conversation takes its words out of the notebook.
+    await h.core.sessions.remove(maya, second);
+    expect((await commitments()).some((c) => c.id === line.id || c.text.includes('Mercy General'))).toBe(
+      false,
+    );
+  });
+
+  it('erases copies of an opener of unknown origin when any conversation of the venture is deleted; a person’s stay', async () => {
+    const writeOpener = async (nextOpener: string): Promise<void> => {
+      // A legacy write: the vEIR's opener without the conversation it came from (origin unknown).
+      const current = await notebook();
+      const saved = await h.t.db.system((sx) =>
+        notebooksRepo.saveNotebook(sx, {
+          tenantId: h.seed.tenantId,
+          ventureId: quietquad(),
+          personaId: corinPersona(),
+          expectedVersion: current?.version ?? 0,
+          content: { ...(current?.content ?? notebooksRepo.EMPTY_NOTEBOOK), nextOpener },
+          suppressed: current?.suppressed ?? [],
+          editedBy: 'veir',
+        }),
+      );
+      expect(saved?.content.nextOpenerSource).toBeUndefined();
+    };
+    const UNKNOWN = 'Did the library deposit question get an answer?';
+    await writeOpener(UNKNOWN);
+    const copied = await h.core.sessions.create(maya, quietquad(), { mode: 'diagnose' });
+    expect(await openerOf(copied.id)).toEqual({ opener: UNKNOWN, source: null });
+
+    // Deleting a conversation the opener may have come from, though nothing records it, erases the copy and
+    // the notebook's opener (the next distillation writes a new one).
+    const unrelated = await conversation(maya, ['A question about sensor housings.']);
+    await h.core.sessions.remove(maya, unrelated);
+    expect(await openerOf(copied.id)).toEqual({ opener: null, source: null });
+    expect((await notebook())?.content.nextOpener).toBeNull();
+
+    // An opener a person wrote is drawn from no conversation: it and its copies stay.
+    const current = await notebook();
+    const PERSONS = 'How did your call with the second library go?';
+    await h.core.notebook.update(maya, quietquad(), {
+      expectedVersion: current?.version ?? 0,
+      edit: { action: 'edit_opener', text: PERSONS },
+    });
+    const theirs = await h.core.sessions.create(maya, quietquad(), { mode: 'diagnose' });
+    expect(await openerOf(theirs.id)).toEqual({ opener: PERSONS, source: null });
+    await h.core.sessions.remove(maya, await conversation(maya, ['Another question about housings.']));
+    expect(await openerOf(theirs.id)).toEqual({ opener: PERSONS, source: null });
+    expect((await notebook())?.content.nextOpener).toBe(PERSONS);
   });
 
   it('never writes over a notebook it cannot read in full, and still writes the digest', async () => {

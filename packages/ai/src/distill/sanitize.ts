@@ -1,9 +1,10 @@
-import type {
-  ConversationDigest,
-  MemoryCandidate,
-  NotebookCommitment,
-  NotebookEntry,
-  VeirNotebook,
+import {
+  MAX_LINE_SOURCES,
+  type ConversationDigest,
+  type MemoryCandidate,
+  type NotebookCommitment,
+  type NotebookEntry,
+  type VeirNotebook,
 } from '@foundry/contracts';
 
 import { fnv1a } from '../gateway/hash-embedding.js';
@@ -134,6 +135,28 @@ function sentencesOf(text: string): string[] {
   return text.split(/(?<=[.!?])\s+/).filter((s) => s.trim() !== '');
 }
 
+/**
+ * The sources of a line this distillation changed: drawn from `sessionId` now, and still from every
+ * conversation the line it replaces was drawn from (its words may carry theirs), so deleting any of them
+ * removes it.
+ */
+function drawnFrom(
+  origin: Pick<NotebookEntry, 'sourceSessionId' | 'sourceSessionIds'> | undefined,
+  sessionId: string,
+): Pick<NotebookEntry, 'sourceSessionId' | 'sourceSessionIds'> {
+  const earlier = origin === undefined ? [] : [...(origin.sourceSessionIds ?? []), origin.sourceSessionId];
+  const ids = [...new Set(earlier.filter((id): id is string => id !== null && id !== sessionId))];
+  return ids.length === 0
+    ? { sourceSessionId: sessionId }
+    : { sourceSessionId: sessionId, sourceSessionIds: ids.slice(-MAX_LINE_SOURCES) };
+}
+
+/** A line without its earlier sources (they are replaced, not merged, by {@link drawnFrom}). */
+function withoutSources<T extends { sourceSessionIds?: string[] }>(line: T): Omit<T, 'sourceSessionIds'> {
+  const { sourceSessionIds: _earlier, ...rest } = line;
+  return rest;
+}
+
 /** Open commitments first (soonest due first, then oldest), then closed ones (newest first). */
 function byCommitmentOrder(a: NotebookCommitment, b: NotebookCommitment): number {
   const rank = (a.status === 'open' ? 0 : 1) - (b.status === 'open' ? 0 : 1);
@@ -163,7 +186,10 @@ function byCommitmentOrder(a: NotebookCommitment, b: NotebookCommitment): number
  * pinned id, or that restates a pinned entry, is dropped. A proposed entry whose
  * text is unchanged from a previous entry keeps that entry's id, creation time and source conversation;
  * a new or reworded entry gets a new id that is stable for this conversation and text (so a retry
- * produces the same notebook). Anything that repeats a suppressed text is dropped, near-duplicates are
+ * produces the same notebook). A line this conversation changed (a reworded entry, by id or as a
+ * near-duplicate; a commitment reworded, re-dated or closed) is drawn from this conversation and keeps the
+ * conversations the line it replaces was drawn from (`sourceSessionIds`): its words may carry theirs, so
+ * deleting any of them removes it. Anything that repeats a suppressed text is dropped, near-duplicates are
  * merged, and each section is capped (8 profile notes, 10 commitments, 6 open questions, 5 advice
  * notes). Previous commitments the model left out are kept: only an explicit "done" or "dropped" closes
  * one, so a forgetful model never silently loses a founder's commitment. The 10-commitment cap never
@@ -295,7 +321,9 @@ export function sanitizeDistill(draft: DistillDraft, ctx: DistillSanitizeContext
         stats.suppressedDropped += 1;
         continue;
       }
-      out.push({ id: newId(prefix, text), text, sourceSessionId: ctx.sessionId, createdAt: ctx.now });
+      // The entry it rewords (same id, or a near-duplicate): its conversations stay sources of the new text.
+      const origin = byId ?? before.find((e) => !pinned.has(e.id) && isNearDuplicate(e.text, text));
+      out.push({ id: newId(prefix, text), text, ...drawnFrom(origin, ctx.sessionId), createdAt: ctx.now });
       fresh.push(text);
     }
     return out.slice(0, max);
@@ -339,7 +367,14 @@ export function sanitizeDistill(draft: DistillDraft, ctx: DistillSanitizeContext
         }
         const reworded = textKey(prev.text) !== textKey(text) && !mentionsSuppressed(text);
         if (reworded) fresh.push(text);
-        out.push({ ...prev, text: reworded ? text : prev.text, due: due ?? prev.due, status: c.status });
+        const next = { text: reworded ? text : prev.text, due: due ?? prev.due, status: c.status };
+        // Reworded, re-dated or closed here: what it says now comes from this conversation too.
+        const changed = next.text !== prev.text || next.due !== prev.due || next.status !== prev.status;
+        out.push(
+          changed
+            ? { ...withoutSources(prev), ...next, ...drawnFrom(prev, ctx.sessionId) }
+            : { ...prev, ...next },
+        );
         continue;
       }
       if (mentionsSuppressed(text)) {

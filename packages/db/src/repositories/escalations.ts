@@ -238,6 +238,42 @@ export async function updateEscalationPacket(
   return id ? getEscalation(ex, id) : null;
 }
 
+/** What the packet of an escalation drawn from a temporary chat says once the chat ended unshared. */
+export const TEMPORARY_CHAT_ENDED_TEXT = '[temporary chat ended]';
+
+/**
+ * The packet an unshared escalation keeps once its conversation is erased (the founder's question and the
+ * reason replaced by `:marker`), as app.erase_drawn_from_session writes it when a conversation is deleted.
+ * Escalation alias `e`.
+ */
+export const ERASED_PACKET_SQL = `jsonb_build_object(
+  'founderQuestion', CAST(:marker AS text), 'desiredDecision', NULL, 'sharedFacts', '[]'::jsonb,
+  'evidenceConsidered', '[]'::jsonb, 'conflictingSignals', '[]'::jsonb, 'unknowns', '[]'::jsonb,
+  'reason', CAST(:marker AS text),
+  'urgency', CASE WHEN jsonb_typeof(e.packet -> 'urgency') = 'string' THEN e.packet -> 'urgency' ELSE '""'::jsonb END,
+  'proposedNextStep', NULL, 'sessionSummary', NULL, 'aiGenerated', true)`;
+
+/** The unshared escalations of a conversation still holding a packet that was not erased yet (alias `e`). */
+export const UNSHARED_NOT_ERASED_SQL = `e.sharing_consent_at IS NULL
+  AND (e.status IN ('draft', 'awaiting_consent') OR e.packet ->> 'founderQuestion' IS DISTINCT FROM CAST(:marker AS text))`;
+
+/**
+ * Ending a temporary chat (it keeps nothing): the escalations drawn from it that the founder never shared are
+ * withdrawn when still open, and their packet (the founder's question verbatim) is erased, as deleting a
+ * conversation does. An escalation the founder shared went to a person with their consent and stays. Runs in
+ * the caller's RLS transaction (founder/team). Returns the number of escalations erased.
+ */
+export async function eraseUnsharedEscalations(ex: SqlExecutor, sessionId: string): Promise<number> {
+  const result = await ex.query(
+    `UPDATE escalations AS e
+     SET status = CASE WHEN e.status IN ('draft', 'awaiting_consent') THEN 'withdrawn' ELSE e.status END,
+         packet = ${ERASED_PACKET_SQL}, updated_at = now()
+     WHERE e.session_id = :sessionId AND ${UNSHARED_NOT_ERASED_SQL}`,
+    { sessionId: p.uuid(sessionId), marker: p.text(TEMPORARY_CHAT_ENDED_TEXT) },
+  );
+  return result.rowCount;
+}
+
 /**
  * Founder approves sharing the packet (only from `draft` / `awaiting_consent`). With an assignee the
  * escalation is `routed` immediately; otherwise it becomes `awaiting_assignment` (consented, waiting in

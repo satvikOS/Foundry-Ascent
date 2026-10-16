@@ -44,7 +44,11 @@ export function createMaintenanceService(
           outcome: 'succeeded',
           requestId,
           objectType: 'coaching_session',
-          metadata: { ended: ended.sessionsEnded, redactedTurns: ended.turnsRedacted },
+          metadata: {
+            ended: ended.sessionsEnded,
+            redactedTurns: ended.turnsRedacted,
+            escalationsErased: ended.escalationsErased,
+          },
         });
         return ended;
       });

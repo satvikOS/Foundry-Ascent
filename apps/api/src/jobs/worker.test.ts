@@ -234,6 +234,38 @@ describe('daily maintenance message (EventBridge schedule → jobs queue)', () =
     expect(failed.batchItemFailures).toEqual([{ itemIdentifier: 'm2' }]);
   });
 
+  it('comes back while the backstop leaves conversations for lack of time, until the queue’s last receive', async () => {
+    const lines: string[] = [];
+    const { value, maintenance } = deps(lines);
+    const left = (): Promise<MaintenanceReport> =>
+      Promise.resolve({
+        ephemeralSessionsEnded: 0,
+        ephemeralTurnsRedacted: 0,
+        staleCallsEnded: 0,
+        proposalsExpired: 0,
+        distillation: { candidates: 50, distilled: 12, skipped: 0, dropped: 0, failed: 0, deferred: 38 },
+      });
+    maintenance.mockImplementation(left);
+    const body = JSON.stringify(DAILY_MAINTENANCE_MESSAGE);
+    for (const receive of [1, 2]) {
+      const again = await processSqsBatch(
+        value,
+        { Records: [record(`m${receive}`, body, receive)] },
+        { remainingMs: () => 60_000 },
+      );
+      expect(again.batchItemFailures).toEqual([{ itemIdentifier: `m${receive}` }]);
+    }
+    expect(lines.join('\n')).toContain('worker.maintenance_continues');
+    // The last receive is acknowledged: a backlog never sends the message to the dead-letter queue.
+    const last = await processSqsBatch(
+      value,
+      { Records: [record('m3', body, 3)] },
+      { remainingMs: () => 60_000 },
+    );
+    expect(last.batchItemFailures).toEqual([]);
+    expect(maintenance).toHaveBeenCalledTimes(3);
+  });
+
   it('drops maintenance messages it does not understand', async () => {
     const { value, maintenance } = deps();
     const result = await processSqsBatch(

@@ -142,12 +142,28 @@ pushback reframe rebrand roadmap rollout scalable signup smartphone telehealth t
 upsell upskill waitlist workaround workflow`.split(/\s+/),
 );
 
-const SUFFIXES = ['ments', 'ment', 'ness', 'ings', 'ing', 'ers', 'er', 'ees', 'ed', 'es', 'ly', 's', 'd'];
+const SUFFIXES = [
+  'ments',
+  'ment',
+  'ness',
+  'ings',
+  'ing',
+  'ers',
+  'er',
+  'ees',
+  'est',
+  'ed',
+  'es',
+  'ly',
+  's',
+  'd',
+];
 const PREFIX = /^(?:re|un|pre|co|over|under|mis|non|sub|multi|inter|out)/;
 
 /**
  * The forms a lower-case word may be inflected, prefixed or spelled from: "batteries" → "battery",
- * "hiring" → "hire", "shipping" → "ship", "rewrite" → "write", "prioritise" → "prioritize".
+ * "hiring" → "hire", "shipping" → "ship", "riskiest" → "risky", "rewrite" → "write", "prioritise" →
+ * "prioritize".
  */
 function baseForms(word: string): string[] {
   const american = word.replace(/is(e|ed|es|ing|ation|ations)$/, 'iz$1').replace(/yse(s|d)?$/, 'yze$1');
@@ -256,12 +272,40 @@ function namePatterns(names: readonly string[], minWordLength: number): RegExp[]
   return out;
 }
 
+/** Names written without their spaces ("Quiet Quad" for "QuietQuad", "kelpkinetics"): at least 5 letters. */
+const MIN_COMPACT_NAME = 5;
+/** Most words a name written with spaces it does not have may be split into. */
+const MAX_NAME_SPLIT = 4;
+
+/** Each name with its spaces and punctuation removed ("Kelp Kinetics" → "kelpkinetics"). */
+function compactNames(names: readonly string[]): Set<string> {
+  return new Set(names.map((name) => wordsOf(name).join('')).filter((c) => c.length >= MIN_COMPACT_NAME));
+}
+
+/**
+ * Whether consecutive words of the text, joined, spell one of the compact names: "Quiet Quad" or "Quiet-Quad"
+ * for the venture QuietQuad, "kelpkinetics" for Kelp Kinetics. Whole words only, so a name is never found
+ * inside a longer word.
+ */
+function spellsName(words: readonly string[], compact: ReadonlySet<string>): boolean {
+  if (compact.size === 0) return false;
+  for (let i = 0; i < words.length; i += 1) {
+    let joined = '';
+    for (const word of words.slice(i, i + MAX_NAME_SPLIT)) {
+      joined += word;
+      if (compact.has(joined)) return true;
+    }
+  }
+  return false;
+}
+
 /**
  * A denylisted entry, and the words that identify on their own. An entry that reads as a name ("Riverside
  * Public Library") counts word by word like a person's or venture's name ("the Riverside pilot"). Entries are
  * often descriptions instead ("Library operations manager open to a pilot conversation", "Pilot interview
- * notes"): their everyday words identify no one, so only a word the entry capitalises that is not everyday
- * vocabulary counts alone ("Kaiser pilot notes" → "Kaiser").
+ * notes"): their everyday words identify no one, so only a word that is not everyday vocabulary counts alone,
+ * whether the entry capitalises it or not ("Kaiser pilot notes" → "Kaiser", a document named
+ * "northfield-pilot-terms" → "northfield").
  */
 function denyPatterns(entries: readonly string[]): RegExp[] {
   const out: RegExp[] = [];
@@ -274,7 +318,7 @@ function denyPatterns(entries: readonly string[]): RegExp[] {
     const full = phrasePattern(entry);
     if (full) out.push(full);
     for (const word of text.match(/[\p{L}][\p{L}\p{M}'’]*/gu) ?? []) {
-      if (word.length < 4 || !/^\p{Lu}/u.test(word)) continue;
+      if (word.length < 4) continue;
       if (everyday(foldDiacritics(word.toLowerCase()), NO_TERMS)) continue;
       const pattern = phrasePattern(word);
       if (pattern) out.push(pattern);
@@ -292,7 +336,9 @@ function atSentenceStart(text: string, index: number): boolean {
 
 /**
  * Capitalised words that are not generic: likely proper nouns. At a sentence start a capital proves
- * nothing, so there the word must not be everyday vocabulary ("Stanford asked…", "Boston buyers…").
+ * nothing, so there the word must not be everyday vocabulary ("Stanford asked…", "Boston buyers…"). In a
+ * Title Case title every word is capitalised, so every word is judged that way: Title Case never hides a
+ * name ("Selling To Kaiser", "Lessons From The Northfield Pilot").
  */
 function hasProperNoun(text: string, allowed: ReadonlySet<string>, titleCase: boolean): boolean {
   // Hyphenated parts are separate words ("Follow-Up", "Abernathy-Song"); contractions are folded ("I'd",
@@ -308,8 +354,7 @@ function hasProperNoun(text: string, allowed: ReadonlySet<string>, titleCase: bo
       if (!GENERIC_CAPITALISED.has(lower) && !allowed.has(lower)) return true;
       continue;
     }
-    if (titleCase) continue; // in a Title Case title every word is capitalised
-    if (atSentenceStart(text, m.index)) {
+    if (titleCase || atSentenceStart(text, m.index)) {
       if (everyday(lower, allowed)) continue;
       return true;
     }
@@ -344,6 +389,8 @@ export function checkDeidentified(
   const reasons = new Set<DeidentifyReason>();
   const ventures = namePatterns(ctx.ventureNames, 4);
   const people = namePatterns(ctx.personNames, 3);
+  const ventureSpellings = compactNames(ctx.ventureNames);
+  const personSpellings = compactNames(ctx.personNames);
   const denied = denyPatterns(ctx.denylist ?? []);
   const allowed = new Set(
     (ctx.allowedTerms ?? []).flatMap((term) => wordsOf(term)).filter((w) => w.length >= 2),
@@ -353,8 +400,11 @@ export function checkDeidentified(
     const text = normalizeText(raw);
     const lower = normalizeForMatching(text);
     const folded = foldDiacritics(lower);
-    if (ventures.some((re) => re.test(folded))) reasons.add('venture_name');
-    if (people.some((re) => re.test(folded))) reasons.add('person_name');
+    const words = wordsOf(text);
+    if (ventures.some((re) => re.test(folded)) || spellsName(words, ventureSpellings))
+      reasons.add('venture_name');
+    if (people.some((re) => re.test(folded)) || spellsName(words, personSpellings))
+      reasons.add('person_name');
     if (denied.some((re) => re.test(folded))) reasons.add('denylisted');
     const compact = lower.replace(/\s+/g, '');
     if (canaries.some((c) => lower.includes(c) || compact.includes(c.replace(/\s+/g, ''))))
