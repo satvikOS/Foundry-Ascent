@@ -19,10 +19,10 @@ import {
 } from '@foundry/db';
 import { type z } from 'zod';
 
-import { issueCodeForPrincipal } from '../auth/codes.js';
 import { hasAnyRole, requireRole } from '../authz/roles.js';
 import { type RequestContext } from '../context.js';
 import { fail, parseInput } from '../errors.js';
+import { expiryAfterDays, issueAndAuditAccessCode } from '../internal/access-codes.js';
 import { audit, requireId, type Kit } from '../internal/kit.js';
 
 type AdminPrincipalRowValue = z.infer<typeof AdminPrincipalRow>;
@@ -243,39 +243,17 @@ export function createAdminService(
       const principalId = requireId(rawPrincipalId, 'Principal');
       const input = parseInput(IssueAccessCodeRequest, rawInput);
       const roles = await callerRoles(ctx);
-      const expiresAt =
-        input.expiresInDays === null
-          ? null
-          : new Date(kit.now().getTime() + input.expiresInDays * 86_400_000);
       const { target: principal, reissue } = await authorizeIssuer(ctx, roles, principalId, 'issue');
       if (principal.status !== 'active')
         throw fail.conflict('The principal is disabled', 'principal_disabled');
-      const issued = await kit.system(async (sx) => {
-        const result = await issueCodeForPrincipal(sx, {
-          principalId,
-          label: input.label,
-          createdBy: ctx.principalId,
-          expiresAt,
-        });
-        // A re-issue is audited as its own action; the principal sees a notice at the next sign-in.
-        await auditRepo.appendAudit(sx, {
-          action: reissue ? 'access_code.reissued' : 'access_code.issued',
-          outcome: 'succeeded',
-          tenantId: ctx.tenantId,
-          actorId: ctx.principalId,
-          requestId: ctx.requestId,
-          objectType: 'access_code',
-          objectId: result.record.id,
-          metadata: { principalId, expiresInDays: input.expiresInDays, reissue },
-        });
-        return result;
+      // A re-issue is audited as its own action; the principal sees a notice at the next sign-in.
+      return issueAndAuditAccessCode(kit, ctx, {
+        principal,
+        label: input.label,
+        expiresAt: expiryAfterDays(kit.now(), input.expiresInDays),
+        reissue,
+        metadata: { expiresInDays: input.expiresInDays, reissue },
       });
-      return {
-        accessCodeId: issued.record.id,
-        principal: principalsRepo.toPrincipalView(principal),
-        accessCode: issued.code,
-        expiresAt: issued.record.expiresAt,
-      };
     },
 
     revokeAccessCode: async (ctx, rawAccessCodeId) => {

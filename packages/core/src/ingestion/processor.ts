@@ -1,6 +1,10 @@
 import { createHash } from 'node:crypto';
 
-import { MAX_DOCUMENT_BYTES, type PlatformSettingsView } from '@foundry/contracts';
+import {
+  type DocumentFailureReason,
+  MAX_DOCUMENT_BYTES,
+  type PlatformSettingsView,
+} from '@foundry/contracts';
 import {
   DatabaseResumingError,
   auditRepo,
@@ -68,7 +72,7 @@ interface IngestionTarget {
 }
 
 class PermanentFailure extends Error {
-  constructor(readonly reason: string) {
+  constructor(readonly reason: DocumentFailureReason) {
     super(reason);
   }
 }
@@ -84,7 +88,11 @@ export function createIngestionProcessor(kit: Kit): IngestionProcessor {
     await auditRepo.appendAudit(sx, event);
   }
 
-  async function markFailed(job: IngestionJob, requestId: string, reason: string): Promise<void> {
+  async function markFailed(
+    job: IngestionJob,
+    requestId: string,
+    reason: DocumentFailureReason,
+  ): Promise<void> {
     if (job.type === 'ingest_knowledge_source') {
       await kit.system(async (sx) => {
         const updated = await knowledgeRepo.setKnowledgeSourceStatus(sx, {

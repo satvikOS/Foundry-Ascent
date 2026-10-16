@@ -5,7 +5,9 @@
  *
  * Idempotent and safe on a database seeded before vEIRs existed:
  * - every row has a deterministic id and is inserted only when absent, so product changes (an edited note, a
- *   suspended persona, a deleted conversation, a corrected notebook) are never overwritten;
+ *   suspended persona, a deleted conversation, a corrected notebook) are never overwritten; a library
+ *   source's chunks are inserted only together with the source, so an edited or withdrawn note keeps the
+ *   chunks it has;
  * - a demo venture is re-pointed only while its active assignment is still the original seeded Foundry Guide
  *   assignment: that assignment is ended and the vEIR assignment created, once. A venture a program lead
  *   re-assigned (to anything) is left alone.
@@ -15,17 +17,9 @@ import { col } from '../columns.js';
 import { SqlUsageError } from '../errors.js';
 import { type SystemExecutor } from '../executor.js';
 import { p } from '../params.js';
+import { insertRows, insertSourceWithChunks } from './insert.js';
 import { SEED_VEIRS, VEIR_ASSIGNMENTS, sectionChunks, type SeedVeir } from './veir-content.js';
 import { type SeedEir } from './ventures.js';
-
-type ColumnType = 'uuid' | 'text' | 'text[]' | 'jsonb' | 'integer' | 'numeric' | 'boolean' | 'timestamptz';
-
-export type InsertRows = (
-  sx: SystemExecutor,
-  table: string,
-  columns: Readonly<Record<string, ColumnType>>,
-  rows: readonly Readonly<Record<string, unknown>>[],
-) => Promise<number>;
 
 export interface SeededVeir {
   readonly eirKey: string;
@@ -52,7 +46,6 @@ interface VeirSeedContext {
   readonly memoryIds: Readonly<Record<string, Readonly<Record<string, string>>>>;
   readonly day: (offsetDays: number) => string;
   readonly now: Date;
-  readonly insertRows: InsertRows;
 }
 
 /** True when the schema has the vEIR tables and columns (migration 0004). */
@@ -103,7 +96,7 @@ async function seedPersona(sx: SystemExecutor, c: VeirSeedContext, v: SeedVeir):
   const consentId = c.id('consent', v.eirKey, 'veir-v1');
   const nowIso = c.now.toISOString();
 
-  await c.insertRows(
+  await insertRows(
     sx,
     'consents',
     {
@@ -143,7 +136,7 @@ async function seedPersona(sx: SystemExecutor, c: VeirSeedContext, v: SeedVeir):
       embodiment: p.json({ provider: 'builtin', voiceId: v.voiceId, portraitKey: null }),
     },
   );
-  await c.insertRows(
+  await insertRows(
     sx,
     'persona_releases',
     {
@@ -176,56 +169,47 @@ async function seedPersona(sx: SystemExecutor, c: VeirSeedContext, v: SeedVeir):
     ],
   );
 
-  // Common pool: the knowledge library (authored notes, cases, FAQs, transcripts) and its chunks.
-  const sources = v.library.map((item) => ({
-    item,
-    sourceId: c.id('knowledge-source', 'veir', v.eirKey, item.key),
-  }));
-  await c.insertRows(
-    sx,
-    'knowledge_sources',
-    {
-      id: 'uuid',
-      tenant_id: 'uuid',
-      scope: 'text',
-      persona_id: 'uuid',
-      kind: 'text',
-      title: 'text',
-      summary: 'text',
-      body: 'text',
-      owner: 'text',
-      classification: 'text',
-      created_by: 'uuid',
-    },
-    sources.map(({ item, sourceId }) => ({
-      id: sourceId,
-      tenant_id: c.tenantId,
-      scope: 'persona',
-      persona_id: personaId,
-      kind: item.kind,
-      title: item.title,
-      summary: item.summary,
-      body: item.body,
-      owner: `${eir.displayName} (synthetic EIR)`,
-      classification: 'synthetic',
-      created_by: subject,
-    })),
-  );
-  await c.insertRows(
-    sx,
-    'knowledge_chunks',
-    {
-      source_id: 'uuid',
-      tenant_id: 'uuid',
-      scope: 'text',
-      persona_id: 'uuid',
-      ordinal: 'integer',
-      heading: 'text',
-      content: 'text',
-      token_count: 'integer',
-    },
-    sources.flatMap(({ item, sourceId }) =>
-      sectionChunks(item.body).map((chunk, i) => ({
+  // Common pool: the knowledge library (authored notes, cases, FAQs, transcripts), each with its chunks.
+  for (const item of v.library) {
+    const sourceId = c.id('knowledge-source', 'veir', v.eirKey, item.key);
+    await insertSourceWithChunks(sx, {
+      sourceColumns: {
+        id: 'uuid',
+        tenant_id: 'uuid',
+        scope: 'text',
+        persona_id: 'uuid',
+        kind: 'text',
+        title: 'text',
+        summary: 'text',
+        body: 'text',
+        owner: 'text',
+        classification: 'text',
+        created_by: 'uuid',
+      },
+      source: {
+        id: sourceId,
+        tenant_id: c.tenantId,
+        scope: 'persona',
+        persona_id: personaId,
+        kind: item.kind,
+        title: item.title,
+        summary: item.summary,
+        body: item.body,
+        owner: `${eir.displayName} (synthetic EIR)`,
+        classification: 'synthetic',
+        created_by: subject,
+      },
+      chunkColumns: {
+        source_id: 'uuid',
+        tenant_id: 'uuid',
+        scope: 'text',
+        persona_id: 'uuid',
+        ordinal: 'integer',
+        heading: 'text',
+        content: 'text',
+        token_count: 'integer',
+      },
+      chunks: sectionChunks(item.body).map((chunk, i) => ({
         source_id: sourceId,
         tenant_id: c.tenantId,
         scope: 'persona',
@@ -235,11 +219,11 @@ async function seedPersona(sx: SystemExecutor, c: VeirSeedContext, v: SeedVeir):
         content: chunk.content,
         token_count: Math.ceil(chunk.content.length / 4),
       })),
-    ),
-  );
+    });
+  }
 
   // Common pool: published lessons of this persona.
-  await c.insertRows(
+  await insertRows(
     sx,
     'patterns',
     {
@@ -329,7 +313,7 @@ async function seedNotebook(
 ): Promise<void> {
   const notebookId = c.id('notebook', args.ventureKey, args.veir.eirKey);
   if (args.ventureKey !== 'quietquad') {
-    await c.insertRows(
+    await insertRows(
       sx,
       'veir_notebooks',
       { id: 'uuid', tenant_id: 'uuid', venture_id: 'uuid', persona_id: 'uuid' },
@@ -416,8 +400,11 @@ async function seedNotebook(
     nextOpener:
       'Last time you planned five library-staff interviews about occupancy data. How many have you done, and what ' +
       'did they say about sharing counts?',
+    // Both were drawn from the past conversation: deleting it clears them.
+    summarySources: [sessionId],
+    nextOpenerSource: sessionId,
   };
-  await c.insertRows(
+  await insertRows(
     sx,
     'veir_notebooks',
     {
@@ -467,7 +454,7 @@ async function seedQuietQuadConversation(
   const secondAt = at(day(-6), 15, 14);
   const ended = at(day(-6), 15, 26);
 
-  await c.insertRows(
+  await insertRows(
     sx,
     'coaching_sessions',
     {
@@ -647,7 +634,7 @@ async function seedQuietQuadConversation(
       },
     },
   ];
-  await c.insertRows(
+  await insertRows(
     sx,
     'turns',
     {
@@ -685,7 +672,7 @@ async function seedQuietQuadConversation(
       completed_at: t.completed,
     })),
   );
-  await c.insertRows(
+  await insertRows(
     sx,
     'turn_evidence',
     {

@@ -26,6 +26,18 @@ DISCLOSURE = (
     "You are working with Foundry Guide, an AI coach. It is not a person, and no human EIR authored or approved "
     "these responses."
 )
+# The seeded vEIRs (packages/db/src/seed/veir-content.ts): each demo venture is coached by the vEIR built from
+# its assigned EIR, who also reviews it (BenchTally -> Ruth, SoleSignal -> Corin since the vEIR seed).
+VEIR_DISCLOSURES = {
+    "Corin's vEIR": (
+        "You are talking with Corin's vEIR, an AI coach built from Corin Halvorsen's approved frameworks and "
+        "coaching style. It is not a person, and no human EIR, including Corin, wrote or approved these responses."
+    ),
+    "Ruth's vEIR": (
+        "You are talking with Ruth's vEIR, an AI coach built from Ruth Abernathy-Song's approved frameworks and "
+        "coaching style. It is not a person, and no human EIR, including Ruth, wrote or approved these responses."
+    ),
+}
 NOW = "2026-10-05T12:00:00.000Z"
 HIGH_RISK_WORDS = {
     "legal": "legal",
@@ -72,6 +84,7 @@ class Venture:
     domain: str
     eir: str
     canary: str
+    persona: str
 
 
 @dataclass
@@ -187,7 +200,7 @@ class FakeFoundryApi:
                 "BenchTally",
                 "validation",
                 "software",
-                corin.name,
+                ruth.name,
                 [("Priya Ramaswamy-Holt", "founder"), ("Tomasz Wrenfield", "founder")],
             ),
             (
@@ -195,7 +208,7 @@ class FakeFoundryApi:
                 "SoleSignal",
                 "business_model",
                 "biomedical",
-                ruth.name,
+                corin.name,
                 [("Amara Nwosu-Belling", "founder"), ("Graham Fenwick-Tate", "advisor")],
             ),
             (
@@ -208,7 +221,8 @@ class FakeFoundryApi:
             ),
         ]
         for key, name, stage, domain, eir, members in specs:
-            venture = Venture(_id(), key, name, stage, domain, eir, seed_canary(key))
+            persona = f"{eir.split()[0]}'s vEIR"
+            venture = Venture(_id(), key, name, stage, domain, eir, seed_canary(key), persona)
             self.ventures[venture.id] = venture
             for person, role in members:
                 self._principal(person, memberships=[(venture.id, role)])
@@ -365,7 +379,7 @@ class FakeFoundryApi:
             "cohort": None,
             "classification": "synthetic",
             "currentGoal": None,
-            "persona": {"name": "Foundry Guide", "disclosure": DISCLOSURE},
+            "persona": {"name": v.persona, "disclosure": VEIR_DISCLOSURES[v.persona]},
             "assignedEir": {"id": eir.id, "displayName": eir.name, "synthetic": True},
             "createdAt": NOW,
         }
@@ -382,6 +396,7 @@ class FakeFoundryApi:
         }
 
     def _session_view(self, s: dict[str, Any]) -> dict[str, Any]:
+        persona = self.ventures[s["venture_id"]].persona
         return {
             "id": s["id"],
             "ventureId": s["venture_id"],
@@ -389,9 +404,9 @@ class FakeFoundryApi:
             "privacy": "ephemeral",
             "goal": None,
             "status": s["status"],
-            "personaName": "Foundry Guide",
+            "personaName": persona,
             "personaVersion": 1,
-            "disclosure": DISCLOSURE,
+            "disclosure": VEIR_DISCLOSURES[persona],
             "startedBy": {"id": s["by"], "displayName": "x"},
             "startedAt": NOW,
             "endedAt": None,
@@ -463,7 +478,7 @@ class FakeFoundryApi:
                             "domain": v.domain,
                             "status": "active",
                             "memberCount": 2,
-                            "personaName": "Foundry Guide",
+                            "personaName": v.persona,
                             "createdAt": NOW,
                         }
                         for v in self.ventures.values()

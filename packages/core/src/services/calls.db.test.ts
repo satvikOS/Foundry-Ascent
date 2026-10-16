@@ -146,9 +146,10 @@ async function transcribedSeconds(person: Person): Promise<number[]> {
   const rows = await h.t.db.system((sx) =>
     sx.query(
       `SELECT input_tokens FROM usage_ledger
-       WHERE purpose = 'speech' AND model_id = 'transcribe:streaming:en-US' AND principal_id = :me
+       WHERE purpose = 'speech' AND model_id = :model AND principal_id = :me
        ORDER BY id`,
-      { me: p.uuid(h.people[person]) },
+      // A parameter: a ":name" shape inside SQL text is refused (the Data API may read it as one).
+      { me: p.uuid(h.people[person]), model: p.text('transcribe:streaming:en-US') },
     ),
   );
   return rows.rows.map((r) => Number(r.input_tokens));

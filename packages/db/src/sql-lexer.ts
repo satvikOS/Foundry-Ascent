@@ -6,7 +6,15 @@
  *
  * Placeholders are `:` followed by an identifier (`[A-Za-z_][A-Za-z0-9_]*`). `::` casts and the PL/pgSQL
  * `:=` operator are not placeholders. Write array slices with spaces (`arr[lo : hi]`).
+ *
+ * The same `:name` shape inside a string literal, quoted identifier, comment or dollar-quoted body is not a
+ * placeholder here or for PostgreSQL, but the RDS Data API parses named parameters itself and does not
+ * document that it skips any of them: `to_char(x, 'HH24:MI')`, a regex `(?:Z|…)` in a function body or
+ * `hh:mm` in a comment could fail in production only. The scan reports such names so the executors refuse
+ * those statements on every driver, migrations included (local tests catch them). Write the value as a
+ * parameter, compute it numerically, use `[:]` in a regular expression, or reword the comment.
  */
+import { SqlUsageError } from './errors.js';
 
 const IDENT_START = /[A-Za-z_]/;
 const IDENT_CHAR = /[A-Za-z0-9_]/;
@@ -22,6 +30,11 @@ export interface PlaceholderToken {
 
 export interface SqlScan {
   readonly placeholders: readonly PlaceholderToken[];
+  /**
+   * `:name` shapes that are not placeholders: inside string literals, quoted identifiers, comments and
+   * dollar-quoted bodies (unsafe for the RDS Data API).
+   */
+  readonly unsafeNames: readonly PlaceholderToken[];
   /** Offsets of top-level ';' statement terminators. */
   readonly terminators: readonly number[];
 }
@@ -30,12 +43,29 @@ function isIdentChar(ch: string | undefined): boolean {
   return ch !== undefined && IDENT_CHAR.test(ch);
 }
 
+/** A `:name` shape starting at `i` (not part of `::`), or null. */
+function colonName(sql: string, i: number): PlaceholderToken | null {
+  const next = sql[i + 1];
+  if (sql[i] !== ':' || next === undefined || !IDENT_START.test(next) || sql[i - 1] === ':') return null;
+  let j = i + 2;
+  while (j < sql.length && isIdentChar(sql[j])) j += 1;
+  return { name: sql.slice(i + 1, j), start: i, end: j };
+}
+
 /** Scans SQL once and reports placeholders and statement terminators outside quoted regions. */
 export function scanSql(sql: string): SqlScan {
   const placeholders: PlaceholderToken[] = [];
+  const unsafeNames: PlaceholderToken[] = [];
   const terminators: number[] = [];
   const n = sql.length;
   let i = 0;
+  /** Reports every `:name` shape in sql[from, to) (a comment or dollar-quoted body). */
+  const reportNames = (from: number, to: number): void => {
+    for (let k = from; k < to; k += 1) {
+      const name = colonName(sql, k);
+      if (name) unsafeNames.push(name);
+    }
+  };
 
   while (i < n) {
     const ch = sql[i];
@@ -44,6 +74,8 @@ export function scanSql(sql: string): SqlScan {
     // -- line comment
     if (ch === '-' && next === '-') {
       const eol = sql.indexOf('\n', i + 2);
+      const end = eol === -1 ? n : eol;
+      reportNames(i + 2, end);
       i = eol === -1 ? n : eol + 1;
       continue;
     }
@@ -53,6 +85,8 @@ export function scanSql(sql: string): SqlScan {
       let depth = 1;
       i += 2;
       while (i < n && depth > 0) {
+        const name = colonName(sql, i);
+        if (name) unsafeNames.push(name);
         if (sql[i] === '/' && sql[i + 1] === '*') {
           depth += 1;
           i += 2;
@@ -85,6 +119,8 @@ export function scanSql(sql: string): SqlScan {
           i += 1;
           break;
         }
+        const quoted = colonName(sql, i);
+        if (quoted) unsafeNames.push(quoted);
         i += 1;
       }
       continue;
@@ -102,6 +138,8 @@ export function scanSql(sql: string): SqlScan {
           i += 1;
           break;
         }
+        const quoted = colonName(sql, i);
+        if (quoted) unsafeNames.push(quoted);
         i += 1;
       }
       continue;
@@ -113,6 +151,7 @@ export function scanSql(sql: string): SqlScan {
       if (match) {
         const tag = match[0];
         const close = sql.indexOf(tag, i + tag.length);
+        reportNames(i + tag.length, close === -1 ? n : close);
         i = close === -1 ? n : close + tag.length;
         continue;
       }
@@ -123,11 +162,10 @@ export function scanSql(sql: string): SqlScan {
         i += 2; // type cast
         continue;
       }
-      if (next !== undefined && IDENT_START.test(next) && sql[i - 1] !== ':') {
-        let j = i + 2;
-        while (j < n && isIdentChar(sql[j])) j += 1;
-        placeholders.push({ name: sql.slice(i + 1, j), start: i, end: j });
-        i = j;
+      const placeholder = colonName(sql, i);
+      if (placeholder) {
+        placeholders.push(placeholder);
+        i = placeholder.end;
         continue;
       }
     }
@@ -136,7 +174,7 @@ export function scanSql(sql: string): SqlScan {
     i += 1;
   }
 
-  return { placeholders, terminators };
+  return { placeholders, unsafeNames, terminators };
 }
 
 /** True when the text holds nothing but whitespace and comments. */
@@ -199,13 +237,21 @@ export interface CompiledSql {
 
 /**
  * Rewrites `:name` placeholders. `render(name, index)` returns the replacement text (index is the 1-based
- * position of the distinct name). Throws via `render` for unknown names.
+ * position of the distinct name). Throws via `render` for unknown names, and {@link SqlUsageError} when a
+ * literal, quoted identifier, comment or dollar-quoted body holds a `:name` shape (unsafe for the RDS Data
+ * API).
  */
 export function rewritePlaceholders(
   sql: string,
   render: (name: string, index: number) => string,
 ): CompiledSql {
-  const { placeholders } = scanSql(sql);
+  const { placeholders, unsafeNames } = scanSql(sql);
+  const unsafe = unsafeNames[0];
+  if (unsafe) {
+    throw new SqlUsageError(
+      `SQL text holds ":${unsafe.name}" outside a placeholder (in quoted text, a comment or a function body), which the RDS Data API may read as a parameter; pass the value as a parameter or reword it`,
+    );
+  }
   if (placeholders.length === 0) return { text: sql, names: [] };
   const order = new Map<string, number>();
   let out = '';

@@ -327,7 +327,8 @@ def test_setup_discovers_canaries_and_never_uses_real_people() -> None:
         assert not env.actors_for(api.venture("emberloop").id)
         assert env.advisor is not None
         assert env.advisor.role == "advisor"
-        assert env.ventures[api.venture("solesignal").id].eir_name == "Ruth Abernathy-Song"
+        assert env.ventures[api.venture("solesignal").id].eir_name == "Corin Halvorsen"
+        assert env.ventures[api.venture("solesignal").id].persona_name == "Corin's vEIR"
     finally:
         env.teardown()
 

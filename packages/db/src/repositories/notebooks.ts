@@ -7,14 +7,23 @@
  *
  * RLS: read by the founder/team and the assigned EIR (like the conversations it is distilled from); written
  * by the founder/team; distillation writes with the owner role.
+ *
+ * The summary and the opener record the conversations they were drawn from (`summarySources`,
+ * `nextOpenerSource`), so deleting a conversation clears them (`app.soft_delete_session`). A missing key
+ * means "unknown": deleting any distilled conversation of the persona then clears the text. `[]` or null
+ * means no conversation: a person wrote it, and deleting a conversation leaves it.
  */
-import { NotebookCommitment, NotebookEntry, type VeirNotebook } from '@foundry/contracts';
+import { Id, NotebookCommitment, NotebookEntry, type VeirNotebook } from '@foundry/contracts';
 import { z } from 'zod';
 
 import { col, type RawRow } from '../columns.js';
+import { NotebookIntegrityError } from '../errors.js';
 import { type SqlExecutor } from '../executor.js';
 import { p } from '../params.js';
 import { queryFirst } from './common.js';
+
+/** At most this many conversations are recorded as the sources of the summary (oldest dropped first). */
+export const MAX_SUMMARY_SOURCES = 50;
 
 /** The notebook document (`content`): the contract's sections without the view metadata. */
 export const NotebookContent = z.object({
@@ -24,6 +33,10 @@ export const NotebookContent = z.object({
   openQuestions: z.array(NotebookEntry).max(40),
   lastAdvice: z.array(NotebookEntry).max(40),
   nextOpener: z.string().max(300).nullable(),
+  /** Conversations the summary was drawn from (missing: unknown; `[]`: none, a person wrote it). */
+  summarySources: z.array(Id).max(MAX_SUMMARY_SOURCES).optional(),
+  /** Conversation the opener was drawn from (missing: unknown; null: none, a person wrote it). */
+  nextOpenerSource: Id.nullable().optional(),
 });
 export type NotebookContent = z.infer<typeof NotebookContent>;
 
@@ -55,6 +68,11 @@ export interface NotebookRecord {
   readonly personaName: string;
   /** AI notes: content, never log it. */
   readonly content: NotebookContent;
+  /**
+   * False when the stored document does not match the contract: `content` then holds what could be read,
+   * and writes at this version are refused (`NotebookIntegrityError`).
+   */
+  readonly intact: boolean;
   readonly suppressed: SuppressedLine[];
   readonly version: number;
   readonly lastEditedBy: 'veir' | 'person' | null;
@@ -65,10 +83,38 @@ export interface NotebookRecord {
 const COLUMNS = `n.id, n.tenant_id, n.venture_id, n.persona_id, n.content, n.suppressed, n.version, n.last_edited_by,
   n.updated_at, n.created_at`;
 
-function decodeContent(raw: unknown): NotebookContent {
-  const parsed = NotebookContent.safeParse(col.json().decode(raw, 'content'));
-  // The CHECK constraint guarantees the shape; a stricter contract (e.g. longer ids) degrades to empty.
-  return parsed.success ? parsed.data : EMPTY_NOTEBOOK;
+function validItems<T>(schema: z.ZodType<T>, raw: unknown): T[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((item) => {
+    const parsed = schema.safeParse(item);
+    return parsed.success ? [parsed.data] : [];
+  });
+}
+
+/**
+ * Decodes the stored document. The CHECK constraint keeps it in the contract's shape; should a row still
+ * not match (a later, stricter contract), the readable lines are kept and the record is marked not intact,
+ * never shown empty at the live version (which an edit would then overwrite).
+ */
+export function decodeNotebookContent(raw: unknown): { content: NotebookContent; intact: boolean } {
+  const value = col.json().decode(raw, 'content');
+  const parsed = NotebookContent.safeParse(value);
+  if (parsed.success) return { content: parsed.data, intact: true };
+  const doc: Record<string, unknown> =
+    typeof value === 'object' && value !== null && !Array.isArray(value) ? { ...value } : {};
+  const summary = z.string().max(1200).safeParse(doc.summary);
+  const opener = z.string().max(300).safeParse(doc.nextOpener);
+  return {
+    content: {
+      summary: summary.success ? summary.data : '',
+      founderProfile: validItems(NotebookEntry, doc.founderProfile).slice(0, 40),
+      commitments: validItems(NotebookCommitment, doc.commitments).slice(0, 40),
+      openQuestions: validItems(NotebookEntry, doc.openQuestions).slice(0, 40),
+      lastAdvice: validItems(NotebookEntry, doc.lastAdvice).slice(0, 40),
+      nextOpener: opener.success ? opener.data : null,
+    },
+    intact: false,
+  };
 }
 
 function decodeSuppressed(raw: unknown): SuppressedLine[] {
@@ -81,13 +127,15 @@ function decodeSuppressed(raw: unknown): SuppressedLine[] {
 }
 
 function decode(r: RawRow, personaName: string): NotebookRecord {
+  const { content, intact } = decodeNotebookContent(r.content);
   return {
     id: col.uuid.decode(r.id, 'id'),
     tenantId: col.uuid.decode(r.tenant_id, 'tenant_id'),
     ventureId: col.uuid.decode(r.venture_id, 'venture_id'),
     personaId: col.uuid.decode(r.persona_id, 'persona_id'),
     personaName,
-    content: decodeContent(r.content),
+    content,
+    intact,
     suppressed: decodeSuppressed(r.suppressed),
     version: col.int.decode(r.version, 'version'),
     lastEditedBy: col.enum(['veir', 'person'] as const).nullable.decode(r.last_edited_by, 'last_edited_by'),
@@ -123,19 +171,108 @@ export interface SaveNotebookInput {
   readonly editedBy: 'veir' | 'person';
   /** The editing person (request principal under RLS); null for distillation. */
   readonly principalId?: string | null;
+  /**
+   * Distillation: the conversation this write was drawn from. A changed summary or opener is recorded as
+   * drawn from it ({@link withDistilledSources}); without it they are recorded as of unknown origin.
+   */
+  readonly sourceSessionId?: string | null;
+}
+
+/**
+ * Where a distillation write's summary and opener came from, given the document it replaces. An unchanged
+ * summary or opener keeps its recorded sources. A rewritten summary adds `sourceSessionId` to the earlier
+ * summary's sources (unknown stays unknown: the rewrite may carry the earlier text). A new opener is drawn
+ * from `sourceSessionId`. Without `sourceSessionId` rewritten text is of unknown origin. Pure (unit tested).
+ */
+export function withDistilledSources(
+  previous: NotebookContent | null,
+  next: NotebookContent,
+  sourceSessionId: string | null,
+): NotebookContent {
+  const before = previous ?? EMPTY_NOTEBOOK;
+  const out: NotebookContent = {
+    summary: next.summary,
+    founderProfile: next.founderProfile,
+    commitments: next.commitments,
+    openQuestions: next.openQuestions,
+    lastAdvice: next.lastAdvice,
+    nextOpener: next.nextOpener,
+  };
+  if (next.summary === before.summary) {
+    if (before.summarySources !== undefined) out.summarySources = before.summarySources;
+  } else if (next.summary !== '' && sourceSessionId !== null) {
+    const known = before.summary === '' ? [] : before.summarySources;
+    if (known !== undefined) {
+      out.summarySources = [...known.filter((id) => id !== sourceSessionId), sourceSessionId].slice(
+        -MAX_SUMMARY_SOURCES,
+      );
+    }
+  }
+  if (next.nextOpener === before.nextOpener) {
+    if (before.nextOpenerSource !== undefined) out.nextOpenerSource = before.nextOpenerSource;
+  } else if (next.nextOpener !== null && sourceSessionId !== null) {
+    out.nextOpenerSource = sourceSessionId;
+  }
+  return out;
+}
+
+/**
+ * Where a person's write left the summary and opener, given the document it replaces. Text written where there
+ * was none is a person's: drawn from no conversation (`summarySources: []`, `nextOpenerSource: null`), so
+ * deleting a conversation leaves it. Unchanged or corrected text keeps where it was drawn from (a correction
+ * may keep the conversation's words), unknown included. The caller's own source fields are ignored. Pure
+ * (unit tested).
+ */
+export function withPersonSources(previous: NotebookContent | null, next: NotebookContent): NotebookContent {
+  const before = previous ?? EMPTY_NOTEBOOK;
+  const out: NotebookContent = {
+    summary: next.summary,
+    founderProfile: next.founderProfile,
+    commitments: next.commitments,
+    openQuestions: next.openQuestions,
+    lastAdvice: next.lastAdvice,
+    nextOpener: next.nextOpener,
+  };
+  if (next.summary !== '') {
+    if (before.summary === '') out.summarySources = [];
+    else if (before.summarySources !== undefined) out.summarySources = before.summarySources;
+  }
+  if (next.nextOpener !== null) {
+    if (before.nextOpener === null) out.nextOpenerSource = null;
+    else if (before.nextOpenerSource !== undefined) out.nextOpenerSource = before.nextOpenerSource;
+  }
+  return out;
 }
 
 /**
  * Writes the notebook if it is still at `expectedVersion` (optimistic concurrency: edits and distillation
- * never overwrite each other's changes silently) and bumps the version. Creates the row when none exists
- * and `expectedVersion` is 0. Returns null on a version conflict (the caller re-reads and retries or
- * reports 409).
+ * never overwrite each other's changes silently) and bumps the version. It records where the summary and
+ * opener were drawn from ({@link withDistilledSources}, {@link withPersonSources}). Creates the row when
+ * none exists and `expectedVersion` is 0. Returns null on a version conflict (the caller re-reads and
+ * retries or reports 409). Throws {@link NotebookIntegrityError} when the stored document at that version
+ * does not match the contract: a write never replaces content that could not be read.
  */
 export async function saveNotebook(
   ex: SqlExecutor,
   input: SaveNotebookInput,
 ): Promise<NotebookRecord | null> {
-  const content = NotebookContent.parse(input.content);
+  const stored = await queryFirst(
+    ex,
+    `SELECT n.id, n.content FROM veir_notebooks n
+     WHERE n.venture_id = :ventureId AND n.persona_id = :personaId AND n.version = :expected`,
+    {
+      ventureId: p.uuid(input.ventureId),
+      personaId: p.uuid(input.personaId),
+      expected: p.int(input.expectedVersion),
+    },
+    (r) => ({ id: col.uuid.decode(r.id, 'id'), ...decodeNotebookContent(r.content) }),
+  );
+  if (stored !== null && !stored.intact) throw new NotebookIntegrityError(stored.id);
+  const parsed = NotebookContent.parse(input.content);
+  const content =
+    input.editedBy === 'veir'
+      ? withDistilledSources(stored?.content ?? null, parsed, input.sourceSessionId ?? null)
+      : withPersonSources(stored?.content ?? null, parsed);
   const suppressed = input.suppressed.slice(-MAX_SUPPRESSED).map((line) => SuppressedLine.parse(line));
   const params = {
     tenantId: p.uuid(input.tenantId),

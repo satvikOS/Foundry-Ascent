@@ -37,7 +37,7 @@ export interface HttpOptions {
   readonly healthTimeoutMs: number;
 }
 
-export const DEFAULT_HTTP_OPTIONS: HttpOptions = {
+const DEFAULT_HTTP_OPTIONS: HttpOptions = {
   maxBodyBytes: MAX_JSON_BODY_BYTES,
   sseKeepAliveMs: SSE_KEEP_ALIVE_MS,
   sseWriteTimeoutMs: 10_000,

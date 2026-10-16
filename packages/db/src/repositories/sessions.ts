@@ -33,8 +33,13 @@ export interface SessionRecord {
   readonly recap: SessionRecapValue | null;
   readonly startedAt: string;
   readonly endedAt: string | null;
-  /** Conversation title (from the first message, renamed by people, refined by distillation). */
+  /**
+   * Conversation title (from the first message, renamed by people, refined by distillation). Founder text:
+   * null for readers outside the venture's founder/team (an assigned EIR). Never set for temporary chats.
+   */
   readonly title: string | null;
+  /** Who set the title: `auto` (first message or distillation, which may replace it) or a `person`. */
+  readonly titleSource: 'auto' | 'person';
   /** Latest turn or the start (maintained by the `turns_touch_session` trigger). */
   readonly lastActivityAt: string;
   /** Whether any turn was spoken during a call. */
@@ -50,9 +55,19 @@ export interface SessionRecord {
   readonly opener: string | null;
 }
 
+/**
+ * A column holding the founder's own words (title, goal), readable only by the venture's founder/team: an
+ * assigned EIR may read conversation rows (RLS) but gets null here. System work (owner role, no principal)
+ * reads it as stored.
+ */
+function memberOnly(column: string): string {
+  return `CASE WHEN app.current_principal() IS NULL OR app.can_write_venture(s.venture_id) THEN ${column} END`;
+}
+
 const COLUMNS = `s.id, s.tenant_id, s.venture_id, s.assignment_id, s.persona_release_id, s.started_by, s.mode, s.privacy,
-  s.goal, s.status, s.policy_version, s.recap, s.started_at, s.ended_at, s.title, s.last_activity_at, s.has_calls,
-  s.digest, s.digest_deleted_at, s.distilled_at, s.distill_version, s.opener`;
+  ${memberOnly('s.goal')} AS goal, s.status, s.policy_version, s.recap, s.started_at, s.ended_at,
+  ${memberOnly('s.title')} AS title, s.title_source, s.last_activity_at, s.has_calls, s.digest, s.digest_deleted_at,
+  s.distilled_at, s.distill_version, s.opener`;
 
 /** Parses a stored recap; recaps that no longer match the contract are treated as absent. */
 function decodeRecap(raw: unknown): SessionRecapValue | null {
@@ -87,6 +102,7 @@ function decodeSession(r: RawRow): SessionRecord {
     startedAt: col.ts.decode(r.started_at, 'started_at'),
     endedAt: col.ts.nullable.decode(r.ended_at, 'ended_at'),
     title: col.text.nullable.decode(r.title, 'title'),
+    titleSource: col.enum(['auto', 'person'] as const).decode(r.title_source, 'title_source'),
     lastActivityAt: col.ts.decode(r.last_activity_at, 'last_activity_at'),
     hasCalls: col.bool.decode(r.has_calls, 'has_calls'),
     digest: decodeDigest(r.digest),
@@ -119,7 +135,7 @@ export interface CreateSessionInput {
   readonly goal?: string | null;
   /** Version tag of the policy/validator bundle in force (e.g. `2026-10-05.1`). */
   readonly policyVersion: string;
-  /** Title chosen by the person; otherwise the first message titles the conversation. */
+  /** Title chosen by the person (standard conversations only); otherwise the first message titles it. */
   readonly title?: string | null;
   /** The vEIR's validated opening line (standard conversations only; at most 300 characters). */
   readonly opener?: string | null;
@@ -129,9 +145,10 @@ export function createSession(ex: SqlExecutor, input: CreateSessionInput): Promi
   return queryOne(
     ex,
     `INSERT INTO coaching_sessions AS s (id, tenant_id, venture_id, assignment_id, persona_release_id, started_by, mode,
-                                         privacy, goal, policy_version, title, opener)
+                                         privacy, goal, policy_version, title, title_source, opener)
      VALUES (coalesce(:id, gen_random_uuid()), :tenantId, :ventureId, :assignmentId, :releaseId, :startedBy, :mode,
-             :privacy, :goal, :policyVersion, :title, :opener)
+             :privacy, :goal, :policyVersion, :title, CASE WHEN :title IS NULL THEN 'auto' ELSE 'person' END,
+             :opener)
      RETURNING ${COLUMNS}`,
     {
       id: p.nullable.uuid(input.id),
@@ -216,22 +233,28 @@ export function setSessionRelease(
   );
 }
 
-/** Renames a conversation (founder/team under RLS). Null when not visible. */
+/**
+ * Renames a standard conversation (founder/team under RLS); the title is then the person's, which
+ * distillation never replaces. Null when not visible or temporary (temporary chats keep no title).
+ */
 export function renameSession(
   ex: SqlExecutor,
   args: { sessionId: string; title: string },
 ): Promise<SessionRecord | null> {
   return queryFirst(
     ex,
-    `UPDATE coaching_sessions AS s SET title = :title WHERE s.id = :id RETURNING ${COLUMNS}`,
+    `UPDATE coaching_sessions AS s SET title = :title, title_source = 'person'
+     WHERE s.id = :id AND s.privacy = 'standard'
+     RETURNING ${COLUMNS}`,
     { id: p.uuid(args.sessionId), title: p.text(args.title) },
     decodeSession,
   );
 }
 
 /**
- * Stores the distilled digest of a standard conversation and the number of turns it covers. Never writes a
- * digest a person deleted, nor one for a temporary or deleted conversation. Returns whether it was stored.
+ * Stores the distilled digest of a standard conversation and the number of turns it covers, and its refined
+ * `title` unless a person chose the title. Never writes a digest a person deleted, nor one for a temporary or
+ * deleted conversation. Returns whether it was stored.
  */
 export async function setSessionDigest(
   ex: SqlExecutor,
@@ -239,7 +262,8 @@ export async function setSessionDigest(
 ): Promise<boolean> {
   const result = await ex.query(
     `UPDATE coaching_sessions AS s
-     SET digest = :digest, distilled_at = now(), distill_version = :version, title = coalesce(:title, s.title)
+     SET digest = :digest, distilled_at = now(), distill_version = :version,
+         title = CASE WHEN s.title_source = 'auto' THEN coalesce(:title, s.title) ELSE s.title END
      WHERE s.id = :id AND s.privacy = 'standard' AND s.deleted_at IS NULL AND s.digest_deleted_at IS NULL`,
     {
       id: p.uuid(args.sessionId),
@@ -379,22 +403,50 @@ export interface SessionPage {
   readonly nextCursor: string | null;
 }
 
-/** Exact keyset position: the latest activity in UTC with microseconds (JS dates keep milliseconds only). */
-const ACTIVITY_KEY_SQL = `to_char(s.last_activity_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US') || 'Z'`;
-const ACTIVITY_KEY = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/;
+/**
+ * Exact keyset position: the latest activity in microseconds since the epoch (JS dates keep milliseconds
+ * only). Computed as a number, so the SQL text carries no time-format literal such as `HH24:MI:SS`, whose
+ * `:MI` the RDS Data API's own parameter parser could take for a placeholder.
+ */
+const ACTIVITY_MICROS_SQL = `(extract(epoch FROM s.last_activity_at) * 1000000)::bigint::text`;
+const MICROS = /^\d{1,16}$/;
+/** The position of cursors issued before it was numeric: the activity as `…ss.ffffffZ` in UTC. */
+const ISO_MICROS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/;
 const UUID_TEXT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Encodes a keyset position (latest activity with microseconds, id) as an opaque cursor. */
-export function encodeSessionCursor(activityKey: string, id: string): string {
-  return Buffer.from(`${activityKey}|${id}`, 'utf8').toString('base64url');
+/** Encodes a keyset position (latest activity in microseconds since the epoch, id) as an opaque cursor. */
+export function encodeSessionCursor(activityMicros: string, id: string): string {
+  return Buffer.from(`${activityMicros}|${id}`, 'utf8').toString('base64url');
 }
 
-/** Decodes a cursor; null when it is malformed (callers then read the first page). */
-export function decodeSessionCursor(cursor: string): { activityKey: string; id: string } | null {
-  const [activityKey, id] = Buffer.from(cursor, 'base64url').toString('utf8').split('|');
-  if (activityKey === undefined || id === undefined) return null;
-  if (!ACTIVITY_KEY.test(activityKey) || !UUID_TEXT.test(id)) return null;
-  return { activityKey, id: id.toLowerCase() };
+/**
+ * Decodes a cursor; null when it is malformed. A cursor in the earlier ISO form is read as the same
+ * position, so a list paging across the deploy that changed the form keeps its place.
+ */
+export function decodeSessionCursor(cursor: string): { activityMicros: string; id: string } | null {
+  const [position, id] = Buffer.from(cursor, 'base64url').toString('utf8').split('|');
+  if (position === undefined || id === undefined || !UUID_TEXT.test(id)) return null;
+  const activityMicros = MICROS.test(position)
+    ? position
+    : ISO_MICROS.test(position)
+      ? isoToMicros(position)
+      : null;
+  return activityMicros === null ? null : { activityMicros, id: id.toLowerCase() };
+}
+
+/** Microseconds since the epoch as an exact ISO timestamp (`…ss.ffffffZ`). */
+export function microsToIso(micros: string): string {
+  const value = BigInt(micros);
+  const millis = new Date(Number(value / 1000n)).toISOString();
+  return `${millis.slice(0, -1)}${(value % 1000n).toString().padStart(3, '0')}Z`;
+}
+
+/** An exact `…ss.ffffffZ` timestamp as microseconds since the epoch; null for an impossible date. */
+function isoToMicros(iso: string): string | null {
+  const millis = Date.parse(`${iso.slice(0, 23)}Z`);
+  if (Number.isNaN(millis) || millis < 0) return null;
+  const micros = (BigInt(millis) * 1000n + BigInt(iso.slice(23, 26))).toString();
+  return microsToIso(micros) === iso ? micros : null;
 }
 
 /**
@@ -406,7 +458,7 @@ export async function listSessionPage(ex: SqlExecutor, q: SessionPageQuery): Pro
   const cursor = q.cursor ? decodeSessionCursor(q.cursor) : null;
   const rows = await queryRows(
     ex,
-    `SELECT s.id, ${ACTIVITY_KEY_SQL} AS activity_key FROM coaching_sessions s
+    `SELECT s.id, ${ACTIVITY_MICROS_SQL} AS activity_micros FROM coaching_sessions s
      WHERE app.can_write_venture(s.venture_id)
        AND (:mine = false OR s.started_by = :principal)
        AND (:ventureId IS NULL OR s.venture_id = :ventureId)
@@ -417,13 +469,13 @@ export async function listSessionPage(ex: SqlExecutor, q: SessionPageQuery): Pro
       mine: p.bool(q.scope === 'mine'),
       principal: p.uuid(q.principalId),
       ventureId: p.nullable.uuid(q.ventureId),
-      cursorAt: p.nullable.text(cursor?.activityKey),
+      cursorAt: p.nullable.text(cursor ? microsToIso(cursor.activityMicros) : null),
       cursorId: p.nullable.uuid(cursor?.id),
       limit: p.int(limit + 1),
     },
     (r) => ({
       id: col.uuid.decode(r.id, 'id'),
-      activityKey: col.text.decode(r.activity_key, 'activity_key'),
+      activityMicros: col.text.decode(r.activity_micros, 'activity_micros'),
     }),
   );
   const page = rows.slice(0, limit);
@@ -433,7 +485,7 @@ export async function listSessionPage(ex: SqlExecutor, q: SessionPageQuery): Pro
       ex,
       page.map((r) => r.id),
     ),
-    nextCursor: rows.length > limit && last ? encodeSessionCursor(last.activityKey, last.id) : null,
+    nextCursor: rows.length > limit && last ? encodeSessionCursor(last.activityMicros, last.id) : null,
   };
 }
 
@@ -448,7 +500,8 @@ export interface RecentDigest {
 
 /**
  * The latest digests of a venture's conversations with one persona ("Previous conversations" in the
- * prompt), newest first. Temporary and deleted conversations never have one.
+ * prompt), newest first. Temporary and deleted conversations never have one. Titles follow the session
+ * rule: null for readers outside the founder/team.
  */
 export async function listRecentDigests(
   ex: SqlExecutor,
@@ -456,7 +509,7 @@ export async function listRecentDigests(
 ): Promise<RecentDigest[]> {
   const rows = await queryRows(
     ex,
-    `SELECT s.id, s.title, s.last_activity_at, s.has_calls, s.digest
+    `SELECT s.id, ${memberOnly('s.title')} AS title, s.last_activity_at, s.has_calls, s.digest
      FROM coaching_sessions s
      JOIN persona_releases r ON r.id = s.persona_release_id
      WHERE s.venture_id = :ventureId AND r.persona_id = :personaId AND s.digest IS NOT NULL

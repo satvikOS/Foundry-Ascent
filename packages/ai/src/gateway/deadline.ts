@@ -49,8 +49,3 @@ export class Deadline {
     this.#callerSignal?.removeEventListener('abort', this.#onCallerAbort);
   }
 }
-
-/** Monotonic-enough wall clock helper for latency measurement. */
-export function elapsedSince(start: number): number {
-  return Math.max(0, Math.round(performance.now() - start));
-}

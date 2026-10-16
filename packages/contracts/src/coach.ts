@@ -121,16 +121,6 @@ export const TurnUsage = z.object({
 });
 
 /**
- * Known `reason` values of a blocked turn (`turn.blocked` events and `TurnView.blocked`). The field stays a
- * string on the wire so a new reason never breaks an older client. Founders and teams see `policy` where
- * the server recorded `cross_venture` (a privacy or safety check held the answer back); the specific
- * reason is only in staff views and the audit log.
- */
-export const TURN_BLOCK_REASONS = ['crisis_support', 'policy', 'identity', 'invalid_schema'] as const;
-/** Staff-only block reason (the founder/team-facing reason is `policy`). */
-export const STAFF_ONLY_BLOCK_REASONS = ['cross_venture'] as const;
-
-/**
  * Why a turn was blocked and what the founder is offered instead: the same fields as the `turn.blocked`
  * event, so a reloaded session shows the same support message and request as the live stream did.
  * `supportMessage` is set for crisis support (human resources and crisis lines, Markdown); `escalationId`
@@ -138,6 +128,11 @@ export const STAFF_ONLY_BLOCK_REASONS = ['cross_venture'] as const;
  * model output.
  */
 export const TurnBlockedDetail = z.object({
+  /**
+   * `crisis_support`, `policy`, `identity` or `invalid_schema`; a plain string so a new reason never breaks
+   * an older client. Founders and teams see `policy` where the server recorded `cross_venture` (staff views
+   * and the audit log keep the specific reason).
+   */
   reason: z.string(),
   supportMessage: z.string().nullable(),
   escalationId: Id.nullable(),

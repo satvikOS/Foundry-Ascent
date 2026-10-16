@@ -1,4 +1,4 @@
-import { POLICY_VERSION, isModelGatewayError } from '@foundry/ai';
+import { DEFAULT_PERSONA_NAME, POLICY_VERSION, isModelGatewayError } from '@foundry/ai';
 import {
   CreateSessionRequest,
   type SessionDetailResponse,
@@ -68,15 +68,20 @@ export interface SessionsService {
    * page at a time: `mine` (started by the caller) or `all`, optionally for one venture.
    */
   listMine(ctx: RequestContext, query: z.input<typeof SessionListQuery>): Promise<SessionPageResult>;
-  /** Renames a conversation (founder/team). */
+  /**
+   * Renames a conversation (founder/team); distillation never replaces a title a person chose. 409 for a
+   * temporary chat, which keeps no title.
+   */
   rename(
     ctx: RequestContext,
     sessionId: string,
     input: z.input<typeof UpdateSessionRequest>,
   ): Promise<SessionView>;
   /**
-   * Deletes a conversation (founder/team): its content is erased like an ended temporary chat, pending AI
-   * memory proposals and notebook lines drawn from it are removed, and it disappears from every list.
+   * Deletes a conversation (founder/team): its content is erased like an ended temporary chat; the AI memory
+   * proposals nobody kept, the escalations the founder never shared, and the notebook lines, summary and
+   * opener drawn from it go too; it disappears from every list. Escalations the founder shared stay: they
+   * went to a person with consent.
    */
   remove(ctx: RequestContext, sessionId: string): Promise<void>;
   /** Deletes a conversation's digest (founder/team); distillation never writes it again. */
@@ -256,6 +261,9 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
       const input = parseInput(UpdateSessionRequest, rawInput);
       return await kit.inRequest(ctx, async (scope) => {
         const session = await writableSession(scope, sessionId);
+        if (session.privacy !== 'standard') {
+          throw fail.conflict('Temporary chats keep no title', 'temporary_chat');
+        }
         if (input.title !== undefined) {
           await sessionsRepo.renameSession(scope.tx, { sessionId, title: input.title });
         }
@@ -377,7 +385,7 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
             operation: 'recap',
           });
           const others = await directory.others(ctx.tenantId, session.ventureId);
-          const personaName = persona?.name ?? 'Foundry Guide';
+          const personaName = persona?.name ?? DEFAULT_PERSONA_NAME;
           const prompt = buildRecapPrompt({
             personaName,
             disclosure: release.disclosureText,

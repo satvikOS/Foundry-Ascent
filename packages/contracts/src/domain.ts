@@ -309,19 +309,22 @@ export const MemoryEventView = z.object({
 });
 
 /**
- * `DocumentView.failureReason` codes the web explains: `spend_cap_reached` (the daily AI budget of the
- * platform or of the uploader was used up before indexing; retry after midnight UTC), `extract_failed`,
+ * Every `DocumentView.failureReason` (and persona-library source failure) the ingestion pipeline writes:
+ * `spend_cap_reached` (the daily AI budget of the platform or of the uploader was used up before indexing;
+ * retry after midnight UTC), `extract_failed`, `extractor_unavailable` (the process has no text extractor),
  * `empty_text`, `too_large`, `object_missing`, `retries_exhausted`, `enqueue_failed`.
  */
 export const DOCUMENT_FAILURE_REASONS = [
   'spend_cap_reached',
   'extract_failed',
+  'extractor_unavailable',
   'empty_text',
   'too_large',
   'object_missing',
   'retries_exhausted',
   'enqueue_failed',
 ] as const;
+export type DocumentFailureReason = (typeof DOCUMENT_FAILURE_REASONS)[number];
 
 export const DocumentView = z.object({
   id: Id,

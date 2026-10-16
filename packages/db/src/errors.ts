@@ -103,6 +103,19 @@ export class SqlUsageError extends DbError {
   override readonly name = 'SqlUsageError';
 }
 
+/**
+ * A stored vEIR notebook does not match its contract. Writes at that version are refused, so an edit or a
+ * distillation never replaces content it could not read. Carries the notebook id only (never content).
+ */
+export class NotebookIntegrityError extends DbError {
+  override readonly name = 'NotebookIntegrityError';
+  readonly notebookId: string;
+  constructor(notebookId: string) {
+    super(`notebook ${notebookId} does not match its contract`);
+    this.notebookId = notebookId;
+  }
+}
+
 export function isDbError(err: unknown): err is DbError {
   return err instanceof DbError;
 }

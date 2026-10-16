@@ -161,10 +161,11 @@ describe('idempotency under concurrency', () => {
       api.h.t.db.system((sx) =>
         sx.query(
           `INSERT INTO idempotency_keys (key, principal_id, route, response, status_code, request_hash, created_at)
-           VALUES (:key, :principal, 'POST /ventures/:id/memory', '{"state":"in_progress"}', 0, :hash,
+           VALUES (:key, :principal, :route, '{"state":"in_progress"}', 0, :hash,
                    now() - make_interval(secs => :age))`,
           {
             key: p.text(key),
+            route: p.text('POST /ventures/:id/memory'),
             principal: p.uuid(api.h.people.maya),
             hash: p.text(hash),
             age: p.num(ageSeconds),
