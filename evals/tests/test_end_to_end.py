@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 import httpx
 import pytest
 
 from foundry_evals import cli
 from foundry_evals.environment import Environment, EnvironmentSetupError
+from foundry_evals.models import CoachModeName
 from tests.fake_api import OWNER_CODE, FakeFoundryApi, Venture, default_responder
 
 BASE = "https://d111.cloudfront.example"
@@ -64,6 +65,12 @@ def test_full_run_mechanics(
     assert len(statuses) == 179
     assert not [i for i, s in statuses.items() if s in ("error", "skipped")]
     assert results["run"]["turnsUsed"] == 193
+    # Every turn pins its case's mode: a turn without one is answered in auto mode, which no case grades.
+    turn_bodies = [
+        json.loads(r.content) for r in api.requests if r.method == "POST" and r.url.path.endswith("/turns")
+    ]
+    assert turn_bodies
+    assert all(body.get("mode") in get_args(CoachModeName) for body in turn_bodies)
     assert {p["status"] for p in results["probes"]} == {"passed"}
     # Setup resources were cleaned up and every session ended.
     assert not [

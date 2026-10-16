@@ -162,7 +162,7 @@ class Runner:
             plan = [(t, False) for t in rendered_setup] + [(t, True) for t in rendered_turns]
             for index, (text, graded) in enumerate(plan, start=1):
                 outcome = self._turn(
-                    actor, session.id, text, counterpart if case.mode == "rehearse" else None
+                    actor, session.id, text, case.mode, counterpart if case.mode == "rehearse" else None
                 )
                 record = _record(index, graded, outcome)
                 result.turns.append(record)
@@ -312,7 +312,10 @@ class Runner:
             self._sleep(delay)
             waited += delay
 
-    def _turn(self, actor: Actor, session_id: str, text: str, counterpart: str | None) -> TurnOutcome:
+    def _turn(
+        self, actor: Actor, session_id: str, text: str, mode: str, counterpart: str | None
+    ) -> TurnOutcome:
+        """One turn in the case's mode: a turn sent without a mode is answered in auto mode (the coach picks)."""
         retried = False
         reauthenticated = False
         waited = 0.0
@@ -322,7 +325,9 @@ class Runner:
             if self.options.max_cost_usd is not None and self.cost_usd >= self.options.max_cost_usd:
                 raise BudgetExhaustedError
             try:
-                outcome = actor.client.run_turn(session_id, text, rehearsal_counterpart=counterpart)
+                outcome = actor.client.run_turn(
+                    session_id, text, mode=mode, rehearsal_counterpart=counterpart
+                )
             except ApiError as exc:
                 if exc.code in ABORT_CODES:
                     raise RunAbortedError(exc.code) from exc
