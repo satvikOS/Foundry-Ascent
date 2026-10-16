@@ -4,7 +4,7 @@ import { useState, type ComponentProps } from 'react';
 import { monogram } from '@/lib/veir';
 import { cn } from '@/lib/utils';
 
-export type FaceSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
+export type FaceSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl';
 
 const faceVariants = cva(
   'relative inline-flex shrink-0 items-center justify-center rounded-full select-none',
@@ -16,6 +16,8 @@ const faceVariants = cva(
         md: 'size-8',
         lg: 'size-10',
         xl: 'size-16',
+        /** The call stage. */
+        '2xl': 'size-28',
       },
     },
     defaultVariants: { size: 'md' },
@@ -29,6 +31,7 @@ const MONOGRAM_TEXT: Record<FaceSize, string> = {
   md: 'text-[1rem]',
   lg: 'text-[1.25rem]',
   xl: 'text-[1.875rem]',
+  '2xl': 'text-[3.25rem]',
 };
 
 interface PersonaAvatarProps
@@ -62,7 +65,7 @@ export function PersonaAvatar({
   const [portraitFailed, setPortraitFailed] = useState(false);
   const key: FaceSize = size ?? 'md';
   const showPortrait = Boolean(portraitUrl) && !portraitFailed;
-  const large = key === 'lg' || key === 'xl';
+  const large = key === 'lg' || key === 'xl' || key === '2xl';
 
   return (
     <span

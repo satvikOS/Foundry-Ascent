@@ -30,6 +30,8 @@ import { useHotkeys } from '@/lib/hooks/use-hotkeys';
 import { cn } from '@/lib/utils';
 import { veirDisplay } from '@/lib/veir';
 
+import { CallLink } from '../calls/call-link';
+
 import { coachingAvailability } from '../coach/availability';
 import { Composer, MAX_TURN_CHARS, type ComposerMode } from '../coach/composer';
 import { setPendingCounterpart } from '../coach/pending-counterpart';
@@ -194,6 +196,9 @@ export function NewChatPage() {
                 ? `What should we work on for ${venture.data?.name ?? 'your venture'} today?`
                 : `You can read ${venture.data?.name ?? 'this venture'}’s conversations from the sidebar.`)}
           </p>
+          {writable && veir && availability?.available ? (
+            <CallLink tenant={tenant} ventureId={ventureId} name={veir.shortName} className="mt-5" />
+          ) : null}
         </div>
 
         {writable ? (

@@ -1,10 +1,14 @@
 import { createFileRoute, Outlet, redirect } from '@tanstack/react-router';
 
 import { AppShell } from '@/components/shell/app-shell';
+import { CallProvider } from '@/features/calls/call-context';
 import { requireMe } from '@/lib/auth/guards';
 import { useRequiredMe } from '@/lib/auth/use-me';
 
-/** Authenticated tenant workspace: guards the session and the tenant, then renders the AppShell. */
+/**
+ * Authenticated tenant workspace: guards the session and the tenant, then renders the AppShell inside the
+ * call provider (a call survives navigation between every page of the workspace).
+ */
 export const Route = createFileRoute('/$tenant/app')({
   beforeLoad: async ({ context, location, params }) => {
     const me = await requireMe(context, location);
@@ -21,8 +25,10 @@ export const Route = createFileRoute('/$tenant/app')({
 function AppLayout() {
   const me = useRequiredMe();
   return (
-    <AppShell me={me}>
-      <Outlet />
-    </AppShell>
+    <CallProvider me={me}>
+      <AppShell me={me}>
+        <Outlet />
+      </AppShell>
+    </CallProvider>
   );
 }

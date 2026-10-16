@@ -1,0 +1,325 @@
+import { ArrowUp, Info, LifeBuoy } from 'lucide-react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
+
+import { DisclosureBanner } from '@/components/disclosure-banner';
+import { VeirBadge } from '@/components/faces/veir-badge';
+import { Button } from '@/components/ui/button';
+import { Markdown } from '@/components/ui/markdown';
+import { useHotkeys } from '@/lib/hooks/use-hotkeys';
+import type { CallEngine, CallNotice, CallSnapshot, TypedReason } from '@/lib/realtime/call-engine';
+import { cn } from '@/lib/utils';
+
+import { CallCaptions } from './call-captions';
+import { CallDock, HoldToTalk } from './call-dock';
+import { CallStage } from './call-stage';
+import { storeTalkMode, useCaptionsPreference } from './preferences';
+import type { CallVeir } from './use-call-veir';
+
+/** The words under the presence: what the call is doing, as text (never colour or motion alone). */
+export function callStatusLabel(snapshot: CallSnapshot): string {
+  if (snapshot.phase === 'starting') return 'Connecting…';
+  if (snapshot.phase === 'ending') return 'Ending…';
+  if (snapshot.reconnecting) return 'Reconnecting…';
+  switch (snapshot.activity) {
+    case 'connecting':
+      return 'Connecting…';
+    case 'speaking':
+      return 'Speaking';
+    case 'thinking':
+      return 'Thinking…';
+    case 'listening':
+      if (snapshot.muted) return 'Muted';
+      if (snapshot.input === 'typed') return 'Type your reply';
+      if (snapshot.talkMode === 'push_to_talk' && !snapshot.talking) return 'Hold to talk';
+      return 'Listening';
+  }
+}
+
+const TYPED_REASONS: Record<TypedReason, string> = {
+  stt_unavailable: 'Voice input isn’t available here, so type instead.',
+  mic_denied: 'Your microphone is blocked. Allow it in the browser’s site settings, or type instead.',
+  mic_unavailable: 'No microphone found, so type instead.',
+  stt_failed: 'Voice input stopped, so type instead.',
+};
+
+function isInteractive(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    target.closest('button, a, input, textarea, select, [role="button"], [contenteditable="true"]') !== null
+  );
+}
+
+interface CallLiveProps {
+  engine: CallEngine;
+  snapshot: CallSnapshot;
+  veir: CallVeir;
+  onSwitchToChat: () => void;
+}
+
+/**
+ * The call in progress: the presence and the vEIR's name and state, live captions, any notice (a blocked
+ * turn's support resources among them), the typed line, the controls and the AI disclosure.
+ */
+export function CallLive({ engine, snapshot, veir, onSwitchToChat }: CallLiveProps) {
+  const [captions, setCaptions] = useCaptionsPreference();
+  const typedOnly = snapshot.input === 'typed';
+  const [typingOpen, setTypingOpen] = useState(false);
+  const typing = typedOnly || typingOpen;
+  const live = snapshot.phase === 'live';
+  const voice = snapshot.input === 'voice';
+  const pushToTalk = snapshot.talkMode === 'push_to_talk';
+  const typeRef = useRef<HTMLInputElement | null>(null);
+  const nameRef = useRef<HTMLHeadingElement | null>(null);
+
+  // Focus starts on the vEIR's name (the state is announced next to it); typing-only calls focus the line.
+  useEffect(() => {
+    nameRef.current?.focus();
+  }, []);
+  useEffect(() => {
+    if (live && typedOnly) typeRef.current?.focus();
+  }, [live, typedOnly]);
+
+  const toggleMute = () => {
+    engine.setMuted(!snapshot.muted);
+  };
+  const toggleTalkMode = () => {
+    const next = pushToTalk ? 'hands_free' : 'push_to_talk';
+    storeTalkMode(next);
+    engine.setTalkMode(next);
+  };
+  const toggleTyping = () => {
+    setTypingOpen((open) => !open);
+  };
+  useEffect(() => {
+    if (typingOpen) typeRef.current?.focus();
+  }, [typingOpen]);
+
+  useHotkeys(
+    {
+      m: () => {
+        if (voice) toggleMute();
+      },
+      p: () => {
+        if (voice) toggleTalkMode();
+      },
+      c: () => {
+        setCaptions(!captions);
+      },
+      t: () => {
+        if (voice) toggleTyping();
+        else typeRef.current?.focus();
+      },
+    },
+    live,
+  );
+
+  // Hold Space anywhere on the call screen to talk (push-to-talk), unless a control has focus.
+  useEffect(() => {
+    if (!live || !pushToTalk || !voice) return undefined;
+    const down = (event: KeyboardEvent) => {
+      if (event.code !== 'Space' || event.repeat || isInteractive(event.target)) return;
+      event.preventDefault();
+      engine.pushToTalk(true);
+    };
+    const up = (event: KeyboardEvent) => {
+      if (event.code !== 'Space' || isInteractive(event.target)) return;
+      event.preventDefault();
+      engine.pushToTalk(false);
+    };
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    return () => {
+      window.removeEventListener('keydown', down);
+      window.removeEventListener('keyup', up);
+    };
+  }, [engine, live, pushToTalk, voice]);
+
+  const status = callStatusLabel(snapshot);
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-5 px-4 py-4 sm:gap-6">
+        <CallStage
+          veir={veir}
+          engine={engine}
+          state={engine.avatarState()}
+          className="w-[min(15rem,58vw,32dvh)] sm:w-[min(18rem,34dvh)]"
+        />
+        <div className="flex flex-col items-center gap-1.5">
+          <h2
+            ref={nameRef}
+            tabIndex={-1}
+            className="flex items-center gap-2 font-serif text-subheading font-normal outline-none"
+          >
+            {veir.shortName}
+            <VeirBadge kind={veir.kind} />
+          </h2>
+          <p className="flex items-center gap-2 text-small text-muted-foreground">
+            <span role="status" aria-live="polite">
+              {status}
+            </span>
+            {snapshot.activity === 'speaking' && live ? (
+              <>
+                <span aria-hidden>·</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    engine.interrupt();
+                  }}
+                  aria-keyshortcuts="Escape"
+                  className="rounded-sm font-medium text-foreground underline decoration-border-strong underline-offset-4 hover:decoration-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                >
+                  Interrupt
+                </button>
+              </>
+            ) : null}
+          </p>
+        </div>
+        {captions ? (
+          <CallCaptions
+            name={veir.shortName}
+            veir={snapshot.captions.veir}
+            founder={snapshot.captions.founder}
+            founderLive={snapshot.captions.founderLive}
+          />
+        ) : null}
+      </div>
+
+      <div className="flex shrink-0 flex-col items-center gap-4 px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        {snapshot.notice ? <Notice notice={snapshot.notice} onSwitchToChat={onSwitchToChat} /> : null}
+        {typing ? (
+          <TypeLine
+            inputRef={typeRef}
+            name={veir.shortName}
+            hint={snapshot.typedReason ? TYPED_REASONS[snapshot.typedReason] : null}
+            queued={snapshot.queued}
+            disabled={!live}
+            onSend={(text) => {
+              engine.sendText(text);
+            }}
+          />
+        ) : null}
+        {voice && pushToTalk && live ? (
+          <HoldToTalk
+            talking={snapshot.talking}
+            onChange={(pressed) => {
+              engine.pushToTalk(pressed);
+            }}
+          />
+        ) : null}
+        <CallDock
+          name={veir.shortName}
+          voice={voice}
+          muted={snapshot.muted}
+          pushToTalk={pushToTalk}
+          captions={captions}
+          typing={typingOpen}
+          disabled={!live}
+          onMute={toggleMute}
+          onPushToTalk={toggleTalkMode}
+          onCaptions={() => {
+            setCaptions(!captions);
+          }}
+          onTyping={toggleTyping}
+          onSwitchToChat={onSwitchToChat}
+          onEnd={() => {
+            void engine.end('user');
+          }}
+        />
+        <DisclosureBanner variant="line" text={veir.disclosure} className="max-w-2xl text-center" />
+      </div>
+    </div>
+  );
+}
+
+function Notice({ notice, onSwitchToChat }: { notice: CallNotice; onSwitchToChat: () => void }) {
+  if (notice.kind === 'blocked') {
+    return (
+      <div
+        role="alert"
+        className="w-full max-w-xl rounded-xl border border-border-strong bg-card px-4 py-3.5 text-left shadow-sm"
+      >
+        <p className="flex items-start gap-2.5 text-small font-medium">
+          <LifeBuoy aria-hidden className="mt-0.5 size-4 shrink-0" />
+          {notice.message}
+        </p>
+        {notice.supportMessage ? (
+          <Markdown size="sm" className="mt-2 pl-6.5">
+            {notice.supportMessage}
+          </Markdown>
+        ) : null}
+        <div className="mt-3 pl-6.5">
+          <Button size="sm" variant="secondary" onClick={onSwitchToChat}>
+            Switch to chat
+          </Button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <p
+      role="status"
+      className={cn(
+        'flex max-w-xl items-start gap-2 text-small text-muted-foreground',
+        notice.kind === 'time_warning' && 'text-warning',
+      )}
+    >
+      <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
+      {notice.message}
+    </p>
+  );
+}
+
+interface TypeLineProps {
+  inputRef: RefObject<HTMLInputElement | null>;
+  name: string;
+  hint: string | null;
+  queued: number;
+  disabled: boolean;
+  onSend: (text: string) => void;
+}
+
+/** One line to type to the vEIR during the call; it answers aloud like any spoken line. */
+function TypeLine({ inputRef, name, hint, queued, disabled, onSend }: TypeLineProps) {
+  const [text, setText] = useState('');
+  const submit = (event: { preventDefault: () => void }) => {
+    event.preventDefault();
+    const value = text.trim();
+    if (!value || disabled) return;
+    onSend(value);
+    setText('');
+  };
+  return (
+    <form onSubmit={submit} className="w-full max-w-xl">
+      {hint ? <p className="mb-2 text-center text-small text-muted-foreground">{hint}</p> : null}
+      <div className="flex items-center gap-2 rounded-full border border-border-strong bg-card py-1.5 pr-1.5 pl-4 shadow-xs transition-[border-color,box-shadow] duration-150 focus-within:border-ring/60 focus-within:shadow-md">
+        <input
+          ref={inputRef}
+          value={text}
+          onChange={(event) => {
+            setText(event.target.value);
+          }}
+          maxLength={2000}
+          aria-label={`Reply to ${name}`}
+          placeholder={`Reply to ${name}…`}
+          autoComplete="off"
+          className="min-w-0 flex-1 bg-transparent text-body outline-none placeholder:text-muted-foreground"
+        />
+        <Button
+          type="submit"
+          size="icon-sm"
+          className="rounded-full"
+          aria-label="Send"
+          disabled={disabled || text.trim() === ''}
+        >
+          <ArrowUp aria-hidden />
+        </Button>
+      </div>
+      {queued > 0 ? (
+        <p role="status" className="mt-2 text-center text-caption text-muted-foreground">
+          {name} will answer that next.
+        </p>
+      ) : null}
+    </form>
+  );
+}
