@@ -118,10 +118,13 @@ export function PrivacyChoice({
           return (
             <label
               key={option.value}
+              data-state={checked ? 'checked' : 'unchecked'}
               className={cn(
                 'relative inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-full px-3 text-small transition-colors duration-150 select-none',
                 'has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-1 has-[:focus-visible]:outline-ring',
-                checked ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground',
+                // The chosen option is a solid pill (well over 3:1 against the page in both themes, WCAG 1.4.11),
+                // the other plain text: which one is on never rests on a faint tint.
+                checked ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground',
                 disabled && 'cursor-not-allowed opacity-50',
               )}
             >

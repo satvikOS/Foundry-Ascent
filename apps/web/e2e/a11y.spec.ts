@@ -1,4 +1,4 @@
-import { expect } from '@playwright/test';
+import { expect, type Locator } from '@playwright/test';
 
 import {
   expectNoSeriousA11yViolations,
@@ -11,6 +11,52 @@ import {
   useTheme,
   test,
 } from './support/fixtures';
+
+/**
+ * How far a radio's visible pill stands out from what is behind it (WCAG contrast ratio): the cue that says which
+ * option is on must reach 3:1 (1.4.11 Non-text Contrast). Colours are read as the browser paints them (a canvas
+ * converts any CSS colour) and composited from the page down, so translucent surfaces count as they look.
+ */
+async function pillContrast(radio: Locator): Promise<number> {
+  return radio.evaluate((input) => {
+    const pill = input.closest('label');
+    if (!pill) throw new Error('the radio has no pill');
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 1;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    if (!context) throw new Error('no canvas');
+    const rgba = (css: string): [number, number, number, number] => {
+      context.clearRect(0, 0, 1, 1);
+      context.fillStyle = '#000';
+      context.fillStyle = css;
+      context.fillRect(0, 0, 1, 1);
+      const [r = 0, g = 0, b = 0, a = 0] = context.getImageData(0, 0, 1, 1).data;
+      return [r, g, b, a / 255];
+    };
+    const over = (top: [number, number, number, number], under: [number, number, number]) =>
+      [0, 1, 2].map((i) => (top[i] ?? 0) * top[3] + (under[i] ?? 0) * (1 - top[3])) as [
+        number,
+        number,
+        number,
+      ];
+    const chain: Element[] = [];
+    for (let node: Element | null = pill; node; node = node.parentElement) chain.unshift(node);
+    let behind: [number, number, number] = [255, 255, 255];
+    for (const node of chain.slice(0, -1))
+      behind = over(rgba(getComputedStyle(node).backgroundColor), behind);
+    const fill = over(rgba(getComputedStyle(pill).backgroundColor), behind);
+    const luminance = (c: [number, number, number]) => {
+      const [r, g, b] = c.map((v) => {
+        const s = v / 255;
+        return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+      }) as [number, number, number];
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const [hi, lo] = [luminance(fill), luminance(behind)].sort((a, b) => b - a) as [number, number];
+    return (hi + 0.05) / (lo + 0.05);
+  });
+}
 
 /**
  * axe-core (WCAG 2.0/2.1/2.2 A and AA rules) on the main surfaces, in both themes: zero serious or
@@ -45,6 +91,21 @@ for (const scheme of ['dark', 'light'] as const) {
         const ventureId = await openVenture(page);
         await useTheme(page, scheme);
         await expectNoSeriousA11yViolations(page, `new chat (${scheme})`);
+
+        // Remember or Private: the chosen option stands out by 3:1 or more, the other not at all.
+        const memory = page.getByRole('group', { name: 'Memory for this conversation' });
+        const remember = memory.getByRole('radio', { name: 'Remember this conversation' });
+        const once = memory.getByRole('radio', { name: 'Private, a one-off' });
+        await expect(remember).toBeChecked();
+        // Polled: the pills ease between states.
+        const settled = { timeout: 2_000 };
+        await expect.poll(() => pillContrast(remember), settled).toBeGreaterThanOrEqual(3);
+        await expect.poll(() => pillContrast(once), settled).toBeLessThan(1.1);
+        await once.check();
+        await expect.poll(() => pillContrast(once), settled).toBeGreaterThanOrEqual(3);
+        await expect.poll(() => pillContrast(remember), settled).toBeLessThan(1.1);
+        await remember.check();
+        await expect(remember).toBeChecked();
 
         const token = runToken();
         await startConversation(page, `What should we test next? ${token}`);
