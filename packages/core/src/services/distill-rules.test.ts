@@ -78,6 +78,20 @@ describe('distillSkipReason (the cheap checks of a queued distill_session)', () 
     expect(distillSkipReason({ ...idle, distillVersion: 4 }, NOW, ACTIVE_WINDOW, 3)).toBe('up_to_date');
   });
 
+  it('never skips a settled conversation as active: a call in it ended, or its person moved on', () => {
+    const recent = { ...state, lastActivityAt: minutesAgo(0.5) };
+    expect(distillSkipReason(recent, NOW, ACTIVE_WINDOW)).toBe('active');
+    expect(distillSkipReason(recent, NOW, ACTIVE_WINDOW, 4, true)).toBeNull();
+    // Settling never overrides the other checks.
+    expect(distillSkipReason({ ...recent, privacy: 'ephemeral' }, NOW, ACTIVE_WINDOW, 4, true)).toBe(
+      'ephemeral',
+    );
+    expect(distillSkipReason({ ...recent, distillVersion: 4 }, NOW, ACTIVE_WINDOW, 4, true)).toBe(
+      'up_to_date',
+    );
+    expect(distillSkipReason(recent, NOW, ACTIVE_WINDOW, 3, true)).toBe('superseded');
+  });
+
   it('the 9-minute delay of the last turn lands after its 8-minute active window', () => {
     const delay = 540;
     expect(
@@ -186,6 +200,14 @@ describe('previousNeedsDistill (a new conversation distils the previous one)', (
     expect(previousNeedsDistill({ ...previous, lastActivityAt: minutesAgo(3) }, NOW, ACTIVE_WINDOW)).toBe(
       false,
     );
+  });
+
+  it('a second call minutes after the first finds the first distilled: only a short grace applies', () => {
+    const GRACE = 60;
+    expect(previousNeedsDistill({ ...previous, lastActivityAt: minutesAgo(3) }, NOW, GRACE)).toBe(true);
+    expect(previousNeedsDistill({ ...previous, lastActivityAt: minutesAgo(1.5) }, NOW, GRACE)).toBe(true);
+    // A turn within the grace may still be going on in another tab.
+    expect(previousNeedsDistill({ ...previous, lastActivityAt: minutesAgo(0.5) }, NOW, GRACE)).toBe(false);
   });
 });
 
