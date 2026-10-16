@@ -1,15 +1,13 @@
 import type { MemoryObjectView } from '@foundry/contracts';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, render, renderHook, screen, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { memoryQueryOptions } from '@/lib/api/hooks/memory';
-import { IDS, makeMemory } from '@/features/coach/testing';
+import { IDS, makeMemory } from '@/features/knowledge/testing';
 
 import { useOptimisticMemoryAction } from './api';
-import { ProposedQueue } from './proposed-queue';
 
 type FetchFn = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 let fetchMock: ReturnType<typeof vi.fn<FetchFn>>;
@@ -144,109 +142,5 @@ describe('useOptimisticMemoryAction', () => {
       expect(result.current.isError).toBe(true);
     });
     expect(fetchMock).not.toHaveBeenCalled();
-  });
-});
-
-describe('ProposedQueue', () => {
-  /** Queue cards (the list also contains nested provenance list items). */
-  function cards(): HTMLElement[] {
-    return screen.getAllByRole('listitem').filter((el) => el.tagName === 'ARTICLE');
-  }
-
-  /** PATCH returns `updated`; the refetch that follows returns `remaining`. */
-  function respond(updated: MemoryObjectView, remaining: MemoryObjectView[]) {
-    fetchMock.mockImplementation((_input, init) =>
-      Promise.resolve(init?.method === 'PATCH' ? json(updated) : json({ items: remaining })),
-    );
-  }
-
-  function patchCalls() {
-    return fetchMock.mock.calls.filter(([, init]) => init?.method === 'PATCH');
-  }
-
-  function renderQueue(canEdit = true) {
-    const ctx = setup();
-    const onOpenDetail = vi.fn<(id: string) => void>();
-    const user = userEvent.setup();
-    render(
-      <ProposedQueue ventureId={IDS.venture} tenant="ain" canEdit={canEdit} onOpenDetail={onOpenDetail} />,
-      { wrapper: ctx.wrapper },
-    );
-    return { ...ctx, onOpenDetail, user };
-  }
-
-  it('lists proposed memory with review actions', () => {
-    renderQueue();
-    expect(screen.getByText('2 suggestions to review')).toBeInTheDocument();
-    expect(screen.getByRole('list', { name: 'Proposed memory' })).toBeInTheDocument();
-    const [first] = cards();
-    expect(cards()).toHaveLength(2);
-    if (!first) throw new Error('no cards');
-    expect(within(first).getByRole('button', { name: 'Approve' })).toBeInTheDocument();
-    expect(within(first).getByRole('button', { name: 'Reject' })).toBeInTheDocument();
-  });
-
-  it('moves with J/K and approves the focused suggestion with A', async () => {
-    respond({ ...proposedB, status: 'confirmed' }, [proposedA]);
-    const { user, proposedKey, client } = renderQueue();
-    const [first, second] = cards();
-    if (!first || !second) throw new Error('no cards');
-    first.focus();
-    await user.keyboard('j');
-    await waitFor(() => {
-      expect(second).toHaveFocus();
-    });
-    expect(second).toHaveAttribute('aria-current', 'true');
-    await user.keyboard('k');
-    await waitFor(() => {
-      expect(first).toHaveFocus();
-    });
-    await user.keyboard('j');
-    await waitFor(() => {
-      expect(second).toHaveFocus();
-    });
-    await user.keyboard('a');
-
-    await waitFor(() => {
-      expect(patchCalls()).toHaveLength(1);
-    });
-    expect(sentUrl()).toContain(`/memory/${IDS.memory2}`);
-    expect(sentJson()).toEqual({ action: 'approve' });
-    await waitFor(() => {
-      expect(cards()).toHaveLength(1);
-    });
-    expect(client.getQueryData<{ items: MemoryObjectView[] }>(proposedKey)?.items.map((m) => m.id)).toEqual([
-      IDS.memory,
-    ]);
-  });
-
-  it('rejects with R and ignores the second key of a "g" navigation sequence', async () => {
-    respond({ ...proposedA, status: 'rejected' }, [proposedB]);
-    const { user } = renderQueue();
-    const [first] = cards();
-    if (!first) throw new Error('no cards');
-    first.focus();
-    await user.keyboard('ga');
-    expect(fetchMock).not.toHaveBeenCalled();
-    await user.keyboard('r');
-    await waitFor(() => {
-      expect(patchCalls()).toHaveLength(1);
-    });
-    expect(sentJson()).toEqual({ action: 'reject' });
-    await waitFor(() => {
-      expect(cards()).toHaveLength(1);
-    });
-  });
-
-  it('opens details with Enter and hides review actions for read-only viewers', async () => {
-    const { user, onOpenDetail } = renderQueue(false);
-    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
-    const [first] = cards();
-    if (!first) throw new Error('no cards');
-    first.focus();
-    await user.keyboard('a');
-    expect(fetchMock).not.toHaveBeenCalled();
-    await user.keyboard('{Enter}');
-    expect(onOpenDetail).toHaveBeenCalledWith(IDS.memory);
   });
 });

@@ -41,13 +41,22 @@ interface MemoryDetailProps {
   ventureId: string;
   canEdit: boolean;
   onRemoved?: () => void;
+  /** A type-specific editor (decisions, experiments, milestones) instead of the generic correction. */
+  onEdit?: (() => void) | undefined;
 }
 
 /**
  * Full detail for one memory object: content, typed attributes, provenance, confidence, visibility,
  * lifecycle actions and the version history. Rendered inside the page's inspector.
  */
-export function MemoryDetail({ memory: listed, tenant, ventureId, canEdit, onRemoved }: MemoryDetailProps) {
+export function MemoryDetail({
+  memory: listed,
+  tenant,
+  ventureId,
+  canEdit,
+  onRemoved,
+  onEdit,
+}: MemoryDetailProps) {
   // Lists carry an excerpt of the content; the detail shows the full text (GET /memory/:id).
   const { memory: full } = useFullMemory(listed);
   const memory = full ?? listed;
@@ -74,6 +83,7 @@ export function MemoryDetail({ memory: listed, tenant, ventureId, canEdit, onRem
             size="sm"
             className="mt-3"
             onRemoved={onRemoved}
+            onEdit={onEdit}
           />
         ) : null}
       </InspectorSection>

@@ -29,10 +29,9 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
 import { PageContainer, PageHeader } from '@/components/ui/page-header';
+import { HairlineSkeleton } from '@/components/ui/page-section';
 import { Progress } from '@/components/ui/progress';
-import { Skeleton } from '@/components/ui/skeleton';
-import { StatusBadge } from '@/components/ui/status-badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { getStatusDefinition } from '@/components/ui/status-badge';
 import { toast } from '@/components/ui/toast';
 import { errorMessage } from '@/lib/api/errors';
 import {
@@ -41,11 +40,12 @@ import {
   useDeleteDocument,
   useDocuments,
 } from '@/lib/api/hooks/documents';
-import { documentFailureMessage } from '@/lib/labels';
 import { canWrite } from '@/lib/auth/roles';
 import { useRequiredMe } from '@/lib/auth/use-me';
-import { formatBytes, formatDateTime, formatNumber, formatRelative, isoString } from '@/lib/format';
+import { formatBytes, formatDateTime, formatRelative, isoString, pluralize } from '@/lib/format';
+import { documentFailureMessage } from '@/lib/labels';
 import { cn } from '@/lib/utils';
+import { sentenceStart, useVeirName } from '@/features/venture/veir-name';
 
 import { SUPPORTED_FORMATS_LABEL, validateUploadFiles, type UploadRejection } from './upload-validation';
 import { useUploadQueue, type UploadItem } from './use-upload-queue';
@@ -61,78 +61,23 @@ const TYPE_ICON: Record<DocumentView['contentType'], { icon: LucideIcon; label: 
 
 const IN_FLIGHT = new Set<DocumentView['status']>(['pending_upload', 'processing']);
 
-function Dropzone({ onFiles, disabled }: { onFiles: (files: File[]) => void; disabled: boolean }) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const [dragging, setDragging] = useState(false);
-  const depth = useRef(0);
-  const hintId = useId();
+const FORMATS_HINT = `${SUPPORTED_FORMATS_LABEL}, up to ${formatBytes(MAX_DOCUMENT_BYTES)} each.`;
 
-  const onDrop = (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    depth.current = 0;
-    setDragging(false);
-    if (disabled) return;
-    onFiles(Array.from(event.dataTransfer.files));
-  };
-
-  return (
-    <div
-      data-testid="dropzone"
-      onDragEnter={(event) => {
-        event.preventDefault();
-        depth.current += 1;
-        setDragging(true);
-      }}
-      onDragOver={(event) => {
-        event.preventDefault();
-        event.dataTransfer.dropEffect = disabled ? 'none' : 'copy';
-      }}
-      onDragLeave={() => {
-        depth.current = Math.max(0, depth.current - 1);
-        if (depth.current === 0) setDragging(false);
-      }}
-      onDrop={onDrop}
-      className={cn(
-        'flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed px-6 py-10 text-center transition-colors',
-        dragging ? 'border-foreground/60 bg-accent/60' : 'border-border-strong bg-card',
-      )}
-    >
-      <span className="flex size-11 items-center justify-center rounded-xl border border-border bg-muted">
-        <Upload aria-hidden className="size-5" />
-      </span>
-      <div>
-        <p className="text-sm font-medium">
-          {dragging ? 'Drop to upload' : 'Drag files here, or choose them'}
-        </p>
-        <p id={hintId} className="mt-1 text-[13px] text-muted-foreground">
-          {SUPPORTED_FORMATS_LABEL} · up to {formatBytes(MAX_DOCUMENT_BYTES)} each · stays private to this
-          venture
-        </p>
-      </div>
-      <Button
-        variant="secondary"
-        disabled={disabled}
-        aria-describedby={hintId}
-        onClick={() => inputRef.current?.click()}
-      >
-        Choose files
-      </Button>
-      <input
-        ref={inputRef}
-        type="file"
-        multiple
-        accept={DOCUMENT_ACCEPT}
-        className="sr-only"
-        tabIndex={-1}
-        aria-hidden
-        onChange={(event) => {
-          const files = Array.from(event.target.files ?? []);
-          event.target.value = '';
-          onFiles(files);
-        }}
-      />
-    </div>
-  );
+function uploadLabel(item: UploadItem): string {
+  switch (item.status) {
+    case 'queued':
+      return 'Waiting';
+    case 'uploading':
+      return `Uploading · ${item.progress}%`;
+    case 'finishing':
+      return 'Finishing…';
+    case 'done':
+      return 'Uploaded, processing';
+    case 'cancelled':
+      return 'Cancelled';
+    case 'failed':
+      return 'Failed';
+  }
 }
 
 function UploadRow({
@@ -146,20 +91,8 @@ function UploadRow({
   onRetry: () => void;
   onDismiss: () => void;
 }) {
-  const label =
-    item.status === 'queued'
-      ? 'Waiting'
-      : item.status === 'uploading'
-        ? `Uploading · ${item.progress}%`
-        : item.status === 'finishing'
-          ? 'Finishing…'
-          : item.status === 'done'
-            ? 'Uploaded — processing'
-            : item.status === 'cancelled'
-              ? 'Cancelled'
-              : 'Failed';
   return (
-    <li className="grid gap-2 px-4 py-3">
+    <li className="grid gap-2 py-3">
       <div className="flex items-center gap-3">
         {item.status === 'done' ? (
           <CircleCheck aria-hidden className="size-4 shrink-0 text-success" />
@@ -169,8 +102,7 @@ function UploadRow({
           <FileText aria-hidden className="size-4 shrink-0 text-muted-foreground" />
         )}
         <span className="min-w-0 flex-1 truncate text-sm font-medium">{item.file.name}</span>
-        <span className="tabular shrink-0 text-xs text-muted-foreground">{formatBytes(item.file.size)}</span>
-        <span className="w-36 shrink-0 text-right text-xs text-muted-foreground">{label}</span>
+        <span className="shrink-0 text-caption text-muted-foreground">{uploadLabel(item)}</span>
         {item.status === 'queued' || item.status === 'uploading' ? (
           <Button
             variant="ghost"
@@ -204,21 +136,31 @@ function UploadRow({
           label={`Upload progress for ${item.file.name}`}
         />
       ) : null}
-      {item.error ? <p className="text-[13px] text-destructive">{item.error}</p> : null}
+      {item.error ? <p className="text-small text-destructive">{item.error}</p> : null}
     </li>
   );
 }
 
+/**
+ * Documents: the venture's files the vEIR can cite. One action (upload, by button or by dropping files
+ * on the page), the upload queue while it runs, and the files as hairline rows that update while they
+ * are processed.
+ */
 export function DocumentsPage() {
   const me = useRequiredMe();
   const { ventureId } = routeApi.useParams();
   const canEdit = canWrite(me, ventureId);
+  const veirName = useVeirName(ventureId);
   const documents = useDocuments(ventureId);
   const queue = useUploadQueue(ventureId);
   const remove = useDeleteDocument(ventureId);
   const complete = useCompleteDocument(ventureId);
   const [rejections, setRejections] = useState<UploadRejection[]>([]);
   const [confirmDelete, setConfirmDelete] = useState<DocumentView | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const depth = useRef(0);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const hintId = useId();
 
   const rows = useMemo(
     () =>
@@ -240,11 +182,35 @@ export function DocumentsPage() {
     queue.add(result.accepted);
     if (result.rejected.length > 0) {
       announce(
-        `${result.rejected.length} file${result.rejected.length === 1 ? '' : 's'} can’t be uploaded. See the list for reasons.`,
+        `${pluralize(result.rejected.length, 'file')} can’t be uploaded. See the list for reasons.`,
         'assertive',
       );
     }
   };
+
+  const dropHandlers = canEdit
+    ? {
+        onDragEnter: (event: DragEvent<HTMLDivElement>) => {
+          event.preventDefault();
+          depth.current += 1;
+          setDragging(true);
+        },
+        onDragOver: (event: DragEvent<HTMLDivElement>) => {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'copy';
+        },
+        onDragLeave: () => {
+          depth.current = Math.max(0, depth.current - 1);
+          if (depth.current === 0) setDragging(false);
+        },
+        onDrop: (event: DragEvent<HTMLDivElement>) => {
+          event.preventDefault();
+          depth.current = 0;
+          setDragging(false);
+          onFiles(Array.from(event.dataTransfer.files));
+        },
+      }
+    : {};
 
   const deleteDocument = (doc: DocumentView) => {
     setConfirmDelete(null);
@@ -271,15 +237,50 @@ export function DocumentsPage() {
   };
 
   return (
-    <PageContainer size="wide">
+    <PageContainer className="relative max-w-4xl" {...dropHandlers}>
       <PageHeader
         title="Documents"
-        description="Files Foundry Guide can cite as evidence. They’re split into searchable passages; only people on this venture can see them."
+        description={`Files ${veirName} can cite. Private to this venture.`}
+        actions={
+          canEdit ? (
+            <Button aria-describedby={hintId} onClick={() => inputRef.current?.click()}>
+              <Upload aria-hidden />
+              Upload files
+            </Button>
+          ) : null
+        }
       />
-
       {canEdit ? (
-        <section aria-label="Upload documents" className="mb-6 grid gap-3">
-          <Dropzone onFiles={onFiles} disabled={false} />
+        <input
+          ref={inputRef}
+          type="file"
+          multiple
+          accept={DOCUMENT_ACCEPT}
+          className="sr-only"
+          tabIndex={-1}
+          aria-hidden
+          onChange={(event) => {
+            const files = Array.from(event.target.files ?? []);
+            event.target.value = '';
+            onFiles(files);
+          }}
+        />
+      ) : null}
+
+      {dragging ? (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-2 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-foreground/50 bg-background/85"
+        >
+          <p className="flex items-center gap-2 text-sm font-medium">
+            <Upload className="size-4" />
+            Drop to upload
+          </p>
+        </div>
+      ) : null}
+
+      {rejections.length > 0 || queue.items.length > 0 ? (
+        <section aria-label="Uploads" className="mb-6 grid gap-3">
           {rejections.length > 0 ? (
             <Alert
               variant="destructive"
@@ -303,7 +304,7 @@ export function DocumentsPage() {
               <ul className="mt-1 grid gap-0.5">
                 {rejections.map((r, index) => (
                   <li key={`${r.name}-${index}`}>
-                    <span className="font-medium text-foreground">{r.name || 'Unnamed file'}</span> —{' '}
+                    <span className="font-medium text-foreground">{r.name || 'Unnamed file'}</span>:{' '}
                     {r.message}
                   </li>
                 ))}
@@ -311,10 +312,7 @@ export function DocumentsPage() {
             </Alert>
           ) : null}
           {queue.items.length > 0 ? (
-            <ul
-              aria-label="Uploads"
-              className="divide-y divide-border rounded-xl border border-border bg-card"
-            >
+            <ul aria-label="Upload queue" className="divide-y divide-border border-y border-border">
               {queue.items.map((item) => (
                 <UploadRow
                   key={item.id}
@@ -335,125 +333,52 @@ export function DocumentsPage() {
         </section>
       ) : null}
 
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold">Venture documents</h2>
-        {processing > 0 ? (
-          <p className="text-[13px] text-muted-foreground" role="status" aria-live="polite">
-            {processing} processing — this list updates automatically
-          </p>
-        ) : null}
-      </div>
+      {processing > 0 ? (
+        <p className="mb-3 text-small text-muted-foreground" role="status" aria-live="polite">
+          Processing {pluralize(processing, 'file')}…
+        </p>
+      ) : null}
 
       {documents.isError ? (
-        <ErrorState error={documents.error} onRetry={() => void documents.refetch()} />
+        <ErrorState error={documents.error} onRetry={() => void documents.refetch()} headingLevel={2} />
       ) : documents.isPending ? (
-        <div aria-busy="true" className="overflow-hidden rounded-xl border border-border bg-card">
-          <span className="sr-only" role="status">
-            Loading documents…
-          </span>
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="flex items-center gap-4 border-b border-border px-4 py-3.5 last:border-0">
-              <Skeleton className="h-4 w-1/3" />
-              <Skeleton className="h-4 w-20" />
-              <Skeleton className="ml-auto h-4 w-16" />
-            </div>
-          ))}
-        </div>
+        <HairlineSkeleton rows={3} label="Loading documents…" />
       ) : rows.length === 0 ? (
         <EmptyState
           icon={FileText}
+          headingLevel={2}
           title="No documents yet"
-          description="Upload interview notes, pitch decks or research. Foundry Guide cites them as evidence, and you can see exactly which passage it used."
+          description={
+            canEdit
+              ? `Upload notes, decks or research for ${veirName} to cite. ${FORMATS_HINT}`
+              : `${sentenceStart(veirName)} cites the documents the team uploads here.`
+          }
         />
       ) : (
-        <Table aria-label="Venture documents">
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Passages</TableHead>
-              <TableHead className="text-right">Size</TableHead>
-              <TableHead>Uploaded</TableHead>
-              <TableHead>
-                <span className="sr-only">Actions</span>
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((doc) => {
-              const type = TYPE_ICON[doc.contentType];
-              const Icon = type.icon;
-              return (
-                <TableRow key={doc.id}>
-                  <TableCell className="max-w-[24rem]">
-                    <div className="flex items-center gap-2">
-                      <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-                      <span className="truncate font-medium" title={doc.filename}>
-                        {doc.filename}
-                      </span>
-                      <span className="shrink-0 text-xs text-subtle-foreground">{type.label}</span>
-                    </div>
-                    {doc.status === 'failed' ? (
-                      <p className="mt-0.5 pl-6 text-xs text-destructive">
-                        {documentFailureMessage(doc.failureReason)}
-                      </p>
-                    ) : null}
-                  </TableCell>
-                  <TableCell>
-                    <StatusBadge kind="document" status={doc.status} withTitle />
-                  </TableCell>
-                  <TableCell className="tabular text-right">
-                    {doc.status === 'ready' ? (
-                      formatNumber(doc.chunkCount)
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="tabular text-right whitespace-nowrap">
-                    {formatBytes(doc.sizeBytes)}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap text-muted-foreground">
-                    {doc.uploadedBy.displayName} ·{' '}
-                    <time dateTime={isoString(doc.createdAt)} title={formatDateTime(doc.createdAt)}>
-                      {formatRelative(doc.createdAt)}
-                    </time>
-                  </TableCell>
-                  <TableCell className="text-right whitespace-nowrap">
-                    {canEdit ? (
-                      <span className="inline-flex items-center gap-1">
-                        {doc.status === 'failed' ? (
-                          <Button
-                            size="xs"
-                            variant="ghost"
-                            loading={complete.isPending && complete.variables === doc.id}
-                            onClick={() => {
-                              retryProcessing(doc);
-                            }}
-                          >
-                            <RotateCcw aria-hidden />
-                            Retry
-                          </Button>
-                        ) : null}
-                        <Button
-                          size="icon-xs"
-                          variant="ghost"
-                          aria-label={`Delete ${doc.filename}`}
-                          disabled={remove.isPending && remove.variables === doc.id}
-                          onClick={() => {
-                            setConfirmDelete(doc);
-                          }}
-                        >
-                          <Trash2 aria-hidden />
-                        </Button>
-                      </span>
-                    ) : null}
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
+        <ul aria-label="Venture documents" className="divide-y divide-border border-y border-border">
+          {rows.map((doc) => (
+            <DocumentRow
+              key={doc.id}
+              doc={doc}
+              canEdit={canEdit}
+              retrying={complete.isPending && complete.variables === doc.id}
+              deleting={remove.isPending && remove.variables === doc.id}
+              onRetry={() => {
+                retryProcessing(doc);
+              }}
+              onDelete={() => {
+                setConfirmDelete(doc);
+              }}
+            />
+          ))}
+        </ul>
       )}
+
+      {canEdit ? (
+        <p id={hintId} className="mt-4 text-caption text-subtle-foreground">
+          {FORMATS_HINT} You can also drop files on this page.
+        </p>
+      ) : null}
 
       <AlertDialog
         open={confirmDelete !== null}
@@ -465,8 +390,7 @@ export function DocumentsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this document?</AlertDialogTitle>
             <AlertDialogDescription>
-              Its passages are removed from search immediately, so Foundry Guide can no longer cite it. Memory
-              that referenced it keeps its source note.
+              {sentenceStart(veirName)} can no longer cite it. Memory that referenced it is kept.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -483,5 +407,83 @@ export function DocumentsPage() {
         </AlertDialogContent>
       </AlertDialog>
     </PageContainer>
+  );
+}
+
+function DocumentRow({
+  doc,
+  canEdit,
+  retrying,
+  deleting,
+  onRetry,
+  onDelete,
+}: {
+  doc: DocumentView;
+  canEdit: boolean;
+  retrying: boolean;
+  deleting: boolean;
+  onRetry: () => void;
+  onDelete: () => void;
+}) {
+  const type = TYPE_ICON[doc.contentType];
+  const Icon = type.icon;
+  const status = getStatusDefinition('document', doc.status);
+  const nameId = `document-${doc.id}`;
+  return (
+    <li
+      aria-labelledby={nameId}
+      className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 px-2 py-3.5"
+    >
+      <Icon aria-hidden className="mt-0.5 size-4 text-muted-foreground" />
+      <div className="grid min-w-0 gap-0.5">
+        <p id={nameId} className="truncate text-[15px] font-medium" title={doc.filename}>
+          {doc.filename}
+        </p>
+        <p className="flex flex-wrap items-center gap-x-1.5 text-caption text-subtle-foreground">
+          <span className={cn(doc.status === 'failed' && 'font-medium text-destructive')}>
+            {status.label}
+          </span>
+          {doc.status === 'ready' ? (
+            <>
+              <span aria-hidden>·</span>
+              <span className="tabular">{pluralize(doc.chunkCount, 'passage')}</span>
+            </>
+          ) : null}
+          <span aria-hidden>·</span>
+          <span>{type.label}</span>
+          <span aria-hidden>·</span>
+          <span className="tabular">{formatBytes(doc.sizeBytes)}</span>
+          <span aria-hidden>·</span>
+          <span>
+            {doc.uploadedBy.displayName},{' '}
+            <time dateTime={isoString(doc.createdAt)} title={formatDateTime(doc.createdAt)}>
+              {formatRelative(doc.createdAt)}
+            </time>
+          </span>
+        </p>
+        {doc.status === 'failed' ? (
+          <p className="text-small text-destructive">{documentFailureMessage(doc.failureReason)}</p>
+        ) : null}
+      </div>
+      {canEdit ? (
+        <div className="flex items-center gap-1">
+          {doc.status === 'failed' ? (
+            <Button size="xs" variant="ghost" loading={retrying} onClick={onRetry}>
+              <RotateCcw aria-hidden />
+              Retry
+            </Button>
+          ) : null}
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            aria-label={`Delete ${doc.filename}`}
+            disabled={deleting}
+            onClick={onDelete}
+          >
+            <Trash2 aria-hidden />
+          </Button>
+        </div>
+      ) : null}
+    </li>
   );
 }

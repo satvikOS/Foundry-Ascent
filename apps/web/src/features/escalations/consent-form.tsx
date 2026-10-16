@@ -93,10 +93,11 @@ export function ConsentForm({ escalation, onConsented, onCancel }: ConsentFormPr
 
   return (
     <div className="grid gap-4">
-      <Alert variant="info" icon={ShieldCheck} title="You decide what is shared">
-        {role} will see your question, the packet above, and only the facts you tick below. Founder-only items
-        are never shared and are not listed.
-      </Alert>
+      <p className="flex items-start gap-2 text-small text-muted-foreground">
+        <ShieldCheck aria-hidden className="mt-0.5 size-4 shrink-0" />
+        {role} sees your question, the packet and only the facts you tick. Founder-only items are never
+        shared.
+      </p>
       {error ? (
         <Alert variant="destructive" live="alert" title="Couldn’t record consent">
           {error}
@@ -159,7 +160,7 @@ export function ConsentForm({ escalation, onConsented, onCancel }: ConsentFormPr
                     <span className="flex flex-wrap items-center gap-1.5">
                       <MemoryTypeLabel type={memory.type} />
                       {suggested.has(memory.id) ? (
-                        <span className="text-xs text-muted-foreground">Suggested by AI</span>
+                        <span className="text-xs text-muted-foreground">Suggested</span>
                       ) : null}
                     </span>
                     <span className="text-sm font-medium [overflow-wrap:anywhere]">{memory.title}</span>

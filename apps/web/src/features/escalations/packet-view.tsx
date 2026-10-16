@@ -1,85 +1,109 @@
-import type { EscalationPacket } from '@foundry/contracts';
-import { Bot } from 'lucide-react';
+import type { EscalationView } from '@foundry/contracts';
+import { Bot, Lock } from 'lucide-react';
 import type { ReactNode } from 'react';
 
+import { formatDateTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
-function PacketField({ label, children }: { label: string; children: ReactNode }) {
+/** Who reads the brief: the founder who asked (before and after consent) or the person it went to. */
+export type PacketAudience = 'founder' | 'assignee';
+
+const LABELS: Record<PacketAudience, { question: string; decision: string; facts: string }> = {
+  founder: { question: 'Your question', decision: 'Decision you want to make', facts: 'Facts you shared' },
+  assignee: { question: 'Founder’s question', decision: 'Decision they need', facts: 'Shared facts' },
+};
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="grid gap-1">
-      <dt className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{label}</dt>
-      <dd className="text-sm leading-6 [overflow-wrap:anywhere]">{children}</dd>
+      <dt className="label-mono">{label}</dt>
+      <dd className="text-sm leading-6 whitespace-pre-wrap [overflow-wrap:anywhere]">{children}</dd>
     </div>
   );
 }
 
-function List({ items, empty }: { items: readonly string[]; empty: string }) {
-  if (items.length === 0) return <span className="text-muted-foreground">{empty}</span>;
+function Items({ items }: { items: readonly ReactNode[] }) {
   return (
-    <ul className="list-disc space-y-0.5 pl-4 marker:text-subtle-foreground">
+    <ul className="grid list-disc gap-0.5 pl-4 marker:text-subtle-foreground">
       {items.map((item, index) => (
-        <li key={`${index}-${item}`}>{item}</li>
+        <li key={index}>{item}</li>
       ))}
     </ul>
   );
 }
 
 /**
- * The escalation packet a human will receive. It is drafted by AI, so it is always shown
- * with an explicit "AI-generated draft" label; the founder reviews it and chooses what to share.
+ * The packet that goes with a request for a person's help. It is assembled from the request and the
+ * vEIR's answer, so it is always labelled AI-drafted, and it renders as plain text (never Markdown or
+ * HTML): it carries venture content to someone outside the team. Empty fields are left out.
  */
-export function EscalationPacketView({
-  packet,
+export function PacketView({
+  escalation,
+  audience,
   className,
-  sharedOnly = false,
 }: {
-  packet: EscalationPacket;
+  escalation: EscalationView;
+  audience: PacketAudience;
   className?: string;
-  /** Hide the facts list (e.g. when the consent step shows its own selection). */
-  sharedOnly?: boolean;
 }) {
-  return (
-    <div className={cn('rounded-xl border border-dashed border-border-strong bg-muted/30', className)}>
-      <p className="flex items-center gap-2 border-b border-dashed border-border-strong px-4 py-2 text-[13px] text-muted-foreground">
-        <span className="inline-flex items-center gap-1 rounded-sm border border-border-strong bg-background px-1.5 text-[11px] leading-[18px] font-semibold tracking-wide text-foreground uppercase">
-          <Bot aria-hidden className="size-3" />
-          AI-generated
-        </span>
-        Drafted by AI from your conversation. Review it before anything is shared.
+  const packet = escalation.packet;
+  if (!packet) {
+    return (
+      <p className={cn('flex items-center gap-2 text-small text-muted-foreground', className)}>
+        <Lock aria-hidden className="size-4 shrink-0" />
+        {audience === 'assignee' ? 'Waiting for the founder to share details.' : 'Packet unavailable.'}
       </p>
-      <dl className="grid gap-4 p-4">
-        <PacketField label="Your question">{packet.founderQuestion}</PacketField>
-        {packet.desiredDecision ? (
-          <PacketField label="Decision you want to make">{packet.desiredDecision}</PacketField>
-        ) : null}
-        <PacketField label="Why a person is needed">{packet.reason}</PacketField>
-        <PacketField label="Urgency">{packet.urgency}</PacketField>
-        {packet.sessionSummary ? (
-          <PacketField label="Session summary">{packet.sessionSummary}</PacketField>
-        ) : null}
-        {!sharedOnly ? (
-          <PacketField label="Facts proposed for sharing">
-            <List
-              items={packet.sharedFacts.map((f) => f.text)}
-              empty="None yet — you choose them in the consent step."
+    );
+  }
+  const labels = LABELS[audience];
+  const shared = escalation.sharingConsentAt;
+  // Before consent the founder picks the facts in the consent step, not here.
+  const facts = shared ? packet.sharedFacts : [];
+
+  return (
+    <div className={cn('grid gap-4', className)}>
+      <p className="flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
+        <span className="inline-flex items-center gap-1 rounded-sm border border-border-strong px-1.5 leading-[18px] font-medium text-foreground">
+          <Bot aria-hidden className="size-3" />
+          AI-drafted
+        </span>
+        {shared
+          ? `${audience === 'assignee' ? 'Shared by the founder' : 'Shared'} ${formatDateTime(shared)}.${audience === 'assignee' ? ' Verify before acting.' : ''}`
+          : 'Review before sharing.'}
+      </p>
+      <dl className="grid gap-4">
+        <Field label={labels.question}>{packet.founderQuestion}</Field>
+        {packet.desiredDecision ? <Field label={labels.decision}>{packet.desiredDecision}</Field> : null}
+        <Field label="Why a person">{packet.reason}</Field>
+        <Field label="Urgency">{packet.urgency}</Field>
+        {packet.sessionSummary ? <Field label="Conversation summary">{packet.sessionSummary}</Field> : null}
+        {facts.length > 0 ? (
+          <Field label={labels.facts}>
+            <Items
+              items={facts.map((fact) =>
+                audience === 'assignee' && fact.memoryId ? (
+                  <>
+                    {fact.text}{' '}
+                    <span className="text-caption text-muted-foreground">(from venture memory)</span>
+                  </>
+                ) : (
+                  fact.text
+                ),
+              )}
             />
-          </PacketField>
+          </Field>
         ) : null}
-        <PacketField label="Evidence considered">
-          <List
-            items={packet.evidenceConsidered.map((e) => `${e.key} · ${e.title}`)}
-            empty="No evidence attached."
-          />
-        </PacketField>
-        <PacketField label="Conflicting signals">
-          <List items={packet.conflictingSignals} empty="None noted." />
-        </PacketField>
-        <PacketField label="Unknowns">
-          <List items={packet.unknowns} empty="None noted." />
-        </PacketField>
-        {packet.proposedNextStep ? (
-          <PacketField label="Proposed next step">{packet.proposedNextStep}</PacketField>
+        {packet.evidenceConsidered.length > 0 ? (
+          <Field label="Evidence considered">
+            <Items items={packet.evidenceConsidered.map((e) => `${e.key} · ${e.title}`)} />
+          </Field>
         ) : null}
+        {packet.unknowns.length > 0 ? (
+          <Field label="Unknowns">
+            <Items items={packet.unknowns} />
+          </Field>
+        ) : null}
+        {packet.proposedNextStep ? <Field label="Proposed next step">{packet.proposedNextStep}</Field> : null}
       </dl>
     </div>
   );

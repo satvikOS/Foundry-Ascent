@@ -1,4 +1,11 @@
-import type { CoachMode, EscalationCategory, MemoryType, VentureStage, Visibility } from '@foundry/contracts';
+import type {
+  CoachMode,
+  EscalationCategory,
+  MembershipRole,
+  MemoryType,
+  VentureStage,
+  Visibility,
+} from '@foundry/contracts';
 import {
   BookOpen,
   Compass,
@@ -139,3 +146,10 @@ export function documentFailureMessage(reason: string | null): string {
     (reason === null ? undefined : DOCUMENT_FAILURE_MESSAGES[reason]) ?? 'Processing failed — not searchable.'
   );
 }
+
+/** What each venture role can see: one wording for the Team page and every invitation. */
+export const MEMBERSHIP_ROLE_ACCESS: Record<MembershipRole, string> = {
+  founder: 'Everything, including their own founder-only items; decides what is shared with a person.',
+  team: 'Everything except founder-only items.',
+  advisor: 'Items shared with advisors.',
+};

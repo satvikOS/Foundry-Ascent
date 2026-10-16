@@ -15,7 +15,6 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Old typed views became type filters on the Knowledge page. */
 const TYPED_SECTIONS: Record<string, string> = {
-  evidence: 'evidence',
   decisions: 'decision',
   experiments: 'experiment',
   milestones: 'milestone',
@@ -38,6 +37,8 @@ export function legacyVentureTarget(splat: string, search: Record<string, unknow
     }
     case 'memory':
       return { page: 'knowledge', search };
+    case 'evidence':
+      return { page: 'knowledge', search: { view: 'evidence' } };
     case 'documents':
       return { page: 'documents' };
     case 'team':

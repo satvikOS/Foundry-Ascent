@@ -40,7 +40,7 @@ describe('legacyVentureTarget', () => {
       page: 'knowledge',
       search: { type: 'milestone' },
     });
-    expect(legacyVentureTarget('evidence', {})).toEqual({ page: 'knowledge', search: { type: 'evidence' } });
+    expect(legacyVentureTarget('evidence', {})).toEqual({ page: 'knowledge', search: { view: 'evidence' } });
   });
 
   it('maps documents, team and escalations (keeping a valid escalation id)', () => {
