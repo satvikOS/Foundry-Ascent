@@ -42,11 +42,12 @@ export function speechFor(env: EnvLike, config: ApiConfig): { speech?: SpeechSyn
 
 /**
  * Speech-to-text grants for calls: Amazon Transcribe streaming URLs presigned with the API role's credentials,
- * wherever the models run on Bedrock. Local development and tests get none: calls start without a grant and
- * the founder types. No network I/O at construction.
+ * where {@link callSpeechEnabled}. With `SPEECH_ENABLED=false` infra grants no Transcribe access, so no grant
+ * is minted (one would fail at AWS); local development and tests get none either: calls start without a
+ * grant and the founder types. No network I/O at construction.
  */
 export function sttGrantsFor(env: EnvLike, config: ApiConfig): { sttGrants?: SttGrantIssuer } {
-  return env.MODEL_PROVIDER?.trim().toLowerCase() === 'bedrock'
+  return callSpeechEnabled(env, config)
     ? { sttGrants: new TranscribeStreamingPresigner({ region: config.awsRegion }) }
     : {};
 }

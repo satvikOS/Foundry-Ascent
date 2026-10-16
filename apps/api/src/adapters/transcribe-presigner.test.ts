@@ -140,4 +140,14 @@ describe('speech-to-text wiring', () => {
     expect(sttGrantsFor({ ...env, MODEL_PROVIDER: 'mock' }, config)).toEqual({});
     expect(sttGrantsFor(env, config)).toEqual({});
   });
+
+  it('mints no grant when infra turned speech off (SPEECH_ENABLED=false): calls start typed', () => {
+    const off = {
+      DOCUMENTS_BUCKET: 'docs-bucket',
+      JOBS_QUEUE_URL: 'https://sqs.test/queue',
+      MODEL_PROVIDER: 'bedrock',
+      SPEECH_ENABLED: 'false',
+    };
+    expect(sttGrantsFor(off, loadApiConfig(off, 'api'))).toEqual({});
+  });
 });
