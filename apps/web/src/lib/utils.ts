@@ -1,22 +1,28 @@
 import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
+import { extendTailwindMerge } from 'tailwind-merge';
+
+/**
+ * The type scale's named sizes (globals.css `--text-*`). tailwind-merge must know they are font sizes:
+ * otherwise `text-small` reads as a colour and is dropped when merged with `text-muted-foreground`.
+ */
+export const TYPE_SCALE = [
+  'display',
+  'title',
+  'heading',
+  'subheading',
+  'body',
+  'small',
+  'caption',
+  'label',
+] as const;
+
+const twMerge = extendTailwindMerge({
+  extend: { theme: { text: [...TYPE_SCALE] } },
+});
 
 /** Merge class names, resolving Tailwind conflicts (last one wins). */
 export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs));
-}
-
-/** Exhaustiveness guard for discriminated unions. */
-export function assertNever(value: never, message = 'Unexpected value'): never {
-  throw new Error(`${message}: ${String(value)}`);
-}
-
-/** Two-letter initials for avatars ("Ada Lovelace" → "AL", "foundry" → "FO"). */
-export function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return '?';
-  if (parts.length === 1) return (parts[0] ?? '').slice(0, 2).toUpperCase();
-  return `${(parts[0] ?? '').charAt(0)}${(parts[parts.length - 1] ?? '').charAt(0)}`.toUpperCase();
 }
 
 export const isMac = (): boolean =>
