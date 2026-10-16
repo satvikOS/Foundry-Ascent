@@ -694,8 +694,11 @@ describe('spoken turns', () => {
     expect(outcome.status).toBe('completed');
     const turn = completed(events);
     expect(turn.validator?.narrowed).toBe(true);
-    // The transcript still says it plainly.
-    expect(turn.response?.answer).toContain(NARROWING_NOTE_PREFIX);
+    // The transcript is what was said, so it carries no "Limited evidence" note: the uncertainty item (Sources &
+    // reasoning) and `narrowed` say it plainly instead.
+    expect(turn.response?.answer).toBe(sentences.join(' '));
+    expect(turn.response?.answer).not.toContain(NARROWING_NOTE_PREFIX);
+    expect(turn.response?.uncertainty[0]?.level).toBe('high');
     const units = speechUnits(events);
     expect(units.map((u) => u.text)).toEqual(sentences);
     expect(units.map((u) => u.text)).not.toContain(SPOKEN_NARROWING_CAVEAT);
