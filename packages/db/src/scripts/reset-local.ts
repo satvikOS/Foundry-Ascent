@@ -41,6 +41,13 @@ async function main(): Promise<void> {
   const name = process.env.LOCAL_DB_NAME ?? 'foundry';
   if (!/^[a-z_][a-z0-9_]*$/.test(name)) throw new Error('LOCAL_DB_NAME must be a simple identifier');
 
+  // Say which database is about to be dropped before anything happens: the default is the one `pnpm dev`
+  // uses, so resetting it rotates the owner access code everyone using it signed in with.
+  process.stdout.write(
+    process.env.LOCAL_DB_NAME === undefined
+      ? `Resetting local database "${name}" (the default, used by \`pnpm dev\`; set LOCAL_DB_NAME for a scratch one)…\n`
+      : `Resetting local database "${name}"…\n`,
+  );
   await withClient(adminUrl, async (admin) => {
     await bootstrapCluster(admin);
     await admin.query(`DROP DATABASE IF EXISTS ${quoteIdent(name)} WITH (FORCE)`);
