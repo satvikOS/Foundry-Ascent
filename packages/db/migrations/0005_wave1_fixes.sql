@@ -4,9 +4,7 @@
 -- Every statement is re-runnable and expand-only: code written for 0004 keeps working on this schema.
 --
 --  1. Conversation titles record who set them (`title_source`): distillation replaces only automatic titles,
---     never one a person chose. Temporary chats never carry a title (CHECK, after clearing any that do). A
---     message the classifier did not find ordinary (crisis, high-risk, injection, cross-venture) never becomes
---     a title, and a title taken from a turn that is then held back is withdrawn.
+--     never one a person chose. Temporary chats never carry a title (CHECK, after clearing any that do).
 --  2. The notebook document matches its contract exactly (uuid sources, ISO timestamps) and may record the
 --     conversations its summary and opener were drawn from. Rows that predate the stricter shape are repaired.
 --  3. Deleting a conversation also clears the notebook summary and opener drawn from it, erases the AI memory
@@ -46,54 +44,6 @@ UPDATE coaching_sessions s SET title_source = 'person'
                                            WHERE t.session_id = s.id AND t.risk_label IS DISTINCT FROM 'crisis'
                                            ORDER BY t.ordinal LIMIT 1)
             AND s.title IS DISTINCT FROM app.conversation_title(s.goal)));
-
--- Crisis-safe titles (owner decision): the conversation is titled automatically only from a message the
--- classifier found ordinary (`risk_label` 'none'). A crisis, high-risk, injection or cross-venture message never
--- becomes the title shown in recents, the command palette and teammates' lists; the conversation reads
--- "Conversation · <time>" until an ordinary message titles it.
-CREATE OR REPLACE FUNCTION app.turns_touch_session() RETURNS trigger
-  LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
-BEGIN
-  UPDATE coaching_sessions s
-     SET last_activity_at = greatest(s.last_activity_at, NEW.created_at),
-         has_calls = s.has_calls OR NEW.channel = 'voice',
-         title = CASE
-                   WHEN s.title IS NULL AND s.privacy = 'standard' AND coalesce(NEW.risk_label, 'none') = 'none'
-                     THEN app.conversation_title(NEW.founder_text)
-                   ELSE s.title
-                 END
-   WHERE s.id = NEW.session_id;
-  RETURN NULL;
-END
-$$;
-REVOKE ALL ON FUNCTION app.turns_touch_session() FROM PUBLIC;
-
--- A turn held back after it was classified (a policy, privacy or identity block) withdraws the automatic
--- title it gave the conversation.
-CREATE OR REPLACE FUNCTION app.turns_untitle_blocked() RETURNS trigger
-  LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
-BEGIN
-  UPDATE coaching_sessions s
-     SET title = NULL
-   WHERE s.id = NEW.session_id
-     AND s.title_source = 'auto'
-     AND s.title IS NOT DISTINCT FROM app.conversation_title(NEW.founder_text);
-  RETURN NULL;
-END
-$$;
-REVOKE ALL ON FUNCTION app.turns_untitle_blocked() FROM PUBLIC;
-DROP TRIGGER IF EXISTS turns_untitle_blocked ON turns;
-CREATE TRIGGER turns_untitle_blocked AFTER UPDATE OF status ON turns
-  FOR EACH ROW WHEN (NEW.status = 'blocked' AND OLD.status IS DISTINCT FROM 'blocked')
-  EXECUTE FUNCTION app.turns_untitle_blocked();
-
--- Conversations titled before this rule from such a message, or from a turn that was held back.
-UPDATE coaching_sessions s SET title = NULL
- WHERE s.title_source = 'auto' AND s.title IS NOT NULL AND s.distilled_at IS NULL
-   AND EXISTS (SELECT 1 FROM turns t
-                WHERE t.session_id = s.id
-                  AND (coalesce(t.risk_label, 'none') <> 'none' OR t.status = 'blocked')
-                  AND s.title = app.conversation_title(t.founder_text));
 
 -- ---------------------------------------------------------------------------------------------------
 -- 2. Notebook shape
