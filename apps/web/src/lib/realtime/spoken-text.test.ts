@@ -22,9 +22,9 @@ describe('spoken text', () => {
     expect(speakableSentences('   ')).toEqual([]);
   });
 
-  it('keeps the opening of a long answer, about as long as a spoken reply', () => {
+  it('keeps the first sentences of a long answer', () => {
     const sentence = 'This sentence has exactly ten words in it for counting.';
-    expect(openingText(Array(12).fill(sentence).join(' '))).toBe(Array(7).fill(sentence).join(' '));
+    expect(openingText(Array(12).fill(sentence).join(' '))).toBe(Array(4).fill(sentence).join(' '));
     expect(openingText(`${'word '.repeat(90)}end.`)).toBe(`${'word '.repeat(90)}end.`);
   });
 });

@@ -63,8 +63,8 @@ export function speakableSentences(spoken: string): string[] {
   return splitSentences(speakableText(spoken));
 }
 
-/** The opening of a reply that has no spoken form, about as long as one (shown, never voiced). */
-export function openingText(answer: string, maxWords = 70): string {
+/** The opening of a reply that has no spoken form: its first sentences (shown, never voiced). */
+export function openingText(answer: string, maxWords = 40): string {
   const opening: string[] = [];
   let count = 0;
   for (const sentence of splitSentences(speakableText(answer))) {

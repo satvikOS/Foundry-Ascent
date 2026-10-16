@@ -19,11 +19,12 @@ import type { CallEngine } from '@/lib/realtime/call-engine';
 import { IDLE_CALL, type CallSnapshot } from '@/lib/realtime/call-state';
 
 /**
- * The engine and the call screen load on demand: most visits never open them. Both are warmed once the app
- * is idle, so the first Call opens at once.
+ * The engine, the call screen and the mini bar load on demand: most visits never open them. They are
+ * warmed once the app is idle, so the first Call opens at once.
  */
 const loadEngine = () => import('./create-engine');
 const loadCallScreen = () => import('./call-screen');
+const loadMiniBar = () => import('./mini-call-bar-view');
 const CallScreen = lazy(() => loadCallScreen().then((module) => ({ default: module.CallScreen })));
 const WARM_AFTER_MS = 3000;
 
@@ -126,6 +127,7 @@ export function CallProvider({ me, children }: { me: Me; children: ReactNode }) 
     const timer = setTimeout(() => {
       ensureEngine();
       void loadCallScreen().catch(() => undefined);
+      void loadMiniBar().catch(() => undefined);
     }, WARM_AFTER_MS);
     return () => {
       clearTimeout(timer);

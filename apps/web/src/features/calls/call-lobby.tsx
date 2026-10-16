@@ -83,9 +83,11 @@ export function CallLobby({
   onClose,
 }: CallLobbyProps) {
   const primaryRef = useRef<HTMLButtonElement | null>(null);
+  const loaded = config !== undefined;
+  // Focus the primary control once it can be used (Start call waits for the call settings to load).
   useEffect(() => {
     primaryRef.current?.focus();
-  }, [blocker, failure, busy]);
+  }, [blocker, failure, busy, loaded]);
 
   const problem =
     blocker ??

@@ -462,7 +462,7 @@ describe('CallEngine · replies', () => {
     await flush(20);
     // Only the stored spoken form may be voiced unsigned: nothing is asked of /speech.
     expect(h.speechRequests).toHaveLength(0);
-    expect(h.state().captions.veir).toBe(Array(7).fill(sentence).join(' '));
+    expect(h.state().captions.veir).toBe(Array(4).fill(sentence).join(' '));
     expect(h.state().activity).toBe('listening');
   });
 
