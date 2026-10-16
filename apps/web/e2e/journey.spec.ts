@@ -153,6 +153,11 @@ test.describe('founder journey', () => {
       await expectDisclosureInView(page);
       await expect(page.getByRole('heading', { level: 1 })).toContainText('Which assumption should we test');
       await expect(result.answer.getByRole('button', { name: /^Evidence E1: / }).first()).toBeVisible();
+      // Citations are quiet numbers, and no report artefact (raw keys, a "Limited evidence" quote) shows.
+      await expect(result.answer.getByRole('button', { name: /^Evidence E1: / }).first()).toHaveText('1');
+      await expect(result.answer.locator('[data-slot="markdown"]').first()).not.toContainText(
+        /\[E\d|Limited evidence/,
+      );
       // The conversation is listed (and current) in the sidebar's recents, under its own title.
       const row = page
         .getByRole('navigation', { name: 'Recent conversations' })

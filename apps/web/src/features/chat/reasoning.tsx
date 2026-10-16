@@ -166,7 +166,7 @@ export function NarrowedNote({ validator }: { validator: ValidatorResults | null
   return (
     <p
       data-testid="narrowed-banner"
-      className="mb-3 flex items-start gap-2 text-small text-muted-foreground"
+      className="flex items-start gap-2 text-small text-muted-foreground"
       role="note"
       aria-label="Answer limited to your evidence"
     >
@@ -201,8 +201,9 @@ export function citedSourceKeys(
 }
 
 /**
- * "Sources & reasoning": a disclosure under an answer that holds its claims, uncertainty and challenge,
- * and opens the panel on its sources. Its summary counts the sources the answer cites.
+ * "Sources & reasoning": a disclosure under an answer that holds its claims, uncertainty and challenge (and,
+ * when the answer was narrowed to what the venture's evidence supports, says so), and opens the panel on its
+ * sources. Its summary counts the sources the answer cites.
  */
 export function ReasoningDisclosure({
   response,
@@ -223,9 +224,11 @@ export function ReasoningDisclosure({
   const hasDetails =
     response.claims.length > 0 || response.uncertainty.length > 0 || response.challenge !== null;
   if (!hasDetails && evidence.length === 0) return null;
+  const narrowed = validator?.narrowed === true;
   const summary = [
     cited > 0 ? pluralize(cited, 'source') : null,
     response.claims.length > 0 ? pluralize(response.claims.length, 'claim') : null,
+    narrowed ? 'limited evidence' : null,
   ]
     .filter(Boolean)
     .join(' · ');
@@ -267,6 +270,9 @@ export function ReasoningDisclosure({
       </button>
       {open ? (
         <div id={regionId} className="mt-3 grid gap-4 border-l border-border pl-4">
+          {/* Why the answer was narrowed lives here, not above the answer: in a conversation it read as a
+              report. */}
+          <NarrowedNote validator={validator} />
           <ReasoningDetails
             response={response}
             evidence={evidence}

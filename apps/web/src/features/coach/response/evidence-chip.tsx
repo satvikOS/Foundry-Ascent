@@ -12,21 +12,32 @@ interface EvidenceChipProps {
   className?: string;
 }
 
-/** Chip shape shared by every citation form, so a streamed key and its final chip are the same size. */
+/**
+ * Chip shape shared by every citation form, so a streamed key and its final chip are the same size: a small,
+ * quiet raised number, like a footnote, rather than a code in a box (in a conversation "E4" read as machine
+ * output). Side by side ([E1][E2]) the chips sit 24 px apart, centre to centre, as WCAG 2.5.8 asks of small
+ * targets; on touch screens each grows to a 24 px target.
+ */
 const CHIP =
-  'mx-0.5 inline-flex h-[18px] items-center justify-center rounded-[5px] border px-1 align-[2px] font-mono text-[11px] leading-none font-medium not-italic pointer-coarse:h-6 pointer-coarse:min-w-7 pointer-coarse:px-1.5 pointer-coarse:align-middle pointer-coarse:text-xs';
+  'mx-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 align-[0.35em] font-sans text-[10px] leading-none font-medium tabular-nums not-italic pointer-coarse:h-6 pointer-coarse:min-w-6 pointer-coarse:px-1.5 pointer-coarse:align-middle pointer-coarse:text-xs';
+
+/** The number shown for a key ("E4" → "4"). */
+export function citationNumber(evidenceKey: string): string {
+  return evidenceKey.replace(/^E/, '');
+}
 
 /** A citation in an answer that is still streaming (its sources arrive with the finished answer). */
 export function CitationKey({ evidenceKey }: { evidenceKey: string }) {
   return (
-    <span data-slot="evidence-chip" className={cn(CHIP, 'border-border bg-muted text-muted-foreground')}>
-      {evidenceKey}
+    <span data-slot="evidence-chip" className={cn(CHIP, 'bg-muted text-muted-foreground')}>
+      <span aria-hidden>{citationNumber(evidenceKey)}</span>
+      <span className="sr-only"> (source {evidenceKey})</span>
     </span>
   );
 }
 
 /**
- * Citation chip ("E2"). Opens the source in the conversation's Sources panel. The accessible name includes
+ * Citation chip (shows "2" for E2). Opens the source in the conversation's Sources panel. The accessible name includes
  * the source title so screen-reader users hear what is cited, not just a code.
  */
 export function EvidenceChip({ evidenceKey, item, onOpen, className }: EvidenceChipProps) {
@@ -39,10 +50,10 @@ export function EvidenceChip({ evidenceKey, item, onOpen, className }: EvidenceC
         data-slot="evidence-chip"
         data-missing="true"
         title="This source is not available"
-        className={cn(base, 'border-dashed border-border-strong text-muted-foreground', className)}
+        className={cn(base, 'border border-dashed border-border-strong text-muted-foreground', className)}
       >
-        {evidenceKey}
-        <span className="sr-only"> (source not available)</span>
+        <span aria-hidden>{citationNumber(evidenceKey)}</span>
+        <span className="sr-only"> (source {evidenceKey} not available)</span>
       </span>
     );
   }
@@ -51,10 +62,13 @@ export function EvidenceChip({ evidenceKey, item, onOpen, className }: EvidenceC
       <span
         data-slot="evidence-chip"
         title={item.title}
-        className={cn(base, 'border-border-strong bg-muted text-foreground', className)}
+        className={cn(base, 'bg-muted text-muted-foreground', className)}
       >
-        {evidenceKey}
-        <span className="sr-only">: {item.title}</span>
+        <span aria-hidden>{citationNumber(evidenceKey)}</span>
+        <span className="sr-only">
+          {' '}
+          (source {evidenceKey}: {item.title})
+        </span>
       </span>
     );
   }
@@ -69,12 +83,12 @@ export function EvidenceChip({ evidenceKey, item, onOpen, className }: EvidenceC
       }}
       className={cn(
         base,
-        'cursor-pointer border-border-strong bg-muted text-foreground transition-colors hover:border-foreground/50 hover:bg-accent',
+        'cursor-pointer bg-muted text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
         'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring',
         className,
       )}
     >
-      {evidenceKey}
+      {citationNumber(evidenceKey)}
     </button>
   );
 }

@@ -15,10 +15,11 @@ import { ESCALATION_CATEGORY_LABELS, REQUESTED_ROLE_LABELS } from '@/lib/labels'
 import { cn } from '@/lib/utils';
 
 import { EvidenceChip } from '../coach/response/evidence-chip';
+import { conversationAnswer } from './answer-text';
 import { MemorySaved } from './memory-saved';
 import { MessageActions } from './message-actions';
 import { NextStepList, type NextActionControls } from './next-steps';
-import { NarrowedNote, ReasoningDisclosure } from './reasoning';
+import { ReasoningDisclosure } from './reasoning';
 
 /** The vEIR's own words: serif reading face, generous leading, a 60–75 character measure. */
 export const ANSWER_PROSE = 'max-w-[68ch] font-serif text-[1.0625rem] leading-[1.7]';
@@ -83,6 +84,10 @@ export function VeirAnswer({
   escalation,
 }: VeirAnswerProps) {
   const evidence = useMemo(() => new Map(turn.evidence.map((item) => [item.key, item])), [turn.evidence]);
+  // As a conversation shows it: no "Limited evidence" block quote (it is under Sources & reasoning), and each
+  // evidence key a quiet citation.
+  const answer = useMemo(() => conversationAnswer(response.answer), [response.answer]);
+  const reasoning = useMemo(() => ({ ...response, answer }), [response, answer]);
   const renderCitation = useCallback(
     (key: string) => <EvidenceChip evidenceKey={key} item={evidence.get(key)} onOpen={onOpenSource} />,
     [evidence, onOpenSource],
@@ -90,9 +95,8 @@ export function VeirAnswer({
 
   return (
     <div data-slot="veir-answer" className="group/answer">
-      <NarrowedNote validator={turn.validator} />
       <Markdown renderCitation={renderCitation} className={ANSWER_PROSE}>
-        {response.answer}
+        {answer}
       </Markdown>
       {wasInterrupted(turn) ? (
         <p className="mt-2 text-caption text-muted-foreground">Interrupted on the call</p>
@@ -101,7 +105,7 @@ export function VeirAnswer({
       {response.rehearsal ? <Rehearsal rehearsal={response.rehearsal} personaName={personaName} /> : null}
 
       <ReasoningDisclosure
-        response={response}
+        response={reasoning}
         evidence={turn.evidence}
         validator={turn.validator}
         onOpenSource={onOpenSource}
@@ -125,7 +129,7 @@ export function VeirAnswer({
 
       <MessageActions
         turnId={turn.id}
-        copyText={response.answer}
+        copyText={answer}
         canRate={canEdit}
         pinned={latest}
         myRating={turn.myFeedback?.rating ?? null}

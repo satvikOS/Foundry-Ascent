@@ -17,6 +17,7 @@ import type { TurnProgress } from '../coach/progress';
 import { CitationKey } from '../coach/response/evidence-chip';
 import { TurnProgressList } from '../coach/turn-progress';
 import { isActionSaved, useAddAction } from './actions';
+import { conversationAnswer } from './answer-text';
 import { savedFromTurn } from './memory-saved';
 import { usePanelState } from './panel-state';
 import { ANSWER_PROSE, VeirAnswer } from './veir-answer';
@@ -312,7 +313,7 @@ export function LiveExchange({
       <VeirMessage personaName={personaName} portraitUrl={portraitUrl}>
         {state.streamedText ? (
           <Markdown renderCitation={renderStreamedCitation} className={ANSWER_PROSE}>
-            {state.streamedText}
+            {conversationAnswer(state.streamedText)}
           </Markdown>
         ) : null}
         {streaming || state.status === 'completed' ? (

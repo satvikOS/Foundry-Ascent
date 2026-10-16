@@ -86,7 +86,8 @@ describe('LiveExchange', () => {
     );
     const prose = screen.getByText(/Talk to the people who feel the pain/).closest('[data-slot="markdown"]');
     expect(prose).not.toBeNull();
-    expect(prose).toHaveTextContent('Talk to the people who feel the pain E1. Then decide.');
+    // A quiet raised number, read to screen readers as the source it is.
+    expect(prose).toHaveTextContent('Talk to the people who feel the pain 1 (source E1). Then decide.');
     // The key is not a button yet: the evidence list comes with the stored answer.
     expect(screen.queryByRole('button', { name: /Evidence E1/ })).toBeNull();
   });
@@ -136,6 +137,35 @@ describe('VeirAnswer', () => {
     expect(props.nextActions.onAdd).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'Interview five library staff' }),
       0,
+    );
+  });
+
+  it('reads as a conversation: no "Limited evidence" quote, grouped keys as quiet citations', async () => {
+    const base = makeTurn();
+    if (!base.response || !base.validator) throw new Error('fixture has no response');
+    const answer =
+      '> **Limited evidence:** only 1 of 2 factual statements in this answer are backed by your venture records.\n\n' +
+      'Your riskiest assumption is repeat use [E1, E2].';
+    const turn = makeTurn({
+      response: { ...base.response, answer },
+      validator: { ...base.validator, narrowed: true, groundingCoverage: 0.5 },
+    });
+    if (!turn.response) throw new Error('no response');
+    renderWithProviders(<VeirAnswer {...answerProps({ turn, response: turn.response })} />);
+    const prose = screen
+      .getByText(/Your riskiest assumption is repeat use/)
+      .closest('[data-slot="markdown"]');
+    expect(prose).not.toHaveTextContent(/Limited evidence|\[E/);
+    expect(screen.queryByTestId('narrowed-banner')).toBeNull();
+    // Each key is its own quiet citation, still named for screen readers.
+    expect(screen.getByRole('button', { name: /^Evidence E1: / })).toHaveTextContent(/^1$/);
+    expect(screen.getByRole('button', { name: /^Evidence E2: / })).toHaveTextContent(/^2$/);
+    // The information stays under Sources & reasoning.
+    const toggle = screen.getByRole('button', { name: /^Sources & reasoning/ });
+    expect(toggle).toHaveTextContent('limited evidence');
+    await userEvent.setup().click(toggle);
+    expect(screen.getByTestId('narrowed-banner')).toHaveTextContent(
+      'Limited to what your evidence supports.',
     );
   });
 
