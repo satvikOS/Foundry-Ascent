@@ -306,7 +306,11 @@ test.describe('memory', () => {
   }) => {
     test.setTimeout(90_000);
     await openVenture(page);
-    await startConversation(page, `How should we price the pilot for libraries? ${runToken()}`);
+    // The founder says what is worth remembering in their own words (the coach's framing alone is never kept).
+    await startConversation(
+      page,
+      `How should we price the pilot for libraries? Willingness to pay has not been tested with a paid commitment yet. ${runToken()}`,
+    );
     const saved = page.getByRole('article', { name: 'Exchange 1' }).getByTestId('memory-saved');
     await expect(saved).toBeVisible({ timeout: 30_000 });
     const href = (await saved.getByRole('link').getAttribute('href')) ?? '';

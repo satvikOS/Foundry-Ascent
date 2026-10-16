@@ -70,6 +70,13 @@ describe('MemoryDetail', () => {
     const learned = await screen.findByRole('link', { name: /^Learned from the call on / });
     expect(learned).toHaveAttribute('href', `/ain/app/v/${IDS.venture}/c/${IDS.session}`);
     expect(fetchMock.mock.calls.filter(([input]) => urlOf(input).includes('/sessions'))).toHaveLength(1);
+    // The server's own label for memory it kept by itself is not repeated under Sources (the line above says it,
+    // and says it was a call): the source is the conversation.
+    expect(screen.queryByText('Learned from the conversation')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Conversation' })).toHaveAttribute(
+      'href',
+      `/ain/app/v/${IDS.venture}/c/${IDS.session}`,
+    );
   });
 
   it('shows an older suggestion as known, with Edit, Pin where it applies, and Forget', async () => {

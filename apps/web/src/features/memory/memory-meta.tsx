@@ -92,8 +92,17 @@ const SOURCE_KIND: Record<SourceRef['kind'], { icon: LucideIcon; label: string }
   memory: { icon: Brain, label: 'Earlier memory' },
 };
 
-/** Labels the server writes for its own bookkeeping, not for people: the kind's own label is shown instead. */
-const MACHINE_LABELS: ReadonlySet<string> = new Set(['ai proposal', 'call', 'chat']);
+/**
+ * Labels the server writes for its own bookkeeping, not for people: the kind's own label is shown instead. The
+ * server marks memory it kept by itself "Learned from the conversation" (packages/core LEARNED_FROM_LABEL); the
+ * provenance line already says that, with its date and whether it was a call, so the source reads "Conversation".
+ */
+const MACHINE_LABELS: ReadonlySet<string> = new Set([
+  'ai proposal',
+  'call',
+  'chat',
+  'learned from the conversation',
+]);
 
 const linkClasses =
   'font-medium text-foreground underline decoration-border-strong underline-offset-[3px] hover:decoration-foreground';
