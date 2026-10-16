@@ -83,8 +83,8 @@ export function DigestsSection({ ventureId, tenant, canEdit }: DigestsSectionPro
   };
 
   return (
-    <>
-      <div className="grid gap-1.5 pb-2">
+    <div className="grid gap-5">
+      <div className="grid gap-1.5">
         <p className="label-mono">AI notes</p>
         <p className="max-w-[60ch] text-small text-muted-foreground">
           What {author} took from each conversation. Your team can see and delete them. They’re never treated
@@ -197,6 +197,6 @@ export function DigestsSection({ ventureId, tenant, canEdit }: DigestsSectionPro
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </div>
   );
 }

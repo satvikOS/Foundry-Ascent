@@ -97,7 +97,7 @@ export function EscalationsPage() {
   if (!canEdit) {
     return (
       <PageContainer>
-        <PageHeader title="Human help" description="Requests the founders and team make for a person." />
+        <PageHeader title="Human help" />
         {isAssignedEir(me, ventureId) ? (
           <EmptyState
             icon={Inbox}
