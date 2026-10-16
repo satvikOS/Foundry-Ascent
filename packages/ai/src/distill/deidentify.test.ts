@@ -22,6 +22,41 @@ const GOOD = [
 ];
 
 describe('checkDeidentified', () => {
+  it('reads a descriptive denylist entry by its whole text and proper nouns, not its everyday words', () => {
+    const ctx: LessonDeidentifyContext = {
+      ...CTX,
+      denylist: [
+        'Library operations manager open to a pilot conversation',
+        'Pilot interview notes',
+        'Kaiser pilot notes',
+      ],
+    };
+    // Everyday words of a relationship title or document name identify no one.
+    expect(
+      checkDeidentified(
+        [
+          'Book the pilot conversation early',
+          'A founder kept interview notes after every pilot conversation with a library operations manager.',
+        ],
+        ctx,
+        { titleIndex: 0 },
+      ),
+    ).toEqual({ ok: true, reasons: [] });
+    for (const text of [
+      'The buyer said kaiser would decide after the pilot.',
+      'A library operations manager open to a pilot conversation helped.',
+    ]) {
+      expect(checkDeidentified([GOOD[0] ?? '', text], ctx, { titleIndex: 0 }).reasons, text).toContain(
+        'denylisted',
+      );
+    }
+    // An entry that reads as a name still counts word by word ("the riverside pilot").
+    const named = checkDeidentified([GOOD[0] ?? '', 'The riverside pilot doubled bookings.'], CTX, {
+      titleIndex: 0,
+    });
+    expect(named.reasons).toContain('denylisted');
+  });
+
   it('accepts a generic, de-identified lesson', () => {
     expect(checkDeidentified(GOOD, CTX, { titleIndex: 0 })).toEqual({ ok: true, reasons: [] });
   });

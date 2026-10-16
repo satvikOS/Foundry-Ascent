@@ -256,6 +256,34 @@ function namePatterns(names: readonly string[], minWordLength: number): RegExp[]
   return out;
 }
 
+/**
+ * A denylisted entry, and the words that identify on their own. An entry that reads as a name ("Riverside
+ * Public Library") counts word by word like a person's or venture's name ("the Riverside pilot"). Entries are
+ * often descriptions instead ("Library operations manager open to a pilot conversation", "Pilot interview
+ * notes"): their everyday words identify no one, so only a word the entry capitalises that is not everyday
+ * vocabulary counts alone ("Kaiser pilot notes" → "Kaiser").
+ */
+function denyPatterns(entries: readonly string[]): RegExp[] {
+  const out: RegExp[] = [];
+  for (const entry of entries) {
+    const text = normalizeText(entry);
+    if (isTitleCase(text)) {
+      out.push(...namePatterns([entry], 4));
+      continue;
+    }
+    const full = phrasePattern(entry);
+    if (full) out.push(full);
+    for (const word of text.match(/[\p{L}][\p{L}\p{M}'’]*/gu) ?? []) {
+      if (word.length < 4 || !/^\p{Lu}/u.test(word)) continue;
+      if (everyday(foldDiacritics(word.toLowerCase()), NO_TERMS)) continue;
+      const pattern = phrasePattern(word);
+      if (pattern) out.push(pattern);
+    }
+  }
+  return out;
+}
+const NO_TERMS: ReadonlySet<string> = new Set();
+
 /** Whether `index` starts a sentence (start of text, after . ! ? : ; or a line break, past quotes). */
 function atSentenceStart(text: string, index: number): boolean {
   const before = text.slice(0, index).replace(/["'“‘([\s]+$/u, '');
@@ -316,7 +344,7 @@ export function checkDeidentified(
   const reasons = new Set<DeidentifyReason>();
   const ventures = namePatterns(ctx.ventureNames, 4);
   const people = namePatterns(ctx.personNames, 3);
-  const denied = namePatterns(ctx.denylist ?? [], 4);
+  const denied = denyPatterns(ctx.denylist ?? []);
   const allowed = new Set(
     (ctx.allowedTerms ?? []).flatMap((term) => wordsOf(term)).filter((w) => w.length >= 2),
   );
