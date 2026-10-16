@@ -56,23 +56,22 @@ export function createMaintenanceService(
         });
         return count;
       });
-      const result = { ...cleanup, expired };
       const distillation = await distill.backstop({
         requestId,
         ...(deadline === undefined ? {} : { deadline }),
       });
       kit.deps.logger.info('maintenance.daily_done', {
         requestId,
-        ephemeralSessionsEnded: result.sessionsEnded,
-        ephemeralTurnsRedacted: result.turnsRedacted,
-        proposalsExpired: result.expired,
+        ephemeralSessionsEnded: cleanup.sessionsEnded,
+        ephemeralTurnsRedacted: cleanup.turnsRedacted,
+        proposalsExpired: expired,
         distilled: distillation.distilled,
         distillDeferred: distillation.deferred,
       });
       return {
-        ephemeralSessionsEnded: result.sessionsEnded,
-        ephemeralTurnsRedacted: result.turnsRedacted,
-        proposalsExpired: result.expired,
+        ephemeralSessionsEnded: cleanup.sessionsEnded,
+        ephemeralTurnsRedacted: cleanup.turnsRedacted,
+        proposalsExpired: expired,
         distillation,
       };
     },

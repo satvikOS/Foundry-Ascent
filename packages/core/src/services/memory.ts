@@ -162,8 +162,8 @@ async function findDuplicate(
  * anything else the venture has (confirmed, disputed, a person's proposal, or something a person rejected)
  * is dropped. Comparison is lexical against the venture's recent items (`existing`, read here when not
  * given), by containment against the pending proposals of the same conversation (`conversation`), and by
- * cosine similarity when `embeddings` (one per candidate,
- * unit-length) are given; new proposals store their embedding.
+ * cosine similarity when `embeddings` (one per candidate, unit-length) are given; new proposals store their
+ * embedding.
  */
 export async function proposeMemoryCandidates(
   tx: SqlExecutor,
