@@ -58,11 +58,6 @@ interface ComposerProps {
   busy?: boolean;
   /** When set, the composer is disabled and shows this reason. */
   disabledReason: string | null;
-  /**
-   * When set, the person can keep writing but Send waits, and this says why under the message box (files
-   * still uploading on New chat, which sending would leave).
-   */
-  sendHold?: string | null;
   onSend: () => void;
   onStop: () => void;
   textareaRef?: Ref<HTMLTextAreaElement>;
@@ -94,7 +89,6 @@ export function Composer({
   streaming,
   busy = false,
   disabledReason,
-  sendHold = null,
   onSend,
   onStop,
   textareaRef,
@@ -108,7 +102,6 @@ export function Composer({
   const tooLong = length > MAX_TURN_CHARS;
   const empty = value.trim().length === 0;
   const disabled = disabledReason !== null;
-  const held = sendHold !== null;
   const modes = COACH_MODES.filter((m) => !allowedModes || allowedModes.includes(m));
   const nearLimit = length > MAX_TURN_CHARS * 0.9;
   const label = `Message ${personaName}`;
@@ -136,7 +129,7 @@ export function Composer({
     }
     if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
     event.preventDefault();
-    if (!streaming && !busy && !empty && !tooLong && !disabled && !held) onSend();
+    if (!streaming && !busy && !empty && !tooLong && !disabled) onSend();
   };
 
   return (
@@ -155,7 +148,7 @@ export function Composer({
           onSubmit={(event) => {
             event.preventDefault();
             // Submitting only ever sends: Stop is its own button (and Escape), never the form.
-            if (!streaming && !busy && !empty && !tooLong && !disabled && !held) onSend();
+            if (!streaming && !busy && !empty && !tooLong && !disabled) onSend();
           }}
           aria-label={label}
         >
@@ -267,7 +260,7 @@ export function Composer({
                   type="submit"
                   size="icon-sm"
                   loading={busy}
-                  disabled={disabled || empty || tooLong || held}
+                  disabled={disabled || empty || tooLong}
                   aria-label="Send message"
                   className="rounded-full"
                 >
@@ -278,11 +271,6 @@ export function Composer({
           </div>
         </form>
       </div>
-      {sendHold ? (
-        <p role="status" className="text-center text-small text-muted-foreground">
-          {sendHold}
-        </p>
-      ) : null}
       <DisclosureBanner variant="line" text={disclosure} veirName={veirName} />
     </div>
   );

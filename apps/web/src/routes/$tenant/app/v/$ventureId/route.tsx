@@ -1,6 +1,7 @@
 import { createFileRoute, Outlet } from '@tanstack/react-router';
 
 import { InspectorProvider, InspectorRegion } from '@/components/shell/inspector';
+import { VentureUploadsProvider } from '@/features/documents/venture-uploads';
 import { isApiError } from '@/lib/api/errors';
 import { ventureQueryOptions } from '@/lib/api/hooks/ventures';
 import { canAccessVenture, canManageAnyTeam, hasAnyRole } from '@/lib/auth/roles';
@@ -8,7 +9,8 @@ import { canAccessVenture, canManageAnyTeam, hasAnyRole } from '@/lib/auth/roles
 /**
  * A venture: its conversations and pages, with the right-hand context panel that pages fill with
  * `<Inspector title="…">` (closed until a citation, a selection or the panel toggle opens it). The
- * sidebar carries the venture's navigation, so the layout adds no chrome of its own.
+ * sidebar carries the venture's navigation, so the layout adds no chrome of its own. The venture's uploads
+ * live here, above its pages, so a file keeps uploading while the person moves between them.
  */
 export const Route = createFileRoute('/$tenant/app/v/$ventureId')({
   loader: async ({ context, params, location }) => {
@@ -44,14 +46,17 @@ export const Route = createFileRoute('/$tenant/app/v/$ventureId')({
 });
 
 function VentureLayout() {
+  const { ventureId } = Route.useParams();
   return (
-    <InspectorProvider>
-      <div className="flex min-h-0 flex-1">
-        <div className="flex min-w-0 flex-1 flex-col">
-          <Outlet />
+    <VentureUploadsProvider ventureId={ventureId}>
+      <InspectorProvider>
+        <div className="flex min-h-0 flex-1">
+          <div className="flex min-w-0 flex-1 flex-col">
+            <Outlet />
+          </div>
+          <InspectorRegion />
         </div>
-        <InspectorRegion />
-      </div>
-    </InspectorProvider>
+      </InspectorProvider>
+    </VentureUploadsProvider>
   );
 }

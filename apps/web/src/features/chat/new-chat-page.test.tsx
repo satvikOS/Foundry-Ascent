@@ -7,6 +7,7 @@ import {
   createRouter,
   Outlet,
   RouterProvider,
+  useParams,
 } from '@tanstack/react-router';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -14,13 +15,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { jsonResponse, stubFetch } from '@/features/admin/shared/test-utils';
-import { makeNotebook, makeVenture } from '@/features/knowledge/testing';
+import { conversationOrigin } from '@/features/documents/upload-queue';
+import { VentureUploadsProvider } from '@/features/documents/venture-uploads';
+import { makeNotebook, makeSession, makeVenture } from '@/features/knowledge/testing';
 import { meQueryOptions } from '@/lib/api/hooks/auth';
 
+import { AttachmentTray, useComposerAttachments } from './attachments';
 import { NewChatPage } from './new-chat-page';
 
 const A = '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c01';
 const B = '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c02';
+const SESSION = '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c03';
 const NAMED_OPENER = 'Last time Corin suggested five library interviews. How did they go?';
 const GREETING = 'Last time you planned five library interviews. How did they go?';
 
@@ -67,6 +72,11 @@ function stubApi(): Call[] {
       }
       if (method === 'GET' && url === `/api/v1/ventures/${id}/notebook`)
         return Promise.resolve(jsonResponse(notebook));
+      if (method === 'POST' && url === `/api/v1/ventures/${id}/sessions`) {
+        return Promise.resolve(
+          jsonResponse(makeSession({ id: SESSION, ventureId: id, status: 'active', endedAt: null }), 201),
+        );
+      }
       if (method === 'POST' && url === `/api/v1/ventures/${id}/documents`) {
         // Uploading: nothing comes back until the request is aborted.
         return new Promise<Response>((_, reject) => {
@@ -83,18 +93,47 @@ function stubApi(): Call[] {
   return calls;
 }
 
+/** The venture layout's part these tests need: the venture's uploads, above its pages. */
+function VentureLayout() {
+  const { ventureId } = useParams({ strict: false });
+  if (!ventureId) throw new Error('no venture');
+  return (
+    <VentureUploadsProvider ventureId={ventureId}>
+      <Outlet />
+    </VentureUploadsProvider>
+  );
+}
+
+/** A conversation's composer tray: the uploads started from that conversation. */
+function ConversationTray() {
+  const { ventureId, sessionId } = useParams({ strict: false });
+  if (!ventureId || !sessionId) throw new Error('no conversation');
+  const attachments = useComposerAttachments(ventureId, conversationOrigin(sessionId));
+  return (
+    <>
+      <p>Conversation</p>
+      <AttachmentTray
+        items={attachments.items}
+        onCancel={attachments.cancel}
+        onRetry={attachments.retry}
+        onDismiss={attachments.dismiss}
+      />
+    </>
+  );
+}
+
 function renderNewChat(ventureId: string) {
   const root = createRootRoute({ component: Outlet });
   const venture = createRoute({
     getParentRoute: () => root,
     path: '$tenant/app/v/$ventureId',
-    component: Outlet,
+    component: VentureLayout,
   });
   const index = createRoute({ getParentRoute: () => venture, path: '/', component: NewChatPage });
   const conversation = createRoute({
     getParentRoute: () => venture,
     path: 'c/$sessionId',
-    component: () => <p>Conversation</p>,
+    component: ConversationTray,
   });
   const router = createRouter({
     routeTree: root.addChildren([venture.addChildren([index, conversation])]),
@@ -159,9 +198,9 @@ describe('New chat', () => {
     expect(await screen.findByText(GREETING)).toBeVisible();
   });
 
-  it('holds Send while files upload, because sending would leave the page and cancel them', async () => {
+  it('sends while files upload: they keep uploading and show in the conversation it opened', async () => {
     const calls = stubApi();
-    renderNewChat(A);
+    const router = renderNewChat(A);
     await screen.findByText('What should we work on for QuietQuad today?');
     await attach('plan-a.md');
     await waitFor(() => {
@@ -169,13 +208,14 @@ describe('New chat', () => {
         true,
       );
     });
-    const user = userEvent.setup();
-    await user.type(composer(), 'What should we test first?{Enter}');
-    expect(screen.getByText('Your files are still uploading. You can send when they’re done.')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
-    // Nothing was created: no conversation to navigate to while the upload runs.
-    expect(calls.some((c) => c.method === 'POST' && c.url.endsWith('/sessions'))).toBe(false);
-    expect(composer()).toHaveValue('What should we test first?');
+    const inFlight = calls.find((c) => c.method === 'POST' && c.url === `/api/v1/ventures/${A}/documents`);
+    await userEvent.setup().type(composer(), 'What should we test first?{Enter}');
+
+    expect(await screen.findByText('Conversation')).toBeVisible();
+    expect(router.state.location.pathname).toBe(`/ain/app/v/${A}/c/${SESSION}`);
+    const tray = screen.getByRole('list', { name: 'Documents being added' });
+    expect(tray).toHaveTextContent('plan-a.md');
+    expect(inFlight?.signal?.aborted).toBe(false);
   });
 
   it('keeps nothing across a venture switch: no draft, no queued upload sent to the other venture', async () => {

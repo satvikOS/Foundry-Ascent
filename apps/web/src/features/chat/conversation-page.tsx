@@ -35,6 +35,7 @@ import { conversationTitle } from '@/lib/conversations';
 import { useDockedBottom } from '@/lib/hooks/use-docked-bottom';
 import { useHotkeys } from '@/lib/hooks/use-hotkeys';
 import { conversationVeir, veirDisplay } from '@/lib/veir';
+import { conversationOrigin } from '@/features/documents/upload-queue';
 import { EscalationFlowDialog, type EscalationDraft } from '@/features/escalations/escalation-flow-dialog';
 
 import { coachingAvailability } from '../coach/availability';
@@ -127,7 +128,7 @@ function Conversation() {
   const escalations = useVentureEscalations(ventureId);
   const stream = useTurnStream(sessionId, { ventureId });
   const endSession = useEndSession();
-  const attachments = useComposerAttachments(ventureId);
+  const attachments = useComposerAttachments(ventureId, conversationOrigin(sessionId));
 
   const [text, setText] = useState('');
   const [mode, setModeState] = useState<ComposerMode>(() => rememberedComposerMode(sessionId));

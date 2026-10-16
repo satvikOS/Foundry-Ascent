@@ -6,40 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { json, problem, stubFetch, urlOf } from '@/features/knowledge/test-utils';
 import { IDS, makeDocument } from '@/features/knowledge/testing';
 
-import { useUploadQueue } from './use-upload-queue';
-
-/** A presigned PUT the test finishes, fails or watches being aborted. */
-class FakeXhr {
-  static sent: FakeXhr[] = [];
-  upload: { onprogress: ((event: ProgressEvent) => void) | null } = { onprogress: null };
-  onload: (() => void) | null = null;
-  onerror: (() => void) | null = null;
-  onabort: (() => void) | null = null;
-  status = 0;
-  withCredentials = true;
-  url = '';
-  aborted = false;
-  open(_method: string, url: string) {
-    this.url = url;
-  }
-  setRequestHeader() {
-    return undefined;
-  }
-  send() {
-    FakeXhr.sent.push(this);
-  }
-  abort() {
-    this.aborted = true;
-    this.onabort?.();
-  }
-  succeed() {
-    this.status = 200;
-    this.onload?.();
-  }
-  fail() {
-    this.onerror?.();
-  }
-}
+import { FakeXhr } from './upload-testing';
+import { DOCUMENTS_ORIGIN, type QueuedUpload } from './upload-queue';
+import { useVentureUploads, VentureUploadsProvider } from './venture-uploads';
 
 const DOC_ID = IDS.document;
 const file = new File(['# Interview notes\n\nSeven students.'], 'interviews.md', { type: 'text/markdown' });
@@ -94,9 +63,23 @@ function renderQueue() {
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    <QueryClientProvider client={client}>
+      <VentureUploadsProvider ventureId={IDS.venture}>{children}</VentureUploadsProvider>
+    </QueryClientProvider>
   );
-  return renderHook(() => useUploadQueue(IDS.venture), { wrapper });
+  // Uploads from the Documents page (the venture's queue, as that page adds to it).
+  return renderHook(
+    () => {
+      const queue = useVentureUploads(IDS.venture);
+      return {
+        ...queue,
+        add: (candidates: readonly QueuedUpload[]) => {
+          queue.add(candidates, DOCUMENTS_ORIGIN);
+        },
+      };
+    },
+    { wrapper },
+  );
 }
 
 async function sentPut(count: number): Promise<FakeXhr> {
@@ -161,7 +144,7 @@ describe('upload lifecycle', () => {
     expect(calls()).not.toContain(`POST /api/v1/documents/${DOC_ID}/abandon`);
   });
 
-  it('marks the upload unfinished (not deleted) when the person leaves the page mid-upload', async () => {
+  it('marks the upload unfinished (not deleted) when the person leaves the venture mid-upload', async () => {
     const { result, unmount } = renderQueue();
     act(() => {
       result.current.add([{ file, contentType: 'text/markdown' }]);

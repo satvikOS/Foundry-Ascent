@@ -1,6 +1,15 @@
 import { expect, type Page } from '@playwright/test';
 
-import { FOUNDER_STATE, openVenture, runToken, TENANT, test, expectNoBareEirName } from './support/fixtures';
+import {
+  composer,
+  expectNoBareEirName,
+  FOUNDER_STATE,
+  openVenture,
+  runToken,
+  startConversation,
+  TENANT,
+  test,
+} from './support/fixtures';
 
 test.use({ storageState: FOUNDER_STATE });
 
@@ -131,4 +140,88 @@ test('a cancelled upload leaves no document behind', async ({ page }) => {
   await expect(queued).toContainText('Cancelled');
   await expect(rows).toHaveCount(0);
   await page.unroute(UPLOAD_PUT);
+});
+
+/** Asks a question from New chat and waits for the answer; returns the conversation id. */
+async function conversationWithAnswer(page: Page, question: string): Promise<string> {
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'New chat' }).click();
+  await expect(composer(page)).toBeVisible();
+  const id = await startConversation(page, question);
+  await expect(
+    page.getByRole('article', { name: 'Exchange 1' }).getByRole('button', { name: 'Copy answer' }),
+  ).toBeVisible({ timeout: 30_000 });
+  return id;
+}
+
+/**
+ * A file attached in one conversation keeps uploading while the founder opens another conversation and
+ * Documents (switching conversations used to cancel it), shows in its own conversation's composer on return,
+ * and lands in the venture's Documents.
+ */
+test('a file attached in a conversation keeps uploading while another is open, and lands in Documents', async ({
+  page,
+}) => {
+  const token = runToken();
+  const filename = `pilot-terms-${token}.md`;
+  await openVenture(page);
+  const first = await conversationWithAnswer(page, `What should the pilot terms cover? ${token}`);
+  const second = await conversationWithAnswer(page, `Who signs off on a library pilot? ${token}`);
+
+  // The upload's PUT waits until the test lets it through.
+  let held = false;
+  let release: () => void = () => undefined;
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(UPLOAD_PUT, async (route) => {
+    held = true;
+    await released;
+    await route.continue();
+  });
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Add documents' }).click();
+  await (
+    await chooser
+  ).setFiles({
+    name: filename,
+    mimeType: 'text/markdown',
+    buffer: Buffer.from(`# Pilot terms (${token})\n\nThe library pays after four weeks of use.\n`),
+  });
+  const tray = page.getByRole('list', { name: 'Documents being added' });
+  await expect(tray).toContainText(filename);
+  await expect.poll(() => held).toBe(true);
+
+  // Another conversation: its composer has nothing of this upload.
+  const recents = page.getByRole('navigation', { name: 'Recent conversations' });
+  await recents.locator(`a[href$="/c/${first}"]`).click();
+  await expect(page).toHaveURL(new RegExp(`/c/${first}`));
+  await expect(composer(page)).toBeVisible();
+  await expect(tray).toHaveCount(0);
+
+  // Back in the conversation it was attached to, it is still uploading there.
+  await recents.locator(`a[href$="/c/${second}"]`).click();
+  await expect(page).toHaveURL(new RegExp(`/c/${second}`));
+  await expect(tray).toContainText(filename);
+
+  // Documents shows it too, and it finishes there.
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Documents' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Documents' })).toBeVisible();
+  await expect(
+    page.getByRole('list', { name: 'Upload queue' }).getByRole('listitem').filter({ hasText: filename }),
+  ).toBeVisible();
+  release();
+  const rows = page
+    .getByRole('list', { name: 'Venture documents' })
+    .getByRole('listitem')
+    .filter({ hasText: filename });
+  await expect(rows).toContainText('Ready', { timeout: 30_000 });
+  await expect(rows).toHaveCount(1);
+  await page.unroute(UPLOAD_PUT);
+
+  await rows.getByRole('button', { name: `Delete ${filename}` }).click();
+  await page
+    .getByRole('alertdialog', { name: 'Delete this document?' })
+    .getByRole('button', { name: 'Delete' })
+    .click();
+  await expect(rows).toHaveCount(0);
 });

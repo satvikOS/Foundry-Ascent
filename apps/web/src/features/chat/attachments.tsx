@@ -6,18 +6,20 @@ import { toast } from '@/components/ui/toast';
 import { SimpleTooltip } from '@/components/ui/tooltip';
 import { DOCUMENT_ACCEPT, useDocuments } from '@/lib/api/hooks/documents';
 import { cn } from '@/lib/utils';
+import { isActiveUpload, type UploadItem, type UploadOrigin } from '@/features/documents/upload-queue';
 import { SUPPORTED_FORMATS_LABEL, validateUploadFiles } from '@/features/documents/upload-validation';
-import { useUploadQueue, type UploadItem } from '@/features/documents/use-upload-queue';
+import { useVentureUploads } from '@/features/documents/venture-uploads';
 
 /**
- * Attach from the composer: files go into the venture's Documents through the same upload queue as the
- * Documents page, so the vEIR can cite them once they are processed. Nothing is attached to the message
- * itself; the tray under the message box shows each upload until it is done.
+ * Attach from the composer: files go into the venture's Documents through the venture's upload queue (the
+ * one the Documents page shows), so the vEIR can cite them once they are processed. Nothing is attached to
+ * the message itself; the tray under the message box shows each upload started from this composer until it
+ * is done. Uploads go on while the person opens another conversation, and show here again on return.
  */
-export function useComposerAttachments(ventureId: string) {
-  const queue = useUploadQueue(ventureId);
+export function useComposerAttachments(ventureId: string, origin: UploadOrigin) {
+  const queue = useVentureUploads(ventureId);
   const documents = useDocuments(ventureId);
-  const { add } = queue;
+  const { add, move } = queue;
   const existing = useMemo(
     () => [
       ...(documents.data ?? []).filter((doc) => doc.status !== 'failed').map((doc) => doc.filename),
@@ -29,18 +31,22 @@ export function useComposerAttachments(ventureId: string) {
     (files: readonly File[]) => {
       const { accepted, rejected } = validateUploadFiles(files, { existingNames: existing });
       for (const rejection of rejected) toast.error(rejection.name, { description: rejection.message });
-      add(accepted);
+      add(accepted, origin);
     },
-    [add, existing],
+    [add, existing, origin],
   );
-  // Queued, uploading or finishing: leaving the page now would cancel it.
-  const uploading = queue.items.some(
-    (item) => item.status === 'queued' || item.status === 'uploading' || item.status === 'finishing',
+  /** The uploads started here now belong to `to` (New chat's, to the conversation its first message opened). */
+  const handOver = useCallback(
+    (to: UploadOrigin) => {
+      move(origin, to);
+    },
+    [move, origin],
   );
+  const items = useMemo(() => queue.items.filter((item) => item.origin === origin), [queue.items, origin]);
   return {
-    items: queue.items,
-    uploading,
+    items,
     attach,
+    handOver,
     cancel: queue.cancel,
     retry: queue.retry,
     dismiss: queue.dismiss,
@@ -115,7 +121,7 @@ export function AttachmentTray({
   return (
     <ul aria-label="Documents being added" className="flex flex-wrap gap-2 px-3 pt-3">
       {items.map((item) => {
-        const active = item.status === 'queued' || item.status === 'uploading' || item.status === 'finishing';
+        const active = isActiveUpload(item);
         const failed = item.status === 'failed';
         return (
           <li

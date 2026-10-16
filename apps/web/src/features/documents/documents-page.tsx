@@ -50,8 +50,9 @@ import { cn } from '@/lib/utils';
 import { sentenceStart, useVeirName } from '@/features/venture/veir-name';
 
 import { isUnfinishedUpload, resumableUpload } from './unfinished-uploads';
+import { DOCUMENTS_ORIGIN, type UploadItem } from './upload-queue';
 import { SUPPORTED_FORMATS_LABEL, validateUploadFiles, type UploadRejection } from './upload-validation';
-import { useUploadQueue, type UploadItem } from './use-upload-queue';
+import { useVentureUploads } from './venture-uploads';
 
 const routeApi = getRouteApi('/$tenant/app/v/$ventureId/documents');
 
@@ -144,8 +145,8 @@ function UploadRow({
 
 /**
  * Documents: the venture's files the vEIR can cite. One action (upload, by button or by dropping files
- * on the page), the upload queue while it runs, and the files as hairline rows that update while they
- * are processed.
+ * on the page), the venture's uploads while they run (from here or from a conversation's composer), and
+ * the files as hairline rows that update while they are processed.
  */
 export function DocumentsPage() {
   const me = useRequiredMe();
@@ -153,7 +154,7 @@ export function DocumentsPage() {
   const canEdit = canWrite(me, ventureId);
   const veirName = useVeirName(ventureId);
   const documents = useDocuments(ventureId);
-  const queue = useUploadQueue(ventureId);
+  const queue = useVentureUploads(ventureId);
   const remove = useDeleteDocument(ventureId);
   const complete = useCompleteDocument(ventureId);
   const [rejections, setRejections] = useState<UploadRejection[]>([]);
@@ -184,6 +185,7 @@ export function DocumentsPage() {
     setRejections(result.rejected);
     queue.add(
       result.accepted.map((candidate) => ({ ...candidate, resume: resumableUpload(candidate, rows) })),
+      DOCUMENTS_ORIGIN,
     );
     if (result.rejected.length > 0) {
       announce(

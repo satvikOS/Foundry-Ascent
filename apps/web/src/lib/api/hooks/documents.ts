@@ -9,7 +9,7 @@ import {
   RenewDocumentUploadResponse,
   type DocumentView,
 } from '@foundry/contracts';
-import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { queryOptions, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type { z } from 'zod';
 
 import { encodeBody } from '../body';
@@ -87,16 +87,22 @@ export function useCompleteDocument(ventureId: string) {
   });
 }
 
+/** DELETE /documents/:id → 204, then the venture's documents and overview are read again. */
+export async function deleteDocument(
+  client: QueryClient,
+  ventureId: string,
+  documentId: string,
+): Promise<void> {
+  await api.delete(path`/documents/${documentId}`, { idempotencyKey: createIdempotencyKey() });
+  void client.invalidateQueries({ queryKey: queryKeys.venture.documents(ventureId) });
+  void client.invalidateQueries({ queryKey: queryKeys.venture.overview(ventureId) });
+}
+
 /** DELETE /documents/:id → 204 */
 export function useDeleteDocument(ventureId: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (documentId: string) =>
-      api.delete(path`/documents/${documentId}`, { idempotencyKey: createIdempotencyKey() }),
-    onSuccess: () => {
-      void client.invalidateQueries({ queryKey: queryKeys.venture.documents(ventureId) });
-      void client.invalidateQueries({ queryKey: queryKeys.venture.overview(ventureId) });
-    },
+    mutationFn: (documentId: string) => deleteDocument(client, ventureId, documentId),
   });
 }
 
@@ -208,72 +214,76 @@ async function settleStoppedUpload(documentId: string, cancelled: boolean): Prom
  * retry, a fresh PUT for the same document) → upload with progress → mark complete (starts ingestion). The
  * documents list then polls until the document is ready. When the upload stops, its document never stays
  * "Uploading": a cancelled one is deleted, any other is marked unfinished (`upload_incomplete`) for a retry.
+ * A plain function (not only a mutation) so a venture's upload queue can run it outside any one page.
  */
-export function useUploadDocument(ventureId: string) {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ file, onProgress, signal, resume, onResume }: UploadDocumentVariables) => {
-      const contentType = documentContentType(file);
-      if (!contentType) {
-        throw new ApiError({ status: 415, code: 'unsupported_media_type', title: 'Unsupported file type' });
-      }
-      if (file.size > MAX_DOCUMENT_BYTES) {
-        throw new ApiError({ status: 413, code: 'upload_too_large', title: 'File too large' });
-      }
-      let documentId = resume?.documentId ?? null;
-      let uploaded = resume?.uploaded ?? false;
-      const report = () => {
-        if (documentId !== null) onResume?.({ documentId, uploaded });
-      };
-      try {
-        if (!uploaded) {
-          let ticket: DocumentUploadTicket | null = null;
-          if (documentId !== null) {
-            try {
-              ticket = await api.post(
-                path`/documents/${documentId}/upload`,
-                RenewDocumentUploadResponse,
-                undefined,
-                { idempotencyKey: createIdempotencyKey(), signal },
-              );
-            } catch (error) {
-              // 404: the document is gone (deleted meanwhile), so the file is registered again. 409: its
-              // file already arrived, so only completing is left.
-              if (isApiError(error) && error.status === 404) documentId = null;
-              else if (isApiError(error) && error.status === 409) uploaded = true;
-              else throw error;
-            }
-          }
-          if (documentId === null) {
-            ticket = await api.post(
-              path`/ventures/${ventureId}/documents`,
-              CreateDocumentResponse,
-              encodeBody(CreateDocumentRequest, { filename: file.name, contentType, sizeBytes: file.size }),
-              { idempotencyKey: createIdempotencyKey(), signal },
-            );
-          }
-          if (ticket) {
-            documentId = ticket.document.id;
-            report();
-            void client.invalidateQueries({ queryKey: queryKeys.venture.documents(ventureId) });
-            await uploadToPresignedUrl(ticket.upload, file, { onProgress, signal });
-            uploaded = true;
-          }
-          report();
+export async function uploadDocument(
+  client: QueryClient,
+  ventureId: string,
+  { file, onProgress, signal, resume, onResume }: UploadDocumentVariables,
+): Promise<DocumentView> {
+  const contentType = documentContentType(file);
+  if (!contentType) {
+    throw new ApiError({ status: 415, code: 'unsupported_media_type', title: 'Unsupported file type' });
+  }
+  if (file.size > MAX_DOCUMENT_BYTES) {
+    throw new ApiError({ status: 413, code: 'upload_too_large', title: 'File too large' });
+  }
+  let documentId = resume?.documentId ?? null;
+  let uploaded = resume?.uploaded ?? false;
+  const report = () => {
+    if (documentId !== null) onResume?.({ documentId, uploaded });
+  };
+  try {
+    if (!uploaded) {
+      let ticket: DocumentUploadTicket | null = null;
+      if (documentId !== null) {
+        try {
+          ticket = await api.post(
+            path`/documents/${documentId}/upload`,
+            RenewDocumentUploadResponse,
+            undefined,
+            {
+              idempotencyKey: createIdempotencyKey(),
+              signal,
+            },
+          );
+        } catch (error) {
+          // 404: the document is gone (deleted meanwhile), so the file is registered again. 409: its
+          // file already arrived, so only completing is left.
+          if (isApiError(error) && error.status === 404) documentId = null;
+          else if (isApiError(error) && error.status === 409) uploaded = true;
+          else throw error;
         }
-        if (documentId === null) throw new Error('upload has no document');
-        // 202 (processing) and 200 both carry the DocumentView; the list polls until it settles.
-        return await api.post(path`/documents/${documentId}/complete`, CompleteDocumentResponse, undefined, {
-          idempotencyKey: createIdempotencyKey(),
-          signal,
-        });
-      } catch (error) {
-        if (documentId !== null) {
-          await settleStoppedUpload(documentId, signal?.reason === UPLOAD_CANCELLED);
-        }
-        throw error;
       }
-    },
-    onSettled: () => client.invalidateQueries({ queryKey: queryKeys.venture.documents(ventureId) }),
-  });
+      if (documentId === null) {
+        ticket = await api.post(
+          path`/ventures/${ventureId}/documents`,
+          CreateDocumentResponse,
+          encodeBody(CreateDocumentRequest, { filename: file.name, contentType, sizeBytes: file.size }),
+          { idempotencyKey: createIdempotencyKey(), signal },
+        );
+      }
+      if (ticket) {
+        documentId = ticket.document.id;
+        report();
+        void client.invalidateQueries({ queryKey: queryKeys.venture.documents(ventureId) });
+        await uploadToPresignedUrl(ticket.upload, file, { onProgress, signal });
+        uploaded = true;
+      }
+      report();
+    }
+    if (documentId === null) throw new Error('upload has no document');
+    // 202 (processing) and 200 both carry the DocumentView; the list polls until it settles.
+    return await api.post(path`/documents/${documentId}/complete`, CompleteDocumentResponse, undefined, {
+      idempotencyKey: createIdempotencyKey(),
+      signal,
+    });
+  } catch (error) {
+    if (documentId !== null) {
+      await settleStoppedUpload(documentId, signal?.reason === UPLOAD_CANCELLED);
+    }
+    throw error;
+  } finally {
+    void client.invalidateQueries({ queryKey: queryKeys.venture.documents(ventureId) });
+  }
 }
