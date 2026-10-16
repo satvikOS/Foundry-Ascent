@@ -4,8 +4,11 @@
 --
 --  1. A turn is never stored on a deleted conversation. A BEFORE INSERT trigger locks the conversation the way
 --     deleting it does, so a turn admitted while a delete is committing waits for it and is then refused; the
---     trigger that moves a conversation's last activity skips deleted ones, and titles a conversation only from
---     a message that is neither a crisis nor high-risk (the client shows its default title until then).
+--     trigger that moves a conversation's last activity skips deleted ones. Crisis-safe titles (owner decision):
+--     a conversation is titled automatically only from a message the classifier found ordinary (`risk_label`
+--     'none'), never from a crisis, high-risk, injection or cross-venture one; a title taken from a turn whose
+--     answer is then held back is withdrawn, and existing such titles are cleared. The client shows its default
+--     title ("Conversation · <time>") until an ordinary message titles the conversation.
 --  2. Deleting a conversation clears what the founder heard of every reply (`heard_text`) explicitly, whether or
 --     not the turn's words change (0008's trigger clears it only when they do). It also purges the stored
 --     idempotent responses that carry what it erases without naming the conversation: the AI memory proposals
@@ -47,9 +50,10 @@ CREATE TRIGGER turns_require_live_session BEFORE INSERT ON turns
   FOR EACH ROW EXECUTE FUNCTION app.turns_require_live_session();
 
 -- 0004's function with two changes: a deleted conversation is never touched (no activity, no title), and the
--- title comes from the first message that is neither a crisis nor high-risk (`risk_label` 'crisis' or 'high'):
--- the founder's words about their wellbeing, a legal threat or a medical question never name the conversation
--- in every list. Until such a message, the conversation keeps no title and the client shows its default.
+-- title comes only from a message the classifier found ordinary (`risk_label` 'none'): the founder's words about
+-- their wellbeing, a legal threat, a medical question, an injection attempt or another venture never name the
+-- conversation in recents, the command palette and teammates' lists. Until an ordinary message, the
+-- conversation keeps no title and the client shows its default.
 CREATE OR REPLACE FUNCTION app.turns_touch_session() RETURNS trigger
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 BEGIN
@@ -57,8 +61,7 @@ BEGIN
      SET last_activity_at = greatest(s.last_activity_at, NEW.created_at),
          has_calls = s.has_calls OR NEW.channel = 'voice',
          title = CASE
-                   WHEN s.title IS NULL AND s.privacy = 'standard'
-                        AND coalesce(NEW.risk_label, 'none') NOT IN ('crisis', 'high')
+                   WHEN s.title IS NULL AND s.privacy = 'standard' AND coalesce(NEW.risk_label, 'none') = 'none'
                      THEN app.conversation_title(NEW.founder_text)
                    ELSE s.title
                  END
@@ -67,6 +70,33 @@ BEGIN
 END
 $$;
 REVOKE ALL ON FUNCTION app.turns_touch_session() FROM PUBLIC;
+
+-- A turn held back after it was classified (a policy, privacy or identity block) withdraws the automatic title
+-- it gave its conversation.
+CREATE OR REPLACE FUNCTION app.turns_untitle_blocked() RETURNS trigger
+  LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+BEGIN
+  UPDATE coaching_sessions s
+     SET title = NULL
+   WHERE s.id = NEW.session_id AND s.deleted_at IS NULL AND s.title_source = 'auto'
+     AND s.title IS NOT DISTINCT FROM app.conversation_title(NEW.founder_text);
+  RETURN NULL;
+END
+$$;
+REVOKE ALL ON FUNCTION app.turns_untitle_blocked() FROM PUBLIC;
+DROP TRIGGER IF EXISTS turns_untitle_blocked ON turns;
+CREATE TRIGGER turns_untitle_blocked AFTER UPDATE OF status ON turns
+  FOR EACH ROW WHEN (NEW.status = 'blocked' AND OLD.status IS DISTINCT FROM 'blocked')
+  EXECUTE FUNCTION app.turns_untitle_blocked();
+
+-- Conversations titled before this rule from such a message, or from a turn that was held back (distilled
+-- titles were written by the model from the whole conversation and stay).
+UPDATE coaching_sessions s SET title = NULL
+ WHERE s.title_source = 'auto' AND s.title IS NOT NULL AND s.distilled_at IS NULL
+   AND EXISTS (SELECT 1 FROM turns t
+                WHERE t.session_id = s.id
+                  AND (coalesce(t.risk_label, 'none') <> 'none' OR t.status = 'blocked')
+                  AND s.title = app.conversation_title(t.founder_text));
 
 -- ---------------------------------------------------------------------------------------------------
 -- 2. Deleting a conversation (and 3. openers of unknown origin)

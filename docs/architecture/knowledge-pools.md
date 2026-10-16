@@ -157,9 +157,10 @@ generated time), with `distilled_at` and `distill_version` (the number of comple
 
 ## 5. Conversations
 
-- **Titles** come from the first message that is neither a crisis nor high-risk (trigger
-  `turns_touch_session`; until then the client shows its default "Conversation · date, time") and can be
-  renamed (`PATCH /sessions/:id`). `title_source` records who set them: `auto` (first message, distillation) or
+- **Titles** come from the first message the classifier found ordinary (`risk_label` `none`: never a crisis,
+  high-risk, injection or cross-venture one; trigger `turns_touch_session`), and a title taken from a turn
+  whose answer is then held back is withdrawn (`turns_untitle_blocked`); until then the client shows its
+  default "Conversation · date, time". Titles can be renamed (`PATCH /sessions/:id`). `title_source` records who set them: `auto` (first message, distillation) or
   `person` (a rename, or a title given at the start). Distillation (`setSessionDigest`) replaces only
   `auto` titles.
 - **Temporary chats never carry a title** (CHECK `coaching_sessions_title_privacy_check`); renaming one is 409.
@@ -251,7 +252,7 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
 | Object                             | Change                                                                                                                                                                     |
 | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `turns_require_live_session`       | BEFORE INSERT on `turns`: locks the conversation like a delete does and refuses a turn on a deleted one (55000)                                                            |
-| `app.turns_touch_session`          | skips deleted conversations; titles from the first message that is neither `crisis` nor `high` risk                                                                        |
+| `app.turns_touch_session`          | skips deleted conversations; titles only from a message labelled `none`; `turns_untitle_blocked` withdraws a title whose turn is held back; such titles cleared once       |
 | `app.soft_delete_session`          | also clears `heard_text` explicitly                                                                                                                                        |
 | `app.erase_drawn_from_session`     | purges stored responses of erased AI proposals; removes lines listing the conversation in `sourceSessionIds`; clears a notebook opener of unknown origin in every notebook |
 | `app.sessions_erase_opener_copies` | also clears copies of unknown origin on the venture's conversations, and purges stored responses of the conversations it clears                                            |

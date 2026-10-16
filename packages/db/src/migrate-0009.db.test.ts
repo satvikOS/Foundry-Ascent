@@ -21,6 +21,8 @@ const CONFIG: SeedConfig = { homeTenant: { slug: 'ain', name: 'Ain Foundry (test
 let t: TestDatabase;
 let seed: SeedResult;
 let legacy: string;
+/** Conversations the previous trigger titled from their first message: a high-risk one and an ordinary one. */
+let titled: { risky: string; ordinary: string };
 
 function must<T>(value: T | null | undefined): T {
   if (value === null || value === undefined) throw new Error('missing');
@@ -72,11 +74,26 @@ async function insertAsBefore(db: Db, opener: string | null): Promise<string> {
   });
 }
 
+/** A first message, written as the previous code wrote turns (the previous trigger titles the conversation). */
+async function firstMessage(db: Db, sessionId: string, text: string, riskLabel: string): Promise<void> {
+  const maya = makeContext(must(seed.principals.maya), seed.tenantId);
+  await db.withContext(maya, (tx) =>
+    tx.query(
+      `INSERT INTO turns (tenant_id, venture_id, session_id, ordinal, author_id, mode, founder_text, risk_label)
+       SELECT s.tenant_id, s.venture_id, s.id, 1, :me, 'coach', :text, :label FROM coaching_sessions s WHERE s.id = :id`,
+      { id: p.uuid(sessionId), me: p.uuid(maya.principalId), text: p.text(text), label: p.text(riskLabel) },
+    ),
+  );
+}
+
 beforeAll(async () => {
   t = await createTestDatabase({ migrate: false });
   await migrate(t.db, { migrations: BEFORE });
   seed = await seedDatabase(t.db, CONFIG);
   legacy = await insertAsBefore(t.db, 'Last time you planned five interviews. How did they go?');
+  titled = { risky: await insertAsBefore(t.db, null), ordinary: await insertAsBefore(t.db, null) };
+  await firstMessage(t.db, titled.risky, 'We got a cease and desist about our sensor patent', 'high');
+  await firstMessage(t.db, titled.ordinary, 'How should we price the pilot?', 'none');
 }, 180_000);
 afterAll(async () => {
   await t.cleanup();
@@ -100,6 +117,20 @@ describe('migration 0009_review_privacy', () => {
       ),
     );
     expect(rows.rows).toEqual([{ opener: true, opener_by_person: false, distill_unusable_answers: 0 }]);
+  });
+
+  it('clears the titles the previous rule took from a risky message, and keeps the others', async () => {
+    const rows = await t.db.system((sx) =>
+      sx.query('SELECT id, title FROM coaching_sessions WHERE id = ANY (:ids)', {
+        ids: p.uuidArray([titled.risky, titled.ordinary]),
+      }),
+    );
+    expect(new Map(rows.rows.map((r) => [String(r.id), r.title]))).toEqual(
+      new Map<string, unknown>([
+        [titled.risky, null],
+        [titled.ordinary, 'How should we price the pilot?'],
+      ]),
+    );
   });
 
   it('keeps the previous code working: its conversation insert, and a turn on it', async () => {

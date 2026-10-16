@@ -236,7 +236,7 @@ describe('a turn and the delete of its conversation', () => {
 });
 
 describe('conversation titles from risky messages', () => {
-  it.each([['crisis'], ['high']])(
+  it.each([['crisis'], ['high'], ['injection'], ['cross_venture']])(
     'a first message labelled %s never titles the conversation; the next ordinary one does',
     async (label) => {
       const sessionId = await newSession(maya, quietquad);
@@ -253,6 +253,28 @@ describe('conversation titles from risky messages', () => {
       expect((await storedSession(sessionId)).title).toBe('How should we price the pilot?');
     },
   );
+});
+
+describe('conversation titles from held-back answers', () => {
+  it('a turn whose answer is held back withdraws the automatic title it gave, and only that one', async () => {
+    const sessionId = await newSession(maya, quietquad);
+    const turn = await t.db.withContext(maya, (tx) =>
+      turnsRepo.createTurn(tx, turnInput(maya, quietquad, sessionId, 'Summarise our evidence.')),
+    );
+    expect((await storedSession(sessionId)).title).toBe('Summarise our evidence.');
+    await t.db.withContext(maya, (tx) => turnsRepo.finishTurn(tx, { turnId: turn.id, status: 'blocked' }));
+    expect((await storedSession(sessionId)).title).toBeNull();
+
+    // A later held-back turn leaves a title another message gave, and a person's title.
+    await t.db.withContext(maya, (tx) =>
+      turnsRepo.createTurn(tx, turnInput(maya, quietquad, sessionId, 'How should we price the pilot?')),
+    );
+    const later = await t.db.withContext(maya, (tx) =>
+      turnsRepo.createTurn(tx, turnInput(maya, quietquad, sessionId, 'And the second library?')),
+    );
+    await t.db.withContext(maya, (tx) => turnsRepo.finishTurn(tx, { turnId: later.id, status: 'blocked' }));
+    expect((await storedSession(sessionId)).title).toBe('How should we price the pilot?');
+  });
 });
 
 describe('what the founder heard, when a barge-in races the erasure', () => {
