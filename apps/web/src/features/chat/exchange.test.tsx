@@ -187,10 +187,19 @@ describe('TurnFailure', () => {
       />,
     );
     expect(screen.getByText('Corin couldn’t answer')).toBeVisible();
-    expect(screen.getByRole('button', { name: /Try again in 5 s/ })).toBeDisabled();
+    // The countdown is shown, but kept out of the alert's spoken text: the button's name never ticks.
+    const retry = screen.getByRole('button', { name: 'Try again' });
+    expect(retry).toBeDisabled();
+    expect(retry).toHaveTextContent('Try again in 5 s');
+    expect(screen.getByText('Try again in 5 s').closest('[aria-hidden="true"]')).not.toBeNull();
+    expect(screen.getByRole('alert').textContent).toContain('Try again in 5 s');
+    act(() => {
+      vi.advanceTimersByTime(1_000);
+    });
+    expect(screen.getByRole('button', { name: 'Try again' })).toHaveTextContent('Try again in 4 s');
     expect(screen.getByText('req-42')).toBeVisible();
     act(() => {
-      vi.advanceTimersByTime(5_000);
+      vi.advanceTimersByTime(4_000);
     });
     expect(screen.getByRole('button', { name: 'Try again' })).toBeEnabled();
   });

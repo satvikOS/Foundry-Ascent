@@ -599,6 +599,7 @@ describe('documents, sessions, turns, escalations', () => {
         turnCount: 2,
         status: 'active',
         digestDeleted: false,
+        personaKind: 'eir_persona',
       });
       const ended = await sessionsRepo.endSession(tx, {
         sessionId,

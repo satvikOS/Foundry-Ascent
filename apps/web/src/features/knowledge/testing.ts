@@ -148,6 +148,7 @@ export function makeSession(overrides: Partial<SessionView> = {}): SessionView {
     recap: null,
     title: 'Is exam-week demand strong enough for a pilot?',
     personaId: IDS.persona,
+    personaKind: 'eir_persona',
     lastActivityAt: NOW,
     hasCalls: false,
     digestDeleted: false,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { faceMonogram, monogram, veirDisplay, veirName } from './veir';
+import { conversationVeir, faceMonogram, monogram, veirDisplay, veirName } from './veir';
 
 describe('veirName (the AI is always "<EIR first name>’s vEIR")', () => {
   it('keeps a persona already named as a vEIR', () => {
@@ -86,5 +86,47 @@ describe('monogram', () => {
   it('skips leading punctuation and handles empty names', () => {
     expect(monogram('  (ruth)  abernathy ')).toBe('RA');
     expect(monogram('   ')).toBe('?');
+  });
+});
+
+describe('conversationVeir (who a conversation is with)', () => {
+  const CORIN = { personaId: 'p-corin', name: 'Corin’s vEIR', kind: 'eir_persona' as const };
+  const GUIDE_ID = 'p-guide';
+
+  it('names a conversation with the venture’s current vEIR after it', () => {
+    expect(
+      conversationVeir(
+        { personaId: 'p-corin', personaName: "Corin's vEIR", personaKind: 'eir_persona' },
+        CORIN,
+      ),
+    ).toEqual({ name: 'Corin’s vEIR', kind: 'eir_persona' });
+  });
+
+  it('keeps an older conversation’s guide as the guide, never "Foundry’s vEIR"', () => {
+    expect(
+      conversationVeir(
+        { personaId: GUIDE_ID, personaName: 'Foundry Guide', personaKind: 'neutral_guide' },
+        CORIN,
+      ),
+    ).toEqual({ name: 'Foundry Guide', kind: 'neutral_guide' });
+    // An older API without the kind: a name without "vEIR" is a guide's.
+    expect(
+      conversationVeir({ personaId: GUIDE_ID, personaName: 'Foundry Guide', personaKind: null }, CORIN),
+    ).toEqual({ name: 'Foundry Guide', kind: 'neutral_guide' });
+  });
+
+  it('names an older conversation with another EIR’s vEIR after that vEIR', () => {
+    expect(
+      conversationVeir(
+        { personaId: 'p-ruth', personaName: "Ruth's vEIR", personaKind: 'eir_persona' },
+        CORIN,
+      ),
+    ).toEqual({ name: "Ruth's vEIR", kind: 'eir_persona' });
+    expect(
+      conversationVeir({ personaId: 'p-ruth', personaName: "Ruth's vEIR", personaKind: null }, null),
+    ).toEqual({
+      name: "Ruth's vEIR",
+      kind: 'eir_persona',
+    });
   });
 });

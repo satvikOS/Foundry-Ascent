@@ -7,6 +7,7 @@ import {
   EvidenceItem,
   Id,
   MemoryType,
+  PersonaKind,
   RequestedRole,
   RiskCategory,
   Timestamp,
@@ -210,6 +211,11 @@ export const SessionView = z.object({
   title: z.string().nullable().default(null),
   /** The vEIR persona of this conversation. Additive. */
   personaId: Id.nullable().default(null),
+  /**
+   * Its kind, so a conversation with a persona the venture no longer has is named after that persona (a guide
+   * keeps its own name). Additive: older payloads parse as null.
+   */
+  personaKind: PersonaKind.nullable().default(null),
   /** Time of the latest turn, or the start time. Additive. */
   lastActivityAt: Timestamp.nullable().default(null),
   /** Whether any turn of this conversation was spoken during a call. Additive. */

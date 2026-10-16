@@ -34,11 +34,12 @@ import { useRequiredMe } from '@/lib/auth/use-me';
 import { conversationTitle } from '@/lib/conversations';
 import { useDockedBottom } from '@/lib/hooks/use-docked-bottom';
 import { useHotkeys } from '@/lib/hooks/use-hotkeys';
-import { veirName, veirDisplay } from '@/lib/veir';
+import { conversationVeir, veirDisplay } from '@/lib/veir';
 import { EscalationFlowDialog, type EscalationDraft } from '@/features/escalations/escalation-flow-dialog';
 
 import { coachingAvailability } from '../coach/availability';
 import { deriveTurnProgress } from '../coach/progress';
+import { turnOutcomeAnnouncement } from './announcements';
 import { AttachButton, AttachmentTray, useComposerAttachments } from './attachments';
 import { Composer, MAX_TURN_CHARS, modeToSend, type ComposerMode } from './composer';
 import { ContextPanel } from './context-panel';
@@ -52,7 +53,9 @@ import {
   rememberedComposerMode,
   useFirstMessageHandoff,
 } from './first-message';
+import { useFirstLoadScroll } from './first-load-scroll';
 import { FollowUps } from './follow-ups';
+import { useKeepEndInView } from './keep-end-in-view';
 import { PanelStateProvider } from './panel-state';
 
 const routeApi = getRouteApi('/$tenant/app/v/$ventureId/c/$sessionId');
@@ -136,7 +139,6 @@ function Conversation() {
   });
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const liveRef = useRef<HTMLDivElement | null>(null);
-  const initialScrollDone = useRef(false);
   const composerDockRef = useDockedBottom();
 
   const session = detail.data?.session ?? null;
@@ -148,12 +150,10 @@ function Conversation() {
   const { state } = stream;
   const progress = deriveTurnProgress(state);
   const veir = veirDisplay(venture.data);
-  const personaName =
-    session && veir?.personaId === session.personaId
-      ? veir.name
-      : session
-        ? veirName(session.personaName, veir?.kind ?? 'neutral_guide')
-        : (veir?.name ?? 'your vEIR');
+  // Named after the conversation's own persona: an older conversation can be with one the venture no longer has.
+  const withVeir = session ? conversationVeir(session, veir) : null;
+  const personaName = withVeir?.name ?? veir?.name ?? 'your vEIR';
+  const personaKind = withVeir?.kind ?? veir?.kind ?? 'neutral_guide';
 
   const setMode = useCallback(
     (next: ComposerMode) => {
@@ -168,19 +168,19 @@ function Conversation() {
   useHotkeys({ '/': focusComposer });
 
   // First load: an ended conversation opened for its summary starts there; an open one at its latest
-  // exchange.
-  useEffect(() => {
-    if (initialScrollDone.current || !session) return;
-    if (search.view === 'digest' && session.status === 'ended') {
-      initialScrollDone.current = true;
-      document.getElementById('digest')?.scrollIntoView({ block: 'start' });
-      return;
-    }
-    if (turns.length === 0) return;
-    initialScrollDone.current = true;
-    const last = turns[turns.length - 1];
-    if (last) document.getElementById(`turn-${last.id}`)?.scrollIntoView({ block: 'start' });
-  }, [session, turns, search.view]);
+  // exchange. Answers that arrive later never move the page.
+  useFirstLoadScroll(session, turns, search.view);
+  // When an answer finishes while the reader is at the end of the page, its actions and the follow-up chips
+  // (the composer grows by them at the same moment) stay in view together.
+  const lastTurn = turns[turns.length - 1] ?? null;
+  const conversationRef = useKeepEndInView(
+    [
+      state.status,
+      lastTurn?.id ?? '',
+      lastTurn?.status ?? '',
+      lastTurn?.response?.follow_up_questions.length ?? 0,
+    ].join('|'),
+  );
 
   // A message just sent: bring it to the top of the reading column, so the answer streams in below.
   const sentText = state.status === 'streaming' ? state.pendingText : null;
@@ -189,39 +189,24 @@ function Conversation() {
     liveRef.current?.scrollIntoView({ block: 'start', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
   }, [sentText]);
 
-  // Announce how a turn ended (content-free). Step-by-step progress is announced by TurnProgressList.
-  // A replay that found the turn still being answered is retried automatically, so it is not a failure.
-  const stillAnswering =
-    state.status === 'failed' && state.error?.code === 'conflict' && state.error.retryAt !== undefined;
+  // Announce how a turn ended (content-free), saying only what happened (announcements.ts). Step-by-step
+  // progress is announced by TurnProgressList.
+  const outcome = turnOutcomeAnnouncement(state, personaName);
   useEffect(() => {
-    if (stillAnswering) {
-      announce(`Still answering. ${personaName} will check again shortly.`);
-      return;
-    }
-    switch (state.status) {
-      case 'completed':
-        announce('Response ready.');
-        break;
-      case 'blocked':
-        announce(`${personaName} handed this question to a person. Support options are shown.`, 'assertive');
-        break;
-      case 'failed':
-        announce('The response could not be completed.', 'assertive');
-        break;
-      case 'cancelled':
-        announce('Stopped.');
-        break;
-      default:
-        break;
-    }
-  }, [state.status, stillAnswering, personaName]);
+    // Announced when the outcome changes, not on every render.
+    if (outcome) announce(outcome.text, outcome.politeness);
+  }, [outcome?.text, outcome?.politeness]);
 
   const sendTurn = stream.send;
+  /**
+   * Sends a message. Only the composer's own text clears the composer: a follow-up chip or "Ask again" sends
+   * other words and leaves an unsent draft where it is.
+   */
   const send = useCallback(
-    (raw: string) => {
+    (raw: string, { fromComposer = false }: { fromComposer?: boolean } = {}) => {
       const value = raw.trim();
       if (!value || value.length > MAX_TURN_CHARS || !canSend || stream.isStreaming) return;
-      setText('');
+      if (fromComposer) setText('');
       const chosen = modeToSend(mode);
       const rehearsalCounterpart = chosen === 'rehearse' ? counterpart.trim() : '';
       void sendTurn({
@@ -338,14 +323,14 @@ function Conversation() {
   };
 
   return (
-    <div className="@container/conv flex flex-1 flex-col">
+    <div ref={conversationRef} className="@container/conv flex flex-1 flex-col">
       <ConversationHeader
         tenant={tenant}
         ventureId={ventureId}
         session={session}
         title={title}
         personaName={personaName}
-        personaKind={veir?.kind ?? 'neutral_guide'}
+        personaKind={personaKind}
         portraitUrl={veir?.portraitUrl}
         canEdit
         canCall={!ended && callable}
@@ -469,7 +454,7 @@ function Conversation() {
               streaming={stream.isStreaming}
               disabledReason={canSend ? null : (availability?.title ?? 'Unavailable')}
               onSend={() => {
-                send(text);
+                send(text, { fromComposer: true });
               }}
               onStop={stream.cancel}
               textareaRef={textareaRef}

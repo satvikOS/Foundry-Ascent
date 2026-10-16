@@ -441,9 +441,17 @@ export function TurnFailure({
       action={
         <>
           {error.retryable && canRetry && !replaying ? (
-            <Button size="sm" variant="secondary" onClick={onRetry} disabled={waitFor > 0}>
+            // The countdown is visual only: it sits in the alert, which a screen reader would otherwise read
+            // again every second. The button's name stays "Try again"; it is disabled until the wait is over.
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={onRetry}
+              disabled={waitFor > 0}
+              aria-label="Try again"
+            >
               <RotateCcw aria-hidden />
-              {waitFor > 0 ? `Try again in ${formatWait(waitFor)}` : 'Try again'}
+              <span aria-hidden>{waitFor > 0 ? `Try again in ${formatWait(waitFor)}` : 'Try again'}</span>
             </Button>
           ) : null}
           <Button size="sm" variant="ghost" onClick={onEdit}>

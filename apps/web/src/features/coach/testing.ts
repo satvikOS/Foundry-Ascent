@@ -128,6 +128,7 @@ export function makeSession(overrides: Partial<SessionView> = {}): SessionView {
     recap: null,
     title: null,
     personaId: null,
+    personaKind: null,
     lastActivityAt: null,
     hasCalls: false,
     digestDeleted: false,

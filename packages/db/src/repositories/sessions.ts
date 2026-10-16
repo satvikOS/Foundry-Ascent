@@ -316,7 +316,8 @@ export async function softDeleteSession(ex: SqlExecutor, sessionId: string): Pro
 // ------------------------------------------------------------------------------------------------
 
 const VIEW_SELECT = `
-  SELECT ${COLUMNS}, pe.id AS persona_id, pe.name AS persona_name, r.version AS persona_version, r.disclosure_text,
+  SELECT ${COLUMNS}, pe.id AS persona_id, pe.name AS persona_name, pe.kind AS persona_kind,
+         r.version AS persona_version, r.disclosure_text,
          st.display_name AS started_by_name,
          (SELECT count(*) FROM turns t WHERE t.session_id = s.id) AS turn_count
   FROM coaching_sessions s
@@ -346,6 +347,7 @@ function decodeView(r: RawRow): SessionView {
     recap: s.recap,
     title: s.title,
     personaId: col.uuid.decode(r.persona_id, 'persona_id'),
+    personaKind: col.enum(['neutral_guide', 'eir_persona'] as const).decode(r.persona_kind, 'persona_kind'),
     lastActivityAt: s.lastActivityAt,
     hasCalls: s.hasCalls,
     digest: s.privacy === 'standard' ? s.digest : null,

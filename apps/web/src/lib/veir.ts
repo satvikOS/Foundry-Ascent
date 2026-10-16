@@ -1,4 +1,4 @@
-import type { PersonaSummary, VentureDetail } from '@foundry/contracts';
+import type { PersonaSummary, SessionView, VentureDetail } from '@foundry/contracts';
 
 /**
  * How the vEIR assigned to a venture is shown: its face (portrait or monogram), its name and its disclosure.
@@ -53,6 +53,23 @@ export function veirDisplay(venture: Pick<VentureDetail, 'persona'> | null | und
     disclosure: persona.disclosure,
     portraitUrl: null,
   };
+}
+
+/**
+ * Who a conversation is with: the venture's vEIR when the conversation is with it, otherwise the conversation's
+ * own persona (an older conversation can be with a persona the venture no longer has), named by that persona's
+ * own kind: a guide keeps its name ("Foundry Guide", never "Foundry’s vEIR"). Without the kind (an older API),
+ * a name ending in "vEIR" is an EIR persona's, which the API requires them to carry.
+ */
+export function conversationVeir(
+  session: Pick<SessionView, 'personaId' | 'personaName' | 'personaKind'>,
+  current: Pick<VeirDisplay, 'personaId' | 'name' | 'kind'> | null,
+): { name: string; kind: PersonaSummary['kind'] } {
+  if (current?.personaId === session.personaId) return { name: current.name, kind: current.kind };
+  const kind =
+    session.personaKind ??
+    (ENDS_WITH_VEIR.test(session.personaName.trim()) ? 'eir_persona' : 'neutral_guide');
+  return { name: veirName(session.personaName, kind), kind };
 }
 
 /** The letters on a vEIR's face: its EIR's initial for "Corin’s vEIR" ("C"), a guide's initials ("FG"). */
