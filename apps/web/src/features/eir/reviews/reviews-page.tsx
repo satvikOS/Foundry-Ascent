@@ -7,6 +7,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
 import { PageContainer, PageHeader } from '@/components/ui/page-header';
 import { SectionCard } from '@/components/ui/section-card';
+import { SelectableRow } from '@/components/ui/selectable-row';
 import { LoadingRegion, Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast';
 import { FilterChips } from '@/features/admin/shared/filter-chips';
@@ -16,7 +17,6 @@ import { hasRole } from '@/lib/auth/roles';
 import { useRequiredMe } from '@/lib/auth/use-me';
 import { formatDate } from '@/lib/format';
 import { MODE_LABELS } from '@/lib/labels';
-import { cn } from '@/lib/utils';
 
 import { RubricForm } from './rubric-form';
 import { StructuredResponse } from './structured-response';
@@ -117,17 +117,12 @@ export function ReviewsPage({ selectedTurnId, filter, onSelect, onFilterChange }
                   const isSelected = sample === selected;
                   return (
                     <li key={sample.turn.id}>
-                      <button
-                        type="button"
-                        aria-current={isSelected ? 'true' : undefined}
+                      <SelectableRow
+                        selected={isSelected}
                         onClick={() => {
                           select(sample);
                         }}
-                        className={cn(
-                          'grid w-full gap-0.5 rounded-lg px-3 py-2 text-left transition-colors',
-                          'hover:bg-accent/60 focus-visible:outline-2 focus-visible:outline-ring',
-                          isSelected && 'bg-accent',
-                        )}
+                        className="grid gap-0.5 rounded-lg px-3 py-2"
                       >
                         <span className="flex items-center justify-between gap-2 text-sm font-medium">
                           Sample {ordinal(sample)}
@@ -144,7 +139,7 @@ export function ReviewsPage({ selectedTurnId, filter, onSelect, onFilterChange }
                         <span className="text-xs text-muted-foreground">
                           {formatDate(sample.turn.createdAt)}
                         </span>
-                      </button>
+                      </SelectableRow>
                     </li>
                   );
                 })}

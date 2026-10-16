@@ -202,6 +202,14 @@ const NON_TEXT = [
   { token: '--ring', on: SOLID_SURFACES },
 ] as const;
 
+/**
+ * Selection in a master list (SelectableRow): the selected row is filled with `--accent` and marked by a
+ * bar in `--selected-cue`; hover is `--accent` at 50 % and never draws the bar. The bar is what tells the
+ * two apart, so it must reach 3:1 (WCAG 1.4.11) on the selected fill, on the hover tint and on every page
+ * surface a list sits on.
+ */
+const SELECTION_SURFACES = ['--background', '--card', '--popover', '--sidebar'] as const;
+
 function failures(
   pairs: { label: string; fg: Rgba; bg: Rgba }[],
   minimum: number,
@@ -219,6 +227,7 @@ describe('colour tokens (globals.css)', () => {
       ...GLASS_LAYERS,
       ...TEXT_TOKENS,
       ...NON_TEXT.map((n) => n.token),
+      '--selected-cue',
     ]) {
       expect(tokens.has(name), name).toBe(true);
     }
@@ -262,6 +271,33 @@ describe('colour tokens (globals.css)', () => {
         expect(failures(pairs, 4.5)).toEqual([]);
       });
 
+      it('the selected-row cue reaches 3:1 on the selected fill, the hover tint and the page', () => {
+        const cue = resolve('--selected-cue', scheme);
+        const accent = resolve('--accent', scheme);
+        const pairs = SELECTION_SURFACES.flatMap((surface) => {
+          const base = resolve(surface, scheme);
+          return [
+            { label: `--selected-cue on ${surface}`, fg: cue, bg: base },
+            {
+              label: `--selected-cue on --accent (selected) over ${surface}`,
+              fg: cue,
+              bg: over(accent, base),
+            },
+            {
+              label: `--selected-cue beside --accent/50 (hover) over ${surface}`,
+              fg: cue,
+              bg: over({ ...accent, a: 0.5 }, base),
+            },
+          ];
+        });
+        expect(pairs).toHaveLength(SELECTION_SURFACES.length * 3);
+        expect(failures(pairs, 3)).toEqual([]);
+        // The row component draws exactly what is measured here.
+        const row = readFileSync(join(here, '..', 'components', 'ui', 'selectable-row.tsx'), 'utf8');
+        expect(row).toContain("'bg-accent before:bg-selected-cue'");
+        expect(row).toContain('hover:bg-accent/50');
+      });
+
       it('field boundaries and the focus ring reach 3:1 on the surfaces they sit on', () => {
         const pairs = NON_TEXT.flatMap(({ token, on }) =>
           on.map((surface) => ({
@@ -294,7 +330,8 @@ describe('colour tokens (globals.css)', () => {
         expect(ratio, `${name} vs canvas`).toBeGreaterThanOrEqual(1.05);
         expect(luminance(color), `${name} stays near-black`).toBeLessThan(0.02);
       }
-      // Hover and selection must read on the black canvas and sidebar.
+      // Hover and selected fills stay visible on the black canvas and sidebar (lit, not crushed). The fill
+      // is only a secondary cue: the selected-row bar carries selection (checked above in both themes).
       expect(contrast(resolve('--accent', 'dark'), canvas)).toBeGreaterThanOrEqual(1.2);
       expect(
         contrast(resolve('--sidebar-accent', 'dark'), resolve('--sidebar', 'dark')),

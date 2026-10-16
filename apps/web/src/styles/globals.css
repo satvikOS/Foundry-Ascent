@@ -49,6 +49,11 @@
   --border-strong: light-dark(#cfcfcb, rgb(255 255 255 / 0.2));
   --input: light-dark(#8d8d88, #6b6b67);
   --ring: var(--fa-focus);
+  /*
+   * The mark of the selected row in a master list (a bar at its start, beside the row's fill). A fill
+   * alone is ~1.1:1 on the canvas, and hover tints the same way, so selection never rests on it.
+   */
+  --selected-cue: var(--fa-text);
 
   /* Status tokens: ≥ 5:1 as text on background, card and their own 10–15 % tints (badges). */
   --destructive: light-dark(#b0262b, #ff6369);
@@ -198,6 +203,7 @@
   --color-border-strong: var(--border-strong);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-selected-cue: var(--selected-cue);
   --color-destructive: var(--destructive);
   --color-destructive-strong: var(--destructive-strong);
   --color-destructive-foreground: var(--destructive-foreground);

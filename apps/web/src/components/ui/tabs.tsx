@@ -35,8 +35,8 @@ export function TabsTrigger({ className, ...props }: ComponentProps<typeof TabsP
         'inline-flex h-full items-center justify-center gap-1.5 px-2.5 text-small font-medium whitespace-nowrap transition-colors',
         'hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50',
         '[&_svg]:size-3.5 [&_svg]:shrink-0',
-        // pill
-        'in-data-[variant=pill]:rounded-md in-data-[variant=pill]:data-[state=active]:bg-accent in-data-[variant=pill]:data-[state=active]:text-foreground',
+        // pill: the active tab is an inverted chip (a fill alone would read like hover)
+        'in-data-[variant=pill]:rounded-md in-data-[variant=pill]:data-[state=active]:bg-foreground in-data-[variant=pill]:data-[state=active]:text-background',
         // underline (active state also gets a heavier weight, not just colour)
         'in-data-[variant=underline]:-mb-px in-data-[variant=underline]:border-b-2 in-data-[variant=underline]:border-transparent in-data-[variant=underline]:px-0.5',
         'in-data-[variant=underline]:data-[state=active]:border-foreground in-data-[variant=underline]:data-[state=active]:text-foreground',

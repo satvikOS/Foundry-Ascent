@@ -7,6 +7,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
 import { PageContainer, PageHeader } from '@/components/ui/page-header';
 import { SectionCard } from '@/components/ui/section-card';
+import { SelectableRow } from '@/components/ui/selectable-row';
 import { LoadingRegion, Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { FilterChips } from '@/features/admin/shared/filter-chips';
@@ -110,20 +111,15 @@ export function InboxPage({ selectedId, filter, onSelect, onFilterChange }: Inbo
                   const isSelected = e === selected;
                   return (
                     <li key={e.id}>
-                      <button
-                        type="button"
-                        aria-current={isSelected ? 'true' : undefined}
+                      <SelectableRow
+                        selected={isSelected}
                         onClick={() => {
                           onSelect(e.id);
                           requestAnimationFrame(() => {
                             detailRef.current?.focus();
                           });
                         }}
-                        className={cn(
-                          'grid w-full gap-1 rounded-lg px-3 py-2.5 text-left transition-colors',
-                          'hover:bg-accent/60 focus-visible:outline-2 focus-visible:outline-ring',
-                          isSelected && 'bg-accent',
-                        )}
+                        className="grid gap-1 rounded-lg px-3 py-2.5"
                       >
                         <span className="flex flex-wrap items-center gap-1.5">
                           <StatusBadge kind="escalationPriority" status={e.priority} />
@@ -136,7 +132,7 @@ export function InboxPage({ selectedId, filter, onSelect, onFilterChange }: Inbo
                         <span className="text-xs text-muted-foreground">
                           {e.dueAt ? <DueLabel escalation={e} /> : `Raised ${formatRelative(e.createdAt)}`}
                         </span>
-                      </button>
+                      </SelectableRow>
                     </li>
                   );
                 })}

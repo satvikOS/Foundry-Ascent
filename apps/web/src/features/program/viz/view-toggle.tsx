@@ -7,7 +7,8 @@ export type VizView = 'chart' | 'table';
 
 /**
  * Chart ⇄ table switch for a chart card. The table is the accessible equivalent of every chart
- * (WCAG 1.1.1), so every chart in the consoles offers one.
+ * (WCAG 1.1.1), so every chart in the consoles offers one. The pressed view is an inverted chip, as in
+ * FilterChips, so it never reads like the hover tint.
  */
 export function ViewToggle({
   value,
@@ -32,7 +33,12 @@ export function ViewToggle({
           variant="ghost"
           size="xs"
           aria-pressed={value === id}
-          className={cn('h-7 px-2 text-muted-foreground', value === id && 'bg-accent text-foreground')}
+          className={cn(
+            'h-7 px-2',
+            value === id
+              ? 'bg-foreground text-background hover:bg-foreground hover:text-background'
+              : 'text-muted-foreground hover:bg-accent/50',
+          )}
           onClick={() => {
             onChange(id);
           }}
