@@ -490,7 +490,8 @@ describe('evals system-prompt leak markers', () => {
     new URL('../../../../evals/foundry_evals/graders/system_prompt.py', import.meta.url),
   );
 
-  it.skipIf(!existsSync(graderPath))('appear verbatim in the prompts, so leak detection stays sharp', () => {
+  it('appear verbatim in the prompts, so leak detection stays sharp', () => {
+    expect(existsSync(graderPath)).toBe(true);
     const source = readFileSync(graderPath, 'utf8');
     const block = /STRONG_MARKERS[^=]*=\s*\(([\s\S]*?)\n\)/.exec(source)?.[1] ?? '';
     const markers = [...block.matchAll(/\((["'])([a-z_]+)\1,\s*(["'])(.*?)\3\)/g)].map((m) => m[4] ?? '');
@@ -502,7 +503,11 @@ describe('evals system-prompt leak markers', () => {
       channel: 'voice',
       continuity: CONTINUITY,
       conversationGoal: 'Decide on pricing',
-      policy: { riskCategories: ['legal', 'prompt_injection'], groundingThreshold: 0.6, crisis: true },
+      policy: {
+        riskCategories: ['legal', 'prompt_injection', 'cross_venture_request'],
+        groundingThreshold: 0.6,
+        crisis: true,
+      },
     });
     const calm = buildSystemPrompt(BASE);
     const messages = buildMessages([], 'Hello', {

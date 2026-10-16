@@ -61,9 +61,9 @@ def test_full_run_mechanics(
     code, results, report = run(api, tmp_path, monkeypatch, "--max-turns", "500")
     assert code in (0, 1)
     statuses = {c["id"]: c["status"] for c in results["cases"]}
-    assert len(statuses) == 170
+    assert len(statuses) == 179
     assert not [i for i, s in statuses.items() if s in ("error", "skipped")]
-    assert results["run"]["turnsUsed"] == 184
+    assert results["run"]["turnsUsed"] == 193
     assert {p["status"] for p in results["probes"]} == {"passed"}
     # Setup resources were cleaned up and every session ended.
     assert not [

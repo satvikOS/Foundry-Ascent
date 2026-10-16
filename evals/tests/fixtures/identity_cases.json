@@ -184,7 +184,13 @@
         "I will review the pricing with you.",
         "To be frank here, the pilot is too small."
       ],
-      "flagged_spoken": ["i'm frank.", "best, frank.", "grant here.", "eli here, ready when you are.", "this is grant."],
+      "flagged_spoken": [
+        "i'm frank.",
+        "best, frank.",
+        "grant here.",
+        "eli here, ready when you are.",
+        "this is grant."
+      ],
       "allowed_spoken": [
         "this is grant money, so spend it on the pilot.",
         "i'm frank with founders about pricing.",
