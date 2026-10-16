@@ -266,8 +266,8 @@ describe('voice channel', () => {
   it('asks for a short spoken reply on a call and none in chat', () => {
     const voice = buildSystemPrompt({ ...BASE, channel: 'voice' });
     expect(voice).toContain('# Voice call');
-    expect(voice).toContain('`spoken` is what you say aloud: the same reply in at most 70 words');
-    expect(voice).toContain('No\n  Markdown, lists, headings, citation ids like [E1] or URLs.');
+    expect(voice).toContain('`spoken` is what you say aloud, at most 70 words.');
+    expect(voice).toContain('No Markdown, lists, headings, citation ids like [E1] or URLs,');
     expect(voice).toContain('- spoken: the short spoken version of the answer');
     expect(parseControlBlock(voice)?.channel).toBe('voice');
 

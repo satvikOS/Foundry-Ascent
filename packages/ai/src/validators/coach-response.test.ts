@@ -763,6 +763,11 @@ describe('spoken text (voice channel)', () => {
     );
     expect(out.results.narrowed).toBe(true);
     expect(out.response.spoken).toBe(`${SPOKEN_NARROWING_CAVEAT} Run the pilot first.`);
+    // Said in plain words, not caveat boilerplate read out (production spoke "A quick caveat: …"), and still
+    // honest that part of the answer is not from the venture's records.
+    expect(SPOKEN_NARROWING_CAVEAT).not.toMatch(/caveat|disclaimer|limited evidence|note:/i);
+    expect(SPOKEN_NARROWING_CAVEAT).toMatch(/not something your records show/);
+    expect(out.results.identityViolation).toBe(false);
   });
 
   it('rewrites identity violations in the spoken reply and blocks EIR impersonation', () => {

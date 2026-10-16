@@ -94,9 +94,25 @@ describe('streamed-turn prompts', () => {
     expect(text).toContain('# Conversation craft');
     expect(text).toContain('a social turn gets a short, natural reply, not advice; a reply need not end');
     expect(text).not.toContain('End with at most one question');
+  });
+
+  it('writes a call reply as speech that hands the turn back, never as a cut-down written answer', () => {
     const voice = answerSystemPrompt(SYSTEM, { channel: 'voice', mode: 'coach', allowedModes: ['coach'] });
-    expect(voice).toContain('- Speak the way people talk: contractions, short sentences with one idea each');
-    expect(voice).toContain('At most one question.');
+    expect(voice).toContain('Write it as speech, not cut from a longer answer: two or three short sentences');
+    expect(voice).toContain('ending by handing the turn back with one question or a clear invitation');
+    expect(voice).toContain('caveats or labels read out');
+    // The general "a reply need not end with a question" is for typed replies only.
+    expect(voice).not.toContain('need not end');
+    expect(voice).toContain('a social turn gets a short, natural reply, not advice.');
+  });
+
+  it('stops the streamed reply at its end: no mode name, claims or notes after it (the production leak)', () => {
+    for (const channel of ['text', 'voice'] as const) {
+      const prompt = answerSystemPrompt(SYSTEM, { channel, mode: null, allowedModes: ['coach'] });
+      expect(prompt).toContain(
+        'Stop when the reply ends: never write the mode name, claims, notes, field names',
+      );
+    }
   });
 
   it('replays the streamed reply before asking for its fields', () => {

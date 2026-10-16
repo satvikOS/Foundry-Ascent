@@ -128,8 +128,11 @@ const NO_ESCALATION: EscalationProposal = {
 };
 
 export const NARROWING_NOTE_PREFIX = '> **Limited evidence:**';
-/** Said first on a call when the answer was narrowed (the transcript carries the full note). */
-export const SPOKEN_NARROWING_CAVEAT = "A quick caveat: some of this isn't backed by your records yet.";
+/**
+ * Said on a call when the answer was narrowed (the transcript carries the full note): the uncertainty in plain
+ * words, not caveat boilerplate read out ("A quick caveat: …" was spoken in production).
+ */
+export const SPOKEN_NARROWING_CAVEAT = 'Some of that is general advice, not something your records show yet.';
 export const EMPTY_ANSWER_FALLBACK =
   "I don't have enough to give you a reliable answer yet. Could you share a bit more detail about what you've observed so far?";
 export const CROSS_VENTURE_BLOCK_ANSWER =
