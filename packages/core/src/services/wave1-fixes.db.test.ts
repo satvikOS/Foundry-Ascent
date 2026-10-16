@@ -1,6 +1,6 @@
 /**
- * Core rules behind the wave-1 fixes: platform admins invite to a venture team like program leads (audited,
- * denials too); temporary chats cannot be renamed; deleting a conversation keeps notebook text a
+ * Core rules behind the wave-1 fixes: platform admins invite to a venture team and see it like program leads
+ * (audited, denials too); temporary chats cannot be renamed; deleting a conversation keeps notebook text a
  * person wrote; a notebook that no longer matches its contract fails loudly (logged with ids only) instead
  * of being shown or saved as empty.
  */
@@ -69,6 +69,11 @@ describe('team invitations', () => {
     expect(issued.accessCode).toMatch(/^FA-/);
     const team = await h.core.team.list(maya, ventureId);
     expect(team.find((m) => m.principal.id === issued.principal.id)?.role).toBe('team');
+    // The admin sees the team they invite to, without reading the venture itself.
+    expect((await h.core.team.list(admin, ventureId)).map((m) => m.principal.id)).toEqual(
+      team.map((m) => m.principal.id),
+    );
+    expect(isDomainError(await rejection(h.core.ventures.get(admin, ventureId)))).toBe(true);
     const invited = (await auditOf('team.invited')).find((e) => e.objectId === issued.principal.id);
     expect(invited).toMatchObject({ actorId: admin.principalId, ventureId, outcome: 'succeeded' });
     const code = (await auditOf('access_code.issued')).find((e) => e.objectId === issued.accessCodeId);

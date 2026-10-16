@@ -13,7 +13,7 @@ type TeamMemberViewValue = z.infer<typeof TeamMemberView>;
 type AccessCodeIssuedValue = z.infer<typeof AccessCodeIssued>;
 
 export interface TeamService {
-  /** Active members (read access, or a program lead of the tenant). */
+  /** Active members (read access, or a program lead or platform admin of the tenant). */
   list(ctx: RequestContext, ventureId: string): Promise<TeamMemberViewValue[]>;
   /**
    * Program lead or platform admin of the tenant: creates a principal, an active membership (expiring after
@@ -37,9 +37,12 @@ export function createTeamService(kit: Kit, onPrincipalChanged: (principalId: st
         });
         const decision = decideVentureAccess(access, ctx, 'read');
         if (!decision.allowed) {
+          // Those who may invite to the team see it too, without reading the venture itself.
           const roles = await loadPrincipalRoles(scope.tx, ctx);
-          const programLead = hasAnyRole(roles, ['program_lead']) && access?.tenantId === ctx.tenantId;
-          if (!programLead) await requireVentureAccess(scope, ventureId, 'read', { objectType: 'team' });
+          const staff =
+            hasAnyRole(roles, ['program_lead', 'platform_admin']) &&
+            (await venturesRepo.ventureInCurrentTenant(scope.tx, ventureId));
+          if (!staff) await requireVentureAccess(scope, ventureId, 'read', { objectType: 'team' });
         }
         return venturesRepo.listTeam(scope.tx, ventureId);
       });
