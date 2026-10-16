@@ -335,7 +335,6 @@ function Conversation() {
         personaKind={personaKind}
         portraitUrl={veir?.portraitUrl}
         canEdit
-        canCall={!ended && callable}
         onAction={onMenu}
       >
         {ended ? (

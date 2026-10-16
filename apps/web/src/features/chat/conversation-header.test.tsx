@@ -20,7 +20,6 @@ async function renderHeader(privacy: 'standard' | 'ephemeral') {
         personaName="Corin’s vEIR"
         personaKind="eir_persona"
         canEdit
-        canCall={false}
         onAction={vi.fn()}
       />
     </InspectorProvider>

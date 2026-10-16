@@ -7,7 +7,6 @@ import {
   MoreHorizontal,
   PanelRight,
   Pencil,
-  Phone,
   Square,
   SquarePen,
   Trash2,
@@ -40,17 +39,16 @@ interface ConversationHeaderProps {
   portraitUrl?: string | null | undefined;
   /** The person may change this conversation (founders and team). */
   canEdit: boolean;
-  /** A call can start from here (the vEIR is available and the conversation is open). */
-  canCall: boolean;
   onAction: (action: ConversationMenuAction) => void;
   /** Under the title (ended conversations: the disclosure line, so it stays in view). */
   children?: ReactNode;
 }
 
 /**
- * The conversation's one header: the vEIR's face, name and "vEIR · AI" chip, the title, then Call, the
- * context panel and a menu for everything rarer (rename, end, report, delete). On phones it is the only bar:
- * the menu button, the title over "{vEIR} · AI", Call, New chat and the menu (which also opens the panel).
+ * The conversation's one header, on the shared glass surface: the vEIR's face, name and "vEIR · AI" chip,
+ * the title, a quiet "Private" for a private conversation, then the context panel and a menu for everything
+ * rarer (rename, end, report, delete). Calls start from the composer's voice button. On phones it is the
+ * only bar: the menu button, the title over "{vEIR} · AI", New chat and the menu (which also opens the panel).
  */
 export function ConversationHeader({
   tenant,
@@ -61,7 +59,6 @@ export function ConversationHeader({
   personaKind,
   portraitUrl,
   canEdit,
-  canCall,
   onAction,
   children,
 }: ConversationHeaderProps) {
@@ -128,20 +125,6 @@ export function ConversationHeader({
           )}
         </div>
         <div className="-mr-1.5 flex shrink-0 items-center gap-0.5 sm:mr-0">
-          {canCall ? (
-            <SimpleTooltip content={`Call ${personaName}`}>
-              <Button asChild variant="ghost" size="icon-sm">
-                <Link
-                  to="/$tenant/app/v/$ventureId/c/$sessionId"
-                  params={{ tenant, ventureId, sessionId: session.id }}
-                  search={{ call: 1 }}
-                  aria-label={`Call ${personaName}`}
-                >
-                  <Phone aria-hidden />
-                </Link>
-              </Button>
-            </SimpleTooltip>
-          ) : null}
           {openNavigation && canEdit ? (
             <Button asChild variant="ghost" size="icon-sm" className="md:hidden">
               <Link to="/$tenant/app/v/$ventureId" params={{ tenant, ventureId }} aria-label="New chat">
