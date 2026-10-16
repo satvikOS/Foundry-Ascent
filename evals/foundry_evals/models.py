@@ -177,6 +177,15 @@ class TurnBlockedDetail(_Camel):
     escalation_id: str | None = None
 
 
+class PrincipalRef(_Camel):
+    id: str
+    display_name: str
+
+
+class TurnFeedback(_Camel):
+    rating: int
+
+
 class TurnView(_Camel):
     id: str
     session_id: str
@@ -194,11 +203,10 @@ class TurnView(_Camel):
     blocked: TurnBlockedDetail | None = None
     # Typed in chat or spoken during a call (absent from older APIs).
     channel: Literal["text", "voice"] = "text"
-
-
-class PrincipalRef(_Camel):
-    id: str
-    display_name: str
+    # Who wrote the message; null where the viewer is not shown it (absent from older APIs).
+    author: PrincipalRef | None = None
+    # The viewer's own rating of the answer (absent from older APIs).
+    my_feedback: TurnFeedback | None = None
 
 
 class SessionView(_Camel):
