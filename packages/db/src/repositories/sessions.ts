@@ -196,14 +196,18 @@ export interface CreateSessionInput {
 }
 
 export function createSession(ex: SqlExecutor, input: CreateSessionInput): Promise<SessionRecord> {
+  const byPerson =
+    input.opener != null && (input.openerSourceSessionId ?? null) === null && input.openerByPerson === true;
+  // Only a copy a person wrote names `opener_by_person` (migration 0009; it defaults to false), so starting
+  // any other conversation writes exactly the columns of the previous schema.
   return queryOne(
     ex,
     `INSERT INTO coaching_sessions AS s (id, tenant_id, venture_id, assignment_id, persona_release_id, started_by, mode,
                                          privacy, goal, policy_version, title, title_source, opener,
-                                         opener_source_session_id, opener_by_person)
+                                         opener_source_session_id${byPerson ? ', opener_by_person' : ''})
      VALUES (coalesce(:id, gen_random_uuid()), :tenantId, :ventureId, :assignmentId, :releaseId, :startedBy, :mode,
              :privacy, :goal, :policyVersion, :title, CASE WHEN :title IS NULL THEN 'auto' ELSE 'person' END,
-             :opener, :openerSource, :openerByPerson)
+             :opener, :openerSource${byPerson ? ', true' : ''})
      RETURNING ${COLUMNS}`,
     {
       id: p.nullable.uuid(input.id),
@@ -219,11 +223,6 @@ export function createSession(ex: SqlExecutor, input: CreateSessionInput): Promi
       title: p.nullable.text(input.title),
       opener: p.nullable.text(input.opener),
       openerSource: p.nullable.uuid(input.opener == null ? null : (input.openerSourceSessionId ?? null)),
-      openerByPerson: p.bool(
-        input.opener != null &&
-          (input.openerSourceSessionId ?? null) === null &&
-          input.openerByPerson === true,
-      ),
     },
     decodeSession,
     'createSession',

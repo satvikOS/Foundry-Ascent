@@ -214,7 +214,7 @@ generated time), with `distilled_at` and `distill_version` (the number of comple
   the same checks as a call (AI enabled, coach active, minutes left). Only `builtin` can be configured
   until a vendor adapter exists.
 
-## 7. Data model (migrations 0004 and 0005)
+## 7. Data model (migrations 0004, 0005 and 0009)
 
 | Object                              | Change                                                                                                                                                                                                                                                                                                                                                                           |
 | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -244,6 +244,19 @@ Migration 0005 (`0005_wave1_fixes`, expand-only and re-runnable, `migrate-0005.d
 | `knowledge_chunks`        | chunks of withdrawn sources, and chunks of authored sources newer than their last save, removed; seeded doctrine and program corpora still stored as bodiless documents become authored notes                                                            |
 | `venture_memberships` RLS | platform admins may add members (team invitations) and read the memberships of their tenant's ventures (the Team list)                                                                                                                                   |
 | `app.is_synthetic_eir`    | comment: the consent exception covers synthetic EIRs whether or not they can sign in                                                                                                                                                                     |
+
+Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-0009.db.test.ts`; behaviour in
+`repositories/review-privacy.db.test.ts`):
+
+| Object                             | Change                                                                                                                                                                     |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `turns_require_live_session`       | BEFORE INSERT on `turns`: locks the conversation like a delete does and refuses a turn on a deleted one (55000)                                                            |
+| `app.turns_touch_session`          | skips deleted conversations; titles from the first message that is neither `crisis` nor `high` risk                                                                        |
+| `app.soft_delete_session`          | also clears `heard_text` explicitly                                                                                                                                        |
+| `app.erase_drawn_from_session`     | purges stored responses of erased AI proposals; removes lines listing the conversation in `sourceSessionIds`; clears a notebook opener of unknown origin in every notebook |
+| `app.sessions_erase_opener_copies` | also clears copies of unknown origin on the venture's conversations, and purges stored responses of the conversations it clears                                            |
+| notebook CHECK                     | optional `sourceSessionIds` per line (at most 20 conversation ids)                                                                                                         |
+| `coaching_sessions`                | `opener_by_person` (a copy a person wrote), `distill_unusable_answers` (invalid or refused distillation answers for the uncovered turns); checks added NOT VALID           |
 
 ## 8. The turn pipeline and distillation (as built)
 
