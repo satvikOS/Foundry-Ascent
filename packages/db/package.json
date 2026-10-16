@@ -17,7 +17,7 @@
     "check:migrations": "tsx src/scripts/gen-migrations.ts --check"
   },
   "dependencies": {
-    "@aws-sdk/client-rds-data": "^3.1146.0",
+    "@aws-sdk/client-rds-data": "^3.1150.0",
     "@foundry/contracts": "workspace:*",
     "pg": "^8.23.1",
     "zod": "^4.6.5"
