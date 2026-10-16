@@ -1,4 +1,4 @@
-import { callsRepo, settingsRepo } from '@foundry/db';
+import { callsRepo, isUuid, settingsRepo } from '@foundry/db';
 
 import { DomainError, fail } from '../errors.js';
 import { requireId, type RequestScope } from '../internal/kit.js';
@@ -146,3 +146,23 @@ export const admitVoiceTurn: AdmitVoiceTurn = async (scope, admission) => {
   });
   if (refusal !== null) throw deny(refusalError(refusal, admission.now), callId);
 };
+
+/**
+ * Whether `callId` names the caller's live call in this conversation, its client still there. It never refuses:
+ * the turn path asks it for a spoken crisis message, which is answered whatever the call's state (support is
+ * never refused for call reasons) and recorded as spoken only when it was said on such a call.
+ */
+export async function isLiveCallOf(
+  scope: RequestScope,
+  args: { readonly sessionId: string; readonly callId: string | undefined },
+): Promise<boolean> {
+  if (args.callId === undefined || !isUuid(args.callId)) return false;
+  const call = await callsRepo.getCall(scope.tx, args.callId.toLowerCase());
+  return (
+    call !== null &&
+    call.sessionId === args.sessionId &&
+    call.startedBy === scope.ctx.principalId &&
+    call.status === 'live' &&
+    call.idleSeconds <= CALL_LIMITS.staleSeconds
+  );
+}

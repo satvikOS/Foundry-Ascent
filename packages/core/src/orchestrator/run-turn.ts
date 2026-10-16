@@ -52,7 +52,11 @@ import { type RequestContext } from '../context.js';
 import { DomainError, fail, isDomainError, parseInput, toDomainError } from '../errors.js';
 import { type DirectoryCache, type OtherVentures } from '../internal/directory.js';
 import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
-import { admitVoiceTurn as callsAdmission, type AdmitVoiceTurn } from '../services/call-admission.js';
+import {
+  admitVoiceTurn as callsAdmission,
+  isLiveCallOf,
+  type AdmitVoiceTurn,
+} from '../services/call-admission.js';
 import { createDraftEscalation } from '../services/escalations.js';
 import { persistMemoryCandidates } from '../services/memory.js';
 import { historyAsHeard } from '../services/spoken-text.js';
@@ -414,7 +418,15 @@ export function createOrchestrator(
       const settings = await settingsRepo.getPlatformSettings(tx);
       // A counterpart is only used in a rehearsal, so sending one without a mode asks for that mode.
       const mode = input.mode ?? (input.rehearsalCounterpart ? 'rehearse' : null);
-      const channel: TurnChannel = input.channel ?? 'text';
+      // A spoken crisis message skips call admission (support is never refused for call reasons), so it is
+      // recorded as spoken only when it names the caller's live call here; otherwise it is a typed message: no
+      // call is marked on the conversation, no voice turn is counted and no speech unit is sent.
+      const channel: TurnChannel =
+        input.channel === 'voice' &&
+        crisis &&
+        !(await isLiveCallOf(scope, { sessionId, callId: input.callId }))
+          ? 'text'
+          : (input.channel ?? 'text');
       // The crisis path answers with a fixed human-support message and makes no model call, so the AI
       // gates (kill switch, coach persona/assignment, mode) never stand between a founder and support.
       let active: ActiveAssignment | null = null;

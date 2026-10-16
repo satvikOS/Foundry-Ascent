@@ -77,7 +77,8 @@ export function createCore(deps: CoreDeps): Core {
     me: createMeService(kit),
     ventures: createVenturesService(kit, directory),
     sessions: createSessionsService(kit, directory),
-    orchestrator: createOrchestrator(kit, directory),
+    // One key cache signs the turn engine's speech units and verifies them for calls and /speech.
+    orchestrator: createOrchestrator(kit, directory, { speechKeys }),
     memory: createMemoryService(kit),
     documents: createDocumentsService(kit),
     ingestion: createIngestionProcessor(kit),

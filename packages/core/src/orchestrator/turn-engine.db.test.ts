@@ -525,21 +525,28 @@ describe('continuity', () => {
 });
 
 describe('spoken turns', () => {
-  it('refuses spoken turns until the calls service admits them, without any model call', async () => {
+  it('refuses spoken turns the calls service does not admit, without any model call', async () => {
     const session = await h.core.sessions.create(maya, h.ventures.quietquad.id, {});
-    const ctx = await h.ctxFor(h.people.maya);
-    const calls = h.gateway.calls.length;
-    const { outcome } = await run(
-      h.core.orchestrator,
-      session.id,
-      { text: 'We did three interviews.', channel: 'voice', callId: CALL_ID },
-      ctx,
-    );
-    expect(outcome).toMatchObject({ status: 'rejected', turnId: null });
-    expect(outcome.error?.reason).toBe('calls_unavailable');
-    // The query embedding starts only once a turn is admitted.
-    expect(h.gateway.calls.slice(calls)).toEqual([]);
-    expect(await usagePurposes(ctx.requestId)).toEqual([]);
+    // No call named, and a call that is not the caller's live call in this conversation.
+    for (const [callId, code, reason] of [
+      [undefined, 'conflict', 'call_required'],
+      [CALL_ID, 'not_found', undefined],
+    ] as const) {
+      const ctx = await h.ctxFor(h.people.maya);
+      const calls = h.gateway.calls.length;
+      const { outcome } = await run(
+        h.core.orchestrator,
+        session.id,
+        { text: 'We did three interviews.', channel: 'voice', ...(callId === undefined ? {} : { callId }) },
+        ctx,
+      );
+      expect(outcome).toMatchObject({ status: 'rejected', turnId: null, error: { code } });
+      if (reason !== undefined) expect(outcome.error?.reason).toBe(reason);
+      // The query embedding starts only once a turn is admitted.
+      expect(h.gateway.calls.slice(calls)).toEqual([]);
+      expect(await usagePurposes(ctx.requestId)).toEqual([]);
+    }
+    expect(await countFor('turns', session.id)).toBe(0);
   });
 
   it('streams captions and signed speech units of the short spoken reply', async () => {
@@ -584,16 +591,49 @@ describe('spoken turns', () => {
     const gateway = new MockModelGateway({ streamDelayMs: 0 });
     const { core, orchestrator } = coreWith(gateway, admitted);
     const session = await core.sessions.create(maya, h.ventures.quietquad.id, {});
+    const { call } = await core.calls.start(maya, session.id, { inputMode: 'typed' });
+    try {
+      const { events, outcome } = await run(orchestrator, session.id, {
+        text: CRISIS_TEXT,
+        channel: 'voice',
+        callId: call.id,
+      });
+      expect(outcome.status).toBe('blocked');
+      expect(admitted).toEqual([]);
+      expect(gateway.calls.filter((c) => c.kind !== 'embed')).toEqual([]);
+      expect(speechUnits(events).map((u) => [u.seq, u.text, u.final])).toEqual([
+        [0, CRISIS_SPOKEN_MESSAGE, true],
+      ]);
+      expect(events.at(-1)).toMatchObject({ event: 'turn.blocked', reason: 'crisis_support' });
+      const stored = await h.t.db.system((sx) =>
+        sx.query('SELECT channel, call_id FROM turns WHERE session_id = :id', { id: p.uuid(session.id) }),
+      );
+      expect(stored.rows).toEqual([{ channel: 'voice', call_id: call.id }]);
+    } finally {
+      await core.calls.end(maya, call.id, { reason: 'user' });
+    }
+  });
+
+  it('a spoken crisis message naming no live call of the caller is answered as a typed one', async () => {
+    const admitted: VoiceTurnAdmission[] = [];
+    const { core, orchestrator } = coreWith(new MockModelGateway({ streamDelayMs: 0 }), admitted);
+    const session = await core.sessions.create(maya, h.ventures.quietquad.id, {});
     const { events, outcome } = await run(orchestrator, session.id, {
-      text: 'I want to end my life, I cannot do this anymore.',
+      text: CRISIS_TEXT,
       channel: 'voice',
-      callId: '77777777-7777-4777-8777-777777777777',
+      callId: CALL_ID,
     });
+    // Support is still given, but nothing pretends a call took place: no speech unit, no voice turn, no call
+    // marked on the conversation.
     expect(outcome.status).toBe('blocked');
     expect(admitted).toEqual([]);
-    expect(gateway.calls.filter((c) => c.kind !== 'embed')).toEqual([]);
-    expect(speechUnits(events).map((u) => [u.text, u.final])).toEqual([[CRISIS_SPOKEN_MESSAGE, true]]);
+    expect(speechUnits(events)).toEqual([]);
     expect(events.at(-1)).toMatchObject({ event: 'turn.blocked', reason: 'crisis_support' });
+    const stored = await h.t.db.system((sx) =>
+      sx.query('SELECT channel, call_id FROM turns WHERE session_id = :id', { id: p.uuid(session.id) }),
+    );
+    expect(stored.rows).toEqual([{ channel: 'text', call_id: null }]);
+    expect((await core.sessions.get(maya, session.id)).session.hasCalls).toBe(false);
   });
 
   it('a spoken crisis message pays the per-person message limit; past it nothing is written, support is still named', async () => {
