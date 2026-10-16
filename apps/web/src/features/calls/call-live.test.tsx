@@ -78,6 +78,12 @@ describe('callStatusLabel', () => {
     expect(callStatusLabel({ ...LIVE, talkMode: 'push_to_talk', talking: true })).toBe('Listening');
     expect(callStatusLabel(LIVE)).toBe('Listening');
     expect(callStatusLabel({ ...LIVE, phase: 'ending' })).toBe('Ending…');
+    // Audio the browser keeps silent (no gesture yet, an iOS interruption) is not "Speaking" or "Listening".
+    for (const activity of ['speaking', 'listening'] as const) {
+      expect(callStatusLabel({ ...LIVE, activity, audioBlocked: true })).toBe(
+        'Sound is off. Turn on sound to hear replies.',
+      );
+    }
   });
 });
 
@@ -241,9 +247,12 @@ describe('CallLive', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/local emergency number/);
   });
 
-  it('offers Turn on sound when the browser kept the call silent', async () => {
+  it('offers Turn on sound when the browser kept the call silent, and says so instead of Speaking', async () => {
     const { engine } = renderLive({ audioBlocked: true, activity: 'speaking' });
-    await userEvent.click(await screen.findByRole('button', { name: 'Turn on sound' }));
+    const button = await screen.findByRole('button', { name: 'Turn on sound' });
+    // The status line is announced: a screen reader hears why nothing can be heard, not "Speaking".
+    expect(screen.getByRole('status')).toHaveTextContent('Sound is off. Turn on sound to hear replies.');
+    await userEvent.click(button);
     expect(engine.resumeAudio).toHaveBeenCalled();
   });
 

@@ -20,6 +20,8 @@ import type { CallVeir } from './use-call-veir';
 export function callStatusLabel(snapshot: CallSnapshot): string {
   if (snapshot.phase === 'starting') return 'Connecting…';
   if (snapshot.phase === 'ending') return 'Ending…';
+  // Nothing can be heard until the founder taps Turn on sound: say that, not "Speaking" to silence.
+  if (snapshot.audioBlocked) return 'Sound is off. Turn on sound to hear replies.';
   if (snapshot.reconnecting) return 'Reconnecting…';
   if (snapshot.held) return 'On hold';
   switch (snapshot.activity) {
