@@ -103,11 +103,12 @@ const TenantAppAdminAuditRoute = TenantAppAdminAuditRouteImport.update({
   path: '/audit',
   getParentRoute: () => TenantAppAdminRouteRoute,
 } as any);
-const TenantAppAdminPrincipalsRoute = TenantAppAdminPrincipalsRouteImport.update({
-  id: '/principals',
-  path: '/principals',
-  getParentRoute: () => TenantAppAdminRouteRoute,
-} as any);
+const TenantAppAdminPrincipalsRoute =
+  TenantAppAdminPrincipalsRouteImport.update({
+    id: '/principals',
+    path: '/principals',
+    getParentRoute: () => TenantAppAdminRouteRoute,
+  } as any);
 const TenantAppAdminSettingsRoute = TenantAppAdminSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -143,101 +144,116 @@ const TenantAppProgramIndexRoute = TenantAppProgramIndexRouteImport.update({
   path: '/',
   getParentRoute: () => TenantAppProgramRouteRoute,
 } as any);
-const TenantAppProgramAssignmentsRoute = TenantAppProgramAssignmentsRouteImport.update({
-  id: '/assignments',
-  path: '/assignments',
-  getParentRoute: () => TenantAppProgramRouteRoute,
-} as any);
-const TenantAppProgramEscalationsRoute = TenantAppProgramEscalationsRouteImport.update({
-  id: '/escalations',
-  path: '/escalations',
-  getParentRoute: () => TenantAppProgramRouteRoute,
-} as any);
-const TenantAppProgramPortfolioRoute = TenantAppProgramPortfolioRouteImport.update({
-  id: '/portfolio',
-  path: '/portfolio',
-  getParentRoute: () => TenantAppProgramRouteRoute,
-} as any);
-const TenantAppProgramResourcesRoute = TenantAppProgramResourcesRouteImport.update({
-  id: '/resources',
-  path: '/resources',
-  getParentRoute: () => TenantAppProgramRouteRoute,
-} as any);
-const TenantAppProgramVenturesRoute = TenantAppProgramVenturesRouteImport.update({
-  id: '/ventures',
-  path: '/ventures',
-  getParentRoute: () => TenantAppProgramRouteRoute,
-} as any);
-const TenantAppVVentureIdRouteRoute = TenantAppVVentureIdRouteRouteImport.update({
-  id: '/v/$ventureId',
-  path: '/v/$ventureId',
-  getParentRoute: () => TenantAppRouteRoute,
-} as any);
+const TenantAppProgramAssignmentsRoute =
+  TenantAppProgramAssignmentsRouteImport.update({
+    id: '/assignments',
+    path: '/assignments',
+    getParentRoute: () => TenantAppProgramRouteRoute,
+  } as any);
+const TenantAppProgramEscalationsRoute =
+  TenantAppProgramEscalationsRouteImport.update({
+    id: '/escalations',
+    path: '/escalations',
+    getParentRoute: () => TenantAppProgramRouteRoute,
+  } as any);
+const TenantAppProgramPortfolioRoute =
+  TenantAppProgramPortfolioRouteImport.update({
+    id: '/portfolio',
+    path: '/portfolio',
+    getParentRoute: () => TenantAppProgramRouteRoute,
+  } as any);
+const TenantAppProgramResourcesRoute =
+  TenantAppProgramResourcesRouteImport.update({
+    id: '/resources',
+    path: '/resources',
+    getParentRoute: () => TenantAppProgramRouteRoute,
+  } as any);
+const TenantAppProgramVenturesRoute =
+  TenantAppProgramVenturesRouteImport.update({
+    id: '/ventures',
+    path: '/ventures',
+    getParentRoute: () => TenantAppProgramRouteRoute,
+  } as any);
+const TenantAppVVentureIdRouteRoute =
+  TenantAppVVentureIdRouteRouteImport.update({
+    id: '/v/$ventureId',
+    path: '/v/$ventureId',
+    getParentRoute: () => TenantAppRouteRoute,
+  } as any);
 const TenantAppVenturesIndexRoute = TenantAppVenturesIndexRouteImport.update({
   id: '/ventures/',
   path: '/ventures/',
   getParentRoute: () => TenantAppRouteRoute,
 } as any);
-const TenantAppEirPersonasIndexRoute = TenantAppEirPersonasIndexRouteImport.update({
-  id: '/personas/',
-  path: '/personas/',
-  getParentRoute: () => TenantAppEirRouteRoute,
-} as any);
-const TenantAppEirPersonasPersonaIdRoute = TenantAppEirPersonasPersonaIdRouteImport.update({
-  id: '/personas/$personaId',
-  path: '/personas/$personaId',
-  getParentRoute: () => TenantAppEirRouteRoute,
-} as any);
+const TenantAppEirPersonasIndexRoute =
+  TenantAppEirPersonasIndexRouteImport.update({
+    id: '/personas/',
+    path: '/personas/',
+    getParentRoute: () => TenantAppEirRouteRoute,
+  } as any);
+const TenantAppEirPersonasPersonaIdRoute =
+  TenantAppEirPersonasPersonaIdRouteImport.update({
+    id: '/personas/$personaId',
+    path: '/personas/$personaId',
+    getParentRoute: () => TenantAppEirRouteRoute,
+  } as any);
 const TenantAppEirPersonasNewRoute = TenantAppEirPersonasNewRouteImport.update({
   id: '/personas/new',
   path: '/personas/new',
   getParentRoute: () => TenantAppEirRouteRoute,
 } as any);
-const TenantAppVVentureIdIndexRoute = TenantAppVVentureIdIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => TenantAppVVentureIdRouteRoute,
-} as any);
-const TenantAppVVentureIdDocumentsRoute = TenantAppVVentureIdDocumentsRouteImport.update({
-  id: '/documents',
-  path: '/documents',
-  getParentRoute: () => TenantAppVVentureIdRouteRoute,
-} as any);
+const TenantAppVVentureIdIndexRoute =
+  TenantAppVVentureIdIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => TenantAppVVentureIdRouteRoute,
+  } as any);
+const TenantAppVVentureIdDocumentsRoute =
+  TenantAppVVentureIdDocumentsRouteImport.update({
+    id: '/documents',
+    path: '/documents',
+    getParentRoute: () => TenantAppVVentureIdRouteRoute,
+  } as any);
 const TenantAppVVentureIdHelpRoute = TenantAppVVentureIdHelpRouteImport.update({
   id: '/help',
   path: '/help',
   getParentRoute: () => TenantAppVVentureIdRouteRoute,
 } as any);
-const TenantAppVVentureIdKnowledgeRoute = TenantAppVVentureIdKnowledgeRouteImport.update({
-  id: '/knowledge',
-  path: '/knowledge',
-  getParentRoute: () => TenantAppVVentureIdRouteRoute,
-} as any);
-const TenantAppVVentureIdSettingsRoute = TenantAppVVentureIdSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => TenantAppVVentureIdRouteRoute,
-} as any);
+const TenantAppVVentureIdKnowledgeRoute =
+  TenantAppVVentureIdKnowledgeRouteImport.update({
+    id: '/knowledge',
+    path: '/knowledge',
+    getParentRoute: () => TenantAppVVentureIdRouteRoute,
+  } as any);
+const TenantAppVVentureIdSettingsRoute =
+  TenantAppVVentureIdSettingsRouteImport.update({
+    id: '/settings',
+    path: '/settings',
+    getParentRoute: () => TenantAppVVentureIdRouteRoute,
+  } as any);
 const TenantAppVVentureIdTeamRoute = TenantAppVVentureIdTeamRouteImport.update({
   id: '/team',
   path: '/team',
   getParentRoute: () => TenantAppVVentureIdRouteRoute,
 } as any);
-const TenantAppVenturesVentureIdIndexRoute = TenantAppVenturesVentureIdIndexRouteImport.update({
-  id: '/ventures/$ventureId/',
-  path: '/ventures/$ventureId/',
-  getParentRoute: () => TenantAppRouteRoute,
-} as any);
-const TenantAppVenturesVentureIdSplatRoute = TenantAppVenturesVentureIdSplatRouteImport.update({
-  id: '/ventures/$ventureId/$',
-  path: '/ventures/$ventureId/$',
-  getParentRoute: () => TenantAppRouteRoute,
-} as any);
-const TenantAppVVentureIdCSessionIdRoute = TenantAppVVentureIdCSessionIdRouteImport.update({
-  id: '/c/$sessionId',
-  path: '/c/$sessionId',
-  getParentRoute: () => TenantAppVVentureIdRouteRoute,
-} as any);
+const TenantAppVenturesVentureIdIndexRoute =
+  TenantAppVenturesVentureIdIndexRouteImport.update({
+    id: '/ventures/$ventureId/',
+    path: '/ventures/$ventureId/',
+    getParentRoute: () => TenantAppRouteRoute,
+  } as any);
+const TenantAppVenturesVentureIdSplatRoute =
+  TenantAppVenturesVentureIdSplatRouteImport.update({
+    id: '/ventures/$ventureId/$',
+    path: '/ventures/$ventureId/$',
+    getParentRoute: () => TenantAppRouteRoute,
+  } as any);
+const TenantAppVVentureIdCSessionIdRoute =
+  TenantAppVVentureIdCSessionIdRouteImport.update({
+    id: '/c/$sessionId',
+    path: '/c/$sessionId',
+    getParentRoute: () => TenantAppVVentureIdRouteRoute,
+  } as any);
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute;
@@ -768,9 +784,8 @@ const TenantAppAdminRouteRouteChildren: TenantAppAdminRouteRouteChildren = {
   TenantAppAdminIndexRoute: TenantAppAdminIndexRoute,
 };
 
-const TenantAppAdminRouteRouteWithChildren = TenantAppAdminRouteRoute._addFileChildren(
-  TenantAppAdminRouteRouteChildren,
-);
+const TenantAppAdminRouteRouteWithChildren =
+  TenantAppAdminRouteRoute._addFileChildren(TenantAppAdminRouteRouteChildren);
 
 interface TenantAppEirRouteRouteChildren {
   TenantAppEirInboxRoute: typeof TenantAppEirInboxRoute;
@@ -792,9 +807,8 @@ const TenantAppEirRouteRouteChildren: TenantAppEirRouteRouteChildren = {
   TenantAppEirPersonasIndexRoute: TenantAppEirPersonasIndexRoute,
 };
 
-const TenantAppEirRouteRouteWithChildren = TenantAppEirRouteRoute._addFileChildren(
-  TenantAppEirRouteRouteChildren,
-);
+const TenantAppEirRouteRouteWithChildren =
+  TenantAppEirRouteRoute._addFileChildren(TenantAppEirRouteRouteChildren);
 
 interface TenantAppProgramRouteRouteChildren {
   TenantAppProgramAssignmentsRoute: typeof TenantAppProgramAssignmentsRoute;
@@ -814,9 +828,10 @@ const TenantAppProgramRouteRouteChildren: TenantAppProgramRouteRouteChildren = {
   TenantAppProgramIndexRoute: TenantAppProgramIndexRoute,
 };
 
-const TenantAppProgramRouteRouteWithChildren = TenantAppProgramRouteRoute._addFileChildren(
-  TenantAppProgramRouteRouteChildren,
-);
+const TenantAppProgramRouteRouteWithChildren =
+  TenantAppProgramRouteRoute._addFileChildren(
+    TenantAppProgramRouteRouteChildren,
+  );
 
 interface TenantAppVVentureIdRouteRouteChildren {
   TenantAppVVentureIdDocumentsRoute: typeof TenantAppVVentureIdDocumentsRoute;
@@ -828,19 +843,21 @@ interface TenantAppVVentureIdRouteRouteChildren {
   TenantAppVVentureIdCSessionIdRoute: typeof TenantAppVVentureIdCSessionIdRoute;
 }
 
-const TenantAppVVentureIdRouteRouteChildren: TenantAppVVentureIdRouteRouteChildren = {
-  TenantAppVVentureIdDocumentsRoute: TenantAppVVentureIdDocumentsRoute,
-  TenantAppVVentureIdHelpRoute: TenantAppVVentureIdHelpRoute,
-  TenantAppVVentureIdKnowledgeRoute: TenantAppVVentureIdKnowledgeRoute,
-  TenantAppVVentureIdSettingsRoute: TenantAppVVentureIdSettingsRoute,
-  TenantAppVVentureIdTeamRoute: TenantAppVVentureIdTeamRoute,
-  TenantAppVVentureIdIndexRoute: TenantAppVVentureIdIndexRoute,
-  TenantAppVVentureIdCSessionIdRoute: TenantAppVVentureIdCSessionIdRoute,
-};
+const TenantAppVVentureIdRouteRouteChildren: TenantAppVVentureIdRouteRouteChildren =
+  {
+    TenantAppVVentureIdDocumentsRoute: TenantAppVVentureIdDocumentsRoute,
+    TenantAppVVentureIdHelpRoute: TenantAppVVentureIdHelpRoute,
+    TenantAppVVentureIdKnowledgeRoute: TenantAppVVentureIdKnowledgeRoute,
+    TenantAppVVentureIdSettingsRoute: TenantAppVVentureIdSettingsRoute,
+    TenantAppVVentureIdTeamRoute: TenantAppVVentureIdTeamRoute,
+    TenantAppVVentureIdIndexRoute: TenantAppVVentureIdIndexRoute,
+    TenantAppVVentureIdCSessionIdRoute: TenantAppVVentureIdCSessionIdRoute,
+  };
 
-const TenantAppVVentureIdRouteRouteWithChildren = TenantAppVVentureIdRouteRoute._addFileChildren(
-  TenantAppVVentureIdRouteRouteChildren,
-);
+const TenantAppVVentureIdRouteRouteWithChildren =
+  TenantAppVVentureIdRouteRoute._addFileChildren(
+    TenantAppVVentureIdRouteRouteChildren,
+  );
 
 interface TenantAppRouteRouteChildren {
   TenantAppAdminRouteRoute: typeof TenantAppAdminRouteRouteWithChildren;
@@ -864,7 +881,9 @@ const TenantAppRouteRouteChildren: TenantAppRouteRouteChildren = {
   TenantAppVenturesVentureIdIndexRoute: TenantAppVenturesVentureIdIndexRoute,
 };
 
-const TenantAppRouteRouteWithChildren = TenantAppRouteRoute._addFileChildren(TenantAppRouteRouteChildren);
+const TenantAppRouteRouteWithChildren = TenantAppRouteRoute._addFileChildren(
+  TenantAppRouteRouteChildren,
+);
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -873,4 +892,6 @@ const rootRouteChildren: RootRouteChildren = {
   AdminSplatRoute: AdminSplatRoute,
   AdminIndexRoute: AdminIndexRoute,
 };
-export const routeTree = rootRouteImport._addFileChildren(rootRouteChildren)._addFileTypes<FileRouteTypes>();
+export const routeTree = rootRouteImport
+  ._addFileChildren(rootRouteChildren)
+  ._addFileTypes<FileRouteTypes>();

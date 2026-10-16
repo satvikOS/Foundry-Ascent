@@ -2,7 +2,7 @@ import type { Me } from '@foundry/contracts';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import { Menu, PanelLeftClose, PanelLeftOpen, SquarePen, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
@@ -14,8 +14,6 @@ import { useHotkeys } from '@/lib/hooks/use-hotkeys';
 import { safeStorage, STORAGE_KEYS } from '@/lib/storage';
 import { cn } from '@/lib/utils';
 
-import { DataUseDialog, ReportProblemDialog } from './account-dialogs';
-import { CommandPalette } from './command-palette';
 import {
   STAFF_WORKSPACES,
   staffWorkspace,
@@ -25,7 +23,6 @@ import {
   type Workspace,
 } from './nav';
 import { ShellChromeContext, type ShellChrome } from './shell-chrome';
-import { ShortcutsDialog } from './shortcuts-dialog';
 import { SidebarContent } from './sidebar';
 import {
   AccessCodeNoticeBanner,
@@ -39,6 +36,17 @@ interface AppShellProps {
   me: Me;
   children: ReactNode;
 }
+
+// Opened on demand (⌘K, ?, the account menu): loaded the first time they open, so they stay out of the
+// first-paint bundle.
+const CommandPalette = lazy(() => import('./command-palette').then((m) => ({ default: m.CommandPalette })));
+const ShortcutsDialog = lazy(() =>
+  import('./shortcuts-dialog').then((m) => ({ default: m.ShortcutsDialog })),
+);
+const DataUseDialog = lazy(() => import('./account-dialogs').then((m) => ({ default: m.DataUseDialog })));
+const ReportProblemDialog = lazy(() =>
+  import('./account-dialogs').then((m) => ({ default: m.ReportProblemDialog })),
+);
 
 type ShellDialog = 'palette' | 'shortcuts' | 'data-use' | 'report' | null;
 
@@ -58,6 +66,8 @@ export function AppShell({ me, children }: AppShellProps) {
   const [collapsed, setCollapsed] = useState(() => safeStorage.get(STORAGE_KEYS.sidebarCollapsed) === '1');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [dialog, setDialog] = useState<ShellDialog>(null);
+  // Dialogs opened at least once stay mounted (their close animation and state survive).
+  const [opened, setOpened] = useState<ReadonlySet<Exclude<ShellDialog, null>>>(() => new Set());
   // Pages with their own phone header (a conversation) claim the bar; the shell's bar shows otherwise.
   const [mobileBarClaims, setMobileBarClaims] = useState(0);
   const chrome = useMemo<ShellChrome>(
@@ -92,21 +102,23 @@ export function AppShell({ me, children }: AppShellProps) {
   const openDialog = useCallback((next: ShellDialog) => {
     setMobileNavOpen(false);
     setDialog(next);
+    if (next !== null) setOpened((current) => (current.has(next) ? current : new Set(current).add(next)));
   }, []);
   const dialogProps = (id: Exclude<ShellDialog, null>) => ({
     open: dialog === id,
     onOpenChange: (open: boolean) => {
-      setDialog(open ? id : null);
+      if (open) openDialog(id);
+      else setDialog(null);
     },
   });
 
   // The page and workspace shortcuts come from nav.ts, which the shortcuts list reads too.
   useHotkeys({
     'mod+k': () => {
-      setDialog((current) => (current === 'palette' ? null : 'palette'));
+      openDialog(dialog === 'palette' ? null : 'palette');
     },
     '?': () => {
-      setDialog('shortcuts');
+      openDialog('shortcuts');
     },
     '[': toggleSidebar,
     'g n': () => {
@@ -241,17 +253,21 @@ export function AppShell({ me, children }: AppShellProps) {
         </main>
       </div>
 
-      <CommandPalette
-        me={me}
-        workspace={workspace}
-        {...dialogProps('palette')}
-        onOpenShortcuts={() => {
-          setDialog('shortcuts');
-        }}
-      />
-      <ShortcutsDialog {...dialogProps('shortcuts')} />
-      <DataUseDialog me={me} {...dialogProps('data-use')} />
-      <ReportProblemDialog {...dialogProps('report')} />
+      <Suspense fallback={null}>
+        {opened.has('palette') ? (
+          <CommandPalette
+            me={me}
+            workspace={workspace}
+            {...dialogProps('palette')}
+            onOpenShortcuts={() => {
+              openDialog('shortcuts');
+            }}
+          />
+        ) : null}
+        {opened.has('shortcuts') ? <ShortcutsDialog {...dialogProps('shortcuts')} /> : null}
+        {opened.has('data-use') ? <DataUseDialog me={me} {...dialogProps('data-use')} /> : null}
+        {opened.has('report') ? <ReportProblemDialog {...dialogProps('report')} /> : null}
+      </Suspense>
     </div>
   );
 }
