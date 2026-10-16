@@ -413,11 +413,16 @@ describe('SentenceGate', () => {
       }
       return performance.now() - started;
     };
+    // Interleaved, best of three: a burst of load on a shared machine slows one sample, not one size.
     time(1_200);
-    const small = Math.min(time(1_200), time(1_200));
-    const large = Math.min(time(9_600), time(9_600));
-    expect(large).toBeLessThan(16 * small + 100);
-  }, 30_000);
+    const smalls: number[] = [];
+    const larges: number[] = [];
+    for (let round = 0; round < 3; round += 1) {
+      smalls.push(time(1_200));
+      larges.push(time(9_600));
+    }
+    expect(Math.min(...larges)).toBeLessThan(16 * Math.min(...smalls) + 100);
+  }, 60_000);
 
   it('counts removals and rewrites without keeping any text', () => {
     const g = gate({ evidenceKeys: new Set(['E1']) });

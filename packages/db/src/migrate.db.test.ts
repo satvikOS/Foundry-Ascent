@@ -19,7 +19,7 @@ describe('migrate', () => {
   it('applies all bundled migrations as a non-superuser, then is a no-op', async () => {
     const versions = MIGRATIONS.map((m) => m.version);
     // Every shipped migration, pinned in version order (a missing one fails here); later ones follow.
-    expect(versions.slice(0, 9)).toEqual([
+    expect(versions.slice(0, 10)).toEqual([
       '0001_init',
       '0002_rls_helpers',
       '0003_security_hardening',
