@@ -38,6 +38,29 @@ function wrapFounder(text: string): string {
 }
 
 /**
+ * The rendered `<conversation_state>` of a history and a new message, kept per history array: it does not depend
+ * on how much of the history is kept, and the context budget builds the same turn's messages up to ~50 times.
+ */
+const stateBlocks = new WeakMap<
+  readonly HistoryTurn[],
+  { readonly length: number; readonly founderText: string; readonly block: string }
+>();
+
+function conversationStateBlock(
+  history: readonly HistoryTurn[],
+  completed: readonly HistoryTurn[],
+  founderText: string,
+): string {
+  const cached = stateBlocks.get(history);
+  if (cached?.length === history.length && cached.founderText === founderText) {
+    return cached.block;
+  }
+  const block = renderConversationState(deriveConversationState(completed, founderText));
+  stateBlocks.set(history, { length: history.length, founderText, block });
+  return block;
+}
+
+/**
  * Builds the conversation for a turn: the last N completed turns (founder text wrapped and escaped
  * as data, previous answers as assistant messages), then the vEIR's notes, the evidence block, the
  * conversation state and the new founder message as the final user message. Notes and evidence live in the user turn — not the
@@ -65,9 +88,7 @@ export function buildMessages(
     ...(options.maxContinuityChars !== undefined ? { maxChars: options.maxContinuityChars } : {}),
   });
   const state =
-    options.conversationState === false
-      ? ''
-      : renderConversationState(deriveConversationState(completed, founderText));
+    options.conversationState === false ? '' : conversationStateBlock(history, completed, founderText);
   const parts = [notes, options.evidenceBlock, state, wrapFounder(founderText)].filter(
     (p): p is string => p !== undefined && p !== '',
   );

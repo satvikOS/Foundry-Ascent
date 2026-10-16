@@ -56,6 +56,13 @@ export interface ConversationState {
   readonly questionStreak: number;
   /** How the vEIR's latest replies opened (first words, newest first). */
   readonly recentOpenings: readonly string[];
+  /** Questions the vEIR asked in this conversation (one line each, unescaped, newest first, distinct). */
+  readonly askedQuestions: readonly string[];
+  /**
+   * Whether the question the vEIR's last reply asked (the first of `askedQuestions`) is still open: the new message
+   * neither answers it nor takes it up (it asks something else, or changes the topic).
+   */
+  readonly openQuestion: boolean;
   /** Completed exchanges in view. */
   readonly earlierTurns: number;
 }
@@ -66,6 +73,10 @@ export const GIST_CHARS = 90;
 export const MAX_PARKED = 3;
 /** Most recent openings reported. */
 export const MAX_OPENINGS = 3;
+/** Most questions the vEIR already asked that are reported (so it never asks one again). */
+export const MAX_ASKED = 2;
+/** Longest question reported. */
+export const QUESTION_CHARS = 110;
 const OPENING_WORDS = 6;
 
 const APOSTROPHES = /[‘’ʼ]/g;
@@ -90,7 +101,16 @@ const MOVE_CUES: readonly (readonly [FounderMove, RegExp])[] = [
   ],
   [
     'closing',
-    /\b(?:gotta go|got to go|have to (?:go|run|jump|head)|need to (?:go|run|jump|head off)|i'll let you go|talk (?:soon|later|tomorrow|next week)|speak soon|goodbye|bye|see you|catch you later|signing off|good night|(?:that's|that is) (?:all|it|everything) for (?:now|today)|(?:that's|that is) enough for (?:now|today)|let's (?:stop|wrap(?: it)? up|leave it) (?:here|there|for (?:now|today))|i'm done for (?:now|today))\b/,
+    // Pre-closings only: a farewell, or leaving ("I have to run.") with nothing after the verb, so "we need to run
+    // a pilot" or "I have to run the numbers" stay ordinary talk.
+    new RegExp(
+      [
+        String.raw`\b(?:goodbye|bye(?:-bye)?|talk (?:soon|later|tomorrow|next week)|speak soon|catch you later|signing off|good night|i'll let you go|until next time)\b`,
+        String.raw`\bsee you(?: (?:soon|later|tomorrow|next (?:week|time)|then))?(?=\s*(?:[.!,]|$))`,
+        String.raw`(?:^|(?:^|[\s,.!;])(?:i|we|i've|we've|ok|okay|anyway|sorry|well|so|but|alright|right|and|thanks)(?: really| actually| just)?[\s,]+)(?:(?:have|need|got) to|gotta|must)\s+(?:go|run|jump|dash|head (?:off|out)|hop off|leave)(?: now| soon| in a (?:sec|second|minute|bit))?(?=\s*(?:[.!,;:]|$|(?:but|thanks|thank|bye|talk|see)\b))`,
+        String.raw`\b(?:(?:that's|that is) (?:all|it|everything|enough) for (?:now|today)|let's (?:stop|wrap(?: it)? up|leave it) (?:here|there|for (?:now|today))|i'm done for (?:now|today))\b`,
+      ].join('|'),
+    ),
   ],
   [
     'thanks',
@@ -106,7 +126,15 @@ const MOVE_CUES: readonly (readonly [FounderMove, RegExp])[] = [
   ],
   [
     'stress',
-    /\b(?:stress(?:ed|ful)?|overwhelm(?:ed|ing)?|exhaust(?:ed|ing)|burn(?:ed|t)[- ]?out|burning out|anxious|anxiety|worried|panick(?:ed|ing)|freaking out|(?:rough|tough|hard|awful|terrible) (?:day|week|month)|frustrat(?:ed|ing)|discourag(?:ed|ing)|demoralis(?:ed|ing)|demoraliz(?:ed|ing)|scared|losing (?:sleep|hope|motivation)|at a loss|feel like (?:a failure|giving up|quitting))\b/,
+    // The founder's own state ("I'm stressed", "we're worried"), not their customers' ("lab managers are worried").
+    new RegExp(
+      [
+        String.raw`\b(?:i'm|i am|im|i've been|i have been|i feel|i felt|feeling|i'm feeling|we're|we are|we've been|we feel|i'm getting|we're getting|i was|we were|i get|we get)\s+(?:(?:so|really|very|pretty|quite|super|totally|completely|kind of|kinda|a (?:bit|little)|getting|more and more|just|honestly|also|incredibly|seriously|starting to (?:feel|get)|a little bit)\s+)*(?:stressed(?: out)?|overwhelmed|exhausted|burn(?:ed|t)[- ]?out|burning out|anxious|worried|panick(?:ed|ing)|freaking out|frustrated|discouraged|demoralis(?:ed)|demoraliz(?:ed)|scared|terrified|drained|struggling|at a loss|losing (?:sleep|hope|motivation|it))\b`,
+        String.raw`\b(?:i|we) (?:feel|felt) like (?:a failure|giving up|quitting|i'm failing|we're failing)\b`,
+        String.raw`\b(?:rough|tough|awful|terrible|brutal) (?:day|week|month|few days|few weeks)\b`,
+        String.raw`\b(?:this|it)(?:'s| is| has been|'s been) (?:so |really |getting |all )?(?:stressful|overwhelming|exhausting|too much)\b`,
+      ].join('|'),
+    ),
   ],
   [
     'humour',
@@ -188,12 +216,45 @@ function shared(a: ReadonlySet<string>, b: ReadonlySet<string>): number {
 
 // Plain text helpers -------------------------------------------------------------------------------------
 
-/** Markdown and citation keys removed, one line. */
+/** For each position, the index of the first of `stops` at or after it (`text.length` when none). */
+function nextOf(text: string, stops: string): Int32Array {
+  const next = new Int32Array(text.length + 1);
+  next[text.length] = text.length;
+  for (let i = text.length - 1; i >= 0; i -= 1) {
+    next[i] = stops.includes(text.charAt(i)) ? i : (next[i + 1] ?? text.length);
+  }
+  return next;
+}
+
+/**
+ * Markdown links and images (`[text](url)`, `![alt](url)`) replaced by their text, in one linear pass: a regular
+ * expression for them backtracks quadratically on a founder's pasted "[x](" runs.
+ */
+export function stripLinks(text: string): string {
+  if (!text.includes('](')) return text;
+  const bracket = nextOf(text, ']\n');
+  const paren = nextOf(text, ')\n');
+  let out = '';
+  let from = 0;
+  for (let i = text.indexOf('['); i >= 0; i = text.indexOf('[', i + 1)) {
+    const close = bracket[i + 1] ?? text.length;
+    if (text.charAt(close) !== ']' || text.charAt(close + 1) !== '(') continue;
+    const end = paren[close + 2] ?? text.length;
+    if (text.charAt(end) !== ')') continue;
+    const start = i > from && text.charAt(i - 1) === '!' ? i - 1 : i;
+    out += text.slice(from, start) + text.slice(i + 1, close);
+    from = end + 1;
+    i = end;
+  }
+  return out + text.slice(from);
+}
+
+/** Markdown and citation keys removed, one line (linear in the length of `text`). */
 function plain(text: string): string {
-  return text
-    .replace(/!?\[([^\]\n]*)\]\([^)\n]*\)/g, '$1')
-    .replace(/\s*\[\s*E\d+(?:\s*[,;]\s*E\d+)*\s*\]/gi, '')
-    .replace(/^\s*(?:[-*+]|\d+[.)])\s+/gm, '')
+  return stripLinks(text)
+    .replace(/^[ \t]*(?:[-*+]|\d+[.)])[ \t]+/gm, '')
+    .replace(/\s+/g, ' ')
+    .replace(/ ?\[ ?E\d+(?: ?[,;] ?E\d+)* ?\]/gi, '')
     .replace(/[#>*_`~]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
@@ -221,6 +282,28 @@ export function openingOf(answer: string): string {
     .filter((w) => w !== '');
   if (words.length === 0) return '';
   return words.length > OPENING_WORDS ? `${words.slice(0, OPENING_WORDS).join(' ')}…` : words.join(' ');
+}
+
+/** The last question a reply asks (its last sentence ending in "?"), one bounded line, or null. */
+export function lastQuestionOf(answer: string): string | null {
+  const sentences = plain(answer).split(/(?<=[.!?]["'”’)\]]*)\s+/);
+  for (let i = sentences.length - 1; i >= 0; i -= 1) {
+    const sentence = (sentences[i] ?? '').trim();
+    if (/\?["'”’)\]]*$/.test(sentence)) return truncate(sentence, QUESTION_CHARS);
+  }
+  return null;
+}
+
+/** Whether the founder's message takes up the vEIR's question: answers it, or at least says something to it. */
+function takesUp(question: string, text: string, moves: readonly FounderMove[]): boolean {
+  if (moves.includes('short_reply')) return true;
+  if (moves.some((m) => m === 'topic_shift' || m === 'recall' || m === 'resume' || m === 'closing'))
+    return false;
+  if (shared(contentWords(question), contentWords(text)) > 0) return true;
+  // Something said, not only a question of their own.
+  return normalize(text)
+    .split(/(?<=[.!?])\s+/)
+    .some((s) => s !== '' && !s.endsWith('?'));
 }
 
 // Derivation ---------------------------------------------------------------------------------------------
@@ -326,10 +409,18 @@ export function deriveConversationState(
     .map((t) => openingOf(t.answer ?? ''))
     .filter((o) => o !== '');
 
+  const asked: string[] = [];
+  for (let i = turns.length - 1; i >= 0 && asked.length < MAX_ASKED; i -= 1) {
+    const question = lastQuestionOf(turns[i]?.answer ?? '');
+    if (question !== null && !asked.includes(question)) asked.push(question);
+  }
+  const lastAsked = lastQuestionOf(turns.at(-1)?.answer ?? '');
+  const moves = founderMoves(founderText);
+
   const prev: Thread | null = previous;
   const open = parked.filter((p) => p !== current).slice(0, MAX_PARKED);
   return {
-    moves: founderMoves(founderText),
+    moves,
     words: wordCount(founderText),
     typicalWords: median(turns.map((t) => wordCount(t.founderText))),
     // A thread the new message leaves unsettled is reported once, as parked.
@@ -337,6 +428,8 @@ export function deriveConversationState(
     parked: open.map(asThread),
     questionStreak: streak,
     recentOpenings: openings,
+    askedQuestions: asked,
+    openQuestion: lastAsked !== null && !takesUp(lastAsked, founderText, moves),
     earlierTurns: turns.length,
   };
 }
@@ -400,6 +493,12 @@ export function renderConversationState(state: ConversationState): string {
   }
   if (state.recentOpenings.length > 0) {
     lines.push(`- Your recent replies opened with: ${state.recentOpenings.map(quoted).join(' | ')}`);
+  }
+  if (state.askedQuestions.length > 0) {
+    lines.push(`- You already asked: ${state.askedQuestions.map(quoted).join(' | ')}`);
+  }
+  if (state.openQuestion) {
+    lines.push('- They did not take up your last question: answer what they said, and do not ask it again.');
   }
   return [`<${CONVERSATION_STATE_TAG}>`, ...lines, `</${CONVERSATION_STATE_TAG}>`].join('\n');
 }

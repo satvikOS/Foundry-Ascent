@@ -8,8 +8,10 @@ import {
   endsWithQuestion,
   founderMoves,
   gistOf,
+  lastQuestionOf,
   openingOf,
   renderConversationState,
+  stripLinks,
   type FounderMove,
 } from './conversation-state.js';
 import { buildMessages } from './messages.js';
@@ -54,6 +56,160 @@ describe('founderMoves', () => {
     expect(founderMoves('The typical buyer is the head librarian.')).toEqual([]);
     expect(founderMoves('')).toEqual([]);
   });
+});
+
+describe('moves that only look like a goodbye or stress', () => {
+  it('reads venture talk with "need to run" or "have to go" as talk, not a goodbye', () => {
+    for (const text of [
+      'We need to run a pilot with two labs next month.',
+      'I have to run the numbers on the per-seat price first.',
+      'We have to go to market before the exam season.',
+      'You need to go through procurement first, apparently.',
+      "I'll see you at the demo day then.",
+      'The founders must leave room for a second pilot.',
+    ]) {
+      expect(founderMoves(text), text).not.toContain('closing');
+    }
+  });
+
+  it('still hears a real pre-closing', () => {
+    for (const text of [
+      'I have to run.',
+      'Sorry, I need to go now.',
+      'Gotta go!',
+      'ok I have to jump, thanks',
+      'Thanks, I have to run but this helped',
+      'See you soon!',
+      'Talk later',
+      "That's all for today.",
+    ]) {
+      expect(founderMoves(text), text).toContain('closing');
+    }
+  });
+
+  it("hears the founder's own stress, not their customers'", () => {
+    for (const text of [
+      'Customers are frustrated with the current spreadsheet workaround.',
+      'Lab managers are worried about expired reagents.',
+      'Students are frustrated with finding seats during exams.',
+      'The onboarding is stressful for new nurses.',
+      'Buyers feel overwhelmed by the options.',
+    ]) {
+      expect(founderMoves(text), text).not.toContain('stress');
+    }
+    for (const text of [
+      "I'm a bit stressed, the lab pilot fell through yesterday and I don't know what to do next.",
+      "We're worried the pilot will fail.",
+      'I feel like giving up on this.',
+      "Honestly it's been a brutal week.",
+      'I am getting really frustrated with the investors.',
+    ]) {
+      expect(founderMoves(text), text).toContain('stress');
+    }
+  });
+
+  it('tells the model so: ordinary talk is never labelled as wrapping up or stressed', () => {
+    const block = renderConversationState(
+      deriveConversationState(
+        [{ founderText: 'How should we price per library?', answer: 'Start from who holds the budget.' }],
+        'We need to run a pilot with two labs first. Customers are frustrated with the spreadsheet.',
+      ),
+    );
+    expect(block).not.toContain('wrapping up');
+    expect(block).not.toContain('stressed');
+  });
+});
+
+describe('the questions the vEIR asked', () => {
+  const history = [
+    {
+      founderText: 'How should we price per library?',
+      answer: 'Pricing follows the budget. Who signs off on the library budget?',
+    },
+  ];
+
+  it('keeps them, newest first and once each, so none is asked again', () => {
+    const state = deriveConversationState(
+      [
+        { founderText: 'Should we run a pilot?', answer: 'Yes, a short one. How long can you run it?' },
+        { founderText: 'Two weeks.', answer: 'Fine. **How long** can you run it?' },
+        ...history,
+      ],
+      'Facilities, I think.',
+    );
+    expect(state.askedQuestions).toEqual([
+      'Who signs off on the library budget?',
+      'How long can you run it?',
+    ]);
+    expect(lastQuestionOf('No question here. Just a statement.')).toBeNull();
+    expect(lastQuestionOf('Who pays? Start there.')).toBe('Who pays?');
+  });
+
+  it('sees a question the founder did not take up', () => {
+    const ignored = deriveConversationState(history, 'Could you help me write the email to them?');
+    expect(ignored.openQuestion).toBe(true);
+    expect(deriveConversationState(history, 'By the way, should we hire a designer?').openQuestion).toBe(
+      true,
+    );
+    // Answered, said something to it, or shared its words: taken up.
+    expect(deriveConversationState(history, 'Facilities, I think.').openQuestion).toBe(false);
+    expect(deriveConversationState(history, 'Not sure. Does it matter who?').openQuestion).toBe(false);
+    expect(deriveConversationState(history, 'The budget? Why do you ask?').openQuestion).toBe(false);
+    expect(deriveConversationState(history, 'yes').openQuestion).toBe(false);
+    expect(deriveConversationState([], 'Hello?').openQuestion).toBe(false);
+
+    const block = renderConversationState(ignored);
+    expect(block).toContain('- You already asked: "Who signs off on the library budget?"');
+    expect(block).toContain(
+      '- They did not take up your last question: answer what they said, and do not ask it again.',
+    );
+    expect(renderConversationState(deriveConversationState(history, 'Facilities, I think.'))).not.toContain(
+      'did not take up',
+    );
+  });
+});
+
+describe('plain text in linear time', () => {
+  it('strips links and images exactly like the expression it replaces', () => {
+    const old = (text: string): string => text.replace(/!?\[([^\]\n]*)\]\([^)\n]*\)/g, '$1');
+    for (const text of [
+      'See [the sheet](https://x.example) and ![a chart](https://y.example/c.png).',
+      '[a [b](c) d](e)',
+      '[unclosed](https://x.example and [ok](z)',
+      '[x](\n) [y](z)',
+      'no links [here] (at all)',
+      '![]() [](x)',
+      '[x](' + '[x]('.repeat(5),
+    ]) {
+      expect(stripLinks(text), text).toBe(old(text));
+    }
+  });
+
+  it('derives the state of a pasted wall of markup without quadratic backtracking', () => {
+    // Eight times the input takes about eight times as long, not sixty-four. Ratios of warm runs (not absolute
+    // times) keep this independent of the machine.
+    const historyOf = (n: number) =>
+      Array.from({ length: 8 }, (_, i) => ({
+        founderText: `${'[x]('.repeat(n)} ${' '.repeat(n)}x ${'\n'.repeat(n)}y ${String(i)}`,
+        answer: `${'[E1, '.repeat(n)} ok ${'\n- '.repeat(n)}?`,
+      }));
+    const time = (n: number): number => {
+      const history = historyOf(n);
+      const text = `${'[x]('.repeat(n)}?`;
+      const started = performance.now();
+      for (let i = 0; i < 5; i += 1) deriveConversationState(history, text);
+      return performance.now() - started;
+    };
+    // Interleaved, best of three: a burst of load on a shared runner slows one sample, not one size.
+    time(250);
+    let small = Infinity;
+    let large = Infinity;
+    for (let round = 0; round < 3; round += 1) {
+      small = Math.min(small, time(250));
+      large = Math.min(large, time(2_000));
+    }
+    expect(large).toBeLessThan(16 * small + 100);
+  }, 60_000);
 });
 
 describe('content words, gists and openings', () => {
