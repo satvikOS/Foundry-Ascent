@@ -134,14 +134,16 @@ generated time), with `distilled_at` and `distill_version` (the number of comple
   suppressed (`isSuppressed`) and writes with the version it read (`saveNotebook` returns null on a
   conflict), so a founder's correction is never silently overwritten.
 - **Sources.** Every line records the conversation it came from. The summary records the conversations it
-  was drawn from (`summarySources`) and the opener the one it was drawn from (`nextOpenerSource`):
-  distillation passes `sourceSessionId` to `saveNotebook`, which keeps unchanged text's sources and adds the
-  conversation to rewritten text (`withDistilledSources`). Without a source the origin is unknown. These
+  was drawn from (`summarySources`) and the opener the one it was drawn from (`nextOpenerSource`); a missing
+  key means unknown. `saveNotebook` owns these fields and ignores what callers send. For distillation it
+  keeps unchanged text's sources and adds `sourceSessionId` to rewritten text, which is of unknown origin
+  without it (`withDistilledSources`). Text a person writes where there was none is drawn from no
+  conversation (`[]`, null); corrected text keeps where it was drawn from (`withPersonSources`). These
   fields stay in the stored document; the contract view does not show them.
 - **Deleting a conversation** removes the lines sourced from it, and clears the summary and the opener when
-  they were drawn from it. When their origin is unknown, deleting any distilled conversation of the persona
-  (or one that a line cites) clears them: a summary is never kept on the chance it did not use the
-  conversation.
+  they were drawn from it. Text of unknown origin is cleared when the deleted conversation was distilled or a
+  line cites it: a summary is never kept on the chance it did not use the conversation. Text a person wrote
+  stays.
 - **Integrity.** The database checks the document against the contract (conversation ids, ISO timestamps).
   Should a stored notebook still not match a later contract, reads keep the readable lines and mark the
   record not intact; the notebook API fails loudly (500, logged with ids only) and `saveNotebook` refuses to
@@ -166,16 +168,17 @@ generated time), with `distilled_at` and `distill_version` (the number of comple
 - `GET /sessions?scope=mine|all&ventureId&cursor&limit` lists the caller's conversations across every
   venture they work on (founder/team), each with its own `ventureId`, latest activity first, in keyset
   pages. The cursor is the activity in microseconds since the epoch, computed without a time-format literal
-  (a `:MI` inside SQL text could be read as a parameter by the RDS Data API; the executors refuse any quoted
-  `:name`).
+  (a `:MI` inside SQL text could be read as a parameter by the RDS Data API; the executors refuse any
+  `:name` that is not a placeholder, in comments and function bodies too). Cursors in the earlier ISO form
+  still decode to the same position.
 - `DELETE /sessions/:id` (founder/team) erases the content like an ended temporary chat: founder text and
   responses of every turn, title, goal, recap, digest, feedback comments, the AI memory proposals drawn from
   it that no person kept (pending, rejected or expired), the notebook lines, summary and opener drawn from
   it (§4.2), and stored idempotent responses that mention it. Pending turns are failed so a late answer is
-  never stored. AI suggestions a person approved stay: they are the venture's memory now. Escalation
-  packets stay too: a shared one went to a person with the founder's consent, and a draft stays on the
-  Human help page for the founder to send or withdraw. The row stays for security records; RLS hides it
-  from everyone.
+  never stored. AI suggestions a person approved stay: they are the venture's memory now. Escalations the
+  founder never shared (draft, awaiting consent, or withdrawn before sharing) are withdrawn and their packet
+  erased: it held the founder's question verbatim. Escalations the founder shared stay: they went to a
+  person with consent. The row stays for security records; RLS hides it from everyone.
 
 ## 6. Calls
 
@@ -226,14 +229,14 @@ every new column), which `migrate-0004.db.test.ts` checks together with re-runna
 
 Migration 0005 (`0005_wave1_fixes`, expand-only and re-runnable, `migrate-0005.db.test.ts`):
 
-| Object                    | Change                                                                                                                                                                     |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `coaching_sessions`       | `title_source` (`auto` \| `person`, backfilled from rename audits and titles given at the start); CHECK `privacy = 'standard' OR title IS NULL` (temporary titles cleared) |
-| notebook CHECK            | sources are conversation ids, times ISO timestamps (`app.is_contract_uuid`, `app.is_contract_timestamp`); optional `summarySources`, `nextOpenerSource`; old rows repaired |
-| `app.soft_delete_session` | also clears the notebook summary and opener drawn from the conversation and erases its rejected or expired AI proposals                                                    |
-| `knowledge_chunks`        | chunks of withdrawn sources, and chunks of authored sources newer than their last save, removed; the program method corpus becomes an authored note                        |
-| `venture_memberships` RLS | platform admins may add members (team invitations) and read the memberships of their tenant's ventures                                                                     |
-| `app.is_synthetic_eir`    | comment: the consent exception covers synthetic EIRs whether or not they can sign in                                                                                       |
+| Object                    | Change                                                                                                                                                                                                                                                   |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `coaching_sessions`       | `title_source` (`auto` \| `person`, backfilled from rename audits and titles given at the start); CHECK `privacy = 'standard' OR title IS NULL` (temporary titles cleared)                                                                               |
+| notebook CHECK            | sources are conversation ids, times ISO timestamps (`app.is_contract_uuid`, `app.is_contract_timestamp`); optional `summarySources`, `nextOpenerSource`; old rows repaired                                                                               |
+| `app.soft_delete_session` | also clears the notebook summary and opener drawn from the conversation, erases its rejected or expired AI proposals and its unshared escalations (`app.erase_drawn_from_session`, internal); conversations deleted under 0004 get the same erasure once |
+| `knowledge_chunks`        | chunks of withdrawn sources, and chunks of authored sources newer than their last save, removed; seeded doctrine and program corpora still stored as bodiless documents become authored notes                                                            |
+| `venture_memberships` RLS | platform admins may add members (team invitations) and read the memberships of their tenant's ventures (the Team list)                                                                                                                                   |
+| `app.is_synthetic_eir`    | comment: the consent exception covers synthetic EIRs whether or not they can sign in                                                                                                                                                                     |
 
 ## 8. Next: the turn pipeline and distillation
 
@@ -257,10 +260,12 @@ What the orchestrator and the distillation job need is in place:
 - RLS for every new table and path: `packages/db/src/rls.db.test.ts` (notebooks, persona corpora, lessons,
   deleted conversations, consents, the soft-delete NULL fix).
 - Repositories: `packages/db/src/repositories/veir.db.test.ts`, `conversations.db.test.ts` (title privacy as
-  the assigned EIR, title sources, temporary chats, recents under concurrent turns, deletion, notebook
-  integrity); pure rules in `notebooks.test.ts`; Data API literal safety in `sql-lexer.test.ts`. Migration and
-  seed upgrade: `migrate-0004.db.test.ts`, `migrate-0005.db.test.ts`, `seed/seed.db.test.ts` (re-runs after
-  edits, withdrawals and deleted documents).
+  the assigned EIR, title sources, temporary chats, recents under concurrent turns, deletion and what a
+  person wrote, notebook integrity); pure rules in `notebooks.test.ts` and `sessions.test.ts` (cursors);
+  Data API safety of every migration statement, comments and function bodies included, in
+  `sql-lexer.test.ts`. Migration and seed upgrade: `migrate-0004.db.test.ts`, `migrate-0005.db.test.ts`
+  (conversations deleted under 0004, a database first seeded after 0004), `seed/seed.db.test.ts` (re-runs
+  after edits, withdrawals and deleted documents).
 - Services: `packages/core/src/services/veir-pools.db.test.ts`, `wave1-fixes.db.test.ts` (and the
   authorization matrix), pure rules in `veir-pools.test.ts`.
 - HTTP: `apps/api/src/veir.db.test.ts`, `conversations.db.test.ts` (recents across ventures, opener edits,
