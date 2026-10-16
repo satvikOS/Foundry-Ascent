@@ -15,8 +15,11 @@ import { type CoachMode, type TurnChannel } from '@foundry/contracts';
  * governs both phases.
  */
 
-/** Where the turn system prompt's output section starts (`buildSystemPrompt`). */
-export const OUTPUT_SECTION_MARKER = '\nOutput: return exactly one JSON object';
+/**
+ * Where the turn system prompt's final output section starts: its last line beginning with `Output:`
+ * (`buildSystemPrompt`). The streamed reply keeps everything before it.
+ */
+export const OUTPUT_SECTION_MARKER = '\nOutput:';
 
 export interface AnswerPromptOptions {
   readonly channel: TurnChannel;

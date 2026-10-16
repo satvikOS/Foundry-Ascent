@@ -57,8 +57,8 @@ const GUARDS: OpenerGuards = {
 };
 
 describe('streamed-turn prompts', () => {
-  it('finds the output section of the turn system prompt (rewording it breaks this test, not the stream)', () => {
-    expect(SYSTEM).toContain(OUTPUT_SECTION_MARKER);
+  it('finds the JSON output section at the end of the turn system prompt (a rewording breaks this test)', () => {
+    expect(SYSTEM.slice(SYSTEM.lastIndexOf(OUTPUT_SECTION_MARKER))).toMatch(/^\nOutput: .*JSON/);
   });
 
   it('keeps every rule of the turn and replaces the JSON instructions with how to write the reply', () => {
@@ -67,10 +67,10 @@ describe('streamed-turn prompts', () => {
       mode: null,
       allowedModes: ['diagnose', 'coach', 'teach'],
     });
-    expect(prompt).not.toContain(OUTPUT_SECTION_MARKER);
+    expect(prompt).not.toContain('Output: return exactly one JSON object');
     expect(prompt).not.toContain('CoachResponse schema');
-    expect(prompt.slice(0, SYSTEM.indexOf(OUTPUT_SECTION_MARKER))).toBe(
-      SYSTEM.slice(0, SYSTEM.indexOf(OUTPUT_SECTION_MARKER)),
+    expect(prompt.slice(0, SYSTEM.lastIndexOf(OUTPUT_SECTION_MARKER))).toBe(
+      SYSTEM.slice(0, SYSTEM.lastIndexOf(OUTPUT_SECTION_MARKER)),
     );
     expect(prompt).toContain('# Identity');
     expect(prompt).toContain('write your reply to the founder now');
