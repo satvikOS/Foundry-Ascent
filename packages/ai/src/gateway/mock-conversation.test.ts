@@ -507,6 +507,30 @@ describe('social turns', () => {
   });
 });
 
+describe('the annotations of a streamed reply', () => {
+  it('read the same conversation as the reply (the annotation request is not the founder’s turn)', () => {
+    const req = request({
+      text: 'Ok, where were we?',
+      section: DIGEST_CHAT,
+      sectionIn: 'message',
+      history: [
+        { founderText: 'How should we price per library?', answer: 'Who holds the budget?' },
+        { founderText: 'By the way, should we hire a designer?', answer: 'What is the bottleneck?' },
+      ],
+    });
+    const annotationTurn = [
+      ...req.messages,
+      { role: 'assistant' as const, content: 'We were on pricing, before we got sidetracked.' },
+      { role: 'user' as const, content: '<annotation_request>\nReturn the fields.\n</annotation_request>' },
+    ];
+    expect(conversationStateIn(annotationTurn)).toEqual(conversationStateIn(req.messages));
+    expect(previousConversationIn(req.system, annotationTurn, 'Maya', '2026-10-16')).toEqual(
+      previousConversationIn(req.system, req.messages, 'Maya', '2026-10-16'),
+    );
+    expect(conversationStateIn(annotationTurn)?.parked).toEqual(['How should we price per library?']);
+  });
+});
+
 describe('conversationStateIn', () => {
   it('parses the observations the server sends', () => {
     const messages = buildMessages(

@@ -82,6 +82,17 @@ function asPlan(text: string): string | null {
 const COMMITMENT =
   /\b(?:I|we)(?:['’]ll| will| plan to| am going to| are going to|['’]m going to|['’]re going to)\s+([^.!?\n]{4,140})/i;
 
+/**
+ * The user message that carries the founder's newest words (with the notes, evidence and observations), not a
+ * later instruction such as the annotation request that follows a streamed reply.
+ */
+function founderTurnOf(messages: readonly ChatMessage[]): string {
+  const users = messages.filter((m) => m.role === 'user');
+  return (
+    users.findLast((m) => m.content.includes('<founder_message>'))?.content ?? users.at(-1)?.content ?? ''
+  );
+}
+
 /** The "## Where you left off" section of the prompt (to the next heading or block), or null. */
 export function whereYouLeftOffIn(texts: readonly string[]): string | null {
   // The heading starts a line; the doctrine only names it inside a sentence.
@@ -295,14 +306,14 @@ export function previousConversationIn(
   const texts = [system, ...messages.map((m) => m.content)];
   const section = whereYouLeftOffIn(texts);
   if (section !== null) return fromSection(section, founderName, today);
-  const last = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
+  const last = founderTurnOf(messages);
   const notes = /<your_notes>([\s\S]*?)<\/your_notes>/.exec(last)?.[1];
   return notes === undefined ? null : fromNotes(notes, today);
 }
 
 /** The `<conversation_state>` block of the founder's message, parsed; null when there is none. */
 export function conversationStateIn(messages: readonly ChatMessage[]): StateReading | null {
-  const last = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
+  const last = founderTurnOf(messages);
   const block = new RegExp(`<${CONVERSATION_STATE_TAG}>\\n([\\s\\S]*?)\\n</${CONVERSATION_STATE_TAG}>`).exec(
     last,
   )?.[1];
