@@ -83,7 +83,7 @@ export function previousNeedsDistill(
   now: Date,
   activeWindowSeconds: number,
 ): boolean {
-  if (previous === null || previous.privacy !== 'standard' || previous.digestDeleted) return false;
+  if (previous?.privacy !== 'standard' || previous.digestDeleted) return false;
   if (previous.completedTurns <= previous.distillVersion) return false;
   return !isActive(previous, now, activeWindowSeconds);
 }

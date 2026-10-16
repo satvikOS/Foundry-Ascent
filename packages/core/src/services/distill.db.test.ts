@@ -297,7 +297,8 @@ describe('distillSession', () => {
     expect(nb?.version).toBe(versionBefore + 1);
     expect(nb?.lastEditedBy).toBe('veir');
     const commitment = nb?.content.commitments.find((c) => c.sourceSessionId === sessionId);
-    expect(commitment).toMatchObject({ status: 'open', text: expect.stringMatching(/library staff/) });
+    expect(commitment?.status).toBe('open');
+    expect(commitment?.text).toMatch(/library staff/);
     expect(nb?.content.nextOpener).toMatch(/^Last time you planned to interview five library staff/);
     expect(await personEdits()).toEqual([]);
 
@@ -430,10 +431,8 @@ describe('the notebook merge respects people', () => {
     const before = await notebook();
     if (before === null) throw new Error('notebook missing');
     const [kept, removed] = before.content.founderProfile;
-    const opener = before.content.nextOpener;
-    if (kept === undefined || removed === undefined || opener === null)
-      throw new Error('seed notebook too small');
-    let current = await h.core.notebook.update(maya, quietquad(), {
+    if (kept === undefined || removed === undefined) throw new Error('seed notebook too small');
+    const edited = await h.core.notebook.update(maya, quietquad(), {
       expectedVersion: before.version,
       edit: {
         action: 'edit_entry',
@@ -442,12 +441,12 @@ describe('the notebook merge respects people', () => {
         text: 'Prefers voice notes to long emails',
       },
     });
-    current = await h.core.notebook.update(maya, quietquad(), {
-      expectedVersion: current.version,
+    const trimmed = await h.core.notebook.update(maya, quietquad(), {
+      expectedVersion: edited.version,
       edit: { action: 'remove_entry', section: 'founderProfile', id: removed.id },
     });
-    current = await h.core.notebook.update(maya, quietquad(), {
-      expectedVersion: current.version,
+    await h.core.notebook.update(maya, quietquad(), {
+      expectedVersion: trimmed.version,
       edit: { action: 'edit_opener', text: 'How did the staff interviews go?' },
     });
     expect((await personEdits()).sort()).toEqual([kept.id, 'nextOpener'].sort());
