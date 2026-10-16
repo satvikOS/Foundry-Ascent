@@ -178,7 +178,7 @@ describe('admin console', () => {
 
     const usage = UsageSummary.parse(await h.core.admin.usageSummary(owner));
     expect(usage.byDay).toHaveLength(30);
-    expect(usage.capGlobalUsd).toBe(2);
+    expect(usage.capGlobalUsd).toBe(15); // the default since migration 0006
   });
 });
 

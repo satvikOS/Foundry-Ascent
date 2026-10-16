@@ -488,6 +488,10 @@ describe('MockModelGateway.streamText', () => {
       mock.streamText({ purpose: 'turn', system, messages, requestId: 'r' }, () => undefined),
     );
     expect(before).toMatchObject({ reason: 'server_error', textDelivered: false });
+    const whole = await mock.streamText(
+      { purpose: 'turn', system, messages, requestId: 'r' },
+      () => undefined,
+    );
     mock.scriptStream('fail_midway');
     const seen: string[] = [];
     const midway = await captureError(
@@ -496,7 +500,8 @@ describe('MockModelGateway.streamText', () => {
       }),
     );
     expect(midway).toMatchObject({ reason: 'server_error', textDelivered: true });
-    expect(seen).toHaveLength(1);
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.length).toBeLessThan(mockStreamChunks(whole.text).length);
   });
 
   it('stops when the caller aborts', async () => {

@@ -82,8 +82,11 @@ interface HeldReservation {
 /**
  * POST /sessions/:id/turns (system design §6.1). Runs the orchestrator and streams its events as SSE
  * (`event: <name>` + `data: <json>`), with keep-alive comments and cancellation when the client goes away
- * or the deadline approaches. A turn refused before acceptance (not found, session ended, kill switch,
- * rate limit, spend cap, …) is answered with a plain problem+json response instead of a stream.
+ * or the deadline approaches. Each event is written as soon as the orchestrator emits it, so validated
+ * `turn.delta` (and, on a call, `turn.speech`) units reach the client while the answer is still being
+ * written; Lambda Function URL response streaming carries them (ADR-0017). A turn refused before acceptance
+ * (not found, session ended, kill switch, rate limit, spend cap, …) is answered with a plain problem+json
+ * response instead of a stream.
  *
  * `Idempotency-Key`: the key is bound to the accepted turn's ordinal; a retry with the same key and body
  * replays that turn from storage (core `expectedOrdinal`), without a second model call.
@@ -151,6 +154,7 @@ export async function handleTurnRequest(
   const started = performance.now();
   const channel = new EventChannel<TurnStreamEvent>();
   let acceptedTurnId: string | null = null;
+  const counts = { deltas: 0, speech: 0, firstDeltaMs: null as number | null };
   const run: Promise<RunTurnOutcome> = options.orchestrator
     .runTurn(
       ctx,
@@ -158,6 +162,11 @@ export async function handleTurnRequest(
       input,
       (event) => {
         if (event.event === 'turn.accepted') acceptedTurnId = event.turnId;
+        if (event.event === 'turn.delta') {
+          counts.deltas += 1;
+          counts.firstDeltaMs ??= Math.round(performance.now() - started);
+        }
+        if (event.event === 'turn.speech') counts.speech += 1;
         channel.push(event);
       },
       { signal: controller.signal },
@@ -240,6 +249,9 @@ export async function handleTurnRequest(
       code: outcome.error?.code,
       replayed: outcome.replayed,
       frames,
+      deltas: counts.deltas,
+      speechUnits: counts.speech,
+      firstDeltaMs: counts.firstDeltaMs,
       clientGone,
       durationMs: Math.round(performance.now() - started),
     });

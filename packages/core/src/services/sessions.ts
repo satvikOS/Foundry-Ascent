@@ -9,19 +9,28 @@ import {
   type SessionRecap,
   type SessionView,
 } from '@foundry/contracts';
-import { personasRepo, sessionsRepo, settingsRepo, turnsRepo, venturesRepo } from '@foundry/db';
+import {
+  notebooksRepo,
+  personasRepo,
+  sessionsRepo,
+  settingsRepo,
+  turnsRepo,
+  venturesRepo,
+} from '@foundry/db';
 import { type z } from 'zod';
 
 import {
   requireAssignmentActive,
   requireModeAllowed,
   requireVentureAccess,
+  type ActiveAssignment,
 } from '../authz/venture-access.js';
 import { type RequestContext } from '../context.js';
 import { DomainError, fail, isDomainError, parseInput } from '../errors.js';
-import { type DirectoryCache } from '../internal/directory.js';
+import { type DirectoryCache, type OtherVentures } from '../internal/directory.js';
 import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
 import { participantTurnView, supportMessageFor } from '../orchestrator/blocked.js';
+import { validatedOpener } from '../orchestrator/continuity.js';
 import { assertWithinSpendCaps } from '../orchestrator/guards.js';
 import { RECAP_SCHEMA_NAME, RecapDraft, buildRecapPrompt, sanitizeRecap } from '../orchestrator/recap.js';
 import { persistMemoryCandidates } from './memory.js';
@@ -42,7 +51,9 @@ export interface SessionPageResult {
 export interface SessionsService {
   /**
    * Starts a session (founder/team). Resolves the active assignment and approved persona release
-   * server-side, checks persona status, the kill switch, the mode and the daily spend caps.
+   * server-side, checks persona status, the kill switch, the mode and the daily spend caps. A standard
+   * conversation opens with the vEIR's line: the notebook's next opener, validated (never for temporary
+   * chats).
    */
   create(
     ctx: RequestContext,
@@ -99,6 +110,29 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
     return view;
   }
 
+  /**
+   * The vEIR's opening line for a new standard conversation: the notebook's next opener, kept only when it
+   * passes the identity and cross-venture checks (a person may have edited it). Null when there is none.
+   */
+  async function openerFor(
+    scope: RequestScope,
+    ventureId: string,
+    active: ActiveAssignment,
+    guards: { readonly others: OtherVentures; readonly eirNames: readonly string[] },
+  ): Promise<string | null> {
+    const notebook = await notebooksRepo.getNotebook(scope.tx, { ventureId, personaId: active.persona.id });
+    const next = notebook?.content.nextOpener ?? null;
+    if (next === null) return null;
+    return validatedOpener(next, {
+      personaName: active.persona.name,
+      personaEirName: await personasRepo.getPersonaEirName(scope.tx, active.persona.id),
+      eirNames: guards.eirNames,
+      otherVentureNames: guards.others.names,
+      otherVentureCanaries: guards.others.canaries,
+      otherVentureMemberNames: guards.others.memberNames,
+    });
+  }
+
   /** The session (RLS-visible) of a founder/team request, or 404/403. */
   async function writableSession(
     scope: RequestScope,
@@ -140,10 +174,19 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
         return current;
       });
       await assertWithinSpendCaps(kit, ctx, settings, { ventureId, operation: 'session' });
+      // The opener's guards come from the tenant directory (owner role), read before the writing transaction.
+      const guards =
+        input.privacy === 'standard'
+          ? {
+              others: await directory.others(ctx.tenantId, ventureId),
+              eirNames: (await directory.get(ctx.tenantId)).eirNames,
+            }
+          : null;
       return kit.inRequest(ctx, async (scope) => {
         // Re-resolved in the writing transaction: a suspension in between still blocks the session.
         const active = await requireAssignmentActive(scope, ventureId);
         requireModeAllowed(active, input.mode);
+        const opener = guards === null ? null : await openerFor(scope, ventureId, active, guards);
         const session = await sessionsRepo.createSession(scope.tx, {
           tenantId: ctx.tenantId,
           ventureId,
@@ -156,6 +199,7 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
           policyVersion: POLICY_VERSION,
           // Temporary chats keep no title (their content is erased when they end).
           title: input.privacy === 'ephemeral' ? null : input.title,
+          opener,
         });
         await audit(scope, {
           action: 'session.started',
@@ -169,6 +213,7 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
             personaId: active.persona.id,
             releaseVersion: active.release.version,
             assignmentId: active.assignment.id,
+            opener: opener !== null,
           },
         });
         return sessionView(scope.tx, session.id);

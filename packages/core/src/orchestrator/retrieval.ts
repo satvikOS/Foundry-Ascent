@@ -6,10 +6,10 @@ import { buildEvidencePack, classificationsFor, type EvidencePack } from './evid
 export interface RetrievalArgs {
   readonly tenantId: string;
   readonly ventureId: string;
-  /** Assigned persona: its doctrine corpus is searchable. */
+  /** Assigned persona: its knowledge library and published lessons are searchable. */
   readonly personaId: string;
   readonly stage: string;
-  /** Founder text (lexical query). */
+  /** Lexical query: the founder's message read in the conversation (`buildRetrievalQuery`). */
   readonly query: string;
   /** Query embedding or null (lexical only). */
   readonly embedding: readonly number[] | null;
@@ -79,7 +79,11 @@ export async function retrieveEvidence(tx: AppExecutor, args: RetrievalArgs): Pr
       : [];
   const patterns =
     args.budgets.patterns > 0
-      ? await retrievalRepo.searchPatterns(tx, { ...base, limit: args.budgets.patterns })
+      ? await retrievalRepo.searchPatterns(tx, {
+          ...base,
+          personaId: args.personaId,
+          limit: args.budgets.patterns,
+        })
       : [];
   return buildEvidencePack({ memory, chunks, shared, resources, patterns }, args.ventureId, {
     allowPrivateMemory: args.privateOwnerId !== null,

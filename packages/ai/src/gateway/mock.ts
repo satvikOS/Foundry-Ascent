@@ -53,7 +53,7 @@ export const MOCK_RECAP_SCHEMA_NAME = 'SessionRecapDraft';
  */
 export type MockScriptedOutcome = 'unavailable' | 'timeout' | 'invalid_output' | 'refusal' | 'fallback';
 
-/** Scripted outcomes for the next streamed calls only: `fail_midway` fails after the first chunk. */
+/** Scripted outcomes for the next streamed calls only: `fail_midway` fails halfway through the text. */
 export type MockStreamOutcome = 'fail_midway';
 
 /** Pause before each streamed chunk when none is configured (realistic pacing for local demos). */
@@ -822,22 +822,22 @@ export class MockModelGateway implements ModelGateway {
       const answer = typeof response.answer === 'string' ? response.answer : '';
       text = typeof spoken === 'string' && spoken !== '' ? spoken : answer;
     }
-    let delivered = '';
     let firstTokenMs: number | null = null;
-    for (const chunk of mockStreamChunks(text)) {
+    const chunks = mockStreamChunks(text);
+    const failAt = failMidway ? Math.max(1, Math.ceil(chunks.length / 2)) : chunks.length;
+    for (const [index, chunk] of chunks.entries()) {
       await pause(this.#streamDelayMs, request.signal);
-      if (request.signal?.aborted || (failMidway && delivered !== '')) {
+      if (request.signal?.aborted || index >= failAt) {
         const error = this.#failure(
           request.signal?.aborted
             ? new ModelUnavailableError('aborted', MOCK_MODEL_ID)
             : new ModelUnavailableError('server_error', MOCK_MODEL_ID),
           inputTokens,
         );
-        error.textDelivered = true;
+        error.textDelivered = index > 0;
         throw error;
       }
       firstTokenMs ??= Math.round(performance.now() - started);
-      delivered += chunk;
       await onText(chunk);
     }
     const fallbackUsed = scripted === 'fallback';

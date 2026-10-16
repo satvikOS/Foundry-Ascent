@@ -1,31 +1,47 @@
 import {
-  COACH_RESPONSE_SCHEMA_NAME,
+  AUTO_MODE,
+  CRISIS_SPOKEN_MESSAGE,
   CRISIS_SUPPORT_MESSAGE,
+  CROSS_VENTURE_BLOCK_ANSWER,
+  INVALID_RESPONSE_ANSWER,
   POLICY_VERSION,
+  SPOKEN_NARROWING_CAVEAT,
   buildCrisisResponse,
+  buildRetrievalQuery,
   buildSystemPrompt,
   classifyRisk,
+  deriveSpoken,
   isModelGatewayError,
   riskLabel,
   validateCoachResponse,
-  type GenerateStructuredResult,
+  type CoachResponseValidation,
+  type GateBlockReason,
   type HistoryTurn,
   type ModelAttempt,
   type RiskClassification,
 } from '@foundry/ai';
 import {
-  CoachResponse,
   CreateTurnRequest,
   type CoachMode,
   type PlatformSettingsView,
   type TurnBlockedDetail,
+  type TurnChannel,
   type TurnStreamEvent,
   type TurnView,
   type ValidatorResults,
 } from '@foundry/contracts';
-import { escalationsRepo, sessionsRepo, settingsRepo, turnsRepo, venturesRepo } from '@foundry/db';
+import {
+  escalationsRepo,
+  personasRepo,
+  sessionsRepo,
+  settingsRepo,
+  turnsRepo,
+  venturesRepo,
+} from '@foundry/db';
 import type { z } from 'zod';
 
+import { PlatformKeyCache } from '../auth/keys.js';
+import { type SessionSigningKey } from '../auth/session-token.js';
 import {
   requireAssignmentActive,
   requireVentureAccess,
@@ -35,11 +51,21 @@ import { type RequestContext } from '../context.js';
 import { DomainError, fail, isDomainError, parseInput, toDomainError } from '../errors.js';
 import { type DirectoryCache, type OtherVentures } from '../internal/directory.js';
 import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
+import { admitVoiceTurn as callsAdmission, type AdmitVoiceTurn } from '../services/call-admission.js';
 import { createDraftEscalation } from '../services/escalations.js';
 import { persistMemoryCandidates } from '../services/memory.js';
 import { blockedDetailOf, participantRiskLabel, participantTurnView, supportMessageFor } from './blocked.js';
 import { assembleContext } from './context-budget.js';
+import { loadContinuity, type LoadedContinuity } from './continuity.js';
 import { candidateVisibility, type KeyedEvidence } from './evidence.js';
+import {
+  GenerationFailure,
+  generateStreamed,
+  generateWhole,
+  generationTotals,
+  SpeechStream,
+  type Generation,
+} from './generate.js';
 import { assertWithinSpendCaps } from './guards.js';
 import { privateRetrievalOwner, retrieveEvidence } from './retrieval.js';
 import { secondsUntilUtcMidnight, shouldSampleForReview } from './sampling.js';
@@ -47,7 +73,7 @@ import { secondsUntilUtcMidnight, shouldSampleForReview } from './sampling.js';
 /**
  * POST /sessions/:id/turns body. `expectedOrdinal` (the client's retry key) is part of the contract: when
  * a turn with this ordinal already exists for the same author and text, it is replayed from storage
- * instead of re-running.
+ * instead of re-running. Without `mode`, the model picks the mode within the allowed ones (auto mode).
  */
 export const RunTurnInput = CreateTurnRequest;
 export type RunTurnInput = z.input<typeof RunTurnInput>;
@@ -76,7 +102,9 @@ export interface Orchestrator {
   /**
    * Runs one coaching turn (system design §7 steps 1–7) and emits `turn.accepted` → `turn.status`
    * (classifying, retrieving, reasoning, validating) → exactly one of `turn.completed`, `turn.blocked`,
-   * `turn.error`. Never throws for domain failures: they are emitted (and returned in the outcome).
+   * `turn.error`. With streaming on, validated `turn.delta` units of the answer (and, on a call, signed
+   * `turn.speech` units) come before the terminal event, which stays authoritative. Never throws for domain
+   * failures: they are emitted (and returned in the outcome).
    */
   runTurn(
     ctx: RequestContext,
@@ -85,6 +113,13 @@ export interface Orchestrator {
     emit: TurnEmitter,
     options?: RunTurnOptions,
   ): Promise<RunTurnOutcome>;
+}
+
+export interface OrchestratorOptions {
+  /** Admission of spoken turns (the calls service); replaceable in tests. */
+  readonly admitVoiceTurn?: AdmitVoiceTurn;
+  /** Key source for signed speech units; default the platform session-signing key. */
+  readonly speechKeys?: { signingKey(): Promise<SessionSigningKey> };
 }
 
 const SAFE_INTERNAL = (cause: unknown): DomainError =>
@@ -120,19 +155,40 @@ export function errorEvent(
   };
 }
 
-function sumAttempts(attempts: readonly ModelAttempt[]): {
-  inputTokens: number;
-  outputTokens: number;
-  costUsd: number;
-} {
-  return attempts.reduce(
-    (acc, a) => ({
-      inputTokens: acc.inputTokens + a.usage.inputTokens,
-      outputTokens: acc.outputTokens + a.usage.outputTokens,
-      costUsd: acc.costUsd + a.costUsd,
-    }),
-    { inputTokens: 0, outputTokens: 0, costUsd: 0 },
-  );
+/**
+ * The validation of a turn the sentence gate stopped. The final validator normally reaches the same verdict
+ * on the text the gate saw; when it does not (a guarded string cut differently), the gate's verdict stands
+ * and nothing from the stopped text is kept: the stored answer is the fixed placeholder for the reason.
+ */
+export function enforceGateBlock(
+  checked: CoachResponseValidation,
+  reason: GateBlockReason,
+  channel: TurnChannel,
+): CoachResponseValidation {
+  if (checked.blocked) return checked;
+  const results: ValidatorResults = {
+    ...checked.results,
+    crossVentureViolation: checked.results.crossVentureViolation || reason === 'cross_venture',
+    identityViolation: checked.results.identityViolation || reason === 'identity',
+  };
+  const answer = reason === 'cross_venture' ? CROSS_VENTURE_BLOCK_ANSWER : INVALID_RESPONSE_ANSWER;
+  return {
+    response: {
+      ...checked.response,
+      answer,
+      claims: [],
+      uncertainty: [],
+      challenge: null,
+      next_actions: [],
+      memory_candidates: [],
+      follow_up_questions: [],
+      rehearsal: null,
+      spoken: channel === 'voice' ? deriveSpoken(answer) : null,
+    },
+    results,
+    blocked: true,
+    blockReason: reason,
+  };
 }
 
 interface Proceed {
@@ -141,8 +197,28 @@ interface Proceed {
   readonly settings: PlatformSettingsView;
   /** Null only on the crisis path, which makes no model call and needs no coach. */
   readonly active: ActiveAssignment | null;
-  readonly mode: CoachMode;
+  /** The fixed mode of this turn, or null when the model picks one (auto mode). */
+  readonly mode: CoachMode | null;
+  /** The mode the turn is created with (the fixed mode, else the conversation's current one). */
+  readonly turnMode: CoachMode;
+  readonly channel: TurnChannel;
   readonly venture: venturesRepo.VentureRecord;
+  /** The coach of this turn (null on the crisis path). */
+  readonly coach: Coach | null;
+}
+
+/** Everything the model call needs about who answers and what they remember (non-crisis turns). */
+interface Coach {
+  /** The conversation's release (or, when that was withdrawn, the current approved one). */
+  readonly release: personasRepo.PersonaReleaseRecord;
+  /** Modes allowed by both the assignment and that release. */
+  readonly allowedModes: readonly CoachMode[];
+  readonly personaEirName: string | null;
+  /** Earlier completed turns, oldest first (at most `historyTurns`). */
+  readonly history: readonly turnsRepo.TurnRecord[];
+  /** The stored opener, when the history reaches back to the start of the conversation. */
+  readonly opener: string | null;
+  readonly memory: LoadedContinuity;
 }
 
 interface Replay {
@@ -152,9 +228,17 @@ interface Replay {
   readonly escalationId: string | null;
 }
 
-export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchestrator {
+export function createOrchestrator(
+  kit: Kit,
+  directory: DirectoryCache,
+  options: OrchestratorOptions = {},
+): Orchestrator {
   const cfg = kit.config;
   const { logger, gateway } = kit.deps;
+  const admitVoiceTurn = options.admitVoiceTurn ?? callsAdmission;
+  const speechKeys =
+    options.speechKeys ??
+    new PlatformKeyCache(kit, Math.max(cfg.session.keyGraceSeconds, cfg.session.ttlSeconds));
 
   function safeEmitter(emit: TurnEmitter, requestId: string): (event: TurnStreamEvent) => Promise<void> {
     let broken = false;
@@ -171,6 +255,37 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
         });
       }
     };
+  }
+
+  /**
+   * The release a conversation runs on: the one it started with while that stays approved (or superseded by
+   * a newer one: new releases apply to new conversations), else the current approved release, to which the
+   * conversation is then re-pinned (audited).
+   */
+  async function conversationRelease(
+    scope: RequestScope,
+    session: sessionsRepo.SessionRecord,
+    active: ActiveAssignment,
+  ): Promise<personasRepo.PersonaReleaseRecord> {
+    if (session.personaReleaseId === active.release.id) return active.release;
+    const pinned = await personasRepo.getRelease(scope.tx, session.personaReleaseId);
+    const usable =
+      pinned !== null &&
+      pinned.personaId === active.persona.id &&
+      (pinned.status === 'approved' || pinned.status === 'superseded') &&
+      (pinned.expiresAt === null || Date.parse(pinned.expiresAt) > kit.now().getTime());
+    if (usable) return pinned;
+    await sessionsRepo.setSessionRelease(scope.tx, { sessionId: session.id, releaseId: active.release.id });
+    await audit(scope, {
+      action: 'session.release_repinned',
+      outcome: 'succeeded',
+      ventureId: session.ventureId,
+      objectType: 'session',
+      objectId: session.id,
+      policyReason: pinned === null ? 'release_missing' : `release_${pinned.status}`,
+      metadata: { fromVersion: pinned?.version ?? null, toVersion: active.release.version },
+    });
+    return active.release;
   }
 
   /** Step 1: authorize and check every gate except spend caps (owner-only ledger). */
@@ -250,10 +365,12 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
         );
       }
       const settings = await settingsRepo.getPlatformSettings(tx);
-      const mode = input.mode ?? session.mode;
+      const mode = input.mode ?? null;
+      const channel: TurnChannel = input.channel ?? 'text';
       // The crisis path answers with a fixed human-support message and makes no model call, so the AI
       // gates (kill switch, coach persona/assignment, mode) never stand between a founder and support.
       let active: ActiveAssignment | null = null;
+      let coach: Coach | null = null;
       if (!crisis) {
         if (!settings.aiEnabled) {
           throw reject(
@@ -270,9 +387,33 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
             'assignment_changed',
           );
         }
-        if (!active.allowedModes.includes(mode)) {
+        const release = await conversationRelease(scope, session, active);
+        const allowedModes = active.assignment.allowedModes.filter((m) => release.allowedModes.includes(m));
+        if (mode !== null && !allowedModes.includes(mode)) {
           throw reject('forbidden', `Mode "${mode}" is not enabled for this venture`, 'mode_not_allowed');
         }
+        if (allowedModes.length === 0) {
+          throw reject('forbidden', 'No coaching mode is enabled for this venture', 'no_modes_allowed');
+        }
+        const history = await turnsRepo.listRecentTurns(tx, { sessionId, limit: cfg.turns.historyTurns });
+        coach = {
+          release,
+          allowedModes,
+          personaEirName: await personasRepo.getPersonaEirName(tx, active.persona.id),
+          history,
+          // The opener is the conversation's first message: replayed while the history reaches back to it.
+          opener:
+            session.opener !== null && (history.length < cfg.turns.historyTurns || history[0]?.ordinal === 1)
+              ? session.opener
+              : null,
+          memory: await loadContinuity(tx, {
+            ventureId: session.ventureId,
+            personaId: active.persona.id,
+            sessionId,
+            principalId: ctx.principalId,
+            privacy: session.privacy,
+          }),
+        };
       }
       const turnCount = await turnsRepo.countSessionTurns(tx, sessionId);
       if (turnCount >= settings.maxTurnsPerSession) {
@@ -289,21 +430,35 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
           'ordinal_mismatch',
         );
       }
-      const recent = await turnsRepo.countRecentTurnsByAuthor(tx, {
-        authorId: ctx.principalId,
-        windowSeconds: cfg.turns.rateWindowSeconds,
-      });
-      if (recent >= cfg.turns.rateLimit) {
-        throw reject(
-          'rate_limited',
-          'You are sending messages very quickly. Please wait a few minutes.',
-          'turn_rate_limit',
-          cfg.turns.rateWindowSeconds,
-        );
+      // Typed messages have the per-principal rate limit; spoken turns have the calls service's own.
+      if (channel === 'text') {
+        const recent = await turnsRepo.countRecentTurnsByAuthor(tx, {
+          authorId: ctx.principalId,
+          windowSeconds: cfg.turns.rateWindowSeconds,
+          channel: 'text',
+        });
+        if (recent >= cfg.turns.rateLimit) {
+          throw reject(
+            'rate_limited',
+            'You are sending messages very quickly. Please wait a few minutes.',
+            'turn_rate_limit',
+            cfg.turns.rateWindowSeconds,
+          );
+        }
       }
       const venture = await venturesRepo.getVenture(tx, session.ventureId);
       if (venture === null) throw fail.notFound('Venture');
-      return { kind: 'proceed', session, settings, active, mode, venture };
+      return {
+        kind: 'proceed',
+        session,
+        settings,
+        active,
+        mode,
+        turnMode: mode ?? session.mode,
+        channel,
+        venture,
+        coach,
+      };
     });
   }
 
@@ -349,14 +504,21 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
     }
   }
 
-  /** Marks an accepted turn failed (never throws) and records billable attempts. */
+  /** Marks an accepted turn failed (never throws) and records its billable totals on the turn. */
   async function failTurn(
     ctx: RequestContext,
     turn: turnsRepo.TurnRecord,
     error: DomainError,
     attempts: readonly ModelAttempt[],
   ): Promise<void> {
-    const totals = sumAttempts(attempts);
+    const totals = attempts.reduce(
+      (acc, a) => ({
+        inputTokens: acc.inputTokens + a.usage.inputTokens,
+        outputTokens: acc.outputTokens + a.usage.outputTokens,
+        costUsd: acc.costUsd + a.costUsd,
+      }),
+      { inputTokens: 0, outputTokens: 0, costUsd: 0 },
+    );
     try {
       await kit.inRequest(ctx, async (scope) => {
         await turnsRepo.finishTurn(scope.tx, {
@@ -392,8 +554,9 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
     pre: Proceed,
     risk: RiskClassification,
     emit: (e: TurnStreamEvent) => Promise<void>,
+    speechKey: Promise<SessionSigningKey> | null,
   ): Promise<RunTurnOutcome> {
-    const response = buildCrisisResponse(pre.mode);
+    const response = buildCrisisResponse(pre.turnMode, pre.channel);
     const validator: ValidatorResults = {
       unknownEvidenceIdsRemoved: 0,
       factsDowngraded: 0,
@@ -412,7 +575,7 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
         response,
         validatorResults: validator,
         sampledForReview: false,
-        mode: pre.mode,
+        mode: pre.turnMode,
       });
       if (finished === null) throw fail.conflict('The turn is no longer pending', 'turn_not_pending');
       const escalation = await createDraftEscalation(scope, {
@@ -434,10 +597,23 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
         objectType: 'turn',
         objectId: turn.id,
         policyReason: 'crisis',
-        metadata: { escalationId: escalation.id, modelCalled: false },
+        metadata: { escalationId: escalation.id, modelCalled: false, channel: pre.channel },
       });
       return escalation.id;
     });
+    // On a call, the fixed spoken support message is said before the blocked panel appears.
+    if (speechKey !== null) {
+      const speech = new SpeechStream(
+        speechKey,
+        { sessionId: pre.session.id, turnId: turn.id, requestId: ctx.requestId },
+        emit,
+        (fields) => {
+          logger.error('turn.speech_unsigned', fields);
+        },
+      );
+      await speech.queue(CRISIS_SPOKEN_MESSAGE);
+      await speech.finish();
+    }
     await emit({
       event: 'turn.blocked',
       turnId: turn.id,
@@ -476,17 +652,26 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
     }
   }
 
-  async function accepted(
-    ctx: RequestContext,
-    turn: turnsRepo.TurnRecord,
-    pre: Proceed,
-    input: z.output<typeof RunTurnInput>,
-    risk: RiskClassification,
-    others: OtherVentures,
-    eirNames: readonly string[],
-    emit: (e: TurnStreamEvent) => Promise<void>,
-    signal: AbortSignal | undefined,
-  ): Promise<RunTurnOutcome> {
+  interface Accepted {
+    readonly ctx: RequestContext;
+    readonly turn: turnsRepo.TurnRecord;
+    readonly pre: Proceed;
+    readonly input: z.output<typeof RunTurnInput>;
+    readonly risk: RiskClassification;
+    readonly others: OtherVentures;
+    readonly eirNames: readonly string[];
+    /** The retrieval query (founder text, the previous question for short replies, the goal). */
+    readonly query: string;
+    /** Started while the turn was admitted. */
+    readonly embedding: Promise<number[] | null> | null;
+    readonly speechKey: Promise<SessionSigningKey> | null;
+    readonly emit: (e: TurnStreamEvent) => Promise<void>;
+    readonly signal: AbortSignal | undefined;
+    readonly startedAt: number;
+  }
+
+  async function accepted(a: Accepted): Promise<RunTurnOutcome> {
+    const { ctx, turn, pre, input, risk, others, eirNames, emit, signal } = a;
     const label = riskLabel(risk);
     const ventureId = pre.session.ventureId;
     // The detail is a participant-safe label: which names the cross-venture guard knows is never revealed.
@@ -498,31 +683,26 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
     });
 
     // Step 2: crisis → human support, no model call.
-    if (risk.crisis) return crisisPath(ctx, turn, pre, risk, emit);
-    const active = pre.active;
-    if (active === null)
+    if (risk.crisis) return crisisPath(ctx, turn, pre, risk, emit, a.speechKey);
+    const { active, coach } = pre;
+    if (active === null || coach === null)
       throw new DomainError('assignment_inactive', 'No active coach', { reason: 'no_assignment' });
 
     // Step 3: authorized, scoped retrieval.
     await emit({ event: 'turn.status', phase: 'retrieving', detail: null, evidenceCount: null });
-    const embedding = await embedQuery(ctx, ventureId, input.text, signal);
-    const { pack, history } = await kit.inRequest(ctx, async (scope) => {
+    const embedding = await (a.embedding ?? embedQuery(ctx, ventureId, a.query, signal));
+    const pack = await kit.inRequest(ctx, async (scope) => {
       const evidencePack = await retrieveEvidence(scope.tx, {
         tenantId: ctx.tenantId,
         ventureId,
         personaId: active.persona.id,
         stage: pre.venture.stage,
-        query: input.text,
+        query: a.query,
         embedding,
         dataClassCeiling: active.assignment.dataClassCeiling,
         budgets: cfg.retrieval,
         // Always null today: no session is readable by its author alone (see privateRetrievalOwner).
         privateOwnerId: privateRetrievalOwner(pre.session, ctx.principalId),
-      });
-      const recent = await turnsRepo.listRecentTurns(scope.tx, {
-        sessionId: pre.session.id,
-        limit: cfg.turns.historyTurns,
-        beforeOrdinal: turn.ordinal,
       });
       await audit(scope, {
         action: 'retrieval.authorized',
@@ -543,13 +723,7 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
           metadata: { dropped: evidencePack.dropped },
         });
       }
-      return {
-        pack: evidencePack,
-        history: recent.map((t): HistoryTurn => ({
-          founderText: t.founderText,
-          answer: t.response?.answer ?? null,
-        })),
-      };
+      return evidencePack;
     });
     await emit({
       event: 'turn.status',
@@ -558,17 +732,20 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
       evidenceCount: pack.items.length,
     });
 
-    // Step 4: assemble context (≤ maxInputTokens).
+    // Step 4: assemble context (≤ maxInputTokens): rules and persona, the vEIR's notes, history, evidence.
     const today = kit.now().toISOString().slice(0, 10);
+    const continuity = coach.memory.continuity;
     const system = buildSystemPrompt({
       release: {
-        version: active.release.version,
-        doctrine: active.release.doctrine,
-        style: active.release.style,
-        disclosureText: active.release.disclosureText,
+        version: coach.release.version,
+        doctrine: coach.release.doctrine,
+        style: coach.release.style,
+        disclosureText: coach.release.disclosureText,
         personaName: active.persona.name,
+        eirName: coach.personaEirName,
       },
-      mode: pre.mode,
+      mode: pre.mode ?? AUTO_MODE,
+      allowedModes: coach.allowedModes,
       policy: {
         // The cross-venture flag stays out of the prompt: the model would otherwise answer differently
         // for a real venture name than for an unknown one (a membership oracle). The always-on rule that
@@ -583,52 +760,85 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
         domain: pre.venture.domain,
         currentGoal: pre.venture.currentGoal,
       },
-      rehearsalCounterpart: pre.mode === 'rehearse' ? (input.rehearsalCounterpart ?? null) : null,
+      conversationGoal: pre.session.goal,
+      rehearsalCounterpart:
+        pre.mode === 'rehearse' || pre.mode === null ? (input.rehearsalCounterpart ?? null) : null,
       today,
+      channel: pre.channel,
+      continuity,
     });
     const context = assembleContext({
       system,
       evidence: pack.items.map((k) => k.item),
-      history,
+      history: coach.history.map((t): HistoryTurn => ({
+        founderText: t.founderText,
+        answer: t.response?.answer ?? null,
+      })),
       founderText: input.text,
       maxInputTokens: cfg.turns.maxInputTokens,
       maxHistoryTurns: cfg.turns.historyTurns,
+      continuity,
+      today,
+      opener: coach.opener,
     });
     const shown: KeyedEvidence[] = pack.items.filter((k) => context.shownKeys.has(k.item.key));
 
-    // Step 5: generate.
+    // Step 5: generate (streamed through the sentence gate, or whole when streaming is switched off).
     await emit({ event: 'turn.status', phase: 'reasoning', detail: null, evidenceCount: shown.length });
-    let result: GenerateStructuredResult<CoachResponse>;
+    const streaming = pre.settings.streamingEnabled !== false;
+    const base = {
+      kit,
+      ctx,
+      ventureId,
+      sessionId: pre.session.id,
+      turnId: turn.id,
+      system,
+      messages: context.messages,
+      channel: pre.channel,
+      mode: pre.mode,
+      allowedModes: coach.allowedModes,
+      fallbackMode: coach.allowedModes.includes(pre.session.mode)
+        ? pre.session.mode
+        : (coach.allowedModes[0] ?? pre.session.mode),
+      signal,
+      startedAt: a.startedAt,
+    };
+    let generation: Generation;
     try {
-      result = await gateway.generateStructured({
-        purpose: 'turn',
-        system,
-        messages: context.messages,
-        schemaName: COACH_RESPONSE_SCHEMA_NAME,
-        zodSchema: CoachResponse,
-        requestId: ctx.requestId,
-        timeoutMs: cfg.turns.modelTimeoutMs,
-        ...(signal ? { signal } : {}),
-      });
-    } catch (err) {
-      const attempts = isModelGatewayError(err) ? err.attempts : [];
-      await kit.recordUsage({ ctx, ventureId, purpose: 'turn', attempts });
-      const error = isModelGatewayError(err)
-        ? new DomainError('model_unavailable', 'The coach could not answer right now. Please try again.', {
-            reason: err.code,
-            retryAfterSeconds: 5,
-            cause: err,
+      generation = streaming
+        ? await generateStreamed({
+            ...base,
+            emit,
+            speechKey: a.speechKey,
+            gate: {
+              personaName: active.persona.name,
+              eirNames,
+              personaEirName: coach.personaEirName,
+              otherVentureNames: others.names,
+              otherVentureCanaries: others.canaries,
+              otherVentureMemberNames: others.memberNames,
+              evidenceKeys: new Set(shown.map((k) => k.item.key)),
+            },
           })
-        : asDomainError(err);
+        : await generateWhole(base);
+    } catch (err) {
+      const cause = err instanceof GenerationFailure ? err.cause : err;
+      const attempts = err instanceof GenerationFailure ? err.attempts : [];
+      const error = isModelGatewayError(cause)
+        ? new DomainError('model_unavailable', 'The coach could not answer right now. Please try again.', {
+            reason: cause.code,
+            retryAfterSeconds: 5,
+            cause,
+          })
+        : asDomainError(cause);
       await failTurn(ctx, turn, error, attempts);
       await emit(errorEvent(turn.id, error, ctx.requestId));
       return { status: 'failed', turnId: turn.id, replayed: false, error };
     }
-    await kit.recordUsage({ ctx, ventureId, purpose: 'turn', attempts: result.attempts });
 
-    // Step 6: deterministic validation.
+    // Step 6: deterministic validation of the whole response (authoritative over any streamed unit).
     await emit({ event: 'turn.status', phase: 'validating', detail: null, evidenceCount: shown.length });
-    const checked = validateCoachResponse(result.value, {
+    const validated = validateCoachResponse(generation.raw, {
       evidenceKeys: new Set(shown.map((k) => k.item.key)),
       preRisk: risk,
       otherVentureNames: others.names,
@@ -636,10 +846,24 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
       otherVentureMemberNames: others.memberNames,
       personaName: active.persona.name,
       coverageThreshold: pre.settings.groundingCoverageThreshold,
-      expectedMode: pre.mode,
+      ...(pre.mode === null ? { allowedModes: coach.allowedModes } : { expectedMode: pre.mode }),
       eirNames,
+      personaEirName: coach.personaEirName,
+      channel: pre.channel,
     });
+    validated.results.notes.push(...generation.notes);
+    const checked =
+      generation.gateBlocked === null
+        ? validated
+        : enforceGateBlock(validated, generation.gateBlocked, pre.channel);
     const status = checked.blocked ? 'blocked' : 'completed';
+    // A call ends its reply with the last unit (and a caveat when the answer was narrowed); a blocked turn
+    // says nothing more.
+    const speech = generation.stream?.speech ?? null;
+    if (speech !== null) {
+      if (checked.blocked) speech.discard();
+      else await speech.finish(checked.results.narrowed ? SPOKEN_NARROWING_CAVEAT : undefined);
+    }
     // Ephemeral sessions are never shared with the assigned EIR (RLS turns_read enforces it as well).
     const sampled =
       pre.session.privacy !== 'ephemeral' &&
@@ -654,6 +878,8 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
 
     // Step 7: persist turn, evidence, memory candidates, escalation draft, audit.
     const evidenceIndex = new Map(shown.map((k) => [k.item.key, k.item] as const));
+    const totals = generationTotals(generation);
+    const firstTokenMs = generation.stream?.firstDeltaMs ?? null;
     const persisted = await kit.inRequest(ctx, async (scope) => {
       const { tx } = scope;
       const finished = await turnsRepo.finishTurn(tx, {
@@ -661,12 +887,13 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
         status,
         response: checked.response,
         validatorResults: checked.results,
-        modelId: result.modelId,
-        fallbackUsed: result.fallbackUsed,
-        inputTokens: result.usage.inputTokens,
-        outputTokens: result.usage.outputTokens,
-        costUsd: result.costUsd,
-        latencyMs: Math.round(result.latencyMs),
+        modelId: generation.modelId,
+        fallbackUsed: generation.fallbackUsed,
+        inputTokens: totals.inputTokens,
+        outputTokens: totals.outputTokens,
+        costUsd: totals.costUsd,
+        latencyMs: generation.latencyMs,
+        firstTokenMs,
         sampledForReview: sampled,
         mode: checked.response.mode,
       });
@@ -720,6 +947,7 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
       if (checked.response.mode !== pre.session.mode) {
         await sessionsRepo.setSessionMode(tx, { sessionId: pre.session.id, mode: checked.response.mode });
       }
+      const stream = generation.stream;
       await audit(scope, {
         action: checked.blocked ? 'turn.blocked' : 'turn.completed',
         outcome: checked.blocked ? 'blocked' : 'succeeded',
@@ -730,9 +958,13 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
         metadata: {
           ordinal: turn.ordinal,
           policyVersion: POLICY_VERSION,
-          modelId: result.modelId,
-          fallbackUsed: result.fallbackUsed,
-          attempts: result.attempts.length,
+          releaseVersion: coach.release.version,
+          modelId: generation.modelId,
+          fallbackUsed: generation.fallbackUsed,
+          attempts: generation.attempts.length,
+          channel: pre.channel,
+          autoMode: pre.mode === null,
+          mode: checked.response.mode,
           evidence: shown.length,
           factsDowngraded: checked.results.factsDowngraded,
           unknownEvidenceIdsRemoved: checked.results.unknownEvidenceIdsRemoved,
@@ -744,6 +976,18 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
           memoryCandidates: candidates.length,
           escalationId,
           inputTokensEstimate: context.estimatedInputTokens,
+          notebook: coach.memory.notebook,
+          digests: coach.memory.digests,
+          openerReplayed: context.openerReplayed,
+          streamed: stream !== null,
+          firstTokenMs,
+          modelFirstTokenMs: stream?.modelFirstTokenMs ?? null,
+          totalMs: Math.round(performance.now() - a.startedAt),
+          modelMs: generation.latencyMs,
+          deltas: stream?.deltas ?? 0,
+          speechUnits: speech?.sent ?? 0,
+          gateBlocked: generation.gateBlocked,
+          gateIdentityRewrites: stream?.gate.identityRewrites ?? 0,
         },
       });
       const evidence = (await turnsRepo.listTurnEvidence(tx, [turn.id])).get(turn.id) ?? [];
@@ -764,7 +1008,8 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
 
   /**
    * Per-principal turn admission inside the turn-creating transaction (see runTurn). Rejections are
-   * audited after the rollback (deferred) and thrown as DomainErrors.
+   * audited after the rollback (deferred) and thrown as DomainErrors. Spoken turns are admitted by the calls
+   * service (live call, call caps, voice rate limit) instead of the typed-message rate limit.
    */
   async function admitTurn(
     scope: RequestScope,
@@ -773,6 +1018,8 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
       readonly ventureId: string;
       readonly sessionId: string;
       readonly settings: PlatformSettingsView;
+      readonly channel: TurnChannel;
+      readonly callId: string | undefined;
     },
   ): Promise<void> {
     const { tx, ctx } = scope;
@@ -793,17 +1040,20 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
       return new DomainError(code, message, { reason, retryAfterSeconds });
     };
     await turnsRepo.lockTurnAdmission(tx, ctx.principalId);
-    const recent = await turnsRepo.countRecentTurnsByAuthor(tx, {
-      authorId: ctx.principalId,
-      windowSeconds: cfg.turns.rateWindowSeconds,
-    });
-    if (recent >= cfg.turns.rateLimit) {
-      throw reject(
-        'rate_limited',
-        'You are sending messages very quickly. Please wait a few minutes.',
-        'turn_rate_limit',
-        cfg.turns.rateWindowSeconds,
-      );
+    if (args.channel === 'text') {
+      const recent = await turnsRepo.countRecentTurnsByAuthor(tx, {
+        authorId: ctx.principalId,
+        windowSeconds: cfg.turns.rateWindowSeconds,
+        channel: 'text',
+      });
+      if (recent >= cfg.turns.rateLimit) {
+        throw reject(
+          'rate_limited',
+          'You are sending messages very quickly. Please wait a few minutes.',
+          'turn_rate_limit',
+          cfg.turns.rateWindowSeconds,
+        );
+      }
     }
     const inFlight = await turnsRepo.countPendingTurnsByAuthor(tx, {
       authorId: ctx.principalId,
@@ -816,6 +1066,11 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
         'turns_in_flight',
         5,
       );
+    }
+    // Crisis support is never refused for call reasons: it makes no model call and must always reach the
+    // founder.
+    if (args.channel === 'voice' && !args.crisis) {
+      await admitVoiceTurn(scope, { sessionId: args.sessionId, callId: args.callId, now: kit.now() });
     }
     // Spend recorded by turns still in flight is not in the ledger yet; the in-flight limit bounds that.
     if (!args.crisis) {
@@ -838,6 +1093,7 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
 
   return {
     async runTurn(ctx, rawSessionId, rawInput, rawEmit, options = {}) {
+      const startedAt = performance.now();
       const emit = safeEmitter(rawEmit, ctx.requestId);
       let turn: turnsRepo.TurnRecord;
       let pre: Proceed;
@@ -845,6 +1101,9 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
       let risk: RiskClassification;
       let others: OtherVentures;
       let eirNames: readonly string[];
+      let query: string;
+      let embedding: Promise<number[] | null> | null = null;
+      let speechKey: Promise<SessionSigningKey> | null = null;
       try {
         const sessionId = requireId(rawSessionId, 'Session');
         input = parseInput(RunTurnInput, rawInput);
@@ -868,25 +1127,44 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
         const label = riskLabel(risk);
         const parsed = input;
         const settings = pre.settings;
+        const session = pre.session;
+        query = buildRetrievalQuery({
+          founderText: parsed.text,
+          previousAnswer: pre.coach?.history.at(-1)?.response?.answer ?? null,
+          currentGoal: session.goal ?? pre.venture.currentGoal,
+        });
+        // Latency: the query embedding and the speech key load while the turn is admitted.
+        if (!risk.crisis) {
+          embedding = embedQuery(ctx, session.ventureId, query, options.signal);
+        }
+        if (pre.channel === 'voice') {
+          speechKey = speechKeys.signingKey();
+          speechKey.catch(() => undefined); // a failure surfaces when a unit is signed
+        }
+        const channel = pre.channel;
+        const turnMode = pre.turnMode;
         turn = await kit.inRequest(ctx, async (scope) => {
           // Admission is atomic per principal: the rate limit, the in-flight limit and the spend caps are
           // checked under a transaction-scoped advisory lock in the same transaction that inserts the
           // pending turn, so parallel requests cannot all pass the checks before any turn exists.
           await admitTurn(scope, {
             crisis,
-            ventureId: pre.session.ventureId,
-            sessionId: pre.session.id,
+            ventureId: session.ventureId,
+            sessionId: session.id,
             settings,
+            channel,
+            callId: parsed.callId,
           });
           const created = await turnsRepo.createTurn(scope.tx, {
             tenantId: ctx.tenantId,
-            ventureId: pre.session.ventureId,
-            sessionId: pre.session.id,
+            ventureId: session.ventureId,
+            sessionId: session.id,
             authorId: ctx.principalId,
-            mode: pre.mode,
+            mode: turnMode,
             founderText: parsed.text,
             riskLabel: label,
             riskCategories: risk.categories,
+            channel,
           });
           if (parsed.expectedOrdinal !== undefined && created.ordinal !== parsed.expectedOrdinal) {
             throw fail.conflict(
@@ -897,13 +1175,15 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
           await audit(scope, {
             action: 'turn.accepted',
             outcome: 'succeeded',
-            ventureId: pre.session.ventureId,
+            ventureId: session.ventureId,
             objectType: 'turn',
             objectId: created.id,
             metadata: {
-              sessionId: pre.session.id,
+              sessionId: session.id,
               ordinal: created.ordinal,
-              mode: pre.mode,
+              mode: turnMode,
+              autoMode: pre.mode === null,
+              channel,
               riskLabel: label,
               riskRules: risk.matchedRules.slice(0, 20),
             },
@@ -924,7 +1204,21 @@ export function createOrchestrator(kit: Kit, directory: DirectoryCache): Orchest
 
       await emit({ event: 'turn.accepted', turnId: turn.id, ordinal: turn.ordinal });
       try {
-        return await accepted(ctx, turn, pre, input, risk, others, eirNames, emit, options.signal);
+        return await accepted({
+          ctx,
+          turn,
+          pre,
+          input,
+          risk,
+          others,
+          eirNames,
+          query,
+          embedding,
+          speechKey,
+          emit,
+          signal: options.signal,
+          startedAt,
+        });
       } catch (err) {
         const error = asDomainError(err);
         logger.error('turn.failed', {
