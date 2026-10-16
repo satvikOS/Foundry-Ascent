@@ -1,5 +1,5 @@
 import { MAX_DOCUMENT_BYTES, type DocumentView } from '@foundry/contracts';
-import { getRouteApi } from '@tanstack/react-router';
+import { getRouteApi, Link } from '@tanstack/react-router';
 import {
   CircleCheck,
   CircleX,
@@ -94,7 +94,7 @@ function UploadRow({
   onDismiss: () => void;
 }) {
   return (
-    <li className="grid gap-2 py-3">
+    <li className="grid grid-cols-1 gap-2 py-3">
       <div className="flex items-center gap-3">
         {item.status === 'done' ? (
           <CircleCheck aria-hidden className="size-4 shrink-0 text-success" />
@@ -171,8 +171,9 @@ export function reuploadChoice(
 /**
  * Documents: the venture's files the vEIR can cite. One action (upload, by button or by dropping files
  * on the page), the venture's uploads while they run (from here or from a conversation's composer), and
- * the files as hairline rows that update while they are processed. Retry on a document whose file never
- * arrived asks for that file again and uploads it into the same document.
+ * the files as hairline rows that update while they are processed; a file's name opens it in the document
+ * viewer. Retry on a document whose file never arrived asks for that file again and uploads it into the
+ * same document.
  */
 export function DocumentsPage() {
   const me = useRequiredMe();
@@ -362,7 +363,7 @@ export function DocumentsPage() {
       ) : null}
 
       {rejections.length > 0 || queue.items.length > 0 ? (
-        <section aria-label="Uploads" className="mb-6 grid gap-3">
+        <section aria-label="Uploads" className="mb-6 grid grid-cols-1 gap-3">
           {rejections.length > 0 ? (
             <Alert
               variant="destructive"
@@ -550,8 +551,22 @@ function DocumentRow({
     >
       <Icon aria-hidden className="mt-0.5 size-4 text-muted-foreground" />
       <div className="grid min-w-0 gap-0.5">
-        <p id={nameId} className="truncate text-[15px] font-medium" title={doc.filename}>
-          {doc.filename}
+        <p id={nameId} className="flex min-w-0 text-[15px] font-medium">
+          {/* Opens the document viewer over this page (a link: it can also open in a new tab). */}
+          <Link
+            to="."
+            search={(previous) => ({ ...previous, doc: doc.id, src: undefined, passage: undefined })}
+            state={(previous) => ({ ...previous, documentViewer: true })}
+            resetScroll={false}
+            data-opens-document
+            title={doc.filename}
+            className={cn(
+              'min-w-0 truncate rounded-sm underline decoration-transparent underline-offset-[3px]',
+              'transition-colors hover:decoration-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
+            )}
+          >
+            {doc.filename}
+          </Link>
         </p>
         <p className="flex flex-wrap items-center gap-x-1.5 text-caption text-subtle-foreground">
           <span className={cn(failed && 'font-medium text-destructive')}>{label}</span>

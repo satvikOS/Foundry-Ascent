@@ -88,6 +88,79 @@ describe('LocalObjectStore', () => {
   });
 });
 
+describe('LocalObjectStore downloads', () => {
+  const downloadToken = (url: string): string => url.split('/_local/objects/')[1] ?? '';
+
+  it('issues same-origin presigned GETs that serve the file with its type and disposition', async () => {
+    const upload = await store.presignPut({
+      key,
+      contentType: 'text/markdown',
+      contentLength: 7,
+      expiresInSeconds: 60,
+    });
+    await store.receive(tokenOf(upload.url), 'text/markdown', new TextEncoder().encode('# Notes'));
+    const view = await store.presignGet({
+      key,
+      disposition: 'inline',
+      filename: 'Notes é.md',
+      contentType: 'text/markdown',
+      expiresInSeconds: 120,
+    });
+    expect(view.url).toMatch(/^http:\/\/localhost:5173\/api\/v1\/_local\/objects\//);
+    const file = await store.serve(downloadToken(view.url));
+    expect(new TextDecoder().decode(file.body)).toBe('# Notes');
+    expect(file.contentType).toBe('text/markdown; charset=utf-8');
+    expect(file.contentDisposition).toBe(`inline; filename="Notes e.md"; filename*=UTF-8''Notes%20%C3%A9.md`);
+
+    // A download token cannot upload, an upload token cannot download, and a forged one does neither.
+    await expect(
+      store.receive(downloadToken(view.url), 'text/markdown', new TextEncoder().encode('# Notes')),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(store.serve(tokenOf(upload.url))).rejects.toMatchObject({ status: 403 });
+    await expect(store.serve(`${downloadToken(view.url)}x`)).rejects.toMatchObject({ status: 403 });
+
+    now = new Date(now.getTime() + 121_000);
+    await expect(store.serve(downloadToken(view.url))).rejects.toMatchObject({ status: 403 });
+    await store.delete(key);
+  });
+
+  it('signs GETs at another origin when given one (the end-to-end suite reads files cross-origin)', async () => {
+    const crossOrigin = new LocalObjectStore({
+      directory: dir,
+      publicOrigin: 'http://localhost:5173',
+      downloadOrigin: 'http://localhost:8787/',
+      maxUploadBytes: 1024,
+    });
+    const view = await crossOrigin.presignGet({
+      key,
+      disposition: 'inline',
+      filename: 'x.md',
+      contentType: 'text/markdown',
+      expiresInSeconds: 60,
+    });
+    expect(view.url).toMatch(/^http:\/\/localhost:8787\/api\/v1\/_local\/objects\//);
+    // Uploads keep going through the app's own origin.
+    const upload = await crossOrigin.presignPut({
+      key,
+      contentType: 'text/markdown',
+      contentLength: 7,
+      expiresInSeconds: 60,
+    });
+    expect(upload.url).toMatch(/^http:\/\/localhost:5173\/api\/v1\/_local\/uploads\//);
+  });
+
+  it('answers 404 for a file that is gone', async () => {
+    const view = await store.presignGet({
+      key: 'tenants/t/ventures/v/documents/gone/x.pdf',
+      disposition: 'attachment',
+      filename: 'x.pdf',
+      contentType: 'application/pdf',
+      expiresInSeconds: 60,
+    });
+    await expect(store.serve(downloadToken(view.url))).rejects.toMatchObject({ status: 404 });
+  });
+});
+
 describe('InlineJobQueue', () => {
   const job: JobMessage = {
     type: 'ingest_document',

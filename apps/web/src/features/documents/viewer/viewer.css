@@ -1,0 +1,432 @@
+/*
+ * The document viewer: a dimmed, blurred overlay, a reading panel whose bars are glass over the page, and
+ * reading prose (serif, a 68ch measure that the reader can widen, a text size they choose). Colours are the
+ * app's tokens, so light, dark (OLED black) and reduced transparency follow the rest of the platform.
+ */
+.viewer-overlay {
+  background: light-dark(rgb(17 17 16 / 0.28), rgb(0 0 0 / 0.72));
+  -webkit-backdrop-filter: blur(6px) saturate(120%);
+  backdrop-filter: blur(6px) saturate(120%);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .viewer-overlay {
+    background: light-dark(rgb(17 17 16 / 0.5), rgb(0 0 0 / 0.85));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* A full-screen sheet on a phone; a large floating panel from the md breakpoint up. */
+.viewer-panel {
+  --viewer-header: 3.5rem;
+  --viewer-footer: 0px;
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  overflow: hidden;
+  background: var(--background);
+  color: var(--foreground);
+  outline: none;
+}
+.viewer-panel[data-state='open'] {
+  animation: viewer-sheet-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@media (min-width: 48rem) {
+  .viewer-panel {
+    inset: 1rem 1.5rem;
+    margin-inline: auto;
+    max-width: 72rem;
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    box-shadow: 0 32px 80px -32px rgb(0 0 0 / 0.55);
+  }
+  .viewer-panel[data-state='open'] {
+    animation-name: viewer-panel-in;
+  }
+}
+@keyframes viewer-sheet-in {
+  from {
+    opacity: 0;
+    translate: 0 1.5rem;
+  }
+}
+@keyframes viewer-panel-in {
+  from {
+    opacity: 0;
+    scale: 0.985;
+  }
+}
+
+.viewer-scroll {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  outline: none;
+  scroll-padding-top: calc(var(--viewer-header) + 1rem);
+  scroll-padding-bottom: calc(var(--viewer-footer) + 1rem);
+  padding-top: var(--viewer-header);
+  padding-bottom: var(--viewer-footer);
+  overscroll-behavior: contain;
+  touch-action: pan-x pan-y;
+}
+.viewer-scroll:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--ring);
+}
+
+.viewer-toolbar {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/*
+ * The bars are glass over the page being read, and PDF pages are white in either theme: a denser glass
+ * than the shared one keeps their text (secondary text too) at AA contrast over whatever scrolls under
+ * them. Solid where blur is missing or transparency is reduced, like the shared glass.
+ */
+.viewer-panel .glass-strong {
+  background-color: color-mix(in srgb, var(--background) 90%, transparent);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .viewer-panel .glass-strong {
+    background-color: var(--popover);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .viewer-panel .glass-strong {
+    background-color: var(--popover);
+  }
+}
+
+/* The floating dock of a wide screen: the document's status, then a PDF's page pill. */
+.viewer-pill-dock {
+  pointer-events: none;
+  position: absolute;
+  inset-inline: 0;
+  bottom: 1.25rem;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding-inline: 1.5rem;
+}
+.viewer-pill {
+  pointer-events: auto;
+}
+.viewer-status-pill {
+  max-width: min(36rem, 100%);
+  text-align: center;
+}
+
+.viewer-size-label {
+  width: 2.75rem;
+}
+.viewer-page-label {
+  min-width: 4rem;
+  padding-inline: 0.25rem;
+  white-space: nowrap;
+}
+/* A phone's toolbar holds every control in its width (360px phones too): narrower labels. */
+.viewer-toolbar-row .viewer-size-label {
+  width: 2.25rem;
+}
+.viewer-toolbar-row .viewer-page-label {
+  min-width: 3rem;
+  padding-inline: 0.125rem;
+}
+
+.viewer-centered {
+  min-height: 100%;
+}
+
+.viewer-column {
+  padding: 2rem 1.25rem;
+}
+@media (min-width: 48rem) {
+  .viewer-column {
+    padding: 3rem 2.5rem;
+  }
+}
+.viewer-column-top {
+  max-width: 68ch;
+  margin-inline: auto;
+  padding: 1.5rem 1.25rem 0;
+}
+
+/* The cited passage, quoted, when it cannot be marked in the file's own layout. */
+.viewer-cited-callout {
+  margin-bottom: 2rem;
+  border-left: 2px solid var(--info);
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--info) 10%, transparent);
+  padding: 0.75rem 1rem;
+}
+.viewer-cited-callout p:last-child {
+  font-family: var(--font-serif);
+  font-size: 0.95em;
+  line-height: 1.6;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 12;
+  line-clamp: 12;
+  overflow: hidden;
+}
+
+.reader-prose {
+  font-family: var(--font-serif);
+  font-size: var(--reader-size, 17px);
+  line-height: 1.7;
+  font-variation-settings: 'opsz' 18;
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+}
+
+.reader-prose > * + *,
+.reader-prose section > * + *,
+.reader-prose [data-cited] > * + * {
+  margin-top: 0.9em;
+}
+
+.reader-prose p,
+.reader-prose li {
+  text-wrap: pretty;
+}
+
+.reader-prose .reader-h1,
+.reader-prose .reader-h2,
+.reader-prose .reader-h3,
+.reader-prose .reader-h4 {
+  font-family: var(--font-serif);
+  font-weight: 560;
+  letter-spacing: -0.012em;
+  line-height: 1.25;
+  text-wrap: balance;
+  margin-top: 1.6em;
+}
+
+.reader-prose .reader-h1 {
+  font-size: 1.6em;
+}
+.reader-prose .reader-h2 {
+  font-size: 1.3em;
+}
+.reader-prose .reader-h3 {
+  font-size: 1.12em;
+}
+.reader-prose .reader-h4 {
+  font-size: 1em;
+}
+
+.reader-prose ul {
+  list-style: disc;
+  padding-left: 1.4em;
+}
+.reader-prose ol {
+  list-style: decimal;
+  padding-left: 1.4em;
+}
+.reader-prose li + li {
+  margin-top: 0.3em;
+}
+.reader-prose li::marker {
+  color: var(--subtle-foreground);
+}
+
+.reader-prose blockquote {
+  border-left: 2px solid var(--border-strong);
+  padding-left: 1em;
+  color: var(--muted-foreground);
+}
+
+.reader-prose hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 2em 0;
+}
+
+.reader-prose code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  border: 1px solid var(--border);
+  background: var(--muted);
+  border-radius: 4px;
+  padding: 0.05em 0.3em;
+}
+
+.reader-prose pre {
+  font-family: var(--font-mono);
+  font-size: 0.82em;
+  line-height: 1.6;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  background: var(--muted);
+  border-radius: 8px;
+  padding: 0.9em 1em;
+}
+
+.reader-prose pre code {
+  border: 0;
+  background: none;
+  padding: 0;
+  font-size: 1em;
+}
+
+.reader-prose .reader-table {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.reader-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-sans);
+  font-size: 0.82em;
+}
+.reader-prose th,
+.reader-prose td {
+  border-bottom: 1px solid var(--border);
+  padding: 0.5em 0.75em;
+  text-align: left;
+  vertical-align: top;
+}
+
+.reader-prose .reader-link {
+  color: var(--foreground);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+}
+.reader-prose .reader-link:hover {
+  text-decoration-color: var(--foreground);
+}
+.reader-prose .reader-link svg {
+  display: inline;
+  width: 0.8em;
+  height: 0.8em;
+  margin-left: 0.15em;
+  vertical-align: baseline;
+  opacity: 0.7;
+}
+.reader-prose input[type='checkbox'] {
+  margin-right: 0.5em;
+  vertical-align: middle;
+}
+
+.reader-prose .reader-image {
+  font-family: var(--font-sans);
+  font-size: 0.8em;
+  color: var(--muted-foreground);
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  padding: 0 0.3em;
+}
+
+/* Find matches (all, and the one in focus). */
+.reader-prose mark[data-find-index] {
+  color: inherit;
+  background: color-mix(in oklab, var(--warning) 26%, transparent);
+  border-radius: 3px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+.reader-prose mark[data-active] {
+  /* The match in focus: the warning colour itself, its text in the page colour (AA in both themes). */
+  background: var(--warning);
+  color: var(--background);
+  box-shadow: 0 0 0 2px var(--warning);
+}
+
+/*
+ * The cited passage: a quiet tint with a rule beside it, one band across consecutive blocks. The band is
+ * drawn under each block from the column's edge, measured in the reading size (not the block's own size),
+ * so a heading, a paragraph and a list item line up on one rule; it stays inside the column's padding at
+ * every text size. Each block's band reaches up over the gap above it when the block before is cited too.
+ */
+.reader-prose {
+  --cited-inset: calc(0.75 * var(--reader-size, 17px));
+  isolation: isolate;
+}
+.reader-prose [data-cited] {
+  position: relative;
+}
+.reader-prose [data-cited]::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: calc(-0.2 * var(--reader-size, 17px));
+  bottom: calc(-0.2 * var(--reader-size, 17px));
+  left: calc(-1 * var(--cited-inset));
+  right: calc(-1 * var(--cited-inset));
+  background: color-mix(in oklab, var(--info) 7%, transparent);
+  border-left: 2px solid color-mix(in oklab, var(--info) 70%, transparent);
+  border-radius: 0 3px 3px 0;
+  pointer-events: none;
+}
+/* Blocks in a list sit inside its indent (1.4em of the reading size a level), and in a quote inside its
+   rule and padding: the band starts at the column's edge all the same. */
+.reader-prose :is(ul, ol) [data-cited]::before {
+  left: calc(-1 * var(--cited-inset) - 1.4 * var(--reader-size, 17px));
+}
+.reader-prose :is(ul, ol) :is(ul, ol) [data-cited]::before {
+  left: calc(-1 * var(--cited-inset) - 2.8 * var(--reader-size, 17px));
+}
+.reader-prose :is(ul, ol) :is(ul, ol) :is(ul, ol) [data-cited]::before {
+  left: calc(-1 * var(--cited-inset) - 4.2 * var(--reader-size, 17px));
+}
+.reader-prose blockquote [data-cited]::before {
+  left: calc(-1 * var(--cited-inset) - 1 * var(--reader-size, 17px) - 2px);
+}
+/* A cited table cell is tinted within itself. */
+.reader-prose .reader-table :is(td, th)[data-cited]::before {
+  inset: 0;
+  border-radius: 0;
+}
+/*
+ * Consecutive cited blocks join into one band: a block's band covers the gap above it (its own top margin)
+ * when the block before is cited too, and that block's band stops at its edge, so nothing is tinted twice.
+ * A list whose first or last item is cited joins the cited block before or after it the same way.
+ */
+.reader-prose [data-cited] + [data-cited]::before,
+.reader-prose :is(ul, ol):has(> li[data-cited]:last-child) + [data-cited]::before {
+  top: calc(-1 * var(--cited-gap, 0.9em));
+  border-top-right-radius: 0;
+}
+.reader-prose [data-cited] + :is(ul, ol) > li[data-cited]:first-child::before {
+  top: -0.9em;
+  border-top-right-radius: 0;
+}
+.reader-prose [data-cited]:has(+ [data-cited])::before,
+.reader-prose [data-cited]:has(+ :is(ul, ol) > li[data-cited]:first-child)::before,
+.reader-prose :is(ul, ol):has(+ [data-cited]) > li[data-cited]:last-child::before {
+  bottom: 0;
+  border-bottom-right-radius: 0;
+}
+.reader-prose .reader-h1[data-cited],
+.reader-prose .reader-h2[data-cited],
+.reader-prose .reader-h3[data-cited],
+.reader-prose .reader-h4[data-cited] {
+  --cited-gap: 1.6em;
+}
+.reader-prose li[data-cited] {
+  --cited-gap: 0.3em;
+}
+
+/* The find field has its own close button. */
+.viewer-panel input[type='search']::-webkit-search-cancel-button {
+  display: none;
+}
+
+@media (forced-colors: active) {
+  .reader-prose mark[data-find-index],
+  .reader-prose [data-cited] {
+    forced-color-adjust: none;
+    background: Mark;
+    color: MarkText;
+  }
+  .reader-prose mark[data-active] {
+    outline: 2px solid Highlight;
+  }
+  .reader-prose [data-cited]::before {
+    display: none;
+  }
+}

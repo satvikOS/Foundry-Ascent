@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { isActiveUpload, type UploadItem, type UploadOrigin } from '@/features/documents/upload-queue';
 import { SUPPORTED_FORMATS_LABEL, validateUploadFiles } from '@/features/documents/upload-validation';
 import { useVentureUploads } from '@/features/documents/venture-uploads';
+import { UploadedFileName } from '@/features/documents/viewer/uploaded-file-name';
 
 /**
  * Attach from the composer: files go into the venture's Documents through the venture's upload queue (the
@@ -133,7 +134,7 @@ export function AttachmentTray({
           >
             <FileText aria-hidden className="size-4 shrink-0 text-muted-foreground" />
             <span className="grid min-w-0 leading-tight">
-              <span className="truncate text-small font-medium">{item.file.name}</span>
+              <UploadedFileName item={item} className="truncate text-small font-medium" />
               <span
                 className={cn('truncate text-caption', failed ? 'text-destructive' : 'text-muted-foreground')}
               >

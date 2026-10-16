@@ -4,6 +4,8 @@
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
     "types": ["vite/client"],
+    // vite.config.ts imports a local build plugin by its file name (Vite's native config loader needs it).
+    "allowImportingTsExtensions": true,
     "paths": {
       "@/*": ["./src/*"]
     }

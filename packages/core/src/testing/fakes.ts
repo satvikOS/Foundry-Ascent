@@ -13,7 +13,9 @@ import {
   type JobMessage,
   type JobQueue,
   type ObjectStore,
+  type PresignGetInput,
   type PresignPutInput,
+  type PresignedDownload,
   type PresignedUpload,
   SpeechSynthesisError,
   type SpeechSynthesisInput,
@@ -39,6 +41,16 @@ export class MemoryObjectStore implements ObjectStore {
     return Promise.resolve({
       url: `https://uploads.test/${encodeURI(input.key)}?signature=fake`,
       headers: { 'content-type': input.contentType },
+      expiresAt: new Date(Date.now() + input.expiresInSeconds * 1000).toISOString(),
+    });
+  }
+
+  readonly presignedGets: PresignGetInput[] = [];
+
+  presignGet(input: PresignGetInput): Promise<PresignedDownload> {
+    this.presignedGets.push(input);
+    return Promise.resolve({
+      url: `https://downloads.test/${encodeURI(input.key)}?disposition=${input.disposition}&signature=fake`,
       expiresAt: new Date(Date.now() + input.expiresInSeconds * 1000).toISOString(),
     });
   }

@@ -5,6 +5,7 @@ import {
   documentsRepo,
   memoryRepo,
   notebooksRepo,
+  p,
   principalsRepo,
   tenantsRepo,
   venturesRepo,
@@ -159,6 +160,40 @@ async function freshUpload(): Promise<string> {
   return id;
 }
 
+/** A document of Maya's whose file arrived (`ready`), to open in the document viewer. */
+async function storedDocument(): Promise<string> {
+  const id = randomUUID();
+  await h.t.db.system((sx) =>
+    documentsRepo.createDocument(sx, {
+      id,
+      tenantId: h.seed.tenantId,
+      ventureId,
+      filename: 'viewer.md',
+      contentType: 'text/markdown',
+      sizeBytes: 10,
+      s3Key: `tenants/${h.seed.tenantId}/ventures/${ventureId}/documents/${id}/viewer.md`,
+      uploadedBy: h.people.maya,
+      status: 'ready',
+    }),
+  );
+  return id;
+}
+
+/** The seeded knowledge source of a scope (`program`: the handbook; `persona`: QuietQuad's vEIR library). */
+async function seededSource(scope: 'program' | 'persona'): Promise<string> {
+  const result = await h.t.db.system((sx) =>
+    sx.query(
+      `SELECT id FROM knowledge_sources
+       WHERE tenant_id = :t AND scope = :scope AND (persona_id IS NULL OR persona_id = :persona)
+       ORDER BY created_at LIMIT 1`,
+      { t: p.uuid(h.seed.tenantId), scope: p.text(scope), persona: p.uuid(personaId()) },
+    ),
+  );
+  const id = result.rows[0]?.id;
+  if (typeof id !== 'string') throw new Error(`no seeded ${scope} source`);
+  return id;
+}
+
 /** A person with the EIR role and no profile yet, to link a new profile to. */
 async function freshEir(): Promise<string> {
   return h.t.db.system(async (sx) => {
@@ -271,6 +306,22 @@ const MATRIX: readonly { name: string; allowed: readonly Who[]; op: Op }[] = [
     name: 'documents.abandonUpload',
     allowed: WRITERS,
     op: async (c) => h.core.documents.abandonUpload(c, await freshUpload()),
+  },
+  {
+    name: 'reader.documentFile',
+    allowed: MEMBERS_READ,
+    op: async (c) => h.core.reader.documentFile(c, await storedDocument()),
+  },
+  {
+    name: 'reader.sourceText (program)',
+    allowed: MEMBERS_READ,
+    op: async (c) => h.core.reader.sourceText(c, ventureId, await seededSource('program')),
+  },
+  {
+    name: 'reader.sourceText (vEIR library)',
+    // Read in the studio by its roles; of the venture's readers, only its EIR holds one.
+    allowed: ['eirAssigned'],
+    op: async (c) => h.core.reader.sourceText(c, ventureId, await seededSource('persona')),
   },
   { name: 'escalations.list', allowed: WRITERS, op: (c) => h.core.escalations.list(c, ventureId) },
   {

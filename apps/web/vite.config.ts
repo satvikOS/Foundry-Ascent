@@ -3,6 +3,8 @@ import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 
+import { pdfjsAssets } from './src/features/documents/viewer/pdfjs-assets.plugin.ts';
+
 /**
  * Sonner injects its stylesheet with a runtime <style> tag, which a strict CSP (style-src 'self')
  * blocks and reports. We ship the identical rules from `sonner/dist/styles.css` (imported in
@@ -49,6 +51,8 @@ export default defineConfig({
     react(),
     tailwindcss(),
     sonnerWithoutInjectedStyles(),
+    // pdf.js's data files (CMaps, Symbol fonts, scanned-image decoders), same-origin for the viewer.
+    pdfjsAssets(),
   ],
   resolve: { tsconfigPaths: true },
   server: {

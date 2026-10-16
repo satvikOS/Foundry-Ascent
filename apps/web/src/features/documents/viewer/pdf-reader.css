@@ -1,0 +1,99 @@
+/*
+ * PDF pages in the document viewer: a canvas with pdf.js's text layer over it (transparent text that can be
+ * selected, found and marked). The text layer sizes itself from --total-scale-factor and positions its runs
+ * in percentages; these rules give it the layout pdf.js expects.
+ */
+.pdf-pages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: max-content;
+  min-width: 100%;
+  margin: 0 auto;
+  padding: 1rem 1rem 2rem;
+  /* A pinch scales the pages around the fingers until the new zoom is drawn. */
+  transform-origin: var(--pinch-x, 50%) var(--pinch-y, 0);
+}
+
+.pdf-page {
+  --user-unit: 1;
+  --total-scale-factor: calc(var(--scale-factor) * var(--user-unit));
+  --scale-round-x: 1px;
+  --scale-round-y: 1px;
+  position: relative;
+  flex: none;
+  overflow: hidden;
+  border-radius: 4px;
+  /* Paper stays white in dark mode: a PDF is printed matter, its colours are its own. */
+  background: #fff;
+  box-shadow:
+    0 0 0 1px var(--border),
+    0 8px 24px -12px var(--shadow-color);
+}
+
+.pdf-page canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+.pdf-page .textLayer {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  line-height: 1;
+  text-align: initial;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  z-index: 1;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+
+.pdf-page .textLayer :is(span, br) {
+  position: absolute;
+  color: transparent;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.pdf-page .textLayer > :not(.markedContent),
+.pdf-page .textLayer .markedContent span:not(.markedContent) {
+  --font-height: 0;
+  --scale-x: 1;
+  --rotate: 0deg;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.pdf-page .textLayer .markedContent {
+  display: contents;
+}
+
+.pdf-page .textLayer ::selection {
+  background: rgb(0 90 255 / 0.25);
+  color: transparent;
+}
+
+/* Find matches and the cited passage (colours over white paper in both themes). */
+.pdf-page .textLayer mark {
+  position: static;
+  margin: -1px;
+  padding: 1px;
+  border-radius: 3px;
+  color: transparent;
+  background: rgb(245 185 74 / 0.45);
+}
+
+.pdf-page .textLayer mark[data-active] {
+  background: rgb(214 130 0 / 0.65);
+  box-shadow: 0 0 0 2px rgb(138 79 0 / 0.9);
+}
+
+.pdf-page .textLayer .pdf-cited {
+  background: rgb(26 90 184 / 0.18);
+  border-radius: 2px;
+}

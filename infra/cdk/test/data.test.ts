@@ -129,12 +129,12 @@ describe('FoundryAscent-Data', () => {
       });
     });
 
-    it('allows only presigned PUT uploads from CloudFront origins', () => {
+    it('allows only presigned PUT uploads and the viewer’s presigned GETs from CloudFront origins', () => {
       template.hasResourceProperties('AWS::S3::Bucket', {
         CorsConfiguration: {
           CorsRules: [
             {
-              AllowedMethods: ['PUT'],
+              AllowedMethods: ['PUT', 'GET'],
               AllowedOrigins: ['https://*.cloudfront.net'],
               AllowedHeaders: ['content-type', 'content-md5', 'x-amz-*'],
               ExposedHeaders: ['ETag'],

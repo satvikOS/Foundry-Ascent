@@ -183,8 +183,9 @@ export class DataStack extends Stack {
       ],
       cors: [
         {
-          // Browsers upload directly with a presigned PUT; nothing else is allowed cross-origin.
-          allowedMethods: [s3.HttpMethods.PUT],
+          // Browsers upload with a presigned PUT and read a document in the viewer with a presigned GET;
+          // nothing else is allowed cross-origin.
+          allowedMethods: [s3.HttpMethods.PUT, s3.HttpMethods.GET],
           allowedOrigins: [...(props.uploadCorsOrigins ?? DEFAULT_UPLOAD_CORS_ORIGINS)],
           allowedHeaders: ['content-type', 'content-md5', 'x-amz-*'],
           exposedHeaders: ['ETag'],

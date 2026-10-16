@@ -240,15 +240,20 @@ export class AppStack extends Stack {
 
     // Documents, per role. The deployed Data stack's DocumentsAccessPolicy grants Get/Put/Delete on
     // tenants/*; an explicit deny narrows each role to what it uses without touching that stack:
-    //   api    PutObject (signs presigned uploads) + DeleteObject (document delete); never reads content.
+    //   api    PutObject (signs presigned uploads) + DeleteObject (document delete) + GetObject on venture
+    //          documents only (tenants/*/ventures/*/documents/*), to sign the document viewer's presigned
+    //          GETs (the function itself never reads a file; it signs a short GET of one key after checking
+    //          the reader may see it). An allow-list: every other object, a vEIR's library or anything
+    //          stored under tenants/ later, stays unreadable without a change here.
     //   worker GetObject (ingestion); never writes or deletes.
     const documentObjects = `arn:${Aws.PARTITION}:s3:::${props.documentsBucket.bucketName}/${DOCUMENTS_PREFIX}*`;
+    const ventureDocuments = `arn:${Aws.PARTITION}:s3:::${props.documentsBucket.bucketName}/${DOCUMENTS_PREFIX}*/ventures/*/documents/*`;
     this.api.role.addToPolicy(
       new iam.PolicyStatement({
-        sid: 'DocumentsApiNeverReads',
+        sid: 'DocumentsApiReadsOnlyVentureDocuments',
         effect: iam.Effect.DENY,
         actions: ['s3:GetObject'],
-        resources: [documentObjects],
+        notResources: [ventureDocuments],
       }),
     );
     this.worker.role.addToPolicy(

@@ -52,6 +52,7 @@ behave as in production.
 | `MODEL_PROVIDER`          | `mock`                                                                        | `bedrock` to call real models (needs AWS credentials, costs money) |
 | `PORT`                    | `8787`                                                                        | API dev server port                                                |
 | `LOCAL_UPLOAD_DIR`        | `apps/api/.local/uploads`                                                     | uploaded documents (the dev server signs local upload URLs)        |
+| `LOCAL_DOWNLOAD_ORIGIN`   | the site origin                                                               | origin of local presigned GETs (the e2e suite: the API's own)      |
 | `TEST_DATABASE_ADMIN_URL` | `postgresql://postgres@localhost/postgres?host=/var/tmp&port=54329`           | superuser URL for `db:reset` and DB tests                          |
 | `LOCAL_DB_NAME`           | `foundry`                                                                     | database name used by `db:reset`                                   |
 

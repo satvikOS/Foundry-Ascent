@@ -54,30 +54,43 @@ interface EvidenceItemCardProps {
   ref?: Ref<HTMLElement>;
   /** The vEIR's name, for its library ("Corin's vEIR’s library"). */
   veirName?: string;
-  /** Where the venture's pages are: a cited passage links to its document or to its row in Evidence. */
+  /**
+   * Where the venture's pages are: a cited passage opens its document or source in the viewer, or links to
+   * its row in Evidence.
+   */
   venture?: { tenant: string; ventureId: string };
 }
 
 const SOURCE_LINK =
   'inline-flex items-center gap-1 rounded-sm text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring';
 
-/** Opens the source a passage was cited from: its document, or its row in Knowledge › Evidence. */
+/**
+ * Opens the source a passage was cited from: one of the venture's documents, or program and public
+ * material, opens in the document viewer at the cited passage; a vEIR's own library (read in the studio)
+ * links to its row in Knowledge › Evidence.
+ */
 function SourceLink({
   source,
+  passageId,
   venture,
 }: {
   source: NonNullable<EvidenceItem['source']>;
+  /** The cited passage (its knowledge chunk). */
+  passageId: string;
   venture: { tenant: string; ventureId: string };
 }) {
-  if (source.scope === 'venture') {
+  if (source.scope !== 'persona') {
+    // The document viewer opens over the conversation (`?src=…&passage=…`); Back returns to it.
     return (
       <Link
-        to="/$tenant/app/v/$ventureId/documents"
-        params={venture}
-        search={{ source: source.id }}
+        to="."
+        search={(previous) => ({ ...previous, doc: undefined, src: source.id, passage: passageId })}
+        state={(previous) => ({ ...previous, documentViewer: true })}
+        resetScroll={false}
+        data-opens-document
         className={SOURCE_LINK}
       >
-        Open document
+        {source.scope === 'venture' ? 'Open document' : 'Read source'}
         <ArrowUpRight aria-hidden className="size-3" />
       </Link>
     );
@@ -153,7 +166,7 @@ export function EvidenceItemCard({
         {memoryStatus ? <StatusBadge kind="memory" status={memoryStatus} /> : null}
         {source && venture ? (
           <span className="ml-auto">
-            <SourceLink source={source} venture={venture} />
+            <SourceLink source={source} passageId={item.refId} venture={venture} />
           </span>
         ) : null}
       </div>

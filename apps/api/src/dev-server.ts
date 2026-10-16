@@ -69,6 +69,8 @@ async function main(): Promise<void> {
     directory: uploadDir,
     // The web dev server proxies /api to this process, so uploads stay same-origin through it.
     publicOrigin: config.siteOrigin ?? `http://localhost:${String(port)}`,
+    // Presigned GETs at another origin (the end-to-end suite: this server's own, as S3 is in production).
+    downloadOrigin: process.env.LOCAL_DOWNLOAD_ORIGIN,
     maxUploadBytes: MAX_DOCUMENT_BYTES,
   });
   const jobQueue = new InlineJobQueue({ logger, maxAttempts: LOCAL_JOB_ATTEMPTS });

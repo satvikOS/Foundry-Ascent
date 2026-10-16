@@ -114,6 +114,24 @@ def test_http_constants() -> None:
     assert f"REQUEST_ID_HEADER = '{client.REQUEST_ID_HEADER}'" in api
 
 
+def test_document_viewer_views() -> None:
+    api = _source("viewer.ts")
+    assert tuple(_enum(api, "DocumentFileDisposition")) == models.DOCUMENT_FILE_DISPOSITIONS
+    for model, name in (
+        (models.DocumentFileResponse, "DocumentFileResponse"),
+        (models.SourcePassage, "SourcePassage"),
+        (models.SourceTextResponse, "SourceTextResponse"),
+    ):
+        aliases = {f.alias or n for n, f in model.model_fields.items()}
+        assert aliases == _object_keys(api, name), name
+    match = re.search(
+        r"export const SourceTextResponse = z\.object\(\{\s*source: z\.object\(\{(.*?)\}\),", api, re.DOTALL
+    )
+    assert match
+    source = {f.alias or n for n, f in models.SourceTextSource.model_fields.items()}
+    assert set(re.findall(r"^\s{4}(\w+):", match.group(1), re.MULTILINE)) == source
+
+
 def test_health_response_fields() -> None:
     keys = _object_keys(_source("api.ts"), "HealthResponse")
     assert keys == set(models.HealthResponse.model_fields)
