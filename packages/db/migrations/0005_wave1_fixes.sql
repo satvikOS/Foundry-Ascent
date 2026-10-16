@@ -26,6 +26,12 @@ ALTER TABLE coaching_sessions DROP CONSTRAINT IF EXISTS coaching_sessions_title_
 ALTER TABLE coaching_sessions ADD CONSTRAINT coaching_sessions_title_source_check
   CHECK (title_source IN ('auto', 'person'));
 
+-- Temporary chats never carry a title.
+UPDATE coaching_sessions SET title = NULL WHERE privacy <> 'standard' AND title IS NOT NULL;
+ALTER TABLE coaching_sessions DROP CONSTRAINT IF EXISTS coaching_sessions_title_privacy_check;
+ALTER TABLE coaching_sessions ADD CONSTRAINT coaching_sessions_title_privacy_check
+  CHECK (privacy = 'standard' OR title IS NULL);
+
 -- Titles people chose before this column existed: renamed conversations (audited), and titles given at start
 -- (they match neither the first message nor the goal). Distilled titles stay automatic.
 UPDATE coaching_sessions s SET title_source = 'person'
@@ -37,12 +43,6 @@ UPDATE coaching_sessions s SET title_source = 'person'
                                            WHERE t.session_id = s.id AND t.risk_label IS DISTINCT FROM 'crisis'
                                            ORDER BY t.ordinal LIMIT 1)
             AND s.title IS DISTINCT FROM app.conversation_title(s.goal)));
-
--- Temporary chats never carry a title.
-UPDATE coaching_sessions SET title = NULL WHERE privacy <> 'standard' AND title IS NOT NULL;
-ALTER TABLE coaching_sessions DROP CONSTRAINT IF EXISTS coaching_sessions_title_privacy_check;
-ALTER TABLE coaching_sessions ADD CONSTRAINT coaching_sessions_title_privacy_check
-  CHECK (privacy = 'standard' OR title IS NULL);
 
 -- ---------------------------------------------------------------------------------------------------
 -- 2. Notebook shape

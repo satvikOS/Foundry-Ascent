@@ -264,3 +264,124 @@ describe('seed', () => {
     expect(summaries[0]?.openActions).toBeGreaterThanOrEqual(1);
   });
 });
+
+describe('seed re-runs (every production deploy)', () => {
+  /** Ordinal and content of every chunk of a source, in order. */
+  async function chunksOf(sourceId: string): Promise<string[]> {
+    const r = await t.db.system((sx) =>
+      sx.query('SELECT ordinal, content FROM knowledge_chunks WHERE source_id = :id ORDER BY ordinal', {
+        id: p.uuid(sourceId),
+      }),
+    );
+    return r.rows.map((row) => `${String(row.ordinal)}:${String(row.content)}`);
+  }
+
+  /** What the knowledge library does when a curator saves new text: one transaction, new chunks. */
+  async function editAsCurator(sourceId: string, text: string): Promise<void> {
+    await t.db.system(async (sx) => {
+      await sx.query(`UPDATE knowledge_sources SET body = :body, updated_at = now() WHERE id = :id`, {
+        id: p.uuid(sourceId),
+        body: p.text(text),
+      });
+      await sx.query('DELETE FROM knowledge_chunks WHERE source_id = :id', { id: p.uuid(sourceId) });
+      await sx.query(
+        `INSERT INTO knowledge_chunks (source_id, tenant_id, scope, venture_id, persona_id, ordinal, heading, content,
+                                       token_count)
+         SELECT s.id, s.tenant_id, s.scope, s.venture_id, s.persona_id, 1, s.title, :body, 4
+         FROM knowledge_sources s WHERE s.id = :id`,
+        { id: p.uuid(sourceId), body: p.text(text) },
+      );
+    });
+  }
+
+  /** What withdrawing a library source does. */
+  async function withdraw(sourceId: string): Promise<void> {
+    await t.db.system(async (sx) => {
+      await sx.query('DELETE FROM knowledge_chunks WHERE source_id = :id', { id: p.uuid(sourceId) });
+      await sx.query(`UPDATE knowledge_sources SET status = 'withdrawn', updated_at = now() WHERE id = :id`, {
+        id: p.uuid(sourceId),
+      });
+    });
+  }
+
+  it('seeds the Foundry Guide corpora as authored notes, as upgraded databases have them', async () => {
+    const r = await t.db.system((sx) =>
+      sx.query(
+        `SELECT s.scope, s.kind, s.body = (
+                  SELECT string_agg(CASE WHEN c.heading IS NULL OR c.heading = '' THEN c.content
+                                         ELSE '## ' || c.heading || E'\\n\\n' || c.content END,
+                                    E'\\n\\n' ORDER BY c.ordinal)
+                  FROM knowledge_chunks c WHERE c.source_id = s.id) AS body_matches_chunks
+         FROM knowledge_sources s
+         WHERE s.scope = 'program' OR (s.scope = 'persona' AND s.persona_id = :guide)
+         ORDER BY s.scope`,
+        { guide: p.uuid(t.seed?.personaId ?? '') },
+      ),
+    );
+    expect(r.rows).toEqual([
+      { scope: 'persona', kind: 'note', body_matches_chunks: true },
+      { scope: 'program', kind: 'note', body_matches_chunks: true },
+    ]);
+  });
+
+  it('never gives an edited or withdrawn corpus, or a deleted document, its seeded chunks back', async () => {
+    const seed = t.seed;
+    if (!seed) throw new Error('seed missing');
+    const corin = seed.veirs.find((v) => v.eirKey === 'eir-corin');
+    const library = await t.db.system((sx) =>
+      sx.query(
+        `SELECT s.id FROM knowledge_sources s JOIN knowledge_chunks c ON c.source_id = s.id
+         WHERE s.persona_id = :persona GROUP BY s.id, s.title HAVING count(c.id) > 1 ORDER BY s.title LIMIT 2`,
+        { persona: p.uuid(corin?.personaId ?? '') },
+      ),
+    );
+    const [edited, withdrawn] = library.rows.map((row) => String(row.id));
+    const corpora = await t.db.system((sx) =>
+      sx.query(
+        `SELECT scope, id FROM knowledge_sources
+         WHERE scope = 'program' OR (scope = 'persona' AND persona_id = :guide) ORDER BY scope`,
+        { guide: p.uuid(seed.personaId) },
+      ),
+    );
+    const [guide, program] = corpora.rows.map((row) => String(row.id));
+    if (!edited || !withdrawn || !guide || !program) throw new Error('seeded corpora missing');
+
+    await editAsCurator(edited, 'One section now.');
+    await editAsCurator(guide, 'The doctrine, shortened.');
+    await withdraw(withdrawn);
+    await withdraw(program);
+    // A founder deletes a seeded document: its chunks go and its source is withdrawn.
+    const quietquad = seed.ventures.find((v) => v.key === 'quietquad');
+    const maya = quietquad?.members.find((m) => m.key === 'maya');
+    const documentId = quietquad?.documentIds[0];
+    if (!quietquad || !maya || !documentId) throw new Error('seeded document missing');
+    await t.db.withContext(makeContext(maya.principalId, seed.tenantId), (tx) =>
+      tx.query('SELECT app.soft_delete_document(:id) AS s3_key', { id: p.uuid(documentId) }),
+    );
+    const documentSource = await t.db.system((sx) =>
+      sx.query('SELECT source_id FROM documents WHERE id = :id', { id: p.uuid(documentId) }),
+    );
+    const deletedDocument = String(documentSource.rows[0]?.source_id);
+
+    const snapshot = async (): Promise<Record<string, string[]>> => ({
+      edited: await chunksOf(edited),
+      guide: await chunksOf(guide),
+      withdrawn: await chunksOf(withdrawn),
+      program: await chunksOf(program),
+      document: await chunksOf(deletedDocument),
+    });
+    const before = await snapshot();
+    expect(before).toEqual({
+      edited: ['1:One section now.'],
+      guide: ['1:The doctrine, shortened.'],
+      withdrawn: [],
+      program: [],
+      document: [],
+    });
+    const rows = await counts();
+    await seedDatabase(t.db, NO_OWNER);
+    await seedDatabase(t.db, NO_OWNER);
+    expect(await snapshot()).toEqual(before);
+    expect(await counts()).toEqual(rows);
+  });
+});

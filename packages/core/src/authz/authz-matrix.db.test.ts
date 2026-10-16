@@ -231,7 +231,8 @@ const MATRIX: readonly { name: string; allowed: readonly Who[]; op: Op }[] = [
   { name: 'team.list', allowed: [...MEMBERS_READ, 'programLead'], op: (c) => h.core.team.list(c, ventureId) },
   {
     name: 'team.invite',
-    allowed: ['programLead'],
+    // A platform admin (here not a member of the venture) invites too.
+    allowed: ['programLead', 'admin'],
     op: (c) => h.core.team.invite(c, ventureId, { displayName: 'New Teammate', role: 'team' }),
   },
   { name: 'program.portfolio', allowed: ['programLead', 'admin'], op: (c) => h.core.program.portfolio(c) },

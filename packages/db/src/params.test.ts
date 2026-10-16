@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { SqlUsageError } from './errors.js';
 import { compileNamed, compilePositional } from './executor.js';
 import { encodeTextArrayLiteral, p, paramToText } from './params.js';
+import { scanSql } from './sql-lexer.js';
 
 describe('p.* parameter builders', () => {
   it('encodes each kind canonically', () => {
@@ -69,11 +70,11 @@ describe('p.* parameter builders', () => {
 describe('named → positional/named compilation', () => {
   it('rewrites :name to typed casts and reuses positions for repeated names', () => {
     const { text, values } = compilePositional(
-      'SELECT :a, :b::text, :a, \':ignored\', x::int, "col:x" -- :comment\nFROM t WHERE y = :b',
+      'SELECT :a, :b::text, :a, \'kept: as is\', x::int -- :comment\nFROM t WHERE y = :b',
       { a: p.uuid('6f1c3a52-9d7e-4b0a-8f2e-3c5d7a9b1e04'), b: p.textArray(['x']), unused: p.int(1) },
     );
     expect(text).toBe(
-      'SELECT CAST($1 AS uuid), CAST($2 AS text[])::text, CAST($1 AS uuid), \':ignored\', x::int, "col:x" -- :comment\nFROM t WHERE y = CAST($2 AS text[])',
+      'SELECT CAST($1 AS uuid), CAST($2 AS text[])::text, CAST($1 AS uuid), \'kept: as is\', x::int -- :comment\nFROM t WHERE y = CAST($2 AS text[])',
     );
     expect(values.map((v) => v.type)).toEqual(['uuid', 'textArray']);
   });
@@ -92,10 +93,15 @@ describe('named → positional/named compilation', () => {
   });
 
   it('ignores placeholders in strings, identifiers, comments and dollar bodies; leaves casts and := alone', () => {
+    const quoted = "SELECT 'a :b', E'it\\'s :c', \"d:e\"";
     const sql = [
-      "SELECT 'a :b', E'it\\'s :c', \"d:e\", $$ :f $$, $tag$ :g $tag$, /* :h /* nested :i */ */ x::jsonb",
+      'SELECT $$ :f $$, $tag$ :g $tag$, /* :h /* nested :i */ */ x::jsonb',
       'DO $$ DECLARE v int; BEGIN v := 1; END $$',
     ].join('\n');
+    expect(scanSql(`${quoted}; ${sql}`).placeholders).toEqual([]);
     expect(compilePositional(sql, {}).text).toBe(sql);
+    // Quoted `:name` shapes are refused instead: the RDS Data API may read them as parameters.
+    expect(scanSql(quoted).quotedNames.map((q) => q.name)).toEqual(['b', 'c', 'e']);
+    expect(() => compilePositional(quoted, {})).toThrow(SqlUsageError);
   });
 });
