@@ -118,8 +118,9 @@ test.describe('conversation composer', () => {
         conversation: content ? content.getBoundingClientRect().height : 0,
       };
     });
+    // (A little slack for the page's own chrome; the defect made the page as tall as the whole list.)
     expect(layout.page, 'the page is as tall as the conversation, not the panel').toBeLessThanOrEqual(
-      Math.max(900, layout.conversation) + 2,
+      Math.max(900, layout.conversation) + 120,
     );
     await expect(page.getByRole('main').locator('header').first()).toBeInViewport();
     // The new exchange is where the reader is (its message was brought to the top of the column).

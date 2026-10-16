@@ -58,6 +58,7 @@ import {
 import { useFirstLoadScroll } from './first-load-scroll';
 import { FollowUps } from './follow-ups';
 import { useKeepEndInView } from './keep-end-in-view';
+import { savedFromTurn } from './memory-saved';
 import { PanelStateProvider } from './panel-state';
 
 const routeApi = getRouteApi('/$tenant/app/v/$ventureId/c/$sessionId');
@@ -175,12 +176,18 @@ function Conversation() {
   // When an answer finishes while the reader is at the end of the page, its actions and the follow-up chips
   // (the composer grows by them at the same moment) stay in view together.
   const lastTurn = turns[turns.length - 1] ?? null;
+  // The answer's "Saved to Knowledge" line appears once the venture's memory has refreshed, a moment after
+  // the answer: it moves the end too.
+  const lastSaved = lastTurn?.response
+    ? savedFromTurn(lastTurn.response.memory_candidates, memory.data, lastTurn.id).length
+    : 0;
   const conversationRef = useKeepEndInView(
     [
       state.status,
       lastTurn?.id ?? '',
       lastTurn?.status ?? '',
       lastTurn?.response?.follow_up_questions.length ?? 0,
+      lastSaved,
     ].join('|'),
   );
 
