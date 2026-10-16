@@ -4,11 +4,11 @@ import { join } from 'node:path';
 import { expect, type Page } from '@playwright/test';
 
 import {
+  fillSecret,
   FOUNDER_STATE,
   issueAccessCodeViaApi,
   openVenture,
   OWNER_STATE,
-  signIn,
   startConversation,
   TENANT,
   test,
@@ -34,6 +34,15 @@ const VIEWPORTS = {
   desktop: { viewport: { width: 1440, height: 900 } },
   mobile: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 },
 } as const;
+
+/** Sign in through the form on any viewport (on phones the account menu sits in the navigation sheet). */
+async function signInWith(page: Page, code: string): Promise<void> {
+  await page.goto('/sign-in');
+  await fillSecret(page.getByRole('textbox', { name: 'Access code' }), code);
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await page.waitForURL((url) => !url.pathname.startsWith('/sign-in'));
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+}
 
 async function settle(page: Page): Promise<void> {
   await page.waitForLoadState('networkidle');
@@ -176,7 +185,7 @@ for (const [device, options] of Object.entries(VIEWPORTS)) {
           const owner = await browser.newContext({ storageState: OWNER_STATE });
           const code = await issueAccessCodeViaApi(owner.request, CORIN);
           await owner.close();
-          await signIn(page, code);
+          await signInWith(page, code);
           await useTheme(page, scheme);
 
           for (const [surface, path, list] of [
