@@ -1,4 +1,4 @@
-import { CircleSlash, Plus, Search, SearchX, Trash2, Users } from 'lucide-react';
+import { CircleSlash, Ellipsis, KeyRound, Plus, Search, SearchX, Trash2, Users } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 
 import { announce } from '@/components/a11y/live-announcer';
@@ -15,6 +15,14 @@ import {
 import { UserAvatar } from '@/components/faces/user-avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
 import { Input } from '@/components/ui/input';
@@ -67,7 +75,8 @@ function None({ label }: { label: string }) {
 
 /**
  * Admin → Principals: people, roles, memberships and their active access codes. Quiet by default: only a
- * disabled account is marked, and empty cells are a dash.
+ * disabled account is marked, empty cells are a dash, and each row's actions (issue a code, revoke one)
+ * wait in a single menu at its end.
  */
 export function PrincipalsPage() {
   const me = useRequiredMe();
@@ -272,46 +281,63 @@ export function PrincipalsPage() {
                     ) : (
                       <ul className="grid gap-2">
                         {row.activeAccessCodes.map((code) => (
-                          <li key={code.id} className="flex items-start justify-between gap-2">
-                            <div className="min-w-0 text-small">
-                              <p>
-                                <code className="font-mono text-xs whitespace-nowrap">
-                                  {maskedCode(code.prefix)}
-                                </code>
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                <span className="font-medium text-foreground">{code.label}</span> ·{' '}
-                                {code.expiresAt ? `Expires ${formatDate(code.expiresAt)}` : 'No expiry'} ·{' '}
-                                {code.lastUsedAt ? `used ${formatRelative(code.lastUsedAt)}` : 'never used'}
-                              </p>
-                            </div>
-                            <Button
-                              variant="ghost"
-                              size="icon-xs"
-                              aria-label={`Revoke ${row.principal.displayName}’s code ${code.label}`}
-                              onClick={() => {
-                                setRevoking({ code, owner: row.principal.displayName });
-                              }}
-                            >
-                              <Trash2 aria-hidden />
-                            </Button>
+                          <li key={code.id} className="min-w-0 text-small">
+                            <p>
+                              <code className="font-mono text-xs whitespace-nowrap">
+                                {maskedCode(code.prefix)}
+                              </code>
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              <span className="font-medium text-foreground">{code.label}</span> ·{' '}
+                              {code.expiresAt ? `Expires ${formatDate(code.expiresAt)}` : 'No expiry'} ·{' '}
+                              {code.lastUsedAt ? `used ${formatRelative(code.lastUsedAt)}` : 'never used'}
+                            </p>
                           </li>
                         ))}
                       </ul>
                     )}
                   </TableCell>
-                  <TableCell className="text-right align-top">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-label={`Issue access code to ${row.principal.displayName}`}
-                      disabled={row.status !== 'active'}
-                      onClick={() => {
-                        setIssueFor({ id: row.principal.id, displayName: row.principal.displayName });
-                      }}
-                    >
-                      Issue code
-                    </Button>
+                  <TableCell className="w-10 text-right align-top">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Actions for ${row.principal.displayName}`}
+                        >
+                          <Ellipsis aria-hidden />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-64">
+                        <DropdownMenuItem
+                          disabled={row.status !== 'active'}
+                          onSelect={() => {
+                            setIssueFor({ id: row.principal.id, displayName: row.principal.displayName });
+                          }}
+                        >
+                          <KeyRound aria-hidden />
+                          Issue access code…
+                        </DropdownMenuItem>
+                        {row.activeAccessCodes.length > 0 ? (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuLabel>Active codes</DropdownMenuLabel>
+                            {row.activeAccessCodes.map((code) => (
+                              <DropdownMenuItem
+                                key={code.id}
+                                destructive
+                                onSelect={() => {
+                                  setRevoking({ code, owner: row.principal.displayName });
+                                }}
+                              >
+                                <Trash2 aria-hidden />
+                                <span className="min-w-0 truncate">Revoke “{code.label}”…</span>
+                              </DropdownMenuItem>
+                            ))}
+                          </>
+                        ) : null}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </TableCell>
                 </TableRow>
               );
