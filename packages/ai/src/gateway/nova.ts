@@ -181,7 +181,8 @@ export class NovaProvider implements StructuredProvider {
   /**
    * Streams plain text through ConverseStream. Each text delta goes to `onText` as it arrives. A failure
    * after text was delivered is never retried (not even the inference-profile retry) and is marked
-   * `textDelivered`; usage the stream never reported (it ended early) is estimated from the text.
+   * `textDelivered`; usage the stream never reported (it ended early) is estimated once the request reached
+   * Bedrock (`estimatedStreamUsage`; no reasoning is enabled here, so output is the visible text).
    */
   async streamText(request: ProviderStreamRequest): Promise<ProviderStreamResult> {
     const { deadline } = request;
@@ -195,6 +196,8 @@ export class NovaProvider implements StructuredProvider {
       let text = '';
       let stopReason: StopReason | undefined;
       let usage: { inputTokens: number; outputTokens: number } | null = null;
+      let opened = false;
+      const cancelledBeforeSend = deadline.aborted;
       const record = (outcome: RawModelAttempt['outcome'], errorName: string | null): void => {
         rawAttempts.push({
           provider: 'nova',
@@ -202,7 +205,9 @@ export class NovaProvider implements StructuredProvider {
           kind,
           outcome,
           latencyMs: Math.round(performance.now() - started),
-          usage: usage ?? estimatedStreamUsage(request, text),
+          usage:
+            usage ??
+            estimatedStreamUsage(request, text, { outcome, opened, cancelledBeforeSend, reasoning: false }),
           errorName,
         });
       };
@@ -216,6 +221,7 @@ export class NovaProvider implements StructuredProvider {
           },
           deadline.signal,
         );
+        opened = true;
         for await (const event of events) {
           const thrown = streamException(event);
           if (thrown) throw thrown;

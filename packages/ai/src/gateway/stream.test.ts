@@ -23,8 +23,11 @@ import {
   STATIC_CREDENTIALS,
   VALID_ANSWER,
   awsError,
+  hangUntilAborted,
+  jsonResponse,
   providerRequest,
   scriptedFetch,
+  type FetchStep,
 } from './test-helpers.js';
 import type { RawModelAttempt } from './types.js';
 
@@ -68,6 +71,21 @@ async function captureError(promise: Promise<unknown>): Promise<unknown> {
   }
   throw new Error('expected rejection');
 }
+
+/** Rejects like the SDKs do once `signal` aborts (a request or a stream the provider is still working on). */
+function untilAborted<T>(signal: AbortSignal | undefined): Promise<T> {
+  return new Promise<T>((_resolve, reject) => {
+    const fail = (): void => {
+      reject(Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }));
+    };
+    if (signal?.aborted) fail();
+    signal?.addEventListener('abort', fail, { once: true });
+  });
+}
+
+/** The prompt of `streamRequest` as the estimate counts it (about 4 characters a token). */
+const PROMPT_TOKENS =
+  Math.ceil('SYSTEM PROMPT SECRET'.length / 4) + Math.ceil('FOUNDER TEXT SECRET'.length / 4);
 
 describe('NovaProvider.streamText (ConverseStream)', () => {
   function nova(steps: ((input: ConverseStreamCommandInput) => AsyncIterable<ConverseStreamOutput>)[]) {
@@ -170,6 +188,73 @@ describe('NovaProvider.streamText (ConverseStream)', () => {
     const { provider } = nova([() => aborted]);
     const error = await captureError(provider.streamText(streamRequest(() => undefined, { deadline })));
     expect(error).toMatchObject({ reason: 'aborted' });
+  });
+
+  it('bills the prompt of a stream cancelled or timed out before its first text: the provider processed it', async () => {
+    // The stream opened, then the caller hung up (a barge-in) before any text.
+    const caller = new AbortController();
+    const opened = nova([
+      () => ({ [Symbol.asyncIterator]: () => ({ next: () => untilAborted(caller.signal) }) }),
+    ]);
+    const pending = opened.provider.streamText(
+      streamRequest(() => undefined, { deadline: new Deadline(5_000, caller.signal) }),
+    );
+    setTimeout(() => {
+      caller.abort();
+    }, 5);
+    const cancelled = await captureError(pending);
+    expect(cancelled).toMatchObject({ reason: 'aborted' });
+    if (!(cancelled instanceof ModelUnavailableError)) return;
+    // No reasoning on Converse here: the output is the visible text, none.
+    expect(cancelled.rawAttempts.map((a) => a.usage)).toEqual([
+      { inputTokens: PROMPT_TOKENS, outputTokens: 0 },
+    ]);
+
+    // The deadline expired while the request was out, before any response.
+    const slow = new NovaProvider({
+      modelId: 'amazon.nova-2-lite-v1:0',
+      region: 'us-east-1',
+      converse: () => Promise.reject(new Error('unused')),
+      converseStream: (_input, signal) => untilAborted(signal),
+    });
+    const timedOut = await captureError(
+      slow.streamText(streamRequest(() => undefined, { deadline: new Deadline(20) })),
+    );
+    expect(timedOut).toMatchObject({ reason: 'timeout' });
+    if (!(timedOut instanceof ModelUnavailableError)) return;
+    expect(timedOut.rawAttempts.map((a) => a.usage)).toEqual([
+      { inputTokens: PROMPT_TOKENS, outputTokens: 0 },
+    ]);
+  });
+
+  it('bills nothing for a request refused or never received: throttled, a network failure, cancelled before it was sent', async () => {
+    const refused = async (
+      step: (input: ConverseStreamCommandInput) => AsyncIterable<ConverseStreamOutput>,
+      deadline = new Deadline(5_000),
+    ) => {
+      const { provider } = nova([step]);
+      const error = await captureError(provider.streamText(streamRequest(() => undefined, { deadline })));
+      expect(error).toBeInstanceOf(ModelUnavailableError);
+      return error as ModelUnavailableError;
+    };
+    const throttled = await refused(() => {
+      throw awsError('ThrottlingException', 'Rate exceeded', 429);
+    });
+    expect(throttled.reason).toBe('throttled');
+    expect(throttled.rawAttempts.map((a) => a.usage)).toEqual([{ inputTokens: 0, outputTokens: 0 }]);
+    const network = await refused(() => {
+      throw new TypeError('fetch failed');
+    });
+    expect(network.reason).toBe('network');
+    expect(network.rawAttempts.map((a) => a.usage)).toEqual([{ inputTokens: 0, outputTokens: 0 }]);
+    const neverSent = await refused(
+      () => {
+        throw Object.assign(new Error('The operation was aborted'), { name: 'AbortError' });
+      },
+      new Deadline(5_000, AbortSignal.abort()),
+    );
+    expect(neverSent.reason).toBe('aborted');
+    expect(neverSent.rawAttempts.map((a) => a.usage)).toEqual([{ inputTokens: 0, outputTokens: 0 }]);
   });
 });
 
@@ -284,6 +369,120 @@ describe('LunaProvider.streamText (Chat Completions stream)', () => {
     });
     const error = await captureError(provider.streamText(streamRequest(() => undefined)));
     expect(error).toBeInstanceOf(ModelRefusalError);
+  });
+
+  /** An SSE response that sends `chunks`, then stays open until the request is aborted. */
+  const openStream =
+    (chunks: readonly unknown[]): FetchStep =>
+    (_request, signal) =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            for (const c of chunks)
+              controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(c)}\n\n`));
+            const fail = (): void => {
+              controller.error(Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }));
+            };
+            if (signal?.aborted) fail();
+            signal?.addEventListener('abort', fail, { once: true });
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      );
+  const lunaWith = (steps: FetchStep[]) =>
+    new LunaProvider({
+      modelId: 'openai.gpt-6-luna',
+      region: 'us-east-1',
+      credentials: STATIC_CREDENTIALS,
+      fetch: scriptedFetch(steps).fetch,
+    });
+  /** Runs a stream the caller cancels after `ms`. */
+  async function cancelledAfter(provider: LunaProvider, ms: number): Promise<ModelUnavailableError> {
+    const caller = new AbortController();
+    const pending = provider.streamText(
+      streamRequest(() => undefined, { deadline: new Deadline(5_000, caller.signal) }),
+    );
+    setTimeout(() => {
+      caller.abort();
+    }, ms);
+    const error = await captureError(pending);
+    expect(error).toBeInstanceOf(ModelUnavailableError);
+    return error as ModelUnavailableError;
+  }
+
+  it('bills a stream cancelled before its first text: the prompt, and the reasoning at the output bound', async () => {
+    // Luna is still reasoning (nothing visible yet) when the founder speaks over the vEIR.
+    const error = await cancelledAfter(lunaWith([openStream([])]), 10);
+    expect(error.reason).toBe('aborted');
+    expect(error.rawAttempts.map((a) => a.usage)).toEqual([
+      { inputTokens: PROMPT_TOKENS, outputTokens: 400 },
+    ]);
+  });
+
+  it('bills a stream that timed out before any response the same way', async () => {
+    const error = await captureError(
+      lunaWith([hangUntilAborted]).streamText(streamRequest(() => undefined, { deadline: new Deadline(20) })),
+    );
+    expect(error).toMatchObject({ reason: 'timeout' });
+    if (!(error instanceof ModelUnavailableError)) return;
+    expect(error.rawAttempts.map((a) => a.usage)).toEqual([
+      { inputTokens: PROMPT_TOKENS, outputTokens: 400 },
+    ]);
+  });
+
+  it('bills a stream cut off after text at the output bound too, never below the visible text', async () => {
+    const error = await cancelledAfter(lunaWith([openStream([chunk('Start small.')])]), 10);
+    expect(error.textDelivered).toBe(true);
+    expect(error.rawAttempts[0]?.usage).toEqual({ inputTokens: PROMPT_TOKENS, outputTokens: 400 });
+    const long = 'word '.repeat(600);
+    const longer = await cancelledAfter(lunaWith([openStream([chunk(long)])]), 10);
+    expect(longer.rawAttempts[0]?.usage.outputTokens).toBe(Math.ceil(long.length / 4));
+    // The SDK ends an aborted stream quietly; the deadline cutting one off is still a timeout, not an answer.
+    const timedOut = await captureError(
+      lunaWith([openStream([chunk('Start small.')])]).streamText(
+        streamRequest(() => undefined, { deadline: new Deadline(20) }),
+      ),
+    );
+    expect(timedOut).toMatchObject({ reason: 'timeout', textDelivered: true });
+  });
+
+  it('keeps the usage the stream reported, and bills nothing for a request refused before it opened', async () => {
+    const reported = await lunaWith([
+      () =>
+        sse([
+          chunk('Start small.', 'stop'),
+          {
+            ...chunk(null),
+            choices: [],
+            usage: { prompt_tokens: 700, completion_tokens: 12, total_tokens: 712 },
+          },
+        ]),
+    ]).streamText(streamRequest(() => undefined));
+    expect(reported.rawAttempts[0]?.usage).toEqual({ inputTokens: 700, outputTokens: 12 });
+    for (const [step, reason] of [
+      [() => jsonResponse({ error: { message: 'slow down', type: 'x' } }, 429), 'throttled'],
+      [() => jsonResponse({ error: { message: 'bad', type: 'x' } }, 400), 'client_error'],
+      [
+        () => {
+          throw new TypeError('fetch failed');
+        },
+        'network',
+      ],
+    ] as const) {
+      const error = await captureError(lunaWith([step]).streamText(streamRequest(() => undefined)));
+      expect(error).toMatchObject({ reason });
+      if (!(error instanceof ModelUnavailableError)) return;
+      expect(error.rawAttempts.map((a) => a.usage)).toEqual([{ inputTokens: 0, outputTokens: 0 }]);
+    }
+    // Cancelled before it was sent: never reached the provider.
+    const neverSent = await captureError(
+      lunaWith([hangUntilAborted]).streamText(
+        streamRequest(() => undefined, { deadline: new Deadline(5_000, AbortSignal.abort()) }),
+      ),
+    );
+    expect(neverSent).toMatchObject({ reason: 'aborted' });
+    if (!(neverSent instanceof ModelUnavailableError)) return;
+    expect(neverSent.rawAttempts.map((a) => a.usage)).toEqual([{ inputTokens: 0, outputTokens: 0 }]);
   });
 });
 
@@ -400,6 +599,66 @@ describe('gateway streamText (router)', () => {
   it('uses the fallback when the primary cannot stream', async () => {
     const { gateway } = gw(null, ok(FALLBACK, ['Fine.']));
     expect((await gateway.streamText(request, () => undefined)).fallbackUsed).toBe(true);
+  });
+
+  it('prices a stream cancelled or timed out before any text once per network call, never falling back on a cancel', async () => {
+    const lunaStreaming = (step: FetchStep) =>
+      new LunaProvider({
+        modelId: DEFAULT_MODEL_IDS.primary,
+        region: 'us-east-1',
+        credentials: STATIC_CREDENTIALS,
+        fetch: scriptedFetch([step]).fetch,
+      });
+    const withPrimary = (primary: StructuredProvider, fallback: Behaviour) => {
+      const f = new FakeStreamer(FALLBACK, fallback);
+      const gateway = createModelGateway({
+        provider: 'bedrock',
+        region: 'us-east-1',
+        primaryModelId: DEFAULT_MODEL_IDS.primary,
+        fallbackModelId: FALLBACK,
+        embeddingsModelId: DEFAULT_MODEL_IDS.embeddings,
+        credentials: STATIC_CREDENTIALS,
+        providers: { primary, fallback: f },
+        transports: { invokeModel: () => Promise.reject(new Error('unused')) },
+      });
+      return { gateway, f };
+    };
+
+    // The caller cancels while Luna is still reasoning: one billed attempt, no fallback.
+    const caller = new AbortController();
+    const cancelled = withPrimary(lunaStreaming(hangUntilAborted), ok(FALLBACK, ['Other.']));
+    const pending = cancelled.gateway.streamText(
+      { ...request, maxOutputTokens: 400, signal: caller.signal },
+      () => undefined,
+    );
+    setTimeout(() => {
+      caller.abort();
+    }, 5);
+    const error = await captureError(pending);
+    expect(error).toMatchObject({ reason: 'aborted' });
+    if (!isModelGatewayError(error)) return;
+    expect(cancelled.f.calls).toBe(0);
+    expect(error.attempts).toHaveLength(1);
+    expect(error.attempts[0]).toMatchObject({
+      outcome: 'aborted',
+      usage: { inputTokens: 2, outputTokens: 400 },
+    });
+    expect(error.attempts[0]?.costUsd).toBeGreaterThan(0);
+
+    // The primary times out before any text: it is billed once, and the fallback's own attempt once.
+    const slow = withPrimary(lunaStreaming(hangUntilAborted), ok(FALLBACK, ['From the fallback.']));
+    const result = await slow.gateway.streamText(
+      { ...request, maxOutputTokens: 400, timeoutMs: 20 },
+      () => undefined,
+    );
+    expect(result.fallbackUsed).toBe(true);
+    expect(result.attempts.map((a) => [a.modelId, a.outcome])).toEqual([
+      [DEFAULT_MODEL_IDS.primary, 'timeout'],
+      [FALLBACK, 'ok'],
+    ]);
+    // 'S' and 'U': a token each.
+    expect(result.attempts[0]?.usage).toEqual({ inputTokens: 2, outputTokens: 400 });
+    expect(result.usage).toEqual({ inputTokens: 2 + 100, outputTokens: 400 + 10 });
   });
 });
 
