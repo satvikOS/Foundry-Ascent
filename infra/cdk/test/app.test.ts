@@ -208,11 +208,21 @@ describe('FoundryAscent-App', () => {
       expect(denied('FoundryAscent-Worker').sort()).toEqual(['s3:DeleteObject', 's3:PutObject']);
       expect(denied('FoundryAscent-Migrate')).toEqual([]);
       const deny = rolePolicyStatements('FoundryAscent-Api').find((s) => s.Effect === 'Deny');
-      const resource = JSON.stringify(deny?.Resource);
-      // The api may sign GETs of venture documents (the document viewer), never of a vEIR's library.
-      expect(resource).toContain('/tenants/*/personas/*');
-      expect(resource).not.toContain('/ventures/');
-      expect(resource).toContain('FoundryAscent-Data');
+      // An allow-list: the api may sign GETs of venture documents (the document viewer) and nothing else.
+      expect(deny?.Resource).toBeUndefined();
+      const allowed = JSON.stringify(deny?.NotResource);
+      expect(allowed).toContain('FoundryAscent-Data');
+      const suffix = /"(\/tenants\/[^"]*)"\]\]\}/.exec(allowed)?.[1];
+      expect(suffix).toBe('/tenants/*/ventures/*/documents/*');
+      // IAM's wildcard match of an object key against the one allowed pattern.
+      const readable = (key: string): boolean =>
+        new RegExp(`^${(suffix ?? '').replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`).test(
+          key,
+        );
+      expect(readable('/tenants/t1/ventures/v1/documents/d1/notes.md')).toBe(true);
+      expect(readable('/tenants/t1/personas/p1/library/handbook.md')).toBe(false);
+      expect(readable('/tenants/t1/exports/e1/archive.zip')).toBe(false);
+      expect(readable('/tenants/t1/other/y')).toBe(false);
     });
 
     it('lets only the API synthesize speech with Amazon Polly, pinned to the platform region', () => {

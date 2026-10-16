@@ -56,8 +56,9 @@ Region `us-east-1`, account taken from the deploying credentials. Every IAM role
   AWS managed policies):
   - `FoundryAscent-Api` (`apps/api/src/handlers/api.ts`): 1024 MB, 60 s, no reserved concurrency by
     default (see [Reserved concurrency](#reserved-concurrency)), Function URL `AWS_IAM` + `RESPONSE_STREAM`.
-    Database policy, documents `PutObject` (presigned uploads) + `DeleteObject` (an explicit deny removes
-    `GetObject`), `sqs:SendMessage` (the only role that enqueues jobs), Bedrock, and while
+    Database policy, documents `PutObject` (presigned uploads) + `DeleteObject`, and `GetObject` on
+    `tenants/*/ventures/*/documents/*` only (an explicit deny with `NotResource`: an allow-list), to sign the
+    viewer's presigned GETs; `sqs:SendMessage` (the only role that enqueues jobs), Bedrock, and while
     `speech.enabled` (see [Voice calls and distillation](#voice-calls-and-distillation))
     `polly:SynthesizeSpeech` + `polly:DescribeVoices` and `transcribe:StartStreamTranscriptionWebSocket`,
     each on `*` with `aws:RequestedRegion = us-east-1`.
@@ -249,7 +250,8 @@ The deploy workflow then assumes the `GitHubDeployRoleArn` output through GitHub
     custom domain when configured), headers `content-type`, `content-md5`, `x-amz-*`. A presigned URL (one
     key, short-lived, signed by the API role) is the authorization; CORS only decides which pages may use
     one from a browser. The API role may sign GETs of venture documents only (`GET /documents/:id/file`,
-    after the venture check); objects of vEIR libraries stay denied to it.
+    after the venture check); every other object (vEIR libraries, anything stored under `tenants/` later)
+    stays denied to it.
   - _`SITE_ORIGIN`._ Distribution → Function URL → API function, so the function's environment cannot
     contain the distribution domain. Without a custom domain `SITE_ORIGIN` is not set; the `/api/*`
     viewer-request function sets `x-fa-viewer-host` to the Host the browser addressed (CloudFront only
