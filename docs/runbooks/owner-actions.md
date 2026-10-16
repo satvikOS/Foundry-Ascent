@@ -45,8 +45,8 @@ forecast cost catches growth early. Also turn on **Cost Anomaly Detection** (Bil
 Detection → default service monitor, daily email summary; free).
 
 Add a second cost budget scoped to **Service: Amazon Transcribe** (for example $10 a month, alert at 100 %
-of actual cost). Transcribe streaming is the one AI cost outside the app's caps: an open socket bills
-until the browser closes it ([cost controls](cost-controls.md#where-the-money-goes)). Budgets update a few
+of actual cost). Transcribe streaming is the one AI cost the app can only meter as clients report it: an
+open socket bills until the browser closes it ([cost controls](cost-controls.md#where-the-money-goes)). Budgets update a few
 times a day, so this is a backstop, not a live limit; `speech.enabled: false` is the lever.
 
 **Verify:** both budgets appear under Budgets with their alerts; the anomaly monitor lists the email.

@@ -30,7 +30,7 @@ export interface SeedVeir {
   readonly eirKey: string;
   readonly name: string;
   readonly tagline: string;
-  /** Amazon Polly voice (generative where available, neural otherwise). */
+  /** Amazon Polly voice, spoken with the deployment's SPEECH_ENGINE (neural by default). */
   readonly voiceId: string;
   readonly disclosure: string;
   readonly doctrine: Doctrine;

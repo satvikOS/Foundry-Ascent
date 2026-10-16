@@ -185,23 +185,19 @@ generated time), with `distilled_at` and `distill_version` (the number of comple
 - **Configuration**: `GET /ventures/:id/call-config` returns the vEIR identity, the provider, the per-call
   cap (`max_call_minutes`, 30) and the minutes left today (`daily_call_minutes_per_principal`, 60). Both are
   platform settings (`PATCH /admin/settings`).
-- **Minutes** are measured from spoken turns: a call is a run of a person's spoken turns in one
-  conversation with no gap over 10 minutes; it lasts from its first to its last spoken turn plus one minute,
-  or until now while it is going (`measureCalls`). `app.voice_turns_today()` exposes only the times.
-- **Speech** (`POST /speech`, `audio/mpeg`, streamed): calls speak only validated text. The request names
-  the conversation and the turn, and the text must be a passage of that completed turn's stored `spoken`
-  form or of its answer read as plain text (citation keys, Markdown and link targets removed); anything else
-  is 422. It requires founder/team access, AI enabled (503), the coach active (423), minutes left (429
-  `rate_limited`, reasons `daily_call_minutes`, `call_minutes`) and the daily spend caps (429). Each
-  synthesis is metered in `usage_ledger` with purpose `speech` (characters as input tokens, Polly prices:
-  generative $30, neural $16 per million characters) and audited with counts only.
-- **Voices**: Amazon Polly, generative engine first and neural as fallback, adult US-English voices
-  (`SPEECH_VOICES`). A persona speaks with its own voice when its consent covers `voice` (the neutral guide
-  needs none), else with the platform voice (Danielle).
+- **Minutes, admission, speech and barge-in** are the calls backend's ([calls](calls.md) §2): minutes are
+  measured from the `calls` table (per call and per person per UTC day), spoken turns pass voice-turn
+  admission, and `POST /speech` speaks only signed units of the turn engine, the signed intro, whole
+  sentences of a completed turn's stored `spoken` form or the fixed crisis support message. Speech is
+  metered in `usage_ledger` (purpose `speech`) and counted by the platform's daily cap and the call-minute
+  caps, not by a person's own AI cap.
+- **Voices**: Amazon Polly with the deployment's `SPEECH_ENGINE` (neural by default) tried first, adult
+  US-English voices (`packages/core/speech-voices.json`). A persona speaks with its own voice when its
+  consent covers `voice` (the neutral guide needs none), else with the platform voice (Danielle).
 - **Local development** runs the mock model and has no speech service: `/speech` answers 501
   `speech_unavailable` (after authorization and validation) and the web reads validated replies aloud with
-  the browser's speech synthesis. Deployed stacks (`MODEL_PROVIDER=bedrock`) use Polly and need
-  `polly:SynthesizeSpeech` on the API role.
+  the browser's speech synthesis. Deployed stacks (`MODEL_PROVIDER=bedrock`, `SPEECH_ENABLED` not `false`)
+  use Polly and Transcribe.
 - **Avatar seam**: `POST /calls/avatar-session` is reserved for vendor session tokens (HeyGen, Tavus,
   Simli); it never stores or replays a response. Today it returns the built-in provider and its voice after
   the same checks as a call (AI enabled, coach active, minutes left). Only `builtin` can be configured
@@ -238,22 +234,37 @@ Migration 0005 (`0005_wave1_fixes`, expand-only and re-runnable, `migrate-0005.d
 | `venture_memberships` RLS | platform admins may add members (team invitations) and read the memberships of their tenant's ventures (the Team list)                                                                                                                                   |
 | `app.is_synthetic_eir`    | comment: the consent exception covers synthetic EIRs whether or not they can sign in                                                                                                                                                                     |
 
-## 8. Next: the turn pipeline and distillation
+## 8. The turn pipeline and distillation (as built)
 
-What the orchestrator and the distillation job need is in place:
+- **Turns** write their `channel`; spoken turns pass voice-turn admission ([calls](calls.md) §2). The
+  assigned persona's lessons are retrieval candidates (`searchPatterns` with `personaId`).
+- **Prompt continuity**: the founder's first name, the notebook as "Your notes on this founder (unverified;
+  confirm before relying on them)", the last three digests of other conversations and the open
+  commitments. A new standard conversation stores the notebook's next opener, validated, as its first vEIR
+  message (`coaching_sessions.opener`, with the conversation it came from).
+- **Distillation** (purpose `distill`, the daily caps and the kill switch) runs from jobs only the API
+  enqueues (the worker has no `sqs:SendMessage`):
+  - after each completed turn, delayed 540 s; the worker skips while the conversation is active (a turn in
+    the last 480 s), and a job whose conversation has more turns since is `superseded`;
+  - when a conversation ends, immediately;
+  - for the person's previous conversation when they start the next one, if it is idle and undistilled;
+  - in daily maintenance, the backstop: a bounded number of idle, undistilled conversations. The 15-minute
+    `DistillSweep` schedule ships **disabled** ([ADR-0018](adr/0018-veir-knowledge-pools.md)).
 
-- **Turns**: pass `channel` to `turnsRepo.createTurn`; check the call caps before a spoken turn
-  (`callUsageToday`, `currentCallMinutes`); pass `personaId` to `retrievalRepo.searchPatterns` so the
-  assigned persona's lessons become candidates (without it only program-wide lessons are).
-- **Prompt continuity**: the notebook (`notebooksRepo.getNotebook`) as "Your notes on this founder
-  (unverified; confirm before relying on them)" and the last three digests (`listRecentDigests`).
-- **Distillation** (purpose `distill`, spend caps and kill switch): find candidates
-  (`listDistillationCandidates`), write the digest (`setSessionDigest`, never for temporary or
-  digest-deleted conversations; it keeps a person's title), merge the notebook delta skipping suppressed
-  lines and write it with the version read and the conversation it came from (`saveNotebook` with
-  `sourceSessionId`; retry on null; a `NotebookIntegrityError` means the stored notebook cannot be read and
-  must not be overwritten), store memory candidates as proposals and de-identified lesson candidates as
-  `distilled` drafts (`resourcesRepo.createPattern`, status `draft`).
+  One run claims the conversation, checks the persona and its consent, calls the model once, and writes in
+  one transaction: the digest and title (`setSessionDigest`, never for temporary or digest-deleted
+  conversations; it keeps a person's title), the notebook delta merged against the version read
+  (`saveNotebook` with `sourceSessionId`; suppressed lines skipped; lines a person edited since the last
+  distillation pinned for one run; human-help advice kept until a person removes it or newer advice pushes
+  it out; a `NotebookIntegrityError` leaves the notebook untouched), memory candidates as proposals and
+  de-identified lesson candidates as `distilled` drafts that record their conversation.
+
+- **Memory hygiene**: a candidate that restates a pending AI proposal (same key, Jaccard ≥ 0.9, cosine ≥
+  0.92 once embedded, or all its content words in a proposal from the same conversation) raises that
+  proposal again instead of adding one; pending proposals of the venture are embedded before the comparison.
+  AI proposals nobody acts on expire after 30 days.
+- **Deletion**: deleting a conversation also withdraws its lesson drafts still in `draft` and erases the
+  copies of an opener drawn from it on later conversations.
 
 ## 9. Tests
 

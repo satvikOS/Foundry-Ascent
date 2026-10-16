@@ -127,8 +127,9 @@ same before and after it is closed.
 Every 15 s. The heartbeat re-reads everything and ends the call (`action: terminate`) on, in order: the AI
 kill switch or `calls_enabled` off (`disabled`), the conversation ended or deleted (`user`), the caller no
 longer able to write to the venture (`disabled`), the vEIR suspended, retired or re-assigned (`disabled`),
-the call's own voice no longer covered by consent (`disabled`), no heartbeat for 60 s (`timeout`), the daily
-AI spend caps (`budget`), today's minutes (`budget`) or the call's time limit (`timeout`). Switching calls
+the call's own voice no longer covered by consent (`disabled`), no heartbeat for 60 s (`timeout`), the
+platform's daily AI cap or the caller's own AI cap, which counts their model spend but not speech (`budget`),
+today's minutes (`budget`) or the call's time limit (`timeout`). Switching calls
 off therefore stops every built-in call within 15 s. A later heartbeat of an ended call keeps answering
 `terminate`.
 
@@ -194,11 +195,12 @@ turns sampled for review, sees the count and follow-ups of those turns.
 
 ### 2.7 Metering and audit
 
-- Each synthesis is a `usage_ledger` row with purpose `speech` (characters, Polly price per engine) under
-  the daily spend caps, and is added to `calls.speech_characters`.
+- Each synthesis is a `usage_ledger` row with purpose `speech` (characters, Polly price per engine),
+  counted by the platform's daily cap (not by a person's own AI cap: call minutes bound speech), and is added
+  to `calls.speech_characters`.
 - Speech-to-text is a `usage_ledger` row with purpose `speech` and model `transcribe:streaming:en-US` for the
-  microphone seconds each heartbeat adds (`input_tokens` holds the seconds; $0.024 a minute), so the daily
-  spend caps cover it. The last few seconds before the end are not metered.
+  microphone seconds each heartbeat adds (`input_tokens` holds the seconds; $0.024 a minute), so the
+  platform's daily cap covers it, as reported. The last few seconds before the end are not metered.
 - Audit events (identifiers and counts only): `call.started`, `call.refused`, `call.stt_granted`,
   `call.terminated` (with the cause), `call.ended`, `call.access` (denied), `turn.interrupted`,
   `turn.interrupt_refused`, `turn.rejected` (voice admission), `speech.synthesized` (`crisis_support` for the
@@ -249,8 +251,8 @@ Anam or HeyGen LiveAvatar adapter needs (CSP hosts, Secrets Manager key, token r
   platform voice otherwise, for 10 minutes after the turn and at most 5 times; the written message stays on
   screen.
 - **Safety and cost.** Spoken turns go through the same validators, escalation and memory approval as typed
-  ones. The AI kill switch, `calls_enabled`, the daily spend caps (which include speech and speech-to-text),
-  the per-call and daily minute caps and the spoken-turn rate limit always apply to everything but the crisis
-  message.
+  ones. The AI kill switch, `calls_enabled`, the platform's daily spend cap (which counts speech and
+  speech-to-text), the caller's own AI cap (which counts their model spend, not speech), the per-call and
+  daily minute caps and the spoken-turn rate limit always apply to everything but the crisis message.
 - **Before a production voice launch**, the University's privacy review covers student voice processing
   by Amazon Transcribe and the first-call notice.

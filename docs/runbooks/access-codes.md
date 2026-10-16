@@ -21,14 +21,15 @@ any time. Signing in sets a 12-hour session cookie.
 
 ## Issue a code
 
-1. **Admin → Principals** (platform admin) or the venture **Team** page (program lead invitation).
+1. **Admin → Principals** (platform admin) or the venture **Team** page (an invitation by a program lead or
+   platform admin, who may also list the team).
 2. Create the principal if needed (display name, title, roles or venture membership). Email is optional.
 3. **Issue access code**: label (e.g. "Fall cohort laptop") and expiry: a preset in the dialog, or through
    the API 1–365 days or none (`expiresInDays: null`; owner codes only, see above).
 4. Copy the code from the one-time dialog and deliver it. Closing the dialog discards it for good.
 
 API: `POST /api/v1/admin/principals/<principalId>/access-codes` with `{"label": "…", "expiresInDays": 30}`
-(admin), or `POST /api/v1/ventures/<ventureId>/team/invitations` (program lead). Non-GET calls need
+(admin), or `POST /api/v1/ventures/<ventureId>/team/invitations` (program lead or platform admin). Non-GET calls need
 `x-requested-with: foundry-ascent` and `x-amz-content-sha256` (see the kill-switch runbook for a curl example).
 
 **New code for an existing account (re-issue).** Issuing a code to someone who already has (or had) one
