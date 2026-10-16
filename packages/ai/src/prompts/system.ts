@@ -9,9 +9,9 @@ import type {
 
 import { RISK_ESCALATION_MAP } from '../risk/escalation-map.js';
 import { hasContinuity, type PromptContinuity } from './continuity.js';
-import { controlValue, renderControlBlock } from './control.js';
+import { AUTO_MODE, controlValue, renderControlBlock, type PromptMode } from './control.js';
 import { escapeData, escapeInline } from './escape.js';
-import { MODE_INSTRUCTIONS } from './modes.js';
+import { MODE_INSTRUCTIONS, autoModeInstructions, autoModes } from './modes.js';
 import { firstNameOf, resolvePersonaIdentity, type PersonaIdentity } from './persona.js';
 import { POLICY_VERSION } from './version.js';
 
@@ -44,7 +44,10 @@ export interface PromptVentureContext {
 
 export interface SystemPromptInput {
   release: PromptRelease;
-  mode: CoachMode;
+  /** A fixed coaching mode, or `auto` to let the model choose one within `allowedModes`. */
+  mode: PromptMode;
+  /** The modes the model may choose from in `auto` mode (the assignment's allowed modes). */
+  allowedModes?: readonly CoachMode[];
   policy: PromptPolicy;
   ventureContext: PromptVentureContext;
   /** Counterpart for rehearse mode, as named by the founder (untrusted; escaped). */
@@ -207,10 +210,17 @@ const VOICE_CHANNEL_RULES = [
   '  Markdown, lists, headings, citation ids like [E1] or URLs. End with at most one question.',
 ].join('\n');
 
-const OUTPUT_RULES = (mode: CoachMode, today: string, channel: TurnChannel): string =>
+const OUTPUT_RULES = (
+  mode: PromptMode,
+  allowed: readonly CoachMode[],
+  today: string,
+  channel: TurnChannel,
+): string =>
   [
     'Output: return exactly one JSON object matching the CoachResponse schema.',
-    `- mode: "${mode}".`,
+    mode === AUTO_MODE
+      ? `- mode: the mode you chose, one of ${allowed.map((m) => `"${m}"`).join(', ')}.`
+      : `- mode: "${mode}".`,
     '- answer: your reply to the founder as conversational Markdown, as described under "How you talk", with inline',
     '  [E#] citations.',
     channel === 'voice'
@@ -338,8 +348,11 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
   const today = input.today ?? new Date().toISOString().slice(0, 10);
   const channel: TurnChannel = input.channel ?? 'text';
   const founder = promptFirstName(input.continuity?.founderFirstName);
+  const auto = input.mode === AUTO_MODE;
+  const allowed = auto ? autoModes(input.allowedModes) : [];
+  const rehearsing = input.mode === 'rehearse' || (auto && allowed.includes('rehearse'));
   const counterpart =
-    input.mode === 'rehearse' && input.rehearsalCounterpart
+    rehearsing && input.rehearsalCounterpart
       ? controlValue(escapeInline(input.rehearsalCounterpart, 120), 120) || null
       : null;
   const threshold = Math.min(1, Math.max(0, input.policy.groundingThreshold));
@@ -348,6 +361,7 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
     renderControlBlock({
       policyVersion: POLICY_VERSION,
       mode: input.mode,
+      allowedModes: allowed,
       riskFlags: [...input.policy.riskCategories],
       crisis: input.policy.crisis === true,
       rehearsalCounterpart: counterpart,
@@ -370,7 +384,7 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
     ESCALATION_RULES,
     '',
     '# Mode',
-    MODE_INSTRUCTIONS[input.mode],
+    input.mode === AUTO_MODE ? autoModeInstructions(allowed) : MODE_INSTRUCTIONS[input.mode],
     '',
     `# Persona doctrine (approved release v${input.release.version})`,
     renderDoctrine(input.release.doctrine),
@@ -386,6 +400,6 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
     sections.push('', '# Continuity', CONTINUITY_RULES);
   }
   if (channel === 'voice') sections.push('', '# Voice call', VOICE_CHANNEL_RULES);
-  sections.push('', renderTurnPolicy(input.policy), '', OUTPUT_RULES(input.mode, today, channel));
+  sections.push('', renderTurnPolicy(input.policy), '', OUTPUT_RULES(input.mode, allowed, today, channel));
   return sections.join('\n');
 }

@@ -1,4 +1,4 @@
-import type { CoachMode } from '@foundry/contracts';
+import { CoachMode } from '@foundry/contracts';
 
 /** Mode-specific instructions (part of the versioned policy; bump POLICY_VERSION on change). */
 export const MODE_INSTRUCTIONS: Readonly<Record<CoachMode, string>> = {
@@ -52,3 +52,36 @@ export const MODE_INSTRUCTIONS: Readonly<Record<CoachMode, string>> = {
     '  and offer to escalate to the program lead (category "other", priority "P3", requested_role "program_lead").',
   ].join('\n'),
 };
+
+/** When each mode fits, for the model choosing one itself (auto mode). */
+const WHEN_TO_USE: Readonly<Record<CoachMode, string>> = {
+  diagnose: 'diagnose when you do not yet know where the venture stands or what the real problem is',
+  challenge: 'challenge when the founder presents a plan or claim to stress-test, or asks you to push back',
+  coach: 'coach when the founder must decide something or asks what to do next',
+  teach: 'teach when the founder asks how something works or what a concept means',
+  rehearse: 'rehearse only when the founder asks to practise a conversation',
+  route: 'route when the founder asks for program resources, support or people to talk to',
+};
+
+/** Allowed modes in a stable order; all but rehearse when none are given. */
+export function autoModes(allowed: readonly CoachMode[] | undefined): CoachMode[] {
+  const set = new Set(allowed ?? CoachMode.options.filter((m) => m !== 'rehearse'));
+  const modes = CoachMode.options.filter((m) => set.has(m));
+  return modes.length > 0 ? modes : ['diagnose'];
+}
+
+/**
+ * Auto mode: the model picks the one mode that fits the founder's message among `allowed`, sets `mode`
+ * to it and follows that mode's instructions (all of which are listed).
+ */
+export function autoModeInstructions(allowed: readonly CoachMode[]): string {
+  const modes = autoModes(allowed);
+  return [
+    `Mode: AUTO. Choose the one mode that best fits the founder's latest message from: ${modes.join(', ')}. Set`,
+    '`mode` to it and follow its instructions below. Prefer:',
+    ...modes.map((m) => `- ${WHEN_TO_USE[m]};`),
+    'Stay in the mode of the conversation so far unless the founder clearly changes direction.',
+    '',
+    ...modes.flatMap((m, i) => (i === 0 ? [MODE_INSTRUCTIONS[m]] : ['', MODE_INSTRUCTIONS[m]])),
+  ].join('\n');
+}

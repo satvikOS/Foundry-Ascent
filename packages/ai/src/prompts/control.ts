@@ -1,5 +1,10 @@
 import { CoachMode, RiskCategory, TurnChannel } from '@foundry/contracts';
 
+/** The model picks the mode itself, within the allowed modes (no mode sent by the client). */
+export const AUTO_MODE = 'auto';
+/** A turn's mode as the prompt sees it: a fixed coaching mode, or `auto`. */
+export type PromptMode = CoachMode | typeof AUTO_MODE;
+
 /**
  * Machine-readable control block at the top of every system prompt. It tells the model the turn's
  * mode, flags and channel, and lets deterministic components (the mock gateway, evals) read the same
@@ -7,7 +12,9 @@ import { CoachMode, RiskCategory, TurnChannel } from '@foundry/contracts';
  */
 export interface PromptControl {
   policyVersion: string;
-  mode: CoachMode;
+  mode: PromptMode;
+  /** The modes the model may choose from in `auto` mode (empty otherwise). */
+  allowedModes: CoachMode[];
   riskFlags: RiskCategory[];
   crisis: boolean;
   rehearsalCounterpart: string | null;
@@ -36,6 +43,7 @@ export function renderControlBlock(control: PromptControl): string {
     BEGIN,
     `policy_version: ${control.policyVersion}`,
     `mode: ${control.mode}`,
+    `allowed_modes: ${control.allowedModes.length > 0 ? control.allowedModes.join(',') : 'none'}`,
     `risk_flags: ${control.riskFlags.length > 0 ? control.riskFlags.join(',') : 'none'}`,
     `crisis: ${control.crisis ? 'yes' : 'no'}`,
     `rehearsal_counterpart: ${control.rehearsalCounterpart ?? 'none'}`,
@@ -50,6 +58,20 @@ function optional(value: string | undefined): string | null {
   return value === undefined || value === '' || value === 'none' ? null : value;
 }
 
+function list<T>(
+  value: string | undefined,
+  schema: { safeParse(v: unknown): { success: boolean; data?: T } },
+): T[] {
+  return (value ?? 'none')
+    .split(',')
+    .map((f) => f.trim())
+    .filter((f) => f !== '' && f !== 'none')
+    .flatMap((f) => {
+      const parsed = schema.safeParse(f);
+      return parsed.success && parsed.data !== undefined ? [parsed.data] : [];
+    });
+}
+
 /** Parses the control block from a system prompt; returns null when absent or malformed. */
 export function parseControlBlock(system: string): PromptControl | null {
   const start = system.indexOf(BEGIN);
@@ -60,21 +82,15 @@ export function parseControlBlock(system: string): PromptControl | null {
     const idx = line.indexOf(':');
     if (idx > 0) fields.set(line.slice(0, idx).trim(), line.slice(idx + 1).trim());
   }
-  const mode = CoachMode.safeParse(fields.get('mode'));
-  if (!mode.success) return null;
-  const flags = (fields.get('risk_flags') ?? 'none')
-    .split(',')
-    .map((f) => f.trim())
-    .filter((f) => f !== '' && f !== 'none');
-  const riskFlags = flags.flatMap((f) => {
-    const parsed = RiskCategory.safeParse(f);
-    return parsed.success ? [parsed.data] : [];
-  });
+  const rawMode = fields.get('mode');
+  const mode = rawMode === AUTO_MODE ? AUTO_MODE : CoachMode.safeParse(rawMode).data;
+  if (mode === undefined) return null;
   const channel = TurnChannel.safeParse(fields.get('channel'));
   return {
     policyVersion: fields.get('policy_version') ?? '',
-    mode: mode.data,
-    riskFlags,
+    mode,
+    allowedModes: list<CoachMode>(fields.get('allowed_modes'), CoachMode),
+    riskFlags: list<RiskCategory>(fields.get('risk_flags'), RiskCategory),
     crisis: fields.get('crisis') === 'yes',
     rehearsalCounterpart: optional(fields.get('rehearsal_counterpart')),
     channel: channel.success ? channel.data : 'text',

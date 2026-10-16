@@ -8,10 +8,12 @@ import {
   MAX_PROMPT_DIGESTS,
   buildContinuityBlock,
   buildRetrievalQuery,
+  lastQuestionOf,
   type PromptContinuity,
   type PromptNotebook,
 } from './continuity.js';
 import { parseControlBlock } from './control.js';
+import { MODE_INSTRUCTIONS, autoModeInstructions, autoModes } from './modes.js';
 import { buildEvidenceBlock } from './evidence.js';
 import { buildMessages } from './messages.js';
 import { buildVeirDisclosure, resolvePersonaIdentity, veirFirstName } from './persona.js';
@@ -222,6 +224,39 @@ describe('how the persona talks', () => {
   });
 });
 
+describe('auto mode', () => {
+  it('lets the model choose among the allowed modes and lists their instructions', () => {
+    const p = buildSystemPrompt({ ...BASE, mode: 'auto', allowedModes: ['coach', 'diagnose', 'teach'] });
+    expect(p).toContain(
+      "Mode: AUTO. Choose the one mode that best fits the founder's latest message from: diagnose, coach, teach.",
+    );
+    expect(p).toContain(MODE_INSTRUCTIONS.diagnose);
+    expect(p).toContain(MODE_INSTRUCTIONS.coach);
+    expect(p).toContain(MODE_INSTRUCTIONS.teach);
+    expect(p).not.toContain(MODE_INSTRUCTIONS.route);
+    expect(p).toContain('- mode: the mode you chose, one of "diagnose", "coach", "teach".');
+    expect(parseControlBlock(p)).toMatchObject({
+      mode: 'auto',
+      allowedModes: ['diagnose', 'coach', 'teach'],
+    });
+  });
+
+  it('defaults to every mode but rehearse, and keeps a counterpart only when rehearse is allowed', () => {
+    expect(autoModes(undefined)).toEqual(['diagnose', 'challenge', 'coach', 'teach', 'route']);
+    expect(autoModes([])).toEqual(['diagnose']);
+    const without = buildSystemPrompt({ ...BASE, mode: 'auto', rehearsalCounterpart: 'a buyer' });
+    expect(parseControlBlock(without)?.rehearsalCounterpart).toBeNull();
+    const withRehearse = buildSystemPrompt({
+      ...BASE,
+      mode: 'auto',
+      allowedModes: ['coach', 'rehearse'],
+      rehearsalCounterpart: 'a buyer',
+    });
+    expect(parseControlBlock(withRehearse)?.rehearsalCounterpart).toBe('a buyer');
+    expect(autoModeInstructions(['rehearse'])).toContain('rehearse only when the founder asks to practise');
+  });
+});
+
 describe('voice channel', () => {
   it('asks for a short spoken reply on a call and none in chat', () => {
     const voice = buildSystemPrompt({ ...BASE, channel: 'voice' });
@@ -370,27 +405,29 @@ describe('continuity', () => {
 });
 
 describe('buildRetrievalQuery', () => {
-  it('adds a short, plain excerpt of the previous answer', () => {
-    const query = buildRetrievalQuery('Yes, the second one.', {
-      founderText: 'What should we test?',
-      answer: 'You could test **pricing** [E1] or the door counter [E2]. Which one first?',
-    });
-    expect(query).toBe('Yes, the second one.\nYou could test pricing or the door counter. Which one first?');
-  });
+  const previousAnswer =
+    'You could test **pricing** [E1] or the door counter [E2]. Which one should we test first? Think about cost.';
 
-  it('keeps the end of a long answer, cut at a word', () => {
-    const answer = `${'Background sentence. '.repeat(40)}Would the library pay for it?`;
-    const query = buildRetrievalQuery('Maybe', { answer }, 60);
-    expect(query.startsWith('Maybe\n')).toBe(true);
-    expect(query.endsWith('Would the library pay for it?')).toBe(true);
-    expect(query.length).toBeLessThanOrEqual('Maybe\n'.length + 60);
-  });
-
-  it('falls back to the previous founder message, or to the message alone', () => {
-    expect(buildRetrievalQuery('And then?', { founderText: 'Pricing for libraries', answer: null })).toBe(
-      'And then?\nPricing for libraries',
+  it('reads a short reply together with the question the vEIR just asked', () => {
+    expect(buildRetrievalQuery({ founderText: 'Yes, the second one.', previousAnswer })).toBe(
+      'Yes, the second one.\nWhich one should we test first?',
     );
-    expect(buildRetrievalQuery('Pricing?', null)).toBe('Pricing?');
+    expect(lastQuestionOf(previousAnswer)).toBe('Which one should we test first?');
+  });
+
+  it('leaves a self-contained message alone, and adds the current goal', () => {
+    const founderText =
+      'How should we price the two-library pilot so the operations manager can sign it quickly?';
+    expect(buildRetrievalQuery({ founderText, previousAnswer })).toBe(founderText);
+    expect(
+      buildRetrievalQuery({ founderText, previousAnswer, currentGoal: 'Validate **paid** demand' }),
+    ).toBe(`${founderText}\nValidate paid demand`);
+  });
+
+  it('adds nothing when the previous answer asked no question', () => {
+    expect(buildRetrievalQuery({ founderText: 'OK', previousAnswer: 'Run the pilot. [E1]' })).toBe('OK');
+    expect(buildRetrievalQuery({ founderText: 'OK', previousAnswer: null, currentGoal: null })).toBe('OK');
+    expect(lastQuestionOf('')).toBeNull();
   });
 });
 

@@ -1,7 +1,7 @@
-import type { CoachResponse, CommitmentStatus, MemoryCandidate } from '@foundry/contracts';
+import type { CoachMode, CoachResponse, CommitmentStatus, MemoryCandidate } from '@foundry/contracts';
 
 import { DISTILL_SCHEMA_NAME, type DistillDraft } from '../distill/schema.js';
-import { parseControlBlock, type PromptControl } from '../prompts/control.js';
+import { AUTO_MODE, parseControlBlock, type PromptControl } from '../prompts/control.js';
 import { veirFirstName } from '../prompts/persona.js';
 import { COACH_RESPONSE_SCHEMA_NAME } from '../prompts/version.js';
 import { RISK_ESCALATION_MAP, primaryForcedCategory } from '../risk/escalation-map.js';
@@ -20,6 +20,7 @@ import {
   LEADS,
   TEACH_STEPS,
   TOPICS,
+  autoModeFor,
   topicOf,
   type MockTopic,
 } from './mock-content.js';
@@ -175,7 +176,10 @@ function quoteOf(text: string, max = 160): string {
  */
 export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
   const control = context.control;
-  const mode = control?.mode ?? 'coach';
+  const mode: CoachMode =
+    control?.mode === AUTO_MODE
+      ? autoModeFor(context.founderText, control.allowedModes)
+      : (control?.mode ?? 'coach');
   const channel = control?.channel ?? 'text';
   const seed = fnv1a(`${mode}|${context.founderText}`);
   const topic: MockTopic = topicOf(context.founderText);

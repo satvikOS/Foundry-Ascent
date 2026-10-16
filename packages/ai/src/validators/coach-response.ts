@@ -72,6 +72,11 @@ export interface ValidateCoachResponseOptions {
   coverageThreshold: number;
   /** Mode requested for the turn; the response's `mode` is corrected to it. */
   expectedMode?: CoachMode;
+  /**
+   * Auto mode (no `expectedMode`): the modes the model was allowed to choose from. A mode outside them is
+   * corrected to the first allowed one.
+   */
+  allowedModes?: readonly CoachMode[];
   /** Names of real EIRs / program staff the coach must never speak as. */
   eirNames?: readonly string[];
   /**
@@ -217,7 +222,8 @@ export function forcedEscalationFor(preRisk: { categories: readonly RiskCategory
  * Deterministic post-generation validator for coaching turns (system design §7 step 6):
  *
  * 1. schema (Zod) — invalid input is blocked with a safe placeholder response;
- * 2. mode corrected to the requested mode; `rehearsal` only in rehearse mode;
+ * 2. mode corrected to the requested mode (in auto mode, to an allowed one); `rehearsal` only in
+ *    rehearse mode;
  * 3. Markdown sanitised (no raw HTML, images, or non-https/mailto links), plain fields stripped;
  * 4. unknown evidence ids removed (claims, memory candidates, inline `[E#]` citations);
  * 5. `fact` claims without valid evidence downgraded to `inference`; grounding coverage computed;
@@ -273,7 +279,7 @@ export function validateCoachResponse(
     results.escalationForced = forced !== null;
     return {
       response: emptyResponse(
-        options.expectedMode ?? 'coach',
+        options.expectedMode ?? options.allowedModes?.[0] ?? 'coach',
         INVALID_RESPONSE_ANSWER,
         forcedProposal,
         channel,
@@ -289,6 +295,12 @@ export function validateCoachResponse(
   if (options.expectedMode !== undefined && r.mode !== options.expectedMode) {
     r.mode = options.expectedMode;
     notes.push('mode_corrected');
+  } else if (options.expectedMode === undefined && options.allowedModes !== undefined) {
+    const [firstAllowed] = options.allowedModes;
+    if (firstAllowed !== undefined && !options.allowedModes.includes(r.mode)) {
+      r.mode = firstAllowed;
+      notes.push('mode_corrected');
+    }
   }
   if (r.mode !== 'rehearse' && r.rehearsal !== null) {
     r.rehearsal = null;

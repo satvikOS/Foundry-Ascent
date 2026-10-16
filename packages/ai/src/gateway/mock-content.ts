@@ -1,4 +1,4 @@
-import type { MemoryType } from '@foundry/contracts';
+import type { CoachMode, MemoryType } from '@foundry/contracts';
 
 /**
  * Phrase banks for the offline mock model (local development, CI and e2e). They make the mock read like
@@ -395,6 +395,27 @@ export const TOPIC_ORDER: readonly MockTopic[] = [
 export function topicOf(text: string): MockTopic {
   const lower = text.toLowerCase();
   return TOPIC_ORDER.find((t) => TOPICS[t].match.test(lower)) ?? 'general';
+}
+
+/** Cues the mock uses to choose a mode in auto mode, in order of precedence. */
+const AUTO_MODE_CUES: readonly (readonly [CoachMode, RegExp])[] = [
+  ['rehearse', /\b(?:practi[cs]e|rehearse|role-?play|pretend to be)\b/],
+  ['route', /\b(?:resources?|office hours|workshops?|grants?|who (?:can|should) i talk to)\b/],
+  ['teach', /\b(?:what is|what's|what are|how does|explain|teach me|what does)\b/],
+  ['challenge', /\b(?:poke holes|stress[- ]test|devil'?s advocate|push back|challenge (?:me|this|my))\b/],
+  [
+    'coach',
+    /\b(?:should (?:we|i)|decide|which option|what (?:do|should) (?:we|i) do|next step|help me (?:choose|plan))\b/,
+  ],
+];
+
+/** The mode the mock picks for a message in auto mode: the first allowed cue, else diagnose. */
+export function autoModeFor(text: string, allowed: readonly CoachMode[]): CoachMode {
+  const lower = text.toLowerCase();
+  const options = allowed.length > 0 ? allowed : (['diagnose'] as const);
+  const cued = AUTO_MODE_CUES.find(([mode, cue]) => options.includes(mode) && cue.test(lower));
+  if (cued) return cued[0];
+  return options.includes('diagnose') ? 'diagnose' : (options[0] ?? 'diagnose');
 }
 
 /** Greetings by warmth; `{name}` is the founder's first name. */

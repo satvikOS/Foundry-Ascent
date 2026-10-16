@@ -32,7 +32,8 @@ const gateway = createModelGateway(modelGatewayConfigFromEnv(process.env, { logg
 const risk = classifyRisk(founderText, { otherVentureNames });
 if (risk.crisis) return buildCrisisResponse(mode, channel); // + draft a P1 safety escalation
 
-// 2. Retrieve evidence (core; query = buildRetrievalQuery(founderText, previousTurn)), then the prompt.
+// 2. Retrieve evidence (core; query = buildRetrievalQuery({ founderText, previousAnswer, currentGoal })),
+//    then assemble the prompt.
 const continuity = { founderFirstName, notebook, recentDigests, openCommitments }; // the vEIR's notes
 const system = buildSystemPrompt({
   release: {
@@ -223,7 +224,9 @@ continuity?, conversationGoal? })` — trusted instructions: identity (Foundry G
   P1 consequential: IP, legal, securities, medical/regulatory, safety, conflict; P2 expert judgment:
   pivots, pricing, fundraising readiness; P3 other/low grounding), the mode instructions (diagnose,
   challenge, coach, teach, rehearse — play the founder-named counterpart as a generic role, then score
-  with a rubric and critique —, route — recommend only `kind="resource"` evidence and cite it), the
+  with a rubric and critique —, route — recommend only `kind="resource"` evidence and cite it; or
+  `mode: 'auto'` with `allowedModes`: the model picks the mode that fits and follows its instructions,
+  and the validator's `allowedModes` keeps the choice within them), the
   approved doctrine and style, escaped venture context, how to use the vEIR's notes (when there are
   any), the voice-call rules (`channel: 'voice'`: `spoken` is ≤ 70 words of plain sentences, no
   Markdown, lists or citation keys; `answer` stays the full transcript text) and the per-turn policy
@@ -241,8 +244,9 @@ maxHistoryChars })` — the last N completed turns, then one user message with t
   questions, last advice, next opener), open commitments (overdue ones marked) and up to three recent
   `ConversationDigest`s with dates, newest first. Over budget, the oldest digests go first, then advice,
   open questions and the profile. Empty when there is nothing to remember.
-- `buildRetrievalQuery(founderText, previousTurn)` — the founder message plus a short, plain excerpt of
-  the previous answer, so "yes, the second one" still retrieves the right records.
+- `buildRetrievalQuery({ founderText, previousAnswer?, currentGoal? })` — the founder message; for a
+  short reply (under 12 words, e.g. "yes, the second one") the question the vEIR just asked; and the
+  current goal, so retrieval follows the conversation.
 - `resolvePersonaIdentity`, `veirFirstName("Corin's vEIR") === 'Corin'` and `buildVeirDisclosure({
 personaName, eirName })` (a disclosure that passes the persistent-disclosure checks).
 

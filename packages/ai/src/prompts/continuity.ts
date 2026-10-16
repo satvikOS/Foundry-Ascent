@@ -242,32 +242,51 @@ export function buildContinuityBlock(
   return `${truncate(block, maxChars - '\n</your_notes>'.length)}\n</your_notes>`;
 }
 
-/**
- * Retrieval query that understands the conversation: the founder's message plus a short excerpt of
- * the previous turn, so a reply such as "yes, the second one" still finds the right records. Citation
- * keys and Markdown are stripped from the excerpt.
- */
-export function buildRetrievalQuery(
-  founderText: string,
-  previous?: { founderText?: string | null; answer?: string | null } | null,
-  maxExcerptChars = 240,
-): string {
-  const current = founderText.trim();
-  const answer = previous?.answer?.trim() ?? '';
-  const source = answer !== '' ? answer : (previous?.founderText?.trim() ?? '');
-  if (source === '') return current;
-  const plain = source
+export interface RetrievalQueryInput {
+  /** The founder's new message. */
+  founderText: string;
+  /** The vEIR's previous answer in this conversation, if any. */
+  previousAnswer?: string | null;
+  /** The current goal (of the conversation, else of the venture), if set. */
+  currentGoal?: string | null;
+}
+
+/** Messages shorter than this many words are read together with the vEIR's previous question. */
+export const SHORT_REPLY_WORDS = 12;
+const MAX_QUESTION_CHARS = 300;
+const MAX_GOAL_CHARS = 300;
+
+function plainText(text: string): string {
+  return text
     .replace(/\s*\[\s*E\d+(?:\s*[,;]\s*E\d+)*\s*\]/gi, '')
     .replace(/[#>*_`~[\]()]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  if (plain === '') return current;
-  // The end of the previous answer is usually the question the founder is replying to.
-  let excerpt = plain;
-  if (plain.length > maxExcerptChars) {
-    excerpt = plain.slice(plain.length - maxExcerptChars);
-    const space = excerpt.indexOf(' ');
-    if (space > 0 && space < 30) excerpt = excerpt.slice(space + 1); // drop the cut-off first word
+}
+
+/** The last question the vEIR asked in `answer` (plain text), or null. */
+export function lastQuestionOf(answer: string): string | null {
+  const sentences = plainText(answer).split(/(?<=[.!?])\s+/);
+  for (let i = sentences.length - 1; i >= 0; i -= 1) {
+    const sentence = sentences[i]?.trim() ?? '';
+    if (sentence.endsWith('?')) return truncate(sentence, MAX_QUESTION_CHARS);
   }
-  return current === '' ? excerpt : `${current}\n${excerpt}`;
+  return null;
+}
+
+/**
+ * Retrieval query that understands the conversation: the founder's message; when it is a short reply
+ * (under 12 words, such as "yes, the second one") the question the vEIR just asked; and the current
+ * goal. Citation keys and Markdown are stripped from what is added.
+ */
+export function buildRetrievalQuery(input: RetrievalQueryInput): string {
+  const parts = [input.founderText.trim()];
+  const words = parts[0]?.split(/\s+/).filter((w) => w !== '').length ?? 0;
+  if (words < SHORT_REPLY_WORDS && input.previousAnswer) {
+    const question = lastQuestionOf(input.previousAnswer);
+    if (question !== null) parts.push(question);
+  }
+  const goal = plainText(input.currentGoal ?? '');
+  if (goal !== '') parts.push(truncate(goal, MAX_GOAL_CHARS));
+  return parts.filter((p) => p !== '').join('\n');
 }

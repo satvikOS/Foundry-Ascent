@@ -392,6 +392,31 @@ describe('mock conversation realism', () => {
     expect(checked.response.spoken).toBe(value.spoken);
   });
 
+  it('chooses a mode within the allowed modes in auto mode', async () => {
+    const gw = new MockModelGateway();
+    const auto = (text: string, allowedModes: CoachMode[]) => {
+      const request = veirTurn({ text });
+      return gw.generateStructured({
+        ...request,
+        system: buildSystemPrompt({
+          release: veirRelease,
+          mode: 'auto',
+          allowedModes,
+          policy: { riskCategories: [], groundingThreshold: 0.6 },
+          ventureContext: { name: 'Acme', stage: 'discovery', domain: 'software', currentGoal: null },
+          today: '2026-10-16',
+        }),
+      });
+    };
+    const all: CoachMode[] = ['diagnose', 'challenge', 'coach', 'teach', 'route'];
+    expect((await auto('What is a riskiest assumption?', all)).value.mode).toBe('teach');
+    expect((await auto('Should we launch in two libraries or one?', all)).value.mode).toBe('coach');
+    expect((await auto('Poke holes in our pricing plan.', all)).value.mode).toBe('challenge');
+    expect((await auto('Are there resources for hardware founders?', all)).value.mode).toBe('route');
+    expect((await auto('Our usage dropped last week.', all)).value.mode).toBe('diagnose');
+    expect((await auto('What is a riskiest assumption?', ['coach'])).value.mode).toBe('coach');
+  });
+
   it('recommends resources by title in route mode', async () => {
     const gw = new MockModelGateway();
     const resource: EvidenceItem = {

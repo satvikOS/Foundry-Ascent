@@ -93,6 +93,7 @@ describe('buildSystemPrompt', () => {
     expect(parseControlBlock(prompt)).toEqual({
       policyVersion: POLICY_VERSION,
       mode: 'diagnose',
+      allowedModes: [],
       riskFlags: [],
       crisis: false,
       rehearsalCounterpart: null,

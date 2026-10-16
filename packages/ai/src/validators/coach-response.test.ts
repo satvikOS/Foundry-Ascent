@@ -629,6 +629,17 @@ describe('mode and rehearsal', () => {
     expect(out.response.rehearsal).toBeNull();
     expect(out.results.notes).toEqual(expect.arrayContaining(['mode_corrected', 'rehearsal_removed']));
   });
+
+  it('in auto mode keeps the chosen mode when it is allowed and corrects it otherwise', () => {
+    const allowed = { allowedModes: ['diagnose', 'teach'] as const };
+    const kept = validateCoachResponse(base({ mode: 'teach' }), opts(allowed));
+    expect(kept.response.mode).toBe('teach');
+    expect(kept.results.notes).not.toContain('mode_corrected');
+    const corrected = validateCoachResponse(base({ mode: 'route' }), opts(allowed));
+    expect(corrected.response.mode).toBe('diagnose');
+    expect(corrected.results.notes).toContain('mode_corrected');
+    expect(validateCoachResponse(null, opts(allowed)).response.mode).toBe('diagnose');
+  });
 });
 
 describe('markdown sanitisation inside the validator', () => {
