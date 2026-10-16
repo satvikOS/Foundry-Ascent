@@ -6,11 +6,21 @@ import {
   MessageSquareText,
   Mic,
   MicOff,
+  MoreHorizontal,
   PhoneOff,
   type LucideIcon,
 } from 'lucide-react';
-import type { ComponentProps, KeyboardEvent, PointerEvent } from 'react';
+import { useRef, type ComponentProps, type KeyboardEvent, type PointerEvent } from 'react';
 
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Kbd } from '@/components/ui/kbd';
 import { SimpleTooltip } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -60,7 +70,7 @@ export function DockButton({
             ? 'border-foreground bg-foreground text-background hover:bg-foreground/90'
             : pressed
               ? 'border-border-strong bg-accent text-foreground hover:bg-accent/80'
-              : 'border-border bg-card/60 text-foreground hover:border-border-strong hover:bg-accent',
+              : 'glass text-foreground hover:bg-accent',
           className,
         )}
         {...props}
@@ -88,8 +98,9 @@ interface CallDockProps {
 }
 
 /**
- * The call's controls, one row: mute, push-to-talk, captions, type, switch to chat — and End, set apart.
- * Every control is a 48 px target with a name, a pressed state where it toggles, and its shortcut.
+ * The call's controls, one calm row: Mute, Captions, More — and End, set apart. More holds the rarer ones
+ * (push to talk, typing, switching to chat); their shortcuts work without opening it. Every control is a
+ * 48 px target with a name, a pressed state where it toggles, and its shortcut.
  */
 export function CallDock({
   name,
@@ -106,6 +117,8 @@ export function CallDock({
   onSwitchToChat,
   onEnd,
 }: CallDockProps) {
+  // Opening the typed line moves focus to it: the closing menu must not take it back to More.
+  const focusMoved = useRef(false);
   return (
     <div
       role="toolbar"
@@ -113,25 +126,15 @@ export function CallDock({
       className="flex items-center justify-center gap-2 sm:gap-3"
     >
       {voice ? (
-        <>
-          <DockButton
-            icon={muted ? MicOff : Mic}
-            label="Mute"
-            shortcut="M"
-            pressed={muted}
-            emphasis
-            disabled={disabled}
-            onClick={onMute}
-          />
-          <DockButton
-            icon={Hand}
-            label="Push to talk"
-            shortcut="P"
-            pressed={pushToTalk}
-            disabled={disabled}
-            onClick={onPushToTalk}
-          />
-        </>
+        <DockButton
+          icon={muted ? MicOff : Mic}
+          label="Mute"
+          shortcut="M"
+          pressed={muted}
+          emphasis
+          disabled={disabled}
+          onClick={onMute}
+        />
       ) : null}
       <DockButton
         icon={captions ? Captions : CaptionsOff}
@@ -140,17 +143,60 @@ export function CallDock({
         pressed={captions}
         onClick={onCaptions}
       />
-      {voice ? (
-        <DockButton
-          icon={Keyboard}
-          label="Type instead"
-          shortcut="T"
-          pressed={typing}
-          disabled={disabled}
-          onClick={onTyping}
-        />
-      ) : null}
-      <DockButton icon={MessageSquareText} label="Switch to chat" onClick={onSwitchToChat} />
+      {/* Not modal: choosing Type instead moves focus to the typed line while the menu closes. */}
+      <DropdownMenu modal={false}>
+        <SimpleTooltip content="More call controls">
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label="More call controls"
+              className={cn(roundButton, 'glass text-foreground hover:bg-accent')}
+            >
+              <MoreHorizontal aria-hidden />
+            </button>
+          </DropdownMenuTrigger>
+        </SimpleTooltip>
+        <DropdownMenuContent
+          align="center"
+          side="top"
+          className="w-56"
+          onCloseAutoFocus={(event) => {
+            if (focusMoved.current) event.preventDefault();
+            focusMoved.current = false;
+          }}
+        >
+          {voice ? (
+            <>
+              <DropdownMenuCheckboxItem
+                checked={pushToTalk}
+                disabled={disabled}
+                onCheckedChange={onPushToTalk}
+              >
+                <Hand aria-hidden />
+                Push to talk
+                <DropdownMenuShortcut>P</DropdownMenuShortcut>
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={typing}
+                disabled={disabled}
+                onCheckedChange={() => {
+                  focusMoved.current = !typing;
+                  onTyping();
+                }}
+              >
+                <Keyboard aria-hidden />
+                Type instead
+                <DropdownMenuShortcut>T</DropdownMenuShortcut>
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuSeparator />
+            </>
+          ) : null}
+          <DropdownMenuItem onSelect={onSwitchToChat}>
+            <MessageSquareText aria-hidden />
+            Switch to chat
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       <SimpleTooltip content={`End call with ${name}`}>
         <button
           type="button"

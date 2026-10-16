@@ -99,7 +99,8 @@ describe('CallLive', () => {
     const names = within(controls)
       .getAllByRole('button')
       .map((b) => b.getAttribute('aria-label'));
-    expect(names).toEqual(['Mute', 'Push to talk', 'Captions', 'Type instead', 'Switch to chat', 'End call']);
+    // A calm row: the rarer controls live under More.
+    expect(names).toEqual(['Mute', 'Captions', 'More call controls', 'End call']);
     expect(within(controls).getByRole('button', { name: 'Captions' })).toHaveAttribute(
       'aria-pressed',
       'true',
@@ -109,6 +110,22 @@ describe('CallLive', () => {
     expect(engine.setMuted).toHaveBeenCalledWith(true);
     await userEvent.click(within(controls).getByRole('button', { name: 'End call' }));
     expect(engine.end).toHaveBeenCalledWith('user');
+  });
+
+  it('keeps push to talk, typing and switching to chat under More, with their state', async () => {
+    const { engine, switched } = renderLive({ talkMode: 'push_to_talk' });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'More call controls' }));
+    const menu = await screen.findByRole('menu');
+    expect(within(menu).getByRole('menuitemcheckbox', { name: /Push to talk/ })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+    await user.click(within(menu).getByRole('menuitemcheckbox', { name: /Push to talk/ }));
+    expect(engine.setTalkMode).toHaveBeenCalledWith('hands_free');
+    await user.click(screen.getByRole('button', { name: 'More call controls' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Switch to chat' }));
+    expect(switched()).toBe(1);
   });
 
   it('has keyboard shortcuts for mute, push-to-talk and captions', async () => {
@@ -178,7 +195,8 @@ describe('CallLive', () => {
 
   it('opens a typed line during a voice call', async () => {
     const { engine } = renderLive();
-    await userEvent.click(await screen.findByRole('button', { name: 'Type instead' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'More call controls' }));
+    await userEvent.click(await screen.findByRole('menuitemcheckbox', { name: /Type instead/ }));
     const line = screen.getByRole('textbox', { name: "Reply to Corin's vEIR" });
     expect(line).toHaveFocus();
     await userEvent.type(line, 'Quick note{Enter}');

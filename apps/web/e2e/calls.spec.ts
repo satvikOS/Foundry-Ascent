@@ -246,7 +246,7 @@ test.describe('vEIR calls', () => {
 
   test('call from the sidebar: typed fallback, reply in captions, mini bar, summary', async ({ page }) => {
     await voiceNoticeSeen(page);
-    const ventureId = await openVenture(page);
+    await openVenture(page);
     const token = runToken();
     let sessionId = '';
     let callId = '';
@@ -347,9 +347,13 @@ test.describe('vEIR calls', () => {
       await expect(callScreen(page)).toBeVisible();
     });
 
-    await test.step('ending shows the summary; Keep needs the founder', async () => {
+    await test.step('ending shows the summary; what the call learned is saved with no click', async () => {
       const ended = page.waitForRequest(
         (request) => request.url().endsWith(`/calls/${callId}/end`) && request.method() === 'POST',
+      );
+      const endResponse = page.waitForResponse(
+        (response) =>
+          response.url().endsWith(`/calls/${callId}/end`) && response.request().method() === 'POST',
       );
       await callScreen(page).getByRole('button', { name: 'End call' }).click();
       const screen = callScreen(page);
@@ -357,23 +361,14 @@ test.describe('vEIR calls', () => {
       expect((await ended).postDataJSON()).toMatchObject({ reason: 'user' });
       await expect(screen.getByRole('note', { name: 'AI disclosure' })).toHaveCount(1);
       await expectNoBareEirName(page, 'the after-call summary');
-      // The call's turn proposed what to remember; nothing is kept until the founder says so, through the
-      // app's one review path.
-      const keep = screen.getByRole('button', { name: /^Keep: / }).first();
-      await expect(keep).toBeVisible();
-      const approved = page.waitForResponse(
-        (response) =>
-          response.url().endsWith(`/ventures/${ventureId}/memory/batch`) &&
-          response.request().method() === 'POST',
-      );
-      await keep.click();
-      const review = await approved;
-      const sent = review.request().postDataJSON() as { ids: string[]; action: string };
-      expect(sent).toMatchObject({ action: 'approve' });
-      expect(sent.ids).toHaveLength(1);
-      await expect(screen.getByText('Kept').first()).toBeVisible();
+      // What the call's turn learned is already in Knowledge: one quiet line, nothing to keep or decline.
+      const { summary } = (await (await endResponse).json()) as { summary: { memoryProposalIds: string[] } };
+      expect(summary.memoryProposalIds.length).toBeGreaterThan(0);
+      await expect(screen.getByTestId('memory-saved')).toContainText('Saved to Knowledge:');
+      await expect(screen.getByRole('button', { name: /^(Keep|Not now)/ })).toHaveCount(0);
+      await expect(screen.getByText(/would like to remember/)).toHaveCount(0);
       // Leave the venture's memory as it was.
-      for (const id of sent.ids) await deleteMemory(page.request, id);
+      for (const id of summary.memoryProposalIds) await deleteMemory(page.request, id);
       await screen.getByRole('button', { name: 'Back to conversation' }).click();
       await expect(callScreen(page)).toBeHidden();
       await expect(page).toHaveURL(new RegExp(`/c/${sessionId}$`));
@@ -675,7 +670,9 @@ test.describe('vEIR calls', () => {
       await expect(captions).toHaveAttribute('aria-pressed', 'false');
       await page.keyboard.press('Enter');
 
-      await screen.getByRole('button', { name: 'Switch to chat' }).click();
+      // The rarer controls live under More, reachable by keyboard too.
+      await screen.getByRole('button', { name: 'More call controls' }).click();
+      await page.getByRole('menuitem', { name: 'Switch to chat' }).click();
       await expect(screen).toBeHidden();
       await expect(page.getByRole('region', { name: /^Call with / })).toHaveCount(0);
       await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'New chat' }).click();
@@ -800,7 +797,7 @@ test.describe('vEIR calls', () => {
       const screen = callScreen(page);
       await expect(screen.getByRole('textbox', { name: /^Reply to / })).toBeVisible();
       await expectNoHorizontalScroll(page);
-      for (const name of ['Captions', 'Switch to chat', 'End call']) {
+      for (const name of ['Captions', 'More call controls', 'End call']) {
         await expectReachable(page, screen.getByRole('button', { name }));
       }
       await screen.getByRole('button', { name: 'End call' }).click();
