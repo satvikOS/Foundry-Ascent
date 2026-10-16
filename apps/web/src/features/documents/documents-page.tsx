@@ -94,7 +94,7 @@ function UploadRow({
   onDismiss: () => void;
 }) {
   return (
-    <li className="grid gap-2 py-3">
+    <li className="grid grid-cols-1 gap-2 py-3">
       <div className="flex items-center gap-3">
         {item.status === 'done' ? (
           <CircleCheck aria-hidden className="size-4 shrink-0 text-success" />
@@ -363,7 +363,7 @@ export function DocumentsPage() {
       ) : null}
 
       {rejections.length > 0 || queue.items.length > 0 ? (
-        <section aria-label="Uploads" className="mb-6 grid gap-3">
+        <section aria-label="Uploads" className="mb-6 grid grid-cols-1 gap-3">
           {rejections.length > 0 ? (
             <Alert
               variant="destructive"

@@ -293,7 +293,8 @@ describe('document viewer', () => {
     await user.keyboard('{Escape}');
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(within(dialog).queryByRole('searchbox')).toBeNull();
-    expect(within(dialog).getByRole('button', { name: 'Find in document' })).toHaveFocus();
+    // Back in the text, where the reader was.
+    expect(within(dialog).getByRole('region', { name: 'exam-week-interviews.md' })).toHaveFocus();
     expect(dialog.querySelectorAll('mark[data-find-index]')).toHaveLength(0);
   });
 

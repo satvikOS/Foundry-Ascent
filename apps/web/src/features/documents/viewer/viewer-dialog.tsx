@@ -30,7 +30,6 @@ import {
   type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
-  type Ref,
 } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -131,7 +130,6 @@ export default function DocumentViewerDialog({ ventureId, target, onClose, retur
   const header = useRef<HTMLDivElement | null>(null);
   const footer = useRef<HTMLDivElement | null>(null);
   const findInput = useRef<HTMLInputElement | null>(null);
-  const findButton = useRef<HTMLButtonElement | null>(null);
 
   const document_ = subject.state === 'document' ? subject.document : null;
   const kind = document_ ? documentKind(document_.contentType) : null;
@@ -204,9 +202,10 @@ export default function DocumentViewerDialog({ ventureId, target, onClose, retur
     setFindOpen(true);
     setFindFocus((n) => n + 1);
   };
+  // Closing find returns to the text (keyboard scrolling goes on where the reader was).
   const closeFind = () => {
     setFindOpen(false);
-    findButton.current?.focus();
+    scrollRoot?.focus({ preventScroll: true });
   };
   const step = (delta: number) => {
     if (matches === 0) return;
@@ -391,7 +390,6 @@ export default function DocumentViewerDialog({ ventureId, target, onClose, retur
                 <div className="flex items-center gap-1">
                   {citedButton}
                   <IconButton
-                    ref={findButton}
                     label="Find in document"
                     hint="Find (⌘F)"
                     icon={Search}
@@ -490,7 +488,6 @@ export default function DocumentViewerDialog({ ventureId, target, onClose, retur
             >
               <div className="flex h-14 items-center justify-between gap-1 overflow-x-auto px-2">
                 <IconButton
-                  ref={findButton}
                   label="Find in document"
                   icon={Search}
                   pressed={findOpen}
@@ -519,7 +516,6 @@ function IconButton({
   pressed,
   disabled,
   onClick,
-  ref,
 }: {
   label: string;
   hint?: string;
@@ -527,12 +523,10 @@ function IconButton({
   pressed?: boolean;
   disabled?: boolean;
   onClick: () => void;
-  ref?: Ref<HTMLButtonElement>;
 }) {
   return (
     <SimpleTooltip content={hint ?? label}>
       <Button
-        ref={ref}
         variant="ghost"
         size="icon-sm"
         aria-label={label}
