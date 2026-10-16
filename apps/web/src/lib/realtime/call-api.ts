@@ -129,9 +129,12 @@ export async function fetchSpeech(
   } catch (error) {
     if (isAbortError(error)) throw error;
     if (!isApiError(error)) return { kind: 'failed' };
-    switch (error.serverCode) {
-      // A signed unit or the intro already voiced for this call: never ask for it again.
+    // The problem's `reason` says which refusal of a shared code (409 `conflict`, 429 `rate_limited`) it is.
+    switch (error.reason) {
+      // A signed unit or the intro already voiced for this call (or the crisis support line played as often
+      // as it may): it stays on screen and is never asked for again.
       case 'speech_already_played':
+      case 'crisis_speech_limit':
         return { kind: 'played' };
       // The call's or the person's speech budget is used up: words only for the rest of the call.
       case 'call_speech_limit':
@@ -191,6 +194,13 @@ export function callErrorMessage(error: unknown): string {
   if (isApiError(error) && error.detail && CALL_DETAIL_CODES.has(error.code)) return error.detail;
   return errorMessage(error);
 }
+
+/** Why a call ended, when it was not the founder's own choice (the summary and the mini bar say it). */
+export const CALL_END_LINES: Partial<Record<CallEndReason, string>> = {
+  timeout: 'The call reached its time limit.',
+  disabled: 'Calls were paused by the program.',
+  error: 'The connection was lost.',
+};
 
 /**
  * Why a call ended for its budget (`budget`), in plain words. The server ends a call for today's call

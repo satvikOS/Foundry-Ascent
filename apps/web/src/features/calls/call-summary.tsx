@@ -9,9 +9,10 @@ import { PersonaAvatar } from '@/components/faces/persona-avatar';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { toast } from '@/components/ui/toast';
+import { BlockedPanel } from '@/features/coach/blocked-panel';
 import { useVentureEscalations } from '@/lib/api/hooks/escalations';
 import { displayContent, memoryItemQueryOptions } from '@/lib/api/hooks/memory';
-import { budgetEndLine } from '@/lib/realtime/call-api';
+import { budgetEndLine, CALL_END_LINES } from '@/lib/realtime/call-api';
 import type { CallEnded } from '@/lib/realtime/call-engine';
 import { formatDate } from '@/lib/format';
 import { ESCALATION_CATEGORY_LABELS } from '@/lib/labels';
@@ -33,12 +34,6 @@ interface CallSummaryProps {
   onLeave: () => void;
 }
 
-const END_LINES: Partial<Record<CallEnded['reason'], string>> = {
-  timeout: 'The call reached its time limit.',
-  disabled: 'Calls were paused by the program.',
-  error: 'The connection was lost.',
-};
-
 /**
  * After a call (`POST /calls/:id/end`): how long it was, what the vEIR proposes to remember (Keep / Not
  * now, nothing is kept without the founder's say), the next actions it suggested and any request for a
@@ -55,18 +50,45 @@ export function CallSummaryPanel({
   onLeave,
 }: CallSummaryProps) {
   const headingRef = useRef<HTMLHeadingElement | null>(null);
+  const supportRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    headingRef.current?.focus();
+    // Support the call was showing comes first, and focus with it.
+    (supportRef.current ?? headingRef.current)?.focus();
   }, []);
   const summary = ended.summary;
   const exchanges = summary?.turnCount ?? ended.turnCount;
   // Ended for its budget: the refreshed call settings tell call minutes from the day's AI allowance.
   const config = useCallConfig(ventureId, ended.reason === 'budget');
   const endLine =
-    ended.reason === 'budget' ? budgetEndLine(config.data?.remainingMinutesToday) : END_LINES[ended.reason];
+    ended.reason === 'budget'
+      ? budgetEndLine(config.data?.remainingMinutesToday)
+      : CALL_END_LINES[ended.reason];
 
   return (
     <div className="mx-auto flex w-full max-w-xl flex-col items-center px-4 pt-6 pb-8 text-center sm:pt-10">
+      {ended.blocked ? (
+        // The call ended while it showed support (crisis lines, a request for a person): it stays, above the
+        // summary, until the founder leaves it. Following its link leaves the call behind too.
+        <div
+          ref={supportRef}
+          role="region"
+          aria-label="Support"
+          tabIndex={-1}
+          className="mb-8 w-full text-left outline-none"
+          onClick={(event) => {
+            if (event.target instanceof Element && event.target.closest('a')) onLeave();
+          }}
+        >
+          <BlockedPanel
+            tenant={tenant}
+            ventureId={ventureId}
+            supportMessage={ended.blocked.supportMessage}
+            reason={ended.blocked.reason}
+            escalationId={ended.blocked.escalationId}
+            personaName={veir.name}
+          />
+        </div>
+      ) : null}
       <PersonaAvatar name={veir.name} portraitUrl={veir.portraitUrl} size="xl" decorative />
       <h2 ref={headingRef} tabIndex={-1} className="mt-5 font-serif text-heading font-normal outline-none">
         Call ended

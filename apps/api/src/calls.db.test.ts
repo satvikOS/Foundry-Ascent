@@ -122,6 +122,16 @@ describe('a call over HTTP', () => {
       cookie: maya,
     });
     expect((await problem(forged, 422)).code).toBe('validation_failed');
+    // The intro is voiced once per call: asked again, it is refused with the reason the call screen acts on
+    // (show it, never ask again), next to the generic code.
+    const replayed = await problem(
+      await api.request('/speech', {
+        body: { sessionId, turnId: null, seq: 0, text: intro.text, sig: intro.sig },
+        cookie: maya,
+      }),
+      409,
+    );
+    expect(replayed).toMatchObject({ code: 'conflict', reason: 'speech_already_played' });
 
     const grant = await json(
       await api.request(`/calls/${callId}/stt-grant`, { method: 'POST', cookie: maya }),

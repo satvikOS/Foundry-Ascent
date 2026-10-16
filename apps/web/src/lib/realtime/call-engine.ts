@@ -1,4 +1,4 @@
-import type { CallEndReason, CallState, SttGrant, TurnView } from '@foundry/contracts';
+import type { CallEndReason, CallState, SttGrant, TurnBlockedDetail, TurnView } from '@foundry/contracts';
 
 import type { CreateTurnBody, StreamTurnOptions, TurnStreamEventT } from '../api/sse';
 import type { AvatarState, SpokenUnit } from './avatar';
@@ -14,7 +14,13 @@ import {
   type PreparedBeacon,
   type StartCallResult,
 } from './call-api';
-import { MicCapture, MicrophoneError, requestMicrophone, type CaptureAudio } from './capture';
+import {
+  MicCapture,
+  MicrophoneError,
+  requestMicrophone,
+  type CaptureAudio,
+  type TrackChange,
+} from './capture';
 import { Endpointer, floorWords } from './endpointing';
 import { SpeechPlayer, type PlayerAudio, type SpeechFetchResult, type SpeechUnitToPlay } from './playback';
 import { IDLE_CALL, type CallEnded, type CallSnapshot, type TalkMode, type TypedReason } from './call-state';
@@ -89,6 +95,8 @@ export interface CallEngineMedia {
   createSocket: WebSocketFactory;
   synthesis: PlayerAudio['synthesis'];
   createUtterance(text: string): SpeechSynthesisUtterance;
+  /** The browser's `devicechange` (a microphone plugged in or out), where it has one. */
+  watchDevices?: CaptureAudio['watchDevices'];
 }
 
 export interface CallClock {
@@ -115,6 +123,8 @@ export interface CallTuning {
   readonly maxMissedHeartbeats: number;
   /** Suggest push-to-talk after this many ducks that no word confirmed (speakers without headphones). */
   readonly falseBargeInHint: number;
+  /** A microphone the system keeps silent this long (another app took it, a hardware mute) is gone. */
+  readonly micSilentMs: number;
 }
 
 export const DEFAULT_TUNING: CallTuning = {
@@ -126,6 +136,7 @@ export const DEFAULT_TUNING: CallTuning = {
   warnSeconds: 120,
   maxMissedHeartbeats: 3,
   falseBargeInHint: 3,
+  micSilentMs: 6_000,
 };
 
 export interface CallEngineDeps {
@@ -192,6 +203,11 @@ export class CallEngine {
   private turn: ActiveTurn | null = null;
   /** The crisis turn whose fixed support line is being said (never cut off). */
   private crisisTurnId: string | null = null;
+  /**
+   * The crisis support line of a call that ended while it was being said: its player and audio outlive the
+   * call until the line has been heard to its end (released then, or when the page goes away).
+   */
+  private lingering: { readonly player: SpeechPlayer; readonly context: CallAudioContext } | null = null;
   private readonly pendingLines: string[] = [];
   private beacon: PreparedBeacon | null = null;
   private founderLevel = 0;
@@ -209,6 +225,7 @@ export class CallEngine {
   private bargeTimer: unknown = null;
   private releaseTimer: unknown = null;
   private reconnectTimer: unknown = null;
+  private micSilentTimer: unknown = null;
   private missedHeartbeats = 0;
   private falseBargeIns = 0;
   private warned = false;
@@ -415,14 +432,18 @@ export class CallEngine {
     }
     if (phase !== 'live') return;
     const durationSeconds = this.elapsedSeconds();
+    // Whatever ends the call (its time limit, the server, lost heartbeats, the founder), the crisis support
+    // line is heard to its end and the support stays on screen: everything else closes now.
+    const support = supportShown(this.snapshot.blocked);
+    const keepLine = this.sayingCrisisLine();
     this.epoch += 1;
-    this.teardown();
+    this.teardown(keepLine);
     this.set({
       phase: 'ending',
       activity: 'connecting',
       captions: IDLE_CALL.captions,
       notice: null,
-      blocked: null,
+      blocked: support,
       held: false,
       audioBlocked: false,
       queued: 0,
@@ -434,6 +455,7 @@ export class CallEngine {
       turnCount: this.turnCount,
       summary: null,
       summaryError: null,
+      blocked: support,
     };
     if (call) {
       try {
@@ -444,6 +466,7 @@ export class CallEngine {
           turnCount: result.summary.turnCount,
           summary: result.summary,
           summaryError: null,
+          blocked: support,
         };
         this.set({ call: result.call });
       } catch (error) {
@@ -466,10 +489,11 @@ export class CallEngine {
     }
     this.epoch += 1;
     this.teardown();
+    this.releaseLingering();
     this.set({ ...IDLE_CALL });
   }
 
-  /** After an ended or failed call: back to idle, ready for the next one. */
+  /** After an ended or failed call: back to idle, ready for the next one (a crisis line still plays out). */
   reset(): void {
     if (this.snapshot.phase === 'live' || this.snapshot.phase === 'starting') return;
     this.epoch += 1;
@@ -492,18 +516,72 @@ export class CallEngine {
   setMuted(muted: boolean): void {
     if (this.snapshot.phase !== 'live' || this.snapshot.input !== 'voice' || muted === this.snapshot.muted)
       return;
-    this.set({ muted, held: false });
+    // Muting also lets go of push-to-talk, and nothing reconnects while muted (on hold, reading support):
+    // unmuting starts speech-to-text afresh, with a fresh window to reconnect in.
+    this.set(muted ? { muted, held: false, talking: false, reconnecting: false } : { muted, held: false });
     this.capture?.setEnabled(!muted);
     if (muted) {
       // Close speech-to-text while muted: nothing is sent and nothing is billed.
       this.closeStt();
+      this.stopReconnecting();
+      this.stopWatchingSilentMic();
+      if (this.releaseTimer !== null) this.deps.clock.clearTimeout(this.releaseTimer);
+      this.releaseTimer = null;
       this.endpointer.discard();
       this.vad.reset();
       this.founderLevel = 0;
       this.setCaptions({ founder: null, founderLive: false });
     } else {
+      if (this.capture?.sourceMuted) this.watchSilentMic();
       void this.connectStt(this.epoch);
     }
+  }
+
+  /**
+   * After the microphone disconnected (or was refused when asked again): asks for it again and goes back to
+   * voice. Call it from a tap (Reconnect microphone). A call that started typed stays typed.
+   */
+  async reconnectMicrophone(): Promise<void> {
+    const s = this.snapshot;
+    const context = this.context;
+    const getUserMedia = this.deps.media.getUserMedia;
+    if (
+      s.phase !== 'live' ||
+      s.input !== 'typed' ||
+      s.call?.inputMode !== 'transcribe' ||
+      !(
+        s.typedReason === 'mic_lost' ||
+        s.typedReason === 'mic_denied' ||
+        s.typedReason === 'mic_unavailable'
+      ) ||
+      context === null ||
+      getUserMedia === null
+    ) {
+      return;
+    }
+    const epoch = this.epoch;
+    let stream: MediaStream;
+    try {
+      stream = await requestMicrophone(getUserMedia);
+    } catch (error) {
+      if (epoch !== this.epoch || this.snapshot.input !== 'typed') return;
+      const denied = error instanceof MicrophoneError && error.reason === 'denied';
+      this.set({ typedReason: denied ? 'mic_denied' : 'mic_unavailable' });
+      return;
+    }
+    const now = this.snapshot;
+    if (epoch !== this.epoch || now.phase !== 'live' || now.input !== 'typed') {
+      stopStream(stream);
+      return;
+    }
+    this.stopReconnecting();
+    this.set({
+      input: 'voice',
+      typedReason: null,
+      muted: false,
+      activity: now.activity === 'listening' ? 'connecting' : now.activity,
+    });
+    await this.startCapture(stream, context, epoch);
   }
 
   setTalkMode(talkMode: TalkMode): void {
@@ -546,6 +624,15 @@ export class CallEngine {
     const blocked = this.snapshot.blocked;
     const playing = this.player?.current ?? null;
     return blocked?.reason === 'crisis_support' && playing !== null && playing.turnId === this.crisisTurnId;
+  }
+
+  /** The crisis support line is being said, or is still to be said (being fetched after the block). */
+  private sayingCrisisLine(): boolean {
+    const player = this.player;
+    if (this.snapshot.blocked?.reason !== 'crisis_support' || this.crisisTurnId === null || !player?.busy) {
+      return false;
+    }
+    return player.current === null || player.current.turnId === this.crisisTurnId;
   }
 
   /**
@@ -598,6 +685,7 @@ export class CallEngine {
           context,
           getUserMedia: this.deps.media.getUserMedia ?? (() => Promise.reject(new Error('no microphone'))),
           createWorkletNode: (name, options) => this.deps.media.createWorkletNode(context, name, options),
+          watchDevices: this.deps.media.watchDevices,
         },
         stream,
       );
@@ -611,6 +699,10 @@ export class CallEngine {
       capture.onFrame((pcm, rms) => {
         this.onFrame(pcm, rms);
       });
+      capture.onTrackChange((change) => {
+        this.onTrackChange(change);
+      });
+      if (capture.sourceMuted) this.watchSilentMic();
     } catch {
       stopStream(stream);
       if (epoch !== this.epoch) return;
@@ -619,6 +711,35 @@ export class CallEngine {
       return;
     }
     await connecting;
+  }
+
+  /** The microphone went away or went silent at its source (unplugged, revoked, taken by another app). */
+  private onTrackChange(change: TrackChange): void {
+    if (change === 'ended') this.micLost();
+    else if (change === 'muted') this.watchSilentMic();
+    else this.stopWatchingSilentMic();
+  }
+
+  /** A source the system mutes for a moment comes back; one that stays muted is treated as gone. */
+  private watchSilentMic(): void {
+    const s = this.snapshot;
+    if (s.phase !== 'live' || s.input !== 'voice' || s.muted || this.micSilentTimer !== null) return;
+    this.micSilentTimer = this.deps.clock.setTimeout(() => {
+      this.micSilentTimer = null;
+      if (this.capture?.sourceMuted) this.micLost();
+    }, this.tuning.micSilentMs);
+  }
+
+  private stopWatchingSilentMic(): void {
+    if (this.micSilentTimer !== null) this.deps.clock.clearTimeout(this.micSilentTimer);
+    this.micSilentTimer = null;
+  }
+
+  /** Nothing the founder says can be heard any more: say so, and continue by typing (Reconnect offered). */
+  private micLost(): void {
+    const s = this.snapshot;
+    if (s.phase !== 'live' || s.input !== 'voice') return;
+    this.toTyped('mic_lost');
   }
 
   /** Speech-to-text should be connected and is not. */
@@ -685,7 +806,9 @@ export class CallEngine {
 
   /** The Transcribe socket dropped: reconnect with a fresh grant, or continue by typing after a while. */
   private sttLost(): void {
-    if (this.snapshot.phase !== 'live') return;
+    const s = this.snapshot;
+    // Muted meanwhile (a grant request that failed after the founder muted): unmuting reconnects.
+    if (s.phase !== 'live' || s.input !== 'voice' || s.muted) return;
     const now = this.deps.clock.now();
     this.reconnectSince ??= now;
     if (now - this.reconnectSince >= this.tuning.reconnectWindowMs) {
@@ -704,8 +827,17 @@ export class CallEngine {
     }, delay);
   }
 
+  private stopReconnecting(): void {
+    if (this.reconnectTimer !== null) this.deps.clock.clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.reconnectSince = null;
+    this.reconnectAttempt = 0;
+  }
+
   private toTyped(reason: TypedReason): void {
     this.closeStt();
+    this.stopReconnecting();
+    this.stopWatchingSilentMic();
     this.capture?.stop();
     this.capture = null;
     this.endpointer.discard();
@@ -965,7 +1097,9 @@ export class CallEngine {
 
   private createPlayer(context: CallAudioContext, sessionId: string): SpeechPlayer {
     const { clock, media, api } = this.deps;
-    return new SpeechPlayer(
+    // Events of a player that outlived its call (the crisis line) never touch the snapshot of a later call.
+    const current = () => player === this.player;
+    const player: SpeechPlayer = new SpeechPlayer(
       {
         context,
         fetchSpeech: (unit, signal) => api.fetchSpeech(sessionId, unit, signal),
@@ -979,6 +1113,7 @@ export class CallEngine {
       },
       {
         onUnitStart: (unit, route) => {
+          if (!current()) return;
           const turn = this.turn;
           if (turn && unit.turnId !== null && unit.turnId === turn.turnId && turn.firstAudioAt === null) {
             turn.firstAudioAt = clock.now();
@@ -993,21 +1128,28 @@ export class CallEngine {
           for (const listener of this.speakListeners) listener({ text: unit.text });
         },
         onUnitEnd: (unit, completed) => {
+          if (!current()) return;
           const turn = this.turn;
           if (!completed || turn?.turnId !== unit.turnId || unit.seq <= turn.heardSeq) return;
           turn.heardSeq = unit.seq;
           turn.heard.push({ seq: unit.seq, text: unit.text, ...(unit.sig ? { sig: unit.sig } : {}) });
         },
         onVoicePaused: () => {
-          this.set({ voicePaused: true });
+          if (current()) this.set({ voicePaused: true });
         },
         onIdle: () => {
-          if (this.snapshot.phase !== 'live') return;
+          if (player === this.lingering?.player) {
+            // The crisis line of a call that has ended was heard to its end: release its audio now.
+            this.releaseLingering();
+            return;
+          }
+          if (!current() || this.snapshot.phase !== 'live') return;
           if (this.turn && !this.turn.done) this.set({ activity: 'thinking' });
           else this.afterReply();
         },
       },
     );
+    return player;
   }
 
   // Heartbeat and limits ------------------------------------------------------------------------------
@@ -1109,13 +1251,15 @@ export class CallEngine {
     this.vad.reset();
   }
 
-  private teardown(): void {
+  /** Stops everything of the call; `keepCrisisLine` lets the crisis support line being said play out. */
+  private teardown(keepCrisisLine = false): void {
     const { clock } = this.deps;
     for (const timer of [this.heartbeatTimer, this.tickTimer]) if (timer !== null) clock.clearInterval(timer);
-    for (const timer of [this.bargeTimer, this.releaseTimer, this.reconnectTimer]) {
+    for (const timer of [this.bargeTimer, this.releaseTimer, this.reconnectTimer, this.micSilentTimer]) {
       if (timer !== null) clock.clearTimeout(timer);
     }
     this.heartbeatTimer = this.tickTimer = this.bargeTimer = this.releaseTimer = this.reconnectTimer = null;
+    this.micSilentTimer = null;
     this.turn?.controller.abort();
     this.turn = null;
     this.pendingLines.length = 0;
@@ -1125,7 +1269,30 @@ export class CallEngine {
     this.grant = null;
     this.beacon = null;
     this.founderLevel = 0;
-    this.releaseAudio();
+    if (keepCrisisLine) this.lingerCrisisLine();
+    else this.releaseAudio();
+  }
+
+  /** Keeps the player (and its audio) of the crisis line past the call, until it is heard to its end. */
+  private lingerCrisisLine(): void {
+    const { player, context } = this;
+    if (player === null || context === null) {
+      this.releaseAudio();
+      return;
+    }
+    this.releaseLingering();
+    this.player = null;
+    this.context = null;
+    context.removeEventListener('statechange', this.onAudioState);
+    this.lingering = { player, context };
+  }
+
+  private releaseLingering(): void {
+    const lingering = this.lingering;
+    this.lingering = null;
+    if (!lingering) return;
+    lingering.player.dispose();
+    if (lingering.context.state !== 'closed') void lingering.context.close().catch(() => undefined);
   }
 
   private releaseAudio(): void {
@@ -1137,6 +1304,15 @@ export class CallEngine {
     context.removeEventListener('statechange', this.onAudioState);
     if (context.state !== 'closed') void context.close().catch(() => undefined);
   }
+}
+
+/** Reasons whose panel is support for the founder (crisis lines, a safety hand-over), as BlockedPanel tells. */
+const SUPPORT_REASON = /crisis|safety|wellbeing|harm/i;
+
+/** The support a call was showing, kept with its summary when it ends; a held-back answer is not kept. */
+function supportShown(blocked: TurnBlockedDetail | null): TurnBlockedDetail | null {
+  if (blocked === null) return null;
+  return blocked.supportMessage !== null || SUPPORT_REASON.test(blocked.reason) ? blocked : null;
 }
 
 function errorName(error: unknown): string | null {

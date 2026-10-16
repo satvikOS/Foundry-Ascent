@@ -10,8 +10,11 @@ import type { VoiceRoute } from './playback';
 export type CallPhase = 'idle' | 'starting' | 'live' | 'ending' | 'ended' | 'failed';
 export type CallActivity = 'connecting' | 'listening' | 'thinking' | 'speaking';
 export type TalkMode = 'hands_free' | 'push_to_talk';
-/** Why the founder types instead of speaking. */
-export type TypedReason = 'stt_unavailable' | 'mic_denied' | 'mic_unavailable' | 'stt_failed';
+/**
+ * Why the founder types instead of speaking. `mic_lost`: the microphone was unplugged, revoked or kept silent
+ * by the system mid-call (the founder may reconnect it).
+ */
+export type TypedReason = 'stt_unavailable' | 'mic_denied' | 'mic_unavailable' | 'mic_lost' | 'stt_failed';
 
 /** A one-line notice under the stage (never spoken: only validated text is voiced). */
 export interface CallNotice {
@@ -37,6 +40,11 @@ export interface CallEnded {
   readonly summary: CallSummary | null;
   /** Why the summary could not be loaded (the call is over either way). */
   readonly summaryError: string | null;
+  /**
+   * The support the call was showing when it ended (crisis support, a safety hand-over): it stays above the
+   * summary until the founder leaves it.
+   */
+  readonly blocked: TurnBlockedDetail | null;
 }
 
 export interface CallSnapshot {

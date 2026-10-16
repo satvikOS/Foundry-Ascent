@@ -152,6 +152,38 @@ export function exceptionEvent(type: string, message: string): Uint8Array {
   );
 }
 
+// Microphone ------------------------------------------------------------------------------------------
+
+/** A microphone track: `enabled`, `stop()` and the events a browser fires on it (`ended`, `mute`, `unmute`). */
+export class FakeTrack extends EventTarget {
+  enabled = true;
+  muted = false;
+  readyState: MediaStreamTrackState = 'live';
+  stopped = 0;
+  stop = (): void => {
+    this.stopped += 1;
+    this.readyState = 'ended';
+  };
+  /** Test control: the device was unplugged or its permission revoked. */
+  unplug(): void {
+    this.readyState = 'ended';
+    this.dispatchEvent(new Event('ended'));
+  }
+  /** Test control: the system muted or unmuted the source (another app took it, an OS mute). */
+  setMuted(muted: boolean): void {
+    this.muted = muted;
+    this.dispatchEvent(new Event(muted ? 'mute' : 'unmute'));
+  }
+}
+
+/** A one-track microphone stream. */
+export function fakeMicStream(track = new FakeTrack()): { track: FakeTrack; stream: MediaStream } {
+  return {
+    track,
+    stream: { getAudioTracks: () => [track], getTracks: () => [track] } as unknown as MediaStream,
+  };
+}
+
 // Web Audio --------------------------------------------------------------------------------------------
 
 export class FakeAudioParam {

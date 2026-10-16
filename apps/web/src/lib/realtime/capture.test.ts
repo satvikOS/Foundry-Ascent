@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import workletSource from '../../../public/worklets/pcm-capture.js?raw';
 import { MicCapture, MicrophoneError, requestMicrophone, type CaptureAudio } from './capture';
-import { FakeAudioContext } from './testing';
+import { FakeAudioContext, fakeMicStream } from './testing';
 
 interface Posted {
   pcm: ArrayBuffer;
@@ -132,5 +132,44 @@ describe('MicCapture', () => {
     expect(track.stop).toHaveBeenCalled();
     context.worklets[0]?.emit(new Int16Array(800), 0.1);
     expect(frames).toHaveLength(1);
+  });
+
+  it('reports a microphone that is unplugged or silenced by the system, until stopped', async () => {
+    const context = new FakeAudioContext();
+    const deviceListeners = new Set<() => void>();
+    const audio = {
+      context,
+      getUserMedia: vi.fn(),
+      createWorkletNode: () => context.createWorkletNode(),
+      watchDevices: (listener: () => void) => {
+        deviceListeners.add(listener);
+        return () => deviceListeners.delete(listener);
+      },
+    } as unknown as CaptureAudio;
+    const { stream, track } = fakeMicStream();
+    const capture = await MicCapture.start(audio, stream);
+    const seen: string[] = [];
+    capture.onTrackChange((change) => seen.push(change));
+
+    track.setMuted(true);
+    expect(capture.sourceMuted).toBe(true);
+    track.setMuted(false);
+    track.unplug();
+    expect(seen).toEqual(['muted', 'unmuted', 'ended']);
+
+    // A device change re-checks the track: some browsers end it without firing `ended`.
+    const second = fakeMicStream();
+    const other = await MicCapture.start(audio, second.stream);
+    const otherSeen: string[] = [];
+    other.onTrackChange((change) => otherSeen.push(change));
+    second.track.readyState = 'ended';
+    for (const listener of deviceListeners) listener();
+    expect(otherSeen).toEqual(['ended']);
+
+    capture.stop();
+    other.stop();
+    expect(deviceListeners.size).toBe(0);
+    track.setMuted(true);
+    expect(seen).toEqual(['muted', 'unmuted', 'ended']);
   });
 });

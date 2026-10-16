@@ -46,6 +46,15 @@ export function browserCallDeps(
       createSocket: (url) => new WebSocket(url),
       synthesis,
       createUtterance: (text) => new SpeechSynthesisUtterance(text),
+      watchDevices:
+        typeof mediaDevices?.addEventListener === 'function'
+          ? (listener: () => void) => {
+              mediaDevices.addEventListener('devicechange', listener);
+              return () => {
+                mediaDevices.removeEventListener('devicechange', listener);
+              };
+            }
+          : null,
     },
     clock: {
       now: () => Date.now(),

@@ -1,3 +1,4 @@
+import { ProblemDetails } from '@foundry/contracts';
 import { DomainError } from '@foundry/core';
 import { DatabaseResumingError, DbError } from '@foundry/db';
 import { describe, expect, it } from 'vitest';
@@ -106,6 +107,28 @@ describe('problem mapping', () => {
       problemDetails(new DomainError('locked_out', 'x', { retryAfterSeconds: 0.2 }), 'r5').retryAfterSeconds,
     ).toBe(1);
     expect(problemDetails(new DomainError('not_found', 'x'), 'r6')).not.toHaveProperty('retryAfterSeconds');
+  });
+
+  it('sends the reasons a client acts on, and keeps every other reason in the audit log', () => {
+    // A call's speech budget and an already-played unit share their codes with other refusals: the
+    // reason tells the call screen which one it is.
+    for (const [code, reason] of [
+      ['rate_limited', 'call_speech_limit'],
+      ['rate_limited', 'daily_speech_limit'],
+      ['conflict', 'speech_already_played'],
+      ['conflict', 'crisis_speech_limit'],
+    ] as const) {
+      const body = problemDetails(new DomainError(code, 'Shown', { reason }), 'r7');
+      expect(body, reason).toMatchObject({ code, reason });
+      expect(ProblemDetails.parse(body).reason, reason).toBe(reason);
+    }
+    // Policy and authorization reasons say why access was refused: never sent.
+    for (const reason of ['not_member', 'kill_switch', 'unexpected_error', 'call_not_active']) {
+      expect(problemDetails(new DomainError('forbidden', 'No', { reason }), 'r8'), reason).not.toHaveProperty(
+        'reason',
+      );
+    }
+    expect(problemDetails(new DomainError('not_found', 'x'), 'r9')).not.toHaveProperty('reason');
   });
 
   it('includes field errors and a stable type URI', () => {

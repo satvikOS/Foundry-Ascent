@@ -4,6 +4,8 @@ import { PersonaAvatar } from '@/components/faces/persona-avatar';
 import { VeirBadge } from '@/components/faces/veir-badge';
 import { Button } from '@/components/ui/button';
 import { SimpleTooltip } from '@/components/ui/tooltip';
+import { budgetEndLine, CALL_END_LINES } from '@/lib/realtime/call-api';
+import type { CallSnapshot } from '@/lib/realtime/call-state';
 import { cn } from '@/lib/utils';
 
 import { useCall } from './call-context';
@@ -11,9 +13,26 @@ import { formatClock, spokenDuration, useCallClock } from './use-call-clock';
 import { useCallVeir } from './use-call-veir';
 
 /**
- * A call that continues while the person looks elsewhere: the vEIR's face and AI marker, the timer, mute,
- * back to the call and end. After a call ended out of view (its time ran out, or the program paused calls),
- * it offers the summary instead. Rendered by `MiniCallBar` only while there is a call to show.
+ * What the bar announces (its status region): the time warning, a microphone that went away, and the end
+ * of a call that ended out of view, with why. The call screen says these itself while it is open.
+ */
+function barAnnouncement(snapshot: CallSnapshot): string {
+  if (snapshot.phase === 'ended') {
+    const reason = snapshot.ended?.reason;
+    const why = reason === 'budget' ? budgetEndLine(undefined) : reason ? CALL_END_LINES[reason] : undefined;
+    return why ? `Call ended. ${why}` : 'Call ended.';
+  }
+  if (snapshot.typedReason === 'mic_lost') {
+    return 'Your microphone disconnected. Return to the call to reconnect it or type.';
+  }
+  return snapshot.notice?.kind === 'time_warning' ? snapshot.notice.message : '';
+}
+
+/**
+ * A call that continues while the person looks elsewhere: the vEIR's face and AI marker, the timer (and the
+ * time left near the end), mute, back to the call and end. After a call ended out of view (its time ran out,
+ * or the program paused calls), it says so and offers the summary instead. Rendered by `MiniCallBar` only
+ * while there is a call to show; while shown, the page's sticky headers sit below it (`--mini-call-height`).
  */
 export function MiniCallBarView() {
   const { engine, snapshot, showCall } = useCall();
@@ -24,15 +43,22 @@ export function MiniCallBarView() {
 
   const speaking = snapshot.phase === 'live' && snapshot.activity === 'speaking';
   const duration = ended ? (snapshot.ended?.durationSeconds ?? 0) : clock.elapsed;
+  const micLost = !ended && snapshot.typedReason === 'mic_lost';
 
   return (
     <section
       aria-label={`Call with ${veir.name}`}
       data-print="hide"
+      data-mini-call-bar=""
       className={cn(
-        'sticky top-(--header-height) z-20 flex h-12 shrink-0 items-center gap-2 border-b border-border bg-card/95 px-3 backdrop-blur-md supports-[backdrop-filter]:bg-card/80 sm:gap-3 sm:px-4 md:top-0',
+        // Below the phone bar when the page shows it, at the top otherwise (a conversation's own header
+        // replaces the phone bar, and sits below this bar).
+        'sticky top-(--phone-bar-height) z-20 flex h-(--mini-call-bar-height) shrink-0 items-center gap-2 border-b border-border bg-card/95 px-3 backdrop-blur-md supports-[backdrop-filter]:bg-card/80 sm:gap-3 sm:px-4 md:top-0',
       )}
     >
+      <span role="status" className="sr-only">
+        {barAnnouncement(snapshot)}
+      </span>
       <PersonaAvatar
         name={veir.name}
         portraitUrl={veir.portraitUrl}
@@ -63,6 +89,10 @@ export function MiniCallBarView() {
               <span className="sr-only">{spokenDuration(duration)}</span>
             </>
           )}
+          {!ended && clock.warning && clock.leftLabel ? (
+            <span className="font-medium text-warning"> · {clock.leftLabel}</span>
+          ) : null}
+          {micLost ? <span className="text-warning"> · Microphone disconnected</span> : null}
         </p>
         <VeirBadge kind={veir.kind} />
       </div>

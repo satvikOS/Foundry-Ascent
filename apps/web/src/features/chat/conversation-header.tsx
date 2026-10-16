@@ -77,7 +77,10 @@ export function ConversationHeader({
     .filter(Boolean)
     .join(' · ');
   return (
-    <header className="sticky top-0 z-20 border-b border-border bg-background" data-print="hide">
+    <header
+      className="sticky top-(--mini-call-height) z-20 border-b border-border bg-background"
+      data-print="hide"
+    >
       <div className="mx-auto flex h-14 w-full max-w-(--content-width) items-center gap-2.5 px-4 sm:px-6">
         {openNavigation ? (
           <Button

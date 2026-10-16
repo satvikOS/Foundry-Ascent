@@ -1,3 +1,4 @@
+import type { CallView } from '@foundry/contracts';
 import { fireEvent, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -9,6 +10,21 @@ import { IDS } from '@/lib/realtime/testing';
 import { callStatusLabel, CallLive } from './call-live';
 import { fakeEngine, LIVE, renderWithRouter } from './testing';
 import type { CallVeir } from './use-call-veir';
+
+const CALL: CallView = {
+  id: '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c01',
+  sessionId: IDS.session,
+  ventureId: IDS.venture,
+  personaId: IDS.persona,
+  status: 'live',
+  provider: 'builtin',
+  inputMode: 'transcribe',
+  startedAt: '2026-10-01T12:00:00.000Z',
+  endedAt: null,
+  endReason: null,
+  maxSeconds: 1200,
+  durationSeconds: null,
+};
 
 const VEIR: CallVeir = {
   name: "Corin's vEIR",
@@ -35,6 +51,11 @@ function renderLive(snapshot: Partial<CallSnapshot> = {}) {
   return { engine, switched: () => switched };
 }
 
+/** What the call's polite live regions say now. */
+function liveText(): string[] {
+  return [...document.querySelectorAll('[aria-live="polite"]')].map((element) => element.textContent);
+}
+
 beforeEach(() => {
   window.localStorage.clear();
   // jsdom has no pointer capture; the hold-to-talk button captures the pointer while held.
@@ -57,6 +78,12 @@ describe('callStatusLabel', () => {
     expect(callStatusLabel({ ...LIVE, talkMode: 'push_to_talk', talking: true })).toBe('Listening');
     expect(callStatusLabel(LIVE)).toBe('Listening');
     expect(callStatusLabel({ ...LIVE, phase: 'ending' })).toBe('Ending…');
+    // Audio the browser keeps silent (no gesture yet, an iOS interruption) is not "Speaking" or "Listening".
+    for (const activity of ['speaking', 'listening'] as const) {
+      expect(callStatusLabel({ ...LIVE, activity, audioBlocked: true })).toBe(
+        'Sound is off. Turn on sound to hear replies.',
+      );
+    }
   });
 });
 
@@ -127,6 +154,28 @@ describe('CallLive', () => {
     expect(line).toHaveValue('');
   });
 
+  it('says plainly when the microphone disconnected, and offers to reconnect it or type', async () => {
+    const { engine } = renderLive({
+      input: 'typed',
+      typedReason: 'mic_lost',
+      call: { ...CALL, inputMode: 'transcribe' },
+    });
+    const line = await screen.findByRole('textbox', { name: "Reply to Corin's vEIR" });
+    expect(line).toHaveFocus();
+    expect(screen.getByText('Your microphone disconnected. Reconnect it, or type instead.')).toHaveAttribute(
+      'role',
+      'status',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Reconnect microphone' }));
+    expect(engine.reconnectMicrophone).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers no microphone to a call that started typed', async () => {
+    renderLive({ input: 'typed', typedReason: 'mic_denied', call: { ...CALL, inputMode: 'typed' } });
+    await screen.findByRole('textbox', { name: "Reply to Corin's vEIR" });
+    expect(screen.queryByRole('button', { name: 'Reconnect microphone' })).toBeNull();
+  });
+
   it('opens a typed line during a voice call', async () => {
     const { engine } = renderLive();
     await userEvent.click(await screen.findByRole('button', { name: 'Type instead' }));
@@ -146,6 +195,26 @@ describe('CallLive', () => {
     fireEvent.keyDown(hold, { key: ' ' });
     expect(engine.pushToTalk).toHaveBeenLastCalledWith(true);
     fireEvent.keyUp(hold, { key: ' ' });
+    expect(engine.pushToTalk).toHaveBeenLastCalledWith(false);
+  });
+
+  it('lets go of push-to-talk when the window loses focus or the page is hidden', async () => {
+    const { engine } = renderLive({ talkMode: 'push_to_talk' });
+    await screen.findByRole('button', { name: 'Hold to talk' });
+    fireEvent.keyDown(document.body, { code: 'Space' });
+    expect(engine.pushToTalk).toHaveBeenLastCalledWith(true);
+    // Space released in another app never reaches the page.
+    fireEvent.blur(window);
+    expect(engine.pushToTalk).toHaveBeenLastCalledWith(false);
+
+    fireEvent.keyDown(document.body, { code: 'Space' });
+    expect(engine.pushToTalk).toHaveBeenLastCalledWith(true);
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    try {
+      fireEvent(document, new Event('visibilitychange'));
+    } finally {
+      Reflect.deleteProperty(document, 'visibilityState');
+    }
     expect(engine.pushToTalk).toHaveBeenLastCalledWith(false);
   });
 
@@ -173,14 +242,31 @@ describe('CallLive', () => {
     expect(result.switched()).toBe(1);
   });
 
+  it('keeps the support on screen while a call ends during it', async () => {
+    renderLive({
+      phase: 'ending',
+      activity: 'connecting',
+      muted: false,
+      blocked: { reason: 'crisis_support', escalationId: null, supportMessage: 'Call or text **988**.' },
+    });
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Call or text 988.');
+    expect(screen.getByRole('status')).toHaveTextContent('Ending…');
+    // Nothing to switch from any more: the summary, with the support above it, comes next.
+    expect(within(alert).queryByRole('button', { name: 'Switch to chat' })).toBeNull();
+  });
+
   it('adds the emergency line when a safety block has no support message', async () => {
     renderLive({ blocked: { reason: 'safety_wellbeing', escalationId: null, supportMessage: null } });
     expect(await screen.findByRole('alert')).toHaveTextContent(/local emergency number/);
   });
 
-  it('offers Turn on sound when the browser kept the call silent', async () => {
+  it('offers Turn on sound when the browser kept the call silent, and says so instead of Speaking', async () => {
     const { engine } = renderLive({ audioBlocked: true, activity: 'speaking' });
-    await userEvent.click(await screen.findByRole('button', { name: 'Turn on sound' }));
+    const button = await screen.findByRole('button', { name: 'Turn on sound' });
+    // The status line is announced: a screen reader hears why nothing can be heard, not "Speaking".
+    expect(screen.getByRole('status')).toHaveTextContent('Sound is off. Turn on sound to hear replies.');
+    await userEvent.click(button);
     expect(engine.resumeAudio).toHaveBeenCalled();
   });
 
@@ -239,10 +325,50 @@ describe('CallLive', () => {
   it('sizes captions and lets a screen reader follow them when asked', async () => {
     window.localStorage.setItem('fa.call.caption-size', 'lg');
     window.localStorage.setItem('fa.call.announce-captions', '1');
-    renderLive({ captions: { veir: 'Twelve is a good start.', founder: null, founderLive: false } });
+    renderLive({
+      activity: 'speaking',
+      captions: { veir: 'Twelve is a good start.', founder: null, founderLive: false },
+    });
     const line = (await screen.findByRole('region', { name: 'Captions' })).querySelector('p');
-    expect(line).toHaveAttribute('aria-live', 'polite');
     expect(line?.className).toMatch(/1\.5rem/);
+    expect(liveText()).toContain("Corin's vEIR: Twelve is a good start.");
+  });
+
+  it('does not read the captions over the vEIR’s voice unless asked', async () => {
+    renderLive({
+      activity: 'speaking',
+      captions: { veir: 'Twelve is a good start.', founder: null, founderLive: false },
+    });
+    expect(await screen.findByRole('region', { name: 'Captions' })).toHaveTextContent(
+      'Twelve is a good start.',
+    );
+    expect(liveText().some((text) => text.includes('Twelve'))).toBe(false);
+  });
+
+  it('reads the vEIR’s replies to a screen reader when they are on screen only', async () => {
+    renderLive({
+      activity: 'speaking',
+      voice: 'captions',
+      captions: { veir: 'Twelve is a good start.', founder: null, founderLive: false },
+    });
+    await screen.findByText('Replying on screen');
+    // No voice to talk over: each line is announced, without a setting to find first.
+    expect(liveText()).toContain("Corin's vEIR: Twelve is a good start.");
+  });
+
+  it('shows the vEIR’s reply when it is on screen only, even with captions turned off', async () => {
+    window.localStorage.setItem('fa.call.captions', '0');
+    renderLive({
+      activity: 'speaking',
+      voice: 'captions',
+      captions: { veir: 'Twelve is a good start.', founder: 'What about price?', founderLive: false },
+    });
+    const captions = await screen.findByRole('region', { name: 'Captions' });
+    expect(captions).toHaveTextContent('Twelve is a good start.');
+    // Only the reply: the founder chose not to see their own words.
+    expect(captions).not.toHaveTextContent('What about price?');
+    expect(liveText()).toContain("Corin's vEIR: Twelve is a good start.");
+    expect(screen.getByRole('button', { name: 'Captions' })).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('disables the controls until the call is live', async () => {

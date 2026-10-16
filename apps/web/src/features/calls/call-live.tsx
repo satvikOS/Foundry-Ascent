@@ -1,5 +1,5 @@
 import type { TurnBlockedDetail } from '@foundry/contracts';
-import { ArrowUp, Info, Play, Volume2, VolumeX } from 'lucide-react';
+import { ArrowUp, Info, Mic, Play, Volume2, VolumeX } from 'lucide-react';
 import { useEffect, useRef, useState, type RefObject } from 'react';
 
 import { DisclosureBanner } from '@/components/disclosure-banner';
@@ -20,6 +20,8 @@ import type { CallVeir } from './use-call-veir';
 export function callStatusLabel(snapshot: CallSnapshot): string {
   if (snapshot.phase === 'starting') return 'Connecting…';
   if (snapshot.phase === 'ending') return 'Ending…';
+  // Nothing can be heard until the founder taps Turn on sound: say that, not "Speaking" to silence.
+  if (snapshot.audioBlocked) return 'Sound is off. Turn on sound to hear replies.';
   if (snapshot.reconnecting) return 'Reconnecting…';
   if (snapshot.held) return 'On hold';
   switch (snapshot.activity) {
@@ -41,8 +43,19 @@ const TYPED_REASONS: Record<TypedReason, string> = {
   stt_unavailable: 'Voice input isn’t available here, so type instead.',
   mic_denied: 'Your microphone is blocked. Allow it in the browser’s site settings, or type instead.',
   mic_unavailable: 'No microphone found, so type instead.',
+  mic_lost: 'Your microphone disconnected. Reconnect it, or type instead.',
   stt_failed: 'Voice input stopped, so type instead.',
 };
+
+/** A voice call whose microphone went away (or was refused when asked again) can ask for it again. */
+function canReconnectMic(snapshot: CallSnapshot): boolean {
+  const reason = snapshot.typedReason;
+  return (
+    snapshot.input === 'typed' &&
+    snapshot.call?.inputMode === 'transcribe' &&
+    (reason === 'mic_lost' || reason === 'mic_denied' || reason === 'mic_unavailable')
+  );
+}
 
 function isInteractive(target: EventTarget | null): boolean {
   return (
@@ -118,7 +131,8 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: Cal
     live,
   );
 
-  // Hold Space anywhere on the call screen to talk (push-to-talk), unless a control has focus.
+  // Hold Space anywhere on the call screen to talk (push-to-talk), unless a control has focus. Space released
+  // in another app or tab never reaches the page, so leaving the window or hiding the page lets go too.
   useEffect(() => {
     if (!live || !pushToTalk || !voice) return undefined;
     const down = (event: KeyboardEvent) => {
@@ -131,17 +145,32 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: Cal
       event.preventDefault();
       engine.pushToTalk(false);
     };
+    const letGo = () => {
+      engine.pushToTalk(false);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') letGo();
+    };
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
+    window.addEventListener('blur', letGo);
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
       window.removeEventListener('keydown', down);
       window.removeEventListener('keyup', up);
+      window.removeEventListener('blur', letGo);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [engine, live, pushToTalk, voice]);
 
   const status = callStatusLabel(snapshot);
   const speaking = live && snapshot.activity === 'speaking';
   const halfDuplexInterrupt = speaking && voice && snapshot.halfDuplex;
+  // Replies on screen only (no voice for them): they are shown whatever the captions setting, and read to a
+  // screen reader, since there is no voice to talk over.
+  const onScreenOnly = snapshot.voice === 'captions';
+  const readCaptions = announceCaptions || onScreenOnly;
+  const veirLine = snapshot.captions.veir;
 
   return (
     // Content taller than the screen (support resources, a long caption) scrolls the call screen instead of
@@ -165,6 +194,10 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: Cal
             {veir.name}
             <VeirBadge kind={veir.kind} mode="Live voice" />
           </h2>
+          {/* Always present, so each new line is announced (a live region added with its text is not). */}
+          <p className="sr-only" aria-live="polite" aria-atomic="true">
+            {readCaptions && veirLine ? `${veir.name}: ${veirLine}` : ''}
+          </p>
           <p className="flex items-center gap-2 text-small text-muted-foreground">
             <span role="status" aria-live="polite">
               {status}
@@ -224,16 +257,16 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: Cal
             ventureId={snapshot.ventureId}
             blocked={snapshot.blocked}
             personaName={veir.name}
-            onSwitchToChat={onSwitchToChat}
+            onSwitchToChat={live ? onSwitchToChat : null}
           />
-        ) : captions ? (
+        ) : captions || onScreenOnly ? (
           <CallCaptions
             name={veir.name}
-            veir={snapshot.captions.veir}
-            founder={snapshot.captions.founder}
+            veir={veirLine}
+            founder={captions ? snapshot.captions.founder : null}
             founderLive={snapshot.captions.founderLive}
             size={captionSize}
-            announce={announceCaptions}
+            readAloud={readCaptions}
           />
         ) : null}
       </div>
@@ -266,6 +299,13 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: Cal
             onSend={(text) => {
               engine.sendText(text);
             }}
+            onReconnectMic={
+              live && canReconnectMic(snapshot)
+                ? () => {
+                    void engine.reconnectMicrophone();
+                  }
+                : null
+            }
           />
         ) : null}
         {voice && pushToTalk && live ? (
@@ -321,7 +361,8 @@ function CallBlocked({
   ventureId: string;
   blocked: TurnBlockedDetail;
   personaName: string;
-  onSwitchToChat: () => void;
+  /** Null while the call is ending: the support stays, and the summary follows it. */
+  onSwitchToChat: (() => void) | null;
 }) {
   return (
     <div role="alert" className="flex w-full max-w-xl flex-col gap-3 text-left">
@@ -333,9 +374,11 @@ function CallBlocked({
         escalationId={blocked.escalationId}
         personaName={personaName}
       />
-      <Button size="sm" variant="secondary" onClick={onSwitchToChat} className="self-center">
-        Switch to chat
-      </Button>
+      {onSwitchToChat ? (
+        <Button size="sm" variant="secondary" onClick={onSwitchToChat} className="self-center">
+          Switch to chat
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -369,10 +412,12 @@ interface TypeLineProps {
   queued: number;
   disabled: boolean;
   onSend: (text: string) => void;
+  /** The microphone went away mid-call: offered next to the reason. */
+  onReconnectMic: (() => void) | null;
 }
 
 /** One line to type to the vEIR during the call; it answers aloud like any spoken line. */
-function TypeLine({ inputRef, name, hint, queued, disabled, onSend }: TypeLineProps) {
+function TypeLine({ inputRef, name, hint, queued, disabled, onSend, onReconnectMic }: TypeLineProps) {
   const [text, setText] = useState('');
   const submit = (event: { preventDefault: () => void }) => {
     event.preventDefault();
@@ -384,9 +429,17 @@ function TypeLine({ inputRef, name, hint, queued, disabled, onSend }: TypeLinePr
   return (
     <form onSubmit={submit} className="w-full max-w-xl">
       {hint ? (
-        <p role="status" className="mb-2 text-center text-small text-muted-foreground">
-          {hint}
-        </p>
+        <div className="mb-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5">
+          <p role="status" className="text-center text-small text-muted-foreground">
+            {hint}
+          </p>
+          {onReconnectMic ? (
+            <Button type="button" size="sm" variant="secondary" onClick={onReconnectMic}>
+              <Mic aria-hidden />
+              Reconnect microphone
+            </Button>
+          ) : null}
+        </div>
       ) : null}
       <div className="flex items-center gap-2 rounded-full border border-border-strong bg-card py-1.5 pr-1.5 pl-4 shadow-xs transition-[border-color,box-shadow] duration-150 focus-within:border-ring/60 focus-within:shadow-md">
         <input

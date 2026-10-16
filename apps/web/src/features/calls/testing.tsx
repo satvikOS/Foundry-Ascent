@@ -97,6 +97,7 @@ export function fakeEngine() {
     interrupt: vi.fn(),
     resumeAudio: vi.fn(),
     resume: vi.fn(),
+    reconnectMicrophone: vi.fn(() => Promise.resolve()),
     end: vi.fn(() => Promise.resolve()),
     avatarState: vi.fn(() => 'listening' as const),
     levels: vi.fn(() => ({ veir: 0, founder: 0 })),

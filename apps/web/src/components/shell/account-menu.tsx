@@ -1,6 +1,7 @@
 import type { Me } from '@foundry/contracts';
 import { useNavigate } from '@tanstack/react-router';
 import { ChevronsUpDown, Flag, Keyboard, LogOut, Monitor, ShieldQuestion } from 'lucide-react';
+import { useState } from 'react';
 
 import { UserAvatar } from '@/components/faces/user-avatar';
 import {
@@ -20,6 +21,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { toast } from '@/components/ui/toast';
 import { SimpleTooltip } from '@/components/ui/tooltip';
+import { useEndCallBeforeSignOut } from '@/features/calls/call-context';
 import { useSignOut } from '@/lib/api/hooks/auth';
 import { useHealth } from '@/lib/api/hooks/health';
 import { errorMessage } from '@/lib/api/errors';
@@ -30,18 +32,24 @@ import { cn } from '@/lib/utils';
 import { staffWorkspaces } from './nav';
 import { THEME_OPTIONS } from './theme-toggle';
 
-/** Hook used by the menu and the command palette. */
+/** Hook used by the menu and the command palette. A live call is ended first, while the session is valid. */
 export function useSignOutAndRedirect() {
   const navigate = useNavigate();
   const signOut = useSignOut({ beforeClear: () => navigate({ to: '/sign-in', replace: true }) });
+  const endCall = useEndCallBeforeSignOut();
+  const [endingCall, setEndingCall] = useState(false);
   return {
-    pending: signOut.isPending,
+    pending: endingCall || signOut.isPending,
     signOut: () => {
-      signOut.mutate(undefined, {
-        onSuccess: () => {
-          toast.success('Signed out');
-        },
-        onError: (error) => toast.error('Couldn’t sign out', { description: errorMessage(error) }),
+      setEndingCall(true);
+      void endCall().finally(() => {
+        setEndingCall(false);
+        signOut.mutate(undefined, {
+          onSuccess: () => {
+            toast.success('Signed out');
+          },
+          onError: (error) => toast.error('Couldn’t sign out', { description: errorMessage(error) }),
+        });
       });
     },
   };

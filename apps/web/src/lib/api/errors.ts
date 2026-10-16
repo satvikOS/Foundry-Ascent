@@ -19,6 +19,8 @@ interface ApiErrorInit {
   fieldErrors?: FieldError[] | undefined;
   /** The problem document's `code` as the server sent it, also when this client does not know it yet. */
   serverCode?: string | undefined;
+  /** Which refusal of `code` this is, when the server says (`PUBLIC_PROBLEM_REASONS`). */
+  reason?: string | undefined;
   cause?: unknown;
 }
 
@@ -43,6 +45,11 @@ export class ApiError extends Error {
    * has a sensible `code`.
    */
   readonly serverCode: string | undefined;
+  /**
+   * Which refusal of `code` this is (`PUBLIC_PROBLEM_REASONS`, e.g. the call's speech budget behind a 429
+   * `rate_limited`), when the server says.
+   */
+  readonly reason: string | undefined;
 
   constructor(init: ApiErrorInit) {
     super(init.detail ?? init.title, init.cause === undefined ? undefined : { cause: init.cause });
@@ -54,6 +61,7 @@ export class ApiError extends Error {
     this.retryAfter = init.retryAfter;
     this.fieldErrors = init.fieldErrors ?? [];
     this.serverCode = init.serverCode;
+    this.reason = init.reason;
   }
 
   /** Transient failures worth an automatic retry by the query layer. */
@@ -137,11 +145,13 @@ export async function errorFromResponse(response: Response): Promise<ApiError> {
         retryAfter: problem.retryAfterSeconds ?? headerRetryAfter,
         fieldErrors: problem.errors,
         serverCode: problem.code,
+        reason: problem.reason,
       });
     }
     // JSON but not a recognised problem document: keep a known code if one is present.
     const loose = body as
-      { code?: unknown; title?: unknown; detail?: unknown; requestId?: unknown } | undefined;
+      | { code?: unknown; title?: unknown; detail?: unknown; requestId?: unknown; reason?: unknown }
+      | undefined;
     const code = ErrorCode.safeParse(loose?.code);
     return new ApiError({
       status: response.status,
@@ -151,6 +161,7 @@ export async function errorFromResponse(response: Response): Promise<ApiError> {
       requestId: headerRequestId ?? (typeof loose?.requestId === 'string' ? loose.requestId : undefined),
       retryAfter: headerRetryAfter,
       serverCode: typeof loose?.code === 'string' ? loose.code : undefined,
+      reason: typeof loose?.reason === 'string' ? loose.reason : undefined,
     });
   }
 

@@ -9,7 +9,9 @@ import { decodeMessage } from './event-stream';
 import type { SpeechFetchResult, SpeechUnitToPlay } from './playback';
 import {
   FakeAudioContext,
+  fakeMicStream,
   FakeSpeechSynthesis,
+  FakeTrack,
   FakeUtterance,
   FakeWebSocket,
   flush,
@@ -116,8 +118,15 @@ function setup(options: SetupOptions = {}) {
   }
   const synthesis = new FakeSpeechSynthesis();
   const script = new TurnScript();
-  const track = { enabled: true, stop: vi.fn() };
-  const stream = { getAudioTracks: () => [track], getTracks: () => [track] } as unknown as MediaStream;
+  const track = new FakeTrack();
+  vi.spyOn(track, 'stop');
+  const { stream } = fakeMicStream(track);
+  const getUserMedia = vi.fn((): Promise<MediaStream> =>
+    options.mic === 'denied'
+      ? Promise.reject(Object.assign(new Error('blocked'), { name: 'NotAllowedError' }))
+      : Promise.resolve(stream),
+  );
+  const deviceListeners = new Set<() => void>();
   const speechRequests: SpeechUnitToPlay[] = [];
   let speechResult: SpeechFetchResult = { kind: 'audio', data: new ArrayBuffer(16) };
   const beacon = { send: vi.fn() };
@@ -158,10 +167,13 @@ function setup(options: SetupOptions = {}) {
     api,
     media: {
       createAudioContext: () => context as unknown as CallAudioContext,
-      getUserMedia:
-        options.mic === 'denied'
-          ? () => Promise.reject(Object.assign(new Error('blocked'), { name: 'NotAllowedError' }))
-          : () => Promise.resolve(stream),
+      getUserMedia,
+      watchDevices: (listener) => {
+        deviceListeners.add(listener);
+        return () => {
+          deviceListeners.delete(listener);
+        };
+      },
       createWorkletNode: () => context.createWorkletNode() as unknown as AudioWorkletNode,
       createSocket: (url) => {
         if (options.socketThrows) throw new DOMException('Refused to connect', options.socketThrows);
@@ -197,6 +209,10 @@ function setup(options: SetupOptions = {}) {
     speechRequests.push(unit);
     return Promise.resolve(speechQueue.shift() ?? speechResult);
   });
+  /** The browser's `devicechange`: a microphone was plugged in or out. */
+  const devicesChanged = () => {
+    for (const listener of [...deviceListeners]) listener();
+  };
   return {
     engine,
     api,
@@ -204,6 +220,9 @@ function setup(options: SetupOptions = {}) {
     synthesis,
     script,
     track,
+    getUserMedia,
+    devicesChanged,
+    deviceListeners,
     speechRequests,
     settled,
     beacon,
@@ -454,6 +473,123 @@ describe('CallEngine · voice', () => {
     }
     expect(h.state()).toMatchObject({ input: 'typed', typedReason: 'stt_failed', reconnecting: false });
     expect(h.track.stop).toHaveBeenCalled();
+  });
+
+  it('stops reconnecting while muted, and gives an unmuted call a fresh reconnect window', async () => {
+    const h = setup();
+    await startLive(h);
+    FakeWebSocket.last().serverOpen();
+    FakeWebSocket.last().serverDrop();
+    expect(h.state().reconnecting).toBe(true);
+    h.engine.setMuted(true);
+    // Muted (or on hold, or reading crisis support): nothing is reconnecting, so the call does not say so.
+    expect(h.state()).toMatchObject({ muted: true, reconnecting: false });
+    expect(h.engine.avatarState()).toBe('muted');
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(h.state().reconnecting).toBe(false);
+
+    // Unmuted long after: one failed grant is a fresh attempt, not the end of voice input.
+    h.api.refreshSttGrant.mockRejectedValueOnce(new Error('offline'));
+    h.engine.setMuted(false);
+    await flush(10);
+    expect(h.state()).toMatchObject({ input: 'voice', reconnecting: true });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    FakeWebSocket.last().serverOpen();
+    expect(h.state()).toMatchObject({ input: 'voice', reconnecting: false });
+  });
+
+  it('lets go of push-to-talk on hold and on mute, so nothing said meanwhile is sent', async () => {
+    const h = setup();
+    await h.engine.start({ ventureId: IDS.venture, sessionId: IDS.session, talkMode: 'push_to_talk' });
+    await flush(10);
+    FakeWebSocket.last().serverOpen();
+    h.engine.pushToTalk(true);
+    h.engine.hold();
+    expect(h.state()).toMatchObject({ held: true, talking: false });
+    h.engine.resume();
+    await flush(10);
+    const socket = FakeWebSocket.last();
+    socket.serverOpen();
+    expect(h.state()).toMatchObject({ held: false, talking: false });
+    // The side conversation after resuming is not sent: the stream carries silence until Space is held again.
+    h.frame(0.2);
+    expect(decodeMessage(socket.sent.at(-1) ?? new Uint8Array()).payload.every((b) => b === 0)).toBe(true);
+    socket.serverSend(transcriptEvent('s1', 'not for the vEIR', { partial: false }));
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(h.script.calls).toHaveLength(0);
+
+    h.engine.pushToTalk(true);
+    h.engine.setMuted(true);
+    expect(h.state()).toMatchObject({ muted: true, talking: false });
+  });
+
+  it('says when the microphone is unplugged, continues by typing and reconnects it on request', async () => {
+    const h = setup();
+    await startLive(h);
+    const first = FakeWebSocket.last();
+    first.serverOpen();
+    h.track.unplug();
+    // Not "Listening" to a dead microphone: typing, with the reason, and nothing left open.
+    expect(h.state()).toMatchObject({ input: 'typed', typedReason: 'mic_lost', reconnecting: false });
+    expect(h.track.stop).toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(first.readyState).toBe(3);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+
+    // Plugged back in: Reconnect asks for the microphone again and goes back to voice.
+    const plugged = fakeMicStream();
+    h.getUserMedia.mockResolvedValueOnce(plugged.stream);
+    await h.engine.reconnectMicrophone();
+    await flush(10);
+    expect(h.getUserMedia).toHaveBeenCalledTimes(2);
+    expect(h.state()).toMatchObject({ input: 'voice', typedReason: null });
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    const second = FakeWebSocket.last();
+    second.serverOpen();
+    expect(h.state().activity).toBe('listening');
+    h.context.worklets.at(-1)?.emit(new Int16Array(800).fill(1000), 0.2);
+    expect(second.sent.length).toBe(1);
+  });
+
+  it('says so when a reconnect finds no microphone, and keeps the call typed', async () => {
+    const h = setup();
+    await startLive(h);
+    FakeWebSocket.last().serverOpen();
+    h.track.unplug();
+    h.getUserMedia.mockRejectedValueOnce(Object.assign(new Error('none'), { name: 'NotFoundError' }));
+    await h.engine.reconnectMicrophone();
+    expect(h.state()).toMatchObject({ input: 'typed', typedReason: 'mic_unavailable' });
+  });
+
+  it('treats a microphone the system keeps silent as disconnected', async () => {
+    const h = setup();
+    await startLive(h);
+    FakeWebSocket.last().serverOpen();
+    // A short system mute (a notification sound, a device switch) passes.
+    h.track.setMuted(true);
+    await vi.advanceTimersByTimeAsync(2_000);
+    h.track.setMuted(false);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(h.state()).toMatchObject({ input: 'voice', typedReason: null });
+    // One that lasts is a microphone that is gone.
+    h.track.setMuted(true);
+    await vi.advanceTimersByTimeAsync(6_000);
+    expect(h.state()).toMatchObject({ input: 'typed', typedReason: 'mic_lost' });
+  });
+
+  it('checks the microphone again when devices change', async () => {
+    const h = setup();
+    await startLive(h);
+    FakeWebSocket.last().serverOpen();
+    h.devicesChanged();
+    expect(h.state().input).toBe('voice');
+    // The device went away without its track firing `ended`.
+    h.track.readyState = 'ended';
+    h.devicesChanged();
+    expect(h.state()).toMatchObject({ input: 'typed', typedReason: 'mic_lost' });
+    expect(h.deviceListeners.size).toBe(0);
   });
 
   it('push-to-talk sends silence until held and ends the turn on release', async () => {
@@ -937,6 +1073,106 @@ describe('CallEngine · resilience', () => {
     await flush();
     expect(h.state()).toMatchObject({ held: false, muted: false });
     expect(FakeWebSocket.instances).toHaveLength(2);
+  });
+});
+
+describe('CallEngine · the crisis support line is never cut off', () => {
+  const SUPPORT = 'Call or text **988**.';
+
+  /** A call whose vEIR is saying the crisis support line (a minute of audio). */
+  async function sayingSupport(h: ReturnType<typeof setup>, maxSeconds = 1200) {
+    h.setSpeechResult({ kind: 'audio', data: new ArrayBuffer(60_000) });
+    h.api.startCall.mockResolvedValueOnce({ call: callView({ maxSeconds }), sttGrant: grant(), intro: null });
+    await startLive(h);
+    FakeWebSocket.last().serverOpen();
+    h.engine.sendText('I am not okay');
+    await flush();
+    h.script.push(
+      { event: 'turn.accepted', turnId: TURN_ID, ordinal: 1 },
+      speech(0, 'You deserve support from a person right now.', true),
+      {
+        event: 'turn.blocked',
+        turnId: TURN_ID,
+        reason: 'crisis_support',
+        escalationId: IDS.escalation,
+        supportMessage: SUPPORT,
+      },
+    );
+    h.script.close();
+    await flush(20);
+    expect(h.state()).toMatchObject({ activity: 'speaking', blocked: { reason: 'crisis_support' } });
+    expect(h.context.sources[0]?.started).toBe(true);
+  }
+
+  it.each([
+    ['the time limit', 'timeout', 11_000],
+    ['the server ending the call', 'disabled', 15_000],
+    ['three missed heartbeats', 'error', 45_000],
+  ] as const)(
+    'plays to its end through %s, and the support stays with the summary',
+    async (_, reason, after) => {
+      const h = setup();
+      if (reason === 'disabled') {
+        h.api.heartbeat.mockResolvedValue({ remainingSeconds: 0, action: 'terminate', reason: 'disabled' });
+      } else if (reason === 'error') {
+        h.api.heartbeat.mockRejectedValue(new Error('offline'));
+      } else {
+        // The server's countdown never arrives: the client enforces the limit itself.
+        h.api.heartbeat.mockImplementation(() => new Promise(() => undefined));
+      }
+      await sayingSupport(h, reason === 'timeout' ? 10 : 1200);
+      await vi.advanceTimersByTimeAsync(after);
+      await flush(10);
+      expect(h.api.endCall).toHaveBeenCalledWith(CALL_ID, expect.objectContaining({ reason }));
+      expect(h.state().phase).toBe('ended');
+      // The microphone and speech-to-text closed with the call; the line did not.
+      expect(h.track.stop).toHaveBeenCalled();
+      expect(h.context.sources[0]?.stopped).toBe(false);
+      expect(h.context.closed).toBe(false);
+      // The support is still what the founder sees, above the summary.
+      expect(h.state().ended?.blocked).toEqual({
+        reason: 'crisis_support',
+        escalationId: IDS.escalation,
+        supportMessage: SUPPORT,
+      });
+      // Dismissing the summary does not cut it off either.
+      h.engine.reset();
+      expect(h.context.sources[0]?.stopped).toBe(false);
+      expect(h.context.closed).toBe(false);
+      // Heard to its end, the call's audio is released.
+      h.context.sources[0]?.finish();
+      await flush(10);
+      expect(h.context.closed).toBe(true);
+    },
+  );
+
+  it('plays to its end when the founder ends the call', async () => {
+    const h = setup();
+    await sayingSupport(h);
+    await h.engine.end('user');
+    expect(h.state()).toMatchObject({ phase: 'ended', ended: { blocked: { reason: 'crisis_support' } } });
+    expect(h.context.sources[0]?.stopped).toBe(false);
+    h.context.sources[0]?.finish();
+    await flush(10);
+    expect(h.context.closed).toBe(true);
+    expect(h.state().phase).toBe('ended');
+  });
+
+  it('keeps no support on the summary after an ordinary call, and stops a held-back reply', async () => {
+    const h = setup();
+    await startLive(h);
+    h.engine.sendText('Tell me about BenchTally');
+    await flush();
+    h.script.push(
+      { event: 'turn.accepted', turnId: TURN_ID, ordinal: 1 },
+      speech(0, 'Start with what they pay today.'),
+      { event: 'turn.blocked', turnId: TURN_ID, reason: 'policy', escalationId: null, supportMessage: null },
+    );
+    h.script.close();
+    await flush(20);
+    await h.engine.end('user');
+    expect(h.state().ended?.blocked).toBeNull();
+    expect(h.context.closed).toBe(true);
   });
 });
 
