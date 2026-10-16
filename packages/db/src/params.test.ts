@@ -70,11 +70,11 @@ describe('p.* parameter builders', () => {
 describe('named → positional/named compilation', () => {
   it('rewrites :name to typed casts and reuses positions for repeated names', () => {
     const { text, values } = compilePositional(
-      'SELECT :a, :b::text, :a, \'kept: as is\', x::int -- :comment\nFROM t WHERE y = :b',
+      "SELECT :a, :b::text, :a, 'kept: as is', x::int -- :comment\nFROM t WHERE y = :b",
       { a: p.uuid('6f1c3a52-9d7e-4b0a-8f2e-3c5d7a9b1e04'), b: p.textArray(['x']), unused: p.int(1) },
     );
     expect(text).toBe(
-      'SELECT CAST($1 AS uuid), CAST($2 AS text[])::text, CAST($1 AS uuid), \'kept: as is\', x::int -- :comment\nFROM t WHERE y = CAST($2 AS text[])',
+      "SELECT CAST($1 AS uuid), CAST($2 AS text[])::text, CAST($1 AS uuid), 'kept: as is', x::int -- :comment\nFROM t WHERE y = CAST($2 AS text[])",
     );
     expect(values.map((v) => v.type)).toEqual(['uuid', 'textArray']);
   });

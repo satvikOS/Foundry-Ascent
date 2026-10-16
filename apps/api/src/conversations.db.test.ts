@@ -83,7 +83,10 @@ describe('GET /sessions', () => {
     const temporary = await startConversation(maya, benchtally, 'A private question', 'ephemeral');
     const devins = await startConversation(devin, quietquad, 'What should Devin ask staff?');
 
-    const mine = await json(await api.request('/sessions?scope=mine&limit=50', { cookie: maya }), SessionPageResponse);
+    const mine = await json(
+      await api.request('/sessions?scope=mine&limit=50', { cookie: maya }),
+      SessionPageResponse,
+    );
     const byId = new Map(mine.items.map((s) => [s.id, s]));
     expect(byId.get(inQuietQuad.id)).toMatchObject({
       ventureId: quietquad,
@@ -95,7 +98,11 @@ describe('GET /sessions', () => {
       title: 'Who signs the purchase order?',
       personaName: "Ruth's vEIR",
     });
-    expect(byId.get(temporary.id)).toMatchObject({ ventureId: benchtally, title: null, privacy: 'ephemeral' });
+    expect(byId.get(temporary.id)).toMatchObject({
+      ventureId: benchtally,
+      title: null,
+      privacy: 'ephemeral',
+    });
     expect(byId.has(devins.id)).toBe(false);
     // Latest activity first, across ventures.
     const order = mine.items.map((s) => s.id);
@@ -118,7 +125,11 @@ describe('GET /sessions', () => {
     const temporary = await startConversation(maya, api.h.ventures.quietquad.id, 'Quick one', 'ephemeral');
     expect(
       await problemCode(
-        await api.request(`/sessions/${temporary.id}`, { method: 'PATCH', body: { title: 'Private' }, cookie: maya }),
+        await api.request(`/sessions/${temporary.id}`, {
+          method: 'PATCH',
+          body: { title: 'Private' },
+          cookie: maya,
+        }),
         409,
       ),
     ).toBe('conflict');
@@ -197,9 +208,12 @@ describe('POST /ventures/:id/team/invitations', () => {
         displayName: 'Ada Admin',
         synthetic: true,
       });
-      await sx.query(`INSERT INTO role_grants (principal_id, tenant_id, role) VALUES (:p, NULL, 'platform_admin')`, {
-        p: p.uuid(created.id),
-      });
+      await sx.query(
+        `INSERT INTO role_grants (principal_id, tenant_id, role) VALUES (:p, NULL, 'platform_admin')`,
+        {
+          p: p.uuid(created.id),
+        },
+      );
       return created.id;
     });
     const admin = await api.signInAs(adminId);

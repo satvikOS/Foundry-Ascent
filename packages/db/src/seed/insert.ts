@@ -6,7 +6,8 @@ import { SqlUsageError } from '../errors.js';
 import { type SystemExecutor } from '../executor.js';
 import { p } from '../params.js';
 
-export type ColumnType = 'uuid' | 'text' | 'text[]' | 'jsonb' | 'integer' | 'numeric' | 'boolean' | 'timestamptz';
+export type ColumnType =
+  'uuid' | 'text' | 'text[]' | 'jsonb' | 'integer' | 'numeric' | 'boolean' | 'timestamptz';
 export type Columns = Readonly<Record<string, ColumnType>>;
 export type Row = Readonly<Record<string, unknown>>;
 

@@ -157,9 +157,7 @@ describe('conversation titles', () => {
       generatedAt: new Date().toISOString(),
     };
     const distil = (sessionId: string, title: string): Promise<boolean> =>
-      t.db.system((sx) =>
-        sessionsRepo.setSessionDigest(sx, { sessionId, digest, distillVersion: 1, title }),
-      );
+      t.db.system((sx) => sessionsRepo.setSessionDigest(sx, { sessionId, digest, distillVersion: 1, title }));
     expect(await distil(auto, 'Exam-week seat counts')).toBe(true);
     record = await t.db.withContext(maya, (tx) => sessionsRepo.getSession(tx, auto));
     expect(record).toMatchObject({ title: 'Exam-week seat counts', titleSource: 'auto' });
@@ -180,10 +178,12 @@ describe('conversation titles', () => {
   });
 
   it('never exist for temporary chats (rename refuses; the database refuses any other write)', async () => {
-    await expect(newSession(maya, quietquad, { privacy: 'ephemeral', title: 'Kept?' })).rejects.toMatchObject({
-      sqlState: '23514',
-      constraint: 'coaching_sessions_title_privacy_check',
-    });
+    await expect(newSession(maya, quietquad, { privacy: 'ephemeral', title: 'Kept?' })).rejects.toMatchObject(
+      {
+        sqlState: '23514',
+        constraint: 'coaching_sessions_title_privacy_check',
+      },
+    );
     const temporary = await newSession(maya, quietquad, { privacy: 'ephemeral' });
     await addTurn(maya, quietquad, temporary, 'A quick private question');
     const record = await t.db.withContext(maya, (tx) => sessionsRepo.getSession(tx, temporary));
@@ -332,7 +332,10 @@ describe('deleting a conversation', () => {
     const byId = new Map(memory.rows.map((r) => [String(r.id), r]));
     expect(byId.get(pending.id)).toMatchObject({ status: 'deleted', content: '' });
     expect(byId.get(rejected.id)).toMatchObject({ status: 'deleted', content: '' });
-    expect(byId.get(kept.id)).toMatchObject({ status: 'confirmed', content: 'Kept: students might prefer notifications.' });
+    expect(byId.get(kept.id)).toMatchObject({
+      status: 'confirmed',
+      content: 'Kept: students might prefer notifications.',
+    });
     // The founder consents to share a packet with a person: it stays.
     const stored = await t.db.system((sx) =>
       sx.query('SELECT packet FROM escalations WHERE id = :id', { id: p.uuid(escalation.id) }),
@@ -471,14 +474,24 @@ describe('notebook integrity', () => {
     const current = await notebookOf(jonah, emberloop);
     const write = (entry: Record<string, unknown>) =>
       t.db.system((sx) =>
-        sx.query(`UPDATE veir_notebooks SET content = content || jsonb_build_object('lastAdvice', :e) WHERE id = :id`, {
-          id: p.uuid(current.id),
-          e: p.json([entry]),
-        }),
+        sx.query(
+          `UPDATE veir_notebooks SET content = content || jsonb_build_object('lastAdvice', :e) WHERE id = :id`,
+          {
+            id: p.uuid(current.id),
+            e: p.json([entry]),
+          },
+        ),
       );
-    const valid = { id: 'a-1', text: 'Lease first', sourceSessionId: null, createdAt: '2026-10-01T10:00:00Z' };
+    const valid = {
+      id: 'a-1',
+      text: 'Lease first',
+      sourceSessionId: null,
+      createdAt: '2026-10-01T10:00:00Z',
+    };
     await expect(write(valid)).resolves.toBeDefined();
-    await expect(write({ ...valid, sourceSessionId: 'session-7' })).rejects.toMatchObject({ sqlState: '23514' });
+    await expect(write({ ...valid, sourceSessionId: 'session-7' })).rejects.toMatchObject({
+      sqlState: '23514',
+    });
     await expect(write({ ...valid, createdAt: 'yesterday' })).rejects.toMatchObject({ sqlState: '23514' });
     await expect(write({ ...valid, createdAt: '2026-02-30T10:00:00Z' })).rejects.toMatchObject({
       sqlState: '23514',

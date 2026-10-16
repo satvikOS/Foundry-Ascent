@@ -1,9 +1,9 @@
 # vEIR knowledge pools, conversations and calls
 
 How a founder's vEIR knows what it knows, how that knowledge grows, who can see and change it, and how
-calls speak it. This describes what is built (migration `0004_veir_knowledge`, `packages/db`,
-`packages/core/src/services`, `apps/api/src/routes`). The turn pipeline's use of digests and notebooks and
-the distillation job that writes them come next (§8).
+calls speak it. This describes what is built (migrations `0004_veir_knowledge` and `0005_wave1_fixes`,
+`packages/db`, `packages/core/src/services`, `apps/api/src/routes`). The turn pipeline's use of digests and
+notebooks and the distillation job that writes them come next (§8).
 
 ## 1. Vocabulary
 
@@ -21,13 +21,13 @@ the distillation job that writes them come next (§8).
 
 ## 2. Who the founder talks to
 
-| Piece      | Where                                                    | Rule                                                                                                                                                                                |
-| ---------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Persona    | `personas` (+ `tagline`, `embodiment`)                   | Created as a draft by a program lead (`POST /personas`), with a draft release v1.                                                                                                   |
-| Consent    | `consents`, linked by `personas.consent_id`              | The EIR records their own (`POST /personas/:id/consents`); a program lead may record it only for a synthetic EIR who cannot sign in. Revoking suspends every persona relying on it. |
-| Release    | `persona_releases`                                       | Approval needs a consent covering `doctrine`; approving the first release activates a draft persona. An active EIR persona without consent is impossible (CHECK).                   |
-| Embodiment | `personas.embodiment` `{provider, voiceId, portraitKey}` | `builtin` provider only for now; a voice needs consent covering `voice`, a portrait `likeness` (trigger `personas_embodiment_consent`, re-checked at every use).                    |
-| Assignment | `assignments` (one active per venture)                   | `POST /ventures/:id/assignment` (program lead) ends the previous one. A vEIR is assigned with the EIR it is built from, who then reviews its sampled turns.                         |
+| Piece      | Where                                                    | Rule                                                                                                                                                                                                        |
+| ---------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Persona    | `personas` (+ `tagline`, `embodiment`)                   | Created as a draft by a program lead (`POST /personas`), with a draft release v1.                                                                                                                           |
+| Consent    | `consents`, linked by `personas.consent_id`              | The EIR records their own (`POST /personas/:id/consents`); a program lead may record it only for a synthetic (fictional) EIR, whether or not it can sign in. Revoking suspends every persona relying on it. |
+| Release    | `persona_releases`                                       | Approval needs a consent covering `doctrine`; approving the first release activates a draft persona. An active EIR persona without consent is impossible (CHECK).                                           |
+| Embodiment | `personas.embodiment` `{provider, voiceId, portraitKey}` | `builtin` provider only for now; a voice needs consent covering `voice`, a portrait `likeness` (trigger `personas_embodiment_consent`, re-checked at every use).                                            |
+| Assignment | `assignments` (one active per venture)                   | `POST /ventures/:id/assignment` (program lead) ends the previous one. A vEIR is assigned with the EIR it is built from: that EIR is the human who reviews the venture.                                      |
 
 The seed builds **Corin's vEIR** (direct, customer-discovery-first; voice Matthew) and **Ruth's vEIR**
 (warm, deep-tech commercialization and IP pathway; voice Ruth) from the two synthetic EIR profiles, each
@@ -36,6 +36,20 @@ SoleSignal are coached by Corin's vEIR, BenchTally and EmberLoop by Ruth's. On a
 vEIRs existed, the seed ends the original Foundry Guide assignment of each demo venture and creates the
 vEIR assignment exactly once, and only while that original assignment is still the active one: a venture a
 program lead re-assigned is left alone (`migrate-0004.db.test.ts`).
+
+**The coaching vEIR's EIR is the venture's reviewer (decision).** Each vEIR assignment carries the EIR the
+vEIR is built from, so the human who reviews a venture is always the EIR whose doctrine coaches it. The
+re-pointing therefore moved two reviewers from the first seed:
+
+| Venture    | Reviewer before vEIRs | Reviewer now | What moved                                                                                           |
+| ---------- | --------------------- | ------------ | ---------------------------------------------------------------------------------------------------- |
+| BenchTally | Corin                 | Ruth         | Ruth now reads BenchTally's shared memory, notebook, digests and sampled turns; Corin no longer does |
+| SoleSignal | Ruth                  | Corin        | Corin now reads the same for SoleSignal; Ruth no longer does                                         |
+
+QuietQuad (Corin) and EmberLoop (Ruth) keep their reviewer. BenchTally's pending EIR proposal ("Department-level
+purchasing could shorten sales cycles") was made by Corin while he reviewed it; it stays for the founders to
+keep or dismiss and is shown as "Added by an EIR". The evals fake API (`evals/tests/fake_api.py`) mirrors
+this mapping.
 
 `GET /ventures/:id/veir` returns the identity the UI shows (`VeirIdentity`: name, short name "Corin",
 tagline, disclosure, embodiment with consent flags).
@@ -60,6 +74,11 @@ tagline, disclosure, embodiment with consent flags).
   marks the source `active` or `failed` with a reason.
 - **Retrieval**: `searchSharedChunks` returns persona chunks only for the venture's assigned persona, as
   `doctrine` evidence, and only from `active` or `stale` sources.
+- **Seed re-runs** (every deploy) insert a seeded source's chunks only in the statement that newly inserts
+  the source, so a curator's edit or withdrawal, and a founder's deleted document, are never undone.
+  Migration 0005 removed the chunks earlier re-runs had brought back. The Foundry Guide doctrine and the
+  program method corpus are authored notes on every database (fresh ones are seeded that way; 0004 and 0005
+  converted existing ones).
 
 ### 3.2 Lessons
 
@@ -83,6 +102,9 @@ and still need a curator to publish them.
 generated time), with `distilled_at` and `distill_version` (the number of completed turns it covers).
 
 - Temporary (ephemeral) conversations never have one (CHECK `coaching_sessions_digest_check`).
+- **Visibility**: the founder/team and the venture's assigned EIR, like recaps. A digest is an AI summary
+  for the human who reviews the venture; the conversation's title and goal, which are the founder's own
+  words, are not shared with the EIR (§5).
 - `DELETE /sessions/:id/digest` (founder/team) deletes it and sets `digest_deleted_at`: distillation never
   writes one for that conversation again (`setSessionDigest` refuses).
 - `listRecentDigests(ventureId, personaId)` gives the latest digests for the prompt ("Previous
@@ -111,20 +133,49 @@ generated time), with `distilled_at` and `distill_version` (the number of comple
   fingerprint (never its text) in `suppressed`. Distillation must skip any line whose fingerprint is
   suppressed (`isSuppressed`) and writes with the version it read (`saveNotebook` returns null on a
   conflict), so a founder's correction is never silently overwritten.
-- Deleting a conversation removes the notebook lines sourced from it.
+- **Sources.** Every line records the conversation it came from. The summary records the conversations it
+  was drawn from (`summarySources`) and the opener the one it was drawn from (`nextOpenerSource`):
+  distillation passes `sourceSessionId` to `saveNotebook`, which keeps unchanged text's sources and adds the
+  conversation to rewritten text (`withDistilledSources`). Without a source the origin is unknown. These
+  fields stay in the stored document; the contract view does not show them.
+- **Deleting a conversation** removes the lines sourced from it, and clears the summary and the opener when
+  they were drawn from it. When their origin is unknown, deleting any distilled conversation of the persona
+  (or one that a line cites) clears them: a summary is never kept on the chance it did not use the
+  conversation.
+- **Integrity.** The database checks the document against the contract (conversation ids, ISO timestamps).
+  Should a stored notebook still not match a later contract, reads keep the readable lines and mark the
+  record not intact; the notebook API fails loudly (500, logged with ids only) and `saveNotebook` refuses to
+  write at that version (`NotebookIntegrityError`), so an edit or distillation never overwrites content it
+  could not read.
 
 ## 5. Conversations
 
-- `title` comes from the first non-crisis message (trigger `turns_touch_session`), can be renamed
-  (`PATCH /sessions/:id`), and is never kept for temporary chats. The same trigger maintains
-  `last_activity_at` and `has_calls` (any turn spoken during a call; `turns.channel = 'voice'`).
+- **Titles** come from the first non-crisis message (trigger `turns_touch_session`) and can be renamed
+  (`PATCH /sessions/:id`). `title_source` records who set them: `auto` (first message, distillation) or
+  `person` (a rename, or a title given at the start). Distillation (`setSessionDigest`) replaces only
+  `auto` titles.
+- **Temporary chats never carry a title** (CHECK `coaching_sessions_title_privacy_check`); renaming one is 409.
+- **Titles and goals are the founder's own words.** Only the venture's founder/team read them: every read
+  path that returns them (session views, recents, `listRecentDigests`) gives null to anyone else, such as
+  the assigned EIR, who may read the conversation row itself (RLS) and its digest. System jobs read them as
+  stored.
+- The same trigger maintains `last_activity_at` and `has_calls` (any turn spoken during a call;
+  `turns.channel = 'voice'`). A turn is stamped when it is inserted, not when its transaction began, so
+  recents order conversations by when each message was sent however requests interleave, and a later
+  ordinal never carries an earlier time.
 - `GET /sessions?scope=mine|all&ventureId&cursor&limit` lists the caller's conversations across every
-  venture they work on, latest activity first, in keyset pages (cursor keeps microsecond precision).
+  venture they work on (founder/team), each with its own `ventureId`, latest activity first, in keyset
+  pages. The cursor is the activity in microseconds since the epoch, computed without a time-format literal
+  (a `:MI` inside SQL text could be read as a parameter by the RDS Data API; the executors refuse any quoted
+  `:name`).
 - `DELETE /sessions/:id` (founder/team) erases the content like an ended temporary chat: founder text and
-  responses of every turn, title, goal, recap, digest, feedback comments, pending AI memory proposals drawn
-  from it, notebook lines sourced from it, stored idempotent responses that mention it. Pending turns are
-  failed so a late answer is never stored. The row stays for security records; RLS hides it from
-  everyone.
+  responses of every turn, title, goal, recap, digest, feedback comments, the AI memory proposals drawn from
+  it that no person kept (pending, rejected or expired), the notebook lines, summary and opener drawn from
+  it (§4.2), and stored idempotent responses that mention it. Pending turns are failed so a late answer is
+  never stored. AI suggestions a person approved stay: they are the venture's memory now. Escalation
+  packets stay too: a shared one went to a person with the founder's consent, and a draft stays on the
+  Human help page for the founder to send or withdraw. The row stays for security records; RLS hides it
+  from everyone.
 
 ## 6. Calls
 
@@ -153,7 +204,7 @@ generated time), with `distilled_at` and `distill_version` (the number of comple
   the same checks as a call (AI enabled, coach active, minutes left). Only `builtin` can be configured
   until a vendor adapter exists.
 
-## 7. Data model (migration 0004)
+## 7. Data model (migrations 0004 and 0005)
 
 | Object                              | Change                                                                                                                                                                                                                                                                                                                                                                           |
 | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -164,7 +215,7 @@ generated time), with `distilled_at` and `distill_version` (the number of comple
 | `knowledge_sources` / `_chunks` RLS | persona scope: curators; program/public: program leads; chunk DELETE for curators (venture chunks only via document delete)                                                                                                                                                                                                                                                      |
 | `patterns`                          | `persona_id`, `origin`, `updated_at`; RLS: drafts readable and writable by curators only                                                                                                                                                                                                                                                                                         |
 | `personas`                          | `embodiment`, `tagline`; trigger `personas_embodiment_consent`                                                                                                                                                                                                                                                                                                                   |
-| `consents` RLS                      | the subject, or a program lead for a synthetic EIR                                                                                                                                                                                                                                                                                                                               |
+| `consents` RLS                      | the subject, or a program lead for a synthetic EIR (whether or not it can sign in)                                                                                                                                                                                                                                                                                               |
 | `usage_ledger.purpose`              | adds `distill`, `speech`                                                                                                                                                                                                                                                                                                                                                         |
 | `platform_settings`                 | `max_call_minutes` 30, `daily_call_minutes_per_principal` 60                                                                                                                                                                                                                                                                                                                     |
 | Functions                           | `app.can_curate_persona`, `app.is_persona_eir`, `app.soft_delete_session`, `app.voice_turns_today`, `app.persona_consent_assets`, `app.conversation_title`, notebook validators; `app.can_write_venture` now answers false (not NULL) for non-members, which closes an assigned-EIR path through the 0002 soft-delete functions; `app.upload_usage_today` counts persona uploads |
@@ -172,6 +223,17 @@ generated time), with `distilled_at` and `distill_version` (the number of comple
 The migration is expand-only: code from before 0004 keeps working against the new schema (defaults for
 every new column), which `migrate-0004.db.test.ts` checks together with re-runnability and the backfills
 (titles, last activity, the seeded doctrine corpus becoming an authored note).
+
+Migration 0005 (`0005_wave1_fixes`, expand-only and re-runnable, `migrate-0005.db.test.ts`):
+
+| Object                    | Change                                                                                                                                                                     |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `coaching_sessions`       | `title_source` (`auto` \| `person`, backfilled from rename audits and titles given at the start); CHECK `privacy = 'standard' OR title IS NULL` (temporary titles cleared) |
+| notebook CHECK            | sources are conversation ids, times ISO timestamps (`app.is_contract_uuid`, `app.is_contract_timestamp`); optional `summarySources`, `nextOpenerSource`; old rows repaired |
+| `app.soft_delete_session` | also clears the notebook summary and opener drawn from the conversation and erases its rejected or expired AI proposals                                                    |
+| `knowledge_chunks`        | chunks of withdrawn sources, and chunks of authored sources newer than their last save, removed; the program method corpus becomes an authored note                        |
+| `venture_memberships` RLS | platform admins may add members (team invitations) and read the memberships of their tenant's ventures                                                                     |
+| `app.is_synthetic_eir`    | comment: the consent exception covers synthetic EIRs whether or not they can sign in                                                                                       |
 
 ## 8. Next: the turn pipeline and distillation
 
@@ -184,17 +246,22 @@ What the orchestrator and the distillation job need is in place:
   (unverified; confirm before relying on them)" and the last three digests (`listRecentDigests`).
 - **Distillation** (purpose `distill`, spend caps and kill switch): find candidates
   (`listDistillationCandidates`), write the digest (`setSessionDigest`, never for temporary or
-  digest-deleted conversations), merge the notebook delta skipping suppressed lines and write it with the
-  version read (`saveNotebook`, retry on null), store memory candidates as proposals and de-identified lesson
-  candidates as `distilled` drafts (`resourcesRepo.createPattern`, status `draft`).
+  digest-deleted conversations; it keeps a person's title), merge the notebook delta skipping suppressed
+  lines and write it with the version read and the conversation it came from (`saveNotebook` with
+  `sourceSessionId`; retry on null; a `NotebookIntegrityError` means the stored notebook cannot be read and
+  must not be overwritten), store memory candidates as proposals and de-identified lesson candidates as
+  `distilled` drafts (`resourcesRepo.createPattern`, status `draft`).
 
 ## 9. Tests
 
 - RLS for every new table and path: `packages/db/src/rls.db.test.ts` (notebooks, persona corpora, lessons,
   deleted conversations, consents, the soft-delete NULL fix).
-- Repositories: `packages/db/src/repositories/veir.db.test.ts`; migration and seed upgrade:
-  `migrate-0004.db.test.ts`, `seed/seed.db.test.ts`.
-- Services: `packages/core/src/services/veir-pools.db.test.ts` (and the authorization matrix), pure rules in
-  `veir-pools.test.ts`.
-- HTTP: `apps/api/src/veir.db.test.ts`, denial matrices in `authz.db.test.ts`, the Polly adapter in
-  `adapters/polly-speech.test.ts`.
+- Repositories: `packages/db/src/repositories/veir.db.test.ts`, `conversations.db.test.ts` (title privacy as
+  the assigned EIR, title sources, temporary chats, recents under concurrent turns, deletion, notebook
+  integrity); pure rules in `notebooks.test.ts`; Data API literal safety in `sql-lexer.test.ts`. Migration and
+  seed upgrade: `migrate-0004.db.test.ts`, `migrate-0005.db.test.ts`, `seed/seed.db.test.ts` (re-runs after
+  edits, withdrawals and deleted documents).
+- Services: `packages/core/src/services/veir-pools.db.test.ts`, `wave1-fixes.db.test.ts` (and the
+  authorization matrix), pure rules in `veir-pools.test.ts`.
+- HTTP: `apps/api/src/veir.db.test.ts`, `conversations.db.test.ts` (recents across ventures, opener edits,
+  temporary chats), denial matrices in `authz.db.test.ts`, the Polly adapter in `adapters/polly-speech.test.ts`.

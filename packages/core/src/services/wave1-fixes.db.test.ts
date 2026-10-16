@@ -41,9 +41,12 @@ beforeAll(async () => {
       displayName: 'Ada Admin',
       synthetic: true,
     });
-    await sx.query(`INSERT INTO role_grants (principal_id, tenant_id, role) VALUES (:p, NULL, 'platform_admin')`, {
-      p: p.uuid(created.id),
-    });
+    await sx.query(
+      `INSERT INTO role_grants (principal_id, tenant_id, role) VALUES (:p, NULL, 'platform_admin')`,
+      {
+        p: p.uuid(created.id),
+      },
+    );
     return created.id;
   });
   admin = await h.ctxFor(adminId);
@@ -56,7 +59,11 @@ describe('team invitations', () => {
   it('lets a platform admin invite, with the same audit trail as a program lead', async () => {
     const ventureId = h.ventures.quietquad.id;
     const issued = AccessCodeIssued.parse(
-      await h.core.team.invite(admin, ventureId, { displayName: 'Noor Example', role: 'team', expiresInDays: 30 }),
+      await h.core.team.invite(admin, ventureId, {
+        displayName: 'Noor Example',
+        role: 'team',
+        expiresInDays: 30,
+      }),
     );
     expect(issued.accessCode).toMatch(/^FA-/);
     const team = await h.core.team.list(maya, ventureId);
@@ -77,7 +84,10 @@ describe('team invitations', () => {
     expect(isDomainError(denied) && denied.code).toBe('forbidden');
     expect((await auditOf('authz.denied')).some((e) => e.actorId === maya.principalId)).toBe(true);
     const missing = await rejection(
-      h.core.team.invite(admin, '6f1c6d0e-1a2b-4c3d-8e4f-0123456789ab', { displayName: 'Nobody', role: 'team' }),
+      h.core.team.invite(admin, '6f1c6d0e-1a2b-4c3d-8e4f-0123456789ab', {
+        displayName: 'Nobody',
+        role: 'team',
+      }),
     );
     expect(isDomainError(missing) && missing.code).toBe('not_found');
   });
@@ -115,7 +125,10 @@ describe('notebook integrity', () => {
       expect(await rejection(h.core.notebook.get(jonah, venture.id))).toBeInstanceOf(NotebookIntegrityError);
       expect(
         await rejection(
-          h.core.notebook.update(jonah, venture.id, { expectedVersion: before.version, edit: { action: 'clear' } }),
+          h.core.notebook.update(jonah, venture.id, {
+            expectedVersion: before.version,
+            edit: { action: 'clear' },
+          }),
         ),
       ).toBeInstanceOf(NotebookIntegrityError);
       const logged = h.logger.records.filter((r) => r.event === 'notebook.integrity_failed');

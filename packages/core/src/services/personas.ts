@@ -37,7 +37,7 @@ export interface PersonaManagementService {
   listConsents(ctx: RequestContext, personaId: string): Promise<ConsentView[]>;
   /**
    * Records the consent of the persona's EIR and links it to the persona. The EIR records their own; a
-   * program lead may record it only for a synthetic EIR, who cannot sign in.
+   * program lead may record it only for a synthetic (fictional) EIR, whether or not it can sign in.
    */
   recordConsent(
     ctx: RequestContext,

@@ -80,7 +80,9 @@ async function writeLegacyData(db: Db): Promise<typeof legacy> {
       return id;
     };
     const renamed = await session('standard', null, 'Where do students study?');
-    await sx.query(`UPDATE coaching_sessions SET title = 'Study spots' WHERE id = :id`, { id: p.uuid(renamed) });
+    await sx.query(`UPDATE coaching_sessions SET title = 'Study spots' WHERE id = :id`, {
+      id: p.uuid(renamed),
+    });
     await auditRepo.appendAudit(sx, {
       action: 'session.renamed',
       outcome: 'succeeded',
@@ -94,7 +96,9 @@ async function writeLegacyData(db: Db): Promise<typeof legacy> {
     const automatic = await session('standard', null, 'How many seats do we need?');
     // 0004 let a temporary chat be renamed.
     const temporary = await session('ephemeral', null, 'A private question');
-    await sx.query(`UPDATE coaching_sessions SET title = 'Private' WHERE id = :id`, { id: p.uuid(temporary) });
+    await sx.query(`UPDATE coaching_sessions SET title = 'Private' WHERE id = :id`, {
+      id: p.uuid(temporary),
+    });
 
     // A notebook line whose source and time the 0004 CHECK accepted but the contract does not.
     const notebook = await sx.query(
@@ -103,7 +107,12 @@ async function writeLegacyData(db: Db): Promise<typeof legacy> {
       {
         venture: p.uuid(emberloop.id),
         entries: p.json([
-          { id: 'fp-1', text: 'Prefers numbers first', sourceSessionId: 'spreadsheet-row-4', createdAt: 'last week' },
+          {
+            id: 'fp-1',
+            text: 'Prefers numbers first',
+            sourceSessionId: 'spreadsheet-row-4',
+            createdAt: 'last week',
+          },
         ]),
       },
     );
@@ -128,9 +137,12 @@ async function writeLegacyData(db: Db): Promise<typeof legacy> {
   });
   // A curator edits one note and withdraws another (each in its own transaction, as the library does)...
   await db.system(async (sx) => {
-    await sx.query(`UPDATE knowledge_sources SET body = 'One section now.', updated_at = now() WHERE id = :id`, {
-      id: p.uuid(created.edited),
-    });
+    await sx.query(
+      `UPDATE knowledge_sources SET body = 'One section now.', updated_at = now() WHERE id = :id`,
+      {
+        id: p.uuid(created.edited),
+      },
+    );
     await sx.query('DELETE FROM knowledge_chunks WHERE source_id = :id AND ordinal > 1', {
       id: p.uuid(created.edited),
     });
@@ -197,7 +209,9 @@ async function schemaFingerprint(db: Db): Promise<string> {
 
 async function chunkCount(sourceId: string): Promise<number> {
   const r = await t.db.system((sx) =>
-    sx.query('SELECT count(*)::int AS n FROM knowledge_chunks WHERE source_id = :id', { id: p.uuid(sourceId) }),
+    sx.query('SELECT count(*)::int AS n FROM knowledge_chunks WHERE source_id = :id', {
+      id: p.uuid(sourceId),
+    }),
   );
   return Number(r.rows[0]?.n);
 }
