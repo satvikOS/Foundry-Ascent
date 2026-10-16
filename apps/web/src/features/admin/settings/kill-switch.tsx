@@ -64,7 +64,7 @@ export function AiKillSwitch({ aiEnabled, onConfirm, pending = false, error }: A
               <p className="font-semibold" data-testid="ai-state">
                 {aiEnabled ? 'AI coaching is on' : 'AI coaching is paused for everyone'}
               </p>
-              <p id={descriptionId} className="text-[13px] text-muted-foreground">
+              <p id={descriptionId} className="text-small text-muted-foreground">
                 {aiEnabled
                   ? 'Founders get answers, within the daily spend caps.'
                   : 'No model calls are made. Founders can still read their workspace and reach a human.'}

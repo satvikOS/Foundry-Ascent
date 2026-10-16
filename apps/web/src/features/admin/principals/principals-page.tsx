@@ -169,7 +169,7 @@ export function PrincipalsPage() {
               ))}
             </SelectContent>
           </Select>
-          <p className="text-[13px] text-muted-foreground sm:ml-auto" aria-live="polite">
+          <p className="text-small text-muted-foreground sm:ml-auto" aria-live="polite">
             {principals.isSuccess
               ? `${pluralize(rows.length, 'person', 'people')} · ${pluralize(activeCodes, 'active code')}`
               : null}
@@ -228,10 +228,10 @@ export function PrincipalsPage() {
                           )}
                         </p>
                         {row.principal.title ? (
-                          <p className="text-[13px] text-muted-foreground">{row.principal.title}</p>
+                          <p className="text-small text-muted-foreground">{row.principal.title}</p>
                         ) : null}
                         {row.email ? (
-                          <p className="text-[13px] break-all text-muted-foreground">{row.email}</p>
+                          <p className="text-small break-all text-muted-foreground">{row.email}</p>
                         ) : null}
                       </div>
                     </div>
@@ -249,7 +249,7 @@ export function PrincipalsPage() {
                       </ul>
                     )}
                   </TableCell>
-                  <TableCell className="min-w-44 align-top text-[13px]">
+                  <TableCell className="min-w-44 align-top text-small">
                     {row.memberships.length === 0 ? (
                       <None label="No ventures" />
                     ) : (
@@ -273,7 +273,7 @@ export function PrincipalsPage() {
                       <ul className="grid gap-2">
                         {row.activeAccessCodes.map((code) => (
                           <li key={code.id} className="flex items-start justify-between gap-2">
-                            <div className="min-w-0 text-[13px]">
+                            <div className="min-w-0 text-small">
                               <p>
                                 <code className="font-mono text-xs whitespace-nowrap">
                                   {maskedCode(code.prefix)}

@@ -162,7 +162,7 @@ function RouteForm({
             No EIRs or program leads are set up yet. Ask a platform admin to add one in Principals.
           </Alert>
         ) : (
-          <p className="text-[13px] text-muted-foreground">
+          <p className="text-small text-muted-foreground">
             Only EIRs and program staff of your program can receive an escalation.
           </p>
         )}
@@ -173,7 +173,7 @@ function RouteForm({
         >
           <Input type="date" min={today} {...register('dueDate')} />
         </Field>
-        <p className="text-[13px] text-muted-foreground">
+        <p className="text-small text-muted-foreground">
           The founder approved sharing, so the assignee will see the escalation packet.
         </p>
         <MutationErrorAlert error={route.error} title="Couldn’t route the escalation" />

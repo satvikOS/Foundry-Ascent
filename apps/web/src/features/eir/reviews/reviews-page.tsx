@@ -138,7 +138,7 @@ export function ReviewsPage({ selectedTurnId, filter, onSelect, onFilterChange }
                             </span>
                           ) : null}
                         </span>
-                        <span className="truncate text-[13px] text-muted-foreground">
+                        <span className="truncate text-small text-muted-foreground">
                           {sample.ventureName} · {MODE_LABELS[sample.turn.mode].label}
                         </span>
                         <span className="text-xs text-muted-foreground">

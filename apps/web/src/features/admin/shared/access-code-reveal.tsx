@@ -86,7 +86,7 @@ function RevealContent({
       </Alert>
 
       <div className="grid gap-2">
-        <Label htmlFor={ids.code} className="text-[13px] text-muted-foreground">
+        <Label htmlFor={ids.code} className="text-small text-muted-foreground">
           One-time access code
         </Label>
         <div className="flex items-center gap-2 rounded-lg border border-border-strong bg-muted/50 py-2 pr-2 pl-3">
@@ -100,7 +100,7 @@ function RevealContent({
           </output>
           <CopyButton value={issued.accessCode} label="Copy code" showLabel variant="secondary" />
         </div>
-        <p id={ids.hint} className="text-[13px] text-muted-foreground">
+        <p id={ids.hint} className="text-small text-muted-foreground">
           {issued.expiresAt ? `Expires ${formatDate(issued.expiresAt)}.` : 'Does not expire.'} Codes are
           case-insensitive; the dashes are optional when typing.
         </p>
@@ -122,7 +122,7 @@ function RevealContent({
 
       <AlertDialogFooter>
         {stored ? null : (
-          <p className="self-center text-[13px] text-muted-foreground sm:mr-auto">
+          <p className="self-center text-small text-muted-foreground sm:mr-auto">
             Confirm you’ve stored it to close.
           </p>
         )}

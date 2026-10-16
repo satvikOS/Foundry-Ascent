@@ -46,7 +46,7 @@ export function SegmentedControl<T extends string>({
               onChange(option.value);
             }}
             className={cn(
-              'inline-flex h-full flex-1 items-center justify-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium whitespace-nowrap transition-colors',
+              'inline-flex h-full flex-1 items-center justify-center gap-1.5 rounded-md px-2.5 text-small font-medium whitespace-nowrap transition-colors',
               'hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
               active && 'bg-accent text-foreground',
             )}

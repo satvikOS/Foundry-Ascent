@@ -41,7 +41,7 @@ function BannerShell({
         role={live === 'polite' ? 'status' : undefined}
         aria-live={live}
         className={cn(
-          'flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b px-4 py-2 text-[13px]',
+          'flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b px-4 py-2 text-small',
           tone === 'warning' ? 'border-warning/40 bg-warning/10' : 'border-border bg-muted',
         )}
       >

@@ -22,7 +22,7 @@ export function SelectTrigger({
         'disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive',
         'data-[placeholder]:text-subtle-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0',
         '*:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-2',
-        size === 'default' ? 'h-9' : 'h-8 text-[13px]',
+        size === 'default' ? 'h-9' : 'h-8 text-small',
         className,
       )}
       {...props}

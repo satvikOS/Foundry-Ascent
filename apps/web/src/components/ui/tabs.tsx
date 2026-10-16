@@ -32,7 +32,7 @@ export function TabsTrigger({ className, ...props }: ComponentProps<typeof TabsP
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
       className={cn(
-        'inline-flex h-full items-center justify-center gap-1.5 px-2.5 text-[13px] font-medium whitespace-nowrap transition-colors',
+        'inline-flex h-full items-center justify-center gap-1.5 px-2.5 text-small font-medium whitespace-nowrap transition-colors',
         'hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50',
         '[&_svg]:size-3.5 [&_svg]:shrink-0',
         // pill

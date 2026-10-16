@@ -135,7 +135,7 @@ export function ConsentForm({ escalation, onConsented, onCancel }: ConsentFormPr
           headingLevel={3}
         />
       ) : items.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-[13px] text-muted-foreground">
+        <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-small text-muted-foreground">
           {query
             ? 'No confirmed memory matches.'
             : 'No confirmed memory yet. You can share the question on its own.'}
@@ -164,7 +164,7 @@ export function ConsentForm({ escalation, onConsented, onCancel }: ConsentFormPr
                       ) : null}
                     </span>
                     <span className="text-sm font-medium [overflow-wrap:anywhere]">{memory.title}</span>
-                    <span className="line-clamp-2 text-[13px] text-muted-foreground">{memory.content}</span>
+                    <span className="line-clamp-2 text-small text-muted-foreground">{memory.content}</span>
                   </label>
                 </li>
               );
@@ -173,7 +173,7 @@ export function ConsentForm({ escalation, onConsented, onCancel }: ConsentFormPr
         </fieldset>
       )}
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-[13px] text-muted-foreground" role="status" aria-live="polite">
+        <p className="text-small text-muted-foreground" role="status" aria-live="polite">
           {selected.size === 0
             ? 'Only your question and the packet will be shared.'
             : `${pluralize(selected.size, 'fact')} selected`}

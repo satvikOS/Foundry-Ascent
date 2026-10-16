@@ -74,12 +74,12 @@ export function SheetFooter({ className, ...props }: ComponentProps<'div'>) {
 
 export function SheetTitle({ className, ...props }: ComponentProps<typeof SheetPrimitive.Title>) {
   return (
-    <SheetPrimitive.Title className={cn('text-[15px] font-semibold tracking-tight', className)} {...props} />
+    <SheetPrimitive.Title className={cn('text-body font-semibold tracking-tight', className)} {...props} />
   );
 }
 
 export function SheetDescription({ className, ...props }: ComponentProps<typeof SheetPrimitive.Description>) {
   return (
-    <SheetPrimitive.Description className={cn('text-[13px] text-muted-foreground', className)} {...props} />
+    <SheetPrimitive.Description className={cn('text-small text-muted-foreground', className)} {...props} />
   );
 }

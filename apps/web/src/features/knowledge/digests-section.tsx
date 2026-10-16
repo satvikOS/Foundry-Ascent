@@ -97,7 +97,7 @@ export function DigestsSection({ ventureId, tenant, canEdit }: DigestsSectionPro
           return (
             <li key={session.id} aria-labelledby={headingId} className="grid gap-3 py-5 first:pt-1">
               <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                <h3 id={headingId} className="min-w-0 text-[15px] font-medium">
+                <h3 id={headingId} className="min-w-0 text-body font-medium">
                   <Link
                     to="/$tenant/app/v/$ventureId/c/$sessionId"
                     params={{ tenant, ventureId, sessionId: session.id }}

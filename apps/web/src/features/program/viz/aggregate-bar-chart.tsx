@@ -122,7 +122,7 @@ export function AggregateBarChart({
               data-suppressed={row.value === null || undefined}
               className="grid gap-1 py-1 sm:grid-cols-[minmax(7rem,11rem)_1fr] sm:items-center sm:gap-3"
             >
-              <span className="truncate text-[13px] text-muted-foreground" title={row.label}>
+              <span className="truncate text-small text-muted-foreground" title={row.label}>
                 {row.label}
                 <span className="sr-only">:</span>
               </span>
@@ -136,7 +136,7 @@ export function AggregateBarChart({
                       className="h-3 shrink-0 rounded-r-[4px] border border-l-0 border-dashed border-border-strong"
                       style={{ width }}
                     />
-                    <span className="inline-flex items-center gap-1 text-[13px] whitespace-nowrap text-muted-foreground">
+                    <span className="inline-flex items-center gap-1 text-small whitespace-nowrap text-muted-foreground">
                       <EyeOff aria-hidden className="size-3.5" />
                       {suppressedLabel(k)}
                     </span>
@@ -159,7 +159,7 @@ export function AggregateBarChart({
                       className={cn('h-3 shrink-0 rounded-r-[4px] bg-chart-2', row.value === 0 && 'w-px')}
                       style={row.value === 0 ? undefined : { width }}
                     />
-                    <span className="text-[13px] font-medium text-foreground">{formatNumber(row.value)}</span>
+                    <span className="text-small font-medium text-foreground">{formatNumber(row.value)}</span>
                   </>
                 )}
               </span>
@@ -168,7 +168,7 @@ export function AggregateBarChart({
         })}
       </ul>
       {hasSuppressed ? (
-        <figcaption className="flex items-start gap-2 text-[13px] text-muted-foreground">
+        <figcaption className="flex items-start gap-2 text-small text-muted-foreground">
           <EyeOff aria-hidden className="mt-0.5 size-3.5 shrink-0" />
           <span>
             {explanation} The dashed outline marks the possible range (up to {k - 1}), not a value.

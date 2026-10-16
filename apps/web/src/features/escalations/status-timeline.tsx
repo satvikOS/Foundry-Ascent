@@ -157,7 +157,7 @@ export function EscalationTimeline({ escalation }: { escalation: EscalationView 
                 <span className="sr-only"> ({STATE_TEXT[step.state]})</span>
               </p>
               {step.detail ? (
-                <p className="text-[13px] leading-5 text-muted-foreground">{step.detail}</p>
+                <p className="text-small leading-5 text-muted-foreground">{step.detail}</p>
               ) : null}
               {step.at ? (
                 <time

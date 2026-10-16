@@ -82,7 +82,7 @@ export function TeamPage() {
               >
                 <UserAvatar name={member.principal.displayName} decorative />
                 <div className="grid min-w-0 content-start gap-0.5">
-                  <p className="flex flex-wrap items-baseline gap-x-2 text-[15px] font-medium">
+                  <p className="flex flex-wrap items-baseline gap-x-2 text-body font-medium">
                     {member.principal.displayName}
                     {isMe ? (
                       <span className="text-caption font-normal text-muted-foreground">You</span>

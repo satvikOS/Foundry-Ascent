@@ -74,7 +74,7 @@ export function TableCell({ className, ...props }: ComponentProps<'td'>) {
 }
 
 export function TableCaption({ className, ...props }: ComponentProps<'caption'>) {
-  return <caption className={cn('mt-3 text-[13px] text-muted-foreground', className)} {...props} />;
+  return <caption className={cn('mt-3 text-small text-muted-foreground', className)} {...props} />;
 }
 
 export type SortDirection = 'asc' | 'desc';

@@ -130,7 +130,7 @@ export function InboxPage({ selectedId, filter, onSelect, onFilterChange }: Inbo
                           <StatusBadge kind="escalationStatus" status={e.status} />
                         </span>
                         <span className="text-sm font-medium">{e.ventureName}</span>
-                        <span className="text-[13px] text-muted-foreground">
+                        <span className="text-small text-muted-foreground">
                           {ESCALATION_CATEGORY_LABELS[e.category]}
                         </span>
                         <span className="text-xs text-muted-foreground">
@@ -156,7 +156,7 @@ export function InboxPage({ selectedId, filter, onSelect, onFilterChange }: Inbo
                 }
               >
                 <div className="grid gap-5">
-                  <div className="flex flex-wrap items-center gap-2 text-[13px]">
+                  <div className="flex flex-wrap items-center gap-2 text-small">
                     <StatusBadge kind="escalationStatus" status={selected.status} withTitle />
                     <DueLabel escalation={selected} />
                     {selected.sessionId ? <Badge variant="muted">From a coaching session</Badge> : null}

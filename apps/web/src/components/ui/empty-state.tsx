@@ -46,7 +46,7 @@ export function EmptyState({
         {title}
       </Heading>
       {description ? (
-        <div className={cn('max-w-md text-muted-foreground', size === 'default' ? 'text-sm' : 'text-[13px]')}>
+        <div className={cn('max-w-md text-muted-foreground', size === 'default' ? 'text-sm' : 'text-small')}>
           {description}
         </div>
       ) : null}

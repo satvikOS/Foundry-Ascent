@@ -516,7 +516,7 @@ export function StatusBadge<K extends StatusKind>({
       title={withTitle ? def.description : undefined}
       className={cn(
         'inline-flex w-fit shrink-0 items-center gap-1 rounded-md border font-medium whitespace-nowrap',
-        size === 'sm' ? 'h-5 px-1.5 text-xs' : 'h-6 px-2 text-[13px]',
+        size === 'sm' ? 'h-5 px-1.5 text-xs' : 'h-6 px-2 text-small',
         SHAPE_CLASSES[def.shape],
         def.shape === 'filled' ? tone.filled : tone.base,
         className,

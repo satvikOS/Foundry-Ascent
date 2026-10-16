@@ -228,7 +228,7 @@ function EvidenceList({ items }: { items: readonly EvidenceItem[] }) {
                 <Badge variant="muted">{evidenceKindLabel(item).label}</Badge>
                 {item.status ? <span className="text-xs text-muted-foreground">{item.status}</span> : null}
               </div>
-              <p className="mt-1 line-clamp-4 text-[13px] text-muted-foreground">{item.excerpt}</p>
+              <p className="mt-1 line-clamp-4 text-small text-muted-foreground">{item.excerpt}</p>
             </li>
           ))}
         </ul>

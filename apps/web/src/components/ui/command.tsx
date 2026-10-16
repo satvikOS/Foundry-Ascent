@@ -63,7 +63,7 @@ export function CommandInput({ className, ...props }: ComponentProps<typeof Comm
       <CommandPrimitive.Input
         data-slot="command-input"
         className={cn(
-          'flex h-full w-full bg-transparent text-[15px] outline-none placeholder:text-subtle-foreground disabled:cursor-not-allowed disabled:opacity-50',
+          'flex h-full w-full bg-transparent text-body outline-none placeholder:text-subtle-foreground disabled:cursor-not-allowed disabled:opacity-50',
           className,
         )}
         {...props}
