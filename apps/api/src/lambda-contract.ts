@@ -32,6 +32,8 @@ export const LambdaContract = z.object({
   worker: z.object({
     /** The jobs-queue message body the daily schedule (infra app-stack.ts) sends. */
     dailyMaintenanceMessage: z.object({ type: z.literal('maintenance'), task: z.literal('daily') }).strict(),
+    /** The body the distillation sweep schedule sends (the worker distils a bounded batch inline). */
+    distillSweepMessage: z.object({ type: z.literal('distill_sweep') }).strict(),
   }),
 });
 export type LambdaContract = z.infer<typeof LambdaContract>;
@@ -54,6 +56,9 @@ export const SSE_KEEP_ALIVE_MS = LAMBDA_CONTRACT.api.sseKeepAliveSeconds * 1000;
 
 /** Body of the daily maintenance message (EventBridge Scheduler -> jobs queue -> worker). */
 export const DAILY_MAINTENANCE_MESSAGE = LAMBDA_CONTRACT.worker.dailyMaintenanceMessage;
+
+/** Body of the distillation sweep message (EventBridge Scheduler -> jobs queue -> worker). */
+export const DISTILL_SWEEP_MESSAGE = LAMBDA_CONTRACT.worker.distillSweepMessage;
 
 export type LambdaRole = 'api' | 'worker' | 'migrate';
 

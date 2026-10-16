@@ -5,6 +5,7 @@ import { DirectoryCache } from './internal/directory.js';
 import { Kit } from './internal/kit.js';
 import { createOrchestrator, type Orchestrator } from './orchestrator/run-turn.js';
 import { createAdminService, type AdminService } from './services/admin.js';
+import { createDistillService, type DistillService } from './services/distill.js';
 import { createDocumentsService, type DocumentsService } from './services/documents.js';
 import { createEirStudioService, type EirStudioService } from './services/eir-studio.js';
 import { createEscalationsService, type EscalationsService } from './services/escalations.js';
@@ -38,6 +39,8 @@ export interface Core {
   readonly program: ProgramService;
   readonly admin: AdminService;
   readonly maintenance: MaintenanceService;
+  /** Distillation: digests, the notebook, memory proposals and lesson drafts from conversations. */
+  readonly distill: DistillService;
   /** The vEIR notebook of a venture (specific pool). */
   readonly notebook: NotebookService;
   /** The vEIR a venture talks to, call configuration and avatar sessions. */
@@ -56,6 +59,7 @@ export function createCore(deps: CoreDeps): Core {
   const kit = new Kit(resolveDeps(deps));
   const directory = new DirectoryCache(kit);
   const auth = createAuthService(kit);
+  const distill = createDistillService(kit, directory);
   const onPrincipalChanged = (principalId: string): void => {
     auth.invalidatePrincipal(principalId);
   };
@@ -73,7 +77,8 @@ export function createCore(deps: CoreDeps): Core {
     eir: createEirStudioService(kit),
     program: createProgramService(kit, directory),
     admin: createAdminService(kit, onPrincipalChanged),
-    maintenance: createMaintenanceService(kit),
+    maintenance: createMaintenanceService(kit, distill),
+    distill,
     notebook: createNotebookService(kit),
     veir: createVeirService(kit),
     speech: createSpeechService(kit),

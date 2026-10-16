@@ -491,6 +491,104 @@ export function listDistillationCandidates(
   );
 }
 
+/** A conversation as distillation sees it (system executor: deleted conversations included). */
+export interface DistillState extends SessionRecord {
+  readonly deletedAt: string | null;
+  /** The persona of the conversation's pinned release (whose notebook it feeds). */
+  readonly personaId: string;
+  /** Completed turns now; the digest covers `distillVersion` of them. */
+  readonly completedTurns: number;
+}
+
+/**
+ * The distillation state of a conversation, or null when it does not exist. `lock` takes a row lock for the
+ * rest of the transaction, so a concurrent delete, digest deletion or second distillation waits for it.
+ */
+export function getDistillState(
+  ex: SqlExecutor,
+  sessionId: string,
+  options: { readonly lock?: boolean } = {},
+): Promise<DistillState | null> {
+  return queryFirst(
+    ex,
+    `SELECT ${COLUMNS}, s.deleted_at, r.persona_id,
+            (SELECT count(*) FROM turns t WHERE t.session_id = s.id AND t.status = 'completed') AS completed_turns
+     FROM coaching_sessions s
+     JOIN persona_releases r ON r.id = s.persona_release_id
+     WHERE s.id = :id${options.lock ? '\n     FOR UPDATE OF s' : ''}`,
+    { id: p.uuid(sessionId) },
+    (r) => ({
+      ...decodeSession(r),
+      deletedAt: col.ts.nullable.decode(r.deleted_at, 'deleted_at'),
+      personaId: col.uuid.decode(r.persona_id, 'persona_id'),
+      completedTurns: col.int.decode(r.completed_turns, 'completed_turns'),
+    }),
+  );
+}
+
+/**
+ * Records that distillation covered `distillVersion` turns without a new digest (nothing worth keeping, or
+ * the result was blocked), so neither the delayed trigger nor the backstop retries it until a new turn.
+ * Returns whether it was recorded.
+ */
+export async function markSessionDistilled(
+  ex: SqlExecutor,
+  args: { sessionId: string; distillVersion: number },
+): Promise<boolean> {
+  const result = await ex.query(
+    `UPDATE coaching_sessions AS s
+     SET distilled_at = now(), distill_version = greatest(s.distill_version, :version)
+     WHERE s.id = :id AND s.privacy = 'standard' AND s.deleted_at IS NULL`,
+    { id: p.uuid(args.sessionId), version: p.int(Math.max(0, Math.trunc(args.distillVersion))) },
+  );
+  return result.rowCount > 0;
+}
+
+/** The latest earlier conversation of a person in a venture, with what distillation needs to decide on it. */
+export interface PreviousConversation {
+  readonly id: string;
+  readonly status: SessionRecord['status'];
+  readonly privacy: SessionRecord['privacy'];
+  readonly lastActivityAt: string;
+  readonly distillVersion: number;
+  readonly digestDeleted: boolean;
+  readonly completedTurns: number;
+}
+
+/**
+ * The person's most recent other conversation in the venture (deleted ones are hidden by RLS and excluded
+ * for the system executor), or null.
+ */
+export function getPreviousConversation(
+  ex: SqlExecutor,
+  args: { ventureId: string; startedBy: string; excludeSessionId: string },
+): Promise<PreviousConversation | null> {
+  return queryFirst(
+    ex,
+    `SELECT s.id, s.status, s.privacy, s.last_activity_at, s.distill_version,
+            s.digest_deleted_at IS NOT NULL AS digest_deleted,
+            (SELECT count(*) FROM turns t WHERE t.session_id = s.id AND t.status = 'completed') AS completed_turns
+     FROM coaching_sessions s
+     WHERE s.venture_id = :ventureId AND s.started_by = :startedBy AND s.id <> :except AND s.deleted_at IS NULL
+     ORDER BY s.last_activity_at DESC, s.id DESC
+     LIMIT 1`,
+    {
+      ventureId: p.uuid(args.ventureId),
+      startedBy: p.uuid(args.startedBy),
+      except: p.uuid(args.excludeSessionId),
+    },
+    (r) => ({
+      id: col.uuid.decode(r.id, 'id'),
+      status: col.enum(SessionStatus.options).decode(r.status, 'status'),
+      privacy: col.enum(SessionPrivacy.options).decode(r.privacy, 'privacy'),
+      lastActivityAt: col.ts.decode(r.last_activity_at, 'last_activity_at'),
+      distillVersion: col.int.decode(r.distill_version, 'distill_version'),
+      digestDeleted: col.bool.decode(r.digest_deleted, 'digest_deleted'),
+      completedTurns: col.int.decode(r.completed_turns, 'completed_turns'),
+    }),
+  );
+}
+
 export interface EphemeralCleanupResult {
   /** Ephemeral sessions ended because nobody wrote in them for the idle period. */
   readonly sessionsEnded: number;

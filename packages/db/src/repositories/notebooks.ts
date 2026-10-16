@@ -194,3 +194,24 @@ export function toNotebookView(
     lastEditedBy: record?.lastEditedBy ?? null,
   };
 }
+
+/** Pin keys of `person_edits` for the summary and the opener (entries and commitments use their ids). */
+export const SUMMARY_EDIT = 'summary';
+export const OPENER_EDIT = 'nextOpener';
+
+/**
+ * What a person wrote or changed since the vEIR last wrote the notebook (migration 0007, kept by a trigger):
+ * entry and commitment ids, plus {@link SUMMARY_EDIT} / {@link OPENER_EDIT}. Empty when there is no notebook.
+ */
+export async function getPersonEdits(
+  ex: SqlExecutor,
+  args: { ventureId: string; personaId: string },
+): Promise<string[]> {
+  const raw = await queryFirst(
+    ex,
+    `SELECT n.person_edits FROM veir_notebooks n WHERE n.venture_id = :ventureId AND n.persona_id = :personaId`,
+    { ventureId: p.uuid(args.ventureId), personaId: p.uuid(args.personaId) },
+    (r) => col.json().decode(r.person_edits, 'person_edits'),
+  );
+  return Array.isArray(raw) ? raw.filter((id): id is string => typeof id === 'string') : [];
+}

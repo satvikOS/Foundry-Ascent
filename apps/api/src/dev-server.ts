@@ -6,7 +6,10 @@
  *
  * Defaults: APP_ENV=development, DB_DRIVER=pg, DATABASE_URL = the db:reset database, MODEL_PROVIDER=mock.
  * Documents go to a local directory through presigned-style URLs served by this process
- * (PUT /api/v1/_local/uploads/:token), and jobs run in-process right after they are enqueued.
+ * (PUT /api/v1/_local/uploads/:token). Jobs run in-process through the worker's own dispatch, every type the
+ * Lambda worker handles (ingestion, distillation, the sweep and daily maintenance), right after they are
+ * enqueued or after their delay; daily maintenance also runs once a day while the server is up. For a quicker
+ * local demo of distillation, set CORE_DISTILL_DELAY_SECONDS (and CORE_DISTILL_ACTIVE_SECONDS below it).
  */
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -21,13 +24,20 @@ import { LocalObjectStore } from './adapters/local-object-store.js';
 import { DocumentTextExtractor } from './adapters/text-extractor.js';
 import { createApp } from './app.js';
 import { loadApiConfig, loadCoreConfig } from './config.js';
+import { DAILY_MAINTENANCE_MESSAGE, dispatchJob } from './jobs/worker.js';
 import { errorFields } from './logging.js';
 import { createDatabase, createGateway, createProcessLogger } from './runtime/common.js';
 import { observeDatabase } from './runtime/db-observer.js';
+import { workerDepsFor } from './runtime/worker.js';
 
 /** The database `pnpm --filter @foundry/db db:reset` creates (owner role fa_master, unix socket cluster). */
 export const DEFAULT_LOCAL_DATABASE_URL =
   'postgresql://fa_master:fa_master@localhost/foundry?host=/var/tmp&port=54329';
+
+/** Budget of one local job (no Lambda deadline here) and its attempts (like the queue's redrive count). */
+const LOCAL_JOB_BUDGET_MS = 10 * 60_000;
+const LOCAL_JOB_ATTEMPTS = 3;
+const DAY_MS = 24 * 3_600_000;
 
 async function main(): Promise<void> {
   if (process.env.APP_ENV === 'production')
@@ -61,20 +71,35 @@ async function main(): Promise<void> {
     publicOrigin: config.siteOrigin ?? `http://localhost:${String(port)}`,
     maxUploadBytes: MAX_DOCUMENT_BYTES,
   });
-  const jobQueue = new InlineJobQueue({ logger });
+  const jobQueue = new InlineJobQueue({ logger, maxAttempts: LOCAL_JOB_ATTEMPTS });
+  const gateway = createGateway(env, logger);
   const core = createCore({
     db,
-    gateway: createGateway(env, logger),
+    gateway,
     config: loadCoreConfig(env),
     objectStore,
     jobQueue,
     textExtractor: new DocumentTextExtractor(),
     logger: logger.child({ component: 'core' }),
   });
-  jobQueue.attach(async (job, { attempt, maxAttempts, requestId }) => {
-    const result = await core.ingestion.process(job, { requestId, attempt, maxAttempts });
-    logger.info('dev.job_done', { requestId, type: job.type, status: result.status, chunks: result.chunks });
+  const workerDeps = workerDepsFor(core, { db, gateway, logger, maxReceiveCount: LOCAL_JOB_ATTEMPTS });
+  jobQueue.attach(async (job, { attempt, requestId }) => {
+    const log = logger.child({ requestId, jobType: job.type, attempt });
+    const { outcome } = await dispatchJob(workerDeps, job, {
+      requestId,
+      attempt,
+      deadline: Date.now() + LOCAL_JOB_BUDGET_MS,
+      log,
+    });
+    return outcome;
   });
+  // The production schedule sends the daily maintenance message; locally it runs once a day while up.
+  const daily = setInterval(() => {
+    jobQueue.submit(DAILY_MAINTENANCE_MESSAGE).catch((err: unknown) => {
+      logger.warn('dev.maintenance_not_queued', errorFields(err));
+    });
+  }, DAY_MS);
+  daily.unref();
 
   const app = createApp({
     core,
@@ -92,6 +117,8 @@ async function main(): Promise<void> {
   });
 
   const shutdown = (): void => {
+    clearInterval(daily);
+    jobQueue.stop();
     server.close(() => {
       void jobQueue
         .idle()

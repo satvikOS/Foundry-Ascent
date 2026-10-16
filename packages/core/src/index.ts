@@ -15,10 +15,13 @@ export {
 } from './errors.js';
 export { CoreConfig, DEFAULT_CORE_CONFIG, coreConfig, loadConfig, type EnvLike } from './config.js';
 export {
+  DistillSessionJob,
   ExtractionFailedError,
   IngestDocumentJob,
   IngestKnowledgeSourceJob,
+  IngestionJob,
   JobMessage,
+  MAX_JOB_DELAY_SECONDS,
   ObjectNotFoundError,
   ObjectTooLargeError,
   noopCoreLogger,
@@ -27,6 +30,7 @@ export {
   type Clock,
   type CoreLogFields,
   type CoreLogger,
+  type EnqueueOptions,
   type ExtractedText,
   type IdGenerator,
   type JobQueue,
@@ -89,8 +93,34 @@ export {
   type KnowledgeLibraryService,
 } from './services/knowledge-library.js';
 export { type LessonsService } from './services/lessons.js';
-export { MEMORY_PAGE_DEFAULT, type MemoryPage, type MemoryService } from './services/memory.js';
+export {
+  MEMORY_DUPLICATE_COSINE,
+  MEMORY_PAGE_DEFAULT,
+  type MemoryPage,
+  type MemoryService,
+  type ProposalResult,
+} from './services/memory.js';
 export { type MaintenanceReport, type MaintenanceService } from './services/maintenance.js';
+export {
+  MIN_DISTILL_BUDGET_MS,
+  RetryableDistillError,
+  type DistillBackstopReport,
+  type DistillJobInput,
+  type DistillOutcome,
+  type DistillRunOptions,
+  type DistillService,
+} from './services/distill.js';
+export {
+  distillSkipReason,
+  dropSuppressed,
+  previousNeedsDistill,
+  removedSince,
+  staleWriteReason,
+  withoutPinnedRewrites,
+  type DistillSkipReason,
+} from './services/distill-rules.js';
+export { resolutionEntryId, resolutionNote } from './services/notebook-advice.js';
+export { metered, meteredStructured, type Meter, type MeteredAttempt } from './internal/metered.js';
 export { documentKey, storageFilename, type DocumentsService } from './services/documents.js';
 export { type EscalationsService } from './services/escalations.js';
 export { assemblePacket, dueAtFor, type PacketInput } from './services/escalation-packet.js';

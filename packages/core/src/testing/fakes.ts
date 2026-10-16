@@ -8,6 +8,7 @@ import {
   type Clock,
   type CoreLogFields,
   type CoreLogger,
+  type EnqueueOptions,
   type ExtractedText,
   type JobMessage,
   type JobQueue,
@@ -64,15 +65,19 @@ export class MemoryObjectStore implements ObjectStore {
 
 /** In-memory JobQueue (jobs are drained by the test). */
 export class MemoryJobQueue implements JobQueue {
-  readonly jobs: { job: JobMessage; deduplicationId: string | null }[] = [];
+  readonly jobs: { job: JobMessage; deduplicationId: string | null; delaySeconds: number }[] = [];
   failNext = false;
 
-  enqueue(job: JobMessage, options?: { readonly deduplicationId?: string }): Promise<void> {
+  enqueue(job: JobMessage, options?: EnqueueOptions): Promise<void> {
     if (this.failNext) {
       this.failNext = false;
       return Promise.reject(new Error('queue unavailable'));
     }
-    this.jobs.push({ job, deduplicationId: options?.deduplicationId ?? null });
+    this.jobs.push({
+      job,
+      deduplicationId: options?.deduplicationId ?? null,
+      delaySeconds: options?.delaySeconds ?? 0,
+    });
     return Promise.resolve();
   }
 

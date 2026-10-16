@@ -12,7 +12,7 @@ import { z } from 'zod';
 
 import { col, type RawRow } from '../columns.js';
 import { SqlUsageError } from '../errors.js';
-import { type SqlExecutor } from '../executor.js';
+import { type SqlExecutor, type SystemExecutor } from '../executor.js';
 import { p, type SqlParam } from '../params.js';
 import {
   andTsQuerySql,
@@ -557,5 +557,133 @@ export function listMemoryHistory(ex: SqlExecutor, memoryId: string): Promise<Me
       diff: col.json(Attributes).decode(r.diff, 'diff'),
       at: col.ts.decode(r.at, 'at'),
     }),
+  );
+}
+
+// ------------------------------------------------------------------------------------------------
+// Proposal hygiene (distillation, turns, recaps, daily maintenance)
+// ------------------------------------------------------------------------------------------------
+
+/**
+ * Statuses a new AI candidate is compared against before it is proposed: live items, and items a person
+ * rejected (a turned-down suggestion is never raised again as new).
+ */
+export const DEDUPE_MEMORY_STATUSES: readonly MemoryStatusValue[] = [
+  'proposed',
+  'confirmed',
+  'disputed',
+  'rejected',
+];
+
+export interface SimilarMemory {
+  readonly id: string;
+  /** Cosine similarity in [-1, 1]. */
+  readonly similarity: number;
+}
+
+/**
+ * The venture's items closest to `embedding` by cosine similarity, among items that have an embedding and one
+ * of `statuses` (an exact scan inside one venture; memory has no ANN index). Most similar first.
+ */
+export function nearestMemory(
+  ex: SqlExecutor,
+  args: {
+    ventureId: string;
+    embedding: readonly number[];
+    statuses?: readonly MemoryStatusValue[];
+    limit?: number;
+  },
+): Promise<SimilarMemory[]> {
+  return queryRows(
+    ex,
+    `SELECT m.id, 1 - (m.embedding <=> :embedding) AS similarity
+     FROM memory_objects m
+     WHERE m.venture_id = :ventureId AND m.embedding IS NOT NULL AND m.status = ANY (:statuses)
+     ORDER BY m.embedding <=> :embedding, m.id
+     LIMIT :limit`,
+    {
+      ventureId: p.uuid(args.ventureId),
+      embedding: p.vector(args.embedding),
+      statuses: p.textArray(args.statuses ?? DEDUPE_MEMORY_STATUSES),
+      limit: p.int(clampLimit(args.limit, 1, 20)),
+    },
+    (r) => ({ id: col.uuid.decode(r.id, 'id'), similarity: col.num.decode(r.similarity, 'similarity') }),
+  );
+}
+
+/** At most this many source refs are kept on one item. */
+const MAX_SOURCE_REFS = 50;
+
+/**
+ * Raises a pending AI proposal again instead of proposing a duplicate: adds the new source refs it does not
+ * have yet, keeps the higher confidence and refreshes `updated_at` (the expiry clock), with a `proposed`
+ * history event marked `repeated`. Null when the item is no longer a pending AI proposal (or not visible).
+ */
+export async function repeatProposal(
+  ex: SqlExecutor,
+  args: { memoryId: string; actorId: string; sourceRefs: readonly SourceRefValue[]; confidence: number },
+): Promise<MemoryRecord | null> {
+  const id = await queryFirst(
+    ex,
+    `WITH upd AS (
+       UPDATE memory_objects m
+          SET source_refs = CASE
+                WHEN jsonb_typeof(m.source_refs) <> 'array' THEN :refs
+                ELSE m.source_refs || coalesce(
+                  (SELECT jsonb_agg(r.ref) FROM jsonb_array_elements(:refs) AS r (ref)
+                    WHERE NOT m.source_refs @> jsonb_build_array(r.ref)
+                      AND jsonb_array_length(m.source_refs) < :maxRefs), '[]'::jsonb)
+              END,
+              confidence = greatest(m.confidence, :confidence),
+              updated_at = now()
+        WHERE m.id = :id AND m.origin = 'ai' AND m.status = 'proposed'
+        RETURNING m.id, m.venture_id)
+     , ev AS (
+       INSERT INTO memory_events (memory_id, venture_id, actor_id, action, diff)
+       SELECT id, venture_id, :actor, 'proposed', '{"repeated": true}'::jsonb FROM upd)
+     SELECT id FROM upd`,
+    {
+      id: p.uuid(args.memoryId),
+      actor: p.uuid(args.actorId),
+      refs: p.json(args.sourceRefs),
+      maxRefs: p.int(MAX_SOURCE_REFS),
+      confidence: p.num(Math.min(1, Math.max(0, args.confidence))),
+    },
+    (r) => col.uuid.decode(r.id, 'id'),
+  );
+  return id ? mustGet(ex, id) : null;
+}
+
+/**
+ * Daily maintenance (system): AI proposals nobody approved, rejected or raised again for `olderThanDays`
+ * become `expired` (allowed by the approval CHECK since migration 0007), at most `limit` per run, each with an
+ * `expired` history event attributed to the person the proposal was made for. Returns the number expired.
+ */
+export function expireStaleAiProposals(
+  sx: SystemExecutor,
+  args: { olderThanDays: number; limit?: number },
+): Promise<number> {
+  return queryNumber(
+    sx,
+    `WITH due AS (
+       SELECT m.id FROM memory_objects m
+        WHERE m.origin = 'ai' AND m.status = 'proposed'
+          AND m.updated_at < now() - make_interval(days => :days)
+        ORDER BY m.updated_at, m.id
+        LIMIT :limit
+        FOR UPDATE SKIP LOCKED)
+     , upd AS (
+       UPDATE memory_objects m SET status = 'expired', pinned = false, updated_at = now()
+         FROM due WHERE m.id = due.id
+       RETURNING m.id, m.venture_id, m.created_by)
+     , ev AS (
+       INSERT INTO memory_events (memory_id, venture_id, actor_id, action, diff)
+       SELECT id, venture_id, created_by, 'expired', jsonb_build_object('reason', 'not_reviewed', 'days', :days)
+         FROM upd)
+     SELECT count(*) AS n FROM upd`,
+    {
+      days: p.int(Math.max(1, Math.trunc(args.olderThanDays))),
+      limit: p.int(clampLimit(args.limit, 5_000, 50_000)),
+    },
   );
 }

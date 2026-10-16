@@ -153,4 +153,35 @@ describe('SqsJobQueue', () => {
     const command = send.mock.calls[0]?.[0] as unknown as SendMessageCommand;
     expect(command.input).toMatchObject({ MessageGroupId: job.ventureId, MessageDeduplicationId: 'doc:1' });
   });
+
+  const distill = {
+    type: 'distill_session' as const,
+    sessionId: '44444444-4444-4444-8444-444444444444',
+    tenantId: job.tenantId,
+    ventureId: job.ventureId,
+    requestId: 'req-2',
+  };
+
+  it('delays a job with DelaySeconds (and sends none without a delay)', async () => {
+    const { queue: q, send } = queue('https://sqs.us-east-1.amazonaws.com/123456789012/FoundryAscent-Jobs');
+    await q.enqueue(distill, { delaySeconds: 540 });
+    await q.enqueue(distill);
+    const [delayed, now] = send.mock.calls.map((call) => (call[0] as unknown as SendMessageCommand).input);
+    expect(delayed).toMatchObject({ DelaySeconds: 540 });
+    expect(JSON.parse(delayed?.MessageBody ?? '')).toEqual(distill);
+    expect(delayed?.MessageAttributes?.jobType?.StringValue).toBe('distill_session');
+    expect(now?.DelaySeconds).toBeUndefined();
+  });
+
+  it('refuses delays SQS cannot honour', async () => {
+    const standard = queue('https://sqs.us-east-1.amazonaws.com/123456789012/FoundryAscent-Jobs');
+    await expect(standard.queue.enqueue(distill, { delaySeconds: 901 })).rejects.toThrow(RangeError);
+    await expect(standard.queue.enqueue(distill, { delaySeconds: -1 })).rejects.toThrow(RangeError);
+    const fifo = queue('https://sqs.us-east-1.amazonaws.com/123456789012/jobs.fifo');
+    await expect(fifo.queue.enqueue(distill, { delaySeconds: 60 })).rejects.toThrow(/FIFO/);
+    await fifo.queue.enqueue(distill);
+    const command = fifo.send.mock.calls[0]?.[0] as unknown as SendMessageCommand;
+    expect(command.input.MessageGroupId).toBe(distill.ventureId);
+    expect(standard.send).not.toHaveBeenCalled();
+  });
 });

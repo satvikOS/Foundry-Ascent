@@ -69,7 +69,30 @@ export const IngestKnowledgeSourceJob = z.object({
 });
 export type IngestKnowledgeSourceJob = z.infer<typeof IngestKnowledgeSourceJob>;
 
-export const JobMessage = z.discriminatedUnion('type', [IngestDocumentJob, IngestKnowledgeSourceJob]);
+/** The jobs the ingestion processor handles. */
+export const IngestionJob = z.discriminatedUnion('type', [IngestDocumentJob, IngestKnowledgeSourceJob]);
+export type IngestionJob = z.infer<typeof IngestionJob>;
+
+/**
+ * Distils one conversation into its digest, the vEIR notebook, memory proposals and lesson drafts. Sent after
+ * each completed turn (delayed), when a conversation ends and when the person's next one starts; the worker
+ * skips it cheaply when there is nothing new or the conversation is still active.
+ */
+export const DistillSessionJob = z.object({
+  type: z.literal('distill_session'),
+  sessionId: z.uuid(),
+  tenantId: z.uuid(),
+  ventureId: z.uuid(),
+  /** Request that enqueued the job (correlation only). */
+  requestId: z.string().max(128).nullable(),
+});
+export type DistillSessionJob = z.infer<typeof DistillSessionJob>;
+
+export const JobMessage = z.discriminatedUnion('type', [
+  IngestDocumentJob,
+  IngestKnowledgeSourceJob,
+  DistillSessionJob,
+]);
 export type JobMessage = z.infer<typeof JobMessage>;
 
 /** Voice engines of the text-to-speech service, most natural first (Amazon Polly). */
@@ -108,9 +131,19 @@ export interface SpeechSynthesizer {
   synthesize(input: SpeechSynthesisInput): Promise<SynthesizedSpeech>;
 }
 
+export interface EnqueueOptions {
+  /** Lets FIFO/idempotent consumers drop duplicates. */
+  readonly deduplicationId?: string;
+  /** Delivers the job after this many seconds (0–{@link MAX_JOB_DELAY_SECONDS}; SQS `DelaySeconds`). */
+  readonly delaySeconds?: number;
+}
+
+/** The longest delay a queued job can have (the SQS limit). */
+export const MAX_JOB_DELAY_SECONDS = 900;
+
 export interface JobQueue {
-  /** Enqueues a job. `deduplicationId` lets FIFO/idempotent consumers drop duplicates. */
-  enqueue(job: JobMessage, options?: { readonly deduplicationId?: string }): Promise<void>;
+  /** Enqueues a job, optionally delayed. */
+  enqueue(job: JobMessage, options?: EnqueueOptions): Promise<void>;
 }
 
 export interface ExtractedText {

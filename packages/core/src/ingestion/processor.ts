@@ -16,7 +16,7 @@ import { type Kit } from '../internal/kit.js';
 import { spendCapExceeded } from '../orchestrator/guards.js';
 import {
   ExtractionFailedError,
-  JobMessage,
+  IngestionJob,
   ObjectNotFoundError,
   ObjectTooLargeError,
   type IngestDocumentJob,
@@ -84,7 +84,7 @@ export function createIngestionProcessor(kit: Kit): IngestionProcessor {
     await auditRepo.appendAudit(sx, event);
   }
 
-  async function markFailed(job: JobMessage, requestId: string, reason: string): Promise<void> {
+  async function markFailed(job: IngestionJob, requestId: string, reason: string): Promise<void> {
     if (job.type === 'ingest_knowledge_source') {
       await kit.system(async (sx) => {
         const updated = await knowledgeRepo.setKnowledgeSourceStatus(sx, {
@@ -496,7 +496,7 @@ export function createIngestionProcessor(kit: Kit): IngestionProcessor {
 
   return {
     async process(rawJob, options) {
-      const parsed = JobMessage.safeParse(rawJob);
+      const parsed = IngestionJob.safeParse(rawJob);
       if (!parsed.success) {
         logger.warn('ingestion.invalid_job', {
           requestId: options.requestId,
