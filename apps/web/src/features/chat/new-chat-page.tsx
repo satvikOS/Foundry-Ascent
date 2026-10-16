@@ -1,4 +1,4 @@
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getRouteApi, Link, useNavigate, useRouter } from '@tanstack/react-router';
 import {
   AlarmClock,
@@ -19,8 +19,7 @@ import { toast } from '@/components/ui/toast';
 import { SimpleTooltip } from '@/components/ui/tooltip';
 import { errorMessage } from '@/lib/api/errors';
 import { memoryQueryOptions } from '@/lib/api/hooks/memory';
-import { useNotebook } from '@/lib/api/hooks/notebook';
-import { useCreateSession } from '@/lib/api/hooks/sessions';
+import { conversationOpenerQueryOptions, useCreateSession } from '@/lib/api/hooks/sessions';
 import { useVenture, useVentureOverview } from '@/lib/api/hooks/ventures';
 import { canWrite } from '@/lib/auth/roles';
 import { useRequiredMe } from '@/lib/auth/use-me';
@@ -36,6 +35,7 @@ import { coachingAvailability } from '../coach/availability';
 import { AttachButton, AttachmentTray, useComposerAttachments } from './attachments';
 import { Composer, MAX_TURN_CHARS, modeToSend, type ComposerMode } from './composer';
 import { newConversationRequest, setPendingFirstMessage } from './first-message';
+import { newChatGreeting } from './greeting';
 import { markChoiceInView, PrivacyChoice, useStartPrivacy } from './privacy-choice';
 import { newChatSuggestions, type Suggestion, type SuggestionIcon } from './suggestions';
 
@@ -53,11 +53,26 @@ function firstName(displayName: string): string {
   return displayName.trim().split(/\s+/)[0] ?? displayName;
 }
 
+/** Longest New chat waits for the vEIR's opener before greeting without one (a slow network, a cold server). */
+export const OPENER_WAIT_MS = 1_500;
+
+/** What New chat greets a remembered conversation with, decided once per visit (see `NewChat`). */
+interface ShownOpener {
+  /** The vEIR's opener shown, or null (nothing to pick up, or it did not arrive in time). */
+  readonly opener: string | null;
+  /** When it was phrased (`GET /ventures/:id/opener`'s `at`), sent as `openerShownAt`; null with no opener. */
+  readonly at: string | null;
+  /** They have talked before. */
+  readonly returning: boolean;
+}
+
 /**
- * New chat: the vEIR's face and a greeting (its notebook opener when it has one), the composer, whether the
- * conversation is remembered (the default) or private, and a few starting points from the venture's state.
- * The first message creates the conversation and opens it, where that message is answered; there is no
- * setup step. Read-only roles see where they can go instead.
+ * New chat: the vEIR's face and a greeting, the composer, whether the conversation is remembered (the default)
+ * or private, and a few starting points from the venture's state. With something to pick up, the greeting is the
+ * vEIR's opener ("Welcome back, Maya / Last time we were on per-library pricing. How did the facilities call
+ * go?"), the line the conversation then opens with; else, and for a private chat, the time of day. The first
+ * message creates the conversation and opens it, where that message is answered; there is no setup step.
+ * Read-only roles see where they can go instead.
  */
 export function NewChatPage() {
   const me = useRequiredMe();
@@ -130,8 +145,37 @@ function NewChat() {
   const venture = useVenture(ventureId);
   const overview = useVentureOverview(ventureId);
   const veir = veirDisplay(venture.data);
-  const notebook = useNotebook(ventureId, { enabled: veir !== null });
   const availability = venture.data ? coachingAvailability(me, venture.data) : null;
+  // How the vEIR would open a conversation now. Never a greeting fetched before the last conversation (refetched
+  // when stale), and never changed once shown: what New chat greets with is what the conversation opens with.
+  const openerQuery = useQuery({
+    ...conversationOpenerQueryOptions(ventureId),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+  const [openerLate, setOpenerLate] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setOpenerLate(true);
+    }, OPENER_WAIT_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, []);
+  const [shown, setShown] = useState<ShownOpener | null>(null);
+  if (shown === null) {
+    const preview = openerQuery.data;
+    if (preview !== undefined && !openerQuery.isRefetching) {
+      setShown({
+        opener: preview.opener,
+        at: preview.opener === null ? null : preview.at,
+        returning: preview.lastConversation !== null,
+      });
+    } else if (openerQuery.isError || openerLate) {
+      // Not in time (or not at all): greet without it, and the conversation opens without one too.
+      setShown({ opener: null, at: null, returning: false });
+    }
+  }
   // New chat is for the venture team; its Call entry shows only while calls are on.
   const callsAvailable = useCallsAvailable(ventureId, true);
   const createSession = useCreateSession(ventureId);
@@ -190,20 +234,23 @@ function NewChat() {
     const chosenMode = modeToSend(mode);
     const rehearsalCounterpart =
       chosenMode === 'rehearse' && counterpart.trim() ? counterpart.trim() : undefined;
-    createSession.mutate(newConversationRequest({ mode: chosenMode, privacy }), {
-      onSuccess: (session) => {
-        setPendingFirstMessage(session.id, { text: value, mode: chosenMode, rehearsalCounterpart });
-        // Files still uploading go on, and show in the conversation's composer instead of this one.
-        attachments.handOver(conversationOrigin(session.id));
-        void navigate({
-          to: '/$tenant/app/v/$ventureId/c/$sessionId',
-          params: { tenant, ventureId, sessionId: session.id },
-        });
+    createSession.mutate(
+      newConversationRequest({ mode: chosenMode, privacy, openerShownAt: shown?.at ?? null }),
+      {
+        onSuccess: (session) => {
+          setPendingFirstMessage(session.id, { text: value, mode: chosenMode, rehearsalCounterpart });
+          // Files still uploading go on, and show in the conversation's composer instead of this one.
+          attachments.handOver(conversationOrigin(session.id));
+          void navigate({
+            to: '/$tenant/app/v/$ventureId/c/$sessionId',
+            params: { tenant, ventureId, sessionId: session.id },
+          });
+        },
+        onError: (error) => {
+          toast.error('Couldn’t start the conversation', { description: errorMessage(error) });
+        },
       },
-      onError: (error) => {
-        toast.error('Couldn’t start the conversation', { description: errorMessage(error) });
-      },
-    });
+    );
   };
 
   const choose = (suggestion: Extract<Suggestion, { kind: 'prompt' }>) => {
@@ -218,15 +265,24 @@ function NewChat() {
   };
 
   const name = veir?.name ?? 'your vEIR';
-  // Only the opener as the vEIR may say it (the server's checked copy), else the generic greeting.
-  const greetingLine = notebook.data?.greeting?.trim() ?? '';
-  const opener = greetingLine === '' ? null : greetingLine;
   const available = availability?.available === true;
   const suggestions = available && !temporary ? newChatSuggestions(overview.data ?? null) : [];
+  const welcome = newChatGreeting({
+    opener: shown?.opener ?? null,
+    firstName: firstName(me.principal.displayName),
+    ventureName: venture.data?.name ?? 'your venture',
+    returning: shown?.returning ?? false,
+    privateChat: temporary,
+  });
 
-  if (venture.isPending) {
+  // The page appears once its greeting is known (briefly, at most OPENER_WAIT_MS): it never changes in front of
+  // the founder, and nothing moves under them.
+  if (venture.isPending || shown === null) {
     return (
       <div
+        // Keyed apart from the page: the page arrives as a new element, so nothing on screen "moves" (a reused
+        // node moving from the centred skeleton counted as a layout shift on a slow phone).
+        key="pending"
         aria-busy="true"
         className="mx-auto flex w-full max-w-(--content-width) flex-1 flex-col items-center justify-center gap-4 px-4"
       >
@@ -241,7 +297,7 @@ function NewChat() {
   }
 
   return (
-    <div className="relative flex flex-1 flex-col">
+    <div key="ready" className="relative flex flex-1 flex-col">
       <div className="mx-auto flex w-full max-w-(--content-width) flex-1 flex-col justify-center px-4 pt-16 pb-[min(14vh,7rem)] sm:px-6">
         {veir ? (
           <div className="flex flex-col items-center gap-3">
@@ -252,13 +308,12 @@ function NewChat() {
             </p>
           </div>
         ) : null}
-        <Greeting
-          title={temporary ? 'Private chat' : `${greeting()}, ${firstName(me.principal.displayName)}`}
-        >
-          <p className="mt-3 max-w-xl font-serif text-subheading text-pretty text-muted-foreground">
-            {temporary
-              ? 'What’s on your mind?'
-              : (opener ?? `What should we work on for ${venture.data?.name ?? 'your venture'} today?`)}
+        <Greeting title={welcome.title}>
+          <p
+            data-testid="greeting-line"
+            className="mt-3 max-w-xl font-serif text-subheading text-pretty text-muted-foreground"
+          >
+            {welcome.line}
           </p>
         </Greeting>
 

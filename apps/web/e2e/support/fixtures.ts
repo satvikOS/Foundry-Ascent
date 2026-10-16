@@ -148,14 +148,14 @@ export async function issueAccessCodeViaApi(
 
 /**
  * Open the app as the founder: `/<tenant>/app` lands in their venture's New chat (the vEIR's greeting
- * and the composer). Returns the venture id.
+ * and the composer). The greeting is the vEIR's opener ("Welcome back, Maya" over the line the conversation
+ * opens with) when there is something to pick up, else the time of day. Returns the venture id.
  */
 export async function openVenture(page: Page): Promise<string> {
   await page.goto(`/${TENANT}/app`);
   await page.waitForURL(/\/app\/v\/[0-9a-f-]{36}(?:\?.*)?$/);
-  await expect(
-    page.getByRole('heading', { level: 1, name: /^Good (morning|afternoon|evening), / }),
-  ).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  await expect(page.getByTestId('greeting-line')).toBeVisible();
   await expect(composer(page)).toBeVisible();
   const id = /\/app\/v\/([0-9a-f-]{36})/.exec(page.url())?.[1];
   if (!id) throw new Error('No venture id in the URL');

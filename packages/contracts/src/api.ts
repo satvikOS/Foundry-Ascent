@@ -126,6 +126,12 @@ export const CreateSessionRequest = z.object({
   privacy: SessionPrivacy.default('standard'),
   /** Optional conversation title; the server derives one from the first message when absent. */
   title: z.string().trim().min(1).max(120).nullable().default(null),
+  /*
+   * Additive. What New chat greeted the person with, so the conversation opens with that same line: the `at` of
+   * the `GET /ventures/:id/opener` preview it showed (the line is phrased as of then, within an hour), or null when
+   * it showed no opener (the conversation then opens without one). Left out, the opener is chosen at creation.
+   */
+  openerShownAt: Timestamp.nullable().optional(),
 });
 export const UpdateSessionRequest = z
   .object({ title: z.string().trim().min(1).max(120).optional() })
@@ -153,10 +159,14 @@ export const CreateSessionResponse = SessionView;
  * `GET /ventures/:id/opener` 200 body: how the vEIR would open a new standard conversation of the caller now (the
  * line it stores as the conversation's first message, and a call says after introducing itself), so New chat and
  * the call screen can greet with it before anything is sent. `lastConversation` is the caller's latest earlier
- * conversation it picks up. Both null for a first conversation; a temporary chat opens with neither.
+ * conversation it picks up. Both null for a first conversation; a temporary chat opens with neither. The line
+ * names when that conversation was ("about 3 minutes ago"), so a conversation created with `openerShownAt: at`
+ * says it as it was shown, however long the person took to write.
  */
 export const ConversationOpenerResponse = z.object({
   opener: z.string().nullable(),
+  /** When the line was phrased (server time): sent back as `CreateSessionRequest.openerShownAt` once shown. */
+  at: Timestamp,
   lastConversation: z
     .object({
       sessionId: Id,

@@ -23,16 +23,24 @@ export interface PendingFirstMessage {
  * The body that starts a conversation from New chat (a chat, or a call's conversation). It never carries a
  * title: the server names a standard conversation after its first message unless that message was a crisis,
  * so a message that is blocked never becomes a title in anyone's list. Auto sends no mode. `privacy` is the
- * founder's choice: remembered (`standard`, the default) or private (`ephemeral`, a one-off).
+ * founder's choice: remembered (`standard`, the default) or private (`ephemeral`, a one-off). `openerShownAt`
+ * says what New chat greeted a remembered conversation with: the `at` of the opener it showed (the conversation
+ * opens with that line), or null when it showed none (it opens without one); left out, the server chooses.
  */
 export function newConversationRequest({
   mode,
   privacy,
+  openerShownAt,
 }: {
   mode: CoachMode | undefined;
   privacy: SessionView['privacy'];
-}): { mode?: CoachMode; privacy: SessionView['privacy'] } {
-  return { ...(mode ? { mode } : {}), privacy };
+  openerShownAt?: string | null;
+}): { mode?: CoachMode; privacy: SessionView['privacy']; openerShownAt?: string | null } {
+  return {
+    ...(mode ? { mode } : {}),
+    privacy,
+    ...(privacy === 'standard' && openerShownAt !== undefined ? { openerShownAt } : {}),
+  };
 }
 
 const pending = new Map<string, PendingFirstMessage>();

@@ -17,7 +17,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { jsonResponse, stubFetch } from '@/features/admin/shared/test-utils';
 import { conversationOrigin } from '@/features/documents/upload-queue';
 import { VentureUploadsProvider } from '@/features/documents/venture-uploads';
-import { makeNotebook, makeSession, makeVenture } from '@/features/knowledge/testing';
+import { makeSession, makeVenture } from '@/features/knowledge/testing';
 import { meQueryOptions } from '@/lib/api/hooks/auth';
 
 import { AttachmentTray, useComposerAttachments } from './attachments';
@@ -27,8 +27,11 @@ import { startPrivacy, takeChoiceInView } from './privacy-choice';
 const A = '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c01';
 const B = '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c02';
 const SESSION = '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c03';
-const NAMED_OPENER = 'Last time Corin suggested five library interviews. How did they go?';
-const GREETING = 'Last time you planned five library interviews. How did they go?';
+/** BenchTally picks up its last conversation; QuietQuad has nothing to pick up. */
+const OPENER = 'Welcome back. Last time we were on per-library pricing. How did the facilities call go?';
+const OPENER_LINE = 'Last time we were on per-library pricing. How did the facilities call go?';
+const OPENER_AT = '2026-10-16T18:59:58.000Z';
+const TIME_OF_DAY = /^Good (?:morning|afternoon|evening), Maya$/;
 
 const ME: Me = {
   principal: {
@@ -64,8 +67,14 @@ function bodyOf(init: RequestInit | undefined): unknown {
   return undefined;
 }
 
-/** The API as New chat reads it: each venture, its notebook, and an upload that stays in flight until aborted. */
-function stubApi({ calls: callsOn = false }: { calls?: boolean } = {}): Call[] {
+/**
+ * The API as New chat reads it: each venture, how its vEIR would open a conversation now (`opener`: a held
+ * promise to answer late), and an upload that stays in flight until aborted.
+ */
+function stubApi({
+  calls: callsOn = false,
+  opener,
+}: { calls?: boolean; opener?: Promise<Response> } = {}): Call[] {
   const calls: Call[] = [];
   stubFetch().mockImplementation((input, init) => {
     const url = input instanceof Request ? input.url : input.toString();
@@ -106,15 +115,29 @@ function stubApi({ calls: callsOn = false }: { calls?: boolean } = {}): Call[] {
         }),
       );
     }
-    for (const [id, name, notebook] of [
-      [A, 'QuietQuad', makeNotebook({ ventureId: A, nextOpener: NAMED_OPENER, greeting: null })],
-      [B, 'BenchTally', makeNotebook({ ventureId: B, nextOpener: GREETING, greeting: GREETING })],
+    for (const [id, name, preview] of [
+      [A, 'QuietQuad', { opener: null, at: OPENER_AT, lastConversation: null }],
+      [
+        B,
+        'BenchTally',
+        {
+          opener: OPENER,
+          at: OPENER_AT,
+          lastConversation: {
+            sessionId: SESSION,
+            lastActivityAt: '2026-10-16T18:50:00.000Z',
+            channel: 'chat',
+            title: 'Pricing and willingness to pay',
+          },
+        },
+      ],
     ] as const) {
       if (method === 'GET' && url === `/api/v1/ventures/${id}`) {
         return Promise.resolve(jsonResponse(makeVenture({ id, name })));
       }
-      if (method === 'GET' && url === `/api/v1/ventures/${id}/notebook`)
-        return Promise.resolve(jsonResponse(notebook));
+      if (method === 'GET' && url === `/api/v1/ventures/${id}/opener`) {
+        return opener ?? Promise.resolve(jsonResponse(preview));
+      }
       if (method === 'POST' && url === `/api/v1/ventures/${id}/sessions`) {
         return Promise.resolve(
           jsonResponse(makeSession({ id: SESSION, ventureId: id, status: 'active', endedAt: null }), 201),
@@ -223,22 +246,78 @@ afterEach(() => {
 });
 
 describe('New chat', () => {
-  it('greets with the server’s checked opener only, never one that names the EIR', async () => {
+  it('greets with the vEIR’s opener when there is something to pick up, by the time of day when not', async () => {
     const calls = stubApi();
     const router = renderNewChat(A);
+    // QuietQuad: nothing to pick up.
     expect(await screen.findByText('What should we work on for QuietQuad today?')).toBeVisible();
-    // Once the notebook has loaded too, the opener that names the EIR is still not shown.
-    await waitFor(() => {
-      expect(calls.some((c) => c.url === `/api/v1/ventures/${A}/notebook`)).toBe(true);
-    });
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(screen.getByText('What should we work on for QuietQuad today?')).toBeVisible();
-    expect(screen.queryByText(NAMED_OPENER)).toBeNull();
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(TIME_OF_DAY);
     await act(async () => {
       router.history.push(`/ain/app/v/${B}`);
       await router.invalidate();
     });
-    expect(await screen.findByText(GREETING)).toBeVisible();
+    // BenchTally: the opener's own greeting with the name, then the line the conversation opens with.
+    expect(await screen.findByText(OPENER_LINE)).toBeVisible();
+    expect(screen.getByRole('heading', { level: 1, name: 'Welcome back, Maya' })).toBeInTheDocument();
+    expect(screen.queryByText(/What should we work on/)).toBeNull();
+    // The notebook is not what New chat greets with any more.
+    expect(calls.some((c) => c.url.endsWith('/notebook'))).toBe(false);
+  });
+
+  it('opens the conversation with the line it greeted with', async () => {
+    const calls = stubApi();
+    renderNewChat(B);
+    await screen.findByText(OPENER_LINE);
+    await userEvent.setup().type(composer(), 'It went well, they have a budget.{Enter}');
+    await screen.findByText('Conversation');
+    const create = calls.find((c) => c.method === 'POST' && c.url === `/api/v1/ventures/${B}/sessions`);
+    expect(create?.body).toMatchObject({ privacy: 'standard', openerShownAt: OPENER_AT });
+  });
+
+  it('opens with no line when it greeted with none', async () => {
+    const calls = stubApi();
+    renderNewChat(A);
+    await screen.findByText('What should we work on for QuietQuad today?');
+    await userEvent.setup().type(composer(), 'What should we test first?{Enter}');
+    await screen.findByText('Conversation');
+    const create = calls.find((c) => c.method === 'POST' && c.url === `/api/v1/ventures/${A}/sessions`);
+    expect(create?.body).toMatchObject({ privacy: 'standard', openerShownAt: null });
+  });
+
+  it('greets by the time of day when Private is chosen (a private chat reads nothing)', async () => {
+    stubApi();
+    renderNewChat(B);
+    await screen.findByText(OPENER_LINE);
+    await userEvent.setup().click(screen.getByRole('radio', { name: 'Private, a one-off' }));
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(TIME_OF_DAY);
+    expect(screen.getByText('What’s on your mind?')).toBeVisible();
+    expect(screen.queryByText(OPENER_LINE)).toBeNull();
+    // Back to Remember: the same opener as before.
+    await userEvent.setup().click(screen.getByRole('radio', { name: 'Remember this conversation' }));
+    expect(screen.getByText(OPENER_LINE)).toBeVisible();
+  });
+
+  it('greets without the opener when it is late, and never changes the greeting once shown', async () => {
+    let answer: (response: Response) => void = () => undefined;
+    const calls = stubApi({
+      opener: new Promise<Response>((resolve) => {
+        answer = resolve;
+      }),
+    });
+    renderNewChat(B);
+    // Nothing shows while the greeting is unknown (it never changes in front of the founder)...
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull();
+    // ...for at most OPENER_WAIT_MS: then the time of day, and the conversation opens without a line.
+    expect(
+      await screen.findByText('What should we work on for BenchTally today?', {}, { timeout: 4_000 }),
+    ).toBeVisible();
+    answer(jsonResponse({ opener: OPENER, at: OPENER_AT, lastConversation: null }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByText(OPENER_LINE)).toBeNull();
+    await userEvent.setup().type(composer(), 'Hello{Enter}');
+    await screen.findByText('Conversation');
+    const create = calls.find((c) => c.method === 'POST' && c.url === `/api/v1/ventures/${B}/sessions`);
+    expect(create?.body).toMatchObject({ openerShownAt: null });
   });
 
   it('sends while files upload: they keep uploading and show in the conversation it opened', async () => {
@@ -279,7 +358,7 @@ describe('New chat', () => {
       router.history.push(`/ain/app/v/${B}`);
       await router.invalidate();
     });
-    expect(await screen.findByText(GREETING)).toBeVisible();
+    expect(await screen.findByText(OPENER_LINE)).toBeVisible();
     expect(composer()).toHaveValue('');
     expect(screen.queryByRole('list', { name: 'Documents being added' })).toBeNull();
     // A's upload was cancelled, and neither of A's files went to B.
@@ -311,7 +390,7 @@ describe('New chat', () => {
     await screen.findByText('What should we work on for QuietQuad today?');
     const user = userEvent.setup();
     await user.click(screen.getByRole('radio', { name: 'Private, a one-off' }));
-    expect(screen.getByRole('heading', { level: 1, name: 'Private chat' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(TIME_OF_DAY);
     expect(screen.getByRole('group', { name: 'Memory for this conversation' })).toHaveAccessibleDescription(
       'A one-off: nothing is remembered, and it’s erased when it ends.',
     );
@@ -320,6 +399,7 @@ describe('New chat', () => {
     await screen.findByText('Conversation');
     const create = calls.find((c) => c.method === 'POST' && c.url === `/api/v1/ventures/${A}/sessions`);
     expect(create?.body).toMatchObject({ privacy: 'ephemeral' });
+    expect(create?.body).not.toHaveProperty('openerShownAt');
   });
 
   it('starts a call at once from its own Call button, beside the choice (and only that opening)', async () => {

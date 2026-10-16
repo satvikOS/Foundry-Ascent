@@ -245,6 +245,8 @@ class ConversationOpener(_Camel):
 
     opener: str | None = None
     last_conversation: LastConversation | None = None
+    #: When the line was phrased (sent back as ``openerShownAt`` when a conversation is created after showing it).
+    at: str | None = None
 
 
 class SessionDetail(_Camel):

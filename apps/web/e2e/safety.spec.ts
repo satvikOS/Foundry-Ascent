@@ -89,7 +89,11 @@ test.describe('private chats', () => {
     await remember.focus();
     await page.keyboard.press('ArrowRight');
     await expect(isPrivate).toBeChecked();
-    await expect(page.getByRole('heading', { level: 1, name: 'Private chat' })).toBeVisible();
+    // A private chat reads nothing: greeted by the time of day, never with what the vEIR would pick up.
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+      /^Good (?:morning|afternoon|evening), Maya$/,
+    );
+    await expect(page.getByTestId('greeting-line')).toHaveText('What’s on your mind?');
     await expect(page.getByRole('group', { name: 'Memory for this conversation' })).toContainText(
       'nothing is remembered',
     );

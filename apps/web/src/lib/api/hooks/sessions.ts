@@ -1,4 +1,5 @@
 import {
+  ConversationOpenerResponse,
   CreateSessionRequest,
   CreateSessionResponse,
   EndSessionResponse,
@@ -140,8 +141,25 @@ export function awaitingDigest(
   return session.endedAt !== null && now - Date.parse(session.endedAt) < DIGEST_WAIT_MS;
 }
 
+/**
+ * `GET /ventures/:id/opener`: how the vEIR would open a new conversation now, which New chat greets with and the
+ * conversation then opens with (`openerShownAt`). It is about now ("about 3 minutes ago"), so it is fresh for a
+ * few seconds only: long enough for a link's hover to fetch it before the click, never a greeting from before.
+ */
+export const conversationOpenerQueryOptions = (ventureId: string) =>
+  queryOptions({
+    queryKey: queryKeys.venture.opener(ventureId),
+    queryFn: ({ signal }) =>
+      api.get(path`/ventures/${ventureId}/opener`, ConversationOpenerResponse, { signal }),
+    staleTime: 5_000,
+    gcTime: 60_000,
+    retry: false,
+  });
+
 /** Refresh every list a conversation appears in, plus the venture data a conversation changes. */
 function invalidateConversation(client: QueryClient, session: Pick<SessionView, 'id' | 'ventureId'>) {
+  // The next New chat picks up this conversation: never the greeting fetched before it.
+  client.removeQueries({ queryKey: queryKeys.venture.opener(session.ventureId) });
   void client.invalidateQueries({ queryKey: queryKeys.conversations.all() });
   void client.invalidateQueries({ queryKey: queryKeys.venture.sessions(session.ventureId) });
   void client.invalidateQueries({ queryKey: queryKeys.venture.overview(session.ventureId) });

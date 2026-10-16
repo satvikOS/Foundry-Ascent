@@ -85,10 +85,24 @@ test.describe('continuity across conversations', () => {
 
       await test.step('the second conversation opens from where the first left off', async () => {
         await openVenture(page);
+        // New chat greets with the line the conversation will open with, never "Good evening… What should we
+        // work on?" while there is something to pick up.
+        const heading = page.getByRole('heading', { level: 1 });
+        const line = page.getByTestId('greeting-line');
+        await expect(line).toContainText(/facilities|library budget|pric/i);
+        await expect(heading).toHaveText(/, Maya$/);
+        await expect(heading).not.toHaveText(/^Good (?:morning|afternoon|evening)/);
+        await expect(line).not.toHaveText(/What should we work on/);
+        const shown = (await line.textContent()) ?? '';
         const id = await startConversation(page, 'Hi!');
         created.push(id);
         const opened = page.getByRole('region', { name: /opened the conversation$/ });
         await expect(opened).toContainText(/facilities|library budget|pric/i);
+        // The founder sees one opening: the conversation's first message is the greeting's line, word for word.
+        const stored = (await sessionDetail(page.request, id)).session.opener ?? '';
+        expect(shown).not.toBe('');
+        expect(stored.endsWith(shown)).toBe(true);
+        await expect(opened).toContainText(shown);
         await expect(
           page.getByRole('article', { name: 'Exchange 1' }).getByRole('button', { name: 'Copy answer' }),
         ).toBeVisible({ timeout: 30_000 });

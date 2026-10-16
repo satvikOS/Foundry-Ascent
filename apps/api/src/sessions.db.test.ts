@@ -140,8 +140,26 @@ describe('coaching sessions', () => {
     );
     expect(preview.lastConversation).toMatchObject({ sessionId: said.id, channel: 'chat' });
     expect(preview.opener).toContain('“Should we price per library or per seat?”');
+    expect(Number.isFinite(Date.parse(preview.at))).toBe(true);
     const next = await startSession(maya, 'coach');
     expect(next.opener).toBe(preview.opener);
+    // New chat sends back when it showed the line (it opens with that line), or null when it greeted without one.
+    const opens = async (openerShownAt: string | null) =>
+      json(
+        await api.request(`/ventures/${quietquad()}/sessions`, {
+          body: { mode: 'coach', openerShownAt },
+          cookie: maya,
+        }),
+        SessionView,
+        201,
+      );
+    const shown = await json(
+      await api.request(`/ventures/${quietquad()}/opener`, { cookie: maya }),
+      ConversationOpenerResponse,
+    );
+    expect(shown.opener).not.toBeNull();
+    expect((await opens(shown.at)).opener).toBe(shown.opener);
+    expect((await opens(null)).opener).toBeNull();
     // Only the venture's founder and team may ask (no existence leak to others).
     expect(
       await problemCode(await api.request(`/ventures/${quietquad()}/opener`, { cookie: jonah }), 404),

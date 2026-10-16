@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 
 import { NewChatPage } from '@/features/chat/new-chat-page';
+import { conversationOpenerQueryOptions } from '@/lib/api/hooks/sessions';
 import { ventureOverviewQueryOptions } from '@/lib/api/hooks/ventures';
 import { canWrite } from '@/lib/auth/roles';
 
@@ -18,6 +19,8 @@ export const Route = createFileRoute('/$tenant/app/v/$ventureId/')({
     // The starting-point chips come from the overview; read-only roles see no composer or chips.
     if (!canWrite(context.me, params.ventureId)) return;
     context.queryClient.query(ventureOverviewQueryOptions(params.ventureId)).catch(() => undefined);
+    // The greeting: fetched on a link's hover too, so New chat rarely waits for it.
+    context.queryClient.query(conversationOpenerQueryOptions(params.ventureId)).catch(() => undefined);
   },
   head: () => ({ meta: [{ title: 'New chat' }] }),
   component: NewChatPage,

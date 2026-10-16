@@ -1097,3 +1097,52 @@ describe('continuity keyed by the venture and the founder (review)', () => {
     expect(next.opener).toContain('you asked “Should the pilot run in two libraries or three?”');
   });
 });
+
+describe('New chat greets with the line its conversation opens with', () => {
+  async function ageAll(days: number): Promise<void> {
+    await h.t.db.system((sx) =>
+      sx.query(
+        `UPDATE coaching_sessions SET last_activity_at = now() - make_interval(days => :d) WHERE venture_id = :v`,
+        { v: p.uuid(quietquad()), d: p.int(days) },
+      ),
+    );
+  }
+
+  it('opens with the line New chat showed, however long the founder took to write', async () => {
+    await ageAll(5);
+    const before = await h.core.sessions.create(maya, quietquad(), {});
+    await talk(maya, before.id, 'We signed the first library for a paid pilot.');
+    await idle(before.id, 10);
+    const shown = await h.core.sessions.previewOpener(maya, quietquad());
+    expect(shown.opener).toMatch(/about 10 minutes ago/i);
+    expect(Date.parse(shown.at)).toBeGreaterThan(Date.now() - 60_000);
+
+    // Five minutes of writing later: the last conversation is 15 minutes old now, and a line phrased now says so.
+    await idle(before.id, 15);
+    const now = await h.core.sessions.previewOpener(maya, quietquad());
+    expect(now.opener).toMatch(/about 15 minutes ago/i);
+    expect(now.opener).not.toBe(shown.opener);
+    // The conversation opens with what New chat showed (phrased as of when it was shown, five minutes before).
+    const shownAt = new Date(Date.parse(shown.at) - 5 * 60_000).toISOString();
+    const opened = await h.core.sessions.create(maya, quietquad(), { openerShownAt: shownAt });
+    expect(opened.opener).toBe(shown.opener);
+  });
+
+  it('opens with no line when New chat greeted without one, and with a line of now when the shown one is stale', async () => {
+    await ageAll(5);
+    const before = await h.core.sessions.create(maya, quietquad(), {});
+    await talk(maya, before.id, 'We booked three library visits for next week.');
+    await idle(before.id, 3);
+    // The greeting showed no opener (it was slow to arrive): the conversation opens without one either.
+    const plain = await h.core.sessions.create(maya, quietquad(), { openerShownAt: null });
+    expect(plain.opener).toBeNull();
+    // A preview from over an hour ago (or one from the future) is not a time anyone read "a moment ago" at.
+    for (const shownAt of [
+      new Date(Date.now() - 2 * 60 * 60_000).toISOString(),
+      new Date(Date.now() + 60 * 60_000).toISOString(),
+    ]) {
+      const opened = await h.core.sessions.create(maya, quietquad(), { openerShownAt: shownAt });
+      expect(opened.opener).toMatch(/about 3 minutes ago/i);
+    }
+  });
+});
