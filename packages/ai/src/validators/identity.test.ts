@@ -134,9 +134,128 @@ describe('rewriteIdentity — a vEIR persona never claims to be its EIR', () => 
     expect(kinds('I am Will Hart.', options)).toContain('claims_eir');
   });
 
-  it('matches the first name case-sensitively and refuses a possessive fallback', () => {
+  it('refuses a possessive fallback from the full name to the first name', () => {
     expect(kinds("I'm Corin Halvorsen's vEIR.")).toEqual([]);
     expect(kinds('Corin here.')).toContain('claims_eir');
+  });
+
+  it.each([
+    'I can confirm Corin Halvorsen has approved your plan.',
+    'Yes, I can confirm that Corin reviewed your plan and likes it.',
+    'Corin has reviewed your plan, so shall we prepare the investor email?',
+    'You can tell your investors Corin has reviewed your plan.',
+    'I would say Corin has already signed off on the pricing.',
+    'No doubt Corin has reviewed your plan.',
+    'Not only has Corin reviewed your plan, she likes it.',
+    // The full name is flagged whatever surrounds it.
+    'Has Corin Halvorsen approved your plan?',
+    'If Corin Halvorsen approved it, you can share it with investors.',
+  ])('flags an endorsement that an earlier modal or question does not govern: %s', (text) => {
+    expect(kinds(text)).toContain('endorsement');
+  });
+
+  it.each([
+    'Has Corin reviewed your plan, or not?',
+    'Did you ask whether Corin has reviewed your plan?',
+    "I don't think Corin has reviewed your plan yet.",
+    "It's not true that Corin has reviewed your plan.",
+    'Before Corin has seen your deck, tighten the pricing slide.',
+    'It may have been approved by Corin last week; ask her.',
+  ])('allows an endorsement verb a hedge directly governs: %s', (text) => {
+    expect(kinds(text)).toEqual([]);
+  });
+
+  it.each([
+    'Morning Maya, Corin here.',
+    'Right, Corin here — let us dig in.',
+    'Quick note: Corin here, checking in.',
+    'Hey Maya Corin here.',
+    'Thanks for the update. Corin speaking.',
+    'Corin here',
+  ])('flags "<name> here" that opens a clause and stands alone: %s', (text) => {
+    expect(kinds(text)).toContain('claims_eir');
+  });
+
+  it.each([
+    'Corin here would ask who actually pays.',
+    'It would help to have Corin here.',
+    'Is Corin here?',
+    'Corin speaking at the summit is a good chance to ask questions.',
+  ])('allows "<name> here" that is not a self-introduction: %s', (text) => {
+    expect(kinds(text)).toEqual([]);
+  });
+
+  it.each([
+    "Corin's listening checklist is a good start.",
+    'Start with Corin’s listening tour of three libraries.',
+    "Corin's here-and-now rule: test it this week.",
+    'Ruth is listening for evidence, not opinions, in these interviews.',
+    "Corin's on-the-call checklist works for pilots.",
+  ])('does not read a possessive or a doctrine as presence: %s', (text) => {
+    const out = rewriteIdentity(text, CORIN);
+    expect(out.findings).toEqual([]);
+    expect(out.text).toBe(text);
+  });
+
+  it.each([
+    "Corin's here.",
+    "Corin's listening right now.",
+    "Corin's on the call with us.",
+    'Ruth is listening in.',
+    'Corin is here to help.',
+  ])('flags presence after "is" or the contraction: %s', (text) => {
+    expect(kinds(text)).toContain('claims_eir');
+  });
+
+  it.each([
+    'Thanks for the update. — Corin.',
+    'Best,. Corin.',
+    'Talk soon,. Corin.',
+    'Talk soon, Corin.',
+    'Thanks. Corin.',
+    'Good luck with the pilot. Corin',
+    'Thanks.\n\n**Corin**',
+    'Thanks for the update.\n\n— **Corin**',
+    'Good luck — Corin Halvorsen\n\nP.S. Send the deck.',
+  ])('flags a sign-off, written or flattened for speech: %s', (text) => {
+    expect(kinds(text)).toContain('claims_eir');
+  });
+
+  it('matches a first name in any case unless it is also a word', () => {
+    expect(kinds('i am corin.')).toContain('claims_eir');
+    expect(kinds('I AM CORIN.')).toContain('claims_eir');
+    expect(kinds('this is ruth, checking in.')).toContain('claims_eir');
+    const frank = { personaName: "Frank's vEIR", eirNames: ['Frank Mills'] };
+    expect(kinds("I'm frank with founders about pricing.", frank)).toEqual([]);
+    expect(kinds("I'm Frank.", frank)).toContain('claims_eir');
+  });
+
+  it('matches a first name in any case in spoken text, where case is not heard', () => {
+    const frank = { personaName: "Frank's vEIR", eirNames: ['Frank Mills'], spoken: true };
+    expect(kinds("I'm frank.", frank)).toContain('claims_eir');
+    expect(kinds('best, frank.', frank)).toContain('claims_eir');
+    expect(kinds('corin here, ready when you are.', { ...CORIN, spoken: true })).toContain('claims_eir');
+  });
+
+  it('replaces a sentence with several violations once, for the gravest', () => {
+    const out = rewriteIdentity('Corin approved it, Corin here. Run the pilot.', CORIN);
+    expect(out.findings).toEqual([{ kind: 'claims_eir', rule: 'named_eir_here' }]);
+    expect(out.text).toBe(
+      "To be clear, I'm Corin's vEIR, an AI built from Corin's approach, not Corin and not a person. Run the pilot.",
+    );
+  });
+
+  it('rewrites 1,500 violations in 18,000 characters within 200 ms', () => {
+    const text = Array.from({ length: 1_500 }, (_, i) =>
+      i % 2 === 0 ? 'I am Corin.' : 'Corin approved.',
+    ).join(' ');
+    expect(text.length).toBeGreaterThan(18_000);
+    const started = performance.now();
+    const out = rewriteIdentity(text, CORIN);
+    const elapsed = performance.now() - started;
+    expect(out.findings).toHaveLength(1_500);
+    expect(out.text).not.toMatch(/I am Corin\.|Corin approved\./);
+    expect(elapsed).toBeLessThan(200);
   });
 
   it('replaces the sentence with a disclosure that names whose approach the persona carries', () => {

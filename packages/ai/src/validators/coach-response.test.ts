@@ -765,6 +765,57 @@ describe('spoken text (voice channel)', () => {
     expect(eir.response.spoken).not.toContain('Corin here');
   });
 
+  const corinCall = voice({ personaName: "Corin's vEIR", eirNames: ['Corin Halvorsen'] });
+
+  it.each([
+    'Thanks for the update.\n— Corin',
+    'Best,\nCorin',
+    'Talk soon,\nCorin',
+    'Thanks.\n\n**Corin**',
+    'Thanks for the update. — Corin.',
+    'corin here. Run the pilot.',
+    'Good luck with the pilot. i am corin.',
+  ])('never lets a call say the EIR signed it: %j', (spoken) => {
+    const out = validateCoachResponse(base({ spoken }), corinCall);
+    expect(out.blocked).toBe(true);
+    expect(out.blockReason).toBe('identity');
+    expect(out.response.spoken ?? '').not.toMatch(/(?:—|,|\.)\s*corin\.?$|corin here|i am corin/i);
+  });
+
+  it('never speaks a sign-off in a spoken reply derived from the answer', () => {
+    const out = validateCoachResponse(
+      base({ answer: 'Thanks for the update.\n\n— **Corin**', spoken: null }),
+      corinCall,
+    );
+    expect(out.blocked).toBe(true);
+    expect(out.blockReason).toBe('identity');
+    expect(out.response.spoken).not.toMatch(/—\s*Corin/);
+    expect(out.response.spoken).toContain("I'm Corin's vEIR");
+  });
+
+  it('counts a violation once when the spoken reply is derived from the answer', () => {
+    const out = validateCoachResponse(
+      base({ answer: 'Corin has reviewed your plan. Run the pilot.', spoken: null }),
+      corinCall,
+    );
+    expect(out.blocked).toBe(false);
+    expect(out.results.notes).toContain('identity_rewritten:1:endorsement');
+    expect(out.response.spoken).not.toMatch(/Corin has reviewed/);
+  });
+
+  it('checks an over-long answer within its limit, fast', () => {
+    const answer = Array.from({ length: 1_500 }, (_, i) =>
+      i % 2 === 0 ? 'I am Corin.' : 'Corin approved.',
+    ).join(' ');
+    expect(answer.length).toBeGreaterThan(18_000);
+    const started = performance.now();
+    const out = validateCoachResponse(base({ answer }), corinCall);
+    expect(performance.now() - started).toBeLessThan(200);
+    expect(out.blocked).toBe(true);
+    expect(out.response.answer.length).toBeLessThanOrEqual(6_000);
+    expect(out.response.answer).not.toMatch(/I am Corin\.|Corin approved\./);
+  });
+
   it.each([
     ['another venture', 'BrightLoop solved this with a waitlist.'],
     ['a canary', 'Your reference is CANARY-7f3a91.'],

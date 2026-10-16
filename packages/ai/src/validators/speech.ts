@@ -37,8 +37,9 @@ export function toSpeakable(text: string): string {
         .trim(),
     )
     .filter((line) => line !== '');
-  // A line without closing punctuation (a heading, a list item) becomes its own sentence.
-  const joined = lines.map((line) => (/[.!?:;…]$/.test(line) ? line : `${line}.`)).join(' ');
+  // A line without closing punctuation (a heading, a list item) becomes its own sentence; a line ending
+  // in a comma runs on ("Best,\nCorin" reads "Best, Corin.").
+  const joined = lines.map((line) => (/[.!?:;…,]$/.test(line) ? line : `${line}.`)).join(' ');
   return sanitizePlainText(joined)
     .text.replace(/\s+([,.;:!?])/g, '$1')
     .replace(/([,;:])(?:[,;:])+/g, '$1')
