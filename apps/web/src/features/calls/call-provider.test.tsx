@@ -9,7 +9,8 @@ import {
   Outlet,
   RouterProvider,
 } from '@tanstack/react-router';
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -96,6 +97,7 @@ vi.mock('./create-engine', () => ({ createCallEngine: () => engines.next }));
 
 const VENTURE = IDS.venture;
 const SESSION = IDS.session;
+const OTHER_SESSION = '7e8f9a0b-1c2d-4e3f-8a4b-5c6d7e8f9a10';
 const BASE = `/ain/app/v/${VENTURE}`;
 
 const ME: Me = {
@@ -230,6 +232,39 @@ beforeEach(() => {
 });
 afterEach(() => {
   window.localStorage.clear();
+});
+
+describe('starting a call', () => {
+  it('forgets an ended call of another conversation when Call opens New chat', async () => {
+    const { engine } = renderApp([BASE], {
+      phase: 'ended',
+      ventureId: VENTURE,
+      sessionId: OTHER_SESSION,
+      call: { ...liveCall(OTHER_SESSION), status: 'ended' },
+      ended: {
+        reason: 'user',
+        durationSeconds: 30,
+        turnCount: 2,
+        summary: null,
+        summaryError: null,
+        blocked: null,
+      },
+    });
+    await userEvent.click(await screen.findByRole('link', { name: 'Call from New chat' }));
+    // The old summary is not what Call opens: a new call is started in a new conversation.
+    await waitFor(() => {
+      expect(engine.reset).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(
+          ([input, init]) =>
+            urlOf(input).endsWith(`/ventures/${VENTURE}/sessions`) && init?.method === 'POST',
+        ),
+      ).toBe(true);
+    });
+    expect(screen.queryByRole('heading', { name: 'Call ended' })).toBeNull();
+  });
 });
 
 describe('signing out during a call', () => {

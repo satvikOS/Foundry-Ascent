@@ -233,15 +233,17 @@ export function CallScreen() {
   }, [engine, open, snapshot.error, snapshot.phase]);
 
   // Opened on a different conversation than the live call: show the live one (one call at a time).
-  // A finished call of another conversation is forgotten.
+  // A finished call of another conversation is forgotten, also when Call opens New chat (its summary is not
+  // what the founder asked for). New chat's own call is told apart while its conversation is created.
   useEffect(() => {
     if (route?.open !== true || snapshot.sessionId === null) return;
-    if (route.sessionId === snapshot.sessionId || route.sessionId === null) return;
-    if (snapshot.phase === 'ended' || snapshot.phase === 'failed') {
+    if (route.sessionId === snapshot.sessionId) return;
+    const newChat = route.sessionId === null;
+    if (snapshot.phase === 'ended' || (snapshot.phase === 'failed' && !newChat)) {
       engine.reset();
       return;
     }
-    if (snapshot.phase === 'idle' || !snapshot.ventureId) return;
+    if (newChat || snapshot.phase === 'idle' || !snapshot.ventureId) return;
     void navigate({
       to: '/$tenant/app/v/$ventureId/c/$sessionId',
       params: { tenant, ventureId: snapshot.ventureId, sessionId: snapshot.sessionId },
