@@ -1,14 +1,22 @@
 import { retrievalRepo, type AppExecutor } from '@foundry/db';
 
 import { type CoreConfig } from '../config.js';
+import { type RequestContext } from '../context.js';
+import { type Kit } from '../internal/kit.js';
 import { buildEvidencePack, classificationsFor, type EvidencePack } from './evidence.js';
+import { type GenerationMeter } from './generate.js';
 
 export interface RetrievalArgs {
   readonly tenantId: string;
-  readonly ventureId: string;
+  /**
+   * The venture whose specific pool (memory, documents) is searched, or null for none: an EIR studio test
+   * conversation draws on the persona's common pool alone.
+   */
+  readonly ventureId: string | null;
   /** Assigned persona: its knowledge library and published lessons are searchable. */
   readonly personaId: string;
-  readonly stage: string;
+  /** Venture stage (resources tagged for it rank higher); null without a venture. */
+  readonly stage: string | null;
   /** Lexical query: the founder's message read in the conversation (`buildRetrievalQuery`). */
   readonly query: string;
   /** Query embedding or null (lexical only). */
@@ -43,21 +51,22 @@ export function privateRetrievalOwner(
  */
 export async function retrieveEvidence(tx: AppExecutor, args: RetrievalArgs): Promise<EvidencePack> {
   const base = { tenantId: args.tenantId, query: args.query };
+  const { ventureId } = args;
   const memory =
-    args.budgets.memory > 0
+    ventureId !== null && args.budgets.memory > 0
       ? await retrievalRepo.searchVentureMemory(tx, {
           ...base,
-          ventureId: args.ventureId,
+          ventureId,
           embedding: args.embedding,
           limit: args.budgets.memory,
           privateOwnerId: args.privateOwnerId,
         })
       : [];
   const chunks =
-    args.budgets.chunks > 0
+    ventureId !== null && args.budgets.chunks > 0
       ? await retrievalRepo.searchVentureChunks(tx, {
           ...base,
-          ventureId: args.ventureId,
+          ventureId,
           embedding: args.embedding,
           limit: args.budgets.chunks,
         })
@@ -88,4 +97,39 @@ export async function retrieveEvidence(tx: AppExecutor, args: RetrievalArgs): Pr
   return buildEvidencePack({ memory, chunks, shared, resources, patterns }, args.ventureId, {
     allowPrivateMemory: args.privateOwnerId !== null,
   });
+}
+
+/**
+ * The query embedding for retrieval, metered once under `meter` (null when embedding fails: retrieval is then
+ * lexical only). Started while a turn is admitted, so it overlaps the first status events.
+ */
+export async function embedRetrievalQuery(
+  kit: Kit,
+  ctx: RequestContext,
+  meter: GenerationMeter,
+  text: string,
+  signal?: AbortSignal,
+): Promise<number[] | null> {
+  // A coaching turn's embedding is metered as `embedding`; a test conversation meters all of its calls alike.
+  const purpose = meter.purpose === 'turn' ? 'embedding' : meter.purpose;
+  try {
+    const result = await kit.deps.gateway.embed([text.slice(0, 8_000)], {
+      purpose,
+      requestId: ctx.requestId,
+      ...(signal ? { signal } : {}),
+    });
+    await kit.recordUsage({
+      ctx,
+      ventureId: meter.ventureId,
+      purpose,
+      attempts: [{ modelId: result.modelId, usage: result.usage, costUsd: result.costUsd }],
+    });
+    return result.vectors[0] ?? null;
+  } catch (err) {
+    kit.deps.logger.warn('turn.query_embedding_failed', {
+      requestId: ctx.requestId,
+      error: err instanceof Error ? err.name : 'unknown',
+    });
+    return null;
+  }
 }

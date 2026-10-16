@@ -38,14 +38,14 @@ export interface EvidencePackOptions {
 
 /**
  * Defence-in-depth isolation filter and stable keys. Venture-scoped stores may only return rows of
- * `ventureId`; shared stores only rows without a venture; founder_private memory only with
+ * `ventureId` (none at all when it is null); shared stores only rows without a venture; founder_private memory only with
  * `allowPrivateMemory`. Duplicates (same kind + ref) are dropped. Keys are assigned E1…En in store order
  * (memory, venture documents, doctrine/program corpus, resources, patterns), each store already sorted by
  * hybrid score.
  */
 export function buildEvidencePack(
   groups: RetrievedGroups,
-  ventureId: string,
+  ventureId: string | null,
   options: EvidencePackOptions = {},
 ): EvidencePack {
   const items: KeyedEvidence[] = [];
@@ -59,8 +59,9 @@ export function buildEvidencePack(
   ): void => {
     for (const r of list) {
       const founderPrivate = r.kind === 'memory' && r.visibility === 'founder_private';
+      // Without a venture (a test conversation) nothing venture-scoped is allowed at all.
       const allowed =
-        (ventureScoped ? r.ventureId === ventureId : r.ventureId === null) &&
+        (ventureScoped ? ventureId !== null && r.ventureId === ventureId : r.ventureId === null) &&
         (!founderPrivate || options.allowPrivateMemory === true);
       if (!allowed) {
         dropped += 1;
