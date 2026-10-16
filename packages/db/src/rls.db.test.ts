@@ -1197,6 +1197,34 @@ describe('vEIR knowledge pools and conversations', () => {
     expect(intact.rows[0]).toEqual({ memory: 'confirmed', document: 'ready' });
   });
 
+  it('an EIR persona carries a voice or portrait only with consent covering it', async () => {
+    const persona = veir('eir-corin');
+    const embody = (embodiment: object): Promise<string | null> =>
+      sqlState(
+        as(t.db, f.lead, (tx) =>
+          tx.query('UPDATE personas SET embodiment = :e WHERE id = :id', {
+            e: p.json(embodiment),
+            id: p.uuid(persona),
+          }),
+        ),
+      );
+    // Corin's synthetic consent covers voice but not likeness.
+    expect(await embody({ provider: 'builtin', voiceId: 'Stephen', portraitKey: null })).toBeNull();
+    expect(
+      await embody({ provider: 'builtin', voiceId: 'Stephen', portraitKey: 'portraits/corin.jpg' }),
+    ).toBe('23514');
+    expect(await embody({ provider: 'nobody', voiceId: null, portraitKey: null })).toBe('23514');
+    expect(await embody({ provider: 'builtin', voiceId: 'Matthew', portraitKey: null })).toBeNull();
+    // Founders never change a persona.
+    expect(
+      (
+        await as(t.db, f.maya, (tx) =>
+          tx.query(`UPDATE personas SET tagline = 'x' WHERE id = :id`, { id: p.uuid(persona) }),
+        )
+      ).rowCount,
+    ).toBe(0);
+  });
+
   it('consent is the subject’s own act, except a program lead recording a synthetic EIR’s', async () => {
     const record = (actor: Actor, subject: string): Promise<string | null> =>
       sqlState(
