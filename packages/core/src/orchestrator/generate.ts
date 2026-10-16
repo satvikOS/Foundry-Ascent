@@ -223,6 +223,12 @@ export interface StreamArgs extends GenerateArgs {
 export const ANNOTATION_BUDGET_MS = 15_000;
 /** Bounds on the streamed reply: a typed answer, and the short spoken one of a call. */
 const ANSWER_MAX_TOKENS = { text: 1_500, voice: 400 } as const;
+/**
+ * Bound on the annotations (phase B). Production's turns wrote 550–1,900 output tokens for both calls
+ * together (docs/runbooks/latency.md §4), so this never cuts a real one; it stops a call that runs away
+ * (the gateway's default is 4,096) well before the annotation time budget.
+ */
+export const ANNOTATION_MAX_TOKENS = 2_000;
 const SPOKEN_UNIT_CHARS = 280;
 
 function sum(attempts: readonly ModelAttempt[], pick: (a: ModelAttempt) => number): number {
@@ -318,6 +324,12 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
   const stop = new AbortController();
   const signal = a.signal ? AbortSignal.any([a.signal, stop.signal]) : stop.signal;
   const timing = { firstDeltaAt: null as number | null, deltas: 0, modelFirstTextAt: null as number | null };
+  /**
+   * A call's reply as said so far: once its spoken form used the call's word budget, nothing more of it can be
+   * heard, so the model is stopped and the reply is what was shown (`full`). Production's spoken replies were
+   * the first 50–70 words of written answers about twice as long, which the transcript then showed unsaid.
+   */
+  const said = { words: 0, shown: '', full: false, cut: false };
 
   const release = async (result: GateResult): Promise<void> => {
     for (const unit of result.units) {
@@ -326,10 +338,16 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
         timing.firstDeltaAt ??= performance.now();
         await a.emit({ event: 'turn.delta', turnId: a.turnId, seq: timing.deltas, text: unit.text });
         timing.deltas += 1;
+        said.shown += unit.text;
       }
+      if (unit.spoken !== '') said.words += unit.spoken.split(/\s+/).filter((w) => w !== '').length;
       if (speech && unit.spoken !== '') await speech.queue(unit.spoken);
     }
     if (result.blocked !== null || result.fallback !== null) stop.abort();
+    else if (voice && !said.full && said.words >= SPOKEN_MAX_WORDS) {
+      said.full = true;
+      stop.abort();
+    }
   };
   const details = (phaseAMs: number, phaseBMs: number, modelFirstTokenMs: number | null): StreamDetails => ({
     firstDeltaMs: timing.firstDeltaAt === null ? null : Math.round(timing.firstDeltaAt - a.startedAt),
@@ -422,7 +440,7 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
       },
       async (chunk) => {
         timing.modelFirstTextAt ??= performance.now();
-        if (gate.blocked !== null || gate.fallback !== null || reply.isDone()) return;
+        if (gate.blocked !== null || gate.fallback !== null || reply.isDone() || said.full) return;
         const text = reply.push(chunk);
         if (text !== '') await release(gate.push(text));
         // The reply is complete and what follows is the response's other fields: stop the model.
@@ -449,8 +467,10 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
     }
     if (a.signal?.aborted) throw new GenerationFailure(err, attempts);
     if (gate.fallback !== null) return wholeInstead(gate.fallback, phaseAMs, null);
-    if (reply.isDone() && stop.signal.aborted) {
-      // Stopped here once the reply was complete: the reply stands as the stream gave it.
+    if ((reply.isDone() || said.full) && stop.signal.aborted) {
+      // Stopped here once the reply was complete, or all of a call's reply that can be said was said: the
+      // reply stands as the stream gave it.
+      said.cut = said.full;
       streamed = {
         modelId: failed.at(-1)?.modelId ?? 'unknown',
         fallbackUsed: failed.length > 1 && failed.at(-1)?.modelId !== failed[0]?.modelId,
@@ -463,7 +483,9 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
       return wholeInstead('interrupted', phaseAMs, isModelGatewayError(err) ? err.code : 'unknown');
     }
   }
-  if (gate.blocked === null && gate.fallback === null) {
+  // A call's reply cut at its spoken budget ends with what was shown: the start of the next sentence, still
+  // held by the gate, is never shown.
+  if (gate.blocked === null && gate.fallback === null && !said.cut) {
     const rest = reply.end();
     if (rest !== '') await release(gate.push(rest));
     // Ends the gate (nothing more once that last push stopped it).
@@ -480,7 +502,8 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
   // The reply was taken out of structured output, or cut where the response's other fields began.
   if (reply.shape !== 'prose') notes.push(`stream_structured_${reply.shape ?? 'unknown'}`);
   else if (reply.isDone()) notes.push('stream_fields_cut');
-  const replyText = reply.text;
+  if (said.cut) notes.push('stream_spoken_cut');
+  const replyText = said.cut ? said.shown.trim() : reply.text;
 
   // Phase B: the structured fields of exactly that reply.
   const phaseBStarted = performance.now();
@@ -496,6 +519,7 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
       schemaName: COACH_ANNOTATIONS_SCHEMA_NAME,
       zodSchema: CoachAnnotations,
       requestId: a.ctx.requestId,
+      maxOutputTokens: ANNOTATION_MAX_TOKENS,
       timeoutMs: budget,
       signal: a.signal ? AbortSignal.any([a.signal, timeout]) : timeout,
     });

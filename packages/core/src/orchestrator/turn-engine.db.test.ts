@@ -16,6 +16,8 @@ import {
   mockCoachResponse,
   type EmbedOptions,
   type EmbedResult,
+  type GenerateStructuredRequest,
+  type GenerateStructuredResult,
   type MockGenerateContext,
 } from '@foundry/ai';
 import { TurnStreamEvent, type TurnView } from '@foundry/contracts';
@@ -32,6 +34,7 @@ import { Kit } from '../internal/kit.js';
 import { type VoiceTurnAdmission } from '../services/call-admission.js';
 import { createCoreHarness, storeOpenerUnchecked, type CoreHarness } from '../testing/harness.js';
 import { createOrchestrator, type Orchestrator, type RunTurnInput, type RunTurnOutcome } from './run-turn.js';
+import { ANNOTATION_MAX_TOKENS } from './generate.js';
 import { verifySpeechUnit } from './speech-units.js';
 import { OPENER_FRAME } from './turn-prompts.js';
 
@@ -752,6 +755,56 @@ describe('spoken turns', () => {
       expect(outcome.status).toBe('completed');
       return completed(events);
     }
+  });
+
+  it('a call’s reply ends once all of it that can be said was said', async () => {
+    // Twelve sentences of nine words: the call can say 70 words, so the model is stopped within the eighth.
+    const sentences = Array.from(
+      { length: 12 },
+      (_, i) => `Point ${String(i + 1)} is about the pilot and its counts.`,
+    );
+    const gateway = new MockModelGateway({ streamDelayMs: 0, streamFixture: () => sentences.join(' ') });
+    const { core, orchestrator } = coreWith(gateway);
+    const session = await core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+    const { events, outcome } = await run(orchestrator, session.id, {
+      text: 'Walk me through everything we should check.',
+      mode: 'coach',
+      channel: 'voice',
+      callId: CALL_ID,
+    });
+    expect(outcome.status).toBe('completed');
+    const said = speechUnits(events)
+      .map((u) => u.text)
+      .join(' ');
+    expect(said.split(/\s+/).length).toBe(70);
+    const turn = completed(events);
+    expect(turn.validator?.notes).toContain('stream_spoken_cut');
+    // The transcript is what was said, to the end of the sentence the budget ran out in, and nothing after.
+    const shown = deltas(events)
+      .map((d) => d.text)
+      .join('')
+      .trim();
+    expect(turn.response?.answer).toBe(shown);
+    expect(shown).toBe(sentences.slice(0, 8).join(' '));
+    expect(turn.response?.answer).not.toContain('Point 9');
+  });
+
+  it('bounds the annotations call', async () => {
+    const asked: (number | undefined)[] = [];
+    class Recording extends MockModelGateway {
+      override generateStructured<T>(
+        request: GenerateStructuredRequest<T>,
+      ): Promise<GenerateStructuredResult<T>> {
+        if (request.schemaName === COACH_ANNOTATIONS_SCHEMA_NAME) asked.push(request.maxOutputTokens);
+        return super.generateStructured(request);
+      }
+    }
+    const { core, orchestrator } = coreWith(new Recording({ streamDelayMs: 0 }));
+    const session = await core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+    const { outcome } = await run(orchestrator, session.id, { text: 'What should we test?', mode: 'coach' });
+    expect(outcome.status).toBe('completed');
+    expect(asked).toEqual([ANNOTATION_MAX_TOKENS]);
+    expect(ANNOTATION_MAX_TOKENS).toBeLessThan(4_096);
   });
 
   it('a crisis on a call speaks the fixed support message, without call admission or a model call', async () => {
