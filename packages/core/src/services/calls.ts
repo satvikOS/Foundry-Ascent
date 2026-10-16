@@ -38,7 +38,7 @@ import {
 import { type RequestContext } from '../context.js';
 import { DomainError, fail, parseInput } from '../errors.js';
 import { type DirectoryCache } from '../internal/directory.js';
-import { eirNameWords, mentionsEir, normalizedName } from '../internal/eir-names.js';
+import { mentionsEir, personaNameClaimsEir } from '../internal/eir-names.js';
 import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
 import { secondsUntilUtcMidnight } from '../orchestrator/sampling.js';
 import { signSpeechUnit, verifySpeechUnit } from '../orchestrator/speech-units.js';
@@ -116,24 +116,12 @@ export function voiceApproved(
   );
 }
 
-export { mentionsEir };
+export { mentionsEir, personaNameClaimsEir };
 
 /** The founder's first name for a greeting (null when the display name does not start with a plain name). */
 export function greetingName(displayName: string): string | null {
   const first = displayName.trim().split(/\s+/)[0] ?? '';
   return /^\p{L}[\p{L}'’-]{0,39}$/u.test(first) ? first : null;
-}
-
-/**
- * Whether a persona name presents the vEIR as an EIR ("Corin Halvorsen", "Coach Corin") rather than as their
- * vEIR ("Corin's vEIR", "Corin Halvorsen's vEIR"): it names an EIR other than in the possessive.
- */
-export function personaNameClaimsEir(personaName: string, eirNames: readonly string[]): boolean {
-  const words = eirNameWords(eirNames);
-  const possessives = [...eirNames.map(normalizedName), ...words].sort((a, b) => b.length - a.length);
-  let rest = normalizedName(personaName);
-  for (const name of possessives) rest = rest.split(`${name}'s`).join(' ').split(`${name}’s`).join(' ');
-  return rest.split(/[^\p{L}]+/u).some((word) => words.has(word));
 }
 
 /**

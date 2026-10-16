@@ -17,6 +17,7 @@ import { hasAnyRole, loadPrincipalRoles, requireRole } from '../authz/roles.js';
 import { type RequestContext } from '../context.js';
 import { DomainError, fail, parseInput } from '../errors.js';
 import { type DirectoryCache } from '../internal/directory.js';
+import { personaNameClaimsEir } from '../internal/eir-names.js';
 import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
 import { embodimentView } from './veir.js';
 import { isSpeechVoice } from './voices.js';
@@ -131,6 +132,18 @@ export function createPersonaManagementService(
             `${profile.displayName} already has a persona (${existing.name})`,
             'persona_exists',
           );
+        }
+        // A vEIR is never presented as its EIR ("Corin Halvorsen", "Coach Corin"); its name says whose vEIR it
+        // is ("Corin's vEIR"). Every call intro and first message would otherwise open with the claim.
+        if (
+          personaNameClaimsEir(input.name, [
+            profile.displayName,
+            ...(await directory.get(ctx.tenantId)).eirNames,
+          ])
+        ) {
+          throw fail.validation('A vEIR\'s name says whose vEIR it is, such as "Corin\'s vEIR".', [
+            { path: 'name', message: 'Must not present the vEIR as an EIR' },
+          ]);
         }
         const persona = await personasRepo.createPersona(scope.tx, {
           tenantId: ctx.tenantId,

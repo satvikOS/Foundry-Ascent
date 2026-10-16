@@ -27,3 +27,15 @@ export function mentionsEir(text: string, eirNames: readonly string[]): boolean 
     .split(/[^\p{L}]+/u)
     .some((word) => words.has(word));
 }
+
+/**
+ * Whether a persona name presents the vEIR as an EIR ("Corin Halvorsen", "Coach Corin") rather than as their
+ * vEIR ("Corin's vEIR", "Corin Halvorsen's vEIR"): it names an EIR other than in the possessive.
+ */
+export function personaNameClaimsEir(personaName: string, eirNames: readonly string[]): boolean {
+  const words = eirNameWords(eirNames);
+  const possessives = [...eirNames.map(normalizedName), ...words].sort((a, b) => b.length - a.length);
+  let rest = normalizedName(personaName);
+  for (const name of possessives) rest = rest.split(`${name}'s`).join(' ').split(`${name}’s`).join(' ');
+  return rest.split(/[^\p{L}]+/u).some((word) => words.has(word));
+}

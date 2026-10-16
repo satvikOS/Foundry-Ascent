@@ -305,6 +305,20 @@ describe('persona lifecycle', () => {
       );
       return { profileId: String(created.rows[0]?.id) };
     });
+    // A name that presents the vEIR as an EIR (this one or another) is refused; a possessive is the form.
+    for (const name of ['Noor Example', 'Coach Noor', 'Corin Halvorsen']) {
+      await expect(
+        h.core.personas.createEirPersona(lead, {
+          eirProfileId: profileId,
+          name,
+          doctrine: release.doctrine,
+          style: release.style,
+          disclosureText:
+            "You are talking with Noor's vEIR, an AI coach. It is not a person, and no human EIR wrote these.",
+        }),
+        name,
+      ).rejects.toMatchObject({ code: 'validation_failed' });
+    }
     const persona = await h.core.personas.createEirPersona(lead, {
       eirProfileId: profileId,
       name: "Noor's vEIR",
