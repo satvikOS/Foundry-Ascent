@@ -76,6 +76,8 @@ for (const [device, options] of Object.entries(VIEWPORTS)) {
           }
           for (const [surface, path] of [
             ['knowledge', 'knowledge'],
+            ['knowledge-notebook', 'knowledge?view=notebook'],
+            ['knowledge-conversations', 'knowledge?view=conversations'],
             ['team', 'team'],
             ['help', 'help'],
             ['venture-settings', 'settings'],
@@ -91,15 +93,22 @@ for (const [device, options] of Object.entries(VIEWPORTS)) {
         test.use({ storageState: OWNER_STATE });
 
         test('studio, program and admin', async ({ page }) => {
-          test.setTimeout(120_000);
+          test.setTimeout(180_000);
           for (const [surface, path] of [
             ['studio', 'eir/personas'],
             ['studio-eirs', 'eir/eirs'],
+            ['studio-lessons', 'eir/lessons'],
+            ['studio-reviews', 'eir/reviews'],
+            ['studio-inbox', 'eir/inbox'],
             ['program', 'program/portfolio'],
             ['program-ventures', 'program/ventures'],
+            ['program-assignments', 'program/assignments'],
+            ['program-resources', 'program/resources'],
+            ['program-escalations', 'program/escalations'],
             ['admin', 'admin/principals'],
             ['admin-usage', 'admin/usage'],
             ['admin-settings', 'admin/settings'],
+            ['admin-audit', 'admin/audit'],
           ] as const) {
             await page.goto(`/${TENANT}/app/${path}`);
             if (surface === 'studio') await useTheme(page, scheme);
@@ -114,6 +123,10 @@ for (const [device, options] of Object.entries(VIEWPORTS)) {
             .click();
           await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
           await shoot(page, 'studio-persona', device, scheme);
+          await page.goto(`/${TENANT}/app/admin/principals`);
+          await page.getByRole('button', { name: 'Add principal' }).click();
+          await expect(page.getByRole('dialog')).toBeVisible();
+          await shoot(page, 'admin-dialog', device, scheme);
         });
       });
     });
