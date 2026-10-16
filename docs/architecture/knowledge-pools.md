@@ -303,7 +303,12 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
   conversations the person opened since, so two never open alike. The line is validated like any opener and
   stored with the conversation it came from (`coaching_sessions.opener`). A call says it after introducing itself; a call that
   starts a conversation nobody has said anything in chooses the line again at call start and keeps it as the
-  conversation's first message. `GET /ventures/:id/opener` previews it for New chat.
+  conversation's first message. `GET /ventures/:id/opener` previews it for New chat, which greets with it (the
+  opener's own greeting as the heading, with the founder's name; the time of day only with nothing to pick up, or
+  for a private chat) and creates the conversation with `openerShownAt` (the preview's `at`), so the line is
+  phrased as it was shown, within an hour; `null` (no opener shown) opens the conversation without one. A hello
+  right after the opener is answered with a hello, never the recall again (`<conversation_state>` reads the
+  founder's first message as the reply to the replayed opener).
 - **Distillation** (purpose `distill`, the daily caps and the kill switch) runs from jobs only the API
   enqueues (the worker has no `sqs:SendMessage`):
   - after each completed turn, delayed 540 s (the backstop of a conversation left open); the worker skips
