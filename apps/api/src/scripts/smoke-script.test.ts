@@ -82,7 +82,12 @@ function serve(site: Site): Promise<{ server: Server; origin: string }> {
   });
 }
 
-function runSmoke(origin: string, firstContactSeconds: number): Promise<{ code: number; stdout: string }> {
+/** Runs the smoke test; `edgePolicySeconds` defaults to the first-contact window. */
+function runSmoke(
+  origin: string,
+  firstContactSeconds: number,
+  edgePolicySeconds = firstContactSeconds,
+): Promise<{ code: number; stdout: string }> {
   return new Promise((ok) => {
     execFile(
       process.execPath,
@@ -94,6 +99,7 @@ function runSmoke(origin: string, firstContactSeconds: number): Promise<{ code: 
           SMOKE_RETRY_DELAY_MS: '20',
           SMOKE_HEALTH_TIMEOUT_S: '5',
           SMOKE_FIRST_CONTACT_TIMEOUT_S: String(firstContactSeconds),
+          SMOKE_EDGE_POLICY_TIMEOUT_S: String(edgePolicySeconds),
           SMOKE_EXPECT_VERSION: 'test-version',
         },
         timeout: 60_000,
@@ -197,6 +203,44 @@ describe('scripts/smoke.mjs first contact (R6)', () => {
     const { code, stdout } = await runSmoke(origin, 30);
     expect(stdout).toContain('voice-call policy present (after 3 attempts)');
     expect(stdout).toContain('All 6 checks passed.');
+    expect(code).toBe(0);
+  });
+
+  it('gives a stale policy its own window, longer than first contact, on / and the deep link', async () => {
+    const previous = { 'permissions-policy': 'camera=(), microphone=(), geolocation=()' };
+    // Every page keeps the previous policy for 1.5 s: past the 1 s first-contact window.
+    const until = Date.now() + 1_500;
+    let deepLinkStale = 0;
+    const { server, origin } = await serve({
+      transient: () => null,
+      pageHeaders: (req) => {
+        if (Date.now() >= until) return {};
+        if (req.url !== '/') deepLinkStale += 1;
+        return previous;
+      },
+    });
+    current = server;
+    const { code, stdout } = await runSmoke(origin, 1, 30);
+    expect(stdout).toContain('All 6 checks passed.');
+    expect(code).toBe(0);
+    expect(deepLinkStale).toBe(0); // / waited it out first
+  });
+
+  it('retries a deep link that still carries the previous policy', async () => {
+    let staleDeepLinks = 2;
+    const { server, origin } = await serve({
+      transient: () => null,
+      pageHeaders: (req) => {
+        if (req.url === '/' || staleDeepLinks === 0) return {};
+        staleDeepLinks -= 1;
+        return { 'permissions-policy': 'camera=(), microphone=(), geolocation=()' };
+      },
+    });
+    current = server;
+    const { code, stdout } = await runSmoke(origin, 1, 30);
+    expect(stdout).toMatch(/PASS {2}GET \/ain\/app\/ventures serves the SPA \(deep link\)/);
+    expect(stdout).toContain('All 6 checks passed.');
+    expect(staleDeepLinks).toBe(0);
     expect(code).toBe(0);
   });
 
