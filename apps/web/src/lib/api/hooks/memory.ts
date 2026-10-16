@@ -128,6 +128,7 @@ function useInvalidateMemory(ventureId: string) {
   return (memoryId?: string) => {
     void client.invalidateQueries({ queryKey: queryKeys.venture.memoryAll(ventureId) });
     void client.invalidateQueries({ queryKey: queryKeys.venture.overview(ventureId) });
+    void client.invalidateQueries({ queryKey: queryKeys.venture.detail(ventureId) });
     void client.invalidateQueries({ queryKey: queryKeys.ventures.list() });
     if (memoryId) {
       void client.invalidateQueries({ queryKey: queryKeys.memory.history(memoryId) });
@@ -174,21 +175,5 @@ export function sendMemoryAction(
     body: encodeBody(MemoryAction, action),
     idempotencyKey: options.idempotencyKey ?? createIdempotencyKey(),
     signal: options.signal,
-  });
-}
-
-/**
- * PATCH /memory/:id with an action: approve / reject / correct / dispute / pin / unpin / delete.
- * Resolves to the updated (or, for `correct`, the superseding) MemoryObjectView, or `null` after `delete`.
- */
-export function useMemoryAction(ventureId: string) {
-  const invalidate = useInvalidateMemory(ventureId);
-  return useMutation({
-    mutationFn: ({ memoryId, action }: { memoryId: string; action: MemoryActionInput }) =>
-      sendMemoryAction(memoryId, action),
-    onSuccess: (memory, variables) => {
-      invalidate(variables.memoryId);
-      if (memory && memory.id !== variables.memoryId) invalidate(memory.id);
-    },
   });
 }

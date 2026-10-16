@@ -128,18 +128,9 @@ export function useMemoryActions(ventureId: string) {
   return { run, mutation, isPending: mutation.isPending, pendingId: mutation.variables?.memoryId ?? null };
 }
 
-/** POST /ventures/:id/memory, also refreshing the venture's counts. */
+/** POST /ventures/:id/memory (the mutation refreshes the venture's lists and counts itself). */
 export function useCreateVentureMemory(ventureId: string) {
   const create = useCreateMemory(ventureId);
-  const invalidate = useInvalidateVentureMemory(ventureId);
-  const { mutateAsync } = create;
-  const createMemory = useCallback(
-    async (input: CreateMemoryInput) => {
-      const memory = await mutateAsync(input);
-      invalidate([memory.id]);
-      return memory;
-    },
-    [mutateAsync, invalidate],
-  );
+  const createMemory: (input: CreateMemoryInput) => Promise<MemoryObjectView> = create.mutateAsync;
   return { createMemory, mutation: create };
 }
