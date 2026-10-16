@@ -269,6 +269,9 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
             "MODEL_PRIMARY_ID": "us.amazon.nova-2-lite-v1:0",
             "MODEL_PROVIDER": "bedrock",
             "NODE_OPTIONS": "--enable-source-maps",
+            "SPEECH_DEFAULT_VOICE": "Matthew",
+            "SPEECH_ENABLED": "true",
+            "SPEECH_ENGINE": "generative",
           },
         },
         "FunctionName": "FoundryAscent-Api",
@@ -537,6 +540,20 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
                 },
               ],
               "Sid": "BedrockRuntimeModels",
+            },
+            {
+              "Action": [
+                "polly:DescribeVoices",
+                "polly:SynthesizeSpeech",
+              ],
+              "Condition": {
+                "StringEquals": {
+                  "aws:RequestedRegion": "us-east-1",
+                },
+              },
+              "Effect": "Allow",
+              "Resource": "*",
+              "Sid": "PollySpeech",
             },
           ],
           "Version": "2012-10-17",
@@ -974,6 +991,39 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
       },
       "Type": "Custom::CDKBucketDeployment",
       "UpdateReplacePolicy": "Delete",
+    },
+    "DistillSweepFCC9A1DA": {
+      "Properties": {
+        "Description": "Foundry Ascent distillation sweep (digests and notebooks for idle conversations)",
+        "FlexibleTimeWindow": {
+          "Mode": "OFF",
+        },
+        "ScheduleExpression": "rate(15 minutes)",
+        "ScheduleExpressionTimezone": "Etc/UTC",
+        "State": "ENABLED",
+        "Target": {
+          "Arn": {
+            "Fn::GetStackOutput": {
+              "OutputName": "PublishOutputFnGetAttJobsQueue86ED6666Arn08E9A495",
+              "Region": "us-east-1",
+              "StackName": "FoundryAscent-Data",
+            },
+          },
+          "Input": "{"type":"distill_sweep"}",
+          "RetryPolicy": {
+            "MaximumEventAgeInSeconds": 900,
+            "MaximumRetryAttempts": 2,
+          },
+          "RoleArn": {
+            "Fn::GetAtt": [
+              "SchedulerRoleForTargetce9946D198F908",
+              "Arn",
+            ],
+          },
+          "SqsParameters": {},
+        },
+      },
+      "Type": "AWS::Scheduler::Schedule",
     },
     "Distribution830FAC52": {
       "Properties": {
@@ -1607,7 +1657,7 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
               {
                 "Header": "Permissions-Policy",
                 "Override": true,
-                "Value": "camera=(), microphone=(), geolocation=()",
+                "Value": "camera=(), microphone=(self), geolocation=()",
               },
             ],
           },
@@ -1618,7 +1668,7 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
                 "Fn::Join": [
                   "",
                   [
-                    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://",
+                    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' https://",
                     {
                       "Fn::GetStackOutput": {
                         "OutputName": "PublishOutputRefDocumentsBucket9EC9DEB9D4188A2E",
@@ -1849,6 +1899,32 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
         "Name": "us-east-1FoundryAscent-ApaRewriteFunction20ECD1FB",
       },
       "Type": "AWS::CloudFront::Function",
+    },
+    "SpeechCharactersAlarm2E06B92F": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Ref": "AlarmTopicD01E77F9",
+          },
+        ],
+        "AlarmDescription": "More than 100000 characters synthesized by Amazon Polly in one hour (about USD 3 on the generative engine, more than the default global daily AI cap)",
+        "AlarmName": "FoundryAscent-Speech-Characters",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "Dimensions": [
+          {
+            "Name": "Operation",
+            "Value": "SynthesizeSpeech",
+          },
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "RequestCharacters",
+        "Namespace": "AWS/Polly",
+        "Period": 3600,
+        "Statistic": "Sum",
+        "Threshold": 100000,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
     },
     "WorkerErrorsAlarm1932B217": {
       "Properties": {

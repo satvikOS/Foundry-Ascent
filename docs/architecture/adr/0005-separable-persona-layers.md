@@ -58,3 +58,15 @@ own consent and kill switch (ADR-0010). V1 seeds only the neutral Foundry Guide 
 
 - Before the first real EIR persona: the consent schema and release criteria are re-validated against the
   chosen voice/avatar vendor's terms and University approval (03 §9), and this ADR is updated.
+
+## Amendment (2026-10-16)
+
+Two **fictional** EIR personas, built from the synthetic EIR profiles Corin Halvorsen and Ruth
+Abernathy-Song, now ship next to Foundry Guide, each with a synthetic consent record (doctrine, style,
+voice, cases), an approved release, a voice configuration and a common knowledge pool
+([ADR-0018](0018-veir-knowledge-pools.md)). They are not real people, so the revisit trigger above still
+applies to the first real EIR. Voice is now a live layer: calls speak with a stock Amazon Polly voice,
+and a persona-specific voice or portrait is used only with that persona's `voice` or `likeness` consent
+([ADR-0010](0010-realtime-webrtc-deferred.md)). Program leads get product actions to create EIR
+personas, record consent, assign them to ventures, and suspend or retire them; revoking a consent
+suspends the persona automatically.

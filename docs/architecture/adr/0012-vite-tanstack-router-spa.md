@@ -1,6 +1,8 @@
 # ADR-0012: Vite + TanStack Router SPA instead of Next.js
 
-- **Status:** Accepted (deviation from blueprint 03 §17/§26 ADR-012 and 05 §12)
+- **Status:** Accepted (deviation from blueprint 03 §17/§26 ADR-012 and 05 §12). The workspace layout
+  described below (rail, context bar, tabs, inspector, dock) is superseded by
+  [ADR-0019](0019-conversation-first-console-ui.md) (2026-10-16); the technology choice stands.
 - **Date:** 2026-10-05
 - **Deciders:** Platform owner
 - **Blueprint basis:** 03 §17 (Product UI: Next.js App Router), §22 "Frontend shell and visual system",

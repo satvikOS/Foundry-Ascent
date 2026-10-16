@@ -68,6 +68,11 @@ export function documentsUploadOrigin(bucketName: string, region: string): strin
  * The SPA's Content-Security-Policy. `connect-src` allows the app's own origin and exactly one other: the
  * documents bucket. A wildcard such as `https://*.s3.amazonaws.com` would let injected script send data to
  * any bucket in the world.
+ *
+ * `media-src 'self' blob:` is for voice calls (ADR-0010): the call screen fetches the synthesized speech
+ * (`POST /api/v1/speech`, `audio/mpeg`) and plays it from a `blob:` object URL, sentence by sentence. Only
+ * same-origin and in-page blob media can play; remote media hosts stay blocked. Browser speech recognition
+ * (Web Speech API) needs no directive: the page never fetches anything for it.
  */
 export function contentSecurityPolicy(uploadOrigin: string): string {
   return [
@@ -75,6 +80,7 @@ export function contentSecurityPolicy(uploadOrigin: string): string {
     "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
+    "media-src 'self' blob:",
     "font-src 'self' data:",
     `connect-src 'self' ${uploadOrigin}`,
     "frame-ancestors 'none'",
@@ -84,7 +90,13 @@ export function contentSecurityPolicy(uploadOrigin: string): string {
   ].join('; ');
 }
 
-export const PERMISSIONS_POLICY = 'camera=(), microphone=(), geolocation=()';
+/**
+ * Powerful features the SPA may use. The microphone is allowed for this origin only (`self`; never for
+ * frames, and `frame-ancestors 'none'` keeps the app out of other sites' frames) so a founder can talk to
+ * the vEIR in a call; the browser still asks the person before the first capture. Camera and geolocation
+ * stay off: calls are voice only and nothing needs a location (ADR-0010).
+ */
+export const PERMISSIONS_POLICY = 'camera=(), microphone=(self), geolocation=()';
 
 /** Two years, the HSTS preload list minimum is one. */
 export const HSTS_MAX_AGE = Duration.days(730);

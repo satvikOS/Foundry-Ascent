@@ -27,6 +27,8 @@ const valid = (): Record<string, unknown> => ({
   },
   aurora: { minCapacityAcu: 0, maxCapacityAcu: 2, autoPauseMinutes: 10, engineVersion: '16.13' },
   api: { reservedConcurrency: 10, memoryMb: 1024, timeoutSeconds: 60 },
+  speech: { enabled: true, defaultVoice: 'Ruth', engine: 'neural', note: 'free text is ignored' },
+  distillation: { sweepEnabled: true, sweepIntervalMinutes: 20 },
   logRetentionDays: 30,
 });
 
@@ -51,6 +53,25 @@ describe('config', () => {
     // Unreserved: some accounts have a total concurrency quota of 10, which any reservation would break.
     expect(config.api.reservedConcurrency).toBeNull();
     expect(config.worker.reservedConcurrency).toBeNull();
+    // Voice calls on Polly's generative engine (Matthew has a generative voice in us-east-1).
+    expect(config.speech).toEqual({ enabled: true, defaultVoice: 'Matthew', engine: 'generative' });
+    expect(config.distillation).toEqual({ sweepEnabled: true, sweepIntervalMinutes: 15 });
+  });
+
+  it('reads the speech and distillation sections', () => {
+    const config = parseConfig(valid());
+    expect(config.speech).toEqual({ enabled: true, defaultVoice: 'Ruth', engine: 'neural' });
+    expect(config.distillation).toEqual({ sweepEnabled: true, sweepIntervalMinutes: 20 });
+  });
+
+  it('turns speech and the distillation sweep off when their sections are absent', () => {
+    const raw = valid();
+    delete raw.speech;
+    delete raw.distillation;
+    const config = parseConfig(raw);
+    expect(config.speech.enabled).toBe(false);
+    expect(config.distillation.sweepEnabled).toBe(false);
+    expect(config.distillation.sweepIntervalMinutes).toBe(15);
   });
 
   it('treats reserved concurrency as optional (null or absent = unreserved)', () => {
@@ -99,6 +120,17 @@ describe('config', () => {
     [['models', 'primary'], '', /models.primary/],
     [['models', 'luna', 'enabled'], 'yes', /models.luna.enabled/],
     [['models', 'luna', 'modelId'], 'GPT 6', /models.luna.modelId/],
+    [['speech'], 'on', /\$\.speech must be an object/],
+    [['speech', 'enabled'], 'true', /speech.enabled/],
+    [['speech', 'engine'], 'standard', /speech.engine must be one of generative, neural/],
+    [['speech', 'engine'], 'long-form', /speech.engine/],
+    [['speech', 'defaultVoice'], 'matthew', /speech.defaultVoice/],
+    [['speech', 'defaultVoice'], 'Matthew Neural', /speech.defaultVoice/],
+    [['speech', 'defaultVoice'], undefined, /speech.defaultVoice/],
+    [['distillation', 'sweepEnabled'], 1, /distillation.sweepEnabled/],
+    [['distillation', 'sweepIntervalMinutes'], 1, /distillation.sweepIntervalMinutes/],
+    [['distillation', 'sweepIntervalMinutes'], 90, /distillation.sweepIntervalMinutes/],
+    [['distillation', 'sweepIntervalMinutes'], 7.5, /distillation.sweepIntervalMinutes/],
   ])('rejects %j = %j', (path, value, message) => {
     expect(() => parseConfig(withChange(path, value))).toThrow(ConfigError);
     expect(() => parseConfig(withChange(path, value))).toThrow(message);

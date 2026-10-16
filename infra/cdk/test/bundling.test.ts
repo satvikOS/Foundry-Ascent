@@ -140,6 +140,9 @@ const FAKE_ENV: Readonly<Record<string, string>> = {
   OWNER_DISPLAY_NAME: 'Platform Owner',
   HOME_TENANT_SLUG: 'ain',
   HOME_TENANT_NAME: 'Ain Foundry',
+  SPEECH_ENABLED: 'true',
+  SPEECH_DEFAULT_VOICE: 'Matthew',
+  SPEECH_ENGINE: 'generative',
 };
 
 /** Mirrors the Lambda runtime's `awslambda` global, which the streaming API handler needs at import. */

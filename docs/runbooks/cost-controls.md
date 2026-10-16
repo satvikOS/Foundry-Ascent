@@ -15,9 +15,11 @@ prices as configured on 2026-10-05; confirm on the AWS pricing pages before rely
 | Aurora storage, backups       | ~$0.10/GB-month; backups within retention free                                                       | I/O per million requests                                                                                                                                                                             | 7-day retention                                                       |
 | Bedrock reasoning             | $0                                                                                                   | Nova 2 Lite (primary, `us.` profile; `global.` fallback): ≈ $0.007 per turn at ~12 k input / 1.5 k output tokens. GPT-6 Luna (≈ $0.002) is gated by AWS and disabled (`models.luna.enabled = false`) | daily caps, turn rate limit, session turn limit                       |
 | Bedrock embeddings (Titan v2) | $0                                                                                                   | ~$0.02 per million tokens (a 50-page document ≈ $0.001)                                                                                                                                              | ingestion only, kill switch                                           |
+| Amazon Polly (voice calls)    | $0                                                                                                   | per character synthesized: generative $30, neural $16 per million (a 70-word spoken reply ≈ 420 characters ≈ $0.013 generative); free tier 100 k generative characters a month for 12 months         | daily caps (speech is metered), kill switch, `speech.enabled`, alarm  |
+| Distillation (worker)         | the 15-minute sweep: Scheduler free tier; must not wake a paused Aurora (see below)                  | one model call per idle conversation (digest, notebook, memory and lesson candidates), metered under the caps                                                                                        | daily caps, kill switch, `distillation.sweepEnabled`                  |
 | Lambda (ARM, 1 GB)            | $0                                                                                                   | fractions of a cent per turn                                                                                                                                                                         | no reserved concurrency (see below); ≤ 2 pollers (worker); spend caps |
 | Secrets Manager               | $0.40/month (one secret)                                                                             | —                                                                                                                                                                                                    | —                                                                     |
-| CloudWatch                    | 5 alarms ≈ $0.50/month; logs per GB ingested                                                         | —                                                                                                                                                                                                    | 30-day log retention, no content in logs                              |
+| CloudWatch                    | 6 alarms ≈ $0.60/month; logs per GB ingested                                                         | —                                                                                                                                                                                                    | 30-day log retention, no content in logs                              |
 | CloudFront, S3, SQS, SNS      | cents (free tiers)                                                                                   | cents                                                                                                                                                                                                | price class 100, no WAF                                               |
 | Not created at all            | NAT gateway, EIP, VPC endpoints, customer KMS keys, RDS Proxy, provisioned concurrency or throughput | —                                                                                                                                                                                                    | denied by `FoundryAscent-Boundary`                                    |
 
@@ -59,14 +61,20 @@ stay accurate.
 `aurora.maxCapacityAcu` (2), `aurora.minCapacityAcu` (0 = can pause), `aurora.autoPauseMinutes` (10),
 `api.reservedConcurrency` (`null` = none, the production setting; a reservation fails the deploy on
 accounts whose Lambda concurrency quota is only 10), `api.memoryMb` (1024), `api.timeoutSeconds` (60), `logRetentionDays` (30),
-`models.luna.enabled` (`false`; see [ADR-0014](../architecture/adr/0014-bedrock-models-luna-nova-titan.md#enabling-luna-later)).
+`models.luna.enabled` (`false`; see [ADR-0014](../architecture/adr/0014-bedrock-models-luna-nova-titan.md#enabling-luna-later)),
+`speech.enabled` (`true`; `false` removes the API's Polly permission), `speech.engine` (`generative`;
+`neural` is about half the price per character), `speech.defaultVoice` (`Matthew`),
+`distillation.sweepEnabled` (`true`) and `distillation.sweepIntervalMinutes` (15).
 
 ## Alarms and budgets (one-time setup, account administrator)
 
 1. **Subscribe to alarms** — the topic has no subscribers by default:
    `aws sns subscribe --topic-arn <AlarmTopicArn output> --protocol email --notification-endpoint <you>` and
    confirm the email. Alarms: `FoundryAscent-Api-Errors`, `FoundryAscent-Api-Throttles`,
-   `FoundryAscent-Worker-Errors`, `FoundryAscent-Jobs-DLQ-NotEmpty`, `FoundryAscent-CloudFront-5xxRate`.
+   `FoundryAscent-Worker-Errors`, `FoundryAscent-Jobs-DLQ-NotEmpty`, `FoundryAscent-CloudFront-5xxRate`,
+   `FoundryAscent-Speech-Characters` (more than 100,000 characters synthesized by Polly in one hour: about
+   $3 generative, more than the whole default global daily cap, so the in-app metering did not hold or the
+   caps were raised; check **Admin → Usage** and the API logs, and use the kill switch if in doubt).
 2. **AWS Budgets** (Billing → Budgets), **recommended**: a monthly cost budget of $10 with email alerts at
    50 %, 80 % and 100 % actual and 100 % forecast. Budgets are outside the CDK app (account-level); create
    it as the account administrator (the stage-0 policy can only read budgets).
@@ -90,13 +98,18 @@ accounts whose Lambda concurrency quota is only 10), `api.memoryMb` (1024), `api
 ## When Aurora does not pause
 
 Any database call wakes the cluster and restarts the 10-minute idle timer: signed-in users, sign-in
-attempts (valid or not), worker jobs (document ingestion), the deploy-time migrate resource, the deploy
-smoke test's sign-in check, evals runs, and the platform admin's `GET /api/v1/admin/health`. The public
-`GET /api/v1/health` does **not**: it never queries the database, so uptime monitors may poll it. If
+attempts (valid or not), worker jobs (document ingestion, distillation), the deploy-time migrate resource,
+the deploy smoke test's sign-in check, evals runs, and the platform admin's `GET /api/v1/admin/health`.
+The public `GET /api/v1/health` does **not**: it never queries the database, so uptime monitors may poll
+it. Nor may the 15-minute distillation sweep: its handler is required to leave a paused cluster alone
+when there is nothing to distill ([ADR-0018](../architecture/adr/0018-veir-knowledge-pools.md#cost)). If
 capacity never reaches 0:
 
-1. Find the caller: API logs (`/aws/lambda/FoundryAscent-Api`, request ids and paths) and the jobs queue
-   depth.
+1. Find the caller: API logs (`/aws/lambda/FoundryAscent-Api`, request ids and paths), worker logs
+   (`/aws/lambda/FoundryAscent-Worker`, job types) and the jobs queue depth. A worker log line for every
+   `distill_sweep` that is followed by database activity on a quiet night means the sweep is waking the
+   cluster: set `distillation.sweepEnabled` to `false` in `infra/cdk/config/production.json` and deploy
+   (conversations are then distilled when they end or when the next one starts), then fix the handler.
 2. Bots hammering `POST /api/v1/auth/sign-in`: the per-IP lockout answers without a model call, but each
    attempt still touches the database; treat a sustained stream as an incident
    ([incident response](incident-response.md)).

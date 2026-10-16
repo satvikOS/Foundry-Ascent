@@ -57,6 +57,17 @@ every turn and every recap). A global cap of `0` blocks all coaching without cha
 3. Communicate: tell founders and EIRs the coach is paused and how to reach the program team.
 4. Re-enable with the same toggle after the incident review.
 
+### Infrastructure off switches (PR + deploy)
+
+Two features also have a switch in `infra/cdk/config/production.json`, for when the in-product switch is
+not enough (for example a defect that bypasses it). Each is a one-line change plus a normal deploy
+(about 2 minutes after CI):
+
+- `speech.enabled: false` removes the API role's Amazon Polly permission and sets `SPEECH_ENABLED=false`:
+  calls cannot speak even if application code tried to.
+- `distillation.sweepEnabled: false` disables the 15-minute distillation sweep schedule (conversations are
+  then distilled only when they end or when the next one starts).
+
 ## Level 4 — break-glass (product unavailable or not trusted)
 
 Account administrator in the AWS console or CloudShell (`us-east-1`). The GitHub deploy role cannot do this

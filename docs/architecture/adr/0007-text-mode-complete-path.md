@@ -1,6 +1,8 @@
 # ADR-0007: Text mode is the complete product path
 
-- **Status:** Accepted
+- **Status:** Accepted (2026-10-16: voice calls ship under the revised
+  [ADR-0010](0010-realtime-webrtc-deferred.md); they consume the same validated `CoachResponse`, and text
+  stays the complete and default path)
 - **Date:** 2026-10-05
 - **Deciders:** Platform owner
 - **Blueprint basis:** 03 §1 "Graceful degradation" and "Accessibility" quality attributes, §25

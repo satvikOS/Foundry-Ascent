@@ -21,8 +21,13 @@ export interface LambdaContract {
   readonly environment: Readonly<Record<'common' | LambdaRole, readonly string[]>>;
   readonly edgeHeaders: { readonly viewerIp: string; readonly viewerHost: string };
   readonly api: { readonly dbResumeBudgetSeconds: number; readonly sseKeepAliveSeconds: number };
-  /** JSON body of the daily maintenance message the schedule sends to the jobs queue. */
-  readonly worker: { readonly dailyMaintenanceMessage: string };
+  /** JSON bodies of the messages the EventBridge Scheduler schedules send to the jobs queue. */
+  readonly worker: {
+    /** Once a day: ephemeral-session expiry and redaction. */
+    readonly dailyMaintenanceMessage: string;
+    /** Every few minutes: enqueue distillation for conversations that went idle. */
+    readonly distillSweepMessage: string;
+  };
 }
 
 export const LAMBDA_CONTRACT_FILE = join(REPO_ROOT, 'apps', 'api', 'lambda-contract.json');
@@ -71,6 +76,10 @@ export function parseLambdaContract(raw: unknown): LambdaContract {
   ) {
     fail('$.worker.dailyMaintenanceMessage', 'must be exactly {"type":"maintenance","task":"daily"}');
   }
+  const sweep = obj(worker.distillSweepMessage, '$.worker.distillSweepMessage');
+  if (sweep.type !== 'distill_sweep' || Object.keys(sweep).length !== 1) {
+    fail('$.worker.distillSweepMessage', 'must be exactly {"type":"distill_sweep"}');
+  }
   if (bundling.platform !== 'node') fail('$.bundling.platform', 'must be "node"');
   if (bundling.format !== 'esm') fail('$.bundling.format', 'must be "esm"');
   const [target] = strings([bundling.target], '$.bundling.target', /^node\d+$/, 1);
@@ -96,7 +105,10 @@ export function parseLambdaContract(raw: unknown): LambdaContract {
       dbResumeBudgetSeconds: int(api.dbResumeBudgetSeconds, '$.api.dbResumeBudgetSeconds', 1, 50),
       sseKeepAliveSeconds: int(api.sseKeepAliveSeconds, '$.api.sseKeepAliveSeconds', 1, 30),
     },
-    worker: { dailyMaintenanceMessage: JSON.stringify({ type: 'maintenance', task: 'daily' }) },
+    worker: {
+      dailyMaintenanceMessage: JSON.stringify({ type: 'maintenance', task: 'daily' }),
+      distillSweepMessage: JSON.stringify({ type: 'distill_sweep' }),
+    },
   };
 }
 

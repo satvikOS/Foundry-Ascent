@@ -20,7 +20,10 @@ repository's `sub` claim with the owner and repository pinned by immutable ids, 
 (`repo:satvikOS/Foundry-Ascent:…`) is refused. Stage 0 is retired: the `Foundry-Ascent` access key was
 deleted by **Ops - retire stage-0 AWS access** and `FoundryAscent-LegacyCleanup` was detached. The
 workflows that need the stage-0 key (data-stack deploy, cleanup, inventory, verify access, Bedrock probe,
-retire) no longer run.
+retire) no longer run. They are not moved to OIDC on purpose: the deploy role has no Bedrock, Polly,
+S3 or Data API permissions, and widening a role every `production` job can assume is not justified for
+manual ops tasks. A probe that needs model access gets its own narrowly scoped role (see
+[deploy and rollback](../../docs/runbooks/deploy-and-rollback.md#probing-bedrock-and-polly)).
 
 Left for the account owner (optional hygiene): delete the IAM user `Foundry-Ascent` (it still has
 `FoundryAscent-BootstrapOperator` and `IAMUserChangePassword` attached and possibly a console

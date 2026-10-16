@@ -47,6 +47,7 @@ import {
   JOBS_MAX_RECEIVE_COUNT,
   MIGRATE_TIMEOUT_MINUTES,
   NAMES,
+  SPEECH_ALARM_CHARACTERS_PER_HOUR,
   WORKER_TIMEOUT_SECONDS,
 } from '../lib/constants.js';
 import { environmentNames, LAMBDA_CONTRACT, type LambdaRole } from '../lib/lambda-contract.js';
@@ -106,6 +107,8 @@ export class AppStack extends Stack {
   readonly alarmTopic: sns.Topic;
   /** Daily maintenance schedule (EventBridge Scheduler -> jobs queue -> worker). */
   readonly dailyMaintenance: scheduler.Schedule;
+  /** Distillation sweep schedule (EventBridge Scheduler -> jobs queue -> worker), ADR-0018. */
+  readonly distillSweep: scheduler.Schedule;
 
   constructor(scope: Construct, id: string, props: AppStackProps) {
     super(scope, id, props);
@@ -146,6 +149,9 @@ export class AppStack extends Stack {
       OWNER_DISPLAY_NAME: config.owner.displayName,
       HOME_TENANT_SLUG: config.homeTenant.slug,
       HOME_TENANT_NAME: config.homeTenant.name,
+      SPEECH_ENABLED: String(config.speech.enabled),
+      SPEECH_DEFAULT_VOICE: config.speech.defaultVoice,
+      SPEECH_ENGINE: config.speech.engine,
     };
     const environmentFor = (role: LambdaRole): Record<string, string> =>
       Object.fromEntries(
@@ -284,6 +290,21 @@ export class AppStack extends Stack {
       }),
     );
 
+    // Speech (voice calls, ADR-0010): the API alone turns validated vEIR text into audio. Neither action
+    // supports resource-level permissions unless a lexicon is used (none is), so the statement is pinned
+    // to the platform region instead. DescribeVoices lets the API check that a persona's voice id exists
+    // for the configured engine. Polly has no provisioned or long-running resources to deny.
+    if (config.speech.enabled) {
+      this.api.role.addToPolicy(
+        new iam.PolicyStatement({
+          sid: 'PollySpeech',
+          actions: ['polly:SynthesizeSpeech', 'polly:DescribeVoices'],
+          resources: ['*'],
+          conditions: { StringEquals: { 'aws:RequestedRegion': config.region } },
+        }),
+      );
+    }
+
     const foundationModelAcks = (resourceArns: readonly string[]): NagAcknowledgment[] =>
       resourceArns
         .filter((arn) => arn.includes(':bedrock:*::foundation-model/'))
@@ -292,15 +313,24 @@ export class AppStack extends Stack {
           reason:
             'Foundation-model ARNs carry no account; the region is a wildcard because cross-region (us.) and global inference profiles route to other regions. The model id itself is pinned.',
         }));
+    // One finding id (Resource::*) per role, so the reasons for every statement on * are joined.
+    const wildcardReasons = (fn: PlatformFunction): string[] => [
+      ...(usesMantle(models)
+        ? [
+            'bedrock-mantle:CreateInference (GPT-6 Luna on the OpenAI-compatible Mantle endpoint) does not support resource-level permissions; it is the only Bedrock action granted on *.',
+          ]
+        : []),
+      ...(fn === this.api && config.speech.enabled
+        ? [
+            'polly:SynthesizeSpeech and polly:DescribeVoices have no resource-level permissions without a lexicon (none is used); the statement is limited to the platform region by aws:RequestedRegion.',
+          ]
+        : []),
+    ];
     for (const fn of [this.api, this.worker]) {
       acknowledge(fn.role, ...foundationModelAcks(reasoningResources));
-      if (usesMantle(models)) {
-        acknowledge(fn.role, {
-          id: wildcardResource(this, '*'),
-          reason:
-            'bedrock-mantle:CreateInference (GPT-6 Luna on the OpenAI-compatible Mantle endpoint) does not support resource-level permissions; it is the only action granted on *.',
-        });
-      }
+      const reasons = wildcardReasons(fn);
+      if (reasons.length > 0)
+        acknowledge(fn.role, { id: wildcardResource(this, '*'), reason: reasons.join(' ') });
     }
     acknowledge(this.migrate.role, ...foundationModelAcks(embeddingResources));
 
@@ -327,6 +357,28 @@ export class AppStack extends Stack {
         input: scheduler.ScheduleTargetInput.fromText(LAMBDA_CONTRACT.worker.dailyMaintenanceMessage),
         retryAttempts: 5,
         maxEventAge: Duration.hours(1),
+      }),
+    });
+
+    // ---- Distillation sweep (ADR-0018) -------------------------------------------------------------------
+    // Every few minutes the worker looks for conversations with no turn for 20 minutes and no digest yet,
+    // and enqueues their distillation (digest, notebook delta, memory and lesson candidates). Sessions
+    // that end, and the next conversation's start, enqueue distillation too; the sweep catches the rest.
+    // Same pattern as the daily schedule (own role, sqs:SendMessage on the queue only). A sweep that is
+    // late by more than one interval is dropped: the next one covers the same sessions. `sweepEnabled:
+    // false` keeps the schedule (and its role) and only disables it, so re-enabling is a state change.
+    // About 2,900 invocations a month at 15 minutes, inside the Scheduler free tier. Cost contract for the
+    // handler: a sweep must not wake a paused Aurora when there is nothing to distill (a query every 15
+    // minutes would keep the cluster up about two thirds of the time against a 10-minute auto-pause).
+    // ADR-0018 "Cost" lists the accepted ways to do that.
+    this.distillSweep = new scheduler.Schedule(this, 'DistillSweep', {
+      description: 'Foundry Ascent distillation sweep (digests and notebooks for idle conversations)',
+      schedule: scheduler.ScheduleExpression.rate(Duration.minutes(config.distillation.sweepIntervalMinutes)),
+      enabled: config.distillation.sweepEnabled,
+      target: new schedulerTargets.SqsSendMessage(props.jobsQueue, {
+        input: scheduler.ScheduleTargetInput.fromText(LAMBDA_CONTRACT.worker.distillSweepMessage),
+        retryAttempts: 2,
+        maxEventAge: Duration.minutes(config.distillation.sweepIntervalMinutes),
       }),
     });
 
@@ -653,6 +705,27 @@ export class AppStack extends Stack {
         treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       }),
     ];
+    if (config.speech.enabled) {
+      // Backstop for the in-app speech metering: every synthesis is priced into usage_ledger and checked
+      // against the daily caps first, so this only fires if that path is bypassed or the caps were raised.
+      alarms.push(
+        new cloudwatch.Alarm(this, 'SpeechCharactersAlarm', {
+          alarmName: 'FoundryAscent-Speech-Characters',
+          alarmDescription: `More than ${String(SPEECH_ALARM_CHARACTERS_PER_HOUR)} characters synthesized by Amazon Polly in one hour (about USD 3 on the generative engine, more than the default global daily AI cap)`,
+          metric: new cloudwatch.Metric({
+            namespace: 'AWS/Polly',
+            metricName: 'RequestCharacters',
+            dimensionsMap: { Operation: 'SynthesizeSpeech' },
+            period: Duration.hours(1),
+            statistic: cloudwatch.Stats.SUM,
+          }),
+          threshold: SPEECH_ALARM_CHARACTERS_PER_HOUR,
+          evaluationPeriods: 1,
+          comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+          treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+        }),
+      );
+    }
     for (const alarm of alarms) alarm.addAlarmAction(alarmAction);
 
     // ---- Outputs -----------------------------------------------------------------------------------------------

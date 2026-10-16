@@ -20,7 +20,9 @@ push to main ──► CI (quality · database · infra · python · e2e) ──
   custom resource runs first on every deploy (`version = <commit SHA>`): migrations → idempotent synthetic
   seed → embedding backfill. Functions and the SPA update only after it succeeds; a failure rolls the App
   stack back before new code serves traffic.
-- Typical duration: 5–10 minutes; the first deploy ~30 minutes (Aurora ~15, CloudFront ~10).
+- Typical duration: about 2 minutes for a code-only release (the App stack updates in under a minute);
+  several minutes more when the CloudFront distribution or its response headers change; the first deploy
+  ~30 minutes (Aurora ~15, CloudFront ~10).
 - Automatic deploys ship only the tip of main. If CI runs of two pushes finish out of order, the older one
   is skipped with a notice (the newer commit's CI run deploys it).
 - Deploy, **Platform - deploy data stack** and **Ops - retire stage-0 AWS access** share the concurrency
@@ -43,18 +45,38 @@ push to main ──► CI (quality · database · infra · python · e2e) ──
   `503 database_resuming` + `Retry-After`, for up to 120 s), the SPA deep link `/<tenant>/app/ventures`,
   and that API errors stay problem+json. Results are in the job summary.
 
-## Where production stands (2026-10-05)
+## Where production stands (2026-10-16)
 
-Stage 0 (access key). Done: stage-0 policies attached, permissions boundary published, `CDKToolkit`
-bootstrapped, and **`FoundryAscent-Data` deployed first, on its own**, with **Platform - deploy data
-stack** (Aurora takes longest to create). Not yet: Foundation and App. The first full **Deploy** creates
-them and updates Data in place; before it, review the Data diff (below) so the cluster, secret and
-buckets are updated, never replaced.
+Stage 1 (GitHub OIDC). All three stacks are deployed and every deploy assumes
+`FoundryAscent-GitHubDeploy` through OIDC (the job summary shows _AWS access: GitHub OIDC (stage 1)_).
+The stage-0 access key was deleted on 2026-10-06, so the workflows that still read
+`AWS_ACCESS_KEY_ID` (**Platform - deploy data stack**, **Ops - AWS inventory**, **Ops - AWS cleanup**,
+**Ops - verify AWS access**, **Ops - Bedrock live probe**, **Ops - retire stage-0 AWS access**) can no
+longer authenticate. Changes to the Data stack ship with the normal **Deploy**; review its diff first so
+the cluster, secret and buckets are updated, never replaced:
 
 ```bash
 pnpm --filter @foundry/web build
 pnpm --filter @foundry/infra exec cdk diff FoundryAscent-Data -c appVersion=$(git rev-parse HEAD)
 ```
+
+## Probing Bedrock and Polly
+
+The deploy role cannot call models or synthesize speech, by design: it only assumes the CDK bootstrap
+roles and reads CloudFormation, platform Lambda logs and Cost Explorer, and any job in the `production`
+environment can assume it. So **Ops - Bedrock live probe** (stage-0 key) no longer runs and was not
+moved to OIDC. What still exercises the live paths:
+
+- every deploy's migrate resource backfills Titan embeddings (counts only in
+  `/aws/lambda/FoundryAscent-Migrate`; a failure never fails the deploy);
+- a signed-in coaching turn or call in production, or the [evals](evals.md) harness against the site
+  (spend lands in **Admin → Usage**).
+
+To probe from CI again, add a separate role to the Foundation stack in a reviewed change: trusted only
+from a dedicated GitHub environment (for example `ops-probe`, its own OIDC `sub`), allowed
+`bedrock:InvokeModel` on the configured model ARNs (the same set `lib/models.ts` derives) and, for
+speech, `polly:SynthesizeSpeech` pinned with `aws:RequestedRegion`. Never widen
+`FoundryAscent-GitHubDeploy` for it.
 
 ## One-time setup
 
@@ -65,8 +87,9 @@ pnpm --filter @foundry/infra exec cdk diff FoundryAscent-Data -c appVersion=$(gi
 2. **GitHub settings** (Settings → Environments → `production`): deployment branches = `main` only
    (**required**: the deploy role trusts only jobs in this environment, so this rule is what keeps other
    branches out); add required reviewers if deploys should wait for a human approval.
-3. **Credentials:** stage 0 = repository secrets `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`. Stage 1 =
-   repository secret `AWS_DEPLOY_ROLE_ARN` (see [Switch to OIDC](#switch-to-github-oidc-stage-1)).
+3. **Credentials:** stage 1 = repository secret `AWS_DEPLOY_ROLE_ARN` (see
+   [Switch to OIDC](#switch-to-github-oidc-stage-1)). Stage 0 used the repository secrets
+   `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`; that key is deleted, so the two secrets can be removed.
 4. **Branch protection on main:** require the CI jobs (`quality`, `database`, `infra`, `python`, `e2e`),
    `Secret scan (gitleaks)` and CodeQL; require review from code owners; no force pushes.
 5. **Lambda concurrency:** production reserves none (`api.reservedConcurrency: null`), because a
@@ -159,3 +182,9 @@ stops using a column). If data itself is damaged:
 - No resource replacement of the Aurora cluster, secret or buckets (replacement = data loss risk).
 - Migrations backward compatible; seed changes idempotent (`ON CONFLICT DO NOTHING`).
 - New settings or limits documented in [cost controls](cost-controls.md) when they affect spend.
+- A new scheduled message (`lambda-contract.json` → `worker`) ships together with, or after, the worker
+  code that handles it. The worker drops a message type it does not know (logged as
+  `worker.invalid_message`, never retried), so an early schedule does no harm but logs a warning on every
+  run.
+- Security headers changed (CSP, Permissions-Policy): the diff names exactly the directives intended, and
+  `infra/cdk/test/app.test.ts` pins the new values.
