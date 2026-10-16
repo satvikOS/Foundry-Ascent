@@ -34,7 +34,7 @@ import { daysUntil, formatIsoDate } from '@/features/memory/typed/attributes';
 import { sentenceStart, useVeirAuthor } from '@/features/venture/veir-name';
 
 import { InlineEditForm, LineActions, useReturnFocus } from './inline-edit';
-import { isNotebookConflict, useNotebookEdit } from './notebook-api';
+import { isNotebookConflict, openerRefusal, useNotebookEdit } from './notebook-api';
 import { isNotebookEmpty } from './notebook-edit';
 
 /** Limits of the notebook contract (`NotebookEdit` in @foundry/contracts). */
@@ -202,8 +202,16 @@ export function NotebookEditor({ ventureId, veirName, canEdit }: NotebookEditorP
               opener={data.nextOpener}
               author={author}
               canEdit={canEdit}
-              onSave={(text) => {
-                save({ action: 'edit_opener', text });
+              onSave={(text, onRefused) => {
+                edit.mutate(
+                  { action: 'edit_opener', text },
+                  {
+                    onError: (error) => {
+                      const refusal = openerRefusal(error);
+                      if (refusal !== null) onRefused(refusal);
+                    },
+                  },
+                );
               }}
               onRemove={() => {
                 save({ action: 'remove_opener' });
@@ -596,14 +604,18 @@ function OpenerBlock({
   /** Who writes the opening line ("Corin’s vEIR"). */
   author: string;
   canEdit: boolean;
-  onSave: (text: string) => void;
+  /** Saves the line; `onRefused` gets the server's reason when the vEIR could not say it. */
+  onSave: (text: string, onRefused: (reason: string) => void) => void;
   onRemove: () => void;
 }) {
   const [editing, setEditing] = useState(false);
+  // A line the server refused: the editor opens again with it and the reason under it.
+  const [refused, setRefused] = useState<{ text: string; reason: string } | null>(null);
   const focus = useReturnFocus();
   const textId = useId();
   const close = () => {
     setEditing(false);
+    setRefused(null);
     focus.restore();
   };
   return (
@@ -611,12 +623,17 @@ function OpenerBlock({
       <p className="text-small text-muted-foreground">{sentenceStart(author)} may open with:</p>
       {editing ? (
         <InlineEditForm
-          value={opener}
+          key={refused?.text ?? 'opener'}
+          value={refused?.text ?? opener}
           label="Edit opening line"
           maxLength={LIMITS.opener}
+          error={refused?.reason ?? null}
           onCancel={close}
           onSave={(next) => {
-            onSave(next);
+            onSave(next, (reason) => {
+              setRefused({ text: next, reason });
+              setEditing(true);
+            });
             close();
           }}
         />

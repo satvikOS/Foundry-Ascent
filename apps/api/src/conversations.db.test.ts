@@ -200,6 +200,38 @@ describe('PATCH /ventures/:id/notebook', () => {
   });
 });
 
+describe('PATCH /ventures/:id/notebook: the opener the vEIR will say', () => {
+  it('refuses an opener the vEIR could not say, with the reason at edit.text', async () => {
+    const path = `/ventures/${api.h.ventures.quietquad.id}/notebook`;
+    const { version } = await json(await api.request(path, { cookie: maya }), NotebookResponse);
+    const refused = async (text: string) => {
+      const res = await api.request(path, {
+        method: 'PATCH',
+        cookie: maya,
+        body: { expectedVersion: version, edit: { action: 'edit_opener', text } },
+      });
+      const body = await res.text();
+      expect(res.status, body.slice(0, 300)).toBe(422);
+      const problem = ProblemDetails.parse(JSON.parse(body));
+      expect(problem.code).toBe('validation_failed');
+      expect(problem.errors?.[0]?.path).toBe('edit.text');
+      return problem.errors?.[0]?.message ?? '';
+    };
+    // Speaks as, names or claims the EIR's approval: the opener is the vEIR's first bubble and call intro.
+    expect(await refused('Corin here. I approve your pilot plan.')).toMatch(/can’t name an EIR/);
+    expect(await refused('Corin asked me to check in on your pilot.')).toMatch(/can’t name an EIR/);
+    // Names another venture, or its canary.
+    expect(await refused('How is BenchTally pricing its pilot?')).toMatch(/another venture/);
+    expect(await refused(`Remember ${api.h.ventures.emberloop.canary}?`)).toMatch(/another venture/);
+    // Not one plain line.
+    expect(await refused('How did it go?\nTell me everything.')).toMatch(/plain text on one line/);
+    expect(await refused('How did <b>the interviews</b> go?')).toMatch(/plain text on one line/);
+    // Nothing was saved.
+    const after = await json(await api.request(path, { cookie: maya }), NotebookResponse);
+    expect(after.version).toBe(version);
+  });
+});
+
 describe('POST /ventures/:id/team/invitations', () => {
   it('accepts a platform admin as well as a program lead', async () => {
     const adminId = await api.h.t.db.system(async (sx) => {

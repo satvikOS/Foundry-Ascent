@@ -17,6 +17,8 @@ interface InlineEditFormProps {
   /** Whether the extra fields changed (so Save applies even when the text did not). */
   extraChanged?: boolean;
   rows?: number;
+  /** Why the server refused the last save of this text (shown under it and announced). */
+  error?: string | null;
 }
 
 /**
@@ -32,10 +34,12 @@ export function InlineEditForm({
   children,
   extraChanged = false,
   rows = 2,
+  error = null,
 }: InlineEditFormProps) {
   const [draft, setDraft] = useState(value);
   const trimmed = draft.trim();
   const counterId = useId();
+  const errorId = useId();
 
   const submit = () => {
     if (trimmed === '') return;
@@ -56,7 +60,8 @@ export function InlineEditForm({
     >
       <Textarea
         aria-label={label}
-        aria-describedby={counterId}
+        aria-describedby={error ? `${errorId} ${counterId}` : counterId}
+        aria-invalid={error ? true : undefined}
         // Focus moves into the editor the person just opened.
         autoFocus
         value={draft}
@@ -77,6 +82,11 @@ export function InlineEditForm({
           }
         }}
       />
+      {error ? (
+        <p id={errorId} role="alert" className="text-small text-destructive">
+          {error}
+        </p>
+      ) : null}
       {children}
       <div className="flex items-center justify-end gap-2">
         <span

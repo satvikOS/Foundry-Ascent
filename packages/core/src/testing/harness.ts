@@ -7,7 +7,7 @@ import {
   type MockGenerateContext,
   type MockModelGatewayOptions,
 } from '@foundry/ai';
-import { principalsRepo, type SeedResult, type SeededVenture } from '@foundry/db';
+import { notebooksRepo, principalsRepo, type SeedResult, type SeededVenture } from '@foundry/db';
 import { createTestDatabase, type TestDatabase } from '@foundry/db/testing';
 
 import { coreConfig, type CoreConfig } from '../config.js';
@@ -53,6 +53,31 @@ export function restatingMemoryFixtures(): NonNullable<MockModelGatewayOptions['
       return annotations;
     },
   };
+}
+
+/**
+ * Stores `text` as the venture's next opener without the notebook service's checks, as an opener written
+ * before they existed (or by distillation) would be stored: the guards applied when a conversation or a call
+ * starts must still leave it out.
+ */
+export async function storeOpenerUnchecked(
+  h: Pick<CoreHarness, 't' | 'seed'>,
+  venture: SeededVenture,
+  text: string,
+): Promise<void> {
+  await h.t.db.system(async (sx) => {
+    const key = { ventureId: venture.id, personaId: venture.personaId };
+    const current = await notebooksRepo.getNotebook(sx, key);
+    const saved = await notebooksRepo.saveNotebook(sx, {
+      tenantId: h.seed.tenantId,
+      ...key,
+      expectedVersion: current?.version ?? 0,
+      content: { ...(current?.content ?? notebooksRepo.EMPTY_NOTEBOOK), nextOpener: text },
+      suppressed: current?.suppressed ?? [],
+      editedBy: 'veir',
+    });
+    if (saved === null) throw new Error('the notebook changed while storing the opener');
+  });
 }
 
 /** Seed people by role (synthetic demo data). */

@@ -26,7 +26,7 @@ import { resolveDeps } from '../deps.js';
 import { DirectoryCache } from '../internal/directory.js';
 import { Kit } from '../internal/kit.js';
 import { type VoiceTurnAdmission } from '../services/call-admission.js';
-import { createCoreHarness, type CoreHarness } from '../testing/harness.js';
+import { createCoreHarness, storeOpenerUnchecked, type CoreHarness } from '../testing/harness.js';
 import { RATE_LIMITED_CRISIS_MESSAGE } from './blocked.js';
 import { createOrchestrator, type Orchestrator, type RunTurnInput, type RunTurnOutcome } from './run-turn.js';
 import { verifySpeechUnit } from './speech-units.js';
@@ -787,12 +787,8 @@ describe('release pinning and the opener check (run last: they change the person
     );
   });
 
-  it('an opener a person rewrote into the EIR speaking is not used', async () => {
-    const notebook = await h.core.notebook.get(maya, h.ventures.quietquad.id);
-    await h.core.notebook.update(maya, h.ventures.quietquad.id, {
-      expectedVersion: notebook.version,
-      edit: { action: 'edit_opener', text: 'Corin here. I approve your pilot plan.' },
-    });
+  it('a stored opener with the EIR speaking is not used (the notebook now refuses to save one)', async () => {
+    await storeOpenerUnchecked(h, h.ventures.quietquad, 'Corin here. I approve your pilot plan.');
     const session = await h.core.sessions.create(maya, h.ventures.quietquad.id, {});
     expect(session.opener).toBeNull();
     expect(await auditMetadata(session.id, 'session.started')).toMatchObject({ opener: false });

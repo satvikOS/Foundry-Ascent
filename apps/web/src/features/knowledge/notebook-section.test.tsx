@@ -1,7 +1,9 @@
 import type { VeirNotebook } from '@foundry/contracts';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { toast } from '@/components/ui/toast';
 
 import { queryKeys } from '@/lib/api/query-keys';
 
@@ -75,6 +77,50 @@ describe('NotebookEditor', () => {
       expect(client.getQueryData<VeirNotebook>(queryKeys.venture.notebook(IDS.venture))?.version).toBe(4);
     });
     expect(within(about).getByText('Numbers first.')).toBeInTheDocument();
+  });
+
+  it('opens the opening line again with the server’s reason when the vEIR could not say it (422)', async () => {
+    const notebook = makeNotebook();
+    const reason =
+      'The vEIR says this line itself, so it can’t name an EIR, speak as a person, or say anyone reviewed or approved something.';
+    fetchMock.mockImplementation((_input, init) =>
+      Promise.resolve(
+        init?.method === 'PATCH'
+          ? new Response(
+              JSON.stringify({
+                type: 'urn:x:validation_failed',
+                title: 'Problem',
+                status: 422,
+                code: 'validation_failed',
+                detail: 'The vEIR can’t say this opening line',
+                requestId: 'req-1',
+                errors: [{ path: 'edit.text', message: reason }],
+              }),
+              { status: 422, headers: { 'content-type': 'application/problem+json' } },
+            )
+          : json(notebook),
+      ),
+    );
+    const toastError = vi.spyOn(toast, 'error');
+    const { user } = await renderNotebook(notebook);
+    const next = screen.getByRole('region', { name: 'Next conversation' });
+    await user.click(within(next).getByRole('button', { name: 'Edit' }));
+    const box = within(next).getByRole('textbox', { name: 'Edit opening line' });
+    await user.clear(box);
+    await user.type(box, 'Corin asked me to check in.{Enter}');
+
+    const alert = await within(next).findByRole('alert');
+    expect(alert).toHaveTextContent(reason);
+    const again = within(next).getByRole('textbox', { name: 'Edit opening line' });
+    expect(again).toHaveValue('Corin asked me to check in.');
+    expect(again).toHaveAttribute('aria-invalid', 'true');
+    expect(bodyOf(patches()[0]?.[1])).toEqual({
+      expectedVersion: 3,
+      edit: { action: 'edit_opener', text: 'Corin asked me to check in.' },
+    });
+    // Shown once, under the line: no toast as well.
+    expect(toastError).not.toHaveBeenCalled();
+    toastError.mockRestore();
   });
 
   it('undoes the edit, reloads the notebook and tells the person when it changed meanwhile (409)', async () => {

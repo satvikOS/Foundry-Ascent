@@ -142,7 +142,18 @@ export function useNotebookEdit(ventureId: string) {
         announce('The notebook changed. It was reloaded; check it and try again.', 'assertive');
         return;
       }
+      // A refused opening line is shown under the line itself (the caller re-opens its editor).
+      if (edit.action === 'edit_opener' && openerRefusal(error) !== null) return;
       toast.error('Couldn’t save the notebook', { description: errorMessage(error) });
     },
   });
+}
+
+/**
+ * Why the server refused an opening line a person wrote (422 at `edit.text`: the vEIR says it, so it may not
+ * name an EIR or another venture, and must be one plain line), or null for any other failure.
+ */
+export function openerRefusal(error: unknown): string | null {
+  if (!isApiError(error) || error.code !== 'validation_failed') return null;
+  return error.fieldErrors.find((field) => field.path === 'edit.text')?.message ?? null;
 }

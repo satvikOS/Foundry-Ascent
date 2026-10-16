@@ -89,7 +89,7 @@ export function createCore(deps: CoreDeps): Core {
     admin: createAdminService(kit, onPrincipalChanged),
     maintenance: createMaintenanceService(kit, distill),
     distill,
-    notebook: createNotebookService(kit),
+    notebook: createNotebookService(kit, directory),
     veir: createVeirService(kit),
     calls: createCallsService(kit, directory, speechKeys),
     speech: createSpeechService(kit, speechKeys),

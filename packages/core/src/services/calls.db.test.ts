@@ -32,7 +32,7 @@ import { Kit } from '../internal/kit.js';
 import { type RunTurnInput, type RunTurnOutcome } from '../orchestrator/run-turn.js';
 import { signSpeechUnit, verifySpeechUnit } from '../orchestrator/speech-units.js';
 import { FakeSpeechSynthesizer, FakeSttGrantIssuer } from '../testing/fakes.js';
-import { type CoreHarness, createCoreHarness } from '../testing/harness.js';
+import { type CoreHarness, createCoreHarness, storeOpenerUnchecked } from '../testing/harness.js';
 import { admitVoiceTurn } from './call-admission.js';
 import { CALL_LIMITS } from './call-usage.js';
 import { speakableText } from './spoken-text.js';
@@ -274,12 +274,16 @@ describe('starting a call', () => {
     expect(h.logger.dump()).not.toContain('library-staff');
   });
 
-  it('leaves out an opener a person edited into an impersonation', async () => {
+  it('leaves out a stored opener that impersonates the EIR (the notebook now refuses to save one)', async () => {
+    const text = 'Corin here. I read your whole plan myself last night.';
     const notebook = await h.core.notebook.get(ctx.maya, ventureId('quietquad'));
-    await h.core.notebook.update(ctx.maya, ventureId('quietquad'), {
-      expectedVersion: notebook.version,
-      edit: { action: 'edit_opener', text: 'Corin here. I read your whole plan myself last night.' },
-    });
+    await expect(
+      h.core.notebook.update(ctx.maya, ventureId('quietquad'), {
+        expectedVersion: notebook.version,
+        edit: { action: 'edit_opener', text },
+      }),
+    ).rejects.toMatchObject({ code: 'validation_failed' });
+    await storeOpenerUnchecked(h, h.ventures.quietquad, text);
     const sessionId = await newSession('maya', 'quietquad');
     const started = await startCall('maya', sessionId);
     expect(started.intro?.text).toBe(
@@ -289,11 +293,7 @@ describe('starting a call', () => {
   });
 
   it('introduces a persona named after its EIR as the EIR’s vEIR, and leaves out an opener that names the EIR', async () => {
-    const notebook = await h.core.notebook.get(ctx.maya, ventureId('quietquad'));
-    await h.core.notebook.update(ctx.maya, ventureId('quietquad'), {
-      expectedVersion: notebook.version,
-      edit: { action: 'edit_opener', text: 'Corin asked me to check in on your pilot.' },
-    });
+    await storeOpenerUnchecked(h, h.ventures.quietquad, 'Corin asked me to check in on your pilot.');
     const rename = (name: string) =>
       h.t.db.system((sx) =>
         sx.query('UPDATE personas SET name = :n WHERE id = :id', {

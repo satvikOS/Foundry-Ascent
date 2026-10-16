@@ -6,13 +6,15 @@ import {
   UpdateNotebookRequest,
   type VeirNotebook,
 } from '@foundry/contracts';
-import { NotebookIntegrityError, assignmentsRepo, notebooksRepo } from '@foundry/db';
+import { NotebookIntegrityError, assignmentsRepo, notebooksRepo, personasRepo } from '@foundry/db';
 import { type z } from 'zod';
 
 import { requireVentureAccess } from '../authz/venture-access.js';
 import { type RequestContext } from '../context.js';
 import { DomainError, fail, parseInput } from '../errors.js';
+import { type DirectoryCache } from '../internal/directory.js';
 import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
+import { openerProblem, type OpenerProblem } from '../orchestrator/continuity.js';
 
 /**
  * The vEIR notebook: "what <vEIR> knows about you and <venture>", one per venture × the persona that coaches
@@ -161,7 +163,16 @@ export function applyNotebookEdit(
   }
 }
 
-export function createNotebookService(kit: Kit): NotebookService {
+/** What the notebook editor shows when the vEIR could not say an opener a person wrote (422 at `edit.text`). */
+const OPENER_PROBLEMS: Record<OpenerProblem, string> = {
+  not_plain: 'Write the opening line as plain text on one line.',
+  too_long: 'Keep the opening line to 300 characters or fewer.',
+  identity:
+    'The vEIR says this line itself, so it can’t name an EIR, speak as a person, or say anyone reviewed or approved something.',
+  other_venture: 'The opening line can’t name another venture or its people.',
+};
+
+export function createNotebookService(kit: Kit, directory: DirectoryCache): NotebookService {
   /** A notebook that cannot be read in full is never shown or saved as if it were complete. */
   function requireIntact(
     scope: RequestScope,
@@ -221,9 +232,41 @@ export function createNotebookService(kit: Kit): NotebookService {
     update: async (ctx, rawVentureId, rawInput) => {
       const ventureId = requireId(rawVentureId, 'Venture');
       const input = parseInput(UpdateNotebookRequest, rawInput);
+      // An opener a person writes is shown and spoken as the vEIR (the first bubble of the next conversation
+      // and the call intro), so it passes the checks applied there; the directory (owner role) is read before
+      // the writing transaction, as at session start.
+      const openerGuards =
+        input.edit.action === 'edit_opener'
+          ? {
+              others: await directory.others(ctx.tenantId, ventureId),
+              eirNames: (await directory.get(ctx.tenantId)).eirNames,
+            }
+          : null;
       return await kit.inRequest(ctx, async (scope) => {
         await requireVentureAccess(scope, ventureId, 'write', { objectType: 'notebook' });
         const persona = await currentPersona(scope, ventureId);
+        if (input.edit.action === 'edit_opener' && openerGuards !== null) {
+          const problem = openerProblem(input.edit.text, {
+            personaName: persona.name,
+            personaEirName: await personasRepo.getPersonaEirName(scope.tx, persona.id),
+            eirNames: openerGuards.eirNames,
+            otherVentureNames: openerGuards.others.names,
+            otherVentureCanaries: openerGuards.others.canaries,
+            otherVentureMemberNames: openerGuards.others.memberNames,
+          });
+          if (problem !== null) {
+            scope.deferAudit({
+              action: 'notebook.edited',
+              outcome: 'blocked',
+              ventureId,
+              objectType: 'notebook',
+              policyReason: `opener_${problem}`,
+            });
+            throw fail.validation('The vEIR can’t say this opening line', [
+              { path: 'edit.text', message: OPENER_PROBLEMS[problem] },
+            ]);
+          }
+        }
         const record = await notebooksRepo.getNotebook(scope.tx, { ventureId, personaId: persona.id });
         requireIntact(scope, ventureId, record);
         const version = record?.version ?? 0;

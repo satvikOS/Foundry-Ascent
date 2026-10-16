@@ -81,26 +81,20 @@ export interface OpenerGuards {
 /** Longest stored opener (`coaching_sessions.opener`). */
 export const MAX_OPENER_CHARS = 300;
 
-/**
- * The notebook's next opener as the vEIR may say it: plain text on one line, at most 300 characters. It is
- * dropped (null) when it would speak as the EIR, claim to be human or approve anything, names an EIR, or names
- * another venture, member or canary: a person can edit the notebook, and the opener is shown and spoken as the
- * vEIR (the first bubble of the conversation and the call intro).
- */
-export function validatedOpener(text: string | null | undefined, guards: OpenerGuards): string | null {
-  if (!text) return null;
-  const plain = sanitizePlainText(text).text.replace(/\s+/g, ' ').trim();
-  if (plain === '') return null;
-  const opener = truncate(plain, MAX_OPENER_CHARS);
+/** Why an opener cannot be said by the vEIR (null: it can). */
+export type OpenerProblem = 'not_plain' | 'too_long' | 'identity' | 'other_venture';
+
+/** The checks every opener passes, on its plain one-line form. */
+function openerChecks(opener: string, guards: OpenerGuards): 'identity' | 'other_venture' | null {
   const identity = rewriteIdentity(opener, {
     personaName: guards.personaName,
     eirNames: guards.eirNames,
     personaEirName: guards.personaEirName,
   });
-  if (identity.findings.length > 0) return null;
+  if (identity.findings.length > 0) return 'identity';
   // The rewrite misses third-person endorsement, review and presence claims ("Corin asked me to check in"),
   // so an opener that names an EIR at all is left out, as the call intro does (it speaks this opener).
-  if (mentionsEir(opener, guards.eirNames)) return null;
+  if (mentionsEir(opener, guards.eirNames)) return 'identity';
   if (
     textsContainOtherVenture(
       [opener],
@@ -109,7 +103,40 @@ export function validatedOpener(text: string | null | undefined, guards: OpenerG
       guards.otherVentureMemberNames,
     )
   ) {
-    return null;
+    return 'other_venture';
   }
-  return opener;
+  return null;
+}
+
+/** The text as one plain line (markup and control characters removed, whitespace collapsed). */
+function plainLine(text: string): string {
+  return sanitizePlainText(text).text.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * The notebook's next opener as the vEIR may say it: plain text on one line, at most 300 characters. It is
+ * dropped (null) when it would speak as the EIR, claim to be human or approve anything, names an EIR, or names
+ * another venture, member or canary: a person can edit the notebook, and the opener is shown and spoken as the
+ * vEIR (the first bubble of the conversation and the call intro).
+ */
+export function validatedOpener(text: string | null | undefined, guards: OpenerGuards): string | null {
+  if (!text) return null;
+  const plain = plainLine(text);
+  if (plain === '') return null;
+  const opener = truncate(plain, MAX_OPENER_CHARS);
+  return openerChecks(opener, guards) === null ? opener : null;
+}
+
+/**
+ * The same rules for an opener a person writes in the notebook (`edit_opener`), which are refused instead of
+ * dropped later: the line must already be plain text on one line within 300 characters, and pass every check
+ * {@link validatedOpener} applies at the start of a conversation and of a call.
+ */
+export function openerProblem(text: string, guards: OpenerGuards): OpenerProblem | null {
+  const plain = plainLine(text);
+  if (plain === '' || plain !== text.replace(/\s+/g, ' ').trim() || /[\r\n]/.test(text.trim())) {
+    return 'not_plain';
+  }
+  if (plain.length > MAX_OPENER_CHARS) return 'too_long';
+  return openerChecks(plain, guards);
 }
