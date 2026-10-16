@@ -257,7 +257,7 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: Cal
             ventureId={snapshot.ventureId}
             blocked={snapshot.blocked}
             personaName={veir.name}
-            onSwitchToChat={onSwitchToChat}
+            onSwitchToChat={live ? onSwitchToChat : null}
           />
         ) : captions || onScreenOnly ? (
           <CallCaptions
@@ -361,7 +361,8 @@ function CallBlocked({
   ventureId: string;
   blocked: TurnBlockedDetail;
   personaName: string;
-  onSwitchToChat: () => void;
+  /** Null while the call is ending: the support stays, and the summary follows it. */
+  onSwitchToChat: (() => void) | null;
 }) {
   return (
     <div role="alert" className="flex w-full max-w-xl flex-col gap-3 text-left">
@@ -373,9 +374,11 @@ function CallBlocked({
         escalationId={blocked.escalationId}
         personaName={personaName}
       />
-      <Button size="sm" variant="secondary" onClick={onSwitchToChat} className="self-center">
-        Switch to chat
-      </Button>
+      {onSwitchToChat ? (
+        <Button size="sm" variant="secondary" onClick={onSwitchToChat} className="self-center">
+          Switch to chat
+        </Button>
+      ) : null}
     </div>
   );
 }

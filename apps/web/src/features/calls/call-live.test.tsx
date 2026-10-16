@@ -242,6 +242,20 @@ describe('CallLive', () => {
     expect(result.switched()).toBe(1);
   });
 
+  it('keeps the support on screen while a call ends during it', async () => {
+    renderLive({
+      phase: 'ending',
+      activity: 'connecting',
+      muted: false,
+      blocked: { reason: 'crisis_support', escalationId: null, supportMessage: 'Call or text **988**.' },
+    });
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Call or text 988.');
+    expect(screen.getByRole('status')).toHaveTextContent('Ending…');
+    // Nothing to switch from any more: the summary, with the support above it, comes next.
+    expect(within(alert).queryByRole('button', { name: 'Switch to chat' })).toBeNull();
+  });
+
   it('adds the emergency line when a safety block has no support message', async () => {
     renderLive({ blocked: { reason: 'safety_wellbeing', escalationId: null, supportMessage: null } });
     expect(await screen.findByRole('alert')).toHaveTextContent(/local emergency number/);
