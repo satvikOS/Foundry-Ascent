@@ -1,4 +1,4 @@
-import { ArrowDownRight, ArrowUpRight, Minus } from 'lucide-react';
+import { ArrowDownRight, ArrowUpRight, Minus, type LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
@@ -9,6 +9,11 @@ interface MetricTileProps {
   label: string;
   /** Pre-formatted value; `null` renders "—" with an explanation (e.g. k-anonymity suppression). */
   value: ReactNode;
+  /**
+   * Ignored: tiles carry no icon any more. Still accepted so callers written against the boxed tile keep
+   * compiling; drop it from callers, then from here.
+   */
+  icon?: LucideIcon;
   hint?: ReactNode;
   /** Optional delta; direction is shown with an arrow icon and a sign, not colour alone. */
   delta?: { value: string; direction: 'up' | 'down' | 'flat'; positive?: boolean };

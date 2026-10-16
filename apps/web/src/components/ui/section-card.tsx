@@ -1,3 +1,4 @@
+import type { LucideIcon } from 'lucide-react';
 import { useId, type ComponentProps, type ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
@@ -10,6 +11,16 @@ interface SectionCardProps extends Omit<ComponentProps<'section'>, 'title'> {
   /** Footer row. */
   footer?: ReactNode;
   headingLevel?: 2 | 3;
+  /**
+   * Ignored: section headers carry no icon any more. Still accepted (and never passed on to the DOM) so
+   * callers written against the boxed card keep compiling; drop it from callers, then from here.
+   */
+  icon?: LucideIcon;
+  /**
+   * Ignored: the body has no padding any more, so every section's content already runs edge to edge.
+   * Still accepted (and never passed on to the DOM) for the same reason as `icon`.
+   */
+  flush?: boolean;
 }
 
 /**
@@ -22,6 +33,8 @@ export function SectionCard({
   actions,
   footer,
   headingLevel = 2,
+  icon: _icon,
+  flush: _flush,
   className,
   children,
   ...props
