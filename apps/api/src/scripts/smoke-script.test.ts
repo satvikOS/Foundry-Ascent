@@ -230,7 +230,7 @@ describe('scripts/smoke.mjs first contact (R6)', () => {
     let staleDeepLinks = 2;
     const { server, origin } = await serve({
       transient: () => null,
-      pageHeaders: (req) => {
+      pageHeaders: (req): Record<string, string> => {
         if (req.url === '/' || staleDeepLinks === 0) return {};
         staleDeepLinks -= 1;
         return { 'permissions-policy': 'camera=(), microphone=(), geolocation=()' };
