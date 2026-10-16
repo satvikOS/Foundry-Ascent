@@ -42,13 +42,27 @@ export function MiniCallBarView() {
       />
       <div className="flex min-w-0 flex-1 items-center gap-2 text-small">
         <p className="min-w-0 truncate">
-          <span className="font-medium">{ended ? 'Call ended' : `Call with ${veir.shortName}`}</span>
-          <span className="text-muted-foreground"> · </span>
-          <span className="font-mono tabular text-muted-foreground" aria-hidden>
-            {formatClock(duration)}
+          <span className="font-medium">
+            {ended ? (
+              'Call ended'
+            ) : (
+              <>
+                <span className="hidden sm:inline">Call with </span>
+                {veir.shortName}
+              </>
+            )}
           </span>
-          <span className="sr-only">{spokenDuration(duration)}</span>
-          {snapshot.held ? <span className="text-muted-foreground"> · On hold</span> : null}
+          <span className="text-muted-foreground"> · </span>
+          {snapshot.held ? (
+            <span className="text-muted-foreground">On hold</span>
+          ) : (
+            <>
+              <span className="font-mono tabular text-muted-foreground" aria-hidden>
+                {formatClock(duration)}
+              </span>
+              <span className="sr-only">{spokenDuration(duration)}</span>
+            </>
+          )}
         </p>
         <VeirBadge kind={veir.kind} />
       </div>

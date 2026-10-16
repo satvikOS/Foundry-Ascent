@@ -243,7 +243,7 @@ test.describe('vEIR calls', () => {
       // The intro is the vEIR's first line. Its voice failed, so it is on screen only, and the call says so.
       if (body.intro) {
         await expect(screen.getByRole('region', { name: 'Captions' })).toContainText(body.intro.text);
-        await expect(screen.getByText('Voice unavailable right now.')).toBeVisible();
+        await expect(screen.getByText('Spoken replies are unavailable right now.')).toBeVisible();
       }
     });
 
@@ -296,7 +296,7 @@ test.describe('vEIR calls', () => {
       if (reply?.spoken) {
         // One failed sentence did not silence the call: the reply asked for its voice again.
         await expect.poll(() => speech.length, { timeout: 15_000 }).toBeGreaterThan(1);
-        await expect(screen.getByText('Voice unavailable right now.')).toBeHidden();
+        await expect(screen.getByText('Spoken replies are unavailable right now.')).toBeHidden();
       }
     });
 

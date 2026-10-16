@@ -67,7 +67,7 @@ it):
   otherwise minimizes. No single key ends a call.
 - **Timer** with the minutes left (from the heartbeat; the last two minutes count down and warn).
 - **One AI disclosure line**: the persona release's disclosure, `role="note"`, named "AI disclosure".
-- **Notices**: a failed turn (shown, never spoken, in the server's words), "Voice unavailable right now."
+- **Notices**: a failed turn (shown, never spoken, in the server's words), "Spoken replies are unavailable right now."
   while replies are on screen only, the two-minute warning, and the push-to-talk suggestion. A held-back
   turn shows the conversation's own `BlockedPanel` in place of the captions (`role="alert"`): the
   explanation for its reason, the crisis resources or the emergency line, and the drafted request for a

@@ -166,8 +166,9 @@ describe('CallLive', () => {
       'href',
       `/ain/app/v/${IDS.venture}/help?id=${IDS.escalation}`,
     );
-    // The support replaces the captions while it is shown.
+    // The support replaces the captions and the presence while it is shown.
     expect(screen.queryByRole('region', { name: 'Captions' })).toBeNull();
+    expect(document.querySelector('[data-slot="call-stage"]')).toBeNull();
     await userEvent.click(within(alert).getByRole('button', { name: 'Switch to chat' }));
     expect(result.switched()).toBe(1);
   });
@@ -196,7 +197,7 @@ describe('CallLive', () => {
       voice: 'captions',
       captions: { veir: 'Twelve is a good start.', founder: null, founderLive: false },
     });
-    expect(await screen.findByText('Voice unavailable right now.')).toBeInTheDocument();
+    expect(await screen.findByText('Spoken replies are unavailable right now.')).toBeInTheDocument();
     expect(screen.getByText('Replying on screen')).toBeInTheDocument();
   });
 

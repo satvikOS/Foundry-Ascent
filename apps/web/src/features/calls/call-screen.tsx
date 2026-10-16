@@ -271,7 +271,7 @@ export function CallScreen() {
             }
           />
           {ended && ventureId ? (
-            <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex flex-1 flex-col">
               <CallSummaryPanel
                 tenant={tenant}
                 ventureId={ventureId}

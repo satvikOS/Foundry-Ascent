@@ -144,14 +144,18 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: Cal
   const halfDuplexInterrupt = speaking && voice && snapshot.halfDuplex;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-5 px-4 py-4 sm:gap-6">
-        <CallStage
-          veir={veir}
-          engine={engine}
-          state={engine.avatarState()}
-          className="w-[min(15rem,58vw,32dvh)] sm:w-[min(18rem,34dvh)]"
-        />
+    // Content taller than the screen (support resources, a long caption) scrolls the call screen instead of
+    // running under the dock.
+    <div className="flex flex-1 flex-col">
+      <div className="flex flex-1 flex-col items-center justify-center gap-5 px-4 py-4 sm:gap-6">
+        {snapshot.blocked ? null : (
+          <CallStage
+            veir={veir}
+            engine={engine}
+            state={engine.avatarState()}
+            className="w-[min(15rem,58vw,32dvh)] sm:w-[min(18rem,34dvh)]"
+          />
+        )}
         <div className="flex flex-col items-center gap-1.5">
           <h2
             ref={nameRef}
@@ -237,7 +241,7 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: Cal
         {live && snapshot.voice === 'captions' ? (
           <p role="status" className="flex max-w-xl items-start gap-2 text-small text-muted-foreground">
             <VolumeX aria-hidden className="mt-0.5 size-4 shrink-0" />
-            Voice unavailable right now.
+            Spoken replies are unavailable right now.
           </p>
         ) : null}
         {snapshot.notice ? (
