@@ -300,6 +300,9 @@ describe('usage, idempotency, settings (system executor)', () => {
       // Seeded by migration 0004 (call caps).
       maxCallMinutes: 30,
       dailyCallMinutesPerPrincipal: 60,
+      // Not stored yet: the defaults (on) apply.
+      streamingEnabled: true,
+      callsEnabled: true,
     });
     const updated = await t.db.system((sx) =>
       settingsRepo.updatePlatformSettings(sx, { aiEnabled: false, dailyUsdCapGlobal: 3.5 }, seed.ownerId),
