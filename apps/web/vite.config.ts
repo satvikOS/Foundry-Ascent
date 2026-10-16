@@ -3,7 +3,7 @@ import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 
-import { entryChunkBudget, FRAMEWORK_CHUNK } from './vite-plugins/page-speed.js';
+import { FRAMEWORK_CHUNK, firstLoadBudget } from './vite-plugins/page-speed.js';
 
 /**
  * Sonner injects its stylesheet with a runtime <style> tag, which a strict CSP (style-src 'self')
@@ -51,8 +51,9 @@ export default defineConfig({
     react(),
     tailwindcss(),
     sonnerWithoutInjectedStyles(),
-    // Page speed (docs/runbooks/latency.md): the entry chunk stays within its budget (the build fails otherwise).
-    entryChunkBudget(),
+    // Page speed (docs/runbooks/latency.md): the script a first page load fetches (the entry and its static
+    // imports) stays within its budget; the build fails otherwise.
+    firstLoadBudget(),
   ],
   resolve: { tsconfigPaths: true },
   server: {
@@ -71,8 +72,8 @@ export default defineConfig({
     chunkSizeWarningLimit: 650,
     rolldownOptions: {
       output: {
-        // React in a chunk of its own: loaded in parallel with the app's entry chunk, and still cached by a
-        // returning visitor after a release changed the app.
+        // React in a chunk of its own. The first load fetches it alongside the entry either way (same bytes);
+        // the gain is that a returning visitor still has it cached after a release changed the app.
         codeSplitting: { groups: [FRAMEWORK_CHUNK] },
       },
     },

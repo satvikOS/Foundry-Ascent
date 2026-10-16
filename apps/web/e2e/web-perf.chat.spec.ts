@@ -19,7 +19,8 @@ const NETWORK = { offline: false, latency: 40, downloadThroughput: 2_500_000, up
 
 /**
  * The two devices measured: a laptop (no CPU slowdown) and a mid-range phone (the CPU four times slower,
- * which is where script size shows: every byte of the entry chunk is parsed before the app can paint).
+ * which is where script size shows: every byte of the first load, the entry and its static imports, is parsed
+ * before the app can paint).
  */
 const DEVICES = [
   { name: 'laptop', cpuSlowdown: 1 },
