@@ -20,13 +20,23 @@ export interface ApiRuntime {
 }
 
 /**
- * Text-to-speech for calls: Amazon Polly wherever the models run on Bedrock (the deployed stacks). Local
- * development and tests run the mock model and get none: `POST /speech` answers 501 `speech_unavailable` and
- * the browser reads validated replies aloud itself. No network I/O at construction.
+ * Whether calls may use Amazon Polly and Amazon Transcribe: the models run on Bedrock (the deployed stacks)
+ * and `SPEECH_ENABLED` is not `false` (infra `speech.enabled`, which also decides the IAM grants). Local
+ * development and tests run the mock model and use neither.
+ */
+export function callSpeechEnabled(env: EnvLike, config: ApiConfig): boolean {
+  return config.speech.enabled && env.MODEL_PROVIDER?.trim().toLowerCase() === 'bedrock';
+}
+
+/**
+ * Text-to-speech for calls: Amazon Polly with the deployment's engine (`SPEECH_ENGINE`) tried first, where
+ * {@link callSpeechEnabled}. Otherwise none: `POST /speech` answers 501 `speech_unavailable` and the browser
+ * reads validated replies aloud itself. No network I/O at construction.
  */
 export function speechFor(env: EnvLike, config: ApiConfig): { speech?: SpeechSynthesizer } {
-  return env.MODEL_PROVIDER?.trim().toLowerCase() === 'bedrock'
-    ? { speech: new PollySpeechSynthesizer({ region: config.awsRegion }) }
+  const engine = config.speech.engine;
+  return callSpeechEnabled(env, config)
+    ? { speech: new PollySpeechSynthesizer({ region: config.awsRegion, engine }) }
     : {};
 }
 

@@ -1,7 +1,9 @@
 # ADR-0014: Bedrock models — Nova 2 Lite primary with a global fallback, GPT-6 Luna gated behind a flag, Titan embeddings
 
 - **Status:** Accepted (amended 2026-10-05: AWS gates GPT-6 Luna for this account, so production runs
-  Nova 2 Lite as primary and keeps Luna disabled behind `models.luna.enabled`)
+  Nova 2 Lite as primary and keeps Luna disabled behind `models.luna.enabled`; amended 2026-10-16: the
+  **Ops - verify AWS access** workflow is retired with the stage-0 key, so models are probed with the
+  probe script instead)
 - **Date:** 2026-10-05
 - **Deciders:** Platform owner
 - **Blueprint basis:** 03 §8 "Data minimization" and "Vendor", §14 "Model memorization / retention",
@@ -61,8 +63,9 @@ contract and the IAM grants:
 ### Enabling Luna later
 
 1. Request or confirm Luna access for the account in the Bedrock console.
-2. Run **Ops - verify AWS access**. Its two GPT-6 Luna probes (models list, one 16-token chat completion)
-   only warn while the flag is `false`; both must report PASS.
+2. Probe Luna with `apps/api/src/scripts/bedrock-probe.ts` (`MODEL_PRIMARY_ID=openai.gpt-6-luna`), run
+   with credentials allowed to invoke it; it must report PASS ([deploy runbook, "Probing Bedrock and
+   Polly"](../../runbooks/deploy-and-rollback.md#probing-bedrock-and-polly)).
 3. Run the **Evals** workflow against production to record the Nova baseline.
 4. Open a pull request that sets `models.luna.enabled` to `true` (nothing else). CI's CDK tests
    (`models.test.ts`) assert the model mapping and the Mantle grant.
@@ -86,8 +89,8 @@ contract and the IAM grants:
 - Gateway tests (`luna.test.ts`, `nova.test.ts`, `titan.test.ts`, `router.test.ts`) with stubbed
   transports: request signing, schema enforcement, repair, fallback, adapter choice by model id.
 - CDK `models.test.ts`: model ids and IAM grants follow `models.luna.enabled`.
-- The **Ops - verify AWS access** workflow probes Nova (base id and both profiles) and Titan as required,
-  and Luna as required only while the flag is `true`.
+- Every deploy's migrate resource embeds with Titan, and every coaching turn exercises the configured
+  reasoning models; `bedrock-probe.ts` checks a model on demand.
 
 ## Revisit trigger
 

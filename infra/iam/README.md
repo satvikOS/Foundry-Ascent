@@ -153,9 +153,9 @@ for policy in FoundryAscent-BootstrapOperator FoundryAscent-LegacyCleanup; do
 done
 ```
 
-After stage 0 is retired, the workflows that run as the IAM user (**Ops - …**,
-**Platform - deploy data stack**) stop working by design; **Deploy** updates every stack,
-and `ops/aws/inventory.py` can run locally with read-only credentials.
+After stage 0 is retired, the workflows that ran as the IAM user (**Ops - …**,
+**Platform - deploy data stack**) are retired too: each stops at its first step with an explanation.
+**Deploy** updates every stack, and `ops/aws/inventory.py` can run locally with read-only credentials.
 
 ## Policies
 

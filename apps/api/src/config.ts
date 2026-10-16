@@ -23,6 +23,10 @@ const emptyToUndefined = (value: unknown): unknown =>
   typeof value === 'string' && value.trim() === '' ? undefined : value;
 const optionalText = z.preprocess(emptyToUndefined, z.string().trim().optional());
 
+/** Amazon Polly engines a deployment can choose for calls (infra `speech.engine`). */
+export const SpeechEngine = z.enum(['neural', 'generative']);
+export type SpeechEngine = z.infer<typeof SpeechEngine>;
+
 const EnvSchema = z.object({
   APP_ENV: z.preprocess(
     emptyToUndefined,
@@ -47,6 +51,10 @@ const EnvSchema = z.object({
   /** The jobs queue's redrive maxReceiveCount (last attempt marks a document failed). */
   JOBS_MAX_RECEIVE_COUNT: z.preprocess(emptyToUndefined, z.coerce.number().int().min(1).max(1000).default(3)),
   SITE_ORIGIN: z.preprocess(emptyToUndefined, z.url().optional()),
+  /** infra `speech.enabled`: `false` when the API role has no Amazon Polly or Transcribe permission. */
+  SPEECH_ENABLED: z.preprocess(emptyToUndefined, z.enum(['true', 'false']).default('true')),
+  /** infra `speech.engine`: the Polly engine tried first (ADR-0010). */
+  SPEECH_ENGINE: z.preprocess(emptyToUndefined, SpeechEngine.default('neural')),
 });
 
 export interface ApiConfig {
@@ -60,6 +68,8 @@ export interface ApiConfig {
   readonly jobsMaxReceiveCount: number;
   /** Public origin of the SPA when statically known (custom domain); otherwise derived per request. */
   readonly siteOrigin: string | null;
+  /** Voice calls (ADR-0010): whether Polly and Transcribe may be used, and the Polly engine to try first. */
+  readonly speech: { readonly enabled: boolean; readonly engine: SpeechEngine };
 }
 
 export class ConfigError extends Error {
@@ -91,6 +101,7 @@ export function loadApiConfig(env: EnvLike, role: ApiRole): ApiConfig {
     jobsQueueUrl: e.JOBS_QUEUE_URL ?? null,
     jobsMaxReceiveCount: e.JOBS_MAX_RECEIVE_COUNT,
     siteOrigin: e.SITE_ORIGIN?.replace(/\/+$/, '') ?? null,
+    speech: { enabled: e.SPEECH_ENABLED === 'true', engine: e.SPEECH_ENGINE },
   };
 }
 

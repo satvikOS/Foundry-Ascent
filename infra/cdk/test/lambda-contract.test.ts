@@ -1,4 +1,8 @@
-/** The infra side of apps/api/lambda-contract.json: the parser fails synth on any drift the API would not accept. */
+/**
+ * The infra side of apps/api/lambda-contract.json: the parser fails synth when the file drifts from what
+ * this CDK app sets (environment names, the exact scheduled message bodies). The API parses the same file
+ * with its own schema (apps/api/src/lambda-contract.ts).
+ */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
@@ -23,8 +27,8 @@ describe('lambda contract', () => {
   });
 
   it('passes the speech settings to the API only', () => {
-    const speech = ['SPEECH_ENABLED', 'SPEECH_DEFAULT_VOICE', 'SPEECH_ENGINE'];
-    expect(environmentNames('api')).toEqual(expect.arrayContaining(speech));
+    const speech = ['SPEECH_ENABLED', 'SPEECH_ENGINE'];
+    expect(environmentNames('api').filter((name) => name.startsWith('SPEECH_'))).toEqual(speech);
     for (const role of ['worker', 'migrate'] as const) {
       expect(
         environmentNames(role).filter((name) => speech.includes(name)),

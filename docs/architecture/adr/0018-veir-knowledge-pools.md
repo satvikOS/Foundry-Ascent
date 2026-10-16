@@ -1,6 +1,7 @@
 # ADR-0018: vEIR knowledge pools — a common pool per persona, a specific pool per venture, grown by approval-gated distillation
 
-- **Status:** Accepted
+- **Status:** Accepted (amended the same day: distillation runs from delayed per-conversation jobs; the
+  15-minute sweep ships disabled)
 - **Date:** 2026-10-16
 - **Deciders:** Platform owner
 - **Blueprint basis:** 02 §5 "five-tier memory model" (Fig 5) and the memory quality rules, 02 §6 "four
@@ -79,12 +80,16 @@ Knowledge comes in three trust levels, and the prompt labels each one:
 
 ### How the pools grow: distillation
 
-- A job `{type: 'distill_session', sessionId}` runs once per conversation version. It is enqueued:
-  - when a conversation ends;
-  - by a sweep: EventBridge Scheduler sends `{"type":"distill_sweep"}` to the jobs queue every 15 minutes
-    (`DistillSweep`, `infra/cdk/config/production.json` → `distillation`), and the worker enqueues
-    conversations with no turn for at least 20 minutes and no digest yet;
+- A job `{type: 'distill_session', sessionId}` runs once per conversation version. Only the API
+  enqueues it (the worker has no `sqs:SendMessage`):
+  - after each turn, with a 9-minute SQS delay; the worker distills if the conversation is still idle
+    and drops the message if a newer turn queued its own;
+  - when a conversation ends, immediately;
   - lazily when the next conversation starts and the previous digest is still missing.
+
+  The daily maintenance job is the backstop: it distills a bounded number of conversations that are
+  idle and still undistilled (for example after a failed job).
+
 - One structured model call (usage purpose `distill`, under the daily caps and the kill switch) returns
   the digest, a notebook delta, at most 3 memory candidates and at most 2 lesson candidates.
 - Everything is sanitized like recaps: the identity rewrite (no claim to be the EIR), cross-venture name
@@ -114,22 +119,17 @@ Knowledge comes in three trust levels, and the prompt labels each one:
 
 - One `distill` model call per conversation that went idle or ended, priced into `usage_ledger` and
   checked against the daily caps. The kill switch stops distillation with every other AI path.
-- The sweep schedule costs nothing (about 2,900 Scheduler invocations a month, inside the free tier),
-  but **the sweep handler must not wake a paused Aurora when there is nothing to distill.** A database
-  query every 15 minutes against a 10-minute auto-pause keeps the cluster awake about two thirds of the
-  time: at 0.5 ACU and $0.12 per ACU-hour that is about $29 a month, against an idle target of $1–3.
-  Acceptable implementations:
-  1. **Probe before querying.** Read the cluster's `ServerlessDatabaseCapacity` (`AWS/RDS`, dimension
-     `DBClusterIdentifier`) from CloudWatch, which does not touch the database, and skip the sweep while
-     it is 0. Conversations that went idle while the cluster slept are distilled when the next one starts
-     or ends. This needs `cloudwatch:GetMetricData` on the worker role (no resource-level permissions; an
-     infrastructure change with a cdk-nag acknowledgment).
-  2. **Per-conversation delayed messages instead of polling.** After each turn the API sends
-     `distill_session` with an SQS delay (at most 15 minutes); the worker distills if the conversation is
-     still idle and drops the message if a newer turn queued its own. Nothing runs when nobody talks; the
-     sweep can then be disabled (`distillation.sweepEnabled: false`).
-
-  A handler that queries Aurora unconditionally on every sweep is not acceptable.
+- **Nothing may keep Aurora awake for no reason.** Aurora pauses after 10 idle minutes (ADR-0011); a
+  database query every 15 minutes would keep it awake about two thirds of the time, about $29 a month at
+  0.5 ACU and $0.12 per ACU-hour, against an idle target of $1–3. Hence the per-turn delayed message
+  instead of polling: it fires only when someone talked, and its 9-minute delay (under SQS's 15-minute
+  maximum) lands while the cluster is still up from that turn. A conversation that keeps going sends
+  newer messages, and the stale ones are dropped without a model call.
+- The 15-minute sweep schedule this replaced (`DistillSweep`) still exists, **disabled**
+  (`distillation.sweepEnabled: false`). Enabling it needs a handler that distills inline, a bounded
+  number of conversations per run, and that does not wake a paused cluster when there is nothing to do
+  (for example by reading `ServerlessDatabaseCapacity` from CloudWatch first, which needs
+  `cloudwatch:GetMetricData` on the worker role).
 
 ### Consequences
 
@@ -148,11 +148,11 @@ Knowledge comes in three trust levels, and the prompt labels each one:
 - RLS tests for every new table; DB tests for distillation (idempotency, dedupe, expiry, suppressed
   lines, ephemeral sessions skipped), notebook edits and versions, and knowledge-library CRUD.
 - Evals: G1 cross-venture (0 critical), G4 identity, G5 disclosure, G6 system-prompt leaks.
-- Infrastructure: `infra/cdk/test/app.test.ts` pins the `DistillSweep` schedule (rate, message, retry
-  policy, shared send-only role); `lambda-contract.json` → `worker.distillSweepMessage` is validated at
-  synth.
-- Operations: [cost controls](../../runbooks/cost-controls.md) "When Aurora does not pause" checks that the
-  sweep does not keep the cluster awake.
+- Infrastructure: `infra/cdk/test/app.test.ts` pins the `DistillSweep` schedule as `DISABLED` and that
+  the worker cannot send to the queue; `lambda-contract.json` → `worker.distillSweepMessage` is validated
+  at synth.
+- Operations: [cost controls](../../runbooks/cost-controls.md) "When Aurora does not pause" checks that
+  distillation does not keep the cluster awake.
 
 ## Revisit trigger
 

@@ -23,7 +23,8 @@ any time. Signing in sets a 12-hour session cookie.
 
 1. **Admin → Principals** (platform admin) or the venture **Team** page (program lead invitation).
 2. Create the principal if needed (display name, title, roles or venture membership). Email is optional.
-3. **Issue access code**: label (e.g. "Fall cohort laptop"), expiry in days (1–365).
+3. **Issue access code**: label (e.g. "Fall cohort laptop") and expiry: a preset in the dialog, or through
+   the API 1–365 days or none (`expiresInDays: null`; owner codes only, see above).
 4. Copy the code from the one-time dialog and deliver it. Closing the dialog discards it for good.
 
 API: `POST /api/v1/admin/principals/<principalId>/access-codes` with `{"label": "…", "expiresInDays": 30}`

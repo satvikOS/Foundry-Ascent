@@ -32,9 +32,8 @@ permissions:
   contents: read
   id-token: write
 
-# One group for every workflow that changes CloudFormation stacks or the stage-0 credentials in the account
-# (this one, platform-deploy-data.yml and ops-aws-retire-stage0.yml), so they never overlap: a new run waits
-# for the one in progress. GitHub keeps at most one waiting run per group; a newer one replaces it.
+# Deploys never overlap: a new run waits for the one in progress. GitHub keeps at most one waiting run per
+# group; a newer one replaces it. (The stage-0 workflows that shared this group are retired.)
 concurrency:
   group: deploy-production
   cancel-in-progress: false

@@ -1,75 +1,25 @@
 name: Ops - Bedrock live probe
 
-# Manually triggered check that the production model path works on real Bedrock: one structured coach
-# response per reasoning model (the CoachResponse schema with the forced tool choice every coaching turn
-# uses), then one Titan embedding, through the same gateway the API Lambda builds
-# (apps/api/src/scripts/bedrock-probe.ts). Model ids come from infra/cdk/config/production.json.
-# Cost per run: three small model calls (well under USD 0.01). Logs are public: the probe prints model
-# ids, outcomes, error class names, token counts and timings only, and the account id is masked.
-#
-# Status (2026-10-16): this probe signs in with the stage-0 access key, which was deleted on 2026-10-06
-# (infra/iam/README.md), so it cannot authenticate. It is deliberately not moved to GitHub OIDC: the only
-# OIDC role, FoundryAscent-GitHubDeploy (infra/cdk/src/stacks/foundation-stack.ts), may assume the four
-# CDK bootstrap roles and read CloudFormation, platform Lambda logs and Cost Explorer, and nothing else.
-# It has no Bedrock (or Polly) access, and granting model calls to a role every production-environment
-# job can assume is not justified for a manual probe. Reviving it needs a separate ops role in the
-# Foundation stack, trusted only from its own GitHub environment and allowed bedrock:InvokeModel on the
-# configured model ARNs only (docs/runbooks/deploy-and-rollback.md, "Probing Bedrock and Polly").
+# Retired. This probe signed in with the stage-0 access key, which was deleted on 2026-10-06
+# (infra/iam/README.md), and it is deliberately not moved to GitHub OIDC: the only OIDC role,
+# FoundryAscent-GitHubDeploy (infra/cdk/src/stacks/foundation-stack.ts), may assume the four CDK bootstrap
+# roles and read CloudFormation, platform Lambda logs and Cost Explorer, nothing else, and any job in the
+# production environment can assume it. A dispatched run therefore stops at its first step with that
+# explanation instead of an opaque STS error. How to probe Bedrock and Polly today, and what a revived
+# probe needs (its own narrowly scoped role and GitHub environment): docs/runbooks/deploy-and-rollback.md,
+# "Probing Bedrock and Polly".
 on:
   workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: ops-bedrock-probe
-  cancel-in-progress: false
-
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      AWS_DEFAULT_REGION: us-east-1
-      AWS_REGION: us-east-1
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Mask account id
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      - name: Explain why this probe cannot run
         run: |
-          account="$(aws sts get-caller-identity --query Account --output text)"
-          if [[ ! "${account}" =~ ^[0-9]{12}$ ]]; then
-            echo "::error::sts:GetCallerIdentity did not return a 12-digit account id"
-            exit 1
-          fi
-          echo "::add-mask::${account}"
-
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-
-      # No dependency cache in a job that holds cloud credentials (cache-poisoning hardening).
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
-        with:
-          node-version-file: .nvmrc
-          package-manager-cache: false
-
-      - run: pnpm install --frozen-lockfile --filter '@foundry/api...'
-
-      - name: Probe Bedrock
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          APP_ENV: production
-          MODEL_PROVIDER: bedrock
-          BEDROCK_REGION: us-east-1
-        run: |
-          config=infra/cdk/config/production.json
-          MODEL_PRIMARY_ID="$(jq -r '.models.primary' "${config}")"
-          MODEL_FALLBACK_ID="$(jq -r '.models.fallback' "${config}")"
-          MODEL_EMBEDDINGS_ID="$(jq -r '.models.embeddings' "${config}")"
-          export MODEL_PRIMARY_ID MODEL_FALLBACK_ID MODEL_EMBEDDINGS_ID
-          pnpm --filter @foundry/api exec tsx src/scripts/bedrock-probe.ts
+          echo "::error title=Bedrock probe retired::This workflow used the stage-0 AWS access key, which was deleted on 2026-10-06, and the GitHub OIDC deploy role has no Bedrock or Polly access by design. See docs/runbooks/deploy-and-rollback.md, section 'Probing Bedrock and Polly'."
+          exit 1

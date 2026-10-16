@@ -269,9 +269,8 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
             "MODEL_PRIMARY_ID": "us.amazon.nova-2-lite-v1:0",
             "MODEL_PROVIDER": "bedrock",
             "NODE_OPTIONS": "--enable-source-maps",
-            "SPEECH_DEFAULT_VOICE": "Matthew",
             "SPEECH_ENABLED": "true",
-            "SPEECH_ENGINE": "generative",
+            "SPEECH_ENGINE": "neural",
           },
         },
         "FunctionName": "FoundryAscent-Api",
@@ -554,6 +553,17 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
               "Effect": "Allow",
               "Resource": "*",
               "Sid": "PollySpeech",
+            },
+            {
+              "Action": "transcribe:StartStreamTranscriptionWebSocket",
+              "Condition": {
+                "StringEquals": {
+                  "aws:RequestedRegion": "us-east-1",
+                },
+              },
+              "Effect": "Allow",
+              "Resource": "*",
+              "Sid": "TranscribeStreaming",
             },
           ],
           "Version": "2012-10-17",
@@ -994,13 +1004,13 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
     },
     "DistillSweepFCC9A1DA": {
       "Properties": {
-        "Description": "Foundry Ascent distillation sweep (digests and notebooks for idle conversations)",
+        "Description": "Foundry Ascent distillation sweep (inline, bounded; disabled by default)",
         "FlexibleTimeWindow": {
           "Mode": "OFF",
         },
         "ScheduleExpression": "rate(15 minutes)",
         "ScheduleExpressionTimezone": "Etc/UTC",
-        "State": "ENABLED",
+        "State": "DISABLED",
         "Target": {
           "Arn": {
             "Fn::GetStackOutput": {
@@ -1676,7 +1686,7 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
                         "StackName": "FoundryAscent-Data",
                       },
                     },
-                    ".s3.us-east-1.amazonaws.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
+                    ".s3.us-east-1.amazonaws.com wss://transcribestreaming.us-east-1.amazonaws.com:8443; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
                   ],
                 ],
               },
@@ -1907,7 +1917,7 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
             "Ref": "AlarmTopicD01E77F9",
           },
         ],
-        "AlarmDescription": "More than 100000 characters synthesized by Amazon Polly in one hour (about USD 3 on the generative engine, more than the default global daily AI cap)",
+        "AlarmDescription": "More than 100000 characters synthesized by Amazon Polly in one hour (about USD 1.60 on the neural engine)",
         "AlarmName": "FoundryAscent-Speech-Characters",
         "ComparisonOperator": "GreaterThanThreshold",
         "Dimensions": [
@@ -1922,6 +1932,32 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
         "Period": 3600,
         "Statistic": "Sum",
         "Threshold": 100000,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "SpeechCharactersDailyAlarmB1A31F5A": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Ref": "AlarmTopicD01E77F9",
+          },
+        ],
+        "AlarmDescription": "More than 937500 characters synthesized by Amazon Polly in one day (USD 15.00 on the neural engine: the global daily AI cap speech is metered against)",
+        "AlarmName": "FoundryAscent-Speech-Characters-Daily",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "Dimensions": [
+          {
+            "Name": "Operation",
+            "Value": "SynthesizeSpeech",
+          },
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "RequestCharacters",
+        "Namespace": "AWS/Polly",
+        "Period": 86400,
+        "Statistic": "Sum",
+        "Threshold": 937500,
         "TreatMissingData": "notBreaching",
       },
       "Type": "AWS::CloudWatch::Alarm",
@@ -1970,7 +2006,7 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
           },
           "S3Key": "<sha256>.zip",
         },
-        "Description": "Foundry Ascent jobs worker (document ingestion, recaps, memory consolidation)",
+        "Description": "Foundry Ascent jobs worker (ingestion, embeddings, distillation, daily maintenance)",
         "Environment": {
           "Variables": {
             "APP_ENV": "production",

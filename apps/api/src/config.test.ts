@@ -21,6 +21,7 @@ describe('loadApiConfig', () => {
       jobsQueueUrl: prod.JOBS_QUEUE_URL,
       jobsMaxReceiveCount: 3,
       siteOrigin: null,
+      speech: { enabled: true, engine: 'neural' },
     });
     expect(
       loadApiConfig({ LOG_LEVEL: 'DEBUG', SITE_ORIGIN: 'https://foundry.example.edu/' }, 'migrate'),
@@ -41,6 +42,29 @@ describe('loadApiConfig', () => {
     } catch (err) {
       expect((err as Error).message).toBe('Invalid environment: JOBS_MAX_RECEIVE_COUNT');
     }
+  });
+});
+
+describe('speech variables (infra `speech`)', () => {
+  it('reads SPEECH_ENABLED and SPEECH_ENGINE as infra sets them', () => {
+    expect(
+      loadApiConfig({ ...prod, SPEECH_ENABLED: 'false', SPEECH_ENGINE: 'generative' }, 'api').speech,
+    ).toEqual({ enabled: false, engine: 'generative' });
+    expect(loadApiConfig({ ...prod, SPEECH_ENABLED: 'true', SPEECH_ENGINE: 'neural' }, 'api').speech).toEqual(
+      {
+        enabled: true,
+        engine: 'neural',
+      },
+    );
+  });
+
+  it('refuses an engine or switch value it does not know, naming the variable', () => {
+    expect(() => loadApiConfig({ ...prod, SPEECH_ENGINE: 'standard' }, 'api')).toThrow(
+      'Invalid environment: SPEECH_ENGINE',
+    );
+    expect(() => loadApiConfig({ ...prod, SPEECH_ENABLED: 'yes' }, 'api')).toThrow(
+      'Invalid environment: SPEECH_ENABLED',
+    );
   });
 });
 

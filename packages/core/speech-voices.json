@@ -1,0 +1,18 @@
+{
+  "$comment": "Amazon Polly voices and prices for calls: the one source for packages/core (voice choice, speech metering) and infra/cdk (synth-time engine check, speech cost alarms). Voices are the adult US-English voices with the engines each has in us-east-1, neural first (Polly developer guide, 'Available voices', checked 2026-10-16). Prices are on-demand USD per million characters (aws.amazon.com/polly/pricing, checked 2026-10-16). platformVoice speaks for personas without a consented voice of their own; it must exist on both engines.",
+  "platformVoice": "Danielle",
+  "usdPerMillionCharacters": { "neural": 16, "generative": 30, "standard": 4 },
+  "voices": {
+    "Danielle": ["neural", "generative"],
+    "Joanna": ["neural", "generative"],
+    "Matthew": ["neural", "generative"],
+    "Ruth": ["neural", "generative"],
+    "Salli": ["neural", "generative"],
+    "Stephen": ["neural", "generative"],
+    "Gregory": ["neural"],
+    "Joey": ["neural"],
+    "Kendra": ["neural"],
+    "Kimberly": ["neural"],
+    "Tiffany": ["generative"]
+  }
+}

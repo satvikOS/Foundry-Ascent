@@ -2,91 +2,117 @@
 
 **Owner:** platform owner · **Related:** [ADR-0015](../architecture/adr/0015-cost-guardrails.md),
 [ADR-0011](../architecture/adr/0011-aurora-serverless-postgres-data-api.md),
-[ADR-0014](../architecture/adr/0014-bedrock-models-luna-nova-titan.md), [kill switch](kill-switch-and-persona-suspension.md)
+[ADR-0014](../architecture/adr/0014-bedrock-models-luna-nova-titan.md),
+[ADR-0010](../architecture/adr/0010-realtime-webrtc-deferred.md) (calls),
+[ADR-0018](../architecture/adr/0018-veir-knowledge-pools.md) (distillation), [kill switch](kill-switch-and-persona-suspension.md)
 
-Target: **about $1–3 per month idle**, AI spend hard-capped per day. Figures below are us-east-1 list
-prices as configured on 2026-10-05; confirm on the AWS pricing pages before relying on them.
+Target: **about $1–3 per month idle**, AI spend hard-capped per day. Figures are us-east-1 list prices
+(AWS price list of 2026-09-11 for Polly and Transcribe); confirm on the AWS pricing pages before relying
+on them.
 
 ## Where the money goes
 
-| Component                     | Idle                                                                                                 | Under use                                                                                                                                                                                            | Control                                                               |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| Aurora Serverless v2 compute  | $0 while paused (0 ACU)                                                                              | per ACU-hour while awake (0.5–2 ACU); a cluster that never pauses at 0.5 ACU costs tens of dollars a month                                                                                           | auto-pause after 10 idle minutes, max 2 ACU                           |
-| Aurora storage, backups       | ~$0.10/GB-month; backups within retention free                                                       | I/O per million requests                                                                                                                                                                             | 7-day retention                                                       |
-| Bedrock reasoning             | $0                                                                                                   | Nova 2 Lite (primary, `us.` profile; `global.` fallback): ≈ $0.007 per turn at ~12 k input / 1.5 k output tokens. GPT-6 Luna (≈ $0.002) is gated by AWS and disabled (`models.luna.enabled = false`) | daily caps, turn rate limit, session turn limit                       |
-| Bedrock embeddings (Titan v2) | $0                                                                                                   | ~$0.02 per million tokens (a 50-page document ≈ $0.001)                                                                                                                                              | ingestion only, kill switch                                           |
-| Amazon Polly (voice calls)    | $0                                                                                                   | per character synthesized: generative $30, neural $16 per million (a 70-word spoken reply ≈ 420 characters ≈ $0.013 generative); free tier 100 k generative characters a month for 12 months         | daily caps (speech is metered), kill switch, `speech.enabled`, alarm  |
-| Distillation (worker)         | the 15-minute sweep: Scheduler free tier; must not wake a paused Aurora (see below)                  | one model call per idle conversation (digest, notebook, memory and lesson candidates), metered under the caps                                                                                        | daily caps, kill switch, `distillation.sweepEnabled`                  |
-| Lambda (ARM, 1 GB)            | $0                                                                                                   | fractions of a cent per turn                                                                                                                                                                         | no reserved concurrency (see below); ≤ 2 pollers (worker); spend caps |
-| Secrets Manager               | $0.40/month (one secret)                                                                             | —                                                                                                                                                                                                    | —                                                                     |
-| CloudWatch                    | 6 alarms ≈ $0.60/month; logs per GB ingested                                                         | —                                                                                                                                                                                                    | 30-day log retention, no content in logs                              |
-| CloudFront, S3, SQS, SNS      | cents (free tiers)                                                                                   | cents                                                                                                                                                                                                | price class 100, no WAF                                               |
-| Not created at all            | NAT gateway, EIP, VPC endpoints, customer KMS keys, RDS Proxy, provisioned concurrency or throughput | —                                                                                                                                                                                                    | denied by `FoundryAscent-Boundary`                                    |
+| Component                     | Idle                                                                                                 | Under use                                                                                                                                                                                            | Control                                                                |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Aurora Serverless v2 compute  | $0 while paused (0 ACU)                                                                              | about $0.12 per ACU-hour while awake (0.5–2 ACU); a cluster that never pauses costs about $44 a month at 0.5 ACU                                                                                     | auto-pause after 10 idle minutes, max 2 ACU                            |
+| Aurora storage, backups       | ~$0.10/GB-month; backups within retention free                                                       | I/O per million requests                                                                                                                                                                             | 7-day retention                                                        |
+| Bedrock reasoning             | $0                                                                                                   | Nova 2 Lite (primary, `us.` profile; `global.` fallback): ≈ $0.007 per turn at ~12 k input / 1.5 k output tokens. GPT-6 Luna (≈ $0.002) is gated by AWS and disabled (`models.luna.enabled = false`) | daily caps, turn rate limit, session turn limit                        |
+| Bedrock embeddings (Titan v2) | $0                                                                                                   | ~$0.02 per million tokens (a 50-page document ≈ $0.001)                                                                                                                                              | ingestion only, kill switch                                            |
+| Distillation (worker)         | $0: jobs exist only after someone talked                                                             | one `distill` model call per conversation version (digest, notebook, memory and lesson candidates)                                                                                                   | daily caps, kill switch                                                |
+| Amazon Polly (call speech)    | $0                                                                                                   | per character synthesized: neural $16, generative $30 per million (a 70-word spoken reply ≈ 420 characters ≈ $0.007 neural)                                                                          | daily caps (speech is metered), minute caps, kill switches, two alarms |
+| Amazon Transcribe (call STT)  | $0                                                                                                   | $0.01 per minute, billed per second while the browser's stream is open (silence included)                                                                                                            | AWS's stream quota, the AWS Budget, `speech.enabled` (see below)       |
+| Lambda (ARM, 1 GB)            | $0                                                                                                   | fractions of a cent per turn                                                                                                                                                                         | no reserved concurrency (see below); ≤ 2 pollers (worker); spend caps  |
+| Secrets Manager               | $0.40/month (one secret)                                                                             | —                                                                                                                                                                                                    | —                                                                      |
+| CloudWatch                    | 7 alarms ≈ $0.70/month; logs per GB ingested                                                         | —                                                                                                                                                                                                    | 30-day log retention, no content in logs                               |
+| CloudFront, S3, SQS, SNS      | cents (free tiers)                                                                                   | cents                                                                                                                                                                                                | price class 100, no WAF                                                |
+| Not created at all            | NAT gateway, EIP, VPC endpoints, customer KMS keys, RDS Proxy, provisioned concurrency or throughput | —                                                                                                                                                                                                    | denied by `FoundryAscent-Boundary`                                     |
 
-At the default global cap of **$2.00/day**, AI spend is at most ≈ $60/month (about 270 Nova turns a day
-today; about 900 if Luna is enabled later). The per-person cap is **$0.50/day**.
+At the default global cap of **$15.00/day**, AI spend (models, embeddings, distillation and speech) is at
+most ≈ $450/month, about 2,100 Nova turns a day. The per-person cap is **$1.00/day**. A full 30-minute call
+costs about $0.30 of Transcribe plus its speech and turns.
+
+**Transcribe is outside the caps.** The API grants speech-to-text only to a live call, a limited number of
+times per call, and each grant only opens a socket. Once open, the browser streams straight to AWS: the
+minute caps, `callsEnabled` and the kill switch end the call in the app, and a well-behaved client closes
+its socket, but nothing on the server can. Transcribe use is not in `usage_ledger`, and AWS publishes no
+per-stream duration metric to alarm on. What bounds it:
+
+- AWS's quota of 25 concurrent streams per account in us-east-1: at most about $360 a day;
+- the AWS Budget and Cost Anomaly Detection ([owner actions](owner-actions.md) §2), which see Transcribe
+  by service;
+- `speech.enabled: false` (a deploy), which removes the grant so no new socket opens.
 
 ## Application caps (Admin → Settings)
 
 | Setting                            | Default          | Meaning                                                                                                                                 |
 | ---------------------------------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `aiEnabled`                        | on               | Global kill switch (no model or embedding calls when off)                                                                               |
-| `dailyUsdCapGlobal`                | 2.00             | Platform-wide AI spend per UTC day; reaching it returns `429 spend_cap_reached` until midnight UTC                                      |
-| `dailyUsdCapPerPrincipal`          | 0.50             | Per-person AI spend per UTC day                                                                                                         |
-| `maxTurnsPerSession`               | 40               | Hard stop for runaway sessions                                                                                                          |
+| `aiEnabled`                        | on               | Global kill switch (no model, embedding, speech or call activity when off)                                                              |
+| `dailyUsdCapGlobal`                | 15.00            | Platform-wide AI spend per UTC day; reaching it returns `429 spend_cap_reached` until midnight UTC                                      |
+| `dailyUsdCapPerPrincipal`          | 1.00             | Per-person AI spend per UTC day                                                                                                         |
+| `maxTurnsPerSession`               | 40               | Hard stop for runaway conversations                                                                                                     |
+| `maxCallMinutes`                   | 30               | Longest call                                                                                                                            |
+| `dailyCallMinutesPerPrincipal`     | 60               | Call minutes one person may use per UTC day                                                                                             |
+| `callsEnabled`                     | on               | Voice calls (off: new calls refused, live calls end at the next heartbeat)                                                              |
+| `streamingEnabled`                 | on               | Streamed replies (off: whole replies only)                                                                                              |
 | `dailyUploadDocumentsPerPrincipal` | 20               | Documents one person may start uploading per UTC day; beyond it the upload is refused with `429` and `Retry-After` (until midnight UTC) |
 | `dailyUploadBytesPerPrincipal`     | 52428800 (50 MB) | Upload volume one person may start per UTC day (same refusal)                                                                           |
 
-Plus fixed limits in core configuration: 20 turns per 10 minutes per person, at most 3 answers in flight
-per person, sign-in lockout. Every model call writes `usage_ledger` (model, tokens, estimated cost,
-principal, venture), visible in **Admin → Usage**.
+Plus fixed limits in core configuration: 20 turns per 10 minutes per person, a separate rate limit and a
+per-call turn cap for spoken turns, one live call per person, at most 3 answers in flight per person,
+sign-in lockout. Every model and speech call writes `usage_ledger` (purpose, model or voice, tokens or
+characters, estimated cost, principal, venture), visible in **Admin → Usage**. Prices live in
+`packages/ai/src/pricing.ts` (models) and `packages/core/speech-voices.json` (speech, which also prices the
+speech alarms); update them when AWS prices change so the caps stay accurate.
 
 **Document ingestion counts against the caps.** Embedding an uploaded document is attributed to the person
 who uploaded it (`documents.uploaded_by`), and the worker checks the global cap and that person's cap
 before every embedding call. A document that would exceed a cap is marked **failed** with the reason
-`spend_cap_reached`, which the Documents page explains ("Not indexed: today's AI budget (the platform's
-or yours) was used up. Retry after midnight UTC."); nothing is embedded past the cap. The admission check and the turn insert run under
+`spend_cap_reached`; nothing is embedded past the cap. The admission check and the turn insert run under
 one per-person lock in one transaction, so parallel requests cannot overshoot the turn rate limit.
 
 **Sign-in lockout and Aurora.** After the database has locked a network out (repeated invalid codes), each
 API container remembers the lockout in memory and answers `429` with `Retry-After` without touching the
 database or the audit log until it ends; only the first refusal per window is audited. A single anonymous
 sign-in attempt from a network that is not locked out still reaches the database (checking a code needs
-it), so it can resume a paused Aurora cluster (≈ $0.12 per ACU-hour while awake, auto-pause after 10
-minutes). Prices live in `packages/ai/src/pricing.ts`; update them when AWS prices change so caps
-stay accurate.
+it), so it can resume a paused Aurora cluster.
 
 ## Infrastructure limits (`infra/cdk/config/production.json`, change by PR + deploy)
 
-`aurora.maxCapacityAcu` (2), `aurora.minCapacityAcu` (0 = can pause), `aurora.autoPauseMinutes` (10),
-`api.reservedConcurrency` (`null` = none, the production setting; a reservation fails the deploy on
-accounts whose Lambda concurrency quota is only 10), `api.memoryMb` (1024), `api.timeoutSeconds` (60), `logRetentionDays` (30),
-`models.luna.enabled` (`false`; see [ADR-0014](../architecture/adr/0014-bedrock-models-luna-nova-titan.md#enabling-luna-later)),
-`speech.enabled` (`true`; `false` removes the API's Polly permission), `speech.engine` (`generative`;
-`neural` is about half the price per character), `speech.defaultVoice` (`Matthew`),
-`distillation.sweepEnabled` (`true`) and `distillation.sweepIntervalMinutes` (15).
+| Key                                  | Production | Effect                                                                                         |
+| ------------------------------------ | ---------- | ---------------------------------------------------------------------------------------------- |
+| `aurora.maxCapacityAcu`              | 2          | ceiling under load                                                                             |
+| `aurora.minCapacityAcu`              | 0          | 0 = can pause                                                                                  |
+| `aurora.autoPauseMinutes`            | 10         | idle time before pausing                                                                       |
+| `api.reservedConcurrency`            | `null`     | none; a reservation fails the deploy on accounts whose Lambda concurrency quota is only 10     |
+| `api.memoryMb`, `api.timeoutSeconds` | 1024, 60   |                                                                                                |
+| `logRetentionDays`                   | 30         |                                                                                                |
+| `models.luna.enabled`                | `false`    | see [ADR-0014](../architecture/adr/0014-bedrock-models-luna-nova-titan.md#enabling-luna-later) |
+| `speech.enabled`                     | `true`     | `false` removes the API's Polly and Transcribe permissions and both speech alarms              |
+| `speech.engine`                      | `neural`   | `generative` costs almost twice as much per character and carries a residual risk (ADR-0010)   |
+| `speech.dailyAlarmUsd`               | 15         | the daily speech alarm's threshold: keep it equal to `dailyUsdCapGlobal`                       |
+| `distillation.sweepEnabled`          | `false`    | keep off: a 15-minute sweep that queries Aurora stops it from pausing (ADR-0018)               |
 
-## Alarms and budgets (one-time setup, account administrator)
+## Alarms
 
-1. **Subscribe to alarms** — the topic has no subscribers by default:
-   `aws sns subscribe --topic-arn <AlarmTopicArn output> --protocol email --notification-endpoint <you>` and
-   confirm the email. Alarms: `FoundryAscent-Api-Errors`, `FoundryAscent-Api-Throttles`,
-   `FoundryAscent-Worker-Errors`, `FoundryAscent-Jobs-DLQ-NotEmpty`, `FoundryAscent-CloudFront-5xxRate`,
-   `FoundryAscent-Speech-Characters` (more than 100,000 characters synthesized by Polly in one hour: about
-   $3 generative, more than the whole default global daily cap, so the in-app metering did not hold or the
-   caps were raised; check **Admin → Usage** and the API logs, and use the kill switch if in doubt).
-2. **AWS Budgets** (Billing → Budgets), **recommended**: a monthly cost budget of $10 with email alerts at
-   50 %, 80 % and 100 % actual and 100 % forecast. Budgets are outside the CDK app (account-level); create
-   it as the account administrator (the stage-0 policy can only read budgets).
-3. **Cost Anomaly Detection** (Billing → Cost Anomaly Detection): enable the default service monitor
-   with a daily email summary (free).
+All alarms publish to the SNS topic `FoundryAscent-Alarms`, which has no subscriber until the owner adds
+one ([owner actions](owner-actions.md)): `FoundryAscent-Api-Errors`, `FoundryAscent-Api-Throttles`,
+`FoundryAscent-Worker-Errors`, `FoundryAscent-Jobs-DLQ-NotEmpty`, `FoundryAscent-CloudFront-5xxRate`, and
+two speech backstops:
+
+- `FoundryAscent-Speech-Characters`: more than 100,000 characters synthesized by Polly in one hour (about
+  $1.60 neural): a burst several full calls wide.
+- `FoundryAscent-Speech-Characters-Daily`: more than the global daily cap's worth of characters in one day
+  (937,500 neural characters at $15): a steady leak below the burst threshold.
+
+Either one means the in-app metering did not hold, or the cap was raised without updating
+`speech.dailyAlarmUsd`. Check **Admin → Usage** (purpose `speech`) and the API logs; switch calls off
+(`callsEnabled`) or use the kill switch if in doubt.
 
 ## Routine checks (weekly, 5 minutes)
 
-- Run the **Ops - AWS inventory (read-only)** workflow: Cost Explorer month-to-date and last month by
-  service and region (two calls, $0.01 each), plus billable resources outside Foundry Ascent. It uses the
-  stage-0 key; once that is retired, run `python ops/aws/inventory.py` locally with read-only credentials.
-- **Admin → Usage**: spend by day and model; look for one principal or venture dominating.
+- Cost Explorer month-to-date and last month by service (or `python ops/aws/inventory.py` locally with
+  read-only credentials; its CI workflow used the deleted stage-0 key).
+- **Admin → Usage**: spend by day, model and purpose; look for one principal or venture dominating.
 - Aurora is pausing: CloudWatch metric `AWS/RDS ServerlessDatabaseCapacity` for `foundry-ascent` should drop
   to 0 overnight:
   ```bash
@@ -98,18 +124,15 @@ accounts whose Lambda concurrency quota is only 10), `api.memoryMb` (1024), `api
 ## When Aurora does not pause
 
 Any database call wakes the cluster and restarts the 10-minute idle timer: signed-in users, sign-in
-attempts (valid or not), worker jobs (document ingestion, distillation), the deploy-time migrate resource,
-the deploy smoke test's sign-in check, evals runs, and the platform admin's `GET /api/v1/admin/health`.
-The public `GET /api/v1/health` does **not**: it never queries the database, so uptime monitors may poll
-it. Nor may the 15-minute distillation sweep: its handler is required to leave a paused cluster alone
-when there is nothing to distill ([ADR-0018](../architecture/adr/0018-veir-knowledge-pools.md#cost)). If
-capacity never reaches 0:
+attempts (valid or not), worker jobs (document ingestion, distillation, daily maintenance), the
+deploy-time migrate resource, the deploy smoke test's sign-in check, evals runs, and the platform admin's
+`GET /api/v1/admin/health`. The public `GET /api/v1/health` does **not**: it never queries the database, so
+uptime monitors may poll it. Distillation jobs follow conversations (a delayed job after each turn, one at
+the end), so they only run while people talk. If capacity never reaches 0:
 
 1. Find the caller: API logs (`/aws/lambda/FoundryAscent-Api`, request ids and paths), worker logs
-   (`/aws/lambda/FoundryAscent-Worker`, job types) and the jobs queue depth. A worker log line for every
-   `distill_sweep` that is followed by database activity on a quiet night means the sweep is waking the
-   cluster: set `distillation.sweepEnabled` to `false` in `infra/cdk/config/production.json` and deploy
-   (conversations are then distilled when they end or when the next one starts), then fix the handler.
+   (`/aws/lambda/FoundryAscent-Worker`, job types) and the jobs queue depth. Check that the
+   `DistillSweep` schedule is still `DISABLED` (EventBridge Scheduler console).
 2. Bots hammering `POST /api/v1/auth/sign-in`: the per-IP lockout answers without a model call, but each
    attempt still touches the database; treat a sustained stream as an incident
    ([incident response](incident-response.md)).
@@ -117,9 +140,10 @@ capacity never reaches 0:
 
 ## When a cap is hit
 
-Founders see "daily AI budget reached; resumes at midnight UTC". Decide deliberately: raise the cap in
-**Admin → Settings** (audited) if the usage is legitimate, or leave it and investigate (abuse, a loop,
-a leaked code → [incident response](incident-response.md)).
+Founders see "Today’s AI usage limit has been reached. Coaching resumes tomorrow." (`429
+spend_cap_reached`, worded in `apps/web/src/lib/api/errors.ts`). Decide deliberately: raise the cap in
+**Admin → Settings** (audited) if the usage is legitimate, and then `speech.dailyAlarmUsd` to match, or
+leave it and investigate (abuse, a loop, a leaked code → [incident response](incident-response.md)).
 
 ## Cost of a deploy
 

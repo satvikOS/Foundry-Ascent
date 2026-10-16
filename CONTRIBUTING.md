@@ -77,10 +77,11 @@ they differ, the system design wins. Set up your machine with the
 
 - Workflow actions are pinned to full commit SHAs with the version in a trailing comment; Dependabot
   proposes updates weekly. Never reference an action by a moving tag.
-- Workflows get the least `permissions` they need. AWS credentials reach only `deploy.yml` (stage-0 key
-  or, from stage 1, OIDC limited to `main` and the `production` environment) and the manually dispatched
-  stage-0 workflows (`platform-*.yml`, `ops-aws-*.yml`), never during dependency installation. Workflows
-  that change CloudFormation share one concurrency group (`deploy-production`).
+- Workflows get the least `permissions` they need. AWS credentials reach only `deploy.yml`, through GitHub
+  OIDC limited to the `production` environment (deployment branch `main`), never during dependency
+  installation. The stage-0 workflows (`platform-*.yml`, `ops-aws-*.yml`) have had no working credentials
+  since the access key was deleted. Workflows that change CloudFormation share one concurrency group
+  (`deploy-production`).
 - Installs use `pnpm install --frozen-lockfile`; update `pnpm-lock.yaml` only through `pnpm` commands.
 
 ## Reporting security issues

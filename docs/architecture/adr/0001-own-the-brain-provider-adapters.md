@@ -1,6 +1,6 @@
 # ADR-0001: Own the coaching brain; integrate providers through adapters
 
-- **Status:** Accepted
+- **Status:** Accepted (amended 2026-10-16: [AWS service adapters](#amendment-2026-10-16-aws-service-adapters))
 - **Date:** 2026-10-05
 - **Deciders:** Platform owner (Satvik Sathish Adyanthaya)
 - **Blueprint basis:** 03 §1 "Architecture decisions at a glance", §10 "Avatar and speech provider
@@ -53,6 +53,18 @@ ADR-0010 and will follow the same rule.
 - Gateway unit tests per provider (`packages/ai/src/gateway/*.test.ts`) and router fallback tests.
 - Every turn records `model_id`, tokens, cost and latency (`turns`, `usage_ledger`), so a vendor change
   is visible per response.
+
+## Amendment 2026-10-16: AWS service adapters
+
+The rule is that domain code never imports a vendor SDK; it does not require every adapter to live in
+`packages/ai`. Model vendors stay there (`ModelGateway`: Bedrock Runtime, Mantle). AWS infrastructure
+services are adapters of the API runtime instead: they implement ports that `packages/core` declares
+(`ObjectStore`, `JobQueue`, `SpeechSynthesizer`, and the speech-to-text grant for calls), live in
+`apps/api/src/adapters` and are wired per process in `apps/api/src/runtime`, with in-memory or local
+implementations for development and tests. That covers S3 (presigned uploads), SQS (jobs), Amazon Polly
+(call speech, ADR-0010) and the Amazon Transcribe streaming URL presigner (ADR-0010). Their SDKs are
+declared by `apps/api/package.json` only, so `packages/core` still cannot resolve them. Moving them into
+`packages/ai` would put storage and queues behind a model package for no isolation gain.
 
 ## Revisit trigger
 

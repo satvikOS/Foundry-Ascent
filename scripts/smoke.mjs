@@ -7,6 +7,9 @@
  *
  * Checks, in order (each one independent, all reported):
  *   1. GET /                         200 text/html with the security headers (CSP, HSTS, nosniff, DENY)
+ *                                    and the voice-call edge policy: Permissions-Policy microphone=(self)
+ *                                    with the camera off, CSP media-src 'self' blob:, and a connect-src of
+ *                                    exactly 'self', the documents bucket and Amazon Transcribe streaming
  *   2. GET /assets/<entry>.js        200 JavaScript, immutable caching
  *   3. GET /api/v1/health            200 JSON, status ok/degraded [+ the deployed version]. The public
  *                                    health route never queries the database (so polling it cannot keep
@@ -14,7 +17,7 @@
  *   4. POST /api/v1/auth/sign-in     401 problem+json `invalid_access_code` for a random code, no cookie.
  *                                    The first check that reaches Aurora (Data API): it waits for a resume
  *                                    from auto-pause (503 database_resuming + Retry-After, or a 504).
- *   5. GET /<tenant>/app/ventures    200 index.html (SPA deep link rewrite)
+ *   5. GET /<tenant>/app/ventures    200 index.html (SPA deep link rewrite), same headers as check 1
  *   6. GET /api/v1/<unknown>         4xx problem+json (API errors are never rewritten to the SPA)
  *
  * Environment:
@@ -24,6 +27,7 @@
  *   SMOKE_ALLOW_HTTP=1      accept an http:// base URL (local runs)
  *   SMOKE_RETRY_DELAY_MS    pause between first-contact retries (default 5000)
  *   SMOKE_FIRST_CONTACT_TIMEOUT_S  how long the first requests retry 403/404/5xx and network errors (default 180)
+ *   SMOKE_EDGE_POLICY_TIMEOUT_S    how long pages retry a stale voice-call edge policy (default 600)
  *   GITHUB_STEP_SUMMARY     when set, a results table is appended to it
  *
  * Output is status codes, request ids and timings only: response bodies are never printed.
@@ -44,6 +48,11 @@ const DATABASE_REQUEST_TIMEOUT_MS = 65_000;
 /** A new distribution can take a few minutes to resolve everywhere; only the first requests wait. */
 const FIRST_CONTACT_TIMEOUT_S = 180;
 /**
+ * A changed response-headers policy keeps reaching CloudFront edge locations for several minutes after the
+ * stack update completes, so a page may still carry the previous policy: retried this long from the start.
+ */
+const EDGE_POLICY_TIMEOUT_S = 600;
+/**
  * HTTP statuses retried during the first-contact window: 5xx, and 403 / 404, which a freshly created or
  * updated distribution or S3 origin briefly returns while the configuration and the SPA objects propagate.
  */
@@ -51,6 +60,15 @@ const FIRST_CONTACT_RETRY_STATUSES = new Set([403, 404]);
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 const MIN_HSTS_SECONDS = 31_536_000;
 const CSP_DIRECTIVES = ["default-src 'self'", "frame-ancestors 'none'", "object-src 'none'"];
+/**
+ * Voice calls (ADR-0010; infra/cdk/src/constructs/edge.ts): the microphone for this origin only and the
+ * camera off; synthesized speech plays from blob: URLs; the browser may connect to the documents bucket
+ * (presigned uploads) and to Amazon Transcribe streaming (presigned speech-to-text), and nowhere else.
+ */
+const PERMISSIONS = { microphone: '(self)', camera: '()' };
+const MEDIA_SRC = "'self' blob:";
+const SPEECH_TO_TEXT_ORIGIN = 'wss://transcribestreaming.us-east-1.amazonaws.com:8443';
+const UPLOAD_ORIGIN = /^https:\/\/[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]\.s3\.us-east-1\.amazonaws\.com$/;
 
 class CheckError extends Error {}
 
@@ -179,8 +197,95 @@ function expectContentType(res, expected) {
 }
 
 /**
+ * `name value value; name value` → Map of name → value list (CSP), or `a=(x), b=()` → Map of a → `(x)`.
+ * @param {string} header
+ * @param {';' | ','} separator
+ */
+function directives(header, separator) {
+  /** @type {Map<string, string[]>} */
+  const map = new Map();
+  for (const part of header.split(separator)) {
+    const [name, ...values] = part.trim().split(separator === ';' ? /\s+/ : /=/);
+    if (name) map.set(name.toLowerCase(), values);
+  }
+  return map;
+}
+
+/**
+ * What is wrong with the voice-call edge policy of a page response (empty when it is right).
+ * @param {string} csp
+ * @param {string} permissionsPolicy
+ */
+function edgePolicyProblems(csp, permissionsPolicy) {
+  const problems = [];
+  const features = directives(permissionsPolicy, ',');
+  for (const [feature, allow] of Object.entries(PERMISSIONS)) {
+    const actual = features.get(feature)?.join('=');
+    if (actual !== allow)
+      problems.push(`Permissions-Policy ${feature}=${actual ?? 'missing'}, expected ${allow}`);
+  }
+  const policy = directives(csp, ';');
+  const media = policy.get('media-src')?.join(' ');
+  if (media !== MEDIA_SRC) problems.push(`CSP media-src "${media ?? 'missing'}", expected "${MEDIA_SRC}"`);
+  const connect = policy.get('connect-src') ?? [];
+  const uploads = connect.filter((source) => UPLOAD_ORIGIN.test(source));
+  const unexpected = connect.filter(
+    (source) => source !== "'self'" && source !== SPEECH_TO_TEXT_ORIGIN && !UPLOAD_ORIGIN.test(source),
+  );
+  if (!connect.includes("'self'")) problems.push("CSP connect-src lacks 'self'");
+  if (uploads.length !== 1)
+    problems.push(`CSP connect-src has ${uploads.length} documents-bucket origins, expected 1`);
+  if (!connect.includes(SPEECH_TO_TEXT_ORIGIN))
+    problems.push(`CSP connect-src lacks ${SPEECH_TO_TEXT_ORIGIN}`);
+  if (unexpected.length > 0) problems.push(`CSP connect-src allows ${unexpected.join(' ')}`);
+  return problems;
+}
+
+/**
+ * GET a page until its voice-call edge policy is current or `deadline` passes, then return the last response
+ * (its headers are asserted by the caller). 403/404/5xx and network errors are retried until
+ * `firstContactDeadline`.
+ * @param {URL} url
+ * @param {{ deadline: number, firstContactDeadline: number, retryDelayMs: number }} opts
+ * @returns {Promise<{ res: Response, attempts: number }>}
+ */
+async function fetchPage(url, opts) {
+  let attempts = 0;
+  for (;;) {
+    attempts += 1;
+    /** @type {Response} */
+    let res;
+    try {
+      res = await request(url);
+    } catch (err) {
+      // DNS of a new distribution, connection resets: retry until the first-contact deadline.
+      if (Date.now() > opts.firstContactDeadline) throw err;
+      await sleep(opts.retryDelayMs);
+      continue;
+    }
+    if (isTransientFirstContactStatus(res.status) && Date.now() <= opts.firstContactDeadline) {
+      await res.body?.cancel();
+      await sleep(opts.retryDelayMs);
+      continue;
+    }
+    const stale =
+      res.status === 200 &&
+      edgePolicyProblems(
+        res.headers.get('content-security-policy') ?? '',
+        res.headers.get('permissions-policy') ?? '',
+      ).length > 0;
+    if (stale && Date.now() <= opts.deadline) {
+      await res.body?.cancel();
+      await sleep(opts.retryDelayMs);
+      continue;
+    }
+    return { res, attempts };
+  }
+}
+
+/**
  * @param {Response} res
- * @param {{ page: boolean }} opts  page responses also need the CSP and frame headers
+ * @param {{ page: boolean }} opts  page responses also need the CSP, frame and voice-call headers
  */
 function expectSecurityHeaders(res, opts) {
   const h = res.headers;
@@ -198,6 +303,7 @@ function expectSecurityHeaders(res, opts) {
     }
     if ((h.get('x-frame-options') ?? '').toUpperCase() !== 'DENY') problems.push('X-Frame-Options');
     if (!h.get('referrer-policy')) problems.push('Referrer-Policy missing');
+    problems.push(...edgePolicyProblems(csp, h.get('permissions-policy') ?? ''));
   }
   if (problems.length > 0) fail(`security headers: ${problems.join('; ')}`);
 }
@@ -268,6 +374,12 @@ async function main() {
   const firstContactDeadline =
     Date.now() + positiveNumberEnv('SMOKE_FIRST_CONTACT_TIMEOUT_S', FIRST_CONTACT_TIMEOUT_S) * 1000;
   const retryDelayMs = positiveNumberEnv('SMOKE_RETRY_DELAY_MS', 5_000);
+  // Pages (/ and the deep link) also wait out a stale voice-call edge policy (EDGE_POLICY_TIMEOUT_S).
+  const pageFetch = {
+    deadline: Date.now() + positiveNumberEnv('SMOKE_EDGE_POLICY_TIMEOUT_S', EDGE_POLICY_TIMEOUT_S) * 1000,
+    firstContactDeadline,
+    retryDelayMs,
+  };
 
   /** @type {string | undefined} */
   let indexHtml;
@@ -275,34 +387,15 @@ async function main() {
   let entryScript;
 
   await check('GET / serves the SPA with security headers', async () => {
-    const deadline = firstContactDeadline;
-    let attempt = 0;
-    for (;;) {
-      attempt += 1;
-      /** @type {Response} */
-      let res;
-      try {
-        res = await request(new URL('/', base));
-      } catch (err) {
-        // DNS of a new distribution, connection resets: retry until the first-contact deadline.
-        if (Date.now() > deadline) throw err;
-        await sleep(retryDelayMs);
-        continue;
-      }
-      if (isTransientFirstContactStatus(res.status) && Date.now() <= deadline) {
-        await res.body?.cancel();
-        await sleep(retryDelayMs);
-        continue;
-      }
-      expectStatus(res, 200);
-      expectContentType(res, 'text/html');
-      // Read the page before the header assertions so the later checks still get index.html.
-      indexHtml = await res.text();
-      entryScript = /<script[^>]+src="(\/assets\/[^"]+\.js)"/.exec(indexHtml)?.[1];
-      expectSecurityHeaders(res, { page: true });
-      if (!indexHtml.includes('id="root"')) fail('index.html has no #root element');
-      return `HTTP 200, CSP + HSTS present${attempt > 1 ? ` (after ${attempt} attempts)` : ''}`;
-    }
+    const { res, attempts } = await fetchPage(new URL('/', base), pageFetch);
+    expectStatus(res, 200);
+    expectContentType(res, 'text/html');
+    // Read the page before the header assertions so the later checks still get index.html.
+    indexHtml = await res.text();
+    entryScript = /<script[^>]+src="(\/assets\/[^"]+\.js)"/.exec(indexHtml)?.[1];
+    expectSecurityHeaders(res, { page: true });
+    if (!indexHtml.includes('id="root"')) fail('index.html has no #root element');
+    return `HTTP 200, CSP + HSTS + voice-call policy present${attempts > 1 ? ` (after ${attempts} attempts)` : ''}`;
   });
 
   await check('GET entry script is served immutable', async () => {
@@ -405,7 +498,7 @@ async function main() {
   });
 
   await check(`GET /${tenant}/app/ventures serves the SPA (deep link)`, async () => {
-    const res = await request(new URL(`/${tenant}/app/ventures`, base));
+    const { res } = await fetchPage(new URL(`/${tenant}/app/ventures`, base), pageFetch);
     expectStatus(res, 200);
     expectContentType(res, 'text/html');
     expectSecurityHeaders(res, { page: true });

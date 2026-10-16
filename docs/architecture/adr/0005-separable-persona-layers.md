@@ -1,6 +1,7 @@
 # ADR-0005: Separable, versioned persona layers
 
-- **Status:** Accepted
+- **Status:** Accepted (amended 2026-10-16: fictional vEIR personas and voice; see
+  [Amendment](#amendment-2026-10-16))
 - **Date:** 2026-10-05
 - **Deciders:** Platform owner
 - **Blueprint basis:** 03 §1 "Persona", §9 "EIR persona and likeness pipeline" (release criteria), §14

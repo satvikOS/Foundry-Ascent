@@ -8,22 +8,24 @@ Blueprint 01 §7 requires that Ain and the EIR can suspend the system **without 
 intervention**. Levels 1–3 below are product features; level 4 is for when the product itself cannot be
 trusted or reached. Every product action is written to the audit log with the actor and reason.
 
-| Level | Scope                            | Who                      | Effect                                                                                | Reversal            |
-| ----- | -------------------------------- | ------------------------ | ------------------------------------------------------------------------------------- | ------------------- |
-| 1     | One persona (e.g. Foundry Guide) | program lead, linked EIR | New sessions and turns using it are refused (`423 persona_suspended`)                 | Resume              |
-| 2     | AI spend                         | platform admin           | Turns refused once today's spend reaches the cap (`429 spend_cap_reached`)            | Raise cap           |
-| 3     | All AI (global)                  | platform admin           | Session start and every turn refused (`503 ai_disabled`); no model or embedding calls | Re-enable           |
-| 4     | Whole API                        | account administrator    | Every `/api/*` request throttled; SPA still loads but cannot sign in                  | Restore concurrency |
+| Level | Scope                                 | Who                      | Effect                                                                                                         | Reversal            |
+| ----- | ------------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------- | ------------------- |
+| 1     | One persona (e.g. Corin's vEIR)       | program lead, linked EIR | New conversations, turns and calls with it are refused (`423 persona_suspended`); its live calls end           | Resume              |
+| 2     | AI spend                              | platform admin           | Turns, speech and distillation refused once today's spend reaches the cap (`429 spend_cap_reached`)            | Raise cap           |
+| 2a    | Voice calls (`callsEnabled`)          | platform admin           | New calls refused; live calls end at their next heartbeat (≤ 15 s). Chat keeps working                         | Re-enable           |
+| 2b    | Streamed replies (`streamingEnabled`) | platform admin           | Replies arrive whole instead of sentence by sentence; nothing else changes                                     | Re-enable           |
+| 3     | All AI (global)                       | platform admin           | Conversation start, every turn and every call refused (`503 ai_disabled`); no model, embedding or speech calls | Re-enable           |
+| 4     | Whole API                             | account administrator    | Every `/api/*` request throttled; the SPA still loads but cannot sign in                                       | Restore concurrency |
 
 All levels take effect on the next request: settings and persona status are read from the database on
-every session start and every turn (no cache). Memory, documents, escalations and history are never
-modified by any level.
+every conversation start, every turn and every call heartbeat (no cache). Memory, documents, escalations
+and history are never modified by any level.
 
 ## Level 1 — suspend a persona
 
 1. Sign in → **EIR studio → Personas** → select the persona → **Suspend**. A reason is required
    (3–500 characters; it is stored in the audit log, so describe the issue, not the content).
-2. Verify: the persona shows _Suspended_; starting a session on a venture assigned to it shows the
+2. Verify: the persona shows _Suspended_; starting a conversation on a venture assigned to it shows the
    suspension notice.
 3. API equivalent (signed-in session cookie; CloudFront needs the body hash):
    ```bash
@@ -42,31 +44,46 @@ release, which supersedes the faulty one.
 
 ## Level 2 — tighten the spend caps
 
-**Admin → Settings**: daily AI spend cap, global and per person (USD, UTC day; checked on session start,
-every turn and every recap). A global cap of `0` blocks all coaching without changing `aiEnabled`
-(embeddings for document ingestion still run; use level 3 to stop those too). See
-[cost controls](cost-controls.md).
+**Admin → Settings**: daily AI spend cap, global and per person (USD, UTC day; checked on conversation
+start, every turn, every spoken reply and every distillation). A global cap of `0` blocks all coaching
+without changing `aiEnabled`. See [cost controls](cost-controls.md); after raising the global cap, raise
+`speech.dailyAlarmUsd` to match.
+
+## Level 2a and 2b — switch off calls or streaming
+
+Use **2a** when calls misbehave (speech, recognition, a call vendor or the call minutes) and chat should
+stay up; use **2b** when streamed sentences misbehave and whole, fully validated replies are enough.
+Through the API (same headers as above; the change is audited):
+
+```bash
+BODY='{"callsEnabled": false}'        # or '{"streamingEnabled": false}'
+curl -sS -X PATCH "https://<site>/api/v1/admin/settings" \
+  -H 'content-type: application/json' -H 'x-requested-with: foundry-ascent' \
+  -H "x-amz-content-sha256: $(printf '%s' "$BODY" | sha256sum | cut -d' ' -f1)" \
+  -H "cookie: fa_session=<token>" --data "$BODY"
+```
+
+Re-enable with `true`. Conversations, including the transcripts of earlier calls, stay readable.
 
 ## Level 3 — global AI kill switch
 
-1. **Admin → Settings → AI enabled → off → Save.** API: `PATCH /api/v1/admin/settings` with
+1. **Admin → Settings → AI kill switch**: turn off **AI coaching enabled**, then confirm **Pause AI
+   coaching** in the "Pause AI coaching for everyone?" dialog. API: `PATCH /api/v1/admin/settings` with
    `{"aiEnabled": false}` (same headers as above).
-2. Effect: no new sessions or turns; session recaps are skipped; document ingestion still stores text
-   chunks but skips embeddings (lexical retrieval only). Founders can still read memory, documents and
-   escalations, and escalations still route to humans.
+2. Effect: no new conversations, turns or calls, and live calls end at their next heartbeat; recaps and
+   distillation are skipped; document ingestion still stores text chunks but skips embeddings (lexical
+   retrieval only). Founders can still read memory, documents and escalations, and escalations still
+   route to humans.
 3. Communicate: tell founders and EIRs the coach is paused and how to reach the program team.
 4. Re-enable with the same toggle after the incident review.
 
-### Infrastructure off switches (PR + deploy)
+### Infrastructure off switch (PR + deploy)
 
-Two features also have a switch in `infra/cdk/config/production.json`, for when the in-product switch is
-not enough (for example a defect that bypasses it). Each is a one-line change plus a normal deploy
-(about 2 minutes after CI):
-
-- `speech.enabled: false` removes the API role's Amazon Polly permission and sets `SPEECH_ENABLED=false`:
-  calls cannot speak even if application code tried to.
-- `distillation.sweepEnabled: false` disables the 15-minute distillation sweep schedule (conversations are
-  then distilled only when they end or when the next one starts).
+`speech.enabled: false` in `infra/cdk/config/production.json` is for when the in-product switches are
+not enough (for example a defect that bypasses them). It removes the API role's Amazon Polly and Amazon
+Transcribe permissions and sets `SPEECH_ENABLED=false`, so the API offers neither and calls can neither
+listen nor speak even if application code tried to. Transcribe sockets already open run until the browser
+closes them. It is a one-line change plus a normal deploy (about 2 minutes after CI).
 
 ## Level 4 — break-glass (product unavailable or not trusted)
 

@@ -435,7 +435,8 @@ Text precedence: `text` prop → `Me.disclosure` → `DEFAULT_DISCLOSURE`. It is
 
 - CSP compatibility: the build emits no inline scripts and no `data:` URIs; sonner's runtime
   `<style>` injection is removed at build time (its CSS ships in our stylesheet). Radix's modal
-  scroll-lock still attempts to inject a `<style>`; under `style-src 'self'` it is blocked harmlessly
-  (an equivalent rule is in `globals.css`).
+  scroll-lock still injects a `<style>`, which the production CSP allows (`'unsafe-inline'` in
+  `style-src`, `infra/cdk/src/constructs/edge.ts`); an equivalent rule is in `globals.css`, so the page
+  stays correct if `'unsafe-inline'` is ever removed.
 - Uploads go directly to S3 with the presigned URL (no cookies, no CSRF/SHA headers).
 - `localStorage` holds UI preferences and a "probably signed in" hint only — never tokens or content.

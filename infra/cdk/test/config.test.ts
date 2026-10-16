@@ -27,7 +27,7 @@ const valid = (): Record<string, unknown> => ({
   },
   aurora: { minCapacityAcu: 0, maxCapacityAcu: 2, autoPauseMinutes: 10, engineVersion: '16.13' },
   api: { reservedConcurrency: 10, memoryMb: 1024, timeoutSeconds: 60 },
-  speech: { enabled: true, defaultVoice: 'Ruth', engine: 'neural', note: 'free text is ignored' },
+  speech: { enabled: true, engine: 'neural', dailyAlarmUsd: 2.5, note: 'ignored' },
   distillation: { sweepEnabled: true, sweepIntervalMinutes: 20 },
   logRetentionDays: 30,
 });
@@ -53,14 +53,16 @@ describe('config', () => {
     // Unreserved: some accounts have a total concurrency quota of 10, which any reservation would break.
     expect(config.api.reservedConcurrency).toBeNull();
     expect(config.worker.reservedConcurrency).toBeNull();
-    // Voice calls on Polly's generative engine (Matthew has a generative voice in us-east-1).
-    expect(config.speech).toEqual({ enabled: true, defaultVoice: 'Matthew', engine: 'generative' });
-    expect(config.distillation).toEqual({ sweepEnabled: true, sweepIntervalMinutes: 15 });
+    // Voice calls on Polly's neural engine (lower latency, half the price, no generative speech caveat).
+    expect(config.speech).toEqual({ enabled: true, engine: 'neural', dailyAlarmUsd: 15 });
+    // The sweep would keep Aurora awake; distillation runs from jobs the API enqueues (ADR-0018).
+    expect(config.distillation).toEqual({ sweepEnabled: false, sweepIntervalMinutes: 15 });
   });
 
   it('reads the speech and distillation sections', () => {
     const config = parseConfig(valid());
-    expect(config.speech).toEqual({ enabled: true, defaultVoice: 'Ruth', engine: 'neural' });
+    expect(config.speech).toEqual({ enabled: true, engine: 'neural', dailyAlarmUsd: 2.5 });
+    expect(parseConfig(withChange(['speech', 'engine'], 'generative')).speech.engine).toBe('generative');
     expect(config.distillation).toEqual({ sweepEnabled: true, sweepIntervalMinutes: 20 });
   });
 
@@ -122,11 +124,19 @@ describe('config', () => {
     [['models', 'luna', 'modelId'], 'GPT 6', /models.luna.modelId/],
     [['speech'], 'on', /\$\.speech must be an object/],
     [['speech', 'enabled'], 'true', /speech.enabled/],
-    [['speech', 'engine'], 'standard', /speech.engine must be one of generative, neural/],
+    [['speech', 'engine'], 'standard', /speech.engine must be one of neural, generative/],
     [['speech', 'engine'], 'long-form', /speech.engine/],
-    [['speech', 'defaultVoice'], 'matthew', /speech.defaultVoice/],
-    [['speech', 'defaultVoice'], 'Matthew Neural', /speech.defaultVoice/],
-    [['speech', 'defaultVoice'], undefined, /speech.defaultVoice/],
+    // The platform voice is packages/core/speech-voices.json, which the API reads; a voice here reaches nobody.
+    [
+      ['speech', 'defaultVoice'],
+      'Matthew',
+      /speech.defaultVoice is not read: the platform voice is platformVoice/,
+    ],
+    [['speech', 'dailyAlarmUsd'], undefined, /speech.dailyAlarmUsd/],
+    [['speech', 'dailyAlarmUsd'], 0, /speech.dailyAlarmUsd/],
+    [['speech', 'dailyAlarmUsd'], 101, /speech.dailyAlarmUsd/],
+    [['speech', 'dailyAlarmUsd'], 1.005, /speech.dailyAlarmUsd/],
+    [['speech', 'dailyAlarmUsd'], '15', /speech.dailyAlarmUsd/],
     [['distillation', 'sweepEnabled'], 1, /distillation.sweepEnabled/],
     [['distillation', 'sweepIntervalMinutes'], 1, /distillation.sweepIntervalMinutes/],
     [['distillation', 'sweepIntervalMinutes'], 90, /distillation.sweepIntervalMinutes/],

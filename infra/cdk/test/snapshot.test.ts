@@ -1,7 +1,7 @@
 /**
  * Template snapshots (system design §11: "cdk synth + cdk-nag + snapshot"). Content hashes (assets,
  * migrations checksum) are normalised so the snapshots change only when the infrastructure does.
- * Review the diff, then update with `pnpm --filter @foundry/infra test -- -u`.
+ * Review the diff, then update with `pnpm --filter @foundry/infra test -u`.
  */
 import { describe, expect, it } from 'vitest';
 import { defaultSynth } from './helpers.js';

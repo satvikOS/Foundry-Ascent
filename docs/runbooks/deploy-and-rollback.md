@@ -25,9 +25,8 @@ push to main ──► CI (quality · database · infra · python · e2e) ──
   ~30 minutes (Aurora ~15, CloudFront ~10).
 - Automatic deploys ship only the tip of main. If CI runs of two pushes finish out of order, the older one
   is skipped with a notice (the newer commit's CI run deploys it).
-- Deploy, **Platform - deploy data stack** and **Ops - retire stage-0 AWS access** share the concurrency
-  group `deploy-production`: a run waits while another CloudFormation deployment is in progress (GitHub
-  keeps one waiting run per group; a newer one replaces it).
+- Deploy runs in the concurrency group `deploy-production`: a run waits while another deployment is in
+  progress (GitHub keeps one waiting run per group; a newer one replaces it).
 - **GitHub OIDC provider.** The Foundation stack creates the provider for
   `token.actions.githubusercontent.com` unless it is given an existing one to import (context
   `githubOidcProviderArn`); an account holds one provider per URL. Before `cdk deploy`, the step
@@ -35,10 +34,12 @@ push to main ──► CI (quality · database · infra · python · e2e) ──
   contains an `AWS::IAM::OIDCProvider`. It passes the context only when a provider exists **and** the
   stack does not manage it. First deploy: created (or imported if one already exists). Re-deploys: a
   managed provider stays managed, an imported one stays imported, so CloudFormation never deletes a
-  provider it manages. Under stage 1 the deploy role may not list providers; the step then uses the
-  provider's fixed ARN (it must exist, since the role was just assumed through it). The job summary shows
-  which case applied.
-- `scripts/smoke.mjs` then checks the live site: security headers on `/`, an immutable asset,
+  provider it manages. The deploy role may not list providers, so the step uses the provider's fixed ARN
+  (it must exist, since the role was just assumed through it). The job summary shows which case applied.
+- `scripts/smoke.mjs` then checks the live site: security headers on `/` (including
+  `Permissions-Policy: … microphone=(self)` with the camera off, `media-src 'self' blob:`, and a
+  `connect-src` of exactly the documents bucket and Amazon Transcribe streaming; pages that still carry
+  the previous headers policy are retried for up to 10 minutes while it reaches every edge), an immutable asset,
   `/api/v1/health` **reporting the deployed commit** (the public health route never queries the
   database), a signed `POST /api/v1/auth/sign-in` with an invalid code → `401 invalid_access_code` (the
   first request that reaches Aurora: it waits through a resume from auto-pause, honouring
@@ -49,11 +50,12 @@ push to main ──► CI (quality · database · infra · python · e2e) ──
 
 Stage 1 (GitHub OIDC). All three stacks are deployed and every deploy assumes
 `FoundryAscent-GitHubDeploy` through OIDC (the job summary shows _AWS access: GitHub OIDC (stage 1)_).
-The stage-0 access key was deleted on 2026-10-06, so the workflows that still read
-`AWS_ACCESS_KEY_ID` (**Platform - deploy data stack**, **Ops - AWS inventory**, **Ops - AWS cleanup**,
-**Ops - verify AWS access**, **Ops - Bedrock live probe**, **Ops - retire stage-0 AWS access**) can no
-longer authenticate. Changes to the Data stack ship with the normal **Deploy**; review its diff first so
-the cluster, secret and buckets are updated, never replaced:
+The stage-0 access key was deleted on 2026-10-06, so the workflows that used it (**Platform - deploy
+data stack**, **Ops - AWS inventory**, **Ops - AWS cleanup**, **Ops - verify AWS access**, **Ops - retire
+stage-0 AWS access**, **Ops - Bedrock live probe**) are retired: a dispatched run stops at its first step
+and says what to use instead. History: [ADR-0016](../architecture/adr/0016-staged-iam-github-oidc.md).
+Changes to the Data stack ship with the normal **Deploy**; review its diff first so the cluster, secret
+and buckets are updated, never replaced:
 
 ```bash
 pnpm --filter @foundry/web build
@@ -64,13 +66,17 @@ pnpm --filter @foundry/infra exec cdk diff FoundryAscent-Data -c appVersion=$(gi
 
 The deploy role cannot call models or synthesize speech, by design: it only assumes the CDK bootstrap
 roles and reads CloudFormation, platform Lambda logs and Cost Explorer, and any job in the `production`
-environment can assume it. So **Ops - Bedrock live probe** (stage-0 key) no longer runs and was not
-moved to OIDC. What still exercises the live paths:
+environment can assume it. So **Ops - Bedrock live probe** is retired rather than moved to OIDC. What
+exercises the live paths:
 
 - every deploy's migrate resource backfills Titan embeddings (counts only in
   `/aws/lambda/FoundryAscent-Migrate`; a failure never fails the deploy);
 - a signed-in coaching turn or call in production, or the [evals](evals.md) harness against the site
-  (spend lands in **Admin → Usage**).
+  (spend lands in **Admin → Usage**);
+- on demand, from a checkout with credentials allowed to invoke the models (prints ids, outcomes and
+  timings only):
+  `MODEL_PROVIDER=bedrock BEDROCK_REGION=us-east-1 MODEL_PRIMARY_ID=… MODEL_FALLBACK_ID=… MODEL_EMBEDDINGS_ID=… pnpm --filter @foundry/api exec tsx src/scripts/bedrock-probe.ts`
+  with the ids from `infra/cdk/config/production.json` → `models`.
 
 To probe from CI again, add a separate role to the Foundation stack in a reviewed change: trusted only
 from a dedicated GitHub environment (for example `ops-probe`, its own OIDC `sub`), allowed
@@ -80,28 +86,24 @@ speech, `polly:SynthesizeSpeech` pinned with `aws:RequestedRegion`. Never widen
 
 ## One-time setup
 
+Done for production; repeat for a new account. Steps that only the owner can take are in
+[owner actions](owner-actions.md).
+
 1. **Bootstrap** (account administrator in AWS CloudShell): `infra/iam/apply-bootstrap-access.sh`
-   (boundary and stage-0 policy), then `infra/iam/cdk-bootstrap.sh` (`CDKToolkit`); then run
-   **Ops - verify AWS access** (`infra/iam/README.md`). (Done; re-run the script whenever a policy file
-   changes, because the CI user has no IAM write permission.)
+   (boundary), then `infra/iam/cdk-bootstrap.sh` (`CDKToolkit`). Re-run the first script whenever a policy
+   file changes: the deploy role has no IAM write permission.
 2. **GitHub settings** (Settings → Environments → `production`): deployment branches = `main` only
    (**required**: the deploy role trusts only jobs in this environment, so this rule is what keeps other
    branches out); add required reviewers if deploys should wait for a human approval.
-3. **Credentials:** stage 1 = repository secret `AWS_DEPLOY_ROLE_ARN` (see
-   [Switch to OIDC](#switch-to-github-oidc-stage-1)). Stage 0 used the repository secrets
-   `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`; that key is deleted, so the two secrets can be removed.
-4. **Branch protection on main:** require the CI jobs (`quality`, `database`, `infra`, `python`, `e2e`),
-   `Secret scan (gitleaks)` and CodeQL; require review from code owners; no force pushes.
+3. **Credentials:** repository secret `AWS_DEPLOY_ROLE_ARN` = the `GitHubDeployRoleArn` output of
+   `FoundryAscent-Foundation` (a secret keeps the account id masked in the public logs).
+4. **Branch protection on main** (not set today: pushes land directly and only CI gates the deploy):
+   require the CI jobs (`quality`, `database`, `infra`, `python`, `e2e`), `Secret scan (gitleaks)`
+   and CodeQL, and no force pushes. Requiring pull-request reviews also blocks direct pushes to `main`.
 5. **Lambda concurrency:** production reserves none (`api.reservedConcurrency: null`), because a
    reservation fails the deploy (`PutFunctionConcurrency`) on accounts whose regional quota is only 10.
    To reserve later, check Service Quotas → AWS Lambda → _Concurrent executions_ (it must leave 10
    unreserved), then set the number in `infra/cdk/config/production.json` in a PR.
-6. **Data stack first** (optional, already done here): **Platform - deploy data stack** deploys only
-   `FoundryAscent-Data` with the stage-0 key, so Aurora exists before the first full release.
-7. **Cost alerts:** subscribe to the `FoundryAscent-Alarms` topic and create the AWS Budget
-   ([cost controls](cost-controls.md#alarms-and-budgets-one-time-setup-account-administrator)).
-8. **Evals:** create the environment `evals` with the environment secret `FA_OWNER_ACCESS_CODE`, and
-   add the repository variable `FA_SITE_URL` ([evals](evals.md)).
 
 ## Routine operations
 
@@ -113,33 +115,20 @@ speech, `polly:SynthesizeSpeech` pinned with `aws:RequestedRegion`. Never widen
 | Re-run the smoke test only | `node scripts/smoke.mjs https://<distribution>.cloudfront.net` (any machine with Node ≥ 22).                                                                            |
 | Find the site URL          | Deploy job summary, or `aws cloudformation describe-stacks --stack-name FoundryAscent-App --query "Stacks[0].Outputs[?OutputKey=='SiteUrl'].OutputValue" --output text` |
 
-## Switch to GitHub OIDC (stage 1)
-
-1. After the first successful deploy, read the Foundation output:
-   `aws cloudformation describe-stacks --stack-name FoundryAscent-Foundation --query "Stacks[0].Outputs[?OutputKey=='GitHubDeployRoleArn'].OutputValue" --output text`
-2. Settings → Secrets and variables → Actions → **Secrets** → `AWS_DEPLOY_ROLE_ARN` = that ARN (a secret keeps the account id masked in the public logs; a variable also works).
-3. Run **Deploy** manually. The summary must show _AWS access: GitHub OIDC (stage 1)_ and _GitHub OIDC
-   provider: managed by FoundryAscent-Foundation (kept)_ (or _existing provider imported_ if the account
-   already had one before the first deploy).
-4. Retire stage 0 with **Ops - retire stage-0 AWS access**: `mode = plan`, then `mode = retire` with
-   `confirm = RETIRE-STAGE-0` (refused while `AWS_DEPLOY_ROLE_ARN` is unset). It detaches both stage-0
-   policies and deletes every access key of `Foundry-Ascent`, its own last (`infra/iam/README.md`). Then
-   delete the two secrets. Rotate nothing else: no other static credential exists.
-
 ## When a deploy fails
 
-| Symptom                                                          | Meaning and action                                                                                                                                                                                                                                              |
-| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CDK bootstrap missing` / `CDKToolkit is …`                      | The account owner runs `infra/iam/cdk-bootstrap.sh` in CloudShell, then re-run the deploy.                                                                                                                                                                      |
-| `No AWS credentials`                                             | Set the variable (stage 1) or the two secrets (stage 0).                                                                                                                                                                                                        |
-| `cdk deploy` fails, stack `UPDATE_ROLLBACK_COMPLETE`             | CloudFormation restored the previous version; production is unchanged. Read the first `*_FAILED` event: `aws cloudformation describe-stack-events --stack-name FoundryAscent-App --max-items 40`. Fix forward in a PR.                                          |
-| Migrate custom resource failed                                   | Check log group `/aws/lambda/FoundryAscent-Migrate` (identifiers and error codes only). Never edit an applied migration (checksums are verified); add a new migration.                                                                                          |
-| `UPDATE_ROLLBACK_FAILED`                                         | `pnpm --filter @foundry/infra exec cdk rollback FoundryAscent-App` (or console → _Continue update rollback_). Skip resources only when you understand why they failed.                                                                                          |
-| First Data deploy `ROLLBACK_FAILED`                              | Deletion protection kept the new cluster: disable deletion protection on `foundry-ascent`, continue the rollback, re-run.                                                                                                                                       |
-| Smoke: health not ready / version mismatch                       | `/api/v1/health` never answered 200 with the deployed commit: check the App stack status and the `FoundryAscent-Api` function (version = `APP_VERSION`).                                                                                                        |
-| Smoke: sign-in never `401` (503/504 until timeout)               | Aurora did not resume within 120 s, or the Data API fails. Re-run the job once; then check RDS events and `/aws/rds/cluster/foundry-ascent/postgresql`.                                                                                                         |
-| `OIDC provider lookup failed` / `Foundation stack lookup failed` | The step could not tell whether to create, keep or import the provider, so it stopped before any change. Stage 0: the user needs `iam:ListOpenIDConnectProviders` and `cloudformation:DescribeStackResources` (bootstrap-operator policy). Re-run after fixing. |
-| Smoke: headers / deep link / problem+json                        | CloudFront config regression: the new version is live. Roll back (below) or fix forward.                                                                                                                                                                        |
+| Symptom                                                          | Meaning and action                                                                                                                                                                                                                                                                                                                                                                             |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CDK bootstrap missing` / `CDKToolkit is …`                      | The account owner runs `infra/iam/cdk-bootstrap.sh` in CloudShell, then re-run the deploy.                                                                                                                                                                                                                                                                                                     |
+| `No AWS credentials` / `AWS_DEPLOY_ROLE_ARN is not usable`       | Set the repository secret `AWS_DEPLOY_ROLE_ARN` to the deploy role's ARN (or the 12-digit account id).                                                                                                                                                                                                                                                                                         |
+| `cdk deploy` fails, stack `UPDATE_ROLLBACK_COMPLETE`             | CloudFormation restored the previous version; production is unchanged. Read the first `*_FAILED` event: `aws cloudformation describe-stack-events --stack-name FoundryAscent-App --max-items 40`. Fix forward in a PR.                                                                                                                                                                         |
+| Migrate custom resource failed                                   | Check log group `/aws/lambda/FoundryAscent-Migrate` (identifiers and error codes only). Never edit an applied migration (checksums are verified); add a new migration.                                                                                                                                                                                                                         |
+| `UPDATE_ROLLBACK_FAILED`                                         | `pnpm --filter @foundry/infra exec cdk rollback FoundryAscent-App` (or console → _Continue update rollback_). Skip resources only when you understand why they failed.                                                                                                                                                                                                                         |
+| First Data deploy `ROLLBACK_FAILED`                              | Deletion protection kept the new cluster: disable deletion protection on `foundry-ascent`, continue the rollback, re-run.                                                                                                                                                                                                                                                                      |
+| Smoke: health not ready / version mismatch                       | `/api/v1/health` never answered 200 with the deployed commit: check the App stack status and the `FoundryAscent-Api` function (version = `APP_VERSION`).                                                                                                                                                                                                                                       |
+| Smoke: sign-in never `401` (503/504 until timeout)               | Aurora did not resume within 120 s, or the Data API fails. Re-run the job once; then check RDS events and `/aws/rds/cluster/foundry-ascent/postgresql`.                                                                                                                                                                                                                                        |
+| `OIDC provider lookup failed` / `Foundation stack lookup failed` | The step could not tell whether to create, keep or import the provider, so it stopped before any change. Re-run; if it persists, check that the deploy role can still read `FoundryAscent-Foundation` (`cloudformation:DescribeStackResources`).                                                                                                                                               |
+| Smoke: headers / deep link / problem+json                        | CloudFront config regression (the detail names the header or directive, for example a missing `microphone=(self)` or an unexpected `connect-src` host): the new version is live. If the deploy changed the headers policy, re-run the smoke test only (above) before anything else: some edges can take longer than the 10-minute window. If it still fails, roll back (below) or fix forward. |
 
 ## Rollback
 
@@ -182,9 +171,9 @@ stops using a column). If data itself is damaged:
 - No resource replacement of the Aurora cluster, secret or buckets (replacement = data loss risk).
 - Migrations backward compatible; seed changes idempotent (`ON CONFLICT DO NOTHING`).
 - New settings or limits documented in [cost controls](cost-controls.md) when they affect spend.
-- A new scheduled message (`lambda-contract.json` → `worker`) ships together with, or after, the worker
-  code that handles it. The worker drops a message type it does not know (logged as
-  `worker.invalid_message`, never retried), so an early schedule does no harm but logs a warning on every
-  run.
-- Security headers changed (CSP, Permissions-Policy): the diff names exactly the directives intended, and
-  `infra/cdk/test/app.test.ts` pins the new values.
+- A new or newly enabled schedule (`lambda-contract.json` → `worker`) ships only with, or after, the
+  worker code that handles it: the worker drops an unknown message type with a warning on every run. A
+  schedule must not query a paused Aurora when there is nothing to do; that is why `DistillSweep` stays
+  disabled (ADR-0018).
+- Security headers changed (CSP, Permissions-Policy): the diff names exactly the directives intended,
+  `infra/cdk/test/app.test.ts` pins the new values, and `scripts/smoke.mjs` accepts them.

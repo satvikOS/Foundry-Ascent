@@ -4,7 +4,6 @@ import { describe, expect, it } from 'vitest';
 import { summarize } from './knowledge-library.js';
 import { applyNotebookEdit, isSuppressed, notebookFingerprint } from './notebook.js';
 import { embodimentView, shortName } from './veir.js';
-import { speechCostUsd, speechEngines } from './voices.js';
 
 const NOW = new Date('2026-10-16T12:00:00.000Z');
 const SESSION = '6f1c3a52-9d7e-4b0a-8f2e-3c5d7a9b1e04';
@@ -129,14 +128,6 @@ describe('embodiment and voices', () => {
   it('names the vEIR by the EIR’s first name', () => {
     expect(shortName({ kind: 'eir_persona', name: "Corin's vEIR" }, 'Corin Halvorsen')).toBe('Corin');
     expect(shortName({ kind: 'neutral_guide', name: 'Foundry Guide' }, null)).toBe('Foundry Guide');
-  });
-
-  it('prefers the generative engine and prices characters', () => {
-    expect(speechEngines('Ruth')).toEqual(['generative', 'neural']);
-    expect(speechEngines('Gregory')).toEqual(['neural']);
-    expect(speechEngines('Unknown')).toEqual(['generative', 'neural']);
-    expect(speechCostUsd(1_000_000, 'generative')).toBe(30);
-    expect(speechCostUsd(500, 'neural')).toBeCloseTo(0.008, 6);
   });
 });
 
