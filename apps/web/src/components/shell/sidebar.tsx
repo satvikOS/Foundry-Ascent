@@ -242,8 +242,11 @@ export function SidebarContent({
       {ventureId ? (
         <div className="grid shrink-0 gap-px border-t border-sidebar-border px-2 py-2">
           {VENTURE_DESTINATIONS.map((destination) => {
-            const count =
-              destination.id === 'knowledge'
+            // Counts are things to act on (proposals to review, requests for help), which only the venture
+            // team can open; read-only roles see the pages without them.
+            const count = !writable
+              ? undefined
+              : destination.id === 'knowledge'
                 ? venture.data?.pendingMemory
                 : destination.id === 'help'
                   ? venture.data?.openEscalations

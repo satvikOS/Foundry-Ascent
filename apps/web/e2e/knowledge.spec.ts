@@ -78,8 +78,14 @@ test.describe('what the vEIR knows', () => {
     const ventureId = await openKnowledge(page);
     const original = await readNotebook(page.request, ventureId);
     const line = original.founderProfile[0];
-    if (!line || !original.nextOpener) throw new Error('QuietQuad’s seeded notebook is missing');
-    const opener = original.nextOpener;
+    if (!line) throw new Error('QuietQuad’s seeded notebook is missing');
+    // Distillation and deleted conversations legitimately change the opener between runs: give the notebook
+    // one to remove when it has none, and put back whatever was there afterwards.
+    const opener = original.nextOpener ?? 'How did the library-staff interviews go?';
+    if (original.nextOpener === null) {
+      await editNotebook(page.request, ventureId, { action: 'edit_opener', text: opener });
+      await page.reload();
+    }
 
     try {
       await page.getByRole('tab', { name: 'Notebook' }).click();
@@ -124,8 +130,12 @@ test.describe('what the vEIR knows', () => {
           text: line.text,
         });
       }
-      if (current.nextOpener !== opener) {
-        await editNotebook(page.request, ventureId, { action: 'edit_opener', text: opener });
+      if (original.nextOpener === null) {
+        if (current.nextOpener !== null) {
+          await editNotebook(page.request, ventureId, { action: 'remove_opener' });
+        }
+      } else if (current.nextOpener !== original.nextOpener) {
+        await editNotebook(page.request, ventureId, { action: 'edit_opener', text: original.nextOpener });
       }
     }
   });
