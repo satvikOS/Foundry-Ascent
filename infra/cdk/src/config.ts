@@ -53,20 +53,27 @@ export interface PlatformConfig {
     readonly reservedConcurrency: number | null;
   };
   /**
-   * Live voice calls (ADR-0010): the API synthesizes validated vEIR text with Amazon Polly. Optional in the
-   * file; absent means off (no Polly permission, `SPEECH_ENABLED=false`).
+   * Live voice calls (ADR-0010): the browser streams the founder's speech to Amazon Transcribe over a URL the
+   * API presigns, and the API speaks validated vEIR text with Amazon Polly. Optional in the file; absent
+   * means off (no Polly or Transcribe permission, no speech alarms, `SPEECH_ENABLED=false`).
    */
   readonly speech: {
     readonly enabled: boolean;
-    /** Polly voice id for personas without a consented voice of their own (e.g. `Matthew`). */
+    /** Polly voice id for personas without a consented voice of their own; must exist for `engine`. */
     readonly defaultVoice: string;
-    /** Polly engine: `generative` (most natural; a subset of voices) or `neural`. */
+    /** Polly engine: `neural` (default: faster, half the price) or `generative` (see ADR-0010). */
     readonly engine: SpeechEngine;
+    /**
+     * Polly spend per day (USD) above which the daily speech alarm fires: the global daily AI cap
+     * (`platform_settings.daily_usd_cap_global`), which speech is metered against. Keep the two in step.
+     */
+    readonly dailyAlarmUsd: number;
   };
   /**
-   * Knowledge-pool growth (ADR-0018): an EventBridge Scheduler schedule asks the worker every
-   * `sweepIntervalMinutes` to distill conversations that went idle. Optional in the file; absent means the
-   * schedule exists but is disabled.
+   * Knowledge-pool growth (ADR-0018). Distillation is driven by jobs the API enqueues (a delayed message
+   * after each turn, one at session end) plus the daily maintenance backstop. The optional sweep schedule
+   * asks the worker every `sweepIntervalMinutes` to distill idle conversations itself; it ships disabled,
+   * because a query every 15 minutes would keep Aurora from pausing. Absent means disabled.
    */
   readonly distillation: {
     readonly sweepEnabled: boolean;
@@ -76,11 +83,32 @@ export interface PlatformConfig {
 }
 
 /** Polly engines the call pipeline supports (standard voices sound robotic; long-form is not real-time). */
-export const SPEECH_ENGINES = ['generative', 'neural'] as const;
+export const SPEECH_ENGINES = ['neural', 'generative'] as const;
 export type SpeechEngine = (typeof SPEECH_ENGINES)[number];
 
-/** Used when `speech` is absent from the file: speech off; the voice and engine are then never used. */
-const SPEECH_OFF = { enabled: false, defaultVoice: 'Matthew', engine: 'neural' } as const;
+/**
+ * Adult US-English Amazon Polly voices per engine, all available in us-east-1 (Polly developer guide,
+ * "Available voices", checked 2026-10-16). A default voice the engine lacks would fail every
+ * SynthesizeSpeech call at runtime (ValidationException), so synth refuses it.
+ */
+export const POLLY_EN_US_VOICES: Readonly<Record<SpeechEngine, readonly string[]>> = {
+  neural: [
+    'Danielle',
+    'Gregory',
+    'Joanna',
+    'Joey',
+    'Kendra',
+    'Kimberly',
+    'Matthew',
+    'Ruth',
+    'Salli',
+    'Stephen',
+  ],
+  generative: ['Danielle', 'Joanna', 'Matthew', 'Ruth', 'Salli', 'Stephen', 'Tiffany'],
+};
+
+/** Used when `speech` is absent from the file: speech off; the voice, engine and alarm are then never used. */
+const SPEECH_OFF = { enabled: false, defaultVoice: 'Matthew', engine: 'neural', dailyAlarmUsd: 15 } as const;
 /** Used when `distillation` is absent from the file. */
 const DISTILLATION_OFF = { sweepEnabled: false, sweepIntervalMinutes: 15 } as const;
 
@@ -98,8 +126,6 @@ const MODEL_ID = /^[a-z0-9][a-z0-9.:-]{2,127}$/;
 const GITHUB_REPO = /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/;
 const GIT_REF_NAME = /^[A-Za-z0-9._/-]+$/;
 const GITHUB_ID = /^[1-9][0-9]{0,19}$/;
-/** Amazon Polly `VoiceId` values are capitalised ASCII names (`Matthew`, `Ruth`, `Lea`). */
-const POLLY_VOICE_ID = /^[A-Z][A-Za-z]{1,31}$/;
 
 export class ConfigError extends Error {
   constructor(path: string, problem: string) {
@@ -154,6 +180,24 @@ function optionalInt(parent: Json, key: string, path: string, min: number, max: 
   return int(parent, key, path, min, max);
 }
 
+/** A positive amount in USD with at most cent precision, no larger than `max`. */
+function usd(parent: Json, key: string, path: string, max: number): number {
+  const value = parent[key];
+  const cents = typeof value === 'number' ? value * 100 : Number.NaN;
+  if (
+    typeof value !== 'number' ||
+    !(value > 0) ||
+    value > max ||
+    Math.abs(cents - Math.round(cents)) > 1e-9
+  ) {
+    throw new ConfigError(
+      `${path}.${key}`,
+      `must be a USD amount (at most two decimals) in (0, ${String(max)}]`,
+    );
+  }
+  return value;
+}
+
 function bool(parent: Json, key: string, path: string): boolean {
   const value = parent[key];
   if (typeof value !== 'boolean') throw new ConfigError(`${path}.${key}`, 'must be a boolean');
@@ -171,14 +215,25 @@ function parseLuna(raw: unknown): { modelId: string; enabled: boolean } {
 function parseSpeech(raw: unknown): PlatformConfig['speech'] {
   if (raw === undefined) return SPEECH_OFF;
   const speech = obj(raw, '$.speech');
-  const engine = str(speech, 'engine', '$.speech');
-  if (!(SPEECH_ENGINES as readonly string[]).includes(engine)) {
+  const engineName = str(speech, 'engine', '$.speech');
+  if (!(SPEECH_ENGINES as readonly string[]).includes(engineName)) {
     throw new ConfigError('$.speech.engine', `must be one of ${SPEECH_ENGINES.join(', ')}`);
+  }
+  const engine = engineName as SpeechEngine;
+  const defaultVoice = str(speech, 'defaultVoice', '$.speech');
+  const voices = POLLY_EN_US_VOICES[engine];
+  if (!voices.includes(defaultVoice)) {
+    throw new ConfigError(
+      '$.speech.defaultVoice',
+      `is not a US-English ${engine} voice (one of ${voices.join(', ')})`,
+    );
   }
   return {
     enabled: bool(speech, 'enabled', '$.speech'),
-    defaultVoice: str(speech, 'defaultVoice', '$.speech', POLLY_VOICE_ID),
-    engine: engine as SpeechEngine,
+    defaultVoice,
+    engine,
+    // The admin settings accept a global daily cap of at most USD 100.
+    dailyAlarmUsd: usd(speech, 'dailyAlarmUsd', '$.speech', 100),
   };
 }
 

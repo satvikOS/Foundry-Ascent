@@ -1,6 +1,6 @@
 import { Match } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
-import { contentSecurityPolicy, documentsUploadOrigin } from '../src/constructs/edge.js';
+import { contentSecurityPolicy, documentsUploadOrigin, speechToTextOrigin } from '../src/constructs/edge.js';
 import { ESM_REQUIRE_SHIM } from '../src/constructs/platform-function.js';
 import {
   API_DB_RESUME_BUDGET_SECONDS,
@@ -8,6 +8,7 @@ import {
   API_SSE_KEEP_ALIVE_SECONDS,
   JOBS_MAX_RECEIVE_COUNT,
   SPEECH_ALARM_CHARACTERS_PER_HOUR,
+  speechAlarmCharactersPerDay,
   VIEWER_HOST_HEADER,
   VIEWER_IP_HEADER,
 } from '../src/lib/constants.js';
@@ -33,6 +34,15 @@ const FUNCTIONS = [
 ] as const;
 
 type Props = Record<string, unknown>;
+
+const TRANSCRIBE_ORIGIN = 'wss://transcribestreaming.us-east-1.amazonaws.com:8443';
+const testPolicy = (): string =>
+  contentSecurityPolicy({
+    uploadOrigin: documentsUploadOrigin('docs-bucket', 'us-east-1'),
+    speechToTextOrigin: speechToTextOrigin('us-east-1'),
+  });
+const actionsOf = (statement: Props): string[] =>
+  Array.isArray(statement.Action) ? (statement.Action as string[]) : [statement.Action as string];
 
 /** Asymmetric matcher for logical ids (typed `unknown` instead of jest's `any`). */
 const startsWith = (prefix: string): unknown => expect.stringMatching(new RegExp(`^${prefix}`));
@@ -111,11 +121,11 @@ describe('FoundryAscent-App', () => {
       );
       expect(envOf('FoundryAscent-Worker').JOBS_MAX_RECEIVE_COUNT).toBe(String(JOBS_MAX_RECEIVE_COUNT));
       expect(envOf('FoundryAscent-Worker')).not.toHaveProperty('JOBS_QUEUE_URL');
-      // Voice calls: only the API synthesizes speech, with the voice and engine from production.json.
+      // Voice calls: only the API speaks, with the voice and engine from production.json (neural default).
       expect(envOf('FoundryAscent-Api')).toMatchObject({
         SPEECH_ENABLED: 'true',
         SPEECH_DEFAULT_VOICE: 'Matthew',
-        SPEECH_ENGINE: 'generative',
+        SPEECH_ENGINE: 'neural',
       });
       for (const name of ['FoundryAscent-Worker', 'FoundryAscent-Migrate']) {
         expect(
@@ -226,6 +236,32 @@ describe('FoundryAscent-App', () => {
         .flatMap((s) => (Array.isArray(s.Action) ? (s.Action as string[]) : [s.Action as string]))
         .filter((a) => a.startsWith('polly:'));
       expect(pollyActions.sort()).toEqual(['polly:DescribeVoices', 'polly:SynthesizeSpeech']);
+    });
+
+    it('lets only the API presign Amazon Transcribe streaming URLs, pinned to the platform region', () => {
+      const transcribe = (name: string): Props[] =>
+        rolePolicyStatements(name).filter((s) => actionsOf(s).some((a) => a.startsWith('transcribe:')));
+      expect(transcribe('FoundryAscent-Api')).toEqual([
+        {
+          Sid: 'TranscribeStreaming',
+          Effect: 'Allow',
+          Action: 'transcribe:StartStreamTranscriptionWebSocket',
+          // The action has no resource types (Service Authorization Reference); the region condition narrows it.
+          Resource: '*',
+          Condition: { StringEquals: { 'aws:RequestedRegion': 'us-east-1' } },
+        },
+      ]);
+      expect(transcribe('FoundryAscent-Worker')).toEqual([]);
+      expect(transcribe('FoundryAscent-Migrate')).toEqual([]);
+      // Streaming over the presigned WebSocket only: no batch jobs, vocabularies or HTTP/2 streams.
+      const all = synth.all.flatMap((t) =>
+        resourcesOfType(t, 'AWS::IAM::Policy').flatMap(([, p]) =>
+          (p.PolicyDocument as { Statement: Props[] }).Statement.flatMap(actionsOf),
+        ),
+      );
+      expect(all.filter((a) => a.startsWith('transcribe:'))).toEqual([
+        'transcribe:StartStreamTranscriptionWebSocket',
+      ]);
     });
 
     it('scopes each function role to its own log group (no AWS managed policies)', () => {
@@ -417,21 +453,27 @@ describe('FoundryAscent-App', () => {
           },
         }),
       });
-      expect(contentSecurityPolicy(documentsUploadOrigin('docs-bucket', 'us-east-1'))).toBe(
+      expect(testPolicy()).toBe(
         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; " +
           "media-src 'self' blob:; font-src 'self' data:; " +
-          "connect-src 'self' https://docs-bucket.s3.us-east-1.amazonaws.com; " +
+          `connect-src 'self' https://docs-bucket.s3.us-east-1.amazonaws.com ${TRANSCRIBE_ORIGIN}; ` +
           "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
       );
     });
 
-    it('lets calls play synthesized speech from blob URLs but no remote media', () => {
-      const directives = contentSecurityPolicy(documentsUploadOrigin('docs-bucket', 'us-east-1')).split('; ');
+    it('lets calls stream to Transcribe and play speech from blob URLs, and nothing more', () => {
+      expect(speechToTextOrigin('us-east-1')).toBe(TRANSCRIBE_ORIGIN);
+      const directives = testPolicy().split('; ');
       expect(directives.filter((d) => d.startsWith('media-src'))).toEqual(["media-src 'self' blob:"]);
-      // Speech is fetched from the API (same origin); nothing new may be contacted or framed.
-      expect(directives.find((d) => d.startsWith('connect-src'))).toBe(
-        "connect-src 'self' https://docs-bucket.s3.us-east-1.amazonaws.com",
-      );
+      // Exactly two foreign origins: the documents bucket and Transcribe streaming (port 8443 included).
+      expect(directives.find((d) => d.startsWith('connect-src'))?.split(' ')).toEqual([
+        'connect-src',
+        "'self'",
+        'https://docs-bucket.s3.us-east-1.amazonaws.com',
+        TRANSCRIBE_ORIGIN,
+      ]);
+      // The microphone's AudioWorklet is a same-origin static file, which script-src 'self' covers: no
+      // worker-src, no blob: or remote script, and nothing framed.
       expect(directives.some((d) => /^(frame-src|child-src|worker-src) /.test(d))).toBe(false);
       expect(directives.find((d) => d.startsWith('script-src'))).toBe("script-src 'self'");
     });
@@ -452,7 +494,9 @@ describe('FoundryAscent-App', () => {
       expect(csp).toEqual({ 'Fn::Join': ['', [expect.any(String), bucketRef, expect.any(String)]] });
       const [, parts] = (csp as { 'Fn::Join': [string, [string, unknown, string]] })['Fn::Join'];
       const rendered = `${parts[0]}<bucket>${parts[2]}`;
-      expect(rendered).toContain("connect-src 'self' https://<bucket>.s3.us-east-1.amazonaws.com;");
+      expect(rendered).toContain(
+        `connect-src 'self' https://<bucket>.s3.us-east-1.amazonaws.com ${TRANSCRIBE_ORIGIN};`,
+      );
       expect(rendered).not.toContain('*');
     });
 
@@ -557,11 +601,11 @@ describe('FoundryAscent-App', () => {
       });
     });
 
-    it('sends the distillation sweep every 15 minutes and drops a sweep older than one interval', () => {
-      expect(synth.config.distillation).toEqual({ sweepEnabled: true, sweepIntervalMinutes: 15 });
+    it('ships the distillation sweep disabled (it would keep Aurora awake); a late sweep is dropped', () => {
+      expect(synth.config.distillation).toEqual({ sweepEnabled: false, sweepIntervalMinutes: 15 });
       template.hasResourceProperties('AWS::Scheduler::Schedule', {
         ScheduleExpression: 'rate(15 minutes)',
-        State: 'ENABLED',
+        State: 'DISABLED',
         FlexibleTimeWindow: { Mode: 'OFF' },
         Target: Match.objectLike({
           Arn: jobsQueueArn,
@@ -570,7 +614,14 @@ describe('FoundryAscent-App', () => {
           RetryPolicy: { MaximumEventAgeInSeconds: 900, MaximumRetryAttempts: 2 },
         }),
       });
-      expect(schedule('DistillSweep').Description).toMatch(/distillation sweep/);
+      expect(schedule('DistillSweep').Description).toMatch(/distillation sweep \(inline, bounded/);
+    });
+
+    it('never lets the worker enqueue: distillation jobs come from the API', () => {
+      const workerActions = rolePolicyStatements('FoundryAscent-Worker').flatMap(actionsOf);
+      expect(workerActions).not.toContain('sqs:SendMessage');
+      expect(envOf('FoundryAscent-Worker')).not.toHaveProperty('JOBS_QUEUE_URL');
+      expect(rolePolicyStatements('FoundryAscent-Api').flatMap(actionsOf)).toContain('sqs:SendMessage');
     });
 
     it('grants the schedule role sqs:SendMessage on the jobs queue only, without touching the Data stack', () => {
@@ -634,6 +685,13 @@ describe('FoundryAscent-App', () => {
         'GreaterThanThreshold',
         SPEECH_ALARM_CHARACTERS_PER_HOUR,
       ],
+      [
+        'FoundryAscent-Speech-Characters-Daily',
+        'AWS/Polly',
+        'RequestCharacters',
+        'GreaterThanThreshold',
+        speechAlarmCharactersPerDay(15, 'neural'),
+      ],
     ])('%s watches %s %s', (alarmName, namespace, metricName, comparison, threshold) => {
       template.hasResourceProperties('AWS::CloudWatch::Alarm', {
         AlarmName: alarmName,
@@ -646,11 +704,11 @@ describe('FoundryAscent-App', () => {
       });
     });
 
-    it('creates exactly the five platform alarms and the speech backstop', () => {
-      template.resourceCountIs('AWS::CloudWatch::Alarm', 6);
+    it('creates exactly the five platform alarms and the two speech backstops', () => {
+      template.resourceCountIs('AWS::CloudWatch::Alarm', 7);
     });
 
-    it('sums synthesized speech characters per hour for SynthesizeSpeech', () => {
+    it('sums synthesized speech characters per hour (bursts) and per day (steady leaks)', () => {
       template.hasResourceProperties('AWS::CloudWatch::Alarm', {
         AlarmName: 'FoundryAscent-Speech-Characters',
         Dimensions: [{ Name: 'Operation', Value: 'SynthesizeSpeech' }],
@@ -658,6 +716,22 @@ describe('FoundryAscent-App', () => {
         Period: 3600,
         EvaluationPeriods: 1,
       });
+      template.hasResourceProperties('AWS::CloudWatch::Alarm', {
+        AlarmName: 'FoundryAscent-Speech-Characters-Daily',
+        Dimensions: [{ Name: 'Operation', Value: 'SynthesizeSpeech' }],
+        Statistic: 'Sum',
+        Period: 86_400,
+        EvaluationPeriods: 1,
+        AlarmDescription: Match.stringLikeRegexp('USD 15\\.00 on the neural engine'),
+      });
+    });
+
+    it('sets the daily speech alarm at the global daily AI cap, priced for the configured engine', () => {
+      expect(synth.config.speech.dailyAlarmUsd).toBe(15);
+      // USD 15 at USD 16 (neural) or USD 30 (generative) per million characters.
+      expect(speechAlarmCharactersPerDay(15, 'neural')).toBe(937_500);
+      expect(speechAlarmCharactersPerDay(15, 'generative')).toBe(500_000);
+      expect(speechAlarmCharactersPerDay(2, 'neural')).toBe(125_000);
     });
 
     it('watches CloudFront in the Global region dimension', () => {
@@ -703,7 +777,7 @@ describe('speech and distillation switches (config/production.json)', () => {
       Array.isArray(s.Action) ? (s.Action as string[]) : [s.Action as string],
     );
 
-  it('grants no Polly access, raises no speech alarm and tells the API when speech is off', () => {
+  it('grants no Polly or Transcribe access, raises no speech alarm and tells the API when speech is off', () => {
     const { templates } = synthesize(
       {},
       {
@@ -713,16 +787,19 @@ describe('speech and distillation switches (config/production.json)', () => {
       },
     );
     const app = templates.app;
-    expect(policyActions(app, 'FoundryAscent-Api').some((a) => a.startsWith('polly:'))).toBe(false);
+    expect(
+      policyActions(app, 'FoundryAscent-Api').some(
+        (a) => a.startsWith('polly:') || a.startsWith('transcribe:'),
+      ),
+    ).toBe(false);
     const apiEnv = (
       resourcesOfType(app, 'AWS::Lambda::Function').find(
         ([, p]) => p.FunctionName === 'FoundryAscent-Api',
       )?.[1].Environment as { Variables: Record<string, string> }
     ).Variables;
     expect(apiEnv.SPEECH_ENABLED).toBe('false');
-    expect(resourcesOfType(app, 'AWS::CloudWatch::Alarm').map(([, p]) => p.AlarmName)).not.toContain(
-      'FoundryAscent-Speech-Characters',
-    );
+    const alarmNames = resourcesOfType(app, 'AWS::CloudWatch::Alarm').map(([, p]) => p.AlarmName);
+    expect(alarmNames.filter((name) => String(name).startsWith('FoundryAscent-Speech'))).toEqual([]);
     // A disabled sweep keeps its schedule and role; enabling it again is a state change only.
     app.hasResourceProperties('AWS::Scheduler::Schedule', {
       ScheduleExpression: 'rate(30 minutes)',
@@ -747,11 +824,32 @@ describe('speech and distillation switches (config/production.json)', () => {
     const onStar = functionPolicyStatements(templates.app, 'FoundryAscent-Api')
       .filter((s) => s.Resource === '*' && s.Effect === 'Allow')
       .map((s) => s.Sid);
-    expect(onStar.sort()).toEqual(['BedrockMantleInference', 'PollySpeech']);
+    expect(onStar.sort()).toEqual(['BedrockMantleInference', 'PollySpeech', 'TranscribeStreaming']);
     const workerOnStar = functionPolicyStatements(templates.app, 'FoundryAscent-Worker')
       .filter((s) => s.Resource === '*' && s.Effect === 'Allow')
       .map((s) => s.Sid);
     expect(workerOnStar).toEqual(['BedrockMantleInference']);
+  });
+});
+
+describe('speech engine choice (config/production.json speech.engine)', () => {
+  const base = loadConfig();
+
+  it('prices both speech alarms for the generative engine when it is chosen', () => {
+    const { templates } = synthesize(
+      {},
+      { ...base, speech: { ...base.speech, engine: 'generative', defaultVoice: 'Ruth' } },
+    );
+    templates.app.hasResourceProperties('AWS::CloudWatch::Alarm', {
+      AlarmName: 'FoundryAscent-Speech-Characters-Daily',
+      Threshold: 500_000,
+      AlarmDescription: Match.stringLikeRegexp('generative engine'),
+    });
+    templates.app.hasResourceProperties('AWS::CloudWatch::Alarm', {
+      AlarmName: 'FoundryAscent-Speech-Characters',
+      Threshold: SPEECH_ALARM_CHARACTERS_PER_HOUR,
+      AlarmDescription: Match.stringLikeRegexp('USD 3\\.00 on the generative engine'),
+    });
   });
 });
 

@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ConfigError, loadConfig, parseConfig } from '../src/config.js';
+import { ConfigError, loadConfig, parseConfig, POLLY_EN_US_VOICES } from '../src/config.js';
 import { migrationsChecksum } from '../src/lib/migrations.js';
 import { PLACEHOLDER_OWNER } from './helpers.js';
 
@@ -27,7 +27,7 @@ const valid = (): Record<string, unknown> => ({
   },
   aurora: { minCapacityAcu: 0, maxCapacityAcu: 2, autoPauseMinutes: 10, engineVersion: '16.13' },
   api: { reservedConcurrency: 10, memoryMb: 1024, timeoutSeconds: 60 },
-  speech: { enabled: true, defaultVoice: 'Ruth', engine: 'neural', note: 'free text is ignored' },
+  speech: { enabled: true, defaultVoice: 'Ruth', engine: 'neural', dailyAlarmUsd: 2.5, note: 'ignored' },
   distillation: { sweepEnabled: true, sweepIntervalMinutes: 20 },
   logRetentionDays: 30,
 });
@@ -53,15 +53,61 @@ describe('config', () => {
     // Unreserved: some accounts have a total concurrency quota of 10, which any reservation would break.
     expect(config.api.reservedConcurrency).toBeNull();
     expect(config.worker.reservedConcurrency).toBeNull();
-    // Voice calls on Polly's generative engine (Matthew has a generative voice in us-east-1).
-    expect(config.speech).toEqual({ enabled: true, defaultVoice: 'Matthew', engine: 'generative' });
-    expect(config.distillation).toEqual({ sweepEnabled: true, sweepIntervalMinutes: 15 });
+    // Voice calls on Polly's neural engine (lower latency, half the price, no generative speech caveat).
+    expect(config.speech).toEqual({
+      enabled: true,
+      defaultVoice: 'Matthew',
+      engine: 'neural',
+      dailyAlarmUsd: 15,
+    });
+    // The sweep would keep Aurora awake; distillation runs from jobs the API enqueues (ADR-0018).
+    expect(config.distillation).toEqual({ sweepEnabled: false, sweepIntervalMinutes: 15 });
   });
 
   it('reads the speech and distillation sections', () => {
     const config = parseConfig(valid());
-    expect(config.speech).toEqual({ enabled: true, defaultVoice: 'Ruth', engine: 'neural' });
+    expect(config.speech).toEqual({
+      enabled: true,
+      defaultVoice: 'Ruth',
+      engine: 'neural',
+      dailyAlarmUsd: 2.5,
+    });
     expect(config.distillation).toEqual({ sweepEnabled: true, sweepIntervalMinutes: 20 });
+  });
+
+  it('accepts exactly the documented US-English voices of each engine', () => {
+    // Corin's vEIR speaks as Matthew, Ruth's as Ruth: both exist on both engines in us-east-1.
+    for (const engine of ['neural', 'generative'] as const) {
+      expect(POLLY_EN_US_VOICES[engine]).toEqual(expect.arrayContaining(['Matthew', 'Ruth']));
+      for (const voice of POLLY_EN_US_VOICES[engine]) {
+        const config = parseConfig(
+          withChange(['speech'], { enabled: true, defaultVoice: voice, engine, dailyAlarmUsd: 1 }),
+        );
+        expect(config.speech.defaultVoice).toBe(voice);
+      }
+    }
+    // Tiffany is generative-only; Gregory, Joey, Kendra and Kimberly are neural-only. A voice the engine
+    // lacks would fail every SynthesizeSpeech call at runtime, so synth refuses it.
+    expect(() =>
+      parseConfig(
+        withChange(['speech'], {
+          enabled: true,
+          defaultVoice: 'Joey',
+          engine: 'generative',
+          dailyAlarmUsd: 1,
+        }),
+      ),
+    ).toThrow(/speech.defaultVoice is not a US-English generative voice/);
+    expect(() =>
+      parseConfig(
+        withChange(['speech'], {
+          enabled: true,
+          defaultVoice: 'Tiffany',
+          engine: 'neural',
+          dailyAlarmUsd: 1,
+        }),
+      ),
+    ).toThrow(/speech.defaultVoice is not a US-English neural voice/);
   });
 
   it('turns speech and the distillation sweep off when their sections are absent', () => {
@@ -122,11 +168,19 @@ describe('config', () => {
     [['models', 'luna', 'modelId'], 'GPT 6', /models.luna.modelId/],
     [['speech'], 'on', /\$\.speech must be an object/],
     [['speech', 'enabled'], 'true', /speech.enabled/],
-    [['speech', 'engine'], 'standard', /speech.engine must be one of generative, neural/],
+    [['speech', 'engine'], 'standard', /speech.engine must be one of neural, generative/],
     [['speech', 'engine'], 'long-form', /speech.engine/],
     [['speech', 'defaultVoice'], 'matthew', /speech.defaultVoice/],
     [['speech', 'defaultVoice'], 'Matthew Neural', /speech.defaultVoice/],
     [['speech', 'defaultVoice'], undefined, /speech.defaultVoice/],
+    [['speech', 'defaultVoice'], 'Tiffany', /speech.defaultVoice is not a US-English neural voice/],
+    [['speech', 'defaultVoice'], 'Ivy', /speech.defaultVoice/], // a child voice
+    [['speech', 'defaultVoice'], 'Amy', /speech.defaultVoice/], // British English
+    [['speech', 'dailyAlarmUsd'], undefined, /speech.dailyAlarmUsd/],
+    [['speech', 'dailyAlarmUsd'], 0, /speech.dailyAlarmUsd/],
+    [['speech', 'dailyAlarmUsd'], 101, /speech.dailyAlarmUsd/],
+    [['speech', 'dailyAlarmUsd'], 1.005, /speech.dailyAlarmUsd/],
+    [['speech', 'dailyAlarmUsd'], '15', /speech.dailyAlarmUsd/],
     [['distillation', 'sweepEnabled'], 1, /distillation.sweepEnabled/],
     [['distillation', 'sweepIntervalMinutes'], 1, /distillation.sweepIntervalMinutes/],
     [['distillation', 'sweepIntervalMinutes'], 90, /distillation.sweepIntervalMinutes/],

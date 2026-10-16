@@ -37,12 +37,14 @@
   "speech": {
     "enabled": true,
     "defaultVoice": "Matthew",
-    "engine": "generative",
-    "note": "Amazon Polly in us-east-1. Matthew and Ruth (en-US) have generative voices there (verified against the Polly generative-voices list, 2026-10-16); generative is USD 30 per million characters, neural USD 16. A persona's consented voice id overrides defaultVoice and must exist for this engine (polly:DescribeVoices with Engine=generative lists them)."
+    "engine": "neural",
+    "dailyAlarmUsd": 15,
+    "note": "Amazon Polly and Amazon Transcribe streaming in us-east-1 (ADR-0010). Neural is the default engine: lower latency, USD 16 per million characters (generative USD 30) and no generative 'hallucinated speech' caveat. Matthew (Corin's vEIR) and Ruth exist on both engines there (Polly 'Available voices', checked 2026-10-16). dailyAlarmUsd mirrors the global daily AI cap in Admin > Settings: change both together."
   },
   "distillation": {
-    "sweepEnabled": true,
-    "sweepIntervalMinutes": 15
+    "sweepEnabled": false,
+    "sweepIntervalMinutes": 15,
+    "note": "Disabled on purpose: distillation runs from delayed per-conversation jobs the API enqueues, at session end and from the daily maintenance backstop (ADR-0018). A sweep that queries Aurora every 15 minutes keeps the cluster from pausing."
   },
   "logRetentionDays": 30
 }

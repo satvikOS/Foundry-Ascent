@@ -65,16 +65,41 @@ export function documentsUploadOrigin(bucketName: string, region: string): strin
 }
 
 /**
- * The SPA's Content-Security-Policy. `connect-src` allows the app's own origin and exactly one other: the
- * documents bucket. A wildcard such as `https://*.s3.amazonaws.com` would let injected script send data to
- * any bucket in the world.
- *
- * `media-src 'self' blob:` is for voice calls (ADR-0010): the call screen fetches the synthesized speech
- * (`POST /api/v1/speech`, `audio/mpeg`) and plays it from a `blob:` object URL, sentence by sentence. Only
- * same-origin and in-page blob media can play; remote media hosts stay blocked. Browser speech recognition
- * (Web Speech API) needs no directive: the page never fetches anything for it.
+ * Origin of Amazon Transcribe streaming's WebSocket endpoint. During a voice call the browser streams the
+ * founder's microphone audio straight to it over a URL the API presigns (ADR-0010); the audio never passes
+ * through this platform. Port 8443 is part of the origin, so it must be named exactly.
  */
-export function contentSecurityPolicy(uploadOrigin: string): string {
+export function speechToTextOrigin(region: string): string {
+  return `wss://transcribestreaming.${region}.amazonaws.com:8443`;
+}
+
+export interface ContentSecurityPolicyOrigins {
+  /** The documents bucket endpoint presigned uploads go to (`documentsUploadOrigin`). */
+  readonly uploadOrigin: string;
+  /** Amazon Transcribe streaming (`speechToTextOrigin`). */
+  readonly speechToTextOrigin: string;
+}
+
+/**
+ * The SPA's Content-Security-Policy. `connect-src` allows the app's own origin and exactly two others:
+ * the documents bucket and Transcribe streaming. A wildcard such as `https://*.s3.amazonaws.com` would let
+ * injected script send data to any bucket in the world. The Transcribe endpoint serves every AWS account,
+ * so it cannot be pinned to ours; `script-src 'self'` (no inline or third-party script) is what keeps
+ * injected code from using it.
+ *
+ * Voice calls (ADR-0010) also rely on:
+ * - `media-src 'self' blob:`: the call screen fetches synthesized speech (`POST /api/v1/speech`,
+ *   `audio/mpeg`) and plays it from a `blob:` object URL. Remote media stays blocked.
+ * - `script-src 'self'` for the microphone's AudioWorklet: a worklet module is fetched as a script
+ *   (CSP3 `script-src-elem`, falling back to `script-src`), so a same-origin static file such as
+ *   `/worklets/<name>.js` loads, while `blob:` and cross-origin modules are refused. Verified in Chromium
+ *   on 2026-10-16; no `worker-src` is needed.
+ *
+ * `style-src` keeps `'unsafe-inline'`: Radix's scroll lock injects a `<style>` element at runtime. The SPA
+ * already ships that rule and sonner's styles in its own stylesheet, so removing `'unsafe-inline'` is a
+ * one-line change once a browser pass over every page shows no violation.
+ */
+export function contentSecurityPolicy(origins: ContentSecurityPolicyOrigins): string {
   return [
     "default-src 'self'",
     "script-src 'self'",
@@ -82,7 +107,7 @@ export function contentSecurityPolicy(uploadOrigin: string): string {
     "img-src 'self' data: blob:",
     "media-src 'self' blob:",
     "font-src 'self' data:",
-    `connect-src 'self' ${uploadOrigin}`,
+    `connect-src 'self' ${origins.uploadOrigin} ${origins.speechToTextOrigin}`,
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -101,10 +126,7 @@ export const PERMISSIONS_POLICY = 'camera=(), microphone=(self), geolocation=()'
 /** Two years, the HSTS preload list minimum is one. */
 export const HSTS_MAX_AGE = Duration.days(730);
 
-export interface SecurityHeadersProps {
-  /** The only cross-origin `connect-src` (see `documentsUploadOrigin`). */
-  readonly uploadOrigin: string;
-}
+export type SecurityHeadersProps = ContentSecurityPolicyOrigins;
 
 export function createSecurityHeadersPolicy(
   scope: Construct,
@@ -115,7 +137,7 @@ export function createSecurityHeadersPolicy(
     comment: 'Foundry Ascent security headers (CSP, HSTS, frame denial)',
     securityHeadersBehavior: {
       contentSecurityPolicy: {
-        contentSecurityPolicy: contentSecurityPolicy(props.uploadOrigin),
+        contentSecurityPolicy: contentSecurityPolicy(props),
         override: true,
       },
       strictTransportSecurity: {

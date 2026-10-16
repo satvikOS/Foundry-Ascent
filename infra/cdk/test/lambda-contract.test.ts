@@ -1,4 +1,8 @@
-/** The infra side of apps/api/lambda-contract.json: the parser fails synth on any drift the API would not accept. */
+/**
+ * The infra side of apps/api/lambda-contract.json: the parser fails synth when the file drifts from what
+ * this CDK app sets (environment names, the exact scheduled message bodies). The API parses the same file
+ * with its own schema (apps/api/src/lambda-contract.ts).
+ */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {

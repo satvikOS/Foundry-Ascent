@@ -35,6 +35,7 @@ import {
   documentsUploadOrigin,
   createViewerRequestFunction,
   SPA_REWRITE_CODE,
+  speechToTextOrigin,
 } from '../constructs/edge.js';
 import { PlatformFunction } from '../constructs/platform-function.js';
 import {
@@ -47,7 +48,9 @@ import {
   JOBS_MAX_RECEIVE_COUNT,
   MIGRATE_TIMEOUT_MINUTES,
   NAMES,
+  POLLY_USD_PER_MILLION_CHARACTERS,
   SPEECH_ALARM_CHARACTERS_PER_HOUR,
+  speechAlarmCharactersPerDay,
   WORKER_TIMEOUT_SECONDS,
 } from '../lib/constants.js';
 import { environmentNames, LAMBDA_CONTRACT, type LambdaRole } from '../lib/lambda-contract.js';
@@ -107,7 +110,7 @@ export class AppStack extends Stack {
   readonly alarmTopic: sns.Topic;
   /** Daily maintenance schedule (EventBridge Scheduler -> jobs queue -> worker). */
   readonly dailyMaintenance: scheduler.Schedule;
-  /** Distillation sweep schedule (EventBridge Scheduler -> jobs queue -> worker), ADR-0018. */
+  /** Optional distillation sweep (EventBridge Scheduler -> jobs queue -> worker), disabled by default. */
   readonly distillSweep: scheduler.Schedule;
 
   constructor(scope: Construct, id: string, props: AppStackProps) {
@@ -201,7 +204,7 @@ export class AppStack extends Stack {
     this.worker = new PlatformFunction(this, 'Worker', {
       ...functionDefaults,
       functionName: NAMES.workerFunction,
-      description: 'Foundry Ascent jobs worker (document ingestion, recaps, memory consolidation)',
+      description: 'Foundry Ascent jobs worker (ingestion, embeddings, distillation, daily maintenance)',
       entry: assets.handlers.worker,
       memorySize: 1024,
       timeout: Duration.seconds(WORKER_TIMEOUT_SECONDS),
@@ -290,17 +293,31 @@ export class AppStack extends Stack {
       }),
     );
 
-    // Speech (voice calls, ADR-0010): the API alone turns validated vEIR text into audio. Neither action
-    // supports resource-level permissions unless a lexicon is used (none is), so the statement is pinned
-    // to the platform region instead. DescribeVoices lets the API check that a persona's voice id exists
-    // for the configured engine. Polly has no provisioned or long-running resources to deny.
+    // Speech (voice calls, ADR-0010), API role only, pinned to the platform region:
+    //   Polly       turns validated vEIR text into audio. Neither action supports resource-level
+    //               permissions unless a lexicon is used (none is). DescribeVoices lets the API check a
+    //               persona's voice id against the configured engine.
+    //   Transcribe  the API presigns a short-lived StartStreamTranscriptionWebSocket URL with its own
+    //               credentials; the browser opens it and streams audio to AWS directly, so the
+    //               founder's audio never reaches this platform. The action has no resource types and no
+    //               action condition keys (Service Authorization Reference, checked 2026-10-16).
+    // Neither service has provisioned or long-running resources to deny.
     if (config.speech.enabled) {
+      const inPlatformRegion = { StringEquals: { 'aws:RequestedRegion': config.region } };
       this.api.role.addToPolicy(
         new iam.PolicyStatement({
           sid: 'PollySpeech',
           actions: ['polly:SynthesizeSpeech', 'polly:DescribeVoices'],
           resources: ['*'],
-          conditions: { StringEquals: { 'aws:RequestedRegion': config.region } },
+          conditions: inPlatformRegion,
+        }),
+      );
+      this.api.role.addToPolicy(
+        new iam.PolicyStatement({
+          sid: 'TranscribeStreaming',
+          actions: ['transcribe:StartStreamTranscriptionWebSocket'],
+          resources: ['*'],
+          conditions: inPlatformRegion,
         }),
       );
     }
@@ -323,6 +340,7 @@ export class AppStack extends Stack {
       ...(fn === this.api && config.speech.enabled
         ? [
             'polly:SynthesizeSpeech and polly:DescribeVoices have no resource-level permissions without a lexicon (none is used); the statement is limited to the platform region by aws:RequestedRegion.',
+            'transcribe:StartStreamTranscriptionWebSocket has no resource types in the Service Authorization Reference; the API only presigns short-lived browser URLs with it, limited to the platform region by aws:RequestedRegion.',
           ]
         : []),
     ];
@@ -360,19 +378,19 @@ export class AppStack extends Stack {
       }),
     });
 
-    // ---- Distillation sweep (ADR-0018) -------------------------------------------------------------------
-    // Every few minutes the worker looks for conversations with no turn for 20 minutes and no digest yet,
-    // and enqueues their distillation (digest, notebook delta, memory and lesson candidates). Sessions
-    // that end, and the next conversation's start, enqueue distillation too; the sweep catches the rest.
-    // Same pattern as the daily schedule (own role, sqs:SendMessage on the queue only). A sweep that is
-    // late by more than one interval is dropped: the next one covers the same sessions. `sweepEnabled:
-    // false` keeps the schedule (and its role) and only disables it, so re-enabling is a state change.
-    // About 2,900 invocations a month at 15 minutes, inside the Scheduler free tier. Cost contract for the
-    // handler: a sweep must not wake a paused Aurora when there is nothing to distill (a query every 15
-    // minutes would keep the cluster up about two thirds of the time against a 10-minute auto-pause).
-    // ADR-0018 "Cost" lists the accepted ways to do that.
+    // ---- Distillation sweep (ADR-0018), disabled -----------------------------------------------------------
+    // Distillation (digest, notebook delta, memory and lesson candidates) runs from jobs the API enqueues:
+    // a distill_session message delayed 9 minutes after each turn, which arrives while Aurora is still up
+    // from that turn (it pauses after 10 idle minutes); one at session end; and the bounded daily
+    // maintenance backstop. Nothing runs while nobody talks. This schedule is the alternative it replaced
+    // and ships disabled (`distillation.sweepEnabled: false`): a sweep that queries every 15 minutes keeps
+    // the cluster awake about two thirds of the time (about USD 29 a month at 0.5 ACU against a USD 1-3
+    // idle target). If it is ever enabled, the worker distills idle conversations inline, a bounded number
+    // per run: the worker role has no sqs:SendMessage, so it cannot enqueue. Same pattern as the daily
+    // schedule (own role, sqs:SendMessage on the queue only); a sweep late by more than one interval is
+    // dropped. Disabled keeps the schedule and its role, so enabling is a state change.
     this.distillSweep = new scheduler.Schedule(this, 'DistillSweep', {
-      description: 'Foundry Ascent distillation sweep (digests and notebooks for idle conversations)',
+      description: 'Foundry Ascent distillation sweep (inline, bounded; disabled by default)',
       schedule: scheduler.ScheduleExpression.rate(Duration.minutes(config.distillation.sweepIntervalMinutes)),
       enabled: config.distillation.sweepEnabled,
       target: new schedulerTargets.SqsSendMessage(props.jobsQueue, {
@@ -440,6 +458,7 @@ export class AppStack extends Stack {
     // ---- CloudFront -------------------------------------------------------------------------------------------
     const securityHeaders = createSecurityHeadersPolicy(this, 'SecurityHeaders', {
       uploadOrigin: documentsUploadOrigin(props.documentsBucket.bucketName, this.region),
+      speechToTextOrigin: speechToTextOrigin(config.region),
     });
     const spaRewrite = createViewerRequestFunction(
       this,
@@ -706,20 +725,36 @@ export class AppStack extends Stack {
       }),
     ];
     if (config.speech.enabled) {
-      // Backstop for the in-app speech metering: every synthesis is priced into usage_ledger and checked
-      // against the daily caps first, so this only fires if that path is bypassed or the caps were raised.
+      // Backstops for the in-app speech metering: every synthesis is priced into usage_ledger and checked
+      // against the daily caps first, so these fire only if that path is bypassed or the caps were raised.
+      // The hourly alarm catches a burst; the daily one a steady leak below the burst threshold.
+      const { engine, dailyAlarmUsd } = config.speech;
+      const pollyCharacters = (period: Duration): cloudwatch.Metric =>
+        new cloudwatch.Metric({
+          namespace: 'AWS/Polly',
+          metricName: 'RequestCharacters',
+          dimensionsMap: { Operation: 'SynthesizeSpeech' },
+          period,
+          statistic: cloudwatch.Stats.SUM,
+        });
+      const usdFor = (characters: number): string =>
+        ((characters * POLLY_USD_PER_MILLION_CHARACTERS[engine]) / 1_000_000).toFixed(2);
+      const perDay = speechAlarmCharactersPerDay(dailyAlarmUsd, engine);
       alarms.push(
         new cloudwatch.Alarm(this, 'SpeechCharactersAlarm', {
           alarmName: 'FoundryAscent-Speech-Characters',
-          alarmDescription: `More than ${String(SPEECH_ALARM_CHARACTERS_PER_HOUR)} characters synthesized by Amazon Polly in one hour (about USD 3 on the generative engine, more than the default global daily AI cap)`,
-          metric: new cloudwatch.Metric({
-            namespace: 'AWS/Polly',
-            metricName: 'RequestCharacters',
-            dimensionsMap: { Operation: 'SynthesizeSpeech' },
-            period: Duration.hours(1),
-            statistic: cloudwatch.Stats.SUM,
-          }),
+          alarmDescription: `More than ${String(SPEECH_ALARM_CHARACTERS_PER_HOUR)} characters synthesized by Amazon Polly in one hour (about USD ${usdFor(SPEECH_ALARM_CHARACTERS_PER_HOUR)} on the ${engine} engine)`,
+          metric: pollyCharacters(Duration.hours(1)),
           threshold: SPEECH_ALARM_CHARACTERS_PER_HOUR,
+          evaluationPeriods: 1,
+          comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+          treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+        }),
+        new cloudwatch.Alarm(this, 'SpeechCharactersDailyAlarm', {
+          alarmName: 'FoundryAscent-Speech-Characters-Daily',
+          alarmDescription: `More than ${String(perDay)} characters synthesized by Amazon Polly in one day (USD ${usdFor(perDay)} on the ${engine} engine: the global daily AI cap speech is metered against)`,
+          metric: pollyCharacters(Duration.days(1)),
+          threshold: perDay,
           evaluationPeriods: 1,
           comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
           treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,

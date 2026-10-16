@@ -25,7 +25,7 @@ export interface LambdaContract {
   readonly worker: {
     /** Once a day: ephemeral-session expiry and redaction. */
     readonly dailyMaintenanceMessage: string;
-    /** Every few minutes: enqueue distillation for conversations that went idle. */
+    /** Optional sweep (disabled): the worker distills a bounded number of idle conversations inline. */
     readonly distillSweepMessage: string;
   };
 }

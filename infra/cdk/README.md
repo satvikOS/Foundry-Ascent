@@ -210,7 +210,7 @@ off switches (no permission, no schedule).
 ```bash
 pnpm --filter @foundry/infra typecheck
 pnpm --filter @foundry/infra test                 # synth + assertions + cdk-nag + snapshots
-pnpm --filter @foundry/infra test -- -u           # accept reviewed template snapshot changes
+pnpm --filter @foundry/infra test -u           # accept reviewed template snapshot changes
 pnpm --filter @foundry/infra synth:stub           # synth without built assets (FA_SYNTH_STUB_ASSETS=1)
 
 # Deployable synth / diff / deploy (credentials for the target account; CI uses the OIDC role)

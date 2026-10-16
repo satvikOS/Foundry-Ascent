@@ -95,7 +95,7 @@ bump them together.
 | Changed a migration file             | add a new `packages/db/migrations/NNNN_name.sql` (never edit an applied one), then `pnpm --filter @foundry/db gen:migrations` and commit the bundle |
 | Fresh data                           | `pnpm db:reset` (drops and recreates the local database only; refuses non-local URLs)                                                               |
 | Format                               | `pnpm format`                                                                                                                                       |
-| Accept reviewed CDK snapshot changes | `pnpm --filter @foundry/infra test -- -u`                                                                                                           |
+| Accept reviewed CDK snapshot changes | `pnpm --filter @foundry/infra test -u`                                                                                                              |
 | Synth without built assets           | `pnpm --filter @foundry/infra synth:stub`                                                                                                           |
 
 ## Troubleshooting

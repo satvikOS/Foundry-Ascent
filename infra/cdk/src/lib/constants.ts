@@ -1,4 +1,5 @@
 /** Values shared by more than one stack; keep them here so the stacks cannot drift apart. */
+import type { SpeechEngine } from '../config.js';
 import { LAMBDA_CONTRACT } from './lambda-contract.js';
 
 export const PROJECT_TAG = 'foundry-ascent';
@@ -30,12 +31,29 @@ export const JOBS_MAX_RECEIVE_COUNT = 3;
 export const MIGRATE_TIMEOUT_MINUTES = 10;
 
 /**
- * Amazon Polly characters per hour above which the speech alarm fires. 100,000 characters cost about
- * USD 3 on the generative engine (USD 30 per million; neural USD 16), more than the default global daily
- * AI cap of USD 2 that speech is metered against, so crossing it in one hour means the in-app caps did
- * not hold or were raised.
+ * Amazon Polly list prices in us-east-1, USD per million characters (aws.amazon.com/polly/pricing,
+ * checked 2026-10-16). The API meters speech with the same prices (packages/core voices.ts).
+ */
+export const POLLY_USD_PER_MILLION_CHARACTERS: Readonly<Record<SpeechEngine, number>> = {
+  neural: 16,
+  generative: 30,
+};
+
+/**
+ * Amazon Polly characters in one hour above which the burst alarm fires: about USD 1.60 on the neural
+ * engine (USD 3 generative). A call lasts at most 30 minutes, in which the vEIR can speak at most about
+ * 27,000 characters (15 a second without pause), so this takes several full calls in the same hour.
  */
 export const SPEECH_ALARM_CHARACTERS_PER_HOUR = 100_000;
+
+/**
+ * Characters in one day above which the daily speech alarm fires: `dailyAlarmUsd` (the global daily AI
+ * cap speech is metered against) at the engine's price. Speech alone reaching the whole cap means the
+ * in-app metering did not hold, or the cap was raised without updating the alarm.
+ */
+export function speechAlarmCharactersPerDay(dailyAlarmUsd: number, engine: SpeechEngine): number {
+  return Math.floor((dailyAlarmUsd * 1_000_000) / POLLY_USD_PER_MILLION_CHARACTERS[engine]);
+}
 
 /** S3 key prefix that every venture document lives under (`tenants/{t}/ventures/{v}/documents/...`). */
 export const DOCUMENTS_PREFIX = 'tenants/';
