@@ -1,4 +1,4 @@
-import type { CallEndReason, CallState, SttGrant, TurnView } from '@foundry/contracts';
+import type { CallEndReason, CallState, SttGrant, TurnBlockedDetail, TurnView } from '@foundry/contracts';
 
 import type { CreateTurnBody, StreamTurnOptions, TurnStreamEventT } from '../api/sse';
 import type { AvatarState, SpokenUnit } from './avatar';
@@ -203,6 +203,11 @@ export class CallEngine {
   private turn: ActiveTurn | null = null;
   /** The crisis turn whose fixed support line is being said (never cut off). */
   private crisisTurnId: string | null = null;
+  /**
+   * The crisis support line of a call that ended while it was being said: its player and audio outlive the
+   * call until the line has been heard to its end (released then, or when the page goes away).
+   */
+  private lingering: { readonly player: SpeechPlayer; readonly context: CallAudioContext } | null = null;
   private readonly pendingLines: string[] = [];
   private beacon: PreparedBeacon | null = null;
   private founderLevel = 0;
@@ -427,14 +432,18 @@ export class CallEngine {
     }
     if (phase !== 'live') return;
     const durationSeconds = this.elapsedSeconds();
+    // Whatever ends the call (its time limit, the server, lost heartbeats, the founder), the crisis support
+    // line is heard to its end and the support stays on screen: everything else closes now.
+    const support = supportShown(this.snapshot.blocked);
+    const keepLine = this.sayingCrisisLine();
     this.epoch += 1;
-    this.teardown();
+    this.teardown(keepLine);
     this.set({
       phase: 'ending',
       activity: 'connecting',
       captions: IDLE_CALL.captions,
       notice: null,
-      blocked: null,
+      blocked: support,
       held: false,
       audioBlocked: false,
       queued: 0,
@@ -446,6 +455,7 @@ export class CallEngine {
       turnCount: this.turnCount,
       summary: null,
       summaryError: null,
+      blocked: support,
     };
     if (call) {
       try {
@@ -456,6 +466,7 @@ export class CallEngine {
           turnCount: result.summary.turnCount,
           summary: result.summary,
           summaryError: null,
+          blocked: support,
         };
         this.set({ call: result.call });
       } catch (error) {
@@ -478,10 +489,11 @@ export class CallEngine {
     }
     this.epoch += 1;
     this.teardown();
+    this.releaseLingering();
     this.set({ ...IDLE_CALL });
   }
 
-  /** After an ended or failed call: back to idle, ready for the next one. */
+  /** After an ended or failed call: back to idle, ready for the next one (a crisis line still plays out). */
   reset(): void {
     if (this.snapshot.phase === 'live' || this.snapshot.phase === 'starting') return;
     this.epoch += 1;
@@ -612,6 +624,15 @@ export class CallEngine {
     const blocked = this.snapshot.blocked;
     const playing = this.player?.current ?? null;
     return blocked?.reason === 'crisis_support' && playing !== null && playing.turnId === this.crisisTurnId;
+  }
+
+  /** The crisis support line is being said, or is still to be said (being fetched after the block). */
+  private sayingCrisisLine(): boolean {
+    const player = this.player;
+    if (this.snapshot.blocked?.reason !== 'crisis_support' || this.crisisTurnId === null || !player?.busy) {
+      return false;
+    }
+    return player.current === null || player.current.turnId === this.crisisTurnId;
   }
 
   /**
@@ -1076,7 +1097,9 @@ export class CallEngine {
 
   private createPlayer(context: CallAudioContext, sessionId: string): SpeechPlayer {
     const { clock, media, api } = this.deps;
-    return new SpeechPlayer(
+    // Events of a player that outlived its call (the crisis line) never touch the snapshot of a later call.
+    const current = () => player === this.player;
+    const player: SpeechPlayer = new SpeechPlayer(
       {
         context,
         fetchSpeech: (unit, signal) => api.fetchSpeech(sessionId, unit, signal),
@@ -1090,6 +1113,7 @@ export class CallEngine {
       },
       {
         onUnitStart: (unit, route) => {
+          if (!current()) return;
           const turn = this.turn;
           if (turn && unit.turnId !== null && unit.turnId === turn.turnId && turn.firstAudioAt === null) {
             turn.firstAudioAt = clock.now();
@@ -1104,21 +1128,28 @@ export class CallEngine {
           for (const listener of this.speakListeners) listener({ text: unit.text });
         },
         onUnitEnd: (unit, completed) => {
+          if (!current()) return;
           const turn = this.turn;
           if (!completed || turn?.turnId !== unit.turnId || unit.seq <= turn.heardSeq) return;
           turn.heardSeq = unit.seq;
           turn.heard.push({ seq: unit.seq, text: unit.text, ...(unit.sig ? { sig: unit.sig } : {}) });
         },
         onVoicePaused: () => {
-          this.set({ voicePaused: true });
+          if (current()) this.set({ voicePaused: true });
         },
         onIdle: () => {
-          if (this.snapshot.phase !== 'live') return;
+          if (player === this.lingering?.player) {
+            // The crisis line of a call that has ended was heard to its end: release its audio now.
+            this.releaseLingering();
+            return;
+          }
+          if (!current() || this.snapshot.phase !== 'live') return;
           if (this.turn && !this.turn.done) this.set({ activity: 'thinking' });
           else this.afterReply();
         },
       },
     );
+    return player;
   }
 
   // Heartbeat and limits ------------------------------------------------------------------------------
@@ -1220,7 +1251,8 @@ export class CallEngine {
     this.vad.reset();
   }
 
-  private teardown(): void {
+  /** Stops everything of the call; `keepCrisisLine` lets the crisis support line being said play out. */
+  private teardown(keepCrisisLine = false): void {
     const { clock } = this.deps;
     for (const timer of [this.heartbeatTimer, this.tickTimer]) if (timer !== null) clock.clearInterval(timer);
     for (const timer of [this.bargeTimer, this.releaseTimer, this.reconnectTimer, this.micSilentTimer]) {
@@ -1237,7 +1269,30 @@ export class CallEngine {
     this.grant = null;
     this.beacon = null;
     this.founderLevel = 0;
-    this.releaseAudio();
+    if (keepCrisisLine) this.lingerCrisisLine();
+    else this.releaseAudio();
+  }
+
+  /** Keeps the player (and its audio) of the crisis line past the call, until it is heard to its end. */
+  private lingerCrisisLine(): void {
+    const { player, context } = this;
+    if (player === null || context === null) {
+      this.releaseAudio();
+      return;
+    }
+    this.releaseLingering();
+    this.player = null;
+    this.context = null;
+    context.removeEventListener('statechange', this.onAudioState);
+    this.lingering = { player, context };
+  }
+
+  private releaseLingering(): void {
+    const lingering = this.lingering;
+    this.lingering = null;
+    if (!lingering) return;
+    lingering.player.dispose();
+    if (lingering.context.state !== 'closed') void lingering.context.close().catch(() => undefined);
   }
 
   private releaseAudio(): void {
@@ -1249,6 +1304,15 @@ export class CallEngine {
     context.removeEventListener('statechange', this.onAudioState);
     if (context.state !== 'closed') void context.close().catch(() => undefined);
   }
+}
+
+/** Reasons whose panel is support for the founder (crisis lines, a safety hand-over), as BlockedPanel tells. */
+const SUPPORT_REASON = /crisis|safety|wellbeing|harm/i;
+
+/** The support a call was showing, kept with its summary when it ends; a held-back answer is not kept. */
+function supportShown(blocked: TurnBlockedDetail | null): TurnBlockedDetail | null {
+  if (blocked === null) return null;
+  return blocked.supportMessage !== null || SUPPORT_REASON.test(blocked.reason) ? blocked : null;
 }
 
 function errorName(error: unknown): string | null {

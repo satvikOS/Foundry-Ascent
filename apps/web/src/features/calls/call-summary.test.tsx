@@ -1,5 +1,5 @@
 import type { CallSummary, EscalationView, MemoryObjectView } from '@foundry/contracts';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -84,6 +84,7 @@ function ended(summary: Partial<CallSummary> | null, overrides: Partial<CallEnde
             ...summary,
           },
     summaryError: null,
+    blocked: null,
     ...overrides,
   };
 }
@@ -169,6 +170,38 @@ describe('CallSummaryPanel', () => {
     expect(callbacks.back).toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: 'Call again' }));
     expect(callbacks.again).toHaveBeenCalled();
+  });
+
+  it('keeps the crisis support of a call that ended while it was shown, above the summary', async () => {
+    stubFetch().mockResolvedValue(json({ items: [] }));
+    const callbacks = renderSummary(
+      ended(
+        {},
+        {
+          reason: 'timeout',
+          blocked: {
+            reason: 'crisis_support',
+            escalationId: IDS.escalation,
+            supportMessage: 'Call or text **988** any time.',
+          },
+        },
+      ),
+    );
+    const support = await screen.findByTestId('blocked-panel');
+    expect(support).toHaveTextContent('You deserve support from a person');
+    expect(support).toHaveTextContent('Call or text 988 any time.');
+    expect(within(support).getByRole('link', { name: 'View your support request' })).toHaveAttribute(
+      'href',
+      `/ain/app/v/${IDS.venture}/help?id=${IDS.escalation}`,
+    );
+    // First on the page and where focus lands, before the summary of the call.
+    const heading = screen.getByRole('heading', { name: 'Call ended' });
+    expect(support.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Support' })).toHaveFocus();
+    expect(screen.getByText('The call reached its time limit.')).toBeInTheDocument();
+    // It stays until the founder leaves it.
+    await userEvent.click(within(support).getByRole('link', { name: 'View your support request' }));
+    expect(callbacks.leave).toHaveBeenCalled();
   });
 
   it('says when there is nothing to review', async () => {

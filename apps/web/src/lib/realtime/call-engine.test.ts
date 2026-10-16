@@ -1076,6 +1076,106 @@ describe('CallEngine · resilience', () => {
   });
 });
 
+describe('CallEngine · the crisis support line is never cut off', () => {
+  const SUPPORT = 'Call or text **988**.';
+
+  /** A call whose vEIR is saying the crisis support line (a minute of audio). */
+  async function sayingSupport(h: ReturnType<typeof setup>, maxSeconds = 1200) {
+    h.setSpeechResult({ kind: 'audio', data: new ArrayBuffer(60_000) });
+    h.api.startCall.mockResolvedValueOnce({ call: callView({ maxSeconds }), sttGrant: grant(), intro: null });
+    await startLive(h);
+    FakeWebSocket.last().serverOpen();
+    h.engine.sendText('I am not okay');
+    await flush();
+    h.script.push(
+      { event: 'turn.accepted', turnId: TURN_ID, ordinal: 1 },
+      speech(0, 'You deserve support from a person right now.', true),
+      {
+        event: 'turn.blocked',
+        turnId: TURN_ID,
+        reason: 'crisis_support',
+        escalationId: IDS.escalation,
+        supportMessage: SUPPORT,
+      },
+    );
+    h.script.close();
+    await flush(20);
+    expect(h.state()).toMatchObject({ activity: 'speaking', blocked: { reason: 'crisis_support' } });
+    expect(h.context.sources[0]?.started).toBe(true);
+  }
+
+  it.each([
+    ['the time limit', 'timeout', 11_000],
+    ['the server ending the call', 'disabled', 15_000],
+    ['three missed heartbeats', 'error', 45_000],
+  ] as const)(
+    'plays to its end through %s, and the support stays with the summary',
+    async (_, reason, after) => {
+      const h = setup();
+      if (reason === 'disabled') {
+        h.api.heartbeat.mockResolvedValue({ remainingSeconds: 0, action: 'terminate', reason: 'disabled' });
+      } else if (reason === 'error') {
+        h.api.heartbeat.mockRejectedValue(new Error('offline'));
+      } else {
+        // The server's countdown never arrives: the client enforces the limit itself.
+        h.api.heartbeat.mockImplementation(() => new Promise(() => undefined));
+      }
+      await sayingSupport(h, reason === 'timeout' ? 10 : 1200);
+      await vi.advanceTimersByTimeAsync(after);
+      await flush(10);
+      expect(h.api.endCall).toHaveBeenCalledWith(CALL_ID, expect.objectContaining({ reason }));
+      expect(h.state().phase).toBe('ended');
+      // The microphone and speech-to-text closed with the call; the line did not.
+      expect(h.track.stop).toHaveBeenCalled();
+      expect(h.context.sources[0]?.stopped).toBe(false);
+      expect(h.context.closed).toBe(false);
+      // The support is still what the founder sees, above the summary.
+      expect(h.state().ended?.blocked).toEqual({
+        reason: 'crisis_support',
+        escalationId: IDS.escalation,
+        supportMessage: SUPPORT,
+      });
+      // Dismissing the summary does not cut it off either.
+      h.engine.reset();
+      expect(h.context.sources[0]?.stopped).toBe(false);
+      expect(h.context.closed).toBe(false);
+      // Heard to its end, the call's audio is released.
+      h.context.sources[0]?.finish();
+      await flush(10);
+      expect(h.context.closed).toBe(true);
+    },
+  );
+
+  it('plays to its end when the founder ends the call', async () => {
+    const h = setup();
+    await sayingSupport(h);
+    await h.engine.end('user');
+    expect(h.state()).toMatchObject({ phase: 'ended', ended: { blocked: { reason: 'crisis_support' } } });
+    expect(h.context.sources[0]?.stopped).toBe(false);
+    h.context.sources[0]?.finish();
+    await flush(10);
+    expect(h.context.closed).toBe(true);
+    expect(h.state().phase).toBe('ended');
+  });
+
+  it('keeps no support on the summary after an ordinary call, and stops a held-back reply', async () => {
+    const h = setup();
+    await startLive(h);
+    h.engine.sendText('Tell me about BenchTally');
+    await flush();
+    h.script.push(
+      { event: 'turn.accepted', turnId: TURN_ID, ordinal: 1 },
+      speech(0, 'Start with what they pay today.'),
+      { event: 'turn.blocked', turnId: TURN_ID, reason: 'policy', escalationId: null, supportMessage: null },
+    );
+    h.script.close();
+    await flush(20);
+    await h.engine.end('user');
+    expect(h.state().ended?.blocked).toBeNull();
+    expect(h.context.closed).toBe(true);
+  });
+});
+
 describe('CallEngine · limits and ending', () => {
   it('ends when the server says terminate on a heartbeat', async () => {
     const h = setup({ grant: null });

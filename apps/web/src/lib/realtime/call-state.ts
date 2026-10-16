@@ -40,6 +40,11 @@ export interface CallEnded {
   readonly summary: CallSummary | null;
   /** Why the summary could not be loaded (the call is over either way). */
   readonly summaryError: string | null;
+  /**
+   * The support the call was showing when it ended (crisis support, a safety hand-over): it stays above the
+   * summary until the founder leaves it.
+   */
+  readonly blocked: TurnBlockedDetail | null;
 }
 
 export interface CallSnapshot {
