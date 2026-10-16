@@ -3,6 +3,7 @@ import { auditRepo, callsRepo, documentsRepo, sessionsRepo } from '@foundry/db';
 import { type Kit } from '../internal/kit.js';
 import { CALL_LIMITS } from './call-usage.js';
 import { type DistillBackstopReport, type DistillService } from './distill.js';
+import { settlePendingAiProposals, type PendingSettleResult } from './memory.js';
 
 export interface MaintenanceReport {
   /** Ephemeral sessions ended because they were idle for `maintenance.ephemeralIdleSeconds` (24 h). */
@@ -15,6 +16,11 @@ export interface MaintenanceReport {
   readonly endedCallsDistilled: number;
   /** Document uploads left unfinished ({@link staleUploadSeconds}), now `failed` with `upload_incomplete`. */
   readonly staleUploadsFailed: number;
+  /**
+   * AI memory proposals left from before automatic memory, settled through the checks new memory goes through
+   * (`settlePendingAiProposals`): kept, or retired as a restatement or as not the founder's.
+   */
+  readonly pendingProposals: PendingSettleResult;
   /** The distillation backstop: idle conversations that no trigger distilled yet. */
   readonly distillation: DistillBackstopReport;
 }
@@ -24,10 +30,10 @@ export interface MaintenanceService {
    * Daily housekeeping (the worker runs it for the scheduled `maintenance` message; the schedule already wakes
    * the database once a day): ends ephemeral sessions idle for 24 h and erases the content of every ended
    * ephemeral session's turns, closes calls whose client went away and distils their conversations, fails
-   * document uploads nobody finished, then runs the bounded distillation backstop while `deadline` (epoch ms)
-   * leaves time. Each step commits on its own, the privacy erasure first, so a later step failing never undoes
-   * it. One audit event per step, with counts. Idempotent. (AI memory is kept automatically, so no proposal
-   * waits for a person and nothing expires.)
+   * document uploads nobody finished, settles the AI memory proposals left from before automatic memory (kept
+   * or retired with the checks new memory goes through: none waits for a person any more), then runs the bounded
+   * distillation backstop while `deadline` (epoch ms) leaves time. Each step commits on its own, the privacy
+   * erasure first, so a later step failing never undoes it. One audit event per step, with counts. Idempotent.
    */
   runDaily(options: { readonly requestId: string; readonly deadline?: number }): Promise<MaintenanceReport>;
 }
@@ -98,6 +104,16 @@ export function createMaintenanceService(
         });
         return count;
       });
+      const pendingProposals = await settlePendingAiProposals(kit);
+      await kit.system((sx) =>
+        auditRepo.appendAudit(sx, {
+          action: 'maintenance.memory_proposals',
+          outcome: 'succeeded',
+          requestId,
+          objectType: 'memory',
+          metadata: { ...pendingProposals },
+        }),
+      );
       const distillation = await distill.backstop({
         requestId,
         ...(deadline === undefined ? {} : { deadline }),
@@ -109,6 +125,8 @@ export function createMaintenanceService(
         staleCallsEnded: staleCalls,
         endedCallsDistilled: endedCalls.distilled,
         staleUploadsFailed: staleUploads,
+        proposalsKept: pendingProposals.kept,
+        proposalsRetired: pendingProposals.duplicates + pendingProposals.notTheFounders,
         distilled: distillation.distilled,
         distillDeferred: distillation.deferred,
       });
@@ -118,6 +136,7 @@ export function createMaintenanceService(
         staleCallsEnded: staleCalls,
         endedCallsDistilled: endedCalls.distilled,
         staleUploadsFailed: staleUploads,
+        pendingProposals,
         distillation,
       };
     },

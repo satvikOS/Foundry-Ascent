@@ -156,3 +156,12 @@ def test_conversation_opener_mirror() -> None:
     assert match
     nested = set(re.findall(r"^\s+(\w+):", match.group(1), re.MULTILINE))
     assert nested == {f.alias or name for name, f in models.LastConversation.model_fields.items()}
+
+
+def test_memory_candidate_mirror_names_its_source() -> None:
+    coach = _source("coach.ts")
+    assert _object_keys(coach, "MemoryCandidate") == set(models.MemoryCandidate.model_fields)
+    labels = models.MemoryCandidate.model_fields["source"].annotation
+    assert set(_enum(coach, "MemoryCandidateSource")) == {
+        value for arg in getattr(labels, "__args__", ()) for value in getattr(arg, "__args__", ())
+    }

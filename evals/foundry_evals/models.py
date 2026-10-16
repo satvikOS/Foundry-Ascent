@@ -102,6 +102,8 @@ class MemoryCandidate(_Snake):
     content: str
     evidence_ids: list[str]
     confidence: float
+    #: Where it came from; ``coach_advice`` is never kept as a fact about the venture.
+    source: Literal["founder_stated", "founder_agreed", "coach_advice"] | None = None
 
 
 class RehearsalScore(_Snake):

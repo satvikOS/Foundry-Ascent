@@ -12,6 +12,7 @@ import {
 } from '@foundry/contracts';
 import {
   escalationsRepo,
+  memoryRepo,
   personasRepo,
   sessionsRepo,
   settingsRepo,
@@ -489,6 +490,8 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
             grounding: conversationGrounding(
               turns.map((t) => ({ founder: t.founderText, answer: t.response?.answer ?? null })),
             ),
+            // What the founder made the vEIR forget is never kept again.
+            forgotten: await memoryRepo.listForgottenMemory(tx, { ventureId: session.ventureId }),
           });
           candidateCount = created.length;
           recap = {

@@ -86,6 +86,7 @@ function deps(lines: string[] = []) {
         staleCallsEnded: 1,
         endedCallsDistilled: 3,
         staleUploadsFailed: 1,
+        pendingProposals: { kept: 1, duplicates: 0, notTheFounders: 0 },
         distillation: sweep,
       }),
   );
@@ -246,6 +247,7 @@ describe('daily maintenance message (EventBridge schedule → jobs queue)', () =
         staleCallsEnded: 0,
         endedCallsDistilled: 0,
         staleUploadsFailed: 0,
+        pendingProposals: { kept: 0, duplicates: 0, notTheFounders: 0 },
         distillation: { candidates: 50, distilled: 12, skipped: 0, dropped: 0, failed: 0, deferred: 38 },
       });
     maintenance.mockImplementation(left);

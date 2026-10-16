@@ -794,6 +794,7 @@ describe('memory hygiene', () => {
     const id = await conversation(maya, ['Pricing per room seems right; occupancy is the other worry.']);
     const fromTurn = (await proposalsFrom(id)).length;
     await idle(id, 15);
+    // The founder said each (the model labels them so): what is tested here is how they are deduplicated.
     const candidate = (
       type: 'fact' | 'decision' | 'insight',
       title: string,
@@ -805,6 +806,7 @@ describe('memory hygiene', () => {
       content,
       evidence_ids: [],
       confidence,
+      source: 'founder_stated' as const,
     });
     scripted = (context) => ({
       ...mockDistillDraft(context),
@@ -884,7 +886,7 @@ describe('memory hygiene', () => {
     expect(refs.sort()).toEqual((turns.rows as { id: string }[]).map((t) => t.id).sort());
   });
 
-  it('daily maintenance never expires memory: kept items stay, and only a person removes them', async () => {
+  it('daily maintenance never expires kept memory, and settles a proposal from before like new memory', async () => {
     const old = await proposal(maya, 'Old idea about vending machines', 'Vending machines in study rooms.');
     const kept = await h.t.db.system((sx) =>
       memoryRepo.createMemory(sx, {
@@ -908,15 +910,17 @@ describe('memory hygiene', () => {
     const report = await h.core.maintenance.runDaily({ requestId: 'maintenance-test' });
     expect(report).not.toHaveProperty('proposalsExpired');
     const items = await h.t.db.system((sx) => memoryRepo.getMemoryByIds(sx, [old, kept.id]));
-    expect(Object.fromEntries(items.map((m) => [m.id, m.status]))).toEqual({
-      [old]: 'proposed',
-      [kept.id]: 'confirmed',
+    // The proposal from before (no conversation to judge it by, nothing like it) is kept the way new memory is.
+    expect(Object.fromEntries(items.map((m) => [m.id, [m.status, m.keptAutomatically]]))).toEqual({
+      [old]: ['confirmed', true],
+      [kept.id]: ['confirmed', true],
     });
     // The approval CHECK still forbids a confirmed AI item that neither a person nor the vEIR kept.
+    const another = await proposal(maya, 'Another old idea', 'Lockers next to the study rooms.');
     await expect(
       h.t.db.system((sx) =>
         sx.query(`UPDATE memory_objects SET status = 'confirmed', approved_by = NULL WHERE id = :id`, {
-          id: p.uuid(old),
+          id: p.uuid(another),
         }),
       ),
     ).rejects.toThrow();
@@ -1387,7 +1391,9 @@ describe('memory hygiene by meaning', () => {
     const content =
       'Libraries want weekly occupancy reports for every study room in the main building during the exam period.';
     const pending = await proposal(maya, 'Weekly occupancy reports', content);
-    const id = await conversation(maya, ['What should the reports look like?']);
+    const id = await conversation(maya, [
+      'Libraries want weekly occupancy reports for every study room during the exam season.',
+    ]);
     await idle(id, 15);
     scripted = (context) => ({
       ...mockDistillDraft(context),

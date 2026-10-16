@@ -199,6 +199,17 @@ function everyday(word: string, allowed: ReadonlySet<string>): boolean {
   );
 }
 
+const NO_ALLOWED: ReadonlySet<string> = new Set();
+
+/**
+ * Whether `word` (any case) is everyday vocabulary rather than a name: a common or method word, or a form of an
+ * English word ("Regulatory", "Pricing", "Batteries"); "Boston" and "Stanford" are not. What a capitalised word
+ * at the start of a label or sentence is tested with.
+ */
+export function isEverydayWord(word: string): boolean {
+  return everyday(word.toLowerCase(), NO_ALLOWED);
+}
+
 /** Words of well-known, generic methods that are often capitalised. */
 const GENERIC_METHOD_WORDS = new Set([
   'mom',

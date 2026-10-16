@@ -52,6 +52,12 @@ export const DistillDraft = z.object({
     open_questions: z.array(DistillNote),
     last_advice: z.array(DistillNote),
     next_opener: z.string().nullable(),
+    /*
+     * The thread to come back to next time as a short phrase, which the greeting is phrased around afresh each
+     * time. Optional so drafts written without it still parse; the strict model schema lists it as a required,
+     * nullable property (`toStrictJsonSchema`).
+     */
+    next_topic: z.string().nullable().optional(),
   }),
   memory_candidates: z.array(MemoryCandidate),
   lesson_candidates: z.array(LessonCandidate),
@@ -75,6 +81,7 @@ export const DISTILL_LIMITS = {
   notebookOpenQuestionsMax: 6,
   lastAdviceMax: 5,
   nextOpenerMaxChars: 300,
+  nextTopicMaxChars: 120,
   memoryCandidatesMax: 3,
   memoryTitleMaxChars: 200,
   memoryContentMaxChars: 2_000,

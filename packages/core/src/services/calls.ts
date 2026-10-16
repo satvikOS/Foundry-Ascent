@@ -396,6 +396,7 @@ export function createCallsService(
             otherVentureMemberNames: others.memberNames,
           },
           now: kit.now(),
+          sessionId: started.call.sessionId,
         });
         const text = chosen?.text ?? null;
         if (text === started.opener) return text;

@@ -192,6 +192,8 @@ export function removedSince(
   }
   changed(before.summary, after?.summary);
   if (before.nextOpener !== null) changed(before.nextOpener, after?.nextOpener);
+  const topic = before.nextOpener === null ? null : (before.nextTopic ?? null);
+  if (topic !== null) changed(topic, after?.nextOpener == null ? null : after.nextTopic);
   return out;
 }
 
@@ -233,6 +235,12 @@ export function dropSuppressed(
     dropped += 1;
     nextOpener = null;
   }
+  // The thread goes with its opener, and never comes back once a person removed it.
+  let nextTopic = nextOpener === null ? null : (content.nextTopic ?? null);
+  if (nextTopic !== null && hidden(nextTopic)) {
+    dropped += 1;
+    nextTopic = null;
+  }
   return {
     content: {
       summary,
@@ -241,6 +249,7 @@ export function dropSuppressed(
       openQuestions: filter(content.openQuestions),
       lastAdvice: filter(content.lastAdvice),
       nextOpener,
+      ...(content.nextTopic === undefined && nextTopic === null ? {} : { nextTopic }),
     },
     dropped,
   };
@@ -248,7 +257,7 @@ export function dropSuppressed(
 
 /**
  * Whether two notebooks say the same (a distillation that changes nothing writes nothing): the six content
- * sections only, so bookkeeping the document may also carry never counts as a change.
+ * sections and the opener's thread only, so bookkeeping the document may also carry never counts as a change.
  */
 export function sameNotebook(
   a: notebooksRepo.NotebookContent | null,
@@ -264,6 +273,7 @@ export function sameNotebook(
       parsed.openQuestions,
       parsed.lastAdvice,
       parsed.nextOpener,
+      parsed.nextOpener === null ? null : (parsed.nextTopic ?? null),
     ]);
   };
   return a !== null && canonical(a) === canonical(b);

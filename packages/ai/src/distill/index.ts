@@ -16,6 +16,6 @@ export type {
   PreviousNotebook,
   SanitizedDistill,
 } from './sanitize.js';
-export { checkDeidentified } from './deidentify.js';
+export { checkDeidentified, isEverydayWord } from './deidentify.js';
 export type { DeidentifyReason, DeidentifyResult, LessonDeidentifyContext } from './deidentify.js';
 export { contentTokens, isNearDuplicate, jaccardSimilarity, repeatsNote, textKey } from './similarity.js';

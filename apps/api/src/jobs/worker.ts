@@ -26,8 +26,8 @@ export const BackfillEmbeddingsJob = z.object({
 
 /**
  * Daily maintenance, sent by the FoundryAscent-App EventBridge schedule (one rule, `rate(1 day)`) to the
- * jobs queue: ends ephemeral sessions idle for 24 h and erases their content, expires stale AI memory
- * proposals and runs the distillation backstop (core.maintenance.runDaily). The message carries no data;
+ * jobs queue: ends ephemeral sessions idle for 24 h and erases their content, settles the AI memory proposals
+ * left from before automatic memory and runs the distillation backstop (core.maintenance.runDaily). The message carries no data;
  * every run is idempotent. While the backstop leaves conversations for lack of time, the message is
  * redelivered (up to the queue's last receive), so a backlog drains the same day.
  */
@@ -114,6 +114,8 @@ export async function dispatchJob(
           staleCallsEnded: report.staleCallsEnded,
           endedCallsDistilled: report.endedCallsDistilled,
           staleUploadsFailed: report.staleUploadsFailed,
+          proposalsKept: report.pendingProposals.kept,
+          proposalsRetired: report.pendingProposals.duplicates + report.pendingProposals.notTheFounders,
           distillCandidates: report.distillation.candidates,
           distilled: report.distillation.distilled,
           distillFailed: report.distillation.failed,

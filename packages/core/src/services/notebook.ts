@@ -149,19 +149,23 @@ export function applyNotebookEdit(
         suppressed: out,
       };
     }
+    // The thread the opener came back to goes with it: the person chose what to open with (or nothing).
     case 'edit_opener': {
       if (edit.text === current.nextOpener) return { content: current, suppressed: out };
       suppress('nextOpener', current.nextOpener);
-      return { content: { ...current, nextOpener: edit.text }, suppressed: out };
+      suppress('nextOpener', current.nextTopic ?? null);
+      return { content: { ...current, nextOpener: edit.text, nextTopic: null }, suppressed: out };
     }
     case 'remove_opener': {
       if (current.nextOpener === null) return { content: current, suppressed: out };
       suppress('nextOpener', current.nextOpener);
-      return { content: { ...current, nextOpener: null }, suppressed: out };
+      suppress('nextOpener', current.nextTopic ?? null);
+      return { content: { ...current, nextOpener: null, nextTopic: null }, suppressed: out };
     }
     case 'clear': {
       suppress('summary', current.summary);
       suppress('nextOpener', current.nextOpener);
+      suppress('nextOpener', current.nextTopic ?? null);
       for (const section of SECTIONS) for (const entry of current[section]) suppress(section, entry.text);
       for (const commitment of current.commitments) suppress('commitments', commitment.text);
       return { content: notebooksRepo.EMPTY_NOTEBOOK, suppressed: out };

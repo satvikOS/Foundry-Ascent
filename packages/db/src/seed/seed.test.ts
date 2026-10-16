@@ -109,6 +109,23 @@ describe('seed content', () => {
       expect(v.documents.filter((d) => d.canary)).toHaveLength(1);
       expect(new Set(v.memory.map((m) => m.key)).size).toBe(v.memory.length);
       expect(new Set(v.memory.map((m) => m.visibility)).size).toBeGreaterThanOrEqual(2);
+      // What the vEIR learned is kept automatically (seed.ts keepLearnedMemory), so it must restate nothing else
+      // of the venture: no AI item shares nine in ten of its words with another item.
+      const words = (text: string): Set<string> =>
+        new Set(
+          text
+            .toLowerCase()
+            .split(/[^a-z0-9]+/)
+            .filter((w) => w.length > 2),
+        );
+      for (const m of v.memory.filter((x) => x.origin === 'ai')) {
+        for (const other of v.memory.filter((x) => x.key !== m.key)) {
+          const a = words(m.content);
+          const b = words(other.content);
+          const shared = [...a].filter((w) => b.has(w)).length;
+          expect(shared / new Set([...a, ...b]).size, `${m.key} restates ${other.key}`).toBeLessThan(0.9);
+        }
+      }
       for (const m of v.memory) {
         expect(people.has(m.author)).toBe(true);
         if (m.origin === 'eir') expect(m.status).toBe('proposed');

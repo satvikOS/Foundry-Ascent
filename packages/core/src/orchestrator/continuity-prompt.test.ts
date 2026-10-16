@@ -6,8 +6,11 @@ import {
   LEFT_OFF_MAX_CHARS,
   continuityOpener,
   leftOffTopic,
+  midSentence,
+  quotable,
   relativeWhen,
   renderLeftOffSection,
+  threadOpener,
   type LeftOffConversationData,
 } from './continuity-prompt.js';
 import { validatedOpener } from './continuity.js';
@@ -190,18 +193,73 @@ describe('continuityOpener', () => {
     expect(line.generic).not.toContain('price');
   });
 
-  it('prefers the distilled topic, and falls back to a generic line without a topic', () => {
+  it('prefers the distilled topics, said mid-sentence, and falls back to a generic line without a topic', () => {
     const distilled = conversation({
       channel: 'chat',
       digest: { summary: 's', topics: ['per-library pricing'], commitments: [], openQuestions: [] },
     });
     const line = continuityOpener(distilled, { now: NOW, seed: 'b' });
-    expect(line.withTopic).toContain('we were on per-library pricing.');
+    expect(line.withTopic).toContain('we talked about per-library pricing.');
     expect(line.withTopic).not.toMatch(/on a call/);
-    expect(continuityOpener(conversation({ title: null }), { now: NOW, seed: 'c' }).withTopic).toBeNull();
+    expect(
+      continuityOpener(conversation({ title: null, exchanges: [] }), { now: NOW, seed: 'c' }).withTopic,
+    ).toBeNull();
     expect(leftOffTopic({ title: 'We signed the first library!', digest: null })).toBe(
-      'we were on “We signed the first library”',
+      'you said “We signed the first library”',
     );
+  });
+
+  it('never quotes a greeting or a filler back, and picks what the founder actually brought (review)', () => {
+    // Production: founders open calls with "Hi" and short fragments; the title is the first message.
+    for (const title of ['Hi', 'HI', 'hello?', 'Hey, can you hear me?', 'sure', 'ok thanks', 'Test test']) {
+      const greeting = conversation({
+        title,
+        exchanges: [{ founder: title, answer: 'Hello! What is on your mind?' }],
+      });
+      for (const seed of ['a', 'b', 'c', 'd']) {
+        const line = continuityOpener(greeting, { now: NOW, seed });
+        expect(line.withTopic, title).toBeNull();
+        expect(line.generic).not.toContain(title);
+      }
+    }
+    // A greeting first, then the substance: the opener names the substance.
+    const later = continuityOpener(
+      conversation({
+        title: 'Hi',
+        exchanges: [
+          { founder: 'Hi', answer: 'Hello! What is on your mind?' },
+          { founder: 'We decided to price per library, not per seat.', answer: 'That is simpler to sell.' },
+          { founder: 'ok', answer: 'Anything else?' },
+        ],
+      }),
+      { now: NOW, seed: 'a' },
+    );
+    expect(later.withTopic).toContain('you said “We decided to price per library, not per seat”');
+    // Too long to say in one breath: the first sentence, or nothing.
+    const long = conversation({
+      title:
+        'So the thing is that we have been talking to libraries and campuses all month long and every single one of them wants something different.',
+      exchanges: [],
+    });
+    expect(continuityOpener(long, { now: NOW, seed: 'a' }).withTopic).toBeNull();
+    expect(quotable('We booked two rooms. Then the second library called back about a trial.')).toBe(
+      'We booked two rooms.',
+    );
+  });
+
+  it('says a capitalised topic label as part of the sentence, never as a heading (review)', () => {
+    const topics = (labels: string[]) =>
+      conversation({ digest: { summary: 's', topics: labels, commitments: [], openQuestions: [] } });
+    const line = continuityOpener(topics(['Regulatory pathway']), { now: NOW, seed: 'a' }).withTopic ?? '';
+    expect(line).toContain('we talked about regulatory pathway');
+    expect(line).not.toContain('Regulatory pathway');
+    expect(
+      continuityOpener(topics(['Pricing', 'Pilot design']), { now: NOW, seed: 'a' }).withTopic,
+    ).toContain('we talked about pricing and pilot design');
+    expect(midSentence('FDA clearance')).toBe('FDA clearance');
+    expect(midSentence('Boston pilot')).toBe('Boston pilot');
+    expect(midSentence('iOS app')).toBe('iOS app');
+    expect(midSentence('Per-library pricing')).toBe('per-library pricing');
   });
 
   it('varies its phrasing from one conversation to the next', () => {
@@ -216,10 +274,10 @@ describe('continuityOpener', () => {
 
   it('passes the opener checks: it names nobody, and stays within an opener’s length', () => {
     for (let i = 0; i < 30; i += 1) {
-      const { withTopic, generic } = continuityOpener(conversation({ title: 'a'.repeat(79) + '?' }), {
-        now: NOW,
-        seed: `s${String(i)}`,
-      });
+      const { withTopic, generic } = continuityOpener(
+        conversation({ title: `${'Which library budget line pays for the sensors '.repeat(2).trim()}?` }),
+        { now: NOW, seed: `s${String(i)}` },
+      );
       for (const line of [withTopic, generic]) {
         expect(line).not.toBeNull();
         expect(validatedOpener(line, GUARDS)).toBe(line);
@@ -227,12 +285,33 @@ describe('continuityOpener', () => {
       }
     }
     // A title that names an EIR or another venture never reaches the founder as the vEIR's words.
-    const risky = continuityOpener(conversation({ title: 'What would Corin Halvorsen do?' }), {
-      now: NOW,
-      seed: 'x',
-    });
+    const risky = continuityOpener(
+      conversation({ title: 'What would Corin Halvorsen say about pricing the pilot?', exchanges: [] }),
+      { now: NOW, seed: 'x' },
+    );
+    expect(risky.withTopic).toContain('Corin Halvorsen');
     expect(validatedOpener(risky.withTopic, GUARDS)).toBeNull();
     expect(validatedOpener(risky.generic, GUARDS)).toBe(risky.generic);
+  });
+});
+
+describe('threadOpener (the notebook’s next topic, phrased afresh each time)', () => {
+  it('comes back to the thread in a different way from one conversation to the next', () => {
+    const lines = new Set(
+      Array.from({ length: 12 }, (_, i) =>
+        threadOpener('the five library-staff interviews you planned', {
+          seed: `s${String(i)}`,
+          when: 'yesterday',
+        }),
+      ),
+    );
+    expect(lines.size).toBeGreaterThanOrEqual(4);
+    for (const line of lines) {
+      expect(line).toContain('the five library-staff interviews you planned');
+      expect(validatedOpener(line, GUARDS)).toBe(line);
+    }
+    expect(threadOpener('Pilot pricing.', { seed: 'x' })).toMatch(/pilot pricing[.,]/);
+    expect(threadOpener('Hi', { seed: 'x' })).toBeNull();
   });
 });
 

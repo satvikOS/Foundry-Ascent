@@ -731,7 +731,13 @@ describe('ending a call', () => {
   it('ends once, summarizes what the call produced, and shows the summary to the team', async () => {
     const sessionId = await newSession('maya', 'quietquad');
     const { call } = await startCall('maya', sessionId);
-    const turn = await talk('maya', sessionId, call.id, 'How should we price the library pilot?');
+    // The founder says what is worth remembering in their own words (the coach's framing alone is not kept).
+    const turn = await talk(
+      'maya',
+      sessionId,
+      call.id,
+      'Willingness to pay has not been tested with a paid commitment yet. How should we price the library pilot?',
+    );
     await talk('maya', sessionId, call.id, 'What should the second library see first?');
     const live = CallDetailResponse.parse(await h.core.calls.get(ctx.devin, call.id));
     expect(live).toMatchObject({ call: { status: 'live' }, summary: null });

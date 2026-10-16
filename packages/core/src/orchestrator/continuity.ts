@@ -16,6 +16,8 @@ import {
   LEFT_OFF_CONVERSATIONS,
   LEFT_OFF_EXCHANGES,
   continuityOpener,
+  relativeWhen,
+  threadOpener,
   type LeftOffConversationData,
   type LeftOffData,
   type LeftOffThreads,
@@ -51,17 +53,21 @@ export async function loadContinuity(
     ventureId: args.ventureId,
     personaId: args.personaId,
   });
-  // The venture's conversations with any of its vEIRs: a vEIR assigned later still knows what was said before.
+  // The venture's conversations with any of its vEIRs: a vEIR assigned later still knows what was said before
+  // (one with an earlier coach is marked as that coach's). A turn leaves out the ones "Where you left off"
+  // already shows ({@link withoutLeftOff}), so a few more are read than are shown.
   const digests = await sessionsRepo.listRecentDigests(tx, {
     ventureId: args.ventureId,
     excludeSessionId: args.sessionId,
-    limit: MAX_PROMPT_DIGESTS,
+    limit: MAX_PROMPT_DIGESTS + LEFT_OFF_CONVERSATIONS,
   });
   return {
     continuity: {
       founderFirstName,
       notebook: notebook ? { ...notebook.content, updatedAt: notebook.updatedAt } : null,
       recentDigests: digests.map((d) => ({
+        sessionId: d.sessionId,
+        otherCoach: d.personaId !== args.personaId,
         date: d.lastActivityAt,
         title: d.title,
         channel: d.hasCalls ? 'voice' : 'text',
@@ -74,7 +80,23 @@ export async function loadContinuity(
       })),
     },
     notebook: notebook !== null,
-    digests: digests.length,
+    digests: Math.min(MAX_PROMPT_DIGESTS, digests.length),
+  };
+}
+
+/**
+ * The vEIR's notes without the digests of the conversations "Where you left off" already shows (the same
+ * conversation is never sent twice in one prompt), at most {@link MAX_PROMPT_DIGESTS} of them.
+ */
+export function withoutLeftOff(continuity: PromptContinuity, leftOff: LeftOffData | null): PromptContinuity {
+  const digests = continuity.recentDigests;
+  if (digests === undefined) return continuity;
+  const shown = new Set((leftOff?.conversations ?? []).map((c) => c.sessionId));
+  return {
+    ...continuity,
+    recentDigests: digests
+      .filter((d) => d.sessionId === undefined || !shown.has(d.sessionId))
+      .slice(0, MAX_PROMPT_DIGESTS),
   };
 }
 
@@ -155,11 +177,12 @@ export function openerProblem(text: string, guards: OpenerGuards): OpenerProblem
  * The data of "Where you left off" (orchestrator/continuity-prompt.ts) for a conversation of `principalId` in a
  * venture: keyed by the venture and the person, not by the vEIR (a venture's vEIR can change; each conversation
  * says whether it was with `personaId`). The person's own latest earlier conversation, and a teammate's when it
- * is more recent,
- * each with its digest when distilled and its last exchanges the digest does not cover yet. Two indexed
- * statements (the conversations, then their exchanges); null for a temporary chat (it neither reads nor writes
- * the vEIR's memory) and when there is no earlier conversation with a completed turn. Temporary and deleted
- * conversations are never read; RLS keeps other ventures out.
+ * is more recent (or the newest teammate's when the person has none), each with its digest when distilled and
+ * its last exchanges the digest does not cover yet. Two indexed statements (the conversations, then their
+ * exchanges): the person's own conversation is read on its own, so any number of newer teammate conversations
+ * never hides it. Null for a temporary chat (it neither reads nor writes the vEIR's memory) and when there is no
+ * earlier conversation with a completed turn. Temporary and deleted conversations are never read; RLS keeps
+ * other ventures out.
  */
 export async function loadLeftOff(
   tx: AppExecutor,
@@ -170,29 +193,28 @@ export async function loadLeftOff(
     readonly sessionId: string | null;
     readonly principalId: string;
     readonly privacy: 'standard' | 'ephemeral';
-    /** Only the person's own latest conversation, without exchanges (an opener needs no more). */
+    /** Only the person's own latest conversation (a new conversation's opener picks up the person's own). */
     readonly ownOnly?: boolean;
   },
 ): Promise<LeftOffData | null> {
   if (args.privacy === 'ephemeral') return null;
+  const ownOnly = args.ownOnly === true;
+  // Newest first: the person's own latest, and the newest teammate conversation (unless `ownOnly`).
   const recent = await sessionsRepo.listLeftOffConversations(tx, {
     ventureId: args.ventureId,
+    principalId: args.principalId,
     excludeSessionId: args.sessionId,
-    limit: 4,
+    teammate: !ownOnly,
   });
   const ownIndex = recent.findIndex((c) => c.startedBy === args.principalId);
-  const picked =
-    args.ownOnly === true
-      ? recent.slice(ownIndex, ownIndex < 0 ? 0 : ownIndex + 1)
-      : // The person's own latest, and the newest teammate conversation after it (or the newest of any).
-        (ownIndex < 0 ? recent.slice(0, 1) : [...recent.slice(0, ownIndex).slice(0, 1), recent[ownIndex]])
-          .filter((c): c is sessionsRepo.LeftOffConversation => c !== undefined)
-          .slice(0, LEFT_OFF_CONVERSATIONS);
+  // The person's own latest and a teammate's after it; without one of their own, the teammate's.
+  const picked = (ownIndex < 0 ? recent.slice(0, 1) : recent.slice(0, ownIndex + 1)).slice(
+    0,
+    LEFT_OFF_CONVERSATIONS,
+  );
   if (picked.length === 0) return null;
-  const needExchanges =
-    args.ownOnly === true ? [] : picked.filter((c) => c.distillVersion < c.completedTurns);
   const exchanges = await sessionsRepo.listLastExchanges(tx, {
-    sessionIds: needExchanges.map((c) => c.id),
+    sessionIds: picked.filter((c) => c.distillVersion < c.completedTurns).map((c) => c.id),
     perSession: LEFT_OFF_EXCHANGES,
   });
   return {
@@ -247,18 +269,22 @@ const OPENER_ECHO_EXCHANGES = 3;
 /**
  * The vEIR's opening line for a new standard conversation of `principalId` (its first bubble, and what a call says
  * after introducing itself), in this order:
- * 1. the notebook's next opener when a person wrote it (they chose what to open with);
- * 2. the notebook's next opener when distillation drew it from the person's latest conversation with this vEIR,
- *    or the notebook was written after that conversation's last turn (nothing was said since it was written),
- *    unless it only repeats a question the vEIR asked at the end of that conversation (production: call 3 opened
- *    with call 2's closing question, verbatim);
+ * 1. the notebook's next opener when a person wrote or rewrote it (they chose what to open with);
+ * 2. when the notebook's opener is current (distillation drew it from the person's latest conversation with this
+ *    vEIR, or wrote it after that conversation's last turn): a line phrased afresh around the thread it noted to
+ *    come back to (`nextTopic`: a topic, never a sentence to replay), else the stored sentence itself, unless it
+ *    only repeats a question the vEIR asked at the end of that conversation (production: call 3 opened with call
+ *    2's closing question, verbatim) or it already opened a conversation since in which nothing was said (it was
+ *    said once; it is not said again word for word);
  * 3. a line that picks up the person's latest conversation itself, with any of the venture's vEIRs (when it was,
  *    what about), built without a model call from what was said, so it is right even before distillation ran
- *    (orchestrator/continuity-prompt.ts); its phrasing follows that conversation and the person, so each new
- *    conversation after another opens differently, and a preview says what the conversation then opens with;
+ *    (orchestrator/continuity-prompt.ts);
  * 4. an older notebook opener.
- * Every line must pass the opener checks (identity, cross-venture): one that fails is skipped. `opener` is null
- * when there is none (a first conversation); `latest` is the conversation it picks up.
+ * Phrasing follows the latest conversation, the person and how many conversations they opened since it, so each
+ * new conversation opens differently; a preview (no conversation yet) says what the next one opens with, and a
+ * call starting in that conversation (`sessionId`, left out of the count) says it too. Every line must pass the
+ * opener checks (identity, cross-venture): one that fails is skipped. `opener` is null when there is none (a
+ * first conversation); `latest` is the conversation it picks up.
  */
 export async function chooseOpener(
   tx: AppExecutor,
@@ -268,6 +294,8 @@ export async function chooseOpener(
     readonly principalId: string;
     readonly guards: Omit<OpenerGuards, 'personaName' | 'personaEirName'>;
     readonly now: Date;
+    /** The conversation the opener is for, when it exists already (a call starting in it). */
+    readonly sessionId?: string | null;
   },
 ): Promise<{ readonly opener: ChosenOpener | null; readonly latest: LeftOffConversationData | null }> {
   const notebook = await notebooksRepo.getNotebook(tx, {
@@ -288,39 +316,70 @@ export async function chooseOpener(
   const last = await loadLeftOff(tx, {
     ventureId: args.ventureId,
     personaId: args.persona.id,
-    sessionId: null,
+    sessionId: args.sessionId ?? null,
     principalId: args.principalId,
     privacy: 'standard',
     ownOnly: true,
   });
   const latest = last?.conversations[0] ?? null;
   const found = (opener: ChosenOpener | null) => ({ opener, latest });
-  if (stored !== null && source === null)
-    return found({ text: stored, sourceSessionId: null, byPerson: true });
+  // A person wrote it, or rewrote it since the vEIR last wrote the notebook: they chose these words.
+  const chosen =
+    stored !== null &&
+    (source === null ||
+      (
+        await notebooksRepo.getNotebookMarks(tx, { ventureId: args.ventureId, personaId: args.persona.id })
+      ).personEdits.includes(notebooksRepo.OPENER_EDIT));
+  if (stored !== null && chosen)
+    return found({ text: stored, sourceSessionId: source ?? null, byPerson: source === null });
+  // Conversations the person opened since the latest one without saying anything: each opens differently, and
+  // the stored line, once said in one of them, is not said again word for word.
+  const since =
+    latest === null
+      ? { opened: 0, withOpener: 0 }
+      : await sessionsRepo.countConversationsOpenedSince(tx, {
+          ventureId: args.ventureId,
+          principalId: args.principalId,
+          since: latest.lastActivityAt,
+          excludeSessionId: args.sessionId ?? null,
+          opener: stored,
+        });
+  const seed = `${latest?.sessionId ?? 'first'}:${args.principalId}:${String(since.opened)}`;
   const current =
     latest === null ||
     source === latest.sessionId ||
     (latest.withThisVeir &&
       notebook?.updatedAt != null &&
       Date.parse(notebook.updatedAt) > Date.parse(latest.lastActivityAt));
-  if (
-    stored !== null &&
-    current &&
-    !(latest !== null && (await askedAtTheEnd(tx, latest.sessionId, stored)))
-  ) {
-    return found({ text: stored, sourceSessionId: source ?? null, byPerson: false });
+  const drawn = (text: string): ChosenOpener => ({ text, sourceSessionId: source ?? null, byPerson: false });
+  if (stored !== null && current) {
+    const topic = notebook?.content.nextTopic ?? null;
+    const around =
+      topic === null
+        ? null
+        : validatedOpener(
+            threadOpener(topic, {
+              seed,
+              when:
+                latest !== null && source === latest.sessionId
+                  ? relativeWhen(latest.lastActivityAt, args.now)
+                  : null,
+            }),
+            guards,
+          );
+    if (around !== null) return found(drawn(around));
+    if (since.withOpener === 0 && !(latest !== null && (await askedAtTheEnd(tx, latest.sessionId, stored)))) {
+      return found(drawn(stored));
+    }
   }
   if (latest !== null) {
-    const lines = continuityOpener(latest, {
-      now: args.now,
-      seed: `${latest.sessionId}:${args.principalId}`,
-    });
+    const lines = continuityOpener(latest, { now: args.now, seed });
     for (const candidate of [lines.withTopic, lines.generic]) {
       const text = candidate === null ? null : validatedOpener(candidate, guards);
       if (text !== null) return found({ text, sourceSessionId: latest.sessionId, byPerson: false });
     }
   }
-  return found(stored === null ? null : { text: stored, sourceSessionId: source ?? null, byPerson: false });
+  return found(stored === null ? null : drawn(stored));
 }
 
 /** Whether `opener` repeats a question the vEIR asked in one of the last answers of the conversation. */

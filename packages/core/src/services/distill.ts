@@ -761,6 +761,8 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
         grounding: conversationGrounding(
           source.turns.map((t) => ({ founder: t.founderText, answer: t.response?.answer ?? null })),
         ),
+        // What the founder made the vEIR forget is never kept again from the same words.
+        forgotten: await memoryRepo.listForgottenMemory(sx, { ventureId: state.ventureId, system: true }),
         ...(vectors.candidates ? { embeddings: vectors.candidates } : {}),
       });
 

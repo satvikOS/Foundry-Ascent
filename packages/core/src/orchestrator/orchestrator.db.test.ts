@@ -48,7 +48,10 @@ async function auditActions(objectId: string): Promise<string[]> {
 describe('turn pipeline', () => {
   it('authorizes, retrieves, generates, validates and persists a grounded turn', async () => {
     const session = await h.core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'diagnose' });
-    const text = 'What did the library staff interviews tell us about quiet seat demand during exam weeks?';
+    // The founder states something worth remembering, in their own words (the coach's framing alone is not kept).
+    const text =
+      'We have more interviews about real past behaviour planned. What did the library staff interviews tell us ' +
+      'about quiet seat demand during exam weeks?';
     const { events, outcome } = await runTurn(h.core, maya, session.id, { text });
 
     expect(outcome.status).toBe('completed');
@@ -538,7 +541,9 @@ describe('session end', () => {
       goal: 'Decide on the pilot',
     });
     await runTurn(h.core, maya, session.id, {
-      text: 'The library operations manager agreed to a two-week door counter test.',
+      text:
+        'The library operations manager agreed to a two-week door counter test; the pilot needs a written ' +
+        'success threshold and stop condition.',
     });
     const { session: ended, recap } = await h.core.sessions.end(maya, session.id);
     expect(ended.status).toBe('ended');
