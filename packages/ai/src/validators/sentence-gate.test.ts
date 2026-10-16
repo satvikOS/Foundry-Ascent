@@ -309,19 +309,20 @@ describe('SentenceGate', () => {
   });
 
   it('stays linear on a long stream of tiny units', () => {
-    run(gate(), ['Warm up. Corin here.']);
-    let slowestPush = 0;
-    const started = performance.now();
-    const g = gate();
-    const text = '. '.repeat(3_000);
-    for (let i = 0; i < text.length; i += 8) {
-      const t0 = performance.now();
-      g.push(text.slice(i, i + 8));
-      slowestPush = Math.max(slowestPush, performance.now() - t0);
-    }
-    g.end();
-    expect(slowestPush).toBeLessThan(50);
-    expect(performance.now() - started).toBeLessThan(1_000);
+    // Each unit used to re-read everything shown before it. Timing ratios (not absolute times) keep this
+    // independent of the machine: eight times the text takes about eight times as long, not sixty-four.
+    const time = (chars: number): number => {
+      const g = gate();
+      const text = '. '.repeat(chars / 2);
+      const started = performance.now();
+      for (let i = 0; i < text.length; i += 8) g.push(text.slice(i, i + 8));
+      g.end();
+      return performance.now() - started;
+    };
+    time(2_000);
+    const small = Math.min(time(2_000), time(2_000));
+    const large = Math.min(time(16_000), time(16_000));
+    expect(large).toBeLessThan(16 * small + 100);
   });
 
   it('counts removals and rewrites without keeping any text', () => {
