@@ -382,8 +382,8 @@ export class AppStack extends Stack {
     // Distillation (digest, notebook delta, memory and lesson candidates) runs from jobs the API enqueues:
     // a distill_session message delayed 9 minutes after each turn, which arrives while Aurora is still up
     // from that turn (it pauses after 10 idle minutes); one at session end; and the bounded daily
-    // maintenance backstop. Nothing runs while nobody talks. This schedule is the alternative it replaced
-    // and ships disabled (`distillation.sweepEnabled: false`): a sweep that queries every 15 minutes keeps
+    // maintenance backstop. Nothing runs while nobody talks. The polling sweep below, which that replaced,
+    // ships disabled (`distillation.sweepEnabled: false`): a sweep that queries every 15 minutes keeps
     // the cluster awake about two thirds of the time (about USD 29 a month at 0.5 ACU against a USD 1-3
     // idle target). If it is ever enabled, the worker distills idle conversations inline, a bounded number
     // per run: the worker role has no sqs:SendMessage, so it cannot enqueue. Same pattern as the daily
