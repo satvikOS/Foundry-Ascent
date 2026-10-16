@@ -1508,6 +1508,153 @@ describe('the turn engine and the calls service together', () => {
     }
   });
 
+  it('keeps a spoken turn the founder interrupted before it settled, and replays what they heard of it', async () => {
+    const sentences = [
+      'Start with the library that already counts seats.',
+      'Ask the staff for two weeks of hourly counts.',
+      'Compare those counts with your own tally.',
+      'Then book a call with the head librarian.',
+      'Bring the comparison to that call.',
+      'Which librarian can you reach first?',
+    ];
+    const seen: (readonly ChatMessage[])[] = [];
+    const gateway = new MockModelGateway({
+      streamDelayMs: 30,
+      streamFixture: (context) => {
+        seen.push(context.messages);
+        return sentences.join(' ');
+      },
+    });
+    const core = createCore({
+      db: h.t.db,
+      gateway,
+      config: h.config,
+      objectStore: h.objectStore,
+      jobQueue: h.jobQueue,
+      logger: h.logger,
+    });
+    const stored = (turnId: string) =>
+      h.t.db.system(async (sx) => {
+        const r = await sx.query(
+          `SELECT status, founder_text, response ->> 'answer' AS answer,
+                  coalesce((validator_results -> 'notes') @> '["interrupted"]'::jsonb, false) AS interrupted
+           FROM turns WHERE id = :id`,
+          { id: p.uuid(turnId) },
+        );
+        return r.rows[0];
+      });
+    /** A spoken turn whose request is cancelled (the client's barge-in) when `cut` says so. */
+    const interrupted = async (
+      sessionId: string,
+      callId: string,
+      text: string,
+      cut: (event: TurnStreamEvent, events: readonly TurnStreamEvent[]) => boolean,
+      channel: 'voice' | 'text' = 'voice',
+    ) => {
+      const barge = new AbortController();
+      const events: TurnStreamEvent[] = [];
+      let unitsAtCut = 0;
+      const outcome = await core.orchestrator.runTurn(
+        ctx.devin,
+        sessionId,
+        { text, channel, ...(channel === 'voice' ? { callId } : {}) },
+        (e) => {
+          const event = TurnStreamEvent.parse(e);
+          events.push(event);
+          if (!barge.signal.aborted && cut(event, events)) {
+            barge.abort();
+            unitsAtCut = unitsOf(events).length;
+          }
+        },
+        { signal: barge.signal },
+      );
+      // Nothing more is said once the founder spoke over the vEIR.
+      expect(unitsOf(events)).toHaveLength(unitsAtCut);
+      return { outcome, events, units: unitsOf(events) };
+    };
+    const sessionId = (await core.sessions.create(ctx.devin, ventureId('quietquad'), {})).id;
+    const { call } = await core.calls.start(ctx.devin, sessionId, { inputMode: 'typed' });
+    try {
+      // The founder speaks over the first unit while the reply is still streaming.
+      const early = await interrupted(
+        sessionId,
+        call.id,
+        'Which library should we approach first?',
+        (e) => e.event === 'turn.speech',
+      );
+      expect(early.outcome.status).toBe('completed');
+      const earlyId = early.outcome.turnId ?? '';
+      const [heard] = early.units;
+      if (heard === undefined) throw new Error('expected a unit');
+      expect(await stored(earlyId)).toMatchObject({
+        status: 'completed',
+        founder_text: 'Which library should we approach first?',
+        interrupted: true,
+      });
+      // The client records what was heard, as calls.md prescribes (stop audio, abort, interrupt).
+      await core.calls.interrupt(ctx.devin, earlyId, {
+        callId: call.id,
+        heardSeq: 0,
+        heard: [{ seq: heard.seq, text: heard.text, sig: heard.sig }],
+      });
+
+      // … and over the last unit, once the reply was written but before its annotations.
+      const late = await interrupted(
+        sessionId,
+        call.id,
+        'And after the counts?',
+        (_e, events) => events.filter((x) => x.event === 'turn.delta').length === sentences.length,
+      );
+      expect(late.outcome.status).toBe('completed');
+      expect(await stored(late.outcome.turnId ?? '')).toMatchObject({
+        status: 'completed',
+        answer: sentences.join(' '),
+        interrupted: true,
+      });
+
+      // The next reply's model call sees both questions, and of the first reply only what was heard.
+      seen.length = 0;
+      const next = await core.orchestrator.runTurn(
+        ctx.devin,
+        sessionId,
+        { text: 'So what do we do on Monday?', channel: 'voice', callId: call.id },
+        () => undefined,
+      );
+      expect(next.status).toBe('completed');
+      const history = seen[0];
+      if (history === undefined) throw new Error('expected the answer call');
+      const asked = history.map((m) => m.content).join('\n');
+      expect(asked).toContain('Which library should we approach first?');
+      expect(asked).toContain('And after the counts?');
+      const { opener } = (await core.sessions.get(ctx.devin, sessionId)).session;
+      expect(history.filter((m) => m.role === 'assistant').map((m) => m.content)).toEqual([
+        ...(opener === null ? [] : [opener]),
+        speakableText(heard.text),
+        sentences.join(' '),
+      ]);
+
+      // Cancelled before a word was spoken, or a typed message cancelled: the turn failed, as before.
+      const silent = await interrupted(
+        sessionId,
+        call.id,
+        'Wait, one more thing first.',
+        (e) => e.event === 'turn.delta',
+      );
+      expect(silent.units).toHaveLength(0);
+      expect(silent.outcome.status).toBe('failed');
+      const typed = await interrupted(
+        sessionId,
+        call.id,
+        'Never mind that.',
+        (e) => e.event === 'turn.delta',
+        'text',
+      );
+      expect(typed.outcome.status).toBe('failed');
+    } finally {
+      await core.calls.end(ctx.devin, call.id, { reason: 'user' });
+    }
+  });
+
   it('plays the crisis support unit the turn engine streamed, whatever the switches and budgets', async () => {
     const sessionId = await newSession('maya', 'quietquad');
     const { call } = await startCall('maya', sessionId, 'typed');

@@ -601,16 +601,23 @@ export function createOrchestrator(
     }
   }
 
-  /** Signed `turn.speech` units of one voice turn. */
+  /** Signed `turn.speech` units of one voice turn (none once `signal`, the caller's, is aborted). */
   function speechStream(
     ctx: RequestContext,
     ids: { readonly sessionId: string; readonly turnId: string },
     emit: (e: TurnStreamEvent) => Promise<void>,
     key: Promise<SessionSigningKey>,
+    signal?: AbortSignal,
   ): SpeechStream {
-    return new SpeechStream(key, { ...ids, requestId: ctx.requestId }, emit, (fields) => {
-      logger.error('turn.speech_unsigned', fields);
-    });
+    return new SpeechStream(
+      key,
+      { ...ids, requestId: ctx.requestId },
+      emit,
+      (fields) => {
+        logger.error('turn.speech_unsigned', fields);
+      },
+      signal,
+    );
   }
 
   async function crisisPath(
@@ -924,7 +931,7 @@ export function createOrchestrator(
       stream?.speech ??
       (a.speechKey === null
         ? null
-        : speechStream(ctx, { sessionId: pre.session.id, turnId: turn.id }, emit, a.speechKey));
+        : speechStream(ctx, { sessionId: pre.session.id, turnId: turn.id }, emit, a.speechKey, signal));
     // True as well when nothing was streamed (`stream` null).
     const writtenWhole = stream?.fallback !== null;
     if (speech !== null) {
@@ -1053,7 +1060,12 @@ export function createOrchestrator(
           stream:
             stream === null
               ? 'off'
-              : (stream.fallback ?? (generation.gateBlocked === null ? 'streamed' : 'gate_blocked')),
+              : (stream.fallback ??
+                (stream.interrupted
+                  ? 'interrupted'
+                  : generation.gateBlocked === null
+                    ? 'streamed'
+                    : 'gate_blocked')),
           firstTokenMs,
           modelFirstTokenMs: stream?.modelFirstTokenMs ?? null,
           totalMs: Math.round(performance.now() - a.startedAt),

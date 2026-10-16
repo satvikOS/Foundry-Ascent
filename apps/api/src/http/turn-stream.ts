@@ -134,7 +134,8 @@ export async function handleTurnRequest(
 
   // Cancellation: client disconnect (node-server request signal, stream cancel, stalled writes) or the
   // deadline (Lambda remaining time, else the configured budget). Core cancels the model call and
-  // records the turn as failed.
+  // records the turn as failed, except a spoken turn cancelled after some of its speech was sent (a barge-in),
+  // which it keeps as interrupted (docs/architecture/calls.md §2.6).
   const controller = new AbortController();
   const abort = (reason: string): void => {
     if (!controller.signal.aborted) controller.abort(new DOMException(reason, 'AbortError'));

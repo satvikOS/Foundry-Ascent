@@ -205,6 +205,13 @@ builds the conversation history with `historyAsHeard` over `callsRepo.listTurnIn
 founder spoke over is replayed as the words they heard, and left out when they heard none of it or the client
 did not send the units. The model never sees a reply as heard when it was not.
 
+A barge-in usually lands while the turn is still being answered (playback starts during the stream). A spoken
+turn the caller cancels after some of its speech units were sent is therefore not failed: it is stored as
+completed with the reply as far as it was written (all of it when only the annotations were left), without
+annotations and with the validator note `interrupted`, and no further unit is sent. The next turn's history
+then has the founder's words and, once the interrupt is recorded, only what they heard of the reply. A turn
+cancelled before any unit was sent fails as before.
+
 `POST /calls/:id/end` stores the client's numbers and returns the summary: turn count, duration, AI memory
 proposals from the call's turns still awaiting review, their next actions (each once, at most 10) and
 escalations drafted from them. A summary lists what its reader may open: an assigned EIR, who reads only the
