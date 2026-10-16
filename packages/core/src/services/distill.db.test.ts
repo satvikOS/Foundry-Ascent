@@ -871,11 +871,140 @@ describe('escalation resolutions feed the notebook', () => {
     expect(JSON.stringify(event)).not.toMatch(/pilot data/);
   });
 
+  /** An escalation of one of the conversation's turns, shared and acknowledged by Corin (not resolved yet). */
+  async function sharedFromTurn(sessionId: string, turnId: string): Promise<string> {
+    const created = await h.core.escalations.create(maya, quietquad(), {
+      category: 'expert_judgment',
+      priority: 'P2',
+      requestedRole: 'eir',
+      founderQuestion: 'Should we sign the second library before the pilot ends?',
+      turnId,
+    });
+    expect(created.sessionId).toBe(sessionId);
+    await h.core.escalations.act(maya, created.id, { action: 'approve_sharing', sharedMemoryIds: [] });
+    await h.core.escalations.act(corin, created.id, { action: 'acknowledge' });
+    return created.id;
+  }
+
+  const resolve = (escalationId: string) =>
+    h.core.escalations.act(corin, escalationId, {
+      action: 'resolve',
+      resolution: { summary: 'Sign the second library only after the pilot data', nextSteps: [] },
+    });
+
+  it('keeps help asked from a temporary chat out of the notebook (it neither writes nor reads it)', async () => {
+    const session = await h.core.sessions.create(maya, quietquad(), {
+      mode: 'diagnose',
+      privacy: 'ephemeral',
+    });
+    const turn = await completedTurn(maya, session.id, 'Should we sign the second library now?');
+    const escalationId = await sharedFromTurn(session.id, turn.id);
+    const before = await notebook();
+    expect((await resolve(escalationId)).status).toBe('resolved');
+    const after = await notebook();
+    expect(after?.version).toBe(before?.version);
+    expect(after?.content.lastAdvice.some((e) => e.id === resolutionEntryId(escalationId))).toBe(false);
+  });
+
+  it('keeps help asked from a deleted conversation out of the notebook', async () => {
+    const session = await h.core.sessions.create(maya, quietquad(), { mode: 'diagnose' });
+    const turn = await completedTurn(maya, session.id, 'Should we sign the second library now?');
+    const escalationId = await sharedFromTurn(session.id, turn.id);
+    // Shared with consent, it survives the delete; its resolution must not bring the conversation back.
+    await h.core.sessions.remove(maya, session.id);
+    const before = await notebook();
+    expect((await resolve(escalationId)).status).toBe('resolved');
+    const after = await notebook();
+    expect(after?.version).toBe(before?.version);
+    expect(after?.content.lastAdvice.some((e) => e.sourceSessionId === session.id)).toBe(false);
+  });
+
   it('keeps wellbeing matters out of the coaching notebook', async () => {
     const before = (await notebook())?.version;
     const resolved = await resolvedEscalation('safety_wellbeing', 'Talked through the workload with Maya');
     expect(resolved.status).toBe('resolved');
     expect((await notebook())?.version).toBe(before);
+  });
+});
+
+describe('temporary chats keep nothing', () => {
+  const CRISIS = 'Honestly, everyone would be better off without me.';
+
+  async function escalationsOf(
+    sessionId: string,
+  ): Promise<{ status: string; question: string; shared: boolean }[]> {
+    const rows = await h.t.db.system((sx) =>
+      sx.query(
+        `SELECT status, packet ->> 'founderQuestion' AS question, sharing_consent_at IS NOT NULL AS shared
+         FROM escalations WHERE session_id = :id ORDER BY created_at`,
+        { id: p.uuid(sessionId) },
+      ),
+    );
+    return rows.rows as { status: string; question: string; shared: boolean }[];
+  }
+
+  it('ending one erases the support requests drawn from it that were never shared, and keeps a shared one', async () => {
+    const session = await h.core.sessions.create(maya, quietquad(), {
+      mode: 'diagnose',
+      privacy: 'ephemeral',
+    });
+    // The crisis path still drafts its support request in a temporary chat.
+    const events: TurnStreamEvent[] = [];
+    await h.core.orchestrator.runTurn(maya, session.id, { text: CRISIS }, (e) => {
+      events.push(TurnStreamEvent.parse(e));
+    });
+    expect(events.at(-1)).toMatchObject({ event: 'turn.blocked', reason: 'crisis_support' });
+    const turn = await completedTurn(maya, session.id, 'Should we sign the second library now?');
+    const shared = await h.core.escalations.create(maya, quietquad(), {
+      category: 'expert_judgment',
+      priority: 'P2',
+      requestedRole: 'eir',
+      founderQuestion: 'Should we sign the second library before the pilot ends?',
+      turnId: turn.id,
+    });
+    await h.core.escalations.act(maya, shared.id, { action: 'approve_sharing', sharedMemoryIds: [] });
+    expect((await escalationsOf(session.id)).map((e) => e.question)).toEqual([
+      CRISIS,
+      'Should we sign the second library before the pilot ends?',
+    ]);
+
+    await h.core.sessions.end(maya, session.id);
+    expect(await escalationsOf(session.id)).toEqual([
+      { status: 'withdrawn', question: '[temporary chat ended]', shared: false },
+      {
+        status: 'routed',
+        question: 'Should we sign the second library before the pilot ends?',
+        shared: true,
+      },
+    ]);
+  });
+
+  it('the daily sweep erases them for a temporary chat that ended without its end request', async () => {
+    const session = await h.core.sessions.create(maya, quietquad(), {
+      mode: 'diagnose',
+      privacy: 'ephemeral',
+    });
+    await h.core.orchestrator.runTurn(maya, session.id, { text: CRISIS }, () => undefined);
+    expect((await escalationsOf(session.id)).map((e) => e.question)).toEqual([CRISIS]);
+    // Abandoned a day ago: the sweep ends it.
+    await h.t.db.system(async (sx) => {
+      await sx.query(`UPDATE coaching_sessions SET started_at = now() - interval '2 days' WHERE id = :id`, {
+        id: p.uuid(session.id),
+      });
+      await sx.query(`UPDATE turns SET created_at = now() - interval '2 days' WHERE session_id = :id`, {
+        id: p.uuid(session.id),
+      });
+    });
+    const swept = await h.t.db.system((sx) =>
+      sessionsRepo.expireStaleEphemeralSessions(sx, {
+        idleSeconds: h.config.maintenance.ephemeralIdleSeconds,
+      }),
+    );
+    expect(swept.sessionsEnded).toBeGreaterThanOrEqual(1);
+    expect(swept.escalationsErased).toBeGreaterThanOrEqual(1);
+    expect(await escalationsOf(session.id)).toEqual([
+      { status: 'withdrawn', question: '[temporary chat ended]', shared: false },
+    ]);
   });
 });
 

@@ -294,6 +294,8 @@ turn limit per session, the grounding threshold and k for the portfolio live in 
 
 - Cross-venture guard matches other venture **names** as whole phrases: a venture named with a common
   word would over-block; keep venture names distinctive.
-- Ephemeral sessions keep turn content until `sessions.end`, which erases it; abandoned ephemeral sessions
-  keep it (a cleanup job can end stale sessions).
+- Ephemeral sessions keep turn content until `sessions.end`, which erases it together with the escalations
+  drawn from them that the founder never shared (a shared one went to a person with consent and stays); daily
+  maintenance ends abandoned ones after 24 h and erases them the same way. Their escalation resolutions never
+  reach the vEIR notebook, nor do those of a deleted conversation.
 - Revocation in another container takes effect within the cache TTL (60 s), by design.

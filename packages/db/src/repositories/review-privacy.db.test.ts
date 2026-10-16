@@ -630,3 +630,27 @@ describe('notebook lines drawn from several conversations', () => {
     ).rejects.toMatchObject({ sqlState: '23514' });
   });
 });
+
+describe('work that writes what it drew from a conversation', () => {
+  it('waits for a delete in flight and then sees the conversation deleted', async () => {
+    const sessionId = await newSession(maya, quietquad);
+    expect(await t.db.system((sx) => sessionsRepo.lockSessionState(sx, sessionId))).toEqual({
+      privacy: 'standard',
+      deleted: false,
+    });
+    const deleting = gate();
+    const deleted = gate();
+    const deletion = t.db.withContext(maya, async (tx) => {
+      expect(await sessionsRepo.softDeleteSession(tx, sessionId)).toBe(true);
+      deleted.open();
+      await deleting.promise;
+    });
+    await deleted.promise;
+    const check = watch(t.db.system((sx) => sessionsRepo.lockSessionState(sx, sessionId)));
+    await pause(300);
+    expect(check.settled()).toBe(false);
+    deleting.open();
+    await deletion;
+    expect(await check.promise).toEqual({ privacy: 'standard', deleted: true });
+  });
+});

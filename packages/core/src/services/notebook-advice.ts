@@ -1,6 +1,6 @@
 import { DISTILL_LIMITS, sanitizePlainText } from '@foundry/ai';
 import { type EscalationCategory } from '@foundry/contracts';
-import { assignmentsRepo, auditRepo, notebooksRepo, type escalationsRepo } from '@foundry/db';
+import { assignmentsRepo, auditRepo, notebooksRepo, sessionsRepo, type escalationsRepo } from '@foundry/db';
 
 import { type Kit } from '../internal/kit.js';
 import { HUMAN_ADVICE_ID_PREFIX } from './distill-rules.js';
@@ -11,7 +11,9 @@ import { notebookFingerprint } from './notebook.js';
  * resolution becomes a `lastAdvice` line, attributed to the person who gave it, so the vEIR can pick the
  * thread up. It is an AI-notebook line like any other: visible to the venture team, correctable and removable,
  * never cited as a fact. Distillation keeps it as written until a person removes it or newer advice pushes
- * it out (`keepHumanAdvice`). Wellbeing and conflict cases stay out of the coaching notebook.
+ * it out (`keepHumanAdvice`). Wellbeing and conflict cases stay out of the coaching notebook, and so does help
+ * asked from a temporary chat (which neither writes nor reads the vEIR's notes) or from a conversation that
+ * was deleted (everything drawn from it is erased).
  */
 
 /** Categories whose resolutions are personal matters, not venture advice: never written to the notebook. */
@@ -50,8 +52,11 @@ function resolutionNote(
 /**
  * Adds a resolved escalation's advice to the notebook of the venture's current vEIR (owner role; the assignee
  * cannot write the notebook under RLS). The line is newest first; the section keeps at most five lines,
- * dropping the oldest lines no person edited. Skipped for private categories, ventures without an active
- * vEIR, a line a person already removed (suppressed), or an escalation already recorded. Audited with ids.
+ * dropping the oldest lines no person edited. Skipped for private categories, escalations from a temporary
+ * chat or a deleted conversation, ventures without an active vEIR, a line a person already removed
+ * (suppressed), or an escalation already recorded. The conversation is checked under a lock its delete takes
+ * too, so a delete racing the write either comes first (nothing is written) or erases the line after it.
+ * Audited with ids.
  */
 export async function addResolutionToNotebook(
   kit: Kit,
@@ -68,6 +73,10 @@ export async function addResolutionToNotebook(
   const text = resolutionNote(resolverName, escalation.resolution);
   const id = resolutionEntryId(escalation.id);
   return kit.system(async (sx) => {
+    if (escalation.sessionId !== null) {
+      const conversation = await sessionsRepo.lockSessionState(sx, escalation.sessionId);
+      if (conversation?.privacy !== 'standard' || conversation.deleted) return 'skipped';
+    }
     const active = await assignmentsRepo.resolveActiveAssignment(sx, escalation.ventureId);
     if (active === null) return 'skipped';
     const scope = { ventureId: escalation.ventureId, personaId: active.persona.id };

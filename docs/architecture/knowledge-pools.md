@@ -163,6 +163,10 @@ generated time), with `distilled_at` and `distill_version` (the number of comple
   `person` (a rename, or a title given at the start). Distillation (`setSessionDigest`) replaces only
   `auto` titles.
 - **Temporary chats never carry a title** (CHECK `coaching_sessions_title_privacy_check`); renaming one is 409.
+- **Temporary chats keep nothing.** They neither read nor write the vEIR notebook: a resolution of help asked
+  from one (or from a deleted conversation) is never written there. A crisis message still drafts its support
+  request, and the founder may share any request while the chat is open; when it ends (or daily maintenance
+  ends it after 24 h idle) the requests never shared are withdrawn and their packet erased, as a delete does.
 - **Titles and goals are the founder's own words.** Only the venture's founder/team read them: every read
   path that returns them (session views, recents, `listRecentDigests`) gives null to anyone else, such as
   the assigned EIR, who may read the conversation row itself (RLS) and its digest. System jobs read them as

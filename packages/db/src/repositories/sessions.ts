@@ -12,6 +12,7 @@ import { col, type RawRow } from '../columns.js';
 import { type SqlExecutor, type SystemExecutor } from '../executor.js';
 import { p } from '../params.js';
 import { clampLimit, fetchByIdsInBatches, queryFirst, queryNumber, queryOne, queryRows } from './common.js';
+import { ERASED_PACKET_SQL, TEMPORARY_CHAT_ENDED_TEXT, UNSHARED_NOT_ERASED_SQL } from './escalations.js';
 import { EPHEMERAL_REDACTION_TEXT } from './turns.js';
 
 type CoachModeValue = z.infer<typeof CoachMode>;
@@ -140,6 +141,28 @@ export async function lockSessionForTurn(ex: SqlExecutor, sessionId: string): Pr
     (r) => col.uuid.decode(r.id, 'id'),
   );
   return row !== null;
+}
+
+/**
+ * A conversation's privacy and whether it was deleted, locked (FOR SHARE) for the rest of the caller's
+ * transaction, for work that writes something drawn from it (owner role: deleted ones are seen). Deleting it
+ * locks the same row, so a delete that committed first is seen here, and one that comes later waits for the
+ * write and then erases it. Null when it does not exist or is not visible.
+ */
+export function lockSessionState(
+  ex: SqlExecutor,
+  sessionId: string,
+): Promise<{ readonly privacy: SessionRecord['privacy']; readonly deleted: boolean } | null> {
+  return queryFirst(
+    ex,
+    `SELECT s.privacy, s.deleted_at IS NOT NULL AS deleted FROM coaching_sessions s WHERE s.id = :id
+     FOR SHARE OF s`,
+    { id: p.uuid(sessionId) },
+    (r) => ({
+      privacy: col.enum(SessionPrivacy.options).decode(r.privacy, 'privacy'),
+      deleted: col.bool.decode(r.deleted, 'deleted'),
+    }),
+  );
 }
 
 export interface CreateSessionInput {
@@ -756,13 +779,16 @@ export interface EphemeralCleanupResult {
   readonly sessionsEnded: number;
   /** Turns of ended ephemeral sessions whose content was erased by this run. */
   readonly turnsRedacted: number;
+  /** Unshared escalations of ended ephemeral sessions withdrawn and erased by this run. */
+  readonly escalationsErased: number;
 }
 
 /**
  * Daily maintenance (system executor): ends every ephemeral session idle for `idleSeconds` (no turn and no
  * start inside the period) and erases the conversation content of every turn of an ephemeral session that
- * has ended (founder text, response and what the founder heard of it), exactly as ending the session does
- * (`turnsRepo.redactSessionTurns`). Covers
+ * has ended (founder text, response and what the founder heard of it), and the escalations drawn from it that
+ * the founder never shared, exactly as ending the session does (`turnsRepo.redactSessionTurns`,
+ * `escalationsRepo.eraseUnsharedEscalations`). Covers
  * sessions abandoned without "End session" and anything an earlier end could not redact. Idempotent.
  */
 export async function expireStaleEphemeralSessions(
@@ -788,7 +814,20 @@ export async function expireStaleEphemeralSessions(
        AND (t.founder_text <> :redacted OR t.response IS NOT NULL OR t.heard_text IS NOT NULL)`,
     { redacted: p.text(EPHEMERAL_REDACTION_TEXT) },
   );
-  return { sessionsEnded: ended.rowCount, turnsRedacted: redacted.rowCount };
+  const escalations = await sx.query(
+    `UPDATE escalations AS e
+     SET status = CASE WHEN e.status IN ('draft', 'awaiting_consent') THEN 'withdrawn' ELSE e.status END,
+         packet = ${ERASED_PACKET_SQL}, updated_at = now()
+     FROM coaching_sessions s
+     WHERE s.id = e.session_id AND s.privacy = 'ephemeral' AND s.status = 'ended' AND s.deleted_at IS NULL
+       AND ${UNSHARED_NOT_ERASED_SQL}`,
+    { marker: p.text(TEMPORARY_CHAT_ENDED_TEXT) },
+  );
+  return {
+    sessionsEnded: ended.rowCount,
+    turnsRedacted: redacted.rowCount,
+    escalationsErased: escalations.rowCount,
+  };
 }
 
 /** Start of the most recent session of the venture (excluding `exceptSessionId`), or null. */

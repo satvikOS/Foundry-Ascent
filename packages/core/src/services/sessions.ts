@@ -10,6 +10,7 @@ import {
   type SessionView,
 } from '@foundry/contracts';
 import {
+  escalationsRepo,
   notebooksRepo,
   personasRepo,
   sessionsRepo,
@@ -471,9 +472,13 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
             reason: 'concurrent_end',
           });
         }
-        // Ephemeral sessions keep no conversation content beyond security records (audit, usage).
-        const redacted =
-          session.privacy === 'ephemeral' ? await turnsRepo.redactSessionTurns(tx, sessionId) : 0;
+        // Ephemeral sessions keep no conversation content beyond security records (audit, usage): the turns,
+        // and the escalations drawn from them that the founder never shared, are erased.
+        const temporary = session.privacy === 'ephemeral';
+        const redacted = temporary ? await turnsRepo.redactSessionTurns(tx, sessionId) : 0;
+        const escalationsErased = temporary
+          ? await escalationsRepo.eraseUnsharedEscalations(tx, sessionId)
+          : 0;
         await audit(scope, {
           action: 'session.ended',
           outcome: 'succeeded',
@@ -487,6 +492,7 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
             memoryCandidates: candidateCount,
             privacy: session.privacy,
             redactedTurns: redacted,
+            escalationsErased,
           },
         });
         return { session: await sessionView(tx, sessionId), recap };
