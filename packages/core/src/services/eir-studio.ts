@@ -40,7 +40,8 @@ export interface EirStudioService {
   ): Promise<PersonaReleaseView>;
   /**
    * Approves a draft release, superseding the previous approved one (program lead or the linked EIR).
-   * EIR personas require a valid consent record covering doctrine. A draft persona becomes active.
+   * EIR personas require a valid consent record covering doctrine. A draft persona becomes active. A draft
+   * older than the active release is refused (`release_outdated`): approving it would roll doctrine back.
    */
   approveRelease(ctx: RequestContext, releaseId: string): Promise<PersonaReleaseView>;
   /** Kill switch: blocks new sessions and turns immediately (program lead or the linked EIR). */
@@ -234,6 +235,14 @@ export function createEirStudioService(kit: Kit): EirStudioService {
         const via = await requirePersonaControl(scope, persona);
         if (release.status !== 'draft')
           throw fail.conflict('Only draft releases can be approved', 'invalid_transition');
+        // A draft older than the live release would roll every assigned venture back to stale doctrine.
+        const active = await personasRepo.getActiveRelease(scope.tx, persona.id);
+        if (active !== null && release.version < active.version) {
+          throw fail.conflict(
+            `v${String(release.version)} is older than the active v${String(active.version)}`,
+            'release_outdated',
+          );
+        }
         await requireConsent(scope, persona);
         const approved = await personasRepo.approveRelease(scope.tx, {
           releaseId,

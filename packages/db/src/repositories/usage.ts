@@ -137,24 +137,13 @@ export function usageByModel(sx: SystemExecutor, days = 30): Promise<UsageByMode
 }
 
 export interface UsageByPurpose {
-  readonly purpose: UsagePurpose;
+  /** A `UsagePurpose`; read as text so a purpose added by a later migration never breaks the page. */
+  readonly purpose: string;
   readonly usd: number;
   readonly inputTokens: number;
   readonly outputTokens: number;
   readonly calls: number;
 }
-
-const PURPOSES: readonly UsagePurpose[] = [
-  'turn',
-  'recap',
-  'classification',
-  'embedding',
-  'ingestion',
-  'eval',
-  'seed',
-  'distill',
-  'speech',
-];
 
 /** Totals per purpose (turn, distill, speech, …) over the last `days` UTC days, most expensive first. */
 export function usageByPurpose(sx: SystemExecutor, days = 30): Promise<UsageByPurpose[]> {
@@ -168,7 +157,7 @@ export function usageByPurpose(sx: SystemExecutor, days = 30): Promise<UsageByPu
      ORDER BY usd DESC, purpose`,
     { days: p.int(clampLimit(days, 30, 366)) },
     (r) => ({
-      purpose: col.enum(PURPOSES).decode(r.purpose, 'purpose'),
+      purpose: col.text.decode(r.purpose, 'purpose'),
       usd: col.num.decode(r.usd, 'usd'),
       inputTokens: col.int.decode(r.input_tokens, 'input_tokens'),
       outputTokens: col.int.decode(r.output_tokens, 'output_tokens'),

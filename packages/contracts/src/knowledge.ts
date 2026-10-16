@@ -120,6 +120,25 @@ export const NotebookResponse = VeirNotebook;
 export const AvatarProviderId = z.enum(['builtin', 'heygen', 'tavus', 'simli']);
 export type AvatarProviderId = z.infer<typeof AvatarProviderId>;
 
+/**
+ * Voices a persona may speak with on calls (Amazon Polly, adult US English), most natural first. The speech
+ * service refuses any other; a core test keeps its engine table naming exactly these.
+ */
+export const SPEECH_VOICE_IDS = [
+  'Danielle',
+  'Joanna',
+  'Matthew',
+  'Ruth',
+  'Salli',
+  'Stephen',
+  'Gregory',
+  'Joey',
+  'Kendra',
+  'Kimberly',
+] as const;
+/** The platform voice, for personas without a consented voice of their own. */
+export const DEFAULT_SPEECH_VOICE_ID = 'Danielle' satisfies (typeof SPEECH_VOICE_IDS)[number];
+
 export const PersonaEmbodiment = z.object({
   provider: AvatarProviderId,
   /** Text-to-speech voice id (Amazon Polly) or null for the platform default. */

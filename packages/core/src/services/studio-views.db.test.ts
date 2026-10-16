@@ -3,7 +3,7 @@
  * manage its consent, which personas rely on each consent, who coaches each venture, and spend per purpose.
  */
 import { ConsentListResponse, PersonaView, ProgramVentureRow, UsageSummary } from '@foundry/contracts';
-import { usageRepo } from '@foundry/db';
+import { p, personasRepo, usageRepo } from '@foundry/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { type RequestContext } from '../context.js';
@@ -66,6 +66,96 @@ describe('consent dependents', () => {
     expect(active?.personas).toEqual([
       expect.objectContaining({ id: corinPersona(), name: "Corin's vEIR", status: 'active' }),
     ]);
+  });
+});
+
+describe('consent the persona can run on', () => {
+  it('refuses a consent that does not cover doctrine and keeps the one in force', async () => {
+    const before = await h.core.personas.listConsents(lead, corinPersona());
+    await expect(
+      h.core.personas.recordConsent(lead, corinPersona(), { assetTypes: ['style', 'voice'] }),
+    ).rejects.toMatchObject({
+      code: 'validation_failed',
+      errors: [expect.objectContaining({ path: 'assetTypes' })],
+    });
+    expect(await h.core.personas.listConsents(lead, corinPersona())).toHaveLength(before.length);
+    expect(await h.core.eir.getPersona(lead, corinPersona())).toMatchObject({
+      status: 'active',
+      hasConsent: true,
+    });
+  });
+
+  it('does not count a linked consent without doctrine as consent on file', async () => {
+    const original = await h.t.db.system((sx) => personasRepo.getPersona(sx, corinPersona()));
+    if (original?.consentId == null) throw new Error('Corin’s vEIR has no consent in the seed');
+    const subject = (await h.t.db.system((sx) => personasRepo.getConsent(sx, original.consentId ?? '')))
+      ?.subjectPrincipalId;
+    if (!subject) throw new Error('the seeded consent has no subject');
+    // A record from before doctrine was required, linked straight in the database.
+    await h.t.db.system(async (sx) => {
+      const legacy = await sx.query(
+        `INSERT INTO consents (tenant_id, subject_principal_id, asset_types)
+         VALUES (:t, :s, ARRAY['style', 'voice']::text[]) RETURNING id`,
+        { t: p.uuid(h.seed.tenantId), s: p.uuid(subject) },
+      );
+      await personasRepo.setPersonaConsent(sx, {
+        personaId: corinPersona(),
+        consentId: String(legacy.rows[0]?.id),
+      });
+    });
+    try {
+      expect((await h.core.eir.getPersona(lead, corinPersona())).hasConsent).toBe(false);
+    } finally {
+      await h.t.db.system((sx) =>
+        personasRepo.setPersonaConsent(sx, {
+          personaId: corinPersona(),
+          consentId: original.consentId ?? '',
+        }),
+      );
+    }
+    expect((await h.core.eir.getPersona(lead, corinPersona())).hasConsent).toBe(true);
+  });
+});
+
+describe('persona names and releases', () => {
+  it('refuses a vEIR name that does not say it is a vEIR', async () => {
+    const ruth = await h.core.eir.getPersona(lead, ruthPersona());
+    const release = await h.core.eir.getRelease(lead, ruth.activeRelease?.id ?? '');
+    const profileId = ruth.eirProfile?.id ?? '';
+    for (const name of ['Ruth Abernathy-Song', 'Ruth', 'Ruth here']) {
+      await expect(
+        h.core.personas.createEirPersona(lead, {
+          eirProfileId: profileId,
+          name,
+          doctrine: release.doctrine,
+          style: release.style,
+          disclosureText: release.disclosureText,
+        }),
+      ).rejects.toMatchObject({
+        code: 'validation_failed',
+        errors: [{ path: 'name', message: "Include “vEIR”, e.g. Ruth's vEIR." }],
+      });
+    }
+  });
+
+  it('refuses a draft older than the active release, which would roll doctrine back', async () => {
+    const ruth = await h.core.eir.getPersona(lead, ruthPersona());
+    const active = await h.core.eir.getRelease(lead, ruth.activeRelease?.id ?? '');
+    const content = {
+      doctrine: active.doctrine,
+      style: active.style,
+      disclosureText: active.disclosureText,
+      allowedModes: active.allowedModes,
+    };
+    const older = await h.core.eir.createRelease(lead, ruthPersona(), content);
+    const newer = await h.core.eir.createRelease(lead, ruthPersona(), content);
+    expect(newer.version).toBe(older.version + 1);
+    await h.core.eir.approveRelease(lead, newer.id);
+    await expect(h.core.eir.approveRelease(lead, older.id)).rejects.toMatchObject({
+      code: 'conflict',
+      reason: 'release_outdated',
+    });
+    expect((await h.core.eir.getPersona(lead, ruthPersona())).activeRelease?.id).toBe(newer.id);
   });
 });
 
