@@ -66,7 +66,7 @@ export function AggregateBarChart({
     return (
       <div className={className}>
         <Table>
-          {hasSuppressed ? <TableCaption className="px-1 text-left">{explanation}</TableCaption> : null}
+          {hasSuppressed ? <TableCaption className="text-left">{explanation}</TableCaption> : null}
           <TableHeader>
             <TableRow>
               <TableHead scope="col">{categoryHeader}</TableHead>
@@ -120,7 +120,7 @@ export function AggregateBarChart({
             <li
               key={row.key}
               data-suppressed={row.value === null || undefined}
-              className="grid gap-1 rounded-md px-1.5 py-1 transition-colors hover:bg-accent/40 sm:grid-cols-[minmax(7rem,11rem)_1fr] sm:items-center sm:gap-3"
+              className="grid gap-1 py-1 sm:grid-cols-[minmax(7rem,11rem)_1fr] sm:items-center sm:gap-3"
             >
               <span className="truncate text-[13px] text-muted-foreground" title={row.label}>
                 {row.label}
@@ -168,7 +168,7 @@ export function AggregateBarChart({
         })}
       </ul>
       {hasSuppressed ? (
-        <figcaption className="flex items-start gap-2 rounded-lg border border-dashed border-border-strong px-3 py-2 text-[13px] text-muted-foreground">
+        <figcaption className="flex items-start gap-2 text-[13px] text-muted-foreground">
           <EyeOff aria-hidden className="mt-0.5 size-3.5 shrink-0" />
           <span>
             {explanation} The dashed outline marks the possible range (up to {k - 1}), not a value.

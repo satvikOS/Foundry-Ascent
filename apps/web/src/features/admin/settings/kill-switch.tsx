@@ -42,14 +42,13 @@ export function AiKillSwitch({ aiEnabled, onConfirm, pending = false, error }: A
     <SectionCard
       title="AI kill switch"
       description="Stops every model call in every tenant at once"
-      icon={Power}
       className={cn(!aiEnabled && 'border-warning/60')}
     >
       <div className="grid gap-4">
         <div
           className={cn(
-            'flex flex-col gap-3 rounded-lg border px-4 py-3 sm:flex-row sm:items-center sm:justify-between',
-            aiEnabled ? 'border-border' : 'border-dashed border-warning/60 bg-warning/[0.08]',
+            'flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between',
+            !aiEnabled && 'rounded-lg border border-dashed border-warning/60 bg-warning/[0.08] px-4 py-3',
           )}
         >
           <div className="flex items-start gap-3">

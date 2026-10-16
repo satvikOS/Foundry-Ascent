@@ -28,7 +28,7 @@ function PoolTile({
     <button
       type="button"
       onClick={onOpen}
-      className="group grid content-start gap-1.5 rounded-xl border border-border bg-card px-4 py-3.5 text-left transition-colors hover:border-border-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+      className="group grid content-start gap-1.5 border-t border-border pt-4 text-left transition-colors hover:border-foreground/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
     >
       <span className="flex items-center justify-between gap-2">
         <span className="label-mono">{label}</span>
@@ -81,11 +81,11 @@ export function OverviewTab({
         <p className="text-small text-muted-foreground">No approved release yet, so this vEIR can’t coach.</p>
       )}
 
-      <section aria-labelledby="pool-heading" className="grid gap-3">
+      <section aria-labelledby="pool-heading" className="grid gap-4">
         <h2 id="pool-heading" className="font-serif text-subheading font-normal">
           Common pool
         </h2>
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-x-6 gap-y-6 sm:grid-cols-3">
           <PoolTile
             label="Knowledge library"
             value={pool ? pluralize(pool.active, 'source') : '—'}

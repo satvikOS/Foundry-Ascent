@@ -1,6 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { PlatformSettingsView } from '@foundry/contracts';
-import { SlidersHorizontal } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
@@ -166,7 +165,7 @@ export function LimitsCard({ settings, onSave, pending, error }: LimitsCardProps
   );
 
   return (
-    <SectionCard title="Limits and thresholds" icon={SlidersHorizontal}>
+    <SectionCard title="Limits and thresholds">
       <form
         noValidate
         onSubmit={(event) => void onSubmit(event)}

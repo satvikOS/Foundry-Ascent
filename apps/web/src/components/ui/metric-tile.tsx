@@ -1,4 +1,4 @@
-import { ArrowDownRight, ArrowUpRight, Minus, type LucideIcon } from 'lucide-react';
+import { ArrowDownRight, ArrowUpRight, Minus } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
@@ -9,7 +9,6 @@ interface MetricTileProps {
   label: string;
   /** Pre-formatted value; `null` renders "—" with an explanation (e.g. k-anonymity suppression). */
   value: ReactNode;
-  icon?: LucideIcon;
   hint?: ReactNode;
   /** Optional delta; direction is shown with an arrow icon and a sign, not colour alone. */
   delta?: { value: string; direction: 'up' | 'down' | 'flat'; positive?: boolean };
@@ -21,10 +20,10 @@ interface MetricTileProps {
   className?: string;
 }
 
+/** One figure of a stat row: a label, the number, an optional note. Sits on a hairline, not in a box. */
 export function MetricTile({
   label,
   value,
-  icon: Icon,
   hint,
   delta,
   suppressedReason = 'Hidden to protect small groups',
@@ -37,12 +36,9 @@ export function MetricTile({
   return (
     <div
       data-slot="metric-tile"
-      className={cn('flex flex-col gap-2 rounded-xl border border-border bg-card p-4 shadow-sm', className)}
+      className={cn('flex min-w-0 flex-col gap-1.5 border-t border-border pt-4', className)}
     >
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[13px] font-medium text-muted-foreground">{label}</span>
-        {Icon ? <Icon aria-hidden className="size-4 text-subtle-foreground" /> : null}
-      </div>
+      <span className="text-small text-muted-foreground">{label}</span>
       {loading ? (
         <Skeleton className="h-8 w-20" />
       ) : (

@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { CoachMode, DEFAULT_DISCLOSURE, type PersonaReleaseView } from '@foundry/contracts';
-import { FilePlus2, Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { useId, useState, type ReactNode } from 'react';
 import { Controller, useFieldArray, useForm, type Control, type FieldPath } from 'react-hook-form';
 
@@ -130,7 +130,7 @@ export function ReleaseEditor({
   );
 
   return (
-    <SectionCard title={title} description={description} icon={FilePlus2}>
+    <SectionCard title={title} description={description}>
       {leading}
       <form
         noValidate

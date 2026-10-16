@@ -1,4 +1,4 @@
-import { CircleCheck, ClipboardCheck, EyeOff } from 'lucide-react';
+import { CircleCheck, ClipboardCheck } from 'lucide-react';
 import { useEffect, useMemo, useRef } from 'react';
 
 import { announce } from '@/components/a11y/live-announcer';
@@ -108,11 +108,11 @@ export function ReviewsPage({ selectedTurnId, filter, onSelect, onFilterChange }
         <div className="grid items-start gap-6 lg:grid-cols-[18rem_1fr]">
           <nav aria-label={filter === 'pending' ? 'Samples to review' : 'Reviewed samples'}>
             {visible.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-border-strong px-4 py-6 text-center text-sm text-muted-foreground">
+              <p className="py-6 text-sm text-muted-foreground">
                 {filter === 'pending' ? 'All caught up — every sample is reviewed.' : 'Nothing reviewed yet.'}
               </p>
             ) : (
-              <ul className="grid gap-1.5">
+              <ul className="grid gap-0.5">
                 {visible.map((sample) => {
                   const isSelected = sample === selected;
                   return (
@@ -124,9 +124,9 @@ export function ReviewsPage({ selectedTurnId, filter, onSelect, onFilterChange }
                           select(sample);
                         }}
                         className={cn(
-                          'grid w-full gap-0.5 rounded-lg border px-3 py-2 text-left transition-colors',
-                          'hover:border-foreground/40 focus-visible:outline-2 focus-visible:outline-ring',
-                          isSelected ? 'border-foreground bg-accent' : 'border-border bg-card',
+                          'grid w-full gap-0.5 rounded-lg px-3 py-2 text-left transition-colors',
+                          'hover:bg-accent/60 focus-visible:outline-2 focus-visible:outline-ring',
+                          isSelected && 'bg-accent',
                         )}
                       >
                         <span className="flex items-center justify-between gap-2 text-sm font-medium">
@@ -163,14 +163,12 @@ export function ReviewsPage({ selectedTurnId, filter, onSelect, onFilterChange }
               <SectionCard
                 title={<span id="review-sample-title">Sample {ordinal(selected)}</span>}
                 description={`${selected.ventureName} · ${MODE_LABELS[selected.turn.mode].label} mode · ${formatDate(selected.turn.createdAt)}`}
-                icon={EyeOff}
               >
                 <StructuredResponse turn={selected.turn} />
               </SectionCard>
               <SectionCard
                 title="Rubric"
                 description="1 = poor · 5 = excellent"
-                icon={ClipboardCheck}
                 className="xl:sticky xl:top-36"
               >
                 {selected.reviewed ? (

@@ -85,8 +85,8 @@ export function InboxPage({ selectedId, filter, onSelect, onFilterChange }: Inbo
       {inbox.isPending ? (
         <LoadingRegion label="Loading inbox">
           <div className="grid gap-6 lg:grid-cols-[20rem_1fr]">
-            <Skeleton className="h-64 rounded-xl" />
-            <Skeleton className="h-96 rounded-xl" />
+            <Skeleton className="h-64 rounded-lg" />
+            <Skeleton className="h-96 rounded-lg" />
           </div>
         </LoadingRegion>
       ) : inbox.isError ? (
@@ -101,11 +101,11 @@ export function InboxPage({ selectedId, filter, onSelect, onFilterChange }: Inbo
         <div className="grid items-start gap-6 lg:grid-cols-[20rem_1fr]">
           <nav aria-label={filter === 'open' ? 'Open escalations' : 'Closed escalations'}>
             {visible.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-border-strong px-4 py-6 text-center text-sm text-muted-foreground">
+              <p className="py-6 text-sm text-muted-foreground">
                 {filter === 'open' ? 'No open escalations. Nice work.' : 'No closed escalations yet.'}
               </p>
             ) : (
-              <ul className="grid gap-1.5">
+              <ul className="grid gap-0.5">
                 {visible.map((e) => {
                   const isSelected = e === selected;
                   return (
@@ -120,9 +120,9 @@ export function InboxPage({ selectedId, filter, onSelect, onFilterChange }: Inbo
                           });
                         }}
                         className={cn(
-                          'grid w-full gap-1 rounded-lg border px-3 py-2.5 text-left transition-colors',
-                          'hover:border-foreground/40 focus-visible:outline-2 focus-visible:outline-ring',
-                          isSelected ? 'border-foreground bg-accent' : 'border-border bg-card',
+                          'grid w-full gap-1 rounded-lg px-3 py-2.5 text-left transition-colors',
+                          'hover:bg-accent/60 focus-visible:outline-2 focus-visible:outline-ring',
+                          isSelected && 'bg-accent',
                         )}
                       >
                         <span className="flex flex-wrap items-center gap-1.5">
@@ -164,7 +164,7 @@ export function InboxPage({ selectedId, filter, onSelect, onFilterChange }: Inbo
                   <InboxActions key={selected.id} escalation={selected} />
                   <PacketView escalation={selected} audience="assignee" />
                   {selected.resolution ? (
-                    <section className="grid gap-2 rounded-lg border border-border px-4 py-3">
+                    <section className="grid gap-2 border-t border-border pt-4">
                       <h3 className="flex items-center gap-1.5 text-sm font-semibold">
                         <CircleCheck aria-hidden className="size-4 text-muted-foreground" />
                         Resolution

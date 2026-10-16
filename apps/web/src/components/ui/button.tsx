@@ -18,8 +18,7 @@ export const buttonVariants = cva(
     variants: {
       variant: {
         default: 'bg-primary text-primary-foreground shadow-xs hover:bg-primary/90 active:bg-primary/85',
-        secondary:
-          'border border-border bg-secondary text-secondary-foreground shadow-xs hover:border-border-strong hover:bg-accent',
+        secondary: 'bg-secondary text-secondary-foreground hover:bg-accent',
         outline: 'border border-border-strong bg-transparent text-foreground hover:bg-accent',
         ghost: 'text-foreground hover:bg-accent hover:text-accent-foreground',
         subtle: 'text-muted-foreground hover:bg-accent hover:text-foreground',

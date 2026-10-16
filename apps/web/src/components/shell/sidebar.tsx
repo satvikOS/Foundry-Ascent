@@ -83,10 +83,6 @@ function Tip({ show, label, children }: { show: boolean; label: string; children
   );
 }
 
-function Divider({ collapsed }: { collapsed: boolean }) {
-  return <div aria-hidden className={cn('my-2 h-px bg-sidebar-border', collapsed ? 'mx-2' : 'mx-2.5')} />;
-}
-
 export interface SidebarContentProps {
   me: Me;
   workspace: Workspace;
@@ -207,8 +203,7 @@ export function SidebarContent({
       </div>
 
       {staff ? (
-        <div className="grid shrink-0 gap-px px-2 pt-2">
-          <Divider collapsed={collapsed} />
+        <div className="grid shrink-0 gap-px px-2 pt-6">
           {staffSections(me, workspace.kind).map((section) => (
             <Tip key={section.id} show={collapsed} label={section.label}>
               <SidebarLink
@@ -285,7 +280,7 @@ export function SidebarContent({
         </div>
       ) : null}
 
-      <div className={cn('shrink-0 border-t border-sidebar-border p-2', collapsed && 'flex justify-center')}>
+      <div className={cn('shrink-0 p-2', collapsed && 'flex justify-center')}>
         <AccountMenu
           me={me}
           compact={collapsed}

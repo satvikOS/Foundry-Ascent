@@ -18,7 +18,7 @@ export function TabsList({
       data-variant={variant}
       className={cn(
         'inline-flex w-fit items-center text-muted-foreground',
-        variant === 'pill' && 'h-9 gap-0.5 rounded-lg border border-border bg-muted p-0.5',
+        variant === 'pill' && 'h-8 gap-1',
         variant === 'underline' && 'h-10 w-full justify-start gap-4 border-b border-border',
         className,
       )}
@@ -36,7 +36,7 @@ export function TabsTrigger({ className, ...props }: ComponentProps<typeof TabsP
         'hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50',
         '[&_svg]:size-3.5 [&_svg]:shrink-0',
         // pill
-        'in-data-[variant=pill]:rounded-md in-data-[variant=pill]:data-[state=active]:bg-card in-data-[variant=pill]:data-[state=active]:text-foreground in-data-[variant=pill]:data-[state=active]:shadow-xs',
+        'in-data-[variant=pill]:rounded-md in-data-[variant=pill]:data-[state=active]:bg-accent in-data-[variant=pill]:data-[state=active]:text-foreground',
         // underline (active state also gets a heavier weight, not just colour)
         'in-data-[variant=underline]:-mb-px in-data-[variant=underline]:border-b-2 in-data-[variant=underline]:border-transparent in-data-[variant=underline]:px-0.5',
         'in-data-[variant=underline]:data-[state=active]:border-foreground in-data-[variant=underline]:data-[state=active]:text-foreground',

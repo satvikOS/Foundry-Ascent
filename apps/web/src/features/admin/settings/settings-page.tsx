@@ -35,7 +35,7 @@ export function SettingsPage() {
           retrying={settings.isRefetching}
         />
       ) : (
-        <div className="grid gap-6">
+        <div className="grid gap-12">
           {settings.data.aiEnabled ? null : (
             <Alert variant="warning" live="status" title="AI coaching is paused platform-wide" />
           )}

@@ -30,22 +30,19 @@ export function EmptyState({
     <div
       data-slot="empty-state"
       className={cn(
-        'flex flex-col items-center justify-center rounded-xl border border-dashed border-border-strong text-center',
-        size === 'default' ? 'gap-3 px-6 py-14' : 'gap-2 px-4 py-8',
+        'flex flex-col items-center justify-center text-center',
+        size === 'default' ? 'gap-2 px-6 py-16' : 'gap-1.5 px-4 py-8',
         className,
       )}
     >
       {Icon ? (
-        <div
-          className={cn(
-            'flex items-center justify-center rounded-xl border border-border bg-card text-muted-foreground shadow-xs',
-            size === 'default' ? 'mb-1 size-11' : 'size-9',
-          )}
-        >
-          <Icon aria-hidden className={size === 'default' ? 'size-5' : 'size-4'} />
-        </div>
+        <Icon
+          aria-hidden
+          className={cn('text-subtle-foreground', size === 'default' ? 'mb-1 size-6' : 'size-5')}
+          strokeWidth={1.5}
+        />
       ) : null}
-      <Heading className={cn('font-semibold tracking-tight', size === 'default' ? 'text-base' : 'text-sm')}>
+      <Heading className={cn('font-medium tracking-tight', size === 'default' ? 'text-base' : 'text-sm')}>
         {title}
       </Heading>
       {description ? (

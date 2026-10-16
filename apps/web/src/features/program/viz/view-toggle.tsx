@@ -20,7 +20,7 @@ export function ViewToggle({
   label: string;
 }) {
   return (
-    <div role="group" aria-label={`${label}: view as`} className="flex rounded-md border border-border p-0.5">
+    <div role="group" aria-label={`${label}: view as`} className="flex gap-0.5">
       {(
         [
           ['chart', 'Chart', ChartBar],
@@ -32,7 +32,7 @@ export function ViewToggle({
           variant="ghost"
           size="xs"
           aria-pressed={value === id}
-          className={cn('h-6 px-1.5', value === id && 'bg-accent text-foreground')}
+          className={cn('h-7 px-2 text-muted-foreground', value === id && 'bg-accent text-foreground')}
           onClick={() => {
             onChange(id);
           }}
