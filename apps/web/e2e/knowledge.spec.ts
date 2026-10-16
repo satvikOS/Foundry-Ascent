@@ -8,6 +8,7 @@ import {
   OWNER_STATE,
   runToken,
   signIn,
+  startConversation,
   TENANT,
   useTheme,
   test,
@@ -294,6 +295,45 @@ test.describe('memory', () => {
       const next = (await (await saved).json()) as { id: string; status: string };
       ids.push(next.id);
       expect(next.status).toBe('confirmed');
+      await expect(page.getByRole('region', { name: /Notifications/ }).getByText('Saved')).toBeVisible();
+    } finally {
+      await deleteMemory(page.request, ids);
+    }
+  });
+
+  test('editing what the vEIR learned in a conversation saves the edit, with nothing to approve', async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    await openVenture(page);
+    await startConversation(page, `How should we price the pilot for libraries? ${runToken()}`);
+    const saved = page.getByRole('article', { name: 'Exchange 1' }).getByTestId('memory-saved');
+    await expect(saved).toBeVisible({ timeout: 30_000 });
+    const href = (await saved.getByRole('link').getAttribute('href')) ?? '';
+    const memoryId = /[?&]m=([0-9a-f-]{36})/.exec(href)?.[1] ?? '';
+    expect(memoryId, 'the saved line links the item in Knowledge').not.toBe('');
+    const ids = [memoryId];
+    try {
+      await saved.getByRole('link').click();
+      const panel = page.getByRole('complementary', { name: 'Memory inspector' });
+      await expect(panel.getByText(/^Learned from /)).toBeVisible();
+      const corrected = page.waitForResponse(
+        (response) =>
+          response.url().endsWith(`/memory/${memoryId}`) && response.request().method() === 'PATCH',
+      );
+      await panel.getByRole('button', { name: 'Edit', exact: true }).click();
+      const dialog = page.getByRole('dialog', { name: /^Edit / });
+      const title = dialog.getByRole('textbox', { name: /^Title/ });
+      const edited = `${await title.inputValue()} (checked with two librarians)`;
+      await title.fill(edited);
+      await dialog.getByRole('button', { name: /^Save/ }).click();
+      // Whether it was still a suggestion (kept first) or kept automatically, the edit is saved: a new version.
+      const response = await corrected;
+      expect(response.status(), 'PATCH /memory/:id correct').toBe(200);
+      const next = (await response.json()) as { id: string; status: string; title: string };
+      ids.push(next.id);
+      expect(next).toMatchObject({ status: 'confirmed', title: edited });
+      await expect(dialog).toBeHidden();
       await expect(page.getByRole('region', { name: /Notifications/ }).getByText('Saved')).toBeVisible();
     } finally {
       await deleteMemory(page.request, ids);

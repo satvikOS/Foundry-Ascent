@@ -143,21 +143,25 @@ export function CorrectMemoryDialog({
   }, [open, memory, complete, reset]);
 
   if (!memory) return null;
-  // Memory the vEIR saved before memory was kept automatically can still be waiting as a suggestion: the
-  // person editing it means to keep it, so saving keeps it too (through the one review path).
+  // Memory the vEIR saved before memory was kept automatically can still be waiting as a suggestion. The person
+  // editing it means to keep it, and it is kept first (through the one review path): the server keeps no
+  // unapproved version of the vEIR's memory in the history a correction leaves behind.
   const isProposed = memory.status === 'proposed';
 
-  const keep = (memoryId: string) => {
-    review.mutate(
-      { ids: [memoryId], action: 'approve' },
+  const correct = (patch: { title?: string; content?: string; visibility?: Visibility }, reason: string) => {
+    mutation.mutate(
+      { memoryId: memory.id, action: { action: 'correct', patch, ...(reason ? { reason } : {}) } },
       {
-        onSuccess: () => {
+        onSuccess: (result) => {
           toast.success('Saved');
           announce('Saved');
+          // `correct` always answers with the new version; only `delete` is body-less (204).
+          onCorrected?.(result ?? memory);
+          onOpenChange(false);
         },
         onError: (error) => {
-          const failure = reviewFailure('approve', [memoryId], error);
-          toast.error(failure.title, { description: failure.description });
+          const shown = applyFieldErrors(error, setError, ['title', 'content', 'visibility', 'reason']);
+          if (!shown) setFormError(errorMessage(error));
         },
       },
     );
@@ -170,36 +174,25 @@ export function CorrectMemoryDialog({
     if (values.title !== memory.title) patch.title = values.title;
     if (values.content !== memory.content) patch.content = values.content;
     if (values.visibility !== memory.visibility) patch.visibility = values.visibility;
+    // Saving nothing changes nothing: not even whether a suggestion is kept (there is no approving here).
     if (Object.keys(patch).length === 0) {
-      if (isProposed) {
-        keep(memory.id);
-        onOpenChange(false);
-        return;
-      }
       setFormError('Nothing changed. Edit a field, or cancel.');
       return;
     }
-    mutation.mutate(
+    if (!isProposed) {
+      correct(patch, values.reason);
+      return;
+    }
+    review.mutate(
+      { ids: [memory.id], action: 'approve' },
       {
-        memoryId: memory.id,
-        action: { action: 'correct', patch, ...(values.reason ? { reason: values.reason } : {}) },
-      },
-      {
-        onSuccess: (result) => {
-          // `correct` always answers with the new version; only `delete` is body-less (204).
-          const corrected = result ?? memory;
-          if (corrected.status === 'proposed') {
-            keep(corrected.id);
-          } else {
-            toast.success('Saved');
-            announce('Saved');
-          }
-          onCorrected?.(corrected);
-          onOpenChange(false);
+        // Kept, or handled meanwhile (kept by the vEIR itself): either way the edit is saved next.
+        onSuccess: () => {
+          correct(patch, values.reason);
         },
         onError: (error) => {
-          const shown = applyFieldErrors(error, setError, ['title', 'content', 'visibility', 'reason']);
-          if (!shown) setFormError(errorMessage(error));
+          const failure = reviewFailure('approve', [memory.id], error);
+          setFormError(`${failure.title} ${failure.description}`.trim());
         },
       },
     );
@@ -259,7 +252,7 @@ export function CorrectMemoryDialog({
             </Button>
             <Button
               type="submit"
-              loading={mutation.isPending || !complete}
+              loading={mutation.isPending || review.isPending || !complete}
               loadingText={complete ? 'Saving…' : 'Loading…'}
             >
               Save
