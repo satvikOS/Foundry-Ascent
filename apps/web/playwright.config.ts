@@ -115,7 +115,9 @@ export default defineConfig({
     timezoneId: 'UTC',
     actionTimeout: 15_000,
     navigationTimeout: 30_000,
-    launchOptions: executablePath ? { executablePath } : {},
+    // No sound from test browsers: calls play Web Audio, and `--mute-audio` still opens the real speaker.
+    // `--disable-audio-output` gives Chromium a fake output device instead.
+    launchOptions: { ...(executablePath ? { executablePath } : {}), args: ['--disable-audio-output'] },
   },
   projects: [
     { name: 'setup', testMatch: /auth\.setup\.ts$/ },

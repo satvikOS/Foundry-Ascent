@@ -133,8 +133,52 @@ function spokenSentences(reply: { answer: string; spoken?: string | null }): str
   return (plain.match(/[^.!?]+[.!?]*/g) ?? []).map((sentence) => sentence.trim()).filter(Boolean);
 }
 
+/**
+ * Replaces the browser's speech synthesis with a silent one that keeps the engine's contract (`onstart`, then
+ * `onend` after a short reading time). Headless Chromium's `--mute-audio` does not reach the operating system's
+ * speech service, so without this the runner's speakers read every reply aloud.
+ */
+async function silenceBrowserVoice(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const pending = new Set<number>();
+    const silent = {
+      speaking: false,
+      pending: false,
+      paused: false,
+      onvoiceschanged: null,
+      getVoices: () => [],
+      speak(utterance: SpeechSynthesisUtterance) {
+        const words = utterance.text.split(/\s+/).filter(Boolean).length;
+        utterance.onstart?.call(utterance, new Event('start') as SpeechSynthesisEvent);
+        const timer = window.setTimeout(
+          () => {
+            pending.delete(timer);
+            utterance.onend?.call(utterance, new Event('end') as SpeechSynthesisEvent);
+          },
+          Math.min(3000, 200 + 60 * words),
+        );
+        pending.add(timer);
+      },
+      cancel() {
+        for (const timer of pending) window.clearTimeout(timer);
+        pending.clear();
+      },
+      pause: () => undefined,
+      resume: () => undefined,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      dispatchEvent: () => true,
+    };
+    Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: silent });
+  });
+}
+
 test.describe('vEIR calls', () => {
   test.use({ storageState: FOUNDER_STATE });
+
+  test.beforeEach(async ({ page }) => {
+    await silenceBrowserVoice(page);
+  });
 
   test('call from the sidebar: typed fallback, spoken reply, mini bar, summary', async ({ page }) => {
     await stubCallsBackend(page);
