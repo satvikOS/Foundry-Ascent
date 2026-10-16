@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -305,6 +305,53 @@ describe('useTurnStream venture refresh', () => {
     }
     expect(memoryFn).toHaveBeenCalledTimes(2);
     expect(result.current.memory.data).toEqual(['proposed from this turn']);
+  });
+
+  it('reads again only what a turn changes: the memory, not the notebook, documents or call settings', async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal('fetch', fetchMock);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    const reads = { memory: 0, notebook: 0, documents: 0, callConfig: 0 };
+    const counted = (name: keyof typeof reads) => () => {
+      reads[name] += 1;
+      return Promise.resolve([]);
+    };
+    const turn = makeTurn({ id: IDS.turn, sessionId: IDS.session, ordinal: 1 });
+    fetchMock.mockResolvedValue(
+      sse({ event: 'turn.accepted', turnId: IDS.turn, ordinal: 1 }, { event: 'turn.completed', turn }),
+    );
+    const { result } = renderHook(
+      () => ({
+        stream: useTurnStream(IDS.session, { ventureId: IDS.venture }),
+        memory: useQuery({ queryKey: queryKeys.venture.memory(IDS.venture), queryFn: counted('memory') }),
+        notebook: useQuery({
+          queryKey: queryKeys.venture.notebook(IDS.venture),
+          queryFn: counted('notebook'),
+        }),
+        documents: useQuery({
+          queryKey: queryKeys.venture.documents(IDS.venture),
+          queryFn: counted('documents'),
+        }),
+        callConfig: useQuery({
+          queryKey: [...queryKeys.venture.scope(IDS.venture), 'call-config'],
+          queryFn: counted('callConfig'),
+        }),
+      }),
+      { wrapper },
+    );
+    await waitFor(() => {
+      expect(reads).toEqual({ memory: 1, notebook: 1, documents: 1, callConfig: 1 });
+    });
+    await act(async () => {
+      await result.current.stream.send({ text: 'What should we test?' });
+    });
+    await waitFor(() => {
+      expect(reads.memory).toBe(2);
+    });
+    expect(reads).toEqual({ memory: 2, notebook: 1, documents: 1, callConfig: 1 });
   });
 });
 
