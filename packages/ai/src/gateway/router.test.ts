@@ -247,6 +247,20 @@ describe('model router — primary/fallback policy', () => {
     expect(serialized).toContain('req-1');
   });
 
+  it('logs how much of an attempt’s input the prompt cache served', async () => {
+    const cachedNova: Behaviour = () =>
+      Promise.resolve({
+        value: VALID_ANSWER,
+        modelId: NOVA,
+        rawAttempts: [{ ...attempt('nova', NOVA, 'ok', 3_100, 40), cachedInputTokens: 3_000 }],
+      });
+    const { gw, logger } = gateway(cachedNova, ok('nova', NOVA));
+    const result = await gw.generateStructured(request);
+    expect(result.attempts[0]?.cachedInputTokens).toBe(3_000);
+    const line = logger.events.find((e) => e.event === 'ai.model.attempt');
+    expect(line?.fields).toMatchObject({ inputTokens: 3_100, cachedInputTokens: 3_000 });
+  });
+
   it('exposes model info', () => {
     const { gw } = gateway(ok('luna', LUNA), ok('nova', NOVA));
     expect(gw.info).toEqual({

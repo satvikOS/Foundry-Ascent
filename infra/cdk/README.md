@@ -39,8 +39,8 @@ Region `us-east-1`, account taken from the deploying credentials. Every IAM role
 
 - VPC `10.40.0.0/16`, 2 AZs, **isolated subnets only** (no IGW, NAT, EIP or endpoints). The default security
   group is stripped of rules; rejected traffic is flow-logged to the access-log bucket.
-- Aurora Serverless v2 PostgreSQL 16.13 (`foundry-ascent`): one `db.serverless` writer, 0–2 ACU,
-  auto-pause after 10 min, Data API on, storage encrypted with the AWS-managed key, 7-day backups,
+- Aurora Serverless v2 PostgreSQL 16.13 (`foundry-ascent`): one `db.serverless` writer, 0.5–2 ACU (kept
+  awake so no request waits for a resume; at `aurora.minCapacityAcu: 0` it auto-pauses after 10 min), Data API on, storage encrypted with the AWS-managed key, 7-day backups,
   deletion protection, `SNAPSHOT` on delete, `postgresql` log export (30-day log group created before the
   cluster), security group with no ingress/egress. Secret `foundry-ascent/aurora-admin` (user `foundry_admin`).
 - Documents bucket: private, SSE-S3, TLS ≥ 1.2 only, unversioned, incomplete multipart uploads aborted
@@ -57,7 +57,7 @@ Region `us-east-1`, account taken from the deploying credentials. Every IAM role
 
 - Lambdas (Node 24, ARM64, ESM bundles with source maps, log groups with 30-day retention, roles without
   AWS managed policies):
-  - `FoundryAscent-Api` (`apps/api/src/handlers/api.ts`): 1024 MB, 60 s, no reserved concurrency by
+  - `FoundryAscent-Api` (`apps/api/src/handlers/api.ts`): 1,769 MB (`api.memoryMb`: one full vCPU), 60 s, no reserved concurrency by
     default (see [Reserved concurrency](#reserved-concurrency)), Function URL `AWS_IAM` + `RESPONSE_STREAM`.
     Database policy, documents `PutObject` (presigned uploads) + `DeleteObject`, and `GetObject` on
     `tenants/*/ventures/*/documents/*` only (an explicit deny with `NotResource`: an allow-list), to sign the
@@ -152,8 +152,9 @@ edge header names.
 
 ### Timeouts and Aurora resume
 
-Aurora at 0 ACU takes ~15 s (sometimes more) to resume. No byte goes out while an API request waits, so
-the wait must end well before CloudFront or Lambda gives up:
+Production keeps Aurora awake at 0.5 ACU, so requests do not wait for a resume. When `aurora.minCapacityAcu`
+is 0 the cluster pauses, and it takes ~15 s (sometimes more) to resume. No byte goes out while an API
+request waits, so the wait must end well before CloudFront or Lambda gives up:
 
 | Number                                    | Value            | Where                                                                                        |
 | ----------------------------------------- | ---------------- | -------------------------------------------------------------------------------------------- |
@@ -308,10 +309,11 @@ derives IAM5 finding ids from the policy values themselves. They are attached to
 | S1                     | site bucket                                                        | public build output, read only via OAC                                                                                                                      |
 | CFR1, CFR2, CFR3, CFR4 | distribution                                                       | no geo policy, WAF denied, logging v1 needs ACLs, default certificate (CFR4 only without custom domain)                                                     |
 
-## Cost notes (idle ≈ $1–3/month)
+## Cost notes (idle ≈ $45–47/month; ≈ $1–3 with `aurora.minCapacityAcu: 0`)
 
-- Aurora: $0 compute while paused (0 ACU); storage ~$0.10/GB-month; first request after a pause waits
-  ~15 s. Max 2 ACU caps the bill under load. Backups within the retention window of the cluster size are free.
+- Aurora: about $44 a month of compute kept awake at 0.5 ACU (no request waits for a resume); at 0 ACU, $0
+  compute while paused, and the first request after a pause waits ~15 s. Storage ~$0.10/GB-month. Max 2 ACU
+  caps the bill under load. Backups within the retention window of the cluster size are free.
 - No NAT gateway, EIP, VPC endpoint, customer KMS key, WAF, provisioned concurrency or Performance Insights.
 - Secrets Manager: one secret ($0.40/month). S3/CloudFront/SQS/SNS/CloudWatch alarms: cents at V1 traffic
   (7 standard alarms ≈ $0.70/month). Log groups expire after 30 days; access logs after 90.

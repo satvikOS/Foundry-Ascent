@@ -720,6 +720,7 @@ export function createOrchestrator(
         embedding,
         dataClassCeiling: active.assignment.dataClassCeiling,
         budgets: cfg.retrieval,
+        channel: pre.channel,
         // Always null today: no session is readable by its author alone (see privateRetrievalOwner).
         privateOwnerId: privateRetrievalOwner(pre.session, ctx.principalId),
       });

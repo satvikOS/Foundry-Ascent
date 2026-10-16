@@ -46,7 +46,7 @@ CloudFront ──/*──► S3 site bucket (OAC)              CDK → CloudForm
                      │  apps/api (Hono) ─ packages/core ─ packages/ai ─ packages/db
                      │
                      ├── RDS Data API ──► Aurora Serverless v2 PostgreSQL 16.13 (pgvector, FTS, RLS)
-                     │                      min 0 ACU (auto-pause) · max 2 ACU · isolated subnets
+                     │                      min 0.5 ACU (kept awake) · max 2 ACU · isolated subnets
                      ├── Bedrock Runtime ──► us.amazon.nova-2-lite-v1:0     (primary reasoning)
                      │                   ├─► global.amazon.nova-2-lite-v1:0 (fallback reasoning)
                      │                   └─► amazon.titan-embed-text-v2:0   (embeddings, 1024-d)
@@ -61,9 +61,10 @@ CloudFront ──/*──► S3 site bucket (OAC)              CDK → CloudForm
 - **Region:** `us-east-1` (Luna on Mantle is offered only there; Nova 2 Lite and Titan run there too).
 - **No VPC for Lambdas, no NAT, no customer KMS keys** — Data API reaches Aurora; the Aurora cluster
   lives in a VPC with isolated subnets only (zero hourly cost). Encryption at rest uses AWS-managed keys.
-- **Idle cost target:** ≈ $1–3/month (Aurora storage, one Secrets Manager secret, S3, logs). Aurora
-  compute is $0 while paused (auto-pause after 10 idle minutes). The first database request after a pause
-  waits ~15 s while Aurora resumes: the API waits up to 40 s, then answers `503 database_resuming` with
+- **Idle cost target:** ≈ $45–47/month: Aurora kept awake at 0.5 ACU (≈ $44, so no request waits for a
+  resume; see the [latency runbook](../runbooks/latency.md)), plus Aurora storage, one Secrets Manager
+  secret, S3 and logs (≈ $1–3). With `aurora.minCapacityAcu: 0` Aurora compute is $0 while paused (auto-pause
+  after 10 idle minutes), and the first database request after a pause waits ~15 s while Aurora resumes: the API waits up to 40 s, then answers `503 database_resuming` with
   `Retry-After`, and the SPA retries for about 45 s behind a "Waking up your workspace…" banner. The
   public `GET /health` never queries the database, so uptime checks cannot keep Aurora awake.
 - **Cost guardrails** (ADR-0015): the `FoundryAscent-Boundary` permissions boundary denies cost hazards
@@ -307,8 +308,10 @@ One testable orchestrator with deterministic validators (ADR-002). State machine
    session-turn and spend limits (crisis turns still count towards the per-principal rate limit).
 3. **Retrieve (authorized, scoped)**: per store, filtered by tenant + venture + visibility first, then
    hybrid score = `0.55·cosine + 0.25·ts_rank + 0.10·recency + 0.10·authority` with contradiction
-   flags. Budgets: memory 8, venture chunks 6, doctrine 4, resources 4, patterns 2. Evidence items get
-   stable IDs (`E1…En`) and are returned to the client.
+   flags. Budgets: memory 8, venture chunks 6, doctrine 4, resources 4, patterns 2; a call's turn at most
+   6, 3, 2, 1, 1 (a spoken reply is two or three sentences). An item that repeats a higher-ranked one takes
+   no slot (memory is read 4 rows deep beyond its budget). Evidence items get stable IDs (`E1…En`) and are
+   returned to the client.
 4. **Assemble context** (≤ 12k input tokens): persona release (doctrine, style, red lines, disclosure),
    mode instructions, policy rules, evidence pack (content wrapped as _data_, never instructions),
    last 8 turns.
@@ -429,13 +432,13 @@ Stacks (all `FoundryAscent-*`, termination protection on Foundation and Data, ta
    and `aud sts.amazonaws.com`; 1 h sessions; can assume the four CDK CLI bootstrap roles and read
    CloudFormation/Logs/Cost Explorer). `deploy.yml` decides create / keep / import on every run (§12).
 2. **Data** — VPC (2 AZ, isolated subnets only, no IGW/NAT), Aurora Serverless v2 PostgreSQL 16.13
-   (cluster `foundry-ascent`, `serverlessV2MinCapacity: 0`, `serverlessV2MaxCapacity: 2`, auto-pause
-   10 min, Data API on, deletion protection, storage encrypted with the AWS-managed key, 7-day backups,
+   (cluster `foundry-ascent`, `serverlessV2MinCapacity: 0.5`, `serverlessV2MaxCapacity: 2`, auto-pause
+   10 min only at a minimum of 0, Data API on, deletion protection, storage encrypted with the AWS-managed key, 7-day backups,
    log export to `/aws/rds/cluster/foundry-ascent/postgresql`), generated admin secret
    `foundry-ascent/aurora-admin`, documents bucket (private, SSE-S3, enforce SSL, CORS `PUT` from
    `https://*.cloudfront.net` plus the custom domain when set — the presigned URL is the authorization,
    lifecycle for incomplete uploads), SQS jobs queue + DLQ (SSE-SQS).
-3. **App** — API Lambda (Node 24, ARM64, 1024 MB, 60 s, no reserved concurrency in production — see §2,
+3. **App** — API Lambda (Node 24, ARM64, 1,769 MB (`api.memoryMb`: one full vCPU), 60 s, no reserved concurrency in production — see §2,
    Function URL `AWS_IAM` + `RESPONSE_STREAM`), worker Lambda (SQS, batch 5, at most 2 concurrent pollers), migrate custom resource
    (applies `packages/db/migrations` via Data API with an advisory lock, then seeds synthetic data and the
    owner principal, then backfills embeddings; API, worker and site wait for it), site bucket + two

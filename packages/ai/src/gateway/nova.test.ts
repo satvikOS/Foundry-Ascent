@@ -3,7 +3,13 @@ import { describe, expect, it } from 'vitest';
 
 import type { ConverseFn } from './bedrock-runtime.js';
 import { ModelOutputInvalidError, ModelRefusalError, ModelUnavailableError } from './errors.js';
-import { NovaProvider, SUBMIT_TOOL_NAME, inferenceProfilePrefix, toConverseMessages } from './nova.js';
+import {
+  NovaProvider,
+  SUBMIT_TOOL_NAME,
+  billedInputTokens,
+  inferenceProfilePrefix,
+  toConverseMessages,
+} from './nova.js';
 import { Answer, VALID_ANSWER, awsError, providerRequest } from './test-helpers.js';
 
 type Step = (input: ConverseCommandInput) => ConverseCommandOutput | Promise<ConverseCommandOutput>;
@@ -63,6 +69,16 @@ async function captureError(promise: Promise<unknown>): Promise<unknown> {
   }
   throw new Error('expected rejection');
 }
+
+describe('billedInputTokens', () => {
+  it('counts tokens read from and written to the prompt cache with the uncached ones', () => {
+    expect(
+      billedInputTokens({ inputTokens: 300, cacheReadInputTokens: 2_000, cacheWriteInputTokens: 50 }),
+    ).toBe(2_350);
+    expect(billedInputTokens({ inputTokens: 800 })).toBe(800);
+    expect(billedInputTokens(undefined)).toBe(0);
+  });
+});
 
 describe('NovaProvider', () => {
   it('forces the submit_response tool with the strict schema and validates the tool input', async () => {
@@ -246,5 +262,19 @@ describe('inferenceProfilePrefix', () => {
     ['us-gov-west-1', 'us-gov.'],
   ])('%s → %s', (region, prefix) => {
     expect(inferenceProfilePrefix(region)).toBe(prefix);
+  });
+});
+
+describe('NovaProvider metering with the prompt cache', () => {
+  it('bills the cached input of a structured call (Nova caches repeated prefixes by itself)', async () => {
+    const cached: ConverseCommandOutput = {
+      ...toolOutput(VALID_ANSWER),
+      usage: { inputTokens: 120, outputTokens: 90, totalTokens: 3_210, cacheReadInputTokens: 3_000 },
+    };
+    const { converse } = scriptedConverse([() => cached]);
+    const provider = new NovaProvider({ modelId: 'amazon.nova-2-lite-v1:0', region: 'us-east-1', converse });
+    const result = await provider.generate(providerRequest(Answer));
+    expect(result.rawAttempts[0]?.usage).toEqual({ inputTokens: 3_120, outputTokens: 90 });
+    expect(result.rawAttempts[0]?.cachedInputTokens).toBe(3_000);
   });
 });

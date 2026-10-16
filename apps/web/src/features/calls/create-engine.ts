@@ -3,6 +3,7 @@ import type { QueryClient } from '@tanstack/react-query';
 
 import type { SessionDetail } from '@/lib/api/hooks/sessions';
 import { queryKeys } from '@/lib/api/query-keys';
+import { refreshVentureAfterTurn } from '@/lib/api/venture-refresh';
 import { browserCallDeps } from '@/lib/realtime/browser';
 import { CallEngine } from '@/lib/realtime/call-engine';
 
@@ -31,7 +32,10 @@ export function createCallEngine(queryClient: QueryClient): CallEngine {
       }
       void queryClient.invalidateQueries({ queryKey: queryKeys.session.detail(sessionId) });
       const ventureId = engine.getSnapshot().ventureId;
-      if (ventureId) void queryClient.invalidateQueries({ queryKey: queryKeys.venture.scope(ventureId) });
+      // A finished turn refreshes what a turn changes; the end of a call (no turn) the whole venture.
+      if (ventureId && turn) refreshVentureAfterTurn(queryClient, ventureId);
+      else if (ventureId)
+        void queryClient.invalidateQueries({ queryKey: queryKeys.venture.scope(ventureId) });
     }),
   );
   return engine;

@@ -26,8 +26,9 @@ function claude(inputPerMillionUsd: number, outputPerMillionUsd: number): ModelP
  * gateway configuration; do not edit code to change a price.
  *
  * Claude rows are Anthropic's list prices (platform.claude.com pricing, checked 2026-10-16), which Bedrock's
- * global endpoints charge; regional endpoints add 10 %. Prompt-cache rates are not modelled (the gateway
- * sends no cache breakpoints), and Claude Haiku 5.5 is priced at its rate for prompts up to 100,000 tokens
+ * global endpoints charge; regional endpoints add 10 %. Prompt-cache rates are not modelled: the gateway sends
+ * no cache breakpoints, and the tokens a model reads from or writes to its own cache are counted at the input
+ * rate (`billedInputTokens`), so the caps never under-count; and Claude Haiku 5.5 is priced at its rate for prompts up to 100,000 tokens
  * (turn prompts stay far below). Bedrock serves Opus 4.6, Sonnet 4.6 and Haiku 4.5 through Converse with
  * the ARN-versioned ids; later models use the short `anthropic.claude-…` ids.
  */

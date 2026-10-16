@@ -7,9 +7,8 @@ import { type PlatformKeyCache } from '../auth/keys.js';
 import { requireAssignmentActive, requireVentureAccess } from '../authz/venture-access.js';
 import { type RequestContext } from '../context.js';
 import { DomainError, fail, parseInput } from '../errors.js';
-import { requireId, type Kit, type RequestScope } from '../internal/kit.js';
-import { metered } from '../internal/metered.js';
-import { assertWithinSpendCaps } from '../orchestrator/guards.js';
+import { requireId, type AuditEvent, type Kit, type RequestScope } from '../internal/kit.js';
+import { enforceSpendCaps, readSpendState } from '../orchestrator/guards.js';
 import { secondsUntilUtcMidnight } from '../orchestrator/sampling.js';
 import { verifySpeechUnit } from '../orchestrator/speech-units.js';
 import { SpeechSynthesisError, type SynthesizedSpeech } from '../ports.js';
@@ -17,6 +16,7 @@ import { refusalError, timeLimitRefusal } from './call-admission.js';
 import { CALL_LIMITS, type CallCaps, callSecondsToday, callTimeLeft, speechBudget } from './call-usage.js';
 import { voiceApproved } from './calls.js';
 import { isCrisisMessage, speakableRunSpan, speakableText } from './spoken-text.js';
+import { observedAudio } from './speech-audio.js';
 import { DEFAULT_SPEECH_VOICE, speechCostUsd, speechEngines } from './voices.js';
 
 /**
@@ -108,18 +108,44 @@ export function speechRefusal(reason: SpeechRefusal, crisis: boolean, now: Date)
 export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechService {
   const { logger } = kit.deps;
 
-  function refuseText(scope: RequestScope, ventureId: string, turnId: string | null, reason: string): never {
-    scope.deferAudit({
+  /** The validation error for text that is not this call's validated words. */
+  function notValidatedText(reason: string): DomainError {
+    return fail.validation('Only the vEIR’s validated words can be spoken', [
+      { path: reason === 'signature_invalid' ? 'sig' : 'text', message: 'Not validated text of this call' },
+    ]);
+  }
+
+  /** Refuses text inside a request transaction (the audit is appended after its rollback). */
+  function refuseTextIn(
+    scope: RequestScope,
+    ventureId: string,
+    turnId: string | null,
+    reason: string,
+  ): never {
+    scope.deferAudit(textRefusal(ventureId, turnId, reason));
+    throw notValidatedText(reason);
+  }
+
+  /** Refuses text after the checks' transactions (audited first). */
+  async function refuseText(
+    ctx: RequestContext,
+    ventureId: string,
+    turnId: string | null,
+    reason: string,
+  ): Promise<never> {
+    await kit.flushDeferred(ctx, [textRefusal(ventureId, turnId, reason)]);
+    throw notValidatedText(reason);
+  }
+
+  function textRefusal(ventureId: string, turnId: string | null, reason: string): AuditEvent {
+    return {
       action: 'speech.refused',
       outcome: 'denied',
       ventureId,
       objectType: turnId === null ? 'session' : 'turn',
       objectId: turnId,
       policyReason: reason,
-    });
-    throw fail.validation('Only the vEIR’s validated words can be spoken', [
-      { path: reason === 'signature_invalid' ? 'sig' : 'text', message: 'Not validated text of this call' },
-    ]);
+    };
   }
 
   /**
@@ -128,32 +154,38 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
    * speech service runs, a reservation that succeeded is rolled back with the 501 (the last check).
    */
   async function reserve(ctx: RequestContext, plan: SpeechPlan, characters: number): Promise<void> {
-    const refusal = await kit.system(async (sx): Promise<SpeechRefusal | null> => {
-      let refused: SpeechRefusal | null = null;
-      if (plan.settings === null) {
-        const plays = await callsRepo.reserveCrisisSpeech(sx, {
-          callId: plan.callId,
-          principalId: ctx.principalId,
-          turnId: plan.objectId,
-          characters,
-          maxPlays: CALL_LIMITS.crisisSpeechReplays,
-        });
-        if (plays === null) refused = 'already_played';
-      } else {
-        const reservation = await callsRepo.reserveCallSpeech(sx, {
-          callId: plan.callId,
-          principalId: ctx.principalId,
-          unit: plan.unit,
-          characters,
-          maxPlays: plan.unit.kind === 'run' ? CALL_LIMITS.speechRunPlays : CALL_LIMITS.speechUnitPlays,
-          budget: speechBudget(plan.settings),
-        });
-        if (!reservation.ok) refused = reservation.reason;
-      }
-      // Thrown inside the transaction, so nothing stays reserved for a synthesis that will not happen.
-      if (refused === null && kit.deps.speech === undefined) throw speechUnavailable();
-      return refused;
-    });
+    // Each reservation is one statement, atomic on its own (the call row is locked inside it), so where a
+    // speech service runs it autocommits: a transaction around it would only add two Data API round trips
+    // before the first audio. Without one, the transaction carries the 501 that rolls the reservation back.
+    const refusal = await kit.system(
+      async (sx): Promise<SpeechRefusal | null> => {
+        let refused: SpeechRefusal | null = null;
+        if (plan.settings === null) {
+          const plays = await callsRepo.reserveCrisisSpeech(sx, {
+            callId: plan.callId,
+            principalId: ctx.principalId,
+            turnId: plan.objectId,
+            characters,
+            maxPlays: CALL_LIMITS.crisisSpeechReplays,
+          });
+          if (plays === null) refused = 'already_played';
+        } else {
+          const reservation = await callsRepo.reserveCallSpeech(sx, {
+            callId: plan.callId,
+            principalId: ctx.principalId,
+            unit: plan.unit,
+            characters,
+            maxPlays: plan.unit.kind === 'run' ? CALL_LIMITS.speechRunPlays : CALL_LIMITS.speechUnitPlays,
+            budget: speechBudget(plan.settings),
+          });
+          if (!reservation.ok) refused = reservation.reason;
+        }
+        // Thrown inside the transaction, so nothing stays reserved for a synthesis that will not happen.
+        if (refused === null && kit.deps.speech === undefined) throw speechUnavailable();
+        return refused;
+      },
+      kit.deps.speech === undefined ? {} : { transaction: false },
+    );
     if (refusal === null) return;
     const error = speechRefusal(refusal, plan.crisis, kit.now());
     await kit.flushDeferred(ctx, [
@@ -218,7 +250,7 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
     ) {
       return null;
     }
-    if (!signatureValid) refuseText(scope, turn.ventureId, turn.turnId, 'signature_invalid');
+    if (!signatureValid) refuseTextIn(scope, turn.ventureId, turn.turnId, 'signature_invalid');
     const call = await callsRepo.getCall(scope.tx, turn.callId);
     const persona = call === null ? null : await personasRepo.getPersona(scope.tx, call.personaId);
     const assets = persona === null ? [] : await personasRepo.personaConsentAssets(scope.tx, persona.id);
@@ -241,6 +273,12 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
 
   return {
     synthesize: async (ctx, rawInput, options = {}) => {
+      // Stage times for the `speech.timing` log line (docs/runbooks/latency.md): numbers only.
+      const started = performance.now();
+      const stages: Record<string, number> = {};
+      const stage = (name: string): void => {
+        stages[name] = Math.round(performance.now() - started);
+      };
       const input = parseInput(SpeechRequest, rawInput);
       const sessionId = requireId(input.sessionId, 'Session');
       const turnId = input.turnId === null ? null : requireId(input.turnId, 'Turn');
@@ -262,8 +300,27 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
           { sessionId, turnId, seq: input.seq ?? 0, text: input.text },
           input.sig,
         );
+      stage('verifiedMs');
 
-      const plan = await kit.inRequest(ctx, async (scope): Promise<SpeechPlan> => {
+      // The platform's spend today is read alongside the checks below (it needs none of them), and compared
+      // with the caps once they are known.
+      const spend = readSpendState(kit, ctx, true);
+      spend.catch(() => undefined); // awaited below unless a check refuses first
+
+      // The caller's live call, its vEIR's voice and today's call time are read in a transaction of their own
+      // while the conversation's checks run in another (neither waits for the other: a Data API transaction
+      // runs one statement at a time). Every check is then applied in the order it always had, so a refused
+      // request is refused for the same reason as before.
+      const callSide = kit.inRequest(ctx, async ({ tx }) => {
+        const call = await callsRepo.getLiveCallOf(tx, ctx.principalId);
+        if (call === null) return null;
+        const persona = await personasRepo.getPersona(tx, call.personaId);
+        const assets = persona === null ? [] : await personasRepo.personaConsentAssets(tx, persona.id);
+        return { call, persona, assets, usedSecondsToday: await callSecondsToday(tx, ctx.principalId) };
+      });
+      callSide.catch(() => undefined); // awaited below unless a check refuses first
+
+      const checked = await kit.inRequest(ctx, async (scope) => {
         const { tx } = scope;
         const session = await sessionsRepo.getSession(tx, sessionId);
         if (session === null) throw fail.notFound('Session');
@@ -275,7 +332,7 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
         if (turnId !== null && turn?.sessionId !== sessionId) throw fail.notFound('Turn');
         if (turn !== null && isCrisisMessage(input.text)) {
           const crisis = await crisisPlan(scope, turn, !signed || signatureValid);
-          if (crisis !== null) return crisis;
+          if (crisis !== null) return { kind: 'crisis' as const, plan: crisis };
         }
 
         const settings = await settingsRepo.getPlatformSettings(tx);
@@ -292,12 +349,19 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
           });
         }
         const active = await requireAssignmentActive(scope, session.ventureId);
-        const call = await callsRepo.getLiveCallOf(tx, ctx.principalId);
-        if (call?.sessionId !== sessionId || call.idleSeconds > CALL_LIMITS.staleSeconds) {
+        return { kind: 'checked' as const, session, turn, settings, active };
+      });
+
+      let plan: SpeechPlan;
+      if (checked.kind === 'crisis') plan = checked.plan;
+      else {
+        const { session, turn, settings, active } = checked;
+        const side = await callSide;
+        const call = side?.call ?? null;
+        if (side === null || call?.sessionId !== sessionId || call.idleSeconds > CALL_LIMITS.staleSeconds) {
           throw fail.conflict('Speech is only available during a live call.', 'call_not_active');
         }
-        const persona = await personasRepo.getPersona(tx, call.personaId);
-        const assets = persona === null ? [] : await personasRepo.personaConsentAssets(tx, persona.id);
+        const { persona, assets } = side;
         if (
           persona === null ||
           active.persona.id !== call.personaId ||
@@ -311,7 +375,7 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
           callTimeLeft({
             elapsedSeconds: call.elapsedSeconds,
             maxSeconds: call.maxSeconds,
-            usedSecondsToday: await callSecondsToday(tx, ctx.principalId),
+            usedSecondsToday: side.usedSecondsToday,
             caps: settings,
           }),
         );
@@ -326,7 +390,9 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
               throw fail.conflict('Only a completed reply can be spoken', 'turn_not_completed');
             }
             const stored = speakableRunSpan(input.text, turn.spoken);
-            if (stored === null) refuseText(scope, session.ventureId, turnId, 'text_not_validated');
+            if (stored === null) {
+              return refuseText(ctx, session.ventureId, turnId, 'text_not_validated');
+            }
             text = stored.text;
             unit = { kind: 'run', turnId: turn.turnId, first: stored.first, last: stored.last };
           } else if (turn.status === 'blocked' || turn.status === 'failed') {
@@ -334,8 +400,8 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
             throw fail.conflict('This reply can no longer be spoken.', 'turn_not_speakable');
           }
         }
-        if (signed && !signatureValid) refuseText(scope, session.ventureId, turnId, 'signature_invalid');
-        return {
+        if (signed && !signatureValid) return refuseText(ctx, session.ventureId, turnId, 'signature_invalid');
+        plan = {
           ventureId: session.ventureId,
           callId: call.id,
           voiceId: call.voiceId,
@@ -346,61 +412,45 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
           objectId: turnId ?? call.id,
           crisis: false,
         };
-      });
+      }
 
+      stage('plannedMs');
       // Every check runs before the 501 below: a valid request tells the client to speak the text itself.
       if (plan.settings !== null) {
         // The platform's daily cap counts speech; the per-person AI cap does not (the speech budget does).
-        await assertWithinSpendCaps(kit, ctx, plan.settings, {
+        await enforceSpendCaps(kit, ctx, await spend, plan.settings, {
           ventureId: plan.ventureId,
           operation: 'speech',
-          caps: 'global',
         });
       }
       // The play and the characters are reserved before the speech service is called (one statement, so
       // concurrent requests cannot replay a unit or overrun a budget). Where no speech service runs, the
       // reservation is rolled back with the 501: it is the last check.
+      stage('capsCheckedMs');
       const reserved = plan.text.length;
       await reserve(ctx, plan, reserved);
+      stage('reservedMs');
       const synthesizer = kit.deps.speech;
       if (synthesizer === undefined) throw speechUnavailable();
 
       let speech: SynthesizedSpeech;
       try {
-        // Metered like every model call (one usage-ledger row, purpose `speech`, priced per character) once
-        // synthesis succeeded: the service bills the characters whether or not playback finishes, and bills
-        // nothing for a request it refused.
-        ({ speech } = await metered(
-          kit,
-          { ctx, ventureId: plan.ventureId, purpose: 'speech' },
-          async () => {
-            const synthesized = await synthesizer.synthesize({
-              text: plan.text,
-              voiceId: plan.voiceId,
-              engines: speechEngines(plan.voiceId),
-              requestId: ctx.requestId,
-              ...(options.signal === undefined ? {} : { signal: options.signal }),
-            });
-            return {
-              speech: synthesized,
-              attempts: [
-                {
-                  modelId: `polly:${synthesized.engine}:${synthesized.voiceId}`,
-                  usage: { inputTokens: synthesized.characters, outputTokens: 0 },
-                  costUsd: speechCostUsd(synthesized.characters, synthesized.engine),
-                },
-              ],
-            };
-          },
-          () => [],
-        ));
+        speech = await synthesizer.synthesize({
+          text: plan.text,
+          voiceId: plan.voiceId,
+          engines: speechEngines(plan.voiceId),
+          requestId: ctx.requestId,
+          ...(options.signal === undefined ? {} : { signal: options.signal }),
+        });
+        stage('synthesizedMs');
       } catch (err) {
         logger.warn('speech.synthesis_failed', {
           requestId: ctx.requestId,
           callId: plan.callId,
           error: err instanceof Error ? err.name : 'unknown',
         });
-        // Nothing was billed: the play and the characters go back, so the client may ask again.
+        // Nothing was billed (the service bills nothing for a request it refused): the play and the characters
+        // go back, so the client may ask again.
         await settle(ctx, plan, reserved, null);
         if (err instanceof SpeechSynthesisError || (err instanceof Error && err.name === 'AbortError')) {
           throw new DomainError(
@@ -416,39 +466,73 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
         throw err;
       }
 
-      // The call's speech counter as billed, and the audit (ids and counts only).
-      await settle(ctx, plan, reserved, speech.characters);
-      try {
-        await kit.system(
-          (sx) =>
-            auditRepo.appendAudit(sx, {
-              action: 'speech.synthesized',
-              outcome: 'succeeded',
-              tenantId: ctx.tenantId,
-              ventureId: plan.ventureId,
-              actorId: ctx.principalId,
+      // The bookkeeping of a synthesis that succeeded runs while its audio streams, and the response ends
+      // only once it is done (a Lambda invocation is not frozen while its response is open): metered like
+      // every model call (one usage-ledger row, purpose `speech`, priced per character, billed whether or
+      // not playback finishes), the call's speech counter as billed, and the audit (ids and counts only).
+      // None of it can change what is spoken, so the first audio bytes no longer wait for three writes.
+      const billed = speech;
+      const bookkeeping = Promise.all([
+        kit.recordUsage({
+          ctx,
+          ventureId: plan.ventureId,
+          purpose: 'speech',
+          attempts: [
+            {
+              modelId: `polly:${billed.engine}:${billed.voiceId}`,
+              usage: { inputTokens: billed.characters, outputTokens: 0 },
+              costUsd: speechCostUsd(billed.characters, billed.engine),
+            },
+          ],
+        }),
+        settle(ctx, plan, reserved, billed.characters),
+        kit
+          .system(
+            (sx) =>
+              auditRepo.appendAudit(sx, {
+                action: 'speech.synthesized',
+                outcome: 'succeeded',
+                tenantId: ctx.tenantId,
+                ventureId: plan.ventureId,
+                actorId: ctx.principalId,
+                requestId: ctx.requestId,
+                objectType: plan.objectType,
+                objectId: plan.objectId,
+                ...(plan.crisis ? { policyReason: 'crisis_support' } : {}),
+                metadata: {
+                  callId: plan.callId,
+                  characters: billed.characters,
+                  engine: billed.engine,
+                  voiceId: billed.voiceId,
+                  signed,
+                },
+              }),
+            { transaction: false },
+          )
+          .catch((err: unknown) => {
+            logger.error('speech.record_failed', {
               requestId: ctx.requestId,
-              objectType: plan.objectType,
-              objectId: plan.objectId,
-              ...(plan.crisis ? { policyReason: 'crisis_support' } : {}),
-              metadata: {
-                callId: plan.callId,
-                characters: speech.characters,
-                engine: speech.engine,
-                voiceId: speech.voiceId,
-                signed,
-              },
-            }),
-          { transaction: false },
-        );
-      } catch (err) {
-        logger.error('speech.record_failed', {
-          requestId: ctx.requestId,
-          callId: plan.callId,
-          error: err instanceof Error ? err.name : 'unknown',
-        });
-      }
-      return speech;
+              callId: plan.callId,
+              error: err instanceof Error ? err.name : 'unknown',
+            });
+          }),
+      ]).then(() => undefined);
+      return {
+        ...billed,
+        audio: observedAudio(billed.audio, {
+          onFirstChunk: () => {
+            stage('firstAudioMs');
+            logger.info('speech.timing', {
+              requestId: ctx.requestId,
+              callId: plan.callId,
+              signed,
+              characters: billed.characters,
+              ...stages,
+            });
+          },
+          beforeClose: () => bookkeeping,
+        }),
+      };
     },
   };
 }

@@ -7,6 +7,7 @@ import { createIdempotencyKey } from '../client';
 import { errorMessage, isAbortError, isApiError } from '../errors';
 import { queryKeys } from '../query-keys';
 import { streamTurn, type CreateTurnBody, type TurnStreamEventT } from '../sse';
+import { refreshVentureAfterTurn } from '../venture-refresh';
 import type { SessionDetail } from './sessions';
 
 export type TurnPhase = z.infer<typeof TurnStatusPhase>;
@@ -374,13 +375,8 @@ export function useTurnStream(sessionId: string, { ventureId, onEvent }: UseTurn
         }
         void client.invalidateQueries({ queryKey: queryKeys.session.detail(sessionId) });
         if (final === 'completed' || final === 'blocked') {
-          // A venture read that started before this turn was saved (e.g. the memory list fetched as the
-          // conversation opened) cannot include what the turn added, and an in-flight first fetch is
-          // not restarted by invalidation alone: cancel it, then refetch.
-          const scope = queryKeys.venture.scope(ventureId);
-          void client
-            .cancelQueries({ queryKey: scope })
-            .then(() => client.invalidateQueries({ queryKey: scope }));
+          // Only what a turn changes (memory, overview, escalations, conversations), not the whole venture.
+          refreshVentureAfterTurn(client, ventureId);
           void client.invalidateQueries({ queryKey: queryKeys.ventures.list() });
           // The first message titles the conversation and every turn moves it up the recents.
           void client.invalidateQueries({ queryKey: queryKeys.conversations.all() });

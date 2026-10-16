@@ -16,6 +16,7 @@ import type { z } from 'zod';
 import { encodeBody } from '../body';
 import { api, apiRequestOrEmpty, createIdempotencyKey, path } from '../client';
 import { queryKeys, type MemoryFilters } from '../query-keys';
+import { VENTURE_DATA_STALE_MS } from '../venture-refresh';
 
 export type MemoryQueryInput = z.input<typeof MemoryQuery>;
 
@@ -42,6 +43,7 @@ export const memoryQueryOptions = (ventureId: string, filters: MemoryQueryInput 
   const normalised = normaliseFilters(filters);
   return queryOptions({
     queryKey: queryKeys.venture.memory(ventureId, normalised),
+    staleTime: VENTURE_DATA_STALE_MS,
     queryFn: async ({ signal }) => {
       const items: MemoryObjectView[] = [];
       let cursor: string | undefined;

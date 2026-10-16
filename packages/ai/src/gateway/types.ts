@@ -65,6 +65,11 @@ export interface RawModelAttempt {
   outcome: AttemptOutcome;
   latencyMs: number;
   usage: ModelUsage;
+  /**
+   * Input tokens the provider read from its prompt cache (already counted in `usage.inputTokens`), when it
+   * reports them: shows in the logs how much of a prompt was served from the cache (docs/runbooks/latency.md).
+   */
+  cachedInputTokens?: number;
   /** Provider error class name (e.g. `ThrottlingException`), never the error message. */
   errorName: string | null;
 }

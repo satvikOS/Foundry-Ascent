@@ -280,7 +280,7 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
             "Ref": "ApiLogGroup1717FE17",
           },
         },
-        "MemorySize": 1024,
+        "MemorySize": 1769,
         "RecursiveLoop": "Terminate",
         "Role": {
           "Fn::GetAtt": [
@@ -2855,8 +2855,7 @@ exports[`template snapshots > FoundryAscent-Data 1`] = `
         "PreferredMaintenanceWindow": "sun:08:30-sun:09:30",
         "ServerlessV2ScalingConfiguration": {
           "MaxCapacity": 2,
-          "MinCapacity": 0,
-          "SecondsUntilAutoPause": 600,
+          "MinCapacity": 0.5,
         },
         "StorageEncrypted": true,
         "VpcSecurityGroupIds": [

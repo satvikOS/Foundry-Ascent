@@ -34,8 +34,13 @@ export interface PlatformConfig {
     readonly luna?: { readonly modelId: string; readonly enabled: boolean };
   };
   readonly aurora: {
+    /**
+     * 0 lets the cluster pause after `autoPauseMinutes` idle (USD 0 while paused; the first request after a
+     * pause waits 15-30 s for it to resume); 0.5 or more keeps it awake (about USD 44 a month at 0.5).
+     */
     readonly minCapacityAcu: number;
     readonly maxCapacityAcu: number;
+    /** Idle minutes before pausing; used only when `minCapacityAcu` is 0. */
     readonly autoPauseMinutes: number;
     readonly engineVersion: string;
   };

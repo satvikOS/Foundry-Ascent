@@ -44,6 +44,11 @@ admin's `/admin/health` probes it. Durable jobs use an SQS queue (SSE-SQS, visib
 worker Lambda (batch 5, partial batch failures, at most 2 concurrent pollers) and a DLQ after 3 receives.
 Temporal and Redis are deferred.
 
+**Amended 2026-10-16 (latency):** production now keeps the cluster awake at `serverlessV2MinCapacity: 0.5`
+(about USD 44 a month) so no founder waits 15–30 s for a resume after 10 idle minutes; auto-pause applies
+again whenever `aurora.minCapacityAcu` is set back to 0 (`infra/cdk/config/production.json`). The resume
+handling above stays for that case. Measurements and the trade-off: [latency runbook](../../runbooks/latency.md).
+
 ### Consequences
 
 - Good: compute costs $0 while paused; one engine for relational data, vectors, FTS and RLS.

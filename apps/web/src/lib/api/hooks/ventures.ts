@@ -11,6 +11,7 @@ import type { z } from 'zod';
 import { encodeBody } from '../body';
 import { api, createIdempotencyKey, path } from '../client';
 import { queryKeys } from '../query-keys';
+import { VENTURE_DATA_STALE_MS } from '../venture-refresh';
 
 /** GET /ventures — ventures the principal can access (membership or assignment). */
 export const venturesQueryOptions = () =>
@@ -39,6 +40,7 @@ export function useVenture(ventureId: string) {
 export const ventureOverviewQueryOptions = (ventureId: string) =>
   queryOptions({
     queryKey: queryKeys.venture.overview(ventureId),
+    staleTime: VENTURE_DATA_STALE_MS,
     queryFn: ({ signal }) => api.get(path`/ventures/${ventureId}/overview`, VentureOverview, { signal }),
   });
 

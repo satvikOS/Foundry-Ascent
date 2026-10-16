@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 
 import { pdfjsAssets } from './src/features/documents/viewer/pdfjs-assets.plugin.ts';
+import { FRAMEWORK_CHUNK, firstLoadBudget } from './vite-plugins/page-speed.js';
 
 /**
  * Sonner injects its stylesheet with a runtime <style> tag, which a strict CSP (style-src 'self')
@@ -53,6 +54,9 @@ export default defineConfig({
     sonnerWithoutInjectedStyles(),
     // pdf.js's data files (CMaps, Symbol fonts, scanned-image decoders), same-origin for the viewer.
     pdfjsAssets(),
+    // Page speed (docs/runbooks/latency.md): the script a first page load fetches (the entry and its static
+    // imports) stays within its budget; the build fails otherwise.
+    firstLoadBudget(),
   ],
   resolve: { tsconfigPaths: true },
   server: {
@@ -68,6 +72,13 @@ export default defineConfig({
     sourcemap: true,
     // Keep every asset a separate file so the CSP never needs `data:` for fonts or images.
     assetsInlineLimit: 0,
-    chunkSizeWarningLimit: 700,
+    chunkSizeWarningLimit: 650,
+    rolldownOptions: {
+      output: {
+        // React in a chunk of its own. The first load fetches it alongside the entry either way (same bytes);
+        // the gain is that a returning visitor still has it cached after a release changed the app.
+        codeSplitting: { groups: [FRAMEWORK_CHUNK] },
+      },
+    },
   },
 });

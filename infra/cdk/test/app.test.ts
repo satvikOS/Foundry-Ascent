@@ -69,7 +69,8 @@ describe('FoundryAscent-App', () => {
 
   describe('Lambda functions', () => {
     it.each([
-      ['FoundryAscent-Api', 1024, 60],
+      // One full vCPU for the API (Lambda CPU scales with memory): see production.json api.note.
+      ['FoundryAscent-Api', 1769, 60],
       ['FoundryAscent-Worker', 1024, 120],
       ['FoundryAscent-Migrate', 1024, 600],
       ['FoundryAscent-Insights', 1024, 300],

@@ -44,12 +44,15 @@ describe('config', () => {
   it('loads config/production.json', () => {
     const config = loadConfig();
     expect(config.region).toBe('us-east-1');
+    // Kept awake at 0.5 ACU: no request waits for a paused cluster to resume (docs/runbooks/latency.md).
     expect(config.aurora).toEqual({
-      minCapacityAcu: 0,
+      minCapacityAcu: 0.5,
       maxCapacityAcu: 2,
       autoPauseMinutes: 10,
       engineVersion: '16.13',
     });
+    // One full vCPU for the API.
+    expect(config.api.memoryMb).toBe(1769);
     // Unreserved: some accounts have a total concurrency quota of 10, which any reservation would break.
     expect(config.api.reservedConcurrency).toBeNull();
     expect(config.worker.reservedConcurrency).toBeNull();
