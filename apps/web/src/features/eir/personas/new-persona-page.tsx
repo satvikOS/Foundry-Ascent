@@ -94,8 +94,8 @@ export function NewPersonaPage({ tenant }: { tenant: string }) {
       {available.length === 0 ? (
         <EmptyState
           icon={UserSquare}
-          title="Every EIR has a vEIR"
-          description="Add an EIR profile first; each EIR gets one vEIR."
+          title="Every EIR already has a vEIR"
+          description="Each EIR has one vEIR."
         />
       ) : step === 'who' ? (
         <SectionCard title="Who it’s built from">

@@ -192,7 +192,13 @@ export function ProgramVenturesPage() {
                 Stage
               </SortableTableHead>
               <TableHead className="hidden md:table-cell">Domain</TableHead>
-              <SortableTableHead sortKey="members" sort={sort} onSortChange={setSort} align="right">
+              <SortableTableHead
+                sortKey="members"
+                sort={sort}
+                onSortChange={setSort}
+                align="right"
+                className="hidden sm:table-cell"
+              >
                 Members
               </SortableTableHead>
               <TableHead className="hidden lg:table-cell">Status</TableHead>
@@ -226,7 +232,7 @@ export function ProgramVenturesPage() {
                   <TableCell className="hidden text-muted-foreground md:table-cell">
                     {DOMAIN_LABELS[row.domain] ?? row.domain}
                   </TableCell>
-                  <TableCell className="tabular text-right">{row.memberCount}</TableCell>
+                  <TableCell className="tabular hidden text-right sm:table-cell">{row.memberCount}</TableCell>
                   <TableCell className="hidden lg:table-cell">
                     {status.success ? (
                       <StatusBadge kind="venture" status={status.data} />

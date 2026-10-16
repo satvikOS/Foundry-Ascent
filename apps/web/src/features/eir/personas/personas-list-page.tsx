@@ -10,23 +10,30 @@ import { LoadingRegion, Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { usePersonas } from '@/lib/api/hooks/eir';
+import { useEirProfiles } from '@/lib/api/hooks/veir-pools';
 import { formatNumber, pluralize } from '@/lib/format';
 import { shortPersonaName } from '@/lib/veir';
 
 import { ConsentIndicator } from './consent-indicator';
+import { eirsWithoutVeir } from './new-persona';
 import { PERSONA_KIND_LABELS } from './persona-labels';
 
 /** EIR studio → Personas: every vEIR and the program guide, with status, release, reach and consent. */
 export function PersonasListPage({ tenant, canCreate }: { tenant: string; canCreate: boolean }) {
   const personas = usePersonas();
-  const newVeir = canCreate ? (
-    <Button asChild>
-      <Link to="/$tenant/app/eir/personas/new" params={{ tenant }}>
-        <Plus aria-hidden />
-        New vEIR
-      </Link>
-    </Button>
-  ) : null;
+  const profiles = useEirProfiles({ enabled: canCreate });
+  // Offer New vEIR only when some EIR doesn't have one yet (one vEIR per EIR).
+  const available =
+    canCreate && profiles.data && personas.data ? eirsWithoutVeir(profiles.data, personas.data).length : 0;
+  const newVeir =
+    available > 0 ? (
+      <Button asChild>
+        <Link to="/$tenant/app/eir/personas/new" params={{ tenant }}>
+          <Plus aria-hidden />
+          New vEIR
+        </Link>
+      </Button>
+    ) : null;
 
   return (
     <PageContainer>
