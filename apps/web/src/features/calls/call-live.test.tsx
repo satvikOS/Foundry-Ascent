@@ -149,6 +149,26 @@ describe('CallLive', () => {
     expect(engine.pushToTalk).toHaveBeenLastCalledWith(false);
   });
 
+  it('lets go of push-to-talk when the window loses focus or the page is hidden', async () => {
+    const { engine } = renderLive({ talkMode: 'push_to_talk' });
+    await screen.findByRole('button', { name: 'Hold to talk' });
+    fireEvent.keyDown(document.body, { code: 'Space' });
+    expect(engine.pushToTalk).toHaveBeenLastCalledWith(true);
+    // Space released in another app never reaches the page.
+    fireEvent.blur(window);
+    expect(engine.pushToTalk).toHaveBeenLastCalledWith(false);
+
+    fireEvent.keyDown(document.body, { code: 'Space' });
+    expect(engine.pushToTalk).toHaveBeenLastCalledWith(true);
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    try {
+      fireEvent(document, new Event('visibilitychange'));
+    } finally {
+      Reflect.deleteProperty(document, 'visibilityState');
+    }
+    expect(engine.pushToTalk).toHaveBeenLastCalledWith(false);
+  });
+
   it('puts the support of a held-back turn first, with the drafted request', async () => {
     const result = renderLive({
       muted: true,

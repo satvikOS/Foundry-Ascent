@@ -456,6 +456,56 @@ describe('CallEngine · voice', () => {
     expect(h.track.stop).toHaveBeenCalled();
   });
 
+  it('stops reconnecting while muted, and gives an unmuted call a fresh reconnect window', async () => {
+    const h = setup();
+    await startLive(h);
+    FakeWebSocket.last().serverOpen();
+    FakeWebSocket.last().serverDrop();
+    expect(h.state().reconnecting).toBe(true);
+    h.engine.setMuted(true);
+    // Muted (or on hold, or reading crisis support): nothing is reconnecting, so the call does not say so.
+    expect(h.state()).toMatchObject({ muted: true, reconnecting: false });
+    expect(h.engine.avatarState()).toBe('muted');
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(h.state().reconnecting).toBe(false);
+
+    // Unmuted long after: one failed grant is a fresh attempt, not the end of voice input.
+    h.api.refreshSttGrant.mockRejectedValueOnce(new Error('offline'));
+    h.engine.setMuted(false);
+    await flush(10);
+    expect(h.state()).toMatchObject({ input: 'voice', reconnecting: true });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    FakeWebSocket.last().serverOpen();
+    expect(h.state()).toMatchObject({ input: 'voice', reconnecting: false });
+  });
+
+  it('lets go of push-to-talk on hold and on mute, so nothing said meanwhile is sent', async () => {
+    const h = setup();
+    await h.engine.start({ ventureId: IDS.venture, sessionId: IDS.session, talkMode: 'push_to_talk' });
+    await flush(10);
+    FakeWebSocket.last().serverOpen();
+    h.engine.pushToTalk(true);
+    h.engine.hold();
+    expect(h.state()).toMatchObject({ held: true, talking: false });
+    h.engine.resume();
+    await flush(10);
+    const socket = FakeWebSocket.last();
+    socket.serverOpen();
+    expect(h.state()).toMatchObject({ held: false, talking: false });
+    // The side conversation after resuming is not sent: the stream carries silence until Space is held again.
+    h.frame(0.2);
+    expect(decodeMessage(socket.sent.at(-1) ?? new Uint8Array()).payload.every((b) => b === 0)).toBe(true);
+    socket.serverSend(transcriptEvent('s1', 'not for the vEIR', { partial: false }));
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(h.script.calls).toHaveLength(0);
+
+    h.engine.pushToTalk(true);
+    h.engine.setMuted(true);
+    expect(h.state()).toMatchObject({ muted: true, talking: false });
+  });
+
   it('push-to-talk sends silence until held and ends the turn on release', async () => {
     const h = setup();
     await h.engine.start({ ventureId: IDS.venture, sessionId: IDS.session, talkMode: 'push_to_talk' });

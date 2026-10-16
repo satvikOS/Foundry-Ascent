@@ -118,7 +118,8 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: Cal
     live,
   );
 
-  // Hold Space anywhere on the call screen to talk (push-to-talk), unless a control has focus.
+  // Hold Space anywhere on the call screen to talk (push-to-talk), unless a control has focus. Space released
+  // in another app or tab never reaches the page, so leaving the window or hiding the page lets go too.
   useEffect(() => {
     if (!live || !pushToTalk || !voice) return undefined;
     const down = (event: KeyboardEvent) => {
@@ -131,11 +132,21 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: Cal
       event.preventDefault();
       engine.pushToTalk(false);
     };
+    const letGo = () => {
+      engine.pushToTalk(false);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') letGo();
+    };
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
+    window.addEventListener('blur', letGo);
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
       window.removeEventListener('keydown', down);
       window.removeEventListener('keyup', up);
+      window.removeEventListener('blur', letGo);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [engine, live, pushToTalk, voice]);
 

@@ -492,11 +492,16 @@ export class CallEngine {
   setMuted(muted: boolean): void {
     if (this.snapshot.phase !== 'live' || this.snapshot.input !== 'voice' || muted === this.snapshot.muted)
       return;
-    this.set({ muted, held: false });
+    // Muting also lets go of push-to-talk, and nothing reconnects while muted (on hold, reading support):
+    // unmuting starts speech-to-text afresh, with a fresh window to reconnect in.
+    this.set(muted ? { muted, held: false, talking: false, reconnecting: false } : { muted, held: false });
     this.capture?.setEnabled(!muted);
     if (muted) {
       // Close speech-to-text while muted: nothing is sent and nothing is billed.
       this.closeStt();
+      this.stopReconnecting();
+      if (this.releaseTimer !== null) this.deps.clock.clearTimeout(this.releaseTimer);
+      this.releaseTimer = null;
       this.endpointer.discard();
       this.vad.reset();
       this.founderLevel = 0;
@@ -685,7 +690,9 @@ export class CallEngine {
 
   /** The Transcribe socket dropped: reconnect with a fresh grant, or continue by typing after a while. */
   private sttLost(): void {
-    if (this.snapshot.phase !== 'live') return;
+    const s = this.snapshot;
+    // Muted meanwhile (a grant request that failed after the founder muted): unmuting reconnects.
+    if (s.phase !== 'live' || s.input !== 'voice' || s.muted) return;
     const now = this.deps.clock.now();
     this.reconnectSince ??= now;
     if (now - this.reconnectSince >= this.tuning.reconnectWindowMs) {
@@ -702,6 +709,13 @@ export class CallEngine {
       this.reconnectTimer = null;
       if (epoch === this.epoch) void this.connectStt(epoch);
     }, delay);
+  }
+
+  private stopReconnecting(): void {
+    if (this.reconnectTimer !== null) this.deps.clock.clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.reconnectSince = null;
+    this.reconnectAttempt = 0;
   }
 
   private toTyped(reason: TypedReason): void {
