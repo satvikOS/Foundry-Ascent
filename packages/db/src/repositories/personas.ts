@@ -542,6 +542,32 @@ export function listConsents(ex: SqlExecutor, subjectPrincipalId: string): Promi
   );
 }
 
+export interface ConsentDependent {
+  readonly consentId: string;
+  readonly id: string;
+  readonly name: string;
+  readonly status: 'draft' | 'active' | 'suspended' | 'retired';
+}
+
+/** Personas linked to these consents: revoking a consent suspends the active ones. */
+export async function listConsentDependents(
+  ex: SqlExecutor,
+  consentIds: readonly string[],
+): Promise<ConsentDependent[]> {
+  if (consentIds.length === 0) return [];
+  return queryRows(
+    ex,
+    `SELECT consent_id, id, name, status FROM personas WHERE consent_id = ANY (:ids) ORDER BY name, id`,
+    { ids: p.uuidArray(consentIds) },
+    (r) => ({
+      consentId: col.uuid.decode(r.consent_id, 'consent_id'),
+      id: col.uuid.decode(r.id, 'id'),
+      name: col.text.decode(r.name, 'name'),
+      status: col.enum(['draft', 'active', 'suspended', 'retired'] as const).decode(r.status, 'status'),
+    }),
+  );
+}
+
 /**
  * Revokes a consent and suspends every active persona that relies on it (no persona may run without
  * consent). Returns the ids of the personas suspended, or null when the consent was not revocable.

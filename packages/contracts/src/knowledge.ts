@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { CoachMode, Doctrine, Id, PrincipalView, Style, Timestamp } from './domain.js';
+import { CoachMode, Doctrine, Id, PersonaStatus, PrincipalView, Style, Timestamp } from './domain.js';
 
 /**
  * vEIR knowledge pools (docs/architecture/knowledge-pools.md).
@@ -295,6 +295,11 @@ export const ConsentView = z.object({
   grantedAt: Timestamp,
   expiresAt: Timestamp.nullable(),
   revokedAt: Timestamp.nullable(),
+  /**
+   * Personas linked to this consent: revoking it suspends the active ones. Sent by
+   * `GET /personas/:id/consents`; additive.
+   */
+  personas: z.array(z.object({ id: Id, name: z.string(), status: PersonaStatus })).optional(),
 });
 export type ConsentView = z.infer<typeof ConsentView>;
 export const ConsentListResponse = z.object({ items: z.array(ConsentView) });

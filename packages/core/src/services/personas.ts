@@ -33,7 +33,7 @@ type ProgramVentureRowValue = z.infer<typeof ProgramVentureRow>;
 export interface PersonaManagementService {
   /** Creates a draft EIR persona and its draft release v1 (program lead). */
   createEirPersona(ctx: RequestContext, input: z.input<typeof CreateEirPersonaRequest>): Promise<PersonaView>;
-  /** Consent records of the persona's EIR (program lead or that EIR). */
+  /** Consent records of the persona's EIR, each with the personas relying on it (program lead or that EIR). */
   listConsents(ctx: RequestContext, personaId: string): Promise<ConsentView[]>;
   /**
    * Records the consent of the persona's EIR and links it to the persona. The EIR records their own; a
@@ -166,9 +166,17 @@ export function createPersonaManagementService(
         if (persona.eirProfileId === null) return [];
         const profile = await eirRepo.getEirProfile(scope.tx, persona.eirProfileId);
         if (profile?.principalId == null) return [];
-        return (await personasRepo.listConsents(scope.tx, profile.principalId)).map(
-          personasRepo.toConsentView,
+        const consents = await personasRepo.listConsents(scope.tx, profile.principalId);
+        const dependents = await personasRepo.listConsentDependents(
+          scope.tx,
+          consents.map((c) => c.id),
         );
+        return consents.map((c) => ({
+          ...personasRepo.toConsentView(c),
+          personas: dependents
+            .filter((d) => d.consentId === c.id)
+            .map((d) => ({ id: d.id, name: d.name, status: d.status })),
+        }));
       });
     },
 

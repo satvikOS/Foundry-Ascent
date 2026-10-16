@@ -7,7 +7,7 @@ import {
   type PersonaReleaseView,
   type PersonaView,
 } from '@foundry/contracts';
-import { eirRepo, personasRepo, turnsRepo } from '@foundry/db';
+import { eirRepo, personasRepo, principalsRepo, turnsRepo } from '@foundry/db';
 import { type z } from 'zod';
 
 import { hasAnyRole, loadPrincipalRoles, requireRole } from '../authz/roles.js';
@@ -114,17 +114,53 @@ export function createEirStudioService(kit: Kit): EirStudioService {
     }
   }
 
+  /**
+   * Adds what the caller may do with each persona (`canCurate`, `canManageConsent`), by the rules the
+   * library, lessons and consent endpoints enforce, so the studio never offers an action that is refused.
+   */
+  async function withAccess(scope: RequestScope, views: readonly PersonaView[]): Promise<PersonaView[]> {
+    const roles = await loadPrincipalRoles(scope.tx, scope.ctx);
+    const lead = hasAnyRole(roles, ['program_lead']);
+    const eir = hasAnyRole(roles, ['eir']);
+    const subjects = new Map<string, { principalId: string | null; synthetic: boolean }>();
+    for (const view of views) {
+      const profileId = view.eirProfile?.id;
+      if (profileId === undefined || subjects.has(profileId)) continue;
+      const profile = await eirRepo.getEirProfile(scope.tx, profileId);
+      const principalId = profile?.principalId ?? null;
+      // A program lead may act for a synthetic EIR only (consent stays the subject's own act otherwise).
+      const principal =
+        lead && principalId !== null && profile?.synthetic === true
+          ? await principalsRepo.getPrincipal(scope.tx, principalId)
+          : null;
+      subjects.set(profileId, { principalId, synthetic: principal?.synthetic === true });
+    }
+    return views.map((view) => {
+      const subject = view.eirProfile ? subjects.get(view.eirProfile.id) : undefined;
+      const own = subject?.principalId != null && subject.principalId === scope.ctx.principalId;
+      const canCurate = lead || (eir && own);
+      const canManageConsent =
+        canCurate &&
+        view.kind === 'eir_persona' &&
+        view.status !== 'retired' &&
+        subject?.principalId != null &&
+        (own || subject.synthetic);
+      return { ...view, canCurate, canManageConsent };
+    });
+  }
+
   async function personaView(scope: RequestScope, personaId: string): Promise<PersonaView> {
     const view = await personasRepo.getPersonaView(scope.tx, personaId);
     if (view === null) throw fail.notFound('Persona');
-    return view;
+    const [withViewer] = await withAccess(scope, [view]);
+    return withViewer ?? view;
   }
 
   return {
     listPersonas: (ctx) =>
       kit.inRequest(ctx, async (scope) => {
         await requireRole(scope, STUDIO_ROLES, { objectType: 'persona' });
-        return personasRepo.listPersonaViews(scope.tx, ctx.tenantId);
+        return withAccess(scope, await personasRepo.listPersonaViews(scope.tx, ctx.tenantId));
       }),
 
     getPersona: async (ctx, rawPersonaId) => {
