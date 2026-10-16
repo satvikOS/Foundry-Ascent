@@ -45,7 +45,7 @@ describe('owner-facing docs match the production config', () => {
     );
     expect(stale).toEqual([]);
     expect(
-      paragraphs(read(COST_ADR)).some((p) => p.startsWith("> **Update") && p.includes('minCapacityAcu')),
+      paragraphs(read(COST_ADR)).some((p) => p.startsWith('> **Update') && p.includes('minCapacityAcu')),
     ).toBe(true);
   });
 
@@ -62,7 +62,7 @@ describe('owner-facing docs match the production config', () => {
     // The cost table's Lambda row names the API's size.
     const row = read('docs/runbooks/cost-controls.md')
       .split('\n')
-      .find((line) => line.startsWith("| Lambda ("));
+      .find((line) => line.startsWith('| Lambda ('));
     expect(row).toContain(`API ${mb.toLocaleString('en-US')} MB`);
   });
 });
