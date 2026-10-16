@@ -580,7 +580,7 @@ test.describe('document viewer', () => {
           name: notes,
           mimeType: 'text/markdown',
           buffer: Buffer.from(
-            `# Phone notes (${token})\n\n${'A long line of notes about seats. '.repeat(30)}\n`,
+            `# Phone notes (${token})\n\n${Array.from({ length: 30 }, () => 'A long line of notes about seats.').join(' ')}\n`,
           ),
         },
       ]);
