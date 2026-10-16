@@ -303,11 +303,21 @@ const ADDRESSING = new Set(ADDRESSING_CLOSINGS);
 const SIGN_OFF = `(?<signoff>${[...CLOSINGS, ...ADDRESSING_CLOSINGS].map(escapeRegExp).join('|')})`;
 
 const ENDORSE_VERBS =
-  '(?:approved|endorsed|signed off(?: on)?|reviewed and (?:approved|endorsed|signed off(?: on)?)|vetted|validated|vouched for|blessed|backs|backed|green-?lit|greenlit|agreed with|agrees with|is on board with|(?:reviewed|looked over|looked at|read|seen|checked) (?:your|this|these|that|it|the plan|the deck|the pitch|our)|(?:given|gave) (?:(?:your|this|the|that|it)(?: [\\p{L}-]+)? )?(?:a |the |her |his |their )?(?:green light|thumbs[- ]up|go-ahead|nod|seal of approval|stamp of approval|blessing))';
+  '(?:approved|endorsed|signed off(?: on)?|reviewed and (?:approved|endorsed|signed off(?: on)?)|vetted|validated|vouched for|blessed|backs|backed|green-?lit|greenlit|agreed with|agrees with|is on board with|(?:reviewed|looked over|looked at|read|seen|checked) (?:your|this|these|that|it|the plan|the deck|the pitch|our)|(?:endorses|approves(?: of)?|signs off on|vouches for|stands behind) (?:your|this|these|that|it|the plan|the deck|the pitch|our)|(?:given|gave) (?:(?:your|this|the|that|it)(?: [\\p{L}-]+)? )?(?:a |the |her |his |their )?(?:green light|thumbs[- ]up|go-ahead|nod|seal of approval|stamp of approval|blessing))';
 const ENDORSED = `(?:has |had |have )?(?:already |personally |officially |just )?${ENDORSE_VERBS}`;
 const OPINION_VERBS =
   '(?:thinks|believes|feels|likes|loves|liked|loved|enjoyed|(?:is|was) (?:excited|impressed|happy|pleased|thrilled) (?:about|by|with)) (?:your|this plan|this idea|this deck|this pitch)';
 const APPROVED_BY = '(?:approved|endorsed|signed off|vetted|validated|blessed|reviewed|green-?lit) by';
+/**
+ * Contact with the EIR, which an AI never has: the EIR relaying something to it ("Corin asked me to check in",
+ * "Corin told me…"), it speaking with the EIR ("I spoke with Corin", "I asked Corin"), or the two working
+ * together ("Corin and I reviewed your deck"). A doctrine ("Corin asked founders to…") names no "me".
+ */
+const RELAYED_TO_ME =
+  '(?:asked|told|wanted|reminded|instructed|wrote to|messaged|emailed|called|texted|mentioned to|said to) me';
+const I_CONTACTED = `(?:I|we)(?:${APOS}ve| have| had)?\\s+(?:(?:just|already|recently|personally)\\s+)?(?:(?:spoke|spoken|talked|chatted|met|checked|conferred|consulted)\\s+(?:with|to)|asked|told|emailed|messaged|called|consulted|showed|briefed)`;
+const WITH_ME =
+  'and I\\s+(?:(?:just|already|recently)\\s+)?(?:reviewed|discussed|looked at|looked over|went over|talked|spoke|met|agreed|decided|read|worked on)';
 /** "Your plan has Corin's approval", "Go ahead with Corin's blessing": the subject is part of the match. */
 const HAS_THE =
   '(?:(?:you|we|it|this|that|(?:your|the|this|our) [\\p{L}-]+)\\s+)?(?:has|have|had|got|gets|earned|won|with)';
@@ -649,6 +659,14 @@ function namePatterns(spec: NameSpec, ctx: PatternContext): IdentityPattern[] {
       },
       { ...pn('endorsement', 'named_eir_approved', () => `${body}\\s+${ENDORSED}`), accept: claim },
       { ...pn('endorsement', 'named_eir_opinion', () => `${body}\\s+${OPINION_VERBS}`), accept: claim },
+      {
+        ...pn('claims_eir', 'named_eir_contact', () => `${body}\\s+(?:${RELAYED_TO_ME}|${WITH_ME})`),
+        accept: (text, m) => own(m) && assertive(text, m.index, m.index + m[0].length),
+      },
+      {
+        ...pn('claims_eir', 'named_eir_contact', () => `${I_CONTACTED}\\s+${body}${NOT_POSSESSIVE}`),
+        accept: (text, m) => own(m) && assertive(text, m.index, m.index + m[0].length),
+      },
       { ...pn('endorsement', 'approved_by_named_eir', () => `${APPROVED_BY}\\s+${body}`), accept: claim },
       {
         ...pn('endorsement', 'named_eir_approved', () => `${HAS_THE}\\s+${body}${APPROVAL_NOUN}`),
@@ -812,6 +830,18 @@ function namePatterns(spec: NameSpec, ctx: PatternContext): IdentityPattern[] {
       kind: 'endorsement',
       rule: 'named_eir_opinion',
       pattern: re(() => `${S}${subject}\\s+${OPINION_VERBS}${E}`),
+      accept: asserted,
+    },
+    {
+      kind: 'claims_eir',
+      rule: 'named_eir_contact',
+      pattern: re(() => `${S}${subject}\\s+(?:${RELAYED_TO_ME}|${WITH_ME})${E}`),
+      accept: asserted,
+    },
+    {
+      kind: 'claims_eir',
+      rule: 'named_eir_contact',
+      pattern: re(() => `${S}${I_CONTACTED}\\s+${name}`),
       accept: asserted,
     },
     {

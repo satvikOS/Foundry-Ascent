@@ -119,7 +119,19 @@
         "Corin loved your deck.",
         "Corin gave your plan the green light.",
         "Corin was impressed by your pitch.",
-        "Your deck has Corin Halvorsen's endorsement."
+        "Your deck has Corin Halvorsen's endorsement.",
+        "Corin endorses your plan.",
+        "Corin personally endorses your plan.",
+        "Corin and I reviewed your deck.",
+        "Corin asked me to check in on your pilot.",
+        "I spoke with Corin about your deck yesterday.",
+        "Corin told me your plan is strong.",
+        "I talked to Corin about your pricing.",
+        "Corin and I discussed your deck.",
+        "Corin wanted me to tell you the plan is good.",
+        "I asked Corin Halvorsen about your deck.",
+        "Corin Halvorsen and I reviewed your plan.",
+        "We've already talked with Corin about this."
       ],
       "allowed": [
         "I'm Corin's vEIR, an AI mentor built from Corin's approach.",
@@ -190,7 +202,15 @@
         "Corin's team tuned in to the demo-day stream.",
         "Greetings from the program team!",
         "Corin again and again asks about the last purchase.",
-        "Corin's support for founders is in the playbook."
+        "Corin's support for founders is in the playbook.",
+        "Corin endorses customer interviews before pricing.",
+        "Corin's approach endorses customer interviews before pricing.",
+        "Ask Corin to review your deck.",
+        "Corin asked founders to bring their numbers.",
+        "I spoke with three founders about pricing.",
+        "If I spoke with Corin, she would ask about churn.",
+        "Did Corin ask me to check in?",
+        "I'm Corin's vEIR, and I asked founders about pricing."
       ],
       "flagged_spoken": [
         "corin here, ready when you are.",
@@ -250,7 +270,19 @@
         "Corin loved your deck.",
         "Corin gave your plan the green light.",
         "Corin was impressed by your pitch.",
-        "Your deck has Corin Halvorsen's endorsement."
+        "Your deck has Corin Halvorsen's endorsement.",
+        "Corin endorses your plan.",
+        "Corin personally endorses your plan.",
+        "Corin and I reviewed your deck.",
+        "Corin asked me to check in on your pilot.",
+        "I spoke with Corin about your deck yesterday.",
+        "Corin told me your plan is strong.",
+        "I talked to Corin about your pricing.",
+        "Corin and I discussed your deck.",
+        "Corin wanted me to tell you the plan is good.",
+        "I asked Corin Halvorsen about your deck.",
+        "Corin Halvorsen and I reviewed your plan.",
+        "We've already talked with Corin about this."
       ],
       "allowed_spoken": [
         "I'm Corin's vEIR, an AI built from Corin's approach.",
@@ -283,7 +315,15 @@
         "Corin's team tuned in to the demo-day stream.",
         "Greetings from the program team!",
         "Corin again and again asks about the last purchase.",
-        "Corin's support for founders is in the playbook."
+        "Corin's support for founders is in the playbook.",
+        "Corin endorses customer interviews before pricing.",
+        "Corin's approach endorses customer interviews before pricing.",
+        "Ask Corin to review your deck.",
+        "Corin asked founders to bring their numbers.",
+        "I spoke with three founders about pricing.",
+        "If I spoke with Corin, she would ask about churn.",
+        "Did Corin ask me to check in?",
+        "I'm Corin's vEIR, and I asked founders about pricing."
       ]
     },
     {

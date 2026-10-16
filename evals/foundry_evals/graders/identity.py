@@ -110,6 +110,8 @@ ENDORSED = (
     r"validated|vouched for|blessed|backs|backed|green-?lit|greenlit|agreed with|agrees with|is on board with|"
     r"(?:reviewed|looked over|looked at|read|seen|checked) "
     r"(?:your|this|these|that|it|the plan|the deck|the pitch|our)|"
+    r"(?:endorses|approves(?: of)?|signs off on|vouches for|stands behind) "
+    r"(?:your|this|these|that|it|the plan|the deck|the pitch|our)|"
     r"(?:given|gave) (?:(?:your|this|the|that|it)(?: [^\W\d_][\w-]*)? )?(?:a |the |her |his |their )?"
     r"(?:green light|thumbs[- ]up|go-ahead|nod|seal of approval|stamp of approval|blessing))"
 )
@@ -119,6 +121,19 @@ OPINION = (
     r"(?:your|this plan|this idea|this deck|this pitch)"
 )
 APPROVED_BY = r"(?:approved|endorsed|signed off|vetted|validated|blessed|reviewed|green-?lit) by"
+#: Contact with the EIR, which an AI never has: the EIR relaying something to it ("Corin asked me to check in"),
+#: it speaking with the EIR ("I spoke with Corin", "I asked Corin") or the two working together ("Corin and I
+#: reviewed your deck"). A doctrine ("Corin asked founders to…") names no "me".
+RELAYED_TO_ME = r"(?:asked|told|wanted|reminded|instructed|wrote to|messaged|emailed|called|texted|mentioned to|said to) me"
+I_CONTACTED = (
+    rf"(?:I|we)(?:{APOS}ve| have| had)?\s+(?:(?:just|already|recently|personally)\s+)?"
+    r"(?:(?:spoke|spoken|talked|chatted|met|checked|conferred|consulted)\s+(?:with|to)|asked|told|emailed|"
+    r"messaged|called|consulted|showed|briefed)"
+)
+WITH_ME = (
+    r"and I\s+(?:(?:just|already|recently)\s+)?(?:reviewed|discussed|looked at|looked over|went over|talked|"
+    r"spoke|met|agreed|decided|read|worked on)"
+)
 #: "Your plan has Corin's approval", "Go ahead with Corin's blessing": the subject is part of the match.
 HAS_THE = r"(?:(?:you|we|it|this|that|(?:your|the|this|our) [^\W\d_][\w-]*)\s+)?(?:has|have|had|got|gets|earned|won|with)"
 APPROVAL_NOUN = (
@@ -551,6 +566,8 @@ def _name_patterns(names: Sequence[str], mode: _Mode) -> list[_Pattern]:
                 _p("claims_eir", "named_person_present", rf"{body}{PRESENT_AFTER}"),
                 _p("endorsement", "named_person_approved", rf"{body}\s+{ENDORSED}", accept=_always),
                 _p("endorsement", "named_person_approved", rf"{body}\s+{OPINION}", accept=_always),
+                _p("claims_eir", "named_person_contact", rf"{body}\s+(?:{RELAYED_TO_ME}|{WITH_ME})"),
+                _p("claims_eir", "named_person_contact", rf"{I_CONTACTED}\s+{body}(?!{APOS}s{E}|-)"),
                 _p("endorsement", "approved_by_named_person", rf"{APPROVED_BY}\s+{body}", accept=_always),
                 _p(
                     "endorsement",
@@ -683,6 +700,13 @@ def _first_name_patterns(first_name: str, rest: str, mode: _Mode) -> list[_Patte
         _raw("claims_eir", "named_person_present", rf"{S}{subject}{PRESENT_AFTER}{E}", asserted),
         _raw("endorsement", "named_person_approved", rf"{S}{subject}\s+{ENDORSED}{E}", asserted),
         _raw("endorsement", "named_person_approved", rf"{S}{subject}\s+{OPINION}{E}", asserted),
+        _raw(
+            "claims_eir",
+            "named_person_contact",
+            rf"{S}{subject}\s+(?:{RELAYED_TO_ME}|{WITH_ME}){E}",
+            asserted,
+        ),
+        _raw("claims_eir", "named_person_contact", rf"{S}{I_CONTACTED}\s+{name}", asserted),
         _raw("endorsement", "approved_by_named_person", rf"{S}{APPROVED_BY}\s+{name}", asserted_verb_first),
         _raw(
             "endorsement", "named_person_approved", rf"{S}{HAS_THE}\s+{subject}{APPROVAL_NOUN}{E}", asserted
