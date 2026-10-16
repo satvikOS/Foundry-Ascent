@@ -54,6 +54,19 @@ def test_turn_view_fields() -> None:
     assert keys == aliases
 
 
+def test_evidence_item_fields() -> None:
+    domain = _source("domain.ts")
+    keys = _object_keys(domain, "EvidenceItem")
+    aliases = {f.alias or name for name, f in models.EvidenceItem.model_fields.items()}
+    assert keys == aliases
+    source = {f.alias or name for name, f in models.EvidenceSource.model_fields.items()}
+    match = re.search(r"export const EvidenceSource = z\.object\(\{(.*?)\}\);", domain)
+    assert match
+    assert set(re.findall(r"(\w+):", match.group(1))) == source
+    scopes = models.EvidenceSource.model_fields["scope"].annotation.__args__
+    assert tuple(_enum(domain, "EvidenceSourceScope")) == scopes
+
+
 def test_turn_blocked_detail_fields() -> None:
     keys = _object_keys(_source("coach.ts"), "TurnBlockedDetail")
     aliases = {f.alias or name for name, f in models.TurnBlockedDetail.model_fields.items()}

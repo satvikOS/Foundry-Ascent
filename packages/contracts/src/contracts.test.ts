@@ -13,8 +13,14 @@ import {
   CreateProgramVentureResponse,
   CreateResourceResponse,
   CreateSessionResponse,
+  CreateEirProfileRequest,
   CreateTurnRequest,
   DocumentView,
+  EirProfileView,
+  EvidenceItem,
+  LessonListResponse,
+  LessonQuery,
+  UpdateEirProfileRequest,
   EscalationActionResponse,
   EscalationQueueItem,
   EscalationView,
@@ -294,5 +300,137 @@ describe('turn views and events (additive fields)', () => {
     });
     expect(TurnStreamEvent.safeParse({ ...base, retryAfterSeconds: 0 }).success).toBe(false);
     expect(TurnStreamEvent.safeParse({ ...base, retryAfterSeconds: 1.5 }).success).toBe(false);
+  });
+});
+
+describe('evidence sources (additive)', () => {
+  const item = {
+    key: 'E2',
+    kind: 'chunk',
+    refId: ID,
+    title: 'Interview notes.md — Week 1',
+    excerpt: 'Students queue for seats.',
+    score: 0.8,
+    freshnessAt: null,
+    status: 'active',
+  };
+
+  it('reads evidence without a source (an older API or a stored answer) as source unknown', () => {
+    expect(EvidenceItem.parse(item).source).toBeUndefined();
+    expect(EvidenceItem.parse({ ...item, source: null }).source).toBeNull();
+  });
+
+  it('carries the source of a passage by id and scope', () => {
+    for (const scope of ['venture', 'program', 'public', 'persona'] as const) {
+      expect(EvidenceItem.parse({ ...item, source: { id: ID, scope } }).source).toEqual({ id: ID, scope });
+    }
+    expect(EvidenceItem.safeParse({ ...item, source: { id: ID, scope: 'elsewhere' } }).success).toBe(false);
+    expect(EvidenceItem.safeParse({ ...item, source: { id: 'not-an-id', scope: 'venture' } }).success).toBe(
+      false,
+    );
+  });
+
+  it('gives a document its knowledge source id, absent from older APIs', () => {
+    const document = {
+      id: ID,
+      ventureId: ID,
+      filename: 'Interview notes.md',
+      contentType: 'text/markdown',
+      sizeBytes: 10,
+      status: 'ready',
+      failureReason: null,
+      uploadedBy: { id: ID, displayName: 'Maya', title: null, synthetic: true },
+      createdAt: '2026-10-05T10:00:00.000Z',
+      chunkCount: 3,
+    };
+    expect(DocumentView.parse(document).sourceId).toBeUndefined();
+    expect(DocumentView.parse({ ...document, sourceId: ID }).sourceId).toBe(ID);
+  });
+});
+
+describe('EIR profiles', () => {
+  it('normalises expertise to hyphenated lower-case areas, once each, and empty text to none', () => {
+    const parsed = CreateEirProfileRequest.parse({
+      principalId: ID,
+      displayName: '  Noor Haddad ',
+      title: '  ',
+      expertiseTags: ['Climate Tech', 'climate-tech', ' B2B  sales '],
+      bio: '',
+    });
+    expect(parsed).toEqual({
+      principalId: ID,
+      displayName: 'Noor Haddad',
+      title: null,
+      expertiseTags: ['climate-tech', 'b2b-sales'],
+      bio: null,
+    });
+    // Parsing the result again (the API parses, then core does) changes nothing.
+    expect(CreateEirProfileRequest.parse(parsed)).toEqual(parsed);
+    expect(CreateEirProfileRequest.parse({ principalId: ID, displayName: 'Noor Haddad' })).toMatchObject({
+      title: null,
+      expertiseTags: [],
+      bio: null,
+    });
+  });
+
+  it('refuses what a profile cannot hold, at the field', () => {
+    const paths = (value: unknown) =>
+      (CreateEirProfileRequest.safeParse(value).error?.issues ?? []).map((i) => i.path.join('.'));
+    expect(paths({ principalId: 'x', displayName: 'Noor' })).toEqual(['principalId']);
+    expect(paths({ principalId: ID, displayName: ' ' })).toEqual(['displayName']);
+    expect(paths({ principalId: ID, displayName: 'Noor', bio: 'x'.repeat(2001) })).toEqual(['bio']);
+    expect(paths({ principalId: ID, displayName: 'Noor', expertiseTags: ['a'] })).toEqual([
+      'expertiseTags.0',
+    ]);
+    const thirteen = Array.from({ length: 13 }, (_, i) => `area-${i}`);
+    expect(paths({ principalId: ID, displayName: 'Noor', expertiseTags: thirteen })).toEqual([
+      'expertiseTags',
+    ]);
+  });
+
+  it('edits at least one field; clearing the title or bio is an edit', () => {
+    expect(UpdateEirProfileRequest.safeParse({}).success).toBe(false);
+    expect(UpdateEirProfileRequest.parse({ bio: '' })).toEqual({ bio: null });
+    expect(UpdateEirProfileRequest.parse({ title: null })).toEqual({ title: null });
+  });
+
+  it('reads a profile without bio or account (an older API)', () => {
+    const profile = {
+      id: ID,
+      displayName: 'Corin Halvorsen',
+      title: null,
+      expertiseTags: [],
+      routingIntents: [],
+      synthetic: true,
+      status: 'active',
+    };
+    expect(EirProfileView.parse(profile)).toEqual(profile);
+    const account = { id: ID, displayName: 'Corin Halvorsen', title: null, synthetic: true };
+    expect(EirProfileView.parse({ ...profile, bio: null, principal: account }).principal).toEqual(account);
+  });
+});
+
+describe('LessonQuery', () => {
+  it('reads one or more states, comma-separated, once each', () => {
+    expect(LessonQuery.parse({ status: 'draft' })).toEqual({ status: ['draft'] });
+    expect(LessonQuery.parse({ status: ' draft, in_review,draft ' })).toEqual({
+      status: ['draft', 'in_review'],
+    });
+    expect(LessonQuery.parse({})).toEqual({});
+    // The parsed form parses again unchanged (the API parses, then core does).
+    expect(LessonQuery.parse(LessonQuery.parse({ status: 'draft,in_review' }))).toEqual({
+      status: ['draft', 'in_review'],
+    });
+  });
+
+  it('refuses unknown states and an empty list', () => {
+    expect(LessonQuery.safeParse({ status: 'drafts' }).success).toBe(false);
+    expect(LessonQuery.safeParse({ status: ',' }).success).toBe(false);
+    expect(LessonQuery.safeParse({ status: [] }).success).toBe(false);
+  });
+
+  it('carries how many lessons match, absent elsewhere', () => {
+    expect(LessonListResponse.parse({ items: [] }).total).toBeUndefined();
+    expect(LessonListResponse.parse({ items: [], total: 3 }).total).toBe(3);
   });
 });

@@ -135,6 +135,11 @@ class CoachResponse(_Snake):
 # API views --------------------------------------------------------------------------------------------
 
 
+class EvidenceSource(_Camel):
+    id: str
+    scope: Literal["venture", "program", "public", "persona"]
+
+
 class EvidenceItem(_Camel):
     key: str
     kind: str
@@ -144,6 +149,8 @@ class EvidenceItem(_Camel):
     score: float
     freshness_at: str | None = None
     status: str | None = None
+    # The knowledge source of a cited passage, by id (absent from older APIs and stored answers).
+    source: EvidenceSource | None = None
 
 
 class ValidatorResults(_Camel):
