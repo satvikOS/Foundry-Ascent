@@ -6,6 +6,7 @@ import {
   OWNER_STATE,
   runToken,
   signIn,
+  takeRevealedCode,
   TENANT,
   useTheme,
   test,
@@ -210,6 +211,118 @@ test.describe('EIR', () => {
   });
 });
 
+/** A name part of letters only, new on every run (a vEIR's name derives from the EIR's first name). */
+function lettersToken(): string {
+  const letters = 'abcdefghijklmnopqrstuvwxyz';
+  const stamp = Date.now()
+    .toString(36)
+    .replace(/\d/g, (digit) => letters.charAt(Number(digit)));
+  const random = Array.from({ length: 3 }, () => letters.charAt(Math.floor(Math.random() * 26))).join('');
+  return `${stamp}${random}`;
+}
+
+test.describe('EIR registry', () => {
+  test('a program lead adds an EIR; the EIR records consent; their vEIR is built and released', async ({
+    browser,
+  }) => {
+    const first = `Noor${lettersToken()}`;
+    const full = `${first} Haddad`;
+    const veir = `${first}'s vEIR`;
+    const owner = await browser.newContext({ storageState: OWNER_STATE });
+    const page = await owner.newPage();
+
+    let code = '';
+    await test.step('the person is invited with the EIR role (People & access)', async () => {
+      await page.goto(`/${TENANT}/app/admin/principals`);
+      await page.getByRole('button', { name: 'Add principal' }).click();
+      const add = page.getByRole('dialog', { name: 'Add a principal' });
+      await add.getByRole('textbox', { name: /^Name/ }).fill(full);
+      await add.getByRole('checkbox', { name: 'EIR' }).check();
+      await add.getByRole('button', { name: 'Add principal' }).click();
+      await page.getByRole('button', { name: 'Issue access code' }).click();
+      const issue = page.getByRole('dialog', { name: 'Issue access code' });
+      await issue.getByRole('textbox', { name: 'Label' }).fill('EIR invitation');
+      await issue.getByRole('button', { name: 'Issue code' }).click();
+      code = await takeRevealedCode(page, full);
+    });
+
+    const row = page.getByRole('table', { name: 'EIRs' }).getByRole('row', { name: new RegExp(full) });
+    await test.step('Add EIR links them, with no consent implied', async () => {
+      await page.goto(`/${TENANT}/app/eir/personas`);
+      await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'EIRs' }).click();
+      await expect(page.getByRole('heading', { level: 1, name: 'EIRs' })).toBeVisible();
+      await page.getByRole('button', { name: 'Add EIR' }).click();
+      const form = page.getByRole('form', { name: 'Add EIR' });
+      await form.getByRole('combobox', { name: /^Person/ }).click();
+      await page.getByRole('option', { name: full }).click();
+      await expect(form.getByRole('textbox', { name: /^Name/ })).toHaveValue(full);
+      await form.getByRole('textbox', { name: /^Title/ }).fill('Former VP Sales, Gridline');
+      await form.getByRole('textbox', { name: /^Areas of expertise/ }).fill('Pricing, B2B sales');
+      await form
+        .getByRole('textbox', { name: /^Bio/ })
+        .fill('Built the sales team at a grid-storage company from zero to forty people.');
+      await form.getByRole('button', { name: 'Add EIR' }).click();
+      await expect(form).toBeHidden();
+      await expect(row).toContainText('Former VP Sales, Gridline');
+      await expect(row).toContainText('b2b sales');
+      await expect(row).toContainText('No vEIR yet');
+      await expect(row).toContainText('Consent needed before a vEIR can be released');
+    });
+
+    await test.step('New vEIR starts from them and waits for their consent', async () => {
+      await row.getByRole('link', { name: `New vEIR for ${full}` }).click();
+      await expect(page.getByRole('heading', { level: 1, name: 'New vEIR' })).toBeVisible();
+      await expect(page.getByRole('textbox', { name: 'Name' })).toHaveValue(veir);
+      await page.getByRole('button', { name: 'Continue' }).click();
+      const editor = page.getByRole('form', { name: 'Doctrine & style' });
+      const fields: [RegExp, string][] = [
+        [/^Summary/, 'Pricing and sales discipline for early B2B ventures.'],
+        [/^Evidence standard/, 'A paid commitment beats a compliment.'],
+        [/^Red lines/, 'No legal or investment advice.'],
+        [/^Escalation topics/, 'Contracts and term sheets'],
+        [/^Feedback structure/, 'What works, what to test next, one question.'],
+      ];
+      for (const [name, value] of fields) await editor.getByRole('textbox', { name }).fill(value);
+      await editor.getByRole('button', { name: 'Create vEIR' }).click();
+      await expect(page.getByRole('heading', { level: 1, name: veir })).toBeVisible();
+      // It opens on its Consent tab: consent is the EIR's own act.
+      await expect(page.getByText(`Only ${full} can record it.`)).toBeVisible();
+      await page.goto(`/${TENANT}/app/eir/eirs`);
+      await expect(row.getByRole('link', { name: veir })).toBeVisible();
+      await expect(row).toContainText('Consent needed before a vEIR can be released');
+    });
+
+    await test.step('the EIR signs in, records consent and releases v1', async () => {
+      const context = await browser.newContext();
+      const eir = await context.newPage();
+      await signIn(eir, code);
+      await expect(eir.getByRole('heading', { level: 1, name: 'Personas' })).toBeVisible();
+      await eir.getByRole('link', { name: veir }).click();
+      await eir.getByRole('tab', { name: 'Consent' }).click();
+      await eir.getByRole('button', { name: 'Record consent' }).click();
+      const consent = eir.getByRole('dialog', { name: `Record ${full}’s consent` });
+      await consent.getByRole('button', { name: 'Record consent' }).click();
+      await expect(consent).toBeHidden();
+      await expect(eir.getByText(`${full}’s consent is in force.`)).toBeVisible();
+      await eir.getByRole('tab', { name: 'Releases' }).click();
+      await eir.getByRole('button', { name: 'Approve…' }).click();
+      await eir
+        .getByRole('alertdialog', { name: `Approve v1 of ${veir}?` })
+        .getByRole('button', { name: 'Approve release' })
+        .click();
+      await expect(eir.getByText('v1 is now active')).toBeVisible();
+      await context.close();
+    });
+
+    await test.step('the EIR list shows the consent on file', async () => {
+      await page.reload();
+      await expect(row.getByRole('link', { name: veir })).toBeVisible();
+      await expect(row).toContainText('Consent on file');
+    });
+    await owner.close();
+  });
+});
+
 test.describe('platform admin', () => {
   test.use({ storageState: OWNER_STATE });
   test.afterEach(async ({ page }) => {
@@ -293,6 +406,14 @@ for (const scheme of ['dark', 'light'] as const) {
       await page.goto(`/${TENANT}/app/eir/lessons`);
       await expect(page.getByRole('heading', { level: 1, name: 'Lessons to review' })).toBeVisible();
       await expectNoSeriousA11yViolations(page, `lessons to review (${scheme})`);
+
+      await page.goto(`/${TENANT}/app/eir/eirs`);
+      await expect(page.getByRole('table', { name: 'EIRs' })).toBeVisible();
+      await expectNoSeriousA11yViolations(page, `EIRs (${scheme})`);
+      await page.getByRole('button', { name: 'Add EIR' }).click();
+      await expect(page.getByRole('form', { name: 'Add EIR' })).toBeVisible();
+      await expectNoSeriousA11yViolations(page, `Add EIR (${scheme})`);
+      await page.keyboard.press('Escape');
 
       await page.goto(`/${TENANT}/app/program/assignments`);
       await expect(page.getByRole('table')).toBeVisible();

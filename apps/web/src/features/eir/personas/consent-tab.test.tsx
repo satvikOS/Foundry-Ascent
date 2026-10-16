@@ -6,6 +6,8 @@ import { describe, expect, it } from 'vitest';
 import { jsonResponse, renderWithProviders, sentJson, stubFetch } from '@/features/admin/shared/test-utils';
 
 import { ConsentForm, consentStatus, consentToForm, formToConsent, reliedOnConsent } from './consent-form';
+import { usePersona } from '@/lib/api/hooks/eir';
+
 import { ConsentTab } from './consent-tab';
 import { IDS, persona } from './test-fixtures';
 
@@ -131,6 +133,42 @@ describe('ConsentTab', () => {
       audiences: ['program_founders'],
       evidenceRef: 'SYN-CH-2026-01',
       expiresAt: null,
+    });
+  });
+
+  it('records the first consent of a new vEIR and closes, showing it in force', async () => {
+    let recorded = false;
+    const fetchMock = stubFetch();
+    fetchMock.mockImplementation((input, init) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      if (init?.method === 'POST') {
+        recorded = true;
+        return Promise.resolve(jsonResponse(CONSENT, 201));
+      }
+      if (url === `/api/v1/personas/${IDS.corin}`) {
+        // The persona page reads the persona too, and that answer comes later than the consents.
+        return new Promise((resolve) =>
+          setTimeout(() => {
+            resolve(jsonResponse(persona({ hasConsent: recorded })));
+          }, 60),
+        );
+      }
+      return Promise.resolve(jsonResponse({ items: recorded ? [CONSENT] : [] }));
+    });
+    const user = userEvent.setup();
+    function Page() {
+      const read = usePersona(IDS.corin);
+      return read.data ? <ConsentTab persona={read.data} /> : null;
+    }
+    renderWithProviders(<Page />);
+    await user.click(await screen.findByRole('button', { name: 'Record consent' }));
+    const dialog = screen.getByRole('dialog', { name: 'Record Corin Halvorsen’s consent' });
+    expect(within(dialog).getByText("Corin's vEIR relies on it from now on.")).toBeVisible();
+    await user.click(within(dialog).getByRole('button', { name: 'Record consent' }));
+    // The list now holds the new record; the dialog that recorded it closes all the same.
+    expect(await screen.findByText('Corin Halvorsen’s consent is in force.')).toBeVisible();
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Record Corin Halvorsen’s consent' })).toBeNull();
     });
   });
 
