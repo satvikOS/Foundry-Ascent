@@ -144,6 +144,13 @@ generated time), with `distilled_at` and `distill_version` (the number of comple
   they were drawn from it. Text of unknown origin is cleared when the deleted conversation was distilled or a
   line cites it: a summary is never kept on the chance it did not use the conversation. Text a person wrote
   stays.
+- **Known limitation: opener copies of unknown origin.** A conversation keeps the opener it started with
+  (`coaching_sessions.opener`, its first bubble and its call intro) with the conversation it was drawn from
+  (`opener_source_session_id`), and deleting that conversation erases those copies. A copy taken from a
+  notebook opener of unknown origin (a legacy notebook written before sources were recorded) has no source,
+  so deleting the conversation it actually came from cannot find it: it stays in the conversations that
+  opened with it until they are deleted. The notebook's own opener is still cleared
+  (unknown origin is cleared when the deleted conversation was distilled).
 - **Integrity.** The database checks the document against the contract (conversation ids, ISO timestamps).
   Should a stored notebook still not match a later contract, reads keep the readable lines and mark the
   record not intact; the notebook API fails loudly (500, logged with ids only) and `saveNotebook` refuses to

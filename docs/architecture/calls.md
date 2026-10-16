@@ -227,15 +227,22 @@ and the call screen on demand (warmed once the app is idle), so the shell's bund
 | Any page while a call is live                       | The **mini call bar** at the top of the content: the vEIR's face, the timer, mute, Return to call, End. |
 | Any page after a call ended out of view             | The mini bar offers the summary (time limit, kill switch, lost connection).                             |
 
-Entry points all link to `?call=1`: the sidebar's **Call {vEIR}**, New chat's **Call {vEIR}** secondary
-action, the conversation header and the composer's voice button, and ⌘K. One call at a time: opening
+Entry points all link to `?call=1`: the sidebar's **Call {vEIR}** (also in the phone's navigation sheet),
+the voice button in New chat's composer, the conversation header (the phone's only bar) and the
+conversation composer's voice button, and ⌘K. They show only for the venture's founders and team, and only
+while the call settings (`GET /ventures/:id/call-config`) say AI and calls are on (`useCallsAvailable`), so a
+paused calls switch leaves no dead link. The AI is named as "Corin's vEIR" everywhere on a call (stage,
+dialog title, mini bar, captions, summary), never by the EIR's bare name. One call at a time: opening
 `?call=1` elsewhere during a call returns to the live one. Arriving by a click starts the call at once (the
 click is what lets the browser play audio); a reloaded `?call=1` shows **Start call** instead, and so does
 the first call in a browser, which first says how the founder's voice is handled (Amazon Transcribe turns
 it into text, no audio is kept, the transcript is saved like chat, typing works throughout). When a call
 cannot start, the screen says why (calls are for the venture team; AI paused; no minutes left today; the
 API's own refusal in its own words) and offers **Try again** only when trying again may help; a call
-minimized while it connects says why in a toast. A call from New chat that never starts (refused,
+minimized while it connects says why in a toast. When the founder is already in a call in another
+conversation (409 on start), the screen asks "Move it here?": **Move the call here** starts again with
+`replace: true`, which ends the other call; **Not now** leaves it. The first-call notice is acknowledged per
+browser (local storage): no server field records it yet, so a founder on a new device sees it once more. A call from New chat that never starts (refused,
 cancelled, closed while connecting) deletes the conversation it created, so no empty conversation is left
 in Recents.
 
@@ -279,10 +286,13 @@ mic ─ getUserMedia (echo cancellation, noise suppression) ─ AudioWorklet /wo
     ─ decodeAudioData ─ AudioBufferSource ─ gain (duck) ─ analyser (presence) ─ speakers
 ```
 
-- **Capture.** The worklet is a static file on our origin (`script-src 'self'`, no blob: URLs). It averages
+- **Capture.** The worklet is a static file on our origin (`/worklets/pcm-capture.js`, covered by
+  `script-src 'self'`, no blob: URLs; the CSP needs no change for it). It averages
   each 16 kHz sample's span of input samples (a box filter) and transfers frames to the main thread. The
   event-stream codec (CRC-32 prelude and message checksums) is ours: about a hundred lines for one message
-  type, instead of an SDK dependency. Muting closes the Transcribe socket, so muted minutes are not billed;
+  type, instead of an SDK dependency. The socket opens while the worklet loads, not after it, because a grant
+  only opens a stream within seconds of being minted. Muting closes the Transcribe socket, so muted minutes
+  are not billed;
   unmuting re-mints the grant (`POST /calls/:id/stt-grant`) when the old one is within 15 s of expiry.
 - **Speech-to-text failures.** A socket the browser refuses to create (`SecurityError`: the CSP lacks the
   Transcribe host, or the browser blocks it) continues by typing at once; any other failure to connect is
@@ -300,19 +310,23 @@ mic ─ getUserMedia (echo cancellation, noise suppression) ─ AudioWorklet /wo
   `spoken` reply, split by the server's own sentence rules (`POST /speech` checks each unsigned passage
   against the stored turn; a sentence under 12 characters joins its neighbour, since the server voices a
   passage that short only as the whole reply). A reply without a spoken form is shown, never voiced. On
-  `501 speech_unavailable` (local development only) the browser's `speechSynthesis` reads the same validated text for the rest of
-  the call. Any other failure never brings a substitute voice: a failure that may pass (network, 5xx, a
+  `501 speech_unavailable` (local development only), a **development build** lets the browser's
+  `speechSynthesis` read the same validated text for the rest of the call, with a voice on the device only
+  (`localService`; Chrome's online voices would send the text to a third party). Production builds never
+  pass the browser's synthesis to the engine, so a 501 shows captions with "Spoken replies are unavailable
+  right now." Any other failure never brings a substitute voice: a failure that may pass (network, 5xx, a
   busy synthesiser, a unit the server will not voice, undecodable audio) shows that sentence on screen and
   the next one asks for the voice again; a refusal for the whole call (`ai_disabled`, spend or minute caps,
   a paused vEIR or withdrawn voice consent, lost access) keeps replies on screen for the rest of the call.
-  A crisis turn's fixed support line (signed units before `turn.blocked`) plays to its end; any other
-  blocked turn stops at once.
+  A crisis turn's fixed support line (signed units before `turn.blocked`) plays to its end, and nothing cuts
+  it off (Esc, Interrupt and a barge-in are ignored while it plays); any other blocked turn stops at once.
 - **Barge-in.** A VAD onset while the vEIR speaks ducks it to 20 % at once. The founder takes the floor
   with a settled word (a final segment, or every word marked stable), or two words while the transcript
   still changes, that are neither in what the vEIR has said of this reply (the echo guard) nor a
   backchannel ("yeah", "mm-hmm", "right", "got it"). That stops the audio, aborts the turn stream and sends
   `POST /turns/:id/interrupt {callId, heardSeq, heard}`, where `heardSeq` is the last unit heard to its end
-  (-1 for none) and `heard` the units 0…heardSeq as played (sent once the contract carries it). Echo and
+  (-1 for none) and `heard` the units 0…heardSeq as played (signed units with their `sig`, stored passages
+  as text). Echo and
   backchannels never become a turn, also when heard between the reply's sentences. A duck no word confirms
   restores the volume; after three, the call suggests push to talk. Typing while it speaks, Esc and
   Interrupt do the same.
@@ -342,8 +356,15 @@ mic ─ getUserMedia (echo cancellation, noise suppression) ─ AudioWorklet /wo
 `POST /calls/:id/end` returns the summary, shown in place of the stage: the duration and exchanges, what the
 vEIR would like to remember (each proposal with **Keep** / **Not now**: nothing is kept without the founder),
 the next actions it suggested, and any request for a person it drafted (with a link to review and consent in
-Human help). The transcript is already in the conversation: spoken turns are ordinary turns. Buttons: Back to
+Human help), and the AI disclosure. Keep / Not now go through the app's one review path (the batch memory
+route). The transcript is already in the conversation: spoken turns are ordinary turns. Buttons: Back to
 conversation, Call again.
+
+Why a call ended is said plainly: the time limit, calls paused by the program, a lost connection, or the
+budget. A `budget` end reads the refreshed call settings to say which budget: today's call minutes ("Your
+conversation is saved, and you can keep going in chat") or today's AI allowance, which pauses typed chat too
+until midnight UTC ("Your conversation is saved"). A voice turn refused for the allowance says the same
+instead of a generic error.
 
 ## 4. Avatar provider seam
 
