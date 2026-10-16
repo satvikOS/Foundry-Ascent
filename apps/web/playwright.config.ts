@@ -139,6 +139,17 @@ export default defineConfig({
         hasTouch: true,
       },
     },
+    // Design-review screenshots (e2e/screens.spec.ts), only when asked for: E2E_SCREENS_DIR=<dir>.
+    ...(process.env.E2E_SCREENS_DIR
+      ? [
+          {
+            name: 'screens',
+            testMatch: /screens\.spec\.ts$/,
+            dependencies: ['setup'],
+            use: { browserName: 'chromium' as const },
+          },
+        ]
+      : []),
   ],
   webServer,
 });
