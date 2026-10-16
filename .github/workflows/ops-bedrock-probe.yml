@@ -6,6 +6,15 @@ name: Ops - Bedrock live probe
 # (apps/api/src/scripts/bedrock-probe.ts). Model ids come from infra/cdk/config/production.json.
 # Cost per run: three small model calls (well under USD 0.01). Logs are public: the probe prints model
 # ids, outcomes, error class names, token counts and timings only, and the account id is masked.
+#
+# Status (2026-10-16): this probe signs in with the stage-0 access key, which was deleted on 2026-10-06
+# (infra/iam/README.md), so it cannot authenticate. It is deliberately not moved to GitHub OIDC: the only
+# OIDC role, FoundryAscent-GitHubDeploy (infra/cdk/src/stacks/foundation-stack.ts), may assume the four
+# CDK bootstrap roles and read CloudFormation, platform Lambda logs and Cost Explorer, and nothing else.
+# It has no Bedrock (or Polly) access, and granting model calls to a role every production-environment
+# job can assume is not justified for a manual probe. Reviving it needs a separate ops role in the
+# Foundation stack, trusted only from its own GitHub environment and allowed bedrock:InvokeModel on the
+# configured model ARNs only (docs/runbooks/deploy-and-rollback.md, "Probing Bedrock and Polly").
 on:
   workflow_dispatch:
 
