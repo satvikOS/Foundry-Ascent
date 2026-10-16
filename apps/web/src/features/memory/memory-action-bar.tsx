@@ -50,8 +50,7 @@ export function MemoryActionBar({
   const [dialog, setDialog] = useState<'correct' | 'dispute' | 'delete' | null>(null);
   const actions = availableMemoryActions(memory);
   const busy =
-    (isPending && pendingId === memory.id) ||
-    (review.isPending && review.variables.ids.includes(memory.id));
+    (isPending && pendingId === memory.id) || (review.isPending && review.variables.ids.includes(memory.id));
 
   const decide = (action: ReviewAction) => {
     review.mutate(

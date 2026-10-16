@@ -115,6 +115,13 @@ export function EscalationsPage() {
 
       {escalations.isError ? (
         <ErrorState error={escalations.error} onRetry={() => void escalations.refetch()} headingLevel={2} />
+      ) : escalations.data?.length === 0 ? (
+        <EmptyState
+          icon={LifeBuoy}
+          headingLevel={2}
+          title="No requests yet"
+          description="When a person should weigh in, ask here or from a conversation. You review the packet before anything is shared."
+        />
       ) : (
         <div className="grid gap-10 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
           <div className={cn('grid content-start gap-4', selected && 'hidden lg:grid')}>
@@ -214,14 +221,7 @@ export function EscalationsPage() {
                   </Button>
                 }
               />
-            ) : escalations.isPending ? null : (
-              <EmptyState
-                icon={LifeBuoy}
-                headingLevel={2}
-                title="No requests yet"
-                description="When a person should weigh in, ask here or from a conversation. You review the brief before anything is shared."
-              />
-            )}
+            ) : null}
           </div>
         </div>
       )}

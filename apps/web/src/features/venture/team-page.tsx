@@ -80,7 +80,7 @@ export function TeamPage() {
                 className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 px-2 py-4 sm:grid-cols-[auto_minmax(0,1fr)_minmax(0,16rem)]"
               >
                 <UserAvatar name={member.principal.displayName} decorative />
-                <div className="grid min-w-0 gap-0.5">
+                <div className="grid min-w-0 content-start gap-0.5">
                   <p className="flex flex-wrap items-baseline gap-x-2 text-[15px] font-medium">
                     {member.principal.displayName}
                     {isMe ? (
@@ -100,7 +100,7 @@ export function TeamPage() {
                     ) : null}
                   </p>
                 </div>
-                <div className="col-start-2 grid gap-0.5 sm:col-start-3">
+                <div className="col-start-2 grid content-start gap-0.5 sm:col-start-3">
                   <p className="text-sm font-medium">{ROLE_LABELS[member.role]}</p>
                   <p className="text-caption text-muted-foreground">{MEMBERSHIP_ROLE_ACCESS[member.role]}</p>
                 </div>
