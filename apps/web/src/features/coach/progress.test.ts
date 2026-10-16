@@ -79,7 +79,7 @@ describe('turnProgressReducer', () => {
     expect(progress.outcome).toBe('completed');
     expect(statuses(progress)).toEqual(['done', 'done', 'done', 'done']);
     expect(progress.steps[1]?.evidenceCount).toBe(2);
-    expect(progressAnnouncement(progress)).toBe('Response ready.');
+    expect(progressAnnouncement(progress)).toBeNull();
   });
 
   it('stops at the active step when a turn is blocked (crisis path stops after Understanding)', () => {
@@ -111,7 +111,7 @@ describe('turnProgressReducer', () => {
     const cancelled = run([{ event: 'local.start' }, status('reasoning'), { event: 'local.cancelled' }]);
     expect(cancelled.outcome).toBe('cancelled');
     expect(statuses(cancelled)).toEqual(['done', 'done', 'stopped', 'skipped']);
-    expect(progressAnnouncement(cancelled)).toBe('Stopped.');
+    expect(progressAnnouncement(cancelled)).toBeNull();
   });
 
   it('starts implicitly if a status event arrives before local.start', () => {

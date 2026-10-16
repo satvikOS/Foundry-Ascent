@@ -5,7 +5,6 @@ import type { ComponentProps } from 'react';
 import { cn } from '@/lib/utils';
 
 export const Select = SelectPrimitive.Root;
-export const SelectGroup = SelectPrimitive.Group;
 
 export function SelectTrigger({
   className,
@@ -78,15 +77,6 @@ export function SelectContent({
   );
 }
 
-export function SelectLabel({ className, ...props }: ComponentProps<typeof SelectPrimitive.Label>) {
-  return (
-    <SelectPrimitive.Label
-      className={cn('px-2 py-1.5 text-xs text-muted-foreground', className)}
-      {...props}
-    />
-  );
-}
-
 export function SelectItem({ className, children, ...props }: ComponentProps<typeof SelectPrimitive.Item>) {
   return (
     <SelectPrimitive.Item
@@ -109,8 +99,4 @@ export function SelectItem({ className, children, ...props }: ComponentProps<typ
       </SelectPrimitive.ItemText>
     </SelectPrimitive.Item>
   );
-}
-
-export function SelectSeparator({ className, ...props }: ComponentProps<typeof SelectPrimitive.Separator>) {
-  return <SelectPrimitive.Separator className={cn('-mx-1 my-1 h-px bg-border', className)} {...props} />;
 }

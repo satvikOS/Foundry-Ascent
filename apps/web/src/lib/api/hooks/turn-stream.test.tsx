@@ -209,6 +209,52 @@ function idempotencyKeyOf(call: Parameters<typeof fetch> | undefined): string | 
   return new Headers(call?.[1]?.headers).get('idempotency-key');
 }
 
+describe('useTurnStream streaming', () => {
+  it('shows validated units while the turn runs, then keeps the stored answer as authoritative', async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal('fetch', fetchMock);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(queryKeys.session.detail(IDS.session), {
+      session: { turnCount: 0 },
+      turns: [],
+    });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    const final = makeTurn({ id: IDS.turn, sessionId: IDS.session, ordinal: 1 });
+    const seen: string[] = [];
+    const { result } = renderHook(
+      () =>
+        useTurnStream(IDS.session, {
+          ventureId: IDS.venture,
+          onEvent: (event) => {
+            if (event.event === 'turn.delta') seen.push(event.text);
+          },
+        }),
+      { wrapper },
+    );
+    fetchMock.mockResolvedValueOnce(
+      sse(
+        { event: 'turn.accepted', turnId: IDS.turn, ordinal: 1 },
+        { event: 'turn.delta', turnId: IDS.turn, seq: 0, text: 'A streamed first sentence.' },
+        { event: 'turn.delta', turnId: IDS.turn, seq: 1, text: 'A second one.' },
+        { event: 'turn.completed', turn: final },
+      ),
+    );
+    await act(async () => {
+      await result.current.send({ text: 'What is my riskiest assumption?' });
+    });
+    expect(seen).toEqual(['A streamed first sentence.', 'A second one.']);
+    expect(result.current.state.status).toBe('completed');
+    // The stored answer (not the streamed units) is what the conversation now shows.
+    const cached = client.getQueryData<{ turns: { id: string; response: { answer: string } | null }[] }>(
+      queryKeys.session.detail(IDS.session),
+    );
+    expect(cached?.turns.map((t) => t.id)).toEqual([IDS.turn]);
+    expect(cached?.turns[0]?.response?.answer).toBe(final.response?.answer);
+  });
+});
+
 describe('useTurnStream venture refresh', () => {
   it('cancels a venture read that was in flight when the turn finished, then reads again', async () => {
     const fetchMock = vi.fn<typeof fetch>();

@@ -4,7 +4,7 @@ import { formatHotkey } from '@/lib/hooks/use-hotkeys';
 
 import { VENTURE_DESTINATIONS } from './nav';
 
-export const GLOBAL_SHORTCUTS: { binding: string; label: string }[] = [
+const GLOBAL_SHORTCUTS: { binding: string; label: string }[] = [
   { binding: 'mod+k', label: 'Search and jump anywhere' },
   { binding: '?', label: 'Show keyboard shortcuts' },
   { binding: '[', label: 'Collapse or expand the sidebar' },
@@ -13,12 +13,12 @@ export const GLOBAL_SHORTCUTS: { binding: string; label: string }[] = [
   { binding: 'g a', label: 'Go to Admin' },
 ];
 
-export const VENTURE_SHORTCUTS: { binding: string; label: string }[] = [
+const VENTURE_SHORTCUTS: { binding: string; label: string }[] = [
   { binding: 'g n', label: 'New chat' },
   ...VENTURE_DESTINATIONS.map((d) => ({ binding: d.shortcut, label: `Go to ${d.label}` })),
 ];
 
-export const CONVERSATION_SHORTCUTS: { binding: string; label: string }[] = [
+const CONVERSATION_SHORTCUTS: { binding: string; label: string }[] = [
   { binding: '/', label: 'Focus the message box' },
   { binding: 'Enter', label: 'Send the message' },
   { binding: 'shift+Enter', label: 'New line in the message' },

@@ -8,7 +8,6 @@ import { cn } from '@/lib/utils';
 import { overlayClasses } from './dialog';
 
 export const Sheet = SheetPrimitive.Root;
-export const SheetTrigger = SheetPrimitive.Trigger;
 export const SheetClose = SheetPrimitive.Close;
 
 const sheetVariants = cva(

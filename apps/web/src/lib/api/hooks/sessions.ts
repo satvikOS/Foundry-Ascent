@@ -25,7 +25,6 @@ import { api, apiSend, createIdempotencyKey, path } from '../client';
 import { queryKeys, type ConversationFilters } from '../query-keys';
 
 export type SessionDetail = z.infer<typeof SessionDetailResponse>;
-export type EndSessionResult = z.infer<typeof EndSessionResponse>;
 type SessionPage = z.infer<typeof SessionPageResponse>;
 
 /** Conversations per page of `GET /sessions` (the API allows up to 100). */
@@ -100,7 +99,7 @@ function invalidateConversation(client: QueryClient, session: Pick<SessionView, 
   void client.invalidateQueries({ queryKey: queryKeys.ventures.list() });
 }
 
-export type CreateSessionInput = z.input<typeof CreateSessionRequest>;
+type CreateSessionInput = z.input<typeof CreateSessionRequest>;
 
 /** POST /ventures/:id/sessions → 201 `SessionView` (the only way a conversation starts). */
 export function useCreateSession(ventureId: string) {
@@ -195,7 +194,7 @@ export function useDeleteDigest() {
   });
 }
 
-export type TurnFeedbackInput = z.input<typeof TurnFeedbackRequest>;
+type TurnFeedbackInput = z.input<typeof TurnFeedbackRequest>;
 
 /** POST /turns/:id/feedback → 201 `{ feedbackId }` (body not needed). */
 export function useTurnFeedback() {

@@ -66,7 +66,6 @@ export interface StatusDefinition {
 
 type Defs<T extends string> = Record<T, StatusDefinition>;
 
-type DbStatus = 'awake' | 'resuming' | 'unavailable';
 type ResourceStatus = 'active' | 'stale' | 'retired';
 
 export interface StatusKinds {
@@ -80,7 +79,6 @@ export interface StatusKinds {
   venture: z.infer<typeof VentureStatus>;
   resource: ResourceStatus;
   claim: ClaimKind;
-  db: DbStatus;
 }
 export type StatusKind = keyof StatusKinds;
 
@@ -425,29 +423,6 @@ export const STATUS_DEFINITIONS: { [K in StatusKind]: Defs<StatusKinds[K]> } = {
       tone: 'primary',
       shape: 'solid',
       description: 'Suggested next step; your decision.',
-    },
-  },
-  db: {
-    awake: {
-      label: 'Workspace ready',
-      icon: CircleCheck,
-      tone: 'success',
-      shape: 'solid',
-      description: 'The database is awake.',
-    },
-    resuming: {
-      label: 'Waking up',
-      icon: LoaderCircle,
-      tone: 'warning',
-      shape: 'dashed',
-      description: 'The database was paused to save cost and is resuming (about 15 seconds).',
-    },
-    unavailable: {
-      label: 'Unavailable',
-      icon: TriangleAlert,
-      tone: 'destructive',
-      shape: 'solid',
-      description: 'The database cannot be reached right now.',
     },
   },
 };

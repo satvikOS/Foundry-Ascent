@@ -182,7 +182,7 @@ function subscribeOnline(listener: () => void) {
   };
 }
 
-export function useOnline(): boolean {
+function useOnline(): boolean {
   return useSyncExternalStore(
     subscribeOnline,
     () => navigator.onLine,

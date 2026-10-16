@@ -1,4 +1,4 @@
-import { Check, ChevronRight, Circle } from 'lucide-react';
+import { ChevronRight, Circle } from 'lucide-react';
 import { DropdownMenu as DropdownMenuPrimitive } from 'radix-ui';
 import type { ComponentProps } from 'react';
 
@@ -7,17 +7,16 @@ import { cn } from '@/lib/utils';
 export const DropdownMenu = DropdownMenuPrimitive.Root;
 export const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
 export const DropdownMenuGroup = DropdownMenuPrimitive.Group;
-export const DropdownMenuPortal = DropdownMenuPrimitive.Portal;
 export const DropdownMenuSub = DropdownMenuPrimitive.Sub;
 export const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup;
 
-export const menuContentClasses = cn(
+const menuContentClasses = cn(
   'z-50 min-w-[10rem] overflow-x-hidden overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lg',
   'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
   'data-[state=closed]:zoom-out-[0.97] data-[state=open]:zoom-in-[0.97] data-[side=bottom]:slide-in-from-top-1 data-[side=top]:slide-in-from-bottom-1',
 );
 
-export const menuItemClasses = cn(
+const menuItemClasses = cn(
   'relative flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none select-none',
   'focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
   "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground",
@@ -62,23 +61,6 @@ export function DropdownMenuItem({ className, inset, destructive, ...props }: It
       )}
       {...props}
     />
-  );
-}
-
-export function DropdownMenuCheckboxItem({
-  className,
-  children,
-  ...props
-}: ComponentProps<typeof DropdownMenuPrimitive.CheckboxItem>) {
-  return (
-    <DropdownMenuPrimitive.CheckboxItem className={cn(menuItemClasses, 'pl-8', className)} {...props}>
-      <span className="absolute left-2 flex size-4 items-center justify-center">
-        <DropdownMenuPrimitive.ItemIndicator>
-          <Check className="size-4" aria-hidden />
-        </DropdownMenuPrimitive.ItemIndicator>
-      </span>
-      {children}
-    </DropdownMenuPrimitive.CheckboxItem>
   );
 }
 
