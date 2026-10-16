@@ -271,15 +271,16 @@ export function sanitizeDistill(draft: DistillDraft, ctx: DistillSanitizeContext
     for (const note of proposed) {
       const text = clean(note.text, L.entryMaxChars);
       if (text === '') continue;
-      // A person's edit is final: the model may neither reword it (same id) nor restate it.
-      if (
-        (note.id !== null && pinned.has(note.id)) ||
-        kept.some((e) => textKey(e.text) === textKey(text) || isNearDuplicate(e.text, text))
-      ) {
-        stats.pinnedRewritesDropped += 1;
+      const key = textKey(text);
+      // A person's edit is final: the model may neither reword it (same id) nor restate it. Echoing it
+      // unchanged is expected and not counted.
+      const pinnedMatch = kept.find(
+        (e) => e.id === note.id || textKey(e.text) === key || isNearDuplicate(e.text, text),
+      );
+      if (pinnedMatch !== undefined || (note.id !== null && pinned.has(note.id))) {
+        if (pinnedMatch === undefined || textKey(pinnedMatch.text) !== key) stats.pinnedRewritesDropped += 1;
         continue;
       }
-      const key = textKey(text);
       const byId = note.id === null ? undefined : before.find((e) => e.id === note.id);
       const same =
         byId !== undefined && textKey(byId.text) === key ? byId : before.find((e) => textKey(e.text) === key);

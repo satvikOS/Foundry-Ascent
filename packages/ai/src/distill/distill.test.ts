@@ -379,7 +379,8 @@ describe('sanitizeDistill — notebook merge', () => {
       [expect.stringMatching(/^fp-/), 'Thinks in experiments'],
     ]);
     expect(out.notebookDelta.commitments.find((c) => c.id === 'cm-1')).toEqual(PREVIOUS.commitments[0]);
-    expect(out.stats.pinnedRewritesDropped).toBe(3);
+    // The reworded fp-1 and the closed cm-1 count; restating fp-1 as it stands does not.
+    expect(out.stats.pinnedRewritesDropped).toBe(2);
   });
 
   it('never drops an open or person-edited commitment to stay under the cap', () => {
