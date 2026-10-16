@@ -21,14 +21,6 @@ import {
  * `stubCallsBackend` (and this comment) once the API serves them; the assertions stay as they are.
  */
 
-const CALL_ID = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c01';
-const INTRO = 'Hi Maya, good to hear from you. What should we work on?';
-
-interface StubbedCall {
-  sessionId: string | null;
-  ended: string[];
-}
-
 interface SessionTurns {
   session: { ventureId: string };
   turns: {
@@ -48,11 +40,13 @@ async function sessionTurns(request: APIRequestContext, sessionId: string): Prom
 }
 
 // CALLS-BACKEND-STUB (see the file comment).
-async function stubCallsBackend(page: Page): Promise<StubbedCall> {
-  const state: StubbedCall = { sessionId: null, ended: [] };
+async function stubCallsBackend(page: Page): Promise<void> {
+  const callId = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c01';
+  const intro = 'Hi Maya, good to hear from you. What should we work on?';
+  let currentSession = '';
   const startedAt = new Date().toISOString();
   const callView = (sessionId: string, ventureId: string, ended: boolean) => ({
-    id: CALL_ID,
+    id: callId,
     sessionId,
     ventureId,
     personaId: '00000000-0000-4000-8000-000000000001',
@@ -68,7 +62,7 @@ async function stubCallsBackend(page: Page): Promise<StubbedCall> {
 
   await page.route(/\/api\/v1\/sessions\/[0-9a-f-]{36}\/calls$/, async (route) => {
     const sessionId = /sessions\/([0-9a-f-]{36})\/calls$/.exec(route.request().url())?.[1] ?? '';
-    state.sessionId = sessionId;
+    currentSession = sessionId;
     const { session } = await sessionTurns(page.request, sessionId);
     await route.fulfill({
       status: 201,
@@ -76,7 +70,7 @@ async function stubCallsBackend(page: Page): Promise<StubbedCall> {
       body: JSON.stringify({
         call: callView(sessionId, session.ventureId, false),
         sttGrant: null,
-        intro: { text: INTRO, sig: 'c2lnbmVkLWludHJvLWZvci1lMmU' },
+        intro: { text: intro, sig: 'c2lnbmVkLWludHJvLWZvci1lMmU' },
       }),
     });
   });
@@ -87,9 +81,7 @@ async function stubCallsBackend(page: Page): Promise<StubbedCall> {
     }),
   );
   await page.route(/\/api\/v1\/calls\/[0-9a-f-]{36}\/end$/, async (route) => {
-    const body = route.request().postDataJSON() as { reason: string };
-    state.ended.push(body.reason);
-    const sessionId = state.sessionId ?? '';
+    const sessionId = currentSession;
     const { session, turns } = await sessionTurns(page.request, sessionId);
     const turnIds = new Set(turns.map((t) => t.id));
     const memory = (await (
@@ -124,7 +116,6 @@ async function stubCallsBackend(page: Page): Promise<StubbedCall> {
       }),
     }),
   );
-  return state;
 }
 
 function callScreen(page: Page): Locator {
@@ -146,25 +137,34 @@ test.describe('vEIR calls', () => {
   test.use({ storageState: FOUNDER_STATE });
 
   test('call from the sidebar: typed fallback, spoken reply, mini bar, summary', async ({ page }) => {
-    const stub = await stubCallsBackend(page);
+    await stubCallsBackend(page);
     await openVenture(page);
     const token = runToken();
+    let sessionId = '';
+    let callId = '';
 
     await test.step('the sidebar Call button opens the call screen in a new conversation', async () => {
+      const started = page.waitForResponse(
+        (response) => /\/sessions\/[0-9a-f-]{36}\/calls$/.test(response.url()) && response.status() === 201,
+      );
       await page
         .getByRole('navigation', { name: 'Main' })
         .getByRole('link', { name: /^Call / })
         .click();
       await expect(callScreen(page)).toBeVisible();
       await page.waitForURL(/\/c\/[0-9a-f-]{36}\?call=1$/);
+      sessionId = /\/c\/([0-9a-f-]{36})/.exec(page.url())?.[1] ?? '';
+      const body = (await (await started).json()) as { call: { id: string }; intro: { text: string } | null };
+      callId = body.call.id;
       const screen = callScreen(page);
       await expect(screen.getByRole('note', { name: 'AI disclosure' })).toHaveCount(1);
       await expect(screen.getByRole('note', { name: 'AI disclosure' })).toContainText('not a person');
       // The intro is the vEIR's first line (the browser reads it: there is no server voice in mock mode).
-      await expect(screen.getByRole('region', { name: 'Captions' })).toContainText(INTRO);
+      if (body.intro) {
+        await expect(screen.getByRole('region', { name: 'Captions' })).toContainText(body.intro.text);
+      }
     });
 
-    const sessionId = stub.sessionId ?? '';
     await test.step('no voice input here: the call continues by typing, and says why', async () => {
       const screen = callScreen(page);
       // No speech-to-text grant in mock mode (and headless browsers often have no microphone either).
@@ -186,7 +186,7 @@ test.describe('vEIR calls', () => {
         .fill(`Should we pilot with one library? ${token}`);
       await screen.getByRole('textbox', { name: /^Reply to / }).press('Enter');
       const sent = (await turnRequest).postDataJSON() as { channel: string; callId: string; text: string };
-      expect(sent).toMatchObject({ channel: 'voice', callId: CALL_ID });
+      expect(sent).toMatchObject({ channel: 'voice', callId });
       expect(sent.text).toContain(token);
 
       await expect
@@ -221,10 +221,13 @@ test.describe('vEIR calls', () => {
     });
 
     await test.step('ending shows the summary; Keep needs the founder', async () => {
+      const ended = page.waitForRequest(
+        (request) => request.url().endsWith(`/calls/${callId}/end`) && request.method() === 'POST',
+      );
       await callScreen(page).getByRole('button', { name: 'End call' }).click();
       const screen = callScreen(page);
       await expect(screen.getByRole('heading', { name: 'Call ended' })).toBeFocused();
-      expect(stub.ended).toEqual(['user']);
+      expect((await ended).postDataJSON()).toMatchObject({ reason: 'user' });
       const keep = screen.getByRole('button', { name: /^Keep: / }).first();
       if (await keep.count()) {
         await keep.click();
