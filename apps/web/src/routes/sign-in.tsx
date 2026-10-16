@@ -56,7 +56,7 @@ function SignInPage() {
             </p>
             <p className="mt-6 text-body text-muted-foreground">
               Your vEIR remembers what you decided, what you tested and what you promised to do — with memory
-              you approve and a person one step away.
+              you can read and correct, and a person one step away.
             </p>
           </div>
           <DisclosureBanner variant="inline" className="max-w-md bg-background/60" text={PUBLIC_DISCLOSURE} />
