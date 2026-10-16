@@ -253,7 +253,7 @@ export function ResourcesPage() {
               </SelectContent>
             </Select>
           </div>
-          <p className="text-[13px] text-muted-foreground lg:ml-auto" aria-live="polite">
+          <p className="text-small text-muted-foreground lg:ml-auto" aria-live="polite">
             {resources.isSuccess
               ? `${rows.length} shown · ${pluralize(reviewCount, 'needs', 'need')} review`
               : null}

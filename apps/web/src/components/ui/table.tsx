@@ -9,12 +9,12 @@ export function Table({
   ...props
 }: ComponentProps<'table'> & { containerClassName?: string }) {
   return (
+    // The scroll container also clips vertically, and edge cells have no inline padding (text lines up
+    // with the page). An 8px gutter, given back with a negative margin, keeps focus rings and the sort
+    // buttons' bleed on the first and last columns inside the clip box without moving the content.
     <div
       data-slot="table-container"
-      className={cn(
-        'relative w-full overflow-x-auto rounded-xl border border-border bg-card',
-        containerClassName,
-      )}
+      className={cn('relative -mx-2 overflow-x-auto px-2', containerClassName)}
     >
       <table
         data-slot="table"
@@ -27,7 +27,11 @@ export function Table({
 
 export function TableHeader({ className, ...props }: ComponentProps<'thead'>) {
   return (
-    <thead data-slot="table-header" className={cn('bg-muted/50 [&_tr]:border-b', className)} {...props} />
+    <thead
+      data-slot="table-header"
+      className={cn('[&_tr]:border-b [&_tr]:hover:bg-transparent', className)}
+      {...props}
+    />
   );
 }
 
@@ -36,9 +40,7 @@ export function TableBody({ className, ...props }: ComponentProps<'tbody'>) {
 }
 
 export function TableFooter({ className, ...props }: ComponentProps<'tfoot'>) {
-  return (
-    <tfoot className={cn('border-t bg-muted/50 font-medium [&>tr]:last:border-b-0', className)} {...props} />
-  );
+  return <tfoot className={cn('border-t font-medium [&>tr]:last:border-b-0', className)} {...props} />;
 }
 
 export function TableRow({ className, ...props }: ComponentProps<'tr'>) {
@@ -46,7 +48,7 @@ export function TableRow({ className, ...props }: ComponentProps<'tr'>) {
     <tr
       data-slot="table-row"
       className={cn(
-        'border-b border-border transition-colors hover:bg-accent/40 data-[state=selected]:bg-accent',
+        'border-b border-border transition-colors hover:bg-accent/30 data-[state=selected]:bg-accent',
         className,
       )}
       {...props}
@@ -59,7 +61,7 @@ export function TableHead({ className, ...props }: ComponentProps<'th'>) {
     <th
       data-slot="table-head"
       className={cn(
-        'h-10 px-3 text-left align-middle text-xs font-medium whitespace-nowrap text-muted-foreground first:pl-4 last:pr-4',
+        'h-9 px-3 text-left align-middle text-caption font-medium whitespace-nowrap text-muted-foreground first:pl-0 last:pr-0',
         className,
       )}
       {...props}
@@ -71,14 +73,14 @@ export function TableCell({ className, ...props }: ComponentProps<'td'>) {
   return (
     <td
       data-slot="table-cell"
-      className={cn('px-3 py-2.5 align-middle first:pl-4 last:pr-4', className)}
+      className={cn('px-3 py-3 align-middle first:pl-0 last:pr-0', className)}
       {...props}
     />
   );
 }
 
 export function TableCaption({ className, ...props }: ComponentProps<'caption'>) {
-  return <caption className={cn('mt-3 text-[13px] text-muted-foreground', className)} {...props} />;
+  return <caption className={cn('mt-3 text-small text-muted-foreground', className)} {...props} />;
 }
 
 export type SortDirection = 'asc' | 'desc';
@@ -124,7 +126,8 @@ export function SortableTableHead<K extends string>({
         }}
         className={cn(
           '-mx-1.5 inline-flex h-7 items-center gap-1 rounded-md px-1.5 transition-colors hover:bg-accent hover:text-foreground',
-          'focus-visible:outline-2 focus-visible:outline-ring',
+          // Inset: the header row is barely taller than the button, and the table scrolls (clips).
+          'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring',
           active && 'text-foreground',
           align === 'right' && 'flex-row-reverse',
         )}

@@ -171,9 +171,9 @@ export function ReleaseHistory({
 }) {
   const releases = [...persona.releases].sort((a, b) => b.version - a.version);
   return (
-    <SectionCard title="History" description={pluralize(releases.length, 'release')} flush>
+    <SectionCard title="History" description={pluralize(releases.length, 'release')}>
       {releases.length === 0 ? (
-        <p className="px-5 py-4 text-small text-muted-foreground">No releases yet.</p>
+        <p className="text-small text-muted-foreground">No releases yet.</p>
       ) : (
         <ol aria-label="Releases" className="divide-y divide-border">
           {releases.map((release) => {
@@ -181,7 +181,7 @@ export function ReleaseHistory({
             const outdated = isOutdatedDraft(persona, release);
             const reviewing = reviewingId === release.id;
             return (
-              <li key={release.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-5 py-3">
+              <li key={release.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-3 first:pt-0">
                 <span className="tabular w-8 text-small font-semibold">v{release.version}</span>
                 <StatusBadge kind="personaRelease" status={release.status} withTitle />
                 {active ? <Badge variant="outline">Active</Badge> : null}

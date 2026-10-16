@@ -20,6 +20,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
 import { PageContainer, PageHeader } from '@/components/ui/page-header';
 import { HairlineSkeleton, PageSection } from '@/components/ui/page-section';
+import { SelectableRow } from '@/components/ui/selectable-row';
 import { getStatusDefinition, StatusBadge } from '@/components/ui/status-badge';
 import { toast } from '@/components/ui/toast';
 import { errorMessage } from '@/lib/api/errors';
@@ -184,17 +185,12 @@ export function EscalationsPage() {
               <ul aria-label="Help requests" className="divide-y divide-border border-y border-border">
                 {rows.map((e) => (
                   <li key={e.id}>
-                    <button
-                      type="button"
-                      aria-current={e.id === selected?.id ? 'true' : undefined}
+                    <SelectableRow
+                      selected={e.id === selected?.id}
                       onClick={() => {
                         select(e.id);
                       }}
-                      className={cn(
-                        'grid w-full cursor-pointer gap-1 px-2 py-3 text-left transition-colors hover:bg-accent/50',
-                        'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring',
-                        e.id === selected?.id && 'bg-accent/70',
-                      )}
+                      className="grid gap-1 px-3 py-3"
                     >
                       <span className="flex items-baseline justify-between gap-2">
                         <span className="truncate text-sm font-medium">
@@ -224,7 +220,7 @@ export function EscalationsPage() {
                           ? ` · ${getStatusDefinition('escalationPriority', e.priority).label}`
                           : ''}
                       </span>
-                    </button>
+                    </SelectableRow>
                   </li>
                 ))}
               </ul>

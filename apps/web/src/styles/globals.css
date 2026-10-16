@@ -8,8 +8,10 @@
  * light-dark(<light>, <dark>), so the active palette follows `color-scheme`:
  *   - no class on <html>  → follows the OS (works before JavaScript runs, so there is no flash)
  *   - <html class="dark"> → forced dark;  <html class="light"> → forced light (set by ThemeProvider)
- * Contrast: text tokens meet WCAG 2.2 AA (≥ 4.5:1) on background/card/muted surfaces; `--input`
- * and `--ring` meet the 3:1 non-text contrast requirement for component boundaries and focus.
+ * Dark is OLED: a true-black canvas and sidebar, raised surfaces as near-black steps, borders as
+ * low-alpha white hairlines.
+ * Contrast (checked from this file by tokens.test.ts): every text token meets WCAG 2.2 AA (≥ 4.5:1)
+ * on every surface, glass included; `--input` and `--ring` meet 3:1 for boundaries and focus.
  */
 
 @custom-variant dark (&:where(.dark, .dark *));
@@ -19,10 +21,10 @@
   color-scheme: dark light;
 
   /* Brand primitives (spec) */
-  --fa-canvas: light-dark(#fafaf9, #0b0b0b);
-  --fa-raised: light-dark(#ffffff, #151515);
-  --fa-overlay: light-dark(#ffffff, #1a1a1a);
-  --fa-border: light-dark(#e4e4e1, #303030);
+  --fa-canvas: light-dark(#fafaf9, #000000);
+  --fa-raised: light-dark(#ffffff, #0a0a0a);
+  --fa-overlay: light-dark(#ffffff, #141414);
+  --fa-border: light-dark(#e4e4e1, rgb(255 255 255 / 0.1));
   --fa-text: light-dark(#111110, #f4f4f2);
   --fa-text-secondary: light-dark(#5c5c58, #a6a6a3);
   --fa-focus: light-dark(#111110, #ffffff);
@@ -34,19 +36,24 @@
   --card-foreground: var(--fa-text);
   --popover: var(--fa-overlay);
   --popover-foreground: var(--fa-text);
-  --muted: light-dark(#f2f2f0, #181818);
+  --muted: light-dark(#f2f2f0, #111111);
   --muted-foreground: var(--fa-text-secondary);
-  --subtle-foreground: light-dark(#6b6b66, #8f8f8b);
+  --subtle-foreground: light-dark(#686863, #8f8f8b);
   --primary: light-dark(#111110, #f4f4f2);
-  --primary-foreground: light-dark(#fafaf9, #0b0b0b);
-  --secondary: light-dark(#efefed, #1e1e1e);
+  --primary-foreground: light-dark(#fafaf9, #000000);
+  --secondary: light-dark(#efefed, #1a1a1a);
   --secondary-foreground: var(--fa-text);
-  --accent: light-dark(#ececea, #212121);
+  --accent: light-dark(#ececea, #1f1f1f);
   --accent-foreground: var(--fa-text);
   --border: var(--fa-border);
-  --border-strong: light-dark(#cfcfcb, #3d3d3d);
+  --border-strong: light-dark(#cfcfcb, rgb(255 255 255 / 0.2));
   --input: light-dark(#8d8d88, #6b6b67);
   --ring: var(--fa-focus);
+  /*
+   * The mark of the selected row in a master list (a bar at its start, beside the row's fill). A fill
+   * alone is ~1.1:1 on the canvas, and hover tints the same way, so selection never rests on it.
+   */
+  --selected-cue: var(--fa-text);
 
   /* Status tokens: ≥ 5:1 as text on background, card and their own 10–15 % tints (badges). */
   --destructive: light-dark(#b0262b, #ff6369);
@@ -61,14 +68,14 @@
   --neutral: var(--fa-text-secondary);
 
   /* App chrome */
-  --sidebar: light-dark(#f5f5f3, #0e0e0e);
+  --sidebar: light-dark(#f5f5f3, #000000);
   --sidebar-foreground: var(--fa-text);
   --sidebar-muted: var(--fa-text-secondary);
-  --sidebar-accent: light-dark(#e9e9e6, #1c1c1c);
+  --sidebar-accent: light-dark(#e9e9e6, #1a1a1a);
   --sidebar-accent-foreground: var(--fa-text);
   --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-border: light-dark(#e4e4e1, #232323);
+  --sidebar-border: light-dark(#e4e4e1, rgb(255 255 255 / 0.08));
   --sidebar-ring: var(--fa-focus);
 
   /* Data visualisation (distinguishable hues; always paired with labels) */
@@ -78,23 +85,30 @@
   --chart-4: light-dark(#8a4f00, #f5b94a);
   --chart-5: light-dark(#7a3fc4, #c4a1ff);
 
-  /* Elevation: hairline highlight in dark, soft shadow in light */
-  --shadow-color: light-dark(rgb(17 17 16 / 0.08), rgb(0 0 0 / 0.5));
-  --highlight: light-dark(rgb(255 255 255 / 0), rgb(255 255 255 / 0.04));
+  /* Elevation: hairline highlight in dark (a shadow cannot show on black), soft shadow in light */
+  --shadow-color: light-dark(rgb(17 17 16 / 0.08), rgb(0 0 0 / 0.6));
+  --highlight: light-dark(rgb(255 255 255 / 0), rgb(255 255 255 / 0.05));
 
   /*
-   * Glass: translucent surfaces over content (sticky headers, the composer, overlays, the mini call bar).
-   * Use the `.glass` utility; it falls back to a solid surface where blur is unsupported or transparency is
-   * reduced. Text on glass must still meet contrast against the solid fallback.
+   * Glass: translucent surfaces over content.
+   *   `.glass`         bars that sit in the page (sticky headers, the phone bar, the composer, the mini call
+   *                    bar): canvas-coloured, so on OLED they are black until content scrolls beneath.
+   *   `.glass-strong`  layers that float above the page (menus, popovers, the command palette, toasts):
+   *                    a lifted near-black, dense enough for text.
+   * Both fall back to a solid surface where blur is unsupported or transparency is reduced. Text on glass
+   * meets 4.5:1 composited over every surface (tokens.test.ts). Never stack glass on glass.
    */
-  --glass-bg: light-dark(rgb(255 255 255 / 0.72), rgb(12 12 12 / 0.6));
-  --glass-bg-strong: light-dark(rgb(255 255 255 / 0.86), rgb(12 12 12 / 0.78));
+  --glass-bg: light-dark(rgb(255 255 255 / 0.72), rgb(0 0 0 / 0.72));
+  --glass-bg-strong: light-dark(rgb(255 255 255 / 0.86), rgb(22 22 22 / 0.8));
   --glass-border: light-dark(rgb(17 17 16 / 0.08), rgb(255 255 255 / 0.08));
   --glass-blur: 20px;
+  /* The scrim behind modals (dims and lightly blurs the page), and the lighter one under a glass panel. */
+  --scrim: light-dark(rgb(17 17 16 / 0.32), rgb(0 0 0 / 0.72));
+  --scrim-soft: light-dark(rgb(17 17 16 / 0.12), rgb(0 0 0 / 0.5));
 
   --radius: 0.625rem;
-  --scrollbar: light-dark(#cfcfcb, #333333);
-  --scrollbar-hover: light-dark(#a9a9a4, #4a4a4a);
+  --scrollbar: light-dark(#cfcfcb, #2a2a2a);
+  --scrollbar-hover: light-dark(#a9a9a4, #444444);
   --selection: light-dark(rgb(17 17 16 / 0.16), rgb(244 244 242 / 0.22));
 
   /* Layout. The mobile bar is the only top bar; desktop has none. */
@@ -189,6 +203,7 @@
   --color-border-strong: var(--border-strong);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-selected-cue: var(--selected-cue);
   --color-destructive: var(--destructive);
   --color-destructive-strong: var(--destructive-strong);
   --color-destructive-foreground: var(--destructive-foreground);
@@ -436,16 +451,30 @@
     -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
     backdrop-filter: blur(var(--glass-blur)) saturate(140%);
   }
+  /* Toasts paint their own background from --normal-bg (components/ui/toast.tsx). */
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    .glass,
+    .glass {
+      background-color: var(--background);
+    }
     .glass-strong {
       background-color: var(--popover);
     }
+    [data-sonner-toast] {
+      --normal-bg: var(--popover);
+    }
   }
   @media (prefers-reduced-transparency: reduce) {
-    .glass,
+    .glass {
+      background-color: var(--background);
+    }
     .glass-strong {
       background-color: var(--popover);
+    }
+    [data-sonner-toast] {
+      --normal-bg: var(--popover);
+    }
+    .glass,
+    .glass-strong {
       -webkit-backdrop-filter: none;
       backdrop-filter: none;
     }

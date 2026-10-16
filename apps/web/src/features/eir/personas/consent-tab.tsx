@@ -211,7 +211,7 @@ function ConsentItem({
   const badge = STATUS_BADGE[status];
   const dependents = consent.personas ?? [];
   return (
-    <li className="grid gap-3 px-5 py-4">
+    <li className="grid gap-3 py-4">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <Badge variant={badge.variant}>
           {status === 'revoked' && consent.revokedAt
@@ -358,10 +358,7 @@ export function ConsentTab({ persona }: { persona: PersonaView }) {
             </div>
             {recordButton}
           </div>
-          <ul
-            aria-label="Consent records"
-            className="divide-y divide-border rounded-xl border border-border bg-card"
-          >
+          <ul aria-label="Consent records" className="divide-y divide-border border-y border-border">
             {items.map((consent) => (
               <ConsentItem
                 key={consent.id}

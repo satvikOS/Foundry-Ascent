@@ -1,6 +1,6 @@
 import type { EscalationCategory, PortfolioSummary } from '@foundry/contracts';
 import { Link } from '@tanstack/react-router';
-import { Activity, ArrowRight, FlaskConical, Gavel, Layers, MessagesSquare, Siren, Star } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -38,32 +38,16 @@ export function PortfolioDashboard({ summary, tenant }: { summary: PortfolioSumm
   const openTotal = PRIORITIES.reduce((sum, p) => sum + (summary.openEscalationsByPriority[p] ?? 0), 0);
 
   return (
-    <div className="grid gap-6">
-      <section aria-labelledby="portfolio-30d" className="grid gap-3">
+    <div className="grid gap-12">
+      <section aria-labelledby="portfolio-30d" className="grid gap-4">
         <h2 id="portfolio-30d" className="text-sm font-semibold tracking-tight">
           Last 30 days
         </h2>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-          <MetricTile
-            label="Active ventures"
-            value={formatNumber(summary.activeVentures30d)}
-            icon={Activity}
-          />
-          <MetricTile
-            label="Coaching sessions"
-            value={formatNumber(summary.sessions30d)}
-            icon={MessagesSquare}
-          />
-          <MetricTile
-            label="Confirmed decisions"
-            value={formatNumber(summary.confirmedDecisions30d)}
-            icon={Gavel}
-          />
-          <MetricTile
-            label="Experiments completed"
-            value={formatNumber(summary.experimentsCompleted30d)}
-            icon={FlaskConical}
-          />
+        <div className="grid grid-cols-2 gap-x-6 gap-y-8 lg:grid-cols-5">
+          <MetricTile label="Active ventures" value={formatNumber(summary.activeVentures30d)} />
+          <MetricTile label="Coaching sessions" value={formatNumber(summary.sessions30d)} />
+          <MetricTile label="Confirmed decisions" value={formatNumber(summary.confirmedDecisions30d)} />
+          <MetricTile label="Experiments completed" value={formatNumber(summary.experimentsCompleted30d)} />
           <MetricTile
             label="Median founder rating"
             value={
@@ -74,17 +58,14 @@ export function PortfolioDashboard({ summary, tenant }: { summary: PortfolioSumm
                 </>
               )
             }
-            icon={Star}
             suppressedReason={`Not enough ratings to show without identifying anyone (needs at least ${k}).`}
           />
         </div>
       </section>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-12 lg:grid-cols-2 lg:gap-10">
         <SectionCard
           title="Ventures by stage"
-          description="Enrolled ventures in each stage"
-          icon={Layers}
           actions={<ViewToggle value={stageView} onChange={setStageView} label="Ventures by stage" />}
         >
           {stageRows.length === 0 ? (
@@ -104,8 +85,6 @@ export function PortfolioDashboard({ summary, tenant }: { summary: PortfolioSumm
 
         <SectionCard
           title="Escalations by category"
-          description="Human handoffs requested, by topic"
-          icon={Siren}
           actions={
             <ViewToggle value={categoryView} onChange={setCategoryView} label="Escalations by category" />
           }
@@ -129,7 +108,6 @@ export function PortfolioDashboard({ summary, tenant }: { summary: PortfolioSumm
       <SectionCard
         title="Open escalations by priority"
         description={`${formatNumber(openTotal)} open across the portfolio`}
-        icon={Siren}
         actions={
           <Button asChild variant="ghost" size="sm">
             <Link to="/$tenant/app/program/escalations" params={{ tenant }}>
@@ -139,9 +117,9 @@ export function PortfolioDashboard({ summary, tenant }: { summary: PortfolioSumm
           </Button>
         }
       >
-        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-6 sm:grid-cols-4">
           {PRIORITIES.map((priority) => (
-            <div key={priority} className="flex flex-col gap-2 rounded-lg border border-border px-3 py-2.5">
+            <div key={priority} className="flex flex-col items-start gap-2">
               <dt>
                 <StatusBadge kind="escalationPriority" status={priority} withTitle />
               </dt>

@@ -43,7 +43,7 @@ export function ConsentIndicator({
       className={cn('inline-flex flex-col gap-0.5', className)}
       title={showDescription ? undefined : def.description}
     >
-      <span className={cn('inline-flex items-center gap-1 text-[13px] font-medium', def.className)}>
+      <span className={cn('inline-flex items-center gap-1 text-small font-medium', def.className)}>
         <Icon aria-hidden className="size-3.5" />
         {def.label}
       </span>

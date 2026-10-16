@@ -40,7 +40,7 @@ function SignInPage() {
     <div className="grid min-h-dvh lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
       <aside
         aria-label="About Foundry Ascent"
-        className="relative hidden overflow-hidden border-r border-border bg-card lg:flex lg:flex-col"
+        className="relative hidden overflow-hidden border-r border-border bg-background lg:flex lg:flex-col"
       >
         <div aria-hidden className="bg-grid mask-radial pointer-events-none absolute inset-0 opacity-60" />
         <div className="relative flex flex-1 flex-col justify-between p-10 xl:p-14">
@@ -56,7 +56,7 @@ function SignInPage() {
             </p>
             <p className="mt-6 text-body text-muted-foreground">
               Your vEIR remembers what you decided, what you tested and what you promised to do — with memory
-              you approve and a person one step away.
+              you can read and correct, and a person one step away.
             </p>
           </div>
           <DisclosureBanner variant="inline" className="max-w-md bg-background/60" text={PUBLIC_DISCLOSURE} />

@@ -1,14 +1,5 @@
 import { Link, useParams } from '@tanstack/react-router';
-import {
-  CalendarDays,
-  Coins,
-  Cpu,
-  Layers,
-  MessagesSquare,
-  OctagonAlert,
-  Settings,
-  TriangleAlert,
-} from 'lucide-react';
+import { OctagonAlert, Settings, TriangleAlert } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -55,7 +46,6 @@ function TodayTile({ usage }: { usage: Usage }) {
     <MetricTile
       label="Spend today (UTC)"
       value={formatUsd(usage.todayUsd)}
-      icon={Coins}
       hint={`of ${formatUsd(usage.capGlobalUsd)} daily cap · ${formatPercent(ratio)}`}
       footer={
         <div className="grid gap-1.5">
@@ -94,10 +84,10 @@ function ModelTable({ usage }: { usage: Usage }) {
     { usd: 0, inputTokens: 0, outputTokens: 0 },
   );
   if (rows.length === 0) {
-    return <p className="px-5 py-4 text-small text-muted-foreground">No model calls in the last 30 days.</p>;
+    return <p className="text-small text-muted-foreground">No model calls in the last 30 days.</p>;
   }
   return (
-    <Table containerClassName="rounded-none border-0">
+    <Table>
       <TableCaption className="sr-only">Spend and tokens by model, last 30 days</TableCaption>
       <TableHeader>
         <TableRow>
@@ -161,10 +151,10 @@ function PurposeTable({ usage }: { usage: Usage }) {
   const rows = usage.byPurpose;
   const total = rows.reduce((sum, r) => sum + r.usd, 0);
   if (rows.length === 0) {
-    return <p className="px-5 py-4 text-small text-muted-foreground">No AI spend in the last 30 days.</p>;
+    return <p className="text-small text-muted-foreground">No AI spend in the last 30 days.</p>;
   }
   return (
-    <Table containerClassName="rounded-none border-0">
+    <Table>
       <TableCaption className="sr-only">Spend by purpose, last 30 days</TableCaption>
       <TableHeader>
         <TableRow>
@@ -213,20 +203,18 @@ function UsageDashboard({ usage }: { usage: Usage }) {
   const perTurn = turns30 > 0 ? usage.last30DaysUsd / turns30 : null;
 
   return (
-    <div className="grid gap-6">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid gap-12">
+      <div className="grid gap-x-6 gap-y-8 sm:grid-cols-2 lg:grid-cols-4">
         <TodayTile usage={usage} />
         <MetricTile
           label="Last 30 days"
           value={formatUsd(usage.last30DaysUsd)}
-          icon={CalendarDays}
           hint={`≈ ${formatUsd(usage.last30DaysUsd / 30)} per day on average`}
         />
-        <MetricTile label="Coaching turns (30 days)" value={formatNumber(turns30)} icon={MessagesSquare} />
+        <MetricTile label="Coaching turns (30 days)" value={formatNumber(turns30)} />
         <MetricTile
           label="Average cost per turn"
           value={perTurn === null ? '—' : formatUsd(perTurn, 3)}
-          icon={Cpu}
           hint="Includes embeddings and fallback calls"
         />
       </div>
@@ -234,17 +222,16 @@ function UsageDashboard({ usage }: { usage: Usage }) {
       <SectionCard
         title="Daily spend"
         description="Last 30 days (UTC), against the platform’s daily cap"
-        icon={Coins}
         actions={<ViewToggle value={view} onChange={setView} label="Daily spend" />}
       >
         <DailySpendChart points={points} capUsd={usage.capGlobalUsd} view={view} />
       </SectionCard>
 
-      <SectionCard title="By purpose" description="Last 30 days" icon={Layers} flush>
+      <SectionCard title="By purpose" description="Last 30 days">
         <PurposeTable usage={usage} />
       </SectionCard>
 
-      <SectionCard title="By model" description="Last 30 days" icon={Cpu} flush>
+      <SectionCard title="By model" description="Last 30 days">
         <ModelTable usage={usage} />
       </SectionCard>
 
@@ -273,12 +260,12 @@ export function UsagePage() {
       />
       {usage.isPending ? (
         <LoadingRegion label="Loading usage">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-x-6 gap-y-8 sm:grid-cols-2 lg:grid-cols-4">
             {Array.from({ length: 4 }, (_, i) => (
-              <Skeleton key={i} className="h-[120px] rounded-xl" />
+              <Skeleton key={i} className="h-24 rounded-lg" />
             ))}
           </div>
-          <Skeleton className="mt-6 h-64 rounded-xl" />
+          <Skeleton className="mt-12 h-64 rounded-lg" />
         </LoadingRegion>
       ) : usage.isError ? (
         <ErrorState error={usage.error} onRetry={() => void usage.refetch()} retrying={usage.isRefetching} />

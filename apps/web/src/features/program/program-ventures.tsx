@@ -131,7 +131,7 @@ export function ProgramVenturesPage() {
               ))}
             </SelectContent>
           </Select>
-          <p className="text-[13px] text-muted-foreground sm:ml-auto" aria-live="polite">
+          <p className="text-small text-muted-foreground sm:ml-auto" aria-live="polite">
             {ventures.isSuccess
               ? filtering
                 ? `${rows.length} of ${pluralize(total, 'venture')}`

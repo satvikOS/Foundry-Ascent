@@ -10,10 +10,7 @@ function Command({ className, ...props }: ComponentProps<typeof CommandPrimitive
   return (
     <CommandPrimitive
       data-slot="command"
-      className={cn(
-        'flex size-full flex-col overflow-hidden rounded-xl bg-popover text-popover-foreground',
-        className,
-      )}
+      className={cn('flex size-full flex-col overflow-hidden rounded-2xl text-popover-foreground', className)}
       {...props}
     />
   );
@@ -38,6 +35,7 @@ export function CommandDialog({
     <Dialog {...props}>
       <DialogContent
         hideClose
+        surface="glass"
         className="top-[12vh] max-w-xl translate-y-0 gap-0 overflow-hidden p-0 sm:top-[18vh]"
         aria-describedby={undefined}
       >
@@ -65,7 +63,7 @@ export function CommandInput({ className, ...props }: ComponentProps<typeof Comm
       <CommandPrimitive.Input
         data-slot="command-input"
         className={cn(
-          'flex h-full w-full bg-transparent text-[15px] outline-none placeholder:text-subtle-foreground disabled:cursor-not-allowed disabled:opacity-50',
+          'flex h-full w-full bg-transparent text-body outline-none placeholder:text-subtle-foreground disabled:cursor-not-allowed disabled:opacity-50',
           className,
         )}
         {...props}

@@ -20,7 +20,7 @@ const PILLARS: { title: string; body: string; detail: string }[] = [
     title: 'It remembers you',
     body: 'Your vEIR picks up where you left off: the decisions you made, the experiments you ran, the interviews you promised to do.',
     detail:
-      'Nothing becomes memory until someone on your team approves it, and every note it keeps is yours to read, correct or delete.',
+      'Everything it keeps is yours to read, correct or delete, and you can see where every item came from.',
   },
   {
     title: 'Evidence before eloquence',
@@ -44,8 +44,8 @@ const STEPS: { title: string; body: string }[] = [
     body: 'Type or call. Your vEIR diagnoses, challenges, teaches or rehearses with you, one sharp question at a time.',
   },
   {
-    title: 'Keep what matters',
-    body: 'Approve what is worth remembering, correct anything that is off, and see where every item came from.',
+    title: 'Check what it remembers',
+    body: 'Read what your vEIR keeps, correct anything that is off, and delete what should not be there.',
   },
   {
     title: 'Bring in a human',
@@ -105,7 +105,7 @@ function LandingPage() {
 
   return (
     <div className="flex min-h-dvh flex-col">
-      <header className="sticky top-0 z-30 border-b border-border/60 bg-background/80 backdrop-blur-md supports-[backdrop-filter]:bg-background/65">
+      <header className="glass sticky top-0 z-30 border-b">
         <div className="mx-auto flex h-16 max-w-6xl items-center gap-4 px-4 sm:px-6">
           <Link
             to="/"
@@ -200,7 +200,7 @@ function LandingPage() {
         <section
           id="how-it-works"
           aria-labelledby="how-title"
-          className="scroll-mt-20 border-t border-border bg-card/40"
+          className="scroll-mt-20 border-t border-border"
         >
           <div className="mx-auto max-w-6xl px-4 py-24 sm:px-6 lg:py-32">
             <SectionIntro

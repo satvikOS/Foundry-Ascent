@@ -59,9 +59,9 @@ function ShortcutList({
   return (
     <section>
       <h3 className="label-mono mb-2">{title}</h3>
-      <dl className="divide-y divide-border rounded-lg border border-border">
+      <dl className="divide-y divide-border border-y border-border">
         {shortcuts.map((s) => (
-          <div key={s.binding} className="flex items-center justify-between gap-4 px-3 py-2 text-sm">
+          <div key={s.binding} className="flex items-center justify-between gap-4 py-2 text-sm">
             <dt>{s.label}</dt>
             <dd>
               <Binding binding={s.binding} />

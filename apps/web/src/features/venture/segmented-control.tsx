@@ -19,8 +19,9 @@ interface SegmentedControlProps<T extends string> {
 }
 
 /**
- * Filter switch styled like the pill tabs. Unlike tabs it controls a filter (not separate panels), so
- * it is a group of toggle buttons with aria-pressed — no orphaned tab/panel relationships.
+ * Filter switch. Unlike tabs it controls a filter (not separate panels), so it is a group of toggle
+ * buttons with aria-pressed — no orphaned tab/panel relationships. The pressed option is an inverted chip,
+ * as in FilterChips: a fill alone (~1.1:1) would read like the hover tint.
  */
 export function SegmentedControl<T extends string>({
   value,
@@ -33,10 +34,7 @@ export function SegmentedControl<T extends string>({
     <div
       role="group"
       aria-label={label}
-      className={cn(
-        'inline-flex h-9 w-fit items-center gap-0.5 rounded-lg border border-border bg-muted p-0.5 text-muted-foreground',
-        className,
-      )}
+      className={cn('inline-flex h-8 w-fit items-center gap-1 text-muted-foreground', className)}
     >
       {options.map((option) => {
         const active = option.value === value;
@@ -49,14 +47,19 @@ export function SegmentedControl<T extends string>({
               onChange(option.value);
             }}
             className={cn(
-              'inline-flex h-full flex-1 items-center justify-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium whitespace-nowrap transition-colors',
-              'hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
-              active && 'bg-card text-foreground shadow-xs',
+              'inline-flex h-full flex-1 items-center justify-center gap-1.5 rounded-md px-2.5 text-small font-medium whitespace-nowrap transition-colors',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
+              active ? 'bg-foreground text-background' : 'hover:bg-accent/50 hover:text-foreground',
             )}
           >
             {option.label}
             {option.count !== undefined ? (
-              <span className="tabular text-subtle-foreground">{option.count}</span>
+              <>
+                {/* Flex drops this space visually; it keeps the name "Open 2", not "Open2". */}{' '}
+                <span className={cn('tabular', active ? 'opacity-70' : 'text-subtle-foreground')}>
+                  {option.count}
+                </span>
+              </>
             ) : null}
           </button>
         );

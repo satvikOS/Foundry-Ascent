@@ -1,4 +1,4 @@
-import { CircleCheck, ClipboardCheck, EyeOff } from 'lucide-react';
+import { CircleCheck, ClipboardCheck } from 'lucide-react';
 import { useEffect, useMemo, useRef } from 'react';
 
 import { announce } from '@/components/a11y/live-announcer';
@@ -7,6 +7,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
 import { PageContainer, PageHeader } from '@/components/ui/page-header';
 import { SectionCard } from '@/components/ui/section-card';
+import { SelectableRow } from '@/components/ui/selectable-row';
 import { LoadingRegion, Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast';
 import { FilterChips } from '@/features/admin/shared/filter-chips';
@@ -16,7 +17,6 @@ import { hasRole } from '@/lib/auth/roles';
 import { useRequiredMe } from '@/lib/auth/use-me';
 import { formatDate } from '@/lib/format';
 import { MODE_LABELS } from '@/lib/labels';
-import { cn } from '@/lib/utils';
 
 import { RubricForm } from './rubric-form';
 import { StructuredResponse } from './structured-response';
@@ -108,26 +108,21 @@ export function ReviewsPage({ selectedTurnId, filter, onSelect, onFilterChange }
         <div className="grid items-start gap-6 lg:grid-cols-[18rem_1fr]">
           <nav aria-label={filter === 'pending' ? 'Samples to review' : 'Reviewed samples'}>
             {visible.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-border-strong px-4 py-6 text-center text-sm text-muted-foreground">
+              <p className="py-6 text-sm text-muted-foreground">
                 {filter === 'pending' ? 'All caught up — every sample is reviewed.' : 'Nothing reviewed yet.'}
               </p>
             ) : (
-              <ul className="grid gap-1.5">
+              <ul className="grid gap-0.5">
                 {visible.map((sample) => {
                   const isSelected = sample === selected;
                   return (
                     <li key={sample.turn.id}>
-                      <button
-                        type="button"
-                        aria-current={isSelected ? 'true' : undefined}
+                      <SelectableRow
+                        selected={isSelected}
                         onClick={() => {
                           select(sample);
                         }}
-                        className={cn(
-                          'grid w-full gap-0.5 rounded-lg border px-3 py-2 text-left transition-colors',
-                          'hover:border-foreground/40 focus-visible:outline-2 focus-visible:outline-ring',
-                          isSelected ? 'border-foreground bg-accent' : 'border-border bg-card',
-                        )}
+                        className="grid gap-0.5 rounded-lg px-3 py-2"
                       >
                         <span className="flex items-center justify-between gap-2 text-sm font-medium">
                           Sample {ordinal(sample)}
@@ -138,13 +133,13 @@ export function ReviewsPage({ selectedTurnId, filter, onSelect, onFilterChange }
                             </span>
                           ) : null}
                         </span>
-                        <span className="truncate text-[13px] text-muted-foreground">
+                        <span className="truncate text-small text-muted-foreground">
                           {sample.ventureName} · {MODE_LABELS[sample.turn.mode].label}
                         </span>
                         <span className="text-xs text-muted-foreground">
                           {formatDate(sample.turn.createdAt)}
                         </span>
-                      </button>
+                      </SelectableRow>
                     </li>
                   );
                 })}
@@ -163,14 +158,12 @@ export function ReviewsPage({ selectedTurnId, filter, onSelect, onFilterChange }
               <SectionCard
                 title={<span id="review-sample-title">Sample {ordinal(selected)}</span>}
                 description={`${selected.ventureName} · ${MODE_LABELS[selected.turn.mode].label} mode · ${formatDate(selected.turn.createdAt)}`}
-                icon={EyeOff}
               >
                 <StructuredResponse turn={selected.turn} />
               </SectionCard>
               <SectionCard
                 title="Rubric"
                 description="1 = poor · 5 = excellent"
-                icon={ClipboardCheck}
                 className="xl:sticky xl:top-36"
               >
                 {selected.reviewed ? (

@@ -147,7 +147,7 @@ export function AuditPage({ search, onSearchChange }: AuditPageProps) {
           className="flex flex-col gap-2 sm:flex-row sm:items-end"
         >
           <div className="grid gap-1.5">
-            <label htmlFor={actionId} className="text-[13px] font-medium text-muted-foreground">
+            <label htmlFor={actionId} className="text-small font-medium text-muted-foreground">
               Action
             </label>
             <div className="relative w-full sm:w-72">
@@ -164,14 +164,14 @@ export function AuditPage({ search, onSearchChange }: AuditPageProps) {
                   setAction(event.target.value);
                 }}
                 placeholder="e.g. auth.sign_in"
-                className="pl-8 font-mono text-[13px]"
+                className="pl-8 font-mono text-small"
                 spellCheck={false}
                 autoCapitalize="off"
               />
             </div>
           </div>
           <div className="grid gap-1.5">
-            <span className="text-[13px] font-medium text-muted-foreground" aria-hidden>
+            <span className="text-small font-medium text-muted-foreground" aria-hidden>
               Outcome
             </span>
             <Select
@@ -271,7 +271,7 @@ export function AuditPage({ search, onSearchChange }: AuditPageProps) {
             </TableBody>
           </Table>
           <div className="flex flex-col items-center gap-2 sm:flex-row sm:justify-between">
-            <p className="text-[13px] text-muted-foreground" aria-live="polite">
+            <p className="text-small text-muted-foreground" aria-live="polite">
               Showing {formatNumber(events.length)} {events.length === 1 ? 'event' : 'events'}
               {log.hasNextPage ? '' : ' · end of log'}
             </p>

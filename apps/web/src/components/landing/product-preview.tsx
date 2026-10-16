@@ -1,4 +1,4 @@
-import { ArrowUp } from 'lucide-react';
+import { ArrowUp, Check } from 'lucide-react';
 
 import { PersonaAvatar } from '@/components/faces/persona-avatar';
 import { cn } from '@/lib/utils';
@@ -13,7 +13,7 @@ function EvidenceKey({ k }: { k: string }) {
 
 /**
  * CSS-only product illustration for the landing hero: a short conversation with a vEIR — a founder's
- * question, an answer in the vEIR's voice with cited evidence, a memory it would like to keep, and the
+ * question, an answer in the vEIR's voice with cited evidence, the decision it remembers, and the
  * disclosure line. Decorative; exposed to assistive technology as one described image. All content is
  * synthetic. Rendered in its final state (no entrance animation), so first paint shows it.
  */
@@ -21,7 +21,7 @@ export function ProductPreview({ className }: { className?: string }) {
   return (
     <div
       role="img"
-      aria-label="Illustration: a founder asks Corin’s vEIR whether to raise now or finish a paid pilot; Corin’s vEIR answers in plain prose citing evidence E1 and E2, asks one sharp question, and offers to remember a decision."
+      aria-label="Illustration: a founder asks Corin’s vEIR whether to raise now or finish a paid pilot; Corin’s vEIR answers in plain prose citing evidence E1 and E2, asks one sharp question, and remembers the decision."
       className={cn('relative', className)}
     >
       <div
@@ -54,16 +54,10 @@ export function ProductPreview({ className }: { className?: string }) {
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-dashed border-border-strong px-3.5 py-2.5 text-caption">
-            <span className="min-w-0 flex-1 text-muted-foreground">
-              Corin’s vEIR would like to remember:{' '}
-              <span className="text-foreground">finish the pilot before the round</span>
-            </span>
-            <span className="rounded-md bg-primary px-2 py-0.5 font-medium text-primary-foreground">
-              Keep
-            </span>
-            <span className="text-muted-foreground">Not now</span>
-          </div>
+          <p className="flex items-center gap-1.5 text-caption text-muted-foreground">
+            <Check className="size-3.5 shrink-0" />
+            Remembered: <span className="text-foreground">finish the pilot before the round</span>
+          </p>
         </div>
 
         <div className="mx-5 mb-3 flex items-center gap-2 rounded-xl border border-border-strong px-3.5 py-2.5">

@@ -22,7 +22,7 @@ export function SelectTrigger({
         'disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive',
         'data-[placeholder]:text-subtle-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0',
         '*:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-2',
-        size === 'default' ? 'h-9' : 'h-8 text-[13px]',
+        size === 'default' ? 'h-9' : 'h-8 text-small',
         className,
       )}
       {...props}
@@ -57,7 +57,7 @@ export function SelectContent({
         data-slot="select-content"
         position={position}
         className={cn(
-          'relative z-50 max-h-(--radix-select-content-available-height) min-w-[8rem] overflow-x-hidden overflow-y-auto rounded-lg border border-border bg-popover text-popover-foreground shadow-lg',
+          'glass-strong relative z-50 max-h-(--radix-select-content-available-height) min-w-[8rem] overflow-x-hidden overflow-y-auto rounded-xl border text-popover-foreground shadow-lg',
           'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=open]:zoom-in-[0.97]',
           position === 'popper' &&
             'w-full min-w-(--radix-select-trigger-width) data-[side=bottom]:translate-y-1 data-[side=top]:-translate-y-1',

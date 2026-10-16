@@ -196,7 +196,7 @@ export function LibraryTab({ persona, displayName }: { persona: PersonaView; dis
       </div>
 
       {progress ? (
-        <div className="grid gap-1.5 rounded-lg border border-border px-4 py-3" role="status">
+        <div className="grid gap-1.5 py-1" role="status">
           <p className="text-small">
             Uploading {progress.name} · <span className="tabular">{progress.percent}%</span>
           </p>
@@ -214,16 +214,13 @@ export function LibraryTab({ persona, displayName }: { persona: PersonaView; dis
           headingLevel={2}
         />
       ) : (
-        <ul
-          aria-label="Library sources"
-          className="divide-y divide-border rounded-xl border border-border bg-card"
-        >
+        <ul aria-label="Library sources" className="divide-y divide-border border-y border-border">
           {shown.map((source) => {
             const def = SOURCE_KINDS[source.kind];
             const Icon = def.icon;
             const failed = source.status === 'failed';
             return (
-              <li key={source.id} className="flex items-start gap-3 px-4 py-3.5">
+              <li key={source.id} className="flex items-start gap-3 py-3.5">
                 <Icon aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                 <div className="grid min-w-0 flex-1 gap-0.5">
                   <div className="flex min-w-0 flex-wrap items-center gap-2">

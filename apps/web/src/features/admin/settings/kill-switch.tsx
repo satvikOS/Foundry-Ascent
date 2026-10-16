@@ -42,14 +42,13 @@ export function AiKillSwitch({ aiEnabled, onConfirm, pending = false, error }: A
     <SectionCard
       title="AI kill switch"
       description="Stops every model call in every tenant at once"
-      icon={Power}
       className={cn(!aiEnabled && 'border-warning/60')}
     >
       <div className="grid gap-4">
         <div
           className={cn(
-            'flex flex-col gap-3 rounded-lg border px-4 py-3 sm:flex-row sm:items-center sm:justify-between',
-            aiEnabled ? 'border-border' : 'border-dashed border-warning/60 bg-warning/[0.08]',
+            'flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between',
+            !aiEnabled && 'rounded-lg border border-dashed border-warning/60 bg-warning/[0.08] px-4 py-3',
           )}
         >
           <div className="flex items-start gap-3">
@@ -65,7 +64,7 @@ export function AiKillSwitch({ aiEnabled, onConfirm, pending = false, error }: A
               <p className="font-semibold" data-testid="ai-state">
                 {aiEnabled ? 'AI coaching is on' : 'AI coaching is paused for everyone'}
               </p>
-              <p id={descriptionId} className="text-[13px] text-muted-foreground">
+              <p id={descriptionId} className="text-small text-muted-foreground">
                 {aiEnabled
                   ? 'Founders get answers, within the daily spend caps.'
                   : 'No model calls are made. Founders can still read their workspace and reach a human.'}

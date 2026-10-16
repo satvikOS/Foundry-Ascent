@@ -1,4 +1,4 @@
-import { CircleCheck, CircleSlash, KeyRound, Plus, Search, SearchX, Trash2, Users } from 'lucide-react';
+import { CircleSlash, Ellipsis, KeyRound, Plus, Search, SearchX, Trash2, Users } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 
 import { announce } from '@/components/a11y/live-announcer';
@@ -15,6 +15,14 @@ import {
 import { UserAvatar } from '@/components/faces/user-avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
 import { Input } from '@/components/ui/input';
@@ -55,7 +63,21 @@ function matchesRole(row: AdminPrincipal, filter: RoleFilter): boolean {
   return row.roles.includes(filter);
 }
 
-/** Admin → Principals: people, roles, memberships and their active access codes. */
+/** An empty cell: a dash for the eye, the words for assistive technology. */
+function None({ label }: { label: string }) {
+  return (
+    <span className="text-muted-foreground">
+      <span aria-hidden>—</span>
+      <span className="sr-only">{label}</span>
+    </span>
+  );
+}
+
+/**
+ * Admin → Principals: people, roles, memberships and their active access codes. Quiet by default: only a
+ * disabled account is marked, empty cells are a dash, and each row's actions (issue a code, revoke one)
+ * wait in a single menu at its end.
+ */
 export function PrincipalsPage() {
   const me = useRequiredMe();
   const principals = usePrincipals();
@@ -156,7 +178,7 @@ export function PrincipalsPage() {
               ))}
             </SelectContent>
           </Select>
-          <p className="text-[13px] text-muted-foreground sm:ml-auto" aria-live="polite">
+          <p className="text-small text-muted-foreground sm:ml-auto" aria-live="polite">
             {principals.isSuccess
               ? `${pluralize(rows.length, 'person', 'people')} · ${pluralize(activeCodes, 'active code')}`
               : null}
@@ -166,7 +188,7 @@ export function PrincipalsPage() {
 
       {principals.isPending ? (
         <LoadingRegion label="Loading principals">
-          <Skeleton className="h-72 rounded-xl" />
+          <Skeleton className="h-72 rounded-lg" />
         </LoadingRegion>
       ) : principals.isError ? (
         <ErrorState
@@ -187,7 +209,6 @@ export function PrincipalsPage() {
           <TableHeader>
             <TableRow>
               <TableHead scope="col">Person</TableHead>
-              <TableHead scope="col">Status</TableHead>
               <TableHead scope="col">Roles</TableHead>
               <TableHead scope="col">Ventures</TableHead>
               <TableHead scope="col">Active access codes</TableHead>
@@ -208,32 +229,25 @@ export function PrincipalsPage() {
                         <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 font-medium">
                           <span className="whitespace-nowrap">{row.principal.displayName}</span>
                           {isMe ? <Badge variant="outline">You</Badge> : null}
+                          {row.status === 'active' ? null : (
+                            <Badge variant="muted" className="border-dotted border-border-strong">
+                              <CircleSlash aria-hidden />
+                              Disabled
+                            </Badge>
+                          )}
                         </p>
                         {row.principal.title ? (
-                          <p className="text-[13px] text-muted-foreground">{row.principal.title}</p>
+                          <p className="text-small text-muted-foreground">{row.principal.title}</p>
                         ) : null}
                         {row.email ? (
-                          <p className="text-[13px] break-all text-muted-foreground">{row.email}</p>
+                          <p className="text-small break-all text-muted-foreground">{row.email}</p>
                         ) : null}
                       </div>
                     </div>
                   </TableCell>
                   <TableCell className="align-top">
-                    {row.status === 'active' ? (
-                      <Badge variant="outline" className="border-solid">
-                        <CircleCheck aria-hidden />
-                        Active
-                      </Badge>
-                    ) : (
-                      <Badge variant="muted" className="border-dotted border-border-strong">
-                        <CircleSlash aria-hidden />
-                        Disabled
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="align-top">
                     {row.roles.length === 0 ? (
-                      <span className="text-[13px] text-muted-foreground">Venture access only</span>
+                      <None label="Venture access only" />
                     ) : (
                       <ul className="flex flex-wrap gap-1" aria-label="Roles">
                         {row.roles.map((r) => (
@@ -244,9 +258,9 @@ export function PrincipalsPage() {
                       </ul>
                     )}
                   </TableCell>
-                  <TableCell className="min-w-44 align-top text-[13px]">
+                  <TableCell className="min-w-44 align-top text-small">
                     {row.memberships.length === 0 ? (
-                      <span className="text-muted-foreground">—</span>
+                      <None label="No ventures" />
                     ) : (
                       <ul className="grid gap-0.5">
                         {row.memberships.slice(0, 3).map((m) => (
@@ -263,51 +277,67 @@ export function PrincipalsPage() {
                   </TableCell>
                   <TableCell className="min-w-72 align-top">
                     {row.activeAccessCodes.length === 0 ? (
-                      <span className="text-[13px] text-muted-foreground">No active codes</span>
+                      <None label="No active codes" />
                     ) : (
                       <ul className="grid gap-2">
                         {row.activeAccessCodes.map((code) => (
-                          <li key={code.id} className="flex items-start justify-between gap-2">
-                            <div className="min-w-0 text-[13px]">
-                              <p>
-                                <code className="font-mono text-xs whitespace-nowrap">
-                                  {maskedCode(code.prefix)}
-                                </code>
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                <span className="font-medium text-foreground">{code.label}</span> ·{' '}
-                                {code.expiresAt ? `Expires ${formatDate(code.expiresAt)}` : 'No expiry'} ·{' '}
-                                {code.lastUsedAt ? `used ${formatRelative(code.lastUsedAt)}` : 'never used'}
-                              </p>
-                            </div>
-                            <Button
-                              variant="ghost"
-                              size="icon-xs"
-                              aria-label={`Revoke ${row.principal.displayName}’s code ${code.label}`}
-                              onClick={() => {
-                                setRevoking({ code, owner: row.principal.displayName });
-                              }}
-                            >
-                              <Trash2 aria-hidden />
-                            </Button>
+                          <li key={code.id} className="min-w-0 text-small">
+                            <p>
+                              <code className="font-mono text-xs whitespace-nowrap">
+                                {maskedCode(code.prefix)}
+                              </code>
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              <span className="font-medium text-foreground">{code.label}</span> ·{' '}
+                              {code.expiresAt ? `Expires ${formatDate(code.expiresAt)}` : 'No expiry'} ·{' '}
+                              {code.lastUsedAt ? `used ${formatRelative(code.lastUsedAt)}` : 'never used'}
+                            </p>
                           </li>
                         ))}
                       </ul>
                     )}
                   </TableCell>
-                  <TableCell className="text-right align-top">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      aria-label={`Issue access code to ${row.principal.displayName}`}
-                      disabled={row.status !== 'active'}
-                      onClick={() => {
-                        setIssueFor({ id: row.principal.id, displayName: row.principal.displayName });
-                      }}
-                    >
-                      <KeyRound aria-hidden />
-                      Issue code
-                    </Button>
+                  <TableCell className="w-10 text-right align-top">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Actions for ${row.principal.displayName}`}
+                        >
+                          <Ellipsis aria-hidden />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-64">
+                        <DropdownMenuItem
+                          disabled={row.status !== 'active'}
+                          onSelect={() => {
+                            setIssueFor({ id: row.principal.id, displayName: row.principal.displayName });
+                          }}
+                        >
+                          <KeyRound aria-hidden />
+                          Issue access code…
+                        </DropdownMenuItem>
+                        {row.activeAccessCodes.length > 0 ? (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuLabel>Active codes</DropdownMenuLabel>
+                            {row.activeAccessCodes.map((code) => (
+                              <DropdownMenuItem
+                                key={code.id}
+                                destructive
+                                onSelect={() => {
+                                  setRevoking({ code, owner: row.principal.displayName });
+                                }}
+                              >
+                                <Trash2 aria-hidden />
+                                <span className="min-w-0 truncate">Revoke “{code.label}”…</span>
+                              </DropdownMenuItem>
+                            ))}
+                          </>
+                        ) : null}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </TableCell>
                 </TableRow>
               );

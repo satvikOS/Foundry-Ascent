@@ -107,7 +107,7 @@ function buildComponents(renderCitation: MarkdownProps['renderCitation']): Compo
       <h3 className="mt-5 mb-2 text-base font-semibold tracking-tight first:mt-0">{children}</h3>
     ),
     h2: ({ children }) => (
-      <h4 className="mt-5 mb-2 text-[15px] font-semibold tracking-tight first:mt-0">{children}</h4>
+      <h4 className="mt-5 mb-2 text-body font-semibold tracking-tight first:mt-0">{children}</h4>
     ),
     h3: ({ children }) => <h5 className="mt-4 mb-1.5 text-sm font-semibold first:mt-0">{children}</h5>,
     h4: ({ children }) => <h6 className="mt-4 mb-1.5 text-sm font-semibold first:mt-0">{children}</h6>,
@@ -137,7 +137,7 @@ function buildComponents(renderCitation: MarkdownProps['renderCitation']): Compo
     code: ({ children, className }) => {
       const block = (className ?? '').includes('language-');
       return block ? (
-        <code className="font-mono text-[13px]">{children}</code>
+        <code className="font-mono text-small">{children}</code>
       ) : (
         <code className="rounded-sm border border-border bg-muted px-1 py-px font-mono text-[0.85em]">
           {children}
@@ -151,7 +151,7 @@ function buildComponents(renderCitation: MarkdownProps['renderCitation']): Compo
     ),
     table: ({ children }) => (
       <div className="my-3 overflow-x-auto rounded-lg border border-border">
-        <table className="w-full border-collapse text-left text-[13px]">{children}</table>
+        <table className="w-full border-collapse text-left text-small">{children}</table>
       </div>
     ),
     thead: ({ children }) => <thead className="bg-muted/60">{children}</thead>,
@@ -178,7 +178,7 @@ function MarkdownImpl({ children, className, renderCitation, size = 'default' }:
       data-slot="markdown"
       className={cn(
         'max-w-none text-foreground [overflow-wrap:anywhere]',
-        size === 'default' ? 'text-[15px] leading-7' : 'text-sm leading-6',
+        size === 'default' ? 'text-body leading-7' : 'text-sm leading-6',
         className,
       )}
     >

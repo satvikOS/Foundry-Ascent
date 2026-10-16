@@ -1,4 +1,3 @@
-import { AudioLines } from 'lucide-react';
 import { useId, useState, type ReactNode } from 'react';
 
 import {
@@ -75,7 +74,7 @@ export function FeatureSwitches({
 }: FeatureSwitchesProps) {
   const [confirmCallsOff, setConfirmCallsOff] = useState(false);
   return (
-    <SectionCard title="Calls and streaming" icon={AudioLines}>
+    <SectionCard title="Calls and streaming">
       <div className="grid gap-4">
         <div className="divide-y divide-border">
           <SwitchRow

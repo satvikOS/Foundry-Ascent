@@ -68,21 +68,16 @@ export function ErrorState({
       role="alert"
       data-slot="error-state"
       className={cn(
-        'flex flex-col items-center justify-center gap-3 rounded-xl border border-border bg-card text-center',
-        size === 'default' ? 'px-6 py-12' : 'px-4 py-6',
+        'flex flex-col items-center justify-center gap-2 text-center',
+        size === 'default' ? 'px-6 py-14' : 'px-4 py-6',
         className,
       )}
     >
-      <div
-        className={cn(
-          'flex size-10 items-center justify-center rounded-full border',
-          definitive
-            ? 'border-border-strong bg-muted text-muted-foreground'
-            : 'border-destructive/40 bg-destructive/10 text-destructive',
-        )}
-      >
-        <Icon aria-hidden className="size-5" />
-      </div>
+      <Icon
+        aria-hidden
+        strokeWidth={1.5}
+        className={cn('mb-1 size-6', definitive ? 'text-subtle-foreground' : 'text-destructive')}
+      />
       <Heading className="text-base font-semibold tracking-tight">{title ?? defaultTitle}</Heading>
       <p className="max-w-md text-sm text-muted-foreground">{errorMessage(error)}</p>
       {retry || action ? (

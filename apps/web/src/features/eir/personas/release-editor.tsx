@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { CoachMode, DEFAULT_DISCLOSURE, type PersonaReleaseView } from '@foundry/contracts';
-import { FilePlus2, Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { useId, useState, type ReactNode } from 'react';
 import { Controller, useFieldArray, useForm, type Control, type FieldPath } from 'react-hook-form';
 
@@ -130,7 +130,7 @@ export function ReleaseEditor({
   );
 
   return (
-    <SectionCard title={title} description={description} icon={FilePlus2}>
+    <SectionCard title={title} description={description}>
       {leading}
       <form
         noValidate
@@ -175,19 +175,19 @@ export function ReleaseEditor({
               </Button>
             </div>
             {frameworks.fields.length === 0 ? (
-              <p className="rounded-lg border border-dashed border-border-strong px-4 py-3 text-[13px] text-muted-foreground">
+              <p className="rounded-lg border border-dashed border-border-strong px-4 py-3 text-small text-muted-foreground">
                 No frameworks yet. Add the methods this persona teaches (e.g. jobs-to-be-done, assumption
                 mapping).
               </p>
             ) : null}
             {e.frameworks?.message ? (
-              <p className="text-[13px] text-destructive">{e.frameworks.message}</p>
+              <p className="text-small text-destructive">{e.frameworks.message}</p>
             ) : null}
             <ol className="grid gap-3">
               {frameworks.fields.map((item, index) => (
                 <li key={item.id} className="grid gap-3 rounded-lg border border-border px-4 py-3">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[13px] font-medium text-muted-foreground">
+                    <span className="text-small font-medium text-muted-foreground">
                       Framework {index + 1}
                     </span>
                     <Button
@@ -358,7 +358,7 @@ export function ReleaseEditor({
                   })}
                 </div>
                 {e.allowedModes?.message ? (
-                  <p id={`${ids.modes}-error`} className="text-[13px] text-destructive">
+                  <p id={`${ids.modes}-error`} className="text-small text-destructive">
                     {e.allowedModes.message}
                   </p>
                 ) : null}

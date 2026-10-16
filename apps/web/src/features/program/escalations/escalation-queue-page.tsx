@@ -139,7 +139,7 @@ export function EscalationQueuePage() {
               ))}
             </SelectContent>
           </Select>
-          <p className="text-[13px] text-muted-foreground sm:ml-auto" aria-live="polite">
+          <p className="text-small text-muted-foreground sm:ml-auto" aria-live="polite">
             {queue.isSuccess
               ? `${formatNumber(openCount)} open · ${formatNumber(waitingCount)} waiting for assignment · ${formatNumber(overdueCount)} overdue`
               : null}
@@ -240,7 +240,7 @@ export function EscalationQueuePage() {
                       <span className="text-muted-foreground">—</span>
                     )}
                   </TableCell>
-                  <TableCell className="whitespace-nowrap text-[13px]">
+                  <TableCell className="whitespace-nowrap text-small">
                     {e.shared ? (
                       <span className="inline-flex items-center gap-1">
                         <Eye aria-hidden className="size-3.5" />

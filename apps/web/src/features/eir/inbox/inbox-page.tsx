@@ -7,6 +7,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
 import { PageContainer, PageHeader } from '@/components/ui/page-header';
 import { SectionCard } from '@/components/ui/section-card';
+import { SelectableRow } from '@/components/ui/selectable-row';
 import { LoadingRegion, Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { FilterChips } from '@/features/admin/shared/filter-chips';
@@ -85,8 +86,8 @@ export function InboxPage({ selectedId, filter, onSelect, onFilterChange }: Inbo
       {inbox.isPending ? (
         <LoadingRegion label="Loading inbox">
           <div className="grid gap-6 lg:grid-cols-[20rem_1fr]">
-            <Skeleton className="h-64 rounded-xl" />
-            <Skeleton className="h-96 rounded-xl" />
+            <Skeleton className="h-64 rounded-lg" />
+            <Skeleton className="h-96 rounded-lg" />
           </div>
         </LoadingRegion>
       ) : inbox.isError ? (
@@ -101,42 +102,37 @@ export function InboxPage({ selectedId, filter, onSelect, onFilterChange }: Inbo
         <div className="grid items-start gap-6 lg:grid-cols-[20rem_1fr]">
           <nav aria-label={filter === 'open' ? 'Open escalations' : 'Closed escalations'}>
             {visible.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-border-strong px-4 py-6 text-center text-sm text-muted-foreground">
+              <p className="py-6 text-sm text-muted-foreground">
                 {filter === 'open' ? 'No open escalations. Nice work.' : 'No closed escalations yet.'}
               </p>
             ) : (
-              <ul className="grid gap-1.5">
+              <ul className="grid gap-0.5">
                 {visible.map((e) => {
                   const isSelected = e === selected;
                   return (
                     <li key={e.id}>
-                      <button
-                        type="button"
-                        aria-current={isSelected ? 'true' : undefined}
+                      <SelectableRow
+                        selected={isSelected}
                         onClick={() => {
                           onSelect(e.id);
                           requestAnimationFrame(() => {
                             detailRef.current?.focus();
                           });
                         }}
-                        className={cn(
-                          'grid w-full gap-1 rounded-lg border px-3 py-2.5 text-left transition-colors',
-                          'hover:border-foreground/40 focus-visible:outline-2 focus-visible:outline-ring',
-                          isSelected ? 'border-foreground bg-accent' : 'border-border bg-card',
-                        )}
+                        className="grid gap-1 rounded-lg px-3 py-2.5"
                       >
                         <span className="flex flex-wrap items-center gap-1.5">
                           <StatusBadge kind="escalationPriority" status={e.priority} />
                           <StatusBadge kind="escalationStatus" status={e.status} />
                         </span>
                         <span className="text-sm font-medium">{e.ventureName}</span>
-                        <span className="text-[13px] text-muted-foreground">
+                        <span className="text-small text-muted-foreground">
                           {ESCALATION_CATEGORY_LABELS[e.category]}
                         </span>
                         <span className="text-xs text-muted-foreground">
                           {e.dueAt ? <DueLabel escalation={e} /> : `Raised ${formatRelative(e.createdAt)}`}
                         </span>
-                      </button>
+                      </SelectableRow>
                     </li>
                   );
                 })}
@@ -156,7 +152,7 @@ export function InboxPage({ selectedId, filter, onSelect, onFilterChange }: Inbo
                 }
               >
                 <div className="grid gap-5">
-                  <div className="flex flex-wrap items-center gap-2 text-[13px]">
+                  <div className="flex flex-wrap items-center gap-2 text-small">
                     <StatusBadge kind="escalationStatus" status={selected.status} withTitle />
                     <DueLabel escalation={selected} />
                     {selected.sessionId ? <Badge variant="muted">From a coaching session</Badge> : null}
@@ -164,7 +160,7 @@ export function InboxPage({ selectedId, filter, onSelect, onFilterChange }: Inbo
                   <InboxActions key={selected.id} escalation={selected} />
                   <PacketView escalation={selected} audience="assignee" />
                   {selected.resolution ? (
-                    <section className="grid gap-2 rounded-lg border border-border px-4 py-3">
+                    <section className="grid gap-2 border-t border-border pt-4">
                       <h3 className="flex items-center gap-1.5 text-sm font-semibold">
                         <CircleCheck aria-hidden className="size-4 text-muted-foreground" />
                         Resolution

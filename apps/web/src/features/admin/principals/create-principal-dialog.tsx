@@ -151,7 +151,7 @@ export function CreatePrincipalDialog({ open, onOpenChange, onIssueCode }: Creat
                 render={({ field }) => (
                   <fieldset className="grid gap-2" aria-describedby={`${rolesId}-hint`}>
                     <legend className="text-sm font-medium">Roles</legend>
-                    <p id={`${rolesId}-hint`} className="text-[13px] text-muted-foreground">
+                    <p id={`${rolesId}-hint`} className="text-small text-muted-foreground">
                       Leave all unchecked for venture-only access (founder, team or advisor).
                     </p>
                     {PlatformRole.options.map((role) => {
@@ -176,7 +176,7 @@ export function CreatePrincipalDialog({ open, onOpenChange, onIssueCode }: Creat
                           />
                           <div className="grid gap-0.5">
                             <Label htmlFor={id}>{ROLE_LABELS[role]}</Label>
-                            <p id={`${id}-desc`} className="text-[13px] text-muted-foreground">
+                            <p id={`${id}-desc`} className="text-small text-muted-foreground">
                               {PLATFORM_ROLE_DESCRIPTIONS[role]}
                             </p>
                           </div>

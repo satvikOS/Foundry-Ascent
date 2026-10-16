@@ -57,7 +57,7 @@ export function RubricForm({ onSubmit, submitting = false, footer }: RubricFormP
       className="grid gap-5"
     >
       {formState.isSubmitted && errorCount > 0 ? (
-        <p role="alert" className="flex items-center gap-1.5 text-[13px] font-medium text-destructive">
+        <p role="alert" className="flex items-center gap-1.5 text-small font-medium text-destructive">
           <CircleAlert aria-hidden className="size-4" />
           {errorCount === 1
             ? 'Score the remaining criterion to submit.'
@@ -80,7 +80,7 @@ export function RubricForm({ onSubmit, submitting = false, footer }: RubricFormP
                     *
                   </span>
                 </legend>
-                <p id={`${id}-desc`} className="-mt-1 text-[13px] text-muted-foreground">
+                <p id={`${id}-desc`} className="-mt-1 text-small text-muted-foreground">
                   {criterion.description}
                 </p>
                 <RadioGroup
@@ -131,7 +131,7 @@ export function RubricForm({ onSubmit, submitting = false, footer }: RubricFormP
                   })}
                 </RadioGroup>
                 {error ? (
-                  <p id={`${id}-error`} className="flex items-start gap-1.5 text-[13px] text-destructive">
+                  <p id={`${id}-error`} className="flex items-start gap-1.5 text-small text-destructive">
                     <CircleAlert aria-hidden className="mt-0.5 size-3.5 shrink-0" />
                     {error}
                   </p>

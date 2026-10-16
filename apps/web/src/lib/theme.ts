@@ -5,7 +5,7 @@ import { safeStorage, STORAGE_KEYS } from './storage';
 export type ThemePreference = 'system' | 'dark' | 'light';
 export type ResolvedTheme = 'dark' | 'light';
 
-const THEME_COLORS: Record<ResolvedTheme, string> = { dark: '#0B0B0B', light: '#FAFAF9' };
+const THEME_COLORS: Record<ResolvedTheme, string> = { dark: '#000000', light: '#FAFAF9' };
 const LIGHT_QUERY = '(prefers-color-scheme: light)';
 
 function readPreference(): ThemePreference {

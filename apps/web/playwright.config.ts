@@ -123,7 +123,7 @@ export default defineConfig({
     { name: 'setup', testMatch: /auth\.setup\.ts$/ },
     {
       name: 'desktop',
-      testMatch: /(journey|documents|knowledge|safety|a11y|calls|studio|chat)\.spec\.ts$/,
+      testMatch: /(journey|documents|knowledge|safety|a11y|calls|studio|chat|theme)\.spec\.ts$/,
       dependencies: ['setup'],
       use: { browserName: 'chromium', viewport: { width: 1440, height: 900 } },
     },
@@ -139,6 +139,17 @@ export default defineConfig({
         hasTouch: true,
       },
     },
+    // Design-review screenshots (e2e/screens.spec.ts), only when asked for: E2E_SCREENS_DIR=<dir>.
+    ...(process.env.E2E_SCREENS_DIR
+      ? [
+          {
+            name: 'screens',
+            testMatch: /screens\.spec\.ts$/,
+            dependencies: ['setup'],
+            use: { browserName: 'chromium' as const },
+          },
+        ]
+      : []),
   ],
   webServer,
 });

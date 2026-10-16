@@ -33,9 +33,9 @@ function PersonaGroup({
         {persona.name}
         <span className="tabular text-small font-normal text-muted-foreground">{lessons.length}</span>
       </h2>
-      <ul className="divide-y divide-border rounded-xl border border-border bg-card">
+      <ul className="divide-y divide-border border-y border-border">
         {lessons.map((lesson) => (
-          <li key={lesson.id} className="relative grid gap-1 px-4 py-3.5 hover:bg-accent/40">
+          <li key={lesson.id} className="relative grid gap-1 py-3.5">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <Link
                 to="/$tenant/app/eir/personas/$personaId"

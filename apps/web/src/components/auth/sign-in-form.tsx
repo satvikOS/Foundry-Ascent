@@ -124,7 +124,7 @@ export function SignInForm({ onSignedIn }: { onSignedIn: (me: Me) => void }) {
             >
               <span
                 aria-hidden
-                className="pl-3.5 font-mono text-[15px] tracking-wider text-muted-foreground select-none"
+                className="pl-3.5 font-mono text-body tracking-wider text-muted-foreground select-none"
               >
                 {ACCESS_CODE_PREFIX}
               </span>
@@ -159,7 +159,7 @@ export function SignInForm({ onSignedIn }: { onSignedIn: (me: Me) => void }) {
                 aria-describedby={[ids.hint, fieldError ? ids.error : null, ids.count]
                   .filter(Boolean)
                   .join(' ')}
-                className="h-full min-w-0 flex-1 bg-transparent pr-3.5 font-mono text-[15px] tracking-wider text-foreground uppercase outline-none placeholder:text-subtle-foreground placeholder:normal-case"
+                className="h-full min-w-0 flex-1 bg-transparent pr-3.5 font-mono text-body tracking-wider text-foreground uppercase outline-none placeholder:text-subtle-foreground placeholder:normal-case"
               />
               <span
                 id={ids.count}
@@ -174,11 +174,11 @@ export function SignInForm({ onSignedIn }: { onSignedIn: (me: Me) => void }) {
             </div>
           )}
         />
-        <p id={ids.hint} className="text-[13px] text-muted-foreground">
+        <p id={ids.hint} className="text-small text-muted-foreground">
           Paste it or type it — spaces, dashes and lower case are fine.
         </p>
         {fieldError ? (
-          <p id={ids.error} role="alert" className="flex items-start gap-1.5 text-[13px] text-destructive">
+          <p id={ids.error} role="alert" className="flex items-start gap-1.5 text-small text-destructive">
             <CircleAlert aria-hidden className="mt-0.5 size-3.5 shrink-0" />
             {fieldError}
           </p>

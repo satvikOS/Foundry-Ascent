@@ -42,7 +42,7 @@ export function DailySpendChart({ points, capUsd, view }: DailySpendChartProps) 
   if (view === 'table') {
     return (
       <Table>
-        <TableCaption className="px-1 text-left">
+        <TableCaption className="text-left">
           Daily AI spend (UTC days), newest first. Platform cap {formatUsd(capUsd)} per day.
         </TableCaption>
         <TableHeader>

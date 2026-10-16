@@ -219,7 +219,7 @@ function ResourceFormBody({ resource, onDone }: { resource: ResourceView | null;
             render={({ field }) => (
               <fieldset aria-describedby={`${stagesLegend}-hint`} className="grid gap-2">
                 <legend className="text-sm font-medium">Relevant stages</legend>
-                <p id={`${stagesLegend}-hint`} className="text-[13px] text-muted-foreground">
+                <p id={`${stagesLegend}-hint`} className="text-small text-muted-foreground">
                   Leave all unchecked if it applies at every stage.
                 </p>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">

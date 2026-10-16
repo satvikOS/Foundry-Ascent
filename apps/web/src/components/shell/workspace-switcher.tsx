@@ -67,7 +67,7 @@ export function WorkspaceSwitcher({
   ) : (
     <span
       aria-hidden
-      className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border-strong bg-card"
+      className="flex size-8 shrink-0 items-center justify-center rounded-md bg-sidebar-accent text-sidebar-foreground"
     >
       {Icon ? <Icon className="size-4" /> : null}
     </span>

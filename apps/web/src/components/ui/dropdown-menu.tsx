@@ -10,8 +10,12 @@ export const DropdownMenuGroup = DropdownMenuPrimitive.Group;
 export const DropdownMenuSub = DropdownMenuPrimitive.Sub;
 export const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup;
 
+/*
+ * Menus float as glass. A submenu opens beside (and may overlap) its menu, so it is solid: glass never
+ * stacks on glass.
+ */
 const menuContentClasses = cn(
-  'z-50 min-w-[10rem] overflow-x-hidden overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lg',
+  'z-50 min-w-[10rem] overflow-x-hidden overflow-y-auto rounded-xl border p-1 text-popover-foreground shadow-lg',
   'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
   'data-[state=closed]:zoom-out-[0.97] data-[state=open]:zoom-in-[0.97] data-[side=bottom]:slide-in-from-top-1 data-[side=top]:slide-in-from-bottom-1',
 );
@@ -34,7 +38,7 @@ export function DropdownMenuContent({
         sideOffset={sideOffset}
         className={cn(
           menuContentClasses,
-          'max-h-(--radix-dropdown-menu-content-available-height)',
+          'glass-strong max-h-(--radix-dropdown-menu-content-available-height)',
           className,
         )}
         {...props}
@@ -149,7 +153,10 @@ export function DropdownMenuSubContent({
 }: ComponentProps<typeof DropdownMenuPrimitive.SubContent>) {
   return (
     <DropdownMenuPrimitive.Portal>
-      <DropdownMenuPrimitive.SubContent className={cn(menuContentClasses, className)} {...props} />
+      <DropdownMenuPrimitive.SubContent
+        className={cn(menuContentClasses, 'border-border bg-popover', className)}
+        {...props}
+      />
     </DropdownMenuPrimitive.Portal>
   );
 }

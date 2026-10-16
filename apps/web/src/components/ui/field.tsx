@@ -65,12 +65,12 @@ export function Field({
   const helpers = (
     <>
       {description ? (
-        <p id={descriptionId} className="text-[13px] leading-snug text-muted-foreground">
+        <p id={descriptionId} className="text-small leading-snug text-muted-foreground">
           {description}
         </p>
       ) : null}
       {error ? (
-        <p id={errorId} className="flex items-start gap-1.5 text-[13px] leading-snug text-destructive">
+        <p id={errorId} className="flex items-start gap-1.5 text-small leading-snug text-destructive">
           <CircleAlert aria-hidden className="mt-0.5 size-3.5 shrink-0" />
           <span>{error}</span>
         </p>

@@ -115,7 +115,9 @@ test.describe('founder journey', () => {
       await nav.getByRole('button', { name: /^Switch venture or workspace/ }).click();
       await page.getByRole('menuitem', { name: 'Admin' }).click();
       await expect(page.getByRole('heading', { level: 1, name: 'People & access' })).toBeVisible();
-      await page.getByRole('button', { name: `Issue access code to ${FOUNDER_NAME}` }).click();
+      // Row actions wait in one menu at the end of the row.
+      await page.getByRole('button', { name: `Actions for ${FOUNDER_NAME}` }).click();
+      await page.getByRole('menuitem', { name: 'Issue access code…' }).click();
       const dialog = page.getByRole('dialog', { name: 'Issue access code' });
       await dialog.getByRole('textbox', { name: 'Label' }).fill(`journey ${token}`);
       await dialog.getByRole('button', { name: 'Issue code' }).click();
