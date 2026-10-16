@@ -96,6 +96,31 @@ export function useLoadedCall(): CallContextValue & { readonly engine: CallEngin
   return { ...value, engine };
 }
 
+/** How long signing out waits for the live call to end on the server before it goes ahead anyway. */
+const SIGN_OUT_END_WAIT_MS = 4000;
+
+/**
+ * Ends the person's live call before they sign out, and waits for the server (a few seconds at most): ending
+ * it needs the session that signing out revokes, so an end sent while the page unmounts afterwards would be
+ * refused and the call would run on until it went stale. Outside a CallProvider there is no call to end.
+ */
+export function useEndCallBeforeSignOut(): () => Promise<void> {
+  const engine = useContext(CallContext)?.engine ?? null;
+  return useCallback(async () => {
+    if (!engine) return;
+    const { phase } = engine.getSnapshot();
+    if (phase !== 'live' && phase !== 'starting') return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      engine.end('user').catch(() => undefined),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, SIGN_OUT_END_WAIT_MS);
+      }),
+    ]);
+    clearTimeout(timer);
+  }, [engine]);
+}
+
 export function CallProvider({ me, children }: { me: Me; children: ReactNode }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
