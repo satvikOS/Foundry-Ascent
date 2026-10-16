@@ -19,7 +19,12 @@ import {
   primaryForcedCategory,
   type RequestedRoleValue,
 } from '../risk/escalation-map.js';
-import { rewriteIdentity, type IdentityFinding, type IdentityViolationKind } from './identity.js';
+import {
+  IDENTITY_MARGIN_CHARS,
+  rewriteIdentity,
+  type IdentityFinding,
+  type IdentityViolationKind,
+} from './identity.js';
 import { sanitizeMarkdown, sanitizePlainText } from './markdown.js';
 import { SPOKEN_MAX_CHARS, SPOKEN_MAX_WORDS, clampWords, deriveSpoken, toSpeakable } from './speech.js';
 
@@ -113,7 +118,6 @@ export interface CoachResponseValidation {
 const PRIORITY_RANK: Readonly<Record<EscalationPriority, number>> = { P0: 0, P1: 1, P2: 2, P3: 3 };
 
 /** Text kept past a field's limit for the identity check, so a sentence that crosses the limit is judged whole. */
-const IDENTITY_MARGIN_CHARS = 400;
 
 const NO_ESCALATION: EscalationProposal = {
   required: false,

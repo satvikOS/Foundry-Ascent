@@ -40,6 +40,12 @@ export interface IdentityCheckOptions {
   addressees?: readonly string[];
 }
 
+/**
+ * How far past a field's length limit the identity check reads: callers truncate to limit + margin first,
+ * so the check never scans text it cannot keep (a violation straddling the cut is still seen whole).
+ */
+export const IDENTITY_MARGIN_CHARS = 400;
+
 export interface IdentityFinding {
   kind: IdentityViolationKind;
   /** Pattern id, safe to log. */
@@ -63,14 +69,37 @@ interface IdentityPattern {
 const S = '(?<!\\p{ID_Continue})';
 const E = '(?!\\p{ID_Continue})';
 const APOS = "['’]";
+/** Bold or italic markers around a signed name. */
+const EMPHASIS = '(?:\\*\\*|__|\\*|_)?';
 /** After a name: not a possessive ("Corin's approach") and not a compound ("Corin-style"). */
 const NOT_POSSESSIVE = `(?!${APOS}s${E}|-)`;
 const EIR = '(?:eir|eirs|entrepreneur[- ]in[- ]residence)';
 /** A cleft ("It's Corin who would ask…") points at the EIR; it is not a self-introduction. */
 const NOT_RELATIVE = `(?!\\s+(?:who|whom|whose|that)${E}(?!(?:${APOS}s|\\s+(?:is|am|was))?\\s+(?:speaking|talking|chatting|writing|here|with you|on (?:the|this) call)${E}|\\s+(?:you${APOS}re|you are|you)\\s+(?:talking|speaking|chatting)${E}))`;
 
-function p(kind: IdentityViolationKind, rule: string, source: string, flags = 'giu'): IdentityPattern {
-  return { kind, rule, pattern: new RegExp(`${S}(?:${source})${E}`, flags) };
+function compile(source: string): RegExp {
+  return new RegExp(source, 'giu');
+}
+
+/** A name's first name alone, under the flags of its rules: the probe for whether any rule can match. */
+const NAME_PROBES = new Map<string, RegExp>();
+
+function namePresent(spec: NameSpec, text: string): boolean {
+  let probe = NAME_PROBES.get(spec.first);
+  if (probe === undefined) {
+    if (NAME_PROBES.size >= MAX_CACHED_NAMES) NAME_PROBES.clear();
+    probe = new RegExp(escapeRegExp(spec.first), 'iu');
+    NAME_PROBES.set(spec.first, probe);
+  }
+  return probe.test(text);
+}
+
+/** Each EIR name's compiled regexes (see `namePatterns`); bounded, names come from a tenant's EIR list. */
+const NAME_REGEXES = new Map<string, RegExp[]>();
+const MAX_CACHED_NAMES = 256;
+
+function p(kind: IdentityViolationKind, rule: string, source: string): IdentityPattern {
+  return { kind, rule, pattern: compile(`${S}(?:${source})${E}`) };
 }
 
 const BASE_PATTERNS: readonly IdentityPattern[] = [
@@ -213,8 +242,13 @@ summer sunny tanner terry tom tony trey troy tucker valentine van victor violet 
 winter wolf woody worth wren`.split(/\s+/),
 );
 
-/** Unmistakable self-introductions: in typed text the only place a lower-case first name counts. */
-const STRICT_SELF_LEADS = `(?:i${APOS}m|i am|my name is|speaking as)`;
+/** An adverb that only stresses a self-introduction: "I'm actually Corin", "I am really Corin Halvorsen". */
+const SELF_STRESS = '(?:\\s+(?:actually|really|truly|indeed|honestly|literally|in fact|in reality))?';
+/**
+ * Unmistakable self-introductions ("I'm Corin", "It's me, Corin", "Call me Corin"): in typed text the only
+ * place a lower-case first name counts.
+ */
+const STRICT_SELF_LEADS = `(?:i${APOS}m${SELF_STRESS}|i am${SELF_STRESS}|my name is|speaking as|it${APOS}s me|it is me|this is me|call me)`;
 const TALKING_TO = `(?:you${APOS}re|you are) (?:talking|speaking|chatting) (?:to|with)`;
 /** Other self-introductions ("This is Corin", "You're talking to Corin"). */
 const SELF_LEADS = `(?:this is|${TALKING_TO})`;
@@ -269,11 +303,15 @@ const ADDRESSING = new Set(ADDRESSING_CLOSINGS);
 const SIGN_OFF = `(?<signoff>${[...CLOSINGS, ...ADDRESSING_CLOSINGS].map(escapeRegExp).join('|')})`;
 
 const ENDORSE_VERBS =
-  '(?:approved|endorsed|signed off(?: on)?|reviewed and (?:approved|endorsed|signed off(?: on)?)|vetted|validated|vouched for|blessed|backs|backed|green-?lit|greenlit|agreed with|agrees with|is on board with|(?:reviewed|looked over|looked at|read|seen|checked) (?:your|this|these|that|it|the plan|the deck|the pitch|our))';
+  '(?:approved|endorsed|signed off(?: on)?|reviewed and (?:approved|endorsed|signed off(?: on)?)|vetted|validated|vouched for|blessed|backs|backed|green-?lit|greenlit|agreed with|agrees with|is on board with|(?:reviewed|looked over|looked at|read|seen|checked) (?:your|this|these|that|it|the plan|the deck|the pitch|our)|(?:given|gave) (?:(?:your|this|the|that|it)(?: [\\p{L}-]+)? )?(?:a |the |her |his |their )?(?:green light|thumbs[- ]up|go-ahead|nod|seal of approval|stamp of approval|blessing))';
 const ENDORSED = `(?:has |had |have )?(?:already |personally |officially |just )?${ENDORSE_VERBS}`;
 const OPINION_VERBS =
-  '(?:thinks|believes|feels|likes|loves|is (?:excited|impressed|happy|pleased|thrilled) (?:about|by|with)) (?:your|this plan|this idea|this deck|this pitch)';
+  '(?:thinks|believes|feels|likes|loves|liked|loved|enjoyed|(?:is|was) (?:excited|impressed|happy|pleased|thrilled) (?:about|by|with)) (?:your|this plan|this idea|this deck|this pitch)';
 const APPROVED_BY = '(?:approved|endorsed|signed off|vetted|validated|blessed|reviewed|green-?lit) by';
+/** "Your plan has Corin's approval", "Go ahead with Corin's blessing": the subject is part of the match. */
+const HAS_THE =
+  '(?:(?:you|we|it|this|that|(?:your|the|this|our) [\\p{L}-]+)\\s+)?(?:has|have|had|got|gets|earned|won|with)';
+const APPROVAL_NOUN = `${APOS}s\\s+(?:full\\s+|official\\s+|personal\\s+)?(?:approval|endorsement|blessing|sign-off|backing|support|stamp of approval|seal of approval|green light|go-ahead)`;
 /** Where a person is said to be present, other than "here" and "listening" (see below). */
 const PRESENT_PLACE =
   '(?:on (?:the|this) (?:call|line)|in (?:this|the) (?:call|chat|conversation|room)|joining (?:us|you|this|the call)|reading this)';
@@ -291,17 +329,19 @@ const LISTEN_DOCTRINE = `(?:for(?!\\s+(?:your|you|anything|whatever|what you)${E
  * possessive ("Corin's listening checklist", "Corin's here-and-now rule"), so after "'s" the phrase must
  * end the clause, go on with a presence tail ("with us", "right now") or say how ("listening closely").
  */
-const PRESENT_AFTER = `(?:\\s+has\\s+joined\\s+(?:us|you|the call|this call)|\\s+can\\s+hear\\s+you|\\s+is\\s+(?:(?:also|now|still|right|currently|already|actually|really)\\s+)?(?:with (?:you|us)${E}|here(?!-)|listening(?!-|\\s+${LISTEN_DOCTRINE})|${PRESENT_PLACE})|${APOS}s\\s+(?:(?:here|listening|${PRESENT_PLACE})${PRESENT_TAIL}${CLAUSE_END}|listening\\s+(?:closely|carefully|attentively|intently|quietly|actively|as we (?:speak|talk))))`;
+const PRESENT_AFTER = `(?:\\s+has\\s+joined\\s+(?:us|you|the call|this call)|\\s+can\\s+hear\\s+you|\\s+is\\s+(?:(?:also|now|still|right|currently|already|actually|really)\\s+)?(?:with (?:you|us)${E}|(?:tuning|tuned|dialing|dialling|dialed|dialled|sitting|patched) in${E}(?=\\s*(?:[,.;:!?…]|$)|\\s+(?:on|with|for|now|today|right now)${E})|here(?!-)|listening(?!-|\\s+${LISTEN_DOCTRINE})|${PRESENT_PLACE})|${APOS}s\\s+(?:(?:here|listening|${PRESENT_PLACE})${PRESENT_TAIL}${CLAUSE_END}|listening\\s+(?:closely|carefully|attentively|intently|quietly|actively|as we (?:speak|talk))))`;
 /**
- * "<name> here / speaking / out" ends the clause, meets a symbol ("Corin here 👋") or goes on as a
- * greeting ("Corin here and ready to help"). "Corin here would ask…" and "Corin out of office" do not.
+ * "<name> here / speaking / checking in / out" ends the clause, meets a symbol ("Corin here 👋") or goes on
+ * as a greeting ("Corin here and ready to help", "Corin checking in on your pilot"). "Corin here would
+ * ask…" and "Corin out of office" do not.
  */
-const HERE_WORDS = `(?:(?:here|speaking)${E}(?=[ \\t]*(?:[^\\p{L}\\p{N}\\s?]|\\n|$)|\\s+(?:and|again|now|today|with you|to (?:help|chat|talk|check|walk|go)|checking|ready)${E})|out${E}(?=[ \\t]*(?:[.!…]|\\n|$)))`;
+const HERE_WORDS = `(?:(?:here|speaking|checking in)${E}(?=[ \\t]*(?:[^\\p{L}\\p{N}\\s?]|\\n|$)|\\s+(?:and|again|now|today|with you|to (?:help|chat|talk|check|walk|go)|checking|ready)${E})|checking in${E}(?=\\s+(?:on|with|about|before|after|for)${E})|again${E}(?=[ \\t]*(?:[—–:!]|--|\\n|$))|out${E}(?=[ \\t]*(?:[.!…]|\\n|$)))`;
+/** A role title under (or after) a signed name: "Corin Halvorsen\nEntrepreneur-in-Residence". */
+const SIGNED_TITLE = `${EMPHASIS}(?:your |the )?(?:${EIR}|mentor|coach|advisor|adviser|program lead)(?:[ \\t]*(?:,|at|@)[^\\n]{0,60})?${EMPHASIS}[.!]?`;
 /** End of the line: a signature stands alone on it. */
 const LINE_END = '(?=[ \\t]*(?:\\n|$))';
 /** End of the text. */
 const TEXT_END = '(?=\\s*$)';
-const EMPHASIS = '(?:\\*\\*|__|\\*|_)?';
 /** A line that is a list item ("- Ruth", "2. Corin"). */
 const LIST_ITEM = /^\s*(?:[-*+•]|\d+[.)])\s/u;
 
@@ -455,16 +495,39 @@ const HERE_LEAD_WORDS = new Set([
 function opensClause(text: string, start: number, end: number): boolean {
   const clause = clauseAround(text, start, end);
   if (clause.question) return false;
+  const words = withoutRoleTitle(wordsOf(clause.prefix));
   let afterGreeting = false;
-  for (const word of wordsOf(clause.prefix)) {
+  let afterGreeted = false;
+  for (const word of words) {
     if (HERE_LEAD_WORDS.has(word.toLowerCase())) {
       afterGreeting = true;
+      afterGreeted = false;
+      continue;
+    }
+    // One word (the person greeted) after a greeting, or another after "and" ("Hey Maya and Devin").
+    if (afterGreeted && word.toLowerCase() === 'and') {
+      afterGreeting = true;
+      afterGreeted = false;
       continue;
     }
     if (!afterGreeting) return false;
-    afterGreeting = false; // one word (the person greeted) after a greeting
+    afterGreeting = false;
+    afterGreeted = true;
   }
   return true;
+}
+
+/** Role words that may stand right before a name it introduces ("your coach Corin", "mentor Corin"). */
+const ROLE_TITLE_WORDS = new Set(['coach', 'mentor', 'eir', 'advisor', 'adviser', 'guide']);
+/** The words before a name without a role title they end with ("Hi Maya, your mentor" → "Hi Maya"). */
+function withoutRoleTitle(words: readonly string[]): readonly string[] {
+  let n = words.length;
+  const last = (words[n - 1] ?? '').toLowerCase();
+  if (ROLE_TITLE_WORDS.has(last)) n -= 1;
+  else if (last === 'lead' && (words[n - 2] ?? '').toLowerCase() === 'program') n -= 2;
+  else return words;
+  if (/^(?:your|my|the)$/iu.test(words[n - 1] ?? '')) n -= 1;
+  return words.slice(0, n);
 }
 
 /** The line before the one starting at `index` that is not blank, or null. */
@@ -484,6 +547,16 @@ function opensSentence(text: string, index: number): boolean {
   return i === 0 || /[.!?…:\n]/u.test(text.charAt(i - 1));
 }
 const OPENER_SKIP = new Set([' ', '\t', '"', '“', '‘', "'", '(', '*', '_']);
+/** A conjunction or interjection that may open a sentence before its subject ("And I, Corin, …"). */
+const SENTENCE_LEAD = /(?:^|[^\p{L}])(?:and|but|so|yes|well|now|ok|okay)[ \t]*,?[ \t]+$/iu;
+/** Where the sentence holding `index` opens, skipping one leading conjunction or interjection. */
+function leadIndex(text: string, index: number): number {
+  const before = text.slice(Math.max(0, index - 12), index);
+  const lead = SENTENCE_LEAD.exec(before);
+  return lead === null
+    ? index
+    : index - before.length + lead.index + (lead[0].length - lead[0].trimStart().length);
+}
 
 interface NameSpec {
   /** Full display name, normalised ("Corin Halvorsen"). */
@@ -508,10 +581,6 @@ interface PatternContext {
   addressees: ReadonlySet<string>;
 }
 
-function compile(source: string): RegExp {
-  return new RegExp(source, 'giu');
-}
-
 /**
  * Patterns for one EIR name.
  *
@@ -525,6 +594,26 @@ function compile(source: string): RegExp {
  *   unmistakable self-introductions and sign-offs.
  */
 function namePatterns(spec: NameSpec, ctx: PatternContext): IdentityPattern[] {
+  // The sources depend on the name only (the accept checks carry the call's context), so each name's regexes
+  // are compiled once, in the order this function asks for them.
+  let compiled = NAME_REGEXES.get(spec.full);
+  if (compiled === undefined) {
+    if (NAME_REGEXES.size >= MAX_CACHED_NAMES) NAME_REGEXES.clear();
+    compiled = [];
+    NAME_REGEXES.set(spec.full, compiled);
+  }
+  const cache = compiled;
+  let next = 0;
+  const re = (source: () => string): RegExp => {
+    const index = next;
+    next += 1;
+    return (cache[index] ??= compile(source()));
+  };
+  const pn = (kind: IdentityViolationKind, rule: string, source: () => string): IdentityPattern => ({
+    kind,
+    rule,
+    pattern: re(() => `${S}(?:${source()})${E}`),
+  });
   const { exempt, spoken } = ctx;
   const own = (m: RegExpExecArray): boolean => !exempt(m.index, m[0].length);
   const claim = (_text: string, m: RegExpExecArray): boolean => own(m);
@@ -535,28 +624,36 @@ function namePatterns(spec: NameSpec, ctx: PatternContext): IdentityPattern[] {
     const body = [spec.first, ...spec.rest].map(escapeRegExp).join('\\s+');
     out.push(
       {
-        ...p('claims_eir', 'named_eir_here', `${body}(?:[ \\t]*,)?\\s+${HERE_WORDS}`),
+        ...pn('claims_eir', 'named_eir_here', () => `${body}(?:[ \\t]*,)?\\s+${HERE_WORDS}`),
         accept: (text, m) => own(m) && opensClause(text, m.index, m.index + m[0].length),
       },
       {
-        ...p(
+        ...pn(
           'claims_eir',
           'named_eir_self',
-          `(?:${STRICT_SELF_LEADS}|${SELF_LEADS}|${ROLE_LEADS})${LEAD_GAP}${body}${NOT_POSSESSIVE}`,
+          () => `(?:${STRICT_SELF_LEADS}|${SELF_LEADS}|${ROLE_LEADS})${LEAD_GAP}${body}${NOT_POSSESSIVE}`,
         ),
         accept: claim,
       },
       {
-        ...p('claims_eir', 'named_eir_self', `${CLEFT_LEADS}\\s+${body}${NOT_POSSESSIVE}${NOT_RELATIVE}`),
+        ...pn(
+          'claims_eir',
+          'named_eir_self',
+          () => `${CLEFT_LEADS}\\s+${body}${NOT_POSSESSIVE}${NOT_RELATIVE}`,
+        ),
         accept: claim,
       },
       {
-        ...p('claims_eir', 'named_eir_present', `${body}${PRESENT_AFTER}`),
+        ...pn('claims_eir', 'named_eir_present', () => `${body}${PRESENT_AFTER}`),
         accept: (text, m) => own(m) && assertive(text, m.index, m.index + m[0].length),
       },
-      { ...p('endorsement', 'named_eir_approved', `${body}\\s+${ENDORSED}`), accept: claim },
-      { ...p('endorsement', 'named_eir_opinion', `${body}\\s+${OPINION_VERBS}`), accept: claim },
-      { ...p('endorsement', 'approved_by_named_eir', `${APPROVED_BY}\\s+${body}`), accept: claim },
+      { ...pn('endorsement', 'named_eir_approved', () => `${body}\\s+${ENDORSED}`), accept: claim },
+      { ...pn('endorsement', 'named_eir_opinion', () => `${body}\\s+${OPINION_VERBS}`), accept: claim },
+      { ...pn('endorsement', 'approved_by_named_eir', () => `${APPROVED_BY}\\s+${body}`), accept: claim },
+      {
+        ...pn('endorsement', 'named_eir_approved', () => `${HAS_THE}\\s+${body}${APPROVAL_NOUN}`),
+        accept: claim,
+      },
     );
   }
 
@@ -622,7 +719,7 @@ function namePatterns(spec: NameSpec, ctx: PatternContext): IdentityPattern[] {
   const signature = (source: string, accept: NonNullable<IdentityPattern['accept']>): IdentityPattern => ({
     kind: 'claims_eir',
     rule: 'named_eir_signature',
-    pattern: compile(source),
+    pattern: re(() => source),
     accept,
   });
 
@@ -630,19 +727,35 @@ function namePatterns(spec: NameSpec, ctx: PatternContext): IdentityPattern[] {
     {
       kind: 'claims_eir',
       rule: 'named_eir_self',
-      pattern: compile(`${S}${STRICT_SELF_LEADS}${LEAD_GAP}${name}`),
+      pattern: re(() => `${S}${STRICT_SELF_LEADS}${LEAD_GAP}${name}`),
       accept: selfIntro(true),
     },
     {
       kind: 'claims_eir',
       rule: 'named_eir_self',
-      pattern: compile(`${S}${ROLE_LEADS}${LEAD_GAP}${name}`),
+      pattern: re(() => `${S}${ROLE_LEADS}${LEAD_GAP}${name}`),
       accept: selfIntro(false),
     },
-    // Signatures. A dash opens the line: "— Corin", "-- Corin H.".
-    signature(`(?:^|\\n)[ \\t]*(?:[—–]+|-{2,})[ \\t]*${signed}${LINE_END}`, (_text, m) => named(m)),
-    // The name alone on the last line, bare, emphasised or after a hyphen: "Good luck.\nCorin", "**Corin**".
-    signature(`(?:^|\\n)[ \\t]*(?:-[ \\t]*)?${signed}${TEXT_END}`, closesMessage),
+    // "I, Corin, would run the pilot first.": "I" opens its sentence (not "Phase I, Corin, …").
+    {
+      kind: 'claims_eir',
+      rule: 'named_eir_self',
+      pattern: re(() => `${S}I[ \\t]*,[ \\t]*${name}[ \\t]*[,—–]`),
+      accept: (text, m) => selfIntro(false)(text, m) && opensSentence(text, leadIndex(text, m.index)),
+    },
+    // Signatures. A dash (or a tilde) opens the line: "— Corin", "-- Corin H.", "~ Corin".
+    signature(`(?:^|\\n)[ \\t]*(?:[—–~]+|-{2,})[ \\t]*${signed}${LINE_END}`, (_text, m) => named(m)),
+    // A closing "from" the name: "Best wishes from Corin", "Greetings from Corin!".
+    signature(
+      `${S}(?:${SIGN_OFF}|greetings|hugs)\\s+from\\s+${name}[ \\t]*[.!]?${LINE_END}`,
+      (text, m) => named(m) && opensSentence(text, m.index),
+    ),
+    // The name alone on the last line, bare, emphasised or after a hyphen ("Good luck.\nCorin", "**Corin**"),
+    // or above a role title ("Corin Halvorsen\nEntrepreneur-in-Residence").
+    signature(
+      `(?:^|\\n)[ \\t]*(?:-[ \\t]*)?${signed}(?:[ \\t]*\\n[ \\t]*${SIGNED_TITLE})?${TEXT_END}`,
+      closesMessage,
+    ),
     // A sign-off, then the name on the next line: "Best,\nCorin".
     signature(
       `${S}${SIGN_OFF}(?:[ \\t]*[,.!:]+)?[ \\t]*\\n[ \\t]*(?:[-—–]+[ \\t]*)?${signed}${LINE_END}`,
@@ -653,54 +766,65 @@ function namePatterns(spec: NameSpec, ctx: PatternContext): IdentityPattern[] {
       `${S}${SIGN_OFF}(?:[ \\t]*[,.!:]+)?[ \\t]+(?<dash>[-—–]+[ \\t]*)?${signed}${LINE_END}`,
       signsOff,
     ),
-    // The name ends the text after a sentence: "Thanks. — Corin." (not after a quote, a number or "?").
-    signature(`(?<=\\p{L}[.!…])[ \\t]+(?:[-—–]+[ \\t]*)?${signed}${TEXT_END}`, (_text, m) => named(m)),
+    // The name ends the text after a sentence, maybe with a title: "Thanks. — Corin.", "Run it. Corin
+    // Halvorsen, Entrepreneur-in-Residence." (a call's flattened lines; not after a quote, a number or "?").
+    signature(
+      `(?<=\\p{L}[.!…])[ \\t]+(?:[-—–]+[ \\t]*)?${signed}(?:[ \\t]*[,.]?[ \\t]+${SIGNED_TITLE})?${TEXT_END}`,
+      (_text, m) => named(m),
+    ),
   );
   if (common) return out;
   out.push(
     {
       kind: 'claims_eir',
       rule: 'named_eir_self',
-      pattern: compile(`${S}${SELF_LEADS}${LEAD_GAP}${name}`),
+      pattern: re(() => `${S}${SELF_LEADS}${LEAD_GAP}${name}`),
       accept: selfIntro(false),
     },
     {
       kind: 'claims_eir',
       rule: 'named_eir_self',
-      pattern: compile(
-        `${S}${CLEFT_LEADS}\\s+${name}${spec.rest.length > 0 ? `(?!\\s+${restRe})` : ''}${NOT_RELATIVE}`,
+      pattern: re(
+        () =>
+          `${S}${CLEFT_LEADS}\\s+${name}${spec.rest.length > 0 ? `(?!\\s+${restRe})` : ''}${NOT_RELATIVE}`,
       ),
       accept: selfIntro(false),
     },
     {
       kind: 'claims_eir',
       rule: 'named_eir_here',
-      pattern: compile(`${S}${name}(?:[ \\t]*,)?\\s+${HERE_WORDS}`),
+      pattern: re(() => `${S}${name}(?:[ \\t]*,)?\\s+${HERE_WORDS}`),
       accept: (text, m) => named(m) && opensClause(text, m.index, m.index + m[0].length),
     },
     {
       kind: 'claims_eir',
       rule: 'named_eir_present',
-      pattern: compile(`${S}${subject}${PRESENT_AFTER}${E}`),
+      pattern: re(() => `${S}${subject}${PRESENT_AFTER}${E}`),
       accept: asserted,
     },
     {
       kind: 'endorsement',
       rule: 'named_eir_approved',
-      pattern: compile(`${S}${subject}\\s+${ENDORSED}${E}`),
+      pattern: re(() => `${S}${subject}\\s+${ENDORSED}${E}`),
       accept: asserted,
     },
     {
       kind: 'endorsement',
       rule: 'named_eir_opinion',
-      pattern: compile(`${S}${subject}\\s+${OPINION_VERBS}${E}`),
+      pattern: re(() => `${S}${subject}\\s+${OPINION_VERBS}${E}`),
       accept: asserted,
     },
     {
       kind: 'endorsement',
       rule: 'approved_by_named_eir',
-      pattern: compile(`${S}${APPROVED_BY}\\s+${name}`),
+      pattern: re(() => `${S}${APPROVED_BY}\\s+${name}`),
       accept: assertedVerbFirst,
+    },
+    {
+      kind: 'endorsement',
+      rule: 'named_eir_approved',
+      pattern: re(() => `${S}${HAS_THE}\\s+${subject}${APPROVAL_NOUN}${E}`),
+      accept: asserted,
     },
   );
   return out;
@@ -768,6 +892,8 @@ function resolveNames(options: IdentityCheckOptions): ResolvedNames {
   return { eirFirstName: personaEir === null ? null : firstNameOf(normalizeText(personaEir)), specs };
 }
 
+const PERSONA_REGEXES = new Map<string, RegExp>();
+
 /** Ranges of `text` where the persona's own name appears ("Corin's vEIR"), apostrophe-insensitive. */
 function personaRanges(text: string, personaName: string): { start: number; end: number }[] {
   const name = normalizeText(personaName);
@@ -776,7 +902,12 @@ function personaRanges(text: string, personaName: string): { start: number; end:
     .split(' ')
     .map((word) => escapeRegExp(word).replace(/'/g, APOS))
     .join('\\s+');
-  const re = new RegExp(`${S}${body}${E}`, 'giu');
+  let re = PERSONA_REGEXES.get(body);
+  if (re === undefined) {
+    if (PERSONA_REGEXES.size >= MAX_CACHED_NAMES) PERSONA_REGEXES.clear();
+    re = new RegExp(`${S}${body}${E}`, 'giu');
+    PERSONA_REGEXES.set(body, re);
+  }
   return [...text.matchAll(re)].map((m) => ({ start: m.index, end: m.index + m[0].length }));
 }
 
@@ -807,6 +938,8 @@ export function rewriteIdentity(
   text: string,
   options: IdentityCheckOptions & { checkHumanClaims?: boolean },
 ): IdentityRewrite {
+  // Every rule needs a word; a run of punctuation (a streamed unit such as ". ") holds no claim.
+  if (!/\p{L}/u.test(text)) return { text, findings: [] };
   const names = resolveNames(options);
   let current = text;
   let persona = personaRanges(current, options.personaName);
@@ -821,7 +954,13 @@ export function rewriteIdentity(
         .filter((n) => n !== ''),
     ),
   };
-  const patterns = [...BASE_PATTERNS, ...names.specs.flatMap((spec) => namePatterns(spec, ctx))].filter(
+  // Every rule of a name contains its first name under the same flags: a name the text never mentions (and
+  // that no replacement sentence will add) has no rule to run.
+  const replacementName = names.eirFirstName?.toLowerCase() ?? null;
+  const mentioned = names.specs.filter(
+    (spec) => spec.first.toLowerCase() === replacementName || namePresent(spec, text),
+  );
+  const patterns = [...BASE_PATTERNS, ...mentioned.flatMap((spec) => namePatterns(spec, ctx))].filter(
     (pat) => options.checkHumanClaims !== false || pat.kind !== 'claims_human',
   );
   const eirFirstNames = new Set(names.specs.map((s) => s.first.toLowerCase()));
@@ -904,9 +1043,11 @@ export function rewriteIdentity(
   }
 
   // Collapse repeated replacement sentences.
-  for (const kind of ['endorsement', 'claims_human'] as const) {
-    const sentence = escapeRegExp(replacementFor(kind));
-    current = current.replace(new RegExp(`(${sentence})(?:\\s*${sentence})+`, 'g'), '$1');
+  if (findings.length > 0) {
+    for (const kind of ['endorsement', 'claims_human'] as const) {
+      const sentence = escapeRegExp(replacementFor(kind));
+      current = current.replace(new RegExp(`(${sentence})(?:\\s*${sentence})+`, 'g'), '$1');
+    }
   }
   return { text: current, findings };
 }

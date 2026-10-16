@@ -10,7 +10,7 @@ import { fnv1a } from '../gateway/hash-embedding.js';
 import { truncate } from '../prompts/escape.js';
 import { COMMON_WORDS } from '../risk/common-words.js';
 import { textsContainOtherVenture } from '../validators/coach-response.js';
-import { rewriteIdentity } from '../validators/identity.js';
+import { IDENTITY_MARGIN_CHARS, rewriteIdentity } from '../validators/identity.js';
 import { sanitizePlainText } from '../validators/markdown.js';
 import { checkDeidentified, type DeidentifyReason, type LessonDeidentifyContext } from './deidentify.js';
 import {
@@ -23,7 +23,6 @@ import {
 import { isNearDuplicate, repeatsNote, textKey } from './similarity.js';
 
 /** Text kept past a field's limit for the identity check, so a sentence that crosses the limit is judged whole. */
-const IDENTITY_MARGIN_CHARS = 400;
 
 /** Pinned keys for the two notebook fields that have no entry id. */
 export const NOTEBOOK_SUMMARY_PIN = 'summary';

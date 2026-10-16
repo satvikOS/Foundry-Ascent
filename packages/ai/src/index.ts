@@ -180,6 +180,7 @@ export {
   type SanitizeReport,
 } from './validators/markdown.js';
 export {
+  IDENTITY_MARGIN_CHARS,
   identityReplacement,
   rewriteIdentity,
   type IdentityCheckOptions,
