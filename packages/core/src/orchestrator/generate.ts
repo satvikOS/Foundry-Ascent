@@ -241,7 +241,7 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
   const voice = a.channel === 'voice';
   const gate = new SentenceGate({
     ...a.gate,
-    ...(voice ? { maxUnitChars: SPOKEN_UNIT_CHARS, spokenWordBudget: SPOKEN_MAX_WORDS } : {}),
+    ...(voice ? { maxUnitChars: SPOKEN_UNIT_CHARS, spokenWordBudget: SPOKEN_MAX_WORDS, spoken: true } : {}),
   });
   const speech =
     voice && a.speechKey

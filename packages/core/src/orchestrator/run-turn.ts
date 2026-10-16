@@ -718,6 +718,8 @@ export function createOrchestrator(
     readonly risk: RiskClassification;
     readonly others: OtherVentures;
     readonly eirNames: readonly string[];
+    /** The founder and their team: names the reply may address ("Thanks, Ruth."). */
+    readonly addressees: readonly string[];
     /** The retrieval query (founder text, the previous question for short replies, the goal). */
     readonly query: string;
     /** Started while the turn was admitted. */
@@ -729,7 +731,7 @@ export function createOrchestrator(
   }
 
   async function accepted(a: Accepted): Promise<RunTurnOutcome> {
-    const { ctx, turn, pre, input, risk, others, eirNames, emit, signal } = a;
+    const { ctx, turn, pre, input, risk, others, eirNames, addressees, emit, signal } = a;
     const label = riskLabel(risk);
     const ventureId = pre.session.ventureId;
     // The detail is a participant-safe label: which names the cross-venture guard knows is never revealed.
@@ -869,6 +871,7 @@ export function createOrchestrator(
               personaName: active.persona.name,
               eirNames,
               personaEirName: coach.personaEirName,
+              addressees,
               otherVentureNames: others.names,
               otherVentureCanaries: others.canaries,
               otherVentureMemberNames: others.memberNames,
@@ -904,6 +907,7 @@ export function createOrchestrator(
       ...(pre.mode === null ? { allowedModes: coach.allowedModes } : { expectedMode: pre.mode }),
       eirNames,
       personaEirName: coach.personaEirName,
+      addressees,
       channel: pre.channel,
     });
     validated.results.notes.push(...generation.notes);
@@ -1161,6 +1165,7 @@ export function createOrchestrator(
       let risk: RiskClassification;
       let others: OtherVentures;
       let eirNames: readonly string[];
+      let addressees: readonly string[];
       let query: string;
       let embedding: Promise<number[] | null> | null = null;
       let speechKey: Promise<SessionSigningKey> | null = null;
@@ -1180,6 +1185,7 @@ export function createOrchestrator(
         }
         others = await directory.others(ctx.tenantId, pre.session.ventureId);
         eirNames = (await directory.get(ctx.tenantId)).eirNames;
+        addressees = await directory.addressees(ctx.tenantId, pre.session.ventureId);
         risk = classifyRisk(input.text, {
           otherVentureNames: others.names,
           otherVentureMemberNames: others.memberNames,
@@ -1280,6 +1286,7 @@ export function createOrchestrator(
           risk,
           others,
           eirNames,
+          addressees,
           query,
           embedding,
           speechKey,

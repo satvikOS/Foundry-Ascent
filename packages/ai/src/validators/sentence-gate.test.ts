@@ -269,6 +269,61 @@ describe('SentenceGate', () => {
     expect(units.map((u) => u.text)).toHaveLength(3);
   });
 
+  it('checks each unit as heard on a call: a lower-case name or the name alone signs off there', () => {
+    for (const answer of [
+      'Start with the door counts. corin here, by the way. Then count seats.',
+      'Good luck with the pilot. Corin.',
+    ]) {
+      expect(run(gate(), [answer]).blocked, answer).toBeNull();
+      const spoken = run(gate({ spoken: true }), [answer]);
+      expect(spoken.blocked, answer).toBe('identity');
+      expect(spoken.units.map((u) => u.spoken).join(' ')).not.toMatch(/corin/i);
+    }
+  });
+
+  it('reads "Thanks, Ruth." as addressing a founder called Ruth, and as an EIR signing off otherwise', () => {
+    const answer = 'Good progress on the interviews this week. Thanks, Ruth.';
+    expect(run(gate(), [answer]).blocked).toBe('identity');
+    for (const spoken of [false, true]) {
+      const { units, blocked } = run(gate({ addressees: ['Ruth Miller'], spoken }), [answer]);
+      expect(blocked).toBeNull();
+      expect(joined(units)).toBe(answer);
+    }
+  });
+
+  it('still stops a leak or withholds a joined construct after a long reply, with bounded rechecks', () => {
+    const prose = 'Count the seats at night and write the number down before you change anything. '.repeat(
+      40,
+    );
+    expect(prose.length).toBeGreaterThan(3_000);
+    const venture = run(gate(), [prose, 'Then BenchTally ran the same ', 'pilot last term.']);
+    expect(venture.blocked).toBe('cross_venture');
+    expect(joined(venture.units)).not.toMatch(/benchtally/i);
+    const canary = run(gate(), [prose, 'Another team logged ZX-CAN', 'ARY-4471 last week. Keep going.']);
+    expect(canary.blocked).toBe('cross_venture');
+    const g = gate();
+    const markdown = run(g, [prose, 'See [the sheet](\n\ndata:text/html,hi) for details. Then call them.']);
+    expect(markdown.blocked).toBeNull();
+    expect(removals(joined(markdown.units))).toBe(0);
+    expect(g.stats.withheld).toBe(2);
+  });
+
+  it('stays linear on a long stream of tiny units', () => {
+    run(gate(), ['Warm up. Corin here.']);
+    let slowestPush = 0;
+    const started = performance.now();
+    const g = gate();
+    const text = '. '.repeat(3_000);
+    for (let i = 0; i < text.length; i += 8) {
+      const t0 = performance.now();
+      g.push(text.slice(i, i + 8));
+      slowestPush = Math.max(slowestPush, performance.now() - t0);
+    }
+    g.end();
+    expect(slowestPush).toBeLessThan(50);
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
+
   it('counts removals and rewrites without keeping any text', () => {
     const g = gate({ evidenceKeys: new Set(['E1']) });
     run(g, ['Use [E4] here. <b>Bold</b> move. ', "I'm a real person. Next step."]);

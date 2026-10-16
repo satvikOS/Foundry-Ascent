@@ -76,6 +76,15 @@ export class DirectoryCache {
     this.#entries.delete(tenantId);
   }
 
+  /**
+   * Display names of the venture's own active members (the founder and their team): the people a reply may
+   * address by name ("Thanks, Ruth.") without it reading as an EIR's sign-off.
+   */
+  async addressees(tenantId: string, ventureId: string): Promise<readonly string[]> {
+    const dir = await this.get(tenantId);
+    return dir.ventures.find((v) => v.id === ventureId)?.memberNames ?? [];
+  }
+
   /** Names and canaries of every venture of the tenant except `ventureId`. */
   async others(tenantId: string, ventureId: string): Promise<OtherVentures> {
     const dir = await this.get(tenantId);

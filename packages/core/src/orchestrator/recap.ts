@@ -1,4 +1,5 @@
 import {
+  IDENTITY_MARGIN_CHARS,
   buildEvidenceBlock,
   containsOtherVenture,
   escapeData,
@@ -126,7 +127,8 @@ export function sanitizeRecap(
   },
 ): SanitizedRecap | null {
   const clean = (value: string, max: number): string => {
-    const plain = sanitizePlainText(value).text;
+    // Read no further than can be kept (plus a margin, so a claim straddling the cut is still seen whole).
+    const plain = truncate(sanitizePlainText(value).text, max + IDENTITY_MARGIN_CHARS);
     const rewritten = rewriteIdentity(plain, {
       personaName: options.personaName,
       eirNames: options.eirNames,

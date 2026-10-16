@@ -1,6 +1,6 @@
 import { normalizeForMatching } from '../risk/normalize.js';
 import { textsContainOtherVenture } from './coach-response.js';
-import { rewriteIdentity, type IdentityViolationKind } from './identity.js';
+import { rewriteIdentity, type IdentityCheckOptions, type IdentityViolationKind } from './identity.js';
 import { sanitizeMarkdown } from './markdown.js';
 import { clampWords, toSpeakable } from './speech.js';
 
@@ -40,6 +40,13 @@ export interface SentenceGateOptions {
   eirNames?: readonly string[];
   /** Display name of the EIR the persona is built from ("Corin Halvorsen"). */
   personaEirName?: string | null;
+  /** Display names of the founder and their team: "Thanks, Ruth." to one of them is not an EIR's sign-off. */
+  addressees?: readonly string[];
+  /**
+   * The reply is said on a call: each unit's spoken form is checked as speech too, where an EIR's name counts
+   * in any case and a unit that is only the name ("Corin.", "Best, Corin.") signs off.
+   */
+  spoken?: boolean;
   otherVentureNames: readonly string[];
   otherVentureCanaries: readonly string[];
   otherVentureMemberNames?: readonly string[];
@@ -116,6 +123,13 @@ const OPENING_CHARS = 20;
 const CITATION = / ?\[\s*(E\d+(?:\s*[,;]\s*E\d+)*)\s*\](?!\()/gi;
 const DEFAULT_MAX_UNIT_CHARS = 360;
 const MAX_HOLD_BACK = 200;
+/**
+ * How much already-checked text the cumulative checks read again: a guarded string (at most
+ * {@link MAX_HOLD_BACK} characters, spread out) or a Markdown construct formed across units starts within it.
+ * Bounding it keeps a long stream of tiny units linear instead of re-reading everything shown per unit.
+ */
+const CUMULATIVE_WINDOW_CHARS = 4 * MAX_HOLD_BACK;
+const MARKDOWN_WINDOW_CHARS = 2_048;
 
 /**
  * Characters a unit is held back for: twice the longest guarded string (spacing and invisible characters
@@ -226,6 +240,8 @@ export class SentenceGate {
   /** Set once joining a unit to the shown text would form Markdown the subset removes. */
   #withholding = false;
   #spokenWords = 0;
+  /** Length of the stable text already checked for other ventures as a whole. */
+  #leakCheckedTo = 0;
   #stats = { units: 0, withheld: 0, identityRewrites: 0, citationsRemoved: 0, markdownRemovals: 0 };
 
   constructor(options: SentenceGateOptions) {
@@ -322,13 +338,18 @@ export class SentenceGate {
       if (!this.#ended && stable.length < end + this.#holdBack) break;
       if (!checked) {
         checked = true;
-        if (this.#leaks([stable])) return this.#block('cross_venture', units);
+        // Only what is new since the last check, with a window before it for a string that straddles it.
+        const from = Math.max(0, this.#leakCheckedTo - CUMULATIVE_WINDOW_CHARS);
+        this.#leakCheckedTo = stable.length;
+        if (this.#leaks([stable.slice(from)])) return this.#block('cross_venture', units);
       }
       const unit = this.#process(this.#raw.slice(this.#cursor, end));
       this.#cursor = end;
       if (unit === 'identity') return this.#block('identity', units);
       if (unit === null) continue;
-      if (this.#leaks([this.#shown + unit.text])) return this.#block('cross_venture', units);
+      if (this.#leaks([this.#shown.slice(-CUMULATIVE_WINDOW_CHARS) + unit.text])) {
+        return this.#block('cross_venture', units);
+      }
       if (!this.#withholding && this.#formsRemovedMarkdown(unit.text)) this.#withholding = true;
       if (this.#withholding) {
         this.#stats.withheld += 1;
@@ -342,9 +363,13 @@ export class SentenceGate {
     return { units, blocked: null, fallback: null };
   }
 
-  /** Whether the shown text followed by `text` contains Markdown the subset removes (built across units). */
+  /**
+   * Whether the shown text followed by `text` contains Markdown the subset removes (built across units). Units
+   * never end inside a link, image or tag, so such a construct can only open in the recent shown text: the
+   * check reads a bounded tail of it. A construct the tail cuts in two can only withhold the preview.
+   */
   #formsRemovedMarkdown(text: string): boolean {
-    const joined = sanitizeMarkdown(this.#shown + text);
+    const joined = sanitizeMarkdown(this.#shown.slice(-MARKDOWN_WINDOW_CHARS) + text);
     return joined.htmlRemoved + joined.unsafeLinksRemoved + joined.imagesRemoved > 0;
   }
 
@@ -370,21 +395,37 @@ export class SentenceGate {
         return `${whole.startsWith(' ') ? ' ' : ''}[${[...new Set(kept)].join(', ')}]`;
       });
     }
-    const identity = rewriteIdentity(text, {
-      personaName: this.#options.personaName,
-      ...(this.#options.eirNames ? { eirNames: this.#options.eirNames } : {}),
-      ...(this.#options.personaEirName !== undefined ? { personaEirName: this.#options.personaEirName } : {}),
-    });
+    const identity = rewriteIdentity(text, this.#identity);
     if (identity.findings.some((f) => this.#blockOn.has(f.kind))) return 'identity';
     this.#stats.identityRewrites += identity.findings.length;
     text = identity.text.trim();
     if (text === '') return null;
-    return { text: `${lead}${text}`, spoken: this.#speak(text) };
+    const spoken = this.#speak(text);
+    if (spoken === null) return 'identity';
+    return { text: `${lead}${text}`, spoken };
   }
 
-  #speak(text: string): string {
+  get #identity(): IdentityCheckOptions {
+    const o = this.#options;
+    return {
+      personaName: o.personaName,
+      ...(o.eirNames ? { eirNames: o.eirNames } : {}),
+      ...(o.personaEirName !== undefined ? { personaEirName: o.personaEirName } : {}),
+      ...(o.addressees ? { addressees: o.addressees } : {}),
+    };
+  }
+
+  /** The unit's spoken form within the word budget; null when, heard on a call, it speaks as the EIR. */
+  #speak(text: string): string | null {
     const budget = this.#options.spokenWordBudget;
-    const speakable = toSpeakable(text);
+    let speakable = toSpeakable(text);
+    if (this.#options.spoken === true && speakable !== '') {
+      // Heard, not read: the spoken form is checked as speech before it is said.
+      const heard = rewriteIdentity(speakable, { ...this.#identity, spoken: true });
+      if (heard.findings.some((f) => this.#blockOn.has(f.kind))) return null;
+      this.#stats.identityRewrites += heard.findings.length;
+      speakable = heard.text.trim();
+    }
     if (budget === undefined || speakable === '') return speakable;
     const left = budget - this.#spokenWords;
     if (left <= 0) return '';
