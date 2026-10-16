@@ -30,11 +30,13 @@ function OpenViewer({ ventureId, target }: { ventureId: string; target: ViewerTa
   return (
     <Suspense
       fallback={
-        <div
-          role="status"
-          className="fixed inset-0 z-50 grid place-items-center bg-black/60 text-small text-white backdrop-blur-[2px]"
-        >
-          Opening…
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 backdrop-blur-[2px]">
+          <p
+            role="status"
+            className="rounded-full bg-popover px-3 py-1.5 text-small text-popover-foreground shadow-lg"
+          >
+            Opening…
+          </p>
         </div>
       }
     >
