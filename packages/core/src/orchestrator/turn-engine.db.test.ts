@@ -727,6 +727,33 @@ describe('spoken turns', () => {
     ]);
   });
 
+  it('a call’s turn reads fewer evidence items than a typed turn on the same question', async () => {
+    const text = 'What should we measure first in the library pilot, and how do we price it?';
+    const typed = await core0(h.ventures.quietquad.id, text, 'text');
+    const spoken = await core0(h.ventures.quietquad.id, text, 'voice');
+    const kinds = (t: TurnView) => t.evidence.map((e) => e.kind);
+    // Not vacuous: the typed turn uses more than a call may.
+    expect(typed.evidence.length).toBeGreaterThan(13);
+    expect(spoken.evidence.length).toBeLessThanOrEqual(13);
+    expect(kinds(spoken).filter((k) => k === 'memory').length).toBeLessThanOrEqual(6);
+    expect(kinds(spoken).filter((k) => k === 'resource').length).toBeLessThanOrEqual(1);
+    expect(kinds(spoken).filter((k) => k === 'pattern').length).toBeLessThanOrEqual(1);
+    // Keys stay dense.
+    expect(spoken.evidence.map((e) => e.key)).toEqual(spoken.evidence.map((_, i) => `E${String(i + 1)}`));
+
+    async function core0(ventureId: string, message: string, channel: 'text' | 'voice'): Promise<TurnView> {
+      const { core, orchestrator } = coreWith(new MockModelGateway({ streamDelayMs: 0 }));
+      const session = await core.sessions.create(maya, ventureId, { mode: 'coach' });
+      const { events, outcome } = await run(orchestrator, session.id, {
+        text: message,
+        mode: 'coach',
+        ...(channel === 'voice' ? { channel, callId: CALL_ID } : {}),
+      });
+      expect(outcome.status).toBe('completed');
+      return completed(events);
+    }
+  });
+
   it('a crisis on a call speaks the fixed support message, without call admission or a model call', async () => {
     const admitted: VoiceTurnAdmission[] = [];
     const gateway = new MockModelGateway({ streamDelayMs: 0 });

@@ -10,8 +10,8 @@ import {
   participantValidator,
 } from './blocked.js';
 import { assembleContext, estimateTokens } from './context-budget.js';
-import { buildEvidencePack, candidateVisibility, classificationsFor } from './evidence.js';
-import { privateRetrievalOwner } from './retrieval.js';
+import { buildEvidencePack, candidateVisibility, classificationsFor, nearDuplicate } from './evidence.js';
+import { privateRetrievalOwner, retrievalBudgets, VOICE_RETRIEVAL_CAPS } from './retrieval.js';
 import { spendCapExceeded } from './guards.js';
 import { buildRecapPrompt, sanitizeRecap, type RecapDraft } from './recap.js';
 import { secondsUntilUtcMidnight, shouldSampleForReview } from './sampling.js';
@@ -107,6 +107,82 @@ describe('evidence pack', () => {
     );
     expect(pack.items).toHaveLength(1);
     expect(pack.items[0]?.item.score).toBe(0);
+  });
+
+  it('leaves out an item that says what a higher-ranked one said, and gives its slot to the next', () => {
+    const said = (base: retrievalRepo.RetrievedItem, title: string, excerpt: string) => ({
+      ...base,
+      title,
+      excerpt,
+    });
+    // Production's venture memory: the same advisor meeting four times, worded a little differently.
+    const memory = [
+      said(
+        item('memory', V, 0.9),
+        'Advisor meeting',
+        'Book the advisor to settle classification and reimbursement.',
+      ),
+      said(
+        item('memory', V, 0.8),
+        'Advisor meeting',
+        'Book an advisor to settle the classification and reimbursement.',
+      ),
+      said(
+        item('memory', V, 0.7),
+        'Advisor meeting needed',
+        'Book the advisor to settle classification, reimbursement.',
+      ),
+      said(item('memory', V, 0.6), 'Pilot', 'The north campus pilot starts in 2 weeks.'),
+      said(item('memory', V, 0.5), 'Pilot', 'The north campus pilot starts in 4 weeks.'),
+      said(item('memory', V, 0.4), 'Money goal', 'The founder wants the startup to make them rich fast.'),
+    ];
+    const pack = buildEvidencePack({ memory, chunks: [], shared: [], resources: [], patterns: [] }, V, {
+      limits: { memory: 3 },
+    });
+    expect(pack.items.map((k) => [k.item.key, k.item.title])).toEqual([
+      ['E1', 'Advisor meeting'],
+      // Different numbers are different facts.
+      ['E2', 'Pilot'],
+      ['E3', 'Pilot'],
+    ]);
+    expect(pack.repeated).toBe(2);
+    expect(pack.counts.memory).toBe(3);
+    // Without a limit the next distinct item follows.
+    expect(
+      buildEvidencePack({ memory, chunks: [], shared: [], resources: [], patterns: [] }, V).items.map(
+        (k) => k.item.title,
+      ),
+    ).toEqual(['Advisor meeting', 'Pilot', 'Pilot', 'Money goal']);
+  });
+
+  it('treats items as the same only when kind, status, privacy, numbers and nearly all words agree', () => {
+    const base = { ...item('memory', V), title: 'Pilot', excerpt: 'The north campus pilot starts soon.' };
+    expect(nearDuplicate(base, { ...base, refId: 'x' })).toBe(true);
+    expect(nearDuplicate(base, { ...base, status: 'disputed' })).toBe(false);
+    expect(nearDuplicate(base, { ...base, visibility: 'team' })).toBe(false);
+    expect(nearDuplicate(base, { ...base, kind: 'chunk' })).toBe(false);
+    expect(nearDuplicate(base, { ...base, excerpt: 'The south campus pilot ends soon.' })).toBe(false);
+    expect(nearDuplicate(base, { ...base, excerpt: 'The north campus pilot starts in 2 weeks.' })).toBe(
+      false,
+    );
+    // An item's words inside a much longer one do not make them the same.
+    expect(
+      nearDuplicate(base, {
+        ...base,
+        excerpt: 'The north campus pilot starts soon, with sensors, staff interviews, pricing and a survey.',
+      }),
+    ).toBe(false);
+  });
+
+  it('gives a call’s turn fewer items than a typed turn, and never more than configured', () => {
+    const configured = { memory: 8, chunks: 6, doctrine: 4, resources: 4, patterns: 2 };
+    expect(retrievalBudgets(configured, 'text')).toBe(configured);
+    expect(retrievalBudgets(configured, 'voice')).toEqual(VOICE_RETRIEVAL_CAPS);
+    const total = (b: typeof configured) => b.memory + b.chunks + b.doctrine + b.resources + b.patterns;
+    expect(total(retrievalBudgets(configured, 'voice'))).toBe(13);
+    expect(total(configured)).toBe(24);
+    const none = { memory: 0, chunks: 0, doctrine: 0, resources: 0, patterns: 0 };
+    expect(retrievalBudgets(none, 'voice')).toEqual(none);
   });
 
   it('drops founder_private memory unless the pack allows the owner’s private items (regression)', () => {

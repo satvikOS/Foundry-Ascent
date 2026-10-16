@@ -22,12 +22,19 @@ export interface EvidencePack {
   readonly items: readonly KeyedEvidence[];
   /** Candidates removed by the isolation guard (must be 0; anything else is audited as retrieval.denied). */
   readonly dropped: number;
+  /** Items left out because a higher-ranked item says the same thing ({@link nearDuplicate}). */
+  readonly repeated: number;
   /** True when a founder_private item is in the pack: memory candidates then default to founder_private. */
   readonly usesPrivateMemory: boolean;
   readonly counts: { memory: number; chunks: number; shared: number; resources: number; patterns: number };
 }
 
 export interface EvidencePackOptions {
+  /**
+   * Most items each store contributes, counted after the isolation filter and the duplicate checks (the
+   * stores may return more, so a repeated item's slot goes to the next distinct one). Default: no limit.
+   */
+  readonly limits?: Readonly<Partial<Record<keyof EvidencePack['counts'], number>>>;
   /**
    * Keep founder_private memory items. Only for retrieval that was restricted to the principal's own
    * private items in a session readable by that principal alone; default false: any founder_private item
@@ -36,12 +43,54 @@ export interface EvidencePackOptions {
   readonly allowPrivateMemory?: boolean;
 }
 
+/** Words that carry no content for comparing two items. */
+const STOPWORDS: ReadonlySet<string> = new Set(
+  (
+    'a an and are as at be been but by for from has have he her his i if in into is it its of on or our she ' +
+    'so that the their them they this to was we were will with you your not no do does did can could should ' +
+    'would may might about after before than then there these those which who what when where how'
+  ).split(' '),
+);
+
+/** An item's content words (lower case, letters and digits) and the numbers among them. */
+function wordsOf(item: retrievalRepo.RetrievedItem): { words: Set<string>; numbers: string } {
+  const words = new Set(
+    `${item.title} ${item.excerpt}`
+      .toLowerCase()
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((w) => w !== '' && !STOPWORDS.has(w)),
+  );
+  const numbers = [...words]
+    .filter((w) => /\d/.test(w))
+    .sort()
+    .join(' ');
+  return { words, numbers };
+}
+
+/**
+ * Whether two items say the same thing: the same kind, status and privacy, the same numbers, and nearly the
+ * same content words (at least 70 % of the smaller item's words, and 60 % of both together). Production's
+ * venture memory held the same advisor meeting four times and the same open question four times; each copy
+ * took an evidence slot of every turn and fed the same advice back.
+ */
+export function nearDuplicate(a: retrievalRepo.RetrievedItem, b: retrievalRepo.RetrievedItem): boolean {
+  if (a.kind !== b.kind || a.status !== b.status || a.visibility !== b.visibility) return false;
+  const x = wordsOf(a);
+  const y = wordsOf(b);
+  if (x.numbers !== y.numbers || x.words.size === 0 || y.words.size === 0) return false;
+  let shared = 0;
+  for (const w of x.words) if (y.words.has(w)) shared += 1;
+  const union = x.words.size + y.words.size - shared;
+  return shared / Math.min(x.words.size, y.words.size) >= 0.7 && shared / union >= 0.6;
+}
+
 /**
  * Defence-in-depth isolation filter and stable keys. Venture-scoped stores may only return rows of
  * `ventureId` (none at all when it is null); shared stores only rows without a venture; founder_private memory only with
- * `allowPrivateMemory`. Duplicates (same kind + ref) are dropped. Keys are assigned E1…En in store order
- * (memory, venture documents, doctrine/program corpus, resources, patterns), each store already sorted by
- * hybrid score.
+ * `allowPrivateMemory`. Duplicates (same kind + ref) are dropped, and so is an item that says the same thing as
+ * a higher-ranked one ({@link nearDuplicate}): it would only repeat it in the prompt. Keys are assigned E1…En in
+ * store order (memory, venture documents, doctrine/program corpus, resources, patterns), each store already
+ * sorted by hybrid score.
  */
 export function buildEvidencePack(
   groups: RetrievedGroups,
@@ -50,7 +99,9 @@ export function buildEvidencePack(
 ): EvidencePack {
   const items: KeyedEvidence[] = [];
   const seen = new Set<string>();
+  const kept: retrievalRepo.RetrievedItem[] = [];
   let dropped = 0;
+  let repeated = 0;
   const counts = { memory: 0, chunks: 0, shared: 0, resources: 0, patterns: 0 };
   const add = (
     store: keyof typeof counts,
@@ -67,9 +118,15 @@ export function buildEvidencePack(
         dropped += 1;
         continue;
       }
+      if (counts[store] >= (options.limits?.[store] ?? Number.POSITIVE_INFINITY)) continue;
       const id = `${r.kind}:${r.refId}`;
       if (seen.has(id)) continue;
       seen.add(id);
+      if (kept.some((k) => nearDuplicate(k, r))) {
+        repeated += 1;
+        continue;
+      }
+      kept.push(r);
       counts[store] += 1;
       items.push({
         item: {
@@ -97,7 +154,7 @@ export function buildEvidencePack(
   add('shared', groups.shared, false);
   add('resources', groups.resources, false);
   add('patterns', groups.patterns, false);
-  return { items, dropped, counts, usesPrivateMemory: items.some((k) => k.founderPrivate) };
+  return { items, dropped, repeated, counts, usesPrivateMemory: items.some((k) => k.founderPrivate) };
 }
 
 /**
