@@ -14,14 +14,15 @@ import {
 
 /*
  * The Knowledge page: the venture's specific pool. Runs as QuietQuad's founder against the seeded data
- * (QuietQuad's notebook from its seeded conversation with Corin's vEIR). Every test leaves the notebook
- * and memory as it found them, so reruns against one database behave the same.
+ * (QuietQuad's notebook from its seeded conversation with Corin's vEIR). Every test puts the notebook
+ * back and deletes the memory it adds, so reruns against one database behave the same.
  */
 
 test.use({ storageState: FOUNDER_STATE });
 
 const WRITE_HEADERS = { 'x-requested-with': 'foundry-ascent', 'content-type': 'application/json' };
 const EIR_NAME = 'Corin Halvorsen';
+const ADVISOR_NAME = 'Graham Fenwick-Tate';
 
 interface Notebook {
   version: number;
@@ -46,6 +47,17 @@ async function editNotebook(
     data: { expectedVersion: version, edit },
   });
   expect(response.status(), 'PATCH /ventures/:id/notebook').toBe(200);
+}
+
+/** Delete memory items a test added (the founder may delete any item of their venture). */
+async function deleteMemory(request: APIRequestContext, ids: readonly string[]): Promise<void> {
+  for (const id of ids) {
+    const response = await request.patch(`/api/v1/memory/${id}`, {
+      headers: WRITE_HEADERS,
+      data: { action: 'delete' },
+    });
+    expect([204, 404], `PATCH /memory/${id} delete`).toContain(response.status());
+  }
 }
 
 async function openKnowledge(page: Page): Promise<string> {
@@ -127,36 +139,90 @@ test.describe('memory', () => {
     const eir = await browser.newContext({ storageState: { cookies: [], origins: [] } });
     const eirPage = await eir.newPage();
     await signIn(eirPage, eirCode);
-    const titles = [`Libraries count doors hourly ${token}`, `Exam weeks double demand ${token}`];
+    const byEir = `Libraries count doors hourly ${token}`;
+    const titles = [byEir, `Exam weeks double demand ${token}`];
+    const added: string[] = [];
     for (const title of titles) {
       const created = await eirPage.request.post(`/api/v1/ventures/${ventureId}/memory`, {
         headers: WRITE_HEADERS,
         data: { type: 'evidence', title, content: `Proposed by the EIR for review (${token}).` },
       });
       expect(created.status(), 'POST /ventures/:id/memory as the EIR').toBe(201);
-      expect(((await created.json()) as { status: string }).status).toBe('proposed');
+      const body = (await created.json()) as { id: string; status: string };
+      expect(body.status).toBe('proposed');
+      added.push(body.id);
     }
     await eir.close();
 
-    await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?view=proposed`);
-    const queue = page.getByRole('list', { name: 'Suggestions to review' });
-    for (const title of titles) {
-      await page.getByRole('checkbox', { name: title }).check();
-    }
-    await expect(page.getByRole('toolbar', { name: 'Review suggestions' })).toContainText(
-      /2 of \d+ suggestions selected/,
-    );
-    await page.getByRole('button', { name: 'Approve 2' }).click();
-    for (const title of titles) {
-      await expect(queue.getByRole('listitem').filter({ hasText: title })).toHaveCount(0);
-    }
+    try {
+      await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?view=proposed`);
+      const queue = page.getByRole('list', { name: 'Suggestions to review' });
+      // The EIR's own proposals name the person; only the vEIR's are "Suggested by".
+      await expect(queue.getByRole('listitem').filter({ hasText: byEir })).toContainText(
+        `Added by ${EIR_NAME}`,
+      );
+      for (const title of titles) {
+        await page.getByRole('checkbox', { name: title }).check();
+      }
+      await expect(page.getByRole('toolbar', { name: 'Review suggestions' })).toContainText(
+        /2 of \d+ suggestions selected/,
+      );
+      await page.getByRole('button', { name: 'Approve 2' }).click();
+      for (const title of titles) {
+        await expect(queue.getByRole('listitem').filter({ hasText: title })).toHaveCount(0);
+      }
 
-    // Both are now kept memory.
-    await page.getByRole('tab', { name: 'Memory' }).click();
-    await page.getByRole('searchbox', { name: 'Search' }).fill(token);
-    const kept = page.getByRole('list', { name: 'Memory' }).getByRole('button', { name: new RegExp(token) });
-    await expect(kept).toHaveCount(2);
-    for (const item of await kept.all()) await expect(item).toContainText('Confirmed');
+      // Both are now kept memory.
+      await page.getByRole('tab', { name: 'Memory' }).click();
+      await page.getByRole('searchbox', { name: 'Search' }).fill(token);
+      const kept = page
+        .getByRole('list', { name: 'Memory' })
+        .getByRole('button', { name: new RegExp(token) });
+      await expect(kept).toHaveCount(2);
+      for (const item of await kept.all()) await expect(item).toContainText('Confirmed');
+    } finally {
+      await deleteMemory(page.request, added);
+    }
+  });
+
+  test('a replaced item keeps its detail and history', async ({ page }) => {
+    const token = runToken();
+    const ventureId = await openVenture(page);
+    const created = await page.request.post(`/api/v1/ventures/${ventureId}/memory`, {
+      headers: WRITE_HEADERS,
+      data: { type: 'fact', title: `Seats counted at nine ${token}`, content: `Counted at 9:00 (${token}).` },
+    });
+    expect(created.status(), 'POST /ventures/:id/memory').toBe(201);
+    const original = (await created.json()) as { id: string };
+    const corrected = await page.request.patch(`/api/v1/memory/${original.id}`, {
+      headers: WRITE_HEADERS,
+      data: { action: 'correct', patch: { title: `Seats counted hourly ${token}` } },
+    });
+    expect(corrected.status(), 'PATCH /memory/:id correct').toBe(200);
+    const replacement = (await corrected.json()) as { id: string };
+
+    try {
+      // The replaced version is listed under Superseded and opens with its detail.
+      await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?status=superseded`);
+      await page
+        .getByRole('list', { name: 'Memory' })
+        .getByRole('button', { name: new RegExp(`Seats counted at nine ${token}`) })
+        .click();
+      const panel = page.getByRole('complementary', { name: 'Memory inspector' });
+      await expect(panel.getByRole('heading', { name: `Seats counted at nine ${token}` })).toBeVisible();
+      await expect(panel).not.toContainText('no longer in memory');
+      await expect(panel.getByRole('region', { name: 'History' })).toBeVisible();
+
+      // The new version links to the one it replaced.
+      await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?m=${replacement.id}`);
+      await expect(panel.getByRole('heading', { name: `Seats counted hourly ${token}` })).toBeVisible();
+      await panel.getByRole('link', { name: 'earlier version' }).click();
+      await expect(page).toHaveURL(new RegExp(`m=${original.id}`));
+      await expect(panel.getByRole('heading', { name: `Seats counted at nine ${token}` })).toBeVisible();
+      await expect(panel).not.toContainText('no longer in memory');
+    } finally {
+      await deleteMemory(page.request, [replacement.id, original.id]);
+    }
   });
 
   test('type chips filter the memory list', async ({ page }) => {
@@ -177,6 +243,52 @@ test.describe('memory', () => {
     await chips.getByRole('button', { name: /^Decision \d+$/ }).click();
     await expect(page).toHaveURL(new RegExp(`/${TENANT}/app/v/${ventureId}/knowledge$`));
     await expect(list.getByRole('button', { name: /Keep the student app free/ })).toBeVisible();
+  });
+});
+
+test.describe('human help', () => {
+  test('people who only read the venture get a calm page and no refused requests', async ({
+    page,
+    browser,
+  }) => {
+    const ventureId = await openVenture(page);
+    const owner = await browser.newContext({ storageState: OWNER_STATE });
+    const codes = {
+      eir: await issueAccessCodeViaApi(owner.request, EIR_NAME),
+      advisor: await issueAccessCodeViaApi(owner.request, ADVISOR_NAME),
+    };
+    await owner.close();
+
+    for (const role of ['eir', 'advisor'] as const) {
+      const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+      const viewer = await context.newPage();
+      const refused: string[] = [];
+      viewer.on('response', (response) => {
+        if (response.url().includes('/escalations') && response.status() === 403)
+          refused.push(response.url());
+      });
+      await signIn(viewer, codes[role]);
+      if (role === 'eir') {
+        await viewer.goto(`/${TENANT}/app/v/${ventureId}/help`);
+        await expect(
+          viewer.getByRole('heading', { level: 2, name: 'Requests for you arrive in your inbox' }),
+        ).toBeVisible();
+        await expect(viewer.getByRole('link', { name: 'Open inbox' })).toBeVisible();
+      } else {
+        // The advisor lands in their own venture (SoleSignal).
+        await viewer.goto(`/${TENANT}/app`);
+        await viewer.waitForURL(/\/app\/v\/[0-9a-f-]{36}/);
+        const advisorVenture = /\/app\/v\/([0-9a-f-]{36})/.exec(viewer.url())?.[1] ?? '';
+        await viewer.goto(`/${TENANT}/app/v/${advisorVenture}/help`);
+        await expect(
+          viewer.getByRole('heading', { level: 2, name: 'Only the venture team sees requests' }),
+        ).toBeVisible();
+      }
+      await expect(viewer.getByRole('button', { name: 'Request human support' })).toHaveCount(0);
+      await viewer.waitForLoadState('networkidle');
+      expect(refused, `${role}: no request the API refuses`).toEqual([]);
+      await context.close();
+    }
   });
 });
 
