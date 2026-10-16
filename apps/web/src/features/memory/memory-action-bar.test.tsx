@@ -70,7 +70,7 @@ describe('MemoryActionBar', () => {
     await waitFor(() => {
       expect(success).toHaveBeenCalled();
     });
-    const message = String(success.mock.calls[0]?.[0]);
+    const message = success.mock.calls[0]?.[0];
     expect(message).not.toMatch(/Nothing changed|already handled/);
     expect(message).toBe('Dispute resolved: kept as venture memory');
   });
@@ -78,7 +78,9 @@ describe('MemoryActionBar', () => {
   it('tells the person when another teammate already resolved the dispute (409)', async () => {
     const item = makeMemory({ id: IDS.memory, status: 'disputed' });
     fetchMock.mockImplementation((_input, init) =>
-      Promise.resolve(init?.method === 'PATCH' ? problem(409, 'conflict') : json({ items: [], nextCursor: null })),
+      Promise.resolve(
+        init?.method === 'PATCH' ? problem(409, 'conflict') : json({ items: [], nextCursor: null }),
+      ),
     );
     const failure = vi.spyOn(toast, 'error');
     const { user } = await renderBar(item);
