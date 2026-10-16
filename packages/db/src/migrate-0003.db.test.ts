@@ -321,12 +321,7 @@ describe('migration 0003_security_hardening', () => {
     expect(await schemaFingerprint(t.db)).toBe(before);
     const again = await migrate(t.db);
     expect(again.applied).toEqual([]);
-    expect(again.alreadyApplied).toEqual([
-      '0001_init',
-      '0002_rls_helpers',
-      '0003_security_hardening',
-      '0004_veir_knowledge',
-    ]);
+    expect(again.alreadyApplied).toEqual(MIGRATIONS.map((m) => m.version));
     const rows = await t.db.system((sx) =>
       sx.query('SELECT version, checksum FROM schema_migrations ORDER BY version'),
     );

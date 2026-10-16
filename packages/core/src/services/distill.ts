@@ -144,9 +144,7 @@ const DEADLINE_MARGIN_MS = 5_000;
 const NOTEBOOK_WRITE_ATTEMPTS = 3;
 /** Evidence keys a distillation prompt may carry (the conversation's unique evidence, re-keyed E1…). */
 const MAX_SESSION_EVIDENCE = 20;
-/** Venture items read for deduplication and the lesson denylist. */
-const EXISTING_MEMORY_LIMIT = 200;
-const EXISTING_MEMORY_EXCERPT = 1_000;
+/** Terms a lesson must never mention: the venture's relationships (customers, labs, sponsors) and documents. */
 const DENYLIST_MAX = 100;
 /** Lesson `source_class` of distilled drafts. */
 const DISTILLED_SOURCE_CLASS = 'conversation';
@@ -162,7 +160,8 @@ interface DistillSource {
   readonly evidence: ReadonlyMap<string, EvidenceItem>;
   readonly notebook: notebooksRepo.NotebookRecord | null;
   readonly pins: readonly string[];
-  readonly existingMemory: readonly memoryRepo.MemoryRecord[];
+  /** Titles of the venture's relationship memory (customers, labs, sponsors, partners). */
+  readonly relationships: readonly string[];
   readonly lessonTitles: readonly string[];
   readonly documentNames: readonly string[];
   readonly directory: TenantDirectory;
@@ -276,11 +275,11 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
     const pins = notebook
       ? await notebooksRepo.getPersonEdits(sx, { ventureId: venture.id, personaId: persona.id })
       : [];
-    const existingMemory = await memoryRepo.listMemory(sx, {
+    const relationships = await memoryRepo.listMemory(sx, {
       ventureId: venture.id,
-      statuses: memoryRepo.DEDUPE_MEMORY_STATUSES,
-      limit: EXISTING_MEMORY_LIMIT,
-      excerptChars: EXISTING_MEMORY_EXCERPT,
+      types: ['relationship'],
+      limit: DENYLIST_MAX,
+      excerptChars: 0,
     });
     const lessons = await resourcesRepo.listLessons(sx, {
       tenantId: state.tenantId,
@@ -298,7 +297,7 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
       evidence: sessionEvidence(turns, byTurn),
       notebook,
       pins,
-      existingMemory,
+      relationships: relationships.map((m) => m.title),
       lessonTitles: lessons.map((l) => l.title),
       documentNames: documents.map((d) => filenameWords(d.filename)).filter((n) => n !== ''),
       directory: await directory.get(state.tenantId),
@@ -316,7 +315,6 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
     removed: readonly string[],
   ): DistillSanitizeContext {
     const own = source.directory.ventures.find((v) => v.id === source.venture.id);
-    const relationships = source.existingMemory.filter((m) => m.type === 'relationship').map((m) => m.title);
     return {
       sessionId: state.id,
       now,
@@ -327,7 +325,8 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
       suppressed: removed,
       pinnedEntryIds: pins.map(pinKey),
       evidenceKeys: source.evidence.keys(),
-      existingMemory: source.existingMemory.map((m) => ({ title: m.title, content: m.content })),
+      // Memory candidates are deduplicated when they are proposed (proposeMemoryCandidates): by content, and
+      // a repeat raises the pending proposal again instead of being dropped here by its title.
       otherVentureNames: source.others.names,
       otherVentureCanaries: source.others.canaries,
       otherVentureMemberNames: source.others.memberNames,
@@ -336,7 +335,7 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
         personNames: own?.memberNames ?? [],
         canaries: own ? [own.canary] : [],
         // Customers, labs, sponsors and places the venture works with, and its documents' names.
-        denylist: [...relationships, ...source.documentNames].slice(0, DENYLIST_MAX),
+        denylist: [...source.relationships, ...source.documentNames].slice(0, DENYLIST_MAX),
         allowedTerms: source.release.doctrine.frameworks.map((f) => f.name),
       },
     };

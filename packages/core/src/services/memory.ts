@@ -1,4 +1,4 @@
-import { isNearDuplicate } from '@foundry/ai';
+import { jaccardSimilarity, textKey } from '@foundry/ai';
 import {
   BatchMemoryActionRequest,
   type BatchMemoryActionResponse,
@@ -90,10 +90,23 @@ export type EvidenceIndex = ReadonlyMap<
 const DEDUPE_SCAN_LIMIT = 200;
 const DEDUPE_EXCERPT_CHARS = 1_000;
 /**
- * Cosine similarity at or above which a candidate restates an existing item (embeddings are unit-length).
- * Conservative: only near-paraphrases count, lexical matching catches the rewordings.
+ * Cosine similarity at or above which a candidate restates an existing item (embeddings are unit-length):
+ * near-paraphrases only.
  */
 export const MEMORY_DUPLICATE_COSINE = 0.92;
+/**
+ * Content-word overlap (Jaccard) at or above which two contents are the same statement. High on purpose: two
+ * statements that differ in a specific detail (a number, a name, a code) are different memories. Titles are
+ * labels and never decide on their own, and one text containing another is not enough either (a longer
+ * statement that quotes a known fact says something more).
+ */
+export const MEMORY_DUPLICATE_JACCARD = 0.9;
+
+/** Whether two memory contents are the same statement (see {@link MEMORY_DUPLICATE_JACCARD}). */
+export function sameMemoryContent(a: string, b: string): boolean {
+  const key = textKey(a);
+  return key !== '' && (key === textKey(b) || jaccardSimilarity(a, b) >= MEMORY_DUPLICATE_JACCARD);
+}
 
 /** What happened to a batch of AI memory candidates. */
 export interface ProposalResult {
@@ -107,9 +120,8 @@ export interface ProposalResult {
 }
 
 /**
- * The existing item a candidate restates: lexically (title or content near-duplicate, `isNearDuplicate`),
- * or else, when the candidate has an embedding, the closest embedded item at {@link MEMORY_DUPLICATE_COSINE}
- * or above. Null when it is new.
+ * The existing item a candidate restates: lexically ({@link sameMemoryContent}), or else, when the candidate
+ * has an embedding, the closest embedded item at {@link MEMORY_DUPLICATE_COSINE} or above. Null when it is new.
  */
 async function findDuplicate(
   tx: SqlExecutor,
@@ -121,9 +133,7 @@ async function findDuplicate(
   },
   existing: readonly memoryRepo.MemoryRecord[],
 ): Promise<memoryRepo.MemoryRecord | null> {
-  const lexical = existing.find(
-    (e) => isNearDuplicate(e.title, candidate.title) || isNearDuplicate(e.content, candidate.content),
-  );
+  const lexical = existing.find((e) => sameMemoryContent(e.content, candidate.content));
   if (lexical !== undefined) return lexical;
   if (candidate.embedding === null) return null;
   const [nearest] = await memoryRepo.nearestMemory(tx, { ventureId, embedding: candidate.embedding });
