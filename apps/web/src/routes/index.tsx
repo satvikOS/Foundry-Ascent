@@ -20,7 +20,7 @@ const PILLARS: { title: string; body: string; detail: string }[] = [
     title: 'It remembers you',
     body: 'Your vEIR picks up where you left off: the decisions you made, the experiments you ran, the interviews you promised to do.',
     detail:
-      'It keeps what matters from every conversation on its own, and nothing from a private one. Everything it keeps is yours to read, correct or delete.',
+      'Everything it keeps is yours to read, correct or delete, and you can see where every item came from.',
   },
   {
     title: 'Evidence before eloquence',
@@ -44,8 +44,8 @@ const STEPS: { title: string; body: string }[] = [
     body: 'Type or call. Your vEIR diagnoses, challenges, teaches or rehearses with you, one sharp question at a time.',
   },
   {
-    title: 'Let it remember',
-    body: 'What you decide and learn is kept for next time. Correct or forget anything, and see where every item came from.',
+    title: 'Check what it remembers',
+    body: 'Read what your vEIR keeps, correct anything that is off, and delete what should not be there.',
   },
   {
     title: 'Bring in a human',
