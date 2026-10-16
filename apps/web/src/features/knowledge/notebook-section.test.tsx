@@ -123,6 +123,61 @@ describe('NotebookEditor', () => {
     toastError.mockRestore();
   });
 
+  it('keeps a refused opening line and its reason when another edit is made while it saves', async () => {
+    const notebook = makeNotebook();
+    const reason =
+      'The vEIR says this line itself, so it can’t name an EIR, speak as a person, or say anyone reviewed or approved something.';
+    let refuseOpener: (response: Response) => void = () => undefined;
+    fetchMock.mockImplementation((_input, init) => {
+      if (init?.method !== 'PATCH') return Promise.resolve(json(notebook)); // the reload after the refusal
+      return new Promise<Response>((resolve) => {
+        refuseOpener = resolve;
+      });
+    });
+    const toastError = vi.spyOn(toast, 'error');
+    const { user } = await renderNotebook(notebook);
+    const next = screen.getByRole('region', { name: 'Next conversation' });
+    await user.click(within(next).getByRole('button', { name: 'Edit' }));
+    const box = within(next).getByRole('textbox', { name: 'Edit opening line' });
+    await user.clear(box);
+    await user.type(box, 'Corin asked me to check in.{Enter}');
+
+    // While the line saves, the founder ticks a commitment: it queues behind the line.
+    await user.click(
+      within(screen.getByRole('region', { name: 'Commitments' })).getByRole('checkbox', { name: 'Done' }),
+    );
+    expect(patches()).toHaveLength(1);
+    refuseOpener(
+      new Response(
+        JSON.stringify({
+          type: 'urn:x:validation_failed',
+          title: 'Problem',
+          status: 422,
+          code: 'validation_failed',
+          detail: 'The vEIR can’t say this opening line',
+          requestId: 'req-1',
+          errors: [{ path: 'edit.text', message: reason }],
+        }),
+        { status: 422, headers: { 'content-type': 'application/problem+json' } },
+      ),
+    );
+
+    // The refused line comes back in its editor with the reason under it …
+    const alert = await within(next).findByRole('alert');
+    expect(alert).toHaveTextContent(reason);
+    expect(within(next).getByRole('textbox', { name: 'Edit opening line' })).toHaveValue(
+      'Corin asked me to check in.',
+    );
+    // … and the commitment change, dropped because it was made on top of the line, is not lost silently.
+    expect(await screen.findByText('Your later change wasn’t saved')).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('region', { name: 'Commitments' })).getByRole('checkbox', { name: 'Done' }),
+    ).not.toBeChecked();
+    expect(patches()).toHaveLength(1);
+    expect(toastError).not.toHaveBeenCalled();
+    toastError.mockRestore();
+  });
+
   it('undoes the edit, reloads the notebook and tells the person when it changed meanwhile (409)', async () => {
     const notebook = makeNotebook();
     const latest = makeNotebook({ version: 5, nextOpener: 'What did facilities say?' });

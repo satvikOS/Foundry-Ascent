@@ -5,6 +5,7 @@ import {
   type VeirNotebook,
 } from '@foundry/contracts';
 import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { useCallback, useState } from 'react';
 
 import { announce } from '@/components/a11y/live-announcer';
 import { toast } from '@/components/ui/toast';
@@ -27,6 +28,20 @@ export class NotebookEditCancelled extends Error {
     this.name = 'NotebookEditCancelled';
     this.cause = cause;
   }
+}
+
+/**
+ * A queued edit dropped because an earlier one failed for a reason other than a conflict (a conflict has
+ * its own message): the person is told their later change wasn't saved.
+ */
+export function isDroppedEdit(error: unknown): boolean {
+  return error instanceof NotebookEditCancelled && !isNotebookConflict(error.cause);
+}
+
+/** An opening line the server refused, with its reason (shown under the line, in its editor). */
+export interface RefusedOpener {
+  text: string;
+  reason: string;
 }
 
 /** The notebook changed under the person (another teammate, or the vEIR after a conversation). */
@@ -57,6 +72,8 @@ interface EditRun {
   queue: NotebookEdit[];
   /** The failure that ended the run; queued edits are dropped with it. */
   failure: { error: unknown } | null;
+  /** Whether the person was already told that edits of this run were dropped (once per run). */
+  droppedTold: boolean;
 }
 
 const runs = new WeakMap<QueryClient, Map<string, EditRun>>();
@@ -69,7 +86,7 @@ function editRun(client: QueryClient, ventureId: string): EditRun {
   }
   let run = byVenture.get(ventureId);
   if (!run) {
-    run = { base: null, queue: [], failure: null };
+    run = { base: null, queue: [], failure: null, droppedTold: false };
     byVenture.set(ventureId, run);
   }
   return run;
@@ -93,12 +110,18 @@ function onScreen(run: EditRun): VeirNotebook | null {
  * screen at once and are sent one after another: the first carries the version on screen when it was
  * made, each later one the version the previous edit produced. When an edit fails, the edits queued
  * behind it are dropped (they built on it), the screen returns to the last saved notebook and the latest
- * is fetched. A 409 (the notebook changed meanwhile) is announced; any other failure gets an error toast.
+ * is fetched. A 409 (the notebook changed meanwhile) is announced; a refused opening line is kept with its
+ * reason (`refusedOpener`) for its editor to show; dropped edits are announced; any other failure gets an
+ * error toast. Everything is handled here, not in per-call callbacks: a later `mutate` replaces those.
  */
 export function useNotebookEdit(ventureId: string) {
   const client = useQueryClient();
   const key = queryKeys.venture.notebook(ventureId);
-  return useMutation({
+  const [refusedOpener, setRefusedOpener] = useState<RefusedOpener | null>(null);
+  const clearRefusedOpener = useCallback(() => {
+    setRefusedOpener(null);
+  }, []);
+  const mutation = useMutation({
     scope: { id: `notebook:${ventureId}` },
     mutationFn: (edit: NotebookEdit) => {
       const run = editRun(client, ventureId);
@@ -134,20 +157,41 @@ export function useNotebookEdit(ventureId: string) {
       settle(run, edit);
       // Every edit still queued was made on top of this one and will be dropped: show the last saved
       // notebook (never an older snapshot) and fetch the latest.
-      run.failure ??= { error };
+      if (!run.failure) {
+        run.failure = { error };
+        run.droppedTold = false;
+      }
       if (run.base) client.setQueryData<VeirNotebook>(key, run.base);
       void client.invalidateQueries({ queryKey: key });
-      if (error instanceof NotebookEditCancelled) return;
+      if (error instanceof NotebookEditCancelled) {
+        if (isDroppedEdit(error) && !run.droppedTold) {
+          run.droppedTold = true;
+          announce(`${DROPPED_EDIT.title}. ${DROPPED_EDIT.detail}`, 'assertive');
+        }
+        return;
+      }
       if (isNotebookConflict(error)) {
         announce('The notebook changed. It was reloaded; check it and try again.', 'assertive');
         return;
       }
-      // A refused opening line is shown under the line itself (the caller re-opens its editor).
-      if (edit.action === 'edit_opener' && openerRefusal(error) !== null) return;
+      // A refused opening line is shown under the line itself, in its editor, with the reason.
+      const refusal = edit.action === 'edit_opener' ? openerRefusal(error) : null;
+      if (edit.action === 'edit_opener' && refusal !== null) {
+        setRefusedOpener({ text: edit.text, reason: refusal });
+        announce(`The opening line wasn’t saved. ${refusal}`, 'assertive');
+        return;
+      }
       toast.error('Couldn’t save the notebook', { description: errorMessage(error) });
     },
   });
+  return { ...mutation, refusedOpener, clearRefusedOpener };
 }
+
+/** What a person is told when edits they made while an earlier one was saving were dropped with it. */
+export const DROPPED_EDIT = {
+  title: 'Your later change wasn’t saved',
+  detail: 'It was made while an earlier change was saving, and that one wasn’t saved. Make it again.',
+} as const;
 
 /**
  * Why the server refused an opening line a person wrote (422 at `edit.text`: the vEIR says it, so it may not
