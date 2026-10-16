@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { LiveAnnouncer } from '@/components/a11y/live-announcer';
 import { renderWithProviders } from '@/features/admin/shared/test-utils';
 
-import { Composer, MAX_TURN_CHARS, type ComposerMode } from './composer';
+import { Composer, MAX_TURN_CHARS, STOP_GRACE_MS, type ComposerMode } from './composer';
 import { initialTurnProgress, turnProgressReducer } from '../coach/progress';
 import { TurnProgressList } from '../coach/turn-progress';
 
@@ -167,5 +167,45 @@ describe('TurnProgressList', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('a double click on Send sends once and never stops the message it just sent', async () => {
+    const sent: string[] = [];
+    const onStop = vi.fn();
+    function Streaming() {
+      const [text, setText] = useState('Is a paid pilot too early?');
+      const [streaming, setStreaming] = useState(false);
+      return (
+        <Composer
+          value={text}
+          onChange={setText}
+          personaName="Foundry Guide"
+          disclosure={DISCLOSURE}
+          mode="auto"
+          onModeChange={() => undefined}
+          counterpart=""
+          onCounterpartChange={() => undefined}
+          streaming={streaming}
+          disabledReason={null}
+          onSend={() => {
+            sent.push(text);
+            setText('');
+            setStreaming(true);
+          }}
+          onStop={onStop}
+        />
+      );
+    }
+    const user = userEvent.setup();
+    renderWithProviders(<Streaming />);
+    await user.dblClick(screen.getByRole('button', { name: 'Send message' }));
+    expect(sent).toEqual(['Is a paid pilot too early?']);
+    expect(onStop).not.toHaveBeenCalled();
+    // Stop still works as a deliberate click once the answer is under way.
+    const stop = screen.getByRole('button', { name: 'Stop generating' });
+    expect(stop).toHaveAttribute('type', 'button');
+    await new Promise((resolve) => setTimeout(resolve, STOP_GRACE_MS + 50));
+    await user.click(stop);
+    expect(onStop).toHaveBeenCalledTimes(1);
   });
 });
