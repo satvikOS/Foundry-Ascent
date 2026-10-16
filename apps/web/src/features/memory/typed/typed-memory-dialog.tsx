@@ -80,6 +80,7 @@ const FormSchema = z
     status: z.string(),
     result: optionalText(2000, 'the result'),
     interpretation: optionalText(2000, 'the interpretation'),
+    decision: optionalText(1000, 'the resulting decision'),
     dependency: optionalText(300, 'the dependency'),
   })
   .superRefine((v, ctx) => {
@@ -111,6 +112,7 @@ const FIELD_NAMES = [
   'status',
   'result',
   'interpretation',
+  'decision',
   'dependency',
 ] as const;
 
@@ -150,6 +152,7 @@ function emptyValues(kind: TypedKind): FormInput {
     status: kind === 'experiment' ? 'planned' : kind === 'milestone' ? 'planned' : '',
     result: '',
     interpretation: '',
+    decision: '',
     dependency: '',
   };
 }
@@ -183,6 +186,7 @@ function valuesFromMemory(kind: TypedKind, memory: MemoryObjectView): FormInput 
       status: a.status ?? 'planned',
       result: a.result ?? '',
       interpretation: a.interpretation ?? '',
+      decision: a.decision ?? '',
     };
   }
   const a = milestoneAttributes(memory);
@@ -228,6 +232,7 @@ export function buildTypedAttributes(
     set('status', values.status);
     set('result', values.result);
     set('interpretation', values.interpretation);
+    set('decision', values.decision);
   } else {
     set('owner', values.owner);
     set('target_date', values.date);
@@ -441,6 +446,13 @@ export function TypedMemoryDialog({
                 error={errors.interpretation?.message}
               >
                 <Textarea {...register('interpretation')} minRows={2} maxRows={5} maxLength={2000} />
+              </Field>
+              <Field
+                label="Resulting decision"
+                description="What the team decided because of it."
+                error={errors.decision?.message}
+              >
+                <Textarea {...register('decision')} minRows={2} maxRows={4} maxLength={1000} />
               </Field>
             </>
           ) : null}

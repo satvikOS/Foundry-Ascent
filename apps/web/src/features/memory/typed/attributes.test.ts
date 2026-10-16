@@ -72,6 +72,7 @@ describe('buildTypedAttributes', () => {
     status: '',
     result: '',
     interpretation: '',
+    decision: '',
     dependency: '',
   };
 
@@ -102,6 +103,26 @@ describe('buildTypedAttributes', () => {
         status: 'running',
       }),
     ).toEqual({ prediction: 'p', method: 'm', sample_size: 40, status: 'running' });
+    // The resulting decision is editable, and clearing it removes it.
+    expect(
+      buildTypedAttributes(
+        {
+          ...base,
+          kind: 'experiment',
+          prediction: 'p',
+          method: 'm',
+          status: 'completed',
+          decision: 'Pilot it',
+        },
+        { decision: 'Old call' },
+      ),
+    ).toEqual({ prediction: 'p', method: 'm', status: 'completed', decision: 'Pilot it' });
+    expect(
+      buildTypedAttributes(
+        { ...base, kind: 'experiment', prediction: 'p', method: 'm', status: 'completed' },
+        { decision: 'Old call' },
+      ),
+    ).toEqual({ prediction: 'p', method: 'm', status: 'completed' });
     expect(
       buildTypedAttributes({
         ...base,
