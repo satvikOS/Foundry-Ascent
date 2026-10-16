@@ -22,14 +22,8 @@ beforeEach(() => {
   fetchMock = stubFetch();
 });
 
-const content = 'Usage spikes in the two weeks before exams.';
-// The full text (not a list excerpt), so the form can be saved without loading it first.
-const proposal = makeMemory({
-  id: IDS.memory,
-  title: 'Exam weeks drive demand',
-  content,
-  contentLength: content.length,
-});
+// The fixture carries its full text (not a list excerpt), so the form can be saved at once.
+const proposal = makeMemory({ id: IDS.memory, title: 'Exam weeks drive demand' });
 
 async function renderDialog(memory: MemoryObjectView) {
   const client = testQueryClient();

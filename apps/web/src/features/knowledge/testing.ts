@@ -81,7 +81,8 @@ export function makeMemory(overrides: Partial<MemoryObjectView> = {}): MemoryObj
     type: 'insight',
     title: 'Exam weeks drive demand',
     content: 'Usage spikes in the two weeks before exams.',
-    contentLength: 44,
+    // The full text: lists send excerpts only for longer content.
+    contentLength: 43,
     attributes: {},
     status: 'proposed',
     visibility: 'venture',
