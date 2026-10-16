@@ -5,8 +5,8 @@ import { validateKnowledgeSearch } from '@/features/knowledge/search';
 import { memoryQueryOptions } from '@/lib/api/hooks/memory';
 
 /**
- * Knowledge: the venture's memory (`?type=decision`, `?status=…`, `?q=…`), the "To review" queue
- * (`?view=proposed`), the vEIR's notebook, conversation digests and evidence (`?view=…`).
+ * Knowledge: the venture's memory (`?type=decision`, `?q=…`), the vEIR's notebook, conversation digests and
+ * evidence (`?view=…`).
  */
 export const Route = createFileRoute('/$tenant/app/v/$ventureId/knowledge')({
   validateSearch: validateKnowledgeSearch,

@@ -1,18 +1,25 @@
-import type { MemoryObjectView, MemoryStatus } from '@foundry/contracts';
-import { Pin, Plus, Search, SearchX } from 'lucide-react';
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import type { MemoryObjectView } from '@foundry/contracts';
+import { MoreHorizontal, Pencil, Pin, Plus, Search, SearchX, Trash } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
 import { Input } from '@/components/ui/input';
 import { HairlineSkeleton } from '@/components/ui/page-section';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { getStatusDefinition } from '@/components/ui/status-badge';
 import { displayContent, useMemory } from '@/lib/api/hooks/memory';
-import { formatDateTime, formatRelative, isoString, pluralize } from '@/lib/format';
+import { pluralize } from '@/lib/format';
 import { MEMORY_TYPE_LABELS, VISIBILITY_LABELS } from '@/lib/labels';
 import { cn } from '@/lib/utils';
+import { memoryProvenance } from '@/features/memory/provenance';
+import { availableMemoryActions } from '@/features/memory/optimistic';
 import {
   actionAttributes,
   daysUntil,
@@ -23,10 +30,8 @@ import {
   milestoneAttributes,
 } from '@/features/memory/typed/attributes';
 
-import { MEMORY_LIST_STATUSES, memoryListRows, typeChips } from './memory-filters';
+import { memoryListRows, typeChips } from './memory-filters';
 import type { KnowledgeSearch } from './search';
-
-const ANY = '__current__';
 
 interface MemorySectionProps {
   ventureId: string;
@@ -37,11 +42,18 @@ interface MemorySectionProps {
   onCreate: () => void;
   /** Label of the create button for the selected type ("Add decision"). */
   createLabel: string;
+  /** Edit an item from its row. */
+  onEdit?: ((memory: MemoryObjectView) => void) | undefined;
+  /** Forget an item from its row (asks first). */
+  onForget?: ((memory: MemoryObjectView) => void) | undefined;
+  /** The vEIR's name ("Corin's vEIR"), for the empty list. */
+  veirName?: string | undefined;
 }
 
 /**
- * The venture's kept memory: type chips, a status filter and search over one hairline list. Selecting
- * an item opens its detail (source, history, actions) in the side panel.
+ * Everything the vEIR knows about the venture: what it learned from conversations (kept automatically) and
+ * what the team added, with search and type chips over one hairline list. Each row says where it came from
+ * and offers Edit and Forget; selecting it opens its detail (sources, history) in the side panel.
  */
 export function MemorySection({
   ventureId,
@@ -51,8 +63,10 @@ export function MemorySection({
   canEdit,
   onCreate,
   createLabel,
+  onEdit,
+  onForget,
+  veirName = 'your vEIR',
 }: MemorySectionProps) {
-  const statusId = useId();
   const [query, setQuery] = useState(search.q ?? '');
   const pushed = useRef(search.q);
 
@@ -88,7 +102,7 @@ export function MemorySection({
   });
   const chips = useMemo(() => typeChips(all.data ?? [], search.type), [all.data, search.type]);
   const pinnedCount = useMemo(
-    () => (all.data ?? []).filter((item) => item.pinned && item.status !== 'proposed').length,
+    () => memoryListRows(all.data ?? [], undefined).filter((item) => item.pinned).length,
     [all.data],
   );
   const rows = useMemo(() => memoryListRows(memory.data ?? [], search.status), [memory.data, search.status]);
@@ -125,27 +139,6 @@ export function MemorySection({
               maxLength={200}
             />
           </div>
-          <label htmlFor={statusId} className="sr-only">
-            Status
-          </label>
-          <Select
-            value={search.status ?? ANY}
-            onValueChange={(value) => {
-              setSearch({ status: value === ANY ? undefined : (value as MemoryStatus) });
-            }}
-          >
-            <SelectTrigger id={statusId} className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ANY}>Kept</SelectItem>
-              {MEMORY_LIST_STATUSES.map((status) => (
-                <SelectItem key={status} value={status}>
-                  {getStatusDefinition('memory', status).label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
         </div>
         {chips.length > 0 || pinnedCount > 0 ? (
           <div
@@ -220,8 +213,8 @@ export function MemorySection({
         ) : (
           <EmptyState
             headingLevel={2}
-            title="Nothing kept yet"
-            description="What your team approves from conversations appears here. You can add things yourself too."
+            title="Nothing yet"
+            description={`What ${veirName} learns in your conversations shows up here on its own. You can add things yourself too.`}
             action={
               canEdit ? (
                 <Button size="sm" onClick={onCreate}>
@@ -235,7 +228,7 @@ export function MemorySection({
       ) : (
         <ul aria-label="Memory" className="divide-y divide-border border-y border-border">
           {rows.map((item) => (
-            <li key={item.id}>
+            <li key={item.id} className="group/row relative">
               <MemoryRow
                 item={item}
                 selected={item.id === search.m}
@@ -243,6 +236,9 @@ export function MemorySection({
                   onSelect(item.id);
                 }}
               />
+              {canEdit && onEdit && onForget ? (
+                <RowActions item={item} onEdit={onEdit} onForget={onForget} />
+              ) : null}
             </li>
           ))}
         </ul>
@@ -324,6 +320,59 @@ function dueSummary(date: string | undefined, status: string | undefined, closed
   return parts.length > 0 ? parts.join(' · ') : null;
 }
 
+/** Edit and Forget for one row, in a small menu that shows on hover or focus (always on touch screens). */
+function RowActions({
+  item,
+  onEdit,
+  onForget,
+}: {
+  item: MemoryObjectView;
+  onEdit: (memory: MemoryObjectView) => void;
+  onForget: (memory: MemoryObjectView) => void;
+}) {
+  const actions = availableMemoryActions(item);
+  if (!actions.includes('correct') && !actions.includes('delete')) return null;
+  return (
+    <div className="absolute top-2.5 right-1">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Actions for ${item.title}`}
+            className="opacity-100 transition-opacity data-[state=open]:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-focus-within/row:opacity-100 [@media(hover:hover)]:group-hover/row:opacity-100"
+          >
+            <MoreHorizontal aria-hidden />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-40">
+          {actions.includes('correct') ? (
+            <DropdownMenuItem
+              onSelect={() => {
+                onEdit(item);
+              }}
+            >
+              <Pencil aria-hidden />
+              Edit
+            </DropdownMenuItem>
+          ) : null}
+          {actions.includes('delete') ? (
+            <DropdownMenuItem
+              destructive
+              onSelect={() => {
+                onForget(item);
+              }}
+            >
+              <Trash aria-hidden />
+              Forget…
+            </DropdownMenuItem>
+          ) : null}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
 function MemoryRow({
   item,
   selected,
@@ -335,13 +384,14 @@ function MemoryRow({
 }) {
   const Icon = MEMORY_TYPE_LABELS[item.type].icon;
   const summary = typedSummary(item);
+  const shownStatus = item.status === 'proposed' || item.status === 'confirmed' ? null : item.status;
   return (
     <button
       type="button"
       aria-current={selected ? 'true' : undefined}
       onClick={onSelect}
       className={cn(
-        'grid w-full cursor-pointer grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 px-2 py-3.5 text-left transition-colors hover:bg-accent/50',
+        'grid w-full cursor-pointer grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 py-3.5 pr-11 pl-2 text-left transition-colors hover:bg-accent/50',
         'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring',
         selected && 'bg-accent/70',
       )}
@@ -362,11 +412,17 @@ function MemoryRow({
         {displayContent(item)}
       </span>
       <span className="col-start-2 flex flex-wrap items-center gap-x-1.5 text-caption text-subtle-foreground">
-        <span>{MEMORY_TYPE_LABELS[item.type].label}</span>
+        <span>{memoryProvenance(item).text}</span>
         <span aria-hidden>·</span>
-        <span className={cn(item.status === 'disputed' && 'font-medium text-destructive')}>
-          {getStatusDefinition('memory', item.status).label}
-        </span>
+        <span>{MEMORY_TYPE_LABELS[item.type].label}</span>
+        {shownStatus ? (
+          <>
+            <span aria-hidden>·</span>
+            <span className={cn(shownStatus === 'disputed' && 'font-medium text-destructive')}>
+              {getStatusDefinition('memory', shownStatus).label}
+            </span>
+          </>
+        ) : null}
         {summary ? (
           <>
             <span aria-hidden>·</span>
@@ -379,13 +435,6 @@ function MemoryRow({
             <span>{VISIBILITY_LABELS.founder_private.label}</span>
           </>
         ) : null}
-        <span aria-hidden>·</span>
-        <span>
-          Updated{' '}
-          <time dateTime={isoString(item.updatedAt)} title={formatDateTime(item.updatedAt)}>
-            {formatRelative(item.updatedAt)}
-          </time>
-        </span>
       </span>
     </button>
   );

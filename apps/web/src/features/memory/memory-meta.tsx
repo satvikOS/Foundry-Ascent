@@ -1,7 +1,6 @@
 import type { MemoryObjectView, MemoryType, SourceRef, Visibility } from '@foundry/contracts';
 import { Link } from '@tanstack/react-router';
 import {
-  Bot,
   Brain,
   FileText,
   Globe,
@@ -15,9 +14,10 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 
-import { formatPercent } from '@/lib/format';
 import { MEMORY_TYPE_LABELS, VISIBILITY_LABELS } from '@/lib/labels';
 import { cn } from '@/lib/utils';
+
+import { memoryProvenance } from './provenance';
 
 /** Memory type as icon + label (neutral chip; type is not a status). */
 export function MemoryTypeLabel({
@@ -74,29 +74,6 @@ export function VisibilityLabel({ visibility, className }: { visibility: Visibil
   );
 }
 
-/** 0–1 confidence as a five-segment meter plus a visible percentage (never colour alone). */
-export function ConfidenceMeter({ value, className }: { value: number; className?: string }) {
-  const clamped = Math.min(1, Math.max(0, value));
-  const filled = Math.round(clamped * 5);
-  const label = clamped >= 0.75 ? 'High' : clamped >= 0.45 ? 'Medium' : 'Low';
-  return (
-    <span className={cn('inline-flex items-center gap-1.5 text-xs text-muted-foreground', className)}>
-      <span aria-hidden className="flex items-center gap-0.5">
-        {Array.from({ length: 5 }, (_, i) => (
-          <span
-            key={i}
-            className={cn('h-2 w-1.5 rounded-[1px]', i < filled ? 'bg-foreground/80' : 'bg-border-strong')}
-          />
-        ))}
-      </span>
-      <span className="tabular">
-        {formatPercent(clamped)}
-        <span className="sr-only"> confidence ({label.toLowerCase()})</span>
-      </span>
-    </span>
-  );
-}
-
 export function PinnedMark({ className }: { className?: string }) {
   return (
     <span className={cn('inline-flex items-center gap-1 text-xs font-medium text-foreground', className)}>
@@ -106,31 +83,17 @@ export function PinnedMark({ className }: { className?: string }) {
   );
 }
 
-export function OriginLabel({ origin }: { origin: MemoryObjectView['origin'] }) {
-  const map = {
-    founder: { icon: PenLine, label: 'Added by the team' },
-    ai: { icon: Bot, label: 'Suggested by AI' },
-    eir: { icon: UserRound, label: 'Added by an EIR' },
-    import: { icon: FileText, label: 'Imported' },
-  } satisfies Record<MemoryObjectView['origin'], { icon: LucideIcon; label: string }>;
-  const def = map[origin];
-  const Icon = def.icon;
-  return (
-    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-      <Icon aria-hidden className="size-3.5" />
-      {def.label}
-    </span>
-  );
-}
-
 const SOURCE_KIND: Record<SourceRef['kind'], { icon: LucideIcon; label: string }> = {
-  session: { icon: MessagesSquare, label: 'Coaching session' },
-  turn: { icon: MessagesSquare, label: 'Coach response' },
+  session: { icon: MessagesSquare, label: 'Conversation' },
+  turn: { icon: MessagesSquare, label: 'An answer in a conversation' },
   document: { icon: FileText, label: 'Document' },
   chunk: { icon: ScanText, label: 'Document excerpt' },
   manual: { icon: PenLine, label: 'Added manually' },
   memory: { icon: Brain, label: 'Earlier memory' },
 };
+
+/** Labels the server writes for its own bookkeeping, not for people: the kind's own label is shown instead. */
+const MACHINE_LABELS: ReadonlySet<string> = new Set(['ai proposal', 'call', 'chat']);
 
 const linkClasses =
   'font-medium text-foreground underline decoration-border-strong underline-offset-[3px] hover:decoration-foreground';
@@ -155,7 +118,8 @@ export function SourceRefList({
       {refs.map((ref, index) => {
         const def = SOURCE_KIND[ref.kind];
         const Icon = def.icon;
-        const text = ref.label ?? def.label;
+        const label = ref.label?.trim();
+        const text = label && !MACHINE_LABELS.has(label.toLowerCase()) ? label : def.label;
         let body = <span>{text}</span>;
         if (ref.kind === 'session') {
           body = (
@@ -201,4 +165,36 @@ export function SourceRefList({
       })}
     </ul>
   );
+}
+
+/**
+ * Where an item came from, in one line ("Learned from the conversation on Oct 16, 2026"), linking to that
+ * conversation when its source names one (`link` off inside a row that is itself a button).
+ */
+export function ProvenanceLine({
+  memory,
+  tenant,
+  ventureId,
+  link = true,
+  className,
+}: {
+  memory: Pick<MemoryObjectView, 'origin' | 'createdAt' | 'createdBy' | 'sourceRefs'>;
+  tenant: string;
+  ventureId: string;
+  link?: boolean;
+  className?: string;
+}) {
+  const { text, sessionId } = memoryProvenance(memory);
+  if (link && sessionId) {
+    return (
+      <Link
+        to="/$tenant/app/v/$ventureId/c/$sessionId"
+        params={{ tenant, ventureId, sessionId }}
+        className={cn(linkClasses, 'font-normal', className)}
+      >
+        {text}
+      </Link>
+    );
+  }
+  return <span className={className}>{text}</span>;
 }

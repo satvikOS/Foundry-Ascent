@@ -30,7 +30,7 @@ const proposal = makeMemory({
   title: 'Data approval may be slow',
 });
 
-async function renderSection(search: KnowledgeSearch = {}) {
+async function renderSection(search: KnowledgeSearch = {}, { withActions = false } = {}) {
   const client = testQueryClient();
   const items = [decision, insight, proposal];
   client.setQueryData(memoryQueryOptions(IDS.venture).queryKey, { items, nextCursor: null });
@@ -40,6 +40,8 @@ async function renderSection(search: KnowledgeSearch = {}) {
   });
   const setSearch = vi.fn<(patch: Partial<KnowledgeSearch>, replace?: boolean) => void>();
   const onSelect = vi.fn<(id: string) => void>();
+  const onEdit = vi.fn();
+  const onForget = vi.fn();
   await renderWithRouter(
     <MemorySection
       ventureId={IDS.venture}
@@ -49,10 +51,11 @@ async function renderSection(search: KnowledgeSearch = {}) {
       canEdit
       onCreate={vi.fn()}
       createLabel="Add memory"
+      {...(withActions ? { onEdit, onForget } : {})}
     />,
     client,
   );
-  return { setSearch, onSelect };
+  return { setSearch, onSelect, onEdit, onForget };
 }
 
 afterEach(() => {
@@ -60,24 +63,41 @@ afterEach(() => {
 });
 
 describe('MemorySection', () => {
-  it('lists kept memory (proposals wait in the review queue) with pinned items first', async () => {
+  it('lists everything the vEIR knows, saying where each came from, pinned first and nothing to review', async () => {
     await renderSection();
     const list = screen.getByRole('list', { name: 'Memory' });
     const items = within(list).getAllByRole('button');
     expect(items.map((item) => item.textContent)).toEqual([
       expect.stringContaining('Group chats compete'),
       expect.stringContaining('Focus on exam weeks'),
+      expect.stringContaining('Data approval may be slow'),
     ]);
-    expect(items[1]).toHaveTextContent('Confirmed');
-    expect(screen.getByText('2 items')).toBeInTheDocument();
+    // An older suggestion is listed like any other: no "Proposed", no Approve or Reject.
+    expect(items[2]).toHaveTextContent(/Learned from the conversation on /);
+    expect(items[2]).not.toHaveTextContent(/Proposed|Confirmed/);
+    expect(screen.getByText('3 items')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Approve|Reject|Keep/ })).toBeNull();
+    // Filters stay minimal: search and type chips, no status picker.
+    expect(screen.queryByRole('combobox')).toBeNull();
+  });
+
+  it('offers Edit and Forget for each item', async () => {
+    const { onEdit, onForget } = await renderSection({}, { withActions: true });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Actions for Focus on exam weeks' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Edit' }));
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ id: IDS.memory }));
+    await user.click(screen.getByRole('button', { name: 'Actions for Data approval may be slow' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Forget…' }));
+    expect(onForget).toHaveBeenCalledWith(expect.objectContaining({ id: IDS.memory3 }));
   });
 
   it('filters by type with chips that show counts', async () => {
     const { setSearch } = await renderSection();
     const chips = screen.getByRole('group', { name: 'Type' });
     expect(within(chips).getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true');
-    // Proposals are not counted: there is no "Risk" chip.
-    expect(within(chips).queryByRole('button', { name: /Risk/ })).toBeNull();
+    // An older suggestion counts like anything else the vEIR knows.
+    expect(within(chips).getByRole('button', { name: 'Risk 1' })).toBeInTheDocument();
     await userEvent.click(within(chips).getByRole('button', { name: 'Decision 1' }));
     expect(setSearch).toHaveBeenCalledWith({ type: 'decision' });
     await userEvent.click(within(chips).getByRole('button', { name: 'Pinned 1' }));

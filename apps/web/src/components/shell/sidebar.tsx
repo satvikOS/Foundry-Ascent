@@ -258,15 +258,9 @@ export function SidebarContent({
       {ventureId ? (
         <div className="grid shrink-0 gap-px border-t border-sidebar-border px-2 py-2">
           {ventureDestinations(me, ventureId).map((destination) => {
-            // Counts are things to act on (proposals to review, requests for help), which only the venture
-            // team can open; read-only roles see the pages without them.
-            const count = !writable
-              ? undefined
-              : destination.id === 'knowledge'
-                ? venture.data?.pendingMemory
-                : destination.id === 'help'
-                  ? venture.data?.openEscalations
-                  : undefined;
+            // Counts are things to act on (open requests for help), which only the venture team can open;
+            // read-only roles see the pages without them. Memory is never one: it is kept automatically.
+            const count = writable && destination.id === 'help' ? venture.data?.openEscalations : undefined;
             return (
               <Tip key={destination.id} show={collapsed} label={destination.label}>
                 <SidebarLink
@@ -276,7 +270,7 @@ export function SidebarContent({
                   icon={destination.icon}
                   label={destination.label}
                   count={count}
-                  countLabel={destination.id === 'knowledge' ? 'to review' : 'open'}
+                  countLabel="open"
                   collapsed={collapsed}
                 />
               </Tip>

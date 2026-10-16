@@ -15,18 +15,26 @@ import {
 const NOW = '2026-10-05T09:00:00.000Z';
 
 describe('availableMemoryActions', () => {
-  it('offers review actions for proposed memory', () => {
-    expect(availableMemoryActions(makeMemory({ status: 'proposed' }))).toEqual([
-      'approve',
-      'reject',
-      'correct',
-      'delete',
-    ]);
+  it('never offers approve or reject: memory is kept automatically, and edited or forgotten', () => {
+    for (const status of ['proposed', 'confirmed', 'disputed'] as const) {
+      const actions = availableMemoryActions(makeMemory({ status }));
+      expect(actions).toContain('correct');
+      expect(actions).toContain('delete');
+      expect(actions).not.toContain('approve');
+      expect(actions).not.toContain('reject');
+      expect(actions).not.toContain('dispute');
+    }
+    expect(availableMemoryActions(makeMemory({ status: 'proposed' }))).toEqual(['correct', 'delete']);
   });
 
   it('offers pin or unpin depending on the current state', () => {
     expect(availableMemoryActions(makeMemory({ status: 'confirmed', pinned: false }))).toContain('pin');
     expect(availableMemoryActions(makeMemory({ status: 'confirmed', pinned: true }))).toContain('unpin');
+    expect(availableMemoryActions(makeMemory({ status: 'disputed', pinned: false }))).toEqual([
+      'correct',
+      'pin',
+      'delete',
+    ]);
     expect(canApplyMemoryAction(makeMemory({ status: 'confirmed' }), 'approve')).toBe(false);
   });
 
@@ -150,6 +158,6 @@ describe('candidate matching', () => {
 
   it('has a success message for every action', () => {
     expect(memoryActionSuccessMessage('approve')).toMatch(/Approved/);
-    expect(memoryActionSuccessMessage('delete')).toMatch(/Deleted/);
+    expect(memoryActionSuccessMessage('delete')).toBe('Forgotten');
   });
 });

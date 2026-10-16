@@ -4,20 +4,13 @@ import { History } from 'lucide-react';
 
 import { InspectorSection } from '@/components/ui/inspector-panel';
 import { Markdown } from '@/components/ui/markdown';
-import { StatusBadge, getStatusDefinition } from '@/components/ui/status-badge';
+import { StatusBadge } from '@/components/ui/status-badge';
 import { displayContent, useFullMemory } from '@/lib/api/hooks/memory';
 import { formatDateTime, formatRelative, isoString } from '@/lib/format';
 
 import { MemoryActionBar } from './memory-action-bar';
 import { MemoryHistoryTimeline } from './memory-history';
-import {
-  ConfidenceMeter,
-  MemoryTypeLabel,
-  OriginLabel,
-  PinnedMark,
-  SourceRefList,
-  VisibilityLabel,
-} from './memory-meta';
+import { MemoryTypeLabel, PinnedMark, ProvenanceLine, SourceRefList, VisibilityLabel } from './memory-meta';
 import { attributeRows } from './typed/attributes';
 
 export function MemoryAttributesList({ attributes }: { attributes: Record<string, unknown> }) {
@@ -41,13 +34,22 @@ interface MemoryDetailProps {
   ventureId: string;
   canEdit: boolean;
   onRemoved?: () => void;
-  /** A type-specific editor (decisions, experiments, milestones) instead of the generic correction. */
+  /** A type-specific editor (decisions, experiments, milestones) instead of the generic one. */
   onEdit?: (() => void) | undefined;
 }
 
+/** Statuses worth naming on an item: the history ones. Memory in use (kept or older suggestions) is not. */
+const SHOWN_STATUS: ReadonlySet<MemoryObjectView['status']> = new Set([
+  'disputed',
+  'superseded',
+  'expired',
+  'rejected',
+  'deleted',
+]);
+
 /**
- * Full detail for one memory object: content, typed attributes, provenance, confidence, visibility,
- * lifecycle actions and the version history. Rendered inside the page's inspector.
+ * One thing the vEIR knows: what it is, where it came from ("Learned from the call on …"), Edit, Pin and
+ * Forget, then its sources and version history. Rendered inside the page's inspector.
  */
 export function MemoryDetail({
   memory: listed,
@@ -60,16 +62,14 @@ export function MemoryDetail({
   // Lists carry an excerpt of the content; the detail shows the full text (GET /memory/:id).
   const { memory: full } = useFullMemory(listed);
   const memory = full ?? listed;
-  const statusDef = getStatusDefinition('memory', memory.status);
-  // The vEIR suggested it: its creator is only the person whose conversation it came from, who did not write
-  // it. A person keeping (approving) the suggestion is named on its own row.
-  const suggested = memory.origin === 'ai';
   return (
     <div>
       <InspectorSection title="Memory" className="space-y-3">
         <div className="flex flex-wrap items-center gap-1.5">
           <MemoryTypeLabel type={memory.type} />
-          <StatusBadge kind="memory" status={memory.status} withTitle />
+          {SHOWN_STATUS.has(memory.status) ? (
+            <StatusBadge kind="memory" status={memory.status} withTitle />
+          ) : null}
           {memory.pinned ? <PinnedMark /> : null}
         </div>
         <h3 className="mt-2.5 text-[15px] leading-snug font-semibold tracking-tight [overflow-wrap:anywhere]">
@@ -78,7 +78,9 @@ export function MemoryDetail({
         <Markdown size="sm" className="mt-1.5">
           {displayContent(memory)}
         </Markdown>
-        <p className="mt-2 text-xs text-muted-foreground">{statusDef.description}</p>
+        <p className="mt-2 text-xs text-muted-foreground">
+          <ProvenanceLine memory={memory} tenant={tenant} ventureId={ventureId} />
+        </p>
         {canEdit ? (
           <MemoryActionBar
             ventureId={ventureId}
@@ -97,15 +99,9 @@ export function MemoryDetail({
         </InspectorSection>
       ) : null}
 
-      <InspectorSection title="Provenance">
+      <InspectorSection title="Sources">
         <SourceRefList refs={memory.sourceRefs} tenant={tenant} ventureId={ventureId} />
         <dl className="mt-3 grid gap-2 text-[13px]">
-          <div className="flex items-center justify-between gap-3">
-            <dt className="text-muted-foreground">Confidence</dt>
-            <dd>
-              <ConfidenceMeter value={memory.confidence} />
-            </dd>
-          </div>
           <div className="flex items-center justify-between gap-3">
             <dt className="text-muted-foreground">Visible to</dt>
             <dd>
@@ -113,34 +109,13 @@ export function MemoryDetail({
             </dd>
           </div>
           <div className="flex items-center justify-between gap-3">
-            <dt className="text-muted-foreground">Origin</dt>
-            <dd>
-              <OriginLabel origin={memory.origin} />
-            </dd>
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <dt className="text-muted-foreground">Created</dt>
+            <dt className="text-muted-foreground">Updated</dt>
             <dd className="text-right">
-              {suggested ? 'Suggested by AI' : memory.createdBy.displayName} ·{' '}
-              <time dateTime={isoString(memory.createdAt)} title={formatDateTime(memory.createdAt)}>
-                {formatRelative(memory.createdAt)}
+              <time dateTime={isoString(memory.updatedAt)} title={formatDateTime(memory.updatedAt)}>
+                {formatRelative(memory.updatedAt)}
               </time>
+              {memory.version > 1 ? <span className="tabular"> · v{memory.version}</span> : null}
             </dd>
-          </div>
-          {memory.approvedAt ? (
-            <div className="flex items-center justify-between gap-3">
-              <dt className="text-muted-foreground">{suggested ? 'Kept' : 'Approved'}</dt>
-              <dd className="text-right">
-                {memory.approvedBy ? `${memory.approvedBy.displayName} · ` : ''}
-                <time dateTime={isoString(memory.approvedAt)} title={formatDateTime(memory.approvedAt)}>
-                  {formatRelative(memory.approvedAt)}
-                </time>
-              </dd>
-            </div>
-          ) : null}
-          <div className="flex items-center justify-between gap-3">
-            <dt className="text-muted-foreground">Version</dt>
-            <dd className="tabular">v{memory.version}</dd>
           </div>
           {memory.expiresAt ? (
             <div className="flex items-center justify-between gap-3">

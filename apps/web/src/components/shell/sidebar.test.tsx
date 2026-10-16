@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { jsonResponse, renderWithProviders, stubFetch } from '@/features/admin/shared/test-utils';
 import { lesson } from '@/features/eir/personas/test-fixtures';
+import { IDS, makeVenture } from '@/features/knowledge/testing';
 
 import type { Workspace } from './nav';
 import { SidebarContent } from './sidebar';
@@ -93,5 +94,48 @@ describe('SidebarContent: Lessons to review', () => {
     expect(fetchMock.mock.calls.map(([input]) => urlOf(input)).some((url) => url.includes('/lessons'))).toBe(
       false,
     );
+  });
+});
+
+describe('SidebarContent: venture destinations', () => {
+  it('never counts memory to review on Knowledge (memory is kept automatically), only open help', async () => {
+    const fetchMock = stubFetch();
+    fetchMock.mockImplementation((input) =>
+      Promise.resolve(
+        urlOf(input) === `/api/v1/ventures/${IDS.venture}`
+          ? jsonResponse(makeVenture({ pendingMemory: 3, openEscalations: 2 }))
+          : jsonResponse({ items: [] }),
+      ),
+    );
+    const founder: Me = {
+      ...me([]),
+      memberships: [{ ventureId: IDS.venture, ventureName: 'QuietQuad', role: 'founder' }],
+    };
+    const noop = () => undefined;
+    const rootRoute = createRootRoute({
+      component: () => (
+        <nav aria-label="Main">
+          <SidebarContent
+            me={founder}
+            workspace={{ kind: 'venture', ventureId: IDS.venture }}
+            onOpenSearch={noop}
+            onOpenShortcuts={noop}
+            onOpenDataUse={noop}
+            onOpenReportProblem={noop}
+          />
+        </nav>
+      ),
+    });
+    const router = createRouter({
+      routeTree: rootRoute,
+      history: createMemoryHistory({ initialEntries: ['/'] }),
+    });
+    renderWithProviders(<RouterProvider router={router} />);
+    const help = await screen.findByRole('link', { name: /^Human help/ });
+    await waitFor(() => {
+      expect(help).toHaveTextContent('2 open');
+    });
+    expect(screen.getByRole('link', { name: /^Knowledge/ })).toHaveTextContent(/^Knowledge$/);
+    expect(screen.queryByText(/to review/)).toBeNull();
   });
 });

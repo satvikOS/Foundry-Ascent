@@ -142,58 +142,72 @@ test.describe('what the vEIR knows', () => {
 });
 
 test.describe('memory', () => {
-  test('two suggestions are approved together from the review queue', async ({ page, browser }) => {
+  test('what others add is simply in Knowledge, to edit or forget: there is no review queue', async ({
+    page,
+    browser,
+  }) => {
     const token = runToken();
     const ventureId = await openVenture(page);
 
-    // The venture's EIR proposes two items (EIR proposals always wait for the team's approval).
+    // The venture's EIR adds two items for the team.
     const owner = await browser.newContext({ storageState: OWNER_STATE });
     const eirCode = await issueAccessCodeViaApi(owner.request, EIR_NAME);
     await owner.close();
     const eir = await browser.newContext({ storageState: { cookies: [], origins: [] } });
     const eirPage = await eir.newPage();
     await signIn(eirPage, eirCode);
-    const byEir = `Libraries count doors hourly ${token}`;
-    const titles = [byEir, `Exam weeks double demand ${token}`];
+    const toEdit = `Libraries count doors hourly ${token}`;
+    const toForget = `Exam weeks double demand ${token}`;
     const added: string[] = [];
-    for (const title of titles) {
+    for (const title of [toEdit, toForget]) {
       const created = await eirPage.request.post(`/api/v1/ventures/${ventureId}/memory`, {
         headers: WRITE_HEADERS,
-        data: { type: 'evidence', title, content: `Proposed by the EIR for review (${token}).` },
+        data: { type: 'evidence', title, content: `Added by the EIR (${token}).` },
       });
       expect(created.status(), 'POST /ventures/:id/memory as the EIR').toBe(201);
-      const body = (await created.json()) as { id: string; status: string };
-      expect(body.status).toBe('proposed');
-      added.push(body.id);
+      added.push(((await created.json()) as { id: string }).id);
     }
     await eir.close();
 
     try {
+      // An old link to the review queue opens the memory list, where both items already are.
       await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?view=proposed`);
-      const queue = page.getByRole('list', { name: 'Suggestions to review' });
-      // The EIR's own proposals name the person; only the vEIR's are "Suggested by".
-      await expect(queue.getByRole('listitem').filter({ hasText: byEir })).toContainText(
-        `Added by ${EIR_NAME}`,
-      );
-      for (const title of titles) {
-        await page.getByRole('checkbox', { name: title }).check();
-      }
-      await expect(page.getByRole('toolbar', { name: 'Review suggestions' })).toContainText(
-        /2 of \d+ suggestions selected/,
-      );
-      await page.getByRole('button', { name: 'Approve 2' }).click();
-      for (const title of titles) {
-        await expect(queue.getByRole('listitem').filter({ hasText: title })).toHaveCount(0);
-      }
-
-      // Both are now kept memory.
-      await page.getByRole('tab', { name: 'Memory' }).click();
+      await expect(page.getByRole('tab', { name: /^To review/ })).toHaveCount(0);
+      await expect(page.getByRole('tab', { name: 'Memory' })).toHaveAttribute('aria-selected', 'true');
       await page.getByRole('searchbox', { name: 'Search' }).fill(token);
-      const kept = page
-        .getByRole('list', { name: 'Memory' })
-        .getByRole('button', { name: new RegExp(token) });
-      await expect(kept).toHaveCount(2);
-      for (const item of await kept.all()) await expect(item).toContainText('Confirmed');
+      const list = page.getByRole('list', { name: 'Memory' });
+      const rows = list.getByRole('listitem').filter({ hasText: token });
+      await expect(rows).toHaveCount(2);
+      // Each says where it came from; nothing asks to be approved.
+      for (const row of await rows.all()) await expect(row).toContainText(`Added by ${EIR_NAME} on`);
+      await expect(page.getByRole('button', { name: /^(Approve|Reject|Keep|Not now)\b/ })).toHaveCount(0);
+      await expect(page.getByRole('checkbox')).toHaveCount(0);
+
+      // Edit one from its row: saved as a new version.
+      const edited = page.waitForResponse(
+        (response) =>
+          response.url().endsWith(`/memory/${added[0] ?? ''}`) && response.request().method() === 'PATCH',
+      );
+      await page.getByRole('button', { name: `Actions for ${toEdit}` }).click();
+      await page.getByRole('menuitem', { name: 'Edit' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Edit memory' });
+      await dialog.getByRole('textbox', { name: /Title/ }).fill(`Libraries count doors every hour ${token}`);
+      await dialog.getByRole('button', { name: 'Save' }).click();
+      const newVersion = (await (await edited).json()) as { id: string };
+      added.push(newVersion.id);
+      await expect(list.getByRole('listitem').filter({ hasText: `every hour ${token}` })).toBeVisible();
+
+      // Forget the other: it asks first, then it is gone.
+      await page.getByRole('button', { name: `Actions for ${toForget}` }).click();
+      await page.getByRole('menuitem', { name: 'Forget…' }).click();
+      const confirm = page.getByRole('alertdialog', { name: 'Forget this?' });
+      await confirm.getByRole('button', { name: 'Forget' }).click();
+      await expect(list.getByRole('listitem').filter({ hasText: toForget })).toHaveCount(0);
+      await expect
+        .poll(async () => (await page.request.get(`/api/v1/memory/${added[1] ?? ''}`)).status(), {
+          message: 'the forgotten item is gone',
+        })
+        .toBe(404);
     } finally {
       await deleteMemory(page.request, added);
     }
@@ -220,7 +234,7 @@ test.describe('memory', () => {
       await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?status=superseded`);
       await page
         .getByRole('list', { name: 'Memory' })
-        .getByRole('button', { name: new RegExp(`Seats counted at nine ${token}`) })
+        .getByRole('button', { name: new RegExp(`^Seats counted at nine ${token}`) })
         .click();
       const panel = page.getByRole('complementary', { name: 'Memory inspector' });
       await expect(panel.getByRole('heading', { name: `Seats counted at nine ${token}` })).toBeVisible();
@@ -242,7 +256,7 @@ test.describe('memory', () => {
     }
   });
 
-  test('approving a disputed item resolves the dispute', async ({ page }) => {
+  test('editing a disputed item settles it, with no approve step', async ({ page }) => {
     const token = runToken();
     const ventureId = await openVenture(page);
     const created = await page.request.post(`/api/v1/ventures/${ventureId}/memory`, {
@@ -255,6 +269,7 @@ test.describe('memory', () => {
     });
     expect(created.status(), 'POST /ventures/:id/memory').toBe(201);
     const item = (await created.json()) as { id: string };
+    const ids = [item.id];
     try {
       const disputed = await page.request.patch(`/api/v1/memory/${item.id}`, {
         headers: WRITE_HEADERS,
@@ -265,43 +280,44 @@ test.describe('memory', () => {
       await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?m=${item.id}`);
       const panel = page.getByRole('complementary', { name: 'Memory inspector' });
       await expect(panel.getByRole('heading', { name: `Door counter undercounts ${token}` })).toBeVisible();
-      await panel.getByRole('button', { name: 'Approve', exact: true }).click();
-      await expect(
-        page
-          .getByRole('region', { name: /Notifications/ })
-          .getByText('Dispute resolved: kept as venture memory'),
-      ).toBeVisible();
-      await expect(page.getByText('Nothing changed: these were already handled.')).toHaveCount(0);
-      await expect
-        .poll(
-          async () =>
-            ((await (await page.request.get(`/api/v1/memory/${item.id}`)).json()) as { status: string })
-              .status,
-        )
-        .toBe('confirmed');
+      await expect(panel.getByRole('button', { name: /Approve|Reject|Dispute/ })).toHaveCount(0);
+      const saved = page.waitForResponse(
+        (response) =>
+          response.url().endsWith(`/memory/${item.id}`) && response.request().method() === 'PATCH',
+      );
+      await panel.getByRole('button', { name: 'Edit', exact: true }).click();
+      const dialog = page.getByRole('dialog', { name: 'Edit memory' });
+      await dialog
+        .getByRole('textbox', { name: /Title/ })
+        .fill(`Door counter undercounts by a tenth ${token}`);
+      await dialog.getByRole('button', { name: 'Save' }).click();
+      const next = (await (await saved).json()) as { id: string; status: string };
+      ids.push(next.id);
+      expect(next.status).toBe('confirmed');
+      await expect(page.getByRole('region', { name: /Notifications/ }).getByText('Saved')).toBeVisible();
     } finally {
-      await deleteMemory(page.request, [item.id]);
+      await deleteMemory(page.request, ids);
     }
   });
 
   test('type chips filter the memory list', async ({ page }) => {
     const ventureId = await openKnowledge(page);
     const list = page.getByRole('list', { name: 'Memory' });
-    await expect(list.getByRole('button', { name: /Keep the student app free/ })).toBeVisible();
+    await expect(list.getByRole('button', { name: /^Keep the student app free/ })).toBeVisible();
 
     const chips = page.getByRole('group', { name: 'Type' });
     await chips.getByRole('button', { name: /^Decision \d+$/ }).click();
     await expect(page).toHaveURL(new RegExp(`/${TENANT}/app/v/${ventureId}/knowledge\\?type=decision$`));
     await expect(
-      list.getByRole('button', { name: /Focus the first version on exam-week peaks/ }),
+      list.getByRole('button', { name: /^Focus the first version on exam-week peaks/ }),
     ).toBeVisible();
-    await expect(list.getByRole('button', { name: /Keep the student app free/ })).toHaveCount(0);
-    for (const item of await list.getByRole('button').all()) await expect(item).toContainText('Decision');
+    await expect(list.getByRole('button', { name: /^Keep the student app free/ })).toHaveCount(0);
+    for (const item of await list.getByRole('listitem').all()) await expect(item).toContainText('Decision');
 
     // Selecting the chip again clears the filter.
     await chips.getByRole('button', { name: /^Decision \d+$/ }).click();
     await expect(page).toHaveURL(new RegExp(`/${TENANT}/app/v/${ventureId}/knowledge$`));
-    await expect(list.getByRole('button', { name: /Keep the student app free/ })).toBeVisible();
+    await expect(list.getByRole('button', { name: /^Keep the student app free/ })).toBeVisible();
   });
 });
 
@@ -352,7 +368,7 @@ test.describe('human help', () => {
 });
 
 for (const scheme of ['dark', 'light'] as const) {
-  test(`notebook and review queue are accessible · ${scheme}`, async ({ page }) => {
+  test(`notebook and memory are accessible · ${scheme}`, async ({ page }) => {
     await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
     const ventureId = await openVenture(page);
     await useTheme(page, scheme);
@@ -362,13 +378,10 @@ for (const scheme of ['dark', 'light'] as const) {
     await expectNoSeriousA11yViolations(page, `knowledge notebook (${scheme})`);
     await expectNoBareEirName(page, 'the notebook');
 
-    await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?view=proposed`);
-    await expect(page.getByRole('tab', { name: /^To review/ })).toHaveAttribute('aria-selected', 'true');
-    await expectNoSeriousA11yViolations(page, `knowledge review queue (${scheme})`);
-    await expectNoBareEirName(page, 'the review queue');
-
     await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge`);
     await expect(page.getByRole('list', { name: 'Memory' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: /^To review/ })).toHaveCount(0);
+    await expectNoSeriousA11yViolations(page, `knowledge memory (${scheme})`);
     await expectNoBareEirName(page, 'Knowledge memory');
     await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?view=conversations`);
     await expect(page.getByRole('tab', { name: /^Conversations/ })).toHaveAttribute('aria-selected', 'true');

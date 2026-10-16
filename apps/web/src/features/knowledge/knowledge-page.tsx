@@ -10,11 +10,14 @@ import { InspectorSection } from '@/components/ui/inspector-panel';
 import { PageContainer, PageHeader } from '@/components/ui/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useMemory } from '@/lib/api/hooks/memory';
 import { useVenture } from '@/lib/api/hooks/ventures';
 import { canWrite, isAssignedEir } from '@/lib/auth/roles';
 import { useRequiredMe } from '@/lib/auth/use-me';
-import { CreateMemoryDialog } from '@/features/memory/memory-dialogs';
+import {
+  ConfirmDeleteMemoryDialog,
+  CorrectMemoryDialog,
+  CreateMemoryDialog,
+} from '@/features/memory/memory-dialogs';
 import { MemoryDetail } from '@/features/memory/memory-detail';
 import { TypedMemoryDialog, type TypedKind } from '@/features/memory/typed/typed-memory-dialog';
 import { useVeirName } from '@/features/venture/veir-name';
@@ -23,7 +26,6 @@ import { DigestsSection } from './digests-section';
 import { EvidenceSection } from './evidence-section';
 import { MemorySection } from './memory-section';
 import { NotebookEditor } from './notebook-section';
-import { ReviewQueue } from './review-queue';
 import { useSelectedMemory } from './selected-memory';
 import type { KnowledgeSearch, KnowledgeView } from './search';
 
@@ -37,9 +39,10 @@ function typedKind(type: KnowledgeSearch['type']): TypedKind | null {
 }
 
 /**
- * Knowledge: the venture's specific pool in one place. Memory the team kept (with type chips, status
- * and search), the "To review" queue, the vEIR's notebook, conversation digests and the evidence it can
- * cite. A memory item opens in the side panel.
+ * Knowledge: the venture's specific pool in one place. Everything the vEIR learned (kept automatically from
+ * every conversation that is not private) and what the team added, with type chips and search; the vEIR's
+ * notebook, conversation digests and the evidence it can cite. A memory item opens in the side panel, where
+ * it can be edited or forgotten. Nothing waits for review.
  */
 export function KnowledgePage() {
   const me = useRequiredMe();
@@ -54,6 +57,9 @@ export function KnowledgePage() {
   const notebookVisible = team || isAssignedEir(me, ventureId);
   const [creating, setCreating] = useState(false);
   const [typedEditing, setTypedEditing] = useState<MemoryObjectView | null>(null);
+  // Edit and Forget from a row of the list (the side panel has its own).
+  const [editing, setEditing] = useState<MemoryObjectView | null>(null);
+  const [forgetting, setForgetting] = useState<MemoryObjectView | null>(null);
 
   const setSearch = useCallback(
     (patch: Partial<KnowledgeSearch>, replace = true) =>
@@ -71,7 +77,6 @@ export function KnowledgePage() {
 
   const tabs: { value: Tab; label: string }[] = [
     { value: 'memory', label: 'Memory' },
-    { value: 'proposed', label: 'To review' },
     ...(notebookVisible ? [{ value: 'notebook' as const, label: 'Notebook' }] : []),
     ...(team ? [{ value: 'conversations' as const, label: 'Conversations' }] : []),
     { value: 'evidence', label: 'Evidence' },
@@ -89,8 +94,6 @@ export function KnowledgePage() {
 
   const selection = useSelectedMemory(ventureId, search);
   const selected = selection.state === 'ready' ? selection.memory : null;
-  const proposed = useMemory(ventureId, { status: 'proposed' });
-  const pending = proposed.data?.length ?? venture.data?.pendingMemory ?? 0;
 
   const kind = typedKind(search.type);
   const editKind = typedEditing ? typedKind(typedEditing.type) : null;
@@ -140,12 +143,6 @@ export function KnowledgePage() {
               {tabs.map((t) => (
                 <TabsTrigger key={t.value} value={t.value}>
                   {t.label}
-                  {t.value === 'proposed' && pending > 0 ? (
-                    <span className="tabular rounded-sm bg-warning/15 px-1 text-[11px] leading-4 text-warning">
-                      {pending}
-                      <span className="sr-only"> waiting</span>
-                    </span>
-                  ) : null}
                 </TabsTrigger>
               ))}
             </TabsList>
@@ -163,10 +160,13 @@ export function KnowledgePage() {
               setCreating(true);
             }}
             createLabel={createLabel}
+            onEdit={(memory) => {
+              if (typedKind(memory.type)) setTypedEditing(memory);
+              else setEditing(memory);
+            }}
+            onForget={setForgetting}
+            veirName={veirName}
           />
-        </TabsContent>
-        <TabsContent value="proposed">
-          <ReviewQueue ventureId={ventureId} tenant={tenant} canEdit={team} onOpenDetail={select} />
         </TabsContent>
         {notebookVisible ? (
           <TabsContent value="notebook">
@@ -190,7 +190,7 @@ export function KnowledgePage() {
       </Tabs>
 
       {search.m ? (
-        <Inspector title="Memory" description="Source, history and actions">
+        <Inspector title="Memory" description="Where it came from, and its history">
           {selected ? (
             <MemoryDetail
               memory={selected}
@@ -247,6 +247,25 @@ export function KnowledgePage() {
           }}
         />
       )}
+      <CorrectMemoryDialog
+        ventureId={ventureId}
+        memory={editing}
+        open={editing !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditing(null);
+        }}
+      />
+      <ConfirmDeleteMemoryDialog
+        ventureId={ventureId}
+        memory={forgetting}
+        open={forgetting !== null}
+        onOpenChange={(open) => {
+          if (!open) setForgetting(null);
+        }}
+        onDone={() => {
+          if (forgetting && forgetting.id === search.m) select(undefined);
+        }}
+      />
       {typedEditing && editKind ? (
         <TypedMemoryDialog
           ventureId={ventureId}

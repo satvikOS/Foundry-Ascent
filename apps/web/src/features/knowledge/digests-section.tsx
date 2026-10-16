@@ -62,7 +62,7 @@ export function DigestsSection({ ventureId, tenant, canEdit }: DigestsSectionPro
         icon={MessagesSquare}
         headingLevel={2}
         title="No digests yet"
-        description={`When a conversation ends or goes quiet, ${author} writes a short digest of it here. Temporary chats never get one.`}
+        description={`When a conversation ends or goes quiet, ${author} writes a short digest of it here. Private chats never get one.`}
       />
     );
   }

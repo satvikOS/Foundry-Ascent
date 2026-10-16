@@ -20,11 +20,11 @@ describe('memory history lines', () => {
     });
   });
 
-  it('credits an AI proposal to the AI, never to the founder whose conversation it came from', () => {
+  it('says the vEIR learned it, never crediting the founder whose conversation it came from', () => {
     expect(aiEventLine('proposed', { status: 'proposed', origin: 'ai', type: 'insight' })).toBe(
-      'Suggested by AI',
+      'Learned from a conversation',
     );
-    expect(aiEventLine('created', { origin: 'ai' })).toBe('Suggested by AI');
+    expect(aiEventLine('created', { origin: 'ai' })).toBe('Learned from a conversation');
     // What people do with it afterwards, and what people write themselves, keep their names.
     expect(aiEventLine('approved', { origin: 'ai' })).toBeNull();
     expect(aiEventLine('created', { status: 'confirmed', origin: 'founder', type: 'decision' })).toBeNull();

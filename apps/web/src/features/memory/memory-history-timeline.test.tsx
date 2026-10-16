@@ -18,7 +18,7 @@ afterEach(() => {
 });
 
 describe('MemoryHistoryTimeline', () => {
-  it('shows an AI proposal as suggested by AI, and the founder’s approval as hers', async () => {
+  it('says the vEIR learned it, and names who kept an older suggestion', async () => {
     stubFetch().mockResolvedValue(
       jsonResponse({
         items: [
@@ -42,8 +42,9 @@ describe('MemoryHistoryTimeline', () => {
       }),
     );
     renderWithProviders(<MemoryHistoryTimeline memoryId={MEMORY} />);
-    expect(await screen.findByText('Suggested by AI')).toBeVisible();
-    expect(screen.queryByText(/Proposed/)).toBeNull();
+    expect(await screen.findByText('Learned from a conversation')).toBeVisible();
+    expect(screen.queryByText(/Proposed|Approved/)).toBeNull();
+    expect(screen.getByText('Kept')).toBeVisible();
     expect(screen.getByText('by Maya Okafor')).toBeVisible();
     expect(screen.getAllByText(/by Maya Okafor/)).toHaveLength(1);
   });

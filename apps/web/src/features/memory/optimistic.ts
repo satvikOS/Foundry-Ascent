@@ -14,17 +14,20 @@ export type MemoryActionKind = MemoryActionInput['action'];
 /** Statuses a list without an explicit status filter does not show. */
 const HIDDEN_BY_DEFAULT: ReadonlySet<MemoryStatus> = new Set(['deleted']);
 
-/** The founder-facing actions allowed for an item in its current state. */
+/**
+ * The founder-facing actions allowed for an item in its current state: edit (`correct`), pin and forget
+ * (`delete`). Memory is kept automatically, so nothing is approved or rejected; editing a disputed item
+ * settles it (the new version is kept).
+ */
 export function availableMemoryActions(
   item: Pick<MemoryObjectView, 'status' | 'pinned'>,
 ): MemoryActionKind[] {
   switch (item.status) {
     case 'proposed':
-      return ['approve', 'reject', 'correct', 'delete'];
+      return ['correct', 'delete'];
     case 'confirmed':
-      return ['correct', item.pinned ? 'unpin' : 'pin', 'dispute', 'delete'];
     case 'disputed':
-      return ['approve', 'correct', item.pinned ? 'unpin' : 'pin', 'delete'];
+      return ['correct', item.pinned ? 'unpin' : 'pin', 'delete'];
     case 'superseded':
     case 'expired':
     case 'rejected':
@@ -119,7 +122,7 @@ export function memoryActionSuccessMessage(action: MemoryActionKind): string {
     case 'reject':
       return 'Rejected — it won’t be used as memory';
     case 'correct':
-      return 'Correction saved as a new version';
+      return 'Saved';
     case 'dispute':
       return 'Marked as disputed';
     case 'pin':
@@ -127,7 +130,7 @@ export function memoryActionSuccessMessage(action: MemoryActionKind): string {
     case 'unpin':
       return 'Unpinned';
     case 'delete':
-      return 'Deleted from memory';
+      return 'Forgotten';
   }
 }
 

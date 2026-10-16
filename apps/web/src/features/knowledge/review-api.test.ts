@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { errorMessage } from '@/lib/api/errors';
 
 import {
-  decisionMessage,
   PartialReviewError,
   REVIEW_BATCH_MAX,
   reviewFailure,
@@ -134,17 +133,5 @@ describe('reviewMessage', () => {
     expect(reviewMessage('approve', { items: [], skippedIds: [IDS.memory] })).toBe(
       'Nothing changed: these were already handled.',
     );
-  });
-});
-
-describe('decisionMessage (Keep / Not now in a conversation)', () => {
-  it('speaks in the words of the buttons', () => {
-    const one = { items: [makeMemory()], skippedIds: [] };
-    expect(decisionMessage('approve', one)).toBe('Kept');
-    expect(decisionMessage('reject', one)).toBe('Not kept');
-    expect(decisionMessage('approve', { items: [makeMemory(), makeMemory()], skippedIds: [] })).toBe(
-      'Kept 2',
-    );
-    expect(decisionMessage('approve', { items: [], skippedIds: [IDS.memory] })).toBe('Already handled.');
   });
 });

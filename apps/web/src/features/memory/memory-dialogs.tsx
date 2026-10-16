@@ -15,7 +15,6 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -36,7 +35,7 @@ import { applyFieldErrors } from '@/lib/form-errors';
 import { MEMORY_TYPE_LABELS, VISIBILITY_LABELS } from '@/lib/labels';
 import { useFullMemory } from '@/lib/api/hooks/memory';
 import { SelectField, type SelectFieldOption } from '@/components/ui/select-field';
-import { reviewFailure, reviewMessage, useMemoryReview } from '@/features/knowledge/review-api';
+import { reviewFailure, useMemoryReview } from '@/features/knowledge/review-api';
 import { sentenceStart, useVeirName } from '@/features/venture/veir-name';
 
 import { useCreateVentureMemory, useMemoryActions } from './api';
@@ -92,12 +91,7 @@ const CorrectSchema = z.object({
     .min(1, 'Describe what should be remembered.')
     .max(8000, 'Keep it under 8,000 characters.'),
   visibility: Visibility,
-  confidence: z
-    .number({ error: 'Enter a number from 0 to 100.' })
-    .min(0, 'Use 0 to 100.')
-    .max(100, 'Use 0 to 100.'),
   reason: z.string().trim().max(500, 'Keep the reason under 500 characters.'),
-  approveAfter: z.boolean(),
 });
 type CorrectInput = z.input<typeof CorrectSchema>;
 type CorrectOutput = z.output<typeof CorrectSchema>;
@@ -131,9 +125,7 @@ export function CorrectMemoryDialog({
       title: '',
       content: '',
       visibility: 'venture',
-      confidence: 70,
       reason: '',
-      approveAfter: true,
     },
   });
   const { register, handleSubmit, reset, control, setError, formState } = form;
@@ -145,25 +137,23 @@ export function CorrectMemoryDialog({
         title: memory.title,
         content: memory.content,
         visibility: memory.visibility,
-        confidence: Math.round(memory.confidence * 100),
         reason: '',
-        approveAfter: true,
       });
     }
   }, [open, memory, complete, reset]);
 
   if (!memory) return null;
+  // Memory the vEIR saved before memory was kept automatically can still be waiting as a suggestion: the
+  // person editing it means to keep it, so saving keeps it too (through the one review path).
   const isProposed = memory.status === 'proposed';
 
-  // Approving goes through the one review path, like the queue and the action bar.
-  const approve = (memoryId: string, successMessage: string) => {
+  const keep = (memoryId: string) => {
     review.mutate(
       { ids: [memoryId], action: 'approve' },
       {
-        onSuccess: (result) => {
-          const message = result.items.length > 0 ? successMessage : reviewMessage('approve', result);
-          toast.success(message);
-          announce(message);
+        onSuccess: () => {
+          toast.success('Saved');
+          announce('Saved');
         },
         onError: (error) => {
           const failure = reviewFailure('approve', [memoryId], error);
@@ -176,15 +166,13 @@ export function CorrectMemoryDialog({
   const onSubmit = handleSubmit((values) => {
     setFormError(null);
     if (!complete) return;
-    const patch: { title?: string; content?: string; visibility?: Visibility; confidence?: number } = {};
+    const patch: { title?: string; content?: string; visibility?: Visibility } = {};
     if (values.title !== memory.title) patch.title = values.title;
     if (values.content !== memory.content) patch.content = values.content;
     if (values.visibility !== memory.visibility) patch.visibility = values.visibility;
-    const confidence = Math.round(values.confidence) / 100;
-    if (Math.abs(confidence - memory.confidence) > 0.001) patch.confidence = confidence;
     if (Object.keys(patch).length === 0) {
-      if (isProposed && values.approveAfter) {
-        approve(memory.id, 'Approved');
+      if (isProposed) {
+        keep(memory.id);
         onOpenChange(false);
         return;
       }
@@ -200,23 +188,17 @@ export function CorrectMemoryDialog({
         onSuccess: (result) => {
           // `correct` always answers with the new version; only `delete` is body-less (204).
           const corrected = result ?? memory;
-          if (isProposed && values.approveAfter && corrected.status === 'proposed') {
-            approve(corrected.id, 'Corrected and approved');
+          if (corrected.status === 'proposed') {
+            keep(corrected.id);
           } else {
-            toast.success('Correction saved as a new version');
-            announce('Correction saved');
+            toast.success('Saved');
+            announce('Saved');
           }
           onCorrected?.(corrected);
           onOpenChange(false);
         },
         onError: (error) => {
-          const shown = applyFieldErrors(error, setError, [
-            'title',
-            'content',
-            'visibility',
-            'confidence',
-            'reason',
-          ]);
+          const shown = applyFieldErrors(error, setError, ['title', 'content', 'visibility', 'reason']);
           if (!shown) setFormError(errorMessage(error));
         },
       },
@@ -228,7 +210,7 @@ export function CorrectMemoryDialog({
       <DialogContent className="max-w-xl">
         <form onSubmit={(e) => void onSubmit(e)} noValidate className="grid gap-4">
           <DialogHeader>
-            <DialogTitle>{isProposed ? 'Edit proposed memory' : 'Correct memory'}</DialogTitle>
+            <DialogTitle>Edit memory</DialogTitle>
             <DialogDescription>Saved as a new version; the old one stays in the history.</DialogDescription>
           </DialogHeader>
           {formError ? (
@@ -242,35 +224,19 @@ export function CorrectMemoryDialog({
           <Field label="What should be remembered" required error={formState.errors.content?.message}>
             <Textarea {...register('content')} minRows={4} maxRows={12} maxLength={8000} />
           </Field>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Controller
-              control={control}
-              name="visibility"
-              render={({ field }) => (
-                <Field
-                  label="Visibility"
-                  description={VISIBILITY_LABELS[field.value].description}
-                  error={formState.errors.visibility?.message}
-                >
-                  <VisibilitySelect value={field.value} onChange={field.onChange} />
-                </Field>
-              )}
-            />
-            <Field
-              label="Confidence (%)"
-              description="How sure the team is, from 0 to 100."
-              error={formState.errors.confidence?.message}
-            >
-              <Input
-                type="number"
-                inputMode="numeric"
-                min={0}
-                max={100}
-                step={5}
-                {...register('confidence', { valueAsNumber: true })}
-              />
-            </Field>
-          </div>
+          <Controller
+            control={control}
+            name="visibility"
+            render={({ field }) => (
+              <Field
+                label="Visibility"
+                description={VISIBILITY_LABELS[field.value].description}
+                error={formState.errors.visibility?.message}
+              >
+                <VisibilitySelect value={field.value} onChange={field.onChange} />
+              </Field>
+            )}
+          />
           <Field
             label="Reason (optional)"
             description="Shown in the version history."
@@ -282,26 +248,6 @@ export function CorrectMemoryDialog({
               placeholder="e.g. Updated after the second interview round"
             />
           </Field>
-          {isProposed ? (
-            <Controller
-              control={control}
-              name="approveAfter"
-              render={({ field }) => (
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="correct-approve-after"
-                    checked={field.value}
-                    onCheckedChange={(checked) => {
-                      field.onChange(checked === true);
-                    }}
-                  />
-                  <Label htmlFor="correct-approve-after" className="font-normal">
-                    Approve after saving
-                  </Label>
-                </div>
-              )}
-            />
-          ) : null}
           <DialogFooter>
             <Button
               variant="secondary"
@@ -316,79 +262,7 @@ export function CorrectMemoryDialog({
               loading={mutation.isPending || !complete}
               loadingText={complete ? 'Saving…' : 'Loading…'}
             >
-              Save correction
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// -------------------------------------------------------------------------------------------------
-// Dispute
-// -------------------------------------------------------------------------------------------------
-
-const DisputeSchema = z.object({
-  reason: z
-    .string()
-    .trim()
-    .min(3, 'Say briefly what is wrong or contested.')
-    .max(500, 'Keep it under 500 characters.'),
-});
-
-export function DisputeMemoryDialog({
-  ventureId,
-  memory,
-  open,
-  onOpenChange,
-}: {
-  ventureId: string;
-  memory: MemoryObjectView | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const { run, isPending } = useMemoryActions(ventureId);
-  const veirName = useVeirName(ventureId);
-  const form = useForm<z.input<typeof DisputeSchema>, unknown, z.output<typeof DisputeSchema>>({
-    resolver: zodResolver(DisputeSchema),
-    defaultValues: { reason: '' },
-  });
-  const { register, handleSubmit, reset, formState } = form;
-  useEffect(() => {
-    if (open) reset({ reason: '' });
-  }, [open, reset]);
-  if (!memory) return null;
-
-  const onSubmit = handleSubmit((values) => {
-    run(memory.id, { action: 'dispute', reason: values.reason });
-    onOpenChange(false);
-  });
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <form onSubmit={(e) => void onSubmit(e)} noValidate className="grid gap-4">
-          <DialogHeader>
-            <DialogTitle>Dispute this memory</DialogTitle>
-            <DialogDescription>
-              {sentenceStart(veirName)} won’t treat it as fact until it’s corrected or approved again.
-            </DialogDescription>
-          </DialogHeader>
-          <Field label="What’s wrong?" required error={formState.errors.reason?.message}>
-            <Textarea {...register('reason')} minRows={3} maxLength={500} />
-          </Field>
-          <DialogFooter>
-            <Button
-              variant="secondary"
-              onClick={() => {
-                onOpenChange(false);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" loading={isPending}>
-              Mark as disputed
+              Save
             </Button>
           </DialogFooter>
         </form>
@@ -427,9 +301,10 @@ export function ConfirmDeleteMemoryDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete this memory?</AlertDialogTitle>
+          <AlertDialogTitle>Forget this?</AlertDialogTitle>
           <AlertDialogDescription>
-            {sentenceStart(veirName)} stops using it at once. Only an audit record (who and when) is kept.
+            {sentenceStart(veirName)} stops using it at once. Only a record of who forgot it, and when, is
+            kept.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="grid gap-2">
@@ -456,7 +331,7 @@ export function ConfirmDeleteMemoryDialog({
               onDone?.();
             }}
           >
-            Delete
+            Forget
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
