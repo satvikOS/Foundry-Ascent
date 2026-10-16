@@ -224,4 +224,5 @@ export function registerStudioRoutes(r: RouteBuilder, core: Core, options: Studi
     return c.json({ items: page.items, nextCursor: page.nextCursor });
   });
   r.get('/admin/usage', async (c, ctx) => c.json(await core.admin.usageSummary(ctx)));
+  r.get('/admin/insights', async (c, ctx) => c.json(await core.admin.insights(ctx)));
 }

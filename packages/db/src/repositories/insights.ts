@@ -694,6 +694,46 @@ export function turnTrace(
   );
 }
 
+export interface TurnLatencyInsight {
+  readonly channel: string;
+  readonly turns: number;
+  /** Server time from the turn's admission to its answer (audit `totalMs`). */
+  readonly totalMsP50: number | null;
+  readonly totalMsP95: number | null;
+  /** Time to the first validated words shown (audit `firstTokenMs`; streamed turns only). */
+  readonly firstTokenMsP50: number | null;
+  readonly firstTokenMsP95: number | null;
+}
+
+/** End-to-end turn latency per channel over the window, from the turn audit. */
+export async function turnLatency(sx: SystemExecutor, scope: InsightsScope): Promise<TurnLatencyInsight[]> {
+  const rows = await queryRows(
+    sx,
+    `SELECT x.channel, count(*) AS turns,
+            percentile_cont(0.5) WITHIN GROUP (ORDER BY x.totalms) AS total_p50,
+            percentile_cont(0.95) WITHIN GROUP (ORDER BY x.totalms) AS total_p95,
+            percentile_cont(0.5) WITHIN GROUP (ORDER BY x.firsttokenms) AS first_p50,
+            percentile_cont(0.95) WITHIN GROUP (ORDER BY x.firsttokenms) AS first_p95
+     FROM (
+       SELECT coalesce(a.metadata ->> 'channel', 'text') AS channel, ${metaNumber('totalMs')},
+              ${metaNumber('firstTokenMs')}
+       FROM audit_events a
+       WHERE a.action = 'turn.completed' AND a.at >= ${SINCE} AND (:tenant IS NULL OR a.tenant_id = :tenant)) x
+     GROUP BY x.channel
+     ORDER BY x.channel`,
+    scopeParams(scope),
+    (r) => ({
+      channel: col.text.decode(r.channel, 'channel'),
+      turns: int(r, 'turns'),
+      totalMsP50: numOrNull(r, 'total_p50'),
+      totalMsP95: numOrNull(r, 'total_p95'),
+      firstTokenMsP50: numOrNull(r, 'first_p50'),
+      firstTokenMsP95: numOrNull(r, 'first_p95'),
+    }),
+  );
+  return rows.map((r) => ({ ...r, channel: code(r.channel) ?? 'other' }));
+}
+
 // ---------------------------------------------------------------------------------------------------------
 // Operator export (content). Callers encrypt the result before it leaves the process.
 // ---------------------------------------------------------------------------------------------------------

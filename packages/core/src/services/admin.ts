@@ -24,6 +24,7 @@ import { type RequestContext } from '../context.js';
 import { fail, parseInput } from '../errors.js';
 import { expiryAfterDays, issueAndAuditAccessCode } from '../internal/access-codes.js';
 import { audit, requireId, type Kit } from '../internal/kit.js';
+import { type AdminInsightsValue, readAdminInsights, summarizeAdminInsights } from './insights.js';
 
 type AdminPrincipalRowValue = z.infer<typeof AdminPrincipalRow>;
 type AccessCodeIssuedValue = z.infer<typeof AccessCodeIssued>;
@@ -68,6 +69,11 @@ export interface AdminService {
   listAudit(ctx: RequestContext, query?: z.input<typeof AuditQuery>): Promise<AuditPage>;
   /** Spend today / 30 days, by day, model and purpose, with the global cap (platform admin). */
   usageSummary(ctx: RequestContext): Promise<UsageSummaryValue>;
+  /**
+   * How the admin's tenant uses the platform over 30 days: conversations by channel, calls, distillation
+   * health, memory per venture and turn latency; counts and timings only (platform admin).
+   */
+  insights(ctx: RequestContext): Promise<AdminInsightsValue>;
 }
 
 async function buildRows(
@@ -368,6 +374,14 @@ export function createAdminService(
           outputTokens: u.outputTokens,
         })),
       };
+    },
+
+    insights: async (ctx) => {
+      await kit.inRequest(ctx, (scope) => requireRole(scope, ['platform_admin'], { objectType: 'usage' }));
+      // Owner role for the cross-conversation aggregates (like usageSummary), scoped to the admin's tenant and
+      // read-only; nothing but counts and timings leaves readAdminInsights.
+      const data = await kit.system((sx) => readAdminInsights(sx, ctx.tenantId));
+      return summarizeAdminInsights(data);
     },
   };
 }

@@ -804,3 +804,55 @@ export const UsageSummary = z.object({
     )
     .default([]),
 });
+
+/**
+ * Admin → Usage → Insights (platform admin, the admin's tenant, last `days` days): how conversations, calls and
+ * the vEIR's knowledge are doing, as counts and timings only. No conversation content.
+ */
+export const AdminInsights = z.object({
+  days: z.number().int(),
+  /** Conversations active in the window per channel (`voice`: at least one turn spoken in a call). */
+  conversations: z.array(
+    z.object({
+      channel: TurnChannel,
+      conversations: z.number().int(),
+      turns: z.number().int(),
+      averageTurns: z.number(),
+    }),
+  ),
+  /** Temporary (private) conversations: never distilled, by design. */
+  privateConversations: z.number().int(),
+  calls: z.object({ calls: z.number().int(), minutes: z.number() }),
+  /** Standard conversations with answered turns, by where their distillation stands. */
+  distillation: z.object({
+    upToDate: z.number().int(),
+    /** Turns no digest covers yet (waiting for the delayed job, the end of the conversation or the daily run). */
+    pending: z.number().int(),
+    running: z.number().int(),
+    /** Recorded without a digest in the window (nothing worth keeping, or the model gave no usable answer). */
+    dropped: z.number().int(),
+    failed: z.number().int(),
+  }),
+  memory: z.array(
+    z.object({
+      ventureId: Id,
+      ventureName: z.string(),
+      digests: z.number().int(),
+      proposed: z.number().int(),
+      confirmed: z.number().int(),
+      /** Rejected, expired, deleted, disputed or superseded. */
+      other: z.number().int(),
+    }),
+  ),
+  /** Server time from a turn's admission to its answer, and to the first words shown (streamed turns). */
+  latency: z.array(
+    z.object({
+      channel: TurnChannel,
+      turns: z.number().int(),
+      p50Ms: z.number().int().nullable(),
+      p95Ms: z.number().int().nullable(),
+      firstWordsP50Ms: z.number().int().nullable(),
+      firstWordsP95Ms: z.number().int().nullable(),
+    }),
+  ),
+});

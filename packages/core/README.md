@@ -149,6 +149,7 @@ All methods: `(ctx, …) => Promise<…>`; return types are the `@foundry/contra
 | `PATCH /admin/settings`                         | `admin.updateSettings(ctx, UpdateSettingsRequest) → PlatformSettingsView` (kill switch audited)                                | platform admin                                                                                         |
 | `GET /admin/audit?action&outcome&cursor&limit`  | `admin.listAudit(ctx, AuditQuery) → { items, nextCursor }`                                                                     | platform admin                                                                                         |
 | `GET /admin/usage`                              | `admin.usageSummary(ctx) → UsageSummary`                                                                                       | platform admin                                                                                         |
+| `GET /admin/insights`                           | `admin.insights(ctx) → AdminInsights` (the admin's tenant, 30 days, counts and timings only)                                   | platform admin                                                                                         |
 
 vEIR knowledge pools, conversations and calls (docs/architecture/knowledge-pools.md):
 

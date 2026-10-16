@@ -314,6 +314,8 @@ const studioCases = (): Case[] => [
   ['lead', 'PATCH', '/admin/settings', { aiEnabled: false }],
   ['lead', 'GET', '/admin/audit'],
   ['lead', 'GET', '/admin/usage'],
+  ['lead', 'GET', '/admin/insights'],
+  ['maya', 'GET', '/admin/insights'],
   ['lead', 'POST', `/admin/principals/${api.h.people.owner}/access-codes`, {}],
   // Re-issuing a code for a founder who already has one takes over their account: platform admins only.
   ['lead', 'POST', `/admin/principals/${api.h.people.maya}/access-codes`, {}],
