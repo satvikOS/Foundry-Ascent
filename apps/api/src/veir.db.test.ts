@@ -120,6 +120,30 @@ describe('notebook', () => {
   });
 });
 
+describe('notebook greeting', () => {
+  it('greets with the opener only as the vEIR may say it: never one that names the EIR', async () => {
+    const setOpener = (text: string) =>
+      api.h.t.db.system((sx) =>
+        sx.query(
+          `UPDATE veir_notebooks SET content = jsonb_set(content, '{nextOpener}', to_jsonb(:text::text))
+           WHERE venture_id = :venture`,
+          { text: p.text(text), venture: p.uuid(quietquad()) },
+        ),
+      );
+    const read = async () =>
+      json(await api.request(`/ventures/${quietquad()}/notebook`, { cookie: maya }), NotebookResponse);
+
+    // Distillation wrote an opener that names the EIR (the identity rewrite does not catch this one).
+    const named = 'Last time Corin suggested five library interviews. How did they go?';
+    await setOpener(named);
+    expect(await read()).toMatchObject({ nextOpener: named, greeting: null });
+
+    const plain = 'Last time you planned five library interviews. How did they go?';
+    await setOpener(plain);
+    expect(await read()).toMatchObject({ nextOpener: plain, greeting: plain });
+  });
+});
+
 describe('conversations', () => {
   it('pages recents, renames, deletes digests and deletes conversations', async () => {
     const created = await json(

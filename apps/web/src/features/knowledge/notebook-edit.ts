@@ -49,10 +49,11 @@ export function applyNotebookEditLocally(
         ...touched,
         commitments: notebook.commitments.filter((commitment) => commitment.id !== edit.id),
       };
+    // The greeting New chat shows is the server's checked copy of the opener: none until the server answers.
     case 'edit_opener':
-      return { ...notebook, ...touched, nextOpener: edit.text.trim() };
+      return { ...notebook, ...touched, nextOpener: edit.text.trim(), greeting: null };
     case 'remove_opener':
-      return { ...notebook, ...touched, nextOpener: null };
+      return { ...notebook, ...touched, nextOpener: null, greeting: null };
     case 'clear':
       return {
         ...notebook,
@@ -63,6 +64,7 @@ export function applyNotebookEditLocally(
         openQuestions: [],
         lastAdvice: [],
         nextOpener: null,
+        greeting: null,
       };
   }
 }

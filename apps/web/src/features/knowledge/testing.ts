@@ -123,6 +123,7 @@ export function makeNotebook(overrides: Partial<VeirNotebook> = {}): VeirNoteboo
     openQuestions: [entry('q-chat', 'Would students open a map instead of the group chat?')],
     lastAdvice: [entry('a-rerun', 'Rerun the map only in the two weeks before finals.')],
     nextOpener: 'Last time you planned five library-staff interviews. How did they go?',
+    greeting: 'Last time you planned five library-staff interviews. How did they go?',
     version: 3,
     updatedAt: NOW,
     lastEditedBy: 'veir',

@@ -314,6 +314,8 @@ export async function saveNotebook(
 export function toNotebookView(
   args: { ventureId: string; personaId: string; personaName: string },
   record: NotebookRecord | null,
+  /** The opener after the checks applied when a conversation starts (null when it fails one). */
+  greeting: string | null = null,
 ): VeirNotebook {
   const content = record?.content ?? EMPTY_NOTEBOOK;
   return {
@@ -326,6 +328,7 @@ export function toNotebookView(
     openQuestions: content.openQuestions,
     lastAdvice: content.lastAdvice,
     nextOpener: content.nextOpener,
+    greeting,
     version: record?.version ?? 0,
     updatedAt: record?.updatedAt ?? null,
     lastEditedBy: record?.lastEditedBy ?? null,

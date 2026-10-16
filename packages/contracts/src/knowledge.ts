@@ -77,6 +77,12 @@ export const VeirNotebook = z.object({
   lastAdvice: z.array(NotebookEntry),
   /** One sentence the vEIR may open the next conversation with; null when there is nothing to pick up. */
   nextOpener: z.string().max(300).nullable(),
+  /**
+   * `nextOpener` as the vEIR may say it, after the checks applied when a conversation starts (plain, one line,
+   * no EIR name, no other venture): what New chat shows as the vEIR's greeting. Null when there is none or it
+   * fails a check. Additive: older payloads parse as null.
+   */
+  greeting: z.string().max(300).nullable().default(null),
   version: z.number().int().min(0),
   updatedAt: Timestamp.nullable(),
   /** Who changed it last: the distillation job, or a person on the venture team. */
