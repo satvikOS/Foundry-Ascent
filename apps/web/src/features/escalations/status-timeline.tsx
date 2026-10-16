@@ -39,7 +39,7 @@ export function escalationTimeline(e: EscalationView): TimelineStep[] {
     {
       id: 'drafted',
       label: 'Request drafted',
-      detail: 'The packet was drafted by AI from your request.',
+      detail: 'Packet drafted.',
       at: e.createdAt,
       state: 'done',
     },
@@ -91,7 +91,7 @@ export function escalationTimeline(e: EscalationView): TimelineStep[] {
       detail:
         e.status === 'withdrawn'
           ? 'You withdrew this request. Nothing further is shared.'
-          : 'The assignee declined. The program team can route it to someone else, or you can make a new request.',
+          : 'Declined. The program team can route it to someone else.',
       at: e.updatedAt,
       state: e.status,
     };

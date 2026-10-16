@@ -58,15 +58,15 @@ e2e/                       Playwright suite (journey, documents, safety, accessi
 One shell for every role. A venture is a workspace of conversations; EIR studio, Program and Admin are
 staff workspaces in the same shell (the sidebar switcher moves between them).
 
-| URL                                                                                                                                            | What                                                                                                                                      |
-| ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `/`, `/sign-in`                                                                                                                                | landing, sign-in (in the main bundle: never wait for a route chunk)                                                                       |
-| `/$tenant/app`                                                                                                                                 | opens the last venture's New chat (members) or the main staff workspace; otherwise "nothing to open yet"                                  |
-| `/$tenant/app/v/$ventureId`                                                                                                                    | **New chat**: the vEIR's face and greeting, starting points, the composer; read-only roles see where they can go (`?call=1` opens a call) |
-| `/$tenant/app/v/$ventureId/c/$sessionId`                                                                                                       | a conversation; an ended one ends with its summary (`?view=digest` opens it there; `?call=1` opens a call)                                |
-| `/$tenant/app/v/$ventureId/{knowledge,documents,help,team,settings}`                                                                           | Knowledge (`?type=&status=&q=&view=proposed`), Documents, Human help (`?id=`), Team, Venture settings                                     |
-| `/$tenant/app/eir/{personas,reviews,inbox}`, `/program/{portfolio,ventures,resources,escalations}`, `/admin/{principals,settings,usage,audit}` | staff workspaces (guards in each `route.tsx`)                                                                                             |
-| `/$tenant/app/ventures/…`, `/admin/…`                                                                                                          | redirects from before the redesign, keeping ids and query (`lib/legacy-routes.ts`)                                                        |
+| URL                                                                                                                                            | What                                                                                                                                                   |
+| ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/`, `/sign-in`                                                                                                                                | landing, sign-in (in the main bundle: never wait for a route chunk)                                                                                    |
+| `/$tenant/app`                                                                                                                                 | opens the last venture's New chat (members) or the main staff workspace; otherwise "nothing to open yet"                                               |
+| `/$tenant/app/v/$ventureId`                                                                                                                    | **New chat**: the vEIR's face and greeting, starting points, the composer; read-only roles see where they can go (`?call=1` opens a call)              |
+| `/$tenant/app/v/$ventureId/c/$sessionId`                                                                                                       | a conversation; an ended one ends with its summary (`?view=digest` opens it there; `?call=1` opens a call)                                             |
+| `/$tenant/app/v/$ventureId/{knowledge,documents,help,team,settings}`                                                                           | Knowledge (`?view=proposed\|notebook\|conversations\|evidence`, memory `?type=&status=&q=&m=`), Documents, Human help (`?id=`), Team, Venture settings |
+| `/$tenant/app/eir/{personas,reviews,inbox}`, `/program/{portfolio,ventures,resources,escalations}`, `/admin/{principals,settings,usage,audit}` | staff workspaces (guards in each `route.tsx`)                                                                                                          |
+| `/$tenant/app/ventures/…`, `/admin/…`                                                                                                          | redirects from before the redesign, keeping ids and query (`lib/legacy-routes.ts`)                                                                     |
 
 Folder layouts: if a section switches to a folder (`memory/index.tsx`), delete the flat file
 (`memory.tsx`) in the same change — having both makes the flat file a layout without an `<Outlet/>`.
@@ -101,11 +101,12 @@ Folder layouts: if a section switches to a folder (`memory/index.tsx`), delete t
   and `useXxx()`; each write is a `useMutation` hook that invalidates the right keys.
 
 ```tsx
-import { useMemory, useMemoryAction } from '@/lib/api/hooks/memory';
+import { useMemory } from '@/lib/api/hooks/memory';
+import { useMemoryReview } from '@/features/knowledge/review-api';
 
-const memory = useMemory(ventureId, { status: 'proposed' }); // data: MemoryObjectView[]
-const act = useMemoryAction(ventureId);
-act.mutate({ memoryId, action: { action: 'approve' } }, { onError: (e) => toast.error(errorMessage(e)) });
+const proposed = useMemory(ventureId, { status: 'proposed' }); // data: MemoryObjectView[]
+const review = useMemoryReview(ventureId); // one or many proposals, optimistic across every list
+review.mutate({ ids: [memoryId], action: 'approve' }, { onError: (e) => toast.error(errorMessage(e)) });
 ```
 
 Route loaders prefetch with the new TanStack Query API (`fetchQuery`/`ensureQueryData` are deprecated):
@@ -117,20 +118,20 @@ loader: ({ context, params }) =>
 
 ### Hook index
 
-| Area        | Hooks                                                                                                                                                                                                                                                                                                                                          |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Health      | `useHealth` (not polled — polling would keep Aurora awake)                                                                                                                                                                                                                                                                                     |
-| Auth        | `useMe` (null when signed out), `useSignIn`, `useSignOut`; `useRequiredMe` in `lib/auth/use-me`                                                                                                                                                                                                                                                |
-| Ventures    | `useVentures`, `useVenture`, `useVentureOverview`, `useUpdateVenture`                                                                                                                                                                                                                                                                          |
-| Sessions    | `conversationsQueryOptions` / `useRecentConversations` (`GET /sessions?scope=mine`, paged, across ventures; never enabled for read-only roles), `useSession` (re-read while a digest is being written), `useCreateSession`, `useRenameSession`, `useDeleteSession`, `useEndSession`, `useDeleteDigest`, `useTurnFeedback`, **`useTurnStream`** |
-| Notebook    | `useNotebook` (`GET /ventures/:id/notebook`; `null` on 404 — optional context for the New chat greeting)                                                                                                                                                                                                                                       |
-| Memory      | `useMemory(ventureId, filters)`, `useCreateMemory`, `useMemoryAction`, `useMemoryHistory`, `useBatchMemoryAction` (`POST /ventures/:id/memory/batch`)                                                                                                                                                                                          |
-| Documents   | `useDocuments` (polls while processing), `useUploadDocument` (create → presigned PUT with progress → complete), `useCompleteDocument`, `useDeleteDocument`, `documentContentType`, `DOCUMENT_ACCEPT`                                                                                                                                           |
-| Escalations | `useVentureEscalations`, `useCreateEscalation`, `useEscalationAction`, `useInboxEscalations`                                                                                                                                                                                                                                                   |
-| Team        | `useTeam`, `useInviteMember` (one-time code; `gcTime: 0`, never cache/log it)                                                                                                                                                                                                                                                                  |
-| EIR studio  | `usePersonas`, `usePersona`, `usePersonaRelease`, `useCreatePersonaRelease`, `useApprovePersonaRelease`, `useSuspendPersona`, `useResumePersona`, `useReviewQueue`, `useSubmitReview`                                                                                                                                                          |
-| Program     | `usePortfolio`, `useProgramVentures`, `useCreateProgramVenture`, `useResources`, `useCreateResource`, `useUpdateResource`, `useProgramEscalations`, `useEscalationAssignees`, `useRouteEscalation`                                                                                                                                             |
-| Admin       | `usePrincipals`, `useCreatePrincipal`, `useIssueAccessCode` (one-time code), `useRevokeAccessCode`, `usePlatformSettings`, `useUpdatePlatformSettings`, `useAuditLog` (infinite), `useUsage`                                                                                                                                                   |
+| Area        | Hooks                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Health      | `useHealth` (not polled — polling would keep Aurora awake)                                                                                                                                                                                                                                                                                                                                                              |
+| Auth        | `useMe` (null when signed out), `useSignIn`, `useSignOut`; `useRequiredMe` in `lib/auth/use-me`                                                                                                                                                                                                                                                                                                                         |
+| Ventures    | `useVentures`, `useVenture`, `useVentureOverview`, `useUpdateVenture`                                                                                                                                                                                                                                                                                                                                                   |
+| Sessions    | `useSessions` (`GET /ventures/:id/sessions`: Knowledge → Conversations), `conversationsQueryOptions` / `useRecentConversations` (`GET /sessions?scope=mine`, paged, across ventures; never enabled for read-only roles), `useSession` (re-read while a digest is being written), `useCreateSession`, `useRenameSession`, `useDeleteSession`, `useEndSession`, `useDeleteDigest`, `useTurnFeedback`, **`useTurnStream`** |
+| Notebook    | `useNotebook` (`GET /ventures/:id/notebook`; `null` on 404 — optional context for the New chat greeting); edits: `useNotebookEdit` in `features/knowledge` (sent in order; a failed edit drops those queued behind it and reloads)                                                                                                                                                                                      |
+| Memory      | `useMemory(ventureId, filters)`, `useCreateMemory`, `useMemoryHistory`; in `features/memory/api`: `useMemoryActions` (correct, pin, dispute, delete); `useMemoryReview` in `features/knowledge/review-api`: the one approve/reject path (`POST …/memory/batch`, 50 ids per request)                                                                                                                                     |
+| Documents   | `useDocuments` (polls while processing), `useUploadDocument` (create → presigned PUT with progress → complete), `useCompleteDocument`, `useDeleteDocument`, `documentContentType`, `DOCUMENT_ACCEPT`                                                                                                                                                                                                                    |
+| Escalations | `useVentureEscalations`, `useCreateEscalation`, `useEscalationAction`, `useInboxEscalations`                                                                                                                                                                                                                                                                                                                            |
+| Team        | `useTeam`, `useInviteMember` (one-time code; `gcTime: 0`, never cache/log it)                                                                                                                                                                                                                                                                                                                                           |
+| EIR studio  | `usePersonas`, `usePersona`, `usePersonaRelease`, `useCreatePersonaRelease`, `useApprovePersonaRelease`, `useSuspendPersona`, `useResumePersona`, `useReviewQueue`, `useSubmitReview`                                                                                                                                                                                                                                   |
+| Program     | `usePortfolio`, `useProgramVentures`, `useCreateProgramVenture`, `useResources`, `useCreateResource`, `useUpdateResource`, `useProgramEscalations`, `useEscalationAssignees`, `useRouteEscalation`                                                                                                                                                                                                                      |
+| Admin       | `usePrincipals`, `useCreatePrincipal`, `useIssueAccessCode` (one-time code), `useRevokeAccessCode`, `usePlatformSettings`, `useUpdatePlatformSettings`, `useAuditLog` (infinite), `useUsage`                                                                                                                                                                                                                            |
 
 **Turn streaming:**
 
@@ -235,7 +236,7 @@ SPA and runs `pnpm --filter @foundry/web e2e`. `playwright.config.ts` starts eve
 
 Projects: `setup` (signs in the owner, issues the seeded founder a code through the admin API, saves both
 browser states under `node_modules/.cache/foundry-e2e-auth`), `desktop` (1440 × 900: the founder journey,
-document upload and axe checks) and `mobile` (390 × 844 smoke). One worker, because everything shares one seeded database.
+document upload, Knowledge and axe checks) and `mobile` (390 × 844 smoke). One worker, because everything shares one seeded database.
 
 - **Journey** — landing → owner sign-in (lands in Program) → the switcher opens Admin, which issues an
   access code to the seeded founder (Maya Okafor-Lindqvist, QuietQuad) → sign out → founder sign-in lands
@@ -249,7 +250,14 @@ document upload and axe checks) and `mobile` (390 × 844 smoke). One worker, bec
   A read-only advisor opens their venture, and the assigned EIR opens the venture and a link to one of
   the founder's conversations, without any conversation, notebook or escalation request or refusal.
 - **Documents** — upload a Markdown file (presigned PUT to the dev server's local S3 stand-in through the
-  preview proxy) → `complete` (202 while processing) → the list polls until it is Ready → delete.
+  preview proxy) → `complete` (202 while processing) → the list polls until it is Ready → it is listed under
+  Knowledge → Evidence → delete.
+- **Knowledge** — correct a line of the vEIR's notebook and remove its opening line (both restored
+  afterwards); the venture's EIR proposes two items and the founder approves them together from the
+  review queue (then deletes them); a replaced item opens with its history, also from the new version's
+  "earlier version" link; type chips filter memory; the assigned EIR and an advisor get a designed Human
+  help page with no refused request; axe on the notebook, review queue, evidence, Human help and Team in
+  both themes.
 - **Safety** — a crisis message (the first of a new chat) is blocked with human-support resources, live
   and after a reload, and never becomes the conversation's title; a temporary chat offers no attach and
   nothing to remember, ends with nothing kept and leaves the recents; a consented specialist request is
@@ -368,25 +376,28 @@ navigation) inside a `PageContainer` (`size="default" | "wide" | "narrow" | "ful
 with the route's `head`:
 
 ```tsx
-export const Route = createFileRoute('/$tenant/app/v/$ventureId/knowledge')({
-  head: () => ({ meta: [{ title: 'Knowledge' }] }),
-  component: MemoryPage,
+export const Route = createFileRoute('/$tenant/app/v/$ventureId/settings')({
+  head: () => ({ meta: [{ title: 'Venture settings' }] }),
+  component: VentureSettingsPage,
 });
 
-function MemoryPage() {
+function VentureSettingsPage() {
   return (
-    <PageContainer size="wide">
-      <PageHeader title="Memory" description="…" actions={<Button>Add memory</Button>} />
-      <SectionCard title="Proposed" icon={Brain}>
+    <PageContainer size="narrow">
+      <PageHeader title="Venture settings" description="…" />
+      <PageSection title="Profile">…</PageSection>
+      <PageSection title="Current goal" actions={<Button variant="ghost">Edit</Button>}>
         …
-      </SectionCard>
+      </PageSection>
     </PageContainer>
   );
 }
 ```
 
-Loading → skeletons inside `aria-busy` regions; empty → `EmptyState`; failure → `ErrorState`
-(`onRetry={() => query.refetch()}`; shows the copyable request ID).
+Venture pages are editorial stacks: `PageSection` (small label → title → body → actions, divided by a
+hairline instead of a card), rows divided by hairlines rather than card grids, and one primary action in
+the header. Loading → `HairlineSkeleton` (or skeletons inside `aria-busy` regions); empty → `EmptyState`;
+failure → `ErrorState` (`onRetry={() => query.refetch()}`; shows the copyable request ID).
 
 ### VentureLayout and the context panel
 
@@ -404,7 +415,6 @@ import { InspectorSection } from '@/components/ui/inspector-panel';
   <InspectorSection title="Sources" meta={items.length}>
     …
   </InspectorSection>
-  <InspectorSection title="Proposed memory">…</InspectorSection>
 </Inspector>;
 
 const { open, setOpen, toggle } = useInspector(); // e.g. "Show sources" buttons

@@ -10,10 +10,18 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { announce } from '@/components/a11y/live-announcer';
+import { toast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
+import {
+  reviewFailure,
+  reviewMessage,
+  useMemoryReview,
+  type ReviewAction,
+} from '@/features/knowledge/review-api';
 
 import { useMemoryActions } from './api';
-import { ConfirmMemoryActionDialog, CorrectMemoryDialog, DisputeMemoryDialog } from './memory-dialogs';
+import { ConfirmDeleteMemoryDialog, CorrectMemoryDialog, DisputeMemoryDialog } from './memory-dialogs';
 import { availableMemoryActions } from './optimistic';
 
 interface MemoryActionBarProps {
@@ -22,16 +30,16 @@ interface MemoryActionBarProps {
   /** Compact: primary actions as small buttons, the rest in a menu. */
   size?: 'sm' | 'default';
   className?: string;
-  /** Called after a delete/reject was confirmed (e.g. to close a detail panel). */
-  onRemoved?: () => void;
+  /** Called after a delete was confirmed (e.g. to close a detail panel). */
+  onRemoved?: (() => void) | undefined;
   /** Replace the generic correction dialog with a type-specific editor. */
-  onEdit?: () => void;
+  onEdit?: (() => void) | undefined;
 }
 
 /**
- * Lifecycle actions for one memory object: approve / reject for proposals, correct / pin / dispute /
- * delete for confirmed memory. Destructive or lossy actions ask for confirmation; reversible ones
- * (pin, approve) apply optimistically.
+ * Lifecycle actions for one memory object: approve / reject for proposals (the same review path as the
+ * "To review" queue), correct / pin / dispute / delete for kept memory. Deleting asks for confirmation;
+ * everything else applies at once.
  */
 export function MemoryActionBar({
   ventureId,
@@ -42,9 +50,28 @@ export function MemoryActionBar({
   onEdit,
 }: MemoryActionBarProps) {
   const { run, isPending, pendingId } = useMemoryActions(ventureId);
-  const [dialog, setDialog] = useState<'correct' | 'dispute' | 'delete' | 'reject' | null>(null);
+  const review = useMemoryReview(ventureId);
+  const [dialog, setDialog] = useState<'correct' | 'dispute' | 'delete' | null>(null);
   const actions = availableMemoryActions(memory);
-  const busy = isPending && pendingId === memory.id;
+  const busy =
+    (isPending && pendingId === memory.id) || (review.isPending && review.variables.ids.includes(memory.id));
+
+  const decide = (action: ReviewAction) => {
+    review.mutate(
+      { ids: [memory.id], action },
+      {
+        onSuccess: (result) => {
+          const message = reviewMessage(action, result);
+          toast.success(message);
+          announce(message);
+        },
+        onError: (error) => {
+          const failure = reviewFailure(action, [memory.id], error);
+          toast.error(failure.title, { description: failure.description });
+        },
+      },
+    );
+  };
   const buttonSize = size === 'sm' ? 'xs' : 'sm';
 
   if (actions.length === 0) return null;
@@ -60,7 +87,7 @@ export function MemoryActionBar({
           size={buttonSize}
           disabled={busy}
           onClick={() => {
-            run(memory.id, { action: 'approve' });
+            decide('approve');
           }}
         >
           <Check aria-hidden />
@@ -73,7 +100,7 @@ export function MemoryActionBar({
           variant="secondary"
           disabled={busy}
           onClick={() => {
-            setDialog('reject');
+            decide('reject');
           }}
         >
           <X aria-hidden />
@@ -159,11 +186,10 @@ export function MemoryActionBar({
         open={dialog === 'dispute'}
         onOpenChange={close}
       />
-      <ConfirmMemoryActionDialog
+      <ConfirmDeleteMemoryDialog
         ventureId={ventureId}
         memory={memory}
-        action={dialog === 'reject' ? 'reject' : 'delete'}
-        open={dialog === 'delete' || dialog === 'reject'}
+        open={dialog === 'delete'}
         onOpenChange={close}
         onDone={onRemoved}
       />

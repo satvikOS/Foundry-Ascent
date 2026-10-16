@@ -32,7 +32,7 @@ import { FieldSelect, type FieldSelectOption } from '@/features/venture/field-se
 import { applyFieldErrors } from '@/features/venture/form-errors';
 
 import { ConsentForm } from './consent-form';
-import { EscalationPacketView } from './packet-view';
+import { PacketView } from './packet-view';
 
 type Category = z.infer<typeof EscalationCategory>;
 type Priority = z.infer<typeof EscalationPriority>;
@@ -122,13 +122,13 @@ interface EscalationFlowDialogProps {
   draft?: EscalationDraft | null;
   /** Continue an existing request at review/consent instead of creating one. */
   existing?: EscalationView | null;
-  /** "View in Escalations" after completion. */
+  /** "View request" after completion. */
   onViewEscalation?: (escalation: EscalationView) => void;
 }
 
 /**
  * Request human support in three steps: describe → review the AI-drafted packet → consent to what is
- * shared. Closing midway keeps the request as a draft that can be finished from the Escalations page.
+ * shared. Closing midway keeps the request as a draft to finish on the Human help page.
  */
 export function EscalationFlowDialog({
   ventureId,
@@ -265,8 +265,8 @@ export function EscalationFlowDialog({
         <DialogHeader>
           <DialogTitle>Request human support</DialogTitle>
           <DialogDescription>
-            A short packet for {step === 'details' ? 'an EIR or specialist' : role} is drafted by AI. You
-            review it and choose what is shared — nothing leaves your workspace before you consent.
+            We draft a short packet for {step === 'details' ? 'an EIR or specialist' : role}. Nothing is
+            shared until you approve.
           </DialogDescription>
         </DialogHeader>
         <StepIndicator step={step} />
@@ -385,12 +385,8 @@ export function EscalationFlowDialog({
                   </Button>
                 </div>
               </form>
-            ) : escalation.packet ? (
-              <EscalationPacketView packet={escalation.packet} />
             ) : (
-              <Alert variant="info" title="The packet is being prepared">
-                You can continue to consent; the packet will appear on the Escalations page.
-              </Alert>
+              <PacketView escalation={escalation} audience="founder" />
             )}
             {!editing ? (
               <DialogFooter>
@@ -446,10 +442,10 @@ export function EscalationFlowDialog({
               }
             >
               {escalation.status === 'awaiting_assignment'
-                ? `They’ll assign the right person (${role}). You’ll see who, and every status change, on the Escalations page.`
+                ? `They’ll assign the right person (${role}). Follow it on the Human help page.`
                 : escalation.sharingConsentAt
-                  ? 'You’ll see their response and every status change on the Escalations page.'
-                  : 'Track this request on the Escalations page.'}
+                  ? 'Their response appears on the Human help page.'
+                  : 'Finish it on the Human help page.'}
             </Alert>
             <DialogFooter>
               {onViewEscalation ? (
@@ -460,7 +456,7 @@ export function EscalationFlowDialog({
                     onOpenChange(false);
                   }}
                 >
-                  View in Escalations
+                  View request
                 </Button>
               ) : null}
               <Button

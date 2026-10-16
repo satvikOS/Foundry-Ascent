@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { MemoryType, Visibility, type MemoryObjectView, type SourceRef } from '@foundry/contracts';
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 
@@ -33,10 +33,11 @@ import { toast } from '@/components/ui/toast';
 import { announce } from '@/components/a11y/live-announcer';
 import { errorMessage } from '@/lib/api/errors';
 import { MEMORY_TYPE_LABELS, VISIBILITY_LABELS } from '@/lib/labels';
+import { useFullMemory } from '@/lib/api/hooks/memory';
 import { FieldSelect, type FieldSelectOption } from '@/features/venture/field-select';
 import { applyFieldErrors } from '@/features/venture/form-errors';
-
-import { useFullMemory } from '@/lib/api/hooks/memory';
+import { reviewFailure, reviewMessage, useMemoryReview } from '@/features/knowledge/review-api';
+import { sentenceStart, useVeirName } from '@/features/venture/veir-name';
 
 import { useCreateVentureMemory, useMemoryActions } from './api';
 
@@ -121,7 +122,8 @@ export function CorrectMemoryDialog({
   // Lists carry an excerpt: the form is filled (and can be saved) only once the full text is loaded,
   // otherwise a correction would replace the content with its excerpt.
   const { memory, complete } = useFullMemory(open ? listed : null);
-  const { mutation, run } = useMemoryActions(ventureId);
+  const { mutation } = useMemoryActions(ventureId);
+  const review = useMemoryReview(ventureId);
   const [formError, setFormError] = useState<string | null>(null);
   const form = useForm<CorrectInput, unknown, CorrectOutput>({
     resolver: zodResolver(CorrectSchema),
@@ -153,6 +155,24 @@ export function CorrectMemoryDialog({
   if (!memory) return null;
   const isProposed = memory.status === 'proposed';
 
+  // Approving goes through the one review path, like the queue and the action bar.
+  const approve = (memoryId: string, successMessage: string) => {
+    review.mutate(
+      { ids: [memoryId], action: 'approve' },
+      {
+        onSuccess: (result) => {
+          const message = result.items.length > 0 ? successMessage : reviewMessage('approve', result);
+          toast.success(message);
+          announce(message);
+        },
+        onError: (error) => {
+          const failure = reviewFailure('approve', [memoryId], error);
+          toast.error(failure.title, { description: failure.description });
+        },
+      },
+    );
+  };
+
   const onSubmit = handleSubmit((values) => {
     setFormError(null);
     if (!complete) return;
@@ -164,7 +184,7 @@ export function CorrectMemoryDialog({
     if (Math.abs(confidence - memory.confidence) > 0.001) patch.confidence = confidence;
     if (Object.keys(patch).length === 0) {
       if (isProposed && values.approveAfter) {
-        run(memory.id, { action: 'approve' });
+        approve(memory.id, 'Approved');
         onOpenChange(false);
         return;
       }
@@ -181,7 +201,7 @@ export function CorrectMemoryDialog({
           // `correct` always answers with the new version; only `delete` is body-less (204).
           const corrected = result ?? memory;
           if (isProposed && values.approveAfter && corrected.status === 'proposed') {
-            run(corrected.id, { action: 'approve' }, { successMessage: 'Corrected and approved' });
+            approve(corrected.id, 'Corrected and approved');
           } else {
             toast.success('Correction saved as a new version');
             announce('Correction saved');
@@ -209,10 +229,7 @@ export function CorrectMemoryDialog({
         <form onSubmit={(e) => void onSubmit(e)} noValidate className="grid gap-4">
           <DialogHeader>
             <DialogTitle>{isProposed ? 'Edit proposed memory' : 'Correct memory'}</DialogTitle>
-            <DialogDescription>
-              Corrections are saved as a new version. The previous version stays in the history with who
-              changed it and why.
-            </DialogDescription>
+            <DialogDescription>Saved as a new version; the old one stays in the history.</DialogDescription>
           </DialogHeader>
           {formError ? (
             <Alert variant="destructive" live="alert">
@@ -332,6 +349,7 @@ export function DisputeMemoryDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const { run, isPending } = useMemoryActions(ventureId);
+  const veirName = useVeirName(ventureId);
   const form = useForm<z.input<typeof DisputeSchema>, unknown, z.output<typeof DisputeSchema>>({
     resolver: zodResolver(DisputeSchema),
     defaultValues: { reason: '' },
@@ -354,7 +372,7 @@ export function DisputeMemoryDialog({
           <DialogHeader>
             <DialogTitle>Dispute this memory</DialogTitle>
             <DialogDescription>
-              Disputed memory is no longer treated as fact until someone corrects or re-approves it.
+              {sentenceStart(veirName)} won’t treat it as fact until it’s corrected or approved again.
             </DialogDescription>
           </DialogHeader>
           <Field label="What’s wrong?" required error={formState.errors.reason?.message}>
@@ -380,42 +398,38 @@ export function DisputeMemoryDialog({
 }
 
 // -------------------------------------------------------------------------------------------------
-// Delete / reject confirmation
+// Delete confirmation
 // -------------------------------------------------------------------------------------------------
 
-export function ConfirmMemoryActionDialog({
+export function ConfirmDeleteMemoryDialog({
   ventureId,
   memory,
-  action,
   open,
   onOpenChange,
   onDone,
 }: {
   ventureId: string;
   memory: MemoryObjectView | null;
-  action: 'delete' | 'reject';
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onDone?: () => void;
+  onDone?: (() => void) | undefined;
 }) {
   const { run } = useMemoryActions(ventureId);
+  const veirName = useVeirName(ventureId);
   const [reason, setReason] = useState('');
+  const reasonId = useId();
   useEffect(() => {
     if (open) setReason('');
   }, [open]);
   if (!memory) return null;
-  const isDelete = action === 'delete';
-  const reasonId = `memory-${action}-reason`;
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>{isDelete ? 'Delete this memory?' : 'Reject this suggestion?'}</AlertDialogTitle>
+          <AlertDialogTitle>Delete this memory?</AlertDialogTitle>
           <AlertDialogDescription>
-            {isDelete
-              ? 'It stops being used immediately. Only an audit record (who and when) is kept.'
-              : 'It will not be used as venture memory. You can add it again later if it turns out to be right.'}
+            {sentenceStart(veirName)} stops using it at once. Only an audit record (who and when) is kept.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="grid gap-2">
@@ -434,15 +448,15 @@ export function ConfirmMemoryActionDialog({
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <Button
-            variant={isDelete ? 'destructive' : 'default'}
+            variant="destructive"
             onClick={() => {
               const trimmed = reason.trim();
-              run(memory.id, { action, ...(trimmed ? { reason: trimmed } : {}) });
+              run(memory.id, { action: 'delete', ...(trimmed ? { reason: trimmed } : {}) });
               onOpenChange(false);
               onDone?.();
             }}
           >
-            {isDelete ? 'Delete' : 'Reject'}
+            Delete
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -483,6 +497,7 @@ export function CreateMemoryDialog({
   onCreated?: (memory: MemoryObjectView) => void;
 }) {
   const { createMemory, mutation } = useCreateVentureMemory(ventureId);
+  const veirName = useVeirName(ventureId);
   const [formError, setFormError] = useState<string | null>(null);
   const form = useForm<CreateInput, unknown, CreateOutput>({
     resolver: zodResolver(CreateSchema),
@@ -520,7 +535,7 @@ export function CreateMemoryDialog({
           <DialogHeader>
             <DialogTitle>Add to memory</DialogTitle>
             <DialogDescription>
-              Record something worth remembering about this venture. It is linked to you as the source.
+              Add something {veirName} should know. You are recorded as its source.
             </DialogDescription>
           </DialogHeader>
           {formError ? (

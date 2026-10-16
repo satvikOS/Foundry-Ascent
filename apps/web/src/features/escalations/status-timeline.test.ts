@@ -1,7 +1,7 @@
 import { EscalationStatus, type EscalationView } from '@foundry/contracts';
 import { describe, expect, it } from 'vitest';
 
-import { IDS } from '@/features/coach/testing';
+import { IDS } from '@/features/knowledge/testing';
 import { isOpenEscalation, isRoutable, needsFounderConsent } from '@/features/program/escalations/status';
 
 import { escalationTimeline } from './status-timeline';
@@ -10,7 +10,7 @@ const NOW = '2026-10-05T09:00:00.000Z';
 
 function escalation(overrides: Partial<EscalationView> = {}): EscalationView {
   return {
-    id: IDS.ref,
+    id: IDS.escalation,
     ventureId: IDS.venture,
     ventureName: 'Seat Finder',
     sessionId: IDS.session,

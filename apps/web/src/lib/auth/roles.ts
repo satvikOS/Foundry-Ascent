@@ -27,7 +27,7 @@ export function isMember(
   return roles ? roles.includes(membership.role) : true;
 }
 
-function isAssignedEir(me: Me | null | undefined, ventureId: string): boolean {
+export function isAssignedEir(me: Me | null | undefined, ventureId: string): boolean {
   return hasRole(me, 'eir') && Boolean(me?.assignedVentureIds.includes(ventureId));
 }
 

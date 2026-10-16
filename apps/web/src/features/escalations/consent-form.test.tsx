@@ -3,13 +3,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { IDS, makeMemory } from '@/features/coach/testing';
+import { IDS, makeMemory } from '@/features/knowledge/testing';
 import { memoryQueryOptions } from '@/lib/api/hooks/memory';
 
 import { ConsentForm } from './consent-form';
 
 const escalation: EscalationView = {
-  id: IDS.ref,
+  id: IDS.escalation,
   ventureId: IDS.venture,
   ventureName: 'QuietQuad',
   sessionId: null,

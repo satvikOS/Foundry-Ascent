@@ -116,11 +116,15 @@ describe('CallSummaryPanel', () => {
     const second = memory({ id: IDS.turn, title: 'Pilot with one library' });
     fetchMock.mockImplementation((input, init) => {
       const url = urlOf(input);
-      if (url.endsWith(`/memory/${IDS.memory}`) && init?.method === 'PATCH') {
-        return Promise.resolve(json(memory({ status: 'confirmed' })));
-      }
-      if (url.endsWith(`/memory/${IDS.turn}`) && init?.method === 'PATCH') {
-        return Promise.resolve(json({ ...second, status: 'rejected' }));
+      // Keep / Not now go through the app's one review path: POST /ventures/:id/memory/batch.
+      if (url.endsWith(`/ventures/${IDS.venture}/memory/batch`) && init?.method === 'POST') {
+        const body = sentJson(init) as { ids: string[]; action: 'approve' | 'reject' };
+        const items = body.ids.map((id) =>
+          id === IDS.memory
+            ? memory({ status: body.action === 'approve' ? 'confirmed' : 'rejected' })
+            : { ...second, status: body.action === 'approve' ? 'confirmed' : 'rejected' },
+        );
+        return Promise.resolve(json({ items, skippedIds: [] }));
       }
       if (url.endsWith(`/memory/${IDS.memory}`)) return Promise.resolve(json(memory()));
       if (url.endsWith(`/memory/${IDS.turn}`)) return Promise.resolve(json(second));
@@ -153,8 +157,9 @@ describe('CallSummaryPanel', () => {
     await waitFor(() => {
       expect(screen.getByText('Kept')).toBeInTheDocument();
     });
-    const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
-    expect(sentJson(patch?.[1])).toEqual({ action: 'approve' });
+    const batch = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST');
+    expect(sentJson(batch?.[1])).toEqual({ ids: [IDS.memory], action: 'approve' });
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(false);
 
     await userEvent.click(await screen.findByRole('button', { name: 'Not now: Pilot with one library' }));
     await waitFor(() => {

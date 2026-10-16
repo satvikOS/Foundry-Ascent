@@ -1,12 +1,12 @@
 import type { VentureDetail, VentureOverview } from '@foundry/contracts';
 import { useQueryClient } from '@tanstack/react-query';
-import { Pencil, Target } from 'lucide-react';
+import { Pencil } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 
 import { announce } from '@/components/a11y/live-announcer';
 import { Button } from '@/components/ui/button';
 import { Kbd } from '@/components/ui/kbd';
-import { SectionCard } from '@/components/ui/section-card';
+import { PageSection } from '@/components/ui/page-section';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/toast';
 import { errorMessage } from '@/lib/api/errors';
@@ -81,9 +81,8 @@ export function GoalEditor({
   };
 
   return (
-    <SectionCard
+    <PageSection
       title="Current goal"
-      icon={Target}
       description="What the venture is working towards right now."
       actions={
         canEdit && !editing ? (
@@ -161,12 +160,12 @@ export function GoalEditor({
           </div>
         </form>
       ) : goal ? (
-        <p className="text-[15px] leading-7 font-medium text-balance">{goal}</p>
+        <p className="prose-reading text-balance">{goal}</p>
       ) : (
         <p className="text-sm text-muted-foreground">
           No goal set yet.{canEdit ? ' A clear, dated goal makes every conversation sharper.' : ''}
         </p>
       )}
-    </SectionCard>
+    </PageSection>
   );
 }

@@ -9,12 +9,13 @@ import { PersonaAvatar } from '@/components/faces/persona-avatar';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { toast } from '@/components/ui/toast';
-import { errorMessage } from '@/lib/api/errors';
 import { useVentureEscalations } from '@/lib/api/hooks/escalations';
-import { displayContent, memoryItemQueryOptions, useMemoryAction } from '@/lib/api/hooks/memory';
+import { displayContent, memoryItemQueryOptions } from '@/lib/api/hooks/memory';
 import type { CallEnded } from '@/lib/realtime/call-engine';
 import { formatDate } from '@/lib/format';
 import { ESCALATION_CATEGORY_LABELS } from '@/lib/labels';
+
+import { reviewFailure, useMemoryReview } from '../knowledge/review-api';
 
 import { formatClock, spokenDuration } from './use-call-clock';
 import type { CallVeir } from './use-call-veir';
@@ -226,20 +227,26 @@ function MemoryProposal({
   memory: MemoryObjectView;
   canWrite: boolean;
 }) {
-  const action = useMemoryAction(ventureId);
+  const review = useMemoryReview(ventureId);
   const [decided, setDecided] = useState<'confirmed' | 'rejected' | null>(null);
   // A proposal decided elsewhere meanwhile (the conversation's own Keep row) shows that decision.
   const status = decided ?? (memory.status === 'proposed' ? null : memory.status);
+  const pending = review.isPending ? review.variables.action : null;
 
+  // The one approve/reject path in the app (S8's review hook): optimistic lists, batch route, rollback.
   const decide = (choice: 'approve' | 'reject') => {
-    action.mutate(
-      { memoryId: memory.id, action: { action: choice } },
+    review.mutate(
+      { ids: [memory.id], action: choice },
       {
-        onSuccess: () => {
-          setDecided(choice === 'approve' ? 'confirmed' : 'rejected');
+        onSuccess: (result) => {
+          // Skipped: someone decided it meanwhile; the refetched item shows what happened to it.
+          if (result.items.some((item) => item.id === memory.id)) {
+            setDecided(choice === 'approve' ? 'confirmed' : 'rejected');
+          }
         },
         onError: (error) => {
-          toast.error('Couldn’t save that choice', { description: errorMessage(error) });
+          const { title, description } = reviewFailure(choice, [memory.id], error);
+          toast.error(title, { description });
         },
       },
     );
@@ -264,8 +271,8 @@ function MemoryProposal({
             <Button
               size="sm"
               variant="secondary"
-              loading={action.isPending && action.variables.action.action === 'approve'}
-              disabled={action.isPending}
+              loading={pending === 'approve'}
+              disabled={review.isPending}
               onClick={() => {
                 decide('approve');
               }}
@@ -276,8 +283,8 @@ function MemoryProposal({
             <Button
               size="sm"
               variant="ghost"
-              loading={action.isPending && action.variables.action.action === 'reject'}
-              disabled={action.isPending}
+              loading={pending === 'reject'}
+              disabled={review.isPending}
               onClick={() => {
                 decide('reject');
               }}

@@ -1,0 +1,41 @@
+import { MemoryStatus, MemoryType } from '@foundry/contracts';
+import { z } from 'zod';
+
+/** Sections of the Knowledge page besides the memory list (which has no `view`). */
+export const KNOWLEDGE_VIEWS = ['proposed', 'notebook', 'conversations', 'evidence'] as const;
+export type KnowledgeView = (typeof KNOWLEDGE_VIEWS)[number];
+
+/** URL state of the Knowledge page: shareable and back-button friendly. */
+export interface KnowledgeSearch {
+  /** `proposed` is the "To review" queue; absent is the memory list. */
+  view?: KnowledgeView | undefined;
+  type?: MemoryType | undefined;
+  status?: MemoryStatus | undefined;
+  pinned?: boolean | undefined;
+  q?: string | undefined;
+  /** Selected memory item, shown in the side panel. */
+  m?: string | undefined;
+}
+
+function isView(value: unknown): value is KnowledgeView {
+  return typeof value === 'string' && (KNOWLEDGE_VIEWS as readonly string[]).includes(value);
+}
+
+/**
+ * Parses the Knowledge search params. Links from before the merge keep working: `view=all` is the
+ * memory list, and a `status=proposed` filter opens the review queue, where proposals live.
+ */
+export function validateKnowledgeSearch(search: Record<string, unknown>): KnowledgeSearch {
+  const type = MemoryType.safeParse(search.type);
+  const status = MemoryStatus.safeParse(search.status);
+  const id = z.uuid().safeParse(search.m);
+  const proposed = status.success && status.data === 'proposed';
+  return {
+    view: isView(search.view) ? search.view : proposed ? 'proposed' : undefined,
+    type: type.success ? type.data : undefined,
+    status: status.success && !proposed ? status.data : undefined,
+    pinned: search.pinned === true || search.pinned === 'true' ? true : undefined,
+    q: typeof search.q === 'string' && search.q.trim() ? search.q.trim().slice(0, 200) : undefined,
+    m: id.success ? id.data : undefined,
+  };
+}
