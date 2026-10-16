@@ -50,10 +50,10 @@ push to main ──► CI (quality · database · infra · python · e2e) ──
 
 Stage 1 (GitHub OIDC). All three stacks are deployed and every deploy assumes
 `FoundryAscent-GitHubDeploy` through OIDC (the job summary shows _AWS access: GitHub OIDC (stage 1)_).
-The stage-0 access key was deleted on 2026-10-06, so the workflows that read `AWS_ACCESS_KEY_ID`
-(**Platform - deploy data stack**, **Ops - AWS inventory**, **Ops - AWS cleanup**, **Ops - verify AWS
-access**, **Ops - retire stage-0 AWS access**) cannot authenticate, and **Ops - Bedrock live probe** stops
-at its first step with that explanation. History: [ADR-0016](../architecture/adr/0016-staged-iam-github-oidc.md).
+The stage-0 access key was deleted on 2026-10-06, so the workflows that used it (**Platform - deploy
+data stack**, **Ops - AWS inventory**, **Ops - AWS cleanup**, **Ops - verify AWS access**, **Ops - retire
+stage-0 AWS access**, **Ops - Bedrock live probe**) are retired: a dispatched run stops at its first step
+and says what to use instead. History: [ADR-0016](../architecture/adr/0016-staged-iam-github-oidc.md).
 Changes to the Data stack ship with the normal **Deploy**; review its diff first so the cluster, secret
 and buckets are updated, never replaced:
 

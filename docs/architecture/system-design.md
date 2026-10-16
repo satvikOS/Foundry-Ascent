@@ -487,9 +487,8 @@ high-confidence statements; persona suspension without engineering.
   passes `--context githubOidcProviderArn=<arn>` only when a provider exists **and** Foundation does not
   manage it, so first deploys create it, re-deploys keep whichever mode they had, and CloudFormation is
   never asked to delete a provider it manages.
-- `deploy.yml` shares the concurrency group `deploy-production` with the retired stage-0 workflows
-  (`platform-deploy-data.yml`, `ops-aws-retire-stage0.yml`), so two CloudFormation deployments never
-  overlap.
+- `deploy.yml` runs in the concurrency group `deploy-production`, so two deployments never overlap. The
+  stage-0 workflows are retired: each stops at its first step with an explanation.
 - Post-deploy smoke test (`scripts/smoke.mjs`): security headers (including the voice-call
   Permissions-Policy, `media-src` and `connect-src`) and SPA on `/`, an immutable asset,
   `/api/v1/health` reporting the deployed commit, a signed `POST /api/v1/auth/sign-in` with an invalid
