@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext } from '@playwright/test';
 
 import {
   expectNoSeriousA11yViolations,
@@ -13,21 +13,62 @@ import {
 /*
  * Staff consoles in the shared shell: a program lead assigns a vEIR, an EIR grows their vEIR's common pool
  * (a library note and a published lesson), and an admin turns voice calls off and back on. Each test puts
- * the shared seeded database back the way it found it, so the founder specs are unaffected.
+ * the shared seeded database back the way it found it, even when it fails half-way, so the founder and
+ * calls specs are unaffected.
  */
 
 const CORIN = 'Corin Halvorsen';
 const EIR_VENTURE = 'EmberLoop';
+const SEEDED_VEIR = "Ruth's vEIR";
+const WRITE_HEADERS = { 'x-requested-with': 'foundry-ascent', 'content-type': 'application/json' };
 
-async function settingsCallsEnabled(page: Page): Promise<boolean> {
-  const response = await page.request.get('/api/v1/admin/settings');
+async function getItems<T>(request: APIRequestContext, path: string): Promise<T[]> {
+  const response = await request.get(`/api/v1${path}`);
+  expect(response.status(), `GET ${path}`).toBe(200);
+  return ((await response.json()) as { items: T[] }).items;
+}
+
+async function settingsCallsEnabled(request: APIRequestContext): Promise<boolean> {
+  const response = await request.get('/api/v1/admin/settings');
   expect(response.status(), 'GET /admin/settings').toBe(200);
   const body = (await response.json()) as { callsEnabled?: boolean };
   return body.callsEnabled ?? true;
 }
 
+async function enableCalls(request: APIRequestContext): Promise<void> {
+  const response = await request.patch('/api/v1/admin/settings', {
+    headers: WRITE_HEADERS,
+    data: { callsEnabled: true },
+  });
+  expect(response.status(), 'PATCH /admin/settings').toBe(200);
+}
+
+/** Puts the venture back on its seeded vEIR (reviewed by that vEIR's own EIR) through the API. */
+async function restoreSeededAssignment(request: APIRequestContext): Promise<void> {
+  const ventures = await getItems<{ id: string; name: string; personaName: string | null }>(
+    request,
+    '/program/ventures',
+  );
+  const venture = ventures.find((v) => v.name === EIR_VENTURE);
+  if (!venture || venture.personaName === SEEDED_VEIR) return;
+  const personas = await getItems<{ id: string; name: string; eirProfile: { id: string } | null }>(
+    request,
+    '/personas',
+  );
+  const seeded = personas.find((p) => p.name === SEEDED_VEIR);
+  if (!seeded) throw new Error(`${SEEDED_VEIR} is missing from the seed`);
+  const response = await request.post(`/api/v1/ventures/${venture.id}/assignment`, {
+    headers: WRITE_HEADERS,
+    data: { personaId: seeded.id, eirProfileId: seeded.eirProfile?.id ?? null },
+  });
+  expect(response.status(), 'POST /ventures/:id/assignment').toBe(200);
+}
+
 test.describe('program lead', () => {
   test.use({ storageState: OWNER_STATE });
+  test.afterEach(async ({ page }) => {
+    await restoreSeededAssignment(page.request);
+  });
 
   test('assigns a vEIR to a venture and sees who coaches what', async ({ page }) => {
     await page.goto(`/${TENANT}/app/program`);
@@ -36,7 +77,7 @@ test.describe('program lead', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'vEIRs & assignments' })).toBeVisible();
 
     const row = page.getByRole('row', { name: new RegExp(EIR_VENTURE) });
-    await expect(row).toContainText("Ruth's vEIR");
+    await expect(row).toContainText(SEEDED_VEIR);
 
     const assign = async (veir: string) => {
       await row.getByRole('button', { name: `Change the vEIR of ${EIR_VENTURE}` }).click();
@@ -54,7 +95,7 @@ test.describe('program lead', () => {
     await expect(page.getByRole('button', { name: /^Corin's vEIR\s*3$/ })).toBeVisible();
 
     // Back to the seeded assignment.
-    await assign("Ruth's vEIR");
+    await assign(SEEDED_VEIR);
     await expect(row).toContainText('Ruth Abernathy-Song');
   });
 });
@@ -134,6 +175,9 @@ test.describe('EIR', () => {
 
 test.describe('platform admin', () => {
   test.use({ storageState: OWNER_STATE });
+  test.afterEach(async ({ page }) => {
+    await enableCalls(page.request);
+  });
 
   test('turns voice calls off and back on', async ({ page }) => {
     await page.goto(`/${TENANT}/app/admin/settings`);
@@ -145,11 +189,11 @@ test.describe('platform admin', () => {
     const confirm = page.getByRole('alertdialog', { name: 'Turn off voice calls?' });
     await confirm.getByRole('button', { name: 'Turn off calls' }).click();
     await expect(calls).not.toBeChecked();
-    expect(await settingsCallsEnabled(page)).toBe(false);
+    expect(await settingsCallsEnabled(page.request)).toBe(false);
 
     await calls.click();
     await expect(calls).toBeChecked();
-    expect(await settingsCallsEnabled(page)).toBe(true);
+    expect(await settingsCallsEnabled(page.request)).toBe(true);
   });
 });
 
@@ -160,7 +204,7 @@ for (const scheme of ['dark', 'light'] as const) {
       await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
     });
 
-    test('persona sections, assignments and settings meet WCAG 2.2 AA', async ({ page }) => {
+    test('persona sections, lessons, assignments and the admin pages meet WCAG 2.2 AA', async ({ page }) => {
       await page.goto(`/${TENANT}/app/eir/personas`);
       await useTheme(page, scheme);
       await page.getByRole('link', { name: "Corin's vEIR" }).click();
@@ -172,6 +216,10 @@ for (const scheme of ['dark', 'light'] as const) {
         await expectNoSeriousA11yViolations(page, `persona ${tab} (${scheme})`);
       }
 
+      await page.goto(`/${TENANT}/app/eir/lessons`);
+      await expect(page.getByRole('heading', { level: 1, name: 'Lessons to review' })).toBeVisible();
+      await expectNoSeriousA11yViolations(page, `lessons to review (${scheme})`);
+
       await page.goto(`/${TENANT}/app/program/assignments`);
       await expect(page.getByRole('table')).toBeVisible();
       await expectNoSeriousA11yViolations(page, `assignments (${scheme})`);
@@ -179,6 +227,49 @@ for (const scheme of ['dark', 'light'] as const) {
       await page.goto(`/${TENANT}/app/admin/settings`);
       await expect(page.getByRole('switch', { name: 'Voice calls' })).toBeVisible();
       await expectNoSeriousA11yViolations(page, `admin settings (${scheme})`);
+
+      await page.goto(`/${TENANT}/app/admin/usage`);
+      await expect(page.getByRole('heading', { level: 1, name: 'Usage' })).toBeVisible();
+      await expectNoSeriousA11yViolations(page, `admin usage (${scheme})`);
+
+      await page.goto(`/${TENANT}/app/admin/audit`);
+      await expect(page.getByRole('heading', { level: 1, name: 'Audit log' })).toBeVisible();
+      await expect(page.getByRole('table')).toBeVisible();
+      await expectNoSeriousA11yViolations(page, `admin audit (${scheme})`);
+    });
+
+    test('the EIR inbox and calibration reviews meet WCAG 2.2 AA', async ({ browser }) => {
+      const owner = await browser.newContext({ storageState: OWNER_STATE });
+      const corinCode = await issueAccessCodeViaApi(owner.request, CORIN);
+      await owner.close();
+      // Signed out: contexts made here otherwise inherit the owner's storage state from this describe.
+      const context = await browser.newContext({
+        storageState: { cookies: [], origins: [] },
+        colorScheme: scheme,
+        reducedMotion: 'reduce',
+      });
+      const page = await context.newPage();
+      await signIn(page, corinCode);
+      await useTheme(page, scheme);
+
+      // Their filters are toggle-button groups (FilterChips), never tabs without panels; with nothing
+      // routed or sampled yet, a page shows its empty state alone.
+      await page.goto(`/${TENANT}/app/eir/inbox`);
+      await expect(page.getByRole('heading', { level: 1, name: 'Escalation inbox' })).toBeVisible();
+      await expect(
+        page.getByRole('group', { name: 'Filter escalations' }).or(page.getByText('Nothing routed to you')),
+      ).toBeVisible();
+      await expect(page.getByRole('tab')).toHaveCount(0);
+      await expectNoSeriousA11yViolations(page, `EIR inbox (${scheme})`);
+
+      await page.goto(`/${TENANT}/app/eir/reviews`);
+      await expect(page.getByRole('heading', { level: 1, name: 'Calibration reviews' })).toBeVisible();
+      await expect(
+        page.getByRole('group', { name: 'Filter samples' }).or(page.getByText('No samples to review')),
+      ).toBeVisible();
+      await expect(page.getByRole('tab')).toHaveCount(0);
+      await expectNoSeriousA11yViolations(page, `calibration reviews (${scheme})`);
+      await context.close();
     });
   });
 }

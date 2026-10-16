@@ -174,6 +174,8 @@ UI relies on beyond plain JSON bodies:
 | `POST /personas/:id/knowledge/:sourceId/complete`                                | **202** while the upload is processed, 200 once settled; the library polls                                   |
 | `DELETE /personas/:id/knowledge/:sourceId`                                       | 204; the source leaves retrieval at once                                                                     |
 | `GET /personas/:id/consents`                                                     | `ConsentListResponse` with `personas` per consent; 403 unless `canCurate`                                    |
+| `POST /personas/:id/consents`                                                    | 201 `ConsentView`; 422 unless `assetTypes` includes `doctrine`                                               |
+| `POST /persona-releases/:id/approve`                                             | 409 `conflict` for a draft older than the active release                                                     |
 | `POST /consents/:id/revoke`                                                      | 200 `{ consent, suspendedPersonaIds }`                                                                       |
 | `POST /ventures/:id/assignment`                                                  | 200 `ProgramVentureRow` with `personaId`, `reviewingEir`, `assignedAt`                                       |
 | `POST /eir/reviews/:turnId`                                                      | 201 `{ reviewId, turnId }`                                                                                   |
