@@ -39,7 +39,7 @@ export function escalationTimeline(e: EscalationView): TimelineStep[] {
     {
       id: 'drafted',
       label: 'Request drafted',
-      detail: 'Foundry Guide (AI) drafted the packet from your request.',
+      detail: 'The packet was drafted by AI from your request.',
       at: e.createdAt,
       state: 'done',
     },

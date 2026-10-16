@@ -80,29 +80,6 @@ export function useCreateSession(ventureId: string) {
 }
 
 /**
- * Same as useCreateSession, with the venture chosen per call (command palette, home quick start):
- *   startSession.mutate({ ventureId, input: { mode: 'diagnose' } })
- */
-export function useStartSession() {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: ({ ventureId, input = {} }: { ventureId: string; input?: CreateSessionInput }) =>
-      api.post(
-        path`/ventures/${ventureId}/sessions`,
-        CreateSessionResponse,
-        encodeBody(CreateSessionRequest, input),
-        { idempotencyKey: createIdempotencyKey() },
-      ),
-    onSuccess: (session) => {
-      client.setQueryData<SessionDetail>(queryKeys.session.detail(session.id), { session, turns: [] });
-      void client.invalidateQueries({ queryKey: queryKeys.venture.sessions(session.ventureId) });
-      void client.invalidateQueries({ queryKey: queryKeys.venture.overview(session.ventureId) });
-      void client.invalidateQueries({ queryKey: queryKeys.ventures.list() });
-    },
-  });
-}
-
-/**
  * POST /sessions/:id/end → 200 `{ session, recap }`. `recap` is null for ephemeral sessions; its
  * `memory_candidate_ids` are proposed memory items waiting for the founder's approval.
  */

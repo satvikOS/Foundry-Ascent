@@ -459,9 +459,6 @@ function SessionCanvas() {
               </span>
             ) : null}
             <span>
-              {session.personaName} v{session.personaVersion}
-            </span>
-            <span>
               Started by {session.startedBy.displayName}{' '}
               <time dateTime={isoString(session.startedAt)} title={formatDateTime(session.startedAt)}>
                 {formatRelative(session.startedAt)}

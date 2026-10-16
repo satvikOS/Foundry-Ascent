@@ -265,7 +265,7 @@ export function EscalationFlowDialog({
         <DialogHeader>
           <DialogTitle>Request human support</DialogTitle>
           <DialogDescription>
-            Foundry Guide drafts a short packet for {step === 'details' ? 'an EIR or specialist' : role}. You
+            A short packet for {step === 'details' ? 'an EIR or specialist' : role} is drafted by AI. You
             review it and choose what is shared — nothing leaves your workspace before you consent.
           </DialogDescription>
         </DialogHeader>

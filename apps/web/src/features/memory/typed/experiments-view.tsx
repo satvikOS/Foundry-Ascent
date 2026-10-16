@@ -121,7 +121,7 @@ export function ExperimentsView({ embedded = false }: { embedded?: boolean }) {
       description="Tests of your riskiest assumptions: what you predicted, how you tested it, what happened and what it means."
       icon={FlaskConical}
       emptyTitle="No experiments yet"
-      emptyDescription="Turn a risky assumption into a test: write the prediction first, then the method. Results become evidence Foundry Guide can cite."
+      emptyDescription="Turn a risky assumption into a test: write the prediction first, then the method. Results become evidence your vEIR can cite."
     >
       {(items, ctx) => {
         const byStatus = new Map<ExperimentStatus, MemoryObjectView[]>(

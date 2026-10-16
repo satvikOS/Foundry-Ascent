@@ -111,10 +111,7 @@ export function AccountMenu({
       <DropdownMenuContent side="top" align="start" className="w-64">
         <div className="px-2 pt-1.5 pb-2">
           <p className="truncate text-sm font-medium">{name}</p>
-          <p className="truncate text-caption text-muted-foreground">
-            {me.principal.title ? `${me.principal.title} · ` : ''}
-            {roles}
-          </p>
+          <p className="truncate text-caption text-muted-foreground">{me.principal.title ?? roles}</p>
         </div>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>

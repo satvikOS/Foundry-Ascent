@@ -84,7 +84,7 @@ export function GoalEditor({
     <SectionCard
       title="Current goal"
       icon={Target}
-      description="What this venture is working towards right now. Foundry Guide uses it to focus every session."
+      description="What the venture is working towards right now."
       actions={
         canEdit && !editing ? (
           <Button
@@ -164,7 +164,7 @@ export function GoalEditor({
         <p className="text-[15px] leading-7 font-medium text-balance">{goal}</p>
       ) : (
         <p className="text-sm text-muted-foreground">
-          No goal set yet.{canEdit ? ' A clear, dated goal makes every session sharper.' : ''}
+          No goal set yet.{canEdit ? ' A clear, dated goal makes every conversation sharper.' : ''}
         </p>
       )}
     </SectionCard>

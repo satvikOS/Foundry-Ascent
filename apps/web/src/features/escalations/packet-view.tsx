@@ -25,7 +25,7 @@ function List({ items, empty }: { items: readonly string[]; empty: string }) {
 }
 
 /**
- * The escalation packet a human will receive. It is drafted by Foundry Guide, so it is always shown
+ * The escalation packet a human will receive. It is drafted by AI, so it is always shown
  * with an explicit "AI-generated draft" label; the founder reviews it and chooses what to share.
  */
 export function EscalationPacketView({
@@ -45,7 +45,7 @@ export function EscalationPacketView({
           <Bot aria-hidden className="size-3" />
           AI-generated
         </span>
-        Drafted by Foundry Guide from your session. Review it before anything is shared.
+        Drafted by AI from your conversation. Review it before anything is shared.
       </p>
       <dl className="grid gap-4 p-4">
         <PacketField label="Your question">{packet.founderQuestion}</PacketField>

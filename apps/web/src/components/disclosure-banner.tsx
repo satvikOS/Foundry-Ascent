@@ -5,6 +5,13 @@ import { Bot } from 'lucide-react';
 import { meQueryOptions } from '@/lib/api/hooks/auth';
 import { cn } from '@/lib/utils';
 
+/**
+ * The disclosure on public pages, before anyone has signed in (no persona is known yet): what every vEIR
+ * is, and that it never speaks for the EIR.
+ */
+export const PUBLIC_DISCLOSURE =
+  'Every vEIR is an AI, built with consent from an EIR’s approved doctrine and style. It is not the EIR and never speaks for them. Everything in this environment is synthetic.';
+
 interface DisclosureBannerProps {
   /**
    * Disclosure text. Pass the session's or persona release's `disclosure` when you have it;

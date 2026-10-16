@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { ArrowRight } from 'lucide-react';
 
-import { DisclosureBanner } from '@/components/disclosure-banner';
+import { DisclosureBanner, PUBLIC_DISCLOSURE } from '@/components/disclosure-banner';
 import { ProductPreview } from '@/components/landing/product-preview';
 import { BrandWordmark } from '@/components/shell/brand';
 import { ThemeToggle } from '@/components/shell/theme-toggle';
@@ -14,9 +14,6 @@ export const Route = createFileRoute('/')({
   head: () => ({ meta: [{ title: 'A venture coach that remembers' }] }),
   component: LandingPage,
 });
-
-const LANDING_DISCLOSURE =
-  'Every vEIR is an AI, built with consent from an EIR’s approved doctrine and style. It is not the EIR and never speaks for them. Everything in this environment is synthetic.';
 
 const PILLARS: { title: string; body: string; detail: string }[] = [
   {
@@ -182,7 +179,7 @@ function LandingPage() {
                   <a href="#how-it-works">How it works</a>
                 </Button>
               </div>
-              <DisclosureBanner variant="inline" className="mt-12 max-w-xl" text={LANDING_DISCLOSURE} />
+              <DisclosureBanner variant="inline" className="mt-12 max-w-xl" text={PUBLIC_DISCLOSURE} />
             </div>
             <ProductPreview className="mx-auto w-full max-w-md lg:max-w-none" />
           </div>

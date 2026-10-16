@@ -79,14 +79,6 @@ export function setTheme(preference: ThemePreference): void {
   apply({ preference, resolved: resolve(preference) });
 }
 
-/** Cycle dark → light → system (used by the command palette and the toggle shortcut). */
-export function cycleTheme(): ThemePreference {
-  const order: ThemePreference[] = ['dark', 'light', 'system'];
-  const next = order[(order.indexOf(state.preference) + 1) % order.length] ?? 'system';
-  setTheme(next);
-  return next;
-}
-
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);

@@ -81,7 +81,7 @@ export function EscalationsPage() {
     <PageContainer size="wide">
       <PageHeader
         title="Escalations"
-        description="Requests for human support. Packets are drafted by Foundry Guide (AI) — nothing is shared until you review it and consent."
+        description="Requests for a person to weigh in. Packets are drafted by AI — nothing is shared until you review it and consent."
         actions={
           canEdit ? (
             <Button
@@ -140,7 +140,7 @@ export function EscalationsPage() {
                       ? 'Nothing closed yet'
                       : 'No requests yet'
                 }
-                description="When Foundry Guide suggests a person should weigh in — or you ask for one — the request appears here."
+                description="When a conversation suggests a person should weigh in — or you ask for one — the request appears here."
               />
             ) : (
               <ul aria-label="Escalations" className="grid gap-2">
@@ -351,7 +351,7 @@ function EscalationDetail({
 
       <SectionCard
         title="Packet"
-        description="What the human reviewer receives. Drafted by Foundry Guide — check it carefully."
+        description="What the human reviewer receives. Drafted by AI — check it carefully."
       >
         {escalation.packet ? (
           <EscalationPacketView packet={escalation.packet} sharedOnly={!needsConsent} />

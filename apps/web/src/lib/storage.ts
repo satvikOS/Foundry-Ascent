@@ -29,7 +29,6 @@ export const safeStorage = {
 export const STORAGE_KEYS = {
   theme: 'fa.theme',
   sidebarCollapsed: 'fa.sidebar.collapsed',
-  venturesView: 'fa.ventures.view',
   sessionHint: 'fa.session-hint',
   /** Timestamp of the last access-code notice the person dismissed. */
   accessCodeNoticeDismissed: 'fa.notice.access-code',

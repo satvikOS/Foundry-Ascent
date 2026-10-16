@@ -2,7 +2,7 @@ import { createFileRoute, Link, redirect, useNavigate } from '@tanstack/react-ro
 import { ArrowLeft } from 'lucide-react';
 
 import { SignInForm } from '@/components/auth/sign-in-form';
-import { DisclosureBanner } from '@/components/disclosure-banner';
+import { DisclosureBanner, PUBLIC_DISCLOSURE } from '@/components/disclosure-banner';
 import { BrandWordmark } from '@/components/shell/brand';
 import { ThemeToggle } from '@/components/shell/theme-toggle';
 import { Button } from '@/components/ui/button';
@@ -60,7 +60,7 @@ function SignInPage() {
               you approve and a person one step away.
             </p>
           </div>
-          <DisclosureBanner variant="inline" className="max-w-md bg-background/60" />
+          <DisclosureBanner variant="inline" className="max-w-md bg-background/60" text={PUBLIC_DISCLOSURE} />
         </div>
       </aside>
 
@@ -101,7 +101,7 @@ function SignInPage() {
               <p>
                 Lost your code? Ask your program lead for a new one. Codes are shown once and can be revoked.
               </p>
-              <DisclosureBanner variant="inline" className="lg:hidden" />
+              <DisclosureBanner variant="inline" className="lg:hidden" text={PUBLIC_DISCLOSURE} />
             </div>
           </div>
         </main>

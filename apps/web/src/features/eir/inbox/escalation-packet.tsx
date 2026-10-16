@@ -66,7 +66,7 @@ export function EscalationPacketView({ escalation }: { escalation: EscalationVie
           AI-drafted
         </Badge>
         <span>
-          Drafted by Foundry Guide and approved for sharing by the founder
+          Drafted by AI and approved for sharing by the founder
           {escalation.sharingConsentAt ? ` on ${formatDateTime(escalation.sharingConsentAt)}` : ''}. Verify
           before acting.
         </span>

@@ -340,7 +340,7 @@ export function TypedMemoryDialog({
             <DialogDescription>
               {editing
                 ? 'Changes are saved as a new version; the previous one stays in the memory history.'
-                : `Saved to venture memory so Foundry Guide can use it as evidence.`}
+                : `Saved to venture memory so it can be cited as evidence.`}
             </DialogDescription>
           </DialogHeader>
           {formError ? (

@@ -21,7 +21,7 @@ export function PersonasListPage({ tenant }: { tenant: string }) {
     <PageContainer size="wide">
       <PageHeader
         title="Personas"
-        description="Foundry Guide and any EIR personas. Every release is versioned and approved by a person; suspending a persona stops it immediately."
+        description="The neutral Foundry Guide and the EIR personas (vEIRs). Every release is versioned and approved by a person; suspending a persona stops it immediately."
       />
       {personas.isPending ? (
         <LoadingRegion label="Loading personas">

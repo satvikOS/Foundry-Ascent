@@ -159,7 +159,7 @@ export function ConsentForm({ escalation, onConsented, onCancel }: ConsentFormPr
                     <span className="flex flex-wrap items-center gap-1.5">
                       <MemoryTypeLabel type={memory.type} />
                       {suggested.has(memory.id) ? (
-                        <span className="text-xs text-muted-foreground">Suggested by Foundry Guide</span>
+                        <span className="text-xs text-muted-foreground">Suggested by AI</span>
                       ) : null}
                     </span>
                     <span className="text-sm font-medium [overflow-wrap:anywhere]">{memory.title}</span>

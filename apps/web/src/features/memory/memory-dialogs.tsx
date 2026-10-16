@@ -354,8 +354,7 @@ export function DisputeMemoryDialog({
           <DialogHeader>
             <DialogTitle>Dispute this memory</DialogTitle>
             <DialogDescription>
-              Disputed memory is no longer treated as fact by Foundry Guide until someone corrects or
-              re-approves it.
+              Disputed memory is no longer treated as fact until someone corrects or re-approves it.
             </DialogDescription>
           </DialogHeader>
           <Field label="What’s wrong?" required error={formState.errors.reason?.message}>
@@ -415,7 +414,7 @@ export function ConfirmMemoryActionDialog({
           <AlertDialogTitle>{isDelete ? 'Delete this memory?' : 'Reject this suggestion?'}</AlertDialogTitle>
           <AlertDialogDescription>
             {isDelete
-              ? 'Foundry Guide will stop using it immediately. Only an audit record (who and when) is kept.'
+              ? 'It stops being used immediately. Only an audit record (who and when) is kept.'
               : 'It will not be used as venture memory. You can add it again later if it turns out to be right.'}
           </AlertDialogDescription>
         </AlertDialogHeader>
@@ -521,8 +520,7 @@ export function CreateMemoryDialog({
           <DialogHeader>
             <DialogTitle>Add to memory</DialogTitle>
             <DialogDescription>
-              Record something Foundry Guide should know about this venture. It is linked to you as the
-              source.
+              Record something worth remembering about this venture. It is linked to you as the source.
             </DialogDescription>
           </DialogHeader>
           {formError ? (
