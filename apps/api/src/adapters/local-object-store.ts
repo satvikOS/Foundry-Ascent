@@ -7,16 +7,39 @@ import {
   ObjectNotFoundError,
   type ObjectStore,
   ObjectTooLargeError,
+  type PresignedDownload,
   type PresignedUpload,
+  type PresignGetInput,
   type PresignPutInput,
 } from '@foundry/core';
 import { z } from 'zod';
 
 import { UPLOAD_URL_TTL_SECONDS } from '../config.js';
+import { contentDisposition, servedContentType } from './content-disposition.js';
 import { DOCUMENT_KEY_PREFIX } from './s3-object-store.js';
 
 /** Route (relative to /api/v1) that receives local "presigned" uploads. Development only. */
 export const LOCAL_UPLOAD_ROUTE = '/_local/uploads/:token';
+/** Route (relative to /api/v1) that serves local "presigned" downloads. Development only. */
+export const LOCAL_DOWNLOAD_ROUTE = '/_local/objects/:token';
+
+/** A local "presigned" GET: key, served type, disposition, file name and expiry (`o` tells it from a PUT). */
+const DownloadClaims = z.object({
+  o: z.literal('get'),
+  k: z.string().min(1).max(1024),
+  t: DocumentContentType,
+  d: z.enum(['inline', 'attachment']),
+  f: z.string().min(1).max(400),
+  e: z.number().int(),
+});
+type DownloadClaims = z.infer<typeof DownloadClaims>;
+
+/** What the local download route sends back. */
+export interface LocalDownload {
+  readonly body: Uint8Array;
+  readonly contentType: string;
+  readonly contentDisposition: string;
+}
 
 const UploadClaims = z.object({
   k: z.string().min(1).max(1024),
@@ -29,16 +52,18 @@ type UploadClaims = z.infer<typeof UploadClaims>;
 export class LocalUploadRejectedError extends Error {
   override readonly name = 'LocalUploadRejectedError';
   constructor(
-    readonly status: 400 | 403 | 413 | 415,
+    readonly status: 400 | 403 | 404 | 413 | 415,
     message: string,
   ) {
     super(message);
   }
 }
 
-/** Receives uploads for the local upload route (implemented by {@link LocalObjectStore}). */
+/** Receives uploads and serves downloads for the local routes (implemented by {@link LocalObjectStore}). */
 export interface LocalUploadTarget {
   receive(token: string, contentType: string | undefined, body: Uint8Array): Promise<void>;
+  /** The file a download token names, as S3 would serve it (403 for a bad or expired token, 404 if gone). */
+  serve(token: string): Promise<LocalDownload>;
   /** Largest body the route should read. */
   readonly maxUploadBytes: number;
 }
@@ -56,7 +81,8 @@ export interface LocalObjectStoreOptions {
 /**
  * Filesystem ObjectStore for the local dev server, with S3-like presigned PUTs: the URL carries an
  * HMAC-signed token binding key, content type, exact length and expiry, and
- * `PUT /api/v1/_local/uploads/:token` (mounted only when APP_ENV=development) checks all four.
+ * `PUT /api/v1/_local/uploads/:token` (mounted only when APP_ENV=development) checks all four. Presigned
+ * GETs work the same way through `GET /api/v1/_local/objects/:token` (key, type, disposition, expiry).
  */
 export class LocalObjectStore implements ObjectStore, LocalUploadTarget {
   readonly #root: string;
@@ -95,8 +121,7 @@ export class LocalObjectStore implements ObjectStore, LocalUploadTarget {
       l: input.contentLength,
       e: expiresAt.getTime(),
     };
-    const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
-    const token = `${payload}.${this.#sign(payload).toString('base64url')}`;
+    const token = this.#token(claims);
     return {
       url: `${this.#origin}${API_PREFIX}/_local/uploads/${token}`,
       headers: { 'content-type': input.contentType },
@@ -104,21 +129,66 @@ export class LocalObjectStore implements ObjectStore, LocalUploadTarget {
     };
   }
 
-  async receive(token: string, contentType: string | undefined, body: Uint8Array): Promise<void> {
+  #token(claims: UploadClaims | DownloadClaims): string {
+    const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
+    return `${payload}.${this.#sign(payload).toString('base64url')}`;
+  }
+
+  /** The verified claims of a token, or a 403 for anything forged, malformed or of the other kind. */
+  #claims<T>(token: string, schema: z.ZodType<T>): T {
     const [payload, signature] = token.split('.');
     if (payload === undefined || signature === undefined)
-      throw new LocalUploadRejectedError(403, 'malformed upload token');
+      throw new LocalUploadRejectedError(403, 'malformed token');
     const expected = this.#sign(payload);
     const given = Buffer.from(signature, 'base64url');
     if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
-      throw new LocalUploadRejectedError(403, 'invalid upload signature');
+      throw new LocalUploadRejectedError(403, 'invalid signature');
     }
-    let claims: UploadClaims;
     try {
-      claims = UploadClaims.parse(JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')));
+      return schema.parse(JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')));
     } catch {
-      throw new LocalUploadRejectedError(403, 'invalid upload token');
+      throw new LocalUploadRejectedError(403, 'invalid token');
     }
+  }
+
+  async presignGet(input: PresignGetInput): Promise<PresignedDownload> {
+    await Promise.resolve();
+    this.#path(input.key);
+    const expiresIn = Math.min(input.expiresInSeconds, UPLOAD_URL_TTL_SECONDS);
+    const expiresAt = new Date(this.#now().getTime() + expiresIn * 1000);
+    const token = this.#token({
+      o: 'get',
+      k: input.key,
+      t: input.contentType,
+      d: input.disposition,
+      f: input.filename.slice(0, 400) || 'document',
+      e: expiresAt.getTime(),
+    });
+    return {
+      url: `${this.#origin}${API_PREFIX}/_local/objects/${token}`,
+      expiresAt: expiresAt.toISOString(),
+    };
+  }
+
+  async serve(token: string): Promise<LocalDownload> {
+    const claims = this.#claims(token, DownloadClaims);
+    if (claims.e < this.#now().getTime()) throw new LocalUploadRejectedError(403, 'download URL expired');
+    let body: Uint8Array;
+    try {
+      body = await this.getObject(claims.k, { maxBytes: this.maxUploadBytes });
+    } catch (err) {
+      if (err instanceof ObjectNotFoundError) throw new LocalUploadRejectedError(404, 'object not found');
+      throw err;
+    }
+    return {
+      body,
+      contentType: servedContentType(claims.t),
+      contentDisposition: contentDisposition(claims.d, claims.f),
+    };
+  }
+
+  async receive(token: string, contentType: string | undefined, body: Uint8Array): Promise<void> {
+    const claims = this.#claims(token, UploadClaims);
     if (claims.e < this.#now().getTime()) throw new LocalUploadRejectedError(403, 'upload URL expired');
     if (contentType?.split(';')[0]?.trim().toLowerCase() !== claims.t) {
       throw new LocalUploadRejectedError(403, 'content-type does not match the signed upload');

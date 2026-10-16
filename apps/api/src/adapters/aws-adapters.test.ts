@@ -64,6 +64,56 @@ describe('S3ObjectStore.presignPut', () => {
   });
 });
 
+describe('S3ObjectStore.presignGet', () => {
+  it('signs a short GET of one key whose response type and disposition are fixed and never cached', async () => {
+    const store = storeWith(createS3Client('us-east-1', { credentials }));
+    const view = await store.presignGet({
+      key,
+      disposition: 'inline',
+      filename: 'Pitch “deck” v2.pdf',
+      contentType: 'application/pdf',
+      expiresInSeconds: 120,
+    });
+    const url = new URL(view.url);
+    // The documents bucket origin the CSP's connect-src names.
+    expect(url.origin).toBe('https://foundry-docs.s3.us-east-1.amazonaws.com');
+    expect(decodeURIComponent(url.pathname)).toBe(`/${key}`);
+    expect(url.searchParams.get('X-Amz-Expires')).toBe('120');
+    expect(url.searchParams.get('X-Amz-SignedHeaders')).toBe('host');
+    expect(url.searchParams.get('response-content-type')).toBe('application/pdf');
+    expect(url.searchParams.get('response-content-disposition')).toBe(
+      `inline; filename="Pitch _deck_ v2.pdf"; filename*=UTF-8''Pitch%20%E2%80%9Cdeck%E2%80%9D%20v2.pdf`,
+    );
+    expect(url.searchParams.get('response-cache-control')).toBe('private, no-store');
+    expect(view.expiresAt).toBe('2026-10-05T12:02:00.000Z');
+
+    const download = await store.presignGet({
+      key,
+      disposition: 'attachment',
+      filename: 'notes.md',
+      contentType: 'text/markdown',
+      expiresInSeconds: 3600,
+    });
+    const downloadUrl = new URL(download.url);
+    expect(downloadUrl.searchParams.get('X-Amz-Expires')).toBe('300');
+    expect(downloadUrl.searchParams.get('response-content-type')).toBe('text/markdown; charset=utf-8');
+    expect(downloadUrl.searchParams.get('response-content-disposition')).toMatch(/^attachment; /);
+  });
+
+  it('refuses keys outside the documents prefix', async () => {
+    const store = storeWith(createS3Client('us-east-1', { credentials }));
+    await expect(
+      store.presignGet({
+        key: 'site/index.html',
+        disposition: 'inline',
+        filename: 'x',
+        contentType: 'text/plain',
+        expiresInSeconds: 60,
+      }),
+    ).rejects.toThrow(TypeError);
+  });
+});
+
 describe('S3ObjectStore.getObject / delete', () => {
   function fakeClient(handler: (command: unknown) => unknown): {
     client: S3Client;

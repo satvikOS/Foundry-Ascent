@@ -10,11 +10,14 @@ import {
   ObjectNotFoundError,
   type ObjectStore,
   ObjectTooLargeError,
+  type PresignedDownload,
   type PresignedUpload,
+  type PresignGetInput,
   type PresignPutInput,
 } from '@foundry/core';
 
 import { UPLOAD_URL_TTL_SECONDS } from '../config.js';
+import { contentDisposition, servedContentType } from './content-disposition.js';
 
 /** Every venture document key lives under this prefix (bucket policy and IAM scope it). */
 export const DOCUMENT_KEY_PREFIX = 'tenants/';
@@ -60,6 +63,8 @@ export function createS3Client(region: string, overrides: Omit<S3ClientConfig, '
  *
  * - `presignPut`: SigV4 query-signed PUT that signs `content-type` and `content-length`, so the browser
  *   must upload exactly the declared type and size; at most 5 minutes; keys under `tenants/` only.
+ * - `presignGet`: SigV4 query-signed GET of one key (at most 5 minutes) whose response type and
+ *   `Content-Disposition` are fixed by the signature (`response-content-*` overrides), and never cached.
  * - `getObject`: rejects objects above `maxBytes` from ContentLength before reading the payload.
  * - `delete`: idempotent (S3 returns 204 for missing keys).
  */
@@ -101,6 +106,21 @@ export class S3ObjectStore implements ObjectStore {
       headers: { 'content-type': input.contentType },
       expiresAt: new Date(signedAt.getTime() + expiresIn * 1000).toISOString(),
     };
+  }
+
+  async presignGet(input: PresignGetInput): Promise<PresignedDownload> {
+    assertDocumentKey(input.key);
+    const expiresIn = Math.max(60, Math.min(input.expiresInSeconds, this.#maxPresignSeconds));
+    const signedAt = this.#now();
+    const command = new GetObjectCommand({
+      Bucket: this.#bucket,
+      Key: input.key,
+      ResponseContentType: servedContentType(input.contentType),
+      ResponseContentDisposition: contentDisposition(input.disposition, input.filename),
+      ResponseCacheControl: 'private, no-store',
+    });
+    const url = await getSignedUrl(this.#client, command, { expiresIn, signingDate: signedAt });
+    return { url, expiresAt: new Date(signedAt.getTime() + expiresIn * 1000).toISOString() };
   }
 
   async getObject(key: string, options: { readonly maxBytes: number }): Promise<Uint8Array> {

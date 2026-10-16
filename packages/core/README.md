@@ -251,6 +251,7 @@ tenantId, ventureId, requestId }` (enqueued by `documents.complete`) or `IngestK
 ```ts
 interface ObjectStore {
   presignPut(input: { key; contentType; contentLength; expiresInSeconds }): Promise<{ url; headers; expiresAt }>;
+  presignGet(input: { key; disposition; filename; contentType; expiresInSeconds }): Promise<{ url; expiresAt }>;
   getObject(key: string, options: { maxBytes: number }): Promise<Uint8Array>; // throw ObjectNotFoundError / ObjectTooLargeError
   delete(key: string): Promise<void>;                                         // missing key is not an error
 }
@@ -265,6 +266,9 @@ interface CoreLogger { info/warn/error(event: string, fields: CoreLogFields): vo
 - `presignPut`: S3 `PutObjectCommand` with `ContentType` and `ContentLength` signed (bucket CORS for
   `SITE_ORIGIN`); return the headers the browser must send. Keys are built by core:
   `tenants/{tenantId}/ventures/{ventureId}/documents/{documentId}/{safe filename}`.
+- `presignGet`: S3 `GetObjectCommand` with `response-content-type`, `response-content-disposition` and
+  `response-cache-control: private, no-store` signed (the document viewer and downloads; bucket CORS allows
+  `GET`). Core signs only after the venture check (`reader.documentFile`).
 - `TextExtractor`: `unpdf` for PDF, `mammoth.convertToMarkdown` for DOCX (headings become `#` lines),
   UTF-8 for text/markdown.
 

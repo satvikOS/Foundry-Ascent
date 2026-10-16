@@ -25,9 +25,32 @@ export interface PresignedUpload {
   readonly expiresAt: string;
 }
 
+export interface PresignGetInput {
+  /** Object key of a venture document (built by core from the document record, never from input). */
+  readonly key: string;
+  /** `inline` shows the file in the app; `attachment` saves it under `filename`. */
+  readonly disposition: 'inline' | 'attachment';
+  /** The name the file is saved under (the original upload name). */
+  readonly filename: string;
+  /** Served as this type (the stored type), whatever the object's own metadata says. */
+  readonly contentType: z.infer<typeof DocumentContentType>;
+  readonly expiresInSeconds: number;
+}
+
+export interface PresignedDownload {
+  readonly url: string;
+  /** ISO-8601 expiry. */
+  readonly expiresAt: string;
+}
+
 /** Venture document storage (S3 documents bucket). */
 export interface ObjectStore {
   presignPut(input: PresignPutInput): Promise<PresignedUpload>;
+  /**
+   * A short-lived GET of one stored file (the document viewer and downloads). Like a presigned PUT, the URL
+   * is the authorization: core issues it only after checking the caller may read the document.
+   */
+  presignGet(input: PresignGetInput): Promise<PresignedDownload>;
   /**
    * Reads an uploaded object (ingestion worker). Must reject objects larger than `maxBytes` and throw
    * {@link ObjectNotFoundError} when the key does not exist.
