@@ -906,6 +906,16 @@ function entriesIn(section: string): { id: string; text: string }[] {
   }));
 }
 
+/** Words that date a plan ("tomorrow") and go stale in a memory title (the content keeps them as said). */
+const PLAN_TIME =
+  /\s+(?:tomorrow|today|tonight|this (?:week|weekend|morning|afternoon|evening)|next (?:week|month))$/i;
+
+/** A memory title for a plan the founder stated: the plan itself, capitalised, without the time words. */
+function memoryTitleOf(plan: string): string {
+  const title = upperFirst(withoutFinalStop(plan).replace(PLAN_TIME, '').trim());
+  return title.length > 120 ? `${title.slice(0, 119).trimEnd()}…` : title;
+}
+
 /**
  * Deterministic `DistillDraft` from a distillation prompt: a title and digest from the transcript, the
  * previous notebook carried forward with its ids plus new entries (a founder-profile note, commitments
@@ -983,14 +993,26 @@ export function mockDistillDraft(context: MockGenerateContext): DistillDraft {
     : `Last time we talked about ${bank.phrase}. Where did you land?`;
 
   const lesson = turns.length >= 2 ? [bank.lesson] : [];
+  // One memory candidate whose title and content say the same thing: what the founder said they would do, in
+  // their words (an action they stated), else the topic's own note. (The topic's title over the founder's plan
+  // read as a mismatched pair in Knowledge: "Pricing still to be tested…" / "Maya plans to call facilities…".)
   const memory: MemoryCandidate[] = [
-    {
-      type: bank.memory.type,
-      title: bank.memory.title,
-      content: thread ? `${who} plans to ${lowerFirst(withoutFinalStop(thread), names)}.` : bank.memory.note,
-      evidence_ids: context.evidenceIds.slice(0, 1),
-      confidence: 0.6,
-    },
+    thread
+      ? {
+          type: 'action',
+          title: memoryTitleOf(thread),
+          content: `${who} plans to ${lowerFirst(withoutFinalStop(thread), names)}.`,
+          evidence_ids: [],
+          confidence: 0.6,
+          source: 'founder_stated',
+        }
+      : {
+          type: bank.memory.type,
+          title: bank.memory.title,
+          content: bank.memory.note,
+          evidence_ids: context.evidenceIds.slice(0, 1),
+          confidence: 0.6,
+        },
   ];
 
   return {

@@ -622,6 +622,45 @@ describe('MockModelGateway distillation and recap', () => {
     expect(clean?.notebookDelta.commitments.map((c) => c.id)[0]).toBe('cm-old');
   });
 
+  it('remembers one thing at a time: a memory’s title and content say the same thing', async () => {
+    const gw = new MockModelGateway();
+    // The founder states a plan: the memory is that plan, titled by it (never the topic's title over it, which
+    // read in Knowledge as "Pricing still to be tested with real buyers" / "Maya plans to call facilities…").
+    const planned = await gw.generateStructured(
+      distillRequest([
+        { founderText: 'How should we price per library?', answer: 'Ask who holds the budget.' },
+        {
+          founderText:
+            "Facilities holds the budget, I think. I'll call facilities about the library budget tomorrow.",
+          answer: 'Good.',
+        },
+      ]),
+    );
+    expect(planned.value.memory_candidates).toEqual([
+      {
+        type: 'action',
+        title: 'Call facilities about the library budget',
+        content: 'Maya plans to call facilities about the library budget tomorrow.',
+        evidence_ids: [],
+        confidence: 0.6,
+        source: 'founder_stated',
+      },
+    ]);
+    // No plan: the topic's own note, under the topic's own title.
+    const topic = await gw.generateStructured(
+      distillRequest([
+        { founderText: 'How should we price per library?', answer: 'Ask who holds the budget.' },
+      ]),
+    );
+    expect(topic.value.memory_candidates).toMatchObject([
+      {
+        type: 'hypothesis',
+        title: 'Pricing still to be tested with real buyers',
+        content: 'Willingness to pay has not been tested with a paid commitment yet.',
+      },
+    ]);
+  });
+
   it('proposes no lesson after a single exchange', async () => {
     const gw = new MockModelGateway();
     const { value } = await gw.generateStructured(

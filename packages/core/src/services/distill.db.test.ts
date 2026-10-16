@@ -340,6 +340,12 @@ describe('distillSession', () => {
     const learnedBefore = await proposalsFrom(sessionId);
     learned = learnedBefore.length;
     expect(learned).toBeGreaterThan(0);
+    const pairsBefore = new Map(
+      (await Promise.all(learnedBefore.map((item) => h.core.memory.get(maya, item.id)))).map((m) => [
+        m.id,
+        { title: m.title, content: m.content },
+      ]),
+    );
     await idle(sessionId, 10);
     const outcome = await h.core.distill.distillSession(job(sessionId));
     expect(outcome).toMatchObject({ status: 'distilled', reason: null, turns: 4, lessonsDrafted: 1 });
@@ -370,6 +376,11 @@ describe('distillSession', () => {
     const items = await Promise.all(proposals.map((item) => h.core.memory.get(maya, item.id)));
     const raised = items.find((m) => m.content.includes('I will interview five library staff'));
     expect(raised).toMatchObject({ keptAutomatically: true, approvedBy: null });
+    // A merge keeps each item's own title and content together: the item a candidate restates gains a source and
+    // nothing else, so Knowledge never shows one item's title over another's content.
+    for (const item of items) {
+      expect({ title: item.title, content: item.content }).toEqual(pairsBefore.get(item.id));
+    }
     expect(raised?.sourceRefs.map((r) => r.kind)).toEqual(expect.arrayContaining(['turn', 'session']));
     // The conversation's turn proposals were embedded for the comparison by meaning.
     const unembedded = await h.t.db.system((sx) =>
