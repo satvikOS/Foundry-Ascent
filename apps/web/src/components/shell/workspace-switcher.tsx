@@ -23,6 +23,8 @@ interface WorkspaceSwitcherProps {
   me: Me;
   workspace: Workspace;
   ventures: readonly VentureSummary[];
+  /** The current venture's name when it is not among `ventures` (staff opening a venture's Team). */
+  ventureName?: string | null;
   /** Icon-only trigger for the collapsed rail. */
   compact?: boolean;
 }
@@ -31,7 +33,13 @@ interface WorkspaceSwitcherProps {
  * Top of the sidebar: the current venture or staff workspace, and the menu to switch. Venture
  * settings (name, stage, goal) live here too.
  */
-export function WorkspaceSwitcher({ me, workspace, ventures, compact = false }: WorkspaceSwitcherProps) {
+export function WorkspaceSwitcher({
+  me,
+  workspace,
+  ventures,
+  ventureName: knownVentureName = null,
+  compact = false,
+}: WorkspaceSwitcherProps) {
   const navigate = useNavigate();
   const tenant = me.tenant.slug;
   const workspaces = staffWorkspaces(me);
@@ -41,6 +49,7 @@ export function WorkspaceSwitcher({ me, workspace, ventures, compact = false }: 
     workspace.kind === 'venture'
       ? (currentVenture?.name ??
         me.memberships.find((m) => m.ventureId === workspace.ventureId)?.ventureName ??
+        knownVentureName ??
         'Venture')
       : null;
   const staff = workspace.kind === 'eir' || workspace.kind === 'program' || workspace.kind === 'admin';

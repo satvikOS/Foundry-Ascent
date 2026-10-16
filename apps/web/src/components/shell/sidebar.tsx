@@ -9,13 +9,14 @@ import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { SimpleTooltip } from '@/components/ui/tooltip';
 import { useCallsAvailable } from '@/features/calls/calls-available';
 import { ventureQueryOptions, useVentures } from '@/lib/api/hooks/ventures';
-import { canWrite, writesAnyVenture } from '@/lib/auth/roles';
+import { canAccessVenture, canWrite, writesAnyVenture } from '@/lib/auth/roles';
 import { cn, isMac } from '@/lib/utils';
 import { veirDisplay } from '@/lib/veir';
 
 import { AccountMenu } from './account-menu';
-import { STAFF_SECTIONS, VENTURE_DESTINATIONS, type Workspace } from './nav';
+import { STAFF_SECTIONS, ventureDestinations, type Workspace } from './nav';
 import { RecentConversations } from './recent-conversations';
+import { useVentureName } from './venture-name';
 import { WorkspaceSwitcher } from './workspace-switcher';
 
 const itemClasses = cn(
@@ -114,7 +115,11 @@ export function SidebarContent({
   const tenant = me.tenant.slug;
   const ventures = useVentures();
   const ventureId = workspace.kind === 'venture' ? workspace.ventureId : null;
-  const venture = useQuery({ ...ventureQueryOptions(ventureId ?? ''), enabled: ventureId !== null });
+  // Program leads and platform admins may open a venture's Team without reading the venture: nothing else of it
+  // is requested or linked for them.
+  const readable = ventureId !== null && canAccessVenture(me, ventureId);
+  const venture = useQuery({ ...ventureQueryOptions(ventureId ?? ''), enabled: readable });
+  const ventureName = useVentureName(me, ventureId);
   const veir = veirDisplay(venture.data);
   const writable = ventureId !== null && canWrite(me, ventureId);
   const callable = useCallsAvailable(ventureId, writable);
@@ -155,7 +160,13 @@ export function SidebarContent({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className={cn('flex shrink-0 items-center gap-1 pt-2', collapsed ? 'flex-col px-2' : 'px-2')}>
         {collapsed ? headerAction : null}
-        <WorkspaceSwitcher me={me} workspace={workspace} ventures={ventures.data ?? []} compact={collapsed} />
+        <WorkspaceSwitcher
+          me={me}
+          workspace={workspace}
+          ventures={ventures.data ?? []}
+          ventureName={ventureName}
+          compact={collapsed}
+        />
         {collapsed ? null : headerAction}
       </div>
 
@@ -241,7 +252,7 @@ export function SidebarContent({
 
       {ventureId ? (
         <div className="grid shrink-0 gap-px border-t border-sidebar-border px-2 py-2">
-          {VENTURE_DESTINATIONS.map((destination) => {
+          {ventureDestinations(me, ventureId).map((destination) => {
             // Counts are things to act on (proposals to review, requests for help), which only the venture
             // team can open; read-only roles see the pages without them.
             const count = !writable

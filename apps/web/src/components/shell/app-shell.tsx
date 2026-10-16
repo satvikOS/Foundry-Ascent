@@ -1,5 +1,4 @@
 import type { Me } from '@foundry/contracts';
-import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import { Menu, PanelLeftClose, PanelLeftOpen, SquarePen, X } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -8,7 +7,6 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { SimpleTooltip } from '@/components/ui/tooltip';
 import { MiniCallBar } from '@/features/calls/mini-call-bar';
-import { ventureQueryOptions } from '@/lib/api/hooks/ventures';
 import { canWrite } from '@/lib/auth/roles';
 import { useHotkeys } from '@/lib/hooks/use-hotkeys';
 import { safeStorage, STORAGE_KEYS } from '@/lib/storage';
@@ -19,11 +17,13 @@ import {
   staffWorkspace,
   staffWorkspaces,
   VENTURE_DESTINATIONS,
+  ventureDestinations,
   workspaceFromPath,
   type Workspace,
 } from './nav';
 import { ShellChromeContext, type ShellChrome } from './shell-chrome';
 import { SidebarContent } from './sidebar';
+import { useVentureName } from './venture-name';
 import {
   AccessCodeNoticeBanner,
   AiDisabledBanner,
@@ -128,7 +128,8 @@ export function AppShell({ me, children }: AppShellProps) {
       VENTURE_DESTINATIONS.map((destination) => [
         destination.shortcut,
         () => {
-          if (ventureId) void navigate({ to: destination.to, params: { tenant, ventureId } });
+          if (ventureId && ventureDestinations(me, ventureId).includes(destination))
+            void navigate({ to: destination.to, params: { tenant, ventureId } });
         },
       ]),
     ),
@@ -286,10 +287,10 @@ function MobileBar({
 }) {
   const tenant = me.tenant.slug;
   const ventureId = workspace.kind === 'venture' ? workspace.ventureId : null;
-  const venture = useQuery({ ...ventureQueryOptions(ventureId ?? ''), enabled: ventureId !== null });
+  const ventureName = useVentureName(me, ventureId);
   const title =
     workspace.kind === 'venture'
-      ? (venture.data?.name ?? me.memberships.find((m) => m.ventureId === ventureId)?.ventureName ?? '')
+      ? (ventureName ?? '')
       : workspace.kind === 'none'
         ? me.tenant.name
         : staffWorkspace(workspace.kind).label;

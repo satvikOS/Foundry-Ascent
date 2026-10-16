@@ -381,7 +381,14 @@ export const TeamMemberView = z.object({
   grantedAt: Timestamp,
   expiresAt: Timestamp.nullable(),
 });
-export const TeamResponse = z.object({ items: z.array(TeamMemberView) });
+export const TeamResponse = z.object({
+  /**
+   * The venture's id and name, for everyone who may list its team: program leads and platform admins open any
+   * venture's team without reading the venture itself. Additive: older payloads parse as null.
+   */
+  venture: z.object({ id: Id, name: z.string() }).nullable().default(null),
+  items: z.array(TeamMemberView),
+});
 export const InviteMemberRequest = z.object({
   displayName: z.string().trim().min(1).max(120),
   email: z.email().nullable().default(null),

@@ -61,9 +61,7 @@ export function registerVentureRoutes(r: RouteBuilder, core: Core): void {
   r.get('/inbox/escalations', async (c, ctx) => c.json({ items: await core.escalations.inbox(ctx) }));
 
   // Team ----------------------------------------------------------------------------------------------
-  r.get('/ventures/:id/team', async (c, ctx) =>
-    c.json({ items: await core.team.list(ctx, pathParam(c, 'id')) }),
-  );
+  r.get('/ventures/:id/team', async (c, ctx) => c.json(await core.team.list(ctx, pathParam(c, 'id'))));
   // The response carries a one-time access code: never stored for idempotent replay.
   r.post(
     '/ventures/:id/team/invitations',

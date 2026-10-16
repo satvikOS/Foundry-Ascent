@@ -348,6 +348,16 @@ describe('team', () => {
     expect(team.items.map((m) => m.principal.id)).toEqual(
       expect.arrayContaining([api.h.people.maya, api.h.people.devin]),
     );
+    expect(team.venture).toEqual({ id: quietquad(), name: 'QuietQuad' });
+    // A program lead who is not a member sees the same team and the venture's name.
+    const asLead = await json(
+      await api.request(`/ventures/${quietquad()}/team`, { cookie: lead }),
+      TeamResponse,
+    );
+    expect(asLead.items.map((m) => m.principal.id).sort()).toEqual(
+      team.items.map((m) => m.principal.id).sort(),
+    );
+    expect(asLead.venture).toEqual({ id: quietquad(), name: 'QuietQuad' });
 
     const body = { displayName: 'Synthetic Teammate', role: 'team' };
     const invited = await api.request(`/ventures/${quietquad()}/team/invitations`, {
