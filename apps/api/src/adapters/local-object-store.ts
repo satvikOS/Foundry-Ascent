@@ -73,6 +73,12 @@ export interface LocalObjectStoreOptions {
   readonly directory: string;
   /** Origin the browser uses for the API (the Vite dev server proxies /api), e.g. http://localhost:5173. */
   readonly publicOrigin: string;
+  /**
+   * Origin of the presigned GETs (default `publicOrigin`). The end-to-end suite points it at the API
+   * server's own origin, so the document viewer reads files cross-origin (CORS, and a CSP connect-src that
+   * names the origin) as it reads them from the documents bucket in production.
+   */
+  readonly downloadOrigin?: string | undefined;
   readonly maxUploadBytes: number;
   readonly secret?: Uint8Array;
   readonly now?: () => Date;
@@ -87,6 +93,7 @@ export interface LocalObjectStoreOptions {
 export class LocalObjectStore implements ObjectStore, LocalUploadTarget {
   readonly #root: string;
   readonly #origin: string;
+  readonly #downloadOrigin: string;
   readonly #secret: Uint8Array;
   readonly #now: () => Date;
   readonly maxUploadBytes: number;
@@ -94,6 +101,7 @@ export class LocalObjectStore implements ObjectStore, LocalUploadTarget {
   constructor(options: LocalObjectStoreOptions) {
     this.#root = resolve(options.directory);
     this.#origin = options.publicOrigin.replace(/\/+$/, '');
+    this.#downloadOrigin = (options.downloadOrigin ?? options.publicOrigin).replace(/\/+$/, '');
     this.#secret = options.secret ?? randomBytes(32);
     this.#now = options.now ?? (() => new Date());
     this.maxUploadBytes = options.maxUploadBytes;
@@ -165,7 +173,7 @@ export class LocalObjectStore implements ObjectStore, LocalUploadTarget {
       e: expiresAt.getTime(),
     });
     return {
-      url: `${this.#origin}${API_PREFIX}/_local/objects/${token}`,
+      url: `${this.#downloadOrigin}${API_PREFIX}/_local/objects/${token}`,
       expiresAt: expiresAt.toISOString(),
     };
   }

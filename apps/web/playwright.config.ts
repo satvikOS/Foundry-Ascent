@@ -74,6 +74,9 @@ const webServer: PlaywrightTestConfig['webServer'] = localStack
           PORT: apiURL.port || '8787',
           // Local presigned uploads go through the preview's /api proxy (same origin as the SPA).
           SITE_ORIGIN: process.env.SITE_ORIGIN ?? site.origin,
+          // Presigned GETs (the document viewer) come from the API's own origin: cross-origin under the
+          // CSP, as files come from the documents bucket in production.
+          LOCAL_DOWNLOAD_ORIGIN: apiURL.origin,
           // Every run sends a handful of turns as the same founder; keep reruns against one database
           // (and Playwright retries) clear of the 20-per-10-minutes per-person turn limit.
           CORE_TURN_RATE_LIMIT: process.env.CORE_TURN_RATE_LIMIT ?? '200',

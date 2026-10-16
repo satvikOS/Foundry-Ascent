@@ -124,6 +124,31 @@ describe('LocalObjectStore downloads', () => {
     await store.delete(key);
   });
 
+  it('signs GETs at another origin when given one (the end-to-end suite reads files cross-origin)', async () => {
+    const crossOrigin = new LocalObjectStore({
+      directory: dir,
+      publicOrigin: 'http://localhost:5173',
+      downloadOrigin: 'http://localhost:8787/',
+      maxUploadBytes: 1024,
+    });
+    const view = await crossOrigin.presignGet({
+      key,
+      disposition: 'inline',
+      filename: 'x.md',
+      contentType: 'text/markdown',
+      expiresInSeconds: 60,
+    });
+    expect(view.url).toMatch(/^http:\/\/localhost:8787\/api\/v1\/_local\/objects\//);
+    // Uploads keep going through the app's own origin.
+    const upload = await crossOrigin.presignPut({
+      key,
+      contentType: 'text/markdown',
+      contentLength: 7,
+      expiresInSeconds: 60,
+    });
+    expect(upload.url).toMatch(/^http:\/\/localhost:5173\/api\/v1\/_local\/uploads\//);
+  });
+
   it('answers 404 for a file that is gone', async () => {
     const view = await store.presignGet({
       key: 'tenants/t/ventures/v/documents/gone/x.pdf',
