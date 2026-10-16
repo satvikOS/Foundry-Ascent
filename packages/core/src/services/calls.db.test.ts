@@ -8,6 +8,7 @@
 import {
   COACH_RESPONSE_SCHEMA_NAME,
   CRISIS_SPOKEN_MESSAGE,
+  MockModelGateway,
   mockCoachResponse,
   type ChatMessage,
 } from '@foundry/ai';
@@ -28,6 +29,7 @@ import { type RequestContext } from '../context.js';
 import { createCore } from '../core.js';
 import { resolveDeps } from '../deps.js';
 import { Kit } from '../internal/kit.js';
+import { type RunTurnInput, type RunTurnOutcome } from '../orchestrator/run-turn.js';
 import { signSpeechUnit, verifySpeechUnit } from '../orchestrator/speech-units.js';
 import { FakeSpeechSynthesizer, FakeSttGrantIssuer } from '../testing/fakes.js';
 import { type CoreHarness, createCoreHarness } from '../testing/harness.js';
@@ -1131,6 +1133,223 @@ describe('call configuration and avatar sessions', () => {
 });
 
 describe('the turn engine and the calls service together', () => {
+  const unitsOf = (events: readonly TurnStreamEvent[]) =>
+    events.flatMap((e) => (e.event === 'turn.speech' ? [e] : []));
+
+  async function turn(
+    who: Person,
+    sessionId: string,
+    input: RunTurnInput,
+  ): Promise<{ events: TurnStreamEvent[]; outcome: RunTurnOutcome }> {
+    const events: TurnStreamEvent[] = [];
+    const outcome = await h.core.orchestrator.runTurn(ctx[who], sessionId, input, (e) => {
+      events.push(TurnStreamEvent.parse(e));
+    });
+    return { events, outcome };
+  }
+
+  const voiceTurns = (who: Person) =>
+    h.t.db.system((sx) =>
+      callsRepo.countRecentVoiceTurns(sx, {
+        authorId: h.people[who],
+        windowSeconds: CALL_LIMITS.voiceTurnRateWindowSeconds,
+      }),
+    );
+
+  it('admits a spoken turn through the calls service, signs its units and counts it as a voice turn', async () => {
+    const sessionId = await newSession('maya', 'quietquad');
+    const { call } = await startCall('maya', sessionId, 'typed');
+    const before = await voiceTurns('maya');
+    const { events, outcome } = await turn('maya', sessionId, {
+      text: 'We did three library interviews. What should we ask next?',
+      channel: 'voice',
+      callId: call.id,
+    });
+    expect(outcome.status).toBe('completed');
+    const units = unitsOf(events);
+    expect(units.length).toBeGreaterThan(0);
+    expect(units.map((u) => u.seq)).toEqual(units.map((_, i) => i));
+    expect(units.at(-1)?.final).toBe(true);
+    // Signed by the turn engine, verified with the platform key the calls and speech services use.
+    const verification = await keys.verificationKeys();
+    for (const u of units) {
+      expect(
+        verifySpeechUnit(verification, { sessionId, turnId: u.turnId, seq: u.seq, text: u.text }, u.sig),
+      ).toBe(true);
+    }
+    const turnId = outcome.turnId;
+    if (turnId === null) throw new Error('expected a turn');
+    const stored = await h.t.db.system((sx) =>
+      sx.query('SELECT channel, call_id FROM turns WHERE id = :id', { id: p.uuid(turnId) }),
+    );
+    expect(stored.rows).toEqual([{ channel: 'voice', call_id: call.id }]);
+    // The voice-turn rate limit counts it.
+    expect(await voiceTurns('maya')).toBe(before + 1);
+    // A unit as streamed is spoken through /speech, metered as speech.
+    const [firstUnit] = units;
+    if (firstUnit === undefined) throw new Error('expected a unit');
+    const played = await h.core.speech.synthesize(ctx.maya, {
+      sessionId,
+      turnId,
+      seq: firstUnit.seq,
+      text: firstUnit.text,
+      sig: firstUnit.sig,
+    });
+    expect(speech.calls.at(-1)).toMatchObject({ text: speakableText(firstUnit.text) });
+    const ledger = await h.t.db.system((sx) =>
+      sx.query(
+        `SELECT purpose, input_tokens FROM usage_ledger
+         WHERE request_id = :rid AND model_id LIKE 'polly:%'`,
+        { rid: p.text(ctx.maya.requestId) },
+      ),
+    );
+    expect(ledger.rows).toContainEqual({ purpose: 'speech', input_tokens: played.characters });
+
+    // Calls switched off: spoken turns are refused before any model call, typing goes on.
+    await withSetting('calls_enabled', 'false', async () => {
+      const modelCalls = h.gateway.calls.length;
+      const refused = await turn('maya', sessionId, {
+        text: 'And after that?',
+        channel: 'voice',
+        callId: call.id,
+      });
+      expect(refused.outcome).toMatchObject({
+        status: 'rejected',
+        turnId: null,
+        error: { code: 'ai_disabled', reason: 'calls_disabled' },
+      });
+      expect(h.gateway.calls.length).toBe(modelCalls);
+      expect((await turn('maya', sessionId, { text: 'And after that?' })).outcome.status).toBe('completed');
+    });
+    await endCall('maya', call.id);
+    const ended = await turn('maya', sessionId, {
+      text: 'One more thing.',
+      channel: 'voice',
+      callId: call.id,
+    });
+    expect(ended.outcome).toMatchObject({
+      status: 'rejected',
+      error: { code: 'conflict', reason: 'call_not_active' },
+    });
+  });
+
+  it('replays to the model exactly the streamed units the founder heard before speaking over the vEIR', async () => {
+    const sentences = [
+      'Start with the library that already counts seats.',
+      'Ask the staff for two weeks of hourly counts.',
+      'Compare those counts with your own tally.',
+      'Which librarian can you reach first?',
+    ];
+    const seen: (readonly ChatMessage[])[] = [];
+    const gateway = new MockModelGateway({
+      streamDelayMs: 0,
+      streamFixture: (context) => {
+        seen.push(context.messages);
+        return sentences.join(' ');
+      },
+    });
+    const core = createCore({
+      db: h.t.db,
+      gateway,
+      config: h.config,
+      objectStore: h.objectStore,
+      jobQueue: h.jobQueue,
+      logger: h.logger,
+    });
+    const sessionId = (await core.sessions.create(ctx.devin, ventureId('quietquad'), {})).id;
+    const { call } = await core.calls.start(ctx.devin, sessionId, { inputMode: 'typed' });
+    try {
+      const events: TurnStreamEvent[] = [];
+      const first = await core.orchestrator.runTurn(
+        ctx.devin,
+        sessionId,
+        { text: 'Which library should we approach first?', channel: 'voice', callId: call.id },
+        (e) => {
+          events.push(TurnStreamEvent.parse(e));
+        },
+      );
+      expect(first.status).toBe('completed');
+      const turnId = first.turnId ?? '';
+      const units = unitsOf(events);
+      expect(units.map((u) => u.text).slice(0, 3)).toEqual(sentences.slice(0, 3));
+
+      // The founder spoke over the vEIR during unit 1: the client sends back units 0…1 as it played them.
+      const k = 1;
+      const heard = units.slice(0, k + 1);
+      await core.calls.interrupt(ctx.devin, turnId, {
+        callId: call.id,
+        heardSeq: k,
+        heard: heard.map((u) => ({ seq: u.seq, text: u.text, sig: u.sig })),
+      });
+      const heardText = heard.map((u) => speakableText(u.text)).join(' ');
+      const recorded = await h.t.db.system((sx) => callsRepo.listTurnInterruptions(sx, [turnId]));
+      expect(recorded.get(turnId)).toMatchObject({ heardSeq: k, heardText });
+
+      seen.length = 0;
+      const next = await core.orchestrator.runTurn(
+        ctx.devin,
+        sessionId,
+        { text: 'So what do we do on Monday?', channel: 'voice', callId: call.id },
+        () => undefined,
+      );
+      expect(next.status).toBe('completed');
+      const history = seen[0];
+      if (history === undefined) throw new Error('expected the answer call');
+      const { opener } = (await core.sessions.get(ctx.devin, sessionId)).session;
+      expect(history.filter((m) => m.role === 'assistant').map((m) => m.content)).toEqual([
+        ...(opener === null ? [] : [opener]),
+        heardText,
+      ]);
+      const asked = history.map((m) => m.content).join('\n');
+      expect(asked).not.toContain(sentences[2]);
+      expect(asked).not.toContain(sentences[3]);
+    } finally {
+      await core.calls.end(ctx.devin, call.id, { reason: 'user' });
+    }
+  });
+
+  it('plays the crisis support unit the turn engine streamed, whatever the switches and budgets', async () => {
+    const sessionId = await newSession('maya', 'quietquad');
+    const { call } = await startCall('maya', sessionId, 'typed');
+    const overAll = <T>(fn: () => Promise<T>): Promise<T> =>
+      withOverspend('maya', () =>
+        withSetting('ai_enabled', 'false', () => withSetting('calls_enabled', 'false', fn)),
+      );
+    try {
+      const { events, outcome } = await overAll(() =>
+        turn('maya', sessionId, {
+          text: 'I want to kill myself tonight.',
+          channel: 'voice',
+          callId: call.id,
+        }),
+      );
+      expect(outcome.status).toBe('blocked');
+      // One unit, the fixed support message, final, sent just before the blocked panel.
+      const [unit, blocked] = events.slice(-2);
+      if (unit?.event !== 'turn.speech' || blocked?.event !== 'turn.blocked') {
+        throw new Error('expected the support unit, then the blocked turn');
+      }
+      expect(unitsOf(events)).toHaveLength(1);
+      expect(unit).toMatchObject({
+        seq: 0,
+        text: CRISIS_SPOKEN_MESSAGE,
+        final: true,
+        turnId: blocked.turnId,
+      });
+      expect(blocked.reason).toBe('crisis_support');
+      // That exact unit, as the client sends it to /speech, is spoken in the call's voice.
+      const request = { sessionId, turnId: unit.turnId, seq: unit.seq, text: unit.text, sig: unit.sig };
+      const played = await overAll(() => h.core.speech.synthesize(ctx.maya, request));
+      expect(played.characters).toBe(CRISIS_SPOKEN_MESSAGE.length);
+      expect(speech.calls.at(-1)).toMatchObject({
+        text: CRISIS_SPOKEN_MESSAGE,
+        voiceId: (await callRow(call.id)).voiceId,
+      });
+    } finally {
+      await endCall('maya', call.id);
+    }
+  });
+
   it('opens a call with the conversation’s stored opener, never a notebook line written since, and none in a temporary chat', async () => {
     const quietquad = ventureId('quietquad');
     const editOpener = async (text: string) => {
