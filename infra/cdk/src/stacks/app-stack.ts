@@ -50,12 +50,13 @@ import {
   NAMES,
   SPEECH_ALARM_CHARACTERS_PER_HOUR,
   speechAlarmCharactersPerDay,
-  speechUsd,
+  speechUsdAtMost,
   WORKER_TIMEOUT_SECONDS,
 } from '../lib/constants.js';
 import { environmentNames, LAMBDA_CONTRACT, type LambdaRole } from '../lib/lambda-contract.js';
 import { migrationsChecksum } from '../lib/migrations.js';
 import { retentionDays } from '../lib/logs.js';
+import { SPEECH_VOICES } from '../lib/speech-voices.js';
 import {
   type BedrockRuntimeAccess,
   effectiveModels,
@@ -726,8 +727,11 @@ export class AppStack extends Stack {
     if (config.speech.enabled) {
       // Backstops for the in-app speech metering: every synthesis is priced into usage_ledger and checked
       // against the daily caps first, so these fire only if that path is bypassed or the caps were raised.
-      // The hourly alarm catches a burst; the daily one a steady leak below the burst threshold.
-      const { engine, dailyAlarmUsd } = config.speech;
+      // The hourly alarm catches a burst; the daily one a steady leak below the burst threshold. Both are
+      // priced at the costliest engine a listed voice can be billed on: a persona's voice may lack the
+      // deployment's engine (Tiffany is generative only), and Polly then bills it on another.
+      const { dailyAlarmUsd } = config.speech;
+      const { engine } = SPEECH_VOICES.costliest;
       const pollyCharacters = (period: Duration): cloudwatch.Metric =>
         new cloudwatch.Metric({
           namespace: 'AWS/Polly',
@@ -736,12 +740,12 @@ export class AppStack extends Stack {
           period,
           statistic: cloudwatch.Stats.SUM,
         });
-      const usdFor = (characters: number): string => speechUsd(characters, engine).toFixed(2);
-      const perDay = speechAlarmCharactersPerDay(dailyAlarmUsd, engine);
+      const usdFor = (characters: number): string => speechUsdAtMost(characters).toFixed(2);
+      const perDay = speechAlarmCharactersPerDay(dailyAlarmUsd);
       alarms.push(
         new cloudwatch.Alarm(this, 'SpeechCharactersAlarm', {
           alarmName: 'FoundryAscent-Speech-Characters',
-          alarmDescription: `More than ${String(SPEECH_ALARM_CHARACTERS_PER_HOUR)} characters synthesized by Amazon Polly in one hour (about USD ${usdFor(SPEECH_ALARM_CHARACTERS_PER_HOUR)} on the ${engine} engine)`,
+          alarmDescription: `More than ${String(SPEECH_ALARM_CHARACTERS_PER_HOUR)} characters synthesized by Amazon Polly in one hour (at most USD ${usdFor(SPEECH_ALARM_CHARACTERS_PER_HOUR)}, at the ${engine} price, the costliest engine a listed voice is billed on)`,
           metric: pollyCharacters(Duration.hours(1)),
           threshold: SPEECH_ALARM_CHARACTERS_PER_HOUR,
           evaluationPeriods: 1,
@@ -750,7 +754,7 @@ export class AppStack extends Stack {
         }),
         new cloudwatch.Alarm(this, 'SpeechCharactersDailyAlarm', {
           alarmName: 'FoundryAscent-Speech-Characters-Daily',
-          alarmDescription: `More than ${String(perDay)} characters synthesized by Amazon Polly in one day (USD ${usdFor(perDay)} on the ${engine} engine: the global daily AI cap speech is metered against)`,
+          alarmDescription: `More than ${String(perDay)} characters synthesized by Amazon Polly in one day (at most USD ${usdFor(perDay)}, at the ${engine} price, the costliest engine a listed voice is billed on: the global daily AI cap speech is metered against)`,
           metric: pollyCharacters(Duration.days(1)),
           threshold: perDay,
           evaluationPeriods: 1,

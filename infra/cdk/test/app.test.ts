@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 import { Match } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
 import { contentSecurityPolicy, documentsUploadOrigin, speechToTextOrigin } from '../src/constructs/edge.js';
@@ -18,6 +20,7 @@ import { loadConfig } from '../src/config.js';
 import { effectiveModels } from '../src/lib/models.js';
 import { migrationsChecksum } from '../src/lib/migrations.js';
 import { MIGRATIONS_DIR } from '../src/paths.js';
+import { SPEECH_VOICES_FILE } from '../src/lib/speech-voices.js';
 import {
   defaultSynth,
   functionPolicyStatements,
@@ -688,7 +691,7 @@ describe('FoundryAscent-App', () => {
         'AWS/Polly',
         'RequestCharacters',
         'GreaterThanThreshold',
-        speechAlarmCharactersPerDay(15, 'neural'),
+        speechAlarmCharactersPerDay(15),
       ],
     ])('%s watches %s %s', (alarmName, namespace, metricName, comparison, threshold) => {
       template.hasResourceProperties('AWS::CloudWatch::Alarm', {
@@ -720,16 +723,21 @@ describe('FoundryAscent-App', () => {
         Statistic: 'Sum',
         Period: 86_400,
         EvaluationPeriods: 1,
-        AlarmDescription: Match.stringLikeRegexp('USD 15\\.00 on the neural engine'),
+        AlarmDescription: Match.stringLikeRegexp('at most USD 15\\.00, at the generative price'),
       });
     });
 
-    it('sets the daily speech alarm at the global daily AI cap, priced for the configured engine', () => {
+    it('sets the daily speech alarm at the global daily AI cap, priced at the costliest engine a voice is billed on', () => {
       expect(synth.config.speech.dailyAlarmUsd).toBe(15);
-      // USD 15 at USD 16 (neural) or USD 30 (generative) per million characters.
-      expect(speechAlarmCharactersPerDay(15, 'neural')).toBe(937_500);
-      expect(speechAlarmCharactersPerDay(15, 'generative')).toBe(500_000);
-      expect(speechAlarmCharactersPerDay(2, 'neural')).toBe(125_000);
+      // USD 15 at USD 30 per million characters (generative: Tiffany has no neural voice), even on neural.
+      expect(synth.config.speech.engine).toBe('neural');
+      expect(speechAlarmCharactersPerDay(15)).toBe(500_000);
+      expect(speechAlarmCharactersPerDay(15, 16)).toBe(937_500);
+      expect(speechAlarmCharactersPerDay(2)).toBe(66_666);
+      template.hasResourceProperties('AWS::CloudWatch::Alarm', {
+        AlarmName: 'FoundryAscent-Speech-Characters-Daily',
+        Threshold: 500_000,
+      });
     });
 
     it('watches CloudFront in the Global region dimension', () => {
@@ -833,7 +841,31 @@ describe('speech and distillation switches (config/production.json)', () => {
 describe('speech engine choice (config/production.json speech.engine)', () => {
   const base = loadConfig();
 
-  it('passes the generative engine to the API and prices both speech alarms for it', () => {
+  it('fires the daily speech alarm within the global cap whatever voice speaks, on either configured engine', () => {
+    // A persona may speak with any listed voice; one without the deployment's engine is billed on another.
+    const file = JSON.parse(readFileSync(SPEECH_VOICES_FILE, 'utf8')) as {
+      usdPerMillionCharacters: Record<string, number>;
+      voices: Record<string, string[]>;
+    };
+    for (const engine of ['neural', 'generative'] as const) {
+      const { templates } = synthesize({}, { ...base, speech: { ...base.speech, engine } });
+      const daily = resourcesOfType(templates.app, 'AWS::CloudWatch::Alarm').find(
+        ([, p]) => p.AlarmName === 'FoundryAscent-Speech-Characters-Daily',
+      )?.[1];
+      const threshold = Number(daily?.Threshold);
+      expect(threshold).toBeGreaterThan(0);
+      for (const [voice, engines] of Object.entries(file.voices)) {
+        for (const billed of engines) {
+          const usd = (threshold * (file.usdPerMillionCharacters[billed] ?? Number.POSITIVE_INFINITY)) / 1e6;
+          expect(usd, `${voice} billed on ${billed}, deployment on ${engine}`).toBeLessThanOrEqual(
+            base.speech.dailyAlarmUsd,
+          );
+        }
+      }
+    }
+  });
+
+  it('passes the generative engine to the API; the speech alarms keep the costliest engine’s price', () => {
     const { templates } = synthesize({}, { ...base, speech: { ...base.speech, engine: 'generative' } });
     const apiEnv = (
       resourcesOfType(templates.app, 'AWS::Lambda::Function').find(
@@ -844,12 +876,12 @@ describe('speech engine choice (config/production.json speech.engine)', () => {
     templates.app.hasResourceProperties('AWS::CloudWatch::Alarm', {
       AlarmName: 'FoundryAscent-Speech-Characters-Daily',
       Threshold: 500_000,
-      AlarmDescription: Match.stringLikeRegexp('generative engine'),
+      AlarmDescription: Match.stringLikeRegexp('at most USD 15\\.00, at the generative price'),
     });
     templates.app.hasResourceProperties('AWS::CloudWatch::Alarm', {
       AlarmName: 'FoundryAscent-Speech-Characters',
       Threshold: SPEECH_ALARM_CHARACTERS_PER_HOUR,
-      AlarmDescription: Match.stringLikeRegexp('USD 3\\.00 on the generative engine'),
+      AlarmDescription: Match.stringLikeRegexp('at most USD 3\\.00, at the generative price'),
     });
   });
 });
