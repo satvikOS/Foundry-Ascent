@@ -9,7 +9,7 @@ import {
   RouterProvider,
   useParams,
 } from '@tanstack/react-router';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -22,6 +22,7 @@ import { meQueryOptions } from '@/lib/api/hooks/auth';
 
 import { AttachmentTray, useComposerAttachments } from './attachments';
 import { NewChatPage } from './new-chat-page';
+import { startPrivacy, takeChoiceInView } from './privacy-choice';
 
 const A = '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c01';
 const B = '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c02';
@@ -53,16 +54,58 @@ interface Call {
   method: string;
   url: string;
   signal: AbortSignal | null;
+  body: unknown;
+}
+
+function bodyOf(init: RequestInit | undefined): unknown {
+  const body = init?.body;
+  if (typeof body === 'string') return JSON.parse(body) as unknown;
+  if (body && ArrayBuffer.isView(body)) return JSON.parse(new TextDecoder().decode(body)) as unknown;
+  return undefined;
 }
 
 /** The API as New chat reads it: each venture, its notebook, and an upload that stays in flight until aborted. */
-function stubApi(): Call[] {
+function stubApi({ calls: callsOn = false }: { calls?: boolean } = {}): Call[] {
   const calls: Call[] = [];
   stubFetch().mockImplementation((input, init) => {
     const url = input instanceof Request ? input.url : input.toString();
     const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
     const signal = init?.signal ?? (input instanceof Request ? input.signal : null);
-    calls.push({ method, url, signal });
+    calls.push({
+      method,
+      url,
+      signal,
+      body: method === 'POST' && !url.endsWith('/documents') ? bodyOf(init) : undefined,
+    });
+    // Call settings with calls on (the composer then offers Call).
+    if (callsOn && method === 'GET' && url.endsWith('/call-config')) {
+      return Promise.resolve(
+        jsonResponse({
+          veir: {
+            personaId: SESSION,
+            name: 'Corin’s vEIR',
+            shortName: 'Corin',
+            kind: 'eir_persona',
+            eirDisplayName: 'Corin Halvorsen',
+            tagline: null,
+            disclosure: 'AI',
+            embodiment: {
+              provider: 'builtin',
+              voiceId: null,
+              portraitUrl: null,
+              voiceConsented: false,
+              likenessConsented: false,
+            },
+          },
+          provider: 'builtin',
+          maxMinutes: 20,
+          remainingMinutesToday: 40,
+          aiEnabled: true,
+          callsEnabled: true,
+          callNoticeAcknowledgedAt: null,
+        }),
+      );
+    }
     for (const [id, name, notebook] of [
       [A, 'QuietQuad', makeNotebook({ ventureId: A, nextOpener: NAMED_OPENER, greeting: null })],
       [B, 'BenchTally', makeNotebook({ ventureId: B, nextOpener: GREETING, greeting: GREETING })],
@@ -245,5 +288,70 @@ describe('New chat', () => {
     expect(calls.filter((c) => c.method === 'POST' && c.url === `/api/v1/ventures/${B}/documents`)).toEqual(
       [],
     );
+  });
+
+  it('starts remembered by default and sends the choice with the first message', async () => {
+    const calls = stubApi();
+    renderNewChat(A);
+    await screen.findByText('What should we work on for QuietQuad today?');
+    const group = screen.getByRole('group', { name: 'Memory for this conversation' });
+    expect(within(group).getByRole('radio', { name: 'Remember this conversation' })).toBeChecked();
+    expect(group).toHaveAccessibleDescription(
+      'Corin’s vEIR will remember this conversation and pick up from it next time.',
+    );
+    await userEvent.setup().type(composer(), 'What should we test first?{Enter}');
+    await screen.findByText('Conversation');
+    const create = calls.find((c) => c.method === 'POST' && c.url === `/api/v1/ventures/${A}/sessions`);
+    expect(create?.body).toMatchObject({ privacy: 'standard' });
+  });
+
+  it('starts a private one-off when Private is chosen, with no attachments and nothing remembered', async () => {
+    const calls = stubApi();
+    renderNewChat(A);
+    await screen.findByText('What should we work on for QuietQuad today?');
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('radio', { name: 'Private, a one-off' }));
+    expect(screen.getByRole('heading', { level: 1, name: 'Private chat' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Memory for this conversation' })).toHaveAccessibleDescription(
+      'A one-off: nothing is remembered, and it’s erased when it ends.',
+    );
+    expect(screen.queryByRole('button', { name: /Attach/ })).toBeNull();
+    await user.type(composer(), 'Something just for now{Enter}');
+    await screen.findByText('Conversation');
+    const create = calls.find((c) => c.method === 'POST' && c.url === `/api/v1/ventures/${A}/sessions`);
+    expect(create?.body).toMatchObject({ privacy: 'ephemeral' });
+  });
+
+  it('starts a call at once from its own Call button, beside the choice (and only that opening)', async () => {
+    stubApi({ calls: true });
+    const router = renderNewChat(A);
+    const call = await screen.findByRole('link', { name: /^Call / });
+    expect(call).toHaveAttribute('href', `/ain/app/v/${A}?call=1`);
+    expect(takeChoiceInView(A)).toBe(false);
+    await userEvent.setup().click(call);
+    await waitFor(() => {
+      expect(router.state.location.searchStr).toBe('?call=1');
+    });
+    // The call screen takes the mark when it opens; it is good for that one opening only.
+    expect(takeChoiceInView(A)).toBe(true);
+    expect(takeChoiceInView(A)).toBe(false);
+  });
+
+  it('is back to Remember on every fresh New chat (the choice is never stored)', async () => {
+    stubApi();
+    const router = renderNewChat(A);
+    await screen.findByText('What should we work on for QuietQuad today?');
+    await userEvent.setup().click(screen.getByRole('radio', { name: 'Private, a one-off' }));
+    expect(startPrivacy(A)).toBe('ephemeral');
+    await act(async () => {
+      router.history.push(`/ain/app/v/${B}`);
+      await router.invalidate();
+    });
+    await act(async () => {
+      router.history.push(`/ain/app/v/${A}`);
+      await router.invalidate();
+    });
+    expect(await screen.findByRole('radio', { name: 'Remember this conversation' })).toBeChecked();
+    expect(startPrivacy(A)).toBe('standard');
   });
 });

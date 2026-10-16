@@ -1,23 +1,23 @@
-import type { CallSummary, MemoryObjectView } from '@foundry/contracts';
+import type { CallSummary, MemoryObjectView, SessionView } from '@foundry/contracts';
 import { useQueries } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { Check, ListChecks, Phone } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { Check, EyeOff, ListChecks, Phone } from 'lucide-react';
+import { useEffect, useRef } from 'react';
 
 import { DisclosureBanner } from '@/components/disclosure-banner';
 import { PersonaAvatar } from '@/components/faces/persona-avatar';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { toast } from '@/components/ui/toast';
 import { BlockedPanel } from '@/features/coach/blocked-panel';
 import { useVentureEscalations } from '@/lib/api/hooks/escalations';
-import { displayContent, memoryItemQueryOptions } from '@/lib/api/hooks/memory';
+import { memoryItemQueryOptions } from '@/lib/api/hooks/memory';
 import { budgetEndLine, CALL_END_LINES } from '@/lib/realtime/call-api';
 import type { CallEnded } from '@/lib/realtime/call-engine';
 import { formatDate } from '@/lib/format';
 import { ESCALATION_CATEGORY_LABELS } from '@/lib/labels';
 
-import { reviewFailure, useMemoryReview } from '../knowledge/review-api';
+import { MemorySaved, savedByIds } from '../chat/memory-saved';
+import { sentenceStart } from '../venture/veir-name';
 
 import { formatClock, spokenDuration } from './use-call-clock';
 import { useCallConfig, type CallVeir } from './use-call-veir';
@@ -28,6 +28,8 @@ interface CallSummaryProps {
   veir: CallVeir;
   ended: CallEnded;
   canWrite: boolean;
+  /** The call's conversation: a private one (a one-off) keeps nothing, and the summary says so. */
+  privacy: SessionView['privacy'] | null;
   onBackToConversation: () => void;
   onCallAgain: () => void;
   /** Leaving for another page from the summary (Human help): the call is over, forget it. */
@@ -35,9 +37,9 @@ interface CallSummaryProps {
 }
 
 /**
- * After a call (`POST /calls/:id/end`): how long it was, what the vEIR proposes to remember (Keep / Not
- * now, nothing is kept without the founder's say), the next actions it suggested and any request for a
- * person it drafted. The transcript itself is already in the conversation.
+ * After a call (`POST /calls/:id/end`): how long it was, a quiet "Remembered" with what the vEIR saved to
+ * Knowledge (kept automatically; a private call says it keeps nothing), the next actions it suggested and any
+ * request for a person it drafted. The transcript itself is already in the conversation.
  */
 export function CallSummaryPanel({
   tenant,
@@ -45,6 +47,7 @@ export function CallSummaryPanel({
   veir,
   ended,
   canWrite,
+  privacy,
   onBackToConversation,
   onCallAgain,
   onLeave,
@@ -115,6 +118,8 @@ export function CallSummaryPanel({
           veirName={veir.name}
           summary={summary}
           canWrite={canWrite}
+          isPrivate={privacy === 'ephemeral'}
+          supportShown={ended.blocked !== null}
           onLeave={onLeave}
         />
       ) : (
@@ -148,6 +153,8 @@ function SummaryDetails({
   veirName,
   summary,
   canWrite,
+  isPrivate,
+  supportShown,
   onLeave,
 }: {
   tenant: string;
@@ -155,45 +162,56 @@ function SummaryDetails({
   veirName: string;
   summary: CallSummary;
   canWrite: boolean;
+  isPrivate: boolean;
+  /**
+   * The call ended while it showed support (crisis lines, a safety hand-over). What was said then is never
+   * remembered, and under that support a line about memory is the wrong thing to say: none is shown.
+   */
+  supportShown: boolean;
   onLeave: () => void;
 }) {
-  const memories = useQueries({
-    queries: summary.memoryProposalIds.map((id) => memoryItemQueryOptions(id)),
-  });
+  const remembered = !isPrivate && !supportShown && canWrite && summary.turnCount > 0;
+  // What the call saved to Knowledge, as it stands now (anything forgotten since is left out): kept by the vEIR
+  // by itself, or saved before memory was kept automatically.
+  const savedIds = remembered ? [...(summary.memoryKeptIds ?? []), ...summary.memoryProposalIds] : [];
+  const memories = useQueries({ queries: savedIds.map((id) => memoryItemQueryOptions(id)) });
+  const saved = savedByIds(
+    savedIds,
+    memories.map((query) => query.data).filter((memory): memory is MemoryObjectView => memory !== undefined),
+  );
   const escalations = useVentureEscalations(ventureId);
   const drafted = (escalations.data ?? []).filter((e) => summary.escalationIds.includes(e.id));
-  const proposals = memories
-    .map((query) => query.data)
-    .filter((memory): memory is MemoryObjectView => memory !== undefined);
-  const loadingMemory = memories.some((query) => query.isPending);
-  const empty =
-    summary.memoryProposalIds.length === 0 &&
-    summary.nextActions.length === 0 &&
-    summary.escalationIds.length === 0;
-
-  if (empty) {
-    return <p className="mt-6 text-small text-muted-foreground">Nothing new to review from this call.</p>;
-  }
 
   return (
-    <div className="mt-8 grid w-full gap-6 text-left">
-      {summary.memoryProposalIds.length > 0 ? (
-        <section aria-labelledby="call-summary-memory">
-          <h3 id="call-summary-memory" className="label-mono mb-2">
-            {veirName} would like to remember
-          </h3>
-          {loadingMemory && proposals.length === 0 ? (
-            <p role="status" className="text-small text-muted-foreground">
-              Loading…
-            </p>
-          ) : (
-            <ul className="grid gap-2">
-              {proposals.map((memory) => (
-                <MemoryProposal key={memory.id} ventureId={ventureId} memory={memory} canWrite={canWrite} />
-              ))}
-            </ul>
-          )}
-        </section>
+    <div className="mt-6 grid w-full gap-6 text-left">
+      {isPrivate ? (
+        <p
+          data-testid="call-private"
+          className="flex items-center justify-center gap-1.5 text-small text-muted-foreground"
+        >
+          <EyeOff aria-hidden className="size-4" />
+          Private call: nothing from it is remembered.
+        </p>
+      ) : remembered ? (
+        // A quiet "remembered" state: the call is kept with the conversation and the vEIR picks up from it
+        // next time, so the founder can trust the next call knows.
+        <div className="grid justify-items-center gap-1">
+          <p
+            data-testid="call-remembered"
+            className="flex items-center justify-center gap-1.5 text-small text-muted-foreground"
+          >
+            <Check aria-hidden className="size-4" />
+            Remembered. {sentenceStart(veirName)} will pick up from this call next time.
+          </p>
+          <MemorySaved
+            tenant={tenant}
+            ventureId={ventureId}
+            memories={saved}
+            // Leaving for Knowledge: the call is over, forget it (no "Call ended" bar follows the founder there).
+            onNavigate={onLeave}
+            className="justify-center"
+          />
+        </div>
       ) : null}
 
       {summary.nextActions.length > 0 ? (
@@ -224,12 +242,9 @@ function SummaryDetails({
           <h3 id="call-summary-help" className="label-mono mb-2">
             Human help
           </h3>
-          <ul className="grid gap-2">
+          <ul className="divide-y divide-border border-y border-border">
             {drafted.map((escalation) => (
-              <li
-                key={escalation.id}
-                className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-border bg-card px-3.5 py-3"
-              >
+              <li key={escalation.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-3">
                 <span className="min-w-0 flex-1 text-small font-medium">
                   {ESCALATION_CATEGORY_LABELS[escalation.category]}
                 </span>
@@ -248,86 +263,5 @@ function SummaryDetails({
         </section>
       ) : null}
     </div>
-  );
-}
-
-function MemoryProposal({
-  ventureId,
-  memory,
-  canWrite,
-}: {
-  ventureId: string;
-  memory: MemoryObjectView;
-  canWrite: boolean;
-}) {
-  const review = useMemoryReview(ventureId);
-  const [decided, setDecided] = useState<'confirmed' | 'rejected' | null>(null);
-  // A proposal decided elsewhere meanwhile (the conversation's own Keep row) shows that decision.
-  const status = decided ?? (memory.status === 'proposed' ? null : memory.status);
-  const pending = review.isPending ? review.variables.action : null;
-
-  // The one approve/reject path in the app (S8's review hook): optimistic lists, batch route, rollback.
-  const decide = (choice: 'approve' | 'reject') => {
-    review.mutate(
-      { ids: [memory.id], action: choice },
-      {
-        onSuccess: (result) => {
-          // Skipped: someone decided it meanwhile; the refetched item shows what happened to it.
-          if (result.items.some((item) => item.id === memory.id)) {
-            setDecided(choice === 'approve' ? 'confirmed' : 'rejected');
-          }
-        },
-        onError: (error) => {
-          const { title, description } = reviewFailure(choice, [memory.id], error);
-          toast.error(title, { description });
-        },
-      },
-    );
-  };
-
-  return (
-    <li className="rounded-lg border border-border bg-card px-3.5 py-3">
-      <p className="text-small font-medium">{memory.title}</p>
-      <p className="mt-0.5 line-clamp-3 text-small text-muted-foreground">{displayContent(memory)}</p>
-      <div className="mt-2.5 flex items-center gap-2">
-        {status === 'confirmed' ? (
-          <p className="flex items-center gap-1.5 text-small text-muted-foreground">
-            <Check aria-hidden className="size-4" />
-            Kept
-          </p>
-        ) : status === 'rejected' ? (
-          <p className="text-small text-muted-foreground">Not kept</p>
-        ) : status ? (
-          <StatusBadge kind="memory" status={status} />
-        ) : canWrite ? (
-          <>
-            <Button
-              size="sm"
-              variant="secondary"
-              loading={pending === 'approve'}
-              disabled={review.isPending}
-              onClick={() => {
-                decide('approve');
-              }}
-              aria-label={`Keep: ${memory.title}`}
-            >
-              Keep
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              loading={pending === 'reject'}
-              disabled={review.isPending}
-              onClick={() => {
-                decide('reject');
-              }}
-              aria-label={`Not now: ${memory.title}`}
-            >
-              Not now
-            </Button>
-          </>
-        ) : null}
-      </div>
-    </li>
   );
 }

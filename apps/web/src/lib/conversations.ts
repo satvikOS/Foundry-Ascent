@@ -53,11 +53,11 @@ export function conversationTitle(
   if (title) return title;
   const goal = session.goal?.trim();
   if (goal) return goal;
-  return `${session.privacy === 'ephemeral' ? 'Temporary chat' : 'Conversation'} · ${startStamp(session.startedAt, now)}`;
+  return `${session.privacy === 'ephemeral' ? 'Private chat' : 'Conversation'} · ${startStamp(session.startedAt, now)}`;
 }
 
 /**
- * Whether a conversation belongs in the recents. Left out: an ended temporary chat (its content is erased
+ * Whether a conversation belongs in the recents. Left out: an ended private chat (its content is erased
  * and nothing was kept) and one where nothing was said yet, unless it is the one open now.
  */
 export function listedInRecents(

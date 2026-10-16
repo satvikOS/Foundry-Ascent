@@ -383,6 +383,57 @@ describe('deleting a conversation', () => {
     });
   });
 
+  it('erases the vEIR’s untouched memory from it and keeps memory the founder edited (the delete dialog’s promise)', async () => {
+    const sessionId = await newSession(maya, quietquad, { title: 'Pricing call' });
+    const turn = await addTurn(maya, quietquad, sessionId, 'Libraries pay per seat, not per student.');
+    const learned = (title: string) =>
+      t.db.withContext(maya, (tx) =>
+        memoryRepo.createMemory(tx, {
+          tenantId: seed.tenantId,
+          ventureId: quietquad.id,
+          type: 'insight',
+          title,
+          content: `${title}: libraries pay per seat.`,
+          origin: 'ai',
+          createdBy: maya.principalId,
+          visibility: 'team',
+          sourceRefs: [{ kind: 'turn', id: turn.id, label: 'AI proposal' }],
+        }),
+      );
+    const untouched = await learned('Untouched');
+    const edited = await learned('Edited');
+    // Knowledge's Edit on memory the vEIR saved before memory was kept automatically: the person editing it
+    // means to keep it, so it is kept first, then corrected as a new version.
+    must(
+      await t.db.withContext(maya, (tx) =>
+        memoryRepo.approveMemory(tx, { memoryId: edited.id, actorId: maya.principalId }),
+      ),
+    );
+    const corrected = must(
+      await t.db.withContext(maya, (tx) =>
+        memoryRepo.correctMemory(tx, {
+          memoryId: edited.id,
+          actorId: maya.principalId,
+          patch: { content: 'Edited: libraries pay per seat, renewed each term.' },
+        }),
+      ),
+    );
+
+    expect(await t.db.withContext(maya, (tx) => sessionsRepo.softDeleteSession(tx, sessionId))).toBe(true);
+
+    const rows = await t.db.system((sx) =>
+      sx.query('SELECT id, status, content FROM memory_objects WHERE id = ANY (:ids)', {
+        ids: p.uuidArray([untouched.id, corrected.id]),
+      }),
+    );
+    const byId = new Map(rows.rows.map((r) => [String(r.id), r]));
+    expect(byId.get(untouched.id)).toMatchObject({ status: 'deleted', content: '' });
+    expect(byId.get(corrected.id)).toMatchObject({
+      status: 'confirmed',
+      content: 'Edited: libraries pay per seat, renewed each term.',
+    });
+  });
+
   it('clears a summary only when it was drawn from that conversation (or its sources are unknown)', async () => {
     const a = await newSession(maya, quietquad);
     const b = await newSession(maya, quietquad);

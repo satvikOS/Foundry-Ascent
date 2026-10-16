@@ -1,5 +1,5 @@
 import type { MemoryObjectView } from '@foundry/contracts';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -42,41 +42,66 @@ function writes() {
 }
 
 describe('MemoryActionBar', () => {
-  it('approves a disputed item through PATCH /memory/:id and says the dispute is resolved', async () => {
-    const item = makeMemory({ id: IDS.memory, status: 'disputed', title: 'Exam weeks drive demand' });
+  it('offers Edit, Pin and Forget, and never Approve, Reject or Dispute', async () => {
+    for (const status of ['proposed', 'confirmed', 'disputed'] as const) {
+      const { unmount } = await (async () => {
+        const client = testQueryClient();
+        const item = makeMemory({ id: IDS.memory, status });
+        client.setQueryData(memoryQueryOptions(IDS.venture).queryKey, { items: [item], nextCursor: null });
+        return renderWithRouter(<MemoryActionBar ventureId={IDS.venture} memory={item} />, client);
+      })();
+      expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Forget' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Approve|Reject|Keep|Not now|Dispute/ })).toBeNull();
+      unmount();
+    }
+  });
+
+  it('pins in place, through PATCH /memory/:id', async () => {
+    const item = makeMemory({ id: IDS.memory, status: 'confirmed', pinned: false });
     fetchMock.mockImplementation((_input, init) =>
       Promise.resolve(
-        init?.method === 'PATCH'
-          ? json({ ...item, status: 'confirmed', approvedAt: '2026-10-05T09:00:00.000Z' })
-          : // The batch endpoint only decides proposals: a disputed item would be skipped.
-            init?.method === 'POST'
-            ? json({ items: [], skippedIds: [IDS.memory] })
-            : json({ items: [], nextCursor: null }),
+        init?.method === 'PATCH' ? json({ ...item, pinned: true }) : json({ items: [], nextCursor: null }),
       ),
     );
     const success = vi.spyOn(toast, 'success');
     const { user } = await renderBar(item);
-
-    await user.click(screen.getByRole('button', { name: 'Approve' }));
-
+    await user.click(screen.getByRole('button', { name: 'Pin' }));
     await waitFor(() => {
       expect(writes()).toHaveLength(1);
     });
-    expect(writes()[0]).toMatchObject({
-      method: 'PATCH',
-      body: { action: 'approve' },
-    });
-    expect(writes()[0]?.url).toContain(`/api/v1/memory/${IDS.memory}`);
+    expect(writes()[0]).toMatchObject({ method: 'PATCH', body: { action: 'pin' } });
     await waitFor(() => {
-      expect(success).toHaveBeenCalled();
+      expect(success).toHaveBeenCalledWith('Pinned');
     });
-    const message = success.mock.calls[0]?.[0];
-    expect(message).not.toMatch(/Nothing changed|already handled/);
-    expect(message).toBe('Dispute resolved: kept as venture memory');
   });
 
-  it('tells the person when another teammate already resolved the dispute (409)', async () => {
-    const item = makeMemory({ id: IDS.memory, status: 'disputed' });
+  it('forgets only after the person confirms, and says so', async () => {
+    const item = makeMemory({ id: IDS.memory, status: 'confirmed' });
+    fetchMock.mockImplementation((_input, init) =>
+      Promise.resolve(
+        init?.method === 'PATCH'
+          ? new Response(null, { status: 204 })
+          : json({ items: [], nextCursor: null }),
+      ),
+    );
+    const success = vi.spyOn(toast, 'success');
+    const { user } = await renderBar(item);
+    await user.click(screen.getByRole('button', { name: 'Forget' }));
+    const dialog = await screen.findByRole('alertdialog', { name: 'Forget this?' });
+    expect(writes()).toHaveLength(0);
+    await user.click(within(dialog).getByRole('button', { name: 'Forget' }));
+    await waitFor(() => {
+      expect(writes()).toHaveLength(1);
+    });
+    expect(writes()[0]).toMatchObject({ method: 'PATCH', body: { action: 'delete' } });
+    await waitFor(() => {
+      expect(success).toHaveBeenCalledWith('Forgotten');
+    });
+  });
+
+  it('tells the person when forgetting failed', async () => {
+    const item = makeMemory({ id: IDS.memory, status: 'confirmed' });
     fetchMock.mockImplementation((_input, init) =>
       Promise.resolve(
         init?.method === 'PATCH' ? problem(409, 'conflict') : json({ items: [], nextCursor: null }),
@@ -84,33 +109,12 @@ describe('MemoryActionBar', () => {
     );
     const failure = vi.spyOn(toast, 'error');
     const { user } = await renderBar(item);
-
-    await user.click(screen.getByRole('button', { name: 'Approve' }));
-
+    await user.click(screen.getByRole('button', { name: 'Forget' }));
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Forget' }));
     await waitFor(() => {
       expect(failure).toHaveBeenCalled();
     });
     expect(failure.mock.calls[0]?.[0]).toBe('Couldn’t update memory');
-    expect(writes().map((w) => w.method)).toEqual(['PATCH']);
-  });
-
-  it('still approves a proposal through the review path', async () => {
-    const proposal = makeMemory({ id: IDS.memory });
-    fetchMock.mockImplementation((_input, init) =>
-      Promise.resolve(
-        init?.method === 'POST'
-          ? json({ items: [{ ...proposal, status: 'confirmed' }], skippedIds: [] })
-          : json({ items: [], nextCursor: null }),
-      ),
-    );
-    const { user } = await renderBar(proposal);
-
-    await user.click(screen.getByRole('button', { name: 'Approve' }));
-
-    await waitFor(() => {
-      expect(writes()).toHaveLength(1);
-    });
-    expect(writes()[0]).toMatchObject({ method: 'POST', body: { ids: [IDS.memory], action: 'approve' } });
-    expect(writes()[0]?.url).toContain(`/api/v1/ventures/${IDS.venture}/memory/batch`);
   });
 });

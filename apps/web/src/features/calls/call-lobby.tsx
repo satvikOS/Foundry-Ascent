@@ -6,6 +6,7 @@ import { DisclosureBanner } from '@/components/disclosure-banner';
 import { Button } from '@/components/ui/button';
 import type { CallEngine, CallFailure } from '@/lib/realtime/call-engine';
 
+import { PrivacyChoice, type ConversationPrivacy } from '../chat/privacy-choice';
 import { CallStage } from './call-stage';
 import type { CallVeir } from './use-call-veir';
 
@@ -68,6 +69,11 @@ interface CallLobbyProps {
   busy: boolean;
   /** The first call: say how the founder's voice is handled before it starts. */
   voiceNotice: boolean;
+  /**
+   * A call that starts a new conversation (from New chat): remembered (the default) or private, chosen before
+   * it starts. Null for a call in an existing conversation, which keeps that conversation's choice.
+   */
+  privacy: { value: ConversationPrivacy; onChange: (privacy: ConversationPrivacy) => void } | null;
   onStart: () => void;
   onRetry: () => void;
   /** Already in a call elsewhere and the founder said yes: start here, ending the other call. */
@@ -78,7 +84,9 @@ interface CallLobbyProps {
 /**
  * Before the call: start it (a click is what lets the browser play audio), or learn why it can't start.
  * When the person arrived by clicking Call, the call starts on its own and this shows only "Connecting";
- * the first call ever waits here so the founder reads how their voice is handled.
+ * the first call ever waits here so the founder reads how their voice is handled. A call that starts a new
+ * conversation offers Remember (the default) or Private here, and waits for Start call unless it came from
+ * New chat's Call button, beside the same choice.
  */
 export function CallLobby({
   engine,
@@ -88,6 +96,7 @@ export function CallLobby({
   failure,
   busy,
   voiceNotice,
+  privacy,
   onStart,
   onRetry,
   onMoveHere,
@@ -135,10 +144,17 @@ export function CallLobby({
           <p role="status" className="text-body text-pretty text-muted-foreground">
             {busy ? 'Connecting…' : problem ? problem.message : (minutes ?? 'Getting ready…')}
           </p>
-          {!problem && !busy ? (
-            <p className="text-small text-muted-foreground">Headphones help {veir.name} hear you clearly.</p>
-          ) : null}
         </div>
+        {privacy && !problem ? (
+          <PrivacyChoice
+            value={privacy.value}
+            onChange={privacy.onChange}
+            veirName={veir.name}
+            what="call"
+            disabled={busy}
+            className="max-w-md sm:flex-col"
+          />
+        ) : null}
         {voiceNotice && !problem ? (
           <p
             data-testid="voice-notice"

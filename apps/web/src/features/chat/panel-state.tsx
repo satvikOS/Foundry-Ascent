@@ -2,8 +2,8 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 
 import { useInspector } from '@/components/shell/inspector';
 
-/** The conversation's right panel: Sources · Notebook · To review · Human help. */
-export type PanelTab = 'sources' | 'notebook' | 'review' | 'help';
+/** The conversation's right panel: Sources · Notebook · Human help. */
+export type PanelTab = 'sources' | 'notebook' | 'help';
 
 interface FocusedSource {
   turnId: string;

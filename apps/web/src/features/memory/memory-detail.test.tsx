@@ -1,84 +1,124 @@
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { json, renderWithRouter, stubFetch } from '@/features/knowledge/test-utils';
-import { IDS, makeMemory, NOW } from '@/features/knowledge/testing';
+import { json, renderWithRouter, stubFetch, urlOf } from '@/features/knowledge/test-utils';
+import { IDS, makeMemory, makeSession } from '@/features/knowledge/testing';
 
 import { MemoryDetail } from './memory-detail';
 
 const MAYA = { id: IDS.principal, displayName: 'Maya Okafor-Lindqvist', title: null, synthetic: true };
-const SAM = {
-  id: '9f8e7d6c-5b4a-4c3d-8e2f-1a0b9c8d7e16',
-  displayName: 'Sam Teammate',
-  title: null,
-  synthetic: true,
-};
-
-/** The Provenance row labelled `label`: its value. */
-function provenance(label: string): HTMLElement {
-  const term = screen.getAllByRole('term').find((dt) => dt.textContent === label);
-  const value = term?.nextElementSibling;
-  if (!(value instanceof HTMLElement)) throw new Error(`no ${label} row`);
-  return value;
-}
 
 beforeEach(() => {
   stubFetch().mockImplementation(() => Promise.resolve(json({ items: [] })));
 });
 
-describe('MemoryDetail provenance', () => {
-  it('credits a suggestion to the AI, not the person whose conversation it came from', async () => {
-    await renderWithRouter(
-      <MemoryDetail
-        memory={makeMemory({ origin: 'ai', status: 'proposed', createdBy: MAYA })}
-        tenant="ain"
-        ventureId={IDS.venture}
-        canEdit={false}
-      />,
-    );
-    expect(provenance('Created')).toHaveTextContent(/^Suggested by AI · /);
-    expect(provenance('Created')).not.toHaveTextContent('Maya');
-    // Not kept yet: no one is named.
-    expect(screen.queryByText('Kept')).toBeNull();
-    expect(screen.queryByText(/Maya Okafor-Lindqvist/)).toBeNull();
-  });
-
-  it('names who kept the suggestion, when known', async () => {
+describe('MemoryDetail', () => {
+  it('says the vEIR learned it, links the conversation, and never credits the founder', async () => {
     await renderWithRouter(
       <MemoryDetail
         memory={makeMemory({
           origin: 'ai',
           status: 'confirmed',
           createdBy: MAYA,
-          approvedBy: SAM,
-          approvedAt: NOW,
+          sourceRefs: [
+            { kind: 'session', id: IDS.session, label: 'AI proposal' },
+            { kind: 'memory', id: IDS.memory2, label: 'E1' },
+          ],
+          attributes: { evidence_keys: ['E1'] },
         })}
         tenant="ain"
         ventureId={IDS.venture}
         canEdit={false}
       />,
     );
-    expect(provenance('Created')).toHaveTextContent(/^Suggested by AI · /);
-    expect(provenance('Kept')).toHaveTextContent(/^Sam Teammate · /);
+    const learned = screen.getByRole('link', { name: /^Learned from the conversation on / });
+    expect(learned).toHaveAttribute('href', `/ain/app/v/${IDS.venture}/c/${IDS.session}`);
     expect(screen.queryByText(/Maya Okafor-Lindqvist/)).toBeNull();
+    // The server's bookkeeping (its labels, the cited evidence keys) is not shown as if it meant something.
+    expect(screen.queryByText('AI proposal')).toBeNull();
+    expect(screen.queryByText('E1')).toBeNull();
+    expect(screen.queryByText(/Evidence keys/)).toBeNull();
+    expect(screen.getByRole('link', { name: 'Earlier memory' })).toBeInTheDocument();
+    // Nothing waits for approval: no status badge for memory in use, no approve or reject.
+    expect(screen.queryByText(/Proposed|Confirmed|approval/)).toBeNull();
   });
 
-  it('still names the person who added a memory themselves', async () => {
+  it('says it was learned on the call when that conversation had one (asked of the venture’s conversations)', async () => {
+    const fetchMock = stubFetch().mockImplementation((input) =>
+      Promise.resolve(
+        urlOf(input).endsWith(`/ventures/${IDS.venture}/sessions`)
+          ? json({ items: [makeSession({ id: IDS.session, hasCalls: true })] })
+          : json({ items: [] }),
+      ),
+    );
     await renderWithRouter(
       <MemoryDetail
         memory={makeMemory({
-          origin: 'founder',
+          origin: 'ai',
           status: 'confirmed',
-          createdBy: MAYA,
-          approvedBy: MAYA,
-          approvedAt: NOW,
+          sourceRefs: [
+            { kind: 'session', id: IDS.session, label: 'Learned from the conversation' },
+            { kind: 'turn', id: IDS.turn },
+          ],
         })}
+        tenant="ain"
+        ventureId={IDS.venture}
+        canEdit
+      />,
+    );
+    const learned = await screen.findByRole('link', { name: /^Learned from the call on / });
+    expect(learned).toHaveAttribute('href', `/ain/app/v/${IDS.venture}/c/${IDS.session}`);
+    expect(fetchMock.mock.calls.filter(([input]) => urlOf(input).includes('/sessions'))).toHaveLength(1);
+  });
+
+  it('shows an older suggestion as known, with Edit, Pin where it applies, and Forget', async () => {
+    await renderWithRouter(
+      <MemoryDetail
+        memory={makeMemory({ origin: 'ai', status: 'proposed', createdBy: MAYA })}
+        tenant="ain"
+        ventureId={IDS.venture}
+        canEdit
+      />,
+    );
+    expect(screen.queryByText('Proposed')).toBeNull();
+    const buttons = screen.getAllByRole('button').map((button) => button.textContent);
+    expect(buttons).toEqual(expect.arrayContaining(['Edit', 'Forget']));
+    expect(buttons).not.toEqual(expect.arrayContaining(['Approve']));
+    expect(screen.queryByRole('button', { name: /Approve|Reject|Keep|Dispute/ })).toBeNull();
+  });
+
+  it('names the person who added a memory themselves', async () => {
+    await renderWithRouter(
+      <MemoryDetail
+        memory={makeMemory({ origin: 'founder', status: 'confirmed', createdBy: MAYA, sourceRefs: [] })}
         tenant="ain"
         ventureId={IDS.venture}
         canEdit={false}
       />,
     );
-    expect(provenance('Created')).toHaveTextContent(/^Maya Okafor-Lindqvist · /);
-    expect(provenance('Approved')).toHaveTextContent(/^Maya Okafor-Lindqvist · /);
+    expect(screen.getByText(/^Added by Maya Okafor-Lindqvist on /)).toBeInTheDocument();
+  });
+
+  it('asks before forgetting, then forgets with the existing delete', async () => {
+    const fetchMock = stubFetch().mockImplementation((_input, init) =>
+      Promise.resolve(init?.method === 'PATCH' ? new Response(null, { status: 204 }) : json({ items: [] })),
+    );
+    await renderWithRouter(
+      <MemoryDetail
+        memory={makeMemory({ id: IDS.memory, status: 'confirmed' })}
+        tenant="ain"
+        ventureId={IDS.venture}
+        canEdit
+      />,
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Forget' }));
+    const dialog = await screen.findByRole('alertdialog', { name: 'Forget this?' });
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(false);
+    await user.click(within(dialog).getByRole('button', { name: 'Forget' }));
+    const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
+    expect(patch).toBeDefined();
+    expect(urlOf(patch?.[0])).toContain(`/api/v1/memory/${IDS.memory}`);
   });
 });

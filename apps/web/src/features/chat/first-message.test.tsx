@@ -146,15 +146,15 @@ describe('useFirstMessageHandoff', () => {
 
 describe('newConversationRequest', () => {
   it('never names the conversation after the message, so a blocked first message is never a title', () => {
-    for (const temporary of [false, true]) {
-      expect(newConversationRequest({ mode: undefined, temporary })).not.toHaveProperty('title');
-      expect(newConversationRequest({ mode: 'challenge', temporary })).not.toHaveProperty('title');
+    for (const privacy of ['standard', 'ephemeral'] as const) {
+      expect(newConversationRequest({ mode: undefined, privacy })).not.toHaveProperty('title');
+      expect(newConversationRequest({ mode: 'challenge', privacy })).not.toHaveProperty('title');
     }
   });
 
   it('sends no mode for Auto and the chosen privacy', () => {
-    expect(newConversationRequest({ mode: undefined, temporary: false })).toEqual({ privacy: 'standard' });
-    expect(newConversationRequest({ mode: 'rehearse', temporary: true })).toEqual({
+    expect(newConversationRequest({ mode: undefined, privacy: 'standard' })).toEqual({ privacy: 'standard' });
+    expect(newConversationRequest({ mode: 'rehearse', privacy: 'ephemeral' })).toEqual({
       mode: 'rehearse',
       privacy: 'ephemeral',
     });

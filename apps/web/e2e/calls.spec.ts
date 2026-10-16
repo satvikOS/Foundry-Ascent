@@ -246,7 +246,7 @@ test.describe('vEIR calls', () => {
 
   test('call from the sidebar: typed fallback, reply in captions, mini bar, summary', async ({ page }) => {
     await voiceNoticeSeen(page);
-    const ventureId = await openVenture(page);
+    await openVenture(page);
     const token = runToken();
     let sessionId = '';
     let callId = '';
@@ -255,7 +255,12 @@ test.describe('vEIR calls', () => {
       if (request.url().endsWith('/api/v1/speech')) speech.push(request.url());
     });
 
-    await test.step('Call starts at once, in a new conversation', async () => {
+    await test.step('from the sidebar: Remember or Private first, then Start call, in a new conversation', async () => {
+      let created = 0;
+      page.on('request', (request) => {
+        if (request.method() === 'POST' && /\/ventures\/[0-9a-f-]{36}\/sessions$/.test(request.url()))
+          created += 1;
+      });
       const started = page.waitForResponse(
         (response) => /\/sessions\/[0-9a-f-]{36}\/calls$/.test(response.url()) && response.status() === 201,
       );
@@ -265,6 +270,15 @@ test.describe('vEIR calls', () => {
         .click();
       const screen = callScreen(page);
       await expect(screen).toBeVisible();
+      // Away from New chat's choice, the call waits on its start screen: Remember is chosen, Private a click away.
+      const memory = screen.getByRole('group', { name: 'Memory for this call' });
+      await expect(memory.getByRole('radio', { name: 'Remember this call' })).toBeChecked();
+      await expect(memory.getByRole('radio', { name: 'Private, a one-off' })).not.toBeChecked();
+      const start = screen.getByRole('button', { name: 'Start call' });
+      await expect(start).toBeEnabled();
+      await expect(start).toBeFocused();
+      expect(created, 'nothing is created before Start call').toBe(0);
+      await start.click();
       await page.waitForURL(/\/c\/[0-9a-f-]{36}\?call=1$/);
       sessionId = /\/c\/([0-9a-f-]{36})/.exec(page.url())?.[1] ?? '';
       const body = (await (await started).json()) as { call: { id: string }; intro: { text: string } | null };
@@ -347,9 +361,13 @@ test.describe('vEIR calls', () => {
       await expect(callScreen(page)).toBeVisible();
     });
 
-    await test.step('ending shows the summary; Keep needs the founder', async () => {
+    await test.step('ending shows the summary; what the call learned is saved with no click', async () => {
       const ended = page.waitForRequest(
         (request) => request.url().endsWith(`/calls/${callId}/end`) && request.method() === 'POST',
+      );
+      const endResponse = page.waitForResponse(
+        (response) =>
+          response.url().endsWith(`/calls/${callId}/end`) && response.request().method() === 'POST',
       );
       await callScreen(page).getByRole('button', { name: 'End call' }).click();
       const screen = callScreen(page);
@@ -357,28 +375,71 @@ test.describe('vEIR calls', () => {
       expect((await ended).postDataJSON()).toMatchObject({ reason: 'user' });
       await expect(screen.getByRole('note', { name: 'AI disclosure' })).toHaveCount(1);
       await expectNoBareEirName(page, 'the after-call summary');
-      // The call's turn proposed what to remember; nothing is kept until the founder says so, through the
-      // app's one review path.
-      const keep = screen.getByRole('button', { name: /^Keep: / }).first();
-      await expect(keep).toBeVisible();
-      const approved = page.waitForResponse(
-        (response) =>
-          response.url().endsWith(`/ventures/${ventureId}/memory/batch`) &&
-          response.request().method() === 'POST',
+      // What the call's turn learned is already in Knowledge: one quiet line, nothing to keep or decline.
+      const { summary } = (await (await endResponse).json()) as { summary: { memoryProposalIds: string[] } };
+      expect(summary.memoryProposalIds.length).toBeGreaterThan(0);
+      await expect(screen.getByTestId('call-remembered')).toContainText(
+        'will pick up from this call next time',
       );
-      await keep.click();
-      const review = await approved;
-      const sent = review.request().postDataJSON() as { ids: string[]; action: string };
-      expect(sent).toMatchObject({ action: 'approve' });
-      expect(sent.ids).toHaveLength(1);
-      await expect(screen.getByText('Kept').first()).toBeVisible();
+      await expect(screen.getByTestId('memory-saved')).toContainText('Saved to Knowledge:');
+      await expect(screen.getByRole('button', { name: /^(Keep|Not now)/ })).toHaveCount(0);
+      await expect(screen.getByText(/would like to remember/)).toHaveCount(0);
       // Leave the venture's memory as it was.
-      for (const id of sent.ids) await deleteMemory(page.request, id);
+      for (const id of summary.memoryProposalIds) await deleteMemory(page.request, id);
       await screen.getByRole('button', { name: 'Back to conversation' }).click();
       await expect(callScreen(page)).toBeHidden();
       await expect(page).toHaveURL(new RegExp(`/c/${sessionId}$`));
       await expect(page.getByRole('region', { name: /^Call with / })).toHaveCount(0);
     });
+  });
+
+  test('a private call from New chat: chosen before it starts, marked while it lasts, keeps nothing', async ({
+    page,
+  }) => {
+    const calls = trackCalls(page);
+    try {
+      await voiceNoticeSeen(page);
+      const ventureId = await openVenture(page);
+      await page.getByRole('radio', { name: 'Private, a one-off' }).click();
+      const created = page.waitForRequest(
+        (request) => request.method() === 'POST' && request.url().endsWith(`/ventures/${ventureId}/sessions`),
+      );
+      await page
+        .getByRole('main')
+        .getByRole('link', { name: /^Call / })
+        .click();
+      expect((await created).postDataJSON()).toMatchObject({ privacy: 'ephemeral' });
+      const screen = callScreen(page);
+      const reply = screen.getByRole('textbox', { name: /^Reply to / });
+      await expect(reply).toBeFocused({ timeout: 20_000 });
+      await expect(screen.getByTestId('private-indicator')).toHaveText('Private');
+      const answered = page.waitForResponse(
+        (response) =>
+          /\/sessions\/[0-9a-f-]{36}\/turns$/.test(response.url()) && response.request().method() === 'POST',
+      );
+      await reply.fill(`Just between us: is per-library pricing right? ${runToken()}`);
+      await reply.press('Enter');
+      await answered;
+      const endResponse = page.waitForResponse(
+        (response) =>
+          /\/calls\/[0-9a-f-]{36}\/end$/.test(response.url()) && response.request().method() === 'POST',
+      );
+      await screen.getByRole('button', { name: 'End call' }).click();
+      await expect(screen.getByRole('heading', { name: 'Call ended' })).toBeVisible({ timeout: 20_000 });
+      const { summary } = (await (await endResponse).json()) as { summary: { memoryProposalIds: string[] } };
+      expect(summary.memoryProposalIds, 'a private call saves nothing').toEqual([]);
+      await expect(screen.getByTestId('call-private')).toHaveText(
+        'Private call: nothing from it is remembered.',
+      );
+      await expect(screen.getByTestId('memory-saved')).toHaveCount(0);
+      await expect(screen.getByTestId('call-remembered')).toHaveCount(0);
+      await screen.getByRole('button', { name: 'Back to conversation' }).click();
+      await expect(
+        page.getByRole('main').locator('header').getByText('Private', { exact: true }),
+      ).toBeVisible();
+    } finally {
+      await endCalls(page, calls.ids);
+    }
   });
 
   test('the first call says how voice is handled, once per person and in any browser', async ({
@@ -675,7 +736,9 @@ test.describe('vEIR calls', () => {
       await expect(captions).toHaveAttribute('aria-pressed', 'false');
       await page.keyboard.press('Enter');
 
-      await screen.getByRole('button', { name: 'Switch to chat' }).click();
+      // The rarer controls live under More, reachable by keyboard too.
+      await screen.getByRole('button', { name: 'More call controls' }).click();
+      await page.getByRole('menuitem', { name: 'Switch to chat' }).click();
       await expect(screen).toBeHidden();
       await expect(page.getByRole('region', { name: /^Call with / })).toHaveCount(0);
       await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'New chat' }).click();
@@ -800,7 +863,7 @@ test.describe('vEIR calls', () => {
       const screen = callScreen(page);
       await expect(screen.getByRole('textbox', { name: /^Reply to / })).toBeVisible();
       await expectNoHorizontalScroll(page);
-      for (const name of ['Captions', 'Switch to chat', 'End call']) {
+      for (const name of ['Captions', 'More call controls', 'End call']) {
         await expectReachable(page, screen.getByRole('button', { name }));
       }
       await screen.getByRole('button', { name: 'End call' }).click();

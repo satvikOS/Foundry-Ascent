@@ -51,12 +51,12 @@ export function DataUseDialog({
           </Section>
           <Section title="What is remembered">
             <p>
-              Nothing becomes venture memory until someone on your team keeps it. Your vEIR also keeps notes
-              between conversations (its notebook and conversation summaries) so it can pick up where you left
-              off. Your team can see, correct and delete them, and they are never treated as facts.
+              What your vEIR learns in your conversations and calls goes into your venture’s Knowledge on its
+              own, with its notes between conversations (its notebook and conversation summaries), so it can
+              pick up where you left off. Your team can see, edit and forget any of it.
             </p>
             <p className="mt-2">
-              Temporary chats are never remembered. They are erased when they end, or after 24 hours idle.
+              Private chats are never remembered. They are erased when they end, or after 24 hours idle.
             </p>
           </Section>
           <Section title="Who can see your venture">

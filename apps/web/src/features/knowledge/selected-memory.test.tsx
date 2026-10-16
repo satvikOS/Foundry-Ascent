@@ -25,10 +25,6 @@ function seededClient(lists: { all?: MemoryObjectView[]; filtered?: [KnowledgeSe
     items: lists.all ?? [kept],
     nextCursor: null,
   });
-  client.setQueryData(memoryQueryOptions(IDS.venture, { status: 'proposed' }).queryKey, {
-    items: [],
-    nextCursor: null,
-  });
   if (lists.filtered) {
     const [filters, items] = lists.filtered;
     client.setQueryData(memoryQueryOptions(IDS.venture, filters).queryKey, { items, nextCursor: null });
@@ -52,6 +48,16 @@ describe('useSelectedMemory', () => {
     const { result } = render(seededClient({}), { m: IDS.memory });
     expect(result.current).toEqual({ state: 'ready', memory: kept });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('asks only for the lists on screen: an older suggestion is in the venture’s list already', async () => {
+    fetchMock.mockResolvedValue(json({ items: [], nextCursor: null }));
+    const suggestion = makeMemory({ id: IDS.memory2, status: 'proposed' });
+    const { result } = render(seededClient({ all: [kept, suggestion] }), { m: IDS.memory2 });
+    expect(result.current).toEqual({ state: 'ready', memory: suggestion });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    // No separate list of suggestions (`?status=proposed`) is requested on any Knowledge visit.
+    expect(fetchMock.mock.calls.map(([input]) => urlOf(input))).toEqual([]);
   });
 
   it('finds a superseded item in the filtered list', () => {

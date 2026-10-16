@@ -8,7 +8,7 @@ import { CallEngine } from '@/lib/realtime/call-engine';
 
 /**
  * The person's one CallEngine, wired to the browser and to the query cache: a finished turn joins the
- * conversation's transcript, and the venture's data (memory proposals, call minutes) is refreshed.
+ * conversation's transcript, and the venture's data (memory, call minutes) is refreshed.
  * Loaded on demand with the call screen.
  */
 export function createCallEngine(queryClient: QueryClient): CallEngine {

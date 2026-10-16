@@ -1,49 +1,29 @@
 import type { MemoryObjectView } from '@foundry/contracts';
-import { Check, MoreHorizontal, Pencil, Pin, PinOff, Trash, TriangleAlert, X } from 'lucide-react';
+import { Pencil, Pin, PinOff, Trash } from 'lucide-react';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { announce } from '@/components/a11y/live-announcer';
-import { toast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
-import {
-  reviewFailure,
-  reviewMessage,
-  useMemoryReview,
-  type ReviewAction,
-} from '@/features/knowledge/review-api';
 
 import { useMemoryActions } from './api';
-import { ConfirmDeleteMemoryDialog, CorrectMemoryDialog, DisputeMemoryDialog } from './memory-dialogs';
+import { ConfirmDeleteMemoryDialog, CorrectMemoryDialog } from './memory-dialogs';
 import { availableMemoryActions } from './optimistic';
 
 interface MemoryActionBarProps {
   ventureId: string;
   memory: MemoryObjectView;
-  /** Compact: primary actions as small buttons, the rest in a menu. */
+  /** Compact: small buttons (the side panel). */
   size?: 'sm' | 'default';
   className?: string;
-  /** Called after a delete was confirmed (e.g. to close a detail panel). */
+  /** Called after Forget was confirmed (e.g. to close a detail panel). */
   onRemoved?: (() => void) | undefined;
-  /** Replace the generic correction dialog with a type-specific editor. */
+  /** Replace the generic editor with a type-specific one. */
   onEdit?: (() => void) | undefined;
 }
 
-/** What approving a disputed item did: it is kept, confirmed, as venture memory again. */
-const DISPUTE_RESOLVED = 'Dispute resolved: kept as venture memory';
-
 /**
- * Lifecycle actions for one memory object: approve / reject for proposals (the same review path as the
- * "To review" queue), approve to resolve a dispute (`PATCH /memory/:id`, which confirms a disputed item),
- * and correct / pin / dispute / delete for kept memory. Deleting asks for confirmation; everything else
- * applies at once.
+ * What a person can do with something the vEIR knows: Edit (saved as a new version), Pin and Forget (asks
+ * first). Nothing is approved or rejected: memory is kept automatically.
  */
 export function MemoryActionBar({
   ventureId,
@@ -54,33 +34,9 @@ export function MemoryActionBar({
   onEdit,
 }: MemoryActionBarProps) {
   const { run, isPending, pendingId } = useMemoryActions(ventureId);
-  const review = useMemoryReview(ventureId);
-  const [dialog, setDialog] = useState<'correct' | 'dispute' | 'delete' | null>(null);
+  const [dialog, setDialog] = useState<'edit' | 'forget' | null>(null);
   const actions = availableMemoryActions(memory);
-  const busy =
-    (isPending && pendingId === memory.id) || (review.isPending && review.variables.ids.includes(memory.id));
-
-  const decide = (action: ReviewAction) => {
-    if (action === 'approve' && memory.status === 'disputed') {
-      // The review path decides proposals only; a dispute is resolved on the item itself.
-      run(memory.id, { action: 'approve' }, { successMessage: DISPUTE_RESOLVED });
-      return;
-    }
-    review.mutate(
-      { ids: [memory.id], action },
-      {
-        onSuccess: (result) => {
-          const message = reviewMessage(action, result);
-          toast.success(message);
-          announce(message);
-        },
-        onError: (error) => {
-          const failure = reviewFailure(action, [memory.id], error);
-          toast.error(failure.title, { description: failure.description });
-        },
-      },
-    );
-  };
+  const busy = isPending && pendingId === memory.id;
   const buttonSize = size === 'sm' ? 'xs' : 'sm';
 
   if (actions.length === 0) return null;
@@ -91,31 +47,6 @@ export function MemoryActionBar({
 
   return (
     <div className={cn('flex flex-wrap items-center gap-1.5', className)}>
-      {actions.includes('approve') ? (
-        <Button
-          size={buttonSize}
-          disabled={busy}
-          onClick={() => {
-            decide('approve');
-          }}
-        >
-          <Check aria-hidden />
-          Approve
-        </Button>
-      ) : null}
-      {actions.includes('reject') ? (
-        <Button
-          size={buttonSize}
-          variant="secondary"
-          disabled={busy}
-          onClick={() => {
-            decide('reject');
-          }}
-        >
-          <X aria-hidden />
-          Reject
-        </Button>
-      ) : null}
       {actions.includes('correct') ? (
         <Button
           size={buttonSize}
@@ -123,11 +54,11 @@ export function MemoryActionBar({
           disabled={busy}
           onClick={() => {
             if (onEdit) onEdit();
-            else setDialog('correct');
+            else setDialog('edit');
           }}
         >
           <Pencil aria-hidden />
-          {memory.status === 'proposed' || onEdit ? 'Edit' : 'Correct'}
+          Edit
         </Button>
       ) : null}
       {actions.includes('pin') || actions.includes('unpin') ? (
@@ -144,61 +75,30 @@ export function MemoryActionBar({
           {memory.pinned ? 'Unpin' : 'Pin'}
         </Button>
       ) : null}
-      {actions.includes('dispute') || actions.includes('delete') ? (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              size={size === 'sm' ? 'icon-xs' : 'icon-sm'}
-              variant="ghost"
-              aria-label="More memory actions"
-              disabled={busy}
-            >
-              <MoreHorizontal aria-hidden />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {actions.includes('dispute') ? (
-              <DropdownMenuItem
-                onSelect={() => {
-                  setDialog('dispute');
-                }}
-              >
-                <TriangleAlert aria-hidden />
-                Dispute…
-              </DropdownMenuItem>
-            ) : null}
-            {actions.includes('dispute') && actions.includes('delete') ? <DropdownMenuSeparator /> : null}
-            {actions.includes('delete') ? (
-              <DropdownMenuItem
-                destructive
-                onSelect={() => {
-                  setDialog('delete');
-                }}
-              >
-                <Trash aria-hidden />
-                Delete…
-              </DropdownMenuItem>
-            ) : null}
-          </DropdownMenuContent>
-        </DropdownMenu>
+      {actions.includes('delete') ? (
+        <Button
+          size={buttonSize}
+          variant="ghost"
+          disabled={busy}
+          onClick={() => {
+            setDialog('forget');
+          }}
+        >
+          <Trash aria-hidden />
+          Forget
+        </Button>
       ) : null}
 
       <CorrectMemoryDialog
         ventureId={ventureId}
         memory={memory}
-        open={dialog === 'correct'}
-        onOpenChange={close}
-      />
-      <DisputeMemoryDialog
-        ventureId={ventureId}
-        memory={memory}
-        open={dialog === 'dispute'}
+        open={dialog === 'edit'}
         onOpenChange={close}
       />
       <ConfirmDeleteMemoryDialog
         ventureId={ventureId}
         memory={memory}
-        open={dialog === 'delete'}
+        open={dialog === 'forget'}
         onOpenChange={close}
         onDone={onRemoved}
       />

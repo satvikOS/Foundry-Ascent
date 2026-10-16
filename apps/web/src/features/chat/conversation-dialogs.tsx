@@ -109,6 +109,14 @@ export function RenameConversationDialog({
   );
 }
 
+/**
+ * What deleting a conversation erases, as the server does it (`app.erase_drawn_from_session`): its messages and
+ * summary, and memory the vEIR drew only from it that nobody touched since. Memory a person edited or kept is
+ * theirs now, and stays.
+ */
+export const DELETE_CONVERSATION_DESCRIPTION =
+  'Its messages and summary are erased, with anything the vEIR remembered only from it. Memory you edited or kept yourself stays in Knowledge. This can’t be undone.';
+
 /** Delete a conversation after confirming: its content is erased and it leaves every list. */
 export function DeleteConversationDialog({
   session,
@@ -127,9 +135,7 @@ export function DeleteConversationDialog({
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Delete this conversation?</AlertDialogTitle>
-          <AlertDialogDescription>
-            Its messages, summary and pending suggestions are erased. This can’t be undone.
-          </AlertDialogDescription>
+          <AlertDialogDescription>{DELETE_CONVERSATION_DESCRIPTION}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>

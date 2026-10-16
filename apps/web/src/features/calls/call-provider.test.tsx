@@ -12,7 +12,7 @@ import {
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useEffect } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { useSignOutAndRedirect } from '@/components/shell/account-menu';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -21,6 +21,7 @@ import type { StartCallOptions } from '@/lib/realtime/call-engine';
 import { IDLE_CALL, type CallSnapshot } from '@/lib/realtime/call-state';
 import { IDS } from '@/lib/realtime/testing';
 
+import { markChoiceInView, setStartPrivacy, takeChoiceInView } from '../chat/privacy-choice';
 import { CallProvider } from './call-context';
 import { MiniCallBar } from './mini-call-bar';
 import { json, stubFetch, urlOf } from './testing';
@@ -173,12 +174,24 @@ function Page() {
       >
         Call
       </Link>
+      {/* New chat's own Call button, beside Remember or Private. */}
+      <Link
+        to="/$tenant/app/v/$ventureId"
+        params={{ tenant: 'ain', ventureId: VENTURE }}
+        search={{ call: 1 }}
+        onClick={() => {
+          markChoiceInView(VENTURE);
+        }}
+      >
+        Call from New chat
+      </Link>
+      {/* The sidebar's (or ⌘K's) Call: a new conversation, away from New chat's choice. */}
       <Link
         to="/$tenant/app/v/$ventureId"
         params={{ tenant: 'ain', ventureId: VENTURE }}
         search={{ call: 1 }}
       >
-        Call from New chat
+        Call from the sidebar
       </Link>
       <Link to="/$tenant/app/v/$ventureId/knowledge" params={{ tenant: 'ain', ventureId: VENTURE }}>
         Knowledge
@@ -245,7 +258,26 @@ beforeEach(() => {
 });
 afterEach(() => {
   window.localStorage.clear();
+  setStartPrivacy(VENTURE, 'standard');
+  takeChoiceInView(VENTURE);
 });
+
+/** Whether the page asked the server to create a conversation (`POST /ventures/:id/sessions`). */
+function sessionCreated(): boolean {
+  return fetchMock.mock.calls.some(
+    ([input, init]) => urlOf(input).endsWith(`/ventures/${VENTURE}/sessions`) && init?.method === 'POST',
+  );
+}
+
+/** The body of the `POST /ventures/:id/sessions` that created the call's conversation. */
+function createdSession(): unknown {
+  const call = fetchMock.mock.calls.find(
+    ([input, init]) => urlOf(input).endsWith(`/ventures/${VENTURE}/sessions`) && init?.method === 'POST',
+  );
+  const body = call?.[1]?.body;
+  if (body && ArrayBuffer.isView(body)) return JSON.parse(new TextDecoder().decode(body)) as unknown;
+  return typeof body === 'string' ? (JSON.parse(body) as unknown) : undefined;
+}
 
 describe('starting a call', () => {
   it('starts when the founder clicks Call, never when history comes back to the call’s URL', async () => {
@@ -346,6 +378,127 @@ describe('starting a call', () => {
   });
 });
 
+describe('Remember or Private for a call from New chat', () => {
+  it('remembers the call’s conversation by default', async () => {
+    renderApp([BASE]);
+    await userEvent.click(await screen.findByRole('link', { name: 'Call from New chat' }));
+    await waitFor(() => {
+      expect(createdSession()).toMatchObject({ privacy: 'standard' });
+    });
+  });
+
+  it('makes the call private when New chat chose Private', async () => {
+    setStartPrivacy(VENTURE, 'ephemeral');
+    renderApp([BASE]);
+    await userEvent.click(await screen.findByRole('link', { name: 'Call from New chat' }));
+    await waitFor(() => {
+      expect(createdSession()).toMatchObject({ privacy: 'ephemeral' });
+    });
+  });
+
+  it('offers the choice before a New chat call that waits for Start call', async () => {
+    // A tab that has seen no click (a link opened later): the call waits for Start call.
+    Object.defineProperty(navigator, 'userActivation', {
+      configurable: true,
+      value: { hasBeenActive: false, isActive: false },
+    });
+    onTestFinished(() => {
+      Reflect.deleteProperty(navigator, 'userActivation');
+    });
+    fetchMock.mockImplementation((input, init) => {
+      const url = urlOf(input);
+      if (url.endsWith('/call-config')) return Promise.resolve(json(CALL_CONFIG));
+      if (url.endsWith(`/ventures/${VENTURE}/sessions`) && init?.method === 'POST') {
+        return new Promise<Response>(() => undefined);
+      }
+      return Promise.resolve(json({ code: 'not_found' }, 404));
+    });
+    renderApp([`${BASE}?call=1`]);
+    const start = await screen.findByRole('button', { name: 'Start call' });
+    await waitFor(() => {
+      expect(start).toBeEnabled();
+    });
+    const group = screen.getByRole('group', { name: 'Memory for this call' });
+    expect(within(group).getByRole('radio', { name: 'Remember this call' })).toBeChecked();
+    await userEvent.click(within(group).getByRole('radio', { name: 'Private, a one-off' }));
+    await userEvent.click(start);
+    await waitFor(() => {
+      expect(createdSession()).toMatchObject({ privacy: 'ephemeral' });
+    });
+  });
+
+  it('from the sidebar, waits on the start screen with Remember chosen, and starts on Start call', async () => {
+    const { engine } = renderApp([`${BASE}/knowledge`]);
+    await userEvent.click(await screen.findByRole('link', { name: 'Call from the sidebar' }));
+    const start = await screen.findByRole('button', { name: 'Start call' });
+    await waitFor(() => {
+      expect(start).toBeEnabled();
+    });
+    const group = screen.getByRole('group', { name: 'Memory for this call' });
+    expect(within(group).getByRole('radio', { name: 'Remember this call' })).toBeChecked();
+    expect(group).toHaveAccessibleDescription(
+      "Corin's vEIR will remember this call and pick up from it next time.",
+    );
+    // Nothing is created or started before the founder chooses.
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(sessionCreated()).toBe(false);
+    expect(engine.start).not.toHaveBeenCalled();
+    await userEvent.click(start);
+    await waitFor(() => {
+      expect(createdSession()).toMatchObject({ privacy: 'standard' });
+    });
+  });
+
+  it('from the sidebar, a private call is chosen before it starts', async () => {
+    renderApp([`${BASE}/knowledge`]);
+    await userEvent.click(await screen.findByRole('link', { name: 'Call from the sidebar' }));
+    const start = await screen.findByRole('button', { name: 'Start call' });
+    await waitFor(() => {
+      expect(start).toBeEnabled();
+    });
+    await userEvent.click(screen.getByRole('radio', { name: 'Private, a one-off' }));
+    await userEvent.click(start);
+    await waitFor(() => {
+      expect(createdSession()).toMatchObject({ privacy: 'ephemeral' });
+    });
+  });
+
+  it('starts at once only for the opening that New chat’s Call button made', async () => {
+    fetchMock.mockImplementation((input, init) => {
+      const url = urlOf(input);
+      if (url.endsWith('/call-config')) return Promise.resolve(json(CALL_CONFIG));
+      if (url.endsWith(`/ventures/${VENTURE}/sessions`) && init?.method === 'POST') {
+        return new Promise<Response>(() => undefined);
+      }
+      return Promise.resolve(json({ code: 'not_found' }, 404));
+    });
+    const { url } = renderApp([BASE]);
+    await userEvent.click(await screen.findByRole('link', { name: 'Call from New chat' }));
+    await waitFor(() => {
+      expect(sessionCreated()).toBe(true);
+    });
+    await userEvent.click(await screen.findByRole('button', { name: 'Not now' }));
+    await waitFor(() => {
+      expect(url()).toBe(BASE);
+    });
+    fetchMock.mockClear();
+    // A later Call from the sidebar is not beside the choice: it waits for Start call.
+    await userEvent.click(screen.getByRole('link', { name: 'Call from the sidebar' }));
+    const start = await screen.findByRole('button', { name: 'Start call' });
+    await waitFor(() => {
+      expect(start).toBeEnabled();
+    });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(sessionCreated()).toBe(false);
+  });
+
+  it('offers no choice for a call in an existing conversation', async () => {
+    renderApp([`${BASE}/c/${SESSION}?call=1`]);
+    await screen.findByRole('button', { name: 'Start call' });
+    expect(screen.queryByRole('group', { name: /Memory for this/ })).toBeNull();
+  });
+});
+
 describe('signing out during a call', () => {
   it('ends the call on the server before the session is revoked', async () => {
     const { engine, log } = renderApp([`${BASE}/c/${SESSION}?call=1`], {
@@ -398,6 +551,8 @@ describe('the mini call bar', () => {
 
   it('warns when the time is nearly up, and says when the call ended out of view', async () => {
     const { engine, bar } = await minimized();
+    // The bar floats over the page on the shared glass surface.
+    expect(bar).toHaveClass('glass-strong');
     const status = within(bar).getByRole('status');
     expect(status).toHaveTextContent('');
     act(() => {

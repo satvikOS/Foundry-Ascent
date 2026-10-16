@@ -121,7 +121,10 @@ export type EndCallRequest = z.infer<typeof EndCallRequest>;
 export const CallSummary = z.object({
   turnCount: z.number().int().min(0),
   durationSeconds: z.number().int().min(0),
+  /** AI memory of the call still awaiting a person (proposals made before memory was kept automatically). */
   memoryProposalIds: z.array(Id),
+  /** What the vEIR remembered from the call by itself (kept automatically; the founder can edit or forget it). */
+  memoryKeptIds: z.array(Id).optional(),
   nextActions: z.array(NextAction),
   escalationIds: z.array(Id),
 });

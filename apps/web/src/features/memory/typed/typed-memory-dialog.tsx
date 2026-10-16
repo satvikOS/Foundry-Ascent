@@ -24,6 +24,7 @@ import { errorMessage } from '@/lib/api/errors';
 import { applyFieldErrors } from '@/lib/form-errors';
 import { VISIBILITY_LABELS } from '@/lib/labels';
 import { SelectField, type SelectFieldOption } from '@/components/ui/select-field';
+import { useMemoryReview } from '@/features/knowledge/review-api';
 
 import { useCreateVentureMemory, useOptimisticMemoryAction } from '../api';
 import {
@@ -265,6 +266,7 @@ export function TypedMemoryDialog({
   const complete = listed === null || full.complete;
   const { createMemory, mutation: createMutation } = useCreateVentureMemory(ventureId);
   const correct = useOptimisticMemoryAction(ventureId);
+  const keep = useMemoryReview(ventureId);
   const [formError, setFormError] = useState<string | null>(null);
   const copy = COPY[kind];
   const editing = memory !== null;
@@ -304,6 +306,9 @@ export function TypedMemoryDialog({
           onOpenChange(false);
           return;
         }
+        // A suggestion the vEIR saved before memory was kept automatically is kept first (the person editing it
+        // means to keep it): the server corrects only kept memory of the vEIR's.
+        if (memory.status === 'proposed') await keep.mutateAsync({ ids: [memory.id], action: 'approve' });
         await correct.mutateAsync({ memoryId: memory.id, action: { action: 'correct', patch } });
         toast.success(`Updated — saved as a new version`);
       } else {
@@ -334,7 +339,7 @@ export function TypedMemoryDialog({
     }
   });
 
-  const pending = createMutation.isPending || correct.isPending;
+  const pending = createMutation.isPending || correct.isPending || keep.isPending;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

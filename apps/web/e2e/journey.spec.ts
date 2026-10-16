@@ -154,7 +154,12 @@ test.describe('founder journey', () => {
       conversationId = result.conversationId;
       await expectDisclosureInView(page);
       await expect(page.getByRole('heading', { level: 1 })).toContainText('Which assumption should we test');
-      await expect(result.answer.getByRole('button', { name: /^Evidence E1: / }).first()).toBeVisible();
+      await expect(result.answer.getByRole('button', { name: /^Source 1: / }).first()).toBeVisible();
+      // Citations are quiet numbers, and no report artefact (raw keys, a "Limited evidence" quote) shows.
+      await expect(result.answer.getByRole('button', { name: /^Source 1: / }).first()).toHaveText('1');
+      await expect(result.answer.locator('[data-slot="markdown"]').first()).not.toContainText(
+        /\[E\d|Limited evidence/,
+      );
       // The conversation is listed (and current) in the sidebar's recents, under its own title.
       const row = page
         .getByRole('navigation', { name: 'Recent conversations' })
@@ -166,8 +171,8 @@ test.describe('founder journey', () => {
 
     await test.step('a citation opens the Sources panel on that source; reasoning expands in place', async () => {
       const answer = page.getByRole('article', { name: 'Exchange 1' });
-      const chip = answer.getByRole('button', { name: /^Evidence E1: / }).first();
-      const title = ((await chip.getAttribute('aria-label')) ?? '').replace(/^Evidence E1: /, '');
+      const chip = answer.getByRole('button', { name: /^Source 1: / }).first();
+      const title = ((await chip.getAttribute('aria-label')) ?? '').replace(/^Source 1: /, '');
       await chip.click();
       const panel = page.getByRole('complementary', { name: 'Context inspector' });
       await expect(panel.getByRole('tab', { name: 'Sources' })).toHaveAttribute('aria-selected', 'true');
@@ -185,32 +190,44 @@ test.describe('founder journey', () => {
       ).toBeVisible();
     });
 
-    await test.step('keep what the vEIR suggests remembering', async () => {
-      const suggestion = page
-        .getByRole('article', { name: 'Exchange 1' })
-        .getByRole('list', { name: 'Memory suggestions' })
-        .getByRole('listitem')
-        .first();
-      // The row becomes actionable once the refreshed venture memory includes the proposal.
-      const keep = suggestion.getByRole('button', { name: /^Keep: / });
-      await expect(keep).toBeVisible({ timeout: 30_000 });
-      // Keep goes through the app's one review path (the batch route).
-      const reviewed = page.waitForResponse(
-        (response) => response.url().endsWith('/memory/batch') && response.request().method() === 'POST',
-      );
-      await keep.click();
-      const review = await reviewed;
-      expect(review.status()).toBe(200);
-      await expect(suggestion.getByText('Kept')).toBeVisible();
-      // Leave the venture's memory as the next run finds it (the vEIR would not propose a kept fact again).
-      const { ids } = review.request().postDataJSON() as { ids: string[] };
-      for (const id of ids) {
-        const removed = await page.request.patch(`/api/v1/memory/${id}`, {
-          headers: { 'x-requested-with': 'foundry-ascent', 'content-type': 'application/json' },
-          data: { action: 'delete' },
+    await test.step('what the vEIR learned goes to Knowledge on its own: nothing to keep or approve', async () => {
+      const answer = page.getByRole('article', { name: 'Exchange 1' });
+      // One quiet line once the refreshed venture memory includes what the answer saved. No click needed.
+      const saved = answer.getByTestId('memory-saved');
+      await expect(saved).toBeVisible({ timeout: 30_000 });
+      await expect(saved).toContainText('Saved to Knowledge:');
+      await expect(answer.getByRole('button', { name: /^(Keep|Not now)/ })).toHaveCount(0);
+      await expect(answer.getByText(/would like to remember/)).toHaveCount(0);
+      const href = (await saved.getByRole('link').getAttribute('href')) ?? '';
+      const memoryId = /[?&]m=([0-9a-f-]{36})/.exec(href)?.[1];
+      expect(memoryId, 'the saved line links the item in Knowledge').toBeTruthy();
+      // It is in the venture's memory already, used by the vEIR without anyone approving it.
+      const item = await page.request.get(`/api/v1/memory/${memoryId ?? ''}`);
+      expect(item.status()).toBe(200);
+      const learned = (await item.json()) as { status: string; origin: string; keptAutomatically?: boolean };
+      // INTEGRATION (w4-memory): a server that keeps memory automatically says so on every item
+      // (`keptAutomatically`), and then what an answer taught must arrive kept: confirmed, kept automatically,
+      // never a proposal. Until that server is merged, this branch's server still saves it as a proposal, which the
+      // UI shows as learned (nothing to approve). Either way, exactly one of the two holds, so a half-merged server
+      // (the field without kept memory, or kept memory without the field) fails here.
+      if ('keptAutomatically' in learned) {
+        expect(learned, 'AI memory arrives already kept').toMatchObject({
+          origin: 'ai',
+          status: 'confirmed',
+          keptAutomatically: true,
         });
-        expect([200, 204]).toContain(removed.status());
+      } else {
+        expect(learned, 'before w4-memory: still a proposal, shown as learned').toMatchObject({
+          origin: 'ai',
+          status: 'proposed',
+        });
       }
+      // Leave the venture's memory as the next run finds it (the vEIR would not save a known fact again).
+      const removed = await page.request.patch(`/api/v1/memory/${memoryId ?? ''}`, {
+        headers: { 'x-requested-with': 'foundry-ascent', 'content-type': 'application/json' },
+        data: { action: 'delete' },
+      });
+      expect([200, 204]).toContain(removed.status());
     });
 
     await test.step('a follow-up from the conversation composer stays in Auto (no mode is sent)', async () => {

@@ -16,7 +16,8 @@ export type SelectedMemory =
 
 /**
  * The memory item open in the Knowledge page's side panel (`?m=`). It is found in the lists on screen
- * (kept memory, the filtered list, proposals) and otherwise fetched with `GET /memory/:id`, so
+ * (everything the vEIR knows, which includes older suggestions, and the filtered list) and otherwise fetched
+ * with `GET /memory/:id`, so
  * superseded, rejected and expired items, and the "earlier version" a correction replaced, keep their
  * detail and history. Only a 404, or an item of another venture, counts as gone.
  */
@@ -25,7 +26,6 @@ export function useSelectedMemory(
   search: Pick<KnowledgeSearch, 'm' | 'type' | 'status' | 'q' | 'pinned'>,
 ): SelectedMemory {
   const all = useMemory(ventureId);
-  const proposed = useMemory(ventureId, { status: 'proposed' });
   // The same filters as the memory list, so this shares its cached query.
   const filtered = useMemory(ventureId, {
     type: search.type,
@@ -37,10 +37,8 @@ export function useSelectedMemory(
   const listed =
     id === undefined
       ? null
-      : ([all.data, filtered.data, proposed.data]
-          .flatMap((items) => items ?? [])
-          .find((item) => item.id === id) ?? null);
-  const listsPending = all.isPending || proposed.isPending || filtered.isPending;
+      : ([all.data, filtered.data].flatMap((items) => items ?? []).find((item) => item.id === id) ?? null);
+  const listsPending = all.isPending || filtered.isPending;
   const fetched = useQuery({
     ...memoryItemQueryOptions(id ?? ''),
     enabled: id !== undefined && listed === null && !listsPending,

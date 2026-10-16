@@ -9,7 +9,7 @@ import type { TurnStreamError, TurnStreamState } from '@/lib/api/hooks/turn-stre
 import { InspectorProvider } from '@/components/shell/inspector';
 
 import { deriveTurnProgress } from '../coach/progress';
-import { IDS, makeSession, makeTurn } from '../coach/testing';
+import { IDS, makeMemory, makeSession, makeTurn } from '../coach/testing';
 import { LiveExchange, StoredExchange, TurnFailure } from './exchange';
 import { PanelStateProvider } from './panel-state';
 import { VeirAnswer, wasInterrupted, type VeirAnswerProps } from './veir-answer';
@@ -58,7 +58,7 @@ function answerProps(overrides: Partial<VeirAnswerProps> = {}): VeirAnswerProps 
     onOpenSource: vi.fn(),
     onShowSources: vi.fn(),
     nextActions: { saved: new Set(), savingIndex: null, onAdd: vi.fn() },
-    memory: null,
+    saved: null,
     escalation: { existing: null },
     ...overrides,
   };
@@ -86,9 +86,10 @@ describe('LiveExchange', () => {
     );
     const prose = screen.getByText(/Talk to the people who feel the pain/).closest('[data-slot="markdown"]');
     expect(prose).not.toBeNull();
-    expect(prose).toHaveTextContent('Talk to the people who feel the pain E1. Then decide.');
+    // A quiet raised number, read to screen readers as the source it is.
+    expect(prose).toHaveTextContent('Talk to the people who feel the pain 1 (Source 1). Then decide.');
     // The key is not a button yet: the evidence list comes with the stored answer.
-    expect(screen.queryByRole('button', { name: /Evidence E1/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Source 1/ })).toBeNull();
   });
 
   it('lays the stored answer out exactly like the streamed one, so replacing it does not jump', () => {
@@ -122,7 +123,7 @@ describe('VeirAnswer', () => {
     const user = userEvent.setup();
     expect(screen.queryByRole('list', { name: 'Claims and their sources' })).toBeNull();
     await user.click(
-      screen.getByRole('button', { name: 'Evidence E1: 14 problem interviews with undergraduates' }),
+      screen.getByRole('button', { name: 'Source 1: 14 problem interviews with undergraduates' }),
     );
     expect(props.onOpenSource).toHaveBeenCalledWith('E1');
     await user.click(screen.getByRole('button', { name: /^Sources & reasoning/ }));
@@ -136,6 +137,57 @@ describe('VeirAnswer', () => {
     expect(props.nextActions.onAdd).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'Interview five library staff' }),
       0,
+    );
+  });
+
+  it('never shows a message with no words when the answer was only the narrowing note', () => {
+    const base = makeTurn();
+    if (!base.response || !base.validator) throw new Error('fixture has no response');
+    const turn = makeTurn({
+      response: {
+        ...base.response,
+        answer:
+          '> **Limited evidence:** only 0 of 2 factual statements in this answer are backed by your venture records. Treat the rest as unverified until you can check them.',
+      },
+      validator: { ...base.validator, narrowed: true, groundingCoverage: 0 },
+    });
+    if (!turn.response) throw new Error('no response');
+    renderWithProviders(<VeirAnswer {...answerProps({ turn, response: turn.response })} />);
+    const prose = screen
+      .getByText(/enough to give you a reliable answer yet/)
+      .closest('[data-slot="markdown"]');
+    expect(prose).toHaveTextContent(
+      "I don't have enough to give you a reliable answer yet. Could you share a bit more detail about what you've observed so far?",
+    );
+    expect(prose).not.toHaveTextContent(/Limited evidence/);
+  });
+
+  it('reads as a conversation: no "Limited evidence" quote, grouped keys as quiet citations', async () => {
+    const base = makeTurn();
+    if (!base.response || !base.validator) throw new Error('fixture has no response');
+    const answer =
+      '> **Limited evidence:** only 1 of 2 factual statements in this answer are backed by your venture records.\n\n' +
+      'Your riskiest assumption is repeat use [E1, E2].';
+    const turn = makeTurn({
+      response: { ...base.response, answer },
+      validator: { ...base.validator, narrowed: true, groundingCoverage: 0.5 },
+    });
+    if (!turn.response) throw new Error('no response');
+    renderWithProviders(<VeirAnswer {...answerProps({ turn, response: turn.response })} />);
+    const prose = screen
+      .getByText(/Your riskiest assumption is repeat use/)
+      .closest('[data-slot="markdown"]');
+    expect(prose).not.toHaveTextContent(/Limited evidence|\[E/);
+    expect(screen.queryByTestId('narrowed-banner')).toBeNull();
+    // Each key is its own quiet citation, named for screen readers starting with the number it shows.
+    expect(screen.getByRole('button', { name: /^Source 1: / })).toHaveTextContent(/^1$/);
+    expect(screen.getByRole('button', { name: /^Source 2: / })).toHaveTextContent(/^2$/);
+    // The information stays under Sources & reasoning.
+    const toggle = screen.getByRole('button', { name: /^Sources & reasoning/ });
+    expect(toggle).toHaveTextContent('limited evidence');
+    await userEvent.setup().click(toggle);
+    expect(screen.getByTestId('narrowed-banner')).toHaveTextContent(
+      'Limited to what your evidence supports.',
     );
   });
 
@@ -250,20 +302,28 @@ describe('a call turn the founder interrupted', () => {
 });
 
 describe('StoredExchange', () => {
-  async function renderStored(turn: ReturnType<typeof makeTurn>) {
+  async function renderStored(
+    turn: ReturnType<typeof makeTurn>,
+    {
+      memoryItems = [],
+      privacy = 'standard',
+    }: { memoryItems?: ReturnType<typeof makeMemory>[]; privacy?: 'standard' | 'ephemeral' } = {},
+  ) {
     const ui = (
       <InspectorProvider>
         <PanelStateProvider>
           <StoredExchange
             turn={turn}
-            session={makeSession({ startedBy: { id: IDS.principal, displayName: 'Maya Example' } })}
+            session={makeSession({
+              privacy,
+              startedBy: { id: IDS.principal, displayName: 'Maya Example' },
+            })}
             personaName="Corin’s vEIR"
             tenant="ain"
             ventureId={IDS.venture}
             canEdit
             latest
-            memoryItems={[]}
-            memoryLoading={false}
+            memoryItems={memoryItems}
             escalations={[]}
             sendDisabledReason={null}
             onRetry={vi.fn()}
@@ -292,5 +352,37 @@ describe('StoredExchange', () => {
   it('falls back to the starter when the API names no author (an older API)', async () => {
     const { container } = await renderStored(makeTurn({ author: null }));
     expect(container.querySelector('[data-slot="user-avatar"]')).toHaveTextContent('ME');
+  });
+
+  it('says quietly what the vEIR saved from the answer, with nothing to keep or decline', async () => {
+    const saved = makeMemory({ status: 'confirmed' });
+    await renderStored(makeTurn(), { memoryItems: [saved] });
+    const cue = screen.getByTestId('memory-saved');
+    expect(cue).toHaveTextContent('Saved to Knowledge: Exam weeks drive demand');
+    expect(within(cue).getByRole('link', { name: 'Exam weeks drive demand' })).toHaveAttribute(
+      'href',
+      `/ain/app/v/${IDS.venture}/knowledge?m=${IDS.memory}`,
+    );
+    expect(screen.queryByText(/would like to remember/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Keep/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Not now/ })).toBeNull();
+  });
+
+  it('counts an item saved before memory was automatic as saved, and nothing forgotten since', async () => {
+    const { unmount } = await renderStored(makeTurn(), {
+      memoryItems: [makeMemory({ status: 'proposed' })],
+    });
+    expect(screen.getByTestId('memory-saved')).toBeInTheDocument();
+    unmount();
+    await renderStored(makeTurn(), { memoryItems: [makeMemory({ status: 'rejected' })] });
+    expect(screen.queryByTestId('memory-saved')).toBeNull();
+  });
+
+  it('says nothing about memory in a private conversation', async () => {
+    await renderStored(makeTurn(), {
+      memoryItems: [makeMemory({ status: 'confirmed' })],
+      privacy: 'ephemeral',
+    });
+    expect(screen.queryByTestId('memory-saved')).toBeNull();
   });
 });

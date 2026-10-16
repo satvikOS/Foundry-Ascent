@@ -38,6 +38,8 @@ describe('typed attribute parsing', () => {
       reversal_condition: 'If repeat use < 15%',
       empty: '  ',
       list: [],
+      // Which evidence a suggestion cited is bookkeeping, not something to show people.
+      evidence_keys: ['E1', 'E2'],
     });
     expect(rows).toEqual([
       { key: 'riskiness', label: 'Riskiness', value: 'High' },

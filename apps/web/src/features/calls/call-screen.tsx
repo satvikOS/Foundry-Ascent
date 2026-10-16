@@ -1,6 +1,7 @@
-import { useQueryClient } from '@tanstack/react-query';
+import type { SessionView } from '@foundry/contracts';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { ChevronDown, Settings2, X } from 'lucide-react';
+import { ChevronDown, EyeOff, Settings2, X } from 'lucide-react';
 import { Dialog as DialogPrimitive } from 'radix-ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -18,7 +19,7 @@ import {
 import { toast } from '@/components/ui/toast';
 import { SimpleTooltip } from '@/components/ui/tooltip';
 import { errorMessage } from '@/lib/api/errors';
-import { useCreateSession } from '@/lib/api/hooks/sessions';
+import { sessionQueryOptions, useCreateSession } from '@/lib/api/hooks/sessions';
 import { queryKeys } from '@/lib/api/query-keys';
 import { canWrite } from '@/lib/auth/roles';
 import { prefersHalfDuplex } from '@/lib/realtime/browser';
@@ -26,6 +27,8 @@ import { discardConversation } from '@/lib/realtime/call-api';
 import type { CallEngine } from '@/lib/realtime/call-engine';
 import { cn } from '@/lib/utils';
 
+import { newConversationRequest } from '../chat/first-message';
+import { startPrivacy, takeChoiceInView, useStartPrivacy } from '../chat/privacy-choice';
 import { useLoadedCall } from './call-context';
 import { CallLive } from './call-live';
 import { callBlocker, CallLobby } from './call-lobby';
@@ -49,6 +52,15 @@ const FALLBACK_VEIR: CallVeir = {
  */
 function hasUserActivation(): boolean {
   return 'userActivation' in navigator ? navigator.userActivation.hasBeenActive : true;
+}
+
+/**
+ * Whether the call's conversation is private, from the conversation already loaded under the call screen (or
+ * created for the call): nothing is requested for it. Null while unknown.
+ */
+function useSessionPrivacy(sessionId: string | null): SessionView['privacy'] | null {
+  const session = useQuery({ ...sessionQueryOptions(sessionId ?? ''), enabled: false });
+  return sessionId ? (session.data?.session.privacy ?? null) : null;
 }
 
 /**
@@ -102,6 +114,9 @@ export function CallScreen() {
   const config = useCallConfig(routeVenture, open && writable && !active);
   const veir = useCallVeir(ventureId, config.data?.veir) ?? FALLBACK_VEIR;
   const createSession = useCreateSession(routeVenture ?? '');
+  // A call from New chat takes New chat's choice: remembered (the default) or private, a one-off.
+  const [newPrivacy, setNewPrivacy] = useStartPrivacy(routeVenture ?? '');
+  const privacy = useSessionPrivacy(snapshot.sessionId ?? route?.sessionId ?? null);
   // Stored with the person on the server: the first call in any browser says how voice is handled.
   const [noticeSeen, acknowledgeNotice] = useCallNotice(me.principal.id, config.data);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -167,40 +182,37 @@ export function CallScreen() {
       // New chat: the call gets a conversation of its own, which becomes the page once the call is live.
       const key = `new:${target}`;
       attempted.current = key;
-      createSession.mutate(
-        {},
-        {
-          onSuccess: (session) => {
-            if (attempted.current !== key) {
-              // The screen was closed while the conversation was being created.
-              discard(session.id, target);
-              return;
-            }
-            void engine
-              .start({ ...options, sessionId: session.id })
-              .catch(() => undefined)
-              .then(() => {
-                const { phase, sessionId: calling } = engine.getSnapshot();
-                if (calling !== session.id || phase === 'failed' || phase === 'idle') {
-                  discard(session.id, target);
-                  return;
-                }
-                const now = routeNow.current;
-                if (now?.open !== true || now.sessionId !== null || now.ventureId !== target) return;
-                attempted.current = session.id;
-                void navigate({
-                  to: '/$tenant/app/v/$ventureId/c/$sessionId',
-                  params: { tenant, ventureId: target, sessionId: session.id },
-                  search: { call: 1 },
-                  replace: true,
-                });
+      createSession.mutate(newConversationRequest({ mode: undefined, privacy: startPrivacy(target) }), {
+        onSuccess: (session) => {
+          if (attempted.current !== key) {
+            // The screen was closed while the conversation was being created.
+            discard(session.id, target);
+            return;
+          }
+          void engine
+            .start({ ...options, sessionId: session.id })
+            .catch(() => undefined)
+            .then(() => {
+              const { phase, sessionId: calling } = engine.getSnapshot();
+              if (calling !== session.id || phase === 'failed' || phase === 'idle') {
+                discard(session.id, target);
+                return;
+              }
+              const now = routeNow.current;
+              if (now?.open !== true || now.sessionId !== null || now.ventureId !== target) return;
+              attempted.current = session.id;
+              void navigate({
+                to: '/$tenant/app/v/$ventureId/c/$sessionId',
+                params: { tenant, ventureId: target, sessionId: session.id },
+                search: { call: 1 },
+                replace: true,
               });
-          },
-          onError: (error) => {
-            setCreateError(errorMessage(error));
-          },
+            });
         },
-      );
+        onError: (error) => {
+          setCreateError(errorMessage(error));
+        },
+      });
     },
     [acknowledgeNotice, createSession, discard, engine, navigate, route, tenant],
   );
@@ -209,6 +221,20 @@ export function CallScreen() {
   useEffect(() => {
     if (!open) attempted.current = null;
   }, [open]);
+
+  /**
+   * Whether this opening of the screen came from New chat's Call button, beside Remember or Private. A call
+   * into a new conversation from anywhere else (the sidebar, ⌘K) waits on the start screen, which offers the
+   * choice first. Taken when the screen opens (before it can start a call), forgotten when it closes.
+   */
+  const choiceSeen = useRef(false);
+  useEffect(() => {
+    if (!open) {
+      choiceSeen.current = false;
+      return;
+    }
+    if (routeVenture !== null && takeChoiceInView(routeVenture)) choiceSeen.current = true;
+  }, [open, routeVenture]);
 
   // A call that could not start is forgotten once the screen closes. If it failed while minimized, the
   // screen that explains why was closed, so a toast says it instead.
@@ -250,11 +276,13 @@ export function CallScreen() {
 
   // Arrived by clicking Call: start without another click (the first call ever shows how voice is handled
   // first, and starts from its Start call). Back or Forward to a call's URL is not a click: it waits for
-  // Start call too.
+  // Start call too. A call into a new conversation starts at once only from New chat's Call button, where
+  // Remember or Private was in view; from anywhere else it waits for Start call, beside that choice.
   useEffect(() => {
     if (route?.open !== true || !ready || snapshot.phase !== 'idle' || createSession.isPending) return;
     const key = route.sessionId ?? `new:${route.ventureId}`;
     if (attempted.current === key || !noticeSeen || !hasUserActivation() || arrivedByHistory()) return;
+    if (route.sessionId === null && !choiceSeen.current) return;
     begin();
   }, [arrivedByHistory, begin, createSession.isPending, noticeSeen, ready, route, snapshot.phase]);
 
@@ -298,6 +326,7 @@ export function CallScreen() {
           <CallHeader
             live={live}
             snapshot={snapshot}
+            isPrivate={privacy === 'ephemeral'}
             onClose={
               live
                 ? () => {
@@ -319,6 +348,7 @@ export function CallScreen() {
                 veir={veir}
                 ended={ended}
                 canWrite={writable}
+                privacy={privacy}
                 onBackToConversation={backToConversation}
                 onCallAgain={() => {
                   begin();
@@ -345,6 +375,9 @@ export function CallScreen() {
               failure={snapshot.phase === 'failed' ? snapshot.error : null}
               busy={createSession.isPending}
               voiceNotice={!noticeSeen}
+              privacy={
+                route?.sessionId === null && writable ? { value: newPrivacy, onChange: setNewPrivacy } : null
+              }
               onStart={() => {
                 begin();
               }}
@@ -372,10 +405,13 @@ export function CallScreen() {
 function CallHeader({
   live,
   snapshot,
+  isPrivate,
   onClose,
 }: {
   live: boolean;
   snapshot: Parameters<typeof useCallClock>[0];
+  /** A private call (a one-off) says so quietly while it lasts. */
+  isPrivate: boolean;
   onClose: () => void;
 }) {
   const clock = useCallClock(snapshot);
@@ -404,12 +440,30 @@ function CallHeader({
               · {clock.leftLabel}
             </span>
           ) : null}
+          {isPrivate ? <PrivateMark /> : null}
+        </p>
+      ) : isPrivate ? (
+        <p className="text-small">
+          <PrivateMark />
         </p>
       ) : (
         <span />
       )}
       {live ? <CallSettings /> : <span />}
     </header>
+  );
+}
+
+function PrivateMark() {
+  return (
+    <span
+      data-testid="private-indicator"
+      className="inline-flex items-center gap-1 text-muted-foreground"
+      title="Private: nothing from this call is remembered"
+    >
+      <EyeOff aria-hidden className="size-3.5" />
+      Private
+    </span>
   );
 }
 

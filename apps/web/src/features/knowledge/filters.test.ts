@@ -32,10 +32,10 @@ describe('validateKnowledgeSearch', () => {
     });
   });
 
-  it('opens the review queue for old proposed-memory links', () => {
-    expect(validateKnowledgeSearch({ view: 'proposed' }).view).toBe('proposed');
+  it('opens the memory list for old review-queue links: nothing waits for review any more', () => {
+    expect(validateKnowledgeSearch({ view: 'proposed' }).view).toBeUndefined();
     expect(validateKnowledgeSearch({ status: 'proposed' })).toMatchObject({
-      view: 'proposed',
+      view: undefined,
       status: undefined,
     });
     expect(validateKnowledgeSearch({ view: 'all' }).view).toBeUndefined();
@@ -59,17 +59,20 @@ describe('memory list filters', () => {
   });
   const proposal = makeMemory({ id: IDS.memory3, status: 'proposed', type: 'risk' });
 
-  it('leaves proposals to the review queue and puts pinned items first', () => {
-    expect(memoryListRows([kept, proposal, pinned], undefined).map((m) => m.id)).toEqual([
-      IDS.memory2,
-      IDS.memory,
-    ]);
+  const forgotten = makeMemory({ id: IDS.session2, status: 'deleted', type: 'risk' });
+  const replaced = makeMemory({ id: IDS.chunk, status: 'superseded', type: 'risk' });
+
+  it('lists everything the vEIR knows, older suggestions included, pinned items first', () => {
+    expect(memoryListRows([kept, proposal, pinned, forgotten, replaced], undefined).map((m) => m.id)).toEqual(
+      [IDS.memory2, IDS.memory3, IDS.memory],
+    );
     expect(memoryListRows([kept, proposal, pinned], 'disputed').map((m) => m.id)).toEqual([IDS.memory2]);
   });
 
-  it('offers a chip per kept type with its count, and keeps the selected chip visible', () => {
-    expect(typeChips([kept, pinned, proposal], undefined)).toEqual([
+  it('offers a chip per type the vEIR knows with its count, and keeps the selected chip visible', () => {
+    expect(typeChips([kept, pinned, proposal, forgotten], undefined)).toEqual([
       { type: 'decision', count: 1 },
+      { type: 'risk', count: 1 },
       { type: 'insight', count: 1 },
     ]);
     expect(typeChips([kept], 'milestone')).toEqual([

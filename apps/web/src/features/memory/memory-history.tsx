@@ -23,16 +23,16 @@ import { formatDateTime, formatRelative, isoString } from '@/lib/format';
 type EventAction = z.infer<typeof MemoryEventAction>;
 
 const EVENT_DEFS: Record<EventAction, { label: string; icon: LucideIcon }> = {
-  proposed: { label: 'Proposed', icon: CircleDashed },
+  proposed: { label: 'Suggested', icon: CircleDashed },
   created: { label: 'Created', icon: Plus },
-  approved: { label: 'Approved', icon: CircleCheck },
+  approved: { label: 'Kept', icon: CircleCheck },
   rejected: { label: 'Rejected', icon: Ban },
-  corrected: { label: 'Corrected', icon: Pencil },
+  corrected: { label: 'Edited', icon: Pencil },
   superseded: { label: 'Superseded', icon: Undo2 },
   disputed: { label: 'Disputed', icon: TriangleAlert },
   pinned: { label: 'Pinned', icon: Pin },
   unpinned: { label: 'Unpinned', icon: PinOff },
-  deleted: { label: 'Deleted', icon: Trash },
+  deleted: { label: 'Forgotten', icon: Trash },
   expired: { label: 'Expired', icon: Clock },
 };
 
@@ -62,12 +62,14 @@ export function systemEventLine(action: EventAction, diff: Record<string, unknow
 }
 
 /**
- * A proposal the AI made (`origin: 'ai'` on its first event). Its actor is the person whose conversation it came
- * from, so it never reads "by" them: the vEIR suggested it, a person only reviews it.
+ * Memory the vEIR learned (`origin: 'ai'` on its first event). Its actor is the person whose conversation it
+ * came from, so it never reads "by" them: they did not write it.
  */
 export function aiEventLine(action: EventAction, diff: Record<string, unknown>): string | null {
+  // The vEIR came across it again in a later answer (a repeat, not a person's suggestion).
+  if (action === 'proposed' && diff.repeated === true) return 'Learned again in a conversation';
   if (diff.origin !== 'ai' || (action !== 'proposed' && action !== 'created')) return null;
-  return 'Suggested by AI';
+  return 'Learned from a conversation';
 }
 
 /** Changed fields in a diff, and a reason if one was recorded (values are not repeated here). */

@@ -58,7 +58,8 @@ test.describe('mobile 390×844', () => {
       await expectReachable(page, box);
       await expectReachable(page, page.getByRole('combobox', { name: 'Mode for the next message' }));
       await expectReachable(page, page.getByRole('button', { name: 'Add documents' }));
-      await expectReachable(page, page.getByRole('button', { name: 'Temporary' }));
+      await expectReachable(page, page.getByRole('radio', { name: 'Remember this conversation' }));
+      await expectReachable(page, page.getByRole('radio', { name: 'Private, a one-off' }));
 
       await box.fill(`What is our riskiest assumption? ${token}`);
       await expectReachable(page, page.getByRole('button', { name: 'Send message' }));
@@ -71,17 +72,19 @@ test.describe('mobile 390×844', () => {
       await expectNoHorizontalScroll(page);
       await expectReachable(page, composer(page));
       await expectDisclosureInView(page);
-      // One bar on a phone: the conversation's header carries the menu, its title, Call and New chat.
+      // One bar on a phone: the conversation's header carries the menu, its title and New chat. Calls start
+      // from the composer's voice button, as on New chat.
       const bar = page.locator('header').filter({ has: page.getByRole('heading', { level: 1 }) });
       await expect(page.locator('header:visible')).toHaveCount(1);
       await expectReachable(page, bar.getByRole('button', { name: 'Open navigation' }));
       await expect(bar).toContainText('AI');
-      await expectReachable(page, bar.getByRole('link', { name: /^Call / }));
+      await expect(bar.getByRole('link', { name: /^Call / })).toHaveCount(0);
+      await expectReachable(page, page.getByRole('main').getByRole('link', { name: /^Call / }));
       await expectReachable(page, bar.getByRole('link', { name: 'New chat' }));
       await expectReachable(page, page.getByRole('button', { name: 'Conversation options' }));
 
       // A citation opens the sources as a sheet.
-      const chip = answer.getByRole('button', { name: /^Evidence E1: / }).first();
+      const chip = answer.getByRole('button', { name: /^Source 1: / }).first();
       await expectReachable(page, chip);
       await chip.click();
       const panel = page.getByRole('dialog', { name: 'Context' });

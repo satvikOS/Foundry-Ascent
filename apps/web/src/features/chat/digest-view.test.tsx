@@ -9,7 +9,9 @@ import { jsonResponse, stubFetch } from '@/features/admin/shared/test-utils';
 import { awaitingDigest, useSession } from '@/lib/api/hooks/sessions';
 import { queryKeys } from '@/lib/api/query-keys';
 
-import { IDS, makeSession } from '../coach/testing';
+import { renderWithRouter } from '@/features/knowledge/test-utils';
+
+import { IDS, makeMemory, makeSession } from '../coach/testing';
 import { DigestView } from './digest-view';
 import { PanelStateProvider } from './panel-state';
 
@@ -17,7 +19,14 @@ function Harness() {
   const detail = useSession(IDS.session);
   if (!detail.data) return null;
   return (
-    <DigestView session={detail.data.session} personaName="Corin" canEdit memoryItems={[]} escalations={[]} />
+    <DigestView
+      session={detail.data.session}
+      personaName="Corin"
+      tenant="ain"
+      canEdit
+      memoryItems={[]}
+      escalations={[]}
+    />
   );
 }
 
@@ -94,7 +103,14 @@ describe('DigestView', () => {
         <TooltipProvider>
           <InspectorProvider>
             <PanelStateProvider>
-              <DigestView session={deleted} personaName="Corin" canEdit memoryItems={[]} escalations={[]} />
+              <DigestView
+                session={deleted}
+                personaName="Corin"
+                tenant="ain"
+                canEdit
+                memoryItems={[]}
+                escalations={[]}
+              />
             </PanelStateProvider>
           </InspectorProvider>
         </TooltipProvider>
@@ -105,5 +121,58 @@ describe('DigestView', () => {
     ).toBeInTheDocument();
     expect(screen.queryByText(/is writing a summary/)).not.toBeInTheDocument();
     expect(awaitingDigest(deleted)).toBe(false);
+  });
+
+  it('says quietly what the conversation saved to Knowledge, with nothing to review', async () => {
+    stubFetch().mockResolvedValue(jsonResponse({ items: [] }));
+    const ended = makeSession({
+      status: 'ended',
+      endedAt: new Date(Date.now() - 10_000).toISOString(),
+      digestDeleted: true,
+      recap: {
+        diagnosis: { stage: 'Discovery', immediate_constraint: 'Access', riskiest_assumption: 'Repeat use' },
+        evidence: [],
+        challenge: '',
+        next_actions: [],
+        escalation: { required: false, reason: null, category: null, priority: null, requested_role: null },
+        memory_candidate_ids: [IDS.memory, IDS.memory2],
+        generated_at: new Date().toISOString(),
+      },
+    });
+    await renderWithRouter(
+      <DigestView
+        session={ended}
+        personaName="Corin"
+        tenant="ain"
+        canEdit
+        memoryItems={[
+          makeMemory({ status: 'confirmed' }),
+          makeMemory({ id: IDS.memory2, title: 'Forgotten one', status: 'deleted' }),
+        ]}
+        escalations={[]}
+      />,
+    );
+    // Only what is still in Knowledge is named; there is no review button anywhere.
+    expect(screen.getByTestId('memory-saved')).toHaveTextContent(
+      'Saved to Knowledge: Exam weeks drive demand',
+    );
+    expect(screen.queryByRole('button', { name: /to remember|Review/ })).toBeNull();
+  });
+
+  it('ends a private chat saying nothing was kept', async () => {
+    stubFetch().mockResolvedValue(jsonResponse({ items: [] }));
+    const ended = makeSession({ status: 'ended', privacy: 'ephemeral', endedAt: new Date().toISOString() });
+    await renderWithRouter(
+      <DigestView
+        session={ended}
+        personaName="Corin"
+        tenant="ain"
+        canEdit
+        memoryItems={[]}
+        escalations={[]}
+      />,
+    );
+    expect(screen.getByRole('heading', { name: 'Private chat ended' })).toBeInTheDocument();
+    expect(screen.getByText('Nothing from it was kept.')).toBeInTheDocument();
   });
 });

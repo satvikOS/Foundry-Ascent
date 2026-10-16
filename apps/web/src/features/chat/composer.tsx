@@ -63,7 +63,7 @@ interface ComposerProps {
   textareaRef?: Ref<HTMLTextAreaElement>;
   /** Above the message box (attachments being uploaded). */
   top?: ReactNode;
-  /** Toolbar controls after the mode chip (attach, temporary chat). */
+  /** Toolbar controls before the mode chip (attach). */
   tools?: ReactNode;
   /** Toolbar controls just before Send (the call button). */
   actions?: ReactNode;

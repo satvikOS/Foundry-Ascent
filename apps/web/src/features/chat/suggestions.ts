@@ -4,13 +4,15 @@ import { titleFromMessage } from '@/lib/conversations';
 
 import { MODE_DETAILS } from '../coach/modes';
 
-/** A chip under the New chat composer: a message to start with, or a place that needs the founder. */
+/**
+ * A chip under the New chat composer: a message to start with, or open help requests. Memory is never one:
+ * what the vEIR learns is kept automatically, with nothing to review.
+ */
 export type Suggestion =
   | { id: string; kind: 'prompt'; label: string; prompt: string; icon: SuggestionIcon; mode?: CoachMode }
-  | { id: string; kind: 'review'; label: string; count: number; icon: SuggestionIcon }
   | { id: string; kind: 'help'; label: string; count: number; icon: SuggestionIcon };
 
-export type SuggestionIcon = 'review' | 'overdue' | 'goal' | 'assumption' | 'help' | 'idea';
+export type SuggestionIcon = 'overdue' | 'goal' | 'assumption' | 'help' | 'idea';
 
 const MAX_SUGGESTIONS = 4;
 const LABEL_MAX = 44;
@@ -20,26 +22,17 @@ function plural(count: number, one: string, many: string): string {
 }
 
 /**
- * Up to four starting points from the venture's state: memory waiting for review, an overdue action, the
- * current goal, an untested assumption and open help requests — topped up with general openers.
+ * Up to four starting points from the venture's state: an overdue action, the current goal, an untested
+ * assumption and open help requests — topped up with general openers.
  */
 export function newChatSuggestions(
   overview: Pick<
     VentureOverview,
-    'pendingMemoryCount' | 'overdueActions' | 'currentGoal' | 'openAssumptions' | 'openEscalations'
+    'overdueActions' | 'currentGoal' | 'openAssumptions' | 'openEscalations'
   > | null,
 ): Suggestion[] {
   const items: Suggestion[] = [];
   if (overview) {
-    if (overview.pendingMemoryCount > 0) {
-      items.push({
-        id: 'review',
-        kind: 'review',
-        icon: 'review',
-        count: overview.pendingMemoryCount,
-        label: `Review ${plural(overview.pendingMemoryCount, 'memory suggestion', 'memory suggestions')}`,
-      });
-    }
     const overdue = overview.overdueActions[0];
     if (overdue) {
       items.push({

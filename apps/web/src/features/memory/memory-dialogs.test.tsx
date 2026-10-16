@@ -7,6 +7,7 @@ import { memoryQueryOptions } from '@/lib/api/hooks/memory';
 import {
   bodyOf,
   json,
+  problem,
   renderWithRouter,
   stubFetch,
   testQueryClient,
@@ -45,46 +46,90 @@ function sent() {
 }
 
 describe('CorrectMemoryDialog', () => {
-  it('approves an unchanged proposal through the review path', async () => {
-    fetchMock.mockImplementation((_input, init) =>
-      Promise.resolve(
-        init?.method === 'POST'
-          ? json({ items: [{ ...proposal, status: 'confirmed' }], skippedIds: [] })
-          : json({ items: [], nextCursor: null }),
-      ),
-    );
+  it('saving nothing changes nothing: no hidden approve of an older suggestion', async () => {
+    fetchMock.mockImplementation(() => Promise.resolve(json({ items: [], nextCursor: null })));
     const user = await renderDialog(proposal);
-    const dialog = screen.getByRole('dialog', { name: 'Edit proposed memory' });
-    await user.click(within(dialog).getByRole('button', { name: 'Save correction' }));
+    const dialog = screen.getByRole('dialog', { name: 'Edit memory' });
+    expect(within(dialog).queryByRole('checkbox')).toBeNull();
+    expect(within(dialog).queryByText(/Approve|Confidence/)).toBeNull();
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
 
-    await waitFor(() => {
-      expect(sent()).toHaveLength(1);
-    });
-    expect(sent()[0]?.url).toContain(`/api/v1/ventures/${IDS.venture}/memory/batch`);
-    expect(sent()[0]).toMatchObject({ method: 'POST', body: { ids: [IDS.memory], action: 'approve' } });
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Nothing changed. Edit a field, or cancel.',
+    );
+    expect(sent()).toHaveLength(0);
   });
 
-  it('corrects, then approves the new version through the review path', async () => {
-    const corrected = makeMemory({ id: IDS.memory2, title: 'Exam weeks double demand', version: 2 });
+  it('keeps an older suggestion before saving the edit as a new version (the server corrects only kept AI memory)', async () => {
+    const kept = { ...proposal, status: 'confirmed' as const };
+    const corrected = makeMemory({
+      id: IDS.memory2,
+      title: 'Exam weeks double demand',
+      status: 'confirmed',
+      version: 2,
+    });
     fetchMock.mockImplementation((_input, init) => {
+      if (init?.method === 'POST') return Promise.resolve(json({ items: [kept], skippedIds: [] }));
       if (init?.method === 'PATCH') return Promise.resolve(json(corrected));
-      if (init?.method === 'POST') {
-        return Promise.resolve(json({ items: [{ ...corrected, status: 'confirmed' }], skippedIds: [] }));
-      }
       return Promise.resolve(json({ items: [], nextCursor: null }));
     });
     const user = await renderDialog(proposal);
-    const dialog = screen.getByRole('dialog', { name: 'Edit proposed memory' });
+    const dialog = screen.getByRole('dialog', { name: 'Edit memory' });
     const title = within(dialog).getByRole('textbox', { name: /Title/ });
     await user.clear(title);
     await user.type(title, 'Exam weeks double demand');
-    await user.click(within(dialog).getByRole('button', { name: 'Save correction' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
 
     await waitFor(() => {
       expect(sent()).toHaveLength(2);
     });
-    expect(sent()[0]).toMatchObject({ method: 'PATCH', body: { action: 'correct' } });
-    expect(sent()[1]?.url).toContain(`/api/v1/ventures/${IDS.venture}/memory/batch`);
-    expect(sent()[1]).toMatchObject({ method: 'POST', body: { ids: [IDS.memory2], action: 'approve' } });
+    expect(sent()[0]?.url).toContain(`/api/v1/ventures/${IDS.venture}/memory/batch`);
+    expect(sent()[0]).toMatchObject({ method: 'POST', body: { ids: [IDS.memory], action: 'approve' } });
+    expect(sent()[1]?.url).toContain(`/api/v1/memory/${IDS.memory}`);
+    expect(sent()[1]).toMatchObject({
+      method: 'PATCH',
+      body: { action: 'correct', patch: { title: 'Exam weeks double demand' } },
+    });
+  });
+
+  it('saves no edit when keeping the older suggestion failed, and says why', async () => {
+    fetchMock.mockImplementation((_input, init) =>
+      Promise.resolve(
+        init?.method === 'POST' ? problem(503, 'unavailable') : json({ items: [], nextCursor: null }),
+      ),
+    );
+    const user = await renderDialog(proposal);
+    const dialog = screen.getByRole('dialog', { name: 'Edit memory' });
+    const title = within(dialog).getByRole('textbox', { name: /Title/ });
+    await user.clear(title);
+    await user.type(title, 'Exam weeks double demand');
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(/Couldn’t update memory/);
+    expect(sent().some((request) => request.method === 'PATCH')).toBe(false);
+  });
+
+  it('saves an edit of kept memory as a new version only', async () => {
+    const kept = makeMemory({ id: IDS.memory, status: 'confirmed', title: 'Exam weeks drive demand' });
+    fetchMock.mockImplementation((_input, init) =>
+      Promise.resolve(
+        init?.method === 'PATCH'
+          ? json({ ...kept, id: IDS.memory2, title: 'Exam weeks double demand', version: 2 })
+          : json({ items: [], nextCursor: null }),
+      ),
+    );
+    const user = await renderDialog(kept);
+    const dialog = screen.getByRole('dialog', { name: 'Edit memory' });
+    const title = within(dialog).getByRole('textbox', { name: /Title/ });
+    await user.clear(title);
+    await user.type(title, 'Exam weeks double demand');
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() => {
+      expect(sent()).toHaveLength(1);
+    });
+    expect(sent()[0]).toMatchObject({
+      method: 'PATCH',
+      body: { action: 'correct', patch: { title: 'Exam weeks double demand' } },
+    });
   });
 });
