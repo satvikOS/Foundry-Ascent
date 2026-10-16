@@ -2,7 +2,6 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { ResourceKind, VentureStage, type ResourceView } from '@foundry/contracts';
 import { useId } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import { toast } from 'sonner';
 import { z } from 'zod';
 
 import { announce } from '@/components/a11y/live-announcer';
@@ -21,6 +20,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
+import { toast } from '@/components/ui/toast';
 import {
   applyServerFieldErrors,
   MutationErrorAlert,
@@ -173,9 +173,7 @@ function ResourceFormBody({ resource, onDone }: { resource: ResourceView | null;
     <>
       <SheetHeader>
         <SheetTitle>{resource ? `Edit ${resource.name}` : 'Add a resource'}</SheetTitle>
-        <SheetDescription>
-          Foundry Guide recommends these in route mode. Keep eligibility and links accurate.
-        </SheetDescription>
+        <SheetDescription>Keep eligibility and links accurate.</SheetDescription>
       </SheetHeader>
       <form
         noValidate

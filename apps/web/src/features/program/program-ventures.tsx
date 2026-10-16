@@ -1,9 +1,15 @@
 import { VentureStatus } from '@foundry/contracts';
-import { Briefcase, PencilLine, Plus, Search, SearchX, UserPlus } from 'lucide-react';
+import { Briefcase, Ellipsis, PencilLine, Plus, Search, SearchX, UserPlus } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 
 import { VentureMark } from '@/components/faces/user-avatar';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
 import { Input } from '@/components/ui/input';
@@ -46,7 +52,7 @@ function sortValue(row: ProgramVenture, key: SortKey): string | number {
   }
 }
 
-/** Program console → Ventures: enrolment metadata only (no venture content), enrol and invite. */
+/** Program → Ventures: enrolment metadata only (never venture content); enrol, rename and invite. */
 export function ProgramVenturesPage() {
   const ventures = useProgramVentures();
   const [query, setQuery] = useState('');
@@ -61,10 +67,7 @@ export function ProgramVenturesPage() {
     const needle = query.trim().toLowerCase();
     const filtered = (ventures.data ?? []).filter(
       (row) =>
-        (stage === 'all' || row.stage === stage) &&
-        (!needle ||
-          row.name.toLowerCase().includes(needle) ||
-          (row.personaName ?? '').toLowerCase().includes(needle)),
+        (stage === 'all' || row.stage === stage) && (!needle || row.name.toLowerCase().includes(needle)),
     );
     return sortRows(filtered, sort, sortValue);
   }, [ventures.data, query, stage, sort]);
@@ -75,8 +78,8 @@ export function ProgramVenturesPage() {
   return (
     <PageContainer size="wide">
       <PageHeader
-        title="Program ventures"
-        description="Enrolled ventures and their coaching setup. Venture content stays private to each venture."
+        title="Ventures"
+        description="Each venture’s content stays private to its team."
         actions={
           <Button
             onClick={() => {
@@ -108,7 +111,7 @@ export function ProgramVenturesPage() {
               onChange={(event) => {
                 setQuery(event.target.value);
               }}
-              placeholder="Search by venture or persona"
+              placeholder="Search ventures"
               className="pl-8"
             />
           </div>
@@ -188,13 +191,17 @@ export function ProgramVenturesPage() {
               <SortableTableHead sortKey="stage" sort={sort} onSortChange={setSort}>
                 Stage
               </SortableTableHead>
-              <TableHead>Domain</TableHead>
+              <TableHead className="hidden md:table-cell">Domain</TableHead>
               <SortableTableHead sortKey="members" sort={sort} onSortChange={setSort} align="right">
                 Members
               </SortableTableHead>
-              <TableHead>Coach persona</TableHead>
-              <TableHead>Status</TableHead>
-              <SortableTableHead sortKey="created" sort={sort} onSortChange={setSort}>
+              <TableHead className="hidden lg:table-cell">Status</TableHead>
+              <SortableTableHead
+                sortKey="created"
+                sort={sort}
+                onSortChange={setSort}
+                className="hidden lg:table-cell"
+              >
                 Enrolled
               </SortableTableHead>
               <TableHead>
@@ -216,46 +223,46 @@ export function ProgramVenturesPage() {
                   <TableCell>
                     <StageChip stage={row.stage} />
                   </TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell className="hidden text-muted-foreground md:table-cell">
                     {DOMAIN_LABELS[row.domain] ?? row.domain}
                   </TableCell>
                   <TableCell className="tabular text-right">{row.memberCount}</TableCell>
-                  <TableCell>
-                    {row.personaName ?? <span className="text-muted-foreground">Not assigned</span>}
-                  </TableCell>
-                  <TableCell>
+                  <TableCell className="hidden lg:table-cell">
                     {status.success ? (
                       <StatusBadge kind="venture" status={status.data} />
                     ) : (
                       <span className="text-muted-foreground">{row.status}</span>
                     )}
                   </TableCell>
-                  <TableCell className="whitespace-nowrap text-muted-foreground">
+                  <TableCell className="tabular hidden whitespace-nowrap text-muted-foreground lg:table-cell">
                     <time dateTime={row.createdAt}>{formatDate(row.createdAt)}</time>
                   </TableCell>
-                  <TableCell className="text-right whitespace-nowrap">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-label={`Rename ${row.name}`}
-                      onClick={() => {
-                        setRenameFor({ id: row.id, name: row.name });
-                      }}
-                    >
-                      <PencilLine aria-hidden />
-                      Rename
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-label={`Invite a member to ${row.name}`}
-                      onClick={() => {
-                        setInviteFor({ id: row.id, name: row.name });
-                      }}
-                    >
-                      <UserPlus aria-hidden />
-                      Invite
-                    </Button>
+                  <TableCell className="w-10 text-right">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon-sm" aria-label={`Actions for ${row.name}`}>
+                          <Ellipsis aria-hidden />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onSelect={() => {
+                            setInviteFor({ id: row.id, name: row.name });
+                          }}
+                        >
+                          <UserPlus aria-hidden />
+                          Invite a member…
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() => {
+                            setRenameFor({ id: row.id, name: row.name });
+                          }}
+                        >
+                          <PencilLine aria-hidden />
+                          Rename…
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </TableCell>
                 </TableRow>
               );

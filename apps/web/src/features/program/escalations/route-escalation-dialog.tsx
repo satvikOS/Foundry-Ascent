@@ -1,7 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Send } from 'lucide-react';
 import { Controller, useForm } from 'react-hook-form';
-import { toast } from 'sonner';
 import { z } from 'zod';
 
 import { announce } from '@/components/a11y/live-announcer';
@@ -18,6 +17,7 @@ import {
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { toast } from '@/components/ui/toast';
 import {
   applyServerFieldErrors,
   dateInputToIso,

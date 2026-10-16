@@ -26,7 +26,7 @@ import { ROLE_LABELS } from '@/lib/auth/roles';
 import { applyServerFieldErrors, MutationErrorAlert } from '../shared/form';
 import type { CodeRecipient } from './issue-access-code-dialog';
 
-export const PLATFORM_ROLE_DESCRIPTIONS: Record<z.infer<typeof PlatformRole>, string> = {
+const PLATFORM_ROLE_DESCRIPTIONS: Record<z.infer<typeof PlatformRole>, string> = {
   platform_admin:
     'People, access codes, settings, the AI kill switch, usage and audit. No venture content unless also a member.',
   program_lead:

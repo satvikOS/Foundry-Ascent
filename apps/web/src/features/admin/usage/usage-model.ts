@@ -80,8 +80,33 @@ const MODEL_NAMES: [RegExp, string, string][] = [
 ];
 
 export function describeModel(modelId: string): { name: string; role: string } {
+  // Speech is recorded as `polly:<engine>:<voice>`.
+  const polly = /^polly:(\w+):(\w+)$/i.exec(modelId);
+  if (polly) return { name: `Amazon Polly · ${polly[2] ?? ''}`, role: `Call speech (${polly[1] ?? ''})` };
   const match = MODEL_NAMES.find(([pattern]) => pattern.test(modelId));
   return match ? { name: match[1], role: match[2] } : { name: modelId, role: 'Other' };
+}
+
+/** Speech rows count characters synthesized in `inputTokens`, not tokens. */
+export function isSpeechModel(modelId: string): boolean {
+  return /^polly:/i.test(modelId);
+}
+
+/** What each usage-ledger purpose pays for (packages/db usage repository). */
+const PURPOSES: Record<string, string> = {
+  turn: 'Coaching replies',
+  distill: 'Distillation',
+  speech: 'Call speech',
+  recap: 'Recaps',
+  classification: 'Risk checks',
+  embedding: 'Embeddings',
+  ingestion: 'Document processing',
+  eval: 'Evaluations',
+  seed: 'Seed data',
+};
+
+export function purposeLabel(purpose: string): string {
+  return PURPOSES[purpose] ?? purpose;
 }
 
 /** "Oct 5" in UTC (ledger days are UTC; local formatting could shift them by a day). */

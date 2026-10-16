@@ -22,7 +22,7 @@ function PortfolioPage() {
     <PageContainer size="wide">
       <PageHeader
         title="Portfolio"
-        description="Privacy-preserving aggregates across the program. Small groups are hidden to protect individual ventures."
+        description="Aggregates across the program. Never transcripts, memory or documents."
       />
       {portfolio.isPending ? (
         <LoadingRegion label="Loading portfolio">

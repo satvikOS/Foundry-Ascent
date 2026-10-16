@@ -1,6 +1,5 @@
 import { CircleCheck, CircleSlash, KeyRound, Plus, Search, SearchX, Trash2, Users } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
-import { toast } from 'sonner';
 
 import { announce } from '@/components/a11y/live-announcer';
 import {
@@ -23,6 +22,7 @@ import { PageContainer, PageHeader } from '@/components/ui/page-header';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { LoadingRegion, Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { toast } from '@/components/ui/toast';
 import { errorMessage } from '@/lib/api/errors';
 import { usePrincipals, useRevokeAccessCode, type AdminPrincipal } from '@/lib/api/hooks/admin';
 import { ROLE_LABELS } from '@/lib/auth/roles';
@@ -44,7 +44,7 @@ const ROLE_FILTERS: { value: RoleFilter; label: string }[] = [
 ];
 
 /** "FA-ABCDE-•••••-•••••-•••••": the public lookup prefix with the secret part masked. */
-export function maskedCode(prefix: string): string {
+function maskedCode(prefix: string): string {
   const group = prefix.replace(/^FA-/i, '').slice(0, 5).toUpperCase();
   return `FA-${group}-•••••-•••••-•••••`;
 }
@@ -102,7 +102,7 @@ export function PrincipalsPage() {
     <PageContainer size="wide">
       <PageHeader
         title="People & access"
-        description="Everyone who can sign in, their roles and access codes. Codes are shown once and stored only as hashes."
+        description="Everyone who can sign in."
         actions={
           <Button
             onClick={() => {
