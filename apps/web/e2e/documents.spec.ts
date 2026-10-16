@@ -423,7 +423,8 @@ async function enforceProductionCsp(page: Page): Promise<() => Promise<string[]>
 test.describe('document viewer', () => {
   /**
    * A Markdown file and a PDF uploaded, then read in the viewer from Documents: rendered prose, find,
-   * text size, PDF pages with find, download, and Escape back to the row that opened it.
+   * text size, PDF pages with find, download, and Escape back to the row that opened it; then straight
+   * from a link in dark and light. (One test for both files: uploads count against a daily quota.)
    */
   test('reads a Markdown file and a PDF from Documents, with find, pages and download', async ({ page }) => {
     const token = runToken();
@@ -529,85 +530,32 @@ test.describe('document viewer', () => {
     const reported = await violations();
     expect(reported.filter((v) => !/^script-src eval \/assets\/client-[\w-]+\.js$/.test(v))).toEqual([]);
 
-    await deleteDocument(page, notesRow, notes);
-    await deleteDocument(page, surveyRow, survey);
-  });
-
-  test('opens straight from a link, in dark and light', async ({ page }) => {
-    const token = runToken();
-    const notes = `linked-notes-${token}.md`;
-    const ventureId = await openVenture(page);
-    await page.goto(`/${TENANT}/app/v/${ventureId}/documents`);
-    await uploadFiles(page, [
-      {
-        name: notes,
-        mimeType: 'text/markdown',
-        buffer: Buffer.from(`# Linked notes (${token})\n\nOpen me.\n`),
-      },
-    ]);
-    const row = page
-      .getByRole('list', { name: 'Venture documents' })
-      .getByRole('listitem')
-      .filter({ hasText: notes });
-    await expect(row).toContainText('Ready', { timeout: 30_000 });
-    const href = await row.getByRole('link', { name: notes }).getAttribute('href');
+    // A link opens straight into the viewer, in dark and light; Close then leaves the page without it.
+    const href = await notesRow.getByRole('link', { name: notes }).getAttribute('href');
     expect(href).toMatch(/\?doc=[0-9a-f-]{36}$/);
     for (const scheme of ['dark', 'light'] as const) {
       await page.goto(href ?? '');
       await useTheme(page, scheme);
-      const viewer = page.getByRole('dialog', { name: notes });
-      await expect(viewer.getByRole('heading', { name: `Linked notes (${token})` })).toBeVisible();
+      const linked = page.getByRole('dialog', { name: notes });
+      await expect(linked.getByRole('heading', { name: `Reading room notes (${token})` })).toBeVisible();
       await expectNoSeriousA11yViolations(page, `document viewer opened from a link (${scheme})`);
-      // Opened from a link: Close leaves the same page without the viewer.
-      await viewer.getByRole('button', { name: 'Close' }).click();
+      await linked.getByRole('button', { name: 'Close' }).click();
       await expect(page).toHaveURL(new RegExp(`/${TENANT}/app/v/${ventureId}/documents$`));
     }
-    await deleteDocument(page, row, notes);
+
+    await deleteDocument(page, notesRow, notes);
+    await deleteDocument(page, surveyRow, survey);
   });
 
   test.describe('on a phone', () => {
     test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 
-    test('fills the screen with the controls in a bottom toolbar and no sideways scroll', async ({
+    /** Every upload counts against the founder's daily quota (20), and the suite runs twice a day. */
+    test('fills the screen, keeps its controls in a bottom toolbar, and zooms a PDF with a pinch', async ({
       page,
     }) => {
       const token = runToken();
-      const notes = `phone-notes-${token}.md`;
-      const ventureId = await openVenture(page);
-      await page.goto(`/${TENANT}/app/v/${ventureId}/documents`);
-      await uploadFiles(page, [
-        {
-          name: notes,
-          mimeType: 'text/markdown',
-          buffer: Buffer.from(
-            `# Phone notes (${token})\n\n${Array.from({ length: 30 }, () => 'A long line of notes about seats.').join(' ')}\n`,
-          ),
-        },
-      ]);
-      const row = page
-        .getByRole('list', { name: 'Venture documents' })
-        .getByRole('listitem')
-        .filter({ hasText: notes });
-      await expect(row).toContainText('Ready', { timeout: 30_000 });
-      // The upload list of a long file name stays inside a phone's width.
-      await expectNoHorizontalScroll(page);
-      await row.getByRole('link', { name: notes }).click();
-      const viewer = page.getByRole('dialog', { name: notes });
-      await expect(viewer.getByRole('heading', { name: `Phone notes (${token})` })).toBeVisible();
-      const box = await viewer.boundingBox();
-      expect(box).toMatchObject({ x: 0, y: 0, width: 390, height: 844 });
-      const toolbar = viewer.getByRole('toolbar', { name: 'Document controls' });
-      await expect(toolbar.getByRole('button', { name: 'Find in document' })).toBeVisible();
-      await expect(toolbar.getByRole('link', { name: 'Download' })).toBeVisible();
-      await expectNoHorizontalScroll(page);
-      await viewer.getByRole('button', { name: 'Close' }).click();
-      await expect(viewer).toHaveCount(0);
-      await deleteDocument(page, row, notes);
-    });
-
-    test('zooms a PDF with a pinch', async ({ page }) => {
-      const token = runToken();
-      const survey = `phone-survey-${token}.pdf`;
+      const survey = `phone-survey-with-a-long-file-name-${token}.pdf`;
       const ventureId = await openVenture(page);
       await page.goto(`/${TENANT}/app/v/${ventureId}/documents`);
       await uploadFiles(page, [
@@ -622,11 +570,20 @@ test.describe('document viewer', () => {
         .getByRole('listitem')
         .filter({ hasText: survey });
       await expect(row).toContainText('Ready', { timeout: 30_000 });
+      // The upload list of a long file name stays inside a phone's width.
+      await expectNoHorizontalScroll(page);
       await row.getByRole('link', { name: survey }).click();
       const viewer = page.getByRole('dialog', { name: survey });
       const firstPage = viewer.locator('[data-page-index="0"][data-rendered]');
       await expect(firstPage).toBeVisible({ timeout: 15_000 });
-      const zoom = viewer.getByRole('group', { name: 'Zoom' });
+      expect(await viewer.boundingBox()).toMatchObject({ x: 0, y: 0, width: 390, height: 844 });
+      const toolbar = viewer.getByRole('toolbar', { name: 'Document controls' });
+      await expect(toolbar.getByRole('button', { name: 'Find in document' })).toBeVisible();
+      await expect(toolbar.getByRole('group', { name: 'Pages' })).toContainText('1 / 1');
+      await expect(toolbar.getByRole('link', { name: 'Download' })).toBeVisible();
+      await expectNoHorizontalScroll(page);
+
+      const zoom = toolbar.getByRole('group', { name: 'Zoom' });
       await expect(zoom).toContainText('100%');
       const box = await firstPage.boundingBox();
       if (!box) throw new Error('the page has no box');
@@ -644,8 +601,10 @@ test.describe('document viewer', () => {
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
       await expect(zoom).not.toContainText('100%');
       expect(Number((await zoom.textContent())?.match(/(\d+)%/)?.[1])).toBeGreaterThan(150);
+      // Zoomed pages scroll sideways inside the viewer, never the page.
       await expectNoHorizontalScroll(page);
       await viewer.getByRole('button', { name: 'Close' }).click();
+      await expect(viewer).toHaveCount(0);
       await deleteDocument(page, row, survey);
     });
   });
