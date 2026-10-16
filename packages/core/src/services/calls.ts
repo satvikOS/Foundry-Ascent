@@ -39,6 +39,8 @@ import {
 import { type RequestContext } from '../context.js';
 import { DomainError, fail, parseInput } from '../errors.js';
 import { type DirectoryCache } from '../internal/directory.js';
+import { chooseOpener } from '../orchestrator/continuity.js';
+import { type DistillService } from './distill.js';
 import { mentionsEir, personaNameClaimsEir, veirEirName } from '../internal/eir-names.js';
 import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
 import { secondsUntilUtcMidnight } from '../orchestrator/sampling.js';
@@ -198,6 +200,7 @@ async function summarize(ex: SqlExecutor, call: callsRepo.CallRecord): Promise<C
     turnCount: turns.length,
     durationSeconds: call.elapsedSeconds,
     memoryProposalIds: followUps.memoryProposalIds,
+    memoryKeptIds: followUps.memoryKeptIds,
     nextActions: distinctActions(turns.flatMap((t) => t.nextActions)),
     escalationIds: followUps.escalationIds,
   };
@@ -254,6 +257,9 @@ export function stopRefusal(cause: CallStopCause, now: Date): DomainError {
 interface Started {
   readonly call: callsRepo.CallRecord;
   readonly ventureId: string;
+  readonly personaId: string;
+  /** Whether the conversation is standard (remembered); a temporary one opens with nothing picked up. */
+  readonly standard: boolean;
   readonly personaName: string;
   readonly personaKind: personasRepo.PersonaRecord['kind'];
   readonly eirDisplayName: string | null;
@@ -267,8 +273,18 @@ export function createCallsService(
   kit: Kit,
   directory: DirectoryCache,
   keys: PlatformKeyCache,
+  distill: Pick<DistillService, 'afterCallEnd'>,
 ): CallsService {
   const { logger } = kit.deps;
+
+  /**
+   * A call that ends settles what was said in it: once the change commits, its conversation is distilled now,
+   * however the call ended (hang-up, a server stop, replacement), as ending a chat does. The trigger never
+   * fails the request.
+   */
+  function settleAfterCommit(scope: RequestScope, sessionId: string): void {
+    scope.afterCommit(() => distill.afterCallEnd(scope.ctx, sessionId));
+  }
 
   /** The caller's own call; anyone else's (or none) is reported as not found. */
   async function ownCall(scope: RequestScope, callId: string): Promise<callsRepo.CallRecord> {
@@ -324,12 +340,16 @@ export function createCallsService(
     };
   }
 
-  /** Ends a live call for `cause` (audited with the change); returns the call as it now stands. */
+  /**
+   * Ends a live call for `cause` (audited with the change) and settles its conversation, unless `settle` is
+   * false (a new call is starting in that same conversation: it is not over); returns the call as it now stands.
+   */
   async function stop(
     scope: RequestScope,
     call: callsRepo.CallRecord,
     cause: CallStopCause | 'replaced',
     clientStats?: callsRepo.CallClientStats,
+    settle = true,
   ): Promise<callsRepo.CallRecord> {
     const ended = await callsRepo.endCall(scope.tx, {
       callId: call.id,
@@ -339,6 +359,7 @@ export function createCallsService(
       ...(clientStats === undefined ? {} : { clientStats }),
     });
     if (ended === null) return (await callsRepo.getCall(scope.tx, call.id)) ?? call;
+    if (settle) settleAfterCommit(scope, call.sessionId);
     await audit(scope, {
       action: cause === 'replaced' ? 'call.ended' : 'call.terminated',
       outcome: cause === 'replaced' ? 'succeeded' : 'blocked',
@@ -349,6 +370,53 @@ export function createCallsService(
       metadata: { durationSeconds: ended.elapsedSeconds, reason: ended.endReason },
     });
     return ended;
+  }
+
+  /**
+   * A call that starts a conversation nobody has said anything in opens with what is true now: the opener is chosen
+   * again at call start (the founder may have talked elsewhere since the conversation was created, e.g. a call
+   * from New chat right after another call), and the conversation keeps that line as its first message, so the
+   * vEIR's history says what the call said. Unchanged for a temporary conversation or one already under way;
+   * on any failure the stored opener stands.
+   */
+  async function withFreshOpener(ctx: RequestContext, started: Started): Promise<Started> {
+    if (!started.standard || started.conversationStarted) return started;
+    try {
+      const { eirNames } = await directory.get(ctx.tenantId);
+      const others = await directory.others(ctx.tenantId, started.ventureId);
+      const opener = await kit.inRequest(ctx, async ({ tx }) => {
+        const { opener: chosen } = await chooseOpener(tx, {
+          ventureId: started.ventureId,
+          persona: { id: started.personaId, name: started.personaName },
+          principalId: ctx.principalId,
+          guards: {
+            eirNames,
+            otherVentureNames: others.names,
+            otherVentureCanaries: others.canaries,
+            otherVentureMemberNames: others.memberNames,
+          },
+          now: kit.now(),
+          sessionId: started.call.sessionId,
+        });
+        const text = chosen?.text ?? null;
+        if (text === started.opener) return text;
+        const stored = await sessionsRepo.setSessionOpener(tx, {
+          sessionId: started.call.sessionId,
+          opener: text,
+          sourceSessionId: chosen?.sourceSessionId ?? null,
+          byPerson: chosen?.byPerson ?? false,
+        });
+        return stored ? text : started.opener;
+      });
+      return { ...started, opener };
+    } catch (err) {
+      logger.warn('call.opener_refresh_failed', {
+        requestId: ctx.requestId,
+        callId: started.call.id,
+        error: err instanceof Error ? err.name : 'unknown',
+      });
+      return started;
+    }
   }
 
   /** The signed intro (null when it cannot be produced; the call then simply starts listening). */
@@ -552,9 +620,12 @@ export function createCallsService(
         const previous = await callsRepo.getLiveCallOf(tx, ctx.principalId);
         let replaced: string | null = null;
         if (previous !== null) {
-          if (previous.idleSeconds > CALL_LIMITS.staleSeconds) await stop(scope, previous, 'stale_heartbeat');
-          else if (previous.sessionId === sessionId || input.replace === true) {
-            await stop(scope, previous, 'replaced');
+          // A call replaced in its own conversation (a reload, a second tab) leaves that conversation going.
+          const elsewhere = previous.sessionId !== sessionId;
+          if (previous.idleSeconds > CALL_LIMITS.staleSeconds) {
+            await stop(scope, previous, 'stale_heartbeat', undefined, elsewhere);
+          } else if (!elsewhere || input.replace === true) {
+            await stop(scope, previous, 'replaced', undefined, elsewhere);
             replaced = previous.id;
           } else {
             throw refuse(
@@ -619,6 +690,8 @@ export function createCallsService(
         return {
           call,
           ventureId,
+          personaId: persona.id,
+          standard: session.privacy === 'standard',
           personaName: persona.name,
           personaKind: persona.kind,
           // The vEIR introduces itself after its own EIR, never after the venture's reviewing EIR.
@@ -631,7 +704,7 @@ export function createCallsService(
         };
       });
 
-      const intro = await introFor(ctx, started);
+      const intro = await introFor(ctx, await withFreshOpener(ctx, started));
       let sttGrant: SttGrant | null = null;
       if (started.call.inputMode === 'transcribe') {
         // The call works without it (typed input); the client can ask again through `stt-grant`.
@@ -738,6 +811,7 @@ export function createCallsService(
               ...(input.clientStats === undefined ? {} : { clientStats: input.clientStats }),
             });
             if (ended !== null) {
+              settleAfterCommit(scope, call.sessionId);
               await audit(scope, {
                 action: 'call.ended',
                 outcome: 'succeeded',

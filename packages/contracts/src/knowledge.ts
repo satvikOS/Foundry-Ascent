@@ -91,6 +91,13 @@ export const VeirNotebook = z.object({
   /** One sentence the vEIR may open the next conversation with; null when there is nothing to pick up. */
   nextOpener: z.string().max(300).nullable(),
   /**
+   * The thread to come back to next time, as a short phrase ("the five library-staff interviews you planned"):
+   * the vEIR phrases its greeting around it afresh for each conversation instead of repeating one sentence. It
+   * goes with the opener (removing or rewriting the opener clears it). Additive and optional: older payloads
+   * omit it.
+   */
+  nextTopic: z.string().max(120).nullable().optional(),
+  /**
    * `nextOpener` as the vEIR may say it, after the checks applied when a conversation starts (plain, one line,
    * no EIR name, no other venture): what New chat shows as the vEIR's greeting. Null when there is none or it
    * fails a check. Additive: older payloads parse as null.

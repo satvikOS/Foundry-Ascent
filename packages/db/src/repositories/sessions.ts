@@ -230,6 +230,31 @@ export function createSession(ex: SqlExecutor, input: CreateSessionInput): Promi
 }
 
 /**
+ * Replaces the opening line of a conversation nobody has said anything in yet (a standard, undeleted one with no
+ * turn): a call that starts in it opens with what is true now, and the conversation keeps exactly that line as
+ * its first message. `sourceSessionId` is the conversation the line was drawn from (deleting that one erases this
+ * copy); `byPerson` marks a line a person wrote. Returns whether it was replaced.
+ */
+export async function setSessionOpener(
+  ex: SqlExecutor,
+  args: { sessionId: string; opener: string | null; sourceSessionId: string | null; byPerson: boolean },
+): Promise<boolean> {
+  const result = await ex.query(
+    `UPDATE coaching_sessions AS s
+     SET opener = :opener, opener_source_session_id = :source, opener_by_person = :byPerson
+     WHERE s.id = :id AND s.privacy = 'standard' AND s.deleted_at IS NULL
+       AND NOT EXISTS (SELECT 1 FROM turns t WHERE t.session_id = s.id)`,
+    {
+      id: p.uuid(args.sessionId),
+      opener: p.nullable.text(args.opener),
+      source: p.nullable.uuid(args.opener === null ? null : args.sourceSessionId),
+      byPerson: p.bool(args.opener !== null && args.sourceSessionId === null && args.byPerson),
+    },
+  );
+  return result.rowCount > 0;
+}
+
+/**
  * Ends an active session and stores the recap (null for ephemeral sessions, which also lose their title).
  * Null when not active/visible.
  */
@@ -554,6 +579,8 @@ export async function listSessionPage(ex: SqlExecutor, q: SessionPageQuery): Pro
 
 export interface RecentDigest {
   readonly sessionId: string;
+  /** The persona the conversation was with (a venture's vEIR can change). */
+  readonly personaId: string;
   readonly title: string | null;
   readonly lastActivityAt: string;
   /** Whether any turn was spoken during a call. */
@@ -562,31 +589,33 @@ export interface RecentDigest {
 }
 
 /**
- * The latest digests of a venture's conversations with one persona ("Previous conversations" in the
- * prompt), newest first. Temporary and deleted conversations never have one. Titles follow the session
- * rule: null for readers outside the founder/team.
+ * The latest digests of a venture's conversations ("Previous conversations" in the prompt), newest first: with
+ * one persona when `personaId` is given, else with any (continuity is the venture's and its founders', so a vEIR
+ * assigned to the venture later still knows what was said before). Temporary and deleted conversations never
+ * have one. Titles follow the session rule: null for readers outside the founder/team.
  */
 export async function listRecentDigests(
   ex: SqlExecutor,
-  args: { ventureId: string; personaId: string; excludeSessionId?: string | null; limit?: number },
+  args: { ventureId: string; personaId?: string | null; excludeSessionId?: string | null; limit?: number },
 ): Promise<RecentDigest[]> {
   const rows = await queryRows(
     ex,
-    `SELECT s.id, ${memberOnly('s.title')} AS title, s.last_activity_at, s.has_calls, s.digest
+    `SELECT s.id, r.persona_id, ${memberOnly('s.title')} AS title, s.last_activity_at, s.has_calls, s.digest
      FROM coaching_sessions s
      JOIN persona_releases r ON r.id = s.persona_release_id
-     WHERE s.venture_id = :ventureId AND r.persona_id = :personaId AND s.digest IS NOT NULL
-       AND s.privacy = 'standard' AND (:except IS NULL OR s.id <> :except)
+     WHERE s.venture_id = :ventureId AND (:personaId IS NULL OR r.persona_id = :personaId)
+       AND s.digest IS NOT NULL AND s.privacy = 'standard' AND (:except IS NULL OR s.id <> :except)
      ORDER BY s.last_activity_at DESC, s.id DESC
      LIMIT :limit`,
     {
       ventureId: p.uuid(args.ventureId),
-      personaId: p.uuid(args.personaId),
+      personaId: p.nullable.uuid(args.personaId),
       except: p.nullable.uuid(args.excludeSessionId),
       limit: p.int(clampLimit(args.limit, 3, 20)),
     },
     (r) => ({
       sessionId: col.uuid.decode(r.id, 'id'),
+      personaId: col.uuid.decode(r.persona_id, 'persona_id'),
       title: col.text.nullable.decode(r.title, 'title'),
       lastActivityAt: col.ts.decode(r.last_activity_at, 'last_activity_at'),
       hasCalls: col.bool.decode(r.has_calls, 'has_calls'),
@@ -594,6 +623,197 @@ export async function listRecentDigests(
     }),
   );
   return rows.flatMap((r) => (r.digest === null ? [] : [{ ...r, digest: r.digest }]));
+}
+
+/** One of a venture's latest earlier conversations, as "where you left off" reads it. */
+export interface LeftOffConversation {
+  readonly id: string;
+  /** The persona the conversation was with (a venture's vEIR can change: continuity is the venture's). */
+  readonly personaId: string;
+  readonly startedBy: string;
+  /** Display name of the person who had it (null when the reader cannot see it). */
+  readonly startedByName: string | null;
+  /** Founder words: null for readers outside the founder/team, and when the conversation has none yet. */
+  readonly title: string | null;
+  readonly startedAt: string;
+  readonly lastActivityAt: string;
+  readonly status: SessionRecord['status'];
+  /** Whether any turn was spoken during a call. */
+  readonly hasCalls: boolean;
+  /** The distilled digest (null: not distilled yet, or a person deleted it). AI-written: never log it. */
+  readonly digest: ConversationDigestValue | null;
+  /** Completed turns the digest covers. */
+  readonly distillVersion: number;
+  readonly completedTurns: number;
+}
+
+/**
+ * The latest earlier conversations "where you left off" reads for `principalId` in a venture, keyed by the venture
+ * and the person (never by the vEIR: it can change): the person's own latest conversation, and (with `teammate`)
+ * the newest conversation a teammate had, each with at least one completed turn, newest activity first. Two
+ * bounded index scans (the person's own: `coaching_sessions_starter_activity_idx`; a teammate's:
+ * `coaching_sessions_venture_activity_idx`), so a teammate's many newer conversations never hide the person's
+ * own. Only standard conversations: never a temporary chat, never a deleted one (also hidden by RLS), never
+ * `excludeSessionId` (the current one). Titles follow the session rule (null for readers outside the
+ * founder/team).
+ */
+export function listLeftOffConversations(
+  ex: SqlExecutor,
+  args: { ventureId: string; principalId: string; excludeSessionId?: string | null; teammate?: boolean },
+): Promise<LeftOffConversation[]> {
+  const eligible = `s.venture_id = :ventureId AND s.deleted_at IS NULL AND s.privacy = 'standard'
+         AND (:except IS NULL OR s.id <> :except)
+         AND EXISTS (SELECT 1 FROM turns t WHERE t.session_id = s.id AND t.status = 'completed')`;
+  return queryRows(
+    ex,
+    `WITH own AS (
+       SELECT s.id FROM coaching_sessions s
+       WHERE s.started_by = :principal AND ${eligible}
+       ORDER BY s.last_activity_at DESC, s.id DESC
+       LIMIT 1)
+     , mate AS (
+       SELECT s.id FROM coaching_sessions s
+       WHERE :teammate AND s.started_by <> :principal AND ${eligible}
+       ORDER BY s.last_activity_at DESC, s.id DESC
+       LIMIT 1)
+     SELECT s.id, r.persona_id, s.started_by, st.display_name AS started_by_name, ${memberOnly('s.title')} AS title,
+            s.started_at, s.last_activity_at, s.status, s.has_calls, s.digest, s.distill_version,
+            (SELECT count(*) FROM turns t WHERE t.session_id = s.id AND t.status = 'completed') AS completed_turns
+     FROM coaching_sessions s
+     JOIN persona_releases r ON r.id = s.persona_release_id
+     LEFT JOIN principals st ON st.id = s.started_by
+     WHERE s.id IN (SELECT id FROM own UNION ALL SELECT id FROM mate)
+     ORDER BY s.last_activity_at DESC, s.id DESC`,
+    {
+      ventureId: p.uuid(args.ventureId),
+      principal: p.uuid(args.principalId),
+      except: p.nullable.uuid(args.excludeSessionId),
+      teammate: p.bool(args.teammate ?? true),
+    },
+    (r) => ({
+      id: col.uuid.decode(r.id, 'id'),
+      personaId: col.uuid.decode(r.persona_id, 'persona_id'),
+      startedBy: col.uuid.decode(r.started_by, 'started_by'),
+      startedByName: col.text.nullable.decode(r.started_by_name, 'started_by_name'),
+      title: col.text.nullable.decode(r.title, 'title'),
+      startedAt: col.ts.decode(r.started_at, 'started_at'),
+      lastActivityAt: col.ts.decode(r.last_activity_at, 'last_activity_at'),
+      status: col.enum(SessionStatus.options).decode(r.status, 'status'),
+      hasCalls: col.bool.decode(r.has_calls, 'has_calls'),
+      digest: decodeDigest(r.digest),
+      distillVersion: col.int.decode(r.distill_version, 'distill_version'),
+      completedTurns: col.int.decode(r.completed_turns, 'completed_turns'),
+    }),
+  );
+}
+
+/**
+ * The standard conversations `principalId` opened in a venture after `since` (excluding `excludeSessionId`):
+ * conversations started after the latest one with anything said, in which nothing was said yet. `opened` counts
+ * them (a new conversation's opener is phrased with it, so opening one after another never greets the same way
+ * twice); `withOpener` counts those that opened with `opener` (a line already said once is not said again word
+ * for word). One scan of the person's recent conversations (`coaching_sessions_starter_activity_idx`).
+ */
+export async function countConversationsOpenedSince(
+  ex: SqlExecutor,
+  args: {
+    ventureId: string;
+    principalId: string;
+    since: string;
+    excludeSessionId?: string | null;
+    opener?: string | null;
+  },
+): Promise<{ opened: number; withOpener: number }> {
+  const row = await queryFirst(
+    ex,
+    `SELECT count(*) AS opened, count(*) FILTER (WHERE s.opener = :opener) AS with_opener
+     FROM coaching_sessions s
+     WHERE s.started_by = :principal AND s.deleted_at IS NULL AND s.last_activity_at > :since
+       AND s.venture_id = :ventureId AND s.privacy = 'standard' AND s.started_at > :since
+       AND (:except IS NULL OR s.id <> :except)`,
+    {
+      principal: p.uuid(args.principalId),
+      ventureId: p.uuid(args.ventureId),
+      since: p.ts(args.since),
+      except: p.nullable.uuid(args.excludeSessionId),
+      opener: p.nullable.text(args.opener ?? null),
+    },
+    (r) => ({
+      opened: col.int.decode(r.opened, 'opened'),
+      withOpener: col.int.decode(r.with_opener, 'with_opener'),
+    }),
+  );
+  return row ?? { opened: 0, withOpener: 0 };
+}
+
+/** One exchange of an earlier conversation: what the founder said and the vEIR's validated answer. */
+export interface LeftOffExchange {
+  readonly sessionId: string;
+  readonly ordinal: number;
+  /** 1 for the conversation's last completed exchange, 2 for the one before it, … */
+  readonly fromEnd: number;
+  /** Founder words, cut to {@link LEFT_OFF_FOUNDER_CHARS}. Content: never log it. */
+  readonly founderText: string;
+  /**
+   * The validated answer as the founder heard it, cut to {@link LEFT_OFF_ANSWER_CHARS}: the words they heard when
+   * they spoke over it, else the whole answer (null when none was stored or they heard none of it).
+   */
+  readonly answer: string | null;
+  readonly channel: 'text' | 'voice';
+}
+
+/** Characters of each side of an exchange read back (the prompt cuts them further). */
+export const LEFT_OFF_FOUNDER_CHARS = 600;
+export const LEFT_OFF_ANSWER_CHARS = 900;
+
+/**
+ * The statement of {@link listLastExchanges} (exported so a test can check its plan reads no more turns than it
+ * returns). Parameters: `ids`, `perSession`, `founderChars`, `answerChars`.
+ */
+export const LAST_EXCHANGES_SQL = `SELECT x.session_id, x.ordinal, x.rn, x.founder_text, x.answer, x.channel
+     FROM unnest(:ids) AS s (id)
+     CROSS JOIN LATERAL (
+       SELECT t.session_id, t.ordinal, t.channel, left(t.founder_text, :founderChars) AS founder_text,
+              CASE WHEN t.interrupted_at IS NULL THEN left(t.response ->> 'answer', :answerChars)
+                   ELSE left(t.heard_text, :answerChars) END AS answer,
+              row_number() OVER (ORDER BY t.ordinal DESC) AS rn
+       FROM (SELECT * FROM turns t
+             WHERE t.session_id = s.id AND t.status = 'completed' AND coalesce(t.risk_label, '') <> 'crisis'
+             ORDER BY t.ordinal DESC
+             LIMIT :perSession) t) x
+     ORDER BY x.session_id, x.ordinal`;
+
+/**
+ * The last `perSession` completed exchanges of each conversation in `sessionIds`, oldest first per
+ * conversation: per conversation, one backward scan of the turns' `(session_id, ordinal)` key that stops after
+ * `perSession` rows, so a long conversation costs no more than a short one. Crisis messages are never read back:
+ * they never feed notes, memory or continuity. A reply the founder spoke over is read as they heard it
+ * (`heard_text`; null when they heard none of it), as the conversation's own history replays it
+ * (docs/architecture/calls.md §2.6). Text is cut in SQL, so the response stays small.
+ */
+export function listLastExchanges(
+  ex: SqlExecutor,
+  args: { sessionIds: readonly string[]; perSession: number },
+): Promise<LeftOffExchange[]> {
+  if (args.sessionIds.length === 0) return Promise.resolve([]);
+  return queryRows(
+    ex,
+    LAST_EXCHANGES_SQL,
+    {
+      ids: p.uuidArray([...new Set(args.sessionIds)]),
+      perSession: p.int(Math.max(1, Math.min(20, Math.trunc(args.perSession)))),
+      founderChars: p.int(LEFT_OFF_FOUNDER_CHARS),
+      answerChars: p.int(LEFT_OFF_ANSWER_CHARS),
+    },
+    (r) => ({
+      sessionId: col.uuid.decode(r.session_id, 'session_id'),
+      ordinal: col.int.decode(r.ordinal, 'ordinal'),
+      fromEnd: col.int.decode(r.rn, 'rn'),
+      founderText: col.text.decode(r.founder_text, 'founder_text'),
+      answer: col.text.nullable.decode(r.answer, 'answer'),
+      channel: col.enum(['text', 'voice'] as const).decode(r.channel, 'channel'),
+    }),
+  );
 }
 
 export interface DistillationCandidate {

@@ -1,4 +1,5 @@
 import {
+  ConversationOpenerResponse,
   CreateDocumentResponse,
   DocumentListResponse,
   DocumentView,
@@ -128,6 +129,27 @@ describe('coaching sessions', () => {
     });
     expect(bad.status).toBe(422);
     expect(ProblemDetails.parse(await bad.json()).errors?.[0]?.path).toBe('mode');
+  });
+
+  it('previews how a new conversation would open, and the conversation then opens with it', async () => {
+    const said = await startSession(maya, 'coach');
+    await streamTurn(maya, said.id, { text: 'Should we price per library or per seat?' });
+    const preview = await json(
+      await api.request(`/ventures/${quietquad()}/opener`, { cookie: maya }),
+      ConversationOpenerResponse,
+    );
+    expect(preview.lastConversation).toMatchObject({ sessionId: said.id, channel: 'chat' });
+    expect(preview.opener).toContain('“Should we price per library or per seat?”');
+    const next = await startSession(maya, 'coach');
+    expect(next.opener).toBe(preview.opener);
+    // Only the venture's founder and team may ask (no existence leak to others).
+    expect(
+      await problemCode(await api.request(`/ventures/${quietquad()}/opener`, { cookie: jonah }), 404),
+    ).toBe('not_found');
+    const sole = api.h.ventures.solesignal.id;
+    expect(await problemCode(await api.request(`/ventures/${sole}/opener`, { cookie: graham }), 403)).toBe(
+      'forbidden',
+    );
   });
 });
 

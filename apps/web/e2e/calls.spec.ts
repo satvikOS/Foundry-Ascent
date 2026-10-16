@@ -312,7 +312,10 @@ test.describe('vEIR calls', () => {
       );
       await screen
         .getByRole('textbox', { name: /^Reply to / })
-        .fill(`Should we pilot with one library? ${token}`);
+        // The founder says something worth remembering (what only the coach says is never kept as a fact).
+        .fill(
+          `Should we pilot with one library? The pilot needs a written success threshold and stop condition. ${token}`,
+        );
       await screen.getByRole('textbox', { name: /^Reply to / }).press('Enter');
       const sent = (await turnRequest).postDataJSON() as { channel: string; callId: string; text: string };
       expect(sent).toMatchObject({ channel: 'voice', callId });
@@ -361,23 +364,29 @@ test.describe('vEIR calls', () => {
       await expect(callScreen(page)).toBeVisible();
     });
 
-    await test.step('ending shows the summary; what the call learned is saved with no click', async () => {
-      const ended = page.waitForRequest(
-        (request) => request.url().endsWith(`/calls/${callId}/end`) && request.method() === 'POST',
-      );
-      const endResponse = page.waitForResponse(
+    await test.step('ending shows the summary; what the call learned is kept with no click', async () => {
+      const ended = page.waitForResponse(
         (response) =>
           response.url().endsWith(`/calls/${callId}/end`) && response.request().method() === 'POST',
       );
       await callScreen(page).getByRole('button', { name: 'End call' }).click();
       const screen = callScreen(page);
       await expect(screen.getByRole('heading', { name: 'Call ended' })).toBeFocused();
-      expect((await ended).postDataJSON()).toMatchObject({ reason: 'user' });
+      const response = await ended;
+      expect(response.request().postDataJSON()).toMatchObject({ reason: 'user' });
       await expect(screen.getByRole('note', { name: 'AI disclosure' })).toHaveCount(1);
       await expectNoBareEirName(page, 'the after-call summary');
-      // What the call's turn learned is already in Knowledge: one quiet line, nothing to keep or decline.
-      const { summary } = (await (await endResponse).json()) as { summary: { memoryProposalIds: string[] } };
-      expect(summary.memoryProposalIds.length).toBeGreaterThan(0);
+      // What the call's turn learned went to memory by itself: kept, never a proposal waiting for anyone.
+      const { summary } = (await response.json()) as {
+        summary: { memoryProposalIds: string[]; memoryKeptIds?: string[] };
+      };
+      expect(summary.memoryProposalIds).toEqual([]);
+      expect(summary.memoryKeptIds?.length).toBeGreaterThan(0);
+      const kept = await page.request.get(`/api/v1/memory/${summary.memoryKeptIds?.[0] ?? ''}`);
+      expect(kept.status(), 'GET /memory/:id').toBe(200);
+      expect(await kept.json()).toMatchObject({ origin: 'ai', status: 'confirmed', keptAutomatically: true });
+      // The summary says so quietly: one "Remembered" line and one "Saved to Knowledge" line, nothing to keep
+      // or decline.
       await expect(screen.getByTestId('call-remembered')).toContainText(
         'will pick up from this call next time',
       );
@@ -385,7 +394,7 @@ test.describe('vEIR calls', () => {
       await expect(screen.getByRole('button', { name: /^(Keep|Not now)/ })).toHaveCount(0);
       await expect(screen.getByText(/would like to remember/)).toHaveCount(0);
       // Leave the venture's memory as it was.
-      for (const id of summary.memoryProposalIds) await deleteMemory(page.request, id);
+      for (const id of summary.memoryKeptIds ?? []) await deleteMemory(page.request, id);
       await screen.getByRole('button', { name: 'Back to conversation' }).click();
       await expect(callScreen(page)).toBeHidden();
       await expect(page).toHaveURL(new RegExp(`/c/${sessionId}$`));
@@ -413,32 +422,171 @@ test.describe('vEIR calls', () => {
       const reply = screen.getByRole('textbox', { name: /^Reply to / });
       await expect(reply).toBeFocused({ timeout: 20_000 });
       await expect(screen.getByTestId('private-indicator')).toHaveText('Private');
+      await page.waitForURL(/\/c\/[0-9a-f-]{36}\?call=1$/);
+      const sessionId = /\/c\/([0-9a-f-]{36})/.exec(page.url())?.[1] ?? '';
       const answered = page.waitForResponse(
         (response) =>
           /\/sessions\/[0-9a-f-]{36}\/turns$/.test(response.url()) && response.request().method() === 'POST',
       );
-      await reply.fill(`Just between us: is per-library pricing right? ${runToken()}`);
+      // Something that a remembered call would keep: the founder's own goal, in their own words.
+      await reply.fill(`Just between us: my goal is per-library pricing by the pilot. ${runToken()}`);
       await reply.press('Enter');
       await answered;
+      await expect
+        .poll(async () => (await sessionTurns(page.request, sessionId)).turns[0]?.response ?? null, {
+          timeout: 30_000,
+        })
+        .not.toBeNull();
       const endResponse = page.waitForResponse(
         (response) =>
           /\/calls\/[0-9a-f-]{36}\/end$/.test(response.url()) && response.request().method() === 'POST',
       );
       await screen.getByRole('button', { name: 'End call' }).click();
       await expect(screen.getByRole('heading', { name: 'Call ended' })).toBeVisible({ timeout: 20_000 });
-      const { summary } = (await (await endResponse).json()) as { summary: { memoryProposalIds: string[] } };
-      expect(summary.memoryProposalIds, 'a private call saves nothing').toEqual([]);
+      const { summary } = (await (await endResponse).json()) as {
+        summary: { memoryProposalIds: string[]; memoryKeptIds?: string[] };
+      };
+      expect(summary.memoryProposalIds, 'a private call proposes nothing').toEqual([]);
+      expect(summary.memoryKeptIds ?? [], 'a private call keeps nothing').toEqual([]);
       await expect(screen.getByTestId('call-private')).toHaveText(
         'Private call: nothing from it is remembered.',
       );
       await expect(screen.getByTestId('memory-saved')).toHaveCount(0);
       await expect(screen.getByTestId('call-remembered')).toHaveCount(0);
+      // Nothing in the venture's memory names it, and no summary of it is written.
+      const memory = await page.request.get(`/api/v1/ventures/${ventureId}/memory?limit=100`);
+      expect(memory.status(), 'GET /ventures/:id/memory').toBe(200);
+      const { items } = (await memory.json()) as { items: { sourceRefs: { kind: string; id: string }[] }[] };
+      expect(items.filter((m) => m.sourceRefs.some((r) => r.id === sessionId))).toEqual([]);
+      const detail = (await (await page.request.get(`/api/v1/sessions/${sessionId}`)).json()) as {
+        session: { digest: unknown };
+      };
+      expect(detail.session.digest ?? null).toBeNull();
       await screen.getByRole('button', { name: 'Back to conversation' }).click();
       await expect(
         page.getByRole('main').locator('header').getByText('Private', { exact: true }),
       ).toBeVisible();
     } finally {
       await endCalls(page, calls.ids);
+    }
+  });
+
+  test('a second call minutes later picks up the first, remembers it when asked, and so does the next chat', async ({
+    page,
+  }) => {
+    test.setTimeout(150_000);
+    await voiceNoticeSeen(page);
+    const token = runToken();
+    const calls = trackCalls(page);
+    const created: string[] = [];
+    /**
+     * Calls from the sidebar in a new conversation (Remember is preselected on the start screen); returns the
+     * conversation and what the call said first.
+     */
+    const callFromSidebar = async (): Promise<{ sessionId: string; intro: string }> => {
+      await openVenture(page);
+      const started = page.waitForResponse(
+        (response) => /\/sessions\/[0-9a-f-]{36}\/calls$/.test(response.url()) && response.status() === 201,
+      );
+      await page
+        .getByRole('navigation', { name: 'Main' })
+        .getByRole('link', { name: /^Call / })
+        .click();
+      const screen = callScreen(page);
+      await expect(
+        screen
+          .getByRole('group', { name: 'Memory for this call' })
+          .getByRole('radio', { name: 'Remember this call' }),
+      ).toBeChecked();
+      await screen.getByRole('button', { name: 'Start call' }).click();
+      await page.waitForURL(/\/c\/[0-9a-f-]{36}\?call=1$/);
+      const sessionId = /\/c\/([0-9a-f-]{36})/.exec(page.url())?.[1] ?? '';
+      created.push(sessionId);
+      const body = (await (await started).json()) as { intro: { text: string } | null };
+      const intro = body.intro?.text ?? '';
+      await expect(screen.getByRole('region', { name: 'Captions' })).toContainText(intro);
+      return { sessionId, intro };
+    };
+    /** Types a line on the call and returns the stored reply to it (turn `n`, 1-based). */
+    const sayOnCall = async (
+      sessionId: string,
+      text: string,
+      n: number,
+    ): Promise<{ answer: string; spoken?: string | null }> => {
+      const reply = callScreen(page).getByRole('textbox', { name: /^Reply to / });
+      await reply.fill(text);
+      await reply.press('Enter');
+      await expect
+        .poll(async () => (await sessionTurns(page.request, sessionId)).turns[n - 1]?.response ?? null, {
+          timeout: 30_000,
+        })
+        .not.toBeNull();
+      const response = (await sessionTurns(page.request, sessionId)).turns[n - 1]?.response;
+      if (!response) throw new Error(`turn ${String(n)} has no reply`);
+      return response;
+    };
+    const hangUp = async (): Promise<void> => {
+      const screen = callScreen(page);
+      await screen.getByRole('button', { name: 'End call' }).click();
+      await expect(screen.getByRole('heading', { name: 'Call ended' })).toBeVisible();
+      await screen.getByRole('button', { name: 'Back to conversation' }).click();
+      await expect(screen).toBeHidden();
+    };
+    try {
+      let first = '';
+      await test.step('a first call: the founder talks about pricing, then hangs up', async () => {
+        const { sessionId } = await callFromSidebar();
+        first = sessionId;
+        await sayOnCall(first, `We are weighing per-library pricing for the pilot. ${token}`, 1);
+        await hangUp();
+      });
+
+      await test.step('a second call opens by picking up the first, not with the same greeting', async () => {
+        const { sessionId, intro } = await callFromSidebar();
+        expect(sessionId).not.toBe(first);
+        expect(intro).toMatch(/^Hi Maya, this is .+, an AI coach\. /);
+        expect(intro).not.toContain('What would you like to work on?');
+        expect(intro).toMatch(/last time|when we last spoke|we talked about|you said|you asked|pric/i);
+        await expectNoBareEirName(page, 'the second call');
+      });
+
+      await test.step('"do you remember what we talked about last time?" is answered from the first call', async () => {
+        const second = created[1] ?? '';
+        const recall = await sayOnCall(second, 'Do you remember what we talked about last time?', 1);
+        // Specific (the topic and when), spoken as speech, and it hands the turn back with a question.
+        const spoken = recall.spoken ?? recall.answer;
+        expect(spoken).toMatch(/When we spoke [^,]+, we were on pricing\./);
+        expect(spoken.trim()).toMatch(/\?$/);
+        // No report artefacts in what is said or in the call's transcript.
+        for (const text of [spoken, recall.answer]) {
+          expect(text).not.toMatch(/\[E\d|Limited evidence|caveat/i);
+        }
+        await expect(callScreen(page).getByRole('region', { name: 'Captions' })).toContainText(
+          /we were on pricing/i,
+        );
+        await hangUp();
+      });
+
+      await test.step('the next chat opens by picking up the calls too', async () => {
+        await openVenture(page);
+        const sessionId = await startConversation(page, `One more thing about the pilot. ${token}`);
+        created.push(sessionId);
+        const detail = (await (await page.request.get(`/api/v1/sessions/${sessionId}`)).json()) as {
+          session: { opener: string | null };
+        };
+        const opener = detail.session.opener ?? '';
+        expect(opener).toMatch(
+          /last time|when we last spoke|we talked about|you said|you asked|welcome back|good to have you back|good to talk again|nice to hear from you again/i,
+        );
+        await expect(page.getByRole('main').getByText(opener.slice(0, 40)).first()).toBeVisible();
+      });
+    } finally {
+      await endCalls(page, calls.ids);
+      // Deleting the conversations erases what they taught, so the next run starts from the seeded memory.
+      for (const id of created) {
+        const removed = await page.request.delete(`/api/v1/sessions/${id}`, { headers: WRITE_HEADERS });
+        expect([204, 404], 'DELETE /sessions/:id').toContain(removed.status());
+      }
     }
   });
 

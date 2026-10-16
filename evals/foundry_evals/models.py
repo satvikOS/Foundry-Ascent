@@ -102,6 +102,8 @@ class MemoryCandidate(_Snake):
     content: str
     evidence_ids: list[str]
     confidence: float
+    #: Where it came from; ``coach_advice`` is never kept as a fact about the venture.
+    source: Literal["founder_stated", "founder_agreed", "coach_advice"] | None = None
 
 
 class RehearsalScore(_Snake):
@@ -227,8 +229,22 @@ class SessionView(_Camel):
     disclosure: str
     started_by: PrincipalRef
     turn_count: int
-    #: The vEIR's opening line shown as the conversation's first message (contract: additive, nullable).
+    #: The vEIR's opening line: picks up the person's latest conversation (null for a temporary chat).
     opener: str | None = None
+
+
+class LastConversation(_Camel):
+    session_id: str
+    last_activity_at: str
+    channel: Literal["call", "chat"]
+    title: str | None = None
+
+
+class ConversationOpener(_Camel):
+    """``GET /ventures/:id/opener``: how the vEIR would open a new conversation now."""
+
+    opener: str | None = None
+    last_conversation: LastConversation | None = None
 
 
 class SessionDetail(_Camel):
@@ -352,6 +368,9 @@ class MemoryObject(_Camel):
     content: str
     status: str
     visibility: Literal["founder_private", "team", "venture", "advisors"]
+    origin: Literal["founder", "ai", "eir", "import"] | None = None
+    #: The vEIR kept it by itself, learned from a conversation (no "add to memory" approval).
+    kept_automatically: bool | None = None
 
 
 class VeirNotebook(_Camel):

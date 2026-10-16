@@ -251,7 +251,14 @@ describe('seed', () => {
       memoryRepo.listMemory(tx, { ventureId: v.id, statuses: ['proposed', 'confirmed', 'disputed'] }),
     );
     expect(new Set(items.map((m) => m.type)).size).toBeGreaterThanOrEqual(8);
-    expect(new Set(items.map((m) => m.status))).toEqual(new Set(['confirmed', 'proposed']));
+    expect(new Set(items.map((m) => m.status))).toContain('confirmed');
+    // What the vEIR learned is kept automatically: no AI item waits for an approval, and none claims one.
+    const learned = items.filter((m) => m.origin === 'ai');
+    expect(learned.length).toBeGreaterThanOrEqual(1);
+    for (const m of learned) {
+      expect(m).toMatchObject({ status: 'confirmed', keptAutomatically: true, approvedBy: null });
+    }
+    expect(items.filter((m) => m.origin !== 'ai').every((m) => !m.keptAutomatically)).toBe(true);
     const experiment = items.find((m) => m.type === 'experiment');
     expect(typeof experiment?.attributes.prediction).toBe('string');
     expect(typeof experiment?.attributes.method).toBe('string');
@@ -260,7 +267,8 @@ describe('seed', () => {
     );
     expect(summaries).toHaveLength(1);
     expect(summaries[0]?.myRole).toBe('founder');
-    expect(summaries[0]?.pendingMemory).toBeGreaterThanOrEqual(1);
+    // Only an EIR's suggestions wait for the founder; what the vEIR learned was kept automatically.
+    expect(summaries[0]?.pendingMemory).toBe(items.filter((m) => m.status === 'proposed').length);
     expect(summaries[0]?.openActions).toBeGreaterThanOrEqual(1);
   });
 });

@@ -25,6 +25,10 @@ export function registerSessionRoutes(
     await core.distill.afterCreate(ctx, session);
     return c.json(session, 201);
   });
+  // How the vEIR would open a new conversation now (New chat and the call screen greet with it).
+  r.get('/ventures/:id/opener', async (c, ctx) =>
+    c.json(await core.sessions.previewOpener(ctx, pathParam(c, 'id'))),
+  );
   r.get('/ventures/:id/sessions', async (c, ctx) =>
     c.json({ items: await core.sessions.list(ctx, pathParam(c, 'id')) }),
   );

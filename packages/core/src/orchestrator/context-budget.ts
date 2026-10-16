@@ -27,6 +27,13 @@ export interface AssembledContext {
 
 const EVIDENCE_STEPS = [24_000, 16_000, 10_000, 6_000, 3_000, 0];
 
+/** The messages with `leftOff` at the start of the final (founder) message; unchanged when it is ''. */
+export function withLeftOff(messages: ChatMessage[], leftOff: string): ChatMessage[] {
+  const last = messages.at(-1);
+  if (leftOff === '' || last?.role !== 'user') return messages;
+  return [...messages.slice(0, -1), { role: 'user', content: `${leftOff}\n\n${last.content}` }];
+}
+
 /**
  * Fits system prompt + the vEIR's notes + evidence + history + founder message into `maxInputTokens`
  * (system design §7 step 4). Trims history first (oldest turns), then the evidence total (lowest-ranked items
@@ -43,6 +50,12 @@ export function assembleContext(args: {
   readonly maxHistoryTurns: number;
   /** What the vEIR remembers (rendered as untrusted notes in the final user message). */
   readonly continuity?: PromptContinuity | null;
+  /**
+   * The rendered "## Where you left off" section (orchestrator/continuity-prompt.ts): untrusted data placed at
+   * the start of the final user message, before the notes. It is bounded where it is rendered and always kept
+   * (it costs the same in every variant), like the notes.
+   */
+  readonly leftOff?: string;
   /** ISO date for marking overdue commitments in the notes. */
   readonly today?: string;
   /** The conversation's opener, when the history reaches back to the start of the conversation. */
@@ -60,15 +73,18 @@ export function assembleContext(args: {
         : buildEvidenceBlock(args.evidence, { maxTotalChars: Math.max(1, evidenceChars) });
     for (let turns = Math.min(args.maxHistoryTurns, args.history.length); turns >= 0; turns -= 1) {
       const replayOpener = Boolean(args.opener) && turns >= answered;
-      const messages = [
-        ...(replayOpener && args.opener ? openerMessages(args.opener) : []),
-        ...buildMessages(args.history, args.founderText, {
-          evidenceBlock,
-          maxHistoryTurns: turns,
-          ...(args.continuity ? { continuity: args.continuity } : {}),
-          ...(args.today !== undefined ? { today: args.today } : {}),
-        }),
-      ];
+      const messages = withLeftOff(
+        [
+          ...(replayOpener && args.opener ? openerMessages(args.opener) : []),
+          ...buildMessages(args.history, args.founderText, {
+            evidenceBlock,
+            maxHistoryTurns: turns,
+            ...(args.continuity ? { continuity: args.continuity } : {}),
+            ...(args.today !== undefined ? { today: args.today } : {}),
+          }),
+        ],
+        args.leftOff ?? '',
+      );
       const tokens = systemTokens + messages.reduce((acc, m) => acc + estimateTokens(m.content), 0);
       const candidate: AssembledContext = {
         messages,

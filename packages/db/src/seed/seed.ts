@@ -647,6 +647,10 @@ async function seedVenture(
      FROM ins`,
     { rows: p.json(memoryRows) },
   );
+  await keepLearnedMemory(
+    sx,
+    memoryRows.filter((m) => m.origin === 'ai' && m.status === 'proposed').map((m) => m.id),
+  );
 
   if (v.escalation) {
     const e = v.escalation;
@@ -791,4 +795,31 @@ export function seedConfigFromEnv(env: EnvLike = process.env): SeedConfig {
           }
         : null,
   };
+}
+
+/**
+ * What the vEIR learned (origin `ai`) is kept automatically (migration 0013): the seed's own AI items (`ids`, this
+ * venture's curated rows, distinct by construction: seed.test.ts) are kept with a system event, as the vEIR keeps
+ * what it learns. Nothing else is touched: real ventures' pending proposals are settled by the daily maintenance
+ * with the checks new memory goes through. On an older schema (a migration test that seeds before 0013) they stay
+ * proposals.
+ */
+async function keepLearnedMemory(sx: SystemExecutor, ids: readonly string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const schema = await sx.query(
+    `SELECT 1 AS present FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'memory_objects' AND column_name = 'auto_kept_at'`,
+  );
+  if (schema.rows.length === 0) return;
+  await sx.query(
+    `WITH kept AS (
+       UPDATE memory_objects m SET status = 'confirmed', auto_kept_at = now(), updated_at = now()
+        WHERE m.id = ANY (:ids) AND m.origin = 'ai' AND m.status = 'proposed'
+       RETURNING m.id, m.venture_id, m.created_by)
+     INSERT INTO memory_events (memory_id, venture_id, actor_id, action, diff)
+     SELECT kept.id, kept.venture_id, kept.created_by, 'approved',
+            '{"to": "confirmed", "system": true, "reason": "kept_automatically"}'::jsonb
+       FROM kept`,
+    { ids: p.uuidArray(ids) },
+  );
 }

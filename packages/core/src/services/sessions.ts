@@ -1,6 +1,7 @@
 import { DEFAULT_PERSONA_NAME, POLICY_VERSION, isModelGatewayError } from '@foundry/ai';
 import {
   CreateSessionRequest,
+  type ConversationOpenerResponse,
   type SessionDetailResponse,
   SessionListQuery,
   TurnFeedbackRequest,
@@ -11,7 +12,7 @@ import {
 } from '@foundry/contracts';
 import {
   escalationsRepo,
-  notebooksRepo,
+  memoryRepo,
   personasRepo,
   sessionsRepo,
   settingsRepo,
@@ -32,10 +33,11 @@ import { type DirectoryCache, type OtherVentures } from '../internal/directory.j
 import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
 import { meteredStructured } from '../internal/metered.js';
 import { participantTurnView, supportMessageFor } from '../orchestrator/blocked.js';
-import { validatedOpener } from '../orchestrator/continuity.js';
+import { chooseOpener } from '../orchestrator/continuity.js';
 import { assertWithinSpendCaps } from '../orchestrator/guards.js';
 import { RECAP_SCHEMA_NAME, RecapDraft, buildRecapPrompt, sanitizeRecap } from '../orchestrator/recap.js';
 import { persistMemoryCandidates } from './memory.js';
+import { conversationGrounding } from './memory-dedupe.js';
 
 type SessionDetail = z.infer<typeof SessionDetailResponse>;
 
@@ -54,14 +56,19 @@ export interface SessionsService {
   /**
    * Starts a session (founder/team). Resolves the active assignment and approved persona release
    * server-side, checks persona status, the kill switch, the mode and the daily spend caps. A standard
-   * conversation opens with the vEIR's line: the notebook's next opener, validated (never for temporary
-   * chats).
+   * conversation opens with the vEIR's line, validated: the notebook's next opener, or a line picking up the
+   * person's latest conversation (never for temporary chats).
    */
   create(
     ctx: RequestContext,
     ventureId: string,
     input: z.input<typeof CreateSessionRequest>,
   ): Promise<SessionView>;
+  /**
+   * How the vEIR would open a new standard conversation of the caller in this venture now (founder/team): the
+   * opener `create` would store, and the latest earlier conversation it picks up. Nothing is written.
+   */
+  previewOpener(ctx: RequestContext, ventureId: string): Promise<ConversationOpenerResponse>;
   /** Sessions of a venture, latest activity first (founder/team). */
   list(ctx: RequestContext, ventureId: string): Promise<SessionView[]>;
   /**
@@ -117,36 +124,36 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
     return view;
   }
 
-  /**
-   * The vEIR's opening line for a new standard conversation: the notebook's next opener, kept only when it
-   * passes the identity and cross-venture checks (a person may have edited it). Null when there is none.
-   */
-  async function openerFor(
+  /** The opening line of a new conversation of the caller (orchestrator/continuity.ts `chooseOpener`). */
+  function openerFor(
     scope: RequestScope,
     ventureId: string,
     active: ActiveAssignment,
     guards: { readonly others: OtherVentures; readonly eirNames: readonly string[] },
-  ): Promise<{
-    readonly text: string;
-    readonly sourceSessionId: string | null;
-    readonly byPerson: boolean;
-  } | null> {
-    const notebook = await notebooksRepo.getNotebook(scope.tx, { ventureId, personaId: active.persona.id });
-    const next = notebook?.content.nextOpener ?? null;
-    if (next === null) return null;
-    const text = validatedOpener(next, {
-      personaName: active.persona.name,
-      personaEirName: await personasRepo.getPersonaEirName(scope.tx, active.persona.id),
-      eirNames: guards.eirNames,
-      otherVentureNames: guards.others.names,
-      otherVentureCanaries: guards.others.canaries,
-      otherVentureMemberNames: guards.others.memberNames,
+  ): ReturnType<typeof chooseOpener> {
+    return chooseOpener(scope.tx, {
+      ventureId,
+      persona: { id: active.persona.id, name: active.persona.name },
+      principalId: scope.ctx.principalId,
+      guards: {
+        eirNames: guards.eirNames,
+        otherVentureNames: guards.others.names,
+        otherVentureCanaries: guards.others.canaries,
+        otherVentureMemberNames: guards.others.memberNames,
+      },
+      now: kit.now(),
     });
-    // The conversation it was drawn from, so deleting that conversation erases this copy too. A null source
-    // means a person wrote it (the copy stays); a missing one means its origin is unknown, and deleting any
-    // conversation of the venture erases the copy.
-    const source = notebook?.content.nextOpenerSource;
-    return text === null ? null : { text, sourceSessionId: source ?? null, byPerson: source === null };
+  }
+
+  /** The opener's guards, from the tenant directory (owner role, cached): read before a request transaction. */
+  async function openerGuards(
+    ctx: RequestContext,
+    ventureId: string,
+  ): Promise<{ readonly others: OtherVentures; readonly eirNames: readonly string[] }> {
+    return {
+      others: await directory.others(ctx.tenantId, ventureId),
+      eirNames: (await directory.get(ctx.tenantId)).eirNames,
+    };
   }
 
   /** The session (RLS-visible) of a founder/team request, or 404/403. */
@@ -191,18 +198,12 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
       });
       await assertWithinSpendCaps(kit, ctx, settings, { ventureId, operation: 'session' });
       // The opener's guards come from the tenant directory (owner role), read before the writing transaction.
-      const guards =
-        input.privacy === 'standard'
-          ? {
-              others: await directory.others(ctx.tenantId, ventureId),
-              eirNames: (await directory.get(ctx.tenantId)).eirNames,
-            }
-          : null;
+      const guards = input.privacy === 'standard' ? await openerGuards(ctx, ventureId) : null;
       return kit.inRequest(ctx, async (scope) => {
         // Re-resolved in the writing transaction: a suspension in between still blocks the session.
         const active = await requireAssignmentActive(scope, ventureId);
         requireModeAllowed(active, input.mode);
-        const opener = guards === null ? null : await openerFor(scope, ventureId, active, guards);
+        const opener = guards === null ? null : (await openerFor(scope, ventureId, active, guards)).opener;
         const session = await sessionsRepo.createSession(scope.tx, {
           tenantId: ctx.tenantId,
           ventureId,
@@ -235,6 +236,32 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
           },
         });
         return sessionView(scope.tx, session.id);
+      });
+    },
+
+    previewOpener: async (ctx, rawVentureId) => {
+      const ventureId = requireId(rawVentureId, 'Venture');
+      const guards = await openerGuards(ctx, ventureId);
+      return kit.inRequest(ctx, async (scope) => {
+        await requireVentureAccess(scope, ventureId, 'write', { objectType: 'session' });
+        const { opener, latest } = await openerFor(
+          scope,
+          ventureId,
+          await requireAssignmentActive(scope, ventureId),
+          guards,
+        );
+        return {
+          opener: opener?.text ?? null,
+          lastConversation:
+            latest === null
+              ? null
+              : {
+                  sessionId: latest.sessionId,
+                  lastActivityAt: latest.lastActivityAt,
+                  channel: latest.channel,
+                  title: latest.title,
+                },
+        };
       });
     },
 
@@ -459,6 +486,12 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
             // Turn evidence can never cite a founder_private item (retrieval excludes them and the
             // turn_evidence insert policy rejects them), so a recap's candidates are team items.
             visibility: 'team',
+            // The coach's own advice is never kept as a fact unless the founder said or agreed to it.
+            grounding: conversationGrounding(
+              turns.map((t) => ({ founder: t.founderText, answer: t.response?.answer ?? null })),
+            ),
+            // What the founder made the vEIR forget is never kept again.
+            forgotten: await memoryRepo.listForgottenMemory(tx, { ventureId: session.ventureId }),
           });
           candidateCount = created.length;
           recap = {

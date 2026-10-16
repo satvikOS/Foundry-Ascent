@@ -10,16 +10,28 @@ import {
   type MemoryObjectView,
   type SourceRef,
 } from '@foundry/contracts';
-import { memoryRepo, type SqlExecutor } from '@foundry/db';
+import { knowledgeRepo, memoryRepo, settingsRepo, turnsRepo, type SqlExecutor } from '@foundry/db';
 import { type z } from 'zod';
 
 import { requireVentureAccess } from '../authz/venture-access.js';
 import { type RequestContext } from '../context.js';
 import { fail, parseInput } from '../errors.js';
-import { embedMemoryBestEffort, type EmbeddableMemory } from '../internal/embeddings.js';
+import { embedMemoryBestEffort, memoryEmbeddingText, type EmbeddableMemory } from '../internal/embeddings.js';
+import { meteredEmbed } from '../internal/metered.js';
 import { audit, requireId, type Kit } from '../internal/kit.js';
 import { toMemoryView } from '../internal/views.js';
-import { addsNothingTo, MEMORY_DUPLICATE_COSINE, sameMemoryContent } from './memory-dedupe.js';
+import {
+  addsNothingTo,
+  conversationGrounding,
+  forgottenPrintOf,
+  founderSaid,
+  isCoachEcho,
+  matchesForgotten,
+  MEMORY_DUPLICATE_COSINE,
+  sameMemoryContent,
+  sameNumbers,
+  type ConversationGrounding,
+} from './memory-dedupe.js';
 
 type MemoryEventViewValue = z.infer<typeof MemoryEventView>;
 
@@ -74,11 +86,16 @@ export interface MemoryService {
   history(ctx: RequestContext, memoryId: string): Promise<MemoryEventViewValue[]>;
 }
 
-/** Where a memory candidate came from (stored as its first source ref). */
-export interface CandidateSource {
-  readonly kind: 'turn' | 'session';
-  readonly id: string;
-}
+/**
+ * Where a memory candidate came from: a turn (with its conversation) or a conversation. Stored as the first
+ * source refs: the conversation first, so the item names what it was learned from.
+ */
+export type CandidateSource =
+  | { readonly kind: 'turn'; readonly id: string; readonly sessionId: string }
+  | { readonly kind: 'session'; readonly id: string };
+
+/** Label of the source ref naming the conversation an AI item was learned from. */
+export const LEARNED_FROM_LABEL = 'Learned from the conversation';
 
 /** Evidence shown to the model, by key, used to turn candidate evidence ids into source refs. */
 export type EvidenceIndex = ReadonlyMap<
@@ -92,12 +109,17 @@ const DEDUPE_EXCERPT_CHARS = 1_000;
 
 /** What happened to a batch of AI memory candidates. */
 export interface ProposalResult {
-  /** New proposals plus pending proposals raised again: what the founder is asked to review. */
+  /** New items plus the AI items raised again: what the vEIR remembered from these candidates. */
   readonly records: memoryRepo.MemoryRecord[];
+  /** The new items alone (what {@link settleKeptMemory} settles by meaning after a turn). */
+  readonly createdRecords: memoryRepo.MemoryRecord[];
   readonly created: number;
-  /** Candidates that repeated a pending AI proposal, which got the new source instead of a duplicate. */
+  /** Candidates that repeated AI memory nobody approved or corrected, which got the new source instead. */
   readonly repeated: number;
-  /** Candidates that restated an item the venture already has or a person rejected. */
+  /**
+   * Candidates that restated an item a person made, approved or rejected, or that were only the coach's own
+   * advice ({@link isCoachEcho}).
+   */
   readonly dropped: number;
 }
 
@@ -108,25 +130,37 @@ export interface CandidateConversation {
   readonly speakers: readonly string[];
 }
 
-/** Whether an item is a pending AI proposal drawn from one of `sources` (a conversation and its turns). */
-function proposedFrom(item: memoryRepo.MemoryRecord, sources: ReadonlySet<string>): boolean {
+/**
+ * AI memory nobody approved or corrected: a pending proposal, or an item the vEIR kept by itself. A candidate
+ * that restates one raises it again (new source) instead of becoming a duplicate.
+ */
+function unreviewedAi(item: memoryRepo.MemoryRecord): boolean {
   return (
     item.origin === 'ai' &&
-    item.status === 'proposed' &&
+    (item.status === 'proposed' ||
+      (item.status === 'confirmed' && item.keptAutomatically && item.approvedBy === null))
+  );
+}
+
+/** Whether an item is AI memory nobody reviewed, drawn from one of `sources` (a conversation and its turns). */
+function learnedFrom(item: memoryRepo.MemoryRecord, sources: ReadonlySet<string>): boolean {
+  return (
+    unreviewedAi(item) &&
     item.sourceRefs.some((r) => (r.kind === 'turn' || r.kind === 'session') && sources.has(r.id))
   );
 }
 
 /**
- * The existing item a candidate restates: lexically ({@link sameMemoryContent}); a pending AI proposal of the
- * same conversation the candidate adds nothing to ({@link addsNothingTo}, when `conversation` is given); or
- * else, when the candidate has an embedding, the closest embedded item at {@link MEMORY_DUPLICATE_COSINE} or
- * above. Null when it is new.
+ * The existing item a candidate restates: lexically ({@link sameMemoryContent}); AI memory of the same
+ * conversation the candidate adds nothing to ({@link addsNothingTo}, when `conversation` is given); or else,
+ * when the candidate has an embedding, the closest embedded item at {@link MEMORY_DUPLICATE_COSINE} or above.
+ * Null when it is new.
  */
 async function findDuplicate(
   tx: SqlExecutor,
   ventureId: string,
   candidate: {
+    readonly id?: string;
     readonly title: string;
     readonly content: string;
     readonly embedding: readonly number[] | null;
@@ -134,36 +168,55 @@ async function findDuplicate(
   existing: readonly memoryRepo.MemoryRecord[],
   conversation: CandidateConversation | undefined,
 ): Promise<memoryRepo.MemoryRecord | null> {
-  const lexical = existing.find((e) => sameMemoryContent(e.content, candidate.content));
+  const others = existing.filter((e) => e.id !== candidate.id);
+  const lexical = others.find((e) => sameMemoryContent(e.content, candidate.content));
   if (lexical !== undefined) return lexical;
   if (conversation !== undefined) {
-    const restated = existing.find(
+    const restated = others.find(
       (e) =>
-        proposedFrom(e, conversation.sourceIds) &&
+        learnedFrom(e, conversation.sourceIds) &&
         addsNothingTo(candidate.content, e.content, conversation.speakers),
     );
     if (restated !== undefined) return restated;
   }
   if (candidate.embedding === null) return null;
-  const [nearest] = await memoryRepo.nearestMemory(tx, { ventureId, embedding: candidate.embedding });
-  if (nearest === undefined || nearest.similarity < MEMORY_DUPLICATE_COSINE) return null;
-  return existing.find((e) => e.id === nearest.id) ?? (await memoryRepo.getMemory(tx, nearest.id)) ?? null;
+  const near = await memoryRepo.nearestMemory(tx, { ventureId, embedding: candidate.embedding, limit: 3 });
+  for (const hit of near) {
+    if (hit.similarity < MEMORY_DUPLICATE_COSINE) break;
+    if (hit.id === candidate.id) continue;
+    const item = others.find((e) => e.id === hit.id) ?? (await memoryRepo.getMemory(tx, hit.id));
+    // Embeddings barely see numbers: "capped at $500" and "capped at $700" are different facts.
+    if (
+      item !== null &&
+      sameNumbers(`${item.title} ${item.content}`, `${candidate.title} ${candidate.content}`)
+    )
+      return item;
+  }
+  return null;
 }
 
 /**
- * Proposes AI memory candidates as `proposed` items (never auto-confirmed; the DB constraint backs this),
- * origin `ai`, with `visibility` until a founder approves (and optionally widens) them: `team` normally,
- * `founder_private` when they came from a turn or session that used founder_private evidence
- * (`candidateVisibility`), so they cannot restate a private item to the team. Evidence ids that are not in
- * the evidence pack are ignored.
+ * Keeps AI memory candidates (owner decision 2026-10-16: what a conversation teaches goes to memory by itself,
+ * without an "add to memory" step). Each new candidate becomes an item of origin `ai` that is kept
+ * automatically: `confirmed` with no approver and `auto_kept_at` (migration 0013), so the founder and their team
+ * see it in Knowledge at once and can correct, dispute or delete it like any item. Its source refs name the
+ * conversation it was learned from (and the turn, for a turn's candidates), so deleting that conversation
+ * erases it. `visibility` is `team` normally, `founder_private` when it came from a turn or session that used
+ * founder_private evidence (`candidateVisibility`), so it never restates a private item to the team. Evidence
+ * ids that are not in the evidence pack are ignored. Callers write nothing for a temporary chat.
  *
- * Hygiene before every insert: a candidate that restates a pending AI proposal of the same visibility raises
- * that proposal again (new source ref, fresh expiry clock) instead of adding a duplicate; one that restates
- * anything else the venture has (confirmed, disputed, a person's proposal, or something a person rejected)
- * is dropped. Comparison is lexical against the venture's recent items (`existing`, read here when not
- * given), by containment against the pending proposals of the same conversation (`conversation`), and by
- * cosine similarity when `embeddings` (one per candidate, unit-length) are given; new proposals store their
- * embedding.
+ * A candidate that is only the coach's own advice or framing ({@link isCoachEcho}: the model's `source` label,
+ * checked against what the founder said and explicitly agreed to) is never kept as a fact about the venture, and
+ * neither is anything the founder made the vEIR forget ({@link matchesForgotten}): forgetting an item is never
+ * undone by the next distillation of the conversation it came from.
+ *
+ * Hygiene before every insert: a candidate that restates AI memory nobody approved or corrected (an item kept
+ * automatically, or a pending proposal from before) of the same visibility adds its source to that item
+ * instead of a duplicate; one that restates anything else the venture has (an item a person made, approved,
+ * corrected or disputed, or something a person rejected) is dropped. Comparison is lexical against the
+ * venture's recent items (`existing`, read here when not given), by containment against the AI memory of the
+ * same conversation (`conversation`), and by cosine similarity when `embeddings` (one per candidate,
+ * unit-length) are given; new items store their embedding.
  */
 export async function proposeMemoryCandidates(
   tx: SqlExecutor,
@@ -178,10 +231,17 @@ export async function proposeMemoryCandidates(
     readonly existing?: readonly memoryRepo.MemoryRecord[];
     readonly embeddings?: readonly (readonly number[] | null)[];
     readonly conversation?: CandidateConversation;
+    /** What was said where the candidates come from (the founder's words and the coach's). */
+    readonly grounding?: ConversationGrounding;
+    /**
+     * What the founder made the vEIR forget in this venture (`memoryRepo.listForgottenMemory`): a candidate that
+     * matches one is never kept again ({@link matchesForgotten}).
+     */
+    readonly forgotten: readonly memoryRepo.ForgottenMemory[];
   },
 ): Promise<ProposalResult> {
   const usable = args.candidates.filter((c) => c.title.trim() !== '');
-  if (usable.length === 0) return { records: [], created: 0, repeated: 0, dropped: 0 };
+  if (usable.length === 0) return { records: [], createdRecords: [], created: 0, repeated: 0, dropped: 0 };
   const existing = [
     ...(args.existing ??
       (await memoryRepo.listMemory(tx, {
@@ -192,15 +252,40 @@ export async function proposeMemoryCandidates(
       }))),
   ];
   const records: memoryRepo.MemoryRecord[] = [];
+  const createdRecords: memoryRepo.MemoryRecord[] = [];
   let created = 0;
   let repeated = 0;
   let dropped = 0;
+  const conversationRefs: SourceRef[] =
+    args.source.kind === 'turn'
+      ? [
+          { kind: 'session', id: args.source.sessionId, label: LEARNED_FROM_LABEL },
+          { kind: 'turn', id: args.source.id },
+        ]
+      : [{ kind: 'session', id: args.source.id, label: LEARNED_FROM_LABEL }];
+  const conversationId = args.source.kind === 'turn' ? args.source.sessionId : args.source.id;
   for (const [index, candidate] of args.candidates.entries()) {
     const title = candidate.title.trim().slice(0, 200);
     const content = candidate.content.trim().slice(0, 8000);
     if (title === '') continue;
     const keys = [...new Set(candidate.evidence_ids)].filter((k) => args.evidence.has(k));
-    const refs: SourceRef[] = [{ kind: args.source.kind, id: args.source.id, label: 'AI proposal' }];
+    const embedding = args.embeddings?.[index] ?? null;
+    if (
+      (args.grounding !== undefined &&
+        isCoachEcho({ title, content }, args.grounding, {
+          speakers: args.conversation?.speakers ?? [],
+          source: candidate.source ?? null,
+        })) ||
+      matchesForgotten({ type: candidate.type, title, content }, embedding, conversationId, args.forgotten, {
+        saidAgain:
+          args.grounding !== undefined &&
+          founderSaid({ title, content }, args.grounding, args.conversation?.speakers ?? []),
+      })
+    ) {
+      dropped += 1;
+      continue;
+    }
+    const refs: SourceRef[] = [...conversationRefs];
     for (const key of keys) {
       const item = args.evidence.get(key);
       if (!item) continue;
@@ -210,7 +295,6 @@ export async function proposeMemoryCandidates(
     const confidence = Number.isFinite(candidate.confidence)
       ? Math.min(1, Math.max(0, candidate.confidence))
       : 0.5;
-    const embedding = args.embeddings?.[index] ?? null;
     const duplicate = await findDuplicate(
       tx,
       args.ventureId,
@@ -219,19 +303,17 @@ export async function proposeMemoryCandidates(
       args.conversation,
     );
     if (duplicate !== null) {
-      const pendingAi =
-        duplicate.status === 'proposed' &&
-        duplicate.origin === 'ai' &&
+      const again =
+        unreviewedAi(duplicate) &&
         duplicate.visibility === args.visibility &&
-        !records.some((r) => r.id === duplicate.id);
-      const again = pendingAi
-        ? await memoryRepo.repeatProposal(tx, {
-            memoryId: duplicate.id,
-            actorId: args.createdBy,
-            sourceRefs: refs,
-            confidence,
-          })
-        : null;
+        !records.some((r) => r.id === duplicate.id)
+          ? await memoryRepo.repeatProposal(tx, {
+              memoryId: duplicate.id,
+              actorId: args.createdBy,
+              sourceRefs: refs,
+              confidence,
+            })
+          : null;
       if (again === null) {
         dropped += 1;
       } else {
@@ -246,7 +328,7 @@ export async function proposeMemoryCandidates(
       type: candidate.type,
       title,
       content,
-      status: 'proposed',
+      keptAutomatically: true,
       visibility: args.visibility,
       confidence,
       origin: 'ai',
@@ -256,21 +338,270 @@ export async function proposeMemoryCandidates(
       embedding,
     });
     records.push(record);
+    createdRecords.push(record);
     existing.unshift(record);
     created += 1;
   }
-  return { records, created, repeated, dropped };
+  return { records, createdRecords, created, repeated, dropped };
 }
 
 /**
- * {@link proposeMemoryCandidates} for callers that only need the proposals to review (turns and recaps):
- * the new proposals and the pending ones raised again.
+ * {@link proposeMemoryCandidates} for callers that only need what was remembered (turns and recaps): the new
+ * items and the AI items raised again.
  */
 export async function persistMemoryCandidates(
   tx: SqlExecutor,
   args: Parameters<typeof proposeMemoryCandidates>[1],
 ): Promise<memoryRepo.MemoryRecord[]> {
   return (await proposeMemoryCandidates(tx, args)).records;
+}
+
+/** What settling a turn's kept memory by meaning did (counts only). */
+export interface SettleResult {
+  readonly embedded: number;
+  /** Items that restated another item: their source went to that item instead. */
+  readonly merged: number;
+  /** Items that were something the founder made the vEIR forget. */
+  readonly forgotten: number;
+}
+
+/**
+ * Settles by meaning what a turn just kept (owner decision 2026-10-16: the turn's reply never waits for this, so
+ * it runs after the turn completed). A turn keeps its candidates at once, checked lexically; here they are
+ * embedded (one metered call) and, in one transaction: an item that is something the founder made the vEIR forget
+ * is taken back; one that restates another item by meaning ({@link MEMORY_DUPLICATE_COSINE}, same numbers) is
+ * taken back too, its conversation added to that item when it is AI memory nobody reviewed; every other item keeps
+ * its vector, so "do you remember…" finds it by meaning. Best effort: on any failure (or with AI switched off)
+ * the items stay as kept, and the embedding backfill and the next distillation catch up. Never throws; logs
+ * counts only.
+ */
+export async function settleKeptMemory(
+  kit: Kit,
+  ctx: RequestContext,
+  args: {
+    readonly ventureId: string;
+    /** The conversation the items were learned from. */
+    readonly sessionId: string;
+    readonly items: readonly memoryRepo.MemoryRecord[];
+    /** What was said in it (whether the founder said an item again after making the vEIR forget it). */
+    readonly grounding?: ConversationGrounding;
+  },
+): Promise<SettleResult> {
+  const none: SettleResult = { embedded: 0, merged: 0, forgotten: 0 };
+  const items = args.items.filter((m) => m.keptAutomatically && !m.hasEmbedding && m.status === 'confirmed');
+  if (items.length === 0) return none;
+  try {
+    const settings = await kit.inRequest(ctx, ({ tx }) => settingsRepo.getPlatformSettings(tx));
+    if (!settings.aiEnabled) return none;
+    const embedded = await meteredEmbed(
+      kit,
+      { ctx, ventureId: args.ventureId, purpose: 'embedding' },
+      items.map(memoryEmbeddingText),
+    );
+    return await kit.inRequest(ctx, async ({ tx }) => {
+      const forgotten = await memoryRepo.listForgottenMemory(tx, { ventureId: args.ventureId });
+      let done = 0;
+      let merged = 0;
+      let forgot = 0;
+      for (const [i, item] of items.entries()) {
+        const vector = embedded.vectors[i];
+        if (vector?.length !== knowledgeRepo.EMBEDDING_DIMENSIONS) continue;
+        const saidAgain = args.grounding !== undefined && founderSaid(item, args.grounding);
+        if (matchesForgotten(item, vector, args.sessionId, forgotten, { saidAgain })) {
+          if (await memoryRepo.discardKeptMemory(tx, { memoryId: item.id, reason: 'forgotten' })) forgot += 1;
+          continue;
+        }
+        const duplicate = await findDuplicate(
+          tx,
+          args.ventureId,
+          { id: item.id, title: item.title, content: item.content, embedding: vector },
+          [],
+          undefined,
+        );
+        if (duplicate !== null) {
+          if (unreviewedAi(duplicate) && duplicate.visibility === item.visibility) {
+            await memoryRepo.repeatProposal(tx, {
+              memoryId: duplicate.id,
+              actorId: ctx.principalId,
+              sourceRefs: item.sourceRefs.filter((r) => r.kind === 'session' || r.kind === 'turn'),
+              confidence: item.confidence,
+            });
+          }
+          if (
+            await memoryRepo.discardKeptMemory(tx, {
+              memoryId: item.id,
+              reason: 'duplicate',
+              intoId: duplicate.id,
+            })
+          ) {
+            merged += 1;
+          }
+          continue;
+        }
+        await knowledgeRepo.setMemoryEmbeddings(tx, [{ id: item.id, embedding: vector }]);
+        done += 1;
+      }
+      return { embedded: done, merged, forgotten: forgot };
+    });
+  } catch (err) {
+    kit.deps.logger.warn('memory.settle_deferred', {
+      requestId: ctx.requestId,
+      items: items.length,
+      error: err instanceof Error ? err.name : 'unknown',
+    });
+    return none;
+  }
+}
+
+/** What settling the proposals left from before automatic memory did (counts only). */
+export interface PendingSettleResult {
+  readonly kept: number;
+  /** Retired because they restated another item (their conversations went to that item when it was AI memory). */
+  readonly duplicates: number;
+  /** Retired because they were only the coach's advice, or something the founder made the vEIR forget. */
+  readonly notTheFounders: number;
+}
+
+/** Turns of a proposal's conversations read to judge where it came from. */
+const PENDING_GROUNDING_CONVERSATIONS = 3;
+
+/**
+ * Settles the AI memory proposals left from before automatic memory (migration 0013 leaves them pending; owner
+ * role, the daily maintenance): each, oldest first, goes through the checks new memory goes through. One that is
+ * only the coach's advice ({@link isCoachEcho}, judged against the conversations it was drawn from) or something
+ * the founder made the vEIR forget is retired; one that restates an item the venture has (lexically, or by its
+ * stored embedding at {@link MEMORY_DUPLICATE_COSINE} with the same numbers) is retired and its conversations go to
+ * that item when it is AI memory nobody reviewed; every other one is kept automatically, as new memory is. Older
+ * proposals are settled first, so of two that say the same the older is kept. At most `limit` per run.
+ */
+export async function settlePendingAiProposals(
+  kit: Kit,
+  args: { readonly limit?: number } = {},
+): Promise<PendingSettleResult> {
+  return kit.system(async (sx) => {
+    const pending = await memoryRepo.listPendingAiProposals(sx, { limit: args.limit ?? 200 });
+    let kept = 0;
+    let duplicates = 0;
+    let notTheFounders = 0;
+    const ventures = new Map<string, memoryRepo.PendingAiProposal[]>();
+    for (const item of pending) ventures.set(item.ventureId, [...(ventures.get(item.ventureId) ?? []), item]);
+    for (const [ventureId, items] of ventures) {
+      const known = await memoryRepo.listMemory(sx, {
+        ventureId,
+        statuses: ['confirmed', 'disputed', 'rejected', 'superseded'],
+        limit: DEDUPE_SCAN_LIMIT,
+        excerptChars: DEDUPE_EXCERPT_CHARS,
+      });
+      const forgotten = await memoryRepo.listForgottenMemory(sx, { ventureId, system: true });
+      const groundings = new Map<string, ConversationGrounding>();
+      const groundingOf = async (sessionId: string): Promise<ConversationGrounding> => {
+        const cached = groundings.get(sessionId);
+        if (cached !== undefined) return cached;
+        const turns = (await turnsRepo.listTurns(sx, sessionId)).filter(
+          (t) => t.status === 'completed' && t.riskLabel !== 'crisis',
+        );
+        const grounding = conversationGrounding(
+          turns.map((t) => ({ founder: t.founderText, answer: t.response?.answer ?? null })),
+        );
+        groundings.set(sessionId, grounding);
+        return grounding;
+      };
+      for (const item of items) {
+        const conversations = item.conversationIds.slice(0, PENDING_GROUNDING_CONVERSATIONS);
+        const parts = await Promise.all(conversations.map(groundingOf));
+        const grounding: ConversationGrounding = {
+          founder: parts.flatMap((g) => g.founder),
+          agreed: parts.flatMap((g) => g.agreed),
+        };
+        const embedding = item.hasEmbedding ? await memoryRepo.getMemoryEmbedding(sx, item.id) : null;
+        const echo = conversations.length > 0 && isCoachEcho(item, grounding);
+        const forgot = matchesForgotten(item, embedding, conversations[0] ?? '', forgotten, {
+          saidAgain: conversations.length > 0 && founderSaid(item, grounding),
+        });
+        if (echo || forgot) {
+          if (
+            await memoryRepo.settlePendingAiProposal(sx, {
+              memoryId: item.id,
+              outcome: 'expire',
+              reason: echo ? 'coach_advice' : 'forgotten',
+            })
+          )
+            notTheFounders += 1;
+          continue;
+        }
+        let duplicate =
+          known.find((e) => e.id !== item.id && sameMemoryContent(e.content, item.content)) ?? null;
+        if (duplicate === null && item.hasEmbedding) {
+          for (const hit of await memoryRepo.nearestToMemory(sx, {
+            memoryId: item.id,
+            ventureId,
+            statuses: ['confirmed', 'disputed', 'rejected', 'superseded'],
+          })) {
+            if (hit.similarity < MEMORY_DUPLICATE_COSINE) break;
+            const other = known.find((e) => e.id === hit.id) ?? (await memoryRepo.getMemory(sx, hit.id));
+            if (
+              other !== null &&
+              sameNumbers(`${other.title} ${other.content}`, `${item.title} ${item.content}`)
+            ) {
+              duplicate = other;
+              break;
+            }
+          }
+        }
+        if (duplicate !== null) {
+          if (unreviewedAi(duplicate) && duplicate.visibility === item.visibility) {
+            await memoryRepo.repeatProposal(sx, {
+              memoryId: duplicate.id,
+              actorId: item.createdBy,
+              sourceRefs: item.sourceRefs.filter((r) => r.kind === 'session' || r.kind === 'turn'),
+              confidence: 0,
+            });
+          }
+          if (
+            await memoryRepo.settlePendingAiProposal(sx, {
+              memoryId: item.id,
+              outcome: 'expire',
+              reason: 'duplicate',
+            })
+          )
+            duplicates += 1;
+          continue;
+        }
+        if (
+          await memoryRepo.settlePendingAiProposal(sx, {
+            memoryId: item.id,
+            outcome: 'keep',
+            reason: memoryRepo.KEPT_AUTOMATICALLY,
+          })
+        ) {
+          kept += 1;
+          const now = await memoryRepo.getMemory(sx, item.id);
+          if (now !== null) known.unshift(now);
+        }
+      }
+    }
+    return { kept, duplicates, notTheFounders };
+  });
+}
+
+/**
+ * Records what the founder makes the vEIR forget before `current` is deleted (every version) or corrected (the
+ * version they corrected away from), when it was learned from a conversation: hashes and a meaning signature per
+ * conversation (`memory_forgotten`), never text, so the next distillation of that conversation never keeps it again.
+ */
+async function rememberForgetting(
+  tx: SqlExecutor,
+  current: memoryRepo.MemoryRecord,
+  reason: 'deleted' | 'corrected',
+): Promise<void> {
+  if (!current.sourceRefs.some((r) => r.kind === 'session' || r.kind === 'turn')) return;
+  const versions = await memoryRepo.listMemoryVersions(tx, current.id);
+  const chosen = reason === 'deleted' ? versions : versions.filter((v) => v.id === current.id);
+  await memoryRepo.recordForgottenMemory(tx, {
+    memoryId: current.id,
+    reason,
+    fingerprints: chosen.map((v) => forgottenPrintOf(v, v.embedding)),
+  });
 }
 
 const ACTION_EVENTS = {
@@ -432,6 +763,9 @@ export function createMemoryService(kit: Kit): MemoryService {
             const patch = action.patch;
             if (Object.keys(patch).length === 0)
               throw fail.validation('A correction must change at least one field');
+            // What the vEIR kept and the founder corrected is never kept again in its old words.
+            if (current.origin === 'ai' && current.approvedBy === null)
+              await rememberForgetting(tx, current, 'corrected');
             result = await memoryRepo.correctMemory(tx, {
               memoryId,
               actorId,
@@ -452,6 +786,8 @@ export function createMemoryService(kit: Kit): MemoryService {
             });
             break;
           case 'delete':
+            // Forgetting is durable: the next distillation of the conversation never keeps it again.
+            await rememberForgetting(tx, current, 'deleted');
             deletedVersions = await memoryRepo.deleteMemory(tx, memoryId);
             if (deletedVersions === 0) throw fail.notFound('Memory item');
             break;

@@ -55,6 +55,7 @@ import {
   staleWriteReason,
 } from './distill-rules.js';
 import { proposeMemoryCandidates } from './memory.js';
+import { conversationGrounding } from './memory-dedupe.js';
 
 /**
  * Distillation: how a vEIR's specific pool grows from conversations (docs/architecture/knowledge-pools.md).
@@ -66,7 +67,8 @@ import { proposeMemoryCandidates } from './memory.js';
  * - the conversation's digest and an improved title;
  * - the vEIR notebook, merged with what is there and keeping every line a person edited since the last
  *   distillation, never writing back a line a person removed or corrected;
- * - memory candidates, deduplicated against the venture's memory and proposed for a person to approve;
+ * - memory candidates, deduplicated against the venture's memory and kept automatically (the founder and team
+ *   edit or forget them in Knowledge; nobody has to approve them first);
  * - de-identified lesson candidates, drafted in the persona's common pool for its curators to review.
  *
  * Everything of a part is written in one transaction, idempotently per (conversation, covered-turn count), and
@@ -76,19 +78,39 @@ import { proposeMemoryCandidates } from './memory.js';
  * ids, counts and codes only.
  *
  * Triggers (the API calls them after the change commits): every completed turn of a standard conversation
- * queues a job delayed by `turnDelaySeconds`; ending a conversation queues one now; starting a conversation
- * queues the person's previous one when it was never distilled. Each job carries the turn count it was queued
- * at, and skips cheaply when a later turn queued another, when there is nothing new or when the conversation
- * is still active. A bounded backstop (daily maintenance, and the `distill_sweep` message) distils idle
- * conversations that slipped through, inline: the worker never enqueues.
+ * queues a job delayed by `turnDelaySeconds` (the backstop of a conversation left open); ending a conversation,
+ * or a call in it (every way a call ends: hang-up, time limit, a switch, replacement), queues one now; starting
+ * a conversation queues the person's previous one now when it has undistilled turns and the person moved on
+ * from it (ended, or no turn for `settleGraceSeconds`). Those three are `settled`: never skipped as active.
+ * Each job carries the turn count it was queued at, and skips cheaply when a later turn queued another, when
+ * there is nothing new or (a turn's job) when the conversation is still active. Calls the daily maintenance
+ * closes are distilled inline, and a bounded backstop (daily maintenance, and the `distill_sweep` message)
+ * distils idle conversations that slipped through, inline: the worker never enqueues. A new conversation never
+ * waits for any of this: its prompt reads the previous conversation's last exchanges itself.
  */
 export interface DistillService {
   /** After a completed turn: queues the conversation's distillation, delayed (standard conversations). */
   afterTurn(ctx: RequestContext, sessionId: string): Promise<void>;
   /** After a conversation ended: queues its distillation now. */
   afterEnd(ctx: RequestContext, sessionId: string): Promise<void>;
-  /** After a conversation started: queues the person's previous conversation when it is undistilled and idle. */
+  /**
+   * After a call in a conversation ended (any way it ends): queues the conversation's distillation now, as
+   * ending a chat does, though the conversation itself stays open.
+   */
+  afterCallEnd(ctx: RequestContext, sessionId: string): Promise<void>;
+  /**
+   * After a conversation started: queues the person's previous conversation now when it has undistilled turns
+   * and they moved on from it (it ended, or its last turn is older than `settleGraceSeconds`).
+   */
   afterCreate(ctx: RequestContext, session: Pick<SessionView, 'id' | 'ventureId'>): Promise<void>;
+  /**
+   * Distils settled conversations inline (system: the calls the daily maintenance closed), one at a time while
+   * the deadline leaves time. Never throws; failures count as `failed`.
+   */
+  distillSettled(
+    sessionIds: readonly string[],
+    options: { readonly requestId: string; readonly deadline?: number },
+  ): Promise<DistillBackstopReport>;
   /**
    * Distils one conversation (worker, owner role). Throws {@link RetryableDistillError} for failures worth
    * another delivery and lets database errors through (the queue retries both); every other outcome is
@@ -111,6 +133,8 @@ export interface DistillJobInput {
   readonly requestId: string;
   /** Completed turns when the job was queued; a conversation with more by now is left to the later job. */
   readonly queuedTurns?: number;
+  /** The conversation is settled (ended, a call in it ended, its person moved on): never skipped as active. */
+  readonly settled?: boolean;
 }
 
 export interface DistillRunOptions {
@@ -154,6 +178,9 @@ export interface DistillBackstopReport {
   /** Candidates left for a later run because the deadline was near. */
   readonly deferred: number;
 }
+
+/** What queued a distillation (logs only). */
+type Trigger = 'turn' | 'end' | 'call_end' | 'next_conversation';
 
 /** A failure worth another delivery (the model unavailable or out of time, a notebook racing): retried. */
 export class RetryableDistillError extends Error {
@@ -284,8 +311,10 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
     turns: number,
     requestId: string,
     delaySeconds: number,
-    trigger: 'turn' | 'end' | 'next_conversation',
+    trigger: Trigger,
   ): Promise<void> {
+    // Every trigger but a turn's says the conversation is over for now: distilled even if its last turn is recent.
+    const settled = trigger !== 'turn';
     await kit.deps.jobQueue.enqueue(
       {
         type: 'distill_session',
@@ -293,6 +322,7 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
         tenantId: session.tenantId,
         ventureId: session.ventureId,
         turns,
+        ...(settled ? { settled } : {}),
         requestId,
       },
       delaySeconds > 0 ? { delaySeconds } : {},
@@ -308,7 +338,7 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
   async function trigger(
     ctx: RequestContext,
     sessionId: string,
-    name: 'turn' | 'end' | 'next_conversation',
+    name: Trigger,
     run: () => Promise<void>,
   ): Promise<void> {
     try {
@@ -727,6 +757,12 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
           sourceIds: new Set([sessionId, ...source.turnIds]),
           speakers: source.founderFirstName === null ? [] : [source.founderFirstName],
         },
+        // The coach's own advice is never kept as a fact unless the founder said or agreed to it.
+        grounding: conversationGrounding(
+          source.turns.map((t) => ({ founder: t.founderText, answer: t.response?.answer ?? null })),
+        ),
+        // What the founder made the vEIR forget is never kept again from the same words.
+        forgotten: await memoryRepo.listForgottenMemory(sx, { ventureId: state.ventureId, system: true }),
         ...(vectors.candidates ? { embeddings: vectors.candidates } : {}),
       });
 
@@ -823,7 +859,8 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
     const state = await kit.system((sx) => sessionsRepo.getDistillState(sx, sessionId), {
       transaction: false,
     });
-    const skip = distillSkipReason(state, kit.now(), cfg.activeWindowSeconds, job.queuedTurns);
+    const settled = job.settled === true;
+    const skip = distillSkipReason(state, kit.now(), cfg.activeWindowSeconds, job.queuedTurns, settled);
     if (state === null || skip !== null) return skipped(skip ?? 'not_found');
     const settings = await kit.system((sx) => settingsRepo.getPlatformSettings(sx), { transaction: false });
     if (!settings.aiEnabled) return skipped('kill_switch');
@@ -902,7 +939,10 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
         const next = await kit.system((sx) => sessionsRepo.getDistillState(sx, sessionId), {
           transaction: false,
         });
-        if (next === null || distillSkipReason(next, kit.now(), cfg.activeWindowSeconds) !== null)
+        if (
+          next === null ||
+          distillSkipReason(next, kit.now(), cfg.activeWindowSeconds, undefined, settled) !== null
+        )
           return total;
         current = next;
       }
@@ -937,6 +977,14 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
         if (found !== null) await enqueue(found.session, found.turns, ctx.requestId, 0, 'end');
       }),
 
+    afterCallEnd: (ctx, sessionId) =>
+      trigger(ctx, sessionId, 'call_end', async () => {
+        const found = await standardSession(ctx, sessionId);
+        if (found !== null && found.turns > 0) {
+          await enqueue(found.session, found.turns, ctx.requestId, 0, 'call_end');
+        }
+      }),
+
     afterCreate: (ctx, created) =>
       trigger(ctx, created.id, 'next_conversation', async () => {
         const previous = await kit.inRequest(ctx, ({ tx }) =>
@@ -946,7 +994,7 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
             excludeSessionId: created.id,
           }),
         );
-        if (previous === null || !previousNeedsDistill(previous, kit.now(), cfg.activeWindowSeconds)) return;
+        if (previous === null || !previousNeedsDistill(previous, kit.now(), cfg.settleGraceSeconds)) return;
         await enqueue(
           { id: previous.id, tenantId: ctx.tenantId, ventureId: created.ventureId },
           previous.completedTurns,
@@ -957,6 +1005,33 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
       }),
 
     distillSession,
+
+    distillSettled: async (sessionIds, { requestId, deadline }) => {
+      const report = { candidates: 0, distilled: 0, skipped: 0, dropped: 0, failed: 0, deferred: 0 };
+      const unique = [...new Set(sessionIds)];
+      report.candidates = unique.length;
+      for (const [index, sessionId] of unique.entries()) {
+        if (deadline !== undefined && deadline - Date.now() < MIN_DISTILL_BUDGET_MS) {
+          report.deferred = unique.length - index;
+          break;
+        }
+        try {
+          const outcome = await distillSession(
+            { sessionId, requestId, settled: true },
+            deadline === undefined ? {} : { deadline },
+          );
+          report[outcome.status] += 1;
+        } catch (err) {
+          report.failed += 1;
+          logger.warn('distill.settled_failed', {
+            requestId,
+            sessionId,
+            error: err instanceof Error ? err.name : 'unknown',
+          });
+        }
+      }
+      return report;
+    },
 
     backstop: async ({ requestId, deadline }) => {
       const report = { candidates: 0, distilled: 0, skipped: 0, dropped: 0, failed: 0, deferred: 0 };

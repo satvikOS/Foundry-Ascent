@@ -458,6 +458,7 @@ const CLOSED_TABLES = [
   'idempotency_keys',
   'schema_migrations',
   'call_speech',
+  'memory_forgotten',
 ] as const;
 
 /** Every table with a venture_id column that app_rls can read, and how rows map to a venture. */
@@ -940,6 +941,7 @@ describe('role visibility', () => {
       ['platform_settings', `UPDATE platform_settings SET value = 'false'`],
       ['memory_objects', `DELETE FROM memory_objects`],
       ['call_speech', `UPDATE call_speech SET plays = 0`],
+      ['memory_forgotten', `DELETE FROM memory_forgotten`],
     ];
     for (const [table, sql] of writes) {
       expect(await sqlState(as(t.db, f.maya, (tx) => tx.query(sql))), table).toBe('42501');

@@ -14,6 +14,7 @@ import { type SeedResult } from '../seed/seed.js';
 import { createTestDatabase, makeContext, type TestDatabase } from '../testing/test-database.js';
 import * as assignmentsRepo from './assignments.js';
 import * as callsRepo from './calls.js';
+import * as memoryRepo from './memory.js';
 import * as sessionsRepo from './sessions.js';
 import * as turnsRepo from './turns.js';
 
@@ -484,14 +485,29 @@ describe('turns of a call', () => {
       );
       return String(memory.rows[0]?.id);
     });
+    // What the vEIR kept by itself from the call is listed apart from proposals (migration 0013).
+    const kept = await t.db.withContext(maya, async (tx) =>
+      memoryRepo.createMemory(tx, {
+        tenantId: seed.tenantId,
+        ventureId: venture('quietquad').id,
+        type: 'fact',
+        title: 'Two libraries',
+        content: 'The pilot runs in two libraries.',
+        origin: 'ai',
+        keptAutomatically: true,
+        createdBy: maya.principalId,
+        sourceRefs: [{ kind: 'turn', id: explicit.id }],
+      }),
+    );
     await t.db.withContext(maya, async (tx) => {
       const refs = await callsRepo.callFollowUps(tx, {
         ventureId: venture('quietquad').id,
         turnIds: [first.id, explicit.id],
       });
-      expect(refs).toEqual({ memoryProposalIds: [followUps], escalationIds: [] });
+      expect(refs).toEqual({ memoryProposalIds: [followUps], memoryKeptIds: [kept.id], escalationIds: [] });
       expect(await callsRepo.callFollowUps(tx, { ventureId: venture('quietquad').id, turnIds: [] })).toEqual({
         memoryProposalIds: [],
+        memoryKeptIds: [],
         escalationIds: [],
       });
     });
@@ -832,7 +848,8 @@ describe('reaping', () => {
     const reaped = await t.db.system((sx) =>
       callsRepo.reapStaleCalls(sx, { staleSeconds: 60, graceSeconds: 15 }),
     );
-    expect(reaped).toBeGreaterThanOrEqual(1);
+    // The conversation each reaped call was in comes back with it (maintenance distils it next).
+    expect(reaped).toContainEqual({ callId: stale.id, sessionId: session });
     await t.db.withContext(amara, async (tx) => {
       const call = must(await callsRepo.getCall(tx, stale.id));
       expect(call).toMatchObject({ status: 'ended', endReason: 'timeout', endDetail: 'stale_heartbeat' });

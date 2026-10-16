@@ -31,7 +31,7 @@ export const NOTEBOOK_OPENER_PIN = 'nextOpener';
 
 export type PreviousNotebook = Pick<
   VeirNotebook,
-  'summary' | 'founderProfile' | 'commitments' | 'openQuestions' | 'lastAdvice' | 'nextOpener'
+  'summary' | 'founderProfile' | 'commitments' | 'openQuestions' | 'lastAdvice' | 'nextOpener' | 'nextTopic'
 >;
 
 export interface DistillSanitizeContext {
@@ -80,6 +80,8 @@ export interface NotebookDelta {
   openQuestions: NotebookEntry[];
   lastAdvice: NotebookEntry[];
   nextOpener: string | null;
+  /** The thread to come back to, as a short phrase (null with a null opener). */
+  nextTopic: string | null;
 }
 
 /** Counts for the audit log (never content). */
@@ -442,14 +444,28 @@ export function sanitizeDistill(draft: DistillDraft, ctx: DistillSanitizeContext
   }
 
   let nextOpener: string | null;
+  let nextTopic: string | null;
   if (pinned.has(NOTEBOOK_OPENER_PIN) && previous !== null) {
+    // A person chose the opener: the thread stays whatever it was with it (a person's edit clears it).
     nextOpener = previous.nextOpener;
+    nextTopic = previous.nextOpener === null ? null : (previous.nextTopic ?? null);
   } else {
     const opener =
       draft.notebook.next_opener === null ? '' : clean(draft.notebook.next_opener, L.nextOpenerMaxChars);
     if (opener !== '' && mentionsSuppressed(opener)) stats.suppressedDropped += 1;
     nextOpener = opener === '' || mentionsSuppressed(opener) ? null : opener;
     if (nextOpener !== null && nextOpener !== previous?.nextOpener) fresh.push(nextOpener);
+    // The thread goes with the opener: a phrase on one line, never a question, never what a person removed.
+    const raw = draft.notebook.next_topic ?? null;
+    const topic =
+      nextOpener === null || raw === null
+        ? ''
+        : clean(raw, L.nextTopicMaxChars)
+            .replace(/[.!]+$/, '')
+            .trim();
+    if (topic !== '' && mentionsSuppressed(topic)) stats.suppressedDropped += 1;
+    nextTopic = topic === '' || topic.endsWith('?') || mentionsSuppressed(topic) ? null : topic;
+    if (nextTopic !== null && nextTopic !== previous?.nextTopic) fresh.push(nextTopic);
   }
 
   const notebookDelta: NotebookDelta = {
@@ -469,6 +485,7 @@ export function sanitizeDistill(draft: DistillDraft, ctx: DistillSanitizeContext
     ),
     lastAdvice: mergeEntries('la', draft.notebook.last_advice, previous?.lastAdvice ?? [], L.lastAdviceMax),
     nextOpener,
+    nextTopic,
   };
 
   // Memory candidates ------------------------------------------------------------------------------------
@@ -503,6 +520,7 @@ export function sanitizeDistill(draft: DistillDraft, ctx: DistillSanitizeContext
       content,
       evidence_ids: ids,
       confidence: Number.isFinite(m.confidence) ? Math.min(1, Math.max(0, m.confidence)) : 0.5,
+      ...(m.source === undefined || m.source === null ? {} : { source: m.source }),
     });
     fresh.push(title, content);
   }

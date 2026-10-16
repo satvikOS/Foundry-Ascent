@@ -53,13 +53,15 @@ export function isActive(
  * queued at fewer turns than the conversation has now (`queuedTurns`: the later turn queued its own job, so
  * only the last job of a burst of turns pays for a model call), or it is still active (a turn within the
  * active window: the job queued by that later turn covers it). Null when the conversation should be distilled
- * now. An ended conversation is never "active".
+ * now. An ended conversation is never "active", and neither is a `settled` one (a call in it ended, or its
+ * person started a new conversation): what it said is distilled at once.
  */
 export function distillSkipReason(
   state: DistillStateFields | null,
   now: Date,
   activeWindowSeconds: number,
   queuedTurns?: number,
+  settled = false,
 ): DistillSkipReason | null {
   if (state === null) return 'not_found';
   if (state.deletedAt !== null) return 'deleted';
@@ -68,7 +70,7 @@ export function distillSkipReason(
   if (state.completedTurns === 0) return 'no_turns';
   if (state.distillVersion >= state.completedTurns) return 'up_to_date';
   if (queuedTurns !== undefined && state.completedTurns > queuedTurns) return 'superseded';
-  if (isActive(state, now, activeWindowSeconds)) return 'active';
+  if (!settled && isActive(state, now, activeWindowSeconds)) return 'active';
   return null;
 }
 
@@ -132,17 +134,20 @@ export function staleWriteReason(
 
 /**
  * Whether starting a conversation should distil the person's previous one now: it is a standard
- * conversation, its digest was not deleted, it has completed turns no digest covers yet, and it is idle
- * (ended, or no turn within the active window).
+ * conversation, its digest was not deleted, it has completed turns no digest covers yet, and the person has
+ * moved on from it: it ended, or its last turn is older than `graceSeconds` (a short grace, far below the
+ * active window: a second call a few minutes after the first must find the first one distilled). A turn
+ * within the grace may still be answering in another tab; the new conversation never waits for it either way
+ * (it reads the previous one's last exchanges itself, see orchestrator/continuity.ts).
  */
 export function previousNeedsDistill(
   previous: sessionsRepo.PreviousConversation | null,
   now: Date,
-  activeWindowSeconds: number,
+  graceSeconds: number,
 ): boolean {
   if (previous?.privacy !== 'standard' || previous.digestDeleted) return false;
   if (previous.completedTurns <= previous.distillVersion) return false;
-  return !isActive(previous, now, activeWindowSeconds);
+  return !isActive(previous, now, graceSeconds);
 }
 
 /**
@@ -187,6 +192,8 @@ export function removedSince(
   }
   changed(before.summary, after?.summary);
   if (before.nextOpener !== null) changed(before.nextOpener, after?.nextOpener);
+  const topic = before.nextOpener === null ? null : (before.nextTopic ?? null);
+  if (topic !== null) changed(topic, after?.nextOpener == null ? null : after.nextTopic);
   return out;
 }
 
@@ -228,6 +235,12 @@ export function dropSuppressed(
     dropped += 1;
     nextOpener = null;
   }
+  // The thread goes with its opener, and never comes back once a person removed it.
+  let nextTopic = nextOpener === null ? null : (content.nextTopic ?? null);
+  if (nextTopic !== null && hidden(nextTopic)) {
+    dropped += 1;
+    nextTopic = null;
+  }
   return {
     content: {
       summary,
@@ -236,6 +249,7 @@ export function dropSuppressed(
       openQuestions: filter(content.openQuestions),
       lastAdvice: filter(content.lastAdvice),
       nextOpener,
+      ...(content.nextTopic === undefined && nextTopic === null ? {} : { nextTopic }),
     },
     dropped,
   };
@@ -243,7 +257,7 @@ export function dropSuppressed(
 
 /**
  * Whether two notebooks say the same (a distillation that changes nothing writes nothing): the six content
- * sections only, so bookkeeping the document may also carry never counts as a change.
+ * sections and the opener's thread only, so bookkeeping the document may also carry never counts as a change.
  */
 export function sameNotebook(
   a: notebooksRepo.NotebookContent | null,
@@ -259,6 +273,7 @@ export function sameNotebook(
       parsed.openQuestions,
       parsed.lastAdvice,
       parsed.nextOpener,
+      parsed.nextOpener === null ? null : (parsed.nextTopic ?? null),
     ]);
   };
   return a !== null && canonical(a) === canonical(b);

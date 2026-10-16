@@ -149,6 +149,25 @@ export const SessionPageResponse = Page(SessionView);
 export const UpdateSessionResponse = SessionView;
 /** `POST /ventures/:id/sessions` 201 body. */
 export const CreateSessionResponse = SessionView;
+/**
+ * `GET /ventures/:id/opener` 200 body: how the vEIR would open a new standard conversation of the caller now (the
+ * line it stores as the conversation's first message, and a call says after introducing itself), so New chat and
+ * the call screen can greet with it before anything is sent. `lastConversation` is the caller's latest earlier
+ * conversation it picks up. Both null for a first conversation; a temporary chat opens with neither.
+ */
+export const ConversationOpenerResponse = z.object({
+  opener: z.string().nullable(),
+  lastConversation: z
+    .object({
+      sessionId: Id,
+      lastActivityAt: Timestamp,
+      channel: z.enum(['call', 'chat']),
+      /** Founder words (the first ordinary message, or the name a person gave it). */
+      title: z.string().nullable(),
+    })
+    .nullable(),
+});
+export type ConversationOpenerResponse = z.infer<typeof ConversationOpenerResponse>;
 export const SessionDetailResponse = z.object({ session: SessionView, turns: z.array(TurnView) });
 export const CreateTurnRequest = z.object({
   text: z.string().trim().min(1).max(8000),

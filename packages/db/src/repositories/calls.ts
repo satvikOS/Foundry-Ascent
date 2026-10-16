@@ -370,24 +370,28 @@ export function listCallTurns(ex: SqlExecutor, callId: string): Promise<CallTurn
 }
 
 /**
- * What a call's turns left behind that the founder may act on: AI memory proposals still awaiting review and
- * escalation drafts or requests, oldest first (as visible to the caller).
+ * What a call's turns left behind, oldest first (as visible to the caller): the AI memory they produced (kept
+ * automatically, or a proposal from before that still awaits review) and escalation drafts or requests.
  */
 export async function callFollowUps(
   ex: SqlExecutor,
   input: { readonly ventureId: string; readonly turnIds: readonly string[] },
-): Promise<{ memoryProposalIds: string[]; escalationIds: string[] }> {
-  if (input.turnIds.length === 0) return { memoryProposalIds: [], escalationIds: [] };
-  const memoryProposalIds = await queryRows(
+): Promise<{ memoryProposalIds: string[]; memoryKeptIds: string[]; escalationIds: string[] }> {
+  if (input.turnIds.length === 0) return { memoryProposalIds: [], memoryKeptIds: [], escalationIds: [] };
+  const memory = await queryRows(
     ex,
-    `SELECT m.id FROM memory_objects m
-     WHERE m.venture_id = :venture AND m.origin = 'ai' AND m.status = 'proposed'
+    `SELECT m.id, m.status FROM memory_objects m
+     WHERE m.venture_id = :venture AND m.origin = 'ai'
+       AND (m.status = 'proposed' OR (m.approved_by IS NULL AND m.status IN ('confirmed', 'disputed')))
        AND EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(m.source_refs) = 'array'
                                                            THEN m.source_refs ELSE '[]'::jsonb END) AS r (ref)
                    WHERE r.ref ->> 'kind' = 'turn' AND (r.ref ->> 'id') = ANY (:turnIds))
      ORDER BY m.created_at, m.id`,
     { venture: p.uuid(input.ventureId), turnIds: p.textArray(input.turnIds) },
-    (r) => col.uuid.decode(r.id, 'id'),
+    (r) => ({
+      id: col.uuid.decode(r.id, 'id'),
+      proposed: col.text.decode(r.status, 'status') === 'proposed',
+    }),
   );
   const escalationIds = await queryRows(
     ex,
@@ -396,7 +400,11 @@ export async function callFollowUps(
     { venture: p.uuid(input.ventureId), turnIds: p.uuidArray(input.turnIds) },
     (r) => col.uuid.decode(r.id, 'id'),
   );
-  return { memoryProposalIds, escalationIds };
+  return {
+    memoryProposalIds: memory.filter((m) => m.proposed).map((m) => m.id),
+    memoryKeptIds: memory.filter((m) => !m.proposed).map((m) => m.id),
+    escalationIds,
+  };
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -747,23 +755,34 @@ export function speechPlays(
 // Maintenance
 // ------------------------------------------------------------------------------------------------
 
+/** A call the reaper ended, and the conversation it was in (distilled next: the call is over). */
+export interface ReapedCall {
+  readonly callId: string;
+  readonly sessionId: string;
+}
+
 /**
  * Ends live calls whose client went away (no heartbeat for `staleSeconds`) as `timeout` / `stale_heartbeat`,
- * at their last sign of life plus `graceSeconds`. Owner role (maintenance). Returns how many it ended.
+ * at their last sign of life plus `graceSeconds`. Owner role (maintenance). Returns the calls it ended.
  */
-export async function reapStaleCalls(
+export function reapStaleCalls(
   sx: SystemExecutor,
   input: { readonly staleSeconds: number; readonly graceSeconds: number; readonly limit?: number },
-): Promise<number> {
-  const result = await sx.query(
+): Promise<ReapedCall[]> {
+  return queryRows(
+    sx,
     `UPDATE calls AS c SET status = 'ended', end_reason = 'timeout', end_detail = 'stale_heartbeat',
             ended_at = greatest(c.started_at, least(now(), coalesce(c.last_heartbeat_at, c.started_at)
                                                           + make_interval(secs => :grace::integer)))
      WHERE c.id IN (SELECT x.id FROM calls x
                     WHERE x.status = 'live'
                       AND coalesce(x.last_heartbeat_at, x.started_at) < now() - make_interval(secs => :stale::integer)
-                    ORDER BY x.started_at LIMIT :limit)`,
+                    ORDER BY x.started_at LIMIT :limit)
+     RETURNING c.id, c.session_id`,
     { stale: p.int(input.staleSeconds), grace: p.int(input.graceSeconds), limit: p.int(input.limit ?? 500) },
+    (r) => ({
+      callId: col.uuid.decode(r.id, 'id'),
+      sessionId: col.uuid.decode(r.session_id, 'session_id'),
+    }),
   );
-  return result.rowCount;
 }

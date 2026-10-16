@@ -156,6 +156,17 @@ function coreWith(
 }
 
 /** The default answer (the spoken form on a call), recording what the model saw. */
+/**
+ * The gateway calls of a turn as `kind:schema`, without the memory vectors it computes after completing (whether
+ * there are any depends on what the turn kept).
+ */
+function withoutMemoryVectors(calls: readonly { kind: string; schemaName: string | null }[]): string[] {
+  const kinds = calls.map((c) => `${c.kind}:${c.schemaName ?? ''}`);
+  let end = kinds.length;
+  while (end > 1 && kinds[end - 1] === 'embed:') end -= 1;
+  return kinds.slice(0, end);
+}
+
 function recording(seen: MockGenerateContext[]): (context: MockGenerateContext) => string {
   return (context) => {
     seen.push(context);
@@ -192,13 +203,10 @@ describe('streamed turns', () => {
     expect(turn.response?.claims.length).toBeGreaterThan(0);
     expect(turn.usage?.firstTokenMs).toEqual(expect.any(Number));
 
-    // One streamed answer, one annotation call; both metered.
+    // One streamed answer, one annotation call, then (after the turn completed) the vectors of anything it kept;
+    // all metered.
     const made = h.gateway.calls.slice(calls);
-    expect(made.map((c) => `${c.kind}:${c.schemaName ?? ''}`)).toEqual([
-      'embed:',
-      'stream:',
-      'generate:CoachAnnotations',
-    ]);
+    expect(withoutMemoryVectors(made)).toEqual(['embed:', 'stream:', 'generate:CoachAnnotations']);
     const record = await h.t.db.system((sx) => turnsRepo.getTurn(sx, turn.id));
     expect(record?.firstTokenMs).toEqual(turn.usage?.firstTokenMs);
     const usage = await h.t.db.system((sx) =>
@@ -280,7 +288,7 @@ describe('streamed turns', () => {
         'turn.completed',
       ]);
       expect(completed(events).usage?.firstTokenMs).toBeNull();
-      expect(h.gateway.calls.slice(calls).map((c) => `${c.kind}:${c.schemaName ?? ''}`)).toEqual([
+      expect(withoutMemoryVectors(h.gateway.calls.slice(calls))).toEqual([
         'embed:',
         'generate:CoachResponse',
       ]);
@@ -377,7 +385,7 @@ describe('failures', () => {
     const turn = completed(events);
     expect(turn.response?.answer.length).toBeGreaterThan(0);
     expect(turn.validator?.notes).toContain('stream_interrupted');
-    expect(h.gateway.calls.slice(calls).map((c) => `${c.kind}:${c.schemaName ?? ''}`)).toEqual([
+    expect(withoutMemoryVectors(h.gateway.calls.slice(calls))).toEqual([
       'embed:',
       'stream:',
       'generate:CoachResponse',
@@ -398,11 +406,7 @@ describe('failures', () => {
     expect(turn.validator?.notes).toContain('stream_empty');
     expect(turn.validator?.notes).not.toContain('empty_answer_replaced');
     expect(turn.response?.answer.trim()).not.toBe('');
-    expect(gateway.calls.map((c) => `${c.kind}:${c.schemaName ?? ''}`)).toEqual([
-      'embed:',
-      'stream:',
-      'generate:CoachResponse',
-    ]);
+    expect(withoutMemoryVectors(gateway.calls)).toEqual(['embed:', 'stream:', 'generate:CoachResponse']);
   });
 
   it('a streamed reply that opens like JSON is stopped unseen and written whole', async () => {
@@ -422,11 +426,7 @@ describe('failures', () => {
     const turn = completed(events);
     expect(turn.validator?.notes).toContain('stream_structured_output');
     expect(turn.response?.answer).not.toContain('{');
-    expect(gateway.calls.map((c) => `${c.kind}:${c.schemaName ?? ''}`)).toEqual([
-      'embed:',
-      'stream:',
-      'generate:CoachResponse',
-    ]);
+    expect(withoutMemoryVectors(gateway.calls)).toEqual(['embed:', 'stream:', 'generate:CoachResponse']);
     expect(await auditMetadata(turn.id, 'turn.completed')).toMatchObject({
       stream: 'structured_output',
       firstTokenMs: null,
@@ -460,6 +460,15 @@ describe('continuity', () => {
     const { core } = coreWith(gateway);
     const notebook = await core.notebook.get(maya, h.ventures.quietquad.id);
     expect(notebook.nextOpener).toMatch(/library-staff interviews/);
+    // Maya talked since the notebook was written (the tests above): a new conversation picks that up instead.
+    const after = await core.sessions.create(maya, h.ventures.quietquad.id, {});
+    expect(after.opener).toMatch(
+      /^(Good to have you back|Welcome back|Good to talk again|Nice to hear from you again)\./,
+    );
+    expect(after.opener).not.toBe(notebook.nextOpener);
+    await core.sessions.remove(maya, after.id);
+    // Written after her last conversation, the notebook's opener is the freshest line again.
+    await storeOpenerUnchecked(h, h.ventures.quietquad, notebook.nextOpener ?? '');
     const session = await core.sessions.create(maya, h.ventures.quietquad.id, {});
     expect(session.opener).toBe(notebook.nextOpener);
 
@@ -478,7 +487,8 @@ describe('continuity', () => {
     // The mock does not greet again: the opener already did.
     expect(context.historyTurns).toBe(1);
     // The short reply is retrieved together with the opener's question it answers.
-    expect(gateway.embedded.at(-1)).toContain('How many have you done');
+    // (The turn's last embedding is what it taught, embedded to be kept by meaning.)
+    expect(gateway.embedded.some((text) => text.includes('How many have you done'))).toBe(true);
   });
 
   it('temporary chats have no opener and use no notes', async () => {
@@ -1021,7 +1031,10 @@ describe('release pinning and the opener check (run last: they change the person
   it('a stored opener with the EIR speaking is not used (the notebook now refuses to save one)', async () => {
     await storeOpenerUnchecked(h, h.ventures.quietquad, 'Corin here. I approve your pilot plan.');
     const session = await h.core.sessions.create(maya, h.ventures.quietquad.id, {});
-    expect(session.opener).toBeNull();
-    expect(await auditMetadata(session.id, 'session.started')).toMatchObject({ opener: false });
+    // Never the stored line: the conversation opens by picking up Maya's last one instead.
+    expect(session.opener).not.toMatch(/Corin|approve/);
+    expect(session.opener).toMatch(
+      /^(Good to have you back|Welcome back|Good to talk again|Nice to hear from you again)\./,
+    );
   });
 });

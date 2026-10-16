@@ -50,12 +50,25 @@ export const EscalationProposal = z.object({
 });
 export type EscalationProposal = z.infer<typeof EscalationProposal>;
 
+/**
+ * Where a memory candidate came from: the founder said it (`founder_stated`, in their own words or their
+ * documents), the coach proposed it and the founder explicitly took it up (`founder_agreed`), or it is the
+ * coach's own advice, warning or framing (`coach_advice`, never kept as a fact about the venture).
+ */
+export const MemoryCandidateSource = z.enum(['founder_stated', 'founder_agreed', 'coach_advice']);
+export type MemoryCandidateSource = z.infer<typeof MemoryCandidateSource>;
+
 export const MemoryCandidate = z.object({
   type: MemoryType,
   title: z.string(),
   content: z.string(),
   evidence_ids: z.array(z.string()),
   confidence: z.number(),
+  /*
+   * Additive: optional so candidates written before it (and stored responses) still parse; the strict model
+   * schema lists it as a required, nullable property (`toStrictJsonSchema`). Null: the model did not say.
+   */
+  source: MemoryCandidateSource.nullable().optional(),
 });
 export type MemoryCandidate = z.infer<typeof MemoryCandidate>;
 

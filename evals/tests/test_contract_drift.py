@@ -143,3 +143,34 @@ def test_notebook_fields() -> None:
     assert aliases <= keys
     edits = re.findall(r"action: z\.literal\('([a-z_]+)'\)", _source("knowledge.ts"))
     assert {"edit_summary", "clear"} <= set(edits)
+
+
+def test_memory_and_session_mirrors_name_real_fields() -> None:
+    domain = _source("domain.ts")
+    memory = _object_keys(domain, "MemoryObjectView")
+    aliases = {f.alias or name for name, f in models.MemoryObject.model_fields.items()}
+    assert aliases <= memory
+    assert {"origin", "keptAutomatically"} <= aliases
+    session = _object_keys(_source("coach.ts"), "SessionView")
+    session_aliases = {f.alias or name for name, f in models.SessionView.model_fields.items()}
+    assert session_aliases <= session
+    assert "opener" in session_aliases
+
+
+def test_conversation_opener_mirror() -> None:
+    api = _source("api.ts")
+    keys = _object_keys(api, "ConversationOpenerResponse")
+    assert keys == {f.alias or name for name, f in models.ConversationOpener.model_fields.items()}
+    match = re.search(r"lastConversation: z\s*\.object\(\{(.*?)\}\)", api, re.DOTALL)
+    assert match
+    nested = set(re.findall(r"^\s+(\w+):", match.group(1), re.MULTILINE))
+    assert nested == {f.alias or name for name, f in models.LastConversation.model_fields.items()}
+
+
+def test_memory_candidate_mirror_names_its_source() -> None:
+    coach = _source("coach.ts")
+    assert _object_keys(coach, "MemoryCandidate") == set(models.MemoryCandidate.model_fields)
+    labels = models.MemoryCandidate.model_fields["source"].annotation
+    assert set(_enum(coach, "MemoryCandidateSource")) == {
+        value for arg in getattr(labels, "__args__", ()) for value in getattr(arg, "__args__", ())
+    }

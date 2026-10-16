@@ -215,7 +215,7 @@ afterAll(async () => {
 describe('migration 0003_security_hardening', () => {
   it('is bundled after 0001 and 0002, which it never changes', () => {
     const versions = MIGRATIONS.map((m) => m.version);
-    expect(versions.slice(0, 12)).toEqual([
+    expect(versions.slice(0, 13)).toEqual([
       '0001_init',
       '0002_rls_helpers',
       '0003_security_hardening',
@@ -228,6 +228,7 @@ describe('migration 0003_security_hardening', () => {
       '0010_call_notice',
       '0011_eir_profiles_evidence_sources',
       '0012_test_bench',
+      '0013_automatic_memory',
     ]);
     expect(versions).toEqual([...versions].sort());
     expect(HARDENING).toBeDefined();
@@ -324,10 +325,11 @@ describe('migration 0003_security_hardening', () => {
     const statements = splitStatements(HARDENING.sql);
     expect(statements.length).toBeGreaterThan(40);
     // Later migrations replace some of 0003's policies and functions, so they are re-run after it (as a retry
-    // of the whole sequence would).
-    const later = MIGRATIONS.filter((m) => m.version > HARDENING.version).flatMap((m) =>
-      splitStatements(m.sql),
-    );
+    // of the whole sequence would). 0007 is left out: it touches none of 0003's objects, and its memory approval
+    // constraint, which 0013 widened for memory kept automatically, no longer holds for the data 0013 admits.
+    const later = MIGRATIONS.filter(
+      (m) => m.version > HARDENING.version && m.version !== '0007_distillation',
+    ).flatMap((m) => splitStatements(m.sql));
     // One statement per call, as the Data API runs them.
     await t.db.system(async (sx) => {
       for (const statement of [...statements, ...later]) await sx.query(statement);

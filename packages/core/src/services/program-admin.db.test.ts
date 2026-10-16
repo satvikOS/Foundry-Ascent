@@ -53,7 +53,10 @@ describe('me and ventures', () => {
   it('venture list/detail/overview are scoped to the viewer', async () => {
     const list = await h.core.ventures.list(maya);
     expect(list.map((v) => v.name)).toEqual(['QuietQuad']);
-    expect(list[0]?.pendingMemory).toBeGreaterThan(0);
+    // Only a person's suggestions wait for review: what the vEIR learned is kept automatically.
+    expect(list[0]?.pendingMemory).toBe(
+      (await h.core.memory.list(maya, h.ventures.quietquad.id, { status: 'proposed' })).items.length,
+    );
     const detail = VentureDetail.parse(await h.core.ventures.get(maya, h.ventures.quietquad.id));
     expect(detail.persona).toMatchObject({ name: "Corin's vEIR", kind: 'eir_persona', status: 'active' });
     expect(detail.assignedEir?.displayName).toBe('Corin Halvorsen');
@@ -64,7 +67,7 @@ describe('me and ventures', () => {
       true,
     );
     expect(overview.openAssumptions.every((m) => m.type === 'hypothesis')).toBe(true);
-    expect(overview.pendingMemoryCount).toBeGreaterThan(0);
+    expect(overview.pendingMemoryCount).toBe(list[0]?.pendingMemory);
 
     // The advisor of SoleSignal sees venture/advisor-visible items only, and no sessions.
     const advisorView = await h.core.ventures.overview(graham, h.ventures.solesignal.id);

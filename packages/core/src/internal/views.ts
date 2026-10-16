@@ -30,6 +30,7 @@ export function toMemoryView(m: memoryRepo.MemoryRecord): MemoryObjectView {
     expiresAt: m.expiresAt,
     createdAt: m.createdAt,
     updatedAt: m.updatedAt,
+    keptAutomatically: m.keptAutomatically,
   };
 }
 

@@ -33,6 +33,11 @@ export const NotebookContent = z.object({
   openQuestions: z.array(NotebookEntry).max(40),
   lastAdvice: z.array(NotebookEntry).max(40),
   nextOpener: z.string().max(300).nullable(),
+  /**
+   * The thread to come back to next time, a short phrase the greeting is phrased around (distillation writes it
+   * with the opener, from the same conversation: `nextOpenerSource`). Missing on notebooks written before it.
+   */
+  nextTopic: z.string().max(120).nullable().optional(),
   /** Conversations the summary was drawn from (missing: unknown; `[]`: none, a person wrote it). */
   summarySources: z.array(Id).max(MAX_SUMMARY_SOURCES).optional(),
   /** Conversation the opener was drawn from (missing: unknown; null: none, a person wrote it). */
@@ -104,6 +109,7 @@ export function decodeNotebookContent(raw: unknown): { content: NotebookContent;
     typeof value === 'object' && value !== null && !Array.isArray(value) ? { ...value } : {};
   const summary = z.string().max(1200).safeParse(doc.summary);
   const opener = z.string().max(300).safeParse(doc.nextOpener);
+  const topic = z.string().max(120).safeParse(doc.nextTopic);
   return {
     content: {
       summary: summary.success ? summary.data : '',
@@ -112,6 +118,7 @@ export function decodeNotebookContent(raw: unknown): { content: NotebookContent;
       openQuestions: validItems(NotebookEntry, doc.openQuestions).slice(0, 40),
       lastAdvice: validItems(NotebookEntry, doc.lastAdvice).slice(0, 40),
       nextOpener: opener.success ? opener.data : null,
+      ...(opener.success && topic.success ? { nextTopic: topic.data } : {}),
     },
     intact: false,
   };
@@ -197,6 +204,7 @@ export function withDistilledSources(
     openQuestions: next.openQuestions,
     lastAdvice: next.lastAdvice,
     nextOpener: next.nextOpener,
+    ...(next.nextTopic === undefined ? {} : { nextTopic: next.nextOpener === null ? null : next.nextTopic }),
   };
   if (next.summary === before.summary) {
     if (before.summarySources !== undefined) out.summarySources = before.summarySources;
@@ -232,6 +240,7 @@ export function withPersonSources(previous: NotebookContent | null, next: Notebo
     openQuestions: next.openQuestions,
     lastAdvice: next.lastAdvice,
     nextOpener: next.nextOpener,
+    ...(next.nextTopic === undefined ? {} : { nextTopic: next.nextOpener === null ? null : next.nextTopic }),
   };
   if (next.summary !== '') {
     if (before.summary === '') out.summarySources = [];
@@ -328,6 +337,7 @@ export function toNotebookView(
     openQuestions: content.openQuestions,
     lastAdvice: content.lastAdvice,
     nextOpener: content.nextOpener,
+    nextTopic: content.nextOpener === null ? null : (content.nextTopic ?? null),
     greeting,
     version: record?.version ?? 0,
     updatedAt: record?.updatedAt ?? null,

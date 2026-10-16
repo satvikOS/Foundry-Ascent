@@ -91,7 +91,7 @@ async function escalationStatus(request: APIRequestContext, ventureId: string, i
 }
 
 test.describe('founder journey', () => {
-  test('a founder talks to their vEIR, keeps memory, follows citations and ends with a summary', async ({
+  test('a founder talks to their vEIR, which keeps what it learns, follows citations and ends with a summary', async ({
     page,
   }) => {
     test.setTimeout(120_000);
@@ -147,7 +147,8 @@ test.describe('founder journey', () => {
       await expectNoBareEirName(page, 'New chat');
     });
 
-    const question = `Which assumption should we test first? ${token}`;
+    // The founder says what is worth remembering in their own words (the coach's framing alone is never kept).
+    const question = `Which assumption should we test first? Our riskiest assumption still needs a cheap test. ${token}`;
     let conversationId = '';
     await test.step('the first message starts the conversation, named after it, with a cited answer', async () => {
       const result = await startAndAwaitAnswer(page, question);
@@ -198,36 +199,44 @@ test.describe('founder journey', () => {
       await expect(saved).toContainText('Saved to Knowledge:');
       await expect(answer.getByRole('button', { name: /^(Keep|Not now)/ })).toHaveCount(0);
       await expect(answer.getByText(/would like to remember/)).toHaveCount(0);
+      await expect(answer.getByRole('list', { name: 'Memory suggestions' })).toHaveCount(0);
       const href = (await saved.getByRole('link').getAttribute('href')) ?? '';
       const memoryId = /[?&]m=([0-9a-f-]{36})/.exec(href)?.[1];
       expect(memoryId, 'the saved line links the item in Knowledge').toBeTruthy();
-      // It is in the venture's memory already, used by the vEIR without anyone approving it.
+      // It is in the venture's memory already, kept by the vEIR itself: confirmed, kept automatically, learned
+      // from this conversation, and never a proposal waiting for anyone.
       const item = await page.request.get(`/api/v1/memory/${memoryId ?? ''}`);
       expect(item.status()).toBe(200);
-      const learned = (await item.json()) as { status: string; origin: string; keptAutomatically?: boolean };
-      // INTEGRATION (w4-memory): a server that keeps memory automatically says so on every item
-      // (`keptAutomatically`), and then what an answer taught must arrive kept: confirmed, kept automatically,
-      // never a proposal. Until that server is merged, this branch's server still saves it as a proposal, which the
-      // UI shows as learned (nothing to approve). Either way, exactly one of the two holds, so a half-merged server
-      // (the field without kept memory, or kept memory without the field) fails here.
-      if ('keptAutomatically' in learned) {
-        expect(learned, 'AI memory arrives already kept').toMatchObject({
-          origin: 'ai',
-          status: 'confirmed',
-          keptAutomatically: true,
-        });
-      } else {
-        expect(learned, 'before w4-memory: still a proposal, shown as learned').toMatchObject({
-          origin: 'ai',
-          status: 'proposed',
-        });
-      }
-      // Leave the venture's memory as the next run finds it (the vEIR would not save a known fact again).
-      const removed = await page.request.patch(`/api/v1/memory/${memoryId ?? ''}`, {
-        headers: { 'x-requested-with': 'foundry-ascent', 'content-type': 'application/json' },
-        data: { action: 'delete' },
+      expect(await item.json(), 'AI memory arrives already kept').toMatchObject({
+        origin: 'ai',
+        status: 'confirmed',
+        keptAutomatically: true,
+        sourceRefs: expect.arrayContaining([
+          expect.objectContaining({ kind: 'session', id: conversationId }),
+        ]),
       });
-      expect([200, 204]).toContain(removed.status());
+      // Leave the venture's memory as the next run finds it: forget everything this conversation taught (the
+      // vEIR would not save a known fact again).
+      const listed = await page.request.get(
+        `/api/v1/ventures/${ventureId}/memory?status=confirmed&limit=100`,
+      );
+      expect(listed.status()).toBe(200);
+      const { items } = (await listed.json()) as {
+        items: { id: string; keptAutomatically?: boolean; sourceRefs: { kind: string; id: string }[] }[];
+      };
+      const learned = items.filter(
+        (m) =>
+          m.keptAutomatically === true &&
+          m.sourceRefs.some((r) => r.kind === 'session' && r.id === conversationId),
+      );
+      expect(learned.map((m) => m.id)).toContain(memoryId);
+      for (const { id } of learned) {
+        const removed = await page.request.patch(`/api/v1/memory/${id}`, {
+          headers: { 'x-requested-with': 'foundry-ascent', 'content-type': 'application/json' },
+          data: { action: 'delete' },
+        });
+        expect([200, 204]).toContain(removed.status());
+      }
     });
 
     await test.step('a follow-up from the conversation composer stays in Auto (no mode is sent)', async () => {

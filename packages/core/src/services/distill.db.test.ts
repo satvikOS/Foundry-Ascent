@@ -266,27 +266,41 @@ describe('triggers', () => {
     h.jobQueue.drain();
   });
 
-  it('starting a conversation queues the previous one when it is undistilled and idle', async () => {
+  it('starting a conversation queues the previous one when it is undistilled and the person moved on', async () => {
+    const queued = () =>
+      h.jobQueue.jobs.map((j) => [
+        j.job.type,
+        'sessionId' in j.job ? j.job.sessionId : null,
+        'turns' in j.job ? j.job.turns : null,
+        'settled' in j.job ? j.job.settled : null,
+        j.delaySeconds,
+      ]);
     const previous = await conversation(devin, ['We could charge per room booked.']);
     await idle(previous, 30);
     const next = await h.core.sessions.create(devin, quietquad(), { mode: 'coach' });
     h.jobQueue.drain();
     await h.core.distill.afterCreate(devin, next);
-    expect(
-      h.jobQueue.jobs.map((j) => [
-        j.job.type,
-        'sessionId' in j.job ? j.job.sessionId : null,
-        'turns' in j.job ? j.job.turns : null,
-        j.delaySeconds,
-      ]),
-    ).toEqual([['distill_session', previous, 1, 0]]);
+    expect(queued()).toEqual([['distill_session', previous, 1, true, 0]]);
 
-    // Still active (a turn 2 minutes ago): its own delayed job covers it.
+    // A second conversation two minutes after the last turn of the first (well inside the 8-minute active
+    // window): the person moved on, so the first is distilled now, never skipped as active.
     await completedTurn(devin, next.id, 'Rooms fill up during exam weeks.');
     await idle(next.id, 2);
     const third = await h.core.sessions.create(devin, quietquad(), { mode: 'coach' });
     h.jobQueue.drain();
     await h.core.distill.afterCreate(devin, third);
+    expect(queued()).toEqual([['distill_session', next.id, 1, true, 0]]);
+    expect(
+      await h.core.distill.distillSession({ ...job(next.id), queuedTurns: 1, settled: true }),
+    ).toMatchObject({
+      status: 'distilled',
+    });
+
+    // A turn within the grace (30 s) may still be going on in another tab: left to its own jobs.
+    await completedTurn(devin, third.id, 'Exam weeks are the busiest.');
+    const fourth = await h.core.sessions.create(devin, quietquad(), { mode: 'coach' });
+    h.jobQueue.drain();
+    await h.core.distill.afterCreate(devin, fourth);
     expect(h.jobQueue.jobs).toEqual([]);
   });
 });
@@ -294,6 +308,8 @@ describe('triggers', () => {
 describe('distillSession', () => {
   let sessionId: string;
   let versionBefore: number;
+  /** AI memory the conversation's turns kept (each names the conversation). */
+  let learned = 0;
 
   it('skips cheaply while the conversation is active, and for temporary or empty ones', async () => {
     sessionId = await conversation(maya, [
@@ -318,8 +334,12 @@ describe('distillSession', () => {
     expect(h.gateway.calls.length).toBe(callsBefore);
   });
 
-  it('writes digest, title, notebook, memory proposals and lesson drafts in one go', async () => {
+  it('writes digest, title, notebook, memory and lesson drafts in one go', async () => {
     versionBefore = (await notebook())?.version ?? 0;
+    // What the turns taught was kept as they happened; the distillation adds to it without duplicates.
+    const learnedBefore = await proposalsFrom(sessionId);
+    learned = learnedBefore.length;
+    expect(learned).toBeGreaterThan(0);
     await idle(sessionId, 10);
     const outcome = await h.core.distill.distillSession(job(sessionId));
     expect(outcome).toMatchObject({ status: 'distilled', reason: null, turns: 4, lessonsDrafted: 1 });
@@ -345,17 +365,18 @@ describe('distillSession', () => {
     expect(await personEdits()).toEqual([]);
 
     const proposals = await proposalsFrom(sessionId);
-    expect(proposals).toHaveLength(1);
-    expect(proposals[0]).toMatchObject({ status: 'proposed', origin: 'ai' });
-    const raised = await h.core.memory.get(maya, proposals[0]?.id ?? '');
-    expect(raised.sourceRefs.map((r) => r.kind)).toEqual(expect.arrayContaining(['turn', 'session']));
-    expect(raised.content).toMatch(/I will interview five library staff/);
+    expect(proposals).toHaveLength(learned);
+    for (const item of proposals) expect(item).toMatchObject({ status: 'confirmed', origin: 'ai' });
+    const items = await Promise.all(proposals.map((item) => h.core.memory.get(maya, item.id)));
+    const raised = items.find((m) => m.content.includes('I will interview five library staff'));
+    expect(raised).toMatchObject({ keptAutomatically: true, approvedBy: null });
+    expect(raised?.sourceRefs.map((r) => r.kind)).toEqual(expect.arrayContaining(['turn', 'session']));
     // The conversation's turn proposals were embedded for the comparison by meaning.
     const unembedded = await h.t.db.system((sx) =>
       sx.query(
         `SELECT count(*)::int AS n FROM memory_objects m JOIN turns t ON m.source_refs @> jsonb_build_array(
            jsonb_build_object('kind', 'turn', 'id', CAST(t.id AS text)))
-         WHERE t.session_id = :id AND m.status = 'proposed' AND m.embedding IS NULL`,
+         WHERE t.session_id = :id AND m.origin = 'ai' AND m.embedding IS NULL`,
         { id: p.uuid(sessionId) },
       ),
     );
@@ -364,11 +385,14 @@ describe('distillSession', () => {
     expect(lessons).toHaveLength(1);
     expect(lessons[0]).toMatchObject({ status: 'draft', owner_id: null, source_session_id: sessionId });
 
-    // Metered as `distill`, billed to the founder whose conversation it is.
+    // Metered as `distill`, billed to the founder whose conversation it is (Devin's above, Maya's here).
     const usage = await h.t.db.system((sx) =>
-      sx.query(`SELECT principal_id, venture_id FROM usage_ledger WHERE purpose = 'distill'`),
+      sx.query(`SELECT principal_id, venture_id FROM usage_ledger WHERE purpose = 'distill' ORDER BY id`),
     );
-    expect(usage.rows).toEqual([{ principal_id: h.people.maya, venture_id: quietquad() }]);
+    expect(usage.rows).toEqual([
+      { principal_id: h.people.devin, venture_id: quietquad() },
+      { principal_id: h.people.maya, venture_id: quietquad() },
+    ]);
 
     // Audited with ids and counts only; nothing the founder said reaches the audit or the logs.
     const [event] = await auditFor('session.distilled', sessionId);
@@ -392,18 +416,19 @@ describe('distillSession', () => {
     });
     expect(h.gateway.calls.length).toBe(calls);
     expect((await notebook())?.version).toBe(version);
-    expect(await proposalsFrom(sessionId)).toHaveLength(1);
+    expect(await proposalsFrom(sessionId)).toHaveLength(learned);
     expect(await distilledLessons()).toHaveLength(1);
   });
 
   it('distils the new turns of a conversation that continued, without duplicating proposals or lessons', async () => {
     await completedTurn(maya, sessionId, 'The library staff said booking is the biggest pain.');
+    const withTurn = (await proposalsFrom(sessionId)).length;
     await idle(sessionId, 12);
     const outcome = await h.core.distill.distillSession(job(sessionId));
     expect(outcome).toMatchObject({ status: 'distilled', turns: 5, memoryProposed: 0, lessonsDrafted: 0 });
     expect(outcome.memoryRepeated).toBe(1);
     expect((await session(sessionId))?.distillVersion).toBe(5);
-    expect(await proposalsFrom(sessionId)).toHaveLength(1);
+    expect(await proposalsFrom(sessionId)).toHaveLength(withTurn);
     expect(await distilledLessons()).toHaveLength(1);
   });
 
@@ -766,9 +791,10 @@ describe('memory hygiene', () => {
       }),
     );
 
-    const id = await conversation(maya, ['Pricing per room seems right.']);
+    const id = await conversation(maya, ['Pricing per room seems right; occupancy is the other worry.']);
     const fromTurn = (await proposalsFrom(id)).length;
     await idle(id, 15);
+    // The founder said each (the model labels them so): what is tested here is how they are deduplicated.
     const candidate = (
       type: 'fact' | 'decision' | 'insight',
       title: string,
@@ -780,6 +806,7 @@ describe('memory hygiene', () => {
       content,
       evidence_ids: [],
       confidence,
+      source: 'founder_stated' as const,
     });
     scripted = (context) => ({
       ...mockDistillDraft(context),
@@ -833,7 +860,8 @@ describe('memory hygiene', () => {
       sx
         .query(
           `SELECT id, source_refs::text AS refs FROM memory_objects
-           WHERE venture_id = :v AND origin = 'ai' AND status = 'proposed' AND content LIKE :quote`,
+           WHERE venture_id = :v AND origin = 'ai' AND status = 'confirmed' AND approved_by IS NULL
+             AND content LIKE :quote`,
           { v: p.uuid(quietquad()), quote: p.text(`%${text}%`) },
         )
         .then((r) =>
@@ -858,38 +886,41 @@ describe('memory hygiene', () => {
     expect(refs.sort()).toEqual((turns.rows as { id: string }[]).map((t) => t.id).sort());
   });
 
-  it('daily maintenance expires AI proposals nobody acted on for 30 days, and nothing else', async () => {
-    const stale = await proposal(maya, 'Old idea about vending machines', 'Vending machines in study rooms.');
-    const fresh = await proposal(maya, 'New idea about badges', 'Badges for frequent bookers.');
-    const staleConfirmed = await h.core.memory.create(maya, quietquad(), {
-      type: 'fact',
-      title: 'Founded in spring',
-      content: 'The venture started in spring.',
-    });
+  it('daily maintenance never expires kept memory, and settles a proposal from before like new memory', async () => {
+    const old = await proposal(maya, 'Old idea about vending machines', 'Vending machines in study rooms.');
+    const kept = await h.t.db.system((sx) =>
+      memoryRepo.createMemory(sx, {
+        tenantId: h.seed.tenantId,
+        ventureId: quietquad(),
+        type: 'fact',
+        title: 'Kept long ago',
+        content: 'Learned in a conversation two months ago.',
+        visibility: 'team',
+        origin: 'ai',
+        keptAutomatically: true,
+        createdBy: maya.principalId,
+        sourceRefs: [{ kind: 'manual', id: 'test' }],
+      }),
+    );
     await h.t.db.system((sx) =>
-      sx.query(`UPDATE memory_objects SET updated_at = now() - interval '31 days' WHERE id = ANY (:ids)`, {
-        ids: p.uuidArray([stale, staleConfirmed.id]),
+      sx.query(`UPDATE memory_objects SET updated_at = now() - interval '61 days' WHERE id = ANY (:ids)`, {
+        ids: p.uuidArray([old, kept.id]),
       }),
     );
     const report = await h.core.maintenance.runDaily({ requestId: 'maintenance-test' });
-    expect(report.proposalsExpired).toBeGreaterThanOrEqual(1);
-    const items = await h.t.db.system((sx) =>
-      memoryRepo.getMemoryByIds(sx, [stale, fresh, staleConfirmed.id]),
-    );
-    const status = Object.fromEntries(items.map((m) => [m.id, m.status]));
-    expect(status).toEqual({ [stale]: 'expired', [fresh]: 'proposed', [staleConfirmed.id]: 'confirmed' });
-    const events = await h.t.db.system((sx) => memoryRepo.listMemoryHistory(sx, stale));
-    // Nobody acted: the event says so (it names the person the proposal was for only as its subject).
-    expect(events.at(-1)).toMatchObject({
-      action: 'expired',
-      actor: { id: h.people.maya },
-      diff: { system: true, reason: 'not_reviewed' },
+    expect(report).not.toHaveProperty('proposalsExpired');
+    const items = await h.t.db.system((sx) => memoryRepo.getMemoryByIds(sx, [old, kept.id]));
+    // The proposal from before (no conversation to judge it by, nothing like it) is kept the way new memory is.
+    expect(Object.fromEntries(items.map((m) => [m.id, [m.status, m.keptAutomatically]]))).toEqual({
+      [old]: ['confirmed', true],
+      [kept.id]: ['confirmed', true],
     });
-    // The approval CHECK still forbids a confirmed AI item without a person.
+    // The approval CHECK still forbids a confirmed AI item that neither a person nor the vEIR kept.
+    const another = await proposal(maya, 'Another old idea', 'Lockers next to the study rooms.');
     await expect(
       h.t.db.system((sx) =>
         sx.query(`UPDATE memory_objects SET status = 'confirmed', approved_by = NULL WHERE id = :id`, {
-          id: p.uuid(fresh),
+          id: p.uuid(another),
         }),
       ),
     ).rejects.toThrow();
@@ -1360,7 +1391,9 @@ describe('memory hygiene by meaning', () => {
     const content =
       'Libraries want weekly occupancy reports for every study room in the main building during the exam period.';
     const pending = await proposal(maya, 'Weekly occupancy reports', content);
-    const id = await conversation(maya, ['What should the reports look like?']);
+    const id = await conversation(maya, [
+      'Libraries want weekly occupancy reports for every study room during the exam season.',
+    ]);
     await idle(id, 15);
     scripted = (context) => ({
       ...mockDistillDraft(context),
@@ -1550,11 +1583,10 @@ describe('human help in the notebook', () => {
 });
 
 describe('daily maintenance', () => {
-  it('a failing proposal expiry never undoes the erasure of temporary chats', async () => {
+  it('a failing later step never undoes the erasure of temporary chats', async () => {
     const id = await conversation(maya, ['A private thought about co-founder equity.'], {
       privacy: 'ephemeral',
     });
-    const stale = await proposal(maya, 'Stale idea', 'Sell sensors to gyms.');
     await h.t.db.system(async (sx) => {
       await sx.query(`UPDATE coaching_sessions SET started_at = now() - interval '25 hours' WHERE id = :id`, {
         id: p.uuid(id),
@@ -1562,20 +1594,18 @@ describe('daily maintenance', () => {
       await sx.query(`UPDATE turns SET created_at = now() - interval '25 hours' WHERE session_id = :id`, {
         id: p.uuid(id),
       });
-      await sx.query(`UPDATE memory_objects SET updated_at = now() - interval '40 days' WHERE id = :id`, {
-        id: p.uuid(stale),
-      });
-      await sx.query(`CREATE OR REPLACE FUNCTION public.test_block_expiry() RETURNS trigger
-        LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'expiry blocked'; END $$`);
-      await sx.query(`CREATE TRIGGER test_block_expiry BEFORE UPDATE ON memory_objects FOR EACH ROW
-        WHEN (OLD.status = 'proposed' AND NEW.status = 'expired') EXECUTE FUNCTION public.test_block_expiry()`);
+      // The step after the erasure (closing abandoned calls) fails when it records itself.
+      await sx.query(`CREATE OR REPLACE FUNCTION public.test_block_step() RETURNS trigger
+        LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'step blocked'; END $$`);
+      await sx.query(`CREATE TRIGGER test_block_step BEFORE INSERT ON audit_events FOR EACH ROW
+        WHEN (NEW.action = 'maintenance.stale_calls') EXECUTE FUNCTION public.test_block_step()`);
     });
     try {
       await expect(h.core.maintenance.runDaily({ requestId: 'maintenance-blocked' })).rejects.toThrow();
     } finally {
       await h.t.db.system(async (sx) => {
-        await sx.query('DROP TRIGGER test_block_expiry ON memory_objects');
-        await sx.query('DROP FUNCTION public.test_block_expiry()');
+        await sx.query('DROP TRIGGER test_block_step ON audit_events');
+        await sx.query('DROP FUNCTION public.test_block_step()');
       });
     }
     const turns = await h.t.db.system((sx) =>

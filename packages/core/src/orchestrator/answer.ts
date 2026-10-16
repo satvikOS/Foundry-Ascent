@@ -68,6 +68,11 @@ export interface AnswerSpec {
   readonly rehearsalCounterpart: string | null;
   readonly channel: TurnChannel;
   readonly continuity: PromptContinuity;
+  /**
+   * The rendered "## Where you left off" section (orchestrator/continuity-prompt.ts), or '' (none, a temporary
+   * chat, a test conversation). Untrusted data at the start of the final user message.
+   */
+  readonly leftOff: string;
   readonly evidence: readonly KeyedEvidence[];
   readonly history: readonly HistoryTurn[];
   readonly opener: string | null;
@@ -197,6 +202,7 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
     maxInputTokens: cfg.turns.maxInputTokens,
     maxHistoryTurns: cfg.turns.historyTurns,
     continuity: spec.continuity,
+    leftOff: spec.leftOff,
     today,
     opener: spec.opener,
   });

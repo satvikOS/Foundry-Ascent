@@ -321,9 +321,10 @@ describe('starting a call', () => {
     await storeOpenerUnchecked(h, h.ventures.quietquad, text);
     const sessionId = await newSession('maya', 'quietquad');
     const started = await startCall('maya', sessionId);
-    expect(started.intro?.text).toBe(
-      "Hi Maya, this is Corin's vEIR, an AI coach. What would you like to work on?",
-    );
+    // Never the stored line: the call picks up Maya's last conversation (the test above) instead.
+    expect(started.intro?.text).toMatch(/^Hi Maya, this is Corin's vEIR, an AI coach\. /);
+    expect(started.intro?.text).toContain('“Can we test the seat map this week?”');
+    expect(started.intro?.text).not.toMatch(/Corin here|myself/);
     await endCall('maya', started.call.id);
   });
 
@@ -340,9 +341,8 @@ describe('starting a call', () => {
     try {
       const sessionId = await newSession('maya', 'quietquad');
       const started = await startCall('maya', sessionId);
-      expect(started.intro?.text).toBe(
-        "Hi Maya, this is Corin's vEIR, an AI coach. What would you like to work on?",
-      );
+      expect(started.intro?.text).toMatch(/^Hi Maya, this is Corin's vEIR, an AI coach\. /);
+      expect(started.intro?.text).not.toMatch(/Corin Halvorsen|Corin asked/);
       await endCall('maya', started.call.id);
     } finally {
       await rename("Corin's vEIR");
@@ -731,7 +731,13 @@ describe('ending a call', () => {
   it('ends once, summarizes what the call produced, and shows the summary to the team', async () => {
     const sessionId = await newSession('maya', 'quietquad');
     const { call } = await startCall('maya', sessionId);
-    const turn = await talk('maya', sessionId, call.id, 'How should we price the library pilot?');
+    // The founder says what is worth remembering in their own words (the coach's framing alone is not kept).
+    const turn = await talk(
+      'maya',
+      sessionId,
+      call.id,
+      'Willingness to pay has not been tested with a paid commitment yet. How should we price the library pilot?',
+    );
     await talk('maya', sessionId, call.id, 'What should the second library see first?');
     const live = CallDetailResponse.parse(await h.core.calls.get(ctx.devin, call.id));
     expect(live).toMatchObject({ call: { status: 'live' }, summary: null });
@@ -744,13 +750,16 @@ describe('ending a call', () => {
     expect(ended.call.durationSeconds).toBe(ended.summary.durationSeconds);
     expect(ended.summary.turnCount).toBe(2);
     expect(ended.summary.nextActions.length).toBeGreaterThan(0);
-    expect(ended.summary.memoryProposalIds.length).toBeGreaterThan(0);
-    const proposals = await h.t.db.system((sx) =>
-      sx.query(`SELECT source_refs FROM memory_objects WHERE id = ANY (:ids)`, {
-        ids: p.uuidArray(ended.summary.memoryProposalIds),
+    // What the call taught was kept automatically: nothing awaits a Keep.
+    expect(ended.summary.memoryProposalIds).toEqual([]);
+    expect(ended.summary.memoryKeptIds?.length).toBeGreaterThan(0);
+    const kept = await h.t.db.system((sx) =>
+      sx.query(`SELECT source_refs, status FROM memory_objects WHERE id = ANY (:ids)`, {
+        ids: p.uuidArray(ended.summary.memoryKeptIds ?? []),
       }),
     );
-    expect(JSON.stringify(proposals.rows)).toContain(turn.id);
+    expect(JSON.stringify(kept.rows)).toContain(turn.id);
+    expect(kept.rows.every((r) => r.status === 'confirmed')).toBe(true);
     expect(await h.t.db.system((sx) => callsRepo.getCall(sx, call.id))).toMatchObject({
       endDetail: 'client_user',
     });
@@ -1697,7 +1706,7 @@ describe('the turn engine and the calls service together', () => {
     }
   });
 
-  it('opens a call with the conversation’s stored opener, never a notebook line written since, and none in a temporary chat', async () => {
+  it('opens a call with the line that is true when it starts, keeps it as the conversation’s opener, and none in a temporary chat', async () => {
     const quietquad = ventureId('quietquad');
     const editOpener = async (text: string) => {
       const notebook = await h.core.notebook.get(ctx.maya, quietquad);
@@ -1710,12 +1719,15 @@ describe('the turn engine and the calls service together', () => {
     await editOpener(stored);
     const session = await h.core.sessions.create(ctx.maya, quietquad, {});
     expect(session.opener).toBe(stored);
-    await editOpener('What did the second library say about the seat counts?');
+    // A line written since the conversation was created (nothing was said in it yet): the call opens with it.
+    const since = 'What did the second library say about the seat counts?';
+    await editOpener(since);
     const started = await startCall('maya', session.id, 'typed');
     const intro = started.intro;
     if (intro === null) throw new Error('expected an intro');
-    // What the vEIR believes it opened with (its first history message) is what the call says.
-    expect(intro.text).toBe(`Hi Maya, this is Corin's vEIR, an AI coach. ${stored}`);
+    expect(intro.text).toBe(`Hi Maya, this is Corin's vEIR, an AI coach. ${since}`);
+    // What the vEIR believes it opened with (its first history message) is what the call said.
+    expect((await h.core.sessions.get(ctx.maya, session.id)).session.opener).toBe(since);
     expect(
       verifySpeechUnit(
         await keys.verificationKeys(),
