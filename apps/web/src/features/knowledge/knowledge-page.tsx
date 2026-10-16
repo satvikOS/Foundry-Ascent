@@ -62,8 +62,12 @@ export function KnowledgePage() {
   );
   const select = (memoryId: string | undefined) => {
     setSearch({ m: memoryId }, false);
-    if (memoryId) setOpen(true);
   };
+  // An item opens in the side panel however it was chosen: a row, an evidence link, the "earlier
+  // version" link or a shared URL.
+  useEffect(() => {
+    if (search.m) setOpen(true);
+  }, [search.m, setOpen]);
 
   const tabs: { value: Tab; label: string }[] = [
     { value: 'memory', label: 'Memory' },

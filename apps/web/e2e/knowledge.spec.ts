@@ -213,7 +213,10 @@ test.describe('memory', () => {
       await expect(panel).not.toContainText('no longer in memory');
       await expect(panel.getByRole('region', { name: 'History' })).toBeVisible();
 
-      // The new version links to the one it replaced.
+      // A link to an item opens the panel even after the person closed it; the new version links to
+      // the one it replaced.
+      await panel.getByRole('button', { name: 'Close inspector' }).click();
+      await expect(panel).toHaveCount(0);
       await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?m=${replacement.id}`);
       await expect(panel.getByRole('heading', { name: `Seats counted hourly ${token}` })).toBeVisible();
       await panel.getByRole('link', { name: 'earlier version' }).click();
