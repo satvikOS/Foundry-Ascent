@@ -10,6 +10,7 @@ import { type SeedResult } from '../seed/seed.js';
 import { createTestDatabase, makeContext, type TestDatabase } from '../testing/test-database.js';
 import * as assignmentsRepo from './assignments.js';
 import * as knowledgeRepo from './knowledge.js';
+import * as memoryRepo from './memory.js';
 import * as notebooksRepo from './notebooks.js';
 import * as resourcesRepo from './resources.js';
 import * as retrievalRepo from './retrieval.js';
@@ -353,5 +354,49 @@ describe('the persona common pool', () => {
       });
       expect(programOnly.some((l) => corinLessons.some((c) => c.id === l.refId))).toBe(false);
     });
+  });
+});
+
+describe('deleting a conversation', () => {
+  it('removes what was drawn from it: pending AI proposals and notebook lines', async () => {
+    const past = must(
+      (
+        await t.db.withContext(maya, (tx) => sessionsRepo.listSessionViews(tx, { ventureId: quietquad.id }))
+      ).find((s) => s.title === 'Is exam-week demand strong enough for a pilot?'),
+    );
+    const proposal = await t.db.withContext(maya, (tx) =>
+      memoryRepo.createMemory(tx, {
+        tenantId: seed.tenantId,
+        ventureId: quietquad.id,
+        type: 'insight',
+        title: 'Proposed from the past conversation',
+        content: 'Students might prefer notifications.',
+        origin: 'ai',
+        createdBy: maya.principalId,
+        visibility: 'team',
+        sourceRefs: [{ kind: 'session', id: past.id }],
+      }),
+    );
+    const before = must(
+      await t.db.withContext(maya, (tx) =>
+        notebooksRepo.getNotebook(tx, { ventureId: quietquad.id, personaId: quietquad.personaId }),
+      ),
+    );
+    expect(before.content.commitments.length).toBeGreaterThan(0);
+    expect(await t.db.withContext(maya, (tx) => sessionsRepo.softDeleteSession(tx, past.id))).toBe(true);
+    const after = must(
+      await t.db.withContext(maya, (tx) =>
+        notebooksRepo.getNotebook(tx, { ventureId: quietquad.id, personaId: quietquad.personaId }),
+      ),
+    );
+    expect(after.version).toBe(before.version + 1);
+    expect(after.content.commitments).toEqual([]);
+    expect(after.content.founderProfile).toEqual([]);
+    // Lines not tied to the conversation (the summary) stay for the team to correct.
+    expect(after.content.summary).toBe(before.content.summary);
+    const state = await t.db.system((sx) =>
+      sx.query('SELECT status, content FROM memory_objects WHERE id = :id', { id: p.uuid(proposal.id) }),
+    );
+    expect(state.rows[0]).toEqual({ status: 'deleted', content: '' });
   });
 });
