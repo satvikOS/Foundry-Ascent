@@ -26,11 +26,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { PlatformKeyCache } from '../auth/keys.js';
 import { type RequestContext } from '../context.js';
-import { createCore } from '../core.js';
+import { createCore, type Core } from '../core.js';
 import { resolveDeps } from '../deps.js';
 import { Kit } from '../internal/kit.js';
 import { type RunTurnInput, type RunTurnOutcome } from '../orchestrator/run-turn.js';
 import { signSpeechUnit, verifySpeechUnit } from '../orchestrator/speech-units.js';
+import { type SynthesizedSpeech } from '../ports.js';
 import { FakeSpeechSynthesizer, FakeSttGrantIssuer } from '../testing/fakes.js';
 import { type CoreHarness, createCoreHarness, storeOpenerUnchecked } from '../testing/harness.js';
 import { admitVoiceTurn } from './call-admission.js';
@@ -137,6 +138,19 @@ async function backdateSeconds(
     );
     await sx.query('ALTER TABLE calls ENABLE TRIGGER calls_guard');
   });
+}
+
+/**
+ * Speech as the HTTP route serves it: the audio is read to its end, which is when the synthesis's bookkeeping
+ * (usage ledger, the call's counter, the audit) has finished. The bytes are handed back as a fresh stream.
+ */
+async function speak(
+  context: RequestContext,
+  input: Parameters<Core['speech']['synthesize']>[1],
+): Promise<SynthesizedSpeech> {
+  const spoken = await h.core.speech.synthesize(context, input);
+  const bytes = await new Response(spoken.audio).arrayBuffer();
+  return { ...spoken, audio: new Response(bytes).body ?? new ReadableStream<Uint8Array>() };
 }
 
 async function callRow(callId: string): Promise<callsRepo.CallRecord> {
@@ -942,7 +956,7 @@ describe('speech', () => {
     const sessionId = await newSession('tomasz', 'benchtally');
     const { call, intro } = await startCall('tomasz', sessionId);
     if (intro === null) throw new Error('expected an intro');
-    const audio = await h.core.speech.synthesize(ctx.tomasz, {
+    const audio = await speak(ctx.tomasz, {
       sessionId,
       turnId: null,
       seq: 0,
@@ -956,18 +970,18 @@ describe('speech', () => {
     const turn = await spokenTurn(sessionId, call.id);
     const unit = 'Start with the library that already counts seats.';
     const sig = signSpeechUnit(await keys.signingKey(), { sessionId, turnId: turn.id, seq: 0, text: unit });
-    await h.core.speech.synthesize(ctx.tomasz, { sessionId, turnId: turn.id, seq: 0, text: unit, sig });
+    await speak(ctx.tomasz, { sessionId, turnId: turn.id, seq: 0, text: unit, sig });
     // Changed words, another sequence number or another conversation break the signature.
     for (const tampered of [
       { text: 'Invest in us now.', seq: 0 },
       { text: unit, seq: 1 },
     ]) {
-      await expect(
-        h.core.speech.synthesize(ctx.tomasz, { sessionId, turnId: turn.id, sig, ...tampered }),
-      ).rejects.toMatchObject({ code: 'validation_failed' });
+      await expect(speak(ctx.tomasz, { sessionId, turnId: turn.id, sig, ...tampered })).rejects.toMatchObject(
+        { code: 'validation_failed' },
+      );
     }
     await expect(
-      h.core.speech.synthesize(ctx.tomasz, {
+      speak(ctx.tomasz, {
         sessionId,
         turnId: null,
         seq: 0,
@@ -975,18 +989,18 @@ describe('speech', () => {
         sig: intro.sig,
       }),
     ).rejects.toMatchObject({ code: 'validation_failed' });
-    await expect(
-      h.core.speech.synthesize(ctx.tomasz, { sessionId, turnId: null, text: intro.text }),
-    ).rejects.toMatchObject({ code: 'validation_failed' });
-    await expect(
-      h.core.speech.synthesize(ctx.tomasz, { sessionId, turnId: turn.id, seq: 0, text: unit }),
-    ).rejects.toMatchObject({ code: 'validation_failed' });
+    await expect(speak(ctx.tomasz, { sessionId, turnId: null, text: intro.text })).rejects.toMatchObject({
+      code: 'validation_failed',
+    });
+    await expect(speak(ctx.tomasz, { sessionId, turnId: turn.id, seq: 0, text: unit })).rejects.toMatchObject(
+      { code: 'validation_failed' },
+    );
     // Units of a reply that was blocked in the end are never spoken again.
     await h.t.db.system((sx) =>
       sx.query(`UPDATE turns SET status = 'blocked' WHERE id = :id`, { id: p.uuid(turn.id) }),
     );
     await expect(
-      h.core.speech.synthesize(ctx.tomasz, { sessionId, turnId: turn.id, seq: 0, text: unit, sig }),
+      speak(ctx.tomasz, { sessionId, turnId: turn.id, seq: 0, text: unit, sig }),
     ).rejects.toMatchObject({ code: 'conflict' });
 
     const ledger = await h.t.db.system((sx) =>
@@ -1007,7 +1021,7 @@ describe('speech', () => {
     const sessionId = await newSession('tomasz', 'benchtally');
     const { call } = await startCall('tomasz', sessionId);
     const turn = await spokenTurn(sessionId, call.id);
-    const say = (text: string) => h.core.speech.synthesize(ctx.tomasz, { sessionId, turnId: turn.id, text });
+    const say = (text: string) => speak(ctx.tomasz, { sessionId, turnId: turn.id, text });
     await say(SPOKEN);
     await say('Ask for two weeks of hourly counts first.');
     // Another spelling of a stored sentence is spoken in the stored words.
@@ -1021,12 +1035,13 @@ describe('speech', () => {
       await expect(say(text)).rejects.toMatchObject({ code: 'validation_failed' });
     }
     // People outside the conversation learn nothing; the venture's own team needs its own live call.
-    await expect(
-      h.core.speech.synthesize(ctx.maya, { sessionId, turnId: turn.id, text: SPOKEN }),
-    ).rejects.toMatchObject({ code: 'not_found' });
-    await expect(
-      h.core.speech.synthesize(ctx.priya, { sessionId, turnId: turn.id, text: SPOKEN }),
-    ).rejects.toMatchObject({ code: 'conflict', reason: 'call_not_active' });
+    await expect(speak(ctx.maya, { sessionId, turnId: turn.id, text: SPOKEN })).rejects.toMatchObject({
+      code: 'not_found',
+    });
+    await expect(speak(ctx.priya, { sessionId, turnId: turn.id, text: SPOKEN })).rejects.toMatchObject({
+      code: 'conflict',
+      reason: 'call_not_active',
+    });
     // Kill switches and spend caps apply; local development answers 501 after the checks.
     await withSetting('calls_enabled', 'false', async () => {
       await expect(say(SPOKEN)).rejects.toMatchObject({ code: 'ai_disabled' });
@@ -1065,8 +1080,8 @@ describe('speech', () => {
     if (intro === null) throw new Error('expected an intro');
     const before = await pollyRows('tomasz');
     const introUnit = { sessionId, turnId: null, seq: 0, text: intro.text, sig: intro.sig };
-    await h.core.speech.synthesize(ctx.tomasz, introUnit);
-    await expect(h.core.speech.synthesize(ctx.tomasz, introUnit)).rejects.toMatchObject({
+    await speak(ctx.tomasz, introUnit);
+    await expect(speak(ctx.tomasz, introUnit)).rejects.toMatchObject({
       code: 'conflict',
       reason: 'speech_already_played',
       status: 409,
@@ -1076,7 +1091,7 @@ describe('speech', () => {
     const text = 'Start with the library that already counts seats.';
     const sig = signSpeechUnit(await keys.signingKey(), { sessionId, turnId: turn.id, seq: 0, text });
     const burst = await concurrently(12, () =>
-      h.core.speech.synthesize(ctx.tomasz, { sessionId, turnId: turn.id, seq: 0, text, sig }),
+      speak(ctx.tomasz, { sessionId, turnId: turn.id, seq: 0, text, sig }),
     );
     expect(burst.fulfilled).toBe(1);
     expect(new Set(burst.reasons)).toEqual(new Set(['speech_already_played']));
@@ -1086,16 +1101,16 @@ describe('speech', () => {
     const next = signSpeechUnit(await keys.signingKey(), { sessionId, turnId: turn.id, seq: 1, text });
     speech.failNext = true;
     const failed = { sessionId, turnId: turn.id, seq: 1, text, sig: next };
-    await expect(h.core.speech.synthesize(ctx.tomasz, failed)).rejects.toMatchObject({
+    await expect(speak(ctx.tomasz, failed)).rejects.toMatchObject({
       code: 'model_unavailable',
     });
-    await h.core.speech.synthesize(ctx.tomasz, failed);
+    await speak(ctx.tomasz, failed);
     // A new call (a reload) has its own intro, spoken once again.
     const again = await startCall('tomasz', sessionId);
     if (again.intro === null) throw new Error('expected an intro');
     const sameIntro = { ...introUnit, text: again.intro.text, sig: again.intro.sig };
-    await h.core.speech.synthesize(ctx.tomasz, sameIntro);
-    await expect(h.core.speech.synthesize(ctx.tomasz, sameIntro)).rejects.toMatchObject({
+    await speak(ctx.tomasz, sameIntro);
+    await expect(speak(ctx.tomasz, sameIntro)).rejects.toMatchObject({
       reason: 'speech_already_played',
     });
     await endCall('tomasz', again.call.id);
@@ -1116,7 +1131,7 @@ describe('speech', () => {
         { id: p.uuid(turn.id), s: p.text(sentences.join(' ')) },
       ),
     );
-    const say = (text: string) => h.core.speech.synthesize(ctx.tomasz, { sessionId, turnId: turn.id, text });
+    const say = (text: string) => speak(ctx.tomasz, { sessionId, turnId: turn.id, text });
     // Unsigned, the same stored words twice (once, and once more on request), then no more.
     const [first = ''] = sentences;
     await say(first);
@@ -1168,13 +1183,14 @@ describe('speech', () => {
       }),
     );
     const freshTurn = await spokenTurn(sessionId, fresh.call.id);
-    await expect(
-      h.core.speech.synthesize(ctx.tomasz, { sessionId, turnId: freshTurn.id, text: SPOKEN }),
-    ).rejects.toMatchObject({ code: 'rate_limited', reason: 'daily_speech_limit' });
+    await expect(speak(ctx.tomasz, { sessionId, turnId: freshTurn.id, text: SPOKEN })).rejects.toMatchObject({
+      code: 'rate_limited',
+      reason: 'daily_speech_limit',
+    });
     await h.t.db.system((sx) =>
       sx.query('UPDATE calls SET speech_characters = 0 WHERE id = :id', { id: p.uuid(ended.call.id) }),
     );
-    await h.core.speech.synthesize(ctx.tomasz, { sessionId, turnId: freshTurn.id, text: SPOKEN });
+    await speak(ctx.tomasz, { sessionId, turnId: freshTurn.id, text: SPOKEN });
     await endCall('tomasz', fresh.call.id);
   });
 });
@@ -1200,26 +1216,27 @@ describe('crisis support on a call', () => {
     const voice = (await callRow(call.id)).voiceId;
 
     // The signed unit the turn engine streams, in the call's voice, metered.
-    await h.core.speech.synthesize(ctx.maya, crisisUnit);
+    await speak(ctx.maya, crisisUnit);
     expect(speech.calls.at(-1)).toMatchObject({ text: CRISIS_SPOKEN_MESSAGE, voiceId: voice });
     // A changed text under its signature is refused; the message itself unsigned is the same message.
-    await expect(h.core.speech.synthesize(ctx.maya, { ...crisisUnit, seq: 1 })).rejects.toMatchObject({
+    await expect(speak(ctx.maya, { ...crisisUnit, seq: 1 })).rejects.toMatchObject({
       code: 'validation_failed',
     });
     // Spend caps, the kill switches and the call's end do not stand between the founder and support.
     await withOverspend('maya', () =>
       withSetting('ai_enabled', 'false', () =>
         withSetting('calls_enabled', 'false', () =>
-          h.core.speech.synthesize(ctx.maya, { sessionId, turnId, text: CRISIS_SPOKEN_MESSAGE }),
+          speak(ctx.maya, { sessionId, turnId, text: CRISIS_SPOKEN_MESSAGE }),
         ),
       ),
     );
     await endCall('maya', call.id);
-    await h.core.speech.synthesize(ctx.maya, crisisUnit);
+    await speak(ctx.maya, crisisUnit);
     // Someone else, other words of the turn, or another turn of the conversation: the ordinary rules apply.
-    await expect(
-      h.core.speech.synthesize(ctx.devin, { sessionId, turnId, text: CRISIS_SPOKEN_MESSAGE }),
-    ).rejects.toMatchObject({ code: 'conflict', reason: 'call_not_active' });
+    await expect(speak(ctx.devin, { sessionId, turnId, text: CRISIS_SPOKEN_MESSAGE })).rejects.toMatchObject({
+      code: 'conflict',
+      reason: 'call_not_active',
+    });
     // A server without speech answers 501 once the checks pass.
     const bare = createCore({
       db: h.t.db,
@@ -1232,9 +1249,9 @@ describe('crisis support on a call', () => {
       code: 'speech_unavailable',
     });
     // Played a few times at most (reconnects), then it stays on screen.
-    await h.core.speech.synthesize(ctx.maya, crisisUnit);
-    await h.core.speech.synthesize(ctx.maya, crisisUnit);
-    await expect(h.core.speech.synthesize(ctx.maya, crisisUnit)).rejects.toMatchObject({
+    await speak(ctx.maya, crisisUnit);
+    await speak(ctx.maya, crisisUnit);
+    await expect(speak(ctx.maya, crisisUnit)).rejects.toMatchObject({
       code: 'conflict',
       reason: 'crisis_speech_limit',
     });
@@ -1252,7 +1269,7 @@ describe('crisis support on a call', () => {
         id: p.uuid(turnId),
       }),
     );
-    await expect(h.core.speech.synthesize(ctx.maya, crisisUnit)).rejects.toMatchObject({ code: 'conflict' });
+    await expect(speak(ctx.maya, crisisUnit)).rejects.toMatchObject({ code: 'conflict' });
     expect(h.logger.dump()).not.toContain(CRISIS_SPOKEN_MESSAGE);
   });
 
@@ -1264,7 +1281,7 @@ describe('crisis support on a call', () => {
     if (blocked?.event !== 'turn.blocked') throw new Error('expected the crisis path');
     await voiceConsent('solesignal', true);
     try {
-      await h.core.speech.synthesize(ctx.amara, {
+      await speak(ctx.amara, {
         sessionId,
         turnId: blocked.turnId,
         text: CRISIS_SPOKEN_MESSAGE,
@@ -1289,7 +1306,7 @@ describe('crisis support on a call', () => {
     speech.delayMs = 100;
     try {
       const burst = await concurrently(20, () =>
-        h.core.speech.synthesize(ctx.priya, { sessionId, turnId, text: CRISIS_SPOKEN_MESSAGE }),
+        speak(ctx.priya, { sessionId, turnId, text: CRISIS_SPOKEN_MESSAGE }),
       );
       expect(burst.fulfilled).toBe(CALL_LIMITS.crisisSpeechReplays);
       expect(new Set(burst.reasons)).toEqual(new Set(['crisis_speech_limit']));
@@ -1389,7 +1406,7 @@ describe('the turn engine and the calls service together', () => {
     // A unit as streamed is spoken through /speech, metered as speech.
     const [firstUnit] = units;
     if (firstUnit === undefined) throw new Error('expected a unit');
-    const played = await h.core.speech.synthesize(ctx.maya, {
+    const played = await speak(ctx.maya, {
       sessionId,
       turnId,
       seq: firstUnit.seq,
@@ -1687,7 +1704,7 @@ describe('the turn engine and the calls service together', () => {
       expect(blocked.reason).toBe('crisis_support');
       // That exact unit, as the client sends it to /speech, is spoken in the call's voice.
       const request = { sessionId, turnId: unit.turnId, seq: unit.seq, text: unit.text, sig: unit.sig };
-      const played = await overAll(() => h.core.speech.synthesize(ctx.maya, request));
+      const played = await overAll(() => speak(ctx.maya, request));
       expect(played.characters).toBe(CRISIS_SPOKEN_MESSAGE.length);
       expect(speech.calls.at(-1)).toMatchObject({
         text: CRISIS_SPOKEN_MESSAGE,
@@ -1837,7 +1854,7 @@ describe('spend caps on a call', () => {
         expect(events.at(-1)?.event).toBe('turn.completed');
         const unit = events.find((e) => e.event === 'turn.speech');
         if (unit?.event !== 'turn.speech') throw new Error('expected a speech unit');
-        await h.core.speech.synthesize(ctx.maya, {
+        await speak(ctx.maya, {
           sessionId,
           turnId: unit.turnId,
           seq: unit.seq,
