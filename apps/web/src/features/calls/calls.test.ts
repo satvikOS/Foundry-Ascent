@@ -78,7 +78,7 @@ describe('callBlocker', () => {
 
   it('explains every reason a call cannot start', () => {
     expect(callBlocker({ writable: false, name: 'Corin', config, configError: null })?.message).toMatch(
-      /only its founders and team can call Corin/,
+      /Only founders and the team can call Corin/,
     );
     expect(
       callBlocker({
@@ -117,7 +117,7 @@ describe('callErrorMessage', () => {
       detail: 'You have reached your daily AI coaching budget. It resets at midnight UTC.',
     });
     expect(callErrorMessage(error)).toBe(
-      'You have reached your daily AI coaching budget. It resets at midnight UTC. Typed chat pauses too until then. Your conversation is saved.',
+      'You have reached your daily AI coaching budget. It resets at midnight UTC. Chat pauses too until then. Your conversation is saved.',
     );
   });
 });

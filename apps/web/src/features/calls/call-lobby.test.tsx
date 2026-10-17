@@ -75,9 +75,7 @@ describe('CallLobby', () => {
     const group = await screen.findByRole('group', { name: 'Memory for this call' });
     const remember = within(group).getByRole('radio', { name: 'Remember this call' });
     expect(remember).toBeChecked();
-    expect(group).toHaveAccessibleDescription(
-      "Corin's vEIR will remember this call and pick up from it next time.",
-    );
+    expect(group).toHaveAccessibleDescription('Remembered for next time.');
     await userEvent.click(within(group).getByRole('radio', { name: 'Private, a one-off' }));
     expect(onChange).toHaveBeenCalledWith('ephemeral');
   });

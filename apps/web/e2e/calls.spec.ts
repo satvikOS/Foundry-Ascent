@@ -289,16 +289,14 @@ test.describe('vEIR calls', () => {
       // and the call says so once.
       if (body.intro) {
         await expect(screen.getByRole('region', { name: 'Captions' })).toContainText(body.intro.text);
-        await expect(screen.getByText('Spoken replies are unavailable right now.')).toBeVisible();
+        await expect(screen.getByText('Voice replies are unavailable.')).toBeVisible();
       }
     });
 
     await test.step('no voice input here: the call continues by typing, and says why', async () => {
       const screen = callScreen(page);
       // No speech-to-text grant in mock mode (and headless browsers often have no microphone either).
-      await expect(
-        screen.getByText(/, so type instead\.$|Allow it in the browser’s site settings/),
-      ).toBeVisible();
+      await expect(screen.getByText(/Type instead\.$|Allow it in site settings/)).toBeVisible();
       await expect(screen.getByRole('textbox', { name: /^Reply to / })).toBeFocused();
       await expect(screen.getByRole('button', { name: 'Mute' })).toHaveCount(0);
       await expectNoSeriousA11yViolations(page, 'call screen');
@@ -346,7 +344,7 @@ test.describe('vEIR calls', () => {
       // The server said once that it has no voice here (501); a production build then shows every reply on
       // screen, asks for no more speech, and never lets the browser read it aloud.
       expect(speech).toHaveLength(1);
-      await expect(screen.getByText('Spoken replies are unavailable right now.')).toBeVisible();
+      await expect(screen.getByText('Voice replies are unavailable.')).toBeVisible();
       expect(await browserSpeechRequests(page)).toBe(0);
     });
 
@@ -965,7 +963,7 @@ test.describe('vEIR calls', () => {
       const turnOn = bar.getByRole('button', { name: 'Turn on sound' });
       await expect(turnOn).toBeVisible();
       await expect(bar).toContainText('Sound is off');
-      await expect(bar.getByRole('status')).toHaveText('Sound is off. Turn on sound to hear replies.');
+      await expect(bar.getByRole('status')).toHaveText('Sound is off.');
       // The vEIR stays marked as AI next to its name.
       await expect(bar).toContainText('vEIR · AI');
       await turnOn.click();
