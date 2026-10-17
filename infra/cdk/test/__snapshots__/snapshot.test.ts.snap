@@ -3676,6 +3676,147 @@ exports[`template snapshots > FoundryAscent-Foundation 1`] = `
     },
   },
   "Resources": {
+    "ConversationLabPolicyCE9BD69A": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "bedrock:InvokeModel",
+                "bedrock:InvokeModelWithResponseStream",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                "arn:aws:bedrock:*::foundation-model/amazon.nova-2-lite-v1:0",
+                "arn:aws:bedrock:*::foundation-model/amazon.nova-premier-v1:0",
+                "arn:aws:bedrock:*::foundation-model/amazon.nova-pro-v1:0",
+                "arn:aws:bedrock:*::foundation-model/amazon.titan-embed-text-v2:0",
+                "arn:aws:bedrock:::foundation-model/amazon.nova-2-lite-v1:0",
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:bedrock:us-east-1:",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":inference-profile/global.amazon.nova-2-lite-v1:0",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:bedrock:us-east-1:",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":inference-profile/us.amazon.nova-2-lite-v1:0",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:bedrock:us-east-1:",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":inference-profile/us.amazon.nova-premier-v1:0",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:bedrock:us-east-1:",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":inference-profile/us.amazon.nova-pro-v1:0",
+                    ],
+                  ],
+                },
+              ],
+              "Sid": "InvokeLabModels",
+            },
+            {
+              "Action": "polly:SynthesizeSpeech",
+              "Condition": {
+                "StringEquals": {
+                  "aws:RequestedRegion": "us-east-1",
+                },
+              },
+              "Effect": "Allow",
+              "Resource": "*",
+              "Sid": "SynthesizeSpeech",
+            },
+            {
+              "Action": "transcribe:StartStreamTranscriptionWebSocket",
+              "Condition": {
+                "StringEquals": {
+                  "aws:RequestedRegion": "us-east-1",
+                },
+              },
+              "Effect": "Allow",
+              "Resource": "*",
+              "Sid": "TranscribeStreaming",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "ConversationLabPolicyCE9BD69A",
+        "Roles": [
+          {
+            "Ref": "ConversationLabRole866D8B58",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "ConversationLabRole866D8B58": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRoleWithWebIdentity",
+              "Condition": {
+                "StringEquals": {
+                  "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+                  "token.actions.githubusercontent.com:sub": "repo:satvikOS@228056784/Foundry-Ascent@1356439229:environment:conversation-lab",
+                },
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "Federated": {
+                  "Ref": "GitHubOidcProvider7EBF861F",
+                },
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Description": "Headless conversation lab for satvikOS/Foundry-Ascent (OIDC; conversation-lab environment only)",
+        "MaxSessionDuration": 3600,
+        "PermissionsBoundary": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:aws:iam::",
+              {
+                "Ref": "AWS::AccountId",
+              },
+              ":policy/FoundryAscent-Boundary",
+            ],
+          ],
+        },
+        "RoleName": "FoundryAscent-ConversationLab",
+      },
+      "Type": "AWS::IAM::Role",
+    },
     "GitHubDeployPolicyB814826B": {
       "Properties": {
         "PolicyDocument": {

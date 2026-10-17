@@ -8,11 +8,23 @@
  * The ops-insights role is separate and narrower (docs/runbooks/insights.md): trusted only from the
  * `ops-insights` GitHub environment, it may invoke the read-only insights function and read the platform's
  * Lambda logs, nothing else. The deploy role is not widened for it.
+ *
+ * The conversation-lab role (docs/runbooks/conversation-lab.md) is separate too: trusted only from the
+ * `conversation-lab` GitHub environment, it may invoke the app's Bedrock models and the lab's own simulator and
+ * judge models, synthesize speech with Amazon Polly and presign Amazon Transcribe streaming, all for a local copy
+ * of the app with synthetic data on the runner. It reaches no platform resource (no database, bucket, queue,
+ * function, log or secret).
  */
 import { ArnFormat, CfnOutput, Duration, Stack, type StackProps } from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import type { Construct } from 'constructs';
-import { NAMES, OPS_INSIGHTS_ENVIRONMENT, STACK_PREFIX } from '../lib/constants.js';
+import {
+  CONVERSATION_LAB_ENVIRONMENT,
+  NAMES,
+  OPS_INSIGHTS_ENVIRONMENT,
+  STACK_PREFIX,
+} from '../lib/constants.js';
+import type { BedrockRuntimeAccess } from '../lib/models.js';
 import { acknowledge, wildcardResource } from '../lib/nag.js';
 
 export const GITHUB_OIDC_HOST = 'token.actions.githubusercontent.com';
@@ -46,6 +58,16 @@ export interface FoundationStackProps extends StackProps {
    */
   readonly insightsEnvironment?: string;
   /**
+   * GitHub environment of the conversation-lab workflow (default `conversation-lab`): the only subject the lab
+   * role trusts. Its deployment-branch rule must allow `main` only, like `production`'s.
+   */
+  readonly conversationLabEnvironment?: string;
+  /**
+   * Bedrock models the conversation lab may invoke: the app's effective models and the lab's simulator and judge
+   * (lib/lab-models.ts `conversationLabAccess`).
+   */
+  readonly conversationLabModels: BedrockRuntimeAccess;
+  /**
    * ARN of an existing `token.actions.githubusercontent.com` provider. An account can hold only one
    * provider per URL; pass this instead of creating a second one when it already exists.
    */
@@ -78,6 +100,7 @@ export function githubSubject(
 export class FoundationStack extends Stack {
   readonly deployRole: iam.Role;
   readonly insightsRole: iam.Role;
+  readonly conversationLabRole: iam.Role;
 
   constructor(scope: Construct, id: string, props: FoundationStackProps) {
     super(scope, id, props);
@@ -225,6 +248,90 @@ export class FoundationStack extends Stack {
       reason:
         'Read-only access to the log groups of the platform Lambda functions, all named FoundryAscent-*: the insights workflow counts distillation, call and request events (ids, codes and timings only by the logging contract).',
     });
+
+    // ---- Conversation lab ---------------------------------------------------------------------------------------
+    // Its own role and GitHub environment (main only). The lab runs the app on the runner (local PostgreSQL,
+    // synthetic seed, the production model configuration) and talks to it headless, so it needs exactly what
+    // the app's API role uses to think and speak, plus the lab's simulator and judge models: Bedrock
+    // InvokeModel / InvokeModelWithResponseStream (Converse and ConverseStream authorize through them) on the
+    // listed models, Polly SynthesizeSpeech, and Transcribe StartStreamTranscriptionWebSocket (the app presigns
+    // the browser's streaming URL with the role's credentials, as the API role does in production; the app
+    // never calls the HTTP/2 StartStreamTranscription, so it is not granted). No platform resource.
+    const labEnvironment = props.conversationLabEnvironment ?? CONVERSATION_LAB_ENVIRONMENT;
+    this.conversationLabRole = new iam.Role(this, 'ConversationLabRole', {
+      roleName: NAMES.conversationLabRole,
+      description: `Headless conversation lab for ${props.githubRepository} (OIDC; ${labEnvironment} environment only)`,
+      maxSessionDuration: Duration.hours(1),
+      assumedBy: new iam.WebIdentityPrincipal(provider.oidcProviderArn, {
+        StringEquals: {
+          [`${GITHUB_OIDC_HOST}:aud`]: GITHUB_OIDC_AUDIENCE,
+          [`${GITHUB_OIDC_HOST}:sub`]: githubSubject({ ...props, githubEnvironment: labEnvironment }),
+        },
+      }),
+    });
+    const models = props.conversationLabModels;
+    // Profiles in the invoking region; the foundation models behind them in every region (cross-region `us.`
+    // profiles route to other US regions), plus the region-less ARN `global.` profiles are authorized against.
+    const foundationModelArns = models.foundationModels.map((id) =>
+      this.formatArn({
+        service: 'bedrock',
+        region: '*',
+        account: '',
+        resource: 'foundation-model',
+        resourceName: id,
+      }),
+    );
+    const labModelArns = [
+      ...foundationModelArns,
+      ...models.globalFoundationModels.map((id) =>
+        this.formatArn({
+          service: 'bedrock',
+          region: '',
+          account: '',
+          resource: 'foundation-model',
+          resourceName: id,
+        }),
+      ),
+      ...models.inferenceProfiles.map((id) =>
+        this.formatArn({ service: 'bedrock', resource: 'inference-profile', resourceName: id }),
+      ),
+    ];
+    const inLabRegion = { StringEquals: { 'aws:RequestedRegion': this.region } };
+    const labPolicy = new iam.Policy(this, 'ConversationLabPolicy', {
+      statements: [
+        new iam.PolicyStatement({
+          sid: 'InvokeLabModels',
+          actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
+          resources: labModelArns,
+        }),
+        new iam.PolicyStatement({
+          sid: 'SynthesizeSpeech',
+          actions: ['polly:SynthesizeSpeech'],
+          resources: ['*'],
+          conditions: inLabRegion,
+        }),
+        new iam.PolicyStatement({
+          sid: 'TranscribeStreaming',
+          actions: ['transcribe:StartStreamTranscriptionWebSocket'],
+          resources: ['*'],
+          conditions: inLabRegion,
+        }),
+      ],
+    });
+    labPolicy.attachToRole(this.conversationLabRole);
+    acknowledge(
+      labPolicy,
+      ...foundationModelArns.map((arn) => ({
+        id: wildcardResource(this, arn),
+        reason:
+          'Foundation-model ARNs carry no account; the region is a wildcard because cross-region (us.) and global inference profiles route to other regions. The model id itself is pinned.',
+      })),
+      {
+        id: wildcardResource(this, '*'),
+        reason:
+          'polly:SynthesizeSpeech has no resource-level permissions without a lexicon (none is used) and transcribe:StartStreamTranscriptionWebSocket has no resource types; both are limited to the platform region by aws:RequestedRegion and create nothing that persists.',
+      },
+    );
 
     new CfnOutput(this, 'GitHubDeployRoleArn', {
       value: this.deployRole.roleArn,

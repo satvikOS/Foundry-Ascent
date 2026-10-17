@@ -285,15 +285,21 @@ describe('FoundryAscent-App', () => {
       ]);
       expect(transcribe('FoundryAscent-Worker')).toEqual([]);
       expect(transcribe('FoundryAscent-Migrate')).toEqual([]);
-      // Streaming over the presigned WebSocket only: no batch jobs, vocabularies or HTTP/2 streams.
-      const all = synth.all.flatMap((t) =>
-        resourcesOfType(t, 'AWS::IAM::Policy').flatMap(([, p]) =>
-          (p.PolicyDocument as { Statement: Props[] }).Statement.flatMap(actionsOf),
+      // Streaming over the presigned WebSocket only: no batch jobs, vocabularies or HTTP/2 streams. Besides the
+      // API, only the conversation lab's role (Foundation stack) holds it, for the app copy it runs on its runner.
+      const holders = synth.all.flatMap((t) =>
+        resourcesOfType(t, 'AWS::IAM::Policy').flatMap(([id, p]) =>
+          (p.PolicyDocument as { Statement: Props[] }).Statement.flatMap(actionsOf)
+            .filter((a) => a.startsWith('transcribe:'))
+            .map((a) => `${id.replace(/[0-9A-F]{8}$/, '')}:${a}`),
         ),
       );
-      expect(all.filter((a) => a.startsWith('transcribe:'))).toEqual([
+      expect(holders.filter((h) => !h.startsWith('ConversationLabPolicy:'))).toHaveLength(1);
+      expect(holders.map((h) => h.split(':').slice(1).join(':'))).toEqual([
+        'transcribe:StartStreamTranscriptionWebSocket',
         'transcribe:StartStreamTranscriptionWebSocket',
       ]);
+      expect(holders).toContain('ConversationLabPolicy:transcribe:StartStreamTranscriptionWebSocket');
     });
 
     it('scopes each function role to its own log group (no AWS managed policies)', () => {

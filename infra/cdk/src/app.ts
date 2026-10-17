@@ -6,6 +6,8 @@ import { App, type Environment, Validations } from 'aws-cdk-lib';
 import { AwsSolutionsChecks } from 'cdk-nag';
 import { loadConfig, type PlatformConfig } from './config.js';
 import { DEFAULT_UPLOAD_CORS_ORIGINS, ENVIRONMENT_NAME, PROJECT_TAG, STACK_PREFIX } from './lib/constants.js';
+import { conversationLabAccess, LAB_MODELS } from './lib/lab-models.js';
+import { effectiveModels } from './lib/models.js';
 import { ensureLocalEsbuildOnPath, resolveAssets, type AppAssets } from './paths.js';
 import { AppStack, type SiteDomain } from './stacks/app-stack.js';
 import { DataStack } from './stacks/data-stack.js';
@@ -89,6 +91,7 @@ export function buildApp(options: BuildOptions = {}): FoundryApp {
     githubRepositoryId: config.githubRepositoryId,
     githubBranch: config.githubBranch,
     githubEnvironment: ENVIRONMENT_NAME,
+    conversationLabModels: conversationLabAccess(effectiveModels(config.models), LAB_MODELS),
     ...(existingOidcProviderArn ? { existingOidcProviderArn } : {}),
   });
 

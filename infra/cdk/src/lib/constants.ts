@@ -24,10 +24,18 @@ export const NAMES = {
   insightsFunction: 'FoundryAscent-Insights',
   /** GitHub OIDC role of the ops-insights workflow: invoke the insights function, read platform logs. */
   opsInsightsRole: 'FoundryAscent-OpsInsights',
+  /**
+   * GitHub OIDC role of the conversation-lab workflow: invoke the app's and the lab's Bedrock models, Amazon Polly
+   * and Amazon Transcribe streaming for a local copy of the app on the runner. No platform resource.
+   */
+  conversationLabRole: 'FoundryAscent-ConversationLab',
 } as const;
 
 /** The GitHub environment whose jobs may assume the ops-insights role (deployment branch: main only). */
 export const OPS_INSIGHTS_ENVIRONMENT = 'ops-insights';
+
+/** The GitHub environment whose jobs may assume the conversation-lab role (deployment branch: main only). */
+export const CONVERSATION_LAB_ENVIRONMENT = 'conversation-lab';
 
 /** Insights function timeout: an Aurora resume (up to 2 minutes) plus the reads of one export part. */
 export const INSIGHTS_TIMEOUT_MINUTES = 5;

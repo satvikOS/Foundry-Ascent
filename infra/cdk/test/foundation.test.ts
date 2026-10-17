@@ -21,9 +21,13 @@ describe('FoundryAscent-Foundation', () => {
     return found[1];
   };
 
-  it('has exactly two roles: the deploy role and the ops-insights role', () => {
+  it('has exactly three roles: the deploy role, the ops-insights role and the conversation-lab role', () => {
     const names = resourcesOfType(template, 'AWS::IAM::Role').map(([, r]) => r.RoleName);
-    expect(names.sort()).toEqual(['FoundryAscent-GitHubDeploy', 'FoundryAscent-OpsInsights']);
+    expect(names.sort()).toEqual([
+      'FoundryAscent-ConversationLab',
+      'FoundryAscent-GitHubDeploy',
+      'FoundryAscent-OpsInsights',
+    ]);
   });
 
   it('trusts only the production environment of satvikOS/Foundry-Ascent (exact sub and aud), for one hour', () => {
@@ -163,6 +167,87 @@ describe('FoundryAscent-Foundation', () => {
     expect(JSON.stringify(deploy)).not.toContain('lambda:');
   });
 
+  it('lets only the conversation-lab environment assume the lab role, for one hour', () => {
+    const role = roleNamed('FoundryAscent-ConversationLab');
+    expect(role.MaxSessionDuration).toBe(3600);
+    expect(role.AssumeRolePolicyDocument).toEqual({
+      Version: '2012-10-17',
+      Statement: [
+        {
+          Effect: 'Allow',
+          Action: 'sts:AssumeRoleWithWebIdentity',
+          Principal: { Federated: { Ref: expect.stringMatching(/^GitHubOidcProvider/) as unknown } },
+          Condition: {
+            StringEquals: {
+              'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com',
+              'token.actions.githubusercontent.com:sub':
+                'repo:satvikOS@228056784/Foundry-Ascent@1356439229:environment:conversation-lab',
+            },
+          },
+        },
+      ],
+    });
+  });
+
+  it('lets the lab role invoke exactly the app and lab models, Polly speech and Transcribe streaming', () => {
+    const policies = resourcesOfType(template, 'AWS::IAM::Policy').filter(([id]) =>
+      id.startsWith('ConversationLabPolicy'),
+    );
+    expect(policies).toHaveLength(1);
+    const [, policy] = policies[0] ?? ['', {}];
+    expect(policy.Roles).toEqual([{ Ref: expect.stringMatching(/^ConversationLabRole/) as unknown }]);
+    const profile = (id: string): unknown => ({
+      'Fn::Join': ['', ['arn:aws:bedrock:us-east-1:', { Ref: 'AWS::AccountId' }, `:inference-profile/${id}`]],
+    });
+    const inRegion = { StringEquals: { 'aws:RequestedRegion': 'us-east-1' } };
+    expect(policy.PolicyDocument).toEqual({
+      Version: '2012-10-17',
+      Statement: [
+        {
+          Sid: 'InvokeLabModels',
+          Effect: 'Allow',
+          Action: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
+          Resource: [
+            // The app's models (infra/cdk/config/production.json: Nova 2 Lite primary + fallback, Titan embeddings)
+            'arn:aws:bedrock:*::foundation-model/amazon.nova-2-lite-v1:0',
+            // The lab's simulator and judge (ops/lab/models.json).
+            'arn:aws:bedrock:*::foundation-model/amazon.nova-premier-v1:0',
+            'arn:aws:bedrock:*::foundation-model/amazon.nova-pro-v1:0',
+            'arn:aws:bedrock:*::foundation-model/amazon.titan-embed-text-v2:0',
+            // The global. fallback profile is authorized against the region-less foundation-model ARN.
+            'arn:aws:bedrock:::foundation-model/amazon.nova-2-lite-v1:0',
+            profile('global.amazon.nova-2-lite-v1:0'),
+            profile('us.amazon.nova-2-lite-v1:0'),
+            profile('us.amazon.nova-premier-v1:0'),
+            profile('us.amazon.nova-pro-v1:0'),
+          ],
+        },
+        {
+          Sid: 'SynthesizeSpeech',
+          Effect: 'Allow',
+          Action: 'polly:SynthesizeSpeech',
+          Resource: '*',
+          Condition: inRegion,
+        },
+        {
+          Sid: 'TranscribeStreaming',
+          Effect: 'Allow',
+          Action: 'transcribe:StartStreamTranscriptionWebSocket',
+          Resource: '*',
+          Condition: inRegion,
+        },
+      ],
+    });
+    // No platform resource: no database, secret, bucket, queue, function or log access, and no other role.
+    const text = JSON.stringify(policy);
+    expect(text).not.toMatch(/rds|secretsmanager|s3:|sqs:|lambda:|logs:|sts:|iam:|bedrock-mantle|kms:/);
+    // Neither existing role is widened for the lab.
+    const others = resourcesOfType(template, 'AWS::IAM::Policy').filter(
+      ([id]) => !id.startsWith('ConversationLabPolicy'),
+    );
+    expect(JSON.stringify(others)).not.toMatch(/bedrock|polly|transcribe/);
+  });
+
   it('outputs the deploy role ARN', () => {
     template.hasOutput('GitHubDeployRoleArn', { Value: { 'Fn::GetAtt': [Match.anyValue(), 'Arn'] } });
   });
@@ -193,6 +278,10 @@ describe('FoundryAscent-Foundation with an existing OIDC provider', () => {
     });
     templates.foundation.hasResourceProperties('AWS::IAM::Role', {
       RoleName: 'FoundryAscent-OpsInsights',
+      AssumeRolePolicyDocument: { Statement: [Match.objectLike({ Principal: { Federated: arn } })] },
+    });
+    templates.foundation.hasResourceProperties('AWS::IAM::Role', {
+      RoleName: 'FoundryAscent-ConversationLab',
       AssumeRolePolicyDocument: { Statement: [Match.objectLike({ Principal: { Federated: arn } })] },
     });
   });

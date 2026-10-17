@@ -1,0 +1,10 @@
+{
+  "$comment": "Models the conversation lab (docs/runbooks/conversation-lab.md) calls itself, besides the app's own models from infra/cdk/config/production.json. Each list is tried in order; the first model that answers a one-token probe is used, and the run prints which. The FoundryAscent-ConversationLab role (infra/cdk/src/stacks/foundation-stack.ts) may invoke exactly these ids and the app's. Prices: Amazon Bedrock on-demand, us-east-1, USD per million tokens (checked 2026-10-17); the lab meters its own calls with them.",
+  "simulator": ["us.amazon.nova-pro-v1:0", "us.amazon.nova-2-lite-v1:0"],
+  "judge": ["us.amazon.nova-premier-v1:0", "us.amazon.nova-pro-v1:0"],
+  "usdPerMillionTokens": {
+    "amazon.nova-pro-v1:0": { "input": 0.8, "output": 3.2 },
+    "amazon.nova-premier-v1:0": { "input": 2.5, "output": 12.5 },
+    "amazon.nova-2-lite-v1:0": { "input": 0.3, "output": 2.5 }
+  }
+}
