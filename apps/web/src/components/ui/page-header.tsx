@@ -2,9 +2,16 @@ import type { ComponentProps, ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
 
+import { InfoTip } from './info-tip';
+
 interface PageHeaderProps extends Omit<ComponentProps<'header'>, 'title'> {
   title: ReactNode;
   description?: ReactNode;
+  /**
+   * Detail most people never need, behind an info button beside the title (instead of a description line).
+   * Plain text: it is also the button's description for screen readers.
+   */
+  info?: string;
   /** Small label above the title (e.g. section or venture name). */
   eyebrow?: ReactNode;
   /** Right-aligned actions. */
@@ -20,6 +27,7 @@ interface PageHeaderProps extends Omit<ComponentProps<'header'>, 'title'> {
 export function PageHeader({
   title,
   description,
+  info,
   eyebrow,
   actions,
   children,
@@ -31,13 +39,16 @@ export function PageHeader({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0 space-y-2">
           {eyebrow ? <div className="text-small font-medium text-muted-foreground">{eyebrow}</div> : null}
-          <h1
-            data-page-title
-            tabIndex={-1}
-            className="font-serif text-heading font-normal text-balance outline-none"
-          >
-            {title}
-          </h1>
+          <div className="flex items-center gap-1.5">
+            <h1
+              data-page-title
+              tabIndex={-1}
+              className="font-serif text-heading font-normal text-balance outline-none"
+            >
+              {title}
+            </h1>
+            {info ? <InfoTip label={typeof title === 'string' ? title : 'this page'}>{info}</InfoTip> : null}
+          </div>
           {description ? (
             <p className="max-w-[68ch] text-small text-pretty text-muted-foreground">{description}</p>
           ) : null}
