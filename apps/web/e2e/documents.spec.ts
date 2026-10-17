@@ -734,10 +734,19 @@ test.describe('document viewer', () => {
     await expect(scanned.locator('[data-page-index="1"] mark[data-find-index]')).toHaveText('日本語');
     await scanned.getByRole('button', { name: 'Close', exact: true }).click();
     await expect(scanned).toHaveCount(0);
-    // Everything above ran under the production CSP. The one report is not the viewer's: zod's
-    // `new Function` probe (which zod catches) in the API client's chunk, on every page of the app.
+    // Everything above ran under the production CSP. The only report allowed is zod's own `Function('')`
+    // probe (it catches the refusal and parses without compiling), recognised by the probe's code in the
+    // chunk that reported it, whatever the bundler named that chunk. Any other report (pdf.js, a new
+    // dependency, eval anywhere else) fails.
     const reported = await violations();
-    expect(reported.filter((v) => !/^script-src eval \/assets\/client-[\w-]+\.js$/.test(v))).toEqual([]);
+    const unexpected: string[] = [];
+    for (const violation of reported) {
+      const source = /^script-src eval (\/assets\/[\w.-]+\.js)$/.exec(violation)?.[1];
+      const code = source === undefined ? '' : await (await page.request.get(source)).text();
+      const zodProbe = code.includes('jitless') && /Function\((?:``|""|'')\)/.test(code);
+      if (!zodProbe) unexpected.push(violation);
+    }
+    expect(unexpected).toEqual([]);
 
     // A link opens straight into the viewer, in dark and light; Close then leaves the page without it.
     // Text on the glass bars (and the match in focus) stays at AA contrast over a white or black page
