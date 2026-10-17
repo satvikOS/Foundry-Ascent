@@ -138,4 +138,47 @@ describe('SidebarContent: venture destinations', () => {
     expect(screen.getByRole('link', { name: /^Knowledge/ })).toHaveTextContent(/^Knowledge$/);
     expect(screen.queryByText(/to review/)).toBeNull();
   });
+  it('says nothing about conversations before the first one (New chat is right there)', async () => {
+    const fetchMock = stubFetch();
+    fetchMock.mockImplementation((input) =>
+      Promise.resolve(
+        urlOf(input) === `/api/v1/ventures/${IDS.venture}`
+          ? jsonResponse(makeVenture({ openEscalations: 0 }))
+          : jsonResponse({ items: [] }),
+      ),
+    );
+    const founder: Me = {
+      ...me([]),
+      memberships: [{ ventureId: IDS.venture, ventureName: 'QuietQuad', role: 'founder' }],
+    };
+    const noop = () => undefined;
+    const rootRoute = createRootRoute({
+      component: () => (
+        <nav aria-label="Main">
+          <SidebarContent
+            me={founder}
+            workspace={{ kind: 'venture', ventureId: IDS.venture }}
+            onOpenSearch={noop}
+            onOpenShortcuts={noop}
+            onOpenDataUse={noop}
+            onOpenReportProblem={noop}
+          />
+        </nav>
+      ),
+    });
+    const router = createRouter({
+      routeTree: rootRoute,
+      history: createMemoryHistory({ initialEntries: ['/'] }),
+    });
+    renderWithProviders(<RouterProvider router={router} />);
+    await screen.findByRole('link', { name: 'New chat' });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([input]) => urlOf(input).startsWith('/api/v1/sessions?'))).toBe(true);
+    });
+    await waitFor(() => {
+      expect(screen.queryByText(/Loading conversations/)).toBeNull();
+    });
+    expect(screen.queryByText(/conversations yet/i)).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'Recent conversations' })).toBeNull();
+  });
 });

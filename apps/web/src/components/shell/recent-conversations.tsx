@@ -75,9 +75,8 @@ export function RecentConversations({ tenant, ventureNames, onNavigate }: Recent
     );
   }
 
-  if (groups.length === 0) {
-    return <p className="px-2.5 pt-4 text-caption text-sidebar-muted">No conversations yet.</p>;
-  }
+  // Nothing yet: the sidebar stays empty rather than saying so (New chat is right above).
+  if (groups.length === 0) return null;
 
   return (
     <>
