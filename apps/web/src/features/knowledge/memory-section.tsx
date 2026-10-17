@@ -275,7 +275,9 @@ function Chip({
       aria-pressed={pressed}
       onClick={onClick}
       className={cn(
-        'inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-3 text-[13px] whitespace-nowrap transition-colors',
+        // Relative: the screen-reader count stays inside the chip, so it never widens the page from inside the
+        // phone's sideways-scrolling strip.
+        'relative inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-3 text-[13px] whitespace-nowrap transition-colors',
         'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
         pressed
           ? 'border-foreground bg-foreground text-background'
