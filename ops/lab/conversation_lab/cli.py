@@ -135,7 +135,9 @@ def cmd_run(args: argparse.Namespace) -> int:
         print("run: budget out of range", file=sys.stderr)
         return 2
     if args.mock and suite == "voice":
-        print("run: the voice suite needs Amazon Polly and Transcribe; it has no mock dry run", file=sys.stderr)
+        print(
+            "run: the voice suite needs Amazon Polly and Transcribe; it has no mock dry run", file=sys.stderr
+        )
         return 2
     owner_code = os.environ.get("E2E_OWNER_ACCESS_CODE", "").strip()
     database_url = os.environ.get("DATABASE_URL", "").strip()
@@ -206,7 +208,11 @@ def cmd_run(args: argparse.Namespace) -> int:
         summary["models"]["app"] = {"primary": "mock", "fallback": "mock", "embeddings": "mock"}
     error: str | None = None
     stack_cm = Stack(
-        env=env, log_dir=ctx.private / "logs", web=suite != "matrix", api_port=args.api_port, web_port=args.web_port
+        env=env,
+        log_dir=ctx.private / "logs",
+        web=suite != "matrix",
+        api_port=args.api_port,
+        web_port=args.web_port,
     )
     with stack_cm as stack:
         admin = AppAdmin(stack.api_url, SecretStr(owner_code))
