@@ -46,18 +46,14 @@ export function escalationTimeline(e: EscalationView): TimelineStep[] {
     {
       id: 'consent',
       label: 'Your consent',
-      detail: consented
-        ? 'You chose what to share.'
-        : 'Waiting for you to review the packet and choose what to share.',
+      detail: consented ? 'You chose what to share.' : 'Waiting for you to choose what to share.',
       at: e.sharingConsentAt,
       state: consented ? 'done' : 'current',
     },
     {
       id: 'routed',
       label: `Shared with ${role}`,
-      detail: e.assignee
-        ? `Assigned to ${e.assignee.displayName}.`
-        : 'Waiting for the program team to assign someone.',
+      detail: e.assignee ? `Assigned to ${e.assignee.displayName}.` : 'Waiting for the program team.',
       at: null,
       // `awaiting_assignment`: consented and waiting in the program team's routing queue.
       state: reached('routed')
@@ -90,8 +86,8 @@ export function escalationTimeline(e: EscalationView): TimelineStep[] {
       label: e.status === 'withdrawn' ? 'Withdrawn' : 'Declined',
       detail:
         e.status === 'withdrawn'
-          ? 'You withdrew this request. Nothing further is shared.'
-          : 'Declined. The program team can route it to someone else.',
+          ? 'Nothing further is shared.'
+          : 'The program team can route it to someone else.',
       at: e.updatedAt,
       state: e.status,
     };

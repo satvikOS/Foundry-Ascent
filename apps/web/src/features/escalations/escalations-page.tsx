@@ -104,7 +104,6 @@ export function EscalationsPage() {
             icon={Inbox}
             headingLevel={2}
             title="Requests for you arrive in your inbox"
-            description="When the founders ask for your help and agree to share the packet, it appears there."
             action={
               <Button asChild size="sm" variant="secondary">
                 <Link to="/$tenant/app/eir/inbox" params={{ tenant }}>
@@ -114,12 +113,7 @@ export function EscalationsPage() {
             }
           />
         ) : (
-          <EmptyState
-            icon={LifeBuoy}
-            headingLevel={2}
-            title="Only the venture team sees requests"
-            description="The founders and team ask for help here and choose what is shared."
-          />
+          <EmptyState icon={LifeBuoy} headingLevel={2} title="Only the venture team sees requests" />
         )}
       </PageContainer>
     );
@@ -129,7 +123,8 @@ export function EscalationsPage() {
     <PageContainer>
       <PageHeader
         title="Human help"
-        description="Ask a person: an EIR, the program team or a specialist. Nothing is shared without your consent."
+        description="Nothing is shared without your consent."
+        info="Ask a person: an EIR, the program team or a specialist."
         actions={
           <Button
             onClick={() => {
@@ -137,7 +132,7 @@ export function EscalationsPage() {
             }}
           >
             <HandHelping aria-hidden />
-            Request human support
+            Ask a person
           </Button>
         }
       />
@@ -155,7 +150,7 @@ export function EscalationsPage() {
           icon={LifeBuoy}
           headingLevel={2}
           title="No requests yet"
-          description="When a person should weigh in, ask here or from a conversation. You review the packet before anything is shared."
+          description="Ask here or from a conversation."
         />
       ) : (
         <div className="grid gap-10 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
@@ -410,7 +405,7 @@ function HelpRequestDetail({
             <AlertDialogTitle>Withdraw this request?</AlertDialogTitle>
             <AlertDialogDescription>
               {escalation.sharingConsentAt
-                ? `${role} is told it was withdrawn and receives nothing further. What was shared stays in the audit record.`
+                ? `${role} is told, and gets nothing more. What was shared stays in the audit record.`
                 : 'Nothing has been shared yet. The draft closes.'}
             </AlertDialogDescription>
           </AlertDialogHeader>

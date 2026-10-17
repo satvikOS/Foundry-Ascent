@@ -263,11 +263,8 @@ export function EscalationFlowDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Request human support</DialogTitle>
-          <DialogDescription>
-            We draft a short packet for {step === 'details' ? 'an EIR or specialist' : role}. Nothing is
-            shared until you approve.
-          </DialogDescription>
+          <DialogTitle>Ask a person</DialogTitle>
+          <DialogDescription>Nothing is shared until you approve.</DialogDescription>
         </DialogHeader>
         <StepIndicator step={step} />
         {formError ? (
@@ -286,7 +283,7 @@ export function EscalationFlowDialog({
               <Textarea {...details.register('founderQuestion')} minRows={3} maxRows={8} maxLength={2000} />
             </Field>
             <Field
-              label="What decision are you trying to make? (optional)"
+              label="Decision to make (optional)"
               error={details.formState.errors.desiredDecision?.message}
             >
               <Textarea {...details.register('desiredDecision')} minRows={2} maxRows={5} maxLength={1000} />
@@ -441,10 +438,10 @@ export function EscalationFlowDialog({
               }
             >
               {escalation.status === 'awaiting_assignment'
-                ? `They’ll assign the right person (${role}). Follow it on the Human help page.`
+                ? `They’ll assign the right person (${role}). Follow it in Human help.`
                 : escalation.sharingConsentAt
-                  ? 'Their response appears on the Human help page.'
-                  : 'Finish it on the Human help page.'}
+                  ? 'Their reply shows in Human help.'
+                  : 'Finish it in Human help.'}
             </Alert>
             <DialogFooter>
               {onViewEscalation ? (
