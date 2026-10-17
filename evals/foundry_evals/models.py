@@ -303,6 +303,8 @@ class Me(_Camel):
     memberships: list[MembershipView]
     disclosure: str
     ai_enabled: bool
+    #: When this person acknowledged the one-time vEIR welcome (0016); additive.
+    veir_welcome_acknowledged_at: str | None = None
 
 
 class AdminAccessCodeRow(_Camel):
@@ -337,6 +339,10 @@ class AssignedEir(_Camel):
 class PersonaSummary(_Camel):
     name: str
     disclosure: str
+    #: The EIR's first name for a vEIR, and whether it appears under it ("Corin · vEIR"); additive.
+    eir_first_name: str | None = None
+    first_person: bool = False
+    eir_sees_work: bool = False
 
 
 class VentureSummary(_Camel):

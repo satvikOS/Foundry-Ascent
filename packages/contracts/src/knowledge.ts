@@ -192,6 +192,16 @@ export const VeirIdentity = z.object({
   tagline: z.string().nullable(),
   disclosure: z.string(),
   embodiment: PersonaEmbodiment,
+  /**
+   * The EIR's consent covers `first_person`: the vEIR is shown as "Corin · vEIR" and speaks as their digital
+   * twin. Additive: absent means no ("Corin's vEIR").
+   */
+  firstPerson: z.boolean().optional(),
+  /**
+   * The persona's EIR is the venture's assigned EIR, who can see the venture's work: the vEIR may say so.
+   * Additive: absent means no.
+   */
+  eirSeesWork: z.boolean().optional(),
 });
 export type VeirIdentity = z.infer<typeof VeirIdentity>;
 
@@ -350,7 +360,12 @@ export type LessonAction = z.infer<typeof LessonAction>;
 
 // Persona management --------------------------------------------------------------------------------
 
-export const ConsentAssetType = z.enum(['doctrine', 'style', 'voice', 'likeness', 'cases']);
+/**
+ * What an EIR's consent covers. `first_person`: founders meet the vEIR under the EIR's first name with a vEIR
+ * badge ("Corin · vEIR"), speaking in the first person as their digital twin; without it the vEIR is "Corin's
+ * vEIR" and refers to the EIR in the third person.
+ */
+export const ConsentAssetType = z.enum(['doctrine', 'style', 'voice', 'likeness', 'cases', 'first_person']);
 export type ConsentAssetType = z.infer<typeof ConsentAssetType>;
 
 export const CreateEirPersonaRequest = z.object({

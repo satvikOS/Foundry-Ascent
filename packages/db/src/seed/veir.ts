@@ -12,6 +12,10 @@
  *   assignment: that assignment is ended and the vEIR assignment created, once. A venture a program lead
  *   re-assigned (to anything) is left alone.
  * - it runs only when migration 0004 is applied (the seed also runs against older schemas in tests).
+ * - once migration 0016 is applied, the seeded consents cover `first_person` (founders meet "Corin · vEIR"). The
+ *   seeded EIRs are fictional (synthetic) and their consent is the seed's own record, so a database seeded before
+ *   0016 has that record extended once, unless it was revoked; a consent anyone recorded in the product is never
+ *   touched.
  */
 import { col } from '../columns.js';
 import { SqlUsageError } from '../errors.js';
@@ -46,6 +50,16 @@ interface VeirSeedContext {
   readonly memoryIds: Readonly<Record<string, Readonly<Record<string, string>>>>;
   readonly day: (offsetDays: number) => string;
   readonly now: Date;
+}
+
+/** True when consents may cover the first-person presentation (migration 0016). */
+export async function hasFirstPersonScope(sx: SystemExecutor): Promise<boolean> {
+  const result = await sx.query(
+    `SELECT EXISTS (SELECT 1 FROM pg_constraint
+                     WHERE conname = 'consents_asset_types_check'
+                       AND pg_get_constraintdef(oid) LIKE '%first_person%') AS ready`,
+  );
+  return result.rows[0]?.ready === true;
 }
 
 /** True when the schema has the vEIR tables and columns (migration 0004). */
@@ -95,6 +109,7 @@ async function seedPersona(sx: SystemExecutor, c: VeirSeedContext, v: SeedVeir):
   const releaseId = c.id('persona-release', 'veir', v.eirKey, 'v1');
   const consentId = c.id('consent', v.eirKey, 'veir-v1');
   const nowIso = c.now.toISOString();
+  const firstPerson = await hasFirstPersonScope(sx);
 
   await insertRows(
     sx,
@@ -113,13 +128,22 @@ async function seedPersona(sx: SystemExecutor, c: VeirSeedContext, v: SeedVeir):
         id: consentId,
         tenant_id: c.tenantId,
         subject_principal_id: subject,
-        asset_types: v.consent.assetTypes,
+        asset_types: firstPerson ? [...v.consent.assetTypes, 'first_person'] : v.consent.assetTypes,
         approved_uses: v.consent.approvedUses,
         audiences: v.consent.audiences,
         evidence_ref: v.consent.evidenceRef,
       },
     ],
   );
+  if (firstPerson) {
+    // A seeded (fictional) EIR's own seeded record gains the first-person scope once; never a revoked one.
+    await sx.query(
+      `UPDATE consents c SET asset_types = c.asset_types || ARRAY['first_person']
+        WHERE c.id = :id AND c.revoked_at IS NULL AND NOT ('first_person' = ANY (c.asset_types))
+          AND EXISTS (SELECT 1 FROM principals pr WHERE pr.id = c.subject_principal_id AND pr.synthetic)`,
+      { id: p.uuid(consentId) },
+    );
+  }
   // Inserted only when absent: the embodiment trigger re-checks the consent of every proposed row, and a
   // consent revoked in the product must not make a later seed run fail.
   await sx.query(

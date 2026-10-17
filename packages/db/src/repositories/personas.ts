@@ -458,7 +458,7 @@ const consentShape = {
 const consentCodec = camelRow(consentShape);
 export type ConsentRecord = CamelRow<typeof consentShape>;
 
-const CONSENT_ASSETS = ['doctrine', 'style', 'voice', 'likeness', 'cases'] as const;
+const CONSENT_ASSETS = ['doctrine', 'style', 'voice', 'likeness', 'cases', 'first_person'] as const;
 
 /** Contract view of a consent record. */
 export function toConsentView(c: ConsentRecord): ConsentView {
@@ -496,6 +496,46 @@ export async function personaConsentAssets(
   );
 }
 
+/** How a vEIR may present itself to the founders of one venture (one query; see `getPersonaPresence`). */
+export interface PersonaPresence {
+  /** Display name of the EIR the persona is built from ("Corin Halvorsen"); null for a guide. */
+  readonly eirName: string | null;
+  /** The EIR's consent in force covers `first_person`: "Corin · vEIR", speaking as their digital twin. */
+  readonly firstPerson: boolean;
+  /** The persona's EIR is the EIR assigned to the venture, who can see its work. */
+  readonly eirSeesWork: boolean;
+}
+
+/**
+ * The persona's EIR, whether the consent in force covers the first-person presentation, and whether that EIR is
+ * the venture's assigned EIR (`assignedEirProfileId`, from the resolved assignment), in one round trip.
+ */
+export async function getPersonaPresence(
+  ex: SqlExecutor,
+  args: { personaId: string; assignedEirProfileId: string | null },
+): Promise<PersonaPresence> {
+  const row = await queryFirst(
+    ex,
+    `SELECT e.display_name, pe.eir_profile_id, pe.kind,
+            'first_person' = ANY (app.persona_consent_assets(pe.id)) AS first_person
+       FROM personas pe LEFT JOIN eir_profiles e ON e.id = pe.eir_profile_id
+      WHERE pe.id = :id`,
+    { id: p.uuid(args.personaId) },
+    (r) => ({
+      eirName: col.text.nullable.decode(r.display_name, 'display_name'),
+      eirProfileId: col.uuid.nullable.decode(r.eir_profile_id, 'eir_profile_id'),
+      veir: col.text.decode(r.kind, 'kind') === 'eir_persona',
+      firstPerson: col.bool.nullable.decode(r.first_person, 'first_person') === true,
+    }),
+  );
+  if (row === null) return { eirName: null, firstPerson: false, eirSeesWork: false };
+  return {
+    eirName: row.eirName,
+    firstPerson: row.veir && row.firstPerson,
+    eirSeesWork: row.veir && row.eirProfileId !== null && row.eirProfileId === args.assignedEirProfileId,
+  };
+}
+
 /** Whether a consent is in force at `now` and covers `asset`. */
 export function consentCovers(
   consent: Pick<ConsentRecord, 'assetTypes' | 'revokedAt' | 'expiresAt'> | null,
@@ -516,7 +556,7 @@ export interface CreateConsentInput {
   readonly id?: string;
   readonly tenantId: string;
   readonly subjectPrincipalId: string;
-  readonly assetTypes: readonly ('doctrine' | 'style' | 'voice' | 'likeness' | 'cases')[];
+  readonly assetTypes: readonly (typeof CONSENT_ASSETS)[number][];
   readonly approvedUses?: readonly string[];
   readonly audiences?: readonly string[];
   readonly evidenceRef?: string | null;

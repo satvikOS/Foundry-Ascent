@@ -1068,6 +1068,28 @@ export async function expireStaleEphemeralSessions(
   };
 }
 
+/**
+ * Whether `principalId` started another conversation of the venture than `exceptSessionId` (one they can still
+ * see): the vEIR has met them, so a call greets them instead of introducing itself.
+ */
+export async function startedEarlierConversation(
+  ex: SqlExecutor,
+  args: { ventureId: string; principalId: string; exceptSessionId: string },
+): Promise<boolean> {
+  const row = await queryFirst(
+    ex,
+    `SELECT EXISTS (SELECT 1 FROM coaching_sessions
+                     WHERE venture_id = :ventureId AND started_by = :principalId AND id <> :except) AS met`,
+    {
+      ventureId: p.uuid(args.ventureId),
+      principalId: p.uuid(args.principalId),
+      except: p.uuid(args.exceptSessionId),
+    },
+    (r) => col.bool.decode(r.met, 'met'),
+  );
+  return row === true;
+}
+
 /** Start of the most recent session of the venture (excluding `exceptSessionId`), or null. */
 export async function lastSessionAt(
   ex: SqlExecutor,
