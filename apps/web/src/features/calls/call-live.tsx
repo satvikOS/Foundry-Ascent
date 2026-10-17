@@ -88,6 +88,7 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: Cal
   const pushToTalk = snapshot.talkMode === 'push_to_talk';
   const typeRef = useRef<HTMLInputElement | null>(null);
   const nameRef = useRef<HTMLHeadingElement | null>(null);
+  const [video, setVideo] = useState(false);
 
   // Focus starts on the vEIR's name (the state is announced next to it); typing-only calls focus the line.
   useEffect(() => {
@@ -182,14 +183,21 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: Cal
             veir={veir}
             engine={engine}
             state={engine.avatarState()}
+            ventureId={snapshot.ventureId}
+            callId={live ? (snapshot.call?.id ?? null) : null}
             className="w-[min(15rem,58vw,32dvh)] sm:w-[min(18rem,34dvh)]"
+            onVideoChange={setVideo}
           />
         )}
         <div className="flex flex-col items-center gap-1.5">
+          {/* With a video tile the name is on the tile; the heading stays for screen readers and focus. */}
           <h2
             ref={nameRef}
             tabIndex={-1}
-            className="flex items-center gap-2 font-serif text-subheading font-normal outline-none"
+            className={cn(
+              'flex items-center gap-2 font-serif text-subheading font-normal outline-none',
+              video && !snapshot.blocked && 'sr-only',
+            )}
           >
             {veir.name}
             <VeirBadge kind={veir.kind} mode="Live voice" />

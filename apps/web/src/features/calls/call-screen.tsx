@@ -112,7 +112,7 @@ export function CallScreen() {
   const ventureId = (active ? snapshot.ventureId : null) ?? routeVenture;
   const writable = ventureId !== null && canWrite(me, ventureId);
   const config = useCallConfig(routeVenture, open && writable && !active);
-  const veir = useCallVeir(ventureId, config.data?.veir) ?? FALLBACK_VEIR;
+  const veir = useCallVeir(ventureId, config.data?.veir, config.data?.provider) ?? FALLBACK_VEIR;
   const createSession = useCreateSession(routeVenture ?? '');
   // A call from New chat takes New chat's choice: remembered (the default) or private, a one-off.
   const [newPrivacy, setNewPrivacy] = useStartPrivacy(routeVenture ?? '');

@@ -102,6 +102,7 @@ export function fakeEngine() {
     avatarState: vi.fn(() => 'listening' as const),
     levels: vi.fn(() => ({ veir: 0, founder: 0 })),
     onSpeak: vi.fn(() => () => undefined),
+    attachFace: vi.fn(),
   };
   return { engine, asEngine: engine as unknown as CallEngine };
 }
