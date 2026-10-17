@@ -1,4 +1,4 @@
-import { CallConfigResponse, type AvatarProviderId, type VeirIdentity } from '@foundry/contracts';
+import { CallConfigResponse, type EmbodimentProviderId, type VeirIdentity } from '@foundry/contracts';
 import { queryOptions, useQuery } from '@tanstack/react-query';
 
 import { api, path } from '@/lib/api/client';
@@ -27,16 +27,21 @@ export interface CallVeir extends VeirName {
   readonly disclosure: string;
   /** Only with likeness consent; otherwise the monogram is the face. */
   readonly portraitUrl: string | null;
-  readonly provider: AvatarProviderId;
+  /** Who draws the call's face (the call settings' provider; `builtin` is the presence). */
+  readonly provider: EmbodimentProviderId;
 }
 
 /**
  * The vEIR of a venture for the call UI: from the call config when loaded, otherwise from the venture
  * (already cached by the sidebar), so the screen has a face and a name from its first frame.
  */
-export function useCallVeir(ventureId: string | null, config?: VeirIdentity | null): CallVeir | null {
+export function useCallVeir(
+  ventureId: string | null,
+  config?: VeirIdentity | null,
+  provider?: EmbodimentProviderId,
+): CallVeir | null {
   const venture = useQuery({ ...ventureQueryOptions(ventureId ?? ''), enabled: ventureId !== null });
-  if (config) return { ...veirFromIdentity(config), provider: config.embodiment.provider };
+  if (config) return { ...veirFromIdentity(config), provider: provider ?? config.embodiment.provider };
   const display = ventureId ? veirDisplay(venture.data) : null;
   if (!display) return null;
   return { ...display, provider: 'builtin' };

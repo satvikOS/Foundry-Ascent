@@ -185,6 +185,8 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: Cal
             engine={engine}
             state={engine.avatarState()}
             nameTag={<CallNameTag veir={veir} speaking={speaking} headingRef={nameRef} />}
+            ventureId={snapshot.ventureId}
+            callId={live ? (snapshot.call?.id ?? null) : null}
             className="h-[min(20rem,34dvh)] sm:h-[min(24rem,40dvh)]"
           />
         )}
