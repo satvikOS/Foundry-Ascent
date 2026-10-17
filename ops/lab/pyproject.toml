@@ -1,0 +1,29 @@
+# The conversation lab's runner-side harness (docs/runbooks/conversation-lab.md). Not a published package: the
+# workflow runs it as `python -m conversation_lab` from this directory, with evals/ on the path for the
+# Foundry API client and the deterministic conversation graders.
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "../../evals"]
+addopts = ["-q", "--strict-markers", "--strict-config", "-p", "no:cacheprovider"]
+xfail_strict = true
+filterwarnings = ["error"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 110
+src = [".", "../../evals"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "C4", "PIE", "RET", "PTH", "N", "S", "DTZ", "BLE", "PT", "RUF"]
+ignore = ["E501"]
+allowed-confusables = ["’", "‘", "“", "”", "—", "–", "−"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["conversation_lab", "foundry_evals"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert and use obviously fake access codes as fixtures.
+"tests/**" = ["S101", "S105", "S106"]
+
+[tool.ruff.format]
+quote-style = "double"

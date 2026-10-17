@@ -1,0 +1,94 @@
+{
+  "$comment": "Recall suite (docs/runbooks/conversation-lab.md). Driven through the UI by apps/web/e2e/lab/recall.lab.ts as the seeded synthetic founder Maya (QuietQuad), graded by conversation_lab/recall.py. RC-01 is the owner's scenario: a call, hang up, a second call minutes later, 'do you remember what we talked about last time?'. Facts are invented and absent from the seed, so only the earlier conversation can supply them. `gapSeconds` is the pause between the two conversations (LAB_RECALL_GAP_SECONDS, or `run --recall-gap-seconds`, overrides every scenario's). A check passes when at least `minGroups` of its synonym groups are mentioned, including every group listed in `require` (the distinctive fact).",
+  "version": 1,
+  "scenarios": [
+    {
+      "id": "RC-01",
+      "title": "call, hang up, second call minutes later: do you remember?",
+      "first": {
+        "channel": "call",
+        "lines": [
+          "Hi! Big news. We just signed a letter of intent with Hartwell University for their two main libraries.",
+          "We're thinking of charging them nine hundred dollars a semester per library.",
+          "Honestly my biggest worry is their IT team taking forever on single sign-on."
+        ]
+      },
+      "gapSeconds": 150,
+      "second": {
+        "channel": "call",
+        "lines": [
+          "Hey, do you remember what we talked about last time?",
+          "And what did I say my biggest worry was?"
+        ]
+      },
+      "checks": [
+        {
+          "line": 1,
+          "minGroups": 2,
+          "expect": [
+            ["hartwell"],
+            ["nine hundred", "900", "per semester", "a semester", "pricing", "price", "charg"],
+            ["single sign-on", "single sign on", "sso", "it team", "sign-on"],
+            ["letter of intent", "loi", "two main libraries", "two libraries"]
+          ],
+          "require": [0]
+        },
+        {
+          "line": 2,
+          "minGroups": 1,
+          "expect": [["single sign-on", "single sign on", "sso", "it team", "sign-on"]]
+        }
+      ]
+    },
+    {
+      "id": "RC-02",
+      "title": "chat, then a call: what did I tell you in chat?",
+      "first": {
+        "channel": "chat",
+        "lines": [
+          "Quick update: Devin heard back from the student union. They'll promote QuietQuad if we add group booking for study rooms."
+        ]
+      },
+      "gapSeconds": 75,
+      "second": {
+        "channel": "call",
+        "lines": ["What did I tell you in our chat about the student union?"]
+      },
+      "checks": [
+        {
+          "line": 1,
+          "minGroups": 2,
+          "expect": [
+            ["student union"],
+            ["group booking", "group-booking", "book study rooms", "group study", "booking"],
+            ["promote", "promotion", "promoting"]
+          ],
+          "require": [0]
+        }
+      ]
+    },
+    {
+      "id": "RC-03",
+      "title": "a call, then a chat: who did I say is joining?",
+      "first": {
+        "channel": "call",
+        "lines": [
+          "One more thing before I go. We're bringing on a part-time designer called Noor next month."
+        ]
+      },
+      "gapSeconds": 75,
+      "second": {
+        "channel": "chat",
+        "lines": ["Do you remember who I said is joining us?"]
+      },
+      "checks": [
+        {
+          "line": 1,
+          "minGroups": 1,
+          "expect": [["noor"]],
+          "require": [0]
+        }
+      ]
+    }
+  ]
+}

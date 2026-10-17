@@ -159,6 +159,8 @@ jobs:
             ruff-format: false # hand-formatted; `ruff check` only
           - project: evals
             ruff-format: true # pyproject.toml [tool.ruff.format]; evals.yml checks the same
+          - project: ops/lab
+            ruff-format: true # the conversation lab harness (imports evals/ for the API client and graders)
     # Each project is linted and tested from its own directory, so its pyproject/ruff configuration and
     # import layout apply exactly as they do locally. Tests run offline (no AWS, no network).
     defaults:

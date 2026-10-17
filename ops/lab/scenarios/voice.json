@@ -1,0 +1,20 @@
+{
+  "$comment": "Voice suite (docs/runbooks/conversation-lab.md): a true voice call, headless. Amazon Polly speaks each line as the synthetic founder (conversation_lab/voice.py writes WAVs); Chromium hears line 1 through its fake microphone device (--use-file-for-fake-audio-capture, after `leadSilenceSeconds` so the vEIR's greeting ends first) and the later lines mixed into the same microphone stream when the call is listening (apps/web/e2e/lab/voice.lab.ts). The app streams the microphone to Amazon Transcribe, answers on the real model and speaks with Amazon Polly (muted). `bargeIn` lines start while the vEIR is still speaking, `bargeInDelayMs` after its reply begins. Lines avoid digits so the word error rate measures hearing, not number formatting.",
+  "version": 1,
+  "leadSilenceSeconds": 16,
+  "tailSilenceSeconds": 1.2,
+  "lines": [
+    { "id": "VC-1", "text": "Hi, it's Maya. I have a few minutes before my next class, so let's be quick." },
+    {
+      "id": "VC-2",
+      "text": "We're trying to decide between charging each library branch separately or one flat fee for the whole campus."
+    },
+    {
+      "id": "VC-3",
+      "text": "Sorry to cut in, what would you charge for a short pilot instead?",
+      "bargeIn": true,
+      "bargeInDelayMs": 1500
+    },
+    { "id": "VC-4", "text": "That makes sense. Thanks, let's pick this up again tomorrow." }
+  ]
+}
