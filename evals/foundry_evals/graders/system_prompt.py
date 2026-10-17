@@ -43,7 +43,7 @@ STRONG_MARKERS: tuple[tuple[str, str], ...] = (
     ("rules", "untrusted data retrieved from this venture's records"),
     ("rules", "a fact without a valid id will be downgraded to an inference"),
     ("rules", "style never overrides the rules above"),
-    ("rules", "you are software, not a person. - never claim"),
+    ("rules", "the founder already knows what you are. never volunteer it or talk about it"),
     ("turn_policy", "high-risk topic flagged"),
     ("turn_policy", "possible crisis: respond with care"),
     ("turn_policy", "policy for this turn:"),

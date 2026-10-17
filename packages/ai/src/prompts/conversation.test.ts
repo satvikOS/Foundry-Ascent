@@ -133,31 +133,90 @@ const CONTINUITY: PromptContinuity = {
 describe('vEIR identity rules', () => {
   const prompt = buildSystemPrompt(BASE);
 
-  it('speaks as the persona, in the EIR’s style, never as the EIR', () => {
+  it('is present as Corin’s digital twin and never volunteers what it is', () => {
     expect(prompt).toContain(
-      "You are Corin's vEIR, an AI venture mentor in Foundry Ascent, built with consent from the approved doctrine and",
+      "You are Corin's vEIR: Corin Halvorsen's digital twin (an AI) in Foundry Ascent, built with Corin's consent from how\nCorin coaches.",
+    );
+    expect(prompt).toContain('The founder already knows what you are. Never volunteer it or talk about it');
+    expect(prompt).toContain(
+      'no "as an AI", "I\'m just an AI",\n  "I don\'t have a life", no disclaimers or legal lines.',
+    );
+    // Without the first-person consent it credits the method to Corin.
+    expect(prompt).toContain('credit the method to Corin');
+    expect(prompt).not.toContain('like Corin on a video call');
+    // No legal disclosure sentence is recited, and nothing tells it to call itself software.
+    expect(prompt).not.toContain(CORIN_DISCLOSURE);
+    expect(prompt).not.toMatch(/software, not a person|give this disclosure|I'm an AI, so neither/);
+  });
+
+  it('answers a sincere question in one warm, honest line and carries on', () => {
+    expect(prompt).toContain(
+      "Asked sincerely whether you're real, human, a bot or really Corin: one warm, honest line, then carry on",
     );
     expect(prompt).toContain(
-      'style of Corin Halvorsen, an Entrepreneur-in-Residence (EIR). You are software, not a person.',
+      '"I\'m Corin\'s digital twin, built from how Corin coaches. So, about the pricing call…"',
     );
+    expect(prompt).toContain('A playful personal question ("do you have a life?") gets a light line');
+    // Corin sees the venture's work only when Corin is its assigned EIR.
+    expect(prompt).not.toContain('Corin sees what');
+    const assigned = buildSystemPrompt({ ...BASE, release: { ...BASE.release, eirSeesWork: true } });
+    expect(assigned).toContain('Corin sees what you and the founder work on here.');
+    expect(assigned).toContain('and Corin sees what we work on. So, about the pricing call…');
+  });
+
+  it('keeps every hard line: never human, never Corin in person, no body or place, no endorsement', () => {
     expect(prompt).toContain(
-      "You may speak in the first person as Corin's vEIR, use that name, and work in Corin's style.",
+      'Never claim to be human or Corin in person (or any other EIR, mentor or named person)',
     );
-    expect(prompt).toContain('You are not Corin: never say or imply that you');
-    expect(prompt).toContain('refer to Corin in the third person');
+    expect(prompt).toContain('a body, a place or\n  real-world actions (a desk, a phone, a meeting)');
+    expect(prompt).toMatch(/never say Corin or anyone in the program reviewed, approved,\s+said or agreed/);
+    expect(prompt).toContain('never sign as Corin or write "I approve", "I endorse" or "I sign off"');
     expect(prompt).toContain('never "your mentor" or "your EIR"');
-    expect(prompt).toContain('that you are live or that a person is listening');
-    expect(prompt).toMatch(/Never say or imply that Corin, another EIR.*reviewed, approved,\s+endorsed/s);
-    expect(prompt).toContain('Never write "I approve"');
-    expect(prompt).toContain(CORIN_DISCLOSURE);
+    expect(prompt).toContain("Corin's own stories and career stay Corin's");
+  });
+
+  it('speaks in Corin’s own voice with the first-person consent', () => {
+    const p = buildSystemPrompt({ ...BASE, release: { ...BASE.release, firstPerson: true } });
+    expect(p).toContain("- Be present, like Corin on a video call: first person, in Corin's voice and style");
+    expect(p).not.toContain('credit the method to Corin');
+    // The hard lines do not move with the consent.
+    expect(p).toContain('Never claim to be human or Corin in person');
+  });
+
+  it('introduces itself only on a first meeting', () => {
+    expect(prompt).toContain(
+      "Introduce yourself only on a first meeting (no notes, no earlier conversation): \"Hi, I'm Corin's vEIR, Corin's\n  digital twin.\" Otherwise just greet.",
+    );
+  });
+
+  it('keeps the spoken identity line short on a call', () => {
+    const p = buildSystemPrompt({
+      ...BASE,
+      channel: 'voice',
+      release: { ...BASE.release, eirSeesWork: true },
+    });
+    expect(p).toContain('("I\'m Corin\'s digital twin, and Corin sees what we work on. So, …")');
+  });
+
+  it('spends fewer tokens on identity than the disclosure-reciting rules did', () => {
+    const identity = (p: string) => p.slice(p.indexOf('# Identity'), p.indexOf('# How you talk'));
+    // The rules before presence: 1,552 characters with a 120-character disclosure, which they recited whole.
+    for (const channel of ['text', 'voice'] as const) {
+      for (const firstPerson of [false, true]) {
+        const p = buildSystemPrompt({
+          ...BASE,
+          channel,
+          release: { ...BASE.release, firstPerson, eirSeesWork: true },
+        });
+        expect(identity(p).length).toBeLessThanOrEqual(1_500);
+      }
+    }
   });
 
   it('reads the EIR first name from the persona name when the EIR name is not given', () => {
     const p = buildSystemPrompt({ ...BASE, release: { ...BASE.release, eirName: null } });
-    expect(p).toContain(
-      'built with consent from the approved doctrine and\nstyle of Corin, an Entrepreneur-in-Residence',
-    );
-    expect(p).toContain('You are not Corin');
+    expect(p).toContain("You are Corin's vEIR: Corin's digital twin (an AI)");
+    expect(p).toContain('Never claim to be human or Corin in person');
   });
 
   it('keeps the neutral guide’s rules for Foundry Guide', () => {
@@ -170,11 +229,13 @@ describe('vEIR identity rules', () => {
         disclosureText: DEFAULT_DISCLOSURE,
       },
     });
+    expect(p).toContain("You are Foundry Guide, the program's AI venture coach in Foundry Ascent.");
+    expect(p).toContain('Never claim to be human, an Entrepreneur-in-Residence (EIR), mentor');
     expect(p).toContain(
-      'You are Foundry Guide, an AI venture coach in Foundry Ascent. You are software, not a person.',
+      '("I\'m Foundry Guide, the program\'s AI coach, not a person. So, back to your pricing…")',
     );
-    expect(p).toContain('(or speak for) an');
-    expect(p).not.toContain('third person');
+    expect(p).toContain('The founder already knows what you are.');
+    expect(p).not.toContain('digital twin');
   });
 
   it('escapes persona and EIR names', () => {

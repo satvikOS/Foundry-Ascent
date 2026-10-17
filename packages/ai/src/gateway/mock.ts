@@ -11,6 +11,7 @@ import {
 import { veirFirstName } from '../prompts/persona.js';
 import { COACH_RESPONSE_SCHEMA_NAME } from '../prompts/version.js';
 import { RISK_ESCALATION_MAP, primaryForcedCategory } from '../risk/escalation-map.js';
+import { escapeRegExp } from '../risk/normalize.js';
 import { clampWords } from '../validators/speech.js';
 import { COACH_ANNOTATIONS_SCHEMA_NAME } from './coach-annotations.js';
 import {
@@ -416,21 +417,49 @@ function asksSomething(text: string, moves: readonly FounderMove[]): boolean {
   return rest.includes('?') || (QUESTION_WORD.test(rest) && wordsIn(rest) > 2);
 }
 
-/** A question about who or what the vEIR is ("are you a man or a woman?", "am I talking to a person?"). */
+/**
+ * A sincere question about who or what the vEIR is ("are you real?", "am I talking to a bot?", "is this really
+ * Corin?"), or a personal one ("are you a man or a woman?", "do you have a life?").
+ */
 const IDENTITY_QUESTION =
-  /\b(?:are|r) (?:you|u) (?:a |an |actually |really |even )*(?:man|woman|guy|girl|lady|male|female|person|human|real person|real|bot|robot|machine|ai)\b|\b(?:am i|are we) (?:talking|speaking|chatting) (?:to|with) (?:a |an )?(?:person|human|real person|bot|machine|ai)\b|\bwhat are you\b|\bwho am i (?:talking|speaking) (?:to|with)\b/i;
+  /\b(?:are|r) (?:you|u) (?:a |an |actually |really |even )*(?:man|woman|guy|girl|lady|male|female|person|human|real person|real|bot|robot|machine|ai)\b|\b(?:am i|are we) (?:talking|speaking|chatting) (?:to|with) (?:a |an )?(?:real )?(?:person|human|bot|robot|machine|ai)\b|\bwhat are you\b|\bwho am i (?:talking|speaking) (?:to|with)\b|\bdo (?:you|u) (?:even )?have (?:a life|feelings|a family|weekends)\b/iu;
 const GENDER_QUESTION = /\b(?:man|woman|guy|girl|lady|male|female|he or she|she or he)\b/i;
+const PLAYFUL_QUESTION = /\bdo (?:you|u) (?:even )?have (?:a life|feelings|a family|weekends)\b/i;
 
 /**
- * The short, human answer to an identity question: always an AI, never a person or the EIR, in one sentence (the
- * full disclosure is for "what are you?"), so the conversation can go on.
+ * The vEIR's answer to an identity question (the presence policy): warm, in its own voice, honest in one line, and
+ * never a lecture about being an AI. A sincere question gets "I'm Corin's digital twin…", a personal one a light
+ * line; the conversation then goes on. The neutral guide is the program's AI coach.
  */
-function identityLine(text: string, persona: string | null, eir: string | null): string {
-  const who = persona ?? 'an AI coach';
-  const notEir = eir !== null ? `, not ${eir}` : '';
-  return GENDER_QUESTION.test(text)
-    ? `I'm an AI, so neither: I'm ${who}${notEir}.`
-    : `I'm an AI, not a person: I'm ${who}${notEir}.`;
+function identityLine(
+  text: string,
+  persona: string | null,
+  eir: string | null,
+  eirSeesWork: boolean,
+): string {
+  if (PLAYFUL_QUESTION.test(text)) return 'Ha, my favourite topic right now is your venture.';
+  if (eir === null) {
+    const who = persona ?? 'the program’s coach';
+    return GENDER_QUESTION.test(text)
+      ? `Neither: I'm ${who}, the program's AI coach.`
+      : `I'm ${who}, the program's AI coach, not a person.`;
+  }
+  if (GENDER_QUESTION.test(text)) return `Neither: I'm ${eir}'s digital twin.`;
+  return `I'm ${eir}'s digital twin, built from how ${eir} coaches${eirSeesWork ? `, and ${eir} sees what we work on` : ''}.`;
+}
+
+/** "Is this really Corin?", "Am I talking to the real Corin?": the vEIR's own EIR, by name. */
+function namedQuestion(eir: string | null): RegExp | null {
+  if (eir === null) return null;
+  return new RegExp(
+    `\\b(?:is this|is that|are you|am i (?:talking|speaking|chatting) (?:to|with))\\s+(?:really\\s+|actually\\s+)?(?:the real\\s+)?${escapeRegExp(eir)}\\b`,
+    'i',
+  );
+}
+
+/** The identity rules say the persona's EIR sees the venture's work (`eirSeesWork`, system prompt). */
+function eirSeesWorkIn(system: string): boolean {
+  return system.includes(' sees what you and the founder work on here.');
 }
 
 /** "When we spoke about 20 minutes ago, we were on pricing." */
@@ -609,11 +638,18 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
   const openingSeed = fnv1a(
     `${reading.openerShown || reading.founderHistory.length > 0 ? (reading.priorReplies[0] ?? '') : ''}|${reading.previous?.source ?? ''}|${today ?? ''}|${name ?? ''}|${context.founderText}`,
   );
-  // "Are you a man or a woman?": a short, human disclosure, then the conversation goes on.
-  const identity = IDENTITY_QUESTION.test(context.founderText)
-    ? identityLine(context.founderText, control?.persona ?? null, eir)
+  // "Are you real?", "Is this really Corin?", "Are you a man or a woman?": one warm, honest line, then the
+  // conversation goes on.
+  const askedByName = namedQuestion(eir);
+  const asked =
+    IDENTITY_QUESTION.test(context.founderText) || (askedByName?.test(context.founderText) ?? false);
+  const identity = asked
+    ? identityLine(context.founderText, control?.persona ?? null, eir, eirSeesWorkIn(context.system))
     : null;
-  const rest = identity === null ? context.founderText : context.founderText.replace(IDENTITY_QUESTION, ' ');
+  const rest =
+    identity === null
+      ? context.founderText
+      : context.founderText.replace(IDENTITY_QUESTION, ' ').replace(askedByName ?? /$^/, ' ');
   if (identity !== null && forced === null && contentWords(rest).size < 2) {
     const back = reading.state?.previous ?? null;
     return socialResponse(
