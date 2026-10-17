@@ -42,7 +42,7 @@ export function TeamPage() {
     <PageContainer className="max-w-4xl">
       <PageHeader
         title="Team"
-        description={`People on ${name ?? 'this venture'} and what each can see.`}
+        info={`People on ${name ?? 'this venture'} and what each can see.`}
         actions={
           canInvite ? (
             <Button

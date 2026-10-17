@@ -83,7 +83,6 @@ export function GoalEditor({
   return (
     <PageSection
       title="Current goal"
-      description="What the venture is working towards right now."
       actions={
         canEdit && !editing ? (
           <Button
@@ -119,7 +118,7 @@ export function GoalEditor({
             minRows={2}
             maxRows={6}
             aria-describedby={hintId}
-            placeholder="e.g. Validate exam-week demand with 300 students before the end of term"
+            placeholder="e.g. Two paid pilots by June"
             onChange={(event) => {
               setDraft(event.target.value);
             }}
@@ -162,9 +161,7 @@ export function GoalEditor({
       ) : goal ? (
         <p className="prose-reading text-balance">{goal}</p>
       ) : (
-        <p className="text-sm text-muted-foreground">
-          No goal set yet.{canEdit ? ' A clear, dated goal makes every conversation sharper.' : ''}
-        </p>
+        <p className="text-sm text-muted-foreground">No goal yet.</p>
       )}
     </PageSection>
   );
