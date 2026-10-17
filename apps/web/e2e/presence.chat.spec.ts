@@ -203,7 +203,10 @@ test.describe('talking with the vEIR', () => {
           'CorinvEIR',
         );
         await expectVeirBadgeInView(page);
-        await expectNoBareEirName(page, 'a conversation about what the vEIR is');
+        // The twin's own line names Corin, the person, on purpose ("built from how Corin coaches").
+        await expectNoBareEirName(page, 'a conversation about what the vEIR is', [
+          /^I'm Corin's digital twin, built from how Corin coaches/,
+        ]);
       });
 
       await test.step('the call tile shows "Corin · vEIR", with no chip clutter or disclaimer line', async () => {
@@ -239,7 +242,9 @@ test.describe('talking with the vEIR', () => {
           expect(body.intro.text).toMatch(/^Hi Maya\. /);
           expect(body.intro.text).not.toMatch(/an AI coach|digital twin/);
         }
-        await expectNoBareEirName(page, 'the call tile');
+        await expectNoBareEirName(page, 'the call tile', [
+          /^I'm Corin's digital twin, built from how Corin coaches/,
+        ]);
         await screen.getByRole('button', { name: 'End call' }).click();
         await expect(screen.getByRole('heading', { name: 'Call ended' })).toBeVisible({ timeout: 20_000 });
         for (const id of calls) {
