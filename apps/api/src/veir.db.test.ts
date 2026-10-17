@@ -226,7 +226,13 @@ describe('vEIR identity and call configuration', () => {
       await api.request('/calls/avatar-session', { body: { ventureId: quietquad() }, cookie: maya }),
       AvatarSessionResponse,
     );
-    expect(session).toEqual({ provider: 'builtin', token: null, expiresAt: null, voiceId: 'Matthew' });
+    expect(session).toEqual({
+      provider: 'builtin',
+      token: null,
+      expiresAt: null,
+      voiceId: 'Matthew',
+      voicing: 'engine',
+    });
   });
 
   it('stores the first-call privacy notice with the person: once, theirs only, audited the first time', async () => {

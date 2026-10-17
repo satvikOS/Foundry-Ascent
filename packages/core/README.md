@@ -162,7 +162,7 @@ vEIR knowledge pools, conversations and calls (docs/architecture/knowledge-pools
 | `GET /ventures/:id/veir`                              | `veir.identity(ctx, id) → VeirIdentity`                                     | read                                           |
 | `GET /ventures/:id/call-config`                       | `veir.callConfig(ctx, id) → CallConfigResponse`                             | write                                          |
 | `POST /calls/notice/acknowledge`                      | `calls.acknowledgeNotice(ctx) → CallNoticeAcknowledgement`                  | the caller, for themselves                     |
-| `POST /calls/avatar-session`                          | `veir.avatarSession(ctx, AvatarSessionRequest)`                             | write; kill switch, coach active, minutes left |
+| `POST /calls/avatar-session`                          | `veir.avatarSession(ctx, AvatarSessionRequest)`                             | write; switches, coach, minutes, own live call |
 | `POST /speech`                                        | `speech.synthesize(ctx, SpeechRequest, {signal}) → SynthesizedSpeech`       | write; validated text only, caps, kill switch  |
 | `POST /personas`                                      | `personas.createEirPersona(ctx, CreateEirPersonaRequest) → PersonaView`     | program lead                                   |
 | `GET` / `POST /personas/:id/consents`                 | `personas.listConsents` · `personas.recordConsent → ConsentView`            | program lead or the persona's EIR              |

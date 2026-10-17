@@ -8,8 +8,13 @@ import {
   type Clock,
   type CoreLogFields,
   type CoreLogger,
+  EmbodimentSessionError,
+  type EmbodimentSessionIssuer,
+  type EmbodimentSessionRequest,
+  type EmbodimentVoicing,
   type EnqueueOptions,
   type ExtractedText,
+  type IssuedEmbodimentSession,
   type JobMessage,
   type JobQueue,
   type ObjectStore,
@@ -172,6 +177,33 @@ export class FakeSttGrantIssuer implements SttGrantIssuer {
     return Promise.resolve({
       url: `wss://stt.test.invalid:8443/stream-transcription-websocket?language-code=${request.languageCode}&sample-rate=${String(request.sampleRateHertz)}&grant=${n}`,
       expiresAt: new Date(Date.now() + request.expiresInSeconds * 1000).toISOString(),
+    });
+  }
+}
+
+/**
+ * Test vendor faces: single-use tokens carrying a counter (no credentials). `provider`, `voicing` and
+ * `likeness` say which face it stands for; `failNext` makes the next session fail like a vendor outage.
+ */
+export class FakeEmbodimentSessionIssuer implements EmbodimentSessionIssuer {
+  readonly calls: EmbodimentSessionRequest[] = [];
+  failNext = false;
+
+  constructor(
+    readonly provider: EmbodimentSessionIssuer['provider'] = 'fake',
+    readonly voicing: EmbodimentVoicing = 'audio',
+    readonly likeness = false,
+  ) {}
+
+  start(request: EmbodimentSessionRequest): Promise<IssuedEmbodimentSession> {
+    this.calls.push(request);
+    if (this.failNext) {
+      this.failNext = false;
+      return Promise.reject(new EmbodimentSessionError('vendor unavailable'));
+    }
+    return Promise.resolve({
+      token: `${this.provider}.session-${String(this.calls.length)}`,
+      expiresAt: new Date(Date.now() + Math.min(request.maxSeconds, 60) * 1000).toISOString(),
     });
   }
 }

@@ -10,6 +10,7 @@ import {
   systemClock,
   type Clock,
   type CoreLogger,
+  type EmbodimentSessionIssuer,
   type IdGenerator,
   type JobQueue,
   type ObjectStore,
@@ -32,6 +33,8 @@ export interface CoreDeps {
   readonly speech?: SpeechSynthesizer;
   /** Speech-to-text grants for calls (API only). Absent: calls start without one and the founder types. */
   readonly sttGrants?: SttGrantIssuer;
+  /** Vendor faces for calls (API only). Absent: every call keeps the built-in presence. */
+  readonly embodiment?: EmbodimentSessionIssuer;
   readonly clock?: Clock;
   readonly ids?: IdGenerator;
   readonly logger?: CoreLogger;
