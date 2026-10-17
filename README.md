@@ -60,7 +60,8 @@ flowchart LR
 Region `us-east-1`. No VPC for Lambdas and no NAT: the API reaches Aurora through the Data API. Aurora
 pauses to zero capacity after 30 idle minutes: idle bill ≈ $1–3/month plus usage (Aurora costs $0 while
 paused and about $0.06 an hour while in use). The first request after a pause waits about 15–20 s while
-Aurora resumes; the app then shows a "Waking up your workspace…" banner and retries
+Aurora resumes; opening any page starts that resume, so it mostly overlaps reading or signing in, and the
+app shows a "Waking up your workspace…" banner and retries while it lasts
 ([cost controls](docs/runbooks/cost-controls.md#aurora-paused-when-idle), how to change it). The public
 health check never touches the database, so monitoring cannot keep it awake. Every IAM role carries
 the `FoundryAscent-Boundary` permissions boundary. Details: [system design](docs/architecture/system-design.md)

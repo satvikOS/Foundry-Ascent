@@ -75,6 +75,17 @@ $0.03–0.05 of compute. While Aurora resumes, the API holds each request up to 
 `503 database_resuming`; the web app retries behind a "Waking up your workspace…" banner, so nothing is
 lost, only waited for.
 
+**The wait is mostly hidden.** Opening any page of the web app (the landing page, sign-in, the app) sends
+one `POST /api/v1/wake`, which runs a single `SELECT 1`: a paused cluster starts resuming while the person
+reads or signs in, so the 15–20 s overlaps that instead of their first message. It answers 204 at once and
+holds the API for one database round trip, never the resume. The API sends at most one such query per viewer
+IP every 4 minutes and per API instance every 30 s, and none while it saw the database awake; automated
+browsers and self-declared crawlers do not send it. Worst case: someone calls it at least every 30 minutes
+forever and the cluster never pauses, which costs what keeping it awake costs (about $0.06 an hour, at most
+about $44 a month, as with `aurora.minCapacityAcu: 0.5`). Anyone can already do that with one sign-in
+attempt every 30 minutes, so the wake adds no new way to do it; the AWS Budget
+([owner actions](owner-actions.md) §2) catches it.
+
 To change it, edit `infra/cdk/config/production.json` and merge to main (the deploy applies it):
 
 - `autoPauseMinutes` (5–1440): a longer window means fewer waits and up to $0.06 more for each extra idle
@@ -178,8 +189,8 @@ returns the same by-day and by-model figures, no purpose). Then check the API lo
 
 ## When Aurora does not pause
 
-Any database call wakes the cluster and restarts the 30-minute idle timer: signed-in users, sign-in
-attempts (valid or not), worker jobs (document ingestion, distillation, daily maintenance), the
+Any database call wakes the cluster and restarts the 30-minute idle timer: page opens
+(`POST /api/v1/wake`, at most one query per IP every 4 minutes), signed-in users, sign-in attempts (valid or not), worker jobs (document ingestion, distillation, daily maintenance), the
 deploy-time migrate resource, the deploy smoke test's sign-in check, evals runs, and the platform admin's
 `GET /api/v1/admin/health`. The public `GET /api/v1/health` does **not**: it never queries the database, so
 uptime monitors may poll it. Distillation jobs follow conversations (a delayed job after each turn, one at

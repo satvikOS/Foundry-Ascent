@@ -459,7 +459,7 @@ async function main() {
       'x-requested-with': 'foundry-ascent',
       'x-amz-content-sha256': sha256Hex(body),
     };
-    // Sign-in is the first request that touches Aurora, which may be paused (auto-pause after 10 idle
+    // Sign-in is the first request that touches Aurora, which may be paused (auto-pause after 30 idle
     // minutes): wait for the resume within the same budget as the health check.
     const deadline = Date.now() + healthTimeoutMs;
     let resumes = 0;

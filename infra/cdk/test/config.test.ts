@@ -45,7 +45,7 @@ describe('config', () => {
     const config = loadConfig();
     expect(config.region).toBe('us-east-1');
     // Pauses after 30 idle minutes (USD 0 while paused); the owner chose this over staying awake (about USD 44 a
-    // month): docs/runbooks/cost-controls.md, "Aurora: paused when idle".
+    // month). The web app wakes the cluster when a page opens: docs/runbooks/cost-controls.md, "Aurora: paused when idle".
     expect(config.aurora).toEqual({
       minCapacityAcu: 0,
       maxCapacityAcu: 2,

@@ -248,7 +248,8 @@ React moved into a chunk it preloads). Landing page, signed out: ready at about 
 - Cold starts at 1,769 MB, and how often a founder meets one.
 - The web app over CloudFront (HTTP/2 and HTTP/3, immutable assets): the local preview is HTTP/1.1 with six
   connections, so it penalises extra chunks that production does not.
-- How often someone meets a resume now that Aurora pauses after 30 idle minutes (was 10): `http.request`
-  lines with a `dbWaitMs` above 10 s, and `503 database_resuming`. Keeping it awake
+- How often someone meets a resume now that Aurora pauses after 30 idle minutes (was 10), and how much of it
+  the page-open wake hides: `db.wake` lines (`outcome: resuming` = a page open started a resume), then
+  `http.request` lines with a `dbWaitMs` above 10 s and `503 database_resuming`. Keeping it awake
   (`aurora.minCapacityAcu: 0.5`, about USD 44 a month) removes them; see
   [cost controls](cost-controls.md#aurora-paused-when-idle) for the trade-off.

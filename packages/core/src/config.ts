@@ -99,8 +99,8 @@ export const CoreConfig = z.object({
   distillation: z
     .object({
       /**
-       * Delay of the distillation queued after every completed turn (9 min, under Aurora's 10-minute
-       * auto-pause, so the job finds the database awake). Each turn queues its own job; only the last one of
+       * Delay of the distillation queued after every completed turn (9 min, inside Aurora's auto-pause window,
+       * 30 minutes in production, so the job finds the database awake). Each turn queues its own job; only the last one of
        * a conversation finds it idle.
        */
       turnDelaySeconds: z.number().int().min(1).max(900),

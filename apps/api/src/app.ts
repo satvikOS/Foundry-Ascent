@@ -18,6 +18,7 @@ import { registerStudioRoutes } from './routes/studio.js';
 import { registerSystemRoutes } from './routes/system.js';
 import { registerVeirRoutes } from './routes/veir.js';
 import { registerVentureRoutes } from './routes/ventures.js';
+import { registerWakeRoute } from './routes/wake.js';
 import { type DbStateSource } from './runtime/db-observer.js';
 import { type InflightTracker } from './runtime/inflight.js';
 
@@ -104,6 +105,16 @@ export function createApp(deps: AppDeps): ApiApp {
     appVersion: deps.appVersion,
     healthTimeoutMs: http.healthTimeoutMs,
     now,
+  });
+  // Starts an Aurora resume when a page opens; at most one SELECT 1 per window (routes/wake.ts).
+  registerWakeRoute(routes, {
+    db: deps.db,
+    dbState: deps.dbState,
+    inflight: deps.inflight,
+    logger: deps.logger,
+    appEnv: deps.appEnv,
+    timeoutMs: http.healthTimeoutMs,
+    now: () => now().getTime(),
   });
   registerVentureRoutes(routes, deps.core);
   registerSessionRoutes(routes, deps.core, {

@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 
 /**
- * Aurora Serverless v2 auto-pauses after 10 idle minutes; the first request afterwards gets
+ * Aurora Serverless v2 auto-pauses after 30 idle minutes; the first request afterwards gets
  * `503 database_resuming` while it wakes (~15 s). The API client retries such requests transparently
  * and registers each wait here so the UI can show one shared "Waking up your workspace…" banner with
  * elapsed time and a Cancel action that stops every pending wait.

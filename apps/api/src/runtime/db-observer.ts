@@ -9,8 +9,9 @@ export interface DbStateSource {
 }
 
 /**
- * How long an observation stays meaningful. Aurora auto-pauses after 10 idle minutes, so a successful
- * call less than 4 minutes ago means the cluster is still awake; a resume in progress ages out faster.
+ * How long an observation stays meaningful. Aurora auto-pauses after `aurora.autoPauseMinutes` idle (30 in
+ * production, never under 5), so a successful call less than 4 minutes ago means the cluster is still awake; a
+ * resume in progress ages out faster.
  */
 export const AWAKE_OBSERVATION_MS = 4 * 60_000;
 export const FAILURE_OBSERVATION_MS = 60_000;

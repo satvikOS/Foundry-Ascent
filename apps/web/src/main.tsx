@@ -15,6 +15,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { createQueryClient, setUnauthenticatedHandler } from '@/lib/api/query-client';
+import { wakeDatabase } from '@/lib/api/wake';
 import { safeRedirectPath } from '@/lib/auth/guards';
 import { displayFacesReady } from '@/lib/display-faces';
 import { initTheme } from '@/lib/theme';
@@ -22,6 +23,8 @@ import { initTheme } from '@/lib/theme';
 import { createAppRouter } from './router';
 
 initTheme();
+// A paused database starts resuming now, while this page renders and the person reads or signs in (not awaited).
+wakeDatabase();
 
 const queryClient = createQueryClient();
 const router = createAppRouter(queryClient);
