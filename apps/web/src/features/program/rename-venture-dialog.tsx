@@ -83,8 +83,7 @@ export function RenameVentureDialog({ venture, onClose }: RenameVentureDialogPro
             Rename {venture?.name ?? 'venture'}
           </DialogTitle>
           <DialogDescription>
-            Venture names must be distinctive and unique in the program: other ventures’ coaches never mention
-            them.
+            Distinctive and unique in the program: other ventures’ coaches never mention them.
           </DialogDescription>
         </DialogHeader>
         <form noValidate onSubmit={(event) => void onSubmit(event)} className="grid gap-4">

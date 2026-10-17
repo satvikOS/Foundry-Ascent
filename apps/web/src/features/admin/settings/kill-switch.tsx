@@ -86,10 +86,7 @@ export function AiKillSwitch({ aiEnabled, onConfirm, pending = false, error }: A
             />
           </div>
         </div>
-        <p className="text-small text-muted-foreground">
-          For unsafe answers, vendor incidents or runaway spend. To pause one vEIR, suspend it in the EIR
-          studio.
-        </p>
+        <p className="text-small text-muted-foreground">To pause one vEIR, suspend it in the EIR studio.</p>
         <MutationErrorAlert error={error} title="The kill switch wasn’t changed" />
       </div>
 

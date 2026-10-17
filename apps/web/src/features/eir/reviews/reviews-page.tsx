@@ -68,7 +68,7 @@ export function ReviewsPage({ selectedTurnId, filter, onSelect, onFilterChange }
     <PageContainer size="wide">
       <PageHeader
         title="Calibration reviews"
-        description="Score sampled answers from your ventures. You see the venture, question, answer and evidence — not who asked."
+        info="Score sampled answers from your ventures. You see the venture, question, answer and evidence — not who asked."
       >
         {samples.length > 0 ? (
           <FilterChips<ReviewFilter>

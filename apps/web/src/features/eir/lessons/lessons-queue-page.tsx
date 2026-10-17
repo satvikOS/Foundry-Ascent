@@ -105,7 +105,7 @@ export function LessonsQueuePage({ tenant }: { tenant: string }) {
         <EmptyState
           icon={Lightbulb}
           title="No vEIRs to curate"
-          description="Lessons appear here for the vEIRs built from you, or for every vEIR if you lead the program."
+          description="Lessons for your vEIRs appear here."
         />
       ) : groups.length === 0 ? (
         <EmptyState

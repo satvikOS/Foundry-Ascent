@@ -96,7 +96,7 @@ export function InboxPage({ selectedId, filter, onSelect, onFilterChange }: Inbo
         <EmptyState
           icon={Inbox}
           title="Nothing routed to you"
-          description="When a program lead routes an escalation to you, it appears here."
+          description="Escalations routed to you appear here."
         />
       ) : (
         <div className="grid items-start gap-6 lg:grid-cols-[20rem_1fr]">

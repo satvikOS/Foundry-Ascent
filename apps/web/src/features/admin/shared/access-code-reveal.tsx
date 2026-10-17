@@ -81,8 +81,8 @@ function RevealContent({
       </AlertDialogHeader>
 
       <Alert variant="warning" icon={ShieldAlert} title="Store it now — it won’t be shown again">
-        Foundry Ascent keeps only a one-way hash of this code. If it is lost, revoke it and issue a new one.
-        Don’t paste it into shared channels or tickets.
+        Only a one-way hash is kept. If it’s lost, revoke it and issue a new one. Never paste it into shared
+        channels.
       </Alert>
 
       <div className="grid gap-2">

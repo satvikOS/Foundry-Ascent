@@ -148,9 +148,7 @@ export function EirProfileDialog({ open, onOpenChange, profile = null }: EirProf
             {editing ? `Edit ${profile.displayName}` : 'Add EIR'}
           </DialogTitle>
           <DialogDescription>
-            {editing
-              ? 'How the program knows them. Their vEIR keeps its own name and doctrine.'
-              : 'A person a vEIR can be built from. They sign in with their own access code.'}
+            {editing ? 'Their vEIR keeps its own name and doctrine.' : 'Someone a vEIR can be built from.'}
           </DialogDescription>
         </DialogHeader>
         <form
@@ -167,8 +165,7 @@ export function EirProfileDialog({ open, onOpenChange, profile = null }: EirProf
             <Skeleton className="h-16 w-full" />
           ) : noOneToAdd ? (
             <Alert variant="info" title="No one to add yet">
-              Everyone with the EIR role already has a profile. A platform admin gives someone the role under
-              People &amp; access, then they appear here.
+              Everyone with the EIR role has a profile. Admins grant the role in People &amp; access.
             </Alert>
           ) : (
             <Controller
@@ -223,11 +220,7 @@ export function EirProfileDialog({ open, onOpenChange, profile = null }: EirProf
           >
             <Input autoComplete="off" {...register('expertise')} />
           </Field>
-          <Field
-            label="Bio"
-            description="A few sentences on their background. Optional."
-            error={e.bio?.message}
-          >
+          <Field label="Bio" description="Optional." error={e.bio?.message}>
             <Textarea minRows={3} maxRows={8} {...register('bio')} />
           </Field>
           {editing ? null : (

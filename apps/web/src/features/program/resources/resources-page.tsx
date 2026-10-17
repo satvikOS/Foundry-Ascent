@@ -188,7 +188,7 @@ export function ResourcesPage() {
     <PageContainer size="wide">
       <PageHeader
         title="Resources"
-        description="Programs, funds, labs and clinics vEIRs can recommend. Review regularly."
+        info="Programs, funds, labs and clinics vEIRs can recommend. Review regularly."
         actions={
           <Button onClick={openCreate}>
             <Plus aria-hidden />

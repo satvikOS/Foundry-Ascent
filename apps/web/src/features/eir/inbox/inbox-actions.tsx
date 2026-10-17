@@ -244,8 +244,7 @@ function DeclineBody({
       <DialogHeader>
         <DialogTitle>Decline escalation</DialogTitle>
         <DialogDescription>
-          Use this if it’s outside your expertise or you can’t take it on. Your reason is shared so it can be
-          re-routed quickly.
+          If it’s outside your expertise or time. Your reason helps re-route it.
         </DialogDescription>
       </DialogHeader>
       <form noValidate onSubmit={(event) => void handleSubmit(onSubmit)(event)} className="grid gap-4">

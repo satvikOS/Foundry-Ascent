@@ -139,7 +139,7 @@ export function AuditPage({ search, onSearchChange }: AuditPageProps) {
     <PageContainer size="full" className="max-w-[96rem]">
       <PageHeader
         title="Audit log"
-        description="Security and admin events (metadata only). Hash-chained: any edit breaks the chain."
+        info="Security and admin events (metadata only). Hash-chained: any edit breaks the chain."
       >
         <div
           role="search"

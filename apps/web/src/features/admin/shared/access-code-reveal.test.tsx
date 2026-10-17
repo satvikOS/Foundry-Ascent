@@ -44,7 +44,7 @@ describe('AccessCodeRevealDialog (one-time reveal)', () => {
     const dialog = screen.getByRole('alertdialog', { name: /Access code for Avery Example/ });
     expect(within(dialog).getByTestId('access-code-value')).toHaveTextContent('FA-ABCDE-FGHJK-MNPQR-STVWX');
     expect(within(dialog).getByText('Store it now — it won’t be shown again')).toBeVisible();
-    expect(within(dialog).getByText(/keeps only a one-way hash/)).toBeVisible();
+    expect(within(dialog).getByText(/Only a one-way hash is kept/)).toBeVisible();
 
     await user.click(within(dialog).getByRole('button', { name: 'Copy code' }));
     await expect(navigator.clipboard.readText()).resolves.toBe('FA-ABCDE-FGHJK-MNPQR-STVWX');

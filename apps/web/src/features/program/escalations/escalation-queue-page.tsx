@@ -97,7 +97,7 @@ export function EscalationQueuePage() {
     <PageContainer size="wide">
       <PageHeader
         title="Escalation queue"
-        description="Route requests for human help. You see metadata only."
+        info="Route requests for human help. You see metadata only."
         actions={
           <Button asChild variant="secondary">
             <Link to="/$tenant/app/eir/inbox" params={{ tenant }}>

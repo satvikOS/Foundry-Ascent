@@ -128,10 +128,7 @@ export function CreatePrincipalDialog({ open, onOpenChange, onIssueCode }: Creat
                 <UserPlus aria-hidden className="size-4" />
                 Add a principal
               </DialogTitle>
-              <DialogDescription>
-                A person who signs in with an access code. Founders are usually invited from a venture
-                instead.
-              </DialogDescription>
+              <DialogDescription>Founders are usually invited from a venture instead.</DialogDescription>
             </DialogHeader>
             <form noValidate onSubmit={(event) => void onSubmit(event)} className="grid gap-4">
               <Field label="Name" required error={formState.errors.displayName?.message}>

@@ -169,8 +169,8 @@ export function ResumePersonaDialog({
             {blocker
               ? `${persona.name} stays suspended until consent is in force again.`
               : release
-                ? `Coaching resumes with release v${release.version} for ${pluralize(persona.assignedVentureCount, 'assigned venture')}, from their next message. The platform kill switch and spend caps still apply.`
-                : 'This persona has no approved release, so it can’t coach until a release is approved.'}
+                ? `Coaching resumes with v${release.version} for ${pluralize(persona.assignedVentureCount, 'assigned venture')} from their next message. The kill switch and spend caps still apply.`
+                : 'No approved release yet, so it can’t coach.'}
           </AlertDialogDescription>
         </AlertDialogHeader>
         {blocker ? (

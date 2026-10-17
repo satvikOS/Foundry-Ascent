@@ -17,7 +17,7 @@ export function suppressedLabel(k: number): string {
 
 /** Short explanation used in footnotes, tooltips and table captions. */
 export function kAnonymityExplanation(k: number, unit = 'ventures'): string {
-  return `Groups with fewer than ${k} ${unit} are shown as “fewer than ${k}” instead of an exact count, so no individual venture can be singled out (k-anonymity, k = ${k}).`;
+  return `Groups under ${k} ${unit} show as “fewer than ${k}”, so no venture can be singled out (k = ${k}).`;
 }
 
 /** Display text for one aggregate value. */

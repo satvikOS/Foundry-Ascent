@@ -176,8 +176,7 @@ export function ReleaseEditor({
             </div>
             {frameworks.fields.length === 0 ? (
               <p className="rounded-lg border border-dashed border-border-strong px-4 py-3 text-small text-muted-foreground">
-                No frameworks yet. Add the methods this persona teaches (e.g. jobs-to-be-done, assumption
-                mapping).
+                No frameworks yet.
               </p>
             ) : null}
             {e.frameworks?.message ? (
