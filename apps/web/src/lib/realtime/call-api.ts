@@ -1,4 +1,6 @@
 import {
+  AvatarSessionRequest,
+  AvatarSessionResponse,
   CallHeartbeatRequest,
   CallHeartbeatResponse,
   EndCallRequest,
@@ -53,6 +55,23 @@ export function refreshSttGrant(callId: string, signal?: AbortSignal) {
     idempotencyKey: createIdempotencyKey(),
     signal,
   });
+}
+
+/**
+ * `POST /calls/avatar-session` — the face of a live call: a vendor's single-use session token for the browser
+ * adapter, or the presence (no token). Never retried with the same key: a token is minted once.
+ */
+export function startAvatarSession(
+  ventureId: string,
+  callId: string,
+  signal?: AbortSignal,
+): Promise<z.infer<typeof AvatarSessionResponse>> {
+  return api.post(
+    path`/calls/avatar-session`,
+    AvatarSessionResponse,
+    encodeBody(AvatarSessionRequest, { ventureId, callId }),
+    { idempotencyKey: createIdempotencyKey(), signal },
+  );
 }
 
 /** `POST /calls/:id/heartbeat` — every 15 s; carries the kill switch and the remaining time. */

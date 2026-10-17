@@ -4,6 +4,9 @@ import {
   localEnglishVoice,
   readingTimeMs,
   SpeechPlayer,
+  type FaceRenderer,
+  type FaceRendererOutput,
+  type FaceRenderHandlers,
   type PlayerAudio,
   type SpeechFetchResult,
   type SpeechUnitToPlay,
@@ -306,5 +309,130 @@ describe('SpeechPlayer', () => {
     const analyser = context.analysers[0];
     if (analyser) analyser.level = 0.25;
     expect(player.level()).toBeCloseTo(0.25);
+  });
+});
+
+/** A face whose every step the test drives (a vendor's speech-to-video, or the stand-in). */
+class ScriptedFace implements FaceRenderer {
+  live = true;
+  readonly renders: {
+    buffer: AudioBuffer;
+    output: FaceRendererOutput;
+    handlers: FaceRenderHandlers;
+    stopped: boolean;
+  }[] = [];
+  ready(): boolean {
+    return this.live;
+  }
+  render(buffer: AudioBuffer, output: FaceRendererOutput, handlers: FaceRenderHandlers): () => void {
+    const entry = { buffer, output, handlers, stopped: false };
+    this.renders.push(entry);
+    return () => {
+      entry.stopped = true;
+    };
+  }
+}
+
+describe('SpeechPlayer with a face that renders the call’s audio (voicing audio)', () => {
+  it('hands each unit’s audio to the face and announces it at the face’s first sound', async () => {
+    const { context, pending, player, log, audioOf } = setup();
+    const face = new ScriptedFace();
+    player.setFace(face);
+    player.enqueue(unit(0));
+    pending[0]?.resolve(audioOf(10));
+    await flush();
+    // Handed over, not yet heard: no caption, nothing through the speakers.
+    expect(face.renders).toHaveLength(1);
+    expect(context.sources).toHaveLength(0);
+    expect(log).toEqual([]);
+    // The face plays into the player's own gain (→ analyser → speakers): ducking and loudness unchanged.
+    const gain = face.renders[0]?.output.destination as unknown as { connections: unknown[] };
+    expect(gain.connections[0]).toBe(context.analysers[0]);
+
+    face.renders[0]?.handlers.onStart();
+    expect(log).toEqual(['start 0 server']);
+    face.renders[0]?.handlers.onEnd('ended');
+    await flush();
+    expect(log).toEqual(['start 0 server', 'end 0 done', 'idle']);
+  });
+
+  it('plays a unit itself when the face fails before its first sound, so no sentence is lost', async () => {
+    const { context, pending, player, log, audioOf } = setup();
+    const face = new ScriptedFace();
+    player.setFace(face);
+    player.enqueue(unit(0));
+    pending[0]?.resolve(audioOf(10));
+    await flush();
+    face.renders[0]?.handlers.onEnd('failed');
+    expect(context.sources[0]?.started).toBe(true);
+    expect(context.sources[0]?.buffer).toBe(face.renders[0]?.buffer);
+    expect(log).toEqual(['start 0 server']);
+    context.sources[0]?.finish();
+    await flush();
+    expect(log).toEqual(['start 0 server', 'end 0 done', 'idle']);
+  });
+
+  it('stops the face at once on barge-in, and never announces a unit it starts afterwards', async () => {
+    const { pending, player, log, audioOf } = setup();
+    const face = new ScriptedFace();
+    player.setFace(face);
+    player.enqueue(unit(0));
+    player.enqueue(unit(1));
+    pending[0]?.resolve(audioOf(10));
+    await flush();
+    face.renders[0]?.handlers.onStart();
+    player.stop();
+    await flush();
+    expect(face.renders[0]?.stopped).toBe(true);
+    expect(log).toEqual(['start 0 server', 'end 0 cut']);
+
+    player.enqueue(unit(2));
+    pending[2]?.resolve(audioOf(10));
+    await flush();
+    player.stop();
+    face.renders[1]?.handlers.onStart();
+    face.renders[1]?.handlers.onEnd('ended');
+    await flush();
+    expect(log).toEqual(['start 0 server', 'end 0 cut', 'end 2 cut']);
+  });
+
+  it('uses the speakers while the face is not ready or after it is removed', async () => {
+    const { context, pending, player, log, audioOf } = setup();
+    const face = new ScriptedFace();
+    face.live = false;
+    player.setFace(face);
+    player.enqueue(unit(0));
+    pending[0]?.resolve(audioOf(10));
+    await flush();
+    expect(face.renders).toHaveLength(0);
+    expect(context.sources[0]?.started).toBe(true);
+    expect(log).toEqual(['start 0 server']);
+    context.sources[0]?.finish();
+    await flush();
+
+    face.live = true;
+    player.setFace(null);
+    player.enqueue(unit(1));
+    pending[1]?.resolve(audioOf(10));
+    await flush();
+    expect(face.renders).toHaveLength(0);
+    expect(context.sources[1]?.started).toBe(true);
+  });
+
+  it('counts a unit as heard when the face never reports its end', async () => {
+    const { pending, player, log, audioOf } = setup();
+    const face = new ScriptedFace();
+    player.setFace(face);
+    player.enqueue(unit(0));
+    pending[0]?.resolve(audioOf(1000));
+    await flush();
+    face.renders[0]?.handlers.onStart();
+    // One second of audio plus the face's allowance.
+    vi.advanceTimersByTime(1000 + 3_999);
+    await flush();
+    expect(log).toEqual(['start 0 server']);
+    vi.advanceTimersByTime(1);
+    await flush();
+    expect(log).toEqual(['start 0 server', 'end 0 done', 'idle']);
   });
 });
