@@ -171,7 +171,7 @@ export function useNotebookEdit(ventureId: string) {
         return;
       }
       if (isNotebookConflict(error)) {
-        announce('The notebook changed. It was reloaded; check it and try again.', 'assertive');
+        announce('The notebook changed. Check it and try again.', 'assertive');
         return;
       }
       // A refused opening line is shown under the line itself, in its editor, with the reason.
@@ -190,7 +190,7 @@ export function useNotebookEdit(ventureId: string) {
 /** What a person is told when edits they made while an earlier one was saving were dropped with it. */
 export const DROPPED_EDIT = {
   title: 'Your later change wasn’t saved',
-  detail: 'It was made while an earlier change was saving, and that one wasn’t saved. Make it again.',
+  detail: 'An earlier change failed first. Make it again.',
 } as const;
 
 /**

@@ -180,7 +180,7 @@ test.describe('memory', () => {
       const rows = list.getByRole('listitem').filter({ hasText: token });
       await expect(rows).toHaveCount(2);
       // Each says where it came from; nothing asks to be approved.
-      for (const row of await rows.all()) await expect(row).toContainText(`Added by ${EIR_NAME} on`);
+      for (const row of await rows.all()) await expect(row).toContainText(`${EIR_NAME} · `);
       await expect(page.getByRole('button', { name: /^(Approve|Reject|Keep|Not now)\b/ })).toHaveCount(0);
       await expect(page.getByRole('checkbox')).toHaveCount(0);
 
@@ -403,7 +403,7 @@ test.describe('human help', () => {
           viewer.getByRole('heading', { level: 2, name: 'Only the venture team sees requests' }),
         ).toBeVisible();
       }
-      await expect(viewer.getByRole('button', { name: 'Request human support' })).toHaveCount(0);
+      await expect(viewer.getByRole('button', { name: 'Ask a person' })).toHaveCount(0);
       await viewer.waitForLoadState('networkidle');
       expect(refused, `${role}: no request the API refuses`).toEqual([]);
       await context.close();

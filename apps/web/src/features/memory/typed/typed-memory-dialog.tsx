@@ -121,7 +121,7 @@ const COPY: Record<TypedKind, { noun: string; content: string; contentHint: stri
   decision: {
     noun: 'decision',
     content: 'What was decided',
-    contentHint: 'One or two sentences anyone on the team would recognise.',
+    contentHint: 'One or two sentences.',
   },
   experiment: {
     noun: 'experiment',
@@ -131,7 +131,7 @@ const COPY: Record<TypedKind, { noun: string; content: string; contentHint: stri
   milestone: {
     noun: 'milestone',
     content: 'Definition of done',
-    contentHint: 'How everyone will know it has been reached.',
+    contentHint: 'How you’ll know it’s reached.',
   },
 };
 
@@ -310,7 +310,7 @@ export function TypedMemoryDialog({
         // means to keep it): the server corrects only kept memory of the vEIR's.
         if (memory.status === 'proposed') await keep.mutateAsync({ ids: [memory.id], action: 'approve' });
         await correct.mutateAsync({ memoryId: memory.id, action: { action: 'correct', patch } });
-        toast.success(`Updated — saved as a new version`);
+        toast.success('Saved as a new version');
       } else {
         const created = await createMemory({
           type: kind,
@@ -348,9 +348,7 @@ export function TypedMemoryDialog({
           <DialogHeader>
             <DialogTitle>{editing ? `Edit ${copy.noun}` : `New ${copy.noun}`}</DialogTitle>
             <DialogDescription>
-              {editing
-                ? 'Changes are saved as a new version; the previous one stays in the memory history.'
-                : `Saved to venture memory so it can be cited as evidence.`}
+              {editing ? 'Saved as a new version.' : 'Saved to memory, citable as evidence.'}
             </DialogDescription>
           </DialogHeader>
           {formError ? (
@@ -375,16 +373,12 @@ export function TypedMemoryDialog({
                   <Input type="date" {...register('date')} />
                 </Field>
               </div>
-              <Field
-                label="Rationale"
-                description="Why this option over the others."
-                error={errors.rationale?.message}
-              >
+              <Field label="Rationale" description="Why this option." error={errors.rationale?.message}>
                 <Textarea {...register('rationale')} minRows={2} maxRows={6} maxLength={2000} />
               </Field>
               <Field
                 label="Reversal condition"
-                description="What evidence would make you change your mind?"
+                description="What would change your mind?"
                 error={errors.reversalCondition?.message}
               >
                 <Textarea {...register('reversalCondition')} minRows={2} maxRows={4} maxLength={1000} />
@@ -404,7 +398,7 @@ export function TypedMemoryDialog({
               <Field
                 label="Prediction"
                 required
-                description="What you expect to see if the hypothesis is right."
+                description="What you expect if it’s right."
                 error={errors.prediction?.message}
               >
                 <Textarea {...register('prediction')} minRows={2} maxRows={4} maxLength={1000} />
@@ -446,14 +440,14 @@ export function TypedMemoryDialog({
               </Field>
               <Field
                 label="Interpretation"
-                description="What the result means for the hypothesis."
+                description="What it means for the hypothesis."
                 error={errors.interpretation?.message}
               >
                 <Textarea {...register('interpretation')} minRows={2} maxRows={5} maxLength={2000} />
               </Field>
               <Field
                 label="Resulting decision"
-                description="What the team decided because of it."
+                description="What you decided as a result."
                 error={errors.decision?.message}
               >
                 <Textarea {...register('decision')} minRows={2} maxRows={4} maxLength={1000} />

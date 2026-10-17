@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
+import { InfoTip } from '@/components/ui/info-tip';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { HairlineSkeleton } from '@/components/ui/page-section';
@@ -104,12 +105,12 @@ export function NotebookEditor({ ventureId, veirName, canEdit }: NotebookEditorP
       <div className="flex items-start gap-4">
         <PersonaAvatar name={veirName} size="lg" decorative className="mt-1 hidden sm:inline-flex" />
         <div className="grid min-w-0 flex-1 gap-1.5">
-          <p className="label-mono">AI notes</p>
-          <h2 className="font-serif text-subheading font-normal">What {veirName} knows</h2>
-          <p className="max-w-[60ch] text-small text-muted-foreground">
-            Notes {author} keeps from your conversations. Your team can see and correct them. They’re never
-            treated as facts.
-          </p>
+          <div className="flex items-center gap-1">
+            <h2 className="font-serif text-subheading font-normal">What {veirName} knows</h2>
+            <InfoTip label="these notes">
+              {`Notes ${author} keeps from your conversations. Your team can correct them. They’re never treated as facts.`}
+            </InfoTip>
+          </div>
           {data.updatedAt ? (
             <p className="text-caption text-subtle-foreground">
               {data.lastEditedBy === 'person' ? 'Edited by your team' : `Updated by ${author}`}{' '}
@@ -138,8 +139,7 @@ export function NotebookEditor({ ventureId, veirName, canEdit }: NotebookEditorP
             </Button>
           }
         >
-          It was updated while you were editing, so your change wasn’t saved. It’s been reloaded: check it and
-          try again.
+          Your change wasn’t saved. Check the reloaded notes and try again.
         </Alert>
       ) : isDroppedEdit(edit.error) ? (
         <Alert
@@ -167,7 +167,7 @@ export function NotebookEditor({ ventureId, veirName, canEdit }: NotebookEditorP
           icon={NotebookPen}
           headingLevel={3}
           title="Nothing noted yet"
-          description={`After a conversation, ${author} notes what you’re working on, your commitments and open questions. You can correct any of it here.`}
+          description="Notes appear after your first conversation."
         />
       ) : (
         <div className="grid gap-7">

@@ -15,7 +15,6 @@ import { documentFailureMessage } from '@/lib/labels';
 import { pluralize } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { FreshnessBadge, freshnessLevel } from '@/features/venture/freshness';
-import { sentenceStart } from '@/features/venture/veir-name';
 
 import { buildEvidenceSources, type EvidenceSource, type ProgramSourceKind } from './evidence';
 
@@ -117,7 +116,6 @@ export function EvidenceSection({
         icon={Library}
         headingLevel={2}
         title="Nothing to cite yet"
-        description={`${sentenceStart(veirName)} cites your documents and the memory your team keeps.`}
         action={
           <Link
             to="/$tenant/app/v/$ventureId/documents"
@@ -157,9 +155,7 @@ export function EvidenceSection({
         </div>
         <p className="text-small text-muted-foreground" role="status" aria-live="polite">
           {pluralize(shown.length, 'source')}
-          {canReadConversations && !countsPending
-            ? ` · ${cited} cited in ${recent.length === 1 ? 'your last conversation' : `your last ${recent.length} conversations`}`
-            : ''}
+          {canReadConversations && !countsPending ? ` · ${cited} cited lately` : ''}
           {stale > 0 ? ` · ${stale} stale` : ''}
         </p>
       </div>
