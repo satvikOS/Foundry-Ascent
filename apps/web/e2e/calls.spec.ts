@@ -385,9 +385,7 @@ test.describe('vEIR calls', () => {
       expect(await kept.json()).toMatchObject({ origin: 'ai', status: 'confirmed', keptAutomatically: true });
       // The summary says so quietly: one "Remembered" line and one "Saved to Knowledge" line, nothing to keep
       // or decline.
-      await expect(screen.getByTestId('call-remembered')).toContainText(
-        'will pick up from this call next time',
-      );
+      await expect(screen.getByTestId('call-remembered')).toContainText('Remembered for next time.');
       await expect(screen.getByTestId('memory-saved')).toContainText('Saved to Knowledge:');
       await expect(screen.getByRole('button', { name: /^(Keep|Not now)/ })).toHaveCount(0);
       await expect(screen.getByText(/would like to remember/)).toHaveCount(0);
@@ -446,9 +444,7 @@ test.describe('vEIR calls', () => {
       };
       expect(summary.memoryProposalIds, 'a private call proposes nothing').toEqual([]);
       expect(summary.memoryKeptIds ?? [], 'a private call keeps nothing').toEqual([]);
-      await expect(screen.getByTestId('call-private')).toHaveText(
-        'Private call: nothing from it is remembered.',
-      );
+      await expect(screen.getByTestId('call-private')).toHaveText('Private: nothing is remembered.');
       await expect(screen.getByTestId('memory-saved')).toHaveCount(0);
       await expect(screen.getByTestId('call-remembered')).toHaveCount(0);
       // Nothing in the venture's memory names it, and no summary of it is written.
@@ -653,7 +649,7 @@ test.describe('vEIR calls', () => {
       await tab.goto(`/${TENANT}/app/v/${emberloop.id}?call=1`);
       const screen = callScreen(tab);
       await expect(screen.getByRole('button', { name: 'Start call' })).toBeVisible();
-      await expect(screen.getByRole('status').filter({ hasText: /min left today/ })).toBeVisible();
+      await expect(screen.getByRole('status').filter({ hasText: /left today$/ })).toBeVisible();
       await expect(screen.getByTestId('voice-notice')).toHaveCount(0);
       expect(
         await tab.evaluate(() =>

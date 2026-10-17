@@ -94,7 +94,9 @@ test.describe('what the vEIR knows', () => {
       await expect(
         page.getByRole('heading', { level: 2, name: /^What Corin['’]s vEIR knows$/ }),
       ).toBeVisible();
-      await expect(page.getByText(/never treated as facts/)).toBeVisible();
+      await expect(page.getByRole('button', { name: 'About these notes' })).toHaveAccessibleDescription(
+        /never treated as facts/,
+      );
 
       // Correct one line in place.
       const about = page.getByRole('region', { name: 'About you' });

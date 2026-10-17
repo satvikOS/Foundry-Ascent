@@ -95,7 +95,7 @@ test.describe('private chats', () => {
     );
     await expect(page.getByTestId('greeting-line')).toHaveText('What’s on your mind?');
     await expect(page.getByRole('group', { name: 'Memory for this conversation' })).toContainText(
-      'nothing is remembered',
+      'Not remembered. Erased when it ends.',
     );
     // Attached files would go into the venture's Documents, which last: a private chat offers none.
     await expect(page.getByRole('button', { name: 'Add documents' })).toHaveCount(0);
@@ -122,7 +122,7 @@ test.describe('private chats', () => {
     await expect(page.getByRole('menuitem', { name: 'Rename' })).toHaveCount(0);
     await page.getByRole('menuitem', { name: 'End and summarise' }).click();
     const confirm = page.getByRole('alertdialog', { name: 'End this conversation?' });
-    await expect(confirm).toContainText('nothing from it is kept');
+    await expect(confirm).toContainText('It’s private, so nothing is kept.');
     await confirm.getByRole('button', { name: 'End conversation' }).click();
     await expect(page.getByRole('heading', { name: 'Private chat ended' })).toBeVisible();
     await expect(page.getByText('Nothing from it was kept.')).toBeVisible();

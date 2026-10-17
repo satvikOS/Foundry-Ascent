@@ -402,7 +402,7 @@ test.describe('read-only roles', () => {
     await expect(
       page.getByRole('heading', { level: 1, name: /^Good (morning|afternoon|evening), Graham$/ }),
     ).toBeVisible();
-    await expect(page.getByText(/are private to the founders and team/)).toBeVisible();
+    await expect(page.getByText(/Conversations are private to the team\./)).toBeVisible();
     await expect(page.getByRole('link', { name: 'Knowledge' }).first()).toBeVisible();
     await expect(composer(page)).toHaveCount(0);
     const nav = page.getByRole('navigation', { name: 'Main' });
@@ -437,14 +437,12 @@ test.describe('read-only roles', () => {
     await expect(
       page.getByRole('heading', { level: 1, name: /^Good (morning|afternoon|evening), Corin$/ }),
     ).toBeVisible();
-    await expect(page.getByText(/are private to the founders and team/)).toBeVisible();
+    await expect(page.getByText(/Conversations are private to the team\./)).toBeVisible();
     await expect(composer(page)).toHaveCount(0);
 
     // A link to one of the founder's conversations says plainly that it is private.
     await page.goto(`/${TENANT}/app/v/${ventureId}/c/${sessionId}`);
-    await expect(
-      page.getByRole('heading', { name: 'Conversations are private to the venture team' }),
-    ).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Private to the venture team' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Open Knowledge' })).toBeVisible();
     await expect(composer(page)).toHaveCount(0);
 
