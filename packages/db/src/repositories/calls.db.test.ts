@@ -242,8 +242,15 @@ describe('call minutes', () => {
     // The live call's client went away 4 minutes ago: it counts until the grace after its last heartbeat …
     await backdate(live.id, 5, 4);
     const abandoned = await secondsToday(ctx, ctx.principalId);
-    expect(abandoned).toBeLessThanOrEqual(seconds - 4 * 60 + GRACE + 2);
-    expect(abandoned).toBeGreaterThanOrEqual(seconds - 4 * 60 + GRACE - 2);
+    if (startOfDay >= 17 * 60 + 60) {
+      expect(abandoned).toBeLessThanOrEqual(seconds - 4 * 60 + GRACE + 2);
+      expect(abandoned).toBeGreaterThanOrEqual(seconds - 4 * 60 + GRACE - 2);
+    } else {
+      // Within minutes of midnight UTC the calls straddle two days: only today's part counts, so the drop from
+      // the client going away is clipped at midnight. Still never more than before, never negative.
+      expect(abandoned).toBeLessThanOrEqual(seconds);
+      expect(abandoned).toBeGreaterThanOrEqual(0);
+    }
     // … which is where reaping closes it: the count is the same before and after.
     await t.db.system((sx) => callsRepo.reapStaleCalls(sx, { staleSeconds: 60, graceSeconds: GRACE }));
     expect(await secondsToday(ctx, ctx.principalId)).toBe(abandoned);
@@ -679,6 +686,27 @@ describe('what a call synthesizes', () => {
       await sx.query('ALTER TABLE calls ENABLE TRIGGER calls_guard');
     });
 
+  /**
+   * How far back a call can be moved and still have started today (UTC): the day's budget counts the calls
+   * started today, so near midnight an hour back would move them into yesterday. Waits out the first two
+   * minutes of a day so there is always room.
+   */
+  const ageWithinToday = async (seconds: number): Promise<number> => {
+    const sinceMidnight = async () =>
+      t.db.system(async (sx) => {
+        const r = await sx.query(
+          `SELECT floor(extract(epoch FROM now() - (date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')))::integer AS s`,
+        );
+        return Number(r.rows[0]?.s);
+      });
+    let since = await sinceMidnight();
+    if (since < 120) {
+      await new Promise((resolve) => setTimeout(resolve, (121 - since) * 1000));
+      since = await sinceMidnight();
+    }
+    return Math.min(seconds, since - 30);
+  };
+
   it('speaks each unit its number of times, within the call’s and the day’s character budgets', async () => {
     const ctx = tomasz();
     const session = await newSession(ctx, 'benchtally');
@@ -739,14 +767,14 @@ describe('what a call synthesizes', () => {
     const short = await t.db.withContext(ctx, (tx) =>
       callsRepo.startCall(tx, { ...startInput(ctx, session, 'benchtally'), maxSeconds: 4 }),
     );
-    await age(short.id, 3_600);
+    await age(short.id, await ageWithinToday(3_600));
     expect(await reserve(ctx, short.id, unit(3), 61)).toEqual({ ok: false, reason: 'call_budget' });
     expect(await reserve(ctx, short.id, unit(3), 60)).toEqual({ ok: true, plays: 1 });
     await endCall(ctx, short.id);
 
     // The person's day: what their other calls today synthesized counts (240 + 60 so far).
     const next = await startCall(ctx, session, 'benchtally');
-    await age(next.id, 3_600);
+    await age(next.id, await ageWithinToday(3_600));
     const day = { ...budget, dailyCharacters: 400 };
     expect(await reserve(ctx, next.id, unit(4), 101, { budget: day })).toEqual({
       ok: false,
@@ -763,7 +791,7 @@ describe('what a call synthesizes', () => {
     expect(await reserve(priya, theirs.id, unit(4), 100, { budget: day })).toEqual({ ok: true, plays: 1 });
     await endCall(priya, theirs.id);
     await endCall(ctx, next.id);
-  });
+  }, 180_000);
 
   it('serialises concurrent requests on two connections: a unit is not replayed and a budget not overrun', async () => {
     const ctx = tomasz();
