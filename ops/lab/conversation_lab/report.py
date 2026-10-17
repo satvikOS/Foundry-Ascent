@@ -51,6 +51,8 @@ def render(summary: Mapping[str, Any]) -> str:
         f"{spend.get('app_budget_usd', 0):.2f}, lab {spend.get('lab_usd', 0):.4f} of {spend.get('lab_budget_usd', 0):.2f}) |"
     )
     out.append(f"| Stopped by | {summary.get('stopped_by') or 'completed'} |")
+    if summary.get("harness_error"):
+        out.append(f"| Harness error | {summary['harness_error']} (server logs are in the sealed outputs) |")
     out.append(f"| Duration | {summary.get('duration_seconds', 0):.0f} s |")
     models = summary.get("models") or {}
     app = models.get("app") or {}

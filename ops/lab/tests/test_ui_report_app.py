@@ -93,6 +93,8 @@ def test_rendered_summary_is_numbers_ids_and_titles() -> None:
     }
     text = render(summary)
     assert "| Passed | 2/3 (67%) |" in text
+    assert "Harness error" not in text
+    assert "| Harness error | TimeoutError" in render({**summary, "harness_error": "TimeoutError"})
     assert "calls.spec.ts [desktop] vEIR calls > a second call remembers" in text
 
 

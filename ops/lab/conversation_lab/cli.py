@@ -214,43 +214,51 @@ def cmd_run(args: argparse.Namespace) -> int:
         api_port=args.api_port,
         web_port=args.web_port,
     )
-    with stack_cm as stack:
-        admin = AppAdmin(stack.api_url, SecretStr(owner_code))
-        try:
-            admin.sign_in()
-            usage_before = admin.usage()
-            admin.apply_lab_settings(app_budget, ui=suite == "ui")
-            guard.attach_app(admin.spent_since_start)
-            summary["backfill"] = "skipped (mock)" if args.mock else run_backfill(env, ctx.private / "logs")
-            browser = browser_env(
-                ctx, stack.api_url, stack.web_url, owner_code, app_budget, admin.baseline_usd
-            )
-            runner: Callable[..., dict[str, Any]] = SUITE_RUNNERS[suite]
-            if summary["stopped_by"] is None:
-                summary["result"] = runner(
-                    ctx,
-                    browser=browser,
-                    admin=admin,
-                    guard=guard,
-                    lab_client=lab_client,
-                    session=session,
-                    simulator_model=simulator_model,
-                    judge_model=judge_model,
-                    ledger=ledger,
-                )
-                summary["stopped_by"] = summary["result"].pop("stopped_by", None) or guard.stopped_by
-            usage_after = admin.usage()
-            summary["spend_app_by_purpose"] = purpose_delta(usage_before, usage_after)
-        except Exception as exc:  # noqa: BLE001 - reported by class name only; the job fails
-            error = type(exc).__name__
-        finally:
-            # The app's spend is read while it is still running; afterwards only this frozen figure remains.
+    try:
+        with stack_cm as stack:
+            admin = AppAdmin(stack.api_url, SecretStr(owner_code))
             try:
-                final = guard.app_spent()
-            except Exception:  # noqa: BLE001 - the API may be the thing that failed
-                final = guard.last_app_usd
-            guard.attach_app(lambda: final)
-            admin.close()
+                admin.sign_in()
+                usage_before = admin.usage()
+                admin.apply_lab_settings(app_budget, ui=suite == "ui")
+                guard.attach_app(admin.spent_since_start)
+                summary["backfill"] = (
+                    "skipped (mock)" if args.mock else run_backfill(env, ctx.private / "logs")
+                )
+                browser = browser_env(
+                    ctx, stack.api_url, stack.web_url, owner_code, app_budget, admin.baseline_usd
+                )
+                runner: Callable[..., dict[str, Any]] = SUITE_RUNNERS[suite]
+                if summary["stopped_by"] is None:
+                    summary["result"] = runner(
+                        ctx,
+                        browser=browser,
+                        admin=admin,
+                        guard=guard,
+                        lab_client=lab_client,
+                        session=session,
+                        simulator_model=simulator_model,
+                        judge_model=judge_model,
+                        ledger=ledger,
+                    )
+                    summary["stopped_by"] = summary["result"].pop("stopped_by", None) or guard.stopped_by
+                usage_after = admin.usage()
+                summary["spend_app_by_purpose"] = purpose_delta(usage_before, usage_after)
+            except BudgetExceededError as exc:
+                # A clean stop, not a failure: what ran is reported.
+                summary["stopped_by"] = f"budget_{exc.side}"
+            except Exception as exc:  # noqa: BLE001 - reported by class name only; the job fails
+                error = type(exc).__name__
+            finally:
+                # The app's spend is read while it is still running; afterwards only this frozen figure remains.
+                try:
+                    final = guard.app_spent()
+                except Exception:  # noqa: BLE001 - the API may be the thing that failed
+                    final = guard.last_app_usd
+                guard.attach_app(lambda: final)
+                admin.close()
+    except Exception as exc:  # noqa: BLE001 - the app did not start (or stop); its logs are sealed
+        error = error or type(exc).__name__
     spend = guard.snapshot()
     spend["app_by_purpose"] = summary.pop("spend_app_by_purpose", [])
     spend["lab_by_purpose"] = ledger.by_purpose()
