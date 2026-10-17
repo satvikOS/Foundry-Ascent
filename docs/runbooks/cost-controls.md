@@ -158,8 +158,14 @@ returns the same by-day and by-model figures, no purpose). Then check the API lo
 
 ## Routine checks (weekly, 5 minutes)
 
-- Cost Explorer month-to-date and last month by service (or `python ops/aws/inventory.py` locally with
-  read-only credentials; its CI workflow used the deleted stage-0 key).
+- Cost Explorer month-to-date and last month by service: the AWS console, or the **Ops - costs (sealed)**
+  workflow (Actions → Ops - costs → Run workflow from main, with your RSA public key as `public_key`, the
+  base64 of its DER SubjectPublicKeyInfo). It reads cost by service and by day for this month and the last
+  as the deploy role, seals it to that key and uploads it as an artifact kept 1 day; the log shows only
+  counts (the repository is public). Open it with
+  `pnpm --filter @foundry/api exec tsx src/scripts/insights.ts open <private.pem> <dir> <out.json>`. Each run
+  costs about $0.02 (Cost Explorer bills $0.01 per request); there is no AWS forecast, because the deploy
+  role has no `ce:GetCostForecast`. Or `python ops/aws/inventory.py` locally with read-only credentials.
 - **Admin → Usage**: spend by day and by model (no breakdown by purpose, principal or venture; call speech
   is the `polly:*` and `transcribe:streaming:en-US` model rows); look for a model or a day out of line.
 - Aurora is pausing: CloudWatch metric `AWS/RDS ServerlessDatabaseCapacity` for `foundry-ascent` should drop

@@ -9,12 +9,14 @@
  *                                                               INSIGHTS_PUBLIC_KEY and INSIGHTS_OUT_DIR also
  *                                                               seals the kept events to <outDir>/logs.json
  *   tsx src/scripts/insights.ts open <private.pem> <dir> <out.json>   decrypts every sealed file of <dir>
+ *   tsx src/scripts/insights.ts seal <kind> <in.json> <out.json>      seals a JSON file to INSIGHTS_PUBLIC_KEY
+ *                                                               (the ops-costs workflow: the AWS bill)
  *
  * Nothing it prints can carry content: responses are validated against the strict schemas first, and an error
  * response prints only its code.
  */
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 import { groupName, renderLogs, renderReport, sanitizeLogEvent, eventsOf } from '../jobs/insights-render.js';
 import { open, parseRecipientKey, SealedEnvelope, seal } from '../jobs/insights-envelope.js';
@@ -94,6 +96,20 @@ async function openAll(privateKeyFile: string, dir: string, outFile: string): Pr
   process.stderr.write(`insights: opened ${String(Object.keys(opened).length)} files into ${outFile}\n`);
 }
 
+/**
+ * Seals any JSON file to INSIGHTS_PUBLIC_KEY as `{ kind, envelope }` (what `open` reads). Prints only the file
+ * name: the content is never parsed beyond JSON, so this script cannot echo it.
+ */
+async function sealFile(kind: string, inFile: string, outFile: string): Promise<void> {
+  if (!/^[a-z][a-z0-9-]{0,31}$/.test(kind)) fail('insights: seal: the kind must be a short lower-case name');
+  const publicKey = process.env.INSIGHTS_PUBLIC_KEY?.trim();
+  if (!publicKey) fail('insights: seal: INSIGHTS_PUBLIC_KEY is not set');
+  const envelope = seal(await readJson(inFile), parseRecipientKey(publicKey));
+  await mkdir(dirname(outFile), { recursive: true });
+  await writeFile(outFile, `${JSON.stringify({ kind, envelope })}\n`, { mode: 0o600 });
+  process.stderr.write(`insights: sealed ${basename(outFile)}\n`);
+}
+
 async function main(argv: readonly string[]): Promise<void> {
   const [command, ...args] = argv;
   switch (command) {
@@ -112,8 +128,14 @@ async function main(argv: readonly string[]): Promise<void> {
         args[1] ?? fail('usage: open <private.pem> <dir> <out.json>'),
         args[2] ?? fail('usage: open <private.pem> <dir> <out.json>'),
       );
+    case 'seal':
+      return sealFile(
+        args[0] ?? fail('usage: seal <kind> <in.json> <out.json>'),
+        args[1] ?? fail('usage: seal <kind> <in.json> <out.json>'),
+        args[2] ?? fail('usage: seal <kind> <in.json> <out.json>'),
+      );
     default:
-      fail('usage: insights.ts report|part|logs|open …');
+      fail('usage: insights.ts report|part|logs|open|seal …');
   }
 }
 

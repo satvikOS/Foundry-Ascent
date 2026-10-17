@@ -335,6 +335,51 @@ def test_own_role_workflows_assume_their_role_and_call_exactly_what_its_policy_g
         assert granted == {iam for iam in needs.values() if iam is not None}, (workflow, sorted(granted))
 
 
+# Workflows that run as the deploy role (FoundryAscent-GitHubDeploy, GitHub OIDC in the `production` environment, no
+# stage-0 key) without deploying: the IAM action each AWS CLI call needs (None: no permission needed). Their calls
+# also meet the manifest check above, like deploy.yml's; this one holds them to what the deploy role itself grants
+# (GitHubDeployPolicy in foundation-stack.ts), which is narrower than the manifest: no ce:GetCostForecast.
+DEPLOY_ROLE_WORKFLOWS: dict[str, dict[str, str | None]] = {
+    "ops-costs.yml": {
+        "sts:getcalleridentity": None,
+        "ce:getcostandusage": "ce:GetCostAndUsage",
+    },
+}
+
+
+def test_deploy_role_workflows_call_only_what_the_deploy_role_grants() -> None:
+    granted = role_policy_actions("GitHubDeployPolicy")
+    assert "ce:GetCostAndUsage" in granted and "sts:AssumeRole" in granted, sorted(granted)
+    calls = workflow_aws_calls()
+    for workflow, needs in DEPLOY_ROLE_WORKFLOWS.items():
+        text = (WORKFLOWS / workflow).read_text(encoding="utf-8")
+        assert "role/FoundryAscent-GitHubDeploy" in text, workflow
+        assert STAGE0_SECRET not in text, workflow
+        assert "id-token: write" in text and "environment: production" in text, workflow
+        assert "if: github.ref == 'refs/heads/main'" in text, workflow
+        assert "mask-aws-account-id: true" in text and "::add-mask::" in text, workflow
+        assert "persist-credentials: false" in text, workflow
+        made = {action for name, action in calls if name == workflow}
+        assert made == set(needs), (workflow, sorted(made ^ set(needs)))
+        missing = {iam for iam in needs.values() if iam is not None} - granted
+        assert missing == set(), (workflow, sorted(missing))
+
+
+def test_the_costs_workflow_uploads_only_a_sealed_file_kept_one_day() -> None:
+    text = (WORKFLOWS / "ops-costs.yml").read_text(encoding="utf-8")
+    # The repository is public: the figures leave the runner only sealed, and the artifact expires.
+    assert "insights.ts seal aws-costs" in text
+    assert '.envelope.alg == "RSA-OAEP-256+A256GCM+gzip"' in text
+    assert re.search(r"path: \$\{\{ runner\.temp \}\}/costs-sealed\n\s+retention-days: 1\n", text)
+    assert "trap 'rm -rf \"${raw}\"' EXIT" in text
+    # Nothing in the step prints a cost figure: no cat, jq to stdout, or step-summary write of the data files.
+    step = text[text.index("- name: Cost by service and day (sealed)") : text.index("- name: Upload the sealed costs")]
+    assert "cat " not in step
+    for line in step.splitlines():
+        if re.search(r"\bjq\b", line) and "costs.json" in line and ">" not in line and "=\"$(jq" not in line:
+            raise AssertionError(f"jq output of the cost data may reach the log: {line.strip()}")
+
+
 def test_no_workflow_bootstraps_cdk_or_publishes_iam_policies() -> None:
     for path in sorted(WORKFLOWS.glob("*.yml")):
         text = path.read_text(encoding="utf-8")

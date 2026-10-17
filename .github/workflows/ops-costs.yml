@@ -1,0 +1,172 @@
+name: Ops - costs (sealed)
+
+# The AWS bill by service and by day, for the owner (docs/runbooks/cost-controls.md "Routine checks"). Runs only
+# from main, in the `production` environment, whose OIDC subject is the only one the deploy role
+# FoundryAscent-GitHubDeploy trusts. That role may call ce:GetCostAndUsage (infra/cdk/src/stacks/foundation-stack.ts,
+# Sid CostExplorerRead) and nothing else of Cost Explorer, so there is no AWS forecast here: ce:GetCostForecast is
+# not granted, and this workflow does not widen the role for it.
+#
+# THE REPOSITORY IS PUBLIC: this log, the job summary and artifacts are world-readable. No amount is ever printed.
+# The figures are sealed in this runner to `public_key` with the insights envelope (RSA-OAEP-256 + AES-256-GCM over
+# gzip, apps/api/src/jobs/insights-envelope.ts; `openssl enc` has no GCM mode), and only the sealed file is
+# uploaded, as an artifact kept for 1 day. The log says "ok" and counts. Open it locally with the private key:
+#   pnpm --filter @foundry/api exec tsx src/scripts/insights.ts open <private.pem> <dir> <out.json>
+# Cost Explorer bills USD 0.01 per API request; a run makes two (more only if a response is paginated).
+on:
+  workflow_dispatch:
+    inputs:
+      public_key:
+        description: RSA public key (3072+ bits) as the base64 of its DER SubjectPublicKeyInfo, one line
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ops-costs
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  costs:
+    name: Costs
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+    steps:
+      - name: Validate the public key
+        env:
+          PUBLIC_KEY: ${{ inputs.public_key }}
+        run: |
+          # The value is checked, never echoed.
+          key="$(printf '%s' "${PUBLIC_KEY}" | tr -d '[:space:]')"
+          if [[ ! "${key}" =~ ^[A-Za-z0-9+/]{500,1400}={0,2}$ ]]; then
+            echo "::error::public_key must be the base64 of an RSA public key's DER SubjectPublicKeyInfo (openssl pkey -pubin -in public.pem -outform DER | base64), on one line."
+            exit 1
+          fi
+          echo "INSIGHTS_PUBLIC_KEY=${key}" >> "${GITHUB_ENV}"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      # No dependency cache in a job that holds cloud credentials; installed before any credentials exist.
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Resolve the deploy role
+        env:
+          RAW_DEPLOY_ROLE: ${{ secrets.AWS_DEPLOY_ROLE_ARN || vars.AWS_DEPLOY_ROLE_ARN }}
+        run: |
+          # An ARN or the 12-digit account id; masked, never printed. GitHub OIDC only (no stage-0 key).
+          role="$(printf '%s' "${RAW_DEPLOY_ROLE}" | tr -d "[:space:]\"'")"
+          if [[ "${role}" =~ ^([0-9]{12})$ ]] || [[ "${role}" =~ ^arn:aws:iam::([0-9]{12}):role/FoundryAscent-GitHubDeploy$ ]]; then
+            account="${BASH_REMATCH[1]}"
+          else
+            echo "::error::AWS_DEPLOY_ROLE_ARN is not set to the FoundryAscent-GitHubDeploy role ARN or a 12-digit account id."
+            exit 1
+          fi
+          echo "::add-mask::${account}"
+          deploy_role="arn:aws:iam::${account}:role/FoundryAscent-GitHubDeploy"
+          echo "::add-mask::${deploy_role}"
+          echo "DEPLOY_ROLE_ARN=${deploy_role}" >> "${GITHUB_ENV}"
+
+      - name: AWS credentials (GitHub OIDC, deploy role)
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ env.DEPLOY_ROLE_ARN }}
+          role-session-name: foundry-ascent-costs-${{ github.run_id }}
+          role-duration-seconds: 900
+          aws-region: us-east-1
+          mask-aws-account-id: true
+
+      - name: Mask account id
+        run: |
+          account="$(aws sts get-caller-identity --query Account --output text)"
+          if [[ ! "${account}" =~ ^[0-9]{12}$ ]]; then
+            echo "::error::sts:GetCallerIdentity did not return a 12-digit account id"
+            exit 1
+          fi
+          echo "::add-mask::${account}"
+
+      - name: Cost by service and day (sealed)
+        run: |
+          set -euo pipefail
+          umask 077
+          raw="${RUNNER_TEMP}/costs-raw"
+          sealed="${RUNNER_TEMP}/costs-sealed"
+          mkdir -p "${raw}" "${sealed}"
+          trap 'rm -rf "${raw}"' EXIT
+          # The previous month and this month to date (UTC). End is exclusive, so tomorrow includes today's
+          # partial figures (Cost Explorer marks them Estimated).
+          this_month="$(date -u +%Y-%m-01)"
+          last_month="$(date -u -d "${this_month} -1 month" +%Y-%m-01)"
+          tomorrow="$(date -u -d tomorrow +%F)"
+          fetch() { # <name> <granularity> [extra arguments]
+            local name="$1" granularity="$2" token="" page=0
+            shift 2
+            while :; do
+              page=$(( page + 1 ))
+              local args=(--time-period "Start=${last_month},End=${tomorrow}" --granularity "${granularity}"
+                --metrics UnblendedCost --output json "$@")
+              if [ -n "${token}" ]; then args+=(--next-page-token "${token}"); fi
+              if ! aws ce get-cost-and-usage "${args[@]}" > "${raw}/${name}-$(printf '%03d' "${page}").json" 2> "${raw}/err"; then
+                # Only the exception's name: a message could carry the account id or the role.
+                echo "::error::ce:GetCostAndUsage failed ($(grep -oE '[A-Za-z]+(Exception|Error)' "${raw}/err" | head -n 1 || echo unknown)). Cost Explorer needs IAM access to billing data, turned on once by the root user."
+                exit 1
+              fi
+              token="$(jq -r '.NextPageToken // empty' "${raw}/${name}-$(printf '%03d' "${page}").json")"
+              if [ -z "${token}" ]; then break; fi
+              if (( page >= 20 )); then
+                echo "::error::Cost Explorer returned more than 20 pages."
+                exit 1
+              fi
+            done
+          }
+          fetch daily DAILY --group-by Type=DIMENSION,Key=SERVICE
+          fetch monthly MONTHLY
+          jq -n \
+            --slurpfile daily <(jq -s '[.[].ResultsByTime[]]' "${raw}"/daily-*.json) \
+            --slurpfile monthly <(jq -s '[.[].ResultsByTime[]]' "${raw}"/monthly-*.json) \
+            --arg generatedAt "$(date -u +%FT%TZ)" --arg currentMonth "${this_month}" --arg previousMonth "${last_month}" \
+            '{kind: "aws-costs", version: 1, generatedAt: $generatedAt, metric: "UnblendedCost",
+              currentMonthStart: $currentMonth, previousMonthStart: $previousMonth,
+              forecast: null, forecastNote: "ce:GetCostForecast is not granted to the deploy role",
+              monthly: $monthly[0], dailyByService: $daily[0]}' > "${raw}/costs.json"
+          days="$(jq '.dailyByService | length' "${raw}/costs.json")"
+          services="$(jq '[.dailyByService[].Groups[].Keys[0]] | unique | length' "${raw}/costs.json")"
+          months="$(jq '.monthly | length' "${raw}/costs.json")"
+          (cd apps/api && pnpm exec tsx src/scripts/insights.ts seal aws-costs "${raw}/costs.json" "${sealed}/costs.json")
+          # Only a sealed envelope may be uploaded.
+          if ! jq -e '(.envelope | keys) == ["alg","data","iv","key","kid","tag","v"] and .envelope.alg == "RSA-OAEP-256+A256GCM+gzip"' "${sealed}/costs.json" > /dev/null; then
+            echo "::error::costs.json is not a sealed envelope; nothing is uploaded."
+            rm -rf "${sealed}"
+            exit 1
+          fi
+          echo "ok: ${months} months, ${days} days, ${services} services; forecast: not granted"
+          echo "Costs sealed: ${months} months, ${days} days, ${services} services." >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload the sealed costs (1 day)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ops-costs-${{ github.run_id }}
+          path: ${{ runner.temp }}/costs-sealed
+          retention-days: 1
+          if-no-files-found: error
