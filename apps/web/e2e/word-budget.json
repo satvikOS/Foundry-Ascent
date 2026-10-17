@@ -1,0 +1,25 @@
+{
+  "$comment": "Visible words on the main founder screens as Priya (BenchTally) sees them, counted by e2e/words.spec.ts at 1440×900. before: base 90cebac (before the wave-6 copy pass); budget: the count after it plus a little headroom for relative times. Raise a budget only on purpose; it must stay below before.",
+  "screens": {
+    "New chat": {
+      "before": 79,
+      "budget": 66
+    },
+    "Conversation": {
+      "before": 63,
+      "budget": 61
+    },
+    "Call": {
+      "before": 33,
+      "budget": 32
+    },
+    "Knowledge": {
+      "before": 506,
+      "budget": 462
+    },
+    "Documents": {
+      "before": 73,
+      "budget": 48
+    }
+  }
+}
