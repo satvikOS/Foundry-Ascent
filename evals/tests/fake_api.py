@@ -168,10 +168,21 @@ class FakeFoundryApi:
         intro: str | None = None,
         intro_for: Callable[[FakeFoundryApi, dict[str, Any]], str] | None = None,
         memory_lab: bool = False,
+        memory_lab_teammate: bool = False,
+        opener_for: Callable[[FakeFoundryApi, dict[str, Any]], str | None] | None = None,
+        model_id: str = "fake",
     ) -> None:
         self.responder = responder
         # A fifth, unseeded synthetic venture for remembered conversations (``--memory-venture memorylab``).
         self.memory_lab = memory_lab
+        # A second synthetic member of the memory lab (matrix `teammate` scenarios).
+        self.memory_lab_teammate = memory_lab_teammate
+        # The opening line of a new session, instead of the notebook's next opener (replays of recorded runs).
+        self.opener_for = opener_for
+        # What every turn's usage reports as the model (``mock`` mirrors the local API on the mock model).
+        self.model_id = model_id
+        # Barge-ins: (turn id, call id, units heard).
+        self.interrupts: list[tuple[str, str, list[str]]] = []
         # The vEIR notebook of each venture (one persona each): what distillation writes and deletion erases.
         self.notebooks: dict[str, dict[str, Any]] = {}
         # Calls: a refusal code for every start (calls switched off, no voice consent), and the intro text.
@@ -260,7 +271,8 @@ class FakeFoundryApi:
                     "validation",
                     "software",
                     corin.name,
-                    [("Mina Halloway-Test", "founder")],
+                    [("Mina Halloway-Test", "founder")]
+                    + ([("Rafi Okonkwo-Test", "team")] if self.memory_lab_teammate else []),
                 )
             )
         for key, name, stage, domain, eir, members in specs:
@@ -556,6 +568,12 @@ class FakeFoundryApi:
             return httpx.Response(200, json=self._memory_view(m))
         if parts[0] == "sessions" and len(parts) >= 2:
             return self._session_route(p, method, parts, body)
+        if parts[0] == "turns" and len(parts) == 3 and parts[2] == "interrupt" and method == "POST":
+            heard = [u["text"] for u in body.get("heard", [])]
+            if body.get("heardSeq") != len(heard) - 1:
+                return self._problem(400, "validation_failed")
+            self.interrupts.append((parts[1], body["callId"], heard))
+            return httpx.Response(204)
         if parts[0] == "calls" and len(parts) == 3 and parts[2] == "end" and method == "POST":
             call = self.calls.get(parts[1])
             if call is None or call["by"] != p.id:
@@ -628,6 +646,8 @@ class FakeFoundryApi:
                 # A remembered conversation opens with the notebook's next opener; a private one with none.
                 "opener": notebook.get("nextOpener") if privacy == "standard" else None,
             }
+            if self.opener_for is not None:
+                self.sessions[sid]["opener"] = self.opener_for(self, self.sessions[sid])
             self.turns[sid] = []
             return httpx.Response(201, json=self._session_view(self.sessions[sid]))
         if sub == "documents" and method == "POST":
@@ -840,7 +860,7 @@ class FakeFoundryApi:
                 "notes": [],
             },
             "usage": {
-                "modelId": "fake",
+                "modelId": self.model_id,
                 "fallbackUsed": False,
                 "inputTokens": 10,
                 "outputTokens": 10,

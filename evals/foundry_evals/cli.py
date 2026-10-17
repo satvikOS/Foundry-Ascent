@@ -1,4 +1,4 @@
-"""Command line: ``python -m foundry_evals run|validate``.
+"""Command line: ``python -m foundry_evals run|validate|matrix-plan|judge-calibrate``.
 
 ``run`` exit codes: 0 every blocking gate passed · 1 a gate failed · 2 usage / dataset error ·
 3 environment or infrastructure error (results are still written when possible).
@@ -34,6 +34,9 @@ from foundry_evals.datasets import (
 )
 from foundry_evals.environment import SEED_VENTURE_SLUGS, Environment, EnvironmentSetupError
 from foundry_evals.graders.judge import JudgeNotAvailableError, load_judge
+from foundry_evals.matrix import cli as matrix_cli
+from foundry_evals.matrix.runner import MatrixRunner, RecordingRefusedError
+from foundry_evals.matrix.taxonomy import load_taxonomy, load_templates
 from foundry_evals.planning import Budget, build_cases, plan_cases
 from foundry_evals.report import write_reports
 from foundry_evals.results import RunResults
@@ -79,7 +82,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     run = sub.add_parser("run", help="run a suite against a deployed API")
-    run.add_argument("--suite", choices=("scenarios", "redteam", "conversations", "all"), default="all")
+    run.add_argument(
+        "--suite", choices=("scenarios", "redteam", "conversations", "matrix", "all"), default="all"
+    )
     run.add_argument(
         "--base-url", default=os.environ.get(BASE_URL_ENV), help=f"site URL (default: ${BASE_URL_ENV})"
     )
@@ -125,14 +130,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--include-transcripts", action="store_true", help="also write transcripts.jsonl (LOCAL USE ONLY)"
     )
     run.add_argument("--no-data-ok", action="store_true", help="do not fail blocking gates that have no data")
-    run.add_argument("--judge", action="store_true", help="LLM-judge rubric (out of scope for V1)")
+    run.add_argument(
+        "--judge", action="store_true", help="LLM-judge rubric (matrix suite only; needs --judge-model)"
+    )
     run.add_argument(
         "--dry-run", action="store_true", help="plan only: validate datasets, print the plan, no network"
     )
     run.add_argument("--datasets-dir", type=Path, default=DATASETS_DIR)
+    matrix_cli.add_run_arguments(run)
 
     validate = sub.add_parser("validate", help="validate the datasets and print counts (offline)")
     validate.add_argument("--datasets-dir", type=Path, default=DATASETS_DIR)
+    matrix_cli.add_plan_parser(sub)
+    matrix_cli.add_calibrate_parser(sub)
     return parser
 
 
@@ -141,6 +151,8 @@ def cmd_validate(args: argparse.Namespace, out: TextIO) -> int:
         scenarios = load_scenarios(args.datasets_dir / "scenarios.yaml")
         redteam = load_redteam(args.datasets_dir / "redteam.yaml")
         conversations = load_conversations(args.datasets_dir / "conversations.yaml")
+        taxonomy = load_taxonomy(args.datasets_dir / "matrix" / "taxonomy.yaml")
+        load_templates(args.datasets_dir / "matrix" / "templates.yaml")
     except DatasetError as exc:
         print(f"dataset error: {exc}", file=sys.stderr)
         return EXIT_USAGE
@@ -164,6 +176,11 @@ def cmd_validate(args: argparse.Namespace, out: TextIO) -> int:
             "redteam": sum(len(a.turns) for a in redteam.attacks),
             "conversations": sum(c.turn_count for c in co),
         },
+        "matrix": {
+            "dimensions": {d: len(spec.values) for d, spec in taxonomy.dimensions.items()},
+            "values": sum(len(spec.values) for spec in taxonomy.dimensions.values()),
+            "checks": len(taxonomy.checks),
+        },
     }
     out.write(json.dumps(summary, indent=2) + "\n")
     return EXIT_OK
@@ -177,12 +194,14 @@ def cmd_run(
     clock: Callable[[], float] = time.monotonic,
 ) -> int:
     """``transport``, ``sleep`` and ``clock`` are test seams (an in-memory API, virtual time)."""
-    if args.judge:
+    if args.judge and args.suite != "matrix":
         try:
             load_judge()
         except JudgeNotAvailableError as exc:
             print(str(exc), file=sys.stderr)
             return EXIT_USAGE
+    if args.suite == "matrix":
+        return _cmd_run_matrix(args, transport=transport, sleep=sleep, clock=clock)
     try:
         scenarios = (
             load_scenarios(args.datasets_dir / "scenarios.yaml")
@@ -371,4 +390,188 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "validate":
         return cmd_validate(args, sys.stdout)
+    if args.command == "matrix-plan":
+        return matrix_cli.cmd_plan(args, sys.stdout)
+    if args.command == "judge-calibrate":
+        return matrix_cli.cmd_calibrate(args, sys.stdout)
     return cmd_run(args)
+
+
+def _cmd_run_matrix(
+    args: argparse.Namespace,
+    *,
+    transport: httpx.BaseTransport | None,
+    sleep: Callable[[float], None],
+    clock: Callable[[], float],
+) -> int:
+    """``run --suite matrix``: the conversation matrix (foundry_evals.matrix) against a deployed API."""
+    budget = Budget(args.max_turns, args.max_cost_usd, args.est_cost_per_turn)
+    setup = matrix_cli.setup_matrix(args, turn_cap=budget.turn_cap)
+    if isinstance(setup, int):
+        return setup
+    matrix_cli.print_plan(setup, _log)
+    if args.dry_run:
+        for scenario in setup.plan.planned:
+            v = scenario.values
+            _log(
+                f"  {scenario.id} turns={scenario.turn_count:<2} {v['question_type']:<14} {v['emotion']:<13} "
+                f"{v['continuity']:<19} {v['channel']}"
+            )
+        return EXIT_OK
+    if not setup.plan.planned:
+        print("the budget fits no matrix scenario", file=sys.stderr)
+        return EXIT_USAGE
+    if args.memory_venture is not None and args.memory_venture in SEED_VENTURE_SLUGS:
+        print("--memory-venture must be a dedicated synthetic venture, never a seeded one", file=sys.stderr)
+        return EXIT_USAGE
+    if not args.base_url:
+        print(f"--base-url or ${BASE_URL_ENV} is required", file=sys.stderr)
+        return EXIT_USAGE
+    try:
+        base_url = normalize_base_url(args.base_url)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_USAGE
+    raw_code = os.environ.get(ACCESS_CODE_ENV, "").strip()
+    if not raw_code:
+        print(
+            f"${ACCESS_CODE_ENV} is required (the owner access code; never pass it on the command line)",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+    owner_code = SecretStr(raw_code)
+    del raw_code
+    started = _utc_now()
+    run_id = f"{_stamp(started)}-{uuid.uuid4().hex[:6]}"
+    out_dir: Path = args.out or (Path(__file__).resolve().parent.parent / "results" / _stamp(started))
+    results = RunResults(
+        run_id=run_id,
+        suite="matrix",
+        base_url=base_url,
+        started_at=started.isoformat(timespec="seconds"),
+        datasets=setup.meta["datasets"],
+        budget={
+            "maxTurns": args.max_turns,
+            "maxCostUsd": args.max_cost_usd,
+            "estCostPerTurn": args.est_cost_per_turn,
+            "turnCap": budget.turn_cap,
+            "plannedCases": len(setup.plan.planned),
+            "plannedTurns": setup.plan.planned_turns,
+            "skippedForBudget": len(setup.plan.skipped),
+        },
+        matrix=dict(setup.meta),
+    )
+    _log(f"run {run_id}: suite=matrix target={base_url}")
+    env = Environment(
+        base_url,
+        run_id,
+        owner_code=owner_code,
+        max_actors_per_venture=args.actors_per_venture,
+        log=_log,
+        transport=transport,
+        sleep=sleep,
+    )
+    exit_code = EXIT_OK
+    transcript_file: TextIO | None = None
+    runner: MatrixRunner | None = None
+    try:
+        env.setup(wait_seconds=args.max_wait_seconds)
+        results.app_version = env.app_version
+        transcript_sink = None
+        if args.include_transcripts:
+            out_dir.mkdir(parents=True, exist_ok=True)
+            transcript_file = (out_dir / "transcripts.jsonl").open("w", encoding="utf-8")
+            _log(
+                "WARNING: writing transcripts.jsonl with full prompts and responses (local use only; do not upload)"
+            )
+
+            def transcript_sink(entry: dict[str, Any], _f: TextIO = transcript_file) -> None:
+                _f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+        runner = MatrixRunner(
+            env,
+            RunnerOptions(
+                turn_cap=budget.turn_cap,
+                max_cost_usd=args.max_cost_usd,
+                turn_rate_limit=args.turn_rate_limit,
+                max_wait_seconds=args.max_wait_seconds,
+                memory_venture=args.memory_venture,
+            ),
+            taxonomy=setup.taxonomy,
+            simulator=setup.simulator,
+            judge=setup.judge,
+            judge_estimate_usd=setup.judge_estimate_usd,
+            private=setup.private,
+            recorder=setup.recorder,
+            log=_log,
+            sleep=sleep,
+            clock=clock,
+            transcript=transcript_sink,
+        )
+        results.cases = runner.run_matrix(setup.plan)
+        results.aborted = runner.aborted if runner.aborted != "budget" else None
+        if results.aborted:
+            exit_code = EXIT_INFRA
+    except RecordingRefusedError as exc:
+        print(f"recording refused: {exc}", file=sys.stderr)
+        results.aborted = "recording_refused"
+        exit_code = EXIT_USAGE
+    except EnvironmentSetupError as exc:
+        print(f"setup failed: {exc}", file=sys.stderr)
+        results.aborted = "setup_failed"
+        exit_code = EXIT_INFRA
+    except Exception as exc:  # noqa: BLE001 - always tear down and write what we have
+        frames = traceback.extract_tb(exc.__traceback__)
+        where = " <- ".join(f"{Path(f.filename).name}:{f.lineno}:{f.name}" for f in reversed(frames[-6:]))
+        print(f"internal error: {type(exc).__name__} at {where}", file=sys.stderr)
+        results.aborted = "internal_error"
+        exit_code = EXIT_INFRA
+    finally:
+        if transcript_file is not None:
+            transcript_file.close()
+        if runner is not None:
+            results.turns_used = runner.turns_used
+            results.cost_usd_reported = runner.cost_usd
+            results.matrix |= {
+                "simulatorSources": dict(runner.simulator_sources),
+                "simulatorCostUsd": round(runner.simulator_cost_usd, 6),
+                "judgeCostUsd": round(runner.judge_cost_usd, 6),
+            }
+        try:
+            teardown = env.teardown()
+            results.environment["teardown"] = {
+                "codesIssued": teardown.codes_issued,
+                "codesRevoked": teardown.codes_revoked,
+                "revokeFailures": teardown.revoke_failures,
+                "signOutFailures": teardown.sign_out_failures,
+            }
+        except Exception as exc:  # noqa: BLE001 - teardown must never hide the run result
+            print(f"teardown error: {type(exc).__name__}", file=sys.stderr)
+        results.environment["ventures"] = env.summary()
+        results.finished_at = _utc_now().isoformat(timespec="seconds")
+    if setup.recorder is not None and exit_code == EXIT_OK and args.record_replies is not None:
+        setup.recorder.write(
+            args.record_replies,
+            {
+                "budget": args.matrix_budget,
+                "seed": args.matrix_seed,
+                "simulator": "template",
+                "datasets": setup.meta["datasets"],
+                "appVersion": results.app_version,
+            },
+        )
+        _log(f"recorded the mock model's replies: {args.record_replies}")
+    gates, passed = write_reports(results, out_dir, no_data_ok=args.no_data_ok, taxonomy=setup.taxonomy)
+    _log("")
+    for gate in gates:
+        flag = "" if gate.blocking else " (informational)"
+        _log(f"{gate.id:<4} {gate.status.upper():<8} {gate.title}: {gate.observed} [{gate.threshold}]{flag}")
+        if gate.blocking and gate.status != "pass" and os.environ.get("GITHUB_ACTIONS") == "true":
+            print(
+                f"::error title=Eval gate {gate.id}::{gate.title}: {gate.observed} (threshold {gate.threshold})"
+            )
+    _log(f"results: {out_dir / 'results.json'}")
+    _log(f"report:  {out_dir / 'report.md'}")
+    if exit_code != EXIT_OK:
+        return exit_code
+    return EXIT_OK if passed else EXIT_GATE_FAILED

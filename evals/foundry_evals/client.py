@@ -597,6 +597,19 @@ class FoundryClient:
             "POST", f"/calls/{call_id}/end", json_body={"reason": "user"}, idempotency_key=str(uuid.uuid4())
         )
 
+    def interrupt_turn(self, turn_id: str, call_id: str, heard: list[str]) -> None:
+        """Barge-in: the founder spoke over the reply after hearing ``heard`` (its first units, in order). The server
+        replays only those words in the conversation history (``POST /turns/:id/interrupt``)."""
+        self.request(
+            "POST",
+            f"/turns/{turn_id}/interrupt",
+            json_body={
+                "callId": call_id,
+                "heardSeq": len(heard) - 1,
+                "heard": [{"seq": i, "text": text} for i, text in enumerate(heard)],
+            },
+        )
+
     def run_turn(
         self,
         session_id: str,

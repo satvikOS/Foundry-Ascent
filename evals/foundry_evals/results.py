@@ -82,6 +82,8 @@ class CaseResult:
     recall_passed: int = 0
     resume_checked: int = 0
     resume_passed: int = 0
+    #: Matrix scenarios: values, check outcomes, judge scores and humanness (foundry_evals.matrix; content-free).
+    matrix: dict[str, Any] | None = None
 
     @property
     def executed(self) -> bool:
@@ -136,6 +138,7 @@ class CaseResult:
             }
             if self.suite == "conversations"
             else None,
+            **({"matrix": self.matrix} if self.suite == "matrix" else {}),
         }
 
 
@@ -183,3 +186,5 @@ class RunResults:
     aborted: str | None = None
     turns_used: int = 0
     cost_usd_reported: float = 0.0
+    #: Matrix runs: the plan and the simulator/judge spend (ids, counts and numbers only).
+    matrix: dict[str, Any] = field(default_factory=dict)
