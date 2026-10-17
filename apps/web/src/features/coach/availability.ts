@@ -42,7 +42,8 @@ export function coachingAvailability(
     };
   }
   if (venture.persona.status === 'suspended') {
-    const name = veirName(venture.persona.name, venture.persona.kind);
+    const { persona } = venture;
+    const name = veirName(persona.name, persona.kind, persona.eirFirstName, persona.firstPerson === true);
     return {
       available: false,
       title: `${name} is paused`,

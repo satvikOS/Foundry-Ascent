@@ -2,6 +2,7 @@ import type { PersonaView, TestTurnResponse } from '@foundry/contracts';
 import { ChevronRight, FlaskConical, HandHeart, LoaderCircle, RotateCcw, ShieldCheck } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 
+import { DisclosureBanner } from '@/components/disclosure-banner';
 import { PersonaAvatar } from '@/components/faces/persona-avatar';
 import { VeirBadge } from '@/components/faces/veir-badge';
 import { Alert } from '@/components/ui/alert';
@@ -235,8 +236,6 @@ export function TestBenchTab({ persona, displayName }: TestBenchTabProps) {
           value={text}
           onChange={setText}
           personaName={displayName}
-          disclosure={release.data?.disclosureText ?? null}
-          veirName={displayName}
           mode={mode}
           onModeChange={setMode}
           allowedModes={release.data?.allowedModes}
@@ -250,6 +249,8 @@ export function TestBenchTab({ persona, displayName }: TestBenchTabProps) {
           onStop={stop}
           textareaRef={textareaRef}
         />
+        {/* The studio keeps the release's own disclosure in view while its author tries it. */}
+        <DisclosureBanner variant="line" text={release.data?.disclosureText ?? null} veirName={displayName} />
       </div>
     </section>
   );

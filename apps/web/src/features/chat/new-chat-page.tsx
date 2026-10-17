@@ -12,7 +12,7 @@ import {
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { PersonaAvatar } from '@/components/faces/persona-avatar';
-import { VeirBadge } from '@/components/faces/veir-badge';
+import { VeirName } from '@/components/faces/veir-name';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast';
@@ -109,8 +109,7 @@ function ReadOnlyVenture() {
         <div className="flex flex-col items-center gap-3">
           <PersonaAvatar name={veir.name} portraitUrl={veir.portraitUrl} size="xl" decorative />
           <p className="flex items-center gap-2 text-small font-medium">
-            {veir.name}
-            <VeirBadge kind={veir.kind} />
+            <VeirName veir={veir} />
           </p>
         </div>
       ) : null}
@@ -305,8 +304,7 @@ function NewChat() {
           <div className="flex flex-col items-center gap-3">
             <PersonaAvatar name={veir.name} portraitUrl={veir.portraitUrl} size="xl" decorative />
             <p className="flex items-center gap-2 text-small font-medium">
-              {veir.name}
-              <VeirBadge kind={veir.kind} />
+              <VeirName veir={veir} />
             </p>
           </div>
         ) : null}
@@ -324,8 +322,6 @@ function NewChat() {
             value={text}
             onChange={setText}
             personaName={name}
-            disclosure={veir?.disclosure}
-            veirName={veir?.name}
             mode={mode}
             onModeChange={setMode}
             allowedModes={venture.data?.persona?.allowedModes}

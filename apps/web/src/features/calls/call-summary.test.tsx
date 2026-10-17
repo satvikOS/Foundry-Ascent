@@ -11,8 +11,13 @@ import { json, renderWithRouter, stubFetch, urlOf } from './testing';
 import type { CallVeir } from './use-call-veir';
 
 const VEIR: CallVeir = {
-  name: "Corin's vEIR",
+  name: 'Corin · vEIR',
+  shortName: 'Corin',
+  badge: 'vEIR',
   kind: 'eir_persona',
+  eirFirstName: 'Corin',
+  firstPerson: true,
+  eirSeesWork: true,
   disclosure: 'AI',
   portraitUrl: null,
   provider: 'builtin',
@@ -136,8 +141,8 @@ describe('CallSummaryPanel', () => {
     );
 
     expect(await screen.findByRole('heading', { name: 'Call ended' })).toHaveFocus();
-    // The summary carries the vEIR's actions, so it carries the AI disclosure too.
-    expect(screen.getAllByRole('note', { name: 'AI disclosure' })).toHaveLength(1);
+    // No disclaimer line under the summary: the vEIR's badge and its one-time welcome say what it is.
+    expect(screen.queryByRole('note', { name: 'AI disclosure' })).toBeNull();
     expect(screen.getByText(/4 minutes 12 seconds/)).toBeInTheDocument();
     expect(screen.getByText(/3 exchanges/)).toBeInTheDocument();
     // A quiet "Remembered" and what the call saved: no Keep, no Not now, nothing waiting for the founder.
@@ -284,7 +289,7 @@ describe('CallSummaryPanel', () => {
     stubFetch().mockResolvedValue(json({ items: [] }));
     renderSummary(ended({}));
     expect(await screen.findByTestId('call-remembered')).toHaveTextContent(
-      "Remembered. Corin's vEIR will pick up from this call next time.",
+      'Remembered. Corin · vEIR will pick up from this call next time.',
     );
     expect(screen.queryByTestId('memory-saved')).toBeNull();
     expect(screen.queryByText(/to review/)).toBeNull();

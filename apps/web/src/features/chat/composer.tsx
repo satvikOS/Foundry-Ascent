@@ -10,7 +10,6 @@ import {
   type Ref,
 } from 'react';
 
-import { DisclosureBanner } from '@/components/disclosure-banner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -41,12 +40,8 @@ export const STOP_GRACE_MS = 600;
 interface ComposerProps {
   value: string;
   onChange: (value: string) => void;
-  /** The vEIR's short name ("Corin"): names the message box and its placeholder. */
+  /** The vEIR's name in text ("Corin · vEIR"): names the message box and its placeholder. */
   personaName: string;
-  /** The persona release's disclosure, shown as the view's one AI disclosure line. */
-  disclosure?: string | null | undefined;
-  /** The vEIR's full name ("Corin's vEIR"), named in the disclosure line. */
-  veirName?: string | null | undefined;
   mode: ComposerMode;
   onModeChange: (mode: ComposerMode) => void;
   /** Modes the persona release allows (all six when undefined). Auto is always offered. */
@@ -72,15 +67,13 @@ interface ComposerProps {
 
 /**
  * Message composer: Enter sends, Shift+Enter adds a line, Escape stops an answer being written. A
- * compact mode chip (Auto by default), the rehearsal counterpart in Rehearse, a character count only
- * near the limit, and under it the view's single AI disclosure line.
+ * compact mode chip (Auto by default), the rehearsal counterpart in Rehearse and a character count only
+ * near the limit. No disclaimer line under it: the vEIR's badge and its one-time welcome say what it is.
  */
 export function Composer({
   value,
   onChange,
   personaName,
-  disclosure,
-  veirName,
   mode,
   onModeChange,
   allowedModes,
@@ -271,7 +264,6 @@ export function Composer({
           </div>
         </form>
       </div>
-      <DisclosureBanner variant="line" text={disclosure} veirName={veirName} />
     </div>
   );
 }

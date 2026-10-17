@@ -1,4 +1,4 @@
-import type { PersonaSummary, SessionView } from '@foundry/contracts';
+import type { SessionView } from '@foundry/contracts';
 import { Link } from '@tanstack/react-router';
 import {
   EyeOff,
@@ -14,7 +14,7 @@ import {
 import type { ReactNode } from 'react';
 
 import { PersonaAvatar } from '@/components/faces/persona-avatar';
-import { VeirBadge } from '@/components/faces/veir-badge';
+import { VeirName } from '@/components/faces/veir-name';
 import { InspectorToggle, useInspector } from '@/components/shell/inspector';
 import { usePageMobileBar } from '@/components/shell/shell-chrome';
 import { Button } from '@/components/ui/button';
@@ -26,6 +26,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { SimpleTooltip } from '@/components/ui/tooltip';
+import { type VeirName as VeirNameView } from '@/lib/veir';
 
 export type ConversationMenuAction = 'rename' | 'end' | 'report' | 'delete';
 
@@ -34,29 +35,29 @@ interface ConversationHeaderProps {
   ventureId: string;
   session: SessionView;
   title: string;
-  personaName: string;
-  personaKind: PersonaSummary['kind'];
+  /** Who the conversation is with: the name and badge ("Corin · vEIR"); null while unknown. */
+  veir: VeirNameView | null;
   portraitUrl?: string | null | undefined;
   /** The person may change this conversation (founders and team). */
   canEdit: boolean;
   onAction: (action: ConversationMenuAction) => void;
-  /** Under the title (ended conversations: the disclosure line, so it stays in view). */
+  /** Under the title. */
   children?: ReactNode;
 }
 
 /**
- * The conversation's one header, on the shared glass surface: the vEIR's face, name and "vEIR · AI" chip,
- * the title, a quiet "Private" for a private conversation, then the context panel and a menu for everything
- * rarer (rename, end, report, delete). Calls start from the composer's voice button. On phones it is the
- * only bar: the menu button, the title over "{vEIR} · AI", New chat and the menu (which also opens the panel).
+ * The conversation's one header, on the shared glass surface: the vEIR's face, its name and badge ("Corin ·
+ * vEIR", the badge explains what it is), the title, a quiet "Private" for a private conversation, then the context
+ * panel and a menu for everything rarer (rename, end, report, delete). Calls start from the composer's voice
+ * button. On phones it is the only bar: the menu button, the title over the name and badge, New chat and the
+ * menu (which also opens the panel).
  */
 export function ConversationHeader({
   tenant,
   ventureId,
   session,
   title,
-  personaName,
-  personaKind,
+  veir,
   portraitUrl,
   canEdit,
   onAction,
@@ -67,9 +68,8 @@ export function ConversationHeader({
   const active = session.status === 'active';
   // A private conversation (a one-off: nothing from it is remembered) says so while it lasts.
   const isPrivate = session.privacy === 'ephemeral';
-  const phoneSubtitle = [`${session.personaName} · AI`, isPrivate ? 'Private' : null, active ? null : 'Ended']
-    .filter(Boolean)
-    .join(' · ');
+  const phoneStatus = [isPrivate ? 'Private' : null, active ? null : 'Ended'].filter(Boolean).join(' · ');
+  const name = veir?.name ?? session.personaName;
   return (
     <header className="glass sticky top-(--mini-call-height) z-20 border-b" data-print="hide">
       <div className="mx-auto flex h-14 w-full max-w-(--content-width) items-center gap-2.5 px-4 sm:px-6">
@@ -86,14 +86,15 @@ export function ConversationHeader({
         ) : null}
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
           <PersonaAvatar
-            name={personaName}
+            name={name}
             portraitUrl={portraitUrl}
             size="sm"
             decorative
             className="hidden sm:inline-flex"
           />
-          <span className="hidden shrink-0 text-small font-medium sm:inline">{personaName}</span>
-          <VeirBadge kind={personaKind} className="hidden sm:inline-flex" />
+          {veir ? (
+            <VeirName veir={veir} className="hidden shrink-0 text-small font-medium sm:inline-flex" />
+          ) : null}
           <span aria-hidden className="hidden text-border-strong sm:inline">
             /
           </span>
@@ -106,7 +107,10 @@ export function ConversationHeader({
             >
               {title}
             </h1>
-            <p className="truncate text-caption text-muted-foreground sm:hidden">{phoneSubtitle}</p>
+            <p className="flex min-w-0 items-center gap-1.5 text-caption text-muted-foreground sm:hidden">
+              {veir ? <VeirName veir={veir} /> : <span className="truncate">{name}</span>}
+              {phoneStatus ? <span className="truncate">· {phoneStatus}</span> : null}
+            </p>
           </div>
           {isPrivate ? (
             <span

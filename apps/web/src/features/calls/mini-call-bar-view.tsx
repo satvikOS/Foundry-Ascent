@@ -1,7 +1,7 @@
 import { Maximize2, Mic, MicOff, PhoneOff, Volume2, X } from 'lucide-react';
 
 import { PersonaAvatar } from '@/components/faces/persona-avatar';
-import { VeirBadge } from '@/components/faces/veir-badge';
+import { VeirNameBadge } from '@/components/faces/veir-name';
 import { Button } from '@/components/ui/button';
 import { SimpleTooltip } from '@/components/ui/tooltip';
 import { budgetEndLine, CALL_END_LINES } from '@/lib/realtime/call-api';
@@ -80,7 +80,7 @@ export function MiniCallBarView() {
             ) : (
               <>
                 <span className="hidden sm:inline">Call with </span>
-                {veir.name}
+                {veir.shortName}
               </>
             )}
           </span>
@@ -101,7 +101,7 @@ export function MiniCallBarView() {
           {micLost ? <span className="text-warning"> · Microphone disconnected</span> : null}
           {soundOff ? <span className="text-warning"> · Sound is off</span> : null}
         </p>
-        <VeirBadge kind={veir.kind} />
+        <VeirNameBadge veir={veir} />
       </div>
       {ended ? (
         <>

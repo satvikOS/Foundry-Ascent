@@ -4,7 +4,6 @@ import { Link } from '@tanstack/react-router';
 import { Check, EyeOff, ListChecks, Phone } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 
-import { DisclosureBanner } from '@/components/disclosure-banner';
 import { PersonaAvatar } from '@/components/faces/persona-avatar';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -137,12 +136,6 @@ export function CallSummaryPanel({
           Back to conversation
         </Button>
       </div>
-      <DisclosureBanner
-        variant="line"
-        text={veir.disclosure}
-        veirName={veir.name}
-        className="mt-8 max-w-2xl text-center"
-      />
     </div>
   );
 }

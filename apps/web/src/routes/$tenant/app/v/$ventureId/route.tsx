@@ -3,6 +3,7 @@ import { createFileRoute, Outlet } from '@tanstack/react-router';
 import { InspectorProvider, InspectorRegion } from '@/components/shell/inspector';
 import { VentureUploadsProvider } from '@/features/documents/venture-uploads';
 import { LazyDocumentViewerHost } from '@/features/documents/viewer/lazy-host';
+import { VeirWelcomeGate } from '@/features/veir/veir-welcome';
 import { isApiError } from '@/lib/api/errors';
 import { ventureQueryOptions } from '@/lib/api/hooks/ventures';
 import { canAccessVenture, canManageAnyTeam, hasAnyRole } from '@/lib/auth/roles';
@@ -14,6 +15,7 @@ import { canAccessVenture, canManageAnyTeam, hasAnyRole } from '@/lib/auth/roles
  * live here, above its pages, so a file keeps uploading while the person moves between them, and so does
  * the document viewer (`?doc=` / `?src=` with `&passage=`), which opens over any of them. Its params are
  * read by the viewer itself (unknown params pass through every route), so none of its code is in the entry.
+ * The first visit of a founder or teammate shows the welcome that introduces their vEIR, once.
  */
 export const Route = createFileRoute('/$tenant/app/v/$ventureId')({
   loader: async ({ context, params, location }) => {
@@ -60,6 +62,7 @@ function VentureLayout() {
           <InspectorRegion />
         </div>
         <LazyDocumentViewerHost ventureId={ventureId} />
+        <VeirWelcomeGate ventureId={ventureId} />
       </InspectorProvider>
     </VentureUploadsProvider>
   );

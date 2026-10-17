@@ -26,6 +26,7 @@ import { prefersHalfDuplex } from '@/lib/realtime/browser';
 import { discardConversation } from '@/lib/realtime/call-api';
 import type { CallEngine } from '@/lib/realtime/call-engine';
 import { cn } from '@/lib/utils';
+import { veirWelcome } from '@/lib/veir';
 
 import { newConversationRequest } from '../chat/first-message';
 import { startPrivacy, takeChoiceInView, useStartPrivacy } from '../chat/privacy-choice';
@@ -34,13 +35,19 @@ import { CallLive } from './call-live';
 import { callBlocker, CallLobby } from './call-lobby';
 import { CallSummaryPanel } from './call-summary';
 import { useCallNotice } from './call-notice';
+import { useVeirWelcome } from '../veir/welcome';
 import { CAPTION_SIZES, storedTalkMode, useAnnounceCaptions, useCaptionSize } from './preferences';
 import { formatClock, spokenDuration, useCallClock } from './use-call-clock';
 import { useCallConfig, useCallVeir, type CallVeir } from './use-call-veir';
 
 const FALLBACK_VEIR: CallVeir = {
   name: 'your vEIR',
+  shortName: 'your vEIR',
+  badge: 'AI',
   kind: 'eir_persona',
+  eirFirstName: null,
+  firstPerson: false,
+  eirSeesWork: false,
   disclosure: '',
   portraitUrl: null,
   provider: 'builtin',
@@ -119,6 +126,9 @@ export function CallScreen() {
   const privacy = useSessionPrivacy(snapshot.sessionId ?? route?.sessionId ?? null);
   // Stored with the person on the server: the first call in any browser says how voice is handled.
   const [noticeSeen, acknowledgeNotice] = useCallNotice(me.principal.id, config.data);
+  // Stored with the person: someone who opens a call before meeting their vEIR reads the welcome here.
+  const [welcomeSeen, acknowledgeWelcome] = useVeirWelcome(me);
+  const welcomeHere = !welcomeSeen && writable && veir.kind === 'eir_persona';
   const [createError, setCreateError] = useState<string | null>(null);
   /** The conversation (or New chat) this screen already tried to start a call in. */
   const attempted = useRef<string | null>(null);
@@ -173,6 +183,7 @@ export function CallScreen() {
       };
       setCreateError(null);
       acknowledgeNotice();
+      if (welcomeHere) acknowledgeWelcome();
       engine.reset();
       if (sessionId) {
         attempted.current = sessionId;
@@ -214,7 +225,17 @@ export function CallScreen() {
         },
       });
     },
-    [acknowledgeNotice, createSession, discard, engine, navigate, route, tenant],
+    [
+      acknowledgeNotice,
+      acknowledgeWelcome,
+      createSession,
+      discard,
+      engine,
+      navigate,
+      route,
+      tenant,
+      welcomeHere,
+    ],
   );
 
   // Leaving the screen forgets what it tried, so the next Call starts afresh.
@@ -281,10 +302,20 @@ export function CallScreen() {
   useEffect(() => {
     if (route?.open !== true || !ready || snapshot.phase !== 'idle' || createSession.isPending) return;
     const key = route.sessionId ?? `new:${route.ventureId}`;
-    if (attempted.current === key || !noticeSeen || !hasUserActivation() || arrivedByHistory()) return;
+    if (attempted.current === key || !noticeSeen || welcomeHere || !hasUserActivation() || arrivedByHistory())
+      return;
     if (route.sessionId === null && !choiceSeen.current) return;
     begin();
-  }, [arrivedByHistory, begin, createSession.isPending, noticeSeen, ready, route, snapshot.phase]);
+  }, [
+    arrivedByHistory,
+    begin,
+    createSession.isPending,
+    noticeSeen,
+    ready,
+    route,
+    snapshot.phase,
+    welcomeHere,
+  ]);
 
   const live = snapshot.phase === 'starting' || snapshot.phase === 'live' || snapshot.phase === 'ending';
   const ended = snapshot.phase === 'ended' ? snapshot.ended : null;
@@ -375,6 +406,7 @@ export function CallScreen() {
               failure={snapshot.phase === 'failed' ? snapshot.error : null}
               busy={createSession.isPending}
               voiceNotice={!noticeSeen}
+              welcome={welcomeHere ? veirWelcome(veir) : null}
               privacy={
                 route?.sessionId === null && writable ? { value: newPrivacy, onChange: setNewPrivacy } : null
               }

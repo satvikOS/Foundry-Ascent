@@ -593,8 +593,8 @@ describe('the mini call bar', () => {
     expect(within(bar).getByRole('status')).toHaveTextContent('Sound is off. Turn on sound to hear replies.');
     await userEvent.click(within(bar).getByRole('button', { name: 'Turn on sound' }));
     expect(engine.resumeAudio).toHaveBeenCalledTimes(1);
-    // The vEIR stays marked as AI in the bar.
-    expect(bar.querySelector('[data-slot="veir-badge"]')).toHaveTextContent('vEIR · AI');
+    // The vEIR keeps its badge in the bar (the call settings here carry no first-person consent: "AI").
+    expect(bar.querySelector('[data-slot="veir-badge"]')).toHaveTextContent('AI');
 
     act(() => {
       engine.set({ audioBlocked: false });

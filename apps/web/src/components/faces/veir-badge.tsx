@@ -3,19 +3,11 @@ import type { PersonaSummary } from '@foundry/contracts';
 import { cn } from '@/lib/utils';
 
 /**
- * The marker that travels with a vEIR's name: "vEIR · AI" for an EIR persona, "AI" for the neutral
- * guide. Text, not colour, carries the meaning. `mode` adds how the vEIR is present ("Live voice" on a
- * call).
+ * The static marker of a persona in the EIR studio: "vEIR · AI" for an EIR persona, "AI" for the neutral guide.
+ * Text, not colour, carries the meaning. Founder surfaces name the vEIR with `VeirName` (its badge explains what
+ * the vEIR is; ADR-0020).
  */
-export function VeirBadge({
-  kind,
-  mode,
-  className,
-}: {
-  kind: PersonaSummary['kind'];
-  mode?: string;
-  className?: string;
-}) {
+export function VeirBadge({ kind, className }: { kind: PersonaSummary['kind']; className?: string }) {
   return (
     <span
       data-slot="veir-badge"
@@ -25,7 +17,6 @@ export function VeirBadge({
       )}
     >
       {kind === 'eir_persona' ? 'vEIR · AI' : 'AI'}
-      {mode ? ` · ${mode}` : null}
     </span>
   );
 }

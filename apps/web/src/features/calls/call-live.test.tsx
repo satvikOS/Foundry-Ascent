@@ -27,8 +27,13 @@ const CALL: CallView = {
 };
 
 const VEIR: CallVeir = {
-  name: "Corin's vEIR",
+  name: 'Corin · vEIR',
+  shortName: 'Corin',
+  badge: 'vEIR',
   kind: 'eir_persona',
+  eirFirstName: 'Corin',
+  firstPerson: true,
+  eirSeesWork: true,
   disclosure: "You are talking with Corin's vEIR, an AI coach. It is not a person.",
   portraitUrl: null,
   provider: 'builtin',
@@ -88,12 +93,17 @@ describe('callStatusLabel', () => {
 });
 
 describe('CallLive', () => {
-  it('shows the vEIR, its state, one AI disclosure and named controls', async () => {
+  it('shows the vEIR as a call tile with its name tag, its state and named controls, and no disclaimer line', async () => {
     const { engine } = renderLive();
-    expect(await screen.findByRole('heading', { name: /Corin/ })).toHaveFocus();
-    expect(screen.getByRole('heading', { name: /Corin/ })).toHaveTextContent('vEIR · AI · Live voice');
+    const tag = await screen.findByRole('heading', { name: /Corin/ });
+    expect(tag).toHaveFocus();
+    // Like a video call's name tag: the EIR's first name and the vEIR badge, no "AI · Live voice" chip.
+    expect(tag).toHaveTextContent(/^CorinvEIR$/);
+    expect(tag.closest('[data-slot="call-tile"]')).not.toBeNull();
+    expect(within(tag).getByRole('button', { name: 'vEIR: what is Corin · vEIR?' })).toBeInTheDocument();
+    expect(screen.queryByText(/Live voice/)).toBeNull();
     expect(screen.getByRole('status')).toHaveTextContent('Listening');
-    expect(screen.getAllByRole('note', { name: 'AI disclosure' })).toHaveLength(1);
+    expect(screen.queryByRole('note', { name: 'AI disclosure' })).toBeNull();
 
     const controls = screen.getByRole('toolbar', { name: 'Call controls' });
     const names = within(controls)
@@ -146,7 +156,7 @@ describe('CallLive', () => {
       captions: { veir: 'Twelve is a good start.', founder: 'We interviewed twelve', founderLive: true },
     });
     const captions = await screen.findByRole('region', { name: 'Captions' });
-    expect(captions).toHaveTextContent("Corin's vEIR: Twelve is a good start.");
+    expect(captions).toHaveTextContent('Corin · vEIR: Twelve is a good start.');
     expect(captions).toHaveTextContent('YouWe interviewed twelve');
   });
 
@@ -158,7 +168,7 @@ describe('CallLive', () => {
 
   it('continues by typing when there is no voice input, and says why', async () => {
     const { engine } = renderLive({ input: 'typed', typedReason: 'mic_denied' });
-    const line = await screen.findByRole('textbox', { name: "Reply to Corin's vEIR" });
+    const line = await screen.findByRole('textbox', { name: 'Reply to Corin · vEIR' });
     expect(line).toHaveFocus();
     // Said once, not three times: the status does not repeat "type".
     expect(screen.getByText(/microphone is blocked/)).toBeInTheDocument();
@@ -177,7 +187,7 @@ describe('CallLive', () => {
       typedReason: 'mic_lost',
       call: { ...CALL, inputMode: 'transcribe' },
     });
-    const line = await screen.findByRole('textbox', { name: "Reply to Corin's vEIR" });
+    const line = await screen.findByRole('textbox', { name: 'Reply to Corin · vEIR' });
     expect(line).toHaveFocus();
     expect(screen.getByText('Your microphone disconnected. Reconnect it, or type instead.')).toHaveAttribute(
       'role',
@@ -189,7 +199,7 @@ describe('CallLive', () => {
 
   it('offers no microphone to a call that started typed', async () => {
     renderLive({ input: 'typed', typedReason: 'mic_denied', call: { ...CALL, inputMode: 'typed' } });
-    await screen.findByRole('textbox', { name: "Reply to Corin's vEIR" });
+    await screen.findByRole('textbox', { name: 'Reply to Corin · vEIR' });
     expect(screen.queryByRole('button', { name: 'Reconnect microphone' })).toBeNull();
   });
 
@@ -197,7 +207,7 @@ describe('CallLive', () => {
     const { engine } = renderLive();
     await userEvent.click(await screen.findByRole('button', { name: 'More call controls' }));
     await userEvent.click(await screen.findByRole('menuitemcheckbox', { name: /Type instead/ }));
-    const line = screen.getByRole('textbox', { name: "Reply to Corin's vEIR" });
+    const line = screen.getByRole('textbox', { name: 'Reply to Corin · vEIR' });
     // The closing menu returns focus a moment later (a timer): it must not take it back to More.
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
@@ -353,7 +363,7 @@ describe('CallLive', () => {
     });
     const line = (await screen.findByRole('region', { name: 'Captions' })).querySelector('p');
     expect(line?.className).toMatch(/1\.5rem/);
-    expect(liveText()).toContain("Corin's vEIR: Twelve is a good start.");
+    expect(liveText()).toContain('Corin · vEIR: Twelve is a good start.');
   });
 
   it('does not read the captions over the vEIR’s voice unless asked', async () => {
@@ -375,7 +385,7 @@ describe('CallLive', () => {
     });
     await screen.findByText('Replying on screen');
     // No voice to talk over: each line is announced, without a setting to find first.
-    expect(liveText()).toContain("Corin's vEIR: Twelve is a good start.");
+    expect(liveText()).toContain('Corin · vEIR: Twelve is a good start.');
   });
 
   it('shows the vEIR’s reply when it is on screen only, even with captions turned off', async () => {
@@ -389,7 +399,7 @@ describe('CallLive', () => {
     expect(captions).toHaveTextContent('Twelve is a good start.');
     // Only the reply: the founder chose not to see their own words.
     expect(captions).not.toHaveTextContent('What about price?');
-    expect(liveText()).toContain("Corin's vEIR: Twelve is a good start.");
+    expect(liveText()).toContain('Corin · vEIR: Twelve is a good start.');
     expect(screen.getByRole('button', { name: 'Captions' })).toHaveAttribute('aria-pressed', 'false');
   });
 
