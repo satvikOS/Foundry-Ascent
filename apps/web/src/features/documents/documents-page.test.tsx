@@ -188,7 +188,7 @@ describe('Retry on a document whose upload never finished', () => {
 
     const title = await screen.findByText('One file wasn’t uploaded');
     expect(title.closest('[data-slot="alert"]')).toHaveTextContent(
-      'budget.md: This isn’t exam-week-interviews.md (769 B). Choose that file to finish its upload, or use Upload files to add this one.',
+      'budget.md: This isn’t exam-week-interviews.md (769 B). Choose that file, or use Upload files.',
     );
     expect(calls.filter((c) => c.startsWith('POST'))).toEqual([]);
     expect(FakeXhr.sent).toHaveLength(0);
