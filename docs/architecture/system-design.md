@@ -413,8 +413,11 @@ and vEIR prose, Geist Mono for labels and data; 4-pt spacing grid; one motion gr
 motion; status = label + icon + shape (never colour alone); WCAG 2.2 AA; full keyboard path, visible
 focus, skip links, landmarks.
 
-**Persistent disclosure:** one line (`role="note"`, accessible name "AI disclosure") in every conversation
-view, every call and every export, from the persona release, for example: "You are talking with Corin's
+**Disclosure (ADR-0020):** said once, before the first conversation — a welcome stored with the person
+("Corin's digital twin: an AI built with Corin's consent from how Corin coaches. Corin sees what you work on
+here.") — then a persistent badge beside the vEIR's name on every surface that names it ("Corin · vEIR" with
+the EIR's first-person consent, else "Corin's vEIR" with "AI"), which opens one short paragraph on what the
+vEIR is. Exports carry the persona release's full disclosure, for example: "You are talking with Corin's
 vEIR, an AI coach built from Corin Halvorsen's approved frameworks and coaching style. It is not a person,
 and no human EIR, including Corin, wrote or approved these responses."
 

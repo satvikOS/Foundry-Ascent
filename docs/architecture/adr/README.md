@@ -33,6 +33,7 @@ blueprint.
 | [0017](0017-cloudfront-oac-lambda-function-url-streaming.md)  | CloudFront with OAC in front of a streaming Lambda Function URL                                                                                                     | Accepted                       | 03 §11, §24        |
 | [0018](0018-veir-knowledge-pools.md)                          | vEIR knowledge pools: a common pool per persona, a specific pool per venture, grown by approval-gated distillation; AI notes visible, correctable, never cited      | Accepted (amended 2026-10-16)  | 02 §5, §6, §9      |
 | [0019](0019-conversation-first-console-ui.md)                 | Conversation-first console: one sidebar shell for every role, the conversation as home, calls one click away                                                        | Accepted                       | 02 §4A, §8, §11    |
+| [0020](0020-veir-presence.md)                                 | vEIR presence: disclose once (a welcome stored with the person), a persistent badge, a twin that speaks as itself; first-name presentation by consent               | Accepted                       | 01 F-09, 02 §8     |
 
 ## Writing a new ADR
 
