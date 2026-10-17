@@ -22,7 +22,13 @@ import {
   type TrackChange,
 } from './capture';
 import { BARGE_SUSTAIN_MS, BARGE_WORD_SUSTAIN_MS, Endpointer, VoiceRun, floorWords } from './endpointing';
-import { SpeechPlayer, type PlayerAudio, type SpeechFetchResult, type SpeechUnitToPlay } from './playback';
+import {
+  SpeechPlayer,
+  type FaceRenderer,
+  type PlayerAudio,
+  type SpeechFetchResult,
+  type SpeechUnitToPlay,
+} from './playback';
 import { IDLE_CALL, type CallEnded, type CallSnapshot, type TalkMode, type TypedReason } from './call-state';
 import { openingText, speakableSentences } from './spoken-text';
 import { TranscribeStream, type TranscribeHandlers, type WebSocketFactory } from './transcribe';
@@ -201,6 +207,8 @@ export class CallEngine {
 
   private context: CallAudioContext | null = null;
   private player: SpeechPlayer | null = null;
+  /** The face that renders the call's audio (voicing `audio`), or null: the speakers. */
+  private face: FaceRenderer | null = null;
   private capture: MicCapture | null = null;
   private stt: TranscribeStream | null = null;
   private grant: SttGrant | null = null;
@@ -269,6 +277,16 @@ export class CallEngine {
     return () => {
       this.speakListeners.delete(listener);
     };
+  }
+
+  /**
+   * A vendor face that renders the call's validated audio itself, lip-synced (voicing `audio`), or null to play
+   * through the speakers again (the face dropped, the stage closed). The call's own checks, signatures,
+   * barge-in and heard-units accounting are unchanged: the face only receives audio this call fetched.
+   */
+  attachFace(face: FaceRenderer | null): void {
+    this.face = face;
+    this.player?.setFace(face);
   }
 
   private set(patch: Partial<CallSnapshot>): void {
@@ -1208,6 +1226,7 @@ export class CallEngine {
         },
       },
     );
+    player.setFace(this.face);
     return player;
   }
 
