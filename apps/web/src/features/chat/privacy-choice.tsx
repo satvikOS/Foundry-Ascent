@@ -3,7 +3,6 @@ import { EyeOff, History, type LucideIcon } from 'lucide-react';
 import { useCallback, useId, useSyncExternalStore } from 'react';
 
 import { cn } from '@/lib/utils';
-import { sentenceStart } from '@/features/venture/veir-name';
 
 /** How a new conversation is kept: remembered (the default) or private, a one-off nothing is kept from. */
 export type ConversationPrivacy = SessionView['privacy'];
@@ -84,21 +83,13 @@ const OPTIONS: readonly Option[] = [
 ];
 
 /** The one plain sentence under the choice. */
-export function privacyExplanation(
-  privacy: ConversationPrivacy,
-  veirName: string,
-  what: 'conversation' | 'call',
-): string {
-  return privacy === 'ephemeral'
-    ? 'A one-off: nothing is remembered, and it’s erased when it ends.'
-    : `${sentenceStart(veirName)} will remember this ${what} and pick up from it next time.`;
+export function privacyExplanation(privacy: ConversationPrivacy): string {
+  return privacy === 'ephemeral' ? 'Not remembered. Erased when it ends.' : 'Remembered for next time.';
 }
 
 interface PrivacyChoiceProps {
   value: ConversationPrivacy;
   onChange: (privacy: ConversationPrivacy) => void;
-  /** The vEIR's full name ("Corin's vEIR"). */
-  veirName: string;
   what?: 'conversation' | 'call';
   disabled?: boolean;
   className?: string;
@@ -111,7 +102,6 @@ interface PrivacyChoiceProps {
 export function PrivacyChoice({
   value,
   onChange,
-  veirName,
   what = 'conversation',
   disabled = false,
   className,
@@ -164,7 +154,7 @@ export function PrivacyChoice({
         })}
       </div>
       <p id={described} className="text-center text-caption text-pretty text-muted-foreground">
-        {privacyExplanation(value, veirName, what)}
+        {privacyExplanation(value)}
       </p>
     </fieldset>
   );

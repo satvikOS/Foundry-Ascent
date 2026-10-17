@@ -153,7 +153,7 @@ function SourcesTab({
   if (!turn) {
     return (
       <PanelBody>
-        <Quiet>Sources appear here once {personaName} answers.</Quiet>
+        <Quiet>No sources yet.</Quiet>
       </PanelBody>
     );
   }
@@ -180,9 +180,7 @@ function SourcesTab({
         </Select>
       ) : null}
       {turn.evidence.length === 0 ? (
-        <Quiet>
-          No sources for this answer. Treat it as general guidance, not evidence about your venture.
-        </Quiet>
+        <Quiet>No sources. Treat this answer as general guidance.</Quiet>
       ) : (
         <ul className="grid gap-2" aria-label={`Sources for answer ${turn.ordinal}`}>
           {turn.evidence.map((item) => (
@@ -246,12 +244,10 @@ function NotebookTab({
     <PanelBody>
       <div className="grid gap-1">
         <h2 className="font-serif text-subheading">What {personaName} knows</h2>
-        <p className="text-caption text-muted-foreground">
-          Notes from past conversations. Not facts: your team can correct or delete them.
-        </p>
+        <p className="text-caption text-muted-foreground">Notes from past conversations, not facts.</p>
       </div>
       {empty ? (
-        <Quiet>Nothing yet. {personaName} writes notes after a conversation ends.</Quiet>
+        <Quiet>No notes yet.</Quiet>
       ) : (
         <>
           {data.summary.trim() ? (
@@ -340,9 +336,7 @@ function HelpTab({
     <PanelBody>
       <div className="flex items-center justify-between gap-2">
         <p className="text-small text-muted-foreground">
-          {fromHere.length === 0
-            ? 'No requests from this conversation.'
-            : `${pluralize(fromHere.length, 'request')} from this conversation.`}
+          {fromHere.length === 0 ? 'No requests yet.' : pluralize(fromHere.length, 'request')}
         </p>
         {onAskPerson ? (
           <Button size="xs" variant="secondary" onClick={onAskPerson}>

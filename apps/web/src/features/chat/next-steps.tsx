@@ -54,13 +54,14 @@ export function NextStepList({
                 className="shrink-0 self-start sm:self-auto"
                 loading={controls.savingIndex === index}
                 loadingText="Adding…"
+                aria-label="Add to actions"
                 onClick={() => {
                   handOffFocus(`action:${String(index)}:${action.action}`);
                   controls.onAdd?.(action, index);
                 }}
               >
                 <Plus aria-hidden />
-                Add to actions
+                Add
               </Button>
             ) : null}
           </li>

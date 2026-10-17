@@ -250,7 +250,7 @@ describe('New chat', () => {
     const calls = stubApi();
     const router = renderNewChat(A);
     // QuietQuad: nothing to pick up.
-    expect(await screen.findByText('What should we work on for QuietQuad today?')).toBeVisible();
+    expect(await screen.findByText('What should we work on today?')).toBeVisible();
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(TIME_OF_DAY);
     await act(async () => {
       router.history.push(`/ain/app/v/${B}`);
@@ -277,7 +277,7 @@ describe('New chat', () => {
   it('opens with no line when it greeted with none', async () => {
     const calls = stubApi();
     renderNewChat(A);
-    await screen.findByText('What should we work on for QuietQuad today?');
+    await screen.findByText('What should we work on today?');
     await userEvent.setup().type(composer(), 'What should we test first?{Enter}');
     await screen.findByText('Conversation');
     const create = calls.find((c) => c.method === 'POST' && c.url === `/api/v1/ventures/${A}/sessions`);
@@ -334,9 +334,7 @@ describe('New chat', () => {
     // Nothing shows while the greeting is unknown (it never changes in front of the founder)...
     expect(screen.queryByRole('heading', { level: 1 })).toBeNull();
     // ...for at most OPENER_WAIT_MS: then the time of day, and the conversation opens without a line.
-    expect(
-      await screen.findByText('What should we work on for BenchTally today?', {}, { timeout: 4_000 }),
-    ).toBeVisible();
+    expect(await screen.findByText('What should we work on today?', {}, { timeout: 4_000 })).toBeVisible();
     answer(jsonResponse({ opener: OPENER, at: OPENER_AT, lastConversation: null }));
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(screen.queryByText(OPENER_LINE)).toBeNull();
@@ -349,7 +347,7 @@ describe('New chat', () => {
   it('sends while files upload: they keep uploading and show in the conversation it opened', async () => {
     const calls = stubApi();
     const router = renderNewChat(A);
-    await screen.findByText('What should we work on for QuietQuad today?');
+    await screen.findByText('What should we work on today?');
     await attach('plan-a.md');
     await waitFor(() => {
       expect(calls.some((c) => c.method === 'POST' && c.url === `/api/v1/ventures/${A}/documents`)).toBe(
@@ -369,7 +367,7 @@ describe('New chat', () => {
   it('keeps nothing across a venture switch: no draft, no queued upload sent to the other venture', async () => {
     const calls = stubApi();
     const router = renderNewChat(A);
-    await screen.findByText('What should we work on for QuietQuad today?');
+    await screen.findByText('What should we work on today?');
     await attach('plan-a.md');
     await attach('budget-a.md');
     await userEvent.setup().type(composer(), 'secret plan for A');
@@ -398,12 +396,10 @@ describe('New chat', () => {
   it('starts remembered by default and sends the choice with the first message', async () => {
     const calls = stubApi();
     renderNewChat(A);
-    await screen.findByText('What should we work on for QuietQuad today?');
+    await screen.findByText('What should we work on today?');
     const group = screen.getByRole('group', { name: 'Memory for this conversation' });
     expect(within(group).getByRole('radio', { name: 'Remember this conversation' })).toBeChecked();
-    expect(group).toHaveAccessibleDescription(
-      'Corin’s vEIR will remember this conversation and pick up from it next time.',
-    );
+    expect(group).toHaveAccessibleDescription('Remembered for next time.');
     await userEvent.setup().type(composer(), 'What should we test first?{Enter}');
     await screen.findByText('Conversation');
     const create = calls.find((c) => c.method === 'POST' && c.url === `/api/v1/ventures/${A}/sessions`);
@@ -413,12 +409,12 @@ describe('New chat', () => {
   it('starts a private one-off when Private is chosen, with no attachments and nothing remembered', async () => {
     const calls = stubApi();
     renderNewChat(A);
-    await screen.findByText('What should we work on for QuietQuad today?');
+    await screen.findByText('What should we work on today?');
     const user = userEvent.setup();
     await user.click(screen.getByRole('radio', { name: 'Private, a one-off' }));
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(TIME_OF_DAY);
     expect(screen.getByRole('group', { name: 'Memory for this conversation' })).toHaveAccessibleDescription(
-      'A one-off: nothing is remembered, and it’s erased when it ends.',
+      'Not remembered. Erased when it ends.',
     );
     expect(screen.queryByRole('button', { name: /Attach/ })).toBeNull();
     await user.type(composer(), 'Something just for now{Enter}');
@@ -446,7 +442,7 @@ describe('New chat', () => {
   it('is back to Remember on every fresh New chat (the choice is never stored)', async () => {
     stubApi();
     const router = renderNewChat(A);
-    await screen.findByText('What should we work on for QuietQuad today?');
+    await screen.findByText('What should we work on today?');
     await userEvent.setup().click(screen.getByRole('radio', { name: 'Private, a one-off' }));
     expect(startPrivacy(A)).toBe('ephemeral');
     await act(async () => {

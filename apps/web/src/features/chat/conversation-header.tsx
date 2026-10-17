@@ -119,9 +119,7 @@ export function ConversationHeader({
             </span>
           ) : null}
           {active ? null : (
-            <span className="hidden shrink-0 rounded-full border border-border px-2 py-px text-caption text-muted-foreground sm:inline">
-              Ended
-            </span>
+            <span className="hidden shrink-0 text-caption text-muted-foreground sm:inline">Ended</span>
           )}
         </div>
         <div className="-mr-1.5 flex shrink-0 items-center gap-0.5 sm:mr-0">

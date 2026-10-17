@@ -38,7 +38,7 @@ function explanation(reason: string | null, personaName: string): { title: strin
     case 'cross_venture':
       return {
         title: 'This answer was held back',
-        body: 'It didn’t pass a privacy and safety check. Ask again about your own venture, or ask a person.',
+        body: 'It failed a privacy and safety check. Ask about your own venture, or ask a person.',
       };
     case 'identity':
       return {
@@ -48,12 +48,12 @@ function explanation(reason: string | null, personaName: string): { title: strin
     case 'invalid_schema':
       return {
         title: 'This answer was held back',
-        body: 'A reliable answer couldn’t be produced this time. Ask again, or rephrase your question.',
+        body: 'No reliable answer this time. Ask again, or rephrase.',
       };
     default:
       return {
         title: 'This is one for a person',
-        body: 'Questions like this one are for a human with the right expertise. You haven’t done anything wrong — asking was the right call.',
+        body: 'This needs a person with the right expertise. Asking was the right call.',
       };
   }
 }
@@ -112,7 +112,7 @@ export function BlockedPanel({
                   params={{ tenant, ventureId }}
                   search={{ id: escalationId }}
                 >
-                  View your support request
+                  View your request
                 </Link>
               </Button>
             ) : onRequestSupport ? (
@@ -124,7 +124,7 @@ export function BlockedPanel({
           </div>
           {escalationId ? (
             <p className="text-xs text-muted-foreground">
-              A support request was drafted for you. Nothing is shared until you review it and give consent.
+              A request was drafted. Nothing is shared until you consent.
             </p>
           ) : null}
         </div>

@@ -232,7 +232,7 @@ export function StoredExchange({
     body = (
       <Alert
         variant="warning"
-        title={turn.status === 'failed' ? 'This answer couldn’t be completed' : 'This answer didn’t finish'}
+        title={turn.status === 'failed' ? 'Answer failed' : 'Answer didn’t finish'}
         action={
           canEdit && session.status === 'active' && !sendDisabledReason ? (
             <Button
@@ -248,7 +248,7 @@ export function StoredExchange({
           ) : null
         }
       >
-        Nothing was saved from it.
+        Nothing was saved.
       </Alert>
     );
   }
@@ -342,12 +342,12 @@ export function LiveExchange({
           <Alert
             title="Stopped"
             action={
-              <Button size="sm" variant="secondary" onClick={onEdit}>
-                Edit and resend
+              <Button size="sm" variant="secondary" onClick={onEdit} aria-label="Edit and resend">
+                Edit
               </Button>
             }
           >
-            Nothing from this answer was saved.
+            Nothing was saved.
           </Alert>
         ) : null}
       </VeirMessage>
@@ -399,8 +399,8 @@ export function TurnFailure({
               <span aria-hidden>{waitFor > 0 ? `Try again in ${formatWait(waitFor)}` : 'Try again'}</span>
             </Button>
           ) : null}
-          <Button size="sm" variant="ghost" onClick={onEdit}>
-            Edit message
+          <Button size="sm" variant="ghost" onClick={onEdit} aria-label="Edit message">
+            Edit
           </Button>
         </>
       }

@@ -185,9 +185,7 @@ function BadAnswerDialog({
       >
         <DialogHeader>
           <DialogTitle>What was wrong?</DialogTitle>
-          <DialogDescription>
-            Reviewers use this to improve answers. Both parts are optional.
-          </DialogDescription>
+          <DialogDescription>Optional. Reviewers use it to improve answers.</DialogDescription>
         </DialogHeader>
         <BadAnswerForm
           pending={pending}

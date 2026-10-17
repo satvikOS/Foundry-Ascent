@@ -49,7 +49,7 @@ export function newChatSuggestions(
         id: 'goal',
         kind: 'prompt',
         icon: 'goal',
-        label: 'Plan the next step toward our goal',
+        label: 'Plan our next step',
         prompt: `Our current goal is: ${goal}. What should we do next to get there?`,
       });
     }

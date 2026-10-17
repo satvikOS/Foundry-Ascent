@@ -19,7 +19,7 @@ describe('DeleteConversationDialog', () => {
     // The server erases what the vEIR drew only from this conversation, never what a person edited or kept:
     // the dialog promises no more than that.
     expect(dialog).toHaveAccessibleDescription(
-      'Its messages and summary are erased, with anything the vEIR remembered only from it. Memory you edited or kept yourself stays in Knowledge. This can’t be undone.',
+      'Erases its messages, summary and anything remembered only from it. Memory you edited stays. This can’t be undone.',
     );
   });
 });

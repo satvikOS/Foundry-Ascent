@@ -57,7 +57,7 @@ describe('New chat’s greeting', () => {
   it('greets by the time of day only with nothing to pick up, or in a private chat', () => {
     expect(newChatGreeting({ ...base, opener: null })).toEqual({
       title: 'Good evening, Maya',
-      line: 'What should we work on for QuietQuad today?',
+      line: 'What should we work on today?',
     });
     expect(
       newChatGreeting({ ...base, opener: 'Welcome back. Last time we were on pricing.', privateChat: true }),

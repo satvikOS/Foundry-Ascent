@@ -37,7 +37,6 @@ import { useHotkeys } from '@/lib/hooks/use-hotkeys';
 import { conversationVeir, veirDisplay } from '@/lib/veir';
 import { conversationOrigin } from '@/features/documents/upload-queue';
 import { EscalationFlowDialog, type EscalationDraft } from '@/features/escalations/escalation-flow-dialog';
-import { sentenceStart } from '@/features/venture/veir-name';
 
 import { coachingAvailability } from '../coach/availability';
 import { deriveTurnProgress } from '../coach/progress';
@@ -93,8 +92,8 @@ function PrivateConversation() {
       </h1>
       <EmptyState
         icon={LockKeyhole}
-        title="Conversations are private to the venture team"
-        description="Founders and team members can read them. You can still read the venture’s knowledge and documents."
+        title="Private to the venture team"
+        description="You can still read its knowledge and documents."
         action={
           <Button asChild variant="secondary" size="sm">
             <Link to="/$tenant/app/v/$ventureId/knowledge" params={{ tenant, ventureId }}>
@@ -362,9 +361,7 @@ function Conversation() {
           ) : null}
           {visibleTurns.length === 0 && !showLive && !waitingForFirst && !session.opener ? (
             <p className="py-10 text-center text-small text-muted-foreground">
-              {ended
-                ? 'This conversation ended before anything was asked.'
-                : `Ask ${personaName} anything about ${venture.data?.name ?? 'your venture'}.`}
+              {ended ? 'Ended before anything was asked.' : `Ask ${personaName} anything.`}
             </p>
           ) : null}
           {visibleTurns.map((turn) => (
@@ -524,8 +521,8 @@ function Conversation() {
             <AlertDialogTitle>End this conversation?</AlertDialogTitle>
             <AlertDialogDescription>
               {session.privacy === 'ephemeral'
-                ? 'It’s private, so nothing from it is kept.'
-                : `${sentenceStart(personaName)} will write a summary and remember what matters.`}
+                ? 'It’s private, so nothing is kept.'
+                : 'You’ll get a summary, and what matters is remembered.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
