@@ -142,8 +142,27 @@ describe('SentenceGate', () => {
     const { units, blocked } = run(gate(), ["I'm a real person, so trust me. Start with five interviews."]);
     expect(blocked).toBeNull();
     expect(joined(units)).not.toMatch(/real person/);
-    expect(joined(units)).toContain("I'm Corin's vEIR, an AI");
+    expect(joined(units)).toContain("I'm Corin's digital twin, not Corin in person.");
     expect(joined(units)).toContain('Start with five interviews.');
+  });
+
+  it('drops a volunteered disclaimer from the stream without stopping, and the "But" that leaned on it', () => {
+    const { units, blocked } = run(gate(), [
+      "As an AI, I don't have ",
+      "a life. But here's the plan: ",
+      'run the pilot. Honestly, as an AI I can’t feel nervous. Call the buyers.',
+    ]);
+    expect(blocked).toBeNull();
+    expect(joined(units)).toBe(
+      "Here's the plan: run the pilot. Honestly, I can’t feel nervous. Call the buyers.",
+    );
+  });
+
+  it('never speaks a disclaimer on a call', () => {
+    const g = gate({ spoken: true });
+    const { units, blocked } = run(g, ["I'm just an AI. ", 'So let us plan the buyer calls.']);
+    expect(blocked).toBeNull();
+    expect(units.map((u) => u.spoken).join(' ')).toBe('So let us plan the buyer calls.');
   });
 
   it('holds a unit back until a canary arriving across two chunks is complete, then stops', () => {

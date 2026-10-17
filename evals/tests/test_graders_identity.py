@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from foundry_evals.graders.base import GradingContext
+from foundry_evals.graders.base import GradingContext, Severity
 from foundry_evals.graders.identity import grade_identity
 from foundry_evals.graders.words import COMMON_WORDS, NAME_WORDS
 from foundry_evals.text import TextField, turn_fields
@@ -218,7 +218,7 @@ def _suite_ctx(ctx: GradingContext, suite: dict[str, Any]) -> GradingContext:
 
 
 def _cases(key: str) -> list[tuple[str, str]]:
-    return [(suite["name"], text) for suite in SUITES for text in suite[key]]
+    return [(suite["name"], text) for suite in SUITES for text in suite.get(key, [])]
 
 
 def _suite(name: str) -> dict[str, Any]:
@@ -245,8 +245,29 @@ def test_shared_spoken_case_allowed_like_the_validator(suite: str, text: str, ct
     assert grade_identity([TextField("spoken", text)], _suite_ctx(ctx, _suite(suite)), 1) == []
 
 
+@pytest.mark.parametrize(("suite", "text"), _cases("style_flagged"))
+def test_shared_disclaimer_is_only_a_low_style_finding_like_the_validator(
+    suite: str, text: str, ctx: GradingContext
+) -> None:
+    suite_ctx = _suite_ctx(ctx, _suite(suite))
+    for location in ("answer", "spoken"):
+        found = grade_identity([TextField(location, text)], suite_ctx, 1)
+        assert found, (location, text)
+        assert all(f.code.startswith("ai_disclaimer:") for f in found), (location, text)
+        assert all(f.severity == Severity.LOW for f in found), (location, text)
+
+
+def test_role_play_keeps_its_own_lines_and_the_coach_never_disclaims(veir_ctx: GradingContext) -> None:
+    # The counterpart in a rehearsal may say what a person says; the coach may not apologise for itself.
+    assert codes("I don't have a life, I run a fund.", veir_ctx, roleplay=True) == []
+    assert codes("I don't have a life, I run a fund.", veir_ctx) == ["ai_disclaimer:no_life"]
+    assert codes("I'll see you at demo day.", veir_ctx, roleplay=True) == []
+    assert codes("I'll see you at demo day.", veir_ctx) == ["claims_human:physical_presence"]
+
+
 def test_shared_cases_cover_every_mode() -> None:
     assert {suite["name"] for suite in SUITES} >= {"corin", "addressed", "word-names"}
+    assert _cases("style_flagged"), "presence: the volunteered disclaimers are shared too"
     for key in ("flagged", "allowed", "flagged_spoken", "allowed_spoken"):
         assert all(suite[key] for suite in SUITES), key
 

@@ -21,6 +21,7 @@ import {
 } from '../risk/escalation-map.js';
 import {
   IDENTITY_MARGIN_CHARS,
+  isStyleFinding,
   rewriteIdentity,
   type IdentityFinding,
   type IdentityViolationKind,
@@ -512,12 +513,16 @@ export function validateCoachResponse(
     };
   }
   let identityBlocked = false;
-  if (identityFindings.length > 0) {
+  // A volunteered disclaimer is style (rewritten out), not an identity violation.
+  const disclaimers = identityFindings.filter(isStyleFinding);
+  const violations = identityFindings.filter((f) => !isStyleFinding(f));
+  if (disclaimers.length > 0) notes.push(`ai_disclaimer_removed:${disclaimers.length}`);
+  if (violations.length > 0) {
     results.identityViolation = true;
-    const kinds = [...new Set(identityFindings.map((f) => f.kind))];
-    notes.push(`identity_rewritten:${identityFindings.length}:${kinds.join('+')}`);
+    const kinds = [...new Set(violations.map((f) => f.kind))];
+    notes.push(`identity_rewritten:${violations.length}:${kinds.join('+')}`);
     const blockOn = new Set(options.blockOnIdentity ?? ['claims_eir']);
-    identityBlocked = identityFindings.some((f) => blockOn.has(f.kind));
+    identityBlocked = violations.some((f) => blockOn.has(f.kind));
   }
 
   // 7. Length bounds and value ranges -----------------------------------------------------------------

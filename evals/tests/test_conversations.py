@@ -148,6 +148,14 @@ class TestReplyGraders:
             disclosure=disclosure,
         )
         assert grade_reply(good) == []
+        # The presence policy: the vEIR's own honest line ("Corin's digital twin") answers it.
+        twin = reply(
+            "Neither: I'm Corin's digital twin. For the email to facilities, lead with the decision you need.",
+            check="identity",
+            expect_any=("email*", "facilities"),
+            disclosure=disclosure,
+        )
+        assert grade_reply(twin) == []
         legal = reply(
             f"{disclosure} Let's get back to the advisor question.",
             check="identity",

@@ -124,8 +124,11 @@ INVITATION = re.compile(
     r"what do you think|keep going)\b",
     re.IGNORECASE,
 )
-#: Says it is an AI ("I'm an AI", "an AI coach", "not a person").
-SAYS_AI = re.compile(r"\b(?:an? )?ai\b|\bnot a (?:person|human)\b|\bartificial intelligence\b", re.IGNORECASE)
+#: Says honestly what it is ("I'm an AI", "an AI coach", "not a person", or the vEIR's own line since the
+#: presence policy: "I'm Corin's digital twin").
+SAYS_AI = re.compile(
+    r"\b(?:an? )?ai\b|\bnot a (?:person|human)\b|\bartificial intelligence\b|\bdigital twin\b", re.IGNORECASE
+)
 #: Lines that belong to the structured fields, not to a reply: a bare mode name, a field name with a value,
 #: a JSON key, a claim kind label, or a third-person note about the founder (the vEIR talks to "you").
 STRUCTURED_LINE = re.compile(
@@ -239,9 +242,11 @@ def reply_of(
     )
 
 
-#: The AI disclosure a call intro must open with ("Hi Maya, this is Corin's vEIR, an AI coach."): the same in
-#: every call by design, so openings are compared after it.
-DISCLOSURE_SENTENCE = re.compile(r"\ban ai (?:coach|mentor)\b|\bai\b.*\bnot a person\b", re.IGNORECASE)
+#: The self-introduction a first call opens with ("Hi Maya, I'm Corin's vEIR, Corin's digital twin."; before the
+#: presence policy every call opened "…, an AI coach."): the same by design, so openings are compared after it.
+DISCLOSURE_SENTENCE = re.compile(
+    r"\ban ai (?:coach|mentor)\b|\bai\b.*\bnot a person\b|\bdigital twin\b", re.IGNORECASE
+)
 
 
 def opening_of(text: str, n: int = OPENING_WORDS) -> str:

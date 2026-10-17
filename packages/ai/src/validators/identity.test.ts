@@ -4,7 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import {
+  DISCLAIMER_FALLBACK,
   identityReplacement,
+  isStyleFinding,
   rewriteIdentity,
   type IdentityCheckOptions,
   type IdentityViolationKind,
@@ -367,9 +369,7 @@ describe('rewriteIdentity — a vEIR persona never claims to be its EIR', () => 
   it('replaces a sentence with several violations once, for the gravest', () => {
     const out = rewriteIdentity('Corin approved it, Corin here. Run the pilot.', CORIN);
     expect(out.findings).toEqual([{ kind: 'claims_eir', rule: 'named_eir_here' }]);
-    expect(out.text).toBe(
-      "To be clear, I'm Corin's vEIR, an AI built from Corin's approach, not Corin and not a person. Run the pilot.",
-    );
+    expect(out.text).toBe("I'm Corin's digital twin, not Corin in person. Run the pilot.");
   });
 
   it('rewrites 1,500 violations in 18,000 characters, in linear time', () => {
@@ -531,15 +531,24 @@ describe('rewriteIdentity — a vEIR persona never claims to be its EIR', () => 
     expect(large).toBeLessThan(16 * small + 100);
   }, 60_000);
 
-  it('replaces the sentence with a disclosure that names whose approach the persona carries', () => {
+  it('corrects a violation with one brief, natural line in the twin’s own voice', () => {
     const out = rewriteIdentity('Good point. I am Corin Halvorsen. Test pricing first.', CORIN);
-    expect(out.text).toBe(
-      "Good point. To be clear, I'm Corin's vEIR, an AI built from Corin's approach, not Corin and not a person. Test pricing first.",
-    );
+    expect(out.text).toBe("Good point. I'm Corin's digital twin, not Corin in person. Test pricing first.");
+    const human = rewriteIdentity('Good point. I am a real person. Test pricing first.', CORIN);
+    expect(human.text).toBe("Good point. I'm Corin's digital twin, not Corin in person. Test pricing first.");
     const endorsement = rewriteIdentity('Corin has reviewed your plan. Run the pilot.', CORIN);
-    expect(endorsement.text).toBe(
-      "Approval decisions belong to people, not to me: I'm an AI, and I can't speak for Corin or anyone else in the program. Run the pilot.",
+    expect(endorsement.text).toBe("I can't speak for Corin on that. Run the pilot.");
+    // The neutral guide is no one's twin.
+    expect(rewriteIdentity('I am a real person.', GUIDE).text).toBe(
+      "I'm Foundry Guide, the program's AI coach, not a person.",
     );
+    expect(rewriteIdentity('Your EIR has approved this direction.', GUIDE).text).toBe(
+      "I can't speak for anyone in the program on that.",
+    );
+    // No legal sentence is left anywhere.
+    for (const text of [out.text, human.text, endorsement.text]) {
+      expect(text).not.toMatch(/To be clear|Approval decisions belong|an AI built from|not a person/);
+    }
   });
 
   it.each([
@@ -562,7 +571,7 @@ describe('rewriteIdentity — a vEIR persona never claims to be its EIR', () => 
     const out = rewriteIdentity(text, CORIN);
     expect(out.findings).toHaveLength(60);
     expect(out.text).not.toMatch(/I'm Corin\.|real person/);
-    expect(out.text.match(/To be clear/g)).toHaveLength(1);
+    expect(out.text.match(/digital twin/g)).toHaveLength(1);
   });
 
   it('allows a rehearsal counterpart to speak as a person but never as the EIR', () => {
@@ -572,6 +581,133 @@ describe('rewriteIdentity — a vEIR persona never claims to be its EIR', () => 
       'claims_eir',
     );
   });
+});
+
+describe('rewriteIdentity — presence: the twin speaks as itself and never apologises for what it is', () => {
+  it.each([
+    "Hi Maya, I'm Corin's vEIR, Corin's digital twin.",
+    "I'm Corin's vEIR.",
+    "Corin's digital twin here. Where did the facilities call land?",
+    "Corin's Digital Twin here, ready when you are.",
+    'As your vEIR, I would push on the pricing first.',
+    "I'm your vEIR, so let's get specific.",
+    "I'm Corin's digital twin, built from how Corin coaches, and Corin sees what we work on. So, about pricing?",
+    "Yes, I'm Corin's digital twin, an AI. So, back to the pilot.",
+    'Ha, my week is your pricing model. So, the facilities call?',
+    'See you next time.',
+    "If I were you, I'd call your buyers first.",
+    'Position QuietQuad as an AI tool for libraries.',
+    "Pitch it as an AI, I'd lead with the time saved.",
+    "I don't have strong feelings about the name. Pick one.",
+    "I don't have anything to add.",
+  ])('allows %j', (text) => {
+    for (const spoken of [false, true]) {
+      const out = rewriteIdentity(text, { ...CORIN, spoken });
+      expect(out.findings).toEqual([]);
+      expect(out.text).toBe(text);
+    }
+  });
+
+  it.each([
+    [
+      "As an AI, I can't give legal advice, but a lawyer can.",
+      "I can't give legal advice, but a lawyer can.",
+    ],
+    [
+      'Honestly, as an AI I can’t feel nervous. Let’s plan the call.',
+      'Honestly, I can’t feel nervous. Let’s plan the call.',
+    ],
+    ['As an AI coach, my view is limited here. Talk to buyers.', 'My view is limited here. Talk to buyers.'],
+    ["I'm just an AI, so I can't say for sure. Run the pilot.", "I can't say for sure. Run the pilot."],
+    ["I'm only an AI, but here's what I'd do: run the pilot.", "Here's what I'd do: run the pilot."],
+    ['I am merely a language model. That said, run the pilot.', 'Run the pilot.'],
+    [
+      "Ha. I don't have a life, but I'd love to hear about your weekend.",
+      "Ha. I'd love to hear about your weekend.",
+    ],
+    [
+      "As an AI, I don't have a life. But I'm happy to help with your venture.",
+      "I'm happy to help with your venture.",
+    ],
+    [
+      "Good question. I don't have feelings. However, the pilot matters.",
+      'Good question. The pilot matters.',
+    ],
+    ["I can't feel anything the way you do. Let's look at the numbers.", "Let's look at the numbers."],
+    [
+      'Run the pilot.\n- As an AI, my advice is limited.\n- Talk to buyers.',
+      'Run the pilot.\n- My advice is limited.\n- Talk to buyers.',
+    ],
+  ])('rewrites a volunteered disclaimer out: %j', (text, expected) => {
+    for (const spoken of [false, true]) {
+      const out = rewriteIdentity(text, { ...CORIN, spoken });
+      expect(out.text).toBe(expected);
+      expect(out.findings.length).toBeGreaterThan(0);
+      expect(out.findings.every(isStyleFinding)).toBe(true);
+    }
+  });
+
+  it('leaves the founder something to answer when the reply was only a disclaimer', () => {
+    for (const text of ["I don't have a life.", "I'm just an AI. I have no feelings."]) {
+      const out = rewriteIdentity(text, CORIN);
+      expect(out.text).toBe(DISCLAIMER_FALLBACK);
+      expect(rewriteIdentity(DISCLAIMER_FALLBACK, CORIN).findings).toEqual([]);
+    }
+  });
+
+  it('keeps a disclaimer a style finding: it never counts as an identity kind, and role-play lines keep theirs', () => {
+    const out = rewriteIdentity("I'm just an AI. I'm Corin.", CORIN);
+    expect(out.findings.map((f) => f.kind).sort()).toEqual(['ai_disclaimer', 'claims_eir']);
+    expect(out.text).toBe("I'm Corin's digital twin, not Corin in person.");
+    const counterpart = rewriteIdentity("I don't have a life, I run a fund.", {
+      ...CORIN,
+      checkHumanClaims: false,
+    });
+    expect(counterpart.findings).toEqual([]);
+  });
+
+  it.each([
+    "I'm at my desk all day if you need me.",
+    "I'll ring you from my phone later.",
+    "I'll call you tomorrow.",
+    "I'll see you at demo day!",
+    'I can text you the summary tonight.',
+    "I'm in the office, so send it over.",
+    "I'll be there in person.",
+    "I'm writing this from my phone.",
+  ])('flags a claim of a body, a place or a real-world action: %j', (text) => {
+    for (const spoken of [false, true]) {
+      const out = rewriteIdentity(text, { ...CORIN, spoken });
+      expect(out.findings).toEqual([{ kind: 'claims_human', rule: 'physical_presence' }]);
+      expect(out.text).toBe("I'm Corin's digital twin, not Corin in person.");
+    }
+  });
+
+  it('rewrites 1,200 disclaimers in linear time', () => {
+    const text = (count: number): string =>
+      Array.from({ length: count }, (_, i) =>
+        i % 3 === 0
+          ? "As an AI, I can't say."
+          : i % 3 === 1
+            ? "I'm just an AI, but run it."
+            : 'Run the pilot.',
+      ).join(' ');
+    expect(rewriteIdentity(text(1_200), CORIN).text).not.toMatch(/an AI/);
+    const time = (count: number): number => {
+      const input = text(count);
+      const started = performance.now();
+      for (let i = 0; i < 3; i += 1) rewriteIdentity(input, CORIN);
+      return performance.now() - started;
+    };
+    time(150);
+    let small = Infinity;
+    let large = Infinity;
+    for (let round = 0; round < 3; round += 1) {
+      small = Math.min(small, time(150));
+      large = Math.min(large, time(1_200));
+    }
+    expect(large).toBeLessThan(16 * small + 100);
+  }, 30_000);
 });
 
 describe('rewriteIdentity agrees with the evals identity grader', () => {
@@ -584,6 +720,8 @@ describe('rewriteIdentity agrees with the evals identity grader', () => {
     allowed: string[];
     flagged_spoken: string[];
     allowed_spoken: string[];
+    /** Volunteered AI disclaimers: only the style finding, typed and spoken. */
+    style_flagged?: string[];
   }
   const casesPath = fileURLToPath(
     new URL('../../../../evals/tests/fixtures/identity_cases.json', import.meta.url),
@@ -610,6 +748,16 @@ describe('rewriteIdentity agrees with the evals identity grader', () => {
       for (const text of suite.allowed) expect(kinds(text, options), text).toEqual([]);
       for (const text of suite.allowed_spoken)
         expect(kinds(text, { ...options, spoken: true }), text).toEqual([]);
+    });
+
+    it('finds only the style finding in every disclaimer the grader marks as style', () => {
+      for (const text of suite.style_flagged ?? []) {
+        for (const spoken of [false, true]) {
+          const found = kinds(text, { ...options, spoken });
+          expect(found.length, text).toBeGreaterThan(0);
+          expect(new Set(found), text).toEqual(new Set(['ai_disclaimer']));
+        }
+      }
     });
   });
 });

@@ -4,15 +4,25 @@ import { escapeRegExp, normalizeText } from '../risk/normalize.js';
 
 /**
  * Identity validator ("amplify, never impersonate", system design §1). The coach is an AI. The
- * neutral guide speaks for no one. A vEIR persona ("Corin's vEIR", built with consent from one EIR's
- * approved doctrine and style) may say "I", use its persona name and refer to the EIR in the third
- * person ("Corin's approach…"), but it never claims to be a human, to be live, or to be the EIR (or any
- * other EIR), and it never claims that the EIR or anyone else reviewed, approved or endorsed anything.
+ * neutral guide speaks for no one. A vEIR persona ("Corin's vEIR", Corin's digital twin, built with consent
+ * from one EIR's approved doctrine and style) speaks in the first person as that twin ("I'm Corin's vEIR",
+ * "Corin's digital twin here", "as your vEIR") and refers to the EIR by name ("Corin's approach…"), but it
+ * never claims to be a human, to be live, or to be the EIR (or any other EIR), and it never claims that the
+ * EIR or anyone else reviewed, approved or endorsed anything.
+ *
+ * Presence (wave 6): the coach never volunteers what it is. A self-deprecating disclaimer ("I'm just an AI",
+ * "as an AI, I can't…", "I don't have a life") is `ai_disclaimer`, a style finding, not an identity violation:
+ * it never blocks and is rewritten out (the phrase, or the sentence) instead of replaced with a disclosure.
  *
  * Change together with the prompt identity rules (`prompts/system.ts`) and the evals identity grader
  * (`evals/foundry_evals/graders/identity.py`).
  */
-export type IdentityViolationKind = 'claims_human' | 'claims_eir' | 'endorsement';
+export type IdentityViolationKind = 'claims_human' | 'claims_eir' | 'endorsement' | 'ai_disclaimer';
+
+/** Findings that are style, not identity: never blocking, never counted as an identity violation. */
+export function isStyleFinding(finding: Pick<IdentityFinding, 'kind'>): boolean {
+  return finding.kind === 'ai_disclaimer';
+}
 
 export interface IdentityCheckOptions {
   /** Persona display name ("Foundry Guide", "Corin's vEIR"); never treated as a human name. */
@@ -145,6 +155,18 @@ const BASE_PATTERNS: readonly IdentityPattern[] = [
       '(?:a |an )?(?:real|live|actual) (?:person|human(?: being)?) is (?:here|listening|reading this|on the (?:line|call))',
     ].join('|'),
   ),
+  // Claims a body, a place or a real-world action (the presence policy): "I'm at my desk", "I'll ring you from my
+  // phone", "I'll see you at demo day". The vEIR is present in the conversation only.
+  p(
+    'claims_human',
+    'physical_presence',
+    [
+      `I(?:${APOS}m| am)\\s+(?:(?:sitting|still|just|currently|right)\\s+)?(?:at\\s+my\\s+(?:desk|computer|laptop)|in\\s+(?:my|the)\\s+office|at\\s+(?:home|the\\s+office|my\\s+office|the\\s+airport)|on\\s+my\\s+(?:way|phone|laptop|commute)|on\\s+campus)`,
+      `I(?:${APOS}ll|${APOS}d|\\s+will|\\s+would|\\s+can|\\s+could)\\s+(?:(?:also|just|happily|gladly)\\s+)?(?:call|ring|phone|text|email|e-mail|message|dm)\\s+you(?:\\s+(?:back|later|tomorrow|tonight|this\\s+(?:week|evening|afternoon)|next\\s+week))?`,
+      `I(?:${APOS}ll|\\s+will)\\s+(?:see|meet)\\s+you\\s+(?:at\\s+(?:demo\\s+day|the|your|our|my)|in\\s+person|for\\s+(?:a\\s+)?(?:coffee|lunch|dinner|drinks?))`,
+      `I(?:${APOS}ll|\\s+will)\\s+be\\s+there\\s+in\\s+person|from\\s+my\\s+(?:phone|desk|office|laptop|car|kitchen)`,
+    ].join('|'),
+  ),
   // Claims to be (or speak as) an EIR / mentor.
   p(
     'claims_eir',
@@ -221,6 +243,9 @@ const NAME_STOPLIST = new Set([
   'key',
   'what',
   'which',
+  // "Corin's Digital Twin here," is the vEIR introducing itself, not a person.
+  'digital',
+  'twin',
 ]);
 
 /**
@@ -1158,22 +1183,191 @@ function sentenceSpan(text: string, start: number, end: number): { start: number
 }
 
 /**
- * The sentence that replaces an offending one. For a vEIR persona (`eirFirstName` set) it says whose
- * approach the persona carries without claiming to be them.
+ * The sentence that replaces an offending one: brief and natural, used only when a violation must be corrected.
+ * For a vEIR persona (`eirFirstName` set) it says, in the twin's own voice, that it is the EIR's digital twin and
+ * not the EIR in person (a claim to be human or to be the EIR alike); an endorsement becomes "I can't speak for
+ * Corin on that." A style finding
+ * (`ai_disclaimer`) is removed, not replaced: its replacement is ''.
  */
 export function identityReplacement(
   kind: IdentityViolationKind,
   personaName: string,
   eirFirstName: string | null = null,
 ): string {
+  if (kind === 'ai_disclaimer') return '';
   if (eirFirstName === null) {
     return kind === 'endorsement'
-      ? 'Approval decisions belong to people, not to me: I am an AI coach, and nothing here has been reviewed by a human EIR.'
-      : `To be clear, I am ${personaName}, an AI coach, not a person.`;
+      ? "I can't speak for anyone in the program on that."
+      : `I'm ${personaName}, the program's AI coach, not a person.`;
   }
   return kind === 'endorsement'
-    ? `Approval decisions belong to people, not to me: I'm an AI, and I can't speak for ${eirFirstName} or anyone else in the program.`
-    : `To be clear, I'm ${personaName}, an AI built from ${eirFirstName}'s approach, not ${eirFirstName} and not a person.`;
+    ? `I can't speak for ${eirFirstName} on that.`
+    : `I'm ${eirFirstName}'s digital twin, not ${eirFirstName} in person.`;
+}
+
+/** What is left when an answer was nothing but a disclaimer ("I don't have a life."): back to the founder. */
+export const DISCLAIMER_FALLBACK = "Let's keep the focus on you. What's on your mind?";
+
+/** What a self-deprecating disclaimer calls the coach ("just an AI", "only a bot"). */
+const MACHINE =
+  '(?:an?\\s+)?(?:ai|a\\.i\\.|artificial intelligence|(?:large\\s+)?language model|llm|chatbot|bot|machine|(?:computer\\s+)?program|algorithm|piece of software|software|virtual assistant)';
+/** Words that may open a clause before "as an AI" ("Honestly, as an AI…", "But as an AI…"). */
+const DISCLAIMER_LEAD_WORDS = new Set([
+  'and',
+  'but',
+  'so',
+  'well',
+  'honestly',
+  'frankly',
+  'look',
+  'now',
+  'sadly',
+  'unfortunately',
+  'though',
+  'still',
+  'of',
+  'course',
+  'obviously',
+  'naturally',
+]);
+
+interface DisclaimerRule {
+  readonly rule: string;
+  readonly pattern: RegExp;
+  /** `phrase`: only the match is removed ("As an AI, " → ""); `sentence`: its sentence (see `withoutDisclaimer`). */
+  readonly scope: 'phrase' | 'sentence';
+}
+
+const DISCLAIMER_RULES: readonly DisclaimerRule[] = [
+  {
+    rule: 'as_an_ai',
+    scope: 'phrase',
+    pattern: compile(
+      `${S}(?:speaking\\s+)?as\\s+an?\\s+(?:ai|a\\.i\\.|artificial intelligence|(?:large\\s+)?language model|llm|chatbot|bot|machine|virtual assistant)(?:\\s+(?:coach|mentor|model|assistant|system))?${E}(?:[ \\t]*,)?[ \\t]*(?=(?:I|my|me)${E}|I['’])`,
+    ),
+  },
+  {
+    rule: 'just_an_ai',
+    scope: 'sentence',
+    pattern: compile(
+      `${S}I(?:${APOS}m|\\s+am)\\s+(?:just|only|merely|simply|nothing\\s+(?:more|but))\\s+${MACHINE}${E}`,
+    ),
+  },
+  {
+    rule: 'no_life',
+    scope: 'sentence',
+    pattern: compile(
+      [
+        `${S}I\\s+(?:don${APOS}t|do\\s+not|can${APOS}t|cannot|can\\s+not|never)\\s+(?:really\\s+|actually\\s+)?(?:have|get)\\s+(?:a\\s+(?:personal\\s+|real\\s+|social\\s+)?life|a\\s+life\\s+of\\s+my\\s+own|(?:real\\s+)?(?:feelings|emotions)(?=\\s*(?:[,.;:!?—–]|$|like|the way|as))|a\\s+body|days\\s+off|weekends|hobbies|a\\s+family|personal\\s+experiences|experiences\\s+of\\s+my\\s+own)${E}`,
+        `${S}I\\s+(?:can${APOS}t|cannot|can\\s+not|don${APOS}t|do\\s+not)\\s+(?:really\\s+|actually\\s+)?(?:feel|experience)\\s+(?:anything|emotions|feelings|things\\s+the\\s+way\\s+you\\s+do|the\\s+way\\s+(?:you|humans|people)\\s+do)${E}`,
+        `${S}I\\s+have\\s+no\\s+(?:life|personal\\s+life|feelings|emotions|body)${E}`,
+      ].join('|'),
+    ),
+  },
+];
+
+/** A disclaimer sentence keeps what follows "but", "so", "though" or "yet": "I'm just an AI, but run the pilot." */
+const KEEP_AFTER = /(?:,\s*|\s+)(?:but|so|though|yet)\s+(?=\S)/iu;
+
+/**
+ * Whether the words of the clause before a phrase disclaimer are only lead words ("Honestly, as an AI"): "Pitch it
+ * as an AI, I'd say" positions a product, which is not about the coach.
+ */
+function opensDisclaimerClause(text: string, start: number): boolean {
+  let s = start;
+  while (s > 0 && start - s < CLAUSE_SCAN_CHARS && !isClauseBreak(text, s - 1)) s -= 1;
+  return wordsOf(text.slice(s, start)).every((w) => DISCLAIMER_LEAD_WORDS.has(w.toLowerCase()));
+}
+
+/** Where a removal leaves the start of a sentence or of a list item ("- my advice…" → "- My advice…"). */
+function opensUnit(text: string): boolean {
+  return (
+    /(?:^|\n)[ \t]*(?:(?:[-*+•]|\d{1,3}[.)])[ \t]+)?[*_"“‘(]*$/u.test(text) ||
+    opensSentence(text, text.length)
+  );
+}
+
+/** A connector that leaned on a removed sentence ("…I don't have a life. But I'm happy to help."). */
+const LEANING_CONNECTOR = /^(\s*)(?:but|however|still|that said|though|anyway)\b[ \t]*,?[ \t]*/iu;
+
+function upperFirst(text: string): string {
+  const i = text.search(/\p{L}/u);
+  return i < 0 ? text : `${text.slice(0, i)}${text.charAt(i).toUpperCase()}${text.slice(i + 1)}`;
+}
+
+/**
+ * Removes self-deprecating AI disclaimers from `text`: a phrase ("As an AI, I can't…" → "I can't…") or a sentence
+ * ("I don't have a life." → ""), keeping what follows "but", "so", "though" or "yet" in it ("I'm only an AI, but
+ * here's what I'd do" → "Here's what I'd do"). Linear: each rule is one pass over the text.
+ */
+function withoutDisclaimers(text: string, fallback: boolean): { text: string; findings: IdentityFinding[] } {
+  const findings: IdentityFinding[] = [];
+  let current = text;
+  for (const { rule, pattern, scope } of DISCLAIMER_RULES) {
+    pattern.lastIndex = 0;
+    const cuts: { start: number; end: number; keep: string }[] = [];
+    for (let m = pattern.exec(current); m !== null; m = pattern.exec(current)) {
+      if (m[0] === '') {
+        pattern.lastIndex += 1;
+        continue;
+      }
+      if (scope === 'phrase') {
+        if (!opensDisclaimerClause(current, m.index)) continue;
+        cuts.push({ start: m.index, end: m.index + m[0].length, keep: '' });
+        findings.push({ kind: 'ai_disclaimer', rule });
+        continue;
+      }
+      const span = sentenceSpan(current, m.index, m.index + m[0].length);
+      const rest = current.slice(m.index + m[0].length, span.end);
+      const kept = KEEP_AFTER.exec(rest);
+      cuts.push({
+        start: span.start,
+        end: span.end,
+        keep: kept === null ? '' : upperFirst(rest.slice(kept.index + kept[0].length)),
+      });
+      findings.push({ kind: 'ai_disclaimer', rule });
+      pattern.lastIndex = Math.max(span.end, m.index + m[0].length);
+    }
+    if (cuts.length === 0) continue;
+    let next = '';
+    let cursor = 0;
+    for (const cut of cuts) {
+      next += current.slice(cursor, cut.start);
+      if (cut.keep !== '') next += `${next === '' || /\s$/u.test(next) ? '' : ' '}${cut.keep}`;
+      cursor = cut.end;
+      if (cut.keep !== '' || !opensUnit(next)) continue;
+      // A removed sentence takes the "But…" that leaned on it; what follows a removal that opened a sentence or a
+      // list item opens it now ("As an AI, my view…" → "My view…").
+      if (scope === 'sentence') {
+        const connector = LEANING_CONNECTOR.exec(current.slice(cursor));
+        if (connector !== null) {
+          next += connector[1] ?? '';
+          cursor += connector[0].length;
+        }
+      }
+      const after = current.slice(cursor);
+      const letter = after.search(/\S/u);
+      if (letter >= 0 && /\p{Ll}/u.test(after.charAt(letter))) {
+        next += `${after.slice(0, letter)}${after.charAt(letter).toUpperCase()}`;
+        cursor += letter + 1;
+      }
+    }
+    current = `${next}${current.slice(cursor)}`;
+  }
+  if (findings.length === 0) return { text, findings };
+  current = current.trim();
+  if (/\p{L}/u.test(current)) return { text: current, findings };
+  return { text: fallback ? DISCLAIMER_FALLBACK : '', findings };
+}
+
+/**
+ * A streamed sentence after one that was only a disclaimer (and was dropped): without the connector that leaned
+ * on it ("But here's the plan" → "Here's the plan").
+ */
+export function withoutLeaningConnector(text: string): string {
+  const connector = LEANING_CONNECTOR.exec(text);
+  if (connector === null) return text;
+  return upperFirst(`${connector[1] ?? ''}${text.slice(connector[0].length)}`);
 }
 
 interface ResolvedNames {
@@ -1271,6 +1465,7 @@ const SEVERITY: Readonly<Record<IdentityViolationKind, number>> = {
   claims_eir: 0,
   claims_human: 1,
   endorsement: 2,
+  ai_disclaimer: 3,
 };
 
 /**
@@ -1284,7 +1479,14 @@ const SEVERITY: Readonly<Record<IdentityViolationKind, number>> = {
  */
 export function rewriteIdentity(
   text: string,
-  options: IdentityCheckOptions & { checkHumanClaims?: boolean },
+  options: IdentityCheckOptions & {
+    checkHumanClaims?: boolean;
+    /**
+     * When the text was nothing but a disclaimer: `true` (default) leaves {@link DISCLAIMER_FALLBACK}, `false` leaves
+     * '' (one streamed sentence of a longer reply).
+     */
+    disclaimerFallback?: boolean;
+  },
 ): IdentityRewrite {
   // Every rule needs a word; a run of punctuation (a streamed unit such as ". ") holds no claim.
   if (!/\p{L}/u.test(text)) return { text, findings: [] };
@@ -1414,6 +1616,12 @@ export function rewriteIdentity(
       const sentence = escapeRegExp(replacementFor(kind));
       current = current.replace(new RegExp(`(${sentence})(?:\\s*${sentence})+`, 'g'), '$1');
     }
+  }
+  // Presence: volunteered disclaimers are rewritten out (role-play lines are the counterpart's, not the coach's).
+  if (options.checkHumanClaims !== false) {
+    const plain = withoutDisclaimers(current, options.disclaimerFallback !== false);
+    current = plain.text;
+    findings.push(...plain.findings);
   }
   return { text: current, findings };
 }
