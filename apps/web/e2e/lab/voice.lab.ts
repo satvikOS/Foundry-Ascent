@@ -132,6 +132,18 @@ async function audio(page: Page): Promise<LabAudio> {
   });
 }
 
+/** Plays a WAV into the call's microphone stream (`__labSay`); returns when it started and how long it lasts. */
+async function sayLine(page: Page, file: string): Promise<{ startedAt: number; durationMs: number }> {
+  const b64 = readFileSync(file).toString('base64');
+  return page.evaluate(
+    (data) =>
+      (
+        window as unknown as { __labSay: (b: string) => Promise<{ startedAt: number; durationMs: number }> }
+      ).__labSay(data),
+    b64,
+  );
+}
+
 class TypedCallError extends Error {
   override readonly name = 'TypedCallError';
 }
@@ -218,6 +230,18 @@ test.describe('conversation lab: voice', () => {
             .not.toBeNull()
             .then(async () => (await audio(page)).captureStartedAt ?? 0);
           speechEndedAt = captureAt + (line.leadSeconds + line.speechSeconds) * 1000;
+          // If the device line produced no turn (the file restarted or was never heard), say it through the mixed
+          // stream instead, so the rest of the call still runs; the result records which path carried it.
+          const deadline = speechEndedAt + 20_000;
+          while (Date.now() < deadline && firstAfter(turnPosts, speechEndedAt - 400) === null) {
+            await page.waitForTimeout(250);
+          }
+          result.deviceLineHeard = firstAfter(turnPosts, speechEndedAt - 400) !== null;
+          if (!result.deviceLineHeard) {
+            await waitForReplyToFinish(page, 0, 1500, 15_000);
+            const said = await sayLine(page, line.file);
+            speechEndedAt = said.startedAt + (line.leadSeconds + line.speechSeconds) * 1000;
+          }
         } else {
           if (line.bargeIn) {
             // While the reply to the previous line is playing.
@@ -231,16 +255,7 @@ test.describe('conversation lab: voice', () => {
           } else {
             await waitForReplyToFinish(page, previousTurnAt);
           }
-          const b64 = readFileSync(line.file).toString('base64');
-          const said = await page.evaluate(
-            (data) =>
-              (
-                window as unknown as {
-                  __labSay: (b: string) => Promise<{ startedAt: number; durationMs: number }>;
-                }
-              ).__labSay(data),
-            b64,
-          );
+          const said = await sayLine(page, line.file);
           injectedAt = said.startedAt;
           speechEndedAt = said.startedAt + (line.leadSeconds + line.speechSeconds) * 1000;
         }

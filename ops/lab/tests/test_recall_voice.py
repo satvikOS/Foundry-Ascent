@@ -131,6 +131,8 @@ def captured_voice(**overrides: Any) -> dict[str, Any]:
     texts = [line["text"] for line in load_voice()["lines"]]
     base = {
         "inputMode": "transcribe",
+        "micOpened": True,
+        "deviceLineHeard": True,
         "error": None,
         "transcripts": texts,
         "lines": [
@@ -167,6 +169,8 @@ def test_voice_score_measures_latency_wer_and_barge_in() -> None:
         "stop_ms": 600,
     }
     assert public["client_stats"]["bargeIns"] == 1
+    assert public["mic_opened"] is True
+    assert public["device_line_heard"] is True
 
 
 def test_voice_score_failures() -> None:
@@ -194,3 +198,31 @@ def test_percentile_is_nearest_rank() -> None:
     assert percentile([5.0], 0.95) == 5.0
     assert percentile([1, 2, 3, 4], 0.5) == 2
     assert percentile(list(range(1, 21)), 0.95) == 19
+
+
+def test_voice_and_recall_summaries_render() -> None:
+    from conversation_lab.report import render
+
+    voice = score(load_voice(), captured_voice()).public()
+    text = render(
+        {
+            "suite": "voice",
+            "duration_seconds": 90,
+            "models": {"app": {"primary": "p", "fallback": "f", "embeddings": "e"}},
+            "spend": {
+                "total_usd": 0.05,
+                "app_usd": 0.04,
+                "lab_usd": 0.01,
+                "app_budget_usd": 0.7,
+                "lab_budget_usd": 0.13,
+            },
+            "result": {"passed": 1, "run": 1, "voice": voice},
+        }
+    )
+    assert "| VC-3 | 0.0 |" in text
+    assert "playback stopped after 600 ms" in text
+    recall = grade_scenario(
+        RC01, captured(["Hartwell, nine hundred.", "SSO."]), models=None, judge_model=None
+    )
+    text = render({"suite": "recall", "result": {"passed": 1, "run": 1, "scenarios": [recall.public()]}})
+    assert "| RC-01 | yes | pass | 2/4, 1/1 | -, - |" in text

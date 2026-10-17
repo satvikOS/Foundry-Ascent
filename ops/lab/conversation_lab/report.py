@@ -130,7 +130,10 @@ def _suite_tables(suite: str, result: Mapping[str, Any]) -> list[str]:
             out.append("")
     if suite == "voice" and result.get("voice"):
         v = result["voice"]
-        out.append(f"Input: {v.get('input_mode')}; mean WER {v.get('mean_wer')}; result {v.get('reason')}.")
+        out.append(
+            f"Input: {v.get('input_mode')} (microphone opened {v.get('mic_opened')}, line 1 through the fake device "
+            f"{v.get('device_line_heard')}); mean WER {v.get('mean_wer')}; result {v.get('reason')}."
+        )
         out.append("")
         out.append(f"- First audio after the founder stops speaking: {_ms(v.get('first_audio_ms'))}")
         out.append(

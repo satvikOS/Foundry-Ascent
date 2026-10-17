@@ -98,6 +98,9 @@ def percentile(values: Sequence[float], q: float) -> float | None:
 @dataclass
 class VoiceResult:
     input_mode: str | None = None
+    #: The app opened the (fake) microphone; line 1 came through Chromium's fake device (not the mixed stream).
+    mic_opened: bool | None = None
+    device_line_heard: bool | None = None
     lines: list[dict[str, Any]] = field(default_factory=list)
     first_audio_ms: list[float] = field(default_factory=list)
     endpoint_ms: list[float] = field(default_factory=list)
@@ -114,6 +117,8 @@ class VoiceResult:
             "reason": self.reason,
             "error": self.error,
             "input_mode": self.input_mode,
+            "mic_opened": self.mic_opened,
+            "device_line_heard": self.device_line_heard,
             "lines": self.lines,
             "mean_wer": round(statistics.fmean([x["wer"] for x in self.lines if x["wer"] is not None]), 4)
             if any(x["wer"] is not None for x in self.lines)
@@ -147,6 +152,9 @@ def score(script: Mapping[str, Any], captured: Mapping[str, Any] | None) -> Voic
     result.input_mode = captured.get("inputMode") if isinstance(captured.get("inputMode"), str) else None
     if captured.get("error"):
         result.error = str(captured["error"])[:64]
+    for key, attr in (("micOpened", "mic_opened"), ("deviceLineHeard", "device_line_heard")):
+        if isinstance(captured.get(key), bool):
+            setattr(result, attr, captured[key])
     texts = [line["text"] for line in script["lines"]]
     transcripts = [str(t) for t in captured.get("transcripts", [])]
     timings = {str(t.get("id")): t for t in captured.get("lines", []) if isinstance(t, dict)}
