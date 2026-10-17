@@ -112,7 +112,7 @@ export function CommandPalette({ me, workspace, open, onOpenChange, onOpenShortc
         aria-label="Search conversations, pages and ventures"
       />
       <CommandList>
-        <CommandEmpty>Nothing matches. Try a conversation title or a page name.</CommandEmpty>
+        <CommandEmpty>No matches.</CommandEmpty>
 
         {ventureId ? (
           <CommandGroup heading="This venture">

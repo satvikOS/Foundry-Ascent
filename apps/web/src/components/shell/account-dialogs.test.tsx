@@ -28,10 +28,10 @@ describe('DataUseDialog', () => {
     const dialog = screen.getByRole('dialog', { name: 'Data use & privacy' });
     const readers = within(dialog).getByRole('heading', { name: 'Who can see your venture' }).parentElement;
     if (!readers) throw new Error('section missing');
-    expect(readers).toHaveTextContent('venture team sees its conversations');
-    expect(readers).toHaveTextContent('Advisors on your venture can read the memory and documents');
-    expect(readers).toHaveTextContent('not your conversations');
-    expect(readers).toHaveTextContent('reviews a sample of answers');
+    expect(readers).toHaveTextContent('team sees conversations, memory and documents');
+    expect(readers).toHaveTextContent('Advisors see only the memory and documents shared with them');
+    expect(readers).toHaveTextContent('a sample of answers');
+    expect(readers).toHaveTextContent('Program staff see totals');
     expect(dialog).toHaveTextContent('erased when they end, or after 24 hours idle');
     expect(dialog).toHaveTextContent("You are talking with Corin's vEIR");
   });

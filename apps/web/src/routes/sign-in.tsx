@@ -55,8 +55,7 @@ function SignInPage() {
               Pick up where you <em className="italic">left off</em>.
             </p>
             <p className="mt-6 text-body text-muted-foreground">
-              Your vEIR remembers what you decided, what you tested and what you promised to do — with memory
-              you can read and correct, and a person one step away.
+              Your vEIR remembers your decisions, tests and promises. You can read and correct all of it.
             </p>
           </div>
           <DisclosureBanner variant="inline" className="max-w-md bg-background/60" text={PUBLIC_DISCLOSURE} />
@@ -83,13 +82,7 @@ function SignInPage() {
               <h1 data-page-title tabIndex={-1} className="font-serif text-heading font-normal outline-none">
                 Sign in to Foundry Ascent
               </h1>
-              <p className="text-small text-muted-foreground">
-                Use the access code from your program lead. It looks like{' '}
-                <span className="font-mono whitespace-nowrap text-foreground">
-                  FA-XXXXX-XXXXX-XXXXX-XXXXX
-                </span>
-                .
-              </p>
+              <p className="text-small text-muted-foreground">Use the code from your program lead.</p>
             </div>
             <SignInForm
               onSignedIn={(me) => {
@@ -97,9 +90,7 @@ function SignInPage() {
               }}
             />
             <div className="mt-8 space-y-3 border-t border-border pt-6 text-small text-muted-foreground">
-              <p>
-                Lost your code? Ask your program lead for a new one. Codes are shown once and can be revoked.
-              </p>
+              <p>Lost your code? Ask your program lead for a new one.</p>
               <DisclosureBanner variant="inline" className="lg:hidden" text={PUBLIC_DISCLOSURE} />
             </div>
           </div>

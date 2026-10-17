@@ -109,8 +109,7 @@ export function DbWakingBanner() {
             <p>
               <span className="font-medium">Waking up your workspace…</span>{' '}
               <span className="text-muted-foreground">
-                The database pauses when idle to keep costs low. This usually takes about{' '}
-                {TYPICAL_RESUME_SECONDS} seconds.
+                It sleeps when idle to keep costs low. About {TYPICAL_RESUME_SECONDS} seconds.
               </span>
             </p>
             <div className="flex items-center gap-2 sm:ml-auto">
@@ -157,9 +156,7 @@ export function DbUnavailableBanner() {
         >
           <p>
             <span className="font-medium">Some of your workspace can’t load right now.</span>{' '}
-            <span className="text-muted-foreground">
-              The database is unavailable. This clears on its own.
-            </span>
+            <span className="text-muted-foreground">It clears on its own.</span>
           </p>
         </BannerShell>
       ) : null}
@@ -208,9 +205,7 @@ export function OfflineBanner() {
         >
           <p>
             <span className="font-medium">You’re offline.</span>{' '}
-            <span className="text-muted-foreground">
-              You can keep reading what’s loaded. Changes can’t be saved until you reconnect.
-            </span>
+            <span className="text-muted-foreground">Changes can’t be saved until you reconnect.</span>
           </p>
         </BannerShell>
       )}
@@ -231,8 +226,8 @@ export function AiDisabledBanner() {
           icon={<CirclePause aria-hidden className="size-4 text-warning" />}
         >
           <p>
-            <span className="font-medium">AI is paused by an administrator.</span>{' '}
-            <span className="text-muted-foreground">Everything else still works.</span>
+            <span className="font-medium">An admin paused AI.</span>{' '}
+            <span className="text-muted-foreground">Everything else works.</span>
           </p>
         </BannerShell>
       ) : null}
@@ -277,9 +272,7 @@ export function AccessCodeNoticeBanner() {
             <span className="font-medium">
               A new access code was issued for your account on {formatDate(latest.at)}.
             </span>{' '}
-            <span className="text-muted-foreground">
-              If you didn’t ask for one, tell your program team right away.
-            </span>
+            <span className="text-muted-foreground">If that wasn’t you, tell your program team now.</span>
           </p>
         </BannerShell>
       ) : null}

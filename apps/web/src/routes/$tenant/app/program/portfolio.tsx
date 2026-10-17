@@ -22,7 +22,7 @@ function PortfolioPage() {
     <PageContainer size="wide">
       <PageHeader
         title="Portfolio"
-        description="Aggregates across the program. Never transcripts, memory or documents."
+        info="Aggregates across the program. Never transcripts, memory or documents."
       />
       {portfolio.isPending ? (
         <LoadingRegion label="Loading portfolio">

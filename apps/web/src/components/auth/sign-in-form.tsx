@@ -175,7 +175,7 @@ export function SignInForm({ onSignedIn }: { onSignedIn: (me: Me) => void }) {
           )}
         />
         <p id={ids.hint} className="text-small text-muted-foreground">
-          Paste it or type it — spaces, dashes and lower case are fine.
+          Spaces, dashes and lower case are fine.
         </p>
         {fieldError ? (
           <p id={ids.error} role="alert" className="flex items-start gap-1.5 text-small text-destructive">

@@ -30,7 +30,7 @@ const CALL_SHORTCUTS: { binding: string; label: string }[] = [
   { binding: 'p', label: 'Switch push to talk on or off' },
   { binding: 'c', label: 'Show or hide captions' },
   { binding: 't', label: 'Type instead' },
-  { binding: 'Esc', label: 'Interrupt the vEIR while it speaks; otherwise minimize the call' },
+  { binding: 'Esc', label: 'Interrupt, or minimize the call' },
 ];
 
 function Binding({ binding }: { binding: string }) {
@@ -85,7 +85,7 @@ export function ShortcutsDialog({
       <DialogContent className="max-h-[85dvh] max-w-lg overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Keyboard shortcuts</DialogTitle>
-          <DialogDescription>Single-key shortcuts pause while you type in a field.</DialogDescription>
+          <DialogDescription>Single keys pause while you type.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-5">
           <ShortcutList title="Everywhere" shortcuts={GLOBAL_SHORTCUTS} />
