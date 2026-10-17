@@ -5,16 +5,30 @@ import {
   type PersonaEmbodiment,
   type VeirIdentity,
 } from '@foundry/contracts';
-import { assignmentsRepo, personasRepo, principalsRepo, settingsRepo, type SqlExecutor } from '@foundry/db';
+import {
+  assignmentsRepo,
+  callsRepo,
+  personasRepo,
+  principalsRepo,
+  settingsRepo,
+  type SqlExecutor,
+} from '@foundry/db';
 import { type z } from 'zod';
 
 import { requireAssignmentActive, requireVentureAccess } from '../authz/venture-access.js';
 import { type RequestContext } from '../context.js';
-import { DomainError, parseInput } from '../errors.js';
+import { DomainError, fail, parseInput } from '../errors.js';
 import { veirEirName } from '../internal/eir-names.js';
 import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
 import { secondsUntilUtcMidnight } from '../orchestrator/sampling.js';
-import { CALL_LIMITS, callSecondsToday, remainingDailyMinutes, remainingDailySeconds } from './call-usage.js';
+import { type EmbodimentSessionIssuer } from '../ports.js';
+import {
+  CALL_LIMITS,
+  callSecondsToday,
+  callTimeLeft,
+  remainingDailyMinutes,
+  remainingDailySeconds,
+} from './call-usage.js';
 import { callVoiceFor } from './calls.js';
 
 /**
@@ -28,8 +42,10 @@ export interface VeirService {
   /** Everything the call screen needs before the first word (founder/team). */
   callConfig(ctx: RequestContext, ventureId: string): Promise<CallConfigResponse>;
   /**
-   * Starts a call's avatar session (founder/team). Vendor providers would mint a single-use token here; the
-   * built-in provider needs none. Refused when AI is off, the coach is unavailable or no minutes are left.
+   * The face of a call (founder/team). A vendor face (or the development stand-in) gets a single-use session
+   * token bound to the caller's live call `callId` and its time left; the built-in presence needs none, and a
+   * face that is unavailable (no likeness consent, no live call named, the vendor down) leaves the call on the
+   * presence. Refused when AI or calls are off, the coach is unavailable or no minutes are left.
    */
   avatarSession(
     ctx: RequestContext,
@@ -53,6 +69,23 @@ export function embodimentView(
     voiceConsented,
     likenessConsented,
   };
+}
+
+/** Seconds a vendor session needs at least to be worth opening (a call about to end keeps the presence). */
+export const MIN_FACE_SECONDS = 15;
+
+/**
+ * The vendor face a persona's calls get, or null (the presence). The development stand-in draws no one, so it
+ * serves every persona; a vendor face is an EIR's likeness, so only a persona configured for that vendor
+ * whose likeness consent is in force (`embodimentView`).
+ */
+export function faceIssuer(
+  issuer: EmbodimentSessionIssuer | undefined,
+  embodiment: Pick<PersonaEmbodiment, 'provider' | 'likenessConsented'>,
+): EmbodimentSessionIssuer | null {
+  if (issuer === undefined) return null;
+  if (!issuer.likeness) return issuer;
+  return issuer.provider === embodiment.provider && embodiment.likenessConsented ? issuer : null;
 }
 
 /**
@@ -129,7 +162,8 @@ export function createVeirService(kit: Kit): VeirService {
         const used = await callSecondsToday(scope.tx, ctx.principalId);
         return {
           veir: identity,
-          provider: identity.embodiment.provider,
+          provider:
+            faceIssuer(kit.deps.embodiment, identity.embodiment)?.provider ?? identity.embodiment.provider,
           maxMinutes: settings.maxCallMinutes,
           remainingMinutesToday: remainingDailyMinutes(used, settings.dailyCallMinutesPerPrincipal),
           aiEnabled: settings.aiEnabled,
@@ -143,7 +177,8 @@ export function createVeirService(kit: Kit): VeirService {
     avatarSession: async (ctx, rawInput) => {
       const input = parseInput(AvatarSessionRequest, rawInput);
       const ventureId = requireId(input.ventureId, 'Venture');
-      return await kit.inRequest(ctx, async (scope) => {
+      const callId = input.callId === undefined ? null : requireId(input.callId, 'Call');
+      const plan = await kit.inRequest(ctx, async (scope) => {
         await requireVentureAccess(scope, ventureId, 'write', { objectType: 'call' });
         const settings = await settingsRepo.getPlatformSettings(scope.tx);
         if (!settings.aiEnabled) {
@@ -188,21 +223,93 @@ export function createVeirService(kit: Kit): VeirService {
             },
           );
         }
-        await audit(scope, {
-          action: 'call.avatar_session',
-          outcome: 'succeeded',
-          ventureId,
-          objectType: 'persona',
-          objectId: identity.personaId,
-          metadata: { provider: identity.embodiment.provider },
-        });
-        return {
+        const presence: AvatarSessionResponse = {
           provider: identity.embodiment.provider,
           token: null,
           expiresAt: null,
           voiceId,
+          voicing: 'engine',
+        };
+        const issuer = faceIssuer(kit.deps.embodiment, identity.embodiment);
+        if (issuer === null || callId === null) {
+          await audit(scope, {
+            action: 'call.avatar_session',
+            outcome: 'succeeded',
+            ventureId,
+            objectType: 'persona',
+            objectId: identity.personaId,
+            metadata: { provider: identity.embodiment.provider },
+          });
+          return { presence, face: null };
+        }
+        // A vendor session belongs to a live call: the caller's own, in this venture, with this vEIR. It ends
+        // with the call's time left, so the vendor stops billing when the call has to stop.
+        const call = await callsRepo.getCall(scope.tx, callId);
+        if (
+          call?.status !== 'live' ||
+          call.startedBy !== ctx.principalId ||
+          call.ventureId !== ventureId ||
+          call.personaId !== identity.personaId
+        ) {
+          throw fail.conflict('The face of a call opens only during your live call.', 'call_not_active');
+        }
+        const left = callTimeLeft({
+          elapsedSeconds: call.elapsedSeconds,
+          maxSeconds: call.maxSeconds,
+          usedSecondsToday: used,
+          caps: settings,
+        });
+        return {
+          presence: { ...presence, provider: 'builtin' as const },
+          face: { issuer, callId: call.id, personaId: identity.personaId, maxSeconds: left.seconds },
         };
       });
+      const { presence, face } = plan;
+      if (face === null) return presence;
+
+      // Outside the transaction: a vendor round trip never holds the database. Any failure keeps the presence.
+      const { issuer } = face;
+      let outcome: 'succeeded' | 'failed' | 'denied' = 'denied';
+      let session: AvatarSessionResponse = presence;
+      if (face.maxSeconds >= MIN_FACE_SECONDS) {
+        try {
+          const issued = await issuer.start({
+            callId: face.callId,
+            personaId: face.personaId,
+            avatarRef: null,
+            maxSeconds: face.maxSeconds,
+            requestId: ctx.requestId,
+          });
+          session = {
+            provider: issuer.provider,
+            token: issued.token,
+            expiresAt: issued.expiresAt,
+            voiceId: presence.voiceId,
+            voicing: issuer.voicing,
+          };
+          outcome = 'succeeded';
+        } catch (err) {
+          outcome = 'failed';
+          kit.deps.logger.warn('call.avatar_session_failed', {
+            requestId: ctx.requestId,
+            callId: face.callId,
+            provider: issuer.provider,
+            error: err instanceof Error ? err.name : 'unknown',
+          });
+        }
+      }
+      await kit.inRequest(ctx, async (scope) => {
+        await audit(scope, {
+          action: 'call.avatar_session',
+          outcome,
+          ventureId,
+          objectType: 'call',
+          objectId: face.callId,
+          // Identifiers only: the token is a credential and is never recorded.
+          metadata: { provider: issuer.provider, voicing: issuer.voicing },
+        });
+      });
+      return session;
     },
   };
 }

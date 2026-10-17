@@ -13,7 +13,12 @@ import { createTestDatabase, type TestDatabase } from '@foundry/db/testing';
 import { coreConfig, type CoreConfig } from '../config.js';
 import { createRequestContext, type RequestContext } from '../context.js';
 import { createCore, type Core } from '../core.js';
-import { type Clock, type SpeechSynthesizer, type SttGrantIssuer } from '../ports.js';
+import {
+  type Clock,
+  type EmbodimentSessionIssuer,
+  type SpeechSynthesizer,
+  type SttGrantIssuer,
+} from '../ports.js';
 import { MemoryJobQueue, MemoryObjectStore, RecordingLogger, Utf8TextExtractor } from './fakes.js';
 
 type ConfigOverrides = Parameters<typeof coreConfig>[0];
@@ -27,6 +32,8 @@ export interface CoreHarnessOptions {
   readonly speech?: SpeechSynthesizer;
   /** Speech-to-text grants for calls (absent: calls start without one). */
   readonly sttGrants?: SttGrantIssuer;
+  /** Vendor faces for calls (absent: every call keeps the built-in presence). */
+  readonly embodiment?: EmbodimentSessionIssuer;
 }
 
 /**
@@ -145,6 +152,7 @@ export async function createCoreHarness(options: CoreHarnessOptions = {}): Promi
       ...(options.clock ? { clock: options.clock } : {}),
       ...(options.speech ? { speech: options.speech } : {}),
       ...(options.sttGrants ? { sttGrants: options.sttGrants } : {}),
+      ...(options.embodiment ? { embodiment: options.embodiment } : {}),
     });
   const core = build(config);
   const venture = (key: string): SeededVenture =>

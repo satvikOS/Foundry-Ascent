@@ -147,6 +147,23 @@ export const AvatarProviderId = z.enum(['builtin', 'heygen', 'tavus', 'simli']);
 export type AvatarProviderId = z.infer<typeof AvatarProviderId>;
 
 /**
+ * Who draws the face of a call, as the call screen sees it: the persona's provider, or `fake`, the development
+ * stand-in (a canvas face, no one's likeness) that the local API serves with `EMBODIMENT_PROVIDER=fake` and
+ * nothing else does. Never stored on a persona (`AvatarProviderId` is).
+ */
+export const EmbodimentProviderId = z.enum([...AvatarProviderId.options, 'fake']);
+export type EmbodimentProviderId = z.infer<typeof EmbodimentProviderId>;
+
+/**
+ * How the vEIR is heard when a provider draws its face (docs/architecture/calls.md §4):
+ * - `engine`: the call plays its own synthesized audio and the face follows its loudness (the presence);
+ * - `audio`: the face renders the call's own validated audio itself, lip-synced (a vendor's speech-to-video);
+ * - `text`: the vendor voices the validated text with its own voice (reserved: needs the unit receipt route).
+ */
+export const AvatarVoicing = z.enum(['engine', 'audio', 'text']);
+export type AvatarVoicing = z.infer<typeof AvatarVoicing>;
+
+/**
  * Voices a persona may speak with on calls (Amazon Polly, adult US English), in the order of
  * `packages/core/speech-voices.json` (the catalog core and infra/cdk read). The speech service refuses any
  * other; a core test keeps this list and the catalog naming exactly the same voices.
@@ -208,7 +225,8 @@ export type VeirIdentity = z.infer<typeof VeirIdentity>;
 /** `GET /ventures/:id/call-config` — everything the call screen needs before the first word. */
 export const CallConfigResponse = z.object({
   veir: VeirIdentity,
-  provider: AvatarProviderId,
+  /** Who draws the call's face (the persona's provider, or the development stand-in). */
+  provider: EmbodimentProviderId,
   /** Hard cap per call in minutes. */
   maxMinutes: z.number().int().min(1),
   /** Minutes this person may still use today. */
@@ -434,16 +452,24 @@ export const RevokeConsentResponse = z.object({
 export type RevokeConsentResponse = z.infer<typeof RevokeConsentResponse>;
 
 /**
- * `POST /calls/avatar-session` — reserved for vendor avatar session tokens (HeyGen, Tavus, Simli). The
- * built-in provider needs no token, so today the response carries the provider and voice only.
+ * `POST /calls/avatar-session` — the face of a live call. A vendor face (or the development stand-in) gets a
+ * single-use session token for the browser SDK, bound to the caller's live call `callId` and ending with its
+ * time limit; the built-in presence needs none, and so does a call whose face is unavailable (no likeness
+ * consent, the vendor down): it keeps the presence.
  */
-export const AvatarSessionRequest = z.object({ ventureId: Id });
+export const AvatarSessionRequest = z.object({
+  ventureId: Id,
+  /** The caller's live call in that venture; a vendor session is only minted for one. */
+  callId: Id.optional(),
+});
 export type AvatarSessionRequest = z.infer<typeof AvatarSessionRequest>;
 export const AvatarSessionResponse = z.object({
-  provider: AvatarProviderId,
+  provider: EmbodimentProviderId,
   /** Single-use vendor session token; never stored or replayed. Null for `builtin`. */
   token: z.string().nullable(),
   expiresAt: Timestamp.nullable(),
   voiceId: z.string().nullable(),
+  /** How the vEIR is heard with this face. Additive: older payloads parse as `engine`. */
+  voicing: AvatarVoicing.default('engine'),
 });
 export type AvatarSessionResponse = z.infer<typeof AvatarSessionResponse>;

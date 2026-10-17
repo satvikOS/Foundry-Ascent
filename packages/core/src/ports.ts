@@ -205,6 +205,54 @@ export interface SttGrantIssuer {
   issue(request: SttGrantRequest): Promise<IssuedSttGrant>;
 }
 
+/**
+ * How the vEIR is heard when a provider draws its face (`AvatarVoicing`): `engine` (the call's own audio, the
+ * face follows it), `audio` (the face renders the call's validated audio itself, lip-synced) or `text` (the
+ * vendor voices validated text; reserved).
+ */
+export type EmbodimentVoicing = 'engine' | 'audio' | 'text';
+
+export interface EmbodimentSessionRequest {
+  /** The caller's live call: the vendor session belongs to it and ends with it. */
+  readonly callId: string;
+  readonly personaId: string;
+  /** The persona's avatar at the vendor (its id there), when the EIR recorded one. */
+  readonly avatarRef: string | null;
+  /** Seconds the call may still last: the vendor session ends by itself then. */
+  readonly maxSeconds: number;
+  readonly requestId: string;
+}
+
+export interface IssuedEmbodimentSession {
+  /** Single-use credential for the browser SDK. A credential: never logged, stored or replayed. */
+  readonly token: string;
+  /** ISO-8601 time after which the token no longer opens a session. */
+  readonly expiresAt: string;
+}
+
+/** Thrown when a vendor session cannot be minted (vendor down, key missing, quota): the call keeps the presence. */
+export class EmbodimentSessionError extends Error {
+  override readonly name = 'EmbodimentSessionError';
+}
+
+/**
+ * The face of calls (docs/architecture/calls.md §4): mints a vendor's single-use realtime-avatar session for a
+ * live call, with the vendor key held by the API (Secrets Manager). The vendor only ever renders what the call
+ * already validated: our audio (`audio`) or our signed text (`text`). Absent: every call keeps the built-in
+ * presence. The local API can run the development stand-in (`fake`, no one's likeness).
+ */
+export interface EmbodimentSessionIssuer {
+  /** The provider id the call screen loads (`EmbodimentProviderId`). */
+  readonly provider: 'fake' | 'heygen' | 'tavus' | 'simli';
+  readonly voicing: EmbodimentVoicing;
+  /**
+   * Whether the face is a real person's likeness (a vendor avatar of the EIR): then it serves only personas
+   * configured for this provider whose likeness consent is in force. The stand-in draws no one and serves any.
+   */
+  readonly likeness: boolean;
+  start(request: EmbodimentSessionRequest): Promise<IssuedEmbodimentSession>;
+}
+
 export interface JobQueue {
   /** Enqueues a job, optionally delayed. */
   enqueue(job: JobMessage, options?: EnqueueOptions): Promise<void>;

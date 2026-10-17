@@ -21,6 +21,7 @@ import { MAX_DOCUMENT_BYTES } from '@foundry/contracts';
 import { createCore } from '@foundry/core';
 import { migrate } from '@foundry/db';
 
+import { developmentFaceFor } from './adapters/development-face.js';
 import { InlineJobQueue } from './adapters/inline-job-queue.js';
 import { LocalObjectStore } from './adapters/local-object-store.js';
 import { DocumentTextExtractor } from './adapters/text-extractor.js';
@@ -87,6 +88,8 @@ async function main(): Promise<void> {
     textExtractor: new DocumentTextExtractor(),
     logger: logger.child({ component: 'core' }),
     ...localSpeechFor(env, config),
+    // EMBODIMENT_PROVIDER=fake: every call gets the stand-in face (a canvas, no vendor, no key).
+    ...developmentFaceFor(env),
   });
   const workerDeps = workerDepsFor(core, { db, gateway, logger, maxReceiveCount: LOCAL_JOB_ATTEMPTS });
   jobQueue.attach(async (job, { attempt, requestId }) => {
