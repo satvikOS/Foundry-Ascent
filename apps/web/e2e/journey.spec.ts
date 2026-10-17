@@ -2,7 +2,7 @@ import { expect, type APIRequestContext, type Browser, type Page } from '@playwr
 
 import {
   composer,
-  expectDisclosureInView,
+  expectVeirBadgeInView,
   FOUNDER_NAME,
   FOUNDER_STATE,
   issueAccessCodeViaApi,
@@ -133,7 +133,7 @@ test.describe('founder journey', () => {
     });
 
     let ventureId = '';
-    await test.step('New chat: the vEIR greets the founder with starting points and one disclosure', async () => {
+    await test.step('New chat: the vEIR greets the founder with starting points, its badge and no disclaimer line', async () => {
       ventureId = await openVenture(page);
       const nav = page.getByRole('navigation', { name: 'Main' });
       await expect(nav.getByRole('button', { name: new RegExp(`Current: ${VENTURE_NAME}$`) })).toBeVisible();
@@ -143,7 +143,7 @@ test.describe('founder journey', () => {
         page.getByRole('list', { name: 'Suggestions' }).getByRole('listitem').first(),
       ).toBeVisible();
       await expect(page.getByRole('combobox', { name: 'Mode for the next message' })).toHaveText(/Auto/);
-      await expect(page.getByRole('note', { name: 'AI disclosure' })).toHaveCount(1);
+      await expectVeirBadgeInView(page);
       await expectNoBareEirName(page, 'New chat');
     });
 
@@ -153,7 +153,7 @@ test.describe('founder journey', () => {
     await test.step('the first message starts the conversation, named after it, with a cited answer', async () => {
       const result = await startAndAwaitAnswer(page, question);
       conversationId = result.conversationId;
-      await expectDisclosureInView(page);
+      await expectVeirBadgeInView(page);
       await expect(page.getByRole('heading', { level: 1 })).toContainText('Which assumption should we test');
       await expect(result.answer.getByRole('button', { name: /^Source 1: / }).first()).toBeVisible();
       // Citations are quiet numbers, and no report artefact (raw keys, a "Limited evidence" quote) shows.
@@ -276,7 +276,7 @@ test.describe('founder journey', () => {
       ).toContainText(`Interview plan ${token}`);
     });
 
-    await test.step('end the conversation and read its summary, with the disclosure still in view', async () => {
+    await test.step('end the conversation and read its summary, with the vEIR badge still in view', async () => {
       await page.getByRole('button', { name: 'Conversation options' }).click();
       await page.getByRole('menuitem', { name: 'End and summarise' }).click();
       const confirm = page.getByRole('alertdialog', { name: 'End this conversation?' });
@@ -286,7 +286,7 @@ test.describe('founder journey', () => {
       await expect(summary).toBeVisible();
       await expect(summary.getByRole('heading', { name: 'Diagnosis' })).toBeVisible();
       await expect(summary.getByRole('heading', { name: 'Next steps' })).toBeVisible();
-      await expectDisclosureInView(page);
+      await expectVeirBadgeInView(page);
       await expect(composer(page)).toHaveCount(0);
       // The summary holds the next steps now: the answers above no longer offer them a second time.
       await expect(page.getByRole('region', { name: 'Suggested next steps' })).toHaveCount(0);

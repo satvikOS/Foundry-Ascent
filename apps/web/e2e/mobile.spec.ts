@@ -2,7 +2,7 @@ import { expect } from '@playwright/test';
 
 import {
   composer,
-  expectDisclosureInView,
+  expectVeirBadgeInView,
   expectNoHorizontalScroll,
   expectReachable,
   FOUNDER_STATE,
@@ -71,13 +71,14 @@ test.describe('mobile 390×844', () => {
       });
       await expectNoHorizontalScroll(page);
       await expectReachable(page, composer(page));
-      await expectDisclosureInView(page);
+      await expectVeirBadgeInView(page);
       // One bar on a phone: the conversation's header carries the menu, its title and New chat. Calls start
       // from the composer's voice button, as on New chat.
       const bar = page.locator('header').filter({ has: page.getByRole('heading', { level: 1 }) });
       await expect(page.locator('header:visible')).toHaveCount(1);
       await expectReachable(page, bar.getByRole('button', { name: 'Open navigation' }));
-      await expect(bar).toContainText('AI');
+      // The vEIR's name and badge ("Corin · vEIR") under the title.
+      await expect(bar.locator('[data-slot="veir-badge"]').filter({ visible: true })).toHaveText('vEIR');
       await expect(bar.getByRole('link', { name: /^Call / })).toHaveCount(0);
       await expectReachable(page, page.getByRole('main').getByRole('link', { name: /^Call / }));
       await expectReachable(page, bar.getByRole('link', { name: 'New chat' }));
