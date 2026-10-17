@@ -39,18 +39,22 @@ describe('FoundryAscent-Data', () => {
   });
 
   describe('Aurora Serverless v2', () => {
-    it('scales to zero and auto-pauses when the owner sets the minimum back to 0 ACU', () => {
+    it('stays awake with no auto-pause when the owner sets a minimum above 0 ACU', () => {
       const production = loadConfig();
-      const paused = synthesize(
+      const awake = synthesize(
         { appVersion: 'test-sha' },
-        { ...production, aurora: { ...production.aurora, minCapacityAcu: 0 } },
+        { ...production, aurora: { ...production.aurora, minCapacityAcu: 0.5 } },
       );
-      paused.templates.data.hasResourceProperties('AWS::RDS::DBCluster', {
-        ServerlessV2ScalingConfiguration: { MinCapacity: 0, MaxCapacity: 2, SecondsUntilAutoPause: 600 },
+      awake.templates.data.hasResourceProperties('AWS::RDS::DBCluster', {
+        ServerlessV2ScalingConfiguration: {
+          MinCapacity: 0.5,
+          MaxCapacity: 2,
+          SecondsUntilAutoPause: Match.absent(),
+        },
       });
     });
 
-    it('stays awake at 0.5 ACU (no auto-pause, no resume wait) and exposes the Data API', () => {
+    it('scales to zero, pauses after 30 idle minutes and exposes the Data API', () => {
       template.hasResourceProperties('AWS::RDS::DBCluster', {
         Engine: 'aurora-postgresql',
         EngineVersion: '16.13',
@@ -58,9 +62,9 @@ describe('FoundryAscent-Data', () => {
         DatabaseName: 'foundry',
         MasterUsername: 'foundry_admin',
         ServerlessV2ScalingConfiguration: {
-          MinCapacity: 0.5,
+          MinCapacity: 0,
           MaxCapacity: 2,
-          SecondsUntilAutoPause: Match.absent(),
+          SecondsUntilAutoPause: 1800,
         },
         EnableHttpEndpoint: true,
         EnableIAMDatabaseAuthentication: false,

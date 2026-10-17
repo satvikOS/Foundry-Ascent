@@ -39,15 +39,18 @@ subscriptions. The alarms are listed in [cost controls](cost-controls.md#alarms)
 ## 2. Create an AWS Budget
 
 Billing → **Budgets → Create budget → Cost budget**, monthly, with the amount you are prepared to spend.
-Idle is about $45–47 a month: the database is kept awake at 0.5 ACU (about $44) so no founder waits 15–30 s
-for it to resume ([latency](latency.md)). Setting `aurora.minCapacityAcu` to 0 in
-`infra/cdk/config/production.json` brings idle back to $1–3, with that wait after 10 idle minutes. The daily
-AI cap ($15 by default) allows up to about $450 a month of AI spend, so a budget of, for example, $75 with
-email alerts at 80 % and 100 % of actual cost and 100 % of forecast cost catches growth early without
-firing on the idle bill every month (at `minCapacityAcu: 0`, $50 with alerts at 50 %, 80 % and 100 % does
-the same). Also turn on **Cost Anomaly Detection** (Billing → Cost Anomaly Detection → default service
-monitor, daily email summary; free); expect one anomaly email for the step from $1–3 to about $46 in the
-first month after the change.
+Idle is $1–3 a month plus usage: the database pauses after 30 idle minutes ($0 while paused, about $0.06 an
+hour while in use), and the first request after a pause waits about 15–20 s while it resumes
+([cost controls](cost-controls.md#aurora-paused-when-idle)). The daily AI cap ($15 by default) allows up to
+about $450 a month of AI spend, so a budget of, for example, $50 with email alerts at 50 %, 80 % and 100 %
+of actual cost and 100 % of forecast cost catches growth early. If you created a $75 budget while the
+database was kept awake, lower it to $50 with those alerts. (Setting `aurora.minCapacityAcu` to 0.5 in
+`infra/cdk/config/production.json` would keep the database awake for about $44 a month; a $50 budget's
+alerts would then fire on the idle bill every month, so it would need about $75 with alerts at 80 % and
+100 %.) Also turn on **Cost Anomaly Detection** (Billing → Cost Anomaly Detection → default service
+monitor, daily email summary; free). The database was kept awake from 2026-10-16 until the revert deployed on
+2026-10-17 (about $1.44 a day of Amazon RDS); an anomaly email about those days is that change, not a
+leak, and nothing more is expected from it.
 
 Add a second cost budget scoped to **Service: Amazon Transcribe** (for example $10 a month, alert at 100 %
 of actual cost). Transcribe streaming is the one AI cost the app can only meter as clients report it: an

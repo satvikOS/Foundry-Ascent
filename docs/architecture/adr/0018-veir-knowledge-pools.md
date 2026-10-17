@@ -122,7 +122,8 @@ Knowledge comes in three trust levels, and the prompt labels each one:
   checked against the daily caps. The kill switch stops distillation with every other AI path.
 - **Nothing may keep Aurora awake for no reason.** Aurora pauses after 10 idle minutes (ADR-0011); a
   database query every 15 minutes would keep it awake about two thirds of the time, about $29 a month at
-  0.5 ACU and $0.12 per ACU-hour, against an idle target of $1–3. Hence the per-turn delayed message
+  0.5 ACU and $0.12 per ACU-hour, against an idle target of $1–3. (Since 2026-10-17 it pauses after 30
+  idle minutes, so such a query would keep it awake all the time, about $44 a month.) Hence the per-turn delayed message
   instead of polling: it fires only when someone talked, and its 9-minute delay (under SQS's 15-minute
   maximum) lands while the cluster is still up from that turn. A conversation that keeps going sends
   newer messages, and the stale ones are dropped without a model call.

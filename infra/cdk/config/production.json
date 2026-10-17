@@ -24,11 +24,11 @@
     }
   },
   "aurora": {
-    "minCapacityAcu": 0.5,
+    "minCapacityAcu": 0,
     "maxCapacityAcu": 2,
-    "autoPauseMinutes": 10,
+    "autoPauseMinutes": 30,
     "engineVersion": "16.13",
-    "note": "Kept awake at 0.5 ACU (about USD 44 a month, 0.5 ACU x USD 0.12 per ACU-hour x 730 hours) so no founder waits 15-30 s for a paused cluster to resume: the first request after 10 idle minutes did. autoPauseMinutes applies only at minCapacityAcu 0; set it back to 0 to pause again (docs/runbooks/latency.md)."
+    "note": "Pauses after 30 idle minutes (USD 0 while paused; about USD 0.06 an hour while in use at 0.5 ACU). The owner chose this over keeping it awake (about USD 44 a month). The first request after a pause waits about 15-20 s while the cluster resumes (docs/runbooks/cost-controls.md, \"Aurora: paused when idle\")."
   },
   "api": {
     "reservedConcurrency": null,

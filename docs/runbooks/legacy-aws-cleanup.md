@@ -11,8 +11,8 @@
 **Policy:** `infra/iam/policies/legacy-cleanup.json`
 
 The AWS account predates Foundry Ascent and contained billable resources from earlier projects. This
-one-time tool removes them so the account bill reflects only Foundry Ascent (about $45–47/month idle with
-the database kept awake at 0.5 ACU; $1–3 with `aurora.minCapacityAcu: 0`; [cost controls](cost-controls.md)). It is designed to be safe to run repeatedly: **plan** is read-only,
+one-time tool removes them so the account bill reflects only Foundry Ascent (about $1–3/month idle plus
+usage, [cost controls](cost-controls.md)). It is designed to be safe to run repeatedly: **plan** is read-only,
 **apply** deletes only what the plan lists, and everything belonging to Foundry Ascent or the CDK
 bootstrap is protected twice.
 

@@ -39,8 +39,8 @@ Region `us-east-1`, account taken from the deploying credentials. Every IAM role
 
 - VPC `10.40.0.0/16`, 2 AZs, **isolated subnets only** (no IGW, NAT, EIP or endpoints). The default security
   group is stripped of rules; rejected traffic is flow-logged to the access-log bucket.
-- Aurora Serverless v2 PostgreSQL 16.13 (`foundry-ascent`): one `db.serverless` writer, 0.5–2 ACU (kept
-  awake so no request waits for a resume; at `aurora.minCapacityAcu: 0` it auto-pauses after 10 min), Data API on, storage encrypted with the AWS-managed key, 7-day backups,
+- Aurora Serverless v2 PostgreSQL 16.13 (`foundry-ascent`): one `db.serverless` writer, 0–2 ACU,
+  auto-pause after 30 idle minutes (`aurora.autoPauseMinutes`), Data API on, storage encrypted with the AWS-managed key, 7-day backups,
   deletion protection, `SNAPSHOT` on delete, `postgresql` log export (30-day log group created before the
   cluster), security group with no ingress/egress. Secret `foundry-ascent/aurora-admin` (user `foundry_admin`).
 - Documents bucket: private, SSE-S3, TLS ≥ 1.2 only, unversioned, incomplete multipart uploads aborted
@@ -152,9 +152,8 @@ edge header names.
 
 ### Timeouts and Aurora resume
 
-Production keeps Aurora awake at 0.5 ACU, so requests do not wait for a resume. When `aurora.minCapacityAcu`
-is 0 the cluster pauses, and it takes ~15 s (sometimes more) to resume. No byte goes out while an API
-request waits, so the wait must end well before CloudFront or Lambda gives up:
+Aurora at 0 ACU pauses after 30 idle minutes and takes about 15–20 s (sometimes more) to resume. No byte
+goes out while an API request waits, so the wait must end well before CloudFront or Lambda gives up:
 
 | Number                                    | Value            | Where                                                                                        |
 | ----------------------------------------- | ---------------- | -------------------------------------------------------------------------------------------- |
@@ -309,17 +308,19 @@ derives IAM5 finding ids from the policy values themselves. They are attached to
 | S1                     | site bucket                                                        | public build output, read only via OAC                                                                                                                      |
 | CFR1, CFR2, CFR3, CFR4 | distribution                                                       | no geo policy, WAF denied, logging v1 needs ACLs, default certificate (CFR4 only without custom domain)                                                     |
 
-## Cost notes (idle ≈ $45–47/month; ≈ $1–3 with `aurora.minCapacityAcu: 0`)
+## Cost notes (idle ≈ $1–3/month plus usage)
 
-- Aurora: about $44 a month of compute kept awake at 0.5 ACU (no request waits for a resume); at 0 ACU, $0
-  compute while paused, and the first request after a pause waits ~15 s. Storage ~$0.10/GB-month. Max 2 ACU
-  caps the bill under load. Backups within the retention window of the cluster size are free.
+- Aurora: $0 compute while paused (after 30 idle minutes), about $0.06 an hour while awake at 0.5 ACU; the
+  first request after a pause waits about 15–20 s. `aurora.minCapacityAcu: 0.5` would keep it awake for
+  about $44 a month with no wait (docs/runbooks/cost-controls.md, "Aurora: paused when idle").
+  Storage ~$0.10/GB-month. Max 2 ACU caps the bill under load. Backups within the retention window of the
+  cluster size are free.
 - No NAT gateway, EIP, VPC endpoint, customer KMS key, WAF, provisioned concurrency or Performance Insights.
 - Secrets Manager: one secret ($0.40/month). S3/CloudFront/SQS/SNS/CloudWatch alarms: cents at V1 traffic
   (7 standard alarms ≈ $0.70/month). Log groups expire after 30 days; access logs after 90.
 - EventBridge Scheduler: the daily schedule sends 30 messages a month (free tier); the disabled sweep
-  sends none. A sweep querying Aurora every 15 minutes would keep it awake about two thirds of the time
-  (ADR-0018 "Cost").
+  sends none. A sweep querying Aurora every 15 minutes would keep it awake all the time (it pauses only
+  after 30 idle minutes; ADR-0018 "Cost").
 - Amazon Polly (voice calls): per character synthesized (neural USD 16, generative USD 30 per million;
   a 70-word spoken reply is about 420 characters, ≈ USD 0.007 neural). Metered in `usage_ledger` (purpose
   `speech`) under the global daily cap, not a person's own AI cap; the two speech alarms are the backstop.

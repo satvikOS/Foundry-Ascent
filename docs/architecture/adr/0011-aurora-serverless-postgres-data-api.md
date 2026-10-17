@@ -49,6 +49,13 @@ Temporal and Redis are deferred.
 again whenever `aurora.minCapacityAcu` is set back to 0 (`infra/cdk/config/production.json`). The resume
 handling above stays for that case. Measurements and the trade-off: [latency runbook](../../runbooks/latency.md).
 
+**Amended 2026-10-17 (cost):** the owner reverted the 2026-10-16 amendment: production is back at
+`serverlessV2MinCapacity: 0` and pauses after 30 idle minutes (`aurora.autoPauseMinutes: 30`): USD 0 while
+paused, about USD 0.06 an hour while in use, and the first request after a pause waits about 15–20 s while
+the resume handling above runs. Keeping the cluster awake (`aurora.minCapacityAcu: 0.5`, about USD 44 a
+month) was too much for an idle platform. The trade-off and how to change it:
+[cost controls](../../runbooks/cost-controls.md#aurora-paused-when-idle).
+
 ### Consequences
 
 - Good: compute costs $0 while paused; one engine for relational data, vectors, FTS and RLS.

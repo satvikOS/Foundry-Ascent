@@ -44,11 +44,12 @@ describe('config', () => {
   it('loads config/production.json', () => {
     const config = loadConfig();
     expect(config.region).toBe('us-east-1');
-    // Kept awake at 0.5 ACU: no request waits for a paused cluster to resume (docs/runbooks/latency.md).
+    // Pauses after 30 idle minutes (USD 0 while paused); the owner chose this over staying awake (about USD 44 a
+    // month): docs/runbooks/cost-controls.md, "Aurora: paused when idle".
     expect(config.aurora).toEqual({
-      minCapacityAcu: 0.5,
+      minCapacityAcu: 0,
       maxCapacityAcu: 2,
-      autoPauseMinutes: 10,
+      autoPauseMinutes: 30,
       engineVersion: '16.13',
     });
     // One full vCPU for the API.

@@ -3,8 +3,8 @@
  *
  *  - VPC with isolated subnets only (no IGW, no NAT, no endpoints): Aurora needs a subnet group, nothing in
  *    the VPC needs the internet, and Lambdas reach the database through the RDS Data API, not the VPC.
- *  - Aurora Serverless v2 PostgreSQL (kept awake at `aurora.minCapacityAcu`, 0.5 ACU in production; it scales
- *    to 0 ACU and auto-pauses when that is 0), Data API on, AWS-managed encryption.
+ *  - Aurora Serverless v2 PostgreSQL (scales to 0 ACU and auto-pauses after `aurora.autoPauseMinutes` idle, 30
+ *    in production; a minimum above 0 keeps it awake instead), Data API on, AWS-managed encryption.
  *  - Documents bucket (presigned uploads), access-log bucket, jobs queue + DLQ.
  */
 import { CfnResource, Duration, RemovalPolicy, Resource, Stack, type StackProps } from 'aws-cdk-lib';
@@ -129,8 +129,9 @@ export class DataStack extends Stack {
       }),
       serverlessV2MinCapacity: config.aurora.minCapacityAcu,
       serverlessV2MaxCapacity: config.aurora.maxCapacityAcu,
-      // Auto-pause exists only at 0 ACU. Above it the cluster stays awake: no request waits for a resume
-      // (docs/runbooks/latency.md), at the cost of the minimum capacity (docs/runbooks/cost-controls.md).
+      // Auto-pause exists only at 0 ACU (production: USD 0 while paused, the first request after a pause waits
+      // for the resume). Above it the cluster never pauses and bills the minimum capacity around the clock
+      // (docs/runbooks/cost-controls.md, "Aurora: paused when idle").
       ...(config.aurora.minCapacityAcu === 0
         ? { serverlessV2AutoPauseDuration: Duration.minutes(config.aurora.autoPauseMinutes) }
         : {}),

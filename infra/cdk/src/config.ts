@@ -35,8 +35,9 @@ export interface PlatformConfig {
   };
   readonly aurora: {
     /**
-     * 0 lets the cluster pause after `autoPauseMinutes` idle (USD 0 while paused; the first request after a
-     * pause waits 15-30 s for it to resume); 0.5 or more keeps it awake (about USD 44 a month at 0.5).
+     * 0 (production) lets the cluster pause after `autoPauseMinutes` idle (USD 0 while paused; the first
+     * request after a pause waits 15-20 s for it to resume); 0.5 or more never pauses (about USD 44 a month at
+     * 0.5).
      */
     readonly minCapacityAcu: number;
     readonly maxCapacityAcu: number;
