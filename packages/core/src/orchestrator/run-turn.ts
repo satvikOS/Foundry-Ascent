@@ -181,6 +181,8 @@ interface Coach {
   /** Modes allowed by both the assignment and that release. */
   readonly allowedModes: readonly CoachMode[];
   readonly personaEirName: string | null;
+  /** How the vEIR is present to this venture's founders (first-person consent, the EIR sees the work). */
+  readonly presence: Pick<personasRepo.PersonaPresence, 'firstPerson' | 'eirSeesWork'>;
   /** Earlier completed turns, oldest first (at most `historyTurns`). */
   readonly history: readonly turnsRepo.TurnRecord[];
   /**
@@ -433,10 +435,16 @@ export function createOrchestrator(
           tx,
           history.map((t) => t.id),
         );
+        // One round trip: the persona's EIR, its first-person consent and whether that EIR is the venture's.
+        const presence = await personasRepo.getPersonaPresence(tx, {
+          personaId: active.persona.id,
+          assignedEirProfileId: active.eir?.id ?? null,
+        });
         coach = {
           release,
           allowedModes,
-          personaEirName: await personasRepo.getPersonaEirName(tx, active.persona.id),
+          personaEirName: presence.eirName,
+          presence,
           history,
           heardHistory: historyAsHeard(history, interruptions),
           // The opener is the conversation's first message: replayed while the history reaches back to it.
@@ -768,6 +776,7 @@ export function createOrchestrator(
       release: coach.release,
       personaName: active.persona.name,
       personaEirName: coach.personaEirName,
+      presence: coach.presence,
       mode: pre.mode,
       allowedModes: coach.allowedModes,
       fallbackMode: coach.allowedModes.includes(pre.session.mode)

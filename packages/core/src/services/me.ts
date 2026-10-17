@@ -1,18 +1,29 @@
-import { DEFAULT_DISCLOSURE, type AccountNotice, type Me } from '@foundry/contracts';
+import {
+  DEFAULT_DISCLOSURE,
+  type AccountNotice,
+  type Me,
+  type VeirWelcomeAcknowledgement,
+} from '@foundry/contracts';
 import { authRepo, principalsRepo, settingsRepo, tenantsRepo } from '@foundry/db';
 
 import { loadPrincipalRoles } from '../authz/roles.js';
 import { type RequestContext } from '../context.js';
 import { DomainError } from '../errors.js';
-import { type Kit } from '../internal/kit.js';
+import { audit, type Kit } from '../internal/kit.js';
 
 export interface MeService {
   /**
-   * The caller's identity, roles, memberships, assigned ventures, disclosure, AI kill-switch state and
-   * account notices. With `sessionId` (a verified session), `notices` lists access codes someone else
-   * issued for this account since the caller's previous sign-in.
+   * The caller's identity, roles, memberships, assigned ventures, disclosure, AI kill-switch state, account
+   * notices and when they acknowledged the vEIR welcome. With `sessionId` (a verified session), `notices` lists
+   * access codes someone else issued for this account since the caller's previous sign-in.
    */
   get(ctx: RequestContext & { readonly sessionId?: string }): Promise<Me>;
+  /**
+   * The caller read the welcome that introduces their vEIR (what a vEIR is, once, before their first
+   * conversation): stored with the person (migration 0016), idempotent (a repeat returns the first time),
+   * audited the first time only.
+   */
+  acknowledgeVeirWelcome(ctx: RequestContext): Promise<VeirWelcomeAcknowledgement>;
 }
 
 export function createMeService(kit: Kit): MeService {
@@ -42,6 +53,7 @@ export function createMeService(kit: Kit): MeService {
           assignedVentureIds,
           disclosure: DEFAULT_DISCLOSURE,
           aiEnabled: settings.aiEnabled,
+          veirWelcomeAcknowledgedAt: await principalsRepo.veirWelcomeAcknowledgedAt(tx),
         };
       });
       // Credential tables are closed to app_rls: read the caller's own code history with the owner role,
@@ -61,5 +73,24 @@ export function createMeService(kit: Kit): MeService {
       const notices: AccountNotice[] = issued.map((at) => ({ kind: 'access_code_issued', at }));
       return { ...me, notices };
     },
+
+    acknowledgeVeirWelcome: async (ctx) =>
+      kit.inRequest(ctx, async (scope) => {
+        const acknowledged = await principalsRepo.acknowledgeVeirWelcome(scope.tx);
+        if (acknowledged === null) {
+          throw new DomainError('unauthenticated', 'Please sign in again.', {
+            reason: 'principal_unavailable',
+          });
+        }
+        if (acknowledged.firstTime) {
+          await audit(scope, {
+            action: 'veir.welcome_acknowledged',
+            outcome: 'succeeded',
+            objectType: 'principal',
+            objectId: ctx.principalId,
+          });
+        }
+        return { acknowledgedAt: acknowledged.acknowledgedAt };
+      }),
   };
 }

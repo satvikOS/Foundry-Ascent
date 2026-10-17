@@ -296,7 +296,8 @@ describe('starting a call', () => {
     expect(CALL_LIMITS.sttGrantSeconds).toBeLessThanOrEqual(30);
     const intro = started.intro;
     if (intro === null) throw new Error('expected an intro');
-    expect(intro.text).toMatch(/^Hi Maya, this is Corin's vEIR, an AI coach\. Last time you planned five/);
+    // Maya has met her vEIR (the seeded conversation): a greeting, then the opener.
+    expect(intro.text).toMatch(/^Hi Maya\. Last time you planned five/);
     expect(
       verifySpeechUnit(
         await keys.verificationKeys(),
@@ -313,9 +314,7 @@ describe('starting a call', () => {
     // A conversation under way gets an invitation to continue instead of the opener.
     await talk('maya', sessionId, again.call.id, 'Can we test the seat map this week?');
     const third = await startCall('maya', sessionId);
-    expect(third.intro?.text).toBe(
-      "Hi Maya, this is Corin's vEIR, an AI coach. Where would you like to pick up?",
-    );
+    expect(third.intro?.text).toBe('Hi Maya. Where would you like to pick up?');
     await endCall('maya', third.call.id);
     expect(await auditActions()).toEqual(expect.arrayContaining(['call.started', 'call.ended']));
     // The grant URL and the intro are content: never logged.
@@ -336,7 +335,7 @@ describe('starting a call', () => {
     const sessionId = await newSession('maya', 'quietquad');
     const started = await startCall('maya', sessionId);
     // Never the stored line: the call picks up Maya's last conversation (the test above) instead.
-    expect(started.intro?.text).toMatch(/^Hi Maya, this is Corin's vEIR, an AI coach\. /);
+    expect(started.intro?.text).toMatch(/^Hi Maya\. /);
     expect(started.intro?.text).toContain('“Can we test the seat map this week?”');
     expect(started.intro?.text).not.toMatch(/Corin here|myself/);
     await endCall('maya', started.call.id);
@@ -355,7 +354,7 @@ describe('starting a call', () => {
     try {
       const sessionId = await newSession('maya', 'quietquad');
       const started = await startCall('maya', sessionId);
-      expect(started.intro?.text).toMatch(/^Hi Maya, this is Corin's vEIR, an AI coach\. /);
+      expect(started.intro?.text).toMatch(/^Hi Maya\. /);
       expect(started.intro?.text).not.toMatch(/Corin Halvorsen|Corin asked/);
       await endCall('maya', started.call.id);
     } finally {
@@ -1743,7 +1742,7 @@ describe('the turn engine and the calls service together', () => {
     const started = await startCall('maya', session.id, 'typed');
     const intro = started.intro;
     if (intro === null) throw new Error('expected an intro');
-    expect(intro.text).toBe(`Hi Maya, this is Corin's vEIR, an AI coach. ${since}`);
+    expect(intro.text).toBe(`Hi Maya. ${since}`);
     // What the vEIR believes it opened with (its first history message) is what the call said.
     expect((await h.core.sessions.get(ctx.maya, session.id)).session.opener).toBe(since);
     expect(
@@ -1758,9 +1757,7 @@ describe('the turn engine and the calls service together', () => {
     const temporary = await h.core.sessions.create(ctx.maya, quietquad, { privacy: 'ephemeral' });
     expect(temporary.opener).toBeNull();
     const call = await startCall('maya', temporary.id, 'typed');
-    expect(call.intro?.text).toBe(
-      "Hi Maya, this is Corin's vEIR, an AI coach. What would you like to work on?",
-    );
+    expect(call.intro?.text).toBe('Hi Maya. What would you like to work on?');
     await endCall('maya', call.call.id);
   });
 
