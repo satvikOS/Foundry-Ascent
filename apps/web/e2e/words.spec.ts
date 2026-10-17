@@ -134,6 +134,15 @@ test.describe('word budgets', () => {
     await owner.close();
     await signIn(page, code);
     const ventureId = await openVenture(page);
+    // From the second run on, Priya has an older code too, so the shell says a new one was issued: a one-time
+    // notice she would dismiss, not part of any screen (dismissed for the rest of this browser's visit).
+    const codeNotice = page
+      .locator('[data-slot="status-banner"]')
+      .filter({ has: page.getByTestId('access-code-notice') });
+    if (await codeNotice.isVisible()) {
+      await codeNotice.getByRole('button', { name: 'Dismiss' }).click();
+      await expect(codeNotice).toBeHidden();
+    }
     // The call notice (a first call's one-time explanation) is not part of the call screen measured here.
     const notice = await page.request.post('/api/v1/calls/notice/acknowledge', { headers: WRITE_HEADERS });
     expect(notice.status(), 'POST /calls/notice/acknowledge').toBe(200);
