@@ -169,14 +169,14 @@ REINTRODUCTION = re.compile(
 # Attunement --------------------------------------------------------------------------------------------------------
 
 ACKNOWLEDGEMENT = re.compile(
-    r"\b(?:that(?:'s|’s| is| sounds| does sound)? (?:a lot|hard|tough|rough|stressful|frustrating|exciting|great|"
-    r"brilliant|wonderful|awful|annoying|scary|normal|fair|understandable|a relief|good news|draining|exhausting|"
-    r"heavy|painful|a win|a real start)|sounds (?:like )?(?:a lot|hard|tough|rough|stressful|frustrating|exciting|"
+    r"\b(?:that(?:'s|’s| is| sounds| does sound)? (?:a |an |such a |so |really |pretty |quite )?(?:lot|hard|tough|"
+    r"rough|stressful|frustrating|exciting|great|brilliant|wonderful|awful|annoying|scary|normal|fair|"
+    r"understandable|relief|good news|draining|exhausting|heavy|painful|win|real start)|sounds (?:like )?(?:a lot|hard|tough|rough|stressful|frustrating|exciting|"
     r"great|draining|exhausting|heavy|brutal)|no wonder|of course you|makes (?:total |complete )?sense|"
     r"understandabl[ey]|i get (?:it|that|why)|i can (?:see|tell|hear) (?:why|that|how)|fair enough|oof|ugh|ouch|"
     r"congrat\w*|well done|nice (?:one|work)|good for you|love to hear|glad|sorry (?:to hear|about|that|you)|"
     r"i'?m sorry|that stings|not nothing|you'?re not alone|(?:totally|completely|so|very|pretty) normal|"
-    r"deep breath|one thing at a time|slow (?:down|this down)|let'?s slow|draining|exhausting|frustrat\w*|"
+    r"deep breath|one (?:thing|piece|step) at a time|slow (?:down|this down)|let'?s slow|draining|exhausting|frustrat\w*|"
     r"stress\w*|overwhelm\w*|anxi\w*|nervous|worr\w*|excit\w*|proud|relie\w*|embarrass\w*|confus\w*|"
     r"discourag\w*|feeling (?:down|lost|low)|tired|hard week|tough week|exhale|breathe|annoy\w*|"
     r"you'?re right to|fair point|my bad|that'?s on me|first win|great news|good news|hats off|big step|"

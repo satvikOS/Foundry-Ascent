@@ -912,6 +912,36 @@ class TestParroting:
         assert parrots("anything", []) is None
 
 
+class TestAcknowledgement:
+    @pytest.mark.parametrize(
+        "reply",
+        [
+            # The recorded mock's own acknowledgement (MX-0002), missed by the first version of the pattern.
+            "That's a heavy week. Let's take one piece at a time.",
+            "That sounds really draining. One step at a time.",
+            "Oof, three cancellations in a row.",
+            "Congrats on the first sign-ups!",
+        ],
+    )
+    def test_acknowledgements(self, reply: str) -> None:
+        assert results(
+            grade(one(reply, "emotion.acknowledged", founder="I'm so frustrated.")), "emotion.acknowledged"
+        ) == [True]
+
+    @pytest.mark.parametrize(
+        "reply",
+        [
+            "I'll be direct. The most useful interviews ask about what people did last time.",
+            "Hello Jonah, welcome. Decide before you start what result would make you stop.",
+            "That's the plan: run five interviews.",
+        ],
+    )
+    def test_no_acknowledgement(self, reply: str) -> None:
+        assert results(
+            grade(one(reply, "emotion.acknowledged", founder="I'm so frustrated.")), "emotion.acknowledged"
+        ) == [False]
+
+
 class TestMechanics:
     def test_a_blocked_recall_fails_instead_of_dropping_out(self) -> None:
         convo = Convo(
