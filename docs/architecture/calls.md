@@ -401,23 +401,56 @@ instead of a generic error.
 ## 4. Avatar provider seam
 
 The call engine owns the conversation (speech in, validated speech out); an avatar provider only embodies it.
-`apps/web/src/lib/realtime/avatar.ts` (the code is authoritative):
+`apps/web/src/lib/realtime/avatar.ts` and `playback.ts` (the code is authoritative):
 
 ```text
 AvatarProvider
-  id                         builtin | heygen | tavus | simli   (PersonaEmbodiment.provider)
+  id                         builtin | heygen | tavus | simli | fake   (EmbodimentProviderId)
   drawsFace                  true when the provider renders its own face (vendor video)
+  voicing                    engine | audio | text
   mount(stage, options)      attach to the stage element; honours reduced motion
   setState(state)            connecting | listening | thinking | speaking | muted | idle
   setLevels({veir, founder}) both voices' loudness (0–1), every animation frame
   speak({text})              a validated unit starts being heard
   unmount()                  release the stage (and any vendor session)
+  vendor faces only:
+  connect(session, signal)   open the vendor session with the API's single-use token; resolves at the first frame
+  video()                    the face's live MediaStream for the call tile
+  renderer()                 voicing `audio`: the FaceRenderer the call hands its audio to
+  onLost(listener)           the face stopped (vendor dropped, video ended)
+
+FaceRenderer
+  ready()                                   connected and showing video
+  render(buffer, {context, destination}, {onStart, onEnd('ended' | 'failed')}) → stop
 ```
 
-`createAvatarProvider(id)` returns the registered adapter. Only `builtin` ships; a persona configured for a
-vendor keeps the presence until that vendor's adapter is registered. The interface is visual: `speak`
-notifies the face that a unit started being heard through the engine's own playback. A vendor that voices
-the face itself needs two additions first (below), so a vendor adapter never doubles the audio.
+**Voicing.** `engine`: the call plays its own audio and the face follows its loudness (the built-in presence).
+`audio`: the face renders the call's validated audio itself, lip-synced (a vendor's speech-to-video). The player
+fetches and decodes each unit from `POST /speech` as before and hands the buffer to the face, which plays it into
+the player's own gain node (a vendor adapter routes its remote audio track there with `createMediaStreamSource`;
+the tile's `<video>` stays muted), so ducking for barge-in, loudness and the captions' timing are unchanged. A unit
+is announced (captions, first-audio timing, heard units) at the face's first sound; a unit the face fails before its
+first sound is played through the speakers instead, so no sentence is lost to the face. `text` (a vendor voicing
+validated text) is reserved: it would need a per-unit receipt route before any text leaves the call, and it hands the
+voice to the vendor.
+
+**The face of a call.** The call settings (`GET /ventures/:id/call-config`) name the provider. Once the call is
+live, the stage (`features/calls/use-call-face.ts`) asks `POST /calls/avatar-session {ventureId, callId}`. The API
+(`veir.avatarSession`) mints a vendor session only through the `EmbodimentSessionIssuer` port, only for the caller's
+own live call in that venture with that persona (409 `call_not_active` otherwise), ending with the call's time left,
+and only when a face of a real person's likeness is the persona's provider under likeness consent (`faceIssuer`).
+The vendor round trip happens outside the database transaction; the token is never stored, logged or audited (the
+audit records the provider and voicing). Any failure, and a call with less than 15 s left, answers the presence
+(`provider: builtin`, no token). The stage then loads the vendor adapter (its own chunk), connects within 8 s and,
+at the first frame, becomes a 16:9 video tile (the face, its name, the active-speaker edge, the founder's initials
+in the corner; the camera stays off) and attaches the face to the engine (`CallEngine.attachFace`). A face that
+fails, is late or drops later gives way to the presence without a word, its join is cancelled, and the call goes on
+with its own audio.
+
+**Development stand-in.** `EMBODIMENT_PROVIDER=fake` on the local API (`apps/api/src/adapters/development-face.ts`,
+refused outside `APP_ENV=development`) gives every call the stand-in face (`lib/realtime/embodiment/fake-face.ts`):
+a canvas face captured as a `MediaStream`, voicing `audio`, no one's likeness. `e2e/video-calls.spec.ts` drives the
+same path against the production build.
 
 **Built-in presence** (`presence.ts`, `presence.css`): concentric hairlines and a soft halo drawn only from the
 colour tokens, so it follows the theme. The outer ring and halo follow the vEIR's voice (the playback
@@ -428,42 +461,14 @@ strict CSP allows. With `prefers-reduced-motion` it is still and the state shows
 likeness: the face is the vEIR's monogram (serif initials in a hairline ring) unless the EIR consented to a
 portrait.
 
-**What a vendor adapter (Anam, HeyGen LiveAvatar FULL) needs.** Both fit as browser relay: the vendor renders
-and voices the face from text this platform validated; our turn endpoint stays the only brain.
-
-1. **Approval and consent.** The vendor approved (security, privacy, accessibility, procurement; audio
-   retention and training opt-out in its terms), and the EIR's `likeness` consent recorded, plus `voice` for a
-   cloned voice (ADR-0005). The persona's embodiment names the provider only once consent covers it
-   (`PersonaEmbodiment.likenessConsented` / `voiceConsented`); revoking consent suspends the persona and ends
-   its calls at the next heartbeat.
-2. **Key and token route.** The vendor API key in Secrets Manager (`foundry-ascent/media/<vendor>`,
-   AWS-managed encryption), readable by the API role only. `POST /api/v1/calls/avatar-session` (reserved; it
-   returns the built-in configuration today) mints the vendor's single-use session token for the call (Anam
-   `POST /v1/auth/session-token` with the custom-LLM mode that disables its own model; HeyGen
-   `POST /v1/sessions/token` in FULL mode with `max_session_duration` set to the call's `maxSeconds`). Tokens
-   are never stored or replayed.
-3. **Browser adapter.** The vendor SDK bundled from npm and loaded only with its adapter (`script-src 'self'`);
-   `mount` renders the vendor's `<video>` into the stage (`drawsFace: true`). Two additions to the seam come
-   with the first vendor:
-   - a capability on the provider, `voices: 'engine' | 'text'`. With `'text'` the engine skips
-     `POST /speech` and hands each validated unit's text to the provider (Anam
-     `createTalkMessageStream().streamMessageChunk`, HeyGen `avatar.speak_text`), and takes the unit's
-     start and end (for captions and `heardSeq`) from the provider's events instead of an AudioBufferSource;
-   - an `onInterrupted(heardSeq)` callback the provider calls when the vendor's own barge-in fires, which
-     runs the engine's interrupt (stop, abort, `POST /turns/:id/interrupt`).
-
-   The vendor never receives evidence, memory or the full response. Anam also needs `'anam'` added to
-   `AvatarProviderId` in the contracts (today `builtin | heygen | tavus | simli`) and a migration widening
-   the provider check on `personas.embodiment` (migration 0004).
-
-4. **CSP and permissions.** The vendor's exact API, signalling and media hosts (Anam's WebRTC hosts; HeyGen's
-   API and LiveKit WSS host) added to `connect-src`, `media-src` and, if it renders in a frame, `frame-src`,
-   from the CDK config of the enabled vendor; a test forbids `*`. The camera stays off.
-5. **Latency and cost.** The vendor's voice and render add about 150–500 ms (vendor-reported) to our turn;
-   end of speech to an audible avatar is about 0.75–2 s across vendors, most of it our own turn. Vendor
-   minutes cost about $0.11–0.19 self-serve (Anam; HeyGen FULL ≈ $0.16–0.19) against ≈ $0.03–0.05 for the
-   built-in cascade (estimates in `research/avatars.md`). Measure from recorded audio, not vendor claims,
-   before a cohort. The kill switch, minute caps and heartbeat apply unchanged.
+**What a real vendor adds** (the design: wave 6 avatar design, HeyGen LiveAvatar LITE first, Anam as fallback):
+the vendor approved (security, privacy, accessibility, procurement; retention and training terms), the EIR's
+`likeness` and `voice` consent and the vendor's own consent step recorded, the key in Secrets Manager
+(`foundry-ascent/media/<vendor>`, AWS-managed encryption) read by the API role only, an `EmbodimentSessionIssuer`
+adapter, the browser adapter bundled from npm (`script-src 'self'`), and the vendor's exact hosts in `connect-src`
+(a test forbids `*`). The cloned voice is only ever synthesized by `POST /speech` from signed units: no voice
+credential reaches the browser. A vendor whose speak channel the browser holds can be made to lip-sync other audio
+in that browser's own session; before real students the speak channel stays on the API.
 
 ## 5. Privacy, consent and safety
 
