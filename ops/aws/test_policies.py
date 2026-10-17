@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
 from typing import Any
@@ -256,21 +257,88 @@ def test_legacy_cleanup_can_no_longer_delete_platform_resources() -> None:
 AWS_CLI = re.compile(r"\baws\s+([a-z0-9-]+)\s+([a-z0-9-]+)")
 STAGE0_SECRET = "secrets.AWS_ACCESS_KEY_ID"
 
-# Workflows that run as an OIDC role of their own instead of the identity the manifest describes: the role they
-# assume and, for every AWS CLI call they make, the IAM action it needs (None: no permission needed). The role's
-# policy is defined in infra/cdk/src/stacks/foundation-stack.ts and pinned by infra/cdk/test/foundation.test.ts;
-# the test below keeps the workflow's calls and that policy in step.
-OWN_ROLE_WORKFLOWS: dict[str, tuple[str, str, dict[str, str | None]]] = {
-    "ops-insights.yml": (
-        "FoundryAscent-OpsInsights",
-        "OpsInsightsPolicy",
-        {
+@dataclass(frozen=True)
+class OwnRole:
+    """A workflow that runs as an OIDC role of its own (instead of the identity the manifest describes)."""
+
+    role: str
+    #: The iam.Policy construct id in foundation-stack.ts.
+    policy_id: str
+    #: The GitHub environment the role trusts (its only subject).
+    environment: str
+    #: Every AWS CLI call the workflow makes -> the IAM action it needs (None: no permission needed).
+    cli: dict[str, str | None]
+    #: AWS SDK operations the workflow's own processes make with the role's credentials (the app copy it runs, its
+    #: harness) -> the IAM action each needs. Derived from the code by `role_sdk_operations` and compared below.
+    sdk: dict[str, str] = field(default_factory=dict)
+
+
+# The role's policy is defined in infra/cdk/src/stacks/foundation-stack.ts and pinned by
+# infra/cdk/test/foundation.test.ts; the tests below keep each workflow's calls and that policy in step.
+OWN_ROLE_WORKFLOWS: dict[str, OwnRole] = {
+    "ops-insights.yml": OwnRole(
+        role="FoundryAscent-OpsInsights",
+        policy_id="OpsInsightsPolicy",
+        environment="ops-insights",
+        cli={
             "sts:getcalleridentity": None,
             "lambda:invoke": "lambda:InvokeFunction",
             "logs:filterlogevents": "logs:FilterLogEvents",
         },
     ),
+    "ops-conversation-lab.yml": OwnRole(
+        role="FoundryAscent-ConversationLab",
+        policy_id="ConversationLabPolicy",
+        environment="conversation-lab",
+        cli={"sts:getcalleridentity": None},
+        sdk={
+            # Converse and ConverseStream authorize through InvokeModel / InvokeModelWithResponseStream.
+            "bedrock-runtime:Converse": "bedrock:InvokeModel",
+            "bedrock-runtime:ConverseStream": "bedrock:InvokeModelWithResponseStream",
+            "bedrock-runtime:InvokeModel": "bedrock:InvokeModel",
+            "polly:SynthesizeSpeech": "polly:SynthesizeSpeech",
+            # The app presigns the browser's streaming URL with the role's credentials (SigV4, service transcribe).
+            "transcribe:StartStreamTranscriptionWebSocket": "transcribe:StartStreamTranscriptionWebSocket",
+        },
+    ),
 }
+
+# What the conversation lab runs with the role's credentials: the app's model gateway and speech adapters (the
+# dev server, MODEL_PROVIDER=bedrock, LOCAL_AWS_SPEECH=true) and the lab harness (ops/lab). The dev server keeps
+# documents on disk, runs jobs in process and talks to PostgreSQL directly: no S3, SQS or Data API.
+LAB_TS_SOURCES = (
+    "packages/ai/src/gateway/bedrock-runtime.ts",
+    "apps/api/src/adapters/polly-speech.ts",
+)
+TS_COMMANDS = {
+    "ConverseCommand": "bedrock-runtime:Converse",
+    "ConverseStreamCommand": "bedrock-runtime:ConverseStream",
+    "InvokeModelCommand": "bedrock-runtime:InvokeModel",
+    "SynthesizeSpeechCommand": "polly:SynthesizeSpeech",
+}
+PY_METHODS = {
+    "converse": "bedrock-runtime:Converse",
+    "converse_stream": "bedrock-runtime:ConverseStream",
+    "invoke_model": "bedrock-runtime:InvokeModel",
+    "synthesize_speech": "polly:SynthesizeSpeech",
+}
+
+
+def role_sdk_operations() -> set[str]:
+    """The AWS operations the conversation lab's processes can make, read from their code."""
+    found: set[str] = set()
+    for rel in LAB_TS_SOURCES:
+        for command in re.findall(r"new ([A-Z][A-Za-z]+Command)\(", (REPO / rel).read_text(encoding="utf-8")):
+            assert command in TS_COMMANDS, f"{rel}: {command} is not mapped to an IAM action here"
+            found.add(TS_COMMANDS[command])
+    presigner = (REPO / "apps/api/src/adapters/transcribe-presigner.ts").read_text(encoding="utf-8")
+    if "service: 'transcribe'" in presigner and "/stream-transcription-websocket" in presigner:
+        found.add("transcribe:StartStreamTranscriptionWebSocket")
+    for path in sorted((REPO / "ops" / "lab" / "conversation_lab").glob("*.py")):
+        for method in re.findall(r"\.([a-z_]+)\(", path.read_text(encoding="utf-8")):
+            if method in PY_METHODS:
+                found.add(PY_METHODS[method])
+    return found
 
 
 def workflow_aws_calls() -> list[tuple[str, str]]:
@@ -321,18 +389,41 @@ def role_policy_actions(policy_id: str) -> set[str]:
 def test_own_role_workflows_assume_their_role_and_call_exactly_what_its_policy_grants() -> None:
     constants = (REPO / "infra" / "cdk" / "src" / "lib" / "constants.ts").read_text(encoding="utf-8")
     calls = workflow_aws_calls()
-    for workflow, (role, policy_id, needs) in OWN_ROLE_WORKFLOWS.items():
+    for workflow, own in OWN_ROLE_WORKFLOWS.items():
         text = (WORKFLOWS / workflow).read_text(encoding="utf-8")
-        assert f"role/{role}" in text, workflow
-        assert f"'{role}'" in constants, role
+        assert f"role/{own.role}" in text, workflow
+        assert f"'{own.role}'" in constants, own.role
+        assert f"'{own.environment}'" in constants, own.environment
         assert STAGE0_SECRET not in text, workflow
-        assert "id-token: write" in text and "environment: ops-insights" in text, workflow
-        assert "mask-aws-account-id: true" in text and "::add-mask::" in text, workflow
+        assert "id-token: write" in text, workflow
+        assert f"environment: {own.environment}" in text, workflow
+        assert "if: github.ref == 'refs/heads/main'" in text, workflow
+        assert "mask-aws-account-id: true" in text, workflow
+        assert "::add-mask::" in text, workflow
         assert "persist-credentials: false" in text, workflow
         made = {action for name, action in calls if name == workflow}
-        assert made == set(needs), (workflow, sorted(made ^ set(needs)))
-        granted = role_policy_actions(policy_id)
-        assert granted == {iam for iam in needs.values() if iam is not None}, (workflow, sorted(granted))
+        assert made == set(own.cli), (workflow, sorted(made ^ set(own.cli)))
+        granted = role_policy_actions(own.policy_id)
+        needed = {iam for iam in own.cli.values() if iam is not None} | set(own.sdk.values())
+        assert granted == needed, (workflow, sorted(granted ^ needed))
+
+
+def test_the_lab_role_covers_exactly_the_operations_its_code_makes() -> None:
+    lab = OWN_ROLE_WORKFLOWS["ops-conversation-lab.yml"]
+    assert role_sdk_operations() == set(lab.sdk), sorted(role_sdk_operations() ^ set(lab.sdk))
+    dev = (REPO / "apps" / "api" / "src" / "dev-server.ts").read_text(encoding="utf-8")
+    assert "new LocalObjectStore(" in dev
+    assert "new InlineJobQueue(" in dev
+    for remote in ("S3ObjectStore", "SqsJobQueue", "createApiRuntime", "DataApi"):
+        assert remote not in dev, remote
+    # Speech reaches the dev server only through the opt-in hook (LOCAL_AWS_SPEECH), wired like the deployed API.
+    assert "...localSpeechFor(env, config)" in dev
+    local = (REPO / "apps" / "api" / "src" / "runtime" / "local-speech.ts").read_text(encoding="utf-8")
+    assert "LOCAL_AWS_SPEECH" in local
+    assert "speechFor(env, config), ...sttGrantsFor(env, config)" in local
+    # Nothing else in the lab harness reaches AWS: boto3 clients are bedrock-runtime and polly only.
+    harness = "\n".join(p.read_text(encoding="utf-8") for p in (REPO / "ops" / "lab" / "conversation_lab").glob("*.py"))
+    assert set(re.findall(r"""\.client\(\s*["']([a-z0-9-]+)["']""", harness)) == {"bedrock-runtime", "polly"}
 
 
 # Workflows that run as the deploy role (FoundryAscent-GitHubDeploy, GitHub OIDC in the `production` environment, no
