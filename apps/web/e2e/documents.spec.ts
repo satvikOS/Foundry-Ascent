@@ -28,7 +28,9 @@ test('a founder uploads a document and it becomes searchable evidence', async ({
   await expect(page).toHaveURL(new RegExp(`/${TENANT}/app/v/${ventureId}/documents$`));
   await expect(page.getByRole('heading', { level: 1, name: 'Documents' })).toBeVisible();
   // The copy names the venture's vEIR, never a hard-coded persona.
-  await expect(page.getByText(/^Files Corin['’]s vEIR can cite\. Private to this venture\.$/)).toBeVisible();
+  await expect(
+    page.getByText(/^Files Corin(?:['’]s| ·) vEIR can cite\. Private to this venture\.$/),
+  ).toBeVisible();
   await expectNoBareEirName(page, 'Documents');
 
   const chooser = page.waitForEvent('filechooser');

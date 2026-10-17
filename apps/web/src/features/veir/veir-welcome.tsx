@@ -1,8 +1,10 @@
+import { useQuery } from '@tanstack/react-query';
+
 import { PersonaAvatar } from '@/components/faces/persona-avatar';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { useCall } from '@/features/calls/call-context';
-import { useVenture } from '@/lib/api/hooks/ventures';
+import { ventureQueryOptions } from '@/lib/api/hooks/ventures';
 import { canWrite } from '@/lib/auth/roles';
 import { useRequiredMe } from '@/lib/auth/use-me';
 import { veirDisplay, veirWelcome, type VeirDisplay } from '@/lib/veir';
@@ -64,7 +66,8 @@ export function VeirWelcomeGate({ ventureId }: { ventureId: string }) {
   const me = useRequiredMe();
   const { route } = useCall();
   const writer = canWrite(me, ventureId);
-  const venture = useVenture(ventureId);
+  // Only the venture's founders and team: staff who open its Team page never request the venture itself.
+  const venture = useQuery({ ...ventureQueryOptions(ventureId), enabled: writer });
   const [seen, acknowledge] = useVeirWelcome(me);
   const veir = writer ? veirDisplay(venture.data) : null;
   if (veir?.kind !== 'eir_persona') return null;
