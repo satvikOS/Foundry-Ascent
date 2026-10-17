@@ -13,6 +13,7 @@ verify and reverse them. Decisions behind them are in the [ADRs](../architecture
 | [Cost controls](cost-controls.md)                                           | Understanding the bill, caps and alarms (speech and distillation included); Aurora not pausing; a cap was hit   |
 | [Evals](evals.md)                                                           | Evaluating production: running and reading the gates                                                            |
 | [Platform insights](insights.md)                                            | How the platform is used: conversations, calls, distillation, spend; the sealed transcript export               |
+| [Conversation lab](conversation-lab.md)                                     | Real conversations with the real models, headless: recall, voice, the conversation matrix, the UI suite         |
 | [Latency](latency.md)                                                       | Where a turn's time goes, measuring it locally and in production, and what was done to make it faster           |
 | [Local development](local-development.md)                                   | Running and testing everything on one machine                                                                   |
 

@@ -78,10 +78,13 @@ exercises the live paths:
   `MODEL_PROVIDER=bedrock BEDROCK_REGION=us-east-1 MODEL_PRIMARY_ID=… MODEL_FALLBACK_ID=… MODEL_EMBEDDINGS_ID=… pnpm --filter @foundry/api exec tsx src/scripts/bedrock-probe.ts`
   with the ids from `infra/cdk/config/production.json` → `models`.
 
-To probe from CI again, add a separate role to the Foundation stack in a reviewed change: trusted only
-from a dedicated GitHub environment (for example `ops-probe`, its own OIDC `sub`), allowed
-`bedrock:InvokeModel` on the configured model ARNs (the same set `lib/models.ts` derives) and, for
-speech, `polly:SynthesizeSpeech` pinned with `aws:RequestedRegion`. Never widen
+- from CI, the [conversation lab](conversation-lab.md): its own role (`FoundryAscent-ConversationLab`, trusted
+  only from the `conversation-lab` environment) may invoke exactly the configured models, Polly and Transcribe
+  streaming for a copy of the app on the runner, with synthetic data.
+
+Any other CI probe gets a separate role in the Foundation stack the same way, in a reviewed change: trusted only
+from a dedicated GitHub environment, allowed `bedrock:InvokeModel` on the configured model ARNs (the set
+`lib/models.ts` derives) and, for speech, `polly:SynthesizeSpeech` pinned with `aws:RequestedRegion`. Never widen
 `FoundryAscent-GitHubDeploy` for it.
 
 ## One-time setup
