@@ -10,6 +10,8 @@
  * Lambda worker handles (ingestion, distillation, the sweep and daily maintenance), right after they are
  * enqueued or after their delay; daily maintenance also runs once a day while the server is up. For a quicker
  * local demo of distillation, set CORE_DISTILL_DELAY_SECONDS (and CORE_DISTILL_ACTIVE_SECONDS below it).
+ * Calls are typed and unspoken unless LOCAL_AWS_SPEECH=true with MODEL_PROVIDER=bedrock and AWS credentials
+ * (the conversation lab): then they speak with Amazon Polly and listen through Amazon Transcribe, as deployed.
  */
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -28,6 +30,7 @@ import { DAILY_MAINTENANCE_MESSAGE, dispatchJob } from './jobs/worker.js';
 import { errorFields } from './logging.js';
 import { createDatabase, createGateway, createProcessLogger } from './runtime/common.js';
 import { observeDatabase } from './runtime/db-observer.js';
+import { localSpeechFor } from './runtime/local-speech.js';
 import { workerDepsFor } from './runtime/worker.js';
 
 /** The database `pnpm --filter @foundry/db db:reset` creates (owner role fa_master, unix socket cluster). */
@@ -83,6 +86,7 @@ async function main(): Promise<void> {
     jobQueue,
     textExtractor: new DocumentTextExtractor(),
     logger: logger.child({ component: 'core' }),
+    ...localSpeechFor(env, config),
   });
   const workerDeps = workerDepsFor(core, { db, gateway, logger, maxReceiveCount: LOCAL_JOB_ATTEMPTS });
   jobQueue.attach(async (job, { attempt, requestId }) => {
