@@ -338,6 +338,7 @@ def test_llm_simulator_and_judge_are_charged_and_rationales_stay_private(
         api, tmp_path, monkeypatch, "--matrix-budget", "6", "--max-turns", "500", "--turn-rate-limit", "1000", *MEMORY,
         "--simulator", "llm", "--simulator-model", "amazon.nova-lite-v1:0",
         "--judge", "--judge-model", "anthropic.claude-haiku-4-5", "--private-out", str(private),
+        "--include-transcripts",
     )  # fmt: skip
     meta = results["matrix"]
     assert meta["simulatorSources"].get("llm", 0) > 0
@@ -354,6 +355,9 @@ def test_llm_simulator_and_judge_are_charged_and_rationales_stay_private(
     assert gate(results, "G17")["status"] == "pass"
     assert "SECRET-RATIONALE" not in json.dumps(results) + report
     lines = (private / "judge-rationales.jsonl").read_text().splitlines()
+    # Transcripts asked for in a lab run go to the private (sealed) directory, never next to the reports.
+    assert (private / "transcripts.jsonl").exists()
+    assert not (tmp_path / "out" / "transcripts.jsonl").exists()
     assert len(lines) == 6
     assert "SECRET-RATIONALE" in lines[0]
     assert code in (0, 1)

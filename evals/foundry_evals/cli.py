@@ -479,10 +479,12 @@ def _cmd_run_matrix(
         results.app_version = env.app_version
         transcript_sink = None
         if args.include_transcripts:
-            out_dir.mkdir(parents=True, exist_ok=True)
-            transcript_file = (out_dir / "transcripts.jsonl").open("w", encoding="utf-8")
+            # With --private-out (the lab seals it), transcripts go there, never next to the uploadable reports.
+            transcript_dir: Path = args.private_out or out_dir
+            transcript_dir.mkdir(parents=True, exist_ok=True)
+            transcript_file = (transcript_dir / "transcripts.jsonl").open("w", encoding="utf-8")
             _log(
-                "WARNING: writing transcripts.jsonl with full prompts and responses (local use only; do not upload)"
+                "WARNING: writing transcripts.jsonl with full prompts and responses (local or sealed use only)"
             )
 
             def transcript_sink(entry: dict[str, Any], _f: TextIO = transcript_file) -> None:

@@ -96,23 +96,23 @@ Against the local API (`pnpm --filter @foundry/db db:reset`, then `pnpm --filter
 mock model) use `--base-url http://localhost:8787`; to avoid rate-limit waits start the API with
 `CORE_TURN_RATE_LIMIT=1000` and pass `--turn-rate-limit 1000`.
 
-| Option                                                                                            | Meaning                                                                                                                                   |
-| ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `--suite scenarios\|redteam\|conversations\|matrix\|all`                                          | what to run (API probes run with `redteam`/`all`, not with `--case`; `matrix` runs only on its own)                                       |
-| `--base-url` / `FA_BASE_URL`                                                                      | site origin (`/api/v1` is appended; a trailing `/api/v1` is accepted)                                                                     |
-| `--out DIR`                                                                                       | output directory                                                                                                                          |
-| `--max-turns N` (100)                                                                             | hard cap on model turns, including retries                                                                                                |
-| `--max-cost-usd X`, `--est-cost-per-turn`                                                         | caps turns at `X / est` (default $0.01/turn; Nova 2 Lite ≈ $0.007, Luna ≈ $0.002 if enabled) and stops when the reported cost reaches `X` |
-| `--case ID`, `--category NAME`                                                                    | run a subset (repeatable)                                                                                                                 |
-| `--turn-rate-limit` (20), `--max-wait-seconds` (900)                                              | per-principal limit the runner respects, and the longest single wait                                                                      |
-| `--memory-venture KEY` / `FA_EVALS_MEMORY_VENTURE`                                                | dedicated synthetic venture for the remembered (multi-session) conversations; never a seeded one (refused, exit 2); without it they skip  |
-| `--no-data-ok`                                                                                    | gates without data do not fail                                                                                                            |
-| `--include-transcripts`                                                                           | **local only**: also writes `transcripts.jsonl` with prompts and responses for triage                                                     |
-| `--judge`, `--judge-model ID` / `FA_MATRIX_JUDGE_MODEL`                                           | matrix only: the LLM-judge rubric on a Bedrock model (never defaulted); other suites exit 2                                               |
-| `--matrix-budget ci\|smoke\|standard\|full\|N` (smoke), `--matrix-seed`                           | matrix scenarios to generate (the turn and cost caps still cut the plan)                                                                  |
-| `--simulator template\|llm`, `--simulator-model ID` / `FA_MATRIX_SIMULATOR_MODEL`, `--aws-region` | matrix founder messages: deterministic templates, or a Bedrock model (lab)                                                                |
-| `--private-out DIR`                                                                               | matrix: where the judge's rationales go (they quote the conversation; the lab seals the directory)                                        |
-| `--record-replies FILE`                                                                           | matrix: record the mock model's replies for the offline CI subset (refused for any other model)                                           |
+| Option                                                                                            | Meaning                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--suite scenarios\|redteam\|conversations\|matrix\|all`                                          | what to run (API probes run with `redteam`/`all`, not with `--case`; `matrix` runs only on its own)                                                            |
+| `--base-url` / `FA_BASE_URL`                                                                      | site origin (`/api/v1` is appended; a trailing `/api/v1` is accepted)                                                                                          |
+| `--out DIR`                                                                                       | output directory                                                                                                                                               |
+| `--max-turns N` (100)                                                                             | hard cap on model turns, including retries                                                                                                                     |
+| `--max-cost-usd X`, `--est-cost-per-turn`                                                         | caps turns at `X / est` (default $0.01/turn; Nova 2 Lite ≈ $0.007, Luna ≈ $0.002 if enabled) and stops when the reported cost reaches `X`                      |
+| `--case ID`, `--category NAME`                                                                    | run a subset (repeatable)                                                                                                                                      |
+| `--turn-rate-limit` (20), `--max-wait-seconds` (900)                                              | per-principal limit the runner respects, and the longest single wait                                                                                           |
+| `--memory-venture KEY` / `FA_EVALS_MEMORY_VENTURE`                                                | dedicated synthetic venture for the remembered (multi-session) conversations; never a seeded one (refused, exit 2); without it they skip                       |
+| `--no-data-ok`                                                                                    | gates without data do not fail                                                                                                                                 |
+| `--include-transcripts`                                                                           | **local only**: also writes `transcripts.jsonl` with prompts and responses for triage (a matrix run with `--private-out` writes it there, for the lab to seal) |
+| `--judge`, `--judge-model ID` / `FA_MATRIX_JUDGE_MODEL`                                           | matrix only: the LLM-judge rubric on a Bedrock model (never defaulted); other suites exit 2                                                                    |
+| `--matrix-budget ci\|smoke\|standard\|full\|N` (smoke), `--matrix-seed`                           | matrix scenarios to generate (the turn and cost caps still cut the plan)                                                                                       |
+| `--simulator template\|llm`, `--simulator-model ID` / `FA_MATRIX_SIMULATOR_MODEL`, `--aws-region` | matrix founder messages: deterministic templates, or a Bedrock model (lab)                                                                                     |
+| `--private-out DIR`                                                                               | matrix: where the judge's rationales go (they quote the conversation; the lab seals the directory)                                                             |
+| `--record-replies FILE`                                                                           | matrix: record the mock model's replies for the offline CI subset (refused for any other model)                                                                |
 
 When the budget is smaller than the selection, cases are planned round-robin across groups (high-risk
 scenarios, cross-venture, standard scenarios, prompt injection, policy bypass, identity, identity on a call, escalation
@@ -171,7 +171,8 @@ sessions (ending each, waiting `session_gap_seconds` (2 s) between them, as a fo
 later), then deletes them and clears the notebook back to empty. Without a memory venture they are skipped
 (`needs_memory_venture`): `--suite conversations` then reports G12 as having no data (it fails unless
 `--no-data-ok`), and `--suite all` leaves them out, so G12 only informs it. Create the memory venture once in
-Admin with one synthetic founder; memory items the cases leave behind stay in that venture only.
+Admin with one synthetic founder (add a synthetic teammate for the matrix's `teammate` scenarios, which otherwise
+skip as `needs_teammate`); memory items the cases leave behind stay in that venture only.
 
 A session with `channel: voice` runs in a typed-input call, and the call's intro counts as how that session
 opened. Labelled checks per message: `recall` (the reply names what the last conversation was about: any of
