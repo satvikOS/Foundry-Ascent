@@ -846,6 +846,43 @@ describe('how a new conversation opens', () => {
     expect(next.opener).toContain('we talked about whether to charge libraries per seat.');
   });
 
+  it('picks up the most recent conversation, call or chat, though an older one was distilled after it (LAB-R6c)', async () => {
+    await ageEverything(3);
+    // A call about pilot success criteria, ten minutes ago.
+    const call = await h.core.sessions.create(maya, quietquad(), {});
+    await talk(maya, call.id, 'How do we define the pilot success criteria?');
+    await idle(call.id, 10);
+    // Then a chat about the student union, just now.
+    const chat = await h.core.sessions.create(maya, quietquad(), {});
+    await talk(maya, chat.id, "The student union said they'll promote us if we add group booking.");
+    // The call's distillation finishes only now, after the chat's turn: the notebook's opener is drawn from the call.
+    await h.t.db.system(async (sx) => {
+      const key = { ventureId: quietquad(), personaId: h.ventures.quietquad.personaId };
+      const current = await notebooksRepo.getNotebook(sx, key);
+      await notebooksRepo.saveNotebook(sx, {
+        tenantId: h.seed.tenantId,
+        ...key,
+        expectedVersion: current?.version ?? 0,
+        content: {
+          ...(current?.content ?? notebooksRepo.EMPTY_NOTEBOOK),
+          nextOpener: 'Last time, we talked about the pilot success criteria. How has it gone since?',
+          nextTopic: null,
+        },
+        suppressed: current?.suppressed ?? [],
+        editedBy: 'veir',
+        sourceSessionId: call.id,
+      });
+    });
+    // The next conversation, chat or call, picks up the chat: the most recent conversation across channels.
+    const next = await h.core.sessions.create(maya, quietquad(), {});
+    expect(next.opener ?? '').toMatch(/student union|group booking/);
+    expect(next.opener ?? '').not.toMatch(/success criteria/);
+    const ringing = await startCall(maya, next.id);
+    expect(ringing.intro?.text ?? '').toMatch(/student union|group booking/);
+    await h.core.calls.end(maya, ringing.call.id, { reason: 'user' });
+    h.jobQueue.drain();
+  });
+
   it('carries over a conversation the venture had with its previous coach, as the founder’s, never as its own', async () => {
     await ageEverything(3);
     const before = await h.core.sessions.create(maya, quietquad(), {});

@@ -280,8 +280,9 @@ const OPENER_ECHO_EXCHANGES = 3;
  * The vEIR's opening line for a new standard conversation of `principalId` (its first bubble, and what a call says
  * after introducing itself), in this order:
  * 1. the notebook's next opener when a person wrote or rewrote it (they chose what to open with);
- * 2. when the notebook's opener is current (distillation drew it from the person's latest conversation with this
- *    vEIR, or wrote it after that conversation's last turn): a line phrased afresh around the thread it noted to
+ * 2. when the notebook's opener is current (distillation drew it from the person's latest conversation, call or
+ *    chat; for an opener of unknown origin, the notebook was written after that conversation's last turn with this
+ *    vEIR): a line phrased afresh around the thread it noted to
  *    come back to (`nextTopic`: a topic, never a sentence to replay), else the stored sentence itself, unless it
  *    only repeats a question the vEIR asked at the end of that conversation (production: call 3 opened with call
  *    2's closing question, verbatim) or it already opened a conversation since in which nothing was said (it was
@@ -367,10 +368,15 @@ export async function chooseOpener(
           opener: stored,
         });
   const seed = `${latest?.sessionId ?? 'first'}:${args.principalId}:${String(since.opened)}`;
+  // Current: drawn from the person's latest conversation, call or chat. Only an opener of unknown origin is judged by
+  // when the notebook was written: one drawn from an older conversation is never current, however late its
+  // distillation finished (LAB-R6c: a call right after a chat opened with the earlier call's topic, because the
+  // call's distillation wrote the notebook after the chat's last turn).
   const current =
     latest === null ||
     source === latest.sessionId ||
-    (latest.withThisVeir &&
+    (source === undefined &&
+      latest.withThisVeir &&
       notebook?.updatedAt != null &&
       Date.parse(notebook.updatedAt) > Date.parse(latest.lastActivityAt));
   // A stored sentence's subject is read from it (undefined); a line phrased around a thread carries its own.
