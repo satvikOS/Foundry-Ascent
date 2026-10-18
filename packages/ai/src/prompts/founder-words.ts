@@ -4,7 +4,11 @@
  * said "Last time you planned to run five more interviews at the bus station this week fr" and "…call facilities
  * monday". So chat slang that adds nothing is dropped ("fr", "lol", "ngl", "tbh"), shorthand is spelt out ("u" →
  * "you", "gonna" → "going to", "tmrw" → "tomorrow") and the names of days and months get their capital
- * ("monday" → "Monday"; "may" and "march" only where they name the month: "in may" → "in May").
+ * ("monday" → "Monday"; "may" and "march" only where they name the month: "in may" → "in May"). Shorthand is read
+ * only as typed in lower case, never as a code ("RN", "room b4", "U-Pass", "U of T"); "idk" keeps its uncertainty
+ * ("idk if they'll sign" → "you're not sure if they'll sign", "idk 3 weeks" → "maybe 3 weeks"), and a lone "i" is
+ * written "I". A name only the founder wrote in lower case ("harbour hall") cannot be told from ordinary words and
+ * stays as written; the team's names get their real case where the opener speaks of them (`addressFounder`).
  *
  * Deterministic and conservative: only whole words are touched, nothing is invented, and a phrase without any of
  * these is returned unchanged.
@@ -24,7 +28,6 @@ const FILLER_SLANG = [
   'imo',
   'imho',
   'btw',
-  'idk',
   'smh',
   'fwiw',
   'iykyk',
@@ -93,11 +96,27 @@ const FILLER_PATTERN = new RegExp(
   `(?:[\\s,]+)(?:${FILLER_SLANG.join('|')})(?![\\p{L}\\p{N}'’])|^(?:${FILLER_SLANG.join('|')})(?![\\p{L}\\p{N}'’])[\\s,]*`,
   'giu',
 );
-const SHORTHAND_PATTERN = WORD(
-  Object.keys(SHORTHAND)
+/**
+ * Shorthand as the founder typed it: lower case only ("rn", "b4", "u"), never an upper-case or mixed-case code ("RN"
+ * is a nurse, "B4" a room), and never part of a hyphenated name ("U-Pass").
+ */
+const SHORTHAND_PATTERN = new RegExp(
+  `(?<![\\p{L}\\p{N}'’.-])(?:${Object.keys(SHORTHAND)
     .sort((a, b) => b.length - a.length)
-    .join('|'),
+    .join('|')})(?![\\p{L}\\p{N}'’-]|\\.\\p{L})`,
+  'gu',
 );
+/** Nouns a code follows ("room b4", "gate u2"): what comes after them is a code, never shorthand. */
+const CODE_LEAD =
+  /(?:room|rm|unit|building|bldg|floor|lab|hall|gate|section|seat|level|suite|bay|aisle|row|no\.?|number|#)\s+$/i;
+/** "U" opening a sentence before a lower-case word ("U said…"), but not "U of T". */
+const OPENING_U = /(^|[.!?]\s+)U(?=\s+\p{Ll})(?!\s+of\b)/gu;
+/** "idk" opening a clause ("idk if they'll sign"): the uncertainty, said to them. */
+const OPENING_IDK = /(^|[.!?]\s+)(idk)(?![\p{L}\p{N}'’])/giu;
+/** "idk" inside a clause ("we're idk 3 weeks out"): a hedge. */
+const IDK = /(?<![\p{L}\p{N}'’])idk(?![\p{L}\p{N}'’])/giu;
+/** A standalone lower-case "i" ("what i should charge", "i'm"), never inside a word or "i.e.". */
+const LOWER_I = /(?<![\p{L}\p{N}'’.-])i(?=(?:['’](?:m|ve|ll|d))?(?![\p{L}\p{N}'’-]|\.\p{L}))/gu;
 const DAY_PATTERN = WORD(`${DAYS.join('|')}|${MONTHS.join('|')}`);
 const AMBIGUOUS_PATTERN = new RegExp(
   `(?<![\\p{L}])(${DATE_LEAD}\\s+)(${AMBIGUOUS_MONTHS.join('|')})(?![\\p{L}'’])`,
@@ -115,12 +134,16 @@ function capitalised(word: string): string {
 export function tidyFounderWords(text: string): string {
   if (text === '') return text;
   const out = text
+    .replace(OPENING_IDK, (_m, lead: string, word: string) =>
+      word.startsWith('I') ? `${lead}You're not sure` : `${lead}you're not sure`,
+    )
+    .replace(IDK, 'maybe')
     .replace(FILLER_PATTERN, '')
-    .replace(SHORTHAND_PATTERN, (word: string) => {
-      const spelt = SHORTHAND[word.toLowerCase()] ?? word;
-      // "U" opening a sentence stays capitalised: "You…".
-      return /^\p{Lu}/u.test(word) && word.length > 0 ? capitalised(spelt) : spelt;
-    })
+    .replace(SHORTHAND_PATTERN, (word: string, at: number, source: string) =>
+      CODE_LEAD.test(source.slice(Math.max(0, at - 16), at)) ? word : (SHORTHAND[word] ?? word),
+    )
+    .replace(OPENING_U, '$1You')
+    .replace(LOWER_I, 'I')
     .replace(DAY_PATTERN, capitalised)
     .replace(AMBIGUOUS_PATTERN, (_m, lead: string, month: string) => `${lead}${capitalised(month)}`)
     .replace(/\s+([,.!?;:])/g, '$1')
