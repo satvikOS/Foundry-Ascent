@@ -130,7 +130,7 @@ const MOVE_CUES: readonly (readonly [FounderMove, RegExp])[] = [
       [
         String.raw`\b(?:goodbye|bye(?:-bye)?|talk (?:soon|later|tomorrow|next week)|speak soon|catch you later|signing off|good night|i'll let you go|until next time)\b`,
         String.raw`\bsee you(?: (?:soon|later|tomorrow|next (?:week|time)|then))?(?=\s*(?:[.!,]|$))`,
-        String.raw`(?:^|(?:^|[\s,.!;])(?:i|we|i've|we've|ok|okay|anyway|sorry|well|so|but|alright|right|and|thanks)(?: really| actually| just)?[\s,]+)(?:(?:have|need|got) to|gotta|must)\s+(?:go|run|jump|dash|head (?:off|out)|hop off|leave)(?: now| soon| in a (?:sec|second|minute|bit))?(?=\s*(?:[.!,;:]|$|(?:but|thanks|thank|bye|talk|see)\b))`,
+        String.raw`(?:^|(?:^|[\s,.!;])(?:i|we|i've|we've|ok|okay|anyway|sorry|well|so|but|alright|right|and|thanks)(?: really| actually| just)?[\s,]+)(?:(?:have|need|got|have got) to|gotta|must)\s+(?:go|run|jump|dash|head (?:off|out)|hop off|leave)(?: now| soon| in a (?:sec|second|minute|bit))?(?=\s*(?:[.!,;:]|$|(?:but|thanks|thank|bye|talk|see)\b))`,
         String.raw`\b(?:(?:that's|that is) (?:all|it|everything|enough) for (?:now|today)|let's (?:stop|wrap(?: it)? up|leave it) (?:here|there|for (?:now|today))|i'm done for (?:now|today))\b`,
       ].join('|'),
     ),
@@ -255,7 +255,11 @@ const SOCIAL_PHRASES = new RegExp(
     String.raw`\b(?:i'll|i will|we'll|we will) (?:do (?:that|it|this|so)|try (?:that|it|this)|think about (?:it|that)|keep (?:that|it|this) in mind|give (?:it|that) a (?:go|try|shot)|let you know(?: how (?:it|that|they) (?:goes|go|went))?|see)\b`,
     // A goodbye ("Talk soon", "I have to run", "Have a good one").
     String.raw`\b(?:goodbye|bye(?:-bye| for now)?|talk (?:soon|later|tomorrow|next week)|speak soon|catch you later|signing off|good ?night|i'll let you go|until next time|take care|see you(?: (?:soon|later|tomorrow|next (?:week|time)|then))?|have a (?:good|great|nice|lovely) (?:one|day|evening|night|weekend|week))`,
-    String.raw`\b(?:(?:i|we) (?:really |actually |just )?(?:have|need|got) to|gotta|must) (?:go|run|jump|dash|head (?:off|out)|hop off|leave)(?: now| soon| in a (?:sec|second|minute|bit))?`,
+    String.raw`\b(?:(?:i|we|i've|we've|i'm|we're)(?: really| actually| just)? (?:(?:have |'ve )?got to|have to|need to|gotta|going to have to)|gotta|must) (?:go|run|jump|dash|head (?:off|out)|hop off|leave)(?: now| soon| in a (?:sec|second|minute|bit))?`,
+    // Relief, said in passing ("Phew, that takes some pressure off", "I feel a lot better about this now").
+    String.raw`\b(?:phew|whew|(?:that's|that is|what) a relief|relieved|(?:that |this )?takes (?:some |the |a lot of )?(?:pressure|weight) off|i feel (?:a lot |so much |much |way )?(?:better|calmer|lighter)(?: about (?:this|it|that|things))?)`,
+    // Chat slang that adds nothing ("talk soon! no cap", "thanks! fr").
+    String.raw`\b(?:no cap|fr|frfr|ngl|not gonna lie|tbh|tbf|lol|lmao|haha+|ty|thx|bro|dude|mate|fam)\b`,
     String.raw`\b(?:(?:that's|that is) (?:all|it|everything|enough) for (?:now|today)|let's (?:stop|wrap(?: it)? up|leave it) (?:here|there|for (?:now|today))|i'm done for (?:now|today))`,
     // A hello ("Hey, good morning", "How's it going?").
     String.raw`\b(?:hi|hey|hello|hiya|howdy|yo|good (?:morning|afternoon|evening|day)|morning|evening)(?: there| again)?`,
