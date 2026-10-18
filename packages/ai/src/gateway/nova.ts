@@ -26,6 +26,7 @@ import {
   type ProviderStreamResult,
   type StructuredProvider,
 } from './provider.js';
+import { ReasoningFilter } from './reasoning-filter.js';
 import type { AwsCredentialProvider, AwsCredentials } from './sigv4-fetch.js';
 import type { ChatMessage, RawModelAttempt, StreamStopReason } from './types.js';
 
@@ -191,10 +192,12 @@ export class NovaProvider implements StructuredProvider {
   }
 
   /**
-   * Streams plain text through ConverseStream. Each text delta goes to `onText` as it arrives. A failure
-   * after text was delivered is never retried (not even the inference-profile retry) and is marked
+   * Streams plain text through ConverseStream. Each text delta goes to `onText` as it arrives, without the
+   * model's reasoning: reasoning content blocks are never handed on, and reasoning the model writes into its
+   * text inside `<thinking>` tags is dropped as it streams (`ReasoningFilter`; on a call it would be spoken). A
+   * failure after text was delivered is never retried (not even the inference-profile retry) and is marked
    * `textDelivered`; usage the stream never reported (it ended early) is estimated once the request reached
-   * Bedrock (`estimatedStreamUsage`; no reasoning is enabled here, so output is the visible text).
+   * Bedrock (`estimatedStreamUsage`, from everything the model generated, reasoning included).
    */
   async streamText(request: ProviderStreamRequest): Promise<ProviderStreamResult> {
     const { deadline } = request;
@@ -205,7 +208,11 @@ export class NovaProvider implements StructuredProvider {
     for (;;) {
       const modelId = this.effectiveModelId;
       const started = performance.now();
+      /** What reached `onText`: the visible reply. */
       let text = '';
+      /** Everything the model generated, reasoning included (for a usage estimate). */
+      let generated = '';
+      const reasoning = new ReasoningFilter();
       let stopReason: StopReason | undefined;
       let usage: { inputTokens: number; outputTokens: number } | null = null;
       let cached: number | undefined;
@@ -220,7 +227,12 @@ export class NovaProvider implements StructuredProvider {
           latencyMs: Math.round(performance.now() - started),
           usage:
             usage ??
-            estimatedStreamUsage(request, text, { outcome, opened, cancelledBeforeSend, reasoning: false }),
+            estimatedStreamUsage(request, generated, {
+              outcome,
+              opened,
+              cancelledBeforeSend,
+              reasoning: false,
+            }),
           ...(cached === undefined ? {} : { cachedInputTokens: cached }),
           errorName,
         });
@@ -239,10 +251,18 @@ export class NovaProvider implements StructuredProvider {
         for await (const event of events) {
           const thrown = streamException(event);
           if (thrown) throw thrown;
-          const chunk = event.contentBlockDelta?.delta?.text;
+          const delta = event.contentBlockDelta?.delta;
+          const chunk = delta?.text;
           if (typeof chunk === 'string' && chunk !== '') {
-            text += chunk;
-            await request.onText(chunk);
+            generated += chunk;
+            const visible = reasoning.push(chunk);
+            if (visible !== '') {
+              text += visible;
+              await request.onText(visible);
+            }
+          } else if (delta?.reasoningContent !== undefined) {
+            // The model's reasoning, kept apart by Bedrock: never part of the reply.
+            generated += delta.reasoningContent.text ?? '';
           } else if (event.messageStop) {
             stopReason = event.messageStop.stopReason;
           } else if (event.metadata?.usage) {
@@ -266,6 +286,12 @@ export class NovaProvider implements StructuredProvider {
         throw mapped;
       }
 
+      // What the filter still held (a "<" that turned out not to open a reasoning block) is the reply's end.
+      const tail = reasoning.end();
+      if (tail !== '') {
+        text += tail;
+        await request.onText(tail);
+      }
       if (stopReason === 'content_filtered' || stopReason === 'guardrail_intervened') {
         record('refusal', null);
         const refusal = new ModelRefusalError(modelId, 'content_filter');
