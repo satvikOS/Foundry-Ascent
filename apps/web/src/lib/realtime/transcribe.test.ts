@@ -33,9 +33,9 @@ describe('transcriptResults', () => {
                 {
                   Transcript: 'hello there.',
                   Items: [
-                    { Type: 'pronunciation', Stable: true },
-                    { Type: 'pronunciation', Stable: true },
-                    { Type: 'punctuation', Stable: false },
+                    { Content: 'hello', Type: 'pronunciation', Stable: true },
+                    { Content: 'there', Type: 'pronunciation', Stable: true },
+                    { Content: '.', Type: 'punctuation', Stable: false },
                   ],
                 },
               ],
@@ -46,8 +46,8 @@ describe('transcriptResults', () => {
         },
       }),
     ).toEqual([
-      { resultId: 'r1', text: 'hello there.', partial: true, stable: true },
-      { resultId: 'r2', text: 'Done', partial: false, stable: true },
+      { resultId: 'r1', text: 'hello there.', partial: true, stable: true, stableText: 'hello there' },
+      { resultId: 'r2', text: 'Done', partial: false, stable: true, stableText: 'Done' },
     ]);
     expect(transcriptResults(null)).toEqual([]);
     expect(transcriptResults({ Transcript: { Results: 'x' } })).toEqual([]);
@@ -77,9 +77,22 @@ describe('TranscribeStream', () => {
     socket.serverSend(transcriptEvent('r1', 'we interviewed', { partial: true }));
     socket.serverSend(transcriptEvent('r1', 'we interviewed twelve clinics', { partial: false }));
     expect(handlers.onResult.mock.calls.map(([r]) => r as unknown)).toEqual([
-      { resultId: 'r1', text: 'we interviewed', partial: true, stable: false },
-      { resultId: 'r1', text: 'we interviewed twelve clinics', partial: false, stable: true },
+      { resultId: 'r1', text: 'we interviewed', partial: true, stable: false, stableText: '' },
+      {
+        resultId: 'r1',
+        text: 'we interviewed twelve clinics',
+        partial: false,
+        stable: true,
+        stableText: 'we interviewed twelve clinics',
+      },
     ]);
+  });
+
+  it('reports the stable lead of a partial: the words Transcribe will not revise (LAB-V4)', () => {
+    const { handlers, socket } = open();
+    socket.serverOpen();
+    socket.serverSend(transcriptEvent('r1', 'sorry to cut', { partial: true, stableWords: 1 }));
+    expect(handlers.onResult.mock.calls.at(-1)?.[0]).toMatchObject({ stable: false, stableText: 'sorry' });
   });
 
   it('ends with an empty AudioEvent and reports an expected close', () => {

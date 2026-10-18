@@ -34,6 +34,7 @@ const MAX_PENDING_FRAMES = 40;
 const END_GRACE_MS = 1500;
 
 interface RawItem {
+  Content?: string;
   Stable?: boolean;
   Type?: string;
 }
@@ -54,11 +55,18 @@ export function transcriptResults(payload: unknown): TranscriptResult[] {
     if (typeof result.ResultId !== 'string') continue;
     const items = alternative?.Items ?? [];
     const words = items.filter((item) => item.Type !== 'punctuation');
+    const partial = result.IsPartial !== false;
+    // The words Transcribe will not revise any more: all of a finished segment, the stable lead of a partial.
+    const firstUnstable = words.findIndex((item) => item.Stable !== true);
+    const stableWords = (firstUnstable < 0 ? words : words.slice(0, firstUnstable))
+      .map((item) => item.Content ?? '')
+      .filter((w) => w !== '');
     out.push({
       resultId: result.ResultId,
       text,
-      partial: result.IsPartial !== false,
-      stable: result.IsPartial === false || (words.length > 0 && words.every((item) => item.Stable === true)),
+      partial,
+      stable: !partial || (words.length > 0 && words.every((item) => item.Stable === true)),
+      stableText: partial ? stableWords.join(' ') : text,
     });
   }
   return out;

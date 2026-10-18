@@ -21,7 +21,7 @@ import {
   type CaptureAudio,
   type TrackChange,
 } from './capture';
-import { Endpointer, floorWords } from './endpointing';
+import { BARGE_SUSTAIN_MS, BARGE_WORD_SUSTAIN_MS, Endpointer, VoiceRun, floorWords } from './endpointing';
 import { SpeechPlayer, type PlayerAudio, type SpeechFetchResult, type SpeechUnitToPlay } from './playback';
 import { IDLE_CALL, type CallEnded, type CallSnapshot, type TalkMode, type TypedReason } from './call-state';
 import { openingText, speakableSentences } from './spoken-text';
@@ -46,8 +46,11 @@ export type {
  *   → end of turn (stable transcript + silence) → POST /sessions/:id/turns {channel: 'voice', callId}
  *   → `turn.speech` units (signed) → POST /speech, pipelined → one AudioContext → speakers
  *
- * Barge-in: voice while the vEIR speaks ducks it at once; a word that is not its own echo stops the audio,
- * aborts the turn stream and POSTs /turns/:id/interrupt with the last unit actually heard. A heartbeat every
+ * Barge-in: voice while the vEIR speaks ducks it at once; the founder taking the floor stops the audio, aborts the
+ * turn stream and POSTs /turns/:id/interrupt with the last unit actually heard. Taking the floor is a settled word
+ * that is neither the vEIR's echo nor a backchannel, one Transcribe already marked stable, one with the voice
+ * running on, two unsettled ones, or the voice running on (about 0.7 s) when no word heard yet says it is only a
+ * backchannel or the echo; speakers whose sound alone stopped the vEIR once, with no word after it, need words. A heartbeat every
  * 15 s carries the server's kill switches and remaining minutes. Without a microphone or speech-to-text
  * (local development, a refusal) the call continues by typing; replies are still spoken.
  *
@@ -175,6 +178,9 @@ interface ActiveTurn {
   firstAudioAt: number | null;
 }
 
+/** After voice alone stopped the vEIR, how long a word may take to follow before the sound counts as not the founder. */
+const SILENT_BARGE_MS = 3_000;
+
 /** A grant this close to expiry is re-minted before connecting with it. */
 const GRANT_MARGIN_MS = 15_000;
 
@@ -199,6 +205,11 @@ export class CallEngine {
   private stt: TranscribeStream | null = null;
   private grant: SttGrant | null = null;
   private readonly vad = new VoiceActivityDetector();
+  /** The founder's voice while the vEIR speaks (a barge-in long before the transcript confirms it). */
+  private readonly voiceRun: VoiceRun;
+  /** Voice alone no longer stops the vEIR on this call: it did once and no word followed (speakers, a room). */
+  private sustainBargeOff = false;
+  private silentBargeTimer: unknown = null;
   private endpointer: Endpointer;
   private turn: ActiveTurn | null = null;
   /** The crisis turn whose fixed support line is being said (never cut off). */
@@ -238,6 +249,7 @@ export class CallEngine {
   constructor(private readonly deps: CallEngineDeps) {
     this.tuning = { ...DEFAULT_TUNING, ...deps.tuning };
     this.endpointer = new Endpointer(deps.clock.now, { silenceMs: this.tuning.silenceMs });
+    this.voiceRun = new VoiceRun(deps.clock.now);
   }
 
   // Store ---------------------------------------------------------------------------------------------
@@ -871,6 +883,15 @@ export class CallEngine {
     const vad = this.vad.update(rms);
     if (vad.voiced) this.endpointer.onVoice();
     if (vad.onset && s.activity === 'speaking') this.duckForBargeIn();
+    if (s.activity === 'speaking' && s.talkMode === 'hands_free') {
+      // The voice runs on over the vEIR: the founder is taking the floor, before the transcript says so.
+      if (this.voiceRun.frame(vad.voiced) >= BARGE_SUSTAIN_MS && this.voiceTakesFloor()) {
+        this.bargeIn();
+        this.watchSilentBarge();
+      }
+    } else {
+      this.voiceRun.reset();
+    }
     // While the vEIR speaks, only a barge-in hands the floor over: what is heard meanwhile is its echo or a
     // backchannel, and never completes a turn.
     if (s.talkMode === 'hands_free' && s.activity !== 'speaking' && this.endpointer.isComplete()) {
@@ -898,10 +919,13 @@ export class CallEngine {
     if (heard === '') return;
     if (s.activity === 'speaking' && s.talkMode === 'hands_free') {
       // Barge-in needs the founder taking the floor: a settled word that is neither the vEIR's echo nor a
-      // backchannel ("yeah", "mm-hmm"), or two such words while the transcript is still changing.
+      // backchannel ("yeah", "mm-hmm"), one such word Transcribe already marked stable, one while the voice runs
+      // on, or two such words while the transcript is still changing.
       const taking = floorWords(heard, this.spokenSoFar).length;
       const settled = result.stable || !result.partial;
-      if (taking < (settled ? 1 : 2)) {
+      const stableWord = floorWords(result.stableText ?? '', this.spokenSoFar).length > 0;
+      const voiced = !this.sustainBargeOff && this.voiceRun.duration() >= BARGE_WORD_SUSTAIN_MS;
+      if (taking < (settled ? 1 : 2) && !stableWord && !(taking >= 1 && voiced)) {
         // A settled echo or backchannel is not a turn either (a revision that adds words is heard afresh).
         if (settled) this.forgetNonWords();
         return;
@@ -916,6 +940,31 @@ export class CallEngine {
   /** Drops what was only the vEIR's echo or a backchannel from what the founder is saying. */
   private forgetNonWords(): void {
     this.endpointer.retain((text) => floorWords(text, this.spokenSoFar).length > 0);
+  }
+
+  /**
+   * Whether the voice running on over the vEIR is the founder taking the floor: not on a call where voice alone
+   * already stopped it for nothing, and not when the words heard so far are only its echo or backchannels.
+   */
+  private voiceTakesFloor(): boolean {
+    if (this.sustainBargeOff || this.sayingCrisisSupport()) return false;
+    const heard = this.endpointer.text();
+    return heard === '' || floorWords(heard, this.spokenSoFar).length > 0;
+  }
+
+  /**
+   * After voice alone stopped the vEIR: when no word follows, the sound was not the founder (speakers, a room), so
+   * from now on on this call only words stop it (and push to talk is suggested as for other sound without words).
+   */
+  private watchSilentBarge(): void {
+    if (this.silentBargeTimer !== null) this.deps.clock.clearTimeout(this.silentBargeTimer);
+    const turns = this.turnCount;
+    this.silentBargeTimer = this.deps.clock.setTimeout(() => {
+      this.silentBargeTimer = null;
+      if (this.snapshot.phase !== 'live' || this.turnCount !== turns || this.endpointer.hasSpeech()) return;
+      this.sustainBargeOff = true;
+      this.falseBargeIn();
+    }, SILENT_BARGE_MS);
   }
 
   private duckForBargeIn(): void {
@@ -1247,6 +1296,8 @@ export class CallEngine {
     this.turnCount = 0;
     this.missedHeartbeats = 0;
     this.falseBargeIns = 0;
+    this.sustainBargeOff = false;
+    this.voiceRun.reset();
     this.warned = false;
     this.spokenSoFar = '';
     this.micOpenMs = 0;
@@ -1265,9 +1316,16 @@ export class CallEngine {
   private teardown(keepCrisisLine = false): void {
     const { clock } = this.deps;
     for (const timer of [this.heartbeatTimer, this.tickTimer]) if (timer !== null) clock.clearInterval(timer);
-    for (const timer of [this.bargeTimer, this.releaseTimer, this.reconnectTimer, this.micSilentTimer]) {
+    for (const timer of [
+      this.bargeTimer,
+      this.releaseTimer,
+      this.reconnectTimer,
+      this.micSilentTimer,
+      this.silentBargeTimer,
+    ]) {
       if (timer !== null) clock.clearTimeout(timer);
     }
+    this.silentBargeTimer = null;
     this.heartbeatTimer = this.tickTimer = this.bargeTimer = this.releaseTimer = this.reconnectTimer = null;
     this.micSilentTimer = null;
     this.turn?.controller.abort();
