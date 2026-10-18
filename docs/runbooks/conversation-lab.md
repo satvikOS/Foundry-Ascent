@@ -95,6 +95,26 @@ are written. Findings that point at the product (not the harness) go to the stre
 | Voice latencies   | First audio after the founder stops speaking; end of speech to turn sent (endpointing + Transcribe); turn sent to first audio (model + Polly). The app's own client stats (sent at hang-up) are printed beside them                                                                                            |
 | Stopped by        | `completed`, `budget_app`, `budget_lab`, or `app_refused` (the app answered `spend_cap_reached` or another stop code)                                                                                                                                                                                          |
 
+## Targeted runs and the app's own numbers
+
+- `scenario_ids` (matrix) runs only those scenarios, for example `SM-13,SM-39`. `repeat` runs each one that many
+  times (ids get `#n`). For voice, `repeat` is the number of calls in a row, for more barge-in and first-audio
+  samples.
+- Every summary adds what the app's own logs say, as numbers:
+  - model attempts per purpose (first attempts, how many ended `invalid_output`, the share), the invalid-output
+    issue codes and how often `(root): max_tokens` appears;
+  - server turn time and first speech, Polly first audio per unit;
+  - streamed turns that fell back to a whole reply, and interrupt requests.
+- The matrix also counts the validator notes (for example `meta_narration_*`, `stream_meta_narration*`) and the
+  grader findings (for example `structured_leak`).
+- Recall adds RG-01: a line typed while the call greeting plays. It records how soon the turn goes out (LAB-R1) and
+  whether the greeting stopped. Recall also flags openers that quote a question or name the founder in lower case
+  or in the third person.
+- Voice counts self-interruptions: interrupt requests the test did not cause by barging in.
+
+Only one run of the workflow can wait at a time (GitHub cancels an older pending run of the same concurrency group).
+Dispatch the next suite once the previous one has started.
+
 ## Before and after
 
 `baseline_run_id` compares a run with an earlier run of the same suite. The summary then adds tables of the
@@ -107,8 +127,17 @@ baseline, this run and the change:
 - the scenarios whose outcome changed.
 
 The baseline is `ops/lab/baselines/<suite>-<run id>.json` when committed, otherwise that run's public summary
-artifact (kept 7 days). `matrix-39084323076.json` is the 40-scenario baseline from before the wave-6 presence work.
-Its census was computed afterwards from the run's sealed transcripts.
+artifact (kept 7 days). The committed baselines are from before the wave-6 hotfix and presence work:
+
+| Suite                 | Baseline run |
+| --------------------- | ------------ |
+| recall                | 39080360013  |
+| voice                 | 39081203019  |
+| matrix (40 scenarios) | 39084323076  |
+| ui                    | 39084712617  |
+
+Their census, notes, findings, app-log numbers, opener flags and greeting delay were computed afterwards from
+the runs' sealed outputs. Issue codes were not logged then, so those counts are null.
 
 ```bash
 gh workflow run ops-conversation-lab.yml -f suite=matrix -f budget_usd=5 -f max_scenarios=40 \

@@ -1,0 +1,255 @@
+{
+  "suite": "ui",
+  "budget_usd": 3.0,
+  "max_scenarios": 14,
+  "stopped_by": null,
+  "models": {
+    "app": {
+      "primary": "us.amazon.nova-2-lite-v1:0",
+      "fallback": "global.amazon.nova-2-lite-v1:0",
+      "embeddings": "amazon.titan-embed-text-v2:0"
+    },
+    "simulator": null,
+    "judge": null,
+    "probes": {}
+  },
+  "backfill": "chunks=70 memory=50 stoppedBy=done",
+  "result": {
+    "playwright_exit": 1,
+    "passed": 78,
+    "run": 80,
+    "ui": {
+      "totals": {
+        "expected": 77,
+        "unexpected": 2,
+        "flaky": 1,
+        "skipped": 0
+      },
+      "pass_rate": 0.975,
+      "per_file": {
+        "auth.setup.ts": {
+          "expected": 1,
+          "unexpected": 0,
+          "flaky": 0,
+          "skipped": 0
+        },
+        "a11y.spec.ts": {
+          "expected": 6,
+          "unexpected": 0,
+          "flaky": 0,
+          "skipped": 0
+        },
+        "calls.spec.ts": {
+          "expected": 17,
+          "unexpected": 0,
+          "flaky": 0,
+          "skipped": 0
+        },
+        "chat.spec.ts": {
+          "expected": 3,
+          "unexpected": 0,
+          "flaky": 0,
+          "skipped": 0
+        },
+        "continuity-chat.spec.ts": {
+          "expected": 0,
+          "unexpected": 1,
+          "flaky": 0,
+          "skipped": 0
+        },
+        "documents.spec.ts": {
+          "expected": 7,
+          "unexpected": 0,
+          "flaky": 1,
+          "skipped": 0
+        },
+        "journey.spec.ts": {
+          "expected": 3,
+          "unexpected": 0,
+          "flaky": 0,
+          "skipped": 0
+        },
+        "knowledge.spec.ts": {
+          "expected": 8,
+          "unexpected": 1,
+          "flaky": 0,
+          "skipped": 0
+        },
+        "requests.chat.spec.ts": {
+          "expected": 1,
+          "unexpected": 0,
+          "flaky": 0,
+          "skipped": 0
+        },
+        "safety.spec.ts": {
+          "expected": 3,
+          "unexpected": 0,
+          "flaky": 0,
+          "skipped": 0
+        },
+        "studio.spec.ts": {
+          "expected": 10,
+          "unexpected": 0,
+          "flaky": 0,
+          "skipped": 0
+        },
+        "test-bench.studio.spec.ts": {
+          "expected": 4,
+          "unexpected": 0,
+          "flaky": 0,
+          "skipped": 0
+        },
+        "theme.spec.ts": {
+          "expected": 7,
+          "unexpected": 0,
+          "flaky": 0,
+          "skipped": 0
+        },
+        "web-perf.chat.spec.ts": {
+          "expected": 3,
+          "unexpected": 0,
+          "flaky": 0,
+          "skipped": 0
+        },
+        "mobile.spec.ts": {
+          "expected": 4,
+          "unexpected": 0,
+          "flaky": 0,
+          "skipped": 0
+        }
+      },
+      "failing": [
+        {
+          "file": "continuity-chat.spec.ts",
+          "project": "desktop",
+          "title": "continuity across conversations > the next conversation opens from the last one and remembers it when asked"
+        },
+        {
+          "file": "knowledge.spec.ts",
+          "project": "desktop",
+          "title": "memory > editing what the vEIR learned in a conversation saves the edit, with nothing to approve"
+        }
+      ],
+      "flaky": [
+        {
+          "file": "documents.spec.ts",
+          "project": "desktop",
+          "title": "document viewer > opens program guidance a citation came from, at the passage"
+        }
+      ],
+      "duration_seconds": 648.9
+    }
+  },
+  "spend": {
+    "app_usd": 0.547161,
+    "lab_usd": 0.0,
+    "total_usd": 0.547161,
+    "app_budget_usd": 3.0,
+    "lab_budget_usd": 0.0,
+    "app_by_purpose": [
+      {
+        "purpose": "turn",
+        "usd": 0.345486,
+        "calls": 99,
+        "input_units": 901333
+      },
+      {
+        "purpose": "distill",
+        "usd": 0.163502,
+        "calls": 38,
+        "input_units": 220543
+      },
+      {
+        "purpose": "test_bench",
+        "usd": 0.023746,
+        "calls": 16,
+        "input_units": 58107
+      },
+      {
+        "purpose": "recap",
+        "usd": 0.014168,
+        "calls": 5,
+        "input_units": 20195
+      },
+      {
+        "purpose": "seed",
+        "usd": 0.000132,
+        "calls": 9,
+        "input_units": 6315
+      },
+      {
+        "purpose": "embedding",
+        "usd": 0.000118,
+        "calls": 80,
+        "input_units": 4107
+      },
+      {
+        "purpose": "ingestion",
+        "usd": 9e-6,
+        "calls": 8,
+        "input_units": 268
+      }
+    ],
+    "lab_by_purpose": {}
+  },
+  "duration_seconds": 664.0,
+  "harness_error": null,
+  "app_logs": {
+    "model_attempts": {
+      "distill": {
+        "attempts": 38,
+        "first_attempts": 19,
+        "first_invalid_output": 19,
+        "invalid_output": 20,
+        "kind:repair": 19,
+        "first_invalid_share_pct": 100.0
+      },
+      "recap": {
+        "attempts": 5,
+        "first_attempts": 5,
+        "first_invalid_share_pct": 0.0
+      },
+      "test_bench": {
+        "attempts": 11,
+        "first_attempts": 10,
+        "first_invalid_output": 1,
+        "invalid_output": 1,
+        "kind:repair": 1,
+        "first_invalid_share_pct": 10.0
+      },
+      "turn": {
+        "attempts": 99,
+        "first_attempts": 83,
+        "first_invalid_output": 16,
+        "invalid_output": 16,
+        "kind:repair": 16,
+        "first_invalid_share_pct": 19.3
+      }
+    },
+    "invalid_output_issues": {},
+    "root_max_tokens": null,
+    "turn_total_ms": {
+      "chat": {
+        "p50": 4722.0,
+        "p95": 7896.0,
+        "n": 39
+      },
+      "voice": {
+        "p50": 3680.0,
+        "p95": 4585.0,
+        "n": 4
+      }
+    },
+    "voice_first_speech_ms": {
+      "p50": 1139.0,
+      "p95": 1611.0,
+      "n": 4
+    },
+    "polly_first_audio_ms": null,
+    "stream_fallbacks": {
+      "structured_output": 1
+    },
+    "interrupt_requests": 0
+  },
+  "baseline_note": "Run 39084712617 (main 6cfc9a9). App-log numbers computed afterwards from its sealed outputs (logstats.py). Invalid-output issue codes were not logged before the hotfix, so their counts are unknown (null)."
+}

@@ -56,6 +56,9 @@ class Context:
     max_scenarios: int
     recall_gap_seconds: int | None
     env: dict[str, str] = field(default_factory=dict)
+    #: Only these scenarios (matrix), each run `repeat` times; voice runs its call `repeat` times.
+    scenario_ids: tuple[str, ...] = ()
+    repeat: int = 1
 
     @property
     def private(self) -> Path:
@@ -153,6 +156,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         budget_usd=budget,
         max_scenarios=int(args.max_scenarios),
         recall_gap_seconds=args.recall_gap_seconds,
+        scenario_ids=tuple(i.strip() for i in (args.scenarios or "").split(",") if i.strip()),
+        repeat=int(args.repeat),
     )
     ctx.private.mkdir(parents=True, exist_ok=True)
     ctx.public.mkdir(parents=True, exist_ok=True)
@@ -259,6 +264,9 @@ def cmd_run(args: argparse.Namespace) -> int:
                 admin.close()
     except Exception as exc:  # noqa: BLE001 - the app did not start (or stop); its logs are sealed
         error = error or type(exc).__name__
+    from conversation_lab.logstats import from_file
+
+    summary["app_logs"] = from_file(ctx.private / "logs" / "api.log")
     spend = guard.snapshot()
     spend["app_by_purpose"] = summary.pop("spend_app_by_purpose", [])
     spend["lab_by_purpose"] = ledger.by_purpose()
@@ -305,13 +313,21 @@ def suite_recall(
     ctx: Context, *, browser: dict[str, str], lab_client: Any, judge_model: str | None, **_: Any
 ) -> dict[str, Any]:
     from conversation_lab.budget import BudgetExceededError
-    from conversation_lab.recall import captured_scenarios, grade_scenario, load_recall
+    from conversation_lab.recall import (
+        GREETING_ID,
+        captured_scenarios,
+        grade_scenario,
+        greeting_result,
+        load_recall,
+        opener_flags,
+    )
 
     extra = dict(browser)
     if ctx.recall_gap_seconds is not None:
         extra["LAB_RECALL_GAP_SECONDS"] = str(ctx.recall_gap_seconds)
     scenarios = load_recall()["scenarios"][: ctx.max_scenarios]
-    grep = "|".join(s["id"] for s in scenarios)
+    # RG-01: a line typed while the greeting plays (how soon the first turn goes out).
+    grep = "|".join([*(s["id"] for s in scenarios), GREETING_ID])
     rc = run_playwright(
         ctx,
         specs=["--project=recall", f"--grep={grep}"],
@@ -341,6 +357,8 @@ def suite_recall(
     seconds = [s for r in results for s in r.turn_seconds]
     return {
         "playwright_exit": rc,
+        "greeting": greeting_result(captured.get(GREETING_ID)),
+        "openers": opener_flags(captured),
         "passed": sum(r.passed for r in results),
         "run": len(results),
         "turn_seconds": percentiles(seconds),
@@ -372,8 +390,9 @@ def suite_voice(
             **browser,
             "LAB_VOICE_MANIFEST": str(ctx.private / "voice" / "manifest.json"),
             "LAB_FAKE_MIC_WAV": manifest["deviceFile"],
+            "LAB_VOICE_REPEAT": str(ctx.repeat),
         },
-        timeout=20 * 60,
+        timeout=(10 + 8 * ctx.repeat) * 60,
     )
     result_file = ctx.private / "voice" / "result.json"
     captured = json.loads(result_file.read_text(encoding="utf-8")) if result_file.is_file() else None
@@ -399,7 +418,7 @@ def suite_matrix(
     from conversation_lab.app import FOUNDER_NAME
     from conversation_lab.judge import Judge
     from conversation_lab.simulator import LlmSimulator, TemplateSimulator
-    from conversation_lab.smoke import SmokeRunner, grading_context, load_smoke
+    from conversation_lab.smoke import SmokeRunner, grading_context, load_smoke, select_scenarios
 
     smoke = load_smoke()
     founder = admin.founder(FOUNDER_NAME)
@@ -425,7 +444,8 @@ def suite_matrix(
             context=grading_context(venture.id, venture.name, members, persona, staff),
             private_dir=ctx.private,
         )
-        results, stopped = runner.run(smoke["scenarios"], ctx.max_scenarios)
+        chosen = select_scenarios(smoke["scenarios"], ctx.scenario_ids, ctx.repeat)
+        results, stopped = runner.run(chosen, max(ctx.max_scenarios, len(ctx.scenario_ids) * ctx.repeat))
     finally:
         founder.close()
     return matrix_result(
@@ -440,12 +460,26 @@ def matrix_result(
     results: Sequence[Any], stopped: str | None, *, founder_name: str, llm_simulator: bool
 ) -> dict[str, Any]:
     """The matrix suite's public result: pass rates, dimensions, judge humanness and the phrase census."""
+    from collections import Counter
+
     from conversation_lab.census import census
+    from conversation_lab.logstats import SAFE_CODE
     from conversation_lab.smoke import dimension_rates, humanness
 
     seconds = [t.seconds for r in results for t in r.turns if t.kind != "error"]
     heard = [t.heard for r in results for t in r.turns if t.heard]
+    notes: Counter[str] = Counter()
+    for r in results:
+        for t in r.turns:
+            validator = t.detail.get("validator") if isinstance(t.detail, dict) else None
+            for note in (validator or {}).get("notes", []) if isinstance(validator, dict) else []:
+                if isinstance(note, str) and SAFE_CODE.match(note):
+                    notes[note] += 1
+    findings: Counter[str] = Counter(code for r in results for code in [*r.high, *r.presence, *r.craft])
     return {
+        "validator_notes": dict(sorted(notes.items())),
+        "findings": dict(sorted(findings.items())),
+        "voice_turns": sum(1 for r in results if r.channel == "call" for t in r.turns if t.kind != "error"),
         "source": "built-in smoke set",
         "census": census(heard, founder_names=(founder_name,)),
         "simulator": "llm" if llm_simulator else "template",
@@ -510,6 +544,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     run.add_argument("--budget-usd", required=True)
     run.add_argument("--max-scenarios", type=int, default=14)
     run.add_argument("--recall-gap-seconds", type=int, default=None)
+    run.add_argument("--scenarios", default="", help="matrix: only these scenario ids, comma-separated")
+    run.add_argument(
+        "--repeat", type=int, default=1, help="matrix: run each scenario this many times; voice: calls"
+    )
     run.add_argument("--out", required=True)
     run.add_argument("--api-port", type=int, default=8787)
     run.add_argument("--web-port", type=int, default=4173)

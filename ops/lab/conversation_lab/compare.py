@@ -94,17 +94,44 @@ def compare(current: Mapping[str, Any], baseline: Mapping[str, Any]) -> dict[str
                     f"{name} {key}", (voice_b.get(name) or {}).get(key), (voice_c.get(name) or {}).get(key), 0
                 )
         row(
-            "barge-in stop (ms)",
+            "barge-in stop p50 (ms)",
             (voice_b.get("barge_in") or {}).get("stop_ms"),
             (voice_c.get("barge_in") or {}).get("stop_ms"),
             0,
         )
+        row("self-interruptions", voice_b.get("self_interruptions"), voice_c.get("self_interruptions"), 0)
     row(
         "spend (USD)",
         (baseline.get("spend") or {}).get("total_usd"),
         (current.get("spend") or {}).get("total_usd"),
         4,
     )
+    logs_b, logs_c = baseline.get("app_logs") or {}, current.get("app_logs") or {}
+    attempts_b, attempts_c = logs_b.get("model_attempts") or {}, logs_c.get("model_attempts") or {}
+    for purpose in sorted(set(attempts_b) | set(attempts_c)):
+        row(
+            f"{purpose}: first attempts invalid_output (%)",
+            (attempts_b.get(purpose) or {}).get("first_invalid_share_pct"),
+            (attempts_c.get(purpose) or {}).get("first_invalid_share_pct"),
+        )
+    if logs_b or logs_c:
+        row("(root): max_tokens issues", logs_b.get("root_max_tokens"), logs_c.get("root_max_tokens"), 0)
+        for name in ("voice", "chat"):
+            row(
+                f"server turn time {name} p50 (ms)",
+                ((logs_b.get("turn_total_ms") or {}).get(name) or {}).get("p50"),
+                ((logs_c.get("turn_total_ms") or {}).get(name) or {}).get("p50"),
+                0,
+            )
+        row("interrupt requests", logs_b.get("interrupt_requests"), logs_c.get("interrupt_requests"), 0)
+    if base.get("findings") is not None or cur.get("findings") is not None:
+        for key in ("structured_leak", "volunteered_ai_disclaimer", "repeated_reply", "stacked_questions"):
+            row(
+                f"finding {key}",
+                (base.get("findings") or {}).get(key, 0),
+                (cur.get("findings") or {}).get(key, 0),
+                0,
+            )
     out["headline"] = headline
 
     dims: list[dict[str, Any]] = []

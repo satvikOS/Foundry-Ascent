@@ -106,7 +106,10 @@ class VoiceResult:
     endpoint_ms: list[float] = field(default_factory=list)
     reply_ms: list[float] = field(default_factory=list)
     barge_in: dict[str, Any] = field(default_factory=dict)
-    client_stats: dict[str, Any] | None = None
+    client_stats: dict[str, Any] | list[dict[str, Any] | None] | None = None
+    #: Calls in the run, and interrupt requests the test did not cause (the vEIR cut off by itself).
+    calls: int = 1
+    self_interruptions: int | None = None
     error: str | None = None
     passed: bool = False
     reason: str = "not_run"
@@ -137,6 +140,8 @@ class VoiceResult:
             },
             "barge_in": self.barge_in,
             "client_stats": self.client_stats,
+            "calls": self.calls,
+            "self_interruptions": self.self_interruptions,
         }
 
 
@@ -145,6 +150,61 @@ def _number(value: Any) -> float | None:
 
 
 def score(script: Mapping[str, Any], captured: Mapping[str, Any] | None) -> VoiceResult:
+    """Scores the run: one call (older results) or `calls` in a row, aggregated (latencies pooled, every barge-in
+    timed, self-interruptions summed; the run passes when every call does)."""
+    if captured is None or not isinstance(captured.get("calls"), list):
+        return score_call(script, captured)
+    parts = [score_call(script, c) for c in captured["calls"] if isinstance(c, dict)]
+    if not parts:
+        return score_call(script, None)
+    if len(parts) == 1:
+        one = parts[0]
+        one.self_interruptions = _int(captured["calls"][0].get("selfInterruptions"))
+        if one.barge_in.get("attempted"):
+            stop = one.barge_in.get("stop_ms")
+            one.barge_in = {
+                **one.barge_in,
+                "stops_ms": [stop] if stop is not None else [],
+                "stop_ms_p50": stop,
+            }
+        return one
+    total = VoiceResult(calls=len(parts))
+    first = parts[0]
+    total.input_mode, total.mic_opened, total.device_line_heard = (
+        first.input_mode,
+        first.mic_opened,
+        first.device_line_heard,
+    )
+    for n, part in enumerate(parts, start=1):
+        total.lines += [{**row, "id": f"call {n}: {row['id']}"} for row in part.lines]
+        total.first_audio_ms += part.first_audio_ms
+        total.endpoint_ms += part.endpoint_ms
+        total.reply_ms += part.reply_ms
+    stops = [p.barge_in["stop_ms"] for p in parts if p.barge_in.get("stop_ms") is not None]
+    total.barge_in = {
+        "attempted": sum(1 for p in parts if p.barge_in.get("attempted")),
+        "interrupt_sent": sum(1 for p in parts if p.barge_in.get("interrupt_sent")),
+        "reply_was_playing": sum(1 for p in parts if p.barge_in.get("reply_was_playing")),
+        "stops_ms": stops,
+        "stop_ms_p50": percentile(stops, 0.5),
+        "stop_ms": percentile(stops, 0.5),
+    }
+    total.client_stats = [p.client_stats for p in parts]
+    selfs = [_int(c.get("selfInterruptions")) for c in captured["calls"] if isinstance(c, dict)]
+    total.self_interruptions = (
+        sum(v for v in selfs if v is not None) if any(v is not None for v in selfs) else None
+    )
+    failed = next((p for p in parts if not p.passed), None)
+    total.error = failed.error if failed else None
+    total.passed, total.reason = (True, "pass") if failed is None else (False, failed.reason)
+    return total
+
+
+def _int(value: Any) -> int | None:
+    return int(value) if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def score_call(script: Mapping[str, Any], captured: Mapping[str, Any] | None) -> VoiceResult:
     result = VoiceResult()
     if captured is None:
         result.reason = "not_captured"

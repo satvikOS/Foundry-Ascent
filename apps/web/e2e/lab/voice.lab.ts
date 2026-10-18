@@ -167,151 +167,194 @@ async function waitForReplyToFinish(
   }
 }
 
+interface CallLog {
+  turnPosts: number[];
+  interrupts: number[];
+  clientStats: unknown[];
+  consoleErrors: string[];
+}
+
+/** Whether an interrupt request belongs to a barge-in the test made (from its injection to 6 s after). */
+function isOwnBargeIn(at: number, injections: readonly number[]): boolean {
+  return injections.some((t) => at >= t - 200 && at <= t + 6_000);
+}
+
+/**
+ * One voice call: line 1 through the fake device (or the mixed stream when the device is not heard), the later
+ * lines mixed in, a barge-in where the script says, then End call. Returns what the page saw (times are epoch ms).
+ */
+async function oneCall(
+  page: Page,
+  manifest: { lines: ManifestLine[] },
+  log: CallLog,
+): Promise<Record<string, unknown>> {
+  const startedAt = Date.now();
+  const stats = log.clientStats.length;
+  const result: Record<string, unknown> = { lines: [] as unknown[], error: null };
+  const injections: number[] = [];
+  let sessionId = '';
+  /** The step in progress (a fixed label), recorded when something fails. */
+  let step = 'start call';
+  try {
+    const call = await startCall(page);
+    sessionId = call.sessionId;
+    result.inputMode = call.inputMode;
+    result.intro = call.intro;
+    // Whether the app opened the (fake) microphone at all, whatever the server granted.
+    result.micOpened = (await audio(page)).captureStartedAt !== null;
+    // No speech-to-text grant: the call fell back to typing, so there is no voice loop to measure.
+    if (call.inputMode !== 'transcribe') throw new TypedCallError();
+    const lines = result.lines as Record<string, unknown>[];
+    let previousTurnAt = 0;
+    for (const [index, line] of manifest.lines.entries()) {
+      let speechEndedAt: number;
+      let injectedAt: number | null = null;
+      let replyWasPlaying = false;
+      step = `${line.id}: speak`;
+      if (index === 0) {
+        // The device file plays from the moment the app opened the microphone.
+        const captureAt = await expect
+          .poll(async () => (await audio(page)).captureStartedAt, { timeout: 60_000 })
+          .not.toBeNull()
+          .then(async () => (await audio(page)).captureStartedAt ?? 0);
+        speechEndedAt = captureAt + (line.leadSeconds + line.speechSeconds) * 1000;
+        // If the device line produced no turn (the file restarted or was never heard), say it through the mixed
+        // stream instead, so the rest of the call still runs; the result records which path carried it.
+        const deadline = speechEndedAt + 20_000;
+        while (Date.now() < deadline && firstAfter(log.turnPosts, speechEndedAt - 400) === null) {
+          await page.waitForTimeout(250);
+        }
+        result.deviceLineHeard = firstAfter(log.turnPosts, speechEndedAt - 400) !== null;
+        if (!result.deviceLineHeard) {
+          await waitForReplyToFinish(page, 0, 1500, 15_000);
+          const said = await sayLine(page, line.file);
+          speechEndedAt = said.startedAt + (line.leadSeconds + line.speechSeconds) * 1000;
+        }
+      } else {
+        if (line.bargeIn) {
+          // While the reply to the previous line is playing.
+          await expect
+            .poll(async () => firstAfter((await audio(page)).appStarts, previousTurnAt), {
+              timeout: 90_000,
+            })
+            .not.toBeNull();
+          await page.waitForTimeout(line.bargeInDelayMs);
+          replyWasPlaying = (await audio(page)).appPlaying > 0;
+        } else {
+          await waitForReplyToFinish(page, previousTurnAt);
+        }
+        const said = await sayLine(page, line.file);
+        injectedAt = said.startedAt;
+        if (line.bargeIn) injections.push(injectedAt);
+        speechEndedAt = said.startedAt + (line.leadSeconds + line.speechSeconds) * 1000;
+      }
+      // The turn the app sends once it hears the end of this line.
+      step = `${line.id}: turn sent`;
+      await expect
+        .poll(() => firstAfter(log.turnPosts, speechEndedAt - 400), {
+          timeout: 60_000,
+          intervals: [100, 250],
+        })
+        .not.toBeNull();
+      const turnPostedAt = firstAfter(log.turnPosts, speechEndedAt - 400) ?? 0;
+      previousTurnAt = turnPostedAt;
+      step = `${line.id}: reply audio`;
+      await expect
+        .poll(async () => firstAfter((await audio(page)).appStarts, turnPostedAt), { timeout: 90_000 })
+        .not.toBeNull()
+        .catch(() => undefined);
+      const a = await audio(page);
+      lines.push({
+        id: line.id,
+        speechEndedAt,
+        turnPostedAt,
+        firstAudioAt: firstAfter(a.appStarts, turnPostedAt),
+      });
+      if (line.bargeIn && injectedAt !== null) {
+        const interruptAt = firstAfter(log.interrupts, injectedAt - 50);
+        result.bargeIn = {
+          injectedAt,
+          replyWasPlaying,
+          playbackStoppedAt: firstAfter(a.appStops, injectedAt),
+          interruptSent: interruptAt !== null && interruptAt <= injectedAt + 6_000,
+        };
+      }
+    }
+    step = 'end call';
+    await waitForReplyToFinish(page, previousTurnAt);
+    await callScreen(page).getByRole('button', { name: 'End call' }).click();
+    await expect(callScreen(page).getByRole('heading', { name: 'Call ended' })).toBeVisible();
+    await expect.poll(() => log.clientStats.length, { timeout: 15_000 }).toBeGreaterThan(stats);
+    await callScreen(page).getByRole('button', { name: 'Back to conversation' }).click();
+  } catch (error) {
+    result.error = error instanceof TypedCallError ? 'typed' : errorName(error);
+    result.failedAt = step;
+    result.status = await callScreen(page)
+      .getByRole('status')
+      .allInnerTexts()
+      .catch(() => []);
+    await page
+      .screenshot({ path: `${privateDir()}/voice/failure-${String(startedAt)}.png`, fullPage: true })
+      .catch(() => undefined);
+  } finally {
+    const endedAt = Date.now();
+    result.clientStats = log.clientStats.length > stats ? log.clientStats.at(-1) : null;
+    // Interrupt requests the test did not cause by barging in: the vEIR cut off by its own voice or by noise.
+    const own = log.interrupts.filter((t) => t >= startedAt && t <= endedAt);
+    result.interrupts = own.length;
+    result.selfInterruptions = own.filter((t) => !isOwnBargeIn(t, injections)).length;
+    if (sessionId) {
+      const detail = await sessionTurns(page, sessionId).catch(() => null);
+      result.transcripts = detail?.turns.map((t) => t.founderText ?? '') ?? [];
+      result.replies = detail?.turns.map((t) => t.response?.spoken ?? t.response?.answer ?? '') ?? [];
+    }
+  }
+  return result;
+}
+
 test.describe('conversation lab: voice', () => {
   test.use({ storageState: FOUNDER_STATE });
 
   test('a voice call: speech in, speech out, barge-in', async ({ page, baseURL }) => {
-    test.setTimeout(10 * 60_000);
+    /** Calls in a row (LAB_VOICE_REPEAT, the workflow's `repeat`): more barge-ins and first-audio samples. */
+    const repeat = Math.min(5, Math.max(1, Number(process.env.LAB_VOICE_REPEAT ?? '1') || 1));
+    test.setTimeout(repeat * 8 * 60_000);
     const manifestFile = process.env.LAB_VOICE_MANIFEST;
     test.skip(!manifestFile, 'LAB_VOICE_MANIFEST is not set (the lab prepares it)');
     const manifest = JSON.parse(readFileSync(manifestFile ?? '', 'utf8')) as { lines: ManifestLine[] };
-    if (!baseURL || !(await appWithinBudget(baseURL, 0.2))) {
-      writePrivate('voice/result.json', { error: 'budget' });
-      test.skip(true, 'budget reached');
-      return;
-    }
     await page.addInitScript(labAudioInit);
     await acknowledgeNotices(page);
 
-    const turnPosts: number[] = [];
-    /** When the app first asked the server to cut the reply short (POST /turns/:id/interrupt). */
-    const interrupt: { at: number | null } = { at: null };
-    let clientStats: unknown = null;
+    const log: CallLog = { turnPosts: [], interrupts: [], clientStats: [], consoleErrors: [] };
     page.on('request', (request: Request) => {
       if (request.method() !== 'POST') return;
       const url = request.url();
-      if (/\/sessions\/[0-9a-f-]{36}\/turns$/.test(url)) turnPosts.push(Date.now());
-      else if (/\/turns\/[0-9a-f-]{36}\/interrupt$/.test(url)) interrupt.at ??= Date.now();
+      if (/\/sessions\/[0-9a-f-]{36}\/turns$/.test(url)) log.turnPosts.push(Date.now());
+      else if (/\/turns\/[0-9a-f-]{36}\/interrupt$/.test(url)) log.interrupts.push(Date.now());
       else if (/\/calls\/[0-9a-f-]{36}\/end$/.test(url)) {
         const body = request.postDataJSON() as { clientStats?: unknown } | null;
-        clientStats = body?.clientStats ?? null;
+        log.clientStats.push(body?.clientStats ?? null);
       }
     });
-
-    const consoleErrors: string[] = [];
     page.on('console', (message) => {
-      if (message.type() === 'error') consoleErrors.push(message.text().slice(0, 300));
+      if (message.type() === 'error') log.consoleErrors.push(message.text().slice(0, 300));
     });
 
-    const result: Record<string, unknown> = { lines: [] as unknown[], error: null };
-    let sessionId = '';
-    /** The step in progress (a fixed label), recorded when something fails. */
-    let step = 'start call';
-    try {
-      const call = await startCall(page);
-      sessionId = call.sessionId;
-      result.inputMode = call.inputMode;
-      result.intro = call.intro;
-      // Whether the app opened the (fake) microphone at all, whatever the server granted.
-      result.micOpened = (await audio(page)).captureStartedAt !== null;
-      // No speech-to-text grant: the call fell back to typing, so there is no voice loop to measure.
-      if (call.inputMode !== 'transcribe') throw new TypedCallError();
-      const lines = result.lines as Record<string, unknown>[];
-      let previousTurnAt = 0;
-      for (const [index, line] of manifest.lines.entries()) {
-        let speechEndedAt: number;
-        let injectedAt: number | null = null;
-        let replyWasPlaying = false;
-        step = `${line.id}: speak`;
-        if (index === 0) {
-          // The device file plays from the moment the app opened the microphone.
-          const captureAt = await expect
-            .poll(async () => (await audio(page)).captureStartedAt, { timeout: 60_000 })
-            .not.toBeNull()
-            .then(async () => (await audio(page)).captureStartedAt ?? 0);
-          speechEndedAt = captureAt + (line.leadSeconds + line.speechSeconds) * 1000;
-          // If the device line produced no turn (the file restarted or was never heard), say it through the mixed
-          // stream instead, so the rest of the call still runs; the result records which path carried it.
-          const deadline = speechEndedAt + 20_000;
-          while (Date.now() < deadline && firstAfter(turnPosts, speechEndedAt - 400) === null) {
-            await page.waitForTimeout(250);
-          }
-          result.deviceLineHeard = firstAfter(turnPosts, speechEndedAt - 400) !== null;
-          if (!result.deviceLineHeard) {
-            await waitForReplyToFinish(page, 0, 1500, 15_000);
-            const said = await sayLine(page, line.file);
-            speechEndedAt = said.startedAt + (line.leadSeconds + line.speechSeconds) * 1000;
-          }
-        } else {
-          if (line.bargeIn) {
-            // While the reply to the previous line is playing.
-            await expect
-              .poll(async () => firstAfter((await audio(page)).appStarts, previousTurnAt), {
-                timeout: 90_000,
-              })
-              .not.toBeNull();
-            await page.waitForTimeout(line.bargeInDelayMs);
-            replyWasPlaying = (await audio(page)).appPlaying > 0;
-          } else {
-            await waitForReplyToFinish(page, previousTurnAt);
-          }
-          const said = await sayLine(page, line.file);
-          injectedAt = said.startedAt;
-          speechEndedAt = said.startedAt + (line.leadSeconds + line.speechSeconds) * 1000;
-        }
-        // The turn the app sends once it hears the end of this line.
-        step = `${line.id}: turn sent`;
-        await expect
-          .poll(() => firstAfter(turnPosts, speechEndedAt - 400), { timeout: 60_000, intervals: [100, 250] })
-          .not.toBeNull();
-        const turnPostedAt = firstAfter(turnPosts, speechEndedAt - 400) ?? 0;
-        previousTurnAt = turnPostedAt;
-        step = `${line.id}: reply audio`;
-        await expect
-          .poll(async () => firstAfter((await audio(page)).appStarts, turnPostedAt), { timeout: 90_000 })
-          .not.toBeNull()
-          .catch(() => undefined);
-        const a = await audio(page);
-        lines.push({
-          id: line.id,
-          speechEndedAt,
-          turnPostedAt,
-          firstAudioAt: firstAfter(a.appStarts, turnPostedAt),
-        });
-        if (line.bargeIn && injectedAt !== null) {
-          result.bargeIn = {
-            injectedAt,
-            replyWasPlaying,
-            playbackStoppedAt: firstAfter(a.appStops, injectedAt),
-            interruptSent: interrupt.at !== null && interrupt.at >= injectedAt - 50,
-          };
-        }
+    const calls: Record<string, unknown>[] = [];
+    for (let n = 0; n < repeat; n += 1) {
+      if (!baseURL || !(await appWithinBudget(baseURL, 0.2))) {
+        calls.push({ error: 'budget' });
+        break;
       }
-      step = 'end call';
-      await waitForReplyToFinish(page, previousTurnAt);
-      await callScreen(page).getByRole('button', { name: 'End call' }).click();
-      await expect(callScreen(page).getByRole('heading', { name: 'Call ended' })).toBeVisible();
-      await expect.poll(() => clientStats, { timeout: 15_000 }).not.toBeNull();
-    } catch (error) {
-      result.error = error instanceof TypedCallError ? 'typed' : errorName(error);
-      result.failedAt = step;
-      result.status = await callScreen(page)
-        .getByRole('status')
-        .allInnerTexts()
-        .catch(() => []);
-      await page
-        .screenshot({ path: `${privateDir()}/voice/failure.png`, fullPage: true })
-        .catch(() => undefined);
-    } finally {
-      result.clientStats = clientStats;
-      result.consoleErrors = consoleErrors;
-      if (sessionId) {
-        const detail = await sessionTurns(page, sessionId).catch(() => null);
-        result.transcripts = detail?.turns.map((t) => t.founderText ?? '') ?? [];
-        result.replies = detail?.turns.map((t) => t.response?.spoken ?? t.response?.answer ?? '') ?? [];
-      }
-      writePrivate('voice/result.json', result);
+      const call = await oneCall(page, manifest, log);
+      calls.push(call);
+      writePrivate('voice/result.json', { calls, consoleErrors: log.consoleErrors });
+      if (call.error === 'typed') break;
     }
-    expect(result.error, 'the voice call ran to its end').toBeNull();
+    writePrivate('voice/result.json', { calls, consoleErrors: log.consoleErrors });
+    expect(
+      calls.map((c) => c.error ?? null),
+      'every voice call ran to its end',
+    ).toEqual(calls.map(() => null));
   });
 });

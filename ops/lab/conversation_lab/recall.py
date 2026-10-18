@@ -6,6 +6,7 @@ reply of the later conversation."""
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -137,11 +138,63 @@ def grade_scenario(
     return result
 
 
+#: The greeting test of recall.lab.ts: a line typed as soon as the call opens, while the greeting plays.
+GREETING_ID = "RG-01"
+#: How soon a line typed during the greeting must go out (LAB-R1: 11-14 s before the fix).
+GREETING_TURN_MS = 1500
+
+QUOTED_QUESTION = re.compile(r"[“\"][^”\"]{3,}\?[”\"]")
+LOWERCASE_NAME = re.compile(r"\bmaya\b")
+THIRD_PERSON_NAME = re.compile(r"\bMaya(?:['’]s| will| is| has| had| said| wants| needs| was)\b")
+
+
+def greeting_result(captured: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """How soon a line typed during the greeting reached the API, and whether the greeting gave way (numbers)."""
+    if not captured:
+        return None
+
+    def num(key: str) -> float | None:
+        value = captured.get(key)
+        return float(value) if isinstance(value, int | float) and not isinstance(value, bool) else None
+
+    started, typed, posted = num("callStartedAt"), num("typedAt"), num("turnPostedAt")
+    typed_to_turn = round(posted - typed) if posted is not None and typed is not None else None
+    return {
+        "error": str(captured["error"])[:64] if captured.get("error") else None,
+        "greeting_playing_when_typed": captured.get("greetingPlaying"),
+        "call_to_turn_ms": round(posted - started) if posted is not None and started is not None else None,
+        "typed_to_turn_ms": typed_to_turn,
+        "greeting_stopped": captured.get("greetingStopped"),
+        "passed": typed_to_turn is not None and typed_to_turn <= GREETING_TURN_MS,
+    }
+
+
+def opener_flags(captured: Mapping[str, Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """For every opening a scenario captured (a call's greeting, a chat's first line): does it quote a question, or
+    name the founder in lower case or in the third person (LAB-R3, LAB-U2)?"""
+    out = []
+    for sid, data in sorted(captured.items()):
+        for which in ("first", "second"):
+            opening = (data.get(which) or {}).get("opening") if isinstance(data.get(which), dict) else None
+            if not isinstance(opening, str) or not opening:
+                continue
+            out.append(
+                {
+                    "id": sid,
+                    "conversation": which,
+                    "quoted_question": bool(QUOTED_QUESTION.search(opening)),
+                    "lowercase_name": bool(LOWERCASE_NAME.search(opening)),
+                    "third_person_name": bool(THIRD_PERSON_NAME.search(opening)),
+                }
+            )
+    return out
+
+
 def captured_scenarios(private_dir: Path) -> dict[str, dict[str, Any]]:
     folder = private_dir / "recall"
     out: dict[str, dict[str, Any]] = {}
     if folder.is_dir():
-        for path in sorted(folder.glob("RC-*.json")):
+        for path in sorted([*folder.glob("RC-*.json"), *folder.glob("RG-*.json")]):
             data = json.loads(path.read_text(encoding="utf-8"))
             out[str(data.get("id", path.stem))] = data
     return out

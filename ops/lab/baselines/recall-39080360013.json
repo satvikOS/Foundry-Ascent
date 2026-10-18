@@ -1,0 +1,260 @@
+{
+  "suite": "recall",
+  "budget_usd": 2.0,
+  "max_scenarios": 3,
+  "stopped_by": null,
+  "models": {
+    "app": {
+      "primary": "us.amazon.nova-2-lite-v1:0",
+      "fallback": "global.amazon.nova-2-lite-v1:0",
+      "embeddings": "amazon.titan-embed-text-v2:0"
+    },
+    "simulator": null,
+    "judge": "us.amazon.nova-pro-v1:0",
+    "probes": {
+      "us.amazon.nova-premier-v1:0": "ResourceNotFoundException",
+      "us.amazon.nova-pro-v1:0": "ok"
+    }
+  },
+  "backfill": "chunks=70 memory=50 stoppedBy=done",
+  "result": {
+    "playwright_exit": 0,
+    "passed": 3,
+    "run": 3,
+    "turn_seconds": {
+      "p50": 4.8,
+      "p95": 17.0
+    },
+    "scenarios": [
+      {
+        "id": "RC-01",
+        "passed": true,
+        "reason": "pass",
+        "error": null,
+        "presence_findings": [],
+        "turn_seconds": [14.87, 4.59, 3.31, 15.28, 2.96],
+        "checks": [
+          {
+            "line": 1,
+            "facts_named": "3/4",
+            "rules_ok": true,
+            "passed": true,
+            "judge": {
+              "error": null,
+              "accuracy": 5,
+              "natural": 4,
+              "invented": false
+            }
+          },
+          {
+            "line": 2,
+            "facts_named": "1/1",
+            "rules_ok": true,
+            "passed": true,
+            "judge": {
+              "error": null,
+              "accuracy": 5,
+              "natural": 4,
+              "invented": false
+            }
+          }
+        ]
+      },
+      {
+        "id": "RC-02",
+        "passed": true,
+        "reason": "pass",
+        "error": null,
+        "presence_findings": [],
+        "turn_seconds": [4.8, 16.96],
+        "checks": [
+          {
+            "line": 1,
+            "facts_named": "3/3",
+            "rules_ok": true,
+            "passed": true,
+            "judge": {
+              "error": null,
+              "accuracy": 5,
+              "natural": 4,
+              "invented": false
+            }
+          }
+        ]
+      },
+      {
+        "id": "RC-03",
+        "passed": true,
+        "reason": "pass",
+        "error": null,
+        "presence_findings": [],
+        "turn_seconds": [14.42, 3.26],
+        "checks": [
+          {
+            "line": 1,
+            "facts_named": "1/1",
+            "rules_ok": true,
+            "passed": true,
+            "judge": {
+              "error": null,
+              "accuracy": 5,
+              "natural": 4,
+              "invented": false
+            }
+          }
+        ]
+      }
+    ],
+    "openers": [
+      {
+        "id": "RC-01",
+        "conversation": "first",
+        "quoted_question": false,
+        "lowercase_name": false,
+        "third_person_name": false
+      },
+      {
+        "id": "RC-01",
+        "conversation": "second",
+        "quoted_question": false,
+        "lowercase_name": false,
+        "third_person_name": false
+      },
+      {
+        "id": "RC-02",
+        "conversation": "first",
+        "quoted_question": true,
+        "lowercase_name": false,
+        "third_person_name": false
+      },
+      {
+        "id": "RC-02",
+        "conversation": "second",
+        "quoted_question": false,
+        "lowercase_name": false,
+        "third_person_name": false
+      },
+      {
+        "id": "RC-03",
+        "conversation": "first",
+        "quoted_question": true,
+        "lowercase_name": false,
+        "third_person_name": false
+      },
+      {
+        "id": "RC-03",
+        "conversation": "second",
+        "quoted_question": false,
+        "lowercase_name": false,
+        "third_person_name": false
+      }
+    ],
+    "greeting": {
+      "call_to_turn_ms": 11867.0,
+      "typed_to_turn_ms": null,
+      "note": "founder typed right after each call opened; first turn after POST /calls, median of 4 calls: [11250, 11872, 13823, 11862]"
+    }
+  },
+  "spend": {
+    "app_usd": 0.116508,
+    "lab_usd": 0.001564,
+    "total_usd": 0.118072,
+    "app_budget_usd": 1.7,
+    "lab_budget_usd": 0.3,
+    "app_by_purpose": [
+      {
+        "purpose": "turn",
+        "usd": 0.053478,
+        "calls": 19,
+        "input_units": 152067
+      },
+      {
+        "purpose": "distill",
+        "usd": 0.039916,
+        "calls": 10,
+        "input_units": 54685
+      },
+      {
+        "purpose": "speech",
+        "usd": 0.02296,
+        "calls": 19,
+        "input_units": 1435
+      },
+      {
+        "purpose": "seed",
+        "usd": 0.000131,
+        "calls": 9,
+        "input_units": 6315
+      },
+      {
+        "purpose": "embedding",
+        "usd": 2.3e-5,
+        "calls": 20,
+        "input_units": 744
+      }
+    ],
+    "lab_by_purpose": {
+      "probe": {
+        "calls": 1,
+        "usd": 1.6e-5,
+        "units_in": 8,
+        "units_out": 3
+      },
+      "judge": {
+        "calls": 4,
+        "usd": 0.001548,
+        "units_in": 1233,
+        "units_out": 175
+      }
+    }
+  },
+  "duration_seconds": 407.2,
+  "harness_error": null,
+  "app_logs": {
+    "model_attempts": {
+      "distill": {
+        "attempts": 10,
+        "first_attempts": 5,
+        "first_invalid_output": 5,
+        "invalid_output": 5,
+        "kind:repair": 5,
+        "first_invalid_share_pct": 100.0
+      },
+      "turn": {
+        "attempts": 19,
+        "first_attempts": 18,
+        "first_invalid_output": 1,
+        "invalid_output": 1,
+        "kind:repair": 1,
+        "first_invalid_share_pct": 5.6
+      }
+    },
+    "invalid_output_issues": {},
+    "root_max_tokens": null,
+    "turn_total_ms": {
+      "chat": {
+        "p50": 3121.0,
+        "p95": 4665.0,
+        "n": 2
+      },
+      "voice": {
+        "p50": 3182.0,
+        "p95": 4295.0,
+        "n": 7
+      }
+    },
+    "voice_first_speech_ms": {
+      "p50": 1219.0,
+      "p95": 1516.0,
+      "n": 7
+    },
+    "polly_first_audio_ms": {
+      "p50": 220.0,
+      "p95": 257.0,
+      "n": 19
+    },
+    "stream_fallbacks": {},
+    "interrupt_requests": 2
+  },
+  "baseline_note": "Run 39080360013 (main 8646563). Opener flags, the first-turn delay after a call opened and the app-log numbers were computed afterwards from its sealed outputs (conversation_lab recall.py, logstats.py). Invalid-output issue codes were not logged before the hotfix, so their counts are unknown (null)."
+}

@@ -83,7 +83,68 @@ def render(summary: Mapping[str, Any]) -> str:
         out.extend(f"| {k} | {v['usd']:.4f} | {int(v['calls'])} |" for k, v in lab_rows.items())
         out.append("")
     out.extend(_suite_tables(suite, result))
+    out.extend(_log_tables(summary.get("app_logs")))
     return "\n".join(out) + "\n"
+
+
+def _ms_cell(cell: Mapping[str, Any] | None) -> str:
+    if not cell:
+        return "-"
+    return f"p50 {cell['p50']:g}, p95 {cell['p95']:g} (n={cell['n']})"
+
+
+def _log_tables(logs: Mapping[str, Any] | None) -> list[str]:
+    """The app's own log numbers: model attempts per purpose, invalid-output issues, server timings."""
+    if not logs:
+        return []
+    out = ["| Model attempts (app logs) | First attempts | First invalid_output | Share | All attempts |"]
+    out.append("| --- | --- | --- | --- | --- |")
+    for purpose, c in (logs.get("model_attempts") or {}).items():
+        share = c.get("first_invalid_share_pct")
+        out.append(
+            f"| {purpose} | {c.get('first_attempts', 0)} | {c.get('first_invalid_output', 0)} | "
+            f"{'-' if share is None else f'{share:g} %'} | {c.get('attempts', 0)} |"
+        )
+    out.append("")
+    issues = logs.get("invalid_output_issues") or {}
+    if issues:
+        out.append(
+            f"Invalid-output issue codes ((root): max_tokens {logs.get('root_max_tokens', 0)}): "
+            + ", ".join(f"`{code}` x{n}" for code, n in issues.items())
+        )
+        out.append("")
+    totals = logs.get("turn_total_ms") or {}
+    out.append(
+        f"Server turn time: chat {_ms_cell(totals.get('chat'))} ms; voice {_ms_cell(totals.get('voice'))} ms; "
+        f"voice first speech {_ms_cell(logs.get('voice_first_speech_ms'))} ms; "
+        f"Polly first audio {_ms_cell(logs.get('polly_first_audio_ms'))} ms. Stream fallbacks: "
+        f"{logs.get('stream_fallbacks') or 'none'}; interrupt requests: {logs.get('interrupt_requests', 0)}."
+    )
+    out.append("")
+    voice_turns = [t for t in logs.get("turns") or [] if t.get("voice")]
+    if voice_turns:
+        out.append(
+            "| Voice turn | Retrieval | Embed | Model start | First token | First delta | Token→delta | First speech | Polly first audio | Total |"
+        )
+        out.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+        for n, t in enumerate(voice_turns, start=1):
+            cells = [
+                t.get(k)
+                for k in (
+                    "retrievalMs",
+                    "embedMs",
+                    "modelStartMs",
+                    "modelFirstTokenMs",
+                    "firstDeltaMs",
+                    "firstTokenToDeltaMs",
+                    "firstSpeechMs",
+                    "pollyFirstAudioMs",
+                    "totalMs",
+                )
+            ]
+            out.append(f"| {n} | " + " | ".join("-" if c is None else f"{c:g}" for c in cells) + " |")
+        out.append("")
+    return out
 
 
 def _suite_tables(suite: str, result: Mapping[str, Any]) -> list[str]:
@@ -127,6 +188,17 @@ def _suite_tables(suite: str, result: Mapping[str, Any]) -> list[str]:
                 f"| {s['id']} | {'yes' if s['passed'] else 'no'} | {s['reason']} | {mean if mean is not None else '-'} | {findings} |"
             )
         out.append("")
+        notes = result.get("validator_notes") or {}
+        findings = result.get("findings") or {}
+        if notes or findings:
+            out.append(
+                f"Voice turns: {result.get('voice_turns', 0)}. Validator notes: "
+                + (", ".join(f"`{k}` x{v}" for k, v in notes.items()) or "none")
+                + ". Grader findings: "
+                + (", ".join(f"`{k}` x{v}" for k, v in findings.items()) or "none")
+                + "."
+            )
+            out.append("")
         census = result.get("census") or {}
         if census:
             n = census.get("replies") or 0
@@ -160,6 +232,11 @@ def _suite_tables(suite: str, result: Mapping[str, Any]) -> list[str]:
         out.append(
             f"- Barge-in: attempted {b.get('attempted')}, reply was playing {b.get('reply_was_playing')}, "
             f"interrupt sent {b.get('interrupt_sent')}, playback stopped after {b.get('stop_ms')} ms"
+            + (f" (p50 of {b.get('stops_ms')})" if len(b.get("stops_ms") or []) > 1 else "")
+        )
+        out.append(
+            f"- Calls: {v.get('calls', 1)}; self-interruptions (interrupts the test did not cause): "
+            f"{v.get('self_interruptions')}"
         )
         if v.get("client_stats"):
             out.append(f"- App-reported (call end): {json.dumps(v['client_stats'])}")

@@ -1,3 +1,5 @@
+import { expect } from '@playwright/test';
+
 import { FOUNDER_STATE, test } from '../support/fixtures';
 import {
   acknowledgeNotices,
@@ -5,8 +7,13 @@ import {
   converse,
   errorName,
   privateDir,
+  callScreen,
+  hangUp,
   readScenarios,
+  replyOf,
+  startCall,
   trackSpeech,
+  waitForQuiet,
   writePrivate,
   type Captured,
 } from './lab-support';
@@ -33,6 +40,69 @@ const gapOverride = Number(process.env.LAB_RECALL_GAP_SECONDS ?? 'NaN');
 
 test.describe('conversation lab: recall', () => {
   test.use({ storageState: FOUNDER_STATE });
+
+  /*
+   * RG-01: the founder types as soon as the call opens, while the greeting is still playing (LAB-R1: the line used
+   * to wait until the greeting ended, 11-14 s). Records when the call opened, when the line was sent and when the
+   * turn went out, and whether the greeting stopped for it.
+   */
+  test('RG-01', async ({ page, baseURL }) => {
+    test.setTimeout(3 * 60_000);
+    if (!baseURL || !(await appWithinBudget(baseURL, 0.05))) {
+      writePrivate('recall/RG-01.json', { id: 'RG-01', error: 'budget' });
+      test.skip(true, 'budget reached');
+      return;
+    }
+    await trackSpeech(page);
+    await acknowledgeNotices(page);
+    const record: Record<string, unknown> = { id: 'RG-01', error: null };
+    let callStartedAt: number | null = null;
+    const turnPosts: number[] = [];
+    page.on('response', (response) => {
+      if (/\/sessions\/[0-9a-f-]{36}\/calls$/.test(response.url()) && response.status() === 201) {
+        callStartedAt ??= Date.now();
+      }
+    });
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && /\/sessions\/[0-9a-f-]{36}\/turns$/.test(request.url())) {
+        turnPosts.push(Date.now());
+      }
+    });
+    try {
+      const call = await startCall(page);
+      const reply = callScreen(page).getByRole('textbox', { name: /^Reply to / });
+      await reply.fill('Quick one before you go on: should the pilot start in the east library?');
+      // Whether the greeting was still being spoken when the founder sent the line.
+      record.greetingPlaying = await page.evaluate(
+        () => ((window as unknown as { __labSpeech?: { playing: number } }).__labSpeech?.playing ?? 0) > 0,
+      );
+      const typedAt = Date.now();
+      await reply.press('Enter');
+      await expect.poll(() => turnPosts.length, { timeout: 60_000, intervals: [50, 100] }).toBeGreaterThan(0);
+      Object.assign(record, {
+        callStartedAt,
+        typedAt,
+        turnPostedAt: turnPosts[0],
+        sessionId: call.sessionId,
+      });
+      // The greeting gave way: half a second after the line, before any reply can play, nothing is playing.
+      await page.waitForTimeout(500);
+      record.greetingStopped = await page.evaluate(
+        () => ((window as unknown as { __labSpeech?: { playing: number } }).__labSpeech?.playing ?? 0) === 0,
+      );
+      record.reply = await replyOf(page, call.sessionId, 1, true);
+      await waitForQuiet(page);
+      await hangUp(page);
+    } catch (error) {
+      record.error = errorName(error);
+      await page
+        .screenshot({ path: `${privateDir()}/recall/RG-01-failure.png`, fullPage: true })
+        .catch(() => undefined);
+      throw error;
+    } finally {
+      writePrivate('recall/RG-01.json', record);
+    }
+  });
 
   for (const scenario of scenarios) {
     test(scenario.id, async ({ page, baseURL }, testInfo) => {
