@@ -251,6 +251,8 @@ const SOCIAL_PHRASES = new RegExp(
     String.raw`\b(?:much appreciated|(?:i )?(?:really |truly )?appreciate (?:it|that|this|you|the help|your help|your time)(?: a lot| so much)?)`,
     String.raw`\b(?:that's|that is|that was|this is|this was|it's|it is|it was|you're|you are|you've been|that has been|this has been)(?: (?:really|super|very|so|genuinely|incredibly|truly|extremely|honestly|actually|quite|such|a|so so))* (?:helpful|useful|great|perfect|amazing|awesome|brilliant|clear|good|excellent|fantastic|the best|(?:a )?(?:big|huge|real) help|a lifesaver|gold|clarifying)`,
     String.raw`\b(?:(?:super|really|very|so|genuinely) (?:helpful|useful|clear)|(?:that|this) (?:helps|helped)(?: a lot| loads)?|(?:that |this )?makes (?:total |a lot of |perfect )?sense|got it|sounds (?:good|great|perfect)|will do|love (?:it|that|this))`,
+    // Taking the advice on board, with nothing new in it ("Thanks, I'll do that.").
+    String.raw`\b(?:i'll|i will|we'll|we will) (?:do (?:that|it|this|so)|try (?:that|it|this)|think about (?:it|that)|keep (?:that|it|this) in mind|give (?:it|that) a (?:go|try|shot)|let you know(?: how (?:it|that|they) (?:goes|go|went))?|see)\b`,
     // A goodbye ("Talk soon", "I have to run", "Have a good one").
     String.raw`\b(?:goodbye|bye(?:-bye| for now)?|talk (?:soon|later|tomorrow|next week)|speak soon|catch you later|signing off|good ?night|i'll let you go|until next time|take care|see you(?: (?:soon|later|tomorrow|next (?:week|time)|then))?|have a (?:good|great|nice|lovely) (?:one|day|evening|night|weekend|week))`,
     String.raw`\b(?:(?:i|we) (?:really |actually |just )?(?:have|need|got) to|gotta|must) (?:go|run|jump|dash|head (?:off|out)|hop off|leave)(?: now| soon| in a (?:sec|second|minute|bit))?`,

@@ -41,6 +41,8 @@ describe('social turns (SM-19, social_turn_report)', () => {
       ['Okay, bye!', 'closing'],
       ["Great, I'll let you go. Have a good one!", 'closing'],
       ['Gotta run, thanks!', 'closing'],
+      ["Thanks, I'll do that.", 'thanks'],
+      ["Thanks, I'll let you know how it goes!", 'thanks'],
       ['Hey Corin, good morning!', 'greeting'],
       ["Hi, how's it going?", 'greeting'],
     ] as const) {
