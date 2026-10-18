@@ -111,6 +111,8 @@ export function BlockedPanel({
                   to="/$tenant/app/v/$ventureId/help"
                   params={{ tenant, ventureId }}
                   search={{ id: escalationId }}
+                  // Short on screen; the name keeps what the request is for, starting with the words shown.
+                  aria-label="View your request for support"
                 >
                   View your request
                 </Link>

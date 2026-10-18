@@ -44,7 +44,7 @@ describe('BlockedPanel', () => {
     expect(screen.getAllByRole('listitem')).toHaveLength(2);
     expect(screen.getByText('988').tagName).toBe('STRONG');
     expect(screen.queryByText(/\*\*988\*\*/)).toBeNull();
-    const link = screen.getByRole('link', { name: 'View your request' });
+    const link = screen.getByRole('link', { name: 'View your request for support' });
     expect(link.getAttribute('href')).toContain(`id=${IDS.ref}`);
     expect(screen.getByText(/Nothing is shared until you consent/)).toBeVisible();
   });

@@ -223,7 +223,7 @@ describe('CallSummaryPanel', () => {
     const support = await screen.findByTestId('blocked-panel');
     expect(support).toHaveTextContent('You deserve support from a person');
     expect(support).toHaveTextContent('Call or text 988 any time.');
-    expect(within(support).getByRole('link', { name: 'View your request' })).toHaveAttribute(
+    expect(within(support).getByRole('link', { name: 'View your request for support' })).toHaveAttribute(
       'href',
       `/ain/app/v/${IDS.venture}/help?id=${IDS.escalation}`,
     );
@@ -233,7 +233,7 @@ describe('CallSummaryPanel', () => {
     expect(screen.getByRole('region', { name: 'Support' })).toHaveFocus();
     expect(screen.getByText('The call reached its time limit.')).toBeInTheDocument();
     // It stays until the founder leaves it.
-    await userEvent.click(within(support).getByRole('link', { name: 'View your request' }));
+    await userEvent.click(within(support).getByRole('link', { name: 'View your request for support' }));
     expect(callbacks.leave).toHaveBeenCalled();
   });
 

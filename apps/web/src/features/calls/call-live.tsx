@@ -397,7 +397,8 @@ function Notice({ notice, onPushToTalk }: { notice: CallNotice; onPushToTalk: ()
         {notice.message}
       </p>
       {notice.kind === 'barge_hint' ? (
-        <Button size="sm" variant="secondary" onClick={onPushToTalk}>
+        // The name says it switches the mode, apart from the dock's Push to talk control.
+        <Button size="sm" variant="secondary" onClick={onPushToTalk} aria-label="Use push to talk">
           Push to talk
         </Button>
       ) : null}

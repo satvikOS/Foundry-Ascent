@@ -48,7 +48,7 @@ test.describe('crisis support survives a reload', () => {
       timeout: 30_000,
     });
     await expect(live).toContainText('988');
-    await expect(live.getByRole('link', { name: 'View your request' })).toBeVisible();
+    await expect(live.getByRole('link', { name: 'View your request for support' })).toBeVisible();
 
     // A reload rebuilds the session from GET /sessions/:id: the same humane message and resources.
     await page.reload();
@@ -59,7 +59,7 @@ test.describe('crisis support survives a reload', () => {
     // Rendered as Markdown (a list of resources), never raw markup.
     await expect(stored.getByRole('listitem')).toHaveCount(3);
     await expect(stored).not.toContainText('**');
-    await expect(stored.getByRole('link', { name: 'View your request' })).toBeVisible();
+    await expect(stored.getByRole('link', { name: 'View your request for support' })).toBeVisible();
 
     // A crisis message never becomes the conversation's name: not stored, not in the header, not in the
     // recents (which every page shows).

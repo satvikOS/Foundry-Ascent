@@ -251,7 +251,7 @@ describe('CallLive', () => {
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('You deserve support from a person');
     expect(alert).toHaveTextContent('Call or text 988 any time.');
-    expect(within(alert).getByRole('link', { name: 'View your request' })).toHaveAttribute(
+    expect(within(alert).getByRole('link', { name: 'View your request for support' })).toHaveAttribute(
       'href',
       `/ain/app/v/${IDS.venture}/help?id=${IDS.escalation}`,
     );
@@ -327,7 +327,7 @@ describe('CallLive', () => {
     const { engine } = renderLive({
       notice: { kind: 'barge_hint', message: 'Sound around you keeps pausing the reply.' },
     });
-    await userEvent.click(await screen.findByRole('button', { name: 'Push to talk' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Use push to talk' }));
     expect(engine.setTalkMode).toHaveBeenCalledWith('push_to_talk');
     expect(window.localStorage.getItem('fa.call.talk-mode')).toBe('push_to_talk');
   });
