@@ -4,6 +4,7 @@ import {
   INVALID_RESPONSE_ANSWER,
   buildSystemPrompt,
   deriveSpoken,
+  founderMoves,
   isModelGatewayError,
   openerSaidHello,
   SOCIAL_BUDGETS,
@@ -220,8 +221,12 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
   });
   const shown: KeyedEvidence[] = spec.evidence.filter((k) => context.shownKeys.has(k.item.key));
   const evidenceKeys = new Set(shown.map((k) => k.item.key));
-  // The first reply after an opening line that said hello (a call's intro) does not greet again.
-  const greeted = spec.history.length === 0 && context.openerReplayed && openerSaidHello(spec.opener);
+  // The first reply after an opening line that said hello (a call's intro) does not greet again, and no later reply
+  // does unless the founder greets (LAB-R4: "Good to talk again." opened both replies after the intro said it).
+  const greeted =
+    spec.history.length === 0
+      ? context.openerReplayed && openerSaidHello(spec.opener)
+      : !founderMoves(spec.founderText).includes('greeting');
   // Conversation craft (validators/social.ts): a social turn gets a short reply, a reply never says the previous one
   // (or the opener) again, and a call's reply that ends on a statement hands the turn back.
   const lastAnswer = spec.history.at(-1)?.answer ?? null;

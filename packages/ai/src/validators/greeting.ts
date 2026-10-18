@@ -1,9 +1,10 @@
 /**
  * A greeting said twice. A call's intro greets the founder by name ("Hi Mina, how did the interviews go?"); the
  * vEIR's first reply then opened "Hello Mina, nice to hear from you." (the matrix's MX-0005) or "Good to talk
- * again." right after the intro said it (the lab's LAB-R4). Once the conversation's opening line has greeted them,
- * the first reply leaves out a greeting it opens with (`withoutRepeatedGreeting`), in the sentence gate (typed and
- * spoken) and in the final validator; a reply that was nothing but the greeting becomes a short hand-back
+ * again." right after the intro said it (the lab's LAB-R4, and again on the second reply). Once the conversation's
+ * opening line has greeted them, the first reply leaves out a greeting it opens with (`withoutRepeatedGreeting`), in
+ * the sentence gate (typed and spoken) and in the final validator, and so does every later reply unless the founder
+ * greets (the turn engine sets `greeted`); a reply that was nothing but the greeting becomes a short hand-back
  * ({@link REPEATED_GREETING_FALLBACK}).
  *
  * Only the greeting clause goes: "Hi Mina, how did it go?" keeps "How did it go?", "Hey, good to have you back!

@@ -116,9 +116,9 @@ export interface ValidateCoachResponseOptions {
    */
   founderName?: string | null;
   /**
-   * The conversation's opening line already said hello (a call's intro) and this is the first reply: a greeting the
-   * answer and the spoken reply open with is left out (`repeated_greeting_removed`), and a reply that was only that
-   * greeting becomes a short hand-back.
+   * A greeting was already given: the conversation's opening line said hello (a call's intro) and this is the first
+   * reply, or this is a later reply and the founder did not greet. A greeting the answer and the spoken reply open
+   * with is left out (`repeated_greeting_removed`), and a reply that was only that greeting becomes a short hand-back.
    */
   greeted?: boolean;
   /**

@@ -1355,6 +1355,36 @@ describe('the first reply after an intro that said hello (wave 7)', () => {
     }
   });
 
+  it('no later reply greets again either (LAB-R4: "Good to talk again." opened both replies), unless they greet', async () => {
+    for (const channel of ['text', 'voice'] as const) {
+      let n = 0;
+      const gateway = new MockModelGateway({
+        streamDelayMs: 0,
+        streamFixture: () =>
+          (n += 1) === 1
+            ? 'Five interviews is a solid start. Which one surprised you?'
+            : 'Good to talk again. Price per library, and test it with two this term.',
+      });
+      const { orchestrator } = coreWith(gateway);
+      const sessionId = await openedWith('Hi Maya, how did the five library-staff interviews go?');
+      const call = channel === 'voice' ? { channel, callId: CALL_ID } : {};
+      await run(orchestrator, sessionId, { text: 'They went well, five done.', mode: 'coach', ...call });
+      const { events } = await run(orchestrator, sessionId, {
+        text: 'How should we price it?',
+        mode: 'coach',
+        ...call,
+      });
+      expect(completed(events).response?.answer).toMatch(
+        /^Price per library, and test it with two this term\./,
+      );
+      for (const u of speechUnits(events)) expect(u.text).not.toMatch(/good to talk again/i);
+      // A hello of theirs mid-conversation still gets one back.
+      n = 1;
+      const hello = await run(orchestrator, sessionId, { text: 'Hi again!', mode: 'coach', ...call });
+      expect(completed(hello.events).response?.answer).toMatch(/^Good to talk again\./);
+    }
+  });
+
   it('a chat opener that only welcomed them back leaves a hello its hello back', async () => {
     const gateway = new MockModelGateway({
       streamDelayMs: 0,

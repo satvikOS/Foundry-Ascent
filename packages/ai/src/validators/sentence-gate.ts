@@ -109,9 +109,9 @@ export interface SentenceGateOptions {
    */
   founderName?: string | null;
   /**
-   * The conversation's opening line already said hello (a call's intro, `openerSaidHello`) and this is the first
-   * reply: a greeting it opens with is left out (validators/greeting.ts), and a reply that was only that greeting
-   * becomes a short hand-back.
+   * A greeting was already given (a call's intro that said hello, `openerSaidHello`, before the first reply; any
+   * earlier exchange when the founder does not greet): a greeting the reply opens with is left out
+   * (validators/greeting.ts), and a reply that was only that greeting becomes a short hand-back.
    */
   greeted?: boolean;
   /**
