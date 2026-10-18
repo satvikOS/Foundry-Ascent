@@ -16,7 +16,9 @@ import type { CallSnapshot } from '@/lib/realtime/call-state';
  *
  * The face belongs to the call, not to the screen: it lives in the call's controller (one per call engine), so
  * minimizing the call to the mini bar keeps it, and it ends with the call. One face per call: a face that
- * dropped is not asked for again (the server would refuse; nothing bills unseen).
+ * dropped is not asked for again (the server would refuse; nothing bills unseen). A call left on hold (the page
+ * hidden) for longer than {@link FACE_HOLD_GRACE_MS} gives its face up, since the vendor bills an idle face by
+ * the minute; a quick look at another tab keeps it.
  */
 export type CallFace =
   | { readonly status: 'presence' }
@@ -32,7 +34,12 @@ export interface CallFaceDeps {
   endFace(callId: string): Promise<void>;
   /** A face that has not shown its first frame by then is given up for this call. */
   readonly connectTimeoutMs: number;
+  /** A call on hold longer than this gives its face up (default {@link FACE_HOLD_GRACE_MS}). */
+  readonly holdGraceMs?: number;
 }
+
+/** How long a call may stay on hold (the page hidden) before its face is given up: the vendor bills idle faces. */
+export const FACE_HOLD_GRACE_MS = 60_000;
 
 export const BROWSER_FACE_DEPS: CallFaceDeps = {
   startSession: startAvatarSession,
@@ -84,6 +91,8 @@ export class CallFaceController {
     adapter: AvatarProvider | null;
     offLost: (() => void) | null;
   } | null = null;
+  /** Runs out when the call stayed on hold too long. */
+  private holdTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly engine: FaceEngine,
@@ -169,6 +178,7 @@ export class CallFaceController {
    * was given up while joining), so the vendor session is ended there too.
    */
   close(tellServer: boolean): void {
+    this.clearHold();
     const attempt = this.current;
     this.current = null;
     if (attempt !== null) {
@@ -192,7 +202,25 @@ export class CallFaceController {
       this.engine.setFaceShown(null);
       return;
     }
-    if (snapshot.blocked?.reason === 'crisis_support') this.close(true);
+    if (snapshot.blocked?.reason === 'crisis_support') {
+      this.close(true);
+      return;
+    }
+    if (!snapshot.held) {
+      this.clearHold();
+      return;
+    }
+    // On hold nobody watches the face, and the vendor bills it by the minute: past the grace it ends there too.
+    this.holdTimer ??= setTimeout(() => {
+      this.holdTimer = null;
+      if (this.current === attempt) this.close(true);
+    }, this.deps.holdGraceMs ?? FACE_HOLD_GRACE_MS);
+  }
+
+  private clearHold(): void {
+    if (this.holdTimer === null) return;
+    clearTimeout(this.holdTimer);
+    this.holdTimer = null;
   }
 
   private set(face: CallFace): void {

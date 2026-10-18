@@ -286,6 +286,34 @@ describe('CallStage: the face of a call', () => {
     expect(b.faceDeps.endFace).toHaveBeenCalledWith(CALL);
   });
 
+  it('gives the face up when the call stays on hold (the vendor bills idle faces); a short hold keeps it', async () => {
+    const face = vendorFace();
+    const fake = fakeEngine(LIVE_CALL);
+    const faceDeps = { ...deps(face), holdGraceMs: 40 };
+    const controller = new CallFaceController(fake.asEngine, faceDeps);
+    controller.request({ provider: 'fake', ventureId: VENTURE, callId: CALL, reducedMotion: false });
+    await waitFor(() => {
+      expect(face.provider.connect).toHaveBeenCalled();
+    });
+    face.connect();
+    await waitFor(() => {
+      expect(controller.getSnapshot().status).toBe('live');
+    });
+    // A quick look at another tab: back before the grace runs out.
+    fake.setSnapshot({ ...LIVE_CALL, held: true });
+    fake.setSnapshot({ ...LIVE_CALL, held: false });
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(controller.getSnapshot().status).toBe('live');
+    expect(faceDeps.endFace).not.toHaveBeenCalled();
+    // Left on hold: the face ends, and the server ends the vendor session.
+    fake.setSnapshot({ ...LIVE_CALL, held: true });
+    await waitFor(() => {
+      expect(controller.getSnapshot().status).toBe('presence');
+    });
+    expect(faceDeps.endFace).toHaveBeenCalledWith(CALL);
+    expect(face.provider.unmount).toHaveBeenCalled();
+  });
+
   it('keeps the presence when the API offers no face or the face cannot connect', async () => {
     const noToken = vendorFace();
     const a = controllerWith(noToken, { ...SESSION, provider: 'builtin', token: null, voicing: 'engine' });
