@@ -146,6 +146,8 @@
   --phone-bar-height: 0px;
   --mini-call-bar-height: 3rem;
   --mini-call-height: 0px;
+  /* The measured height of content docked to the bottom (the conversation's composer), 0 when there is none. */
+  --docked-bottom-height: 0px;
   --sidebar-width: 16.5rem;
   --sidebar-width-collapsed: 3.5rem;
   --inspector-width: 24rem;
@@ -349,6 +351,8 @@
     text-rendering: optimizeLegibility;
     scrollbar-gutter: stable;
     font-optical-sizing: auto;
+    /* Anything scrolled or focused into view lands above a docked composer (its height: useDockedBottom). */
+    scroll-padding-bottom: var(--docked-bottom-height);
   }
 
   body {

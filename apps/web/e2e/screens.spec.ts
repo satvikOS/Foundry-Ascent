@@ -14,6 +14,7 @@ import {
   test,
   useTheme,
 } from './support/fixtures';
+import { feedLongAnswers, LONG_FOLLOW_UPS } from './support/long-answer';
 
 /*
  * Screenshots of the main surfaces for design review (not a check: nothing here asserts on pixels).
@@ -141,6 +142,60 @@ for (const [device, options] of Object.entries(VIEWPORTS)) {
           await shoot(page, 'call-ended', device, scheme);
           await call.getByRole('button', { name: 'Back to conversation' }).click();
           await expect(call).toBeHidden();
+        });
+      });
+
+      test.describe('founder conversation, a real-model-sized answer', () => {
+        test.use({ storageState: FOUNDER_STATE });
+
+        test('long answer with long follow-up chips', async ({ page }) => {
+          test.setTimeout(120_000);
+          const notice = await page.request.post('/api/v1/calls/notice/acknowledge', {
+            headers: WRITE_HEADERS,
+          });
+          expect(notice.status(), 'POST /calls/notice/acknowledge').toBe(200);
+          await feedLongAnswers(page);
+          await openVenture(page);
+          await useTheme(page, scheme);
+          await startConversation(page, 'How should we price the two-library pilot?');
+          const answer = page.getByRole('article', { name: 'Exchange 1' });
+          await expect(answer.getByRole('button', { name: 'Copy answer' })).toBeVisible({ timeout: 30_000 });
+          await expect(
+            page.getByRole('list', { name: 'Follow-up questions' }).getByRole('button'),
+          ).toHaveCount(LONG_FOLLOW_UPS.length);
+          // As it finished: where the page left the reader (the end of the answer, its actions and the chips).
+          await shoot(page, 'long-answer-end', device, scheme);
+          // Mid-answer: the prose passing under the conversation's header.
+          await answer
+            .locator('p')
+            .nth(1)
+            .evaluate((p) => {
+              const bar = document.querySelector('main header');
+              const top = p.getBoundingClientRect().top + window.scrollY;
+              window.scrollTo(0, top - (bar ? bar.getBoundingClientRect().height / 2 : 0));
+            });
+          await shoot(page, 'header-over-prose', device, scheme);
+          // A call minimized to the mini bar, over the same prose.
+          await page
+            .getByRole('main')
+            .getByRole('link', { name: /^Call / })
+            .first()
+            .click();
+          const call = page.getByRole('dialog', { name: /^Call with / });
+          await expect(call.getByRole('textbox', { name: /^Reply to / })).toBeVisible();
+          await call.getByRole('button', { name: 'Minimize call' }).click();
+          const bar = page.getByRole('region', { name: /^Call with / });
+          await expect(bar).toBeVisible();
+          await answer
+            .locator('p')
+            .nth(1)
+            .evaluate((p) => {
+              const top = p.getBoundingClientRect().top + window.scrollY;
+              window.scrollTo(0, top - 40);
+            });
+          await shoot(page, 'mini-call-bar-over-prose', device, scheme);
+          await bar.getByRole('button', { name: 'End call' }).click();
+          await expect(bar).toContainText('Call ended');
         });
       });
 
