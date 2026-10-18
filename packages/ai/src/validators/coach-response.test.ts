@@ -1032,3 +1032,67 @@ describe('validateCoachResponse — structured-output leak', () => {
     expect(cutStructuredLeak('coach\nRun the pilot.')).toEqual({ text: 'coach\nRun the pilot.', cut: false });
   });
 });
+
+describe('validateCoachResponse — meta-narration (LAB-M1)', () => {
+  const LAB =
+    "Okay, let's see. The founder says they have five interviews. First, I need to figure out the mode. The venture is in the discovery stage.";
+
+  it('holds back an answer that opens with the model thinking aloud, typed and spoken', () => {
+    for (const channel of ['text', 'voice'] as const) {
+      const checked = validateCoachResponse(base({ answer: LAB, spoken: channel === 'voice' ? LAB : null }), {
+        ...opts(),
+        channel,
+      });
+      expect(checked.blocked).toBe(true);
+      expect(checked.blockReason).toBe('invalid_schema');
+      expect(checked.response.answer).toBe(INVALID_RESPONSE_ANSWER);
+      expect(checked.response.spoken ?? '').not.toMatch(/founder|mode/i);
+      expect(checked.results.notes).toContain('meta_narration_blocked:founder_third_person');
+    }
+  });
+
+  it('keeps a forced escalation when it holds the answer back', () => {
+    const checked = validateCoachResponse(base({ answer: 'This is a social turn. Hi!' }), {
+      ...opts(),
+      preRisk: { categories: ['legal'] },
+    });
+    expect(checked.blocked).toBe(true);
+    expect(checked.response.escalation.required).toBe(true);
+    expect(checked.results.escalationForced).toBe(true);
+  });
+
+  it('cuts the answer and the spoken reply before narration that follows a real start', () => {
+    const answer =
+      'That sounds like a heavy week. Take tonight off. According to the rules, I should ask one question.';
+    const checked = validateCoachResponse(
+      base({ answer, spoken: 'That sounds like a heavy week. My reply should be short.' }),
+      { ...opts(), channel: 'voice' },
+    );
+    expect(checked.blocked).toBe(false);
+    expect(checked.response.answer).toBe('That sounds like a heavy week. Take tonight off.');
+    expect(checked.response.spoken).toBe('That sounds like a heavy week.');
+    expect(checked.results.notes).toEqual(
+      expect.arrayContaining(['meta_narration_cut:rules', 'meta_narration_spoken_cut:planning']),
+    );
+  });
+
+  it('derives the spoken reply from the answer when the model’s spoken reply is all narration', () => {
+    const checked = validateCoachResponse(
+      base({
+        answer: 'Five interviews is a solid start. What surprised you?',
+        spoken: 'The founder said hi.',
+      }),
+      { ...opts(), channel: 'voice' },
+    );
+    expect(checked.blocked).toBe(false);
+    expect(checked.response.spoken).toBe('Five interviews is a solid start. What surprised you?');
+  });
+
+  it('leaves natural speech alone', () => {
+    const answer = "Okay, let's see. Five interviews is a solid start. Let me think about that with you.";
+    const checked = validateCoachResponse(base({ answer }), opts());
+    expect(checked.blocked).toBe(false);
+    expect(checked.response.answer).toBe(answer);
+    expect(checked.results.notes.some((n) => n.startsWith('meta_narration'))).toBe(false);
+  });
+});

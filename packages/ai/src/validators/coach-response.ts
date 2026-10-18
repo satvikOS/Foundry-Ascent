@@ -26,6 +26,7 @@ import {
   type IdentityViolationKind,
 } from './identity.js';
 import { sanitizeMarkdown, sanitizePlainText } from './markdown.js';
+import { cutMetaNarration } from './meta-narration.js';
 import { SPOKEN_MAX_CHARS, SPOKEN_MAX_WORDS, clampWords, deriveSpoken, toSpeakable } from './speech.js';
 
 export interface CoachResponseLimits {
@@ -245,7 +246,11 @@ export function forcedEscalationFor(preRisk: { categories: readonly RiskCategory
  * 1. schema (Zod) — invalid input is blocked with a safe placeholder response;
  * 2. mode corrected to the requested mode (in auto mode, to an allowed one); `rehearsal` only in
  *    rehearse mode;
- * 3. Markdown sanitised (no raw HTML, images, or non-https/mailto links), plain fields stripped;
+ * 3. Markdown sanitised (no raw HTML, images, or non-https/mailto links), plain fields stripped; the reply
+ *    cut before a leaked field line and before meta-narration (the model thinking aloud about its prompt:
+ *    "The founder says…", "I need to figure out the mode"; validators/meta-narration.ts). An answer that opens
+ *    with narration has no reply in it: it is held back like invalid output (`invalid_schema`,
+ *    `meta_narration_blocked`), and a spoken reply that opens with it is derived from the answer instead;
  * 4. unknown evidence ids removed (claims, memory candidates, inline `[E#]` citations);
  * 5. `fact` claims without valid evidence downgraded to `inference`; grounding coverage computed;
  *    answer narrowed (explicit uncertainty note + uncertainty item) when coverage < threshold
@@ -339,6 +344,21 @@ export function validateCoachResponse(
     r.answer = leak.text;
     notes.push('structured_leak_cut');
   }
+  const narration = cutMetaNarration(r.answer);
+  if (narration.at === 'opening') {
+    notes.push(`meta_narration_blocked:${narration.cue ?? 'unknown'}`);
+    results.escalationForced = forced !== null;
+    return {
+      response: emptyResponse(r.mode, INVALID_RESPONSE_ANSWER, forcedProposal, channel),
+      results,
+      blocked: true,
+      blockReason: 'invalid_schema',
+    };
+  }
+  if (narration.at === 'later') {
+    r.answer = narration.text;
+    notes.push(`meta_narration_cut:${narration.cue ?? 'unknown'}`);
+  }
   if (md.htmlRemoved > 0) notes.push(`html_removed:${md.htmlRemoved}`);
   if (md.unsafeLinksRemoved > 0) notes.push(`unsafe_links_removed:${md.unsafeLinksRemoved}`);
   if (md.imagesRemoved > 0) notes.push(`images_removed:${md.imagesRemoved}`);
@@ -397,7 +417,15 @@ export function validateCoachResponse(
   // Spoken text: plain sentences on a call (citation keys and Markdown removed), never on typed turns.
   // Identity is checked on the model's own lines first (a sign-off stands on its own line there) and
   // again on the flattened text in step 6, where "Best,\nCorin" has become "Best, Corin.".
-  const modelSpoken = typeof r.spoken === 'string' ? r.spoken : '';
+  let modelSpoken = typeof r.spoken === 'string' ? r.spoken : '';
+  if (channel === 'voice' && modelSpoken.trim() !== '') {
+    // Never said aloud: the spoken reply up to any narration (all of it narration: derived from the answer).
+    const spokenNarration = cutMetaNarration(modelSpoken);
+    if (spokenNarration.cue !== null) {
+      modelSpoken = spokenNarration.text;
+      notes.push(`meta_narration_spoken_cut:${spokenNarration.cue}`);
+    }
+  }
   if (channel === 'voice') {
     const speakable = toSpeakable(
       modelSpoken.trim() === '' ? '' : fixIdentity(modelSpoken, limits.spokenMaxChars, { spoken: true }),
