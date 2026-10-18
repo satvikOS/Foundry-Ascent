@@ -28,7 +28,9 @@ const src = join(here, '..');
 
 interface ScreenBudget {
   before: number;
-  /** Null: another stream owns this screen's copy (the AI disclosure); it is not held to a budget here. */
+  /** The count when the budget was set (after the wave-6 copy pass). */
+  after: number;
+  /** Null: another stream owns this screen's copy (the vEIR's identity); it is not held to a budget here. */
   budget: number | null;
 }
 
@@ -102,6 +104,20 @@ describe('copy inventory', () => {
     expect(screenOf('features/memory/memory-dialogs.tsx')).toBe('Knowledge');
     expect(screenOf('features/documents/viewer/viewer-dialog.tsx')).toBe('Documents');
     expect(screenOf('routes/index.tsx')).toBe('Landing');
+    // The vEIR's identity (name, badge, first-visit welcome, disclosure) is another stream's copy: new files
+    // there never land in Shared UI or Other, whose budgets are this pass's.
+    for (const file of [
+      'lib/veir.ts',
+      'components/faces/veir-badge.tsx',
+      'components/faces/veir-name.tsx',
+      'components/disclosure-banner.tsx',
+      'features/veir/veir-welcome.tsx',
+      'features/veir/welcome.ts',
+    ]) {
+      expect(screenOf(file), file).toBe('vEIR identity');
+    }
+    expect(screenOf('components/faces/persona-avatar.tsx')).toBe('Shared UI');
+    expect(screenOf('components/ui/popover.tsx')).toBe('Shared UI');
     const unassigned = inventory(src).filter((item) => screenOf(item.file) === 'Other');
     expect(unassigned.map((item) => item.file).filter((file) => file !== 'main.tsx')).toEqual([]);
   });
@@ -129,12 +145,50 @@ describe('word budgets', () => {
     expect(over).toEqual([]);
   });
 
-  it('has no budget above its before, and none for a screen that no longer exists', () => {
+  it('holds every screen but the vEIR identity to a budget, and has none for a screen that is gone', () => {
     for (const [screen, budget] of Object.entries(BUDGET.screens)) {
-      if (budget.budget !== null) {
-        expect(budget.budget, `${screen}: budget ≤ before`).toBeLessThanOrEqual(budget.before);
-      }
+      expect(budget.budget === null, `${screen}: unbudgeted`).toBe(screen === 'vEIR identity');
       expect(totals.has(screen), `${screen} still has copy`).toBe(true);
+    }
+  });
+
+  it('records every budget with room above the count it was set at', () => {
+    // A budget equal to the count fails the next word anyone adds (another stream's merge, a new state).
+    for (const [screen, budget] of Object.entries(BUDGET.screens)) {
+      if (budget.budget === null) continue;
+      expect(budget.budget, `${screen}: room above ${budget.after}`).toBeGreaterThan(budget.after);
+    }
+  });
+});
+
+describe('buttons', () => {
+  /** Founder-screen buttons longer than two words, each kept on purpose (and why). */
+  const LONGER: Record<string, string> = {
+    'Ask a person': 'the way to a real person, set apart from the vEIR; also the crisis panel’s action',
+    'Switch to chat': 'leaves the call, in the crisis alert too, where it must be unmistakable',
+    'Push to talk': 'the name of a talk mode (the dock’s control has the same name)',
+    'Hold to talk': 'the gesture the button needs',
+    'Listening… release to send': 'the gesture, while the button is held',
+  };
+  const founder = new Set(BUDGET.founderScreens);
+  const buttons = inventory(src).filter(
+    (item) =>
+      founder.has(screenOf(item.file)) &&
+      (item.context === 'Button' || item.context === 'button') &&
+      (item.kind === 'text' || item.kind === 'expression'),
+  );
+
+  it('keeps founder-screen buttons to one or two words, apart from named exceptions', () => {
+    const long = buttons.filter((item) => item.words > 2 && !(item.text in LONGER));
+    expect(long.map((item) => `${item.file}:${String(item.line)} ${item.text}`)).toEqual([]);
+  });
+
+  it('names no exception that no button uses any more', () => {
+    for (const text of Object.keys(LONGER)) {
+      expect(
+        buttons.some((item) => item.text === text),
+        text,
+      ).toBe(true);
     }
   });
 });

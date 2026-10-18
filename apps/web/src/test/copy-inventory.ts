@@ -415,6 +415,8 @@ export function extractCopy(source: string, file: string): CopyString[] {
 /** Which screen a source file belongs to (the unit of a word budget). */
 export function screenOf(file: string): string {
   const rules: [RegExp, string][] = [
+    // The vEIR's name, badge, welcome and AI disclosure: their words are w6-presence's to set, not held here.
+    [/^components\/(?:disclosure|faces\/veir-)|^features\/veir\/|^lib\/veir\.ts$/, 'vEIR identity'],
     [/^routes\/index\.tsx$|^components\/landing\//, 'Landing'],
     [/^routes\/sign-in\.tsx$|^components\/auth\//, 'Sign-in'],
     [/^features\/chat\/(?:new-chat-page|privacy-choice|first-message)\./, 'New chat'],
@@ -429,7 +431,6 @@ export function screenOf(file: string): string {
     [/^features\/program\//, 'Program'],
     [/^features\/admin\//, 'Admin'],
     [/^components\/(?:shell|a11y)\//, 'Shell'],
-    [/^components\/disclosure/, 'Disclosure'],
     [/^components\//, 'Shared UI'],
     [/^routes\//, 'Routes'],
     [/^lib\//, 'Shared (lib)'],
