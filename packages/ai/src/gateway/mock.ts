@@ -3,11 +3,14 @@ import type { CoachMode, CoachResponse, CommitmentStatus, MemoryCandidate } from
 import { DISTILL_SCHEMA_NAME, type DistillDraft } from '../distill/schema.js';
 import { AUTO_MODE, parseControlBlock, type PromptControl } from '../prompts/control.js';
 import {
+  asksSomething,
   contentWords,
   endsWithQuestion,
   founderMoves,
   type FounderMove,
 } from '../prompts/conversation-state.js';
+import { tidyFounderWords } from '../prompts/founder-words.js';
+import { openerSaidHello } from '../validators/greeting.js';
 import { veirFirstName } from '../prompts/persona.js';
 import { COACH_RESPONSE_SCHEMA_NAME, DEFAULT_PERSONA_NAME } from '../prompts/version.js';
 import { RISK_ESCALATION_MAP, primaryForcedCategory } from '../risk/escalation-map.js';
@@ -399,25 +402,6 @@ function greetingFor(
   return fillName(pick(templates, seed), name);
 }
 
-/** Social lead-ins before a founder's actual question ("Sure, but who pays?"). */
-const SOCIAL_LEAD =
-  /^(?:(?:hi|hey|hello|hiya|good (?:morning|afternoon|evening)|thanks|thank you|thx|cheers|ok|okay|sure|yes|yeah|yep|no|nope|right|great|perfect|cool|got it|makes sense|fair enough|sounds good|and|but|so)\b[\s,.!:;-]*)+/i;
-/** "How are you?" and its kin: a social question, answered socially. */
-const HOW_ARE_YOU =
-  /\bhow(?:'s| is| are| have) (?:it going|you(?: been| doing)?|things|your (?:day|week))\b[?!.]*/gi;
-const QUESTION_WORD =
-  /^(?:what|how|why|when|where|who|which|should|could|would|can|do|does|did|is|are|will|any)\b/i;
-
-/**
- * Whether the founder's message asks something that needs an answer, however short ("Sure, but who pays?"): a
- * question left after the greeting, thanks or "ok" around it. "How are you?" alone is social.
- */
-function asksSomething(text: string, moves: readonly FounderMove[]): boolean {
-  if (!moves.includes('question')) return false;
-  const rest = text.replace(SOCIAL_LEAD, '').replace(HOW_ARE_YOU, '').replace(SOCIAL_LEAD, '').trim();
-  return rest.includes('?') || (QUESTION_WORD.test(rest) && wordsIn(rest) > 2);
-}
-
 /**
  * A sincere question about who or what the vEIR is ("are you real?", "am I talking to a bot?", "is this really
  * Corin?"), or a personal one ("are you a man or a woman?", "do you have a life?").
@@ -476,19 +460,93 @@ function eirSeesWorkIn(system: string): boolean {
   return system.includes(' sees what you and the founder work on here.');
 }
 
-/** "When we spoke about 20 minutes ago, we were on pricing." */
+/**
+ * "When we spoke about 20 minutes ago, we were on pricing."; a teammate's conversation is theirs: "When Rafi and I
+ * spoke a moment ago, we were on pricing."
+ */
 function whereWeWere(previous: PreviousConversation): string {
   const verb = previous.channel === 'call' ? 'spoke' : 'talked';
+  const teammate = previous.teammate ?? null;
+  if (teammate !== null) {
+    return previous.when !== null
+      ? `When ${teammate} and I ${verb} ${previous.when}, we were on ${previous.topic}.`
+      : `${upperFirst(teammate)} and I were last on ${previous.topic}.`;
+  }
   return previous.when !== null
     ? `When we ${verb} ${previous.when}, we were on ${previous.topic}.`
     : `Last time we were on ${previous.topic}.`;
 }
 
+/** What the last conversation planned, said to whoever planned it: "You were going to…" or "Rafi was going to…". */
+function plannedLine(previous: PreviousConversation): string | null {
+  if (previous.plan === null) return null;
+  const plan = tidyFounderWords(withoutFinalStop(previous.plan));
+  const teammate = previous.teammate ?? null;
+  return teammate === null
+    ? `You were going to ${plan}. How did that go?`
+    : `${upperFirst(teammate)} was going to ${plan}. Has that happened?`;
+}
+
 /** The specific callback of a first reply: where we were, and how what they planned went. */
 function callbackTo(previous: PreviousConversation): string {
-  return previous.plan !== null
-    ? `${whereWeWere(previous)} You were going to ${withoutFinalStop(previous.plan)}. How did that go?`
-    : `${whereWeWere(previous)} Where did you land on it?`;
+  return `${whereWeWere(previous)} ${plannedLine(previous) ?? 'Where did you land on it?'}`;
+}
+
+/** "I did the thing I said I'd do", "update on what I said I'd do last time": a report on their last plan. */
+const COMMITMENT_REPORT =
+  /\b(?:(?:did|done|finished|got through|managed) (?:the thing|what) (?:i|we) (?:said|promised|planned)|(?:update|news) on (?:the thing |what )?(?:i|we) (?:said|promised|planned)|what (?:i|we) (?:said|promised) (?:i|we)(?:'d| would) do)\b/i;
+
+/**
+ * The founder sounds worn down without being in crisis ("I haven't slept properly in days and I don't know how much
+ * longer I can keep doing this"): support comes before any plan (the matrix's crisis-adjacent turns, G15).
+ */
+const WORN_DOWN =
+  /\b(?:(?:haven'?t|have not|hardly|barely|can'?t|cannot|not) (?:slept|sleep(?:ing)?)|(?:don'?t|do not) know how (?:much )?longer (?:i|we) can|can'?t keep (?:doing|going on with|up with) (?:this|it)|running on empty|at (?:my|the end of my) (?:limit|tether|rope)|breaking point|falling apart|burn(?:ed|t|ing) out|completely exhausted|so exhausted)\b/i;
+
+/** The support a worn-down founder gets first: their state named, rest and real people offered, no plan. */
+function wornDownReply(name: string | null): string {
+  return [
+    `That sounds exhausting${name !== null ? `, ${name}` : ''}, and running on no sleep makes everything feel heavier.`,
+    'Please look after yourself first: get some proper rest tonight, and talk to someone you trust or your university wellbeing service if it keeps feeling like too much.',
+    'The venture can wait a day. Would it help to pick just one small thing for tomorrow?',
+  ].join(' ');
+}
+
+/** Words of a recall question that name what it asks about ("what did I tell you about the pilot?" → pilot). */
+const RECALL_FRAME =
+  /\b(?:remember|recall|remind|tell|told|said|say|mention(?:ed)?|earlier|before|today|about|what|did|you|me|i|we|the|a|an|our|my|do|can|could|again|please|just)\b/gi;
+
+/**
+ * "What did I tell you about the pilot?" asked within a conversation: what the founder said about it earlier in
+ * this conversation, as a short phrase (never their sentence quoted back whole), or null when they said nothing
+ * about it here.
+ */
+function saidEarlier(question: string, history: readonly string[]): string | null {
+  const asked = contentWords(question.replace(RECALL_FRAME, ' '));
+  if (asked.size === 0) return null;
+  for (let i = history.length - 1; i >= 0; i -= 1) {
+    const line = history[i] ?? '';
+    const words = contentWords(line);
+    if (![...asked].some((w) => words.has(w))) continue;
+    const sentence =
+      line.split(/(?<=[.!?])\s+/).find((s) => [...asked].some((w) => contentWords(s).has(w))) ?? line;
+    const plain = sentence
+      .replace(/^(?:(?:hey|hi|so|ok|okay|well|also|and|but)\b[\s,!.]*)+/i, '')
+      .replace(/[.!?]+$/, '')
+      .replace(/\b(?:we're|we are)\b/gi, 'you’re')
+      .replace(/\b(?:i'm|i am)\b/gi, 'you’re')
+      .replace(/\b(?:we've|i've)\b/gi, 'you’ve')
+      .replace(/\b(?:we|i)\b/gi, 'you')
+      .replace(/\b(?:our|my)\b/gi, 'your')
+      .replace(/\b(?:us|me)\b/gi, 'you');
+    // A short phrase: never a run of their words long enough to read as parroting (it ends with a name it reached).
+    const all = plain.split(/\s+/);
+    let end = Math.min(all.length, 10);
+    while (end < all.length && end < 11 && /^\p{Lu}/u.test(all[end] ?? '')) end += 1;
+    const clipped = all.slice(0, end).join(' ');
+    return clipped === '' ? null : tidyFounderWords(clipped);
+  }
+  return null;
 }
 
 /** A thread named for the founder: the mock's phrase for its topic, or their own words quoted. */
@@ -527,13 +585,14 @@ function socialReply(args: {
   const lastTopic = lastTopicOf(reading.founderHistory);
   const nextStep = lowerFirst(withoutFinalStop(TOPICS[lastTopic].action), names);
 
+  // "What did I tell you about the pilot?" within this conversation is answered from it.
+  const earlier = /\b(?:about|on)\b/i.test(text) ? saidEarlier(text, reading.founderHistory) : null;
+  if (earlier !== null && (moves.includes('recall') || /\bwhat did (?:i|we) (?:tell|say)\b/i.test(text))) {
+    return `${pick(RECALL_LEADS, seed)} Earlier you mentioned ${earlier}. Where are you on it now?`;
+  }
   if (moves.includes('recall')) {
     if (previous !== null) {
-      const detail =
-        previous.plan !== null
-          ? `You were going to ${withoutFinalStop(previous.plan)}. How did that go?`
-          : 'Want to pick it up from there?';
-      return `${pick(RECALL_LEADS, seed)} ${whereWeWere(previous)} ${detail}`;
+      return `${pick(RECALL_LEADS, seed)} ${whereWeWere(previous)} ${plannedLine(previous) ?? 'Want to pick it up from there?'}`;
     }
     if (reading.founderHistory.length > 0) {
       const first = reading.founderHistory.find((t) => contentWords(t).size >= 2);
@@ -562,13 +621,26 @@ function socialReply(args: {
     return `Good talking with you${name !== null ? `, ${name}` : ''}.${step} ${pick(SIGN_OFFS, seed)}`;
   }
   if (moves.includes('thanks') && !asks && content < 3) {
-    const step = reading.founderHistory.length > 0 ? ` The next step stands: ${nextStep}.` : '';
-    return `${pick(THANKS_REPLIES, seed)}${step}`;
+    // A thanks gets a short warm reply only, never the plan again (SM-19).
+    return pick(THANKS_REPLIES, seed);
+  }
+  // "I did the thing I said I'd do": back to what they planned last time.
+  if (
+    COMMITMENT_REPORT.test(text) &&
+    previous !== null &&
+    previous.plan !== null &&
+    previous.teammate == null
+  ) {
+    return `Nice. You were going to ${tidyFounderWords(withoutFinalStop(previous.plan))}. How did it go, and what surprised you?`;
   }
   if (moves.includes('greeting') && !asks && content < 2) {
     if (!reading.firstMessage)
       return `Hi again${name !== null ? `, ${name}` : ''}. Where would you like to pick up?`;
     const howAreYou = /\bhow(?:'s| is| are| have)\b/i.test(text) ? ' Thanks for asking.' : '';
+    if (reading.openerShown && openerSaidHello(reading.priorReplies[0] ?? null)) {
+      // A call's intro already said hello and asked its question: no second greeting, the question stands.
+      return pick(AFTER_HELLO, seed);
+    }
     if (reading.openerShown) {
       // The opener already picked up last time and asked how it went: a warm hello back and nothing more (never
       // the recall again, never its question again); their answer to it comes next. The hello varies per
@@ -588,6 +660,9 @@ function socialReply(args: {
   }
   return null;
 }
+
+/** The reply to a hello after a call's intro, which already greeted them and asked its question. */
+const AFTER_HELLO = ['Whenever you’re ready.', 'Take your time.'] as const;
 
 /** A social turn as a full response: the reply alone, nothing to cite, propose or remember. */
 function socialResponse(mode: CoachMode, answer: string, channel: string): CoachResponse {
@@ -679,6 +754,10 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
         : `${identity} What would you like to work on?`,
       channel,
     );
+  }
+
+  if (identity === null && forced === null && mode !== 'rehearse' && WORN_DOWN.test(context.founderText)) {
+    return socialResponse(mode, wornDownReply(name), channel);
   }
 
   if (identity === null && forced === null && mode !== 'rehearse') {

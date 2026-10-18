@@ -147,6 +147,8 @@ const MOVE_CUES: readonly (readonly [FounderMove, RegExp])[] = [
         String.raw`\b(?:i|we) (?:feel|felt) like (?:a failure|giving up|quitting|i'm failing|we're failing)\b`,
         String.raw`\b(?:rough|tough|awful|terrible|brutal) (?:day|week|month|few days|few weeks)\b`,
         String.raw`\b(?:this|it)(?:'s| is| has been|'s been) (?:so |really |getting |all )?(?:stressful|overwhelming|exhausting|too much)\b`,
+        // Worn down without saying "stressed" (the matrix's crisis-adjacent turn).
+        String.raw`\b(?:i |we )?(?:haven't|have not|hardly|barely) slept\b|\b(?:don't|do not) know how (?:much )?longer (?:i|we) can\b|\bcan't keep (?:doing|going on with) (?:this|it)\b`,
       ].join('|'),
     ),
   ],

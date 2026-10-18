@@ -647,6 +647,82 @@ describe('social turns', () => {
   });
 });
 
+describe('the matrix gaps the mock closes (wave 7: G15, G12, MX-0005)', () => {
+  it('offers support first when the founder sounds worn down, never a plan (crisis-adjacent, G15)', async () => {
+    for (const channel of ['text', 'voice'] as const) {
+      const value = await reply({
+        text: "I haven't slept properly in days and I don't know how much longer I can keep doing this.",
+        channel,
+      });
+      const said = channel === 'voice' ? (value.spoken ?? '') : value.answer;
+      expect(said).toMatch(/^That sounds exhausting, Maya/);
+      expect(said).toMatch(/someone you trust|wellbeing|proper rest|look after yourself/);
+      expect(said).not.toMatch(/\b(?:i'm|i am) (?:a |your )?(?:counsell?or|therapist)\b/i);
+      expectSocial(value);
+    }
+  });
+
+  it('follows up the plan from last time when the founder reports on it (commitment follow-up, G12)', async () => {
+    for (const text of [
+      "So, I did the thing I said I'd do.",
+      "Okay, update on what I said I'd do last time.",
+    ]) {
+      const value = await reply({ text, section: RENDERED_RAW });
+      expect(value.answer).toContain('call facilities about the library budget tomorrow');
+      expectSocial(value);
+    }
+  });
+
+  it('answers "what did I tell you about…?" from this conversation (in-conversation recall, G12)', async () => {
+    const history: HistoryTurn[] = [
+      {
+        founderText: 'We want to run a two-week pilot in Harbour Hall library before the end of term.',
+        answer: 'A two-week pilot is a good size. What would make it a success?',
+      },
+      { founderText: 'How should we price it?', answer: 'Start with one clear price and see who says yes.' },
+    ];
+    const value = await reply({ text: 'Remind me, what did I tell you about the pilot?', history });
+    expect(value.answer).toMatch(/Earlier you mentioned you want to run a two-week pilot in Harbour Hall/);
+    // A short phrase, never their sentence quoted back whole.
+    expect(value.answer).not.toContain('before the end of term');
+  });
+
+  it('never puts a teammate’s plan to the founder as theirs (MX-0005)', async () => {
+    const teammate = RENDERED_RAW.replace('with="you"', 'with="Rafi"');
+    const value = await reply({ text: 'Do you remember what we talked about last time?', section: teammate });
+    expect(value.answer).toContain('Rafi was going to call facilities about the library budget tomorrow');
+    expect(value.answer).not.toMatch(/you were going to|last time you|you planned/i);
+  });
+
+  it('never greets again after a call’s intro that said hello', async () => {
+    const value = await reply({
+      text: 'Hi again!',
+      history: [],
+      section: RENDERED_RAW,
+      ...{},
+    });
+    // (Without an opener the hello is answered as a first message: greeted, then picked up.)
+    expect(value.answer).toMatch(/^(?:Hi|Hey|Hello|Welcome|Good)/);
+    const gw = new MockModelGateway();
+    const req = request({ text: 'Hi again!', section: RENDERED_RAW });
+    const opened = await gw.generateStructured({
+      ...req,
+      messages: [
+        {
+          role: 'user',
+          content: '[The conversation started with your message below; the founder replies after it.]',
+        },
+        {
+          role: 'assistant',
+          content: 'Hi Maya, how did your call with facilities about the library budget go?',
+        },
+        ...req.messages,
+      ],
+    });
+    expect(['Whenever you’re ready.', 'Take your time.']).toContain(opened.value.answer);
+  });
+});
+
 describe('what production got wrong (insights report, Oct 6-16)', () => {
   const pricing: HistoryTurn[] = [
     {
