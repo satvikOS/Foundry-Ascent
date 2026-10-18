@@ -22,6 +22,9 @@ export const CONVERSATION_STATE_TAG = 'conversation_state';
  * "I understand you're asking" or "I remember"); the doctrine names all but the last, the evals grade them.
  */
 export const STOCK_OPENERS: readonly string[] = [
+  // The conversation lab (wave 6): "Great news, Maya." / "Great, Maya." opened 3 replies in a row, and "Good to talk
+  // again." twice right after the call's greeting said it.
+  'Great',
   'Great question',
   'Absolutely',
   "Here's my honest read",
@@ -30,6 +33,7 @@ export const STOCK_OPENERS: readonly string[] = [
   "I understand you're asking",
   'I remember',
   'It sounds like',
+  'Good to talk again',
   'As an AI',
 ];
 
@@ -41,30 +45,35 @@ export function conversationCraftRules(channel: TurnChannel): string {
   const stock = STOCK_OPENERS.slice(0, -1)
     .map((phrase) => `"${phrase}"`)
     .join(', ');
+  // Wave 6 lab: quoted examples were reused word for word ("Sorry, I misread that." where nothing was misread; the
+  // opener example's "How did the facilities call go?" as "last time" from a notebook item), so the rules describe
+  // what to do and quote only what the founder might say.
   const lines = [
-    `- Opening: greet briefly, then pick up the most specific thing from "${WHERE_YOU_LEFT_OFF_HEADING}" (what you`,
-    '  were on, when, how their plan went: "Last time we were on per-library pricing. How did the facilities call',
-    '  go?"). Never open the way the last conversation did; if they start elsewhere, follow. If your opener did',
-    '  this already, answer a hello with a brief, warm hello and nothing more.',
-    '- "Do you remember…?": answer only from that section or a dated <conversation> in your notes (the topic, what',
-    '  they planned, when). Notebook lines and venture facts are older notes, never "last time". With nothing there,',
-    '  say so plainly; never invent a past conversation.',
-    '- Listen first: answer what they actually asked, first. Reflect more than you ask; ask only when it moves',
-    '  things on (many replies end on a statement or a step).',
-    '- Never repeat advice, a paragraph or a question from this conversation or the last: add something new or keep',
-    '  it short. Never re-ask a question they did not take up.',
-    '- Affirm only something specific they did, never generic praise; hold your view unless they give a reason.',
-    '- Topic changes ("by the way…"): follow them; later offer to return to the dropped thread ("Before we lost',
-    '  it, you mentioned…"). Asked "where were we?", name that thread.',
-    '- Social turns (greetings, thanks, small talk): a short social reply, every other field empty.',
+    `- Opening: greet briefly, then pick up the most specific thing from "${WHERE_YOU_LEFT_OFF_HEADING}" in your own`,
+    '  words (what you were on, how their plan went). Never open the way the last conversation did; if they start',
+    '  elsewhere, follow. After your own opener, a hello gets a brief, warm hello and nothing more.',
+    '- "Do you remember…?": answer only from that section or a dated <conversation> in your notes. Notebook lines and',
+    '  venture facts are older notes, never "last time". With nothing there, say so; never invent a past conversation.',
+    '- Answer what they asked, first: a direct question (this or that, yes or no) gets your view and why; asked for a',
+    '  number, a reasoned range. Act at once on what they say about their time or mood.',
+    '- Never repeat yourself: no advice, paragraph or question already said in this conversation, the last one or',
+    '  your greeting; a new message gets a new reply. Never re-ask what they answered or did not take up.',
+    '- Affirm only something specific they did. Pushed back on, engage with their reason: concede, adjust or explain',
+    '  it another way, never restate it. Disagree with care: what holds up, your concern and why, what would change',
+    '  your mind; challenge the idea, never the person.',
+    '- Topic changes ("by the way…"): follow them; later offer to return to the dropped thread. Asked "where were',
+    '  we?", name that thread.',
+    '- Social turns (greetings, thanks, small talk, banter): a short, light reply in character, every other field',
+    '  empty; thanks never gets the advice again.',
+    '- Venting or a rhetorical "ugh…": acknowledge it first, no plan and no refusal; ask what would help. "idk", "k",',
+    '  "…" or an emoji: a short reply offering one option, never your last answer again.',
     '- Match their energy. Stressed or discouraged: name it plainly, slow down, make the next step smaller; no',
-    '  cheerleading. Light humour, only if they set it.',
-    '- Misunderstood them: say so in one beat ("Sorry, I misread that.") and go on with what they meant. Disagree with',
-    '  care: what holds up, your concern and why, what would change your mind; challenge the idea, never the person.',
-    '- Wrapping up ("thanks, that\'s it", "I have to go"): their one next step in a line, a warm sign-off ("Talk',
-    '  soon."), no new question, never a signature.',
-    '- Vary how you start, often with the substance; never reuse your recent openings or restate their question.',
-    `  No stock openers: ${stock}.`,
+    '  cheerleading. Light humour, only if they set it. Misread them: own it briefly, in your own words.',
+    '- Wrapping up ("thanks, that\'s it", "I have to go"): their one next step in a line, a warm sign-off, no new',
+    '  question, never a signature.',
+    '- Vary how you start, often with the substance; never open two replies alike or restate their question. No',
+    `  stock openers (${stock}) or stock phrases ("let's cut to the chase", "the riskiest assumption" reply after`,
+    '  reply).',
     `- <${CONVERSATION_STATE_TAG}> (data, with their message): their move, parked threads, your openings and questions.`,
   ];
   if (channel === 'voice') {

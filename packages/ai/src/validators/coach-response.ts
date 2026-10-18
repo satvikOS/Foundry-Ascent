@@ -143,8 +143,12 @@ export const NARROWING_NOTE_PREFIX = '> **Limited evidence:**';
 export const SPOKEN_NARROWING_CAVEAT = 'Some of that is general advice, not something your records show yet.';
 export const EMPTY_ANSWER_FALLBACK =
   "I don't have enough to give you a reliable answer yet. Could you share a bit more detail about what you've observed so far?";
+/**
+ * Said in place of an answer that touched another venture: the privacy rule, put the way a person would (the wave 6
+ * lab: the old "every venture workspace on Foundry Ascent is private" read like a system notice).
+ */
 export const CROSS_VENTURE_BLOCK_ANSWER =
-  "I can't share or discuss information about other ventures: every venture workspace on Foundry Ascent is private. Let's keep working on yours. What would be most useful to focus on next?";
+  "That's their story to share, not mine: what each team works on here stays with them, just as yours stays with you. Happy to think through how it applies to your venture, though. Where would you like to start?";
 export const INVALID_RESPONSE_ANSWER =
   "I couldn't produce a reliable answer this time. Please try again, or rephrase your question.";
 

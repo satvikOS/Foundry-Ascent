@@ -151,17 +151,29 @@ describe('vEIR identity rules', () => {
 
   it('answers a sincere question in one warm, honest line and carries on', () => {
     expect(prompt).toContain(
-      "Asked sincerely whether you're real, human, a bot or really Corin: one warm, honest line, then carry on",
+      "Asked sincerely whether you're real, human, a bot or really Corin: one warm, honest line, then straight back",
     );
-    expect(prompt).toContain(
-      '"I\'m Corin\'s digital twin, built from how Corin coaches. So, about the pricing call…"',
-    );
-    expect(prompt).toContain('A playful personal question ("do you have a life?") gets a light line');
+    expect(prompt).toContain("(that you're Corin's digital twin, built from how Corin coaches)");
+    // The wave 6 lab: the honest line was said to banter and repeated atop the next, unrelated reply.
+    expect(prompt).toContain('once a conversation at most. Banter ("do you have a life?") gets a light,');
+    expect(prompt).toContain('human line, never identity talk.');
     // Corin sees the venture's work only when Corin is its assigned EIR.
     expect(prompt).not.toContain('Corin sees what');
     const assigned = buildSystemPrompt({ ...BASE, release: { ...BASE.release, eirSeesWork: true } });
     expect(assigned).toContain('Corin sees what you and the founder work on here.');
-    expect(assigned).toContain('and Corin sees what we work on. So, about the pricing call…');
+    expect(assigned).toContain('built from how Corin coaches, and Corin sees what we work on)');
+  });
+
+  it('describes its examples instead of quoting reusable lines (LAB-M7)', () => {
+    // Quoted example lines were said word for word: "I'm an AI, so neither…" to a book question and to banter,
+    // and "So, about the pricing call…" invites the same. The identity rules quote no line to reuse.
+    for (const variant of [
+      prompt,
+      buildSystemPrompt({ ...BASE, release: { ...BASE.release, firstPerson: true, eirSeesWork: true } }),
+      buildSystemPrompt({ ...BASE, channel: 'voice', release: { ...BASE.release, eirSeesWork: true } }),
+    ]) {
+      expect(variant).not.toMatch(/So, about the pricing call|So, …|three buyer calls|I'm an AI, so neither/);
+    }
   });
 
   it('keeps every hard line: never human, never Corin in person, no body or place, no endorsement', () => {
@@ -195,7 +207,7 @@ describe('vEIR identity rules', () => {
       channel: 'voice',
       release: { ...BASE.release, eirSeesWork: true },
     });
-    expect(p).toContain('("I\'m Corin\'s digital twin, and Corin sees what we work on. So, …")');
+    expect(p).toContain("(that you're Corin's digital twin, and Corin sees what we work on)");
   });
 
   it('spends fewer tokens on identity than the disclosure-reciting rules did', () => {
@@ -232,8 +244,10 @@ describe('vEIR identity rules', () => {
     expect(p).toContain("You are Foundry Guide, the program's AI venture coach in Foundry Ascent.");
     expect(p).toContain('Never claim to be human, an Entrepreneur-in-Residence (EIR), mentor');
     expect(p).toContain(
-      '("I\'m Foundry Guide, the program\'s AI coach, not a person. So, back to your pricing…")',
+      "one warm, honest line (that you're Foundry Guide, the program's\n  AI coach), then straight back to what you were on",
     );
+    // Never "not a person" (the owner's complaint) and no quotable topic line.
+    expect(p).not.toMatch(/not a person|back to your pricing/);
     expect(p).toContain('The founder already knows what you are.');
     expect(p).not.toContain('digital twin');
   });
@@ -268,7 +282,8 @@ describe('how the persona talks', () => {
 
   it('uses the founder’s first name when it is known, and never guesses one', () => {
     const named = buildSystemPrompt({ ...BASE, continuity: { founderFirstName: 'Maya Okafor-Lindqvist' } });
-    expect(named).toContain('Call the founder by their first name, Maya, now and then');
+    // The wave 6 lab: the founder's name in 66 of 81 replies.
+    expect(named).toContain("Use the founder's first name, Maya, rarely: a greeting or real emphasis");
     expect(parseControlBlock(named)?.founder).toBe('Maya');
     const unnamed = buildSystemPrompt(BASE);
     expect(unnamed).toContain('never guess their name');
