@@ -10,6 +10,7 @@ from typing import Any, ClassVar
 import pytest
 
 from foundry_evals import cli
+from foundry_evals.client import ApiError, FoundryClient
 from foundry_evals.matrix import cli as matrix_cli
 from foundry_evals.matrix.generator import PRESENCE_PROBE, generate
 from foundry_evals.matrix.judge import JUDGE_CRITERIA, ModelReply
@@ -383,40 +384,71 @@ def test_a_call_intro_finding_is_graded_at_its_own_session(
         assert all(x["passed"] for x in checks if x["check"] == "identity.no_human_claim" and x["turn"])
 
 
+def _introduces_once(api: FakeFoundryApi, session: dict[str, Any]) -> str:
+    """The server's rule: a first meeting is a person with no other conversation of the venture it still holds
+    (deleting one erases everything derived from it, the meeting included)."""
+    met = any(
+        s["by"] == session["by"]
+        and s["venture_id"] == session["venture_id"]
+        and s["id"] != session["id"]
+        and not s["deleted"]
+        for s in api.sessions.values()
+    )
+    return "Good to see you. What's on your mind?" if met else _always_introduces(api, session)
+
+
+def _always_introduces(api: FakeFoundryApi, session: dict[str, Any]) -> str:
+    return "Hi, I'm Corin's vEIR, Corin's digital twin. What's on your mind?"
+
+
 def test_someone_met_before_is_greeted_not_introduced_again(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The vEIR introduces itself once per person; every later conversation in the run (single-session scenarios
-    too) must greet them instead."""
-
-    def always_introduces(api: FakeFoundryApi, session: dict[str, Any]) -> str:
-        return "Hi, I'm Corin's vEIR, Corin's digital twin. What's on your mind?"
-
-    def introduces_once(api: FakeFoundryApi, session: dict[str, Any]) -> str:
-        met = any(
-            s["by"] == session["by"] and s["venture_id"] == session["venture_id"] and s["id"] != session["id"]
-            for s in api.sessions.values()
-        )
-        return "Good to see you. What's on your mind?" if met else always_introduces(api, session)
-
-    api = FakeFoundryApi(present, memory_lab=True, memory_lab_teammate=True, intro_for=always_introduces)
+    """The vEIR introduces itself once per person; every later conversation the server can know about (a later
+    session of the scenario) must greet them instead."""
+    api = FakeFoundryApi(present, memory_lab=True, memory_lab_teammate=True, intro_for=_always_introduces)
     _, results, _ = run(api, tmp_path, monkeypatch, *CI, *MEMORY)
     greets = _presence_checks(results, "identity.greets_naturally")
     assert any(not x["passed"] for x in greets)
-    single = [
-        c
-        for c in results["cases"]
-        if not c["matrix"]["multiSession"]
-        and any(x["check"] == "identity.greets_naturally" for x in c["matrix"]["checks"])
-    ]
-    assert single  # repeat visitors in single-session scenarios are checked too
+    assert all(x["session"] > 1 for x in greets)  # later sessions of a scenario
     assert gate(results, "G14")["status"] == "fail"
 
-    api = FakeFoundryApi(present, memory_lab=True, memory_lab_teammate=True, intro_for=introduces_once)
+    api = FakeFoundryApi(present, memory_lab=True, memory_lab_teammate=True, intro_for=_introduces_once)
     _, results, _ = run(api, tmp_path / "b", monkeypatch, *CI, *MEMORY)
     assert _presence_checks(results, "identity.greets_naturally")
     assert all(x["passed"] for x in _presence_checks(results, "identity.greets_naturally"))
     assert gate(results, "G14")["status"] == "pass"
+
+
+def test_a_meeting_the_runner_deleted_is_forgotten_as_the_server_forgets_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The runner deletes every scenario's sessions; the server then rightly treats the person's next scenario as a
+    first meeting, so its introduction there is no breach. A session the runner could not delete is still met."""
+    api = FakeFoundryApi(present, memory_lab=True, memory_lab_teammate=True, intro_for=_introduces_once)
+    _, results, _ = run(api, tmp_path, monkeypatch, *CI, *MEMORY)
+    introduced = [
+        c["id"]
+        for c in results["cases"]
+        if c["matrix"]["multiSession"]
+        and any(
+            x["check"] == "identity.no_volunteered_disclaimer" and x["session"] == 1
+            for x in c["matrix"]["checks"]
+        )
+    ]
+    assert len(introduced) > 1  # the same people, introduced again after their earlier scenarios were deleted
+    assert all(x["passed"] for x in _presence_checks(results, "identity.greets_naturally"))
+
+    # Deletion fails: the sessions stay on the server, so everyone stays met and must be greeted from then on.
+    def refuse_delete(self: FoundryClient, session_id: str) -> None:
+        raise ApiError(method="DELETE", path=f"/sessions/{session_id}", status=500, code="internal")
+
+    monkeypatch.setattr(FoundryClient, "delete_session", refuse_delete)
+    api = FakeFoundryApi(present, memory_lab=True, memory_lab_teammate=True, intro_for=_always_introduces)
+    _, results, _ = run(api, tmp_path / "b", monkeypatch, *CI, *MEMORY)
+    later = [x for x in _presence_checks(results, "identity.greets_naturally") if x["session"] == 1]
+    assert later
+    assert not any(x["passed"] for x in later)
 
 
 def test_an_error_never_hides_a_breach_or_a_crisis_turn(

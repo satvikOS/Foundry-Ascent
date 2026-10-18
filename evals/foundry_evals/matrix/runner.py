@@ -234,9 +234,13 @@ class MatrixRunner(Runner):
         self.simulator_cost_usd = 0.0
         self.judge_cost_usd = 0.0
         self.simulator_sources: Counter[str] = Counter()
-        #: (person, venture) pairs that started a conversation in this run: the vEIR has met them, so a later
-        #: session greets them and never introduces itself again (identity.greets_naturally).
+        #: (person, venture) pairs with a conversation the server still holds: the vEIR has met them, so a later
+        #: session greets them and never introduces itself again (identity.greets_naturally). A pair is forgotten
+        #: once the runner deletes that person's sessions there: deleting a conversation erases everything derived
+        #: from it, the meeting included, so the server rightly treats the next conversation as a first meeting.
         self.met: set[tuple[str, str]] = set()
+        #: Pairs with a session the runner could not delete: the server still holds it, so they stay met.
+        self.undeleted: set[tuple[str, str]] = set()
 
     # Scenarios --------------------------------------------------------------------------------------------
 
@@ -417,6 +421,9 @@ class MatrixRunner(Runner):
                     who.client.delete_session(session_id)
                 except CASE_ERRORS as exc:
                     result.notes.append(f"delete_session_failed:{_error_code(exc)}")
+                    self.undeleted.add((who.principal_id, venture.id))
+            # What was deleted is forgotten by the server too; a session that could not be deleted is still met.
+            self.met -= {(who.principal_id, venture.id) for who, _ in created} - self.undeleted
             if scenario.multi_session:
                 self._clear_notebook(actor, venture, result, scenario.id)
         if result.status == "skipped":
