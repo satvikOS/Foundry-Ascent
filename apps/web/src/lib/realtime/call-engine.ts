@@ -944,9 +944,14 @@ export class CallEngine {
 
   // Turns ---------------------------------------------------------------------------------------------
 
-  /** A finished line from the founder: sent now, or after the vEIR finishes its current reply. */
+  /**
+   * A finished line from the founder: sent now, or after the vEIR finishes its current reply. The call's greeting
+   * is not a reply: a line typed or said while it is still on its way or being said stops it and is sent at once
+   * (the lab: every call's first line waited 11–14 s for the greeting to play out).
+   */
   private utterance(text: string): void {
     if (text === '') return;
+    if (this.greeting()) this.bargeIn();
     this.pendingLines.push(text);
     if ((this.turn !== null && !this.turn.done) || this.player?.busy) {
       this.set({ queued: this.pendingLines.length });
@@ -1071,6 +1076,11 @@ export class CallEngine {
     const waiting = this.pendingLines.splice(0);
     this.set({ activity: 'listening', queued: 0 });
     if (waiting.length > 0) void this.submit(waiting.join(' '));
+  }
+
+  /** Only the call's greeting is being fetched or said (no reply of a turn, never the crisis support line). */
+  private greeting(): boolean {
+    return this.turn === null && this.player?.busy === true && !this.sayingCrisisLine();
   }
 
   /** The founder spoke over the vEIR: stop the audio, abort the stream, record what was heard. */

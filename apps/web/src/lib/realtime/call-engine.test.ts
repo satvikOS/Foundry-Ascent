@@ -320,6 +320,71 @@ describe('CallEngine · typed fallback', () => {
   });
 });
 
+describe('CallEngine · speaking over the greeting (LAB-R1)', () => {
+  /** The greeting's audio is still being fetched: `/speech` answers only when the test says so. */
+  function holdGreeting(h: ReturnType<typeof setup>): void {
+    h.api.fetchSpeech.mockImplementationOnce(
+      (_sessionId: string, unit: SpeechUnitToPlay, signal: AbortSignal) =>
+        new Promise<SpeechFetchResult>((_resolve, reject) => {
+          h.speechRequests.push(unit);
+          signal.addEventListener('abort', () => {
+            reject(new DOMException('Aborted', 'AbortError'));
+          });
+        }),
+    );
+  }
+
+  it('a line typed while the greeting is still on its way stops it and is sent at once', async () => {
+    // Lab: every call's first line waited 11–14 s for the greeting to play out.
+    const h = setup({ grant: null, intro: true });
+    holdGreeting(h);
+    await startLive(h);
+    expect(h.speechRequests[0]).toMatchObject({ turnId: null, seq: 0 });
+    expect(h.state().activity).toBe('connecting');
+
+    h.engine.sendText('We finished five library interviews.');
+    await flush();
+    expect(h.script.calls).toHaveLength(1);
+    expect(h.script.calls[0]?.body.text).toBe('We finished five library interviews.');
+    expect(h.state()).toMatchObject({ activity: 'thinking', queued: 0 });
+    // The greeting never plays after the founder spoke.
+    await flush(10);
+    expect(h.synthesis.spoken).toEqual([]);
+    expect(h.context.sources).toHaveLength(0);
+  });
+
+  it('a line typed while the greeting plays stops it and is sent at once', async () => {
+    const h = setup({ grant: null, intro: true });
+    h.setSpeechResult({ kind: 'audio', data: new ArrayBuffer(20_000) });
+    await startLive(h);
+    expect(h.state().activity).toBe('speaking');
+    h.engine.sendText('Quick one: pricing.');
+    await flush();
+    expect(h.context.sources[0]?.stopped).toBe(true);
+    expect(h.script.calls).toHaveLength(1);
+    expect(h.state()).toMatchObject({ activity: 'thinking', queued: 0 });
+  });
+
+  it('a line spoken while the greeting is still on its way stops it and is sent at once', async () => {
+    const h = setup({ intro: true });
+    holdGreeting(h);
+    await startLive(h);
+    const socket = FakeWebSocket.last();
+    socket.serverOpen();
+    expect(h.speechRequests[0]).toMatchObject({ turnId: null, seq: 0 });
+    h.frame(0.2);
+    h.frame(0.2);
+    socket.serverSend(transcriptEvent('r1', 'We finished five interviews', { partial: false }));
+    for (let i = 0; i < 14; i++) {
+      vi.advanceTimersByTime(50);
+      h.frame(0.001);
+    }
+    await flush();
+    expect(h.script.calls[0]?.body.text).toBe('We finished five interviews');
+    expect(h.state()).toMatchObject({ activity: 'thinking', queued: 0 });
+  });
+});
+
 describe('CallEngine · a call already live in another conversation', () => {
   it('asks to move the call here instead of failing, and starts again with replace', async () => {
     const h = setup({ grant: null });
