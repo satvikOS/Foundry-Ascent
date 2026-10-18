@@ -145,7 +145,11 @@ export function useKeepEndInView({
     if (following.current) reveal();
   }, [changeKey, reveal]);
 
-  /** (Re)observes whichever parts are mounted: growth while an answer streams keeps its end in view. */
+  /**
+   * (Re)observes whichever parts are mounted. Growth while an answer streams keeps its end in view; growth at any
+   * other time (the reader opened "Sources & reasoning" at the end) moves nothing and measures again where the
+   * reader is, so a later change (the saved line landing a moment after) does not pull them past what they opened.
+   */
   const observe = useCallback(() => {
     observer.current?.disconnect();
     observer.current = null;
@@ -155,11 +159,12 @@ export function useKeepEndInView({
     );
     if (targets.length === 0) return;
     const next = new ResizeObserver(() => {
-      if (following.current && streamingNow.current) reveal();
+      if (!streamingNow.current) following.current = hidden() <= AT_END_SLACK_PX;
+      else if (following.current) reveal();
     });
     for (const target of targets) next.observe(target);
     observer.current = next;
-  }, [reveal]);
+  }, [hidden, reveal]);
 
   const conversationRef = useCallback(
     (element: HTMLElement | null) => {

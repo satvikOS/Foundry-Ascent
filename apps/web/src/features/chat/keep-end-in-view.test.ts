@@ -183,6 +183,30 @@ describe('useKeepEndInView', () => {
     expect(scrollBy).not.toHaveBeenCalled();
   });
 
+  it('what the reader opened at the end is not pulled away when the saved line lands a moment later', () => {
+    const hook = mount();
+    hook.rerender({ changeKey: 'streaming', streaming: true });
+    grow({ end: 1400 });
+    hook.rerender({ changeKey: 'completed|t1|3|0', streaming: false });
+    expect(hiddenNow()).toBe(0);
+    // The reader opens "Sources & reasoning" at the end: the page grows below what they read, and they stay put.
+    scrollBy.mockClear();
+    grow({ end: 1900 });
+    expect(scrollBy).not.toHaveBeenCalled();
+    // "Saved to Knowledge" lands: the end moves, but the reader is no longer at it.
+    hook.rerender({ changeKey: 'completed|t1|3|1', streaming: false });
+    expect(scrollBy).not.toHaveBeenCalled();
+  });
+
+  it('growth that leaves the end in view keeps the reader following it', () => {
+    const hook = mount();
+    // Short growth while idle: the end is still above the dock (600 + 50 < 800 − 120).
+    grow({ end: 650 });
+    hook.rerender({ changeKey: 'streaming', streaming: true });
+    grow({ end: 1400 });
+    expect(hiddenNow()).toBe(0);
+  });
+
   it('an end hidden only by the dock is not "at the end", whichever part attaches first', () => {
     page.end = 750;
     const hook = renderHook((props: Props) => useKeepEndInView(props), {
