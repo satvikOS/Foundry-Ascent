@@ -113,19 +113,18 @@ export function ConversationHeader({
             </p>
           </div>
           {isPrivate ? (
+            // The title already reads "Private chat · …": an icon (named for screen readers) says it once.
             <span
               data-testid="private-indicator"
               title="Private: nothing from this conversation is remembered"
-              className="hidden shrink-0 items-center gap-1 text-caption text-muted-foreground sm:inline-flex"
+              className="hidden shrink-0 items-center text-muted-foreground sm:inline-flex"
             >
               <EyeOff aria-hidden className="size-3.5" />
-              Private
+              <span className="sr-only">Private</span>
             </span>
           ) : null}
           {active ? null : (
-            <span className="hidden shrink-0 rounded-full border border-border px-2 py-px text-caption text-muted-foreground sm:inline">
-              Ended
-            </span>
+            <span className="hidden shrink-0 text-caption text-muted-foreground sm:inline">Ended</span>
           )}
         </div>
         <div className="-mr-1.5 flex shrink-0 items-center gap-0.5 sm:mr-0">

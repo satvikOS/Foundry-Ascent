@@ -367,8 +367,7 @@ export function PrincipalsPage() {
               {revoking ? (
                 <>
                   <code className="font-mono">{maskedCode(revoking.code.prefix)}</code> (“
-                  {revoking.code.label}”) for {revoking.owner} stops working for new sign-ins immediately.
-                  This can’t be undone — issue a new code if they still need access.
+                  {revoking.code.label}”) for {revoking.owner} stops working at once. This can’t be undone.
                 </>
               ) : null}
             </AlertDialogDescription>

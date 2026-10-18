@@ -95,8 +95,7 @@ export function ConsentForm({ escalation, onConsented, onCancel }: ConsentFormPr
     <div className="grid gap-4">
       <p className="flex items-start gap-2 text-small text-muted-foreground">
         <ShieldCheck aria-hidden className="mt-0.5 size-4 shrink-0" />
-        {role} sees your question, the packet and only the facts you tick. Founder-only items are never
-        shared.
+        {role} sees your question, the packet and the facts you tick. Never founder-only items.
       </p>
       {error ? (
         <Alert variant="destructive" live="alert" title="Couldn’t record consent">
@@ -138,7 +137,7 @@ export function ConsentForm({ escalation, onConsented, onCancel }: ConsentFormPr
         <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-small text-muted-foreground">
           {query
             ? 'No confirmed memory matches.'
-            : 'No confirmed memory yet. You can share the question on its own.'}
+            : 'No confirmed memory yet. The question can go on its own.'}
         </p>
       ) : (
         <fieldset className="max-h-72 overflow-y-auto rounded-lg border border-border">
@@ -175,7 +174,7 @@ export function ConsentForm({ escalation, onConsented, onCancel }: ConsentFormPr
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-small text-muted-foreground" role="status" aria-live="polite">
           {selected.size === 0
-            ? 'Only your question and the packet will be shared.'
+            ? 'Only the question and packet will be shared.'
             : `${pluralize(selected.size, 'fact')} selected`}
           {overLimit ? ` — choose at most ${MAX_SHARED}.` : ''}
         </p>

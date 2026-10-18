@@ -272,8 +272,8 @@ it into text, no audio is kept, the transcript is saved like chat, typing works 
 cannot start, the screen says why (calls are for the venture team; AI paused; no minutes left today; the
 API's own refusal in its own words) and offers **Try again** only when trying again may help; a call
 minimized while it connects says why in a toast. When the founder is already in a call in another
-conversation (409 on start), the screen asks "Move it here?": **Move the call here** starts again with
-`replace: true`, which ends the other call; **Not now** leaves it. The first-call notice is acknowledged per
+conversation (409 on start), the screen asks "Move it here?": **Move here** (named "Move here, ending the
+other call") starts again with `replace: true`, which ends the other call; **Not now** leaves it. The first-call notice is acknowledged per
 browser (local storage): no server field records it yet, so a founder on a new device sees it once more. A call from New chat that never starts (refused,
 cancelled, closed while connecting) deletes the conversation it created, so no empty conversation is left
 in Recents.
@@ -287,8 +287,8 @@ it):
   when likeness consent and an image exist. Under it, the name with its "vEIR · AI · Live voice" badge and the state in
   words (`Connecting…`, `Listening`, `Thinking…`, `Speaking · Interrupt`, `Replying on screen`, `Muted`,
   `On hold`, `Reconnecting…`, `Hold to talk`, `Your turn`), never colour or motion alone. When the browser
-  kept the call's audio suspended (no gesture reached it, as iOS requires), a **Turn on sound** button
-  unlocks it; after the page was hidden, **Resume call** ends the hold.
+  kept the call's audio suspended (no gesture reached it, as iOS requires), a **Turn on** button (named
+  "Turn on sound", beside "Sound is off") unlocks it; after the page was hidden, **Resume call** ends the hold.
 - **Captions** (on by default; the choice is remembered per browser): the vEIR's current sentence in the
   reading face and the founder's live partials. **Call settings** (top right) choose small, medium or large
   captions and "Read captions with my screen reader", which makes the vEIR's line a polite live region;
@@ -299,10 +299,11 @@ it):
 - **Timer** with the minutes left (from the heartbeat; the last two minutes count down and warn).
 - **The vEIR's tile** (ADR-0020): the presence in a call tile with a name tag ("Corin · vEIR", its badge
   explains what the vEIR is) and a speaking indicator; no disclaimer line.
-- **Notices**: a failed turn (shown, never spoken, in the server's words), "Spoken replies are unavailable right now."
-  while replies are on screen only, the two-minute warning, and the push-to-talk suggestion. A held-back
-  turn shows the conversation's own `BlockedPanel` in place of the captions (`role="alert"`): the
-  explanation for its reason, the crisis resources or the emergency line, and the drafted request for a
+- **Notices**: a failed turn (shown, never spoken, in the server's words), "Voice replies are unavailable." while
+  replies are on screen only ("Voice paused for this call. Replies continue as text." once the call's or the
+  day's speech budget ran out), the two-minute warning, and the push-to-talk suggestion. A held-back turn
+  shows the conversation's own `BlockedPanel` in place of the captions (`role="alert"`): the explanation for
+  its reason, the crisis resources or the emergency line, and the drafted request for a
   person, with Switch to chat; the microphone is muted. The typed line says once why voice input is off.
 
 **Switch to chat** ends the media and returns to the conversation. **End** shows the summary.
@@ -346,8 +347,8 @@ mic ─ getUserMedia (echo cancellation, noise suppression) ─ AudioWorklet /wo
   `501 speech_unavailable` (local development only), a **development build** lets the browser's
   `speechSynthesis` read the same validated text for the rest of the call, with a voice on the device only
   (`localService`; Chrome's online voices would send the text to a third party). Production builds never
-  pass the browser's synthesis to the engine, so a 501 shows captions with "Spoken replies are unavailable
-  right now." Any other failure never brings a substitute voice: a failure that may pass (network, 5xx, a
+  pass the browser's synthesis to the engine, so a 501 shows captions with "Voice replies are
+  unavailable." Any other failure never brings a substitute voice: a failure that may pass (network, 5xx, a
   busy synthesiser, a unit the server will not voice, undecodable audio) shows that sentence on screen and
   the next one asks for the voice again; a refusal for the whole call (`ai_disabled`, spend or minute caps,
   a paused vEIR or withdrawn voice consent, lost access) keeps replies on screen for the rest of the call.

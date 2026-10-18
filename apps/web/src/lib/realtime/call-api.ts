@@ -189,7 +189,7 @@ const CALL_DETAIL_CODES: ReadonlySet<ClientErrorCode> = new Set<ClientErrorCode>
 export function callErrorMessage(error: unknown): string {
   if (isApiError(error) && error.code === 'spend_cap_reached') {
     // The daily AI allowance covers typed chat as well, so say so, and that nothing was lost.
-    return `${error.detail ?? 'Today’s AI allowance is used up. It resets at midnight UTC.'} Typed chat pauses too until then. Your conversation is saved.`;
+    return `${error.detail ?? 'Today’s AI allowance is used up. It resets at midnight UTC.'} Chat pauses too until then. Your conversation is saved.`;
   }
   if (isApiError(error) && error.detail && CALL_DETAIL_CODES.has(error.code)) return error.detail;
   return errorMessage(error);
@@ -209,17 +209,17 @@ export const CALL_END_LINES: Partial<Record<CallEndReason, string>> = {
  */
 export function budgetEndLine(remainingMinutesToday: number | undefined): string {
   if (remainingMinutesToday === undefined) {
-    return 'Today’s allowance for calls is used up. Your conversation is saved.';
+    return 'Today’s call allowance is used up. Your conversation is saved.';
   }
   if (remainingMinutesToday < 1) {
-    return 'You’ve used today’s call minutes. Your conversation is saved, and you can keep going in chat.';
+    return 'Today’s call minutes are used up. Chat still works.';
   }
-  return 'Today’s AI allowance is used up, so the call ended and typed chat pauses too until midnight UTC. Your conversation is saved.';
+  return 'Today’s AI allowance is used up. Chat pauses too until midnight UTC. Your conversation is saved.';
 }
 
 /** What the founder is asked when they are already in a call in another conversation. */
 export const CALL_ELSEWHERE_MESSAGE =
-  'You’re in a call in another conversation. Move it here? That call ends, and what was said stays in its conversation.';
+  'You’re in a call elsewhere. Move it here? That call ends; its transcript stays.';
 
 /** Why a call could not start; trying again is offered only when it may help (a network or server hiccup). */
 export function startFailure(error: unknown): CallFailure {

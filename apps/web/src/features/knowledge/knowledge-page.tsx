@@ -119,7 +119,7 @@ export function KnowledgePage() {
       >
         <PageHeader
           title="Knowledge"
-          description={`What ${veirName} knows about ${ventureName}, and where it came from.`}
+          info={`What ${veirName} knows about ${ventureName}, and where it came from.`}
           actions={
             tab === 'memory' && team ? (
               <Button
@@ -170,7 +170,7 @@ export function KnowledgePage() {
         </TabsContent>
         {notebookVisible ? (
           <TabsContent value="notebook">
-            <NotebookEditor ventureId={ventureId} veirName={veirName} canEdit={team} />
+            <NotebookEditor tenant={tenant} ventureId={ventureId} veirName={veirName} canEdit={team} />
           </TabsContent>
         ) : null}
         {team ? (
@@ -190,7 +190,7 @@ export function KnowledgePage() {
       </Tabs>
 
       {search.m ? (
-        <Inspector title="Memory" description="Where it came from, and its history">
+        <Inspector title="Memory">
           {selected ? (
             <MemoryDetail
               memory={selected}
@@ -218,7 +218,7 @@ export function KnowledgePage() {
             </div>
           ) : (
             <InspectorSection title="Memory">
-              <p className="text-[13px] text-muted-foreground">This item is no longer in memory.</p>
+              <p className="text-[13px] text-muted-foreground">No longer in memory.</p>
               <Button
                 className="mt-3"
                 size="sm"

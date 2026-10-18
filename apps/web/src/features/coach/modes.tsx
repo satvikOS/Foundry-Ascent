@@ -10,30 +10,24 @@ export const COACH_MODES: readonly CoachMode[] = [
   'route',
 ];
 
-/** Longer guidance for the mode pickers (labels, icons and short descriptions live in lib/labels). */
-export const MODE_DETAILS: Record<CoachMode, { whenToUse: string; example: string }> = {
+/** A first message for each mode, offered on New chat (labels, icons and descriptions live in lib/labels). */
+export const MODE_DETAILS: Record<CoachMode, { example: string }> = {
   diagnose: {
-    whenToUse: 'You’re not sure what to work on next.',
     example: 'What’s the riskiest assumption in our pilot plan?',
   },
   challenge: {
-    whenToUse: 'You have a plan or claim and want it stress-tested.',
     example: 'Poke holes in our pricing for libraries.',
   },
   coach: {
-    whenToUse: 'You’re facing a decision and want to think it through.',
     example: 'Should we run a paid pilot before fundraising?',
   },
   teach: {
-    whenToUse: 'You want to learn a method, applied to your venture.',
     example: 'Teach me how to size a beachhead market.',
   },
   rehearse: {
-    whenToUse: 'A pitch, interview or hard conversation is coming up.',
     example: 'Let me practise my two-minute pitch.',
   },
   route: {
-    whenToUse: 'You need a program resource or a human expert.',
     example: 'Who can help with university IP licensing?',
   },
 };

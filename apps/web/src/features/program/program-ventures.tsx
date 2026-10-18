@@ -82,7 +82,7 @@ export function ProgramVenturesPage() {
     <PageContainer size="wide">
       <PageHeader
         title="Ventures"
-        description="Each venture’s content stays private to its team."
+        info="Each venture’s content stays private to its team."
         actions={
           <Button
             onClick={() => {
@@ -155,7 +155,7 @@ export function ProgramVenturesPage() {
         <EmptyState
           icon={Briefcase}
           title="No ventures enrolled yet"
-          description="Enrol your first venture, then invite its founder with a one-time access code."
+          description="Enrol one, then invite its founder."
           action={
             <Button
               onClick={() => {

@@ -227,11 +227,9 @@ export function ReasoningDisclosure({
   // its turn: no link that opens onto nothing. What was retrieved stays in the conversation's Sources panel.
   if (!hasDetails && cited === 0) return null;
   const narrowed = validator?.narrowed === true;
-  const summary = [
-    cited > 0 ? pluralize(cited, 'source') : null,
-    response.claims.length > 0 ? pluralize(response.claims.length, 'claim') : null,
-    narrowed ? 'limited evidence' : null,
-  ]
+  // How many sources it cites (what a reader may want to open), and whether the evidence was thin: never a
+  // count of claims, which nobody acts on.
+  const summary = [cited > 0 ? pluralize(cited, 'source') : null, narrowed ? 'limited evidence' : null]
     .filter(Boolean)
     .join(' · ');
   const toggleClasses =

@@ -100,6 +100,7 @@ for (const [device, options] of Object.entries(VIEWPORTS)) {
             ['knowledge', 'knowledge'],
             ['knowledge-notebook', 'knowledge?view=notebook'],
             ['knowledge-conversations', 'knowledge?view=conversations'],
+            ['documents', 'documents'],
             ['team', 'team'],
             ['help', 'help'],
             ['venture-settings', 'settings'],
@@ -108,6 +109,38 @@ for (const [device, options] of Object.entries(VIEWPORTS)) {
             await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
             await shoot(page, surface, device, scheme);
           }
+        });
+      });
+
+      test.describe('founder conversation', () => {
+        test.use({ storageState: FOUNDER_STATE });
+
+        test('conversation and call', async ({ page }) => {
+          test.setTimeout(120_000);
+          const notice = await page.request.post('/api/v1/calls/notice/acknowledge', {
+            headers: WRITE_HEADERS,
+          });
+          expect(notice.status(), 'POST /calls/notice/acknowledge').toBe(200);
+          await openVenture(page);
+          await useTheme(page, scheme);
+          await startConversation(page, 'What should our two-library pilot prove first?');
+          await expect(
+            page.getByRole('article', { name: 'Exchange 1' }).getByRole('button', { name: 'Copy answer' }),
+          ).toBeVisible({ timeout: 30_000 });
+          await shoot(page, 'conversation', device, scheme);
+          await page
+            .getByRole('main')
+            .getByRole('link', { name: /^Call / })
+            .first()
+            .click();
+          const call = page.getByRole('dialog', { name: /^Call with / });
+          await expect(call.getByRole('textbox', { name: /^Reply to / })).toBeVisible();
+          await shoot(page, 'call', device, scheme);
+          await call.getByRole('button', { name: 'End call' }).click();
+          await expect(call.getByRole('button', { name: 'Back to conversation' })).toBeVisible();
+          await shoot(page, 'call-ended', device, scheme);
+          await call.getByRole('button', { name: 'Back to conversation' }).click();
+          await expect(call).toBeHidden();
         });
       });
 

@@ -25,20 +25,20 @@ export function coachingAvailability(
   session?: Pick<SessionView, 'status'> | null,
 ): CoachingAvailability {
   if (!canWrite(me, venture.id)) {
-    return { available: false, title: 'Read-only', reason: 'Only founders and team members can chat here.' };
+    return { available: false, title: 'Read-only', reason: 'Only founders and the team can chat.' };
   }
   if (!me.aiEnabled) {
     return {
       available: false,
       title: 'AI is paused',
-      reason: 'AI is paused by an administrator. Everything else still works.',
+      reason: 'An admin paused AI. Everything else works.',
     };
   }
   if (!venture.persona) {
     return {
       available: false,
       title: 'No vEIR yet',
-      reason: 'No vEIR is assigned yet. Your program lead can assign one.',
+      reason: 'Your program lead can assign one.',
     };
   }
   if (venture.persona.status === 'suspended') {
@@ -47,11 +47,11 @@ export function coachingAvailability(
     return {
       available: false,
       title: `${name} is paused`,
-      reason: `${name} is paused by a reviewer. Past conversations and human help still work.`,
+      reason: 'Paused by a reviewer. Past chats and human help still work.',
     };
   }
   if (venture.status === 'archived') {
-    return { available: false, title: 'Archived', reason: 'This venture is archived and read-only.' };
+    return { available: false, title: 'Archived', reason: 'Archived ventures are read-only.' };
   }
   if (session?.status === 'ended') {
     return { available: false, title: 'Ended', reason: 'This conversation has ended.' };
@@ -60,7 +60,7 @@ export function coachingAvailability(
     return {
       available: false,
       title: 'Paused',
-      reason: 'A safety control paused this conversation. You can ask a person for help.',
+      reason: 'A safety control paused this. You can ask a person.',
     };
   }
   return OK;

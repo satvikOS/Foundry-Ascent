@@ -1,0 +1,30 @@
+{
+  "$comment": "Visible words on the main founder screens as Priya (BenchTally) sees them, counted by e2e/words.spec.ts at 1440×900 (the call typed, with no microphone found). before: base 90cebac (before the wave-6 copy pass); after: the count when the budget was set; budget: after plus a little room (5% or 3 words, for relative times), below before. Raise a budget only on purpose; it must stay below before.",
+  "screens": {
+    "New chat": {
+      "before": 79,
+      "after": 62,
+      "budget": 66
+    },
+    "Conversation": {
+      "before": 45,
+      "after": 40,
+      "budget": 43
+    },
+    "Call": {
+      "before": 33,
+      "after": 29,
+      "budget": 32
+    },
+    "Knowledge": {
+      "before": 506,
+      "after": 440,
+      "budget": 462
+    },
+    "Documents": {
+      "before": 73,
+      "after": 49,
+      "budget": 52
+    }
+  }
+}

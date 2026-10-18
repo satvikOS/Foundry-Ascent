@@ -21,7 +21,7 @@ async function renderNotebook(notebook: VeirNotebook, canEdit = true) {
   const client = testQueryClient();
   client.setQueryData(queryKeys.venture.notebook(IDS.venture), notebook);
   await renderWithRouter(
-    <NotebookEditor ventureId={IDS.venture} veirName="Corin" canEdit={canEdit} />,
+    <NotebookEditor tenant="ain" ventureId={IDS.venture} veirName="Corin" canEdit={canEdit} />,
     client,
   );
   return { client, user: userEvent.setup() };
@@ -353,6 +353,11 @@ describe('NotebookEditor', () => {
       expect(bodyOf(patches()[0]?.[1])).toEqual({ expectedVersion: 3, edit: { action: 'clear' } });
     });
     expect(await screen.findByRole('heading', { name: 'Nothing noted yet' })).toBeInTheDocument();
+    // One line and one action: notes come from conversations.
+    expect(screen.getByRole('link', { name: 'Start chat' })).toHaveAttribute(
+      'href',
+      `/ain/app/v/${IDS.venture}`,
+    );
   });
 
   it('is read-only for the assigned EIR', async () => {

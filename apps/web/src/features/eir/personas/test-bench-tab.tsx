@@ -8,6 +8,7 @@ import { VeirBadge } from '@/components/faces/veir-badge';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { InfoTip } from '@/components/ui/info-tip';
 import { Markdown } from '@/components/ui/markdown';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { isAbortError } from '@/lib/api/errors';
@@ -140,10 +141,14 @@ export function TestBenchTab({ persona, displayName }: TestBenchTabProps) {
     <section aria-label="Test bench" data-testid="test-bench" className="grid gap-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="grid min-w-0 gap-1.5">
-          <h2 className="font-serif text-subheading font-normal text-balance">Test bench</h2>
+          <div className="flex items-center gap-1">
+            <h2 className="font-serif text-subheading font-normal text-balance">Test bench</h2>
+            <InfoTip label="the test bench">
+              {`It answers from this release’s doctrine, library and lessons, through the same checks as a founder’s conversation. “What the checks did” says what they changed.`}
+            </InfoTip>
+          </div>
           <p className="max-w-[64ch] text-small text-pretty text-muted-foreground">
-            Try a release before you approve it. Write as a founder would. Nothing here is saved, no founder
-            sees it, and no venture is attached.
+            Nothing here is saved or seen by a founder.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -184,14 +189,6 @@ export function TestBenchTab({ persona, displayName }: TestBenchTabProps) {
           <VeirBadge kind={persona.kind} />
           <span className="truncate text-small text-muted-foreground">· {current.label}</span>
         </div>
-
-        {empty ? (
-          <p className="max-w-[64ch] text-small text-pretty text-muted-foreground">
-            It answers from this release’s doctrine and style, its knowledge library and lessons, through the
-            same checks as a founder’s conversation. Under each answer, “What the checks did” says what they
-            changed.
-          </p>
-        ) : null}
 
         <ol aria-label="Test conversation" className="grid gap-8">
           {exchanges.map((exchange) => (

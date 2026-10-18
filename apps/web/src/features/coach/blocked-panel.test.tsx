@@ -44,9 +44,9 @@ describe('BlockedPanel', () => {
     expect(screen.getAllByRole('listitem')).toHaveLength(2);
     expect(screen.getByText('988').tagName).toBe('STRONG');
     expect(screen.queryByText(/\*\*988\*\*/)).toBeNull();
-    const link = screen.getByRole('link', { name: 'View your support request' });
+    const link = screen.getByRole('link', { name: 'View your request for support' });
     expect(link.getAttribute('href')).toContain(`id=${IDS.ref}`);
-    expect(screen.getByText(/Nothing is shared until you review it/)).toBeVisible();
+    expect(screen.getByText(/Nothing is shared until you consent/)).toBeVisible();
   });
 
   it('explains other reasons without blaming the founder and offers a human', async () => {

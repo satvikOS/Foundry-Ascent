@@ -13,7 +13,6 @@ import {
 import type { Ref } from 'react';
 
 import { StatusBadge } from '@/components/ui/status-badge';
-import { formatPercent } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { FreshnessBadge } from '@/features/venture/freshness';
 
@@ -143,13 +142,6 @@ export function EvidenceItemCard({
         <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
           <Icon aria-hidden className="size-3.5" />
           {kind.label}
-        </span>
-        <span
-          className="tabular ml-auto text-xs text-subtle-foreground"
-          title="Relevance score from retrieval"
-        >
-          {formatPercent(Math.max(0, Math.min(1, item.score)))}
-          <span className="sr-only"> relevance</span>
         </span>
       </div>
       <h4

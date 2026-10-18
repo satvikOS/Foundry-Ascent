@@ -26,6 +26,17 @@ describe('NextStepList', () => {
     expect(screen.getByText('In actions').closest('span')).toHaveFocus();
   });
 
+  it('marks the vEIR’s own words (step, owner, date) apart from the Add control', () => {
+    render(
+      <NextStepList actions={ACTIONS} controls={{ saved: new Set(), savingIndex: null, onAdd: vi.fn() }} />,
+    );
+    // e2e/words.spec.ts leaves [data-slot="next-step"] out of a screen's word count: model output, not copy.
+    const words = screen.getByText(ACTIONS[0]?.action ?? '').closest('[data-slot="next-step"]');
+    expect(words).not.toBeNull();
+    expect(words).toHaveTextContent('founder · by Oct 23, 2026');
+    expect(words).not.toContainElement(screen.getByRole('button', { name: 'Add to actions' }));
+  });
+
   it('never takes focus for a step already in actions when the page loads', () => {
     render(<NextStepList actions={ACTIONS} controls={{ saved: new Set([0]), savingIndex: null }} />);
     expect(screen.getByText('In actions').closest('span')).not.toHaveFocus();

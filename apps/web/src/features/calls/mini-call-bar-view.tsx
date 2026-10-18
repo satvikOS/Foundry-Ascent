@@ -24,10 +24,9 @@ function barAnnouncement(snapshot: CallSnapshot): string {
     return why ? `Call ended. ${why}` : 'Call ended.';
   }
   if (snapshot.typedReason === 'mic_lost') {
-    return 'Your microphone disconnected. Return to the call to reconnect it or type.';
+    return 'Microphone disconnected. Return to the call to reconnect it.';
   }
-  if (snapshot.phase === 'live' && snapshot.audioBlocked)
-    return 'Sound is off. Turn on sound to hear replies.';
+  if (snapshot.phase === 'live' && snapshot.audioBlocked) return 'Sound is off.';
   return snapshot.notice?.kind === 'time_warning' ? snapshot.notice.message : '';
 }
 
@@ -131,7 +130,7 @@ export function MiniCallBarView() {
               }}
             >
               <Volume2 aria-hidden />
-              <span className="hidden sm:inline">Turn on sound</span>
+              <span className="hidden sm:inline">Turn on</span>
             </Button>
           ) : null}
           {snapshot.input === 'voice' ? (

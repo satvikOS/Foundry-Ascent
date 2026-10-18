@@ -43,7 +43,9 @@ export function DataUseDialog({
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>Data use &amp; privacy</DialogTitle>
-          <DialogDescription>How your conversations and venture data are used.</DialogDescription>
+          <DialogDescription className="sr-only">
+            How your conversations and venture data are used.
+          </DialogDescription>
         </DialogHeader>
         <div className="grid gap-5">
           <Section title="You’re talking to an AI">
@@ -51,9 +53,8 @@ export function DataUseDialog({
           </Section>
           <Section title="What is remembered">
             <p>
-              What your vEIR learns in your conversations and calls goes into your venture’s Knowledge on its
-              own, with its notes between conversations (its notebook and conversation summaries), so it can
-              pick up where you left off. Your team can see, edit and forget any of it.
+              What your vEIR learns in conversations and calls goes into Knowledge on its own, with its notes
+              and summaries, so it picks up where you left off. Your team can see, edit and forget any of it.
             </p>
             <p className="mt-2">
               Private chats are never remembered. They are erased when they end, or after 24 hours idle.
@@ -61,11 +62,9 @@ export function DataUseDialog({
           </Section>
           <Section title="Who can see your venture">
             <p>
-              Your venture team sees its conversations, memory and documents. Advisors on your venture can
-              read the memory and documents shared with them, not your conversations. Your assigned EIR can
-              also read your vEIR’s notes, and reviews a sample of answers, not whole conversations. Program
-              staff see aggregate numbers. Nothing goes to anyone else unless you approve it in a help
-              request.
+              Your team sees conversations, memory and documents. Advisors see only the memory and documents
+              shared with them. Your EIR reads your vEIR’s notes and a sample of answers. Program staff see
+              totals. Nothing else is shared unless you approve a help request.
             </p>
           </Section>
         </div>
@@ -145,8 +144,7 @@ export function ReportProblemDialog({
         <DialogHeader>
           <DialogTitle>Report a problem</DialogTitle>
           <DialogDescription>
-            Describe what went wrong, then copy the report and send it to your program team. It includes the
-            page and app version, never your conversations or documents.
+            Copy it to your program team. It never includes your conversations or documents.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4">
@@ -158,7 +156,7 @@ export function ReportProblemDialog({
               maxLength={1000}
               minRows={3}
               maxRows={8}
-              placeholder="What you were doing, what you expected, and what happened instead"
+              placeholder="What you did, expected and saw"
               onChange={(event) => {
                 setDescription(event.target.value);
               }}

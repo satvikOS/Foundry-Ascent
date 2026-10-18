@@ -53,7 +53,7 @@ export function newChatGreeting(args: {
   if (opener === '') {
     return {
       title: `${timeOfDay(args.now)}, ${firstName}`,
-      line: `What should we work on for ${args.ventureName} today?`,
+      line: 'What should we work on today?',
     };
   }
   const { greeting, rest } = splitOpener(opener);

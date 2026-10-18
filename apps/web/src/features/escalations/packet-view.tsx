@@ -70,8 +70,7 @@ export function PacketView({
     return (
       <p className={cn('flex items-start gap-2 text-small text-muted-foreground', className)}>
         <Trash2 aria-hidden className="mt-0.5 size-4 shrink-0" />
-        This request came from a conversation that was deleted, so its details were removed. Nothing was
-        shared.
+        Its conversation was deleted, so its details were removed. Nothing was shared.
       </p>
     );
   }

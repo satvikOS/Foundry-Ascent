@@ -74,7 +74,7 @@ describe('AggregateBarChart (k-anonymity rendering)', () => {
     // Every suppressed row has an explanation button, and the footnote explains k.
     expect(screen.getByRole('button', { name: 'Why is Discovery hidden?' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Why is Growth hidden?' })).toBeInTheDocument();
-    expect(screen.getByText(/k-anonymity, k = 3/)).toBeInTheDocument();
+    expect(screen.getByText(/singled out \(k = 3\)/)).toBeInTheDocument();
   });
 
   it('scales a suppressed outline to the possible range (k − 1), not to a value', () => {
@@ -117,7 +117,7 @@ describe('AggregateBarChart (k-anonymity rendering)', () => {
     const discovery = within(table).getByRole('rowheader', { name: 'Discovery' }).closest('tr');
     expect(discovery).toHaveTextContent('Fewer than 3');
     expect(within(table).getByText('At least 11')).toBeInTheDocument();
-    expect(within(table).getByText(/shown as “fewer than 3” instead of an exact count/)).toBeInTheDocument();
+    expect(within(table).getByText(/show as “fewer than 3”/)).toBeInTheDocument();
   });
 
   it('shows no k-anonymity note when nothing is suppressed', () => {
@@ -133,7 +133,7 @@ describe('AggregateBarChart (k-anonymity rendering)', () => {
       />,
     );
     expect(screen.queryByText(/Fewer than/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/k-anonymity/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/singled out/)).not.toBeInTheDocument();
   });
 });
 

@@ -204,9 +204,7 @@ describe('CallSummaryPanel', () => {
   it('says a private call keeps nothing, and asks the server for none of its memory', async () => {
     const fetchMock = stubFetch().mockResolvedValue(json({ items: [] }));
     renderSummary(ended({ memoryProposalIds: [IDS.memory] }), true, 'ephemeral');
-    expect(await screen.findByTestId('call-private')).toHaveTextContent(
-      'Private call: nothing from it is remembered.',
-    );
+    expect(await screen.findByTestId('call-private')).toHaveTextContent('Private: nothing is remembered.');
     expect(screen.queryByTestId('call-remembered')).toBeNull();
     expect(screen.queryByTestId('memory-saved')).toBeNull();
     expect(fetchMock.mock.calls.some(([input]) => urlOf(input).includes('/memory/'))).toBe(false);
@@ -230,7 +228,7 @@ describe('CallSummaryPanel', () => {
     const support = await screen.findByTestId('blocked-panel');
     expect(support).toHaveTextContent('You deserve support from a person');
     expect(support).toHaveTextContent('Call or text 988 any time.');
-    expect(within(support).getByRole('link', { name: 'View your support request' })).toHaveAttribute(
+    expect(within(support).getByRole('link', { name: 'View your request for support' })).toHaveAttribute(
       'href',
       `/ain/app/v/${IDS.venture}/help?id=${IDS.escalation}`,
     );
@@ -240,7 +238,7 @@ describe('CallSummaryPanel', () => {
     expect(screen.getByRole('region', { name: 'Support' })).toHaveFocus();
     expect(screen.getByText('The call reached its time limit.')).toBeInTheDocument();
     // It stays until the founder leaves it.
-    await userEvent.click(within(support).getByRole('link', { name: 'View your support request' }));
+    await userEvent.click(within(support).getByRole('link', { name: 'View your request for support' }));
     expect(callbacks.leave).toHaveBeenCalled();
   });
 
@@ -288,9 +286,7 @@ describe('CallSummaryPanel', () => {
   it('says quietly that the call is remembered, even before anything is saved to Knowledge', async () => {
     stubFetch().mockResolvedValue(json({ items: [] }));
     renderSummary(ended({}));
-    expect(await screen.findByTestId('call-remembered')).toHaveTextContent(
-      'Remembered. Corin · vEIR will pick up from this call next time.',
-    );
+    expect(await screen.findByTestId('call-remembered')).toHaveTextContent('Remembered for next time.');
     expect(screen.queryByTestId('memory-saved')).toBeNull();
     expect(screen.queryByText(/to review/)).toBeNull();
   });
@@ -320,7 +316,7 @@ describe('CallSummaryPanel', () => {
     );
     renderSummary(ended(null, { reason: 'budget' }));
     const line = await screen.findByText(/AI allowance is used up/);
-    expect(line).toHaveTextContent('typed chat pauses too until midnight UTC');
+    expect(line).toHaveTextContent('Chat pauses too until midnight UTC');
     expect(line).toHaveTextContent('Your conversation is saved.');
     expect(screen.queryByText(/went wrong|error/i)).toBeNull();
   });
@@ -335,9 +331,7 @@ describe('CallSummaryPanel', () => {
     );
     renderSummary(ended(null, { reason: 'budget' }));
     expect(
-      await screen.findByText(
-        'You’ve used today’s call minutes. Your conversation is saved, and you can keep going in chat.',
-      ),
+      await screen.findByText('Today’s call minutes are used up. Chat still works.'),
     ).toBeInTheDocument();
   });
 

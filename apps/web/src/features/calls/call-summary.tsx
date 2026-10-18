@@ -16,7 +16,6 @@ import { formatDate } from '@/lib/format';
 import { ESCALATION_CATEGORY_LABELS } from '@/lib/labels';
 
 import { MemorySaved, savedByIds } from '../chat/memory-saved';
-import { sentenceStart } from '../venture/veir-name';
 
 import { formatClock, spokenDuration } from './use-call-clock';
 import { useCallConfig, type CallVeir } from './use-call-veir';
@@ -100,9 +99,9 @@ export function CallSummaryPanel({
           {formatClock(ended.durationSeconds)}
         </span>
         <span className="sr-only">{spokenDuration(ended.durationSeconds)}</span>
-        {exchanges > 0 ? ` · ${String(exchanges)} exchange${exchanges === 1 ? '' : 's'}` : null}
-        {' · '}
-        {exchanges > 0 ? 'The transcript is in this conversation.' : 'Nothing was said.'}
+        {exchanges > 0
+          ? ` · ${String(exchanges)} exchange${exchanges === 1 ? '' : 's'}`
+          : ' · Nothing was said.'}
       </p>
       {endLine ? (
         <p role="status" className="mt-1 max-w-md text-small text-pretty text-muted-foreground">
@@ -114,7 +113,6 @@ export function CallSummaryPanel({
         <SummaryDetails
           tenant={tenant}
           ventureId={ventureId}
-          veirName={veir.name}
           summary={summary}
           canWrite={canWrite}
           isPrivate={privacy === 'ephemeral'}
@@ -123,7 +121,7 @@ export function CallSummaryPanel({
         />
       ) : (
         <p role="status" className="mt-6 text-small text-muted-foreground">
-          {ended.summaryError ? `The summary couldn’t load. ${ended.summaryError}` : 'Loading the summary…'}
+          {ended.summaryError ? `The summary couldn’t load. ${ended.summaryError}` : 'Loading…'}
         </p>
       )}
 
@@ -132,8 +130,8 @@ export function CallSummaryPanel({
           <Phone aria-hidden />
           Call again
         </Button>
-        <Button size="lg" onClick={onBackToConversation}>
-          Back to conversation
+        <Button size="lg" onClick={onBackToConversation} aria-label="Back to conversation">
+          Back
         </Button>
       </div>
     </div>
@@ -143,7 +141,6 @@ export function CallSummaryPanel({
 function SummaryDetails({
   tenant,
   ventureId,
-  veirName,
   summary,
   canWrite,
   isPrivate,
@@ -152,7 +149,6 @@ function SummaryDetails({
 }: {
   tenant: string;
   ventureId: string;
-  veirName: string;
   summary: CallSummary;
   canWrite: boolean;
   isPrivate: boolean;
@@ -183,7 +179,7 @@ function SummaryDetails({
           className="flex items-center justify-center gap-1.5 text-small text-muted-foreground"
         >
           <EyeOff aria-hidden className="size-4" />
-          Private call: nothing from it is remembered.
+          Private: nothing is remembered.
         </p>
       ) : remembered ? (
         // A quiet "remembered" state: the call is kept with the conversation and the vEIR picks up from it
@@ -194,7 +190,7 @@ function SummaryDetails({
             className="flex items-center justify-center gap-1.5 text-small text-muted-foreground"
           >
             <Check aria-hidden className="size-4" />
-            Remembered. {sentenceStart(veirName)} will pick up from this call next time.
+            Remembered for next time.
           </p>
           <MemorySaved
             tenant={tenant}

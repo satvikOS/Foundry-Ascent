@@ -1,6 +1,6 @@
 import type { SessionView } from '@foundry/contracts';
 import { Link } from '@tanstack/react-router';
-import { MessagesSquare, Phone } from 'lucide-react';
+import { MessagesSquare, Phone, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import { announce } from '@/components/a11y/live-announcer';
@@ -16,14 +16,19 @@ import {
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
+import { InfoTip } from '@/components/ui/info-tip';
 import { HairlineSkeleton } from '@/components/ui/page-section';
 import { toast } from '@/components/ui/toast';
+import { SimpleTooltip } from '@/components/ui/tooltip';
 import { errorMessage } from '@/lib/api/errors';
 import { useDeleteDigest, useSessions } from '@/lib/api/hooks/sessions';
 import { conversationTitle, lastActivity } from '@/lib/conversations';
 import { formatDateTime, formatRelative, isoString } from '@/lib/format';
+import { TOPIC } from '@/features/chat/digest-view';
 import { formatIsoDate } from '@/features/memory/typed/attributes';
-import { sentenceStart, useVeirName } from '@/features/venture/veir-name';
+import { useVeirName } from '@/features/venture/veir-name';
+
+import { StartChat } from './start-chat';
 
 type Digested = SessionView & { digest: NonNullable<SessionView['digest']> };
 
@@ -62,7 +67,8 @@ export function DigestsSection({ ventureId, tenant, canEdit }: DigestsSectionPro
         icon={MessagesSquare}
         headingLevel={2}
         title="No digests yet"
-        description={`When a conversation ends or goes quiet, ${author} writes a short digest of it here. Private chats never get one.`}
+        description="Private chats never get one."
+        action={canEdit ? <StartChat tenant={tenant} ventureId={ventureId} /> : null}
       />
     );
   }
@@ -82,13 +88,12 @@ export function DigestsSection({ ventureId, tenant, canEdit }: DigestsSectionPro
 
   return (
     <div className="grid gap-5">
-      <div className="grid gap-1.5">
-        <p className="label-mono">AI notes</p>
-        <p className="max-w-[60ch] text-small text-muted-foreground">
-          What {author} took from each conversation. Your team can see and delete them. They’re never treated
-          as facts.
-        </p>
-      </div>
+      <p className="flex items-center gap-1">
+        <span className="label-mono">AI notes</span>
+        <InfoTip label="AI notes">
+          {`What ${author} took from each conversation. Your team can delete them. They’re never treated as facts.`}
+        </InfoTip>
+      </p>
       <ul aria-label="Conversation digests" className="divide-y divide-border border-b border-border">
         {rows.map((session) => {
           const title = conversationTitle(session);
@@ -121,12 +126,9 @@ export function DigestsSection({ ventureId, tenant, canEdit }: DigestsSectionPro
               </div>
               <p className="prose-reading text-pretty">{digest.summary}</p>
               {digest.topics.length > 0 ? (
-                <ul aria-label="Topics" className="flex flex-wrap gap-1.5">
+                <ul aria-label="Topics" className="flex flex-wrap gap-x-2 text-caption text-muted-foreground">
                   {digest.topics.map((topic) => (
-                    <li
-                      key={topic}
-                      className="rounded-full border border-border px-2.5 py-0.5 text-caption text-muted-foreground"
-                    >
+                    <li key={topic} className={TOPIC}>
                       {topic}
                     </li>
                   ))}
@@ -149,18 +151,21 @@ export function DigestsSection({ ventureId, tenant, canEdit }: DigestsSectionPro
               ) : null}
               {canEdit ? (
                 <div>
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    className="-ml-2 text-muted-foreground"
-                    aria-describedby={headingId}
-                    disabled={remove.isPending && remove.variables === session.id}
-                    onClick={() => {
-                      setConfirm(session);
-                    }}
-                  >
-                    Delete digest
-                  </Button>
+                  <SimpleTooltip content="Delete digest">
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      className="-ml-1.5 text-muted-foreground"
+                      aria-label="Delete digest"
+                      aria-describedby={headingId}
+                      disabled={remove.isPending && remove.variables === session.id}
+                      onClick={() => {
+                        setConfirm(session);
+                      }}
+                    >
+                      <Trash2 aria-hidden />
+                    </Button>
+                  </SimpleTooltip>
                 </div>
               ) : null}
             </li>
@@ -178,8 +183,7 @@ export function DigestsSection({ ventureId, tenant, canEdit }: DigestsSectionPro
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this digest?</AlertDialogTitle>
             <AlertDialogDescription>
-              {sentenceStart(author)} stops drawing on it in later conversations, and it won’t be written
-              again. The conversation stays.
+              It won’t be used or rewritten. The conversation stays.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

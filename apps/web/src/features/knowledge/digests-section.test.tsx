@@ -41,4 +41,24 @@ describe('DigestsSection', () => {
     expect(consoleError.mock.calls.some(([message]) => String(message).includes('same key'))).toBe(false);
     consoleError.mockRestore();
   });
+
+  it('shows no digests as one line (private chats never get one) and one action, Start chat', async () => {
+    const client = testQueryClient();
+    client.setQueryData(sessionsQueryOptions(IDS.venture).queryKey, { items: [] });
+    await renderWithRouter(<DigestsSection ventureId={IDS.venture} tenant="ain" canEdit />, client);
+    expect(screen.getByRole('heading', { name: 'No digests yet' })).toBeVisible();
+    expect(screen.getByText('Private chats never get one.')).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Start chat' })).toHaveAttribute(
+      'href',
+      `/ain/app/v/${IDS.venture}`,
+    );
+  });
+
+  it('offers no action to someone who cannot start a chat here', async () => {
+    const client = testQueryClient();
+    client.setQueryData(sessionsQueryOptions(IDS.venture).queryKey, { items: [] });
+    await renderWithRouter(<DigestsSection ventureId={IDS.venture} tenant="ain" canEdit={false} />, client);
+    expect(screen.getByRole('heading', { name: 'No digests yet' })).toBeVisible();
+    expect(screen.queryByRole('link', { name: 'Start chat' })).toBeNull();
+  });
 });

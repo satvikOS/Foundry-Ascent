@@ -102,7 +102,7 @@ export function validateUploadFiles(
       rejected.push({
         name: file.name,
         code: 'duplicate',
-        message: 'A document with this name is already in the venture or the upload queue.',
+        message: 'A document with this name already exists.',
       });
       continue;
     }

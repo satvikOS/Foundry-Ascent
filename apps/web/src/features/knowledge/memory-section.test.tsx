@@ -84,7 +84,7 @@ describe('MemorySection', () => {
       expect.stringContaining('Data approval may be slow'),
     ]);
     // An older suggestion is listed like any other: no "Proposed", no Approve or Reject.
-    expect(items[2]).toHaveTextContent(/Learned from the conversation on /);
+    expect(items[2]).toHaveTextContent(/From a conversation · /);
     expect(items[2]).not.toHaveTextContent(/Proposed|Confirmed/);
     expect(screen.getByText('3 items')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Approve|Reject|Keep/ })).toBeNull();
@@ -96,7 +96,7 @@ describe('MemorySection', () => {
     await renderSection({}, { calls: [IDS.session] });
     const list = screen.getByRole('list', { name: 'Memory' });
     const learned = within(list).getByRole('button', { name: /Data approval may be slow/ });
-    expect(learned).toHaveTextContent(/Learned from the call on /);
+    expect(learned).toHaveTextContent(/From the call · /);
   });
 
   it('asks for the venture’s conversations only when an item names the one it was learned from', async () => {
@@ -126,7 +126,7 @@ describe('MemorySection', () => {
       client,
     );
     expect(screen.getByRole('button', { name: /Data approval may be slow/ })).toHaveTextContent(
-      /Learned from a conversation on /,
+      /From a conversation · /,
     );
     await act(() => new Promise((resolve) => setTimeout(resolve, 30)));
     expect(

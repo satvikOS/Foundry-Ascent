@@ -20,7 +20,7 @@ import { MEMORY_TYPE_LABELS, VISIBILITY_LABELS } from '@/lib/labels';
 import { cn } from '@/lib/utils';
 import {
   learnedFromConversation,
-  memoryProvenance,
+  shortProvenance,
   useConversationsWithCalls,
 } from '@/features/memory/provenance';
 import { availableMemoryActions } from '@/features/memory/optimistic';
@@ -192,16 +192,17 @@ export function MemorySection({
         ) : null}
       </div>
 
-      <div className="flex min-h-5 items-center justify-between gap-3 text-small text-muted-foreground">
-        <p role="status" aria-live="polite">
-          {memory.isPending ? 'Loading…' : memory.isError ? '' : pluralize(rows.length, 'item')}
-        </p>
-        {filtered ? (
+      {/* How many items the filters leave, for screen readers: a count on screen is noise nobody acts on. */}
+      <p role="status" aria-live="polite" className="sr-only">
+        {memory.isPending ? 'Loading…' : memory.isError ? '' : pluralize(rows.length, 'item')}
+      </p>
+      {filtered && rows.length > 0 ? (
+        <div className="-mt-2 flex justify-end">
           <Button variant="link" size="xs" onClick={clear}>
             Clear filters
           </Button>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
 
       {memory.isError ? (
         <ErrorState error={memory.error} onRetry={() => void memory.refetch()} headingLevel={2} />
@@ -213,7 +214,6 @@ export function MemorySection({
             icon={SearchX}
             headingLevel={2}
             title="No memory matches"
-            description="Try another type or status, or clear the search."
             action={
               <Button variant="secondary" size="sm" onClick={clear}>
                 Clear filters
@@ -224,7 +224,7 @@ export function MemorySection({
           <EmptyState
             headingLevel={2}
             title="Nothing yet"
-            description={`What ${veirName} learns in your conversations shows up here on its own. You can add things yourself too.`}
+            description={`What ${veirName} learns shows up here.`}
             action={
               canEdit ? (
                 <Button size="sm" onClick={onCreate}>
@@ -275,7 +275,9 @@ function Chip({
       aria-pressed={pressed}
       onClick={onClick}
       className={cn(
-        'inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-3 text-[13px] whitespace-nowrap transition-colors',
+        // Relative: the screen-reader count stays inside the chip, so it never widens the page from inside the
+        // phone's sideways-scrolling strip.
+        'relative inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-3 text-[13px] whitespace-nowrap transition-colors',
         'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
         pressed
           ? 'border-foreground bg-foreground text-background'
@@ -283,14 +285,11 @@ function Chip({
       )}
     >
       {children}
+      {/* The count stays in the name ("Decision 1") for screen readers; on screen it is noise. */}
       {count !== undefined ? (
         <>
-          {/* The space keeps the accessible name readable ("Decision 1"); flex layout ignores it. */}{' '}
-          <span
-            className={cn('tabular text-[12px]', pressed ? 'text-background/75' : 'text-subtle-foreground')}
-          >
-            {count}
-          </span>
+          {/* The space keeps the name readable ("Decision 1"); flex layout ignores it. */}{' '}
+          <span className="sr-only">{count}</span>
         </>
       ) : null}
     </button>
@@ -425,11 +424,11 @@ function MemoryRow({
       <span className="col-start-2 line-clamp-2 text-small text-muted-foreground [overflow-wrap:anywhere]">
         {displayContent(item)}
       </span>
-      {/* One line of plain text that wraps like a sentence: where it came from, then what it is. */}
+      {/* One quiet line: what it is, then who it came from and when. */}
       <span className="col-start-2 text-caption text-subtle-foreground">
-        {memoryProvenance(item, withCalls).text}
-        {' · '}
         {MEMORY_TYPE_LABELS[item.type].label}
+        {' · '}
+        {shortProvenance(item, withCalls)}
         {shownStatus ? (
           <>
             {' · '}

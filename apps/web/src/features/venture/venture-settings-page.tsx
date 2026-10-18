@@ -54,7 +54,7 @@ export function VentureSettingsPage() {
     <PageContainer size="narrow">
       <PageHeader
         title="Venture settings"
-        description={`${sentenceStart(veirName)} uses the stage and current goal to focus each conversation.`}
+        info={`${sentenceStart(veirName)} uses the stage and current goal to focus each conversation.`}
       />
       {venture.isError ? (
         <ErrorState error={venture.error} onRetry={() => void venture.refetch()} />

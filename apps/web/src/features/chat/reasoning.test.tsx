@@ -18,7 +18,7 @@ const response = (() => {
 })();
 
 describe('ReasoningDisclosure', () => {
-  it('is collapsed, summarises sources and claims, and expands on demand', async () => {
+  it('is collapsed, says how many sources it cites (never a count of claims), and expands on demand', async () => {
     const onShowSources = vi.fn();
     render(
       <ReasoningDisclosure
@@ -31,7 +31,8 @@ describe('ReasoningDisclosure', () => {
     );
     const toggle = screen.getByRole('button', { name: /^Sources & reasoning/ });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    expect(toggle).toHaveTextContent('2 sources · 4 claims');
+    expect(toggle).toHaveTextContent(/2 sources$/);
+    expect(toggle).not.toHaveTextContent(/claim/);
     const user = userEvent.setup();
     await user.click(toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
@@ -126,9 +127,7 @@ describe('citedSourceKeys', () => {
         onShowSources={vi.fn()}
       />,
     );
-    expect(screen.getByRole('button', { name: /^Sources & reasoning/ })).toHaveTextContent(
-      '2 sources · 4 claims',
-    );
+    expect(screen.getByRole('button', { name: /^Sources & reasoning/ })).toHaveTextContent(/2 sources$/);
   });
 });
 

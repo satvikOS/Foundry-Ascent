@@ -248,7 +248,7 @@ export function UsagePage() {
     <PageContainer size="wide">
       <PageHeader
         title="Usage"
-        description="AI spend by day, purpose and model."
+        info="AI spend by day, purpose and model."
         actions={
           <Button asChild variant="secondary">
             <Link to="/$tenant/app/admin/settings" params={{ tenant }}>

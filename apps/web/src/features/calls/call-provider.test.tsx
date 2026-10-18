@@ -436,9 +436,7 @@ describe('Remember or Private for a call from New chat', () => {
     });
     const group = screen.getByRole('group', { name: 'Memory for this call' });
     expect(within(group).getByRole('radio', { name: 'Remember this call' })).toBeChecked();
-    expect(group).toHaveAccessibleDescription(
-      "Corin's vEIR will remember this call and pick up from it next time.",
-    );
+    expect(group).toHaveAccessibleDescription('Remembered for next time.');
     // Nothing is created or started before the founder chooses.
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(sessionCreated()).toBe(false);
@@ -590,7 +588,7 @@ describe('the mini call bar', () => {
       engine.set({ audioBlocked: true });
     });
     expect(bar).toHaveTextContent('Sound is off');
-    expect(within(bar).getByRole('status')).toHaveTextContent('Sound is off. Turn on sound to hear replies.');
+    expect(within(bar).getByRole('status')).toHaveTextContent('Sound is off.');
     await userEvent.click(within(bar).getByRole('button', { name: 'Turn on sound' }));
     expect(engine.resumeAudio).toHaveBeenCalledTimes(1);
     // The vEIR keeps its badge in the bar (the call settings here carry no first-person consent: "AI").
@@ -610,7 +608,7 @@ describe('the mini call bar', () => {
     });
     expect(bar).toHaveTextContent('Microphone disconnected');
     expect(within(bar).getByRole('status')).toHaveTextContent(
-      'Your microphone disconnected. Return to the call to reconnect it or type.',
+      'Microphone disconnected. Return to the call to reconnect it.',
     );
   });
 });

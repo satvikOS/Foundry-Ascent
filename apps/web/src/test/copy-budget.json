@@ -1,0 +1,113 @@
+{
+  "$comment": "Visible words per screen, read from the source by src/test/copy-inventory.ts. before: base 90cebac (before the wave-6 copy pass); after: the count when the budget was set; budget: the most a screen may show (after plus a little room: 3% or 3 words, and below before on founder screens). Raise a budget only on purpose, in the change that needs it; founder screens stay below before. null: the vEIR identity (name, badge, welcome, AI disclosure), whose words w6-presence sets.",
+  "founderScreens": [
+    "New chat",
+    "Conversation",
+    "Call",
+    "Knowledge",
+    "Documents",
+    "Human help",
+    "Team",
+    "Venture settings",
+    "Shell",
+    "Landing",
+    "Sign-in"
+  ],
+  "screens": {
+    "Admin": {
+      "before": 1222,
+      "after": 1168,
+      "budget": 1204
+    },
+    "Call": {
+      "before": 363,
+      "after": 275,
+      "budget": 284
+    },
+    "Conversation": {
+      "before": 961,
+      "after": 789,
+      "budget": 813
+    },
+    "Documents": {
+      "before": 340,
+      "after": 297,
+      "budget": 306
+    },
+    "Human help": {
+      "before": 513,
+      "after": 403,
+      "budget": 416
+    },
+    "Knowledge": {
+      "before": 845,
+      "after": 635,
+      "budget": 655
+    },
+    "Landing": {
+      "before": 481,
+      "after": 365,
+      "budget": 376
+    },
+    "New chat": {
+      "before": 44,
+      "after": 38,
+      "budget": 41
+    },
+    "Other": {
+      "before": 7,
+      "after": 7,
+      "budget": 10
+    },
+    "Program": {
+      "before": 867,
+      "after": 790,
+      "budget": 814
+    },
+    "Routes": {
+      "before": 74,
+      "after": 61,
+      "budget": 64
+    },
+    "Shared (lib)": {
+      "before": 495,
+      "after": 452,
+      "budget": 466
+    },
+    "Shared UI": {
+      "before": 377,
+      "after": 377,
+      "budget": 389
+    },
+    "Shell": {
+      "before": 601,
+      "after": 507,
+      "budget": 523
+    },
+    "Sign-in": {
+      "before": 111,
+      "after": 81,
+      "budget": 84
+    },
+    "Studio": {
+      "before": 2429,
+      "after": 2273,
+      "budget": 2342
+    },
+    "Team": {
+      "before": 34,
+      "after": 24,
+      "budget": 27
+    },
+    "vEIR identity": {
+      "before": 39,
+      "after": 39,
+      "budget": null
+    },
+    "Venture settings": {
+      "before": 118,
+      "after": 95,
+      "budget": 98
+    }
+  }
+}

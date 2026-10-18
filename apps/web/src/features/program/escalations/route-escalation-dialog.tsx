@@ -158,9 +158,7 @@ function RouteForm({
         {optionsState === 'error' ? (
           <Alert variant="warning">Couldn’t load the people you can route to. Close and try again.</Alert>
         ) : optionsState === 'ready' && options.length === 0 ? (
-          <Alert variant="info">
-            No EIRs or program leads are set up yet. Ask a platform admin to add one in Principals.
-          </Alert>
+          <Alert variant="info">No EIRs or program leads yet. Ask an admin to add one.</Alert>
         ) : (
           <p className="text-small text-muted-foreground">
             Only EIRs and program staff of your program can receive an escalation.

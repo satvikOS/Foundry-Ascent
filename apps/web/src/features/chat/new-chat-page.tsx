@@ -115,8 +115,7 @@ function ReadOnlyVenture() {
       ) : null}
       <Greeting title={`${greeting()}, ${firstName(me.principal.displayName)}`}>
         <p className="mt-3 max-w-xl text-pretty text-muted-foreground">
-          You can read {name}’s knowledge and documents. Conversations with {veir ? veir.name : 'its vEIR'}{' '}
-          are private to the founders and team.
+          Conversations are private to the team. You can read {name}’s knowledge and documents.
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-2">
           <Button asChild variant="secondary">
@@ -370,9 +369,7 @@ function NewChat() {
             </p>
           ) : null}
 
-          {available ? (
-            <PrivacyChoice value={privacy} onChange={setPrivacy} veirName={name} className="mt-5" />
-          ) : null}
+          {available ? <PrivacyChoice value={privacy} onChange={setPrivacy} className="mt-5" /> : null}
 
           {suggestions.length > 0 ? (
             <ul aria-label="Suggestions" className="mt-6 flex flex-wrap justify-center gap-2">

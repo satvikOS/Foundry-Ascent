@@ -88,8 +88,7 @@ export function StructuredResponse({ turn }: { turn: TurnView }) {
 
       {response === null ? (
         <p className="rounded-lg border border-dashed border-border-strong px-4 py-3 text-sm text-muted-foreground">
-          This turn has no structured response (status: {turn.status}). Score what the founder saw — for a
-          blocked turn, that is the safety message and any escalation.
+          No structured response (status: {turn.status}). Score what the founder saw.
         </p>
       ) : (
         <>

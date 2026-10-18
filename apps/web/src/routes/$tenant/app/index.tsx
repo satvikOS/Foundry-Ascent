@@ -36,7 +36,7 @@ function NoWorkspace() {
         headingLevel={1}
         icon={Compass}
         title="Nothing to open yet"
-        description="When a program lead adds you to a venture, it will open here."
+        description="A program lead will add you to a venture."
       />
     </PageContainer>
   );

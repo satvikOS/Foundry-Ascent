@@ -115,7 +115,9 @@ test.describe('program lead', () => {
     await row.getByRole('button', { name: /^Actions for / }).click();
     await page.getByRole('menuitem', { name: 'Team' }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Team' })).toBeVisible();
-    await expect(page.getByText('People on QuietQuad and what each can see.')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'About Team' })).toHaveAccessibleDescription(
+      'People on QuietQuad and what each can see.',
+    );
     await expect(page.getByRole('list', { name: 'Team members' })).toContainText('Maya Okafor-Lindqvist');
 
     const nav = page.getByRole('navigation', { name: 'Main' });

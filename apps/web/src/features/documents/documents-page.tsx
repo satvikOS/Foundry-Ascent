@@ -47,7 +47,7 @@ import { useRequiredMe } from '@/lib/auth/use-me';
 import { formatBytes, formatDateTime, formatRelative, isoString, pluralize } from '@/lib/format';
 import { documentFailureMessage } from '@/lib/labels';
 import { cn } from '@/lib/utils';
-import { sentenceStart, useVeirName } from '@/features/venture/veir-name';
+import { useVeirName } from '@/features/venture/veir-name';
 
 import { isUnfinishedUpload, resumableUpload } from './unfinished-uploads';
 import { DOCUMENTS_ORIGIN, isActiveUpload, type QueuedUpload, type UploadItem } from './upload-queue';
@@ -63,7 +63,7 @@ const TYPE_ICON: Record<DocumentView['contentType'], { icon: LucideIcon; label: 
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': { icon: File, label: 'Word' },
 };
 
-const FORMATS_HINT = `${SUPPORTED_FORMATS_LABEL}, up to ${formatBytes(MAX_DOCUMENT_BYTES)} each.`;
+const FORMATS_HINT = `${SUPPORTED_FORMATS_LABEL} · up to ${formatBytes(MAX_DOCUMENT_BYTES)} each`;
 
 function uploadLabel(item: UploadItem): string {
   switch (item.status) {
@@ -163,7 +163,7 @@ export function reuploadChoice(
     rejected: {
       name: candidate.file.name,
       code: 'different_file',
-      message: `This isn’t ${doc.filename} (${formatBytes(doc.sizeBytes)}). Choose that file to finish its upload, or use Upload files to add this one.`,
+      message: `This isn’t ${doc.filename} (${formatBytes(doc.sizeBytes)}). Choose that file, or use Upload files.`,
     },
   };
 }
@@ -304,19 +304,23 @@ export function DocumentsPage() {
     });
   };
 
+  // One Upload button: in the header, or in the empty state while there is nothing to list.
+  const empty = documents.isSuccess && rows.length === 0;
+  const upload = canEdit ? (
+    <Button aria-describedby={hintId} onClick={() => inputRef.current?.click()}>
+      <Upload aria-hidden />
+      Upload files
+    </Button>
+  ) : null;
+
   return (
     <PageContainer className="relative max-w-4xl" {...dropHandlers}>
+      {/* Who can see an upload stays on the page; what the files are for sits behind the info button. */}
       <PageHeader
         title="Documents"
-        description={`Files ${veirName} can cite. Private to this venture.`}
-        actions={
-          canEdit ? (
-            <Button aria-describedby={hintId} onClick={() => inputRef.current?.click()}>
-              <Upload aria-hidden />
-              Upload files
-            </Button>
-          ) : null
-        }
+        description="Private to this venture."
+        info={`Files ${veirName} can cite.`}
+        actions={empty ? null : upload}
       />
       {canEdit ? (
         <input
@@ -424,7 +428,7 @@ export function DocumentsPage() {
 
       {linkedSource !== undefined && documents.isSuccess && linked === null ? (
         <p className="mb-3 text-small text-muted-foreground" role="status">
-          The document that passage came from is no longer here.
+          That passage’s document is gone.
         </p>
       ) : null}
 
@@ -433,16 +437,7 @@ export function DocumentsPage() {
       ) : documents.isPending ? (
         <HairlineSkeleton rows={3} label="Loading documents…" />
       ) : rows.length === 0 ? (
-        <EmptyState
-          icon={FileText}
-          headingLevel={2}
-          title="No documents yet"
-          description={
-            canEdit
-              ? `Upload notes, decks or research for ${veirName} to cite.`
-              : `${sentenceStart(veirName)} cites the documents the team uploads here.`
-          }
-        />
+        <EmptyState icon={FileText} headingLevel={2} title="No documents yet" action={upload} />
       ) : (
         <ul aria-label="Venture documents" className="divide-y divide-border border-y border-border">
           {rows.map((doc) => (
@@ -468,7 +463,7 @@ export function DocumentsPage() {
 
       {canEdit ? (
         <p id={hintId} className="mt-4 text-caption text-subtle-foreground">
-          {FORMATS_HINT} You can also drop files on this page.
+          {FORMATS_HINT}
         </p>
       ) : null}
 
@@ -481,9 +476,7 @@ export function DocumentsPage() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this document?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {sentenceStart(veirName)} can no longer cite it. Memory that referenced it is kept.
-            </AlertDialogDescription>
+            <AlertDialogDescription>It can no longer be cited. Related memory stays.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -568,17 +561,16 @@ function DocumentRow({
             {doc.filename}
           </Link>
         </p>
+        {/* Ready is the normal state: only another state is said. The type shows as the icon (and its name). */}
         <p className="flex flex-wrap items-center gap-x-1.5 text-caption text-subtle-foreground">
-          <span className={cn(failed && 'font-medium text-destructive')}>{label}</span>
-          {doc.status === 'ready' ? (
+          {doc.status === 'ready' && !stale ? (
+            <span className="sr-only">{`${label}, ${type.label}, `}</span>
+          ) : (
             <>
+              <span className={cn(failed && 'font-medium text-destructive')}>{label}</span>
               <span aria-hidden>·</span>
-              <span className="tabular">{pluralize(doc.chunkCount, 'passage')}</span>
             </>
-          ) : null}
-          <span aria-hidden>·</span>
-          <span>{type.label}</span>
-          <span aria-hidden>·</span>
+          )}
           <span className="tabular">{formatBytes(doc.sizeBytes)}</span>
           <span aria-hidden>·</span>
           <span>

@@ -20,6 +20,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { toast } from '@/components/ui/toast';
+import { SimpleTooltip } from '@/components/ui/tooltip';
 import { errorMessage } from '@/lib/api/errors';
 import { awaitingDigest, digestDeleted, useDeleteDigest } from '@/lib/api/hooks/sessions';
 import { formatDate } from '@/lib/format';
@@ -30,6 +31,9 @@ import { isActionSaved, useAddAction } from './actions';
 import { MemorySaved, savedByIds } from './memory-saved';
 import { NextStepList } from './next-steps';
 import { ANSWER_PROSE } from './veir-answer';
+
+/** A digest's topics: one quiet line, separated by middots (not a row of bordered chips nobody clicks). */
+export const TOPIC = "before:mr-2 before:text-border-strong before:content-['·'] first:before:content-none";
 
 function Part({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -110,12 +114,10 @@ export function DigestView({
       {digest ? (
         <DigestBody digest={digest} />
       ) : deleted ? (
-        <p className="text-small text-muted-foreground">
-          You deleted the summary. {personaName} won’t write it again.
-        </p>
+        <p className="text-small text-muted-foreground">Summary deleted. It won’t be rewritten.</p>
       ) : writing ? (
         <p className="text-small text-muted-foreground" role="status">
-          {personaName} is writing a summary…
+          Writing the summary…
         </p>
       ) : null}
 
@@ -133,9 +135,7 @@ export function DigestView({
           }}
         />
       ) : !digest && !writing && !deleted ? (
-        <p className="text-small text-muted-foreground">
-          No summary for this conversation. It couldn’t be written.
-        </p>
+        <p className="text-small text-muted-foreground">No summary: it couldn’t be written.</p>
       ) : null}
 
       {canEdit ? <MemorySaved tenant={tenant} ventureId={session.ventureId} memories={saved} /> : null}
@@ -152,16 +152,18 @@ export function DigestView({
           Print
         </Button>
         {digest && canEdit ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setConfirmDelete(true);
-            }}
-          >
-            <Trash2 aria-hidden />
-            Delete summary
-          </Button>
+          <SimpleTooltip content="Delete summary">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Delete summary"
+              onClick={() => {
+                setConfirmDelete(true);
+              }}
+            >
+              <Trash2 aria-hidden />
+            </Button>
+          </SimpleTooltip>
         ) : null}
       </div>
 
@@ -170,7 +172,7 @@ export function DigestView({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this summary?</AlertDialogTitle>
             <AlertDialogDescription>
-              {personaName} won’t use it in later conversations or write it again. The transcript stays.
+              It won’t be used or rewritten. The transcript stays.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -204,12 +206,9 @@ function DigestBody({ digest }: { digest: ConversationDigest }) {
     <div className="grid gap-5">
       <p className={ANSWER_PROSE}>{digest.summary}</p>
       {digest.topics.length > 0 ? (
-        <ul aria-label="Topics" className="flex flex-wrap gap-1.5">
+        <ul aria-label="Topics" className="flex flex-wrap gap-x-2 text-caption text-muted-foreground">
           {digest.topics.map((topic) => (
-            <li
-              key={topic}
-              className="rounded-full border border-border px-2.5 py-0.5 text-caption text-muted-foreground"
-            >
+            <li key={topic} className={TOPIC}>
               {topic}
             </li>
           ))}

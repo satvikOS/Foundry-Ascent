@@ -79,7 +79,7 @@ describe('DigestView', () => {
     await waitFor(() => {
       expect(screen.queryByText('We planned five interviews.')).not.toBeInTheDocument();
     });
-    expect(screen.getByText('You deleted the summary. Corin won’t write it again.')).toBeInTheDocument();
+    expect(screen.getByText('Summary deleted. It won’t be rewritten.')).toBeInTheDocument();
     expect(screen.queryByText(/is writing a summary/)).not.toBeInTheDocument();
     expect(screen.queryByText(/couldn’t be written/)).not.toBeInTheDocument();
     // Nothing is polled for a digest that will never come.
@@ -116,9 +116,7 @@ describe('DigestView', () => {
         </TooltipProvider>
       </QueryClientProvider>,
     );
-    expect(
-      await screen.findByText('You deleted the summary. Corin won’t write it again.'),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('Summary deleted. It won’t be rewritten.')).toBeInTheDocument();
     expect(screen.queryByText(/is writing a summary/)).not.toBeInTheDocument();
     expect(awaitingDigest(deleted)).toBe(false);
   });

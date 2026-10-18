@@ -104,7 +104,6 @@ export function EscalationsPage() {
             icon={Inbox}
             headingLevel={2}
             title="Requests for you arrive in your inbox"
-            description="When the founders ask for your help and agree to share the packet, it appears there."
             action={
               <Button asChild size="sm" variant="secondary">
                 <Link to="/$tenant/app/eir/inbox" params={{ tenant }}>
@@ -114,32 +113,32 @@ export function EscalationsPage() {
             }
           />
         ) : (
-          <EmptyState
-            icon={LifeBuoy}
-            headingLevel={2}
-            title="Only the venture team sees requests"
-            description="The founders and team ask for help here and choose what is shared."
-          />
+          <EmptyState icon={LifeBuoy} headingLevel={2} title="Only the venture team sees requests" />
         )}
       </PageContainer>
     );
   }
 
+  // One Ask a person button: in the header, or in the empty state while there are no requests.
+  const none = escalations.data?.length === 0;
+  const ask = (
+    <Button
+      onClick={() => {
+        setCreating(true);
+      }}
+    >
+      <HandHelping aria-hidden />
+      Ask a person
+    </Button>
+  );
+
   return (
     <PageContainer>
       <PageHeader
         title="Human help"
-        description="Ask a person: an EIR, the program team or a specialist. Nothing is shared without your consent."
-        actions={
-          <Button
-            onClick={() => {
-              setCreating(true);
-            }}
-          >
-            <HandHelping aria-hidden />
-            Request human support
-          </Button>
-        }
+        description="Nothing is shared without your consent."
+        info="Ask a person: an EIR, the program team or a specialist."
+        actions={none ? null : ask}
       />
 
       {awaiting > 0 ? (
@@ -150,13 +149,8 @@ export function EscalationsPage() {
 
       {escalations.isError ? (
         <ErrorState error={escalations.error} onRetry={() => void escalations.refetch()} headingLevel={2} />
-      ) : escalations.data?.length === 0 ? (
-        <EmptyState
-          icon={LifeBuoy}
-          headingLevel={2}
-          title="No requests yet"
-          description="When a person should weigh in, ask here or from a conversation. You review the packet before anything is shared."
-        />
+      ) : none ? (
+        <EmptyState icon={LifeBuoy} headingLevel={2} title="No requests yet" action={ask} />
       ) : (
         <div className="grid gap-10 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
           <div className={cn('grid content-start gap-4', selected && 'hidden lg:grid')}>
@@ -246,11 +240,12 @@ export function EscalationsPage() {
                   <Button
                     size="sm"
                     variant="secondary"
+                    aria-label="Back to the list"
                     onClick={() => {
                       select(undefined);
                     }}
                   >
-                    Back to the list
+                    Back
                   </Button>
                 }
               />
@@ -410,7 +405,7 @@ function HelpRequestDetail({
             <AlertDialogTitle>Withdraw this request?</AlertDialogTitle>
             <AlertDialogDescription>
               {escalation.sharingConsentAt
-                ? `${role} is told it was withdrawn and receives nothing further. What was shared stays in the audit record.`
+                ? `${role} is told, and gets nothing more. What was shared stays in the audit record.`
                 : 'Nothing has been shared yet. The draft closes.'}
             </AlertDialogDescription>
           </AlertDialogHeader>

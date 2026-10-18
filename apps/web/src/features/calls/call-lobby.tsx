@@ -26,8 +26,8 @@ export function callBlocker(input: {
   const { writable, name, config, configError } = input;
   if (!writable) {
     return {
-      title: 'Calls are for the venture team',
-      message: `You can read this venture’s conversations, but only its founders and team can call ${name}.`,
+      title: 'Calls are for the team',
+      message: `Only founders and the team can call ${name}.`,
       retry: false,
     };
   }
@@ -36,7 +36,7 @@ export function callBlocker(input: {
   if (!config.aiEnabled) {
     return {
       title: 'Calls are paused',
-      message: 'AI is paused by an administrator. Your conversations are still here.',
+      message: 'An admin paused AI. Your conversations are safe.',
       retry: false,
     };
   }
@@ -44,14 +44,14 @@ export function callBlocker(input: {
   if ('callsEnabled' in config && config.callsEnabled === false) {
     return {
       title: 'Calls are paused',
-      message: 'The program has paused calls for now. You can keep chatting.',
+      message: 'The program paused calls. You can keep chatting.',
       retry: false,
     };
   }
   if (config.remainingMinutesToday < 1) {
     return {
       title: 'No call minutes left today',
-      message: 'They reset at midnight UTC. You can keep going in chat.',
+      message: 'They reset at midnight UTC. Chat still works.',
       retry: false,
     };
   }
@@ -131,7 +131,7 @@ export function CallLobby({
   const moveHere = failure?.elsewhere === true;
   const minutes =
     config && !problem
-      ? `Up to ${String(config.maxMinutes)} minutes · ${String(Math.floor(config.remainingMinutesToday))} min left today`
+      ? `Up to ${String(config.maxMinutes)} min · ${String(Math.floor(config.remainingMinutesToday))} left today`
       : null;
 
   return (
@@ -155,7 +155,6 @@ export function CallLobby({
           <PrivacyChoice
             value={privacy.value}
             onChange={privacy.onChange}
-            veirName={veir.name}
             what="call"
             disabled={busy}
             className="max-w-md sm:flex-col"
@@ -179,17 +178,23 @@ export function CallLobby({
           >
             <AudioLines aria-hidden className="mt-0.5 size-4 shrink-0 text-foreground" />
             <span>
-              Your voice goes to Amazon Transcribe to become text. No audio is kept; the transcript is saved
-              here like chat, and you can type instead at any time.
+              Amazon Transcribe turns your voice into text. No audio is kept; the transcript is saved here
+              like chat.
             </span>
           </p>
         ) : null}
         <div className="flex w-full max-w-xs flex-col gap-2 sm:max-w-none sm:flex-row sm:justify-center">
           {problem ? (
             moveHere ? (
-              <Button ref={primaryRef} size="lg" onClick={onMoveHere} loading={busy}>
+              <Button
+                ref={primaryRef}
+                size="lg"
+                onClick={onMoveHere}
+                loading={busy}
+                aria-label="Move here, ending the other call"
+              >
                 <Phone aria-hidden />
-                Move the call here
+                Move here
               </Button>
             ) : problem.retry ? (
               <Button ref={primaryRef} size="lg" onClick={onRetry}>
@@ -207,8 +212,9 @@ export function CallLobby({
             size="lg"
             variant="secondary"
             onClick={onClose}
+            aria-label={problem && !moveHere ? 'Back to chat' : undefined}
           >
-            {problem && !moveHere ? 'Back to chat' : 'Not now'}
+            {problem && !moveHere ? 'Back' : 'Not now'}
           </Button>
         </div>
       </div>

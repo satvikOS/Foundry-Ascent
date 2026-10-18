@@ -46,6 +46,25 @@ export function memoryProvenance(memory: ProvenanceSource, withCalls?: ReadonlyS
   }
 }
 
+/**
+ * Where an item came from, for a list row (a line beside its type): "From the call · Oct 16, 2026", "From a
+ * conversation · …", "Maya Okafor-Lindqvist · …", "Imported · …". `memoryProvenance` says it in full.
+ */
+export function shortProvenance(memory: ProvenanceSource, withCalls?: ReadonlySet<string>): string {
+  const date = formatDate(memory.createdAt);
+  switch (memory.origin) {
+    case 'ai': {
+      const sessionId = learnedFromConversation(memory);
+      return `${sessionId !== null && withCalls?.has(sessionId) ? 'From the call' : 'From a conversation'} · ${date}`;
+    }
+    case 'founder':
+    case 'eir':
+      return `${memory.createdBy.displayName} · ${date}`;
+    case 'import':
+      return `Imported · ${date}`;
+  }
+}
+
 const NONE: ReadonlySet<string> = new Set();
 
 /**

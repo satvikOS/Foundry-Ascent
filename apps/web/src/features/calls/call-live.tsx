@@ -19,7 +19,7 @@ export function callStatusLabel(snapshot: CallSnapshot): string {
   if (snapshot.phase === 'starting') return 'Connecting…';
   if (snapshot.phase === 'ending') return 'Ending…';
   // Nothing can be heard until the founder taps Turn on sound: say that, not "Speaking" to silence.
-  if (snapshot.audioBlocked) return 'Sound is off. Turn on sound to hear replies.';
+  if (snapshot.audioBlocked) return 'Sound is off';
   if (snapshot.reconnecting) return 'Reconnecting…';
   if (snapshot.held) return 'On hold';
   switch (snapshot.activity) {
@@ -38,11 +38,11 @@ export function callStatusLabel(snapshot: CallSnapshot): string {
 }
 
 const TYPED_REASONS: Record<TypedReason, string> = {
-  stt_unavailable: 'Voice input isn’t available here, so type instead.',
-  mic_denied: 'Your microphone is blocked. Allow it in the browser’s site settings, or type instead.',
-  mic_unavailable: 'No microphone found, so type instead.',
-  mic_lost: 'Your microphone disconnected. Reconnect it, or type instead.',
-  stt_failed: 'Voice input stopped, so type instead.',
+  stt_unavailable: 'No voice input here. Type instead.',
+  mic_denied: 'Microphone blocked. Allow it in site settings, or type.',
+  mic_unavailable: 'No microphone. Type instead.',
+  mic_lost: 'Microphone disconnected. Reconnect it, or type.',
+  stt_failed: 'Voice input stopped. Type instead.',
 };
 
 /** A voice call whose microphone went away (or was refused when asked again) can ask for it again. */
@@ -215,14 +215,16 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: Cal
           </p>
         </div>
         {live && snapshot.audioBlocked ? (
+          // Beside "Sound is off": short on screen, the whole action in its name.
           <Button
             size="lg"
+            aria-label="Turn on sound"
             onClick={() => {
               engine.resumeAudio();
             }}
           >
             <Volume2 aria-hidden />
-            Turn on sound
+            Turn on
           </Button>
         ) : live && snapshot.held ? (
           <Button
@@ -271,8 +273,8 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: Cal
           <p role="status" className="flex max-w-xl items-start gap-2 text-small text-muted-foreground">
             <VolumeX aria-hidden className="mt-0.5 size-4 shrink-0" />
             {snapshot.voicePaused
-              ? 'Voice is paused for the rest of this call. Replies continue as text.'
-              : 'Spoken replies are unavailable right now.'}
+              ? 'Voice paused for this call. Replies continue as text.'
+              : 'Voice replies are unavailable.'}
           </p>
         ) : null}
         {snapshot.notice ? (
@@ -386,8 +388,9 @@ function Notice({ notice, onPushToTalk }: { notice: CallNotice; onPushToTalk: ()
         {notice.message}
       </p>
       {notice.kind === 'barge_hint' ? (
-        <Button size="sm" variant="secondary" onClick={onPushToTalk}>
-          Use push to talk
+        // The name says it switches the mode, apart from the dock's Push to talk control.
+        <Button size="sm" variant="secondary" onClick={onPushToTalk} aria-label="Use push to talk">
+          Push to talk
         </Button>
       ) : null}
     </div>
@@ -423,9 +426,15 @@ function TypeLine({ inputRef, name, hint, queued, disabled, onSend, onReconnectM
             {hint}
           </p>
           {onReconnectMic ? (
-            <Button type="button" size="sm" variant="secondary" onClick={onReconnectMic}>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={onReconnectMic}
+              aria-label="Reconnect microphone"
+            >
               <Mic aria-hidden />
-              Reconnect microphone
+              Reconnect
             </Button>
           ) : null}
         </div>
@@ -455,7 +464,7 @@ function TypeLine({ inputRef, name, hint, queued, disabled, onSend, onReconnectM
       </div>
       {queued > 0 ? (
         <p role="status" className="mt-2 text-center text-caption text-muted-foreground">
-          {name} will answer that next.
+          Answering that next.
         </p>
       ) : null}
     </form>

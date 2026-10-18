@@ -73,7 +73,7 @@ describe('PacketView (one packet renderer for the founder and the person it went
         : null,
     });
     render(<PacketView escalation={erased} audience="founder" />);
-    expect(screen.getByText(/came from a conversation that was deleted/)).toBeInTheDocument();
+    expect(screen.getByText(/Its conversation was deleted/)).toBeInTheDocument();
     expect(screen.queryByText(DELETED_CONVERSATION)).toBeNull();
     expect(screen.queryByText('Your question')).toBeNull();
   });

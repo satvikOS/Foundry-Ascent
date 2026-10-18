@@ -27,10 +27,12 @@ test('a founder uploads a document and it becomes searchable evidence', async ({
   await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Documents' }).click();
   await expect(page).toHaveURL(new RegExp(`/${TENANT}/app/v/${ventureId}/documents$`));
   await expect(page.getByRole('heading', { level: 1, name: 'Documents' })).toBeVisible();
-  // The copy names the venture's vEIR, never a hard-coded persona.
-  await expect(
-    page.getByText(/^Files Corin(?:['’]s| ·) vEIR can cite\. Private to this venture\.$/),
-  ).toBeVisible();
+  // Who can see the files is on the page; what they are for is behind the info button, which names the
+  // venture's vEIR, never a hard-coded persona.
+  await expect(page.getByText('Private to this venture.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'About Documents' })).toHaveAccessibleDescription(
+    /^Files Corin(?:['’]s| ·) vEIR can cite\.$/,
+  );
   await expectNoBareEirName(page, 'Documents');
 
   const chooser = page.waitForEvent('filechooser');
@@ -50,8 +52,9 @@ test('a founder uploads a document and it becomes searchable evidence', async ({
     .getByRole('list', { name: 'Venture documents' })
     .getByRole('listitem')
     .filter({ hasText: filename });
+  // Ready is said to screen readers only (a row shows a state only when it is not); the citation below shows
+  // the file is searchable.
   await expect(row).toContainText('Ready', { timeout: 30_000 });
-  await expect(row).toContainText(/\d+ passages?/);
 
   // A conversation that cites it opens the cited passage in the document viewer, over the conversation.
   await page.goto(`/${TENANT}/app/v/${ventureId}`);

@@ -133,11 +133,9 @@ export const SAFETY_ICON = ShieldAlert;
  * Anything else (an older row) gets a generic line.
  */
 export const DOCUMENT_FAILURE_MESSAGES: Record<DocumentFailureReason, string> = {
-  spend_cap_reached:
-    'Not indexed: today’s AI budget (the platform’s or yours) was used up. Retry after midnight UTC.',
+  spend_cap_reached: 'Not indexed: today’s AI budget is used up. Retry after midnight UTC.',
   extract_failed: 'Text couldn’t be extracted from this file.',
-  extractor_unavailable:
-    'Text can’t be read from this kind of file here yet. Retry later, or upload it as text.',
+  extractor_unavailable: 'Can’t read text from this file type yet. Retry later, or upload it as text.',
   empty_text: 'This file contains no readable text.',
   too_large: 'This file is larger than the 10 MB limit.',
   object_missing: 'The upload didn’t finish. Upload the file again.',
@@ -177,7 +175,7 @@ export function expiresInDays(expiry: (typeof ACCESS_CODE_EXPIRY_VALUES)[number]
 
 /** What each venture role can see: one wording for the Team page and every invitation. */
 export const MEMBERSHIP_ROLE_ACCESS: Record<MembershipRole, string> = {
-  founder: 'Everything, including their own founder-only items; decides what is shared with a person.',
+  founder: 'All except others’ founder-only items. Decides what’s shared.',
   team: 'Everything except founder-only items.',
-  advisor: 'Items visible to the whole venture or shared with advisors; never founder-only or team items.',
+  advisor: 'Venture-wide and advisor items only.',
 };

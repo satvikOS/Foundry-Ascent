@@ -119,16 +119,13 @@ export function CreateVentureDialog({ open, onOpenChange, onInvite }: CreateVent
                 <Rocket aria-hidden className="size-4" />
                 Enrol a venture
               </DialogTitle>
-              <DialogDescription>
-                Creates a private venture workspace. Only its members (and its assigned EIR) can see its
-                content.
-              </DialogDescription>
+              <DialogDescription>Only its members and assigned EIR see its content.</DialogDescription>
             </DialogHeader>
             <form noValidate onSubmit={(event) => void onSubmit(event)} className="grid gap-4">
               <Field
                 label="Venture name"
                 required
-                description="A distinctive name, unique in the program (not a common word such as “Pilot”)."
+                description="Distinctive and unique in the program."
                 error={formState.errors.name?.message}
               >
                 <Input autoComplete="off" {...register('name')} />

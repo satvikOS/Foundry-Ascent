@@ -15,41 +15,37 @@ export const Route = createFileRoute('/')({
   component: LandingPage,
 });
 
-const PILLARS: { title: string; body: string; detail: string }[] = [
+const PILLARS: { title: string; body: string }[] = [
   {
     title: 'It remembers you',
-    body: 'Your vEIR picks up where you left off: the decisions you made, the experiments you ran, the interviews you promised to do.',
-    detail:
-      'Everything it keeps is yours to read, correct or delete, and you can see where every item came from.',
+    body: 'It picks up where you left off: your decisions, experiments and promises. You can read, correct or delete any of it.',
   },
   {
     title: 'Evidence before eloquence',
-    body: 'Substantive answers cite your documents and confirmed memory, and say plainly what is fact, inference or a hunch.',
-    detail: 'Unsupported claims are downgraded automatically; thin grounding is flagged, never papered over.',
+    body: 'Answers cite your documents and memory, and say what is fact, inference or hunch. Thin grounding is flagged.',
   },
   {
     title: 'People when it matters',
-    body: 'Legal, IP, investment, clinical and wellbeing questions go to people — EIRs, program staff or specialists — with a prepared packet.',
-    detail: 'Packets are prioritised and shared only with the founder’s consent.',
+    body: 'Legal, IP, investment, clinical and wellbeing questions go to people, shared only with your consent.',
   },
 ];
 
 const STEPS: { title: string; body: string }[] = [
   {
     title: 'Bring your context',
-    body: 'Upload pitch notes, interview summaries and plans. They are indexed privately for your venture only.',
+    body: 'Upload notes, interviews and plans, kept private to your venture.',
   },
   {
     title: 'Talk it through',
-    body: 'Type or call. Your vEIR diagnoses, challenges, teaches or rehearses with you, one sharp question at a time.',
+    body: 'Type or call. One sharp question at a time.',
   },
   {
     title: 'Check what it remembers',
-    body: 'Read what your vEIR keeps, correct anything that is off, and delete what should not be there.',
+    body: 'Read, correct or delete anything it keeps.',
   },
   {
     title: 'Bring in a human',
-    body: 'When judgment, risk or expertise calls for it, hand off to the right person with the context they need.',
+    body: 'Hand off to the right person, with the context.',
   },
 ];
 
@@ -60,15 +56,15 @@ const PRINCIPLES: { title: string; body: string }[] = [
   },
   {
     title: 'Venture-private by default',
-    body: 'Each venture is isolated in the application and in the database. Program views use aggregates only.',
+    body: 'Each venture is isolated. Program views use aggregates only.',
   },
   {
     title: 'Human authority',
-    body: 'Program staff can pause a vEIR for one venture, or everywhere, instantly.',
+    body: 'Staff can pause a vEIR for one venture, or everywhere, at once.',
   },
   {
     title: 'Accessible by design',
-    body: 'Built to WCAG 2.2 AA: full keyboard use, screen-reader support, visible focus and reduced motion.',
+    body: 'WCAG 2.2 AA: keyboard, screen readers, visible focus, reduced motion.',
   },
 ];
 
@@ -162,8 +158,7 @@ function LandingPage() {
               </h1>
               <p className="mt-8 max-w-[56ch] text-[1.0625rem] leading-relaxed text-muted-foreground">
                 Chat or call your <span className="text-foreground">vEIR</span>: an AI mentor built, with
-                consent, from an entrepreneur-in-residence’s approved doctrine and style. It remembers your
-                venture, cites your documents and brings in a person when it matters.
+                consent, from an entrepreneur-in-residence’s approved doctrine and style.
               </p>
               <div className="mt-10 flex flex-wrap items-center gap-3">
                 {primaryCta}
@@ -190,7 +185,6 @@ function LandingPage() {
                   <p className="tabular font-mono text-caption text-muted-foreground">0{index + 1}</p>
                   <h3 className="mt-3 text-subheading font-semibold">{pillar.title}</h3>
                   <p className="mt-3 text-body text-muted-foreground">{pillar.body}</p>
-                  <p className="mt-4 text-small text-muted-foreground">{pillar.detail}</p>
                 </li>
               ))}
             </ul>
@@ -250,9 +244,7 @@ function LandingPage() {
               <h2 id="cta-title" className="font-serif text-heading font-normal">
                 Have an access code?
               </h2>
-              <p className="mt-2 text-muted-foreground">
-                Your program lead issues one per person. It’s shown once.
-              </p>
+              <p className="mt-2 text-muted-foreground">Ask your program lead for one.</p>
             </div>
             {primaryCta}
           </div>
@@ -262,7 +254,7 @@ function LandingPage() {
       <footer className="border-t border-border">
         <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-8 text-small text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <BrandWordmark className="text-sm text-foreground" />
-          <p>All ventures, people and documents in this environment are synthetic.</p>
+          <p>All data here is synthetic.</p>
         </div>
       </footer>
     </div>

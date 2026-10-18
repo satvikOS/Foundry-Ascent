@@ -90,7 +90,7 @@ describe('TestBenchTab', () => {
     await waitFor(() => {
       expect(disclosure).toHaveTextContent(DRAFT.disclosureText);
     });
-    expect(screen.getByText(/Nothing here is saved, no founder sees it/)).toBeInTheDocument();
+    expect(screen.getByText(/Nothing here is saved or seen by a founder/)).toBeInTheDocument();
 
     await ask(user, 'How should I test pricing?');
     expect(await screen.findByText(/Start with ten interviews/)).toBeInTheDocument();

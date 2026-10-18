@@ -53,7 +53,7 @@ describe('escalationTimeline', () => {
       'acknowledged:upcoming',
       'resolved:upcoming',
     ]);
-    expect(escalationTimeline(waiting)[2]?.detail).toBe('Waiting for the program team to assign someone.');
+    expect(escalationTimeline(waiting)[2]?.detail).toBe('Waiting for the program team.');
     expect(needsFounderConsent(waiting)).toBe(false);
     expect(needsFounderConsent(escalation())).toBe(true);
     expect(needsFounderConsent(escalation({ status: 'draft' }))).toBe(true);

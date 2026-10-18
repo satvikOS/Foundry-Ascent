@@ -36,7 +36,6 @@ import { MEMORY_TYPE_LABELS, VISIBILITY_LABELS } from '@/lib/labels';
 import { useFullMemory } from '@/lib/api/hooks/memory';
 import { SelectField, type SelectFieldOption } from '@/components/ui/select-field';
 import { reviewFailure, useMemoryReview } from '@/features/knowledge/review-api';
-import { sentenceStart, useVeirName } from '@/features/venture/veir-name';
 
 import { useCreateVentureMemory, useMemoryActions } from './api';
 
@@ -204,7 +203,7 @@ export function CorrectMemoryDialog({
         <form onSubmit={(e) => void onSubmit(e)} noValidate className="grid gap-4">
           <DialogHeader>
             <DialogTitle>Edit memory</DialogTitle>
-            <DialogDescription>Saved as a new version; the old one stays in the history.</DialogDescription>
+            <DialogDescription>Saved as a new version.</DialogDescription>
           </DialogHeader>
           {formError ? (
             <Alert variant="destructive" live="alert">
@@ -214,7 +213,7 @@ export function CorrectMemoryDialog({
           <Field label="Title" required error={formState.errors.title?.message}>
             <Input {...register('title')} maxLength={200} autoComplete="off" />
           </Field>
-          <Field label="What should be remembered" required error={formState.errors.content?.message}>
+          <Field label="What to remember" required error={formState.errors.content?.message}>
             <Textarea {...register('content')} minRows={4} maxRows={12} maxLength={8000} />
           </Field>
           <Controller
@@ -230,16 +229,8 @@ export function CorrectMemoryDialog({
               </Field>
             )}
           />
-          <Field
-            label="Reason (optional)"
-            description="Shown in the version history."
-            error={formState.errors.reason?.message}
-          >
-            <Input
-              {...register('reason')}
-              maxLength={500}
-              placeholder="e.g. Updated after the second interview round"
-            />
+          <Field label="Reason (optional)" error={formState.errors.reason?.message}>
+            <Input {...register('reason')} maxLength={500} />
           </Field>
           <DialogFooter>
             <Button
@@ -282,7 +273,6 @@ export function ConfirmDeleteMemoryDialog({
   onDone?: (() => void) | undefined;
 }) {
   const { run } = useMemoryActions(ventureId);
-  const veirName = useVeirName(ventureId);
   const [reason, setReason] = useState('');
   const reasonId = useId();
   useEffect(() => {
@@ -296,8 +286,7 @@ export function ConfirmDeleteMemoryDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>Forget this?</AlertDialogTitle>
           <AlertDialogDescription>
-            {sentenceStart(veirName)} stops using it at once. Only a record of who forgot it, and when, is
-            kept.
+            It stops being used at once. Only who forgot it, and when, is kept.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="grid gap-2">
@@ -365,7 +354,6 @@ export function CreateMemoryDialog({
   onCreated?: (memory: MemoryObjectView) => void;
 }) {
   const { createMemory, mutation } = useCreateVentureMemory(ventureId);
-  const veirName = useVeirName(ventureId);
   const [formError, setFormError] = useState<string | null>(null);
   const form = useForm<CreateInput, unknown, CreateOutput>({
     resolver: zodResolver(CreateSchema),
@@ -402,9 +390,7 @@ export function CreateMemoryDialog({
         <form onSubmit={(e) => void onSubmit(e)} noValidate className="grid gap-4">
           <DialogHeader>
             <DialogTitle>Add to memory</DialogTitle>
-            <DialogDescription>
-              Add something {veirName} should know. You are recorded as its source.
-            </DialogDescription>
+            <DialogDescription>You’re recorded as its source.</DialogDescription>
           </DialogHeader>
           {formError ? (
             <Alert variant="destructive" live="alert">
@@ -454,8 +440,14 @@ export function CreateMemoryDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" loading={mutation.isPending} loadingText="Adding…">
-              Add to memory
+            {/* The dialog's title says where it goes; the name keeps it for screen readers. */}
+            <Button
+              type="submit"
+              loading={mutation.isPending}
+              loadingText="Adding…"
+              aria-label="Add to memory"
+            >
+              Add
             </Button>
           </DialogFooter>
         </form>

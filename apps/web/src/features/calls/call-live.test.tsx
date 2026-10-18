@@ -85,9 +85,7 @@ describe('callStatusLabel', () => {
     expect(callStatusLabel({ ...LIVE, phase: 'ending' })).toBe('Ending…');
     // Audio the browser keeps silent (no gesture yet, an iOS interruption) is not "Speaking" or "Listening".
     for (const activity of ['speaking', 'listening'] as const) {
-      expect(callStatusLabel({ ...LIVE, activity, audioBlocked: true })).toBe(
-        'Sound is off. Turn on sound to hear replies.',
-      );
+      expect(callStatusLabel({ ...LIVE, activity, audioBlocked: true })).toBe('Sound is off');
     }
   });
 });
@@ -171,9 +169,9 @@ describe('CallLive', () => {
     const line = await screen.findByRole('textbox', { name: 'Reply to Corin · vEIR' });
     expect(line).toHaveFocus();
     // Said once, not three times: the status does not repeat "type".
-    expect(screen.getByText(/microphone is blocked/)).toBeInTheDocument();
+    expect(screen.getByText(/Microphone blocked/)).toBeInTheDocument();
     expect(screen.queryAllByText(/type/i).map((el) => el.textContent)).toEqual([
-      'Your microphone is blocked. Allow it in the browser’s site settings, or type instead.',
+      'Microphone blocked. Allow it in site settings, or type.',
     ]);
     expect(screen.queryByRole('button', { name: 'Mute' })).toBeNull();
     await userEvent.type(line, 'We interviewed twelve clinics{Enter}');
@@ -189,7 +187,7 @@ describe('CallLive', () => {
     });
     const line = await screen.findByRole('textbox', { name: 'Reply to Corin · vEIR' });
     expect(line).toHaveFocus();
-    expect(screen.getByText('Your microphone disconnected. Reconnect it, or type instead.')).toHaveAttribute(
+    expect(screen.getByText('Microphone disconnected. Reconnect it, or type.')).toHaveAttribute(
       'role',
       'status',
     );
@@ -263,7 +261,7 @@ describe('CallLive', () => {
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('You deserve support from a person');
     expect(alert).toHaveTextContent('Call or text 988 any time.');
-    expect(within(alert).getByRole('link', { name: 'View your support request' })).toHaveAttribute(
+    expect(within(alert).getByRole('link', { name: 'View your request for support' })).toHaveAttribute(
       'href',
       `/ain/app/v/${IDS.venture}/help?id=${IDS.escalation}`,
     );
@@ -297,7 +295,7 @@ describe('CallLive', () => {
     const { engine } = renderLive({ audioBlocked: true, activity: 'speaking' });
     const button = await screen.findByRole('button', { name: 'Turn on sound' });
     // The status line is announced: a screen reader hears why nothing can be heard, not "Speaking".
-    expect(screen.getByRole('status')).toHaveTextContent('Sound is off. Turn on sound to hear replies.');
+    expect(screen.getByRole('status')).toHaveTextContent('Sound is off');
     await userEvent.click(button);
     expect(engine.resumeAudio).toHaveBeenCalled();
   });
@@ -315,7 +313,7 @@ describe('CallLive', () => {
       voice: 'captions',
       captions: { veir: 'Twelve is a good start.', founder: null, founderLive: false },
     });
-    expect(await screen.findByText('Spoken replies are unavailable right now.')).toBeInTheDocument();
+    expect(await screen.findByText('Voice replies are unavailable.')).toBeInTheDocument();
     expect(screen.getByText('Replying on screen')).toBeInTheDocument();
   });
 
@@ -327,9 +325,9 @@ describe('CallLive', () => {
       captions: { veir: 'Twelve is a good start.', founder: null, founderLive: false },
     });
     expect(
-      await screen.findByText('Voice is paused for the rest of this call. Replies continue as text.'),
+      await screen.findByText('Voice paused for this call. Replies continue as text.'),
     ).toBeInTheDocument();
-    expect(screen.queryByText('Spoken replies are unavailable right now.')).toBeNull();
+    expect(screen.queryByText('Voice replies are unavailable.')).toBeNull();
     // Not an error: the call goes on.
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.getByRole('button', { name: 'End call' })).toBeInTheDocument();

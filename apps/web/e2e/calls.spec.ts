@@ -318,16 +318,14 @@ test.describe('vEIR calls', () => {
       // and the call says so once.
       if (body.intro) {
         await expect(screen.getByRole('region', { name: 'Captions' })).toContainText(body.intro.text);
-        await expect(screen.getByText('Spoken replies are unavailable right now.')).toBeVisible();
+        await expect(screen.getByText('Voice replies are unavailable.')).toBeVisible();
       }
     });
 
     await test.step('no voice input here: the call continues by typing, and says why', async () => {
       const screen = callScreen(page);
       // No speech-to-text grant in mock mode (and headless browsers often have no microphone either).
-      await expect(
-        screen.getByText(/, so type instead\.$|Allow it in the browser’s site settings/),
-      ).toBeVisible();
+      await expect(screen.getByText(/Type instead\.$|Allow it in site settings/)).toBeVisible();
       await expect(screen.getByRole('textbox', { name: /^Reply to / })).toBeFocused();
       await expect(screen.getByRole('button', { name: 'Mute' })).toHaveCount(0);
       await expectNoSeriousA11yViolations(page, 'call screen');
@@ -375,7 +373,7 @@ test.describe('vEIR calls', () => {
       // The server said once that it has no voice here (501); a production build then shows every reply on
       // screen, asks for no more speech, and never lets the browser read it aloud.
       expect(speech).toHaveLength(1);
-      await expect(screen.getByText('Spoken replies are unavailable right now.')).toBeVisible();
+      await expect(screen.getByText('Voice replies are unavailable.')).toBeVisible();
       expect(await browserSpeechRequests(page)).toBe(0);
     });
 
@@ -412,9 +410,7 @@ test.describe('vEIR calls', () => {
       expect(summary.memoryProposalIds).toEqual([]);
       // The summary says so quietly: one "Remembered" line, and a "Saved to Knowledge" line exactly when the
       // call's turns kept something; nothing to keep or decline.
-      await expect(screen.getByTestId('call-remembered')).toContainText(
-        'will pick up from this call next time',
-      );
+      await expect(screen.getByTestId('call-remembered')).toContainText('Remembered for next time.');
       if ((summary.memoryKeptIds ?? []).length > 0) {
         await expect(screen.getByTestId('memory-saved')).toContainText('Saved to Knowledge:');
       } else {
@@ -498,9 +494,7 @@ test.describe('vEIR calls', () => {
       };
       expect(summary.memoryProposalIds, 'a private call proposes nothing').toEqual([]);
       expect(summary.memoryKeptIds ?? [], 'a private call keeps nothing').toEqual([]);
-      await expect(screen.getByTestId('call-private')).toHaveText(
-        'Private call: nothing from it is remembered.',
-      );
+      await expect(screen.getByTestId('call-private')).toHaveText('Private: nothing is remembered.');
       await expect(screen.getByTestId('memory-saved')).toHaveCount(0);
       await expect(screen.getByTestId('call-remembered')).toHaveCount(0);
       // Nothing in the venture's memory names it, and no summary of it is written.
@@ -706,7 +700,7 @@ test.describe('vEIR calls', () => {
       await tab.goto(`/${TENANT}/app/v/${emberloop.id}?call=1`);
       const screen = callScreen(tab);
       await expect(screen.getByRole('button', { name: 'Start call' })).toBeVisible();
-      await expect(screen.getByRole('status').filter({ hasText: /min left today/ })).toBeVisible();
+      await expect(screen.getByRole('status').filter({ hasText: /left today$/ })).toBeVisible();
       await expect(screen.getByTestId('voice-notice')).toHaveCount(0);
       expect(
         await tab.evaluate(() =>
@@ -779,7 +773,7 @@ test.describe('vEIR calls', () => {
     const moved = tab.waitForRequest(
       (request) => request.url().endsWith(`/sessions/${sessionId}/calls`) && request.method() === 'POST',
     );
-    await screen.getByRole('button', { name: 'Move the call here' }).click();
+    await screen.getByRole('button', { name: 'Move here, ending the other call' }).click();
     expect((await moved).postDataJSON()).toMatchObject({ replace: true });
     await expect(screen.getByRole('textbox', { name: /^Reply to / })).toBeFocused();
     await screen.getByRole('button', { name: 'End call' }).click();
@@ -1016,7 +1010,7 @@ test.describe('vEIR calls', () => {
       const turnOn = bar.getByRole('button', { name: 'Turn on sound' });
       await expect(turnOn).toBeVisible();
       await expect(bar).toContainText('Sound is off');
-      await expect(bar.getByRole('status')).toHaveText('Sound is off. Turn on sound to hear replies.');
+      await expect(bar.getByRole('status')).toHaveText('Sound is off.');
       // The vEIR keeps its badge next to its name.
       await expect(bar.locator('[data-slot="veir-badge"]')).toHaveText('vEIR');
       await turnOn.click();

@@ -7,7 +7,7 @@ import { PrivacyChoice, type ConversationPrivacy } from './privacy-choice';
 
 function Choice() {
   const [value, setValue] = useState<ConversationPrivacy>('standard');
-  return <PrivacyChoice value={value} onChange={setValue} veirName="Corin's vEIR" />;
+  return <PrivacyChoice value={value} onChange={setValue} />;
 }
 
 /** The visible pill around a radio: what a sighted person reads the choice from. */
@@ -32,8 +32,6 @@ describe('PrivacyChoice', () => {
     await userEvent.click(screen.getByRole('radio', { name: 'Private, a one-off' }));
     expect(pill('Private, a one-off')).toHaveClass('bg-foreground', 'text-background');
     expect(pill('Remember this conversation')).not.toHaveClass('bg-foreground');
-    expect(group).toHaveAccessibleDescription(
-      'A one-off: nothing is remembered, and it’s erased when it ends.',
-    );
+    expect(group).toHaveAccessibleDescription('Not remembered. Erased when it ends.');
   });
 });
