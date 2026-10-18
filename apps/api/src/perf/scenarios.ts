@@ -299,12 +299,24 @@ export async function runScenario(
     readonly turnGapMs?: number;
   },
 ): Promise<ScenarioResult> {
-  const gap = async (): Promise<void> => {
-    if ((options.turnGapMs ?? 0) > 0) await new Promise((resolve) => setTimeout(resolve, options.turnGapMs));
-  };
   const turns: TurnSample[] = [];
   const requests: RequestSample[] = [];
   const cookie = await rig.signIn(rig.founderId);
+  /** The pause between turns; on a call, the browser's heartbeats keep the call alive through it. */
+  const gap = async (callId?: string): Promise<void> => {
+    let left = options.turnGapMs ?? 0;
+    while (left > 0) {
+      if (callId !== undefined) {
+        await rig.request(`/calls/${callId}/heartbeat`, {
+          body: { state: 'listening', micOpenSeconds: 0 },
+          cookie,
+        });
+      }
+      const step = Math.min(left, 5_000);
+      await new Promise((resolve) => setTimeout(resolve, step));
+      left -= step;
+    }
+  };
 
   requests.push((await timed(rig, 'me', '/me', { cookie })).sample);
   requests.push((await timed(rig, 'venture', `/ventures/${rig.ventureId}`, { cookie })).sample);
@@ -361,7 +373,7 @@ export async function runScenario(
       requests.push(intro.sample);
     }
     for (let i = 0; i < options.voiceTurns; i += 1) {
-      await gap();
+      await gap(started.call.id);
       turns.push(
         await turn(rig, {
           cookie,
