@@ -168,8 +168,11 @@ class FakeFoundryApi:
         intro: str | None = None,
         intro_for: Callable[[FakeFoundryApi, dict[str, Any]], str] | None = None,
         memory_lab: bool = False,
+        founder_disclosure: bool = True,
     ) -> None:
         self.responder = responder
+        # False: a server from before the presence policy, which reports no welcome and no coach kind (G5).
+        self.founder_disclosure = founder_disclosure
         # A fifth, unseeded synthetic venture for remembered conversations (``--memory-venture memorylab``).
         self.memory_lab = memory_lab
         # The vEIR notebook of each venture (one persona each): what distillation writes and deletion erases.
@@ -408,6 +411,7 @@ class FakeFoundryApi:
             "assignedVentureIds": [],
             "disclosure": DISCLOSURE,
             "aiEnabled": True,
+            **({"veirWelcomeAcknowledgedAt": None} if self.founder_disclosure else {}),
         }
 
     def _role_in(self, p: Principal, venture_id: str) -> str | None:
@@ -430,7 +434,20 @@ class FakeFoundryApi:
             "cohort": None,
             "classification": "synthetic",
             "currentGoal": None,
-            "persona": {"name": v.persona, "disclosure": VEIR_DISCLOSURES[v.persona]},
+            "persona": {
+                "name": v.persona,
+                "disclosure": VEIR_DISCLOSURES[v.persona],
+                **(
+                    {
+                        "kind": "eir_persona",
+                        "eirFirstName": v.persona.split("'")[0],
+                        "firstPerson": True,
+                        "eirSeesWork": True,
+                    }
+                    if self.founder_disclosure
+                    else {}
+                ),
+            },
             "assignedEir": {"id": eir.id, "displayName": eir.name, "synthetic": True},
             "createdAt": NOW,
         }

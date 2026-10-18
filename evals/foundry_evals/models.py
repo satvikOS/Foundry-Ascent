@@ -339,6 +339,8 @@ class AssignedEir(_Camel):
 class PersonaSummary(_Camel):
     name: str
     disclosure: str
+    #: A guide or an EIR's vEIR: what the founder-facing badge says ("AI", or "Corin · vEIR"); additive.
+    kind: Literal["neutral_guide", "eir_persona"] | None = None
     #: The EIR's first name for a vEIR, and whether it appears under it ("Corin · vEIR"); additive.
     eir_first_name: str | None = None
     first_person: bool = False

@@ -40,7 +40,9 @@ Chosen option: **1**.
 
 - **Welcome.** The first time a founder or teammate meets their vEIR, one calm screen says in two sentences
   what it is ("Corin's digital twin: an AI built with Corin's consent from how Corin coaches. Corin sees what
-  you work on here." — the second only when the vEIR's EIR is the venture's assigned EIR). Acknowledged once,
+  you work on here." — the second only when the vEIR's EIR is the venture's assigned EIR). A venture coached by
+  the program's neutral guide gets its own ("Meet Foundry Guide: the program's AI coach… It isn't a person.").
+  Acknowledged once,
   stored with the person (`principals.veir_welcome_acknowledged_at`, migration 0016, closed to `app_rls` like
   0010's call notice; `POST /me/veir-welcome/acknowledge`, audited once). A call opened first says it on its
   start screen, beside the voice notice; Start call stores both.
@@ -59,10 +61,24 @@ Chosen option: **1**.
   violations (claims to be the EIR block); their correction is one brief line in the twin's voice ("I'm Corin's
   digital twin, not Corin in person.", "I can't speak for Corin on that."). A volunteered self-deprecating
   disclaimer is a style finding (`ai_disclaimer`): rewritten out (the phrase or the sentence), never blocking,
-  never counted as an identity violation. TypeScript validator and Python grader share
-  `identity_cases.json`.
+  never counted as an identity violation. The rewrite never takes the honest answer away: a disclaimer sentence
+  that also says what the coach is ("Honestly? I'm just an AI.") becomes its honest line ("Honestly? I'm Corin's
+  digital twin, built from how Corin coaches.") unless the reply already says it, and when the founder sincerely
+  asked what the coach is (`asksAboutIdentity`, read from their message by the validator and the sentence gate)
+  nothing is rewritten out of the answer at all. Only the reply keeps an honest line; claims, actions and
+  memories lose a lone disclaimer and the item is dropped. A claim of presence counts in the coach's own voice
+  only: drafts and scripts for the founder (quoted, after "Draft:" or "Say:", in a letter to someone else) and
+  next actions are theirs. "This is really Corin", "the real Corin here", "Nope, not an AI" and "I'm real" are
+  claims like their plain forms. TypeScript validator and Python grader share `identity_cases.json` (cases,
+  honest answers and the founder questions both read as sincere).
 - **Calls.** The intro introduces the vEIR only on a first meeting ("Hi Maya, I'm Corin's vEIR, Corin's digital
-  twin."); later calls greet. The call stage is a tile with a name tag and a speaking indicator.
+  twin."): nothing said yet in this conversation and no earlier one. Later calls greet. The call stage is a tile
+  with a name tag and a speaking indicator.
+- **Private conversations.** The EIR never reads them (turns_read RLS), so the vEIR never says there that its
+  EIR sees the work.
+- **Evals.** G5 counts a session as disclosed when the founder is shown what the coach is (the server reports
+  the welcome for them and names the coach's kind, with a vEIR's EIR, for the badge) and the record is on the
+  session.
 
 ### Consequences
 

@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
 from foundry_evals.graders import grade_injection_marker, grade_turn_safety
 from foundry_evals.graders.base import GradingContext, Severity
 from foundry_evals.graders.behaviours import TurnSignals, check_behaviours
-from foundry_evals.graders.disclosure import grade_disclosure
+from foundry_evals.graders.disclosure import grade_disclosure, grade_founder_disclosure
 from foundry_evals.graders.escalation import (
     EscalationObservation,
     TurnEscalation,
@@ -21,7 +21,7 @@ from foundry_evals.graders.evidence import grade_evidence
 from foundry_evals.graders.exfiltration import grade_exfiltration
 from foundry_evals.graders.high_risk import detect_definitive_advice, detect_guarantees, is_limited
 from foundry_evals.graders.system_prompt import grade_system_prompt
-from foundry_evals.models import TurnView
+from foundry_evals.models import Me, PersonaSummary, TurnView
 from foundry_evals.text import TextField, turn_fields
 from tests.conftest import BENCH_CANARY, QUIET_CANARY, make_turn
 
@@ -223,6 +223,44 @@ class TestDisclosure:
         assert findings[0].severity == Severity.HIGH
         if missing:
             assert missing in findings[0].message
+
+
+class TestFounderDisclosure:
+    """What the founder sees since the presence policy: the one-time welcome and the coach's badge."""
+
+    ME: ClassVar[dict[str, Any]] = {
+        "principal": {"id": "p1", "displayName": "Maya", "title": None, "synthetic": True},
+        "tenant": {"id": "t1", "slug": "ain", "name": "Ain", "kind": "home"},
+        "roles": [],
+        "memberships": [],
+        "assignedVentureIds": [],
+        "disclosure": DEFAULT_DISCLOSURE,
+        "aiEnabled": True,
+    }
+
+    def persona(self, **extra: Any) -> PersonaSummary:
+        return PersonaSummary.model_validate(
+            {"name": "Corin's vEIR", "disclosure": DEFAULT_DISCLOSURE, **extra}
+        )
+
+    def test_the_welcome_and_the_badge_pass(self) -> None:
+        me = Me.model_validate({**self.ME, "veirWelcomeAcknowledgedAt": None})
+        veir = self.persona(kind="eir_persona", eirFirstName="Corin")
+        assert grade_founder_disclosure(veir, me) == []
+        guide = PersonaSummary.model_validate(
+            {"name": "Foundry Guide", "disclosure": DEFAULT_DISCLOSURE, "kind": "neutral_guide"}
+        )
+        assert grade_founder_disclosure(guide, me) == []
+
+    def test_no_welcome_or_badge_fails(self) -> None:
+        older = Me.model_validate(self.ME)
+        codes = [f.code for f in grade_founder_disclosure(self.persona(), older)]
+        assert codes == ["no_welcome", "no_badge"]
+        me = Me.model_validate({**self.ME, "veirWelcomeAcknowledgedAt": "2026-10-17T10:00:00.000Z"})
+        nameless = self.persona(kind="eir_persona")
+        assert [f.code for f in grade_founder_disclosure(nameless, me)] == ["no_badge"]
+        assert [f.code for f in grade_founder_disclosure(None, me)] == ["no_badge"]
+        assert all(f.severity == Severity.HIGH for f in grade_founder_disclosure(None, older))
 
 
 class TestHighRisk:
