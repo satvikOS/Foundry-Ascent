@@ -17,10 +17,13 @@ import {
   LEFT_OFF_EXCHANGES,
   continuityOpener,
   relativeWhen,
+  subjectOf,
   threadOpener,
+  threadSubject,
   type LeftOffConversationData,
   type LeftOffData,
   type LeftOffThreads,
+  type OpenerSubject,
 } from './continuity-prompt.js';
 import { addressFounder, type OpenerPeople } from './opener-topic.js';
 
@@ -262,6 +265,11 @@ export interface ChosenOpener {
   /** The conversation it was drawn from (deleting it erases this copy); null when a person wrote it. */
   readonly sourceSessionId: string | null;
   readonly byPerson: boolean;
+  /**
+   * What it is about, when it was phrased around a thread or the last conversation's subject (a call's greeting is
+   * phrased around it in one sentence); null for a stored sentence or a line that names nothing.
+   */
+  readonly subject?: OpenerSubject | null;
 }
 
 /** Exchanges read to tell whether a stored opener only repeats a question the vEIR already asked. */
@@ -282,7 +290,9 @@ const OPENER_ECHO_EXCHANGES = 3;
  *    (orchestrator/continuity-prompt.ts);
  * 4. an older notebook opener.
  * Every distilled line is said to the person (`addressFounder`: "maya will get" becomes "you will get"; a line still
- * in the third person is not said), with the team's names in their real case (`team`; LAB-U2).
+ * in the third person is not said), with the team's names in their real case (`team`; LAB-U2). A notebook opener
+ * drawn from a teammate's conversation is never said to the person as theirs ("Last time you planned…" was a
+ * teammate's plan, MX-0005): it is skipped, and the person's own latest conversation, or nothing, opens.
  * Phrasing follows the latest conversation, the person and how many conversations they opened since it, so each
  * new conversation opens differently; a preview (no conversation yet) says what the next one opens with, and a
  * call starting in that conversation (`sessionId`, left out of the count) says it too. Every line must pass the
@@ -331,6 +341,9 @@ export async function chooseOpener(
   });
   const latest = last?.conversations[0] ?? null;
   const found = (opener: ChosenOpener | null) => ({ opener, latest });
+  // Drawn from a conversation someone else had (a teammate's plan): never said to this person as theirs.
+  const fromSomeoneElse =
+    source != null && (await sessionsRepo.getSession(tx, source))?.startedBy !== args.principalId;
   // A person wrote it, or rewrote it since the vEIR last wrote the notebook: they chose these words.
   const chosen =
     stored !== null &&
@@ -338,7 +351,7 @@ export async function chooseOpener(
       (
         await notebooksRepo.getNotebookMarks(tx, { ventureId: args.ventureId, personaId: args.persona.id })
       ).personEdits.includes(notebooksRepo.OPENER_EDIT));
-  if (stored !== null && chosen)
+  if (stored !== null && chosen && !fromSomeoneElse)
     return found({ text: stored, sourceSessionId: source ?? null, byPerson: source === null });
   // Conversations the person opened since the latest one without saying anything: each opens differently, and
   // the stored line, once said in one of them, is not said again word for word.
@@ -359,8 +372,13 @@ export async function chooseOpener(
     (latest.withThisVeir &&
       notebook?.updatedAt != null &&
       Date.parse(notebook.updatedAt) > Date.parse(latest.lastActivityAt));
-  const drawn = (text: string): ChosenOpener => ({ text, sourceSessionId: source ?? null, byPerson: false });
-  if (stored !== null && current) {
+  const drawn = (text: string, subject: OpenerSubject | null = null): ChosenOpener => ({
+    text,
+    sourceSessionId: source ?? null,
+    byPerson: false,
+    subject,
+  });
+  if (stored !== null && current && !fromSomeoneElse) {
     const topic = notebook?.content.nextTopic ?? null;
     const around =
       topic === null
@@ -376,19 +394,26 @@ export async function chooseOpener(
             }),
             guards,
           );
-    if (around !== null) return found(drawn(around));
+    const thread = topic === null ? null : threadSubject(topic, people);
+    if (around !== null)
+      return found(drawn(around, thread === null ? null : { kind: 'thread', text: thread }));
     if (since.withOpener === 0 && !(latest !== null && (await askedAtTheEnd(tx, latest.sessionId, stored)))) {
       return found(drawn(stored));
     }
   }
   if (latest !== null) {
     const lines = continuityOpener(latest, { now: args.now, seed, people });
-    for (const candidate of [lines.withTopic, lines.generic]) {
+    const subject = latest.withThisVeir ? subjectOf(latest, people) : null;
+    for (const [candidate, about] of [
+      [lines.withTopic, subject],
+      [lines.generic, null],
+    ] as const) {
       const text = candidate === null ? null : validatedOpener(candidate, guards);
-      if (text !== null) return found({ text, sourceSessionId: latest.sessionId, byPerson: false });
+      if (text !== null)
+        return found({ text, sourceSessionId: latest.sessionId, byPerson: false, subject: about });
     }
   }
-  return found(stored === null ? null : drawn(stored));
+  return found(stored === null || fromSomeoneElse ? null : drawn(stored));
 }
 
 /** Whether `opener` repeats a question the vEIR asked in one of the last answers of the conversation. */

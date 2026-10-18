@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { REPEATED_GREETING_FALLBACK } from './greeting.js';
 import { sanitizeMarkdown } from './markdown.js';
 import {
   SentenceGate,
@@ -291,6 +292,37 @@ describe('SentenceGate', () => {
           .push('Okay. ')
           .units.map((u) => u.text),
       ).toEqual(['Okay.']);
+    });
+  });
+
+  describe('the first reply after an intro that said hello (wave 7)', () => {
+    const greeted = { greeted: true, founderName: 'Mina', addressees: ['Mina Castellane'] };
+
+    it('never shows or says a greeting again, typed or spoken', () => {
+      for (const options of [
+        greeted,
+        { ...greeted, spoken: true, spokenWordBudget: 70, maxUnitChars: 280 },
+      ]) {
+        for (const chunks of chunkings('Hello Mina, nice to hear from you. How did the interviews go?')) {
+          const units = run(gate(options), chunks).units;
+          expect(joined(units)).toBe('How did the interviews go?');
+          expect(units.map((u) => u.spoken).join(' ')).not.toMatch(/hello|nice to hear/i);
+        }
+      }
+      expect(joined(run(gate(greeted), ['Hi Mina, five interviews is a solid start.']).units)).toBe(
+        'Five interviews is a solid start.',
+      );
+    });
+
+    it('says a short hand-back when the reply was only the greeting', () => {
+      const { units } = run(gate({ ...greeted, spoken: true }), ['Hello Mina, nice to hear from you.']);
+      expect(units).toEqual([{ text: REPEATED_GREETING_FALLBACK, spoken: REPEATED_GREETING_FALLBACK }]);
+    });
+
+    it('greets as written when the opening line did not say hello', () => {
+      expect(joined(run(gate({ founderName: 'Mina' }), ['Hello Mina, nice to hear from you.']).units)).toBe(
+        'Hello Mina, nice to hear from you.',
+      );
     });
   });
 

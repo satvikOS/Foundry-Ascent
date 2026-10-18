@@ -1172,6 +1172,57 @@ describe('spoken turns', () => {
   });
 });
 
+describe('the first reply after an intro that said hello (wave 7)', () => {
+  async function openedWith(opener: string): Promise<string> {
+    const session = await h.core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+    await h.t.db.system((sx) =>
+      sx.query('UPDATE coaching_sessions SET opener = :o WHERE id = :id', {
+        o: p.text(opener),
+        id: p.uuid(session.id),
+      }),
+    );
+    return session.id;
+  }
+
+  it('never greets again, typed or spoken; a reply that was only the greeting hands back instead', async () => {
+    for (const channel of ['text', 'voice'] as const) {
+      for (const [reply, expected] of [
+        ['Hello Maya, nice to hear from you. How did the interviews go?', 'How did the interviews go?'],
+        ['Hi Maya, good to see you.', 'Whenever you’re ready.'],
+      ] as const) {
+        const gateway = new MockModelGateway({ streamDelayMs: 0, streamFixture: () => reply });
+        const { orchestrator } = coreWith(gateway);
+        const sessionId = await openedWith('Hi Maya, how did the five library-staff interviews go?');
+        const { events, outcome } = await run(orchestrator, sessionId, {
+          text: 'Hi again!',
+          mode: 'coach',
+          ...(channel === 'voice' ? { channel, callId: CALL_ID } : {}),
+        });
+        expect(outcome.status).toBe('completed');
+        const turn = completed(events);
+        expect(turn.response?.answer).toBe(expected);
+        for (const d of deltas(events))
+          expect(d.text).not.toMatch(/\b(?:hello|hi)\b|good to see|nice to hear/i);
+        for (const u of speechUnits(events))
+          expect(u.text).not.toMatch(/\b(?:hello|hi)\b|good to see|nice to hear/i);
+      }
+    }
+  });
+
+  it('a chat opener that only welcomed them back leaves a hello its hello back', async () => {
+    const gateway = new MockModelGateway({
+      streamDelayMs: 0,
+      streamFixture: () => 'Hi Maya, good to see you.',
+    });
+    const { orchestrator } = coreWith(gateway);
+    const sessionId = await openedWith(
+      'Good to have you back. Last time, we talked about pricing. Want to pick that up?',
+    );
+    const { events } = await run(orchestrator, sessionId, { text: 'Hi!', mode: 'coach' });
+    expect(completed(events).response?.answer).toBe('Hi Maya, good to see you.');
+  });
+});
+
 describe('what a turn kept is settled after the response (LAB-P1)', () => {
   /** The mock model, holding every embedding after the first (the turn's query) until `release`. */
   class HeldMemoryEmbeds extends MockModelGateway {

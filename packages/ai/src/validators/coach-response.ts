@@ -29,6 +29,7 @@ import {
   type IdentityViolationKind,
 } from './identity.js';
 import { sanitizeMarkdown, sanitizePlainText } from './markdown.js';
+import { REPEATED_GREETING_FALLBACK, withoutRepeatedGreeting } from './greeting.js';
 import { cutMetaNarration } from './meta-narration.js';
 import { SPOKEN_MAX_CHARS, SPOKEN_MAX_WORDS, clampWords, deriveSpoken, toSpeakable } from './speech.js';
 
@@ -104,6 +105,12 @@ export interface ValidateCoachResponseOptions {
    * about…") is narration and is cut like "The founder says…" (LAB-M1b).
    */
   founderName?: string | null;
+  /**
+   * The conversation's opening line already said hello (a call's intro) and this is the first reply: a greeting the
+   * answer and the spoken reply open with is left out (`repeated_greeting_removed`), and a reply that was only that
+   * greeting becomes a short hand-back.
+   */
+  greeted?: boolean;
   /**
    * The founder's message this response answers. When it sincerely asks who or what the coach is ("are you
    * real?"), the honest answer stands as written: no volunteered disclaimer is rewritten out of the reply.
@@ -377,6 +384,18 @@ export function validateCoachResponse(
     r.answer = narration.text;
     notes.push(`meta_narration_cut:${narration.cue ?? 'unknown'}`);
   }
+  // A call's intro already greeted them: the first reply does not greet again.
+  const greetingNames = [options.founderName ?? '', ...(options.addressees ?? [])].filter(
+    (n) => n.trim() !== '',
+  );
+  const regreeting = (text: string): string => {
+    if (options.greeted !== true) return text;
+    const out = withoutRepeatedGreeting(text, greetingNames);
+    if (!out.removed) return text;
+    if (!notes.includes('repeated_greeting_removed')) notes.push('repeated_greeting_removed');
+    return out.text.trim() === '' ? REPEATED_GREETING_FALLBACK : out.text;
+  };
+  r.answer = regreeting(r.answer);
   if (md.htmlRemoved > 0) notes.push(`html_removed:${md.htmlRemoved}`);
   if (md.unsafeLinksRemoved > 0) notes.push(`unsafe_links_removed:${md.unsafeLinksRemoved}`);
   if (md.imagesRemoved > 0) notes.push(`images_removed:${md.imagesRemoved}`);
@@ -455,7 +474,7 @@ export function validateCoachResponse(
   // Spoken text: plain sentences on a call (citation keys and Markdown removed), never on typed turns.
   // Identity is checked on the model's own lines first (a sign-off stands on its own line there) and
   // again on the flattened text in step 6, where "Best,\nCorin" has become "Best, Corin.".
-  let modelSpoken = typeof r.spoken === 'string' ? r.spoken : '';
+  let modelSpoken = typeof r.spoken === 'string' && r.spoken.trim() !== '' ? regreeting(r.spoken) : '';
   if (channel === 'voice' && modelSpoken.trim() !== '') {
     // Never said aloud: the spoken reply up to any narration (all of it narration: derived from the answer).
     const spokenNarration = cutMetaNarration(modelSpoken, names);

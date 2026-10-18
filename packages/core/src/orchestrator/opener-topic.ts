@@ -1,4 +1,4 @@
-import { contentTokens, founderMoves, isEverydayWord } from '@foundry/ai';
+import { contentTokens, founderMoves, isEverydayWord, tidyFounderWords } from '@foundry/ai';
 
 /**
  * What an opening line says the last conversation was about, and how it speaks of the founder.
@@ -15,6 +15,10 @@ import { contentTokens, founderMoves, isEverydayWord } from '@foundry/ai';
  * distilled line an opener uses is addressed to the founder first ({@link addressFounder}): their name or "the
  * founder" becomes "you"/"your", other people's names get their real case back, and a line that still speaks of
  * the founder in the third person is dropped.
+ *
+ * Wave 7 (the w6 integrator's list): openers echoed the founder's own chat shorthand and lower case ("…at the bus
+ * station this week fr", "…call facilities monday"). What an opener says of them is tidied the way it would be
+ * written (`tidyFounderWords`: slang dropped, shorthand spelt out, days and months capitalised).
  */
 
 /** The people an opener may speak of: the founder (said as "you") and their team (names in their real case). */
@@ -104,7 +108,7 @@ export function addressFounder(text: string, people: OpenerPeople): string | nul
       out = out.replace(new RegExp(`\\b${escapeRegExp(part)}\\b`, 'giu'), part);
     }
   }
-  return out;
+  return tidyFounderWords(out);
 }
 
 /**
@@ -398,5 +402,5 @@ export function topicOf(line: string): LineTopic | null {
     if (found !== null && found.text.length <= 70 && (best === null || found.score > best.score))
       best = found;
   }
-  return best;
+  return best === null ? null : { ...best, text: tidyFounderWords(best.text) };
 }

@@ -207,6 +207,11 @@ export {
   type NarrationNames,
 } from './validators/meta-narration.js';
 export {
+  REPEATED_GREETING_FALLBACK,
+  openerSaidHello,
+  withoutRepeatedGreeting,
+} from './validators/greeting.js';
+export {
   SentenceGate,
   findUnitEnd,
   holdBackFor,

@@ -45,3 +45,4 @@ export {
 } from './conversation-state.js';
 export type { ConversationState, ConversationThread, FounderMove, StateTurn } from './conversation-state.js';
 export { COACH_RESPONSE_SCHEMA_NAME, DEFAULT_PERSONA_NAME, POLICY_VERSION } from './version.js';
+export { tidyFounderWords } from './founder-words.js';

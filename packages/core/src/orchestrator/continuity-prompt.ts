@@ -316,12 +316,59 @@ export function midSentence(label: string): string {
   return isEverydayWord(first) ? `${first.toLowerCase()}${text.slice(first.length)}` : text;
 }
 
-/** What the last conversation was about, in the pieces a line is built from. */
-interface Subject {
-  /** `question`: a question the founder asked, summarised ("whether to price per library or per seat"). */
-  readonly kind: 'topics' | 'question';
+/**
+ * What an opening line is about, in the pieces a line is built from: a thread the vEIR noted to come back to
+ * (`thread`: "the five library-staff interviews you planned"), the last conversation's topics (`topics`: "per-library
+ * pricing"), or a question the founder asked there, summarised (`question`: "whether to price per library or per
+ * seat"). Said to the founder, mid-sentence. A call's greeting is phrased around it in one sentence.
+ */
+export interface OpenerSubject {
+  readonly kind: 'thread' | 'topics' | 'question';
   readonly text: string;
 }
+
+/**
+ * What a stored opening sentence is about, read from the shapes openers take ("Last time you planned five
+ * library-staff interviews. How did they go?", "…we left off on the pilot pricing…", "…we talked about
+ * per-library pricing…"), so a call can greet around it in one sentence; null for any other sentence.
+ */
+export function subjectOfOpener(text: string): OpenerSubject | null {
+  const flat = text.replace(/[‘’ʼ]/g, "'").replace(/\s+/g, ' ').trim();
+  const phrase = (raw: string | undefined): string | null => {
+    const cut = (raw ?? '').split(/[.!?;:]|,\s|\s—\s|\s-\s/)[0]?.trim() ?? '';
+    return cut === '' || cut.length > 60 || topicWords(cut).length === 0 ? null : cut;
+  };
+  const planned = /\blast time,? you (?:planned|were going|said you'd|said you would)( to)? (.+)$/i.exec(
+    flat,
+  );
+  if (planned !== null) {
+    const what = phrase(planned[2]);
+    if (what === null) return null;
+    if (planned[1] !== undefined) return { kind: 'thread', text: `your plan to ${what}` };
+    return {
+      kind: 'thread',
+      text: /^(?:\d|one|two|three|four|five|six|seven|eight|nine|ten)\b/i.test(what) ? `the ${what}` : what,
+    };
+  }
+  const left = /\b(?:we left off on|come back to|pick up|we were on)\s+(.+)$/i.exec(flat);
+  if (left !== null) {
+    const what = phrase(left[1]?.replace(/,? or (?:is )?something else.*$/i, ''));
+    return what === null ? null : { kind: 'thread', text: what };
+  }
+  const talked = /\bwe (?:talked|spoke) about\s+(.+)$/i.exec(flat);
+  if (talked !== null) {
+    const what = phrase(talked[1]);
+    if (what === null) return null;
+    return {
+      kind: /^(?:whether|how|what|which|when|where|who)\b/i.test(what) ? 'question' : 'topics',
+      text: what,
+    };
+  }
+  return null;
+}
+
+/** What the last conversation was about (never a thread: see {@link OpenerSubject}). */
+type Subject = OpenerSubject & { readonly kind: 'topics' | 'question' };
 
 /**
  * What the last conversation was about: the digest's topics (one or two, said mid-sentence, addressed to the
@@ -330,7 +377,7 @@ interface Subject {
  * vEIR, thanks and wrap-ups are never a subject, and nothing the founder said is quoted back (LAB-R3). Null when
  * nothing names a topic.
  */
-function subjectOf(
+export function subjectOf(
   c: Pick<LeftOffConversationData, 'digest' | 'title' | 'exchanges'>,
   people: OpenerPeople,
 ): Subject | null {
@@ -426,6 +473,16 @@ export function continuityOpener(
 }
 
 /**
+ * The thread the vEIR noted to come back to (the notebook's next topic) as an opener says it: mid-sentence and to
+ * the founder, or null when it cannot be said (still in the third person, nothing to name, too long).
+ */
+export function threadSubject(topic: string, people: OpenerPeople = { founder: null }): string | null {
+  // Distilled about the founder ("the facility budget numbers maya will get"): said to them, or not at all (LAB-U2).
+  const thread = addressFounder(midSentence(topic).replace(/[.!?]+$/, ''), people);
+  return thread === null || topicWords(thread).length === 0 || thread.length > 120 ? null : thread;
+}
+
+/**
  * The opening line that comes back to a thread the vEIR noted to pick up next time (the notebook's next topic, a
  * short phrase such as "the five library-staff interviews you planned"), phrased afresh for each conversation
  * (`seed`), with when that was when it is known. The thread is said mid-sentence and to the founder (`people`:
@@ -436,12 +493,8 @@ export function threadOpener(
   topic: string,
   options: { readonly seed: string; readonly when?: string | null; readonly people?: OpenerPeople },
 ): string | null {
-  // Distilled about the founder ("the facility budget numbers maya will get"): said to them, or not at all (LAB-U2).
-  const thread = addressFounder(
-    midSentence(topic).replace(/[.!?]+$/, ''),
-    options.people ?? { founder: null },
-  );
-  if (thread === null || topicWords(thread).length === 0 || thread.length > 120) return null;
+  const thread = threadSubject(topic, options.people ?? { founder: null });
+  if (thread === null) return null;
   const seed = seedOf(options.seed);
   const greeting = GREETINGS[seed % GREETINGS.length] ?? GREETINGS[0];
   const last = options.when ? `Last time (${options.when})` : 'Last time';

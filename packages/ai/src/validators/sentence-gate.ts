@@ -14,6 +14,7 @@ import {
   type IdentityViolationKind,
 } from './identity.js';
 import { sanitizeMarkdown } from './markdown.js';
+import { REPEATED_GREETING_FALLBACK, withoutRepeatedGreeting } from './greeting.js';
 import { findMetaNarration, isThinkingAloudOpener, type NarrationNames } from './meta-narration.js';
 import { clampWords, toSpeakable } from './speech.js';
 
@@ -94,6 +95,12 @@ export interface SentenceGateOptions {
    * is narration (LAB-M1b), like "The founder says…".
    */
   founderName?: string | null;
+  /**
+   * The conversation's opening line already said hello (a call's intro, `openerSaidHello`) and this is the first
+   * reply: a greeting it opens with is left out (validators/greeting.ts), and a reply that was only that greeting
+   * becomes a short hand-back.
+   */
+  greeted?: boolean;
   /**
    * The founder's message this reply answers. When it sincerely asks who or what the coach is ("are you real?"),
    * the reply's honest answer stands as written: no disclaimer is rewritten out of it.
@@ -329,6 +336,8 @@ export class SentenceGate {
   #said = '';
   /** The last unit was only a volunteered disclaimer and was dropped: the next one loses a leaning "But". */
   #afterDroppedDisclaimer = false;
+  /** A greeting the opening line already gave was left out of the reply's start (`greeted`). */
+  #droppedGreeting = false;
   /**
    * What the founder's sincere question about the coach asks (`founderText`), or null: then no disclaimer is
    * rewritten out, and the first unit is read as its answer (a bare "Yes!" to "is this really Corin?").
@@ -477,7 +486,19 @@ export class SentenceGate {
         this.#leakCheckedTo = stable.length;
         if (this.#leaks([stable.slice(from)])) return this.#block('cross_venture', units);
       }
-      const rawUnit = this.#raw.slice(this.#cursor, end);
+      let rawUnit = this.#raw.slice(this.#cursor, end);
+      if (this.#options.greeted === true && this.#opening) {
+        // The opening line already said hello: the reply's own greeting is left out (a whole unit, or its start).
+        const greeting = withoutRepeatedGreeting(rawUnit, this.#greetingNames);
+        if (greeting.removed) {
+          this.#droppedGreeting = true;
+          if (greeting.text.trim() === '') {
+            this.#cursor = end;
+            continue;
+          }
+          rawUnit = greeting.text;
+        }
+      }
       if (
         this.#nothingReleased() &&
         isThinkingAloudOpener(rawUnit) &&
@@ -508,17 +529,34 @@ export class SentenceGate {
       if (this.#leaks([this.#shown.slice(-CUMULATIVE_WINDOW_CHARS) + unit.text])) {
         return this.#block('cross_venture', units);
       }
-      if (!this.#withholding && this.#formsRemovedMarkdown(unit.text)) this.#withholding = true;
-      if (this.#withholding) {
-        this.#stats.withheld += 1;
-        if (unit.spoken !== '') units.push({ text: '', spoken: unit.spoken });
-        continue;
-      }
-      this.#shown += unit.text;
-      this.#stats.units += 1;
-      units.push(unit);
+      this.#show(unit, units);
+    }
+    if (this.#ended && this.#droppedGreeting && this.#nothingReleased()) {
+      // The reply was only the greeting the opening line already gave: a short hand-back instead.
+      const unit = this.#process(REPEATED_GREETING_FALLBACK);
+      if (unit !== null && typeof unit !== 'string') this.#show(unit, units);
     }
     return { units, blocked: null, fallback: null, cut: null };
+  }
+
+  /** Shows a checked unit, or withholds it from the preview (still said on a call). */
+  #show(unit: GateUnit, units: GateUnit[]): void {
+    if (!this.#withholding && this.#formsRemovedMarkdown(unit.text)) this.#withholding = true;
+    if (this.#withholding) {
+      this.#stats.withheld += 1;
+      if (unit.spoken !== '') units.push({ text: '', spoken: unit.spoken });
+      return;
+    }
+    this.#shown += unit.text;
+    this.#stats.units += 1;
+    units.push(unit);
+  }
+
+  /** The founder's names a greeting may carry ("Hi Maya"). */
+  get #greetingNames(): string[] {
+    return [this.#options.founderName ?? '', ...(this.#options.addressees ?? [])].filter(
+      (n) => n.trim() !== '',
+    );
   }
 
   /**

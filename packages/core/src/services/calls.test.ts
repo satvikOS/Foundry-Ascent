@@ -21,7 +21,9 @@ import {
   type CallStopCause,
 } from './call-usage.js';
 import {
+  REPEAT_GREETING_MAX_CHARS,
   callIntroText,
+  repeatGreeting,
   callVoiceFor,
   distinctActions,
   greetingName,
@@ -40,6 +42,7 @@ import {
   splitSentences,
 } from './spoken-text.js';
 import { DEFAULT_SPEECH_VOICE } from './voices.js';
+import { subjectOfOpener } from '../orchestrator/continuity-prompt.js';
 
 const CAPS = { maxCallMinutes: 30, dailyCallMinutesPerPrincipal: 60 };
 
@@ -223,20 +226,40 @@ describe('the voice of a call', () => {
 });
 
 describe('the call intro', () => {
-  it('greets by first name like someone already met, then picks up the notebook opener', () => {
+  it('greets someone already met in one sentence of at most 90 characters, the opener in it (wave 7)', () => {
     expect(greetingName('Maya Okafor')).toBe('Maya');
     expect(greetingName('  Ines  ')).toBe('Ines');
     expect(greetingName('[admin] Maya')).toBeNull();
+    const met = {
+      firstName: 'Maya',
+      personaName: "Corin's vEIR",
+      eirFirstName: 'Corin',
+      firstMeeting: false,
+      conversationStarted: false,
+      seed: 'session-1',
+    } as const;
+    // The lab heard 103–114 characters over two sentences ("Hi Mina. Last time you planned to … How did it go?").
     expect(
       callIntroText({
-        firstName: 'Maya',
-        personaName: "Corin's vEIR",
-        eirFirstName: 'Corin',
-        firstMeeting: false,
+        ...met,
         opener: 'Last time you planned five library-staff interviews. How did they go?',
-        conversationStarted: false,
       }),
-    ).toBe('Hi Maya. Last time you planned five library-staff interviews. How did they go?');
+    ).toBe('Hi Maya, last time you planned five library-staff interviews — how did they go?');
+    // Around the opener's subject when it was chosen around one.
+    const thread = callIntroText({
+      ...met,
+      opener:
+        'Welcome back. Last time, we left off on the facilities budget call you planned. Where are things now?',
+      subject: { kind: 'thread', text: 'the facilities budget call you planned' },
+    });
+    expect(thread).toMatch(/^Hi Maya, .*the facilities budget call you planned.*\?$/);
+    const question = callIntroText({
+      ...met,
+      opener:
+        'Good to talk again. Last time, we talked about whether to price per library or per seat. Where did you land on it?',
+      subject: { kind: 'question', text: 'whether to price per library or per seat' },
+    });
+    expect(question).toMatch(/^Hi Maya, .*whether to price per library or per seat\?$/);
     expect(
       callIntroText({
         firstName: null,
@@ -246,7 +269,41 @@ describe('the call intro', () => {
         opener: null,
         conversationStarted: true,
       }),
-    ).toBe('Hi. Where would you like to pick up?');
+    ).toBe('Hi, where would you like to pick up?');
+  });
+
+  it('never makes a repeat greeting longer than one sentence of 90 characters, whatever the opener', () => {
+    const openers = [
+      'Last time you planned to run five more interviews at the bus station this week. How did it go?',
+      'Good to have you back. Last time (about 2 hours ago, on a call), we talked about per-library pricing. Want to pick that up, or is something else on your mind?',
+      'What did the second library say about the seat counts?',
+      'Last time you planned five library-staff interviews about occupancy data. How many have you done, and what did they tell you about the evening peak?',
+      'Shall we look at the pilot budget?',
+    ];
+    for (const opener of openers) {
+      for (const seed of ['a', 'b', 'c', 'd']) {
+        const text = repeatGreeting({
+          firstName: 'Maya',
+          opener,
+          subject: subjectOfOpener(opener),
+          conversationStarted: false,
+          seed,
+        });
+        expect(text.length, text).toBeLessThanOrEqual(REPEAT_GREETING_MAX_CHARS);
+        expect(text.split(/(?<=[.!?])\s+/), text).toHaveLength(1);
+        expect(text).toMatch(/^Hi Maya, /);
+      }
+    }
+    // A long stored opener is greeted around what it is about, not dropped.
+    expect(
+      repeatGreeting({
+        firstName: 'Maya',
+        opener: openers[3] ?? '',
+        subject: subjectOfOpener(openers[3] ?? ''),
+        conversationStarted: false,
+        seed: 'a',
+      }),
+    ).toMatch(/five library-staff interviews/);
   });
 
   it('introduces the vEIR once, on a first meeting, as its EIR’s digital twin (never "an AI coach" again)', () => {

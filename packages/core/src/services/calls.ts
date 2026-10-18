@@ -1,4 +1,4 @@
-import { rewriteIdentity, textsContainOtherVenture, toSpeakable } from '@foundry/ai';
+import { isEverydayWord, rewriteIdentity, textsContainOtherVenture, toSpeakable } from '@foundry/ai';
 import {
   CallHeartbeatRequest,
   EndCallRequest,
@@ -39,6 +39,7 @@ import {
 import { type RequestContext } from '../context.js';
 import { DomainError, fail, parseInput } from '../errors.js';
 import { type DirectoryCache } from '../internal/directory.js';
+import { subjectOfOpener, type OpenerSubject } from '../orchestrator/continuity-prompt.js';
 import { chooseOpener } from '../orchestrator/continuity.js';
 import { type DistillService } from './distill.js';
 import { mentionsEir, personaNameClaimsEir, veirEirName } from '../internal/eir-names.js';
@@ -147,11 +148,99 @@ export function introName(args: {
   return args.personaKind === 'eir_persona' && first !== '' ? `${first}'s vEIR` : 'your vEIR';
 }
 
+/** The longest repeat-call greeting, in characters (about four seconds said; the lab heard 103–114 over two sentences). */
+export const REPEAT_GREETING_MAX_CHARS = 90;
+
+/** A small, stable hash (FNV-1a) choosing a greeting's phrasing per conversation. */
+function seedOf(text: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash;
+}
+
+/** A sentence as it continues one ("Last time you…" → "last time you…"; a name or "I" keeps its capital). */
+function continuing(sentence: string): string {
+  const first = /^\p{L}[\p{L}'’]*/u.exec(sentence)?.[0] ?? '';
+  return first.length > 1 && /^\p{Lu}\p{Ll}/u.test(first) && isEverydayWord(first)
+    ? `${first.toLowerCase()}${sentence.slice(first.length)}`
+    : sentence;
+}
+
+/** The sentences of a short line. */
+function sentencesOf(text: string): string[] {
+  return text
+    .trim()
+    .split(/(?<=[.!?])\s+/)
+    .filter((part) => part !== '');
+}
+
+/**
+ * The greeting of a call with someone the vEIR has met (wave 7): one sentence of at most
+ * {@link REPEAT_GREETING_MAX_CHARS} characters, the name and what the conversation opens with in it ("Hi Maya, how's
+ * the pilot pricing going?"). Phrased around the opener's subject when it has one, else the opener itself as one
+ * sentence ("Hi Maya, last time you planned five interviews — how did they go?"), else an invitation. The phrasing
+ * varies with `seed` (the conversation).
+ */
+export function repeatGreeting(args: {
+  readonly firstName: string | null;
+  readonly opener: string | null;
+  readonly subject?: OpenerSubject | null;
+  readonly conversationStarted: boolean;
+  readonly seed?: string;
+}): string {
+  const hi = args.firstName === null ? 'Hi' : `Hi ${args.firstName}`;
+  const seed = seedOf(args.seed ?? '');
+  const rotate = (lines: readonly string[]): string[] =>
+    lines.map((_, i) => lines[(seed + i) % lines.length] ?? '');
+  const candidates: string[] = [];
+  const subject = args.subject ?? null;
+  if (subject !== null) {
+    const t = subject.text;
+    // "your plan to call facilities": "did you get to call facilities?"
+    const plan = /^your plan to (.+)$/i.exec(t)?.[1];
+    if (subject.kind === 'thread' && plan !== undefined) candidates.push(`${hi}, did you get to ${plan}?`);
+    candidates.push(
+      ...rotate(
+        subject.kind === 'question'
+          ? [`${hi}, where did you land on ${t}?`, `${hi}, any more thoughts on ${t}?`]
+          : subject.kind === 'thread'
+            ? [
+                `${hi}, how did ${t} go?`,
+                `${hi}, where are things with ${t}?`,
+                `${hi}, shall we pick up ${t}?`,
+              ]
+            : [`${hi}, shall we pick up ${t}?`, `${hi}, want to carry on with ${t}?`],
+      ),
+    );
+  }
+  if (args.opener !== null) {
+    const parts = sentencesOf(args.opener);
+    const [first, second] = parts;
+    if (parts.length === 1 && first !== undefined) candidates.push(`${hi}, ${continuing(first)}`);
+    if (parts.length === 2 && first !== undefined && second !== undefined && /[.!]$/.test(first)) {
+      candidates.push(`${hi}, ${continuing(first.replace(/[.!]$/, ''))} — ${continuing(second)}`);
+    }
+  }
+  candidates.push(
+    args.conversationStarted
+      ? `${hi}, where would you like to pick up?`
+      : `${hi}, what would you like to work on?`,
+  );
+  return (
+    candidates.find((line) => line.length <= REPEAT_GREETING_MAX_CHARS && sentencesOf(line).length === 1) ??
+    `${hi}, where would you like to pick up?`
+  );
+}
+
 /**
  * The words a call opens with (plain text), the presence policy: on a first meeting the vEIR introduces itself
- * once ("Hi Maya, I'm Corin's vEIR, Corin's digital twin."; the neutral guide as the program's AI coach); later
- * it just greets, like anyone you have met. Then the conversation's opener on a fresh conversation, or an
- * invitation to continue one already under way. What a vEIR is, the person read in the welcome.
+ * once ("Hi Maya, I'm Corin's vEIR, Corin's digital twin."; the neutral guide as the program's AI coach), then the
+ * conversation's opener on a fresh conversation, or an invitation to continue one already under way. Later it
+ * just greets, like anyone you have met, in one sentence with the opener in it ({@link repeatGreeting}). What a
+ * vEIR is, the person read in the welcome.
  */
 export function callIntroText(args: {
   readonly firstName: string | null;
@@ -161,12 +250,24 @@ export function callIntroText(args: {
   /** The person has never had a conversation with this vEIR in the venture. */
   readonly firstMeeting: boolean;
   readonly opener: string | null;
+  /** What the opener is about (`ChosenOpener.subject`): a repeat greeting is phrased around it. */
+  readonly subject?: OpenerSubject | null;
   readonly conversationStarted: boolean;
+  /** Varies a repeat greeting's phrasing (the conversation's id). */
+  readonly seed?: string;
 }): string {
+  if (!args.firstMeeting) {
+    return repeatGreeting({
+      firstName: args.firstName,
+      opener: args.opener,
+      subject: args.subject ?? null,
+      conversationStarted: args.conversationStarted,
+      seed: args.seed ?? '',
+    });
+  }
   const hi = args.firstName === null ? 'Hi' : `Hi ${args.firstName}`;
-  const hello = !args.firstMeeting
-    ? `${hi}.`
-    : args.eirFirstName === null
+  const hello =
+    args.eirFirstName === null
       ? `${hi}, I'm ${args.personaName}, the program's AI coach.`
       : `${hi}, I'm ${args.personaName}, ${args.eirFirstName}'s digital twin.`;
   const next =
@@ -274,6 +375,10 @@ interface Started {
   readonly firstName: string | null;
   /** The conversation's stored opener (`coaching_sessions.opener`), offered only before its first turn. */
   readonly opener: string | null;
+  /** What the opener is about, when it was chosen at call start around a subject. */
+  readonly subject?: OpenerSubject | null;
+  /** Where the opener was drawn from (`ChosenOpener`), when it was chosen at call start. */
+  readonly openerSource?: { readonly sourceSessionId: string | null; readonly byPerson: boolean } | null;
   readonly conversationStarted: boolean;
   /** The caller started no other conversation of the venture: the vEIR introduces itself once. */
   readonly firstMeeting: boolean;
@@ -411,16 +516,24 @@ export function createCallsService(
           team,
         });
         const text = chosen?.text ?? null;
-        if (text === started.opener) return text;
+        if (text === started.opener) return { text, chosen };
         const stored = await sessionsRepo.setSessionOpener(tx, {
           sessionId: started.call.sessionId,
           opener: text,
           sourceSessionId: chosen?.sourceSessionId ?? null,
           byPerson: chosen?.byPerson ?? false,
         });
-        return stored ? text : started.opener;
+        return stored ? { text, chosen } : { text: started.opener, chosen: null };
       });
-      return { ...started, opener };
+      return {
+        ...started,
+        opener: opener.text,
+        subject: opener.chosen?.subject ?? null,
+        openerSource:
+          opener.chosen === null
+            ? null
+            : { sourceSessionId: opener.chosen.sourceSessionId, byPerson: opener.chosen.byPerson },
+      };
     } catch (err) {
       logger.warn('call.opener_refresh_failed', {
         requestId: ctx.requestId,
@@ -428,6 +541,37 @@ export function createCallsService(
         error: err instanceof Error ? err.name : 'unknown',
       });
       return started;
+    }
+  }
+
+  /**
+   * A call that starts a conversation nobody has said anything in keeps what its intro said as the conversation's
+   * first message (its opener), so the vEIR's history holds the greeting it gave: its first reply never greets again
+   * or re-asks it (wave 7; production: "Hi Mina…" then "Hello Mina, nice to hear from you."). Drawn from the same
+   * conversation as the opener it says, so deleting that conversation erases this copy too. Never fails the call.
+   */
+  async function keepIntroAsOpener(
+    ctx: RequestContext,
+    started: Started,
+    intro: SpeechUnit | null,
+  ): Promise<void> {
+    if (intro === null || !started.standard || started.conversationStarted || intro.text === started.opener)
+      return;
+    try {
+      await kit.inRequest(ctx, ({ tx }) =>
+        sessionsRepo.setSessionOpener(tx, {
+          sessionId: started.call.sessionId,
+          opener: intro.text,
+          sourceSessionId: started.openerSource?.sourceSessionId ?? null,
+          byPerson: started.openerSource?.byPerson ?? false,
+        }),
+      );
+    } catch (err) {
+      logger.warn('call.intro_not_kept', {
+        requestId: ctx.requestId,
+        callId: started.call.id,
+        error: err instanceof Error ? err.name : 'unknown',
+      });
     }
   }
 
@@ -457,11 +601,20 @@ export function createCallsService(
         personaName,
         eirFirstName: eirFirstName === '' ? null : eirFirstName,
         firstMeeting: started.firstMeeting,
+        seed: started.call.sessionId,
       };
       const candidates = [
         ...(opener === '' || mentionsEir(opener, eirNames) || !safe(opener)
           ? []
-          : [callIntroText({ ...base, opener, conversationStarted: started.conversationStarted })]),
+          : [
+              callIntroText({
+                ...base,
+                opener,
+                // Chosen around a subject at call start, else read from the stored sentence.
+                subject: started.subject ?? subjectOfOpener(opener),
+                conversationStarted: started.conversationStarted,
+              }),
+            ]),
         callIntroText({ ...base, opener: null, conversationStarted: started.conversationStarted }),
       ];
       const text = candidates.find((candidate) => candidate.length <= 600 && safe(candidate));
@@ -734,7 +887,9 @@ export function createCallsService(
         };
       });
 
-      const intro = await introFor(ctx, await withFreshOpener(ctx, started));
+      const opened = await withFreshOpener(ctx, started);
+      const intro = await introFor(ctx, opened);
+      await keepIntroAsOpener(ctx, opened, intro);
       let sttGrant: SttGrant | null = null;
       if (started.call.inputMode === 'transcribe') {
         // The call works without it (typed input); the client can ask again through `stt-grant`.

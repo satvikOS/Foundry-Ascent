@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { classifyRisk } from '../risk/classifier.js';
 import { DISCLAIMER_FALLBACK } from './identity.js';
+import { REPEATED_GREETING_FALLBACK } from './greeting.js';
 import {
   CROSS_VENTURE_BLOCK_ANSWER,
   EMPTY_ANSWER_FALLBACK,
@@ -1174,6 +1175,40 @@ describe('validateCoachResponse — structured-output leak', () => {
     expect(out.results.notes).not.toContain('structured_leak_cut');
     // Nothing of the reply before the leaked line: left as it is (the schema check owns that case).
     expect(cutStructuredLeak('coach\nRun the pilot.')).toEqual({ text: 'coach\nRun the pilot.', cut: false });
+  });
+});
+
+describe('validateCoachResponse — no second greeting after an intro that said hello (wave 7)', () => {
+  it('leaves the greeting out of the answer and the spoken reply, typed and spoken', () => {
+    for (const channel of ['text', 'voice'] as const) {
+      const reply = 'Hello Mina, nice to hear from you. How did the interviews go?';
+      const checked = validateCoachResponse(
+        base({ answer: reply, spoken: channel === 'voice' ? reply : null }),
+        {
+          ...opts(),
+          channel,
+          greeted: true,
+          founderName: 'Mina',
+        },
+      );
+      expect(checked.response.answer).toBe('How did the interviews go?');
+      if (channel === 'voice') expect(checked.response.spoken).toBe('How did the interviews go?');
+      expect(checked.results.notes).toContain('repeated_greeting_removed');
+    }
+  });
+
+  it('a reply that was only the greeting becomes a short hand-back; without an intro it stands', () => {
+    const only = validateCoachResponse(base({ answer: 'Hi Mina, good to see you.' }), {
+      ...opts(),
+      greeted: true,
+      founderName: 'Mina',
+    });
+    expect(only.response.answer).toBe(REPEATED_GREETING_FALLBACK);
+    const chat = validateCoachResponse(base({ answer: 'Hi Mina, good to see you.' }), {
+      ...opts(),
+      founderName: 'Mina',
+    });
+    expect(chat.response.answer).toBe('Hi Mina, good to see you.');
   });
 });
 

@@ -5,6 +5,7 @@ import {
   buildSystemPrompt,
   deriveSpoken,
   isModelGatewayError,
+  openerSaidHello,
   validateCoachResponse,
   type CoachResponseValidation,
   type GateBlockReason,
@@ -216,6 +217,8 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
   });
   const shown: KeyedEvidence[] = spec.evidence.filter((k) => context.shownKeys.has(k.item.key));
   const evidenceKeys = new Set(shown.map((k) => k.item.key));
+  // The first reply after an opening line that said hello (a call's intro) does not greet again.
+  const greeted = spec.history.length === 0 && context.openerReplayed && openerSaidHello(spec.opener);
 
   // Step 5: generate (streamed through the sentence gate, or whole when streaming is switched off).
   await emit({ event: 'turn.status', phase: 'reasoning', detail: null, evidenceCount: shown.length });
@@ -249,6 +252,7 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
             personaEirName: spec.personaEirName,
             addressees: guards.addressees,
             founderName: spec.continuity.founderFirstName ?? null,
+            greeted,
             founderText: spec.founderText,
             otherVentureNames: guards.others.names,
             otherVentureCanaries: guards.others.canaries,
@@ -280,6 +284,7 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
     personaEirName: spec.personaEirName,
     addressees: guards.addressees,
     founderName: spec.continuity.founderFirstName ?? null,
+    greeted,
     founderText: spec.founderText,
     channel: spec.channel,
   });

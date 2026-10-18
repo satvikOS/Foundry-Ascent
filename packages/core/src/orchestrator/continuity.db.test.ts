@@ -242,7 +242,8 @@ describe('a second call minutes after the first', () => {
     const call2 = await startCall(maya, second.id);
     // Maya has met her vEIR: it greets her (no self-introduction, no "an AI coach"), then picks up the first call,
     // summarised (never the question quoted back: LAB-R3).
-    expect(call2.intro?.text).toMatch(/^Hi Maya\. /);
+    expect(call2.intro?.text).toMatch(/^Hi Maya, /);
+    expect(call2.intro?.text.length).toBeLessThanOrEqual(90);
     expect(call2.intro?.text).toContain('whether to price per library or per seat for the pilot');
 
     const turn = await talk(
@@ -348,7 +349,7 @@ describe('a private (temporary) conversation', () => {
     expect(temporary.opener).toBeNull();
     const call = await startCall(maya, temporary.id);
     // A private call opens without picking anything up either.
-    expect(call.intro?.text).toBe('Hi Maya. What would you like to work on?');
+    expect(call.intro?.text).toBe('Hi Maya, what would you like to work on?');
     const turn = await talk(maya, temporary.id, secret, call.call.id);
     // Nothing from "Where you left off" reaches a temporary conversation.
     expect(seen.at(-1)?.messages.at(-1)?.content).not.toContain(LEFT_OFF_HEADING);
@@ -811,10 +812,11 @@ describe('how a new conversation opens', () => {
     const meanwhile = await h.core.sessions.create(maya, quietquad(), {});
     await talk(maya, meanwhile.id, 'We booked the auditorium for demo day.');
     const call = await startCall(maya, empty.id);
-    expect(call.intro?.text).toContain('we talked about booking the auditorium for demo day.');
-    // The conversation keeps that line as its first message: the vEIR's history says what the call said.
+    // One sentence around what they talked about (wave 7: the greeting of someone already met).
+    expect(call.intro?.text).toMatch(/^Hi Maya, .*booking the auditorium for demo day\?$/);
+    // The conversation keeps what the call said as its first message: the vEIR's history holds its greeting.
     const opener = (await h.core.sessions.get(maya, empty.id)).session.opener ?? '';
-    expect(call.intro?.text.endsWith(opener)).toBe(true);
+    expect(opener).toBe(call.intro?.text);
     await h.core.calls.end(maya, call.call.id, { reason: 'user' });
     h.jobQueue.drain();
   });
@@ -1089,6 +1091,61 @@ describe('continuity keyed by the venture and the founder (review)', () => {
     expect((await scripted.sessions.create(maya, quietquad(), {})).opener).toBe(
       'How are the staff interviews going?',
     );
+  });
+
+  it('never puts a teammate’s plan to the founder as theirs (MX-0005)', async () => {
+    await ageAll(8);
+    const current = await scripted.notebook.get(maya, quietquad());
+    if (current.nextOpener !== null) {
+      await scripted.notebook.update(maya, quietquad(), {
+        expectedVersion: current.version,
+        edit: { action: 'remove_opener' },
+      });
+    }
+    // Devin, Maya's teammate, planned something; the notebook's opener was drawn from his conversation.
+    const devins = await scripted.sessions.create(devin, quietquad(), {});
+    await say(devin, devins.id, 'I will order the occupancy sensors from the second supplier.');
+    await scripted.distill.distillSession({ sessionId: devins.id, requestId: 'distill-mx5', settled: true });
+    const notebook = await scripted.notebook.get(maya, quietquad());
+    expect(notebook.nextOpener).toMatch(/you planned to order the occupancy sensors/i);
+    // Said to Devin, it is his plan…
+    expect((await scripted.sessions.create(devin, quietquad(), {})).opener).toMatch(/occupancy sensors/);
+    // …but never to Maya as hers, in a chat or on a call.
+    const hers = await scripted.sessions.create(maya, quietquad(), {});
+    expect(hers.opener ?? '').not.toMatch(/occupancy sensors|you planned/i);
+    const call = StartCallResponse.parse(await scripted.calls.start(maya, hers.id, { inputMode: 'typed' }));
+    expect(call.intro?.text ?? '').not.toMatch(/occupancy sensors|you planned/i);
+    await scripted.calls.end(maya, call.call.id, { reason: 'user' });
+    h.jobQueue.drain();
+  });
+
+  it('never echoes the founder’s chat shorthand or lower case back in an opener (wave 7)', async () => {
+    await ageAll(8);
+    const current = await scripted.notebook.get(maya, quietquad());
+    if (current.nextOpener !== null) {
+      await scripted.notebook.update(maya, quietquad(), {
+        expectedVersion: current.version,
+        edit: { action: 'remove_opener' },
+      });
+    }
+    const before = await scripted.sessions.create(maya, quietquad(), {});
+    await say(maya, before.id, 'I will call facilities about the budget monday fr');
+    await scripted.distill.distillSession({
+      sessionId: before.id,
+      requestId: 'distill-slang',
+      settled: true,
+    });
+    // The notebook keeps the plan as it was written…
+    expect((await scripted.notebook.get(maya, quietquad())).nextOpener).toMatch(/monday fr\./);
+    // …and the opener says it the way it would be written.
+    const first = await scripted.sessions.create(maya, quietquad(), {});
+    expect(first.opener).toBe(
+      'Last time you planned to call facilities about the budget Monday. How did it go?',
+    );
+    for (let i = 0; i < 2; i += 1) {
+      const opened = await scripted.sessions.create(maya, quietquad(), {});
+      expect(opened.opener).not.toMatch(/\bfr\b|monday/);
+    }
   });
 
   it('says a thread distilled about the founder to them, never by name in lower case (LAB-U2)', async () => {
