@@ -16,7 +16,7 @@ import os
 import subprocess
 import sys
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -463,6 +463,12 @@ def suite_matrix(
     )
 
 
+#: evals' planning estimate per matrix turn, from the lab's first evals run (39093976745: the app metered USD 0.388
+#: over 66 turns, retries included). evals' default (USD 0.01) cut a 40-scenario plan to 12; the real spend is
+#: still capped by --max-cost-usd, which evals charges with the app's own turn costs.
+EVALS_EST_TURN_USD = 0.006
+
+
 def evals_matrix_command(
     *,
     base_url: str,
@@ -490,6 +496,8 @@ def evals_matrix_command(
         f"{max_cost_usd:.2f}",
         "--max-turns",
         "600",
+        "--est-cost-per-turn",
+        f"{EVALS_EST_TURN_USD}",
         "--turn-rate-limit",
         "1000",
         "--out",
@@ -503,6 +511,21 @@ def evals_matrix_command(
     if judge_model:
         cmd += ["--judge", "--judge-model", judge_model]
     return cmd
+
+
+def record_evals_model_costs(
+    guard: Any, matrix: Mapping[str, Any], simulator_model: str | None, judge_model: str | None
+) -> None:
+    """evals' simulator and judge calls run under the lab's role: their metered cost joins the lab's ledger."""
+    from conversation_lab.budget import Charge, micro_ceil
+
+    for purpose, key, model in (
+        ("simulator", "simulatorCostUsd", simulator_model),
+        ("judge", "judgeCostUsd", judge_model),
+    ):
+        usd = matrix.get(key)
+        if isinstance(usd, int | float) and not isinstance(usd, bool) and usd > 0:
+            guard.ledger.add(Charge("bedrock", purpose, model or "unknown", 0, 0, micro_ceil(float(usd))))
 
 
 def suite_matrix_evals(
@@ -541,6 +564,7 @@ def suite_matrix_evals(
     results = out / "results.json"
     document = json.loads(results.read_text(encoding="utf-8")) if results.is_file() else {}
     cases = [c for c in document.get("cases", []) if isinstance(c, dict)]
+    record_evals_model_costs(guard, document.get("matrix") or {}, simulator_model, judge_model)
     return {
         "source": "evals conversation matrix",
         "evals_exit": code,

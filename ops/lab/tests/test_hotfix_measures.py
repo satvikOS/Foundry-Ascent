@@ -328,6 +328,7 @@ def test_the_evals_matrix_runs_with_the_probed_models_and_keeps_content_private(
     joined = " ".join(cmd)
     assert "--matrix-budget 40" in joined
     assert "--max-cost-usd 2.50" in joined
+    assert f"--est-cost-per-turn {cli.EVALS_EST_TURN_USD}" in joined
     assert "--simulator llm --simulator-model us.amazon.nova-pro-v1:0" in joined
     assert "--judge --judge-model us.amazon.nova-pro-v1:0" in joined
     assert f"--private-out {tmp_path / 'evals-matrix' / 'private'}" in joined
@@ -336,3 +337,16 @@ def test_the_evals_matrix_runs_with_the_probed_models_and_keeps_content_private(
     )
     assert "--simulator" not in template
     assert "--judge" not in template
+
+
+def test_evals_simulator_and_judge_costs_join_the_lab_ledger() -> None:
+    from conversation_lab.budget import Ledger, SpendGuard
+
+    guard = SpendGuard(app_budget=1.0, lab_budget=0.5, ledger=Ledger())
+    cli.record_evals_model_costs(
+        guard, {"simulatorCostUsd": 0.0238021, "judgeCostUsd": 0.035399, "simulator": "llm"}, "sim", "judge"
+    )
+    assert guard.ledger.by_purpose()["simulator"]["usd"] == 0.023803
+    assert guard.ledger.by_purpose()["judge"]["usd"] == 0.035399
+    cli.record_evals_model_costs(guard, {"simulatorCostUsd": 0.0, "judgeCostUsd": None}, None, None)
+    assert len(guard.ledger.charges) == 2
