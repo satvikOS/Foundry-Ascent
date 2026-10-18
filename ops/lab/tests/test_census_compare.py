@@ -153,3 +153,27 @@ def test_attach_baseline_compares_or_says_why_not(tmp_path: Path) -> None:
     bad: dict[str, Any] = dict(NOW)
     cli.attach_baseline(bad, "matrix", "../x", downloaded)
     assert bad["baseline"]["error"] == "bad_run_id"
+
+
+def test_the_matrix_result_carries_the_census_of_what_the_founder_heard() -> None:
+    from conversation_lab.smoke import ScenarioResult, TurnRecord
+
+    result = ScenarioResult(
+        id="SM-01", tags={"emotion": "neutral"}, channel="chat", passed=True, reason="pass"
+    )
+    result.turns = [
+        TurnRecord(
+            founder="hi",
+            heard="Great, Maya. The riskiest assumption is demand.",
+            kind="completed",
+            seconds=3.0,
+        ),
+        TurnRecord(founder="ok", heard="", kind="error", seconds=0.0),
+    ]
+    out = cli.matrix_result([result], None, founder_name="Maya", llm_simulator=True)
+    assert out["census"]["replies"] == 1
+    assert out["census"]["riskiest_assumption"] == 1
+    assert out["census"]["founder_name"] == 1
+    assert (out["passed"], out["run"], out["simulator"]) == (1, 1, "llm")
+    assert out["dimensions"] == {"emotion": {"neutral": {"passed": 1, "run": 1}}}
+    assert "Great, Maya" not in json.dumps(out)

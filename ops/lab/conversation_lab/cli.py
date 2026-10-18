@@ -397,10 +397,9 @@ def suite_matrix(
     **_: Any,
 ) -> dict[str, Any]:
     from conversation_lab.app import FOUNDER_NAME
-    from conversation_lab.census import census
     from conversation_lab.judge import Judge
     from conversation_lab.simulator import LlmSimulator, TemplateSimulator
-    from conversation_lab.smoke import SmokeRunner, dimension_rates, grading_context, humanness, load_smoke
+    from conversation_lab.smoke import SmokeRunner, grading_context, load_smoke
 
     smoke = load_smoke()
     founder = admin.founder(FOUNDER_NAME)
@@ -429,12 +428,27 @@ def suite_matrix(
         results, stopped = runner.run(smoke["scenarios"], ctx.max_scenarios)
     finally:
         founder.close()
+    return matrix_result(
+        results,
+        stopped,
+        founder_name=str(smoke["founder"]["name"]),
+        llm_simulator=simulator_model is not None,
+    )
+
+
+def matrix_result(
+    results: Sequence[Any], stopped: str | None, *, founder_name: str, llm_simulator: bool
+) -> dict[str, Any]:
+    """The matrix suite's public result: pass rates, dimensions, judge humanness and the phrase census."""
+    from conversation_lab.census import census
+    from conversation_lab.smoke import dimension_rates, humanness
+
     seconds = [t.seconds for r in results for t in r.turns if t.kind != "error"]
     heard = [t.heard for r in results for t in r.turns if t.heard]
     return {
         "source": "built-in smoke set",
-        "census": census(heard, founder_names=(str(smoke["founder"]["name"]),)),
-        "simulator": "llm" if simulator_model else "template",
+        "census": census(heard, founder_names=(founder_name,)),
+        "simulator": "llm" if llm_simulator else "template",
         "passed": sum(r.passed for r in results),
         "run": len(results),
         "humanness": humanness(results),
