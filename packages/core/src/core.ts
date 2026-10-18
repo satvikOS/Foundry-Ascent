@@ -14,6 +14,7 @@ import { createDocumentsService, type DocumentsService } from './services/docume
 import { createEirProfilesService, type EirProfilesService } from './services/eir-profiles.js';
 import { createEirStudioService, type EirStudioService } from './services/eir-studio.js';
 import { createEscalationsService, type EscalationsService } from './services/escalations.js';
+import { createFaceHooks, createFaceService, type FaceService } from './services/face.js';
 import { createKnowledgeLibraryService, type KnowledgeLibraryService } from './services/knowledge-library.js';
 import { createLessonsService, type LessonsService } from './services/lessons.js';
 import { createMaintenanceService, type MaintenanceService } from './services/maintenance.js';
@@ -25,6 +26,7 @@ import { createProgramService, type ProgramService } from './services/program.js
 import { createSessionsService, type SessionsService } from './services/sessions.js';
 import { createSpeechService, type SpeechService } from './services/speech.js';
 import { createTeamService, type TeamService } from './services/team.js';
+import { createTwinService, type TwinService } from './services/twin.js';
 import { createVeirService, type VeirService } from './services/veir.js';
 import { createVenturesService, type VenturesService } from './services/ventures.js';
 
@@ -60,6 +62,10 @@ export interface Core {
   readonly calls: CallsService;
   /** Text-to-speech of validated replies during calls. */
   readonly speech: SpeechService;
+  /** The face of a call: its vendor session, and relaying verified audio to it. */
+  readonly face: FaceService;
+  /** The vEIR's digital twin in the studio: its face and cloned voice, and withdrawing a consent scope. */
+  readonly twin: TwinService;
   /** Persona lifecycle: EIR personas, consent, embodiment, assignments. */
   readonly personas: PersonaManagementService;
   /** A persona's knowledge library (common pool). */
@@ -81,6 +87,8 @@ export function createCore(deps: CoreDeps): Core {
   const onPrincipalChanged = (principalId: string): void => {
     auth.invalidatePrincipal(principalId);
   };
+  const faceHooks = createFaceHooks(kit);
+  const face = createFaceService(kit, speechKeys, faceHooks);
   return {
     auth,
     me: createMeService(kit),
@@ -102,9 +110,11 @@ export function createCore(deps: CoreDeps): Core {
     maintenance: createMaintenanceService(kit, distill),
     distill,
     notebook: createNotebookService(kit, directory),
-    veir: createVeirService(kit),
-    calls: createCallsService(kit, directory, speechKeys, distill),
+    veir: createVeirService(kit, face),
+    calls: createCallsService(kit, directory, speechKeys, distill, faceHooks),
     speech: createSpeechService(kit, speechKeys),
+    face,
+    twin: createTwinService(kit),
     personas: createPersonaManagementService(kit, directory),
     library: createKnowledgeLibraryService(kit),
     lessons: createLessonsService(kit),

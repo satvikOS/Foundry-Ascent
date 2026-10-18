@@ -131,6 +131,12 @@ export type JobMessage = z.infer<typeof JobMessage>;
 /** Voice engines of the text-to-speech service, most natural first (Amazon Polly). */
 export type SpeechEngine = 'generative' | 'neural' | 'standard';
 
+/**
+ * Audio a synthesizer returns: MP3 for the call's own speakers, or raw 16-bit mono PCM (little-endian) for a
+ * vendor face, which renders PCM at 24 kHz (`pcm_16000` is resampled by core; Amazon Polly's PCM stops at 16 kHz).
+ */
+export type SpeechFormat = 'mp3' | 'pcm_16000' | 'pcm_24000';
+
 export interface SpeechSynthesisInput {
   /** Validated text to speak. Content: never log it. */
   readonly text: string;
@@ -139,16 +145,27 @@ export interface SpeechSynthesisInput {
   readonly engines: readonly SpeechEngine[];
   readonly requestId: string;
   readonly signal?: AbortSignal;
+  /** `mp3` unless a face renders the call's audio (`pcm_16000`). */
+  readonly format?: 'mp3' | 'pcm_16000';
 }
 
 export interface SynthesizedSpeech {
-  /** MP3 audio, streamed as the service produces it. */
+  /** The audio, streamed as the service produces it. */
   readonly audio: ReadableStream<Uint8Array>;
-  readonly contentType: 'audio/mpeg';
+  /** `audio/mpeg`, `audio/wav` (PCM in a WAV container, for a face) or `audio/pcm` (raw, from a synthesizer). */
+  readonly contentType: 'audio/mpeg' | 'audio/wav' | 'audio/pcm';
   /** Characters billed (the input length). */
   readonly characters: number;
-  readonly engine: SpeechEngine;
+  /** The Polly engine, or `clone` for the EIR's cloned voice at a vendor. */
+  readonly engine: SpeechEngine | 'clone';
   readonly voiceId: string;
+  /** Raw PCM's sample rate (`audio/pcm` only). */
+  readonly sampleRateHertz?: number;
+  /**
+   * The face-audio manifest of this unit (`POST /speech` for a call with a live face; see
+   * orchestrator/face-audio.ts): the browser hands the audio back with it when the face should render it.
+   */
+  readonly faceManifest?: string;
 }
 
 /** Thrown when the speech service cannot synthesize (outage, throttling, unsupported voice). */
@@ -206,51 +223,128 @@ export interface SttGrantIssuer {
 }
 
 /**
- * How the vEIR is heard when a provider draws its face (`AvatarVoicing`): `engine` (the call's own audio, the
- * face follows it), `audio` (the face renders the call's validated audio itself, lip-synced) or `text` (the
- * vendor voices validated text; reserved).
+ * A unit of the vEIR's speech whose server signature verified (`verifySpeechUnit` over
+ * `sessionId|turnId|seq|text`): the identity guard, the meta-narration gate and the sentence gate passed it. Only
+ * {@link verifiedSpeechUnit} makes one, after checking the signature itself, so the cloned voice and the face can
+ * only ever be handed words the validators approved (docs/architecture/calls.md §4).
  */
-export type EmbodimentVoicing = 'engine' | 'audio' | 'text';
+export interface VerifiedSpeechUnit {
+  readonly [verifiedUnitBrand]: true;
+  readonly sessionId: string;
+  /** Null for the call intro. */
+  readonly turnId: string | null;
+  readonly seq: number;
+  /** The validated words. Content: never log them. */
+  readonly text: string;
+  readonly sig: string;
+}
+declare const verifiedUnitBrand: unique symbol;
 
-export interface EmbodimentSessionRequest {
-  /** The caller's live call: the vendor session belongs to it and ends with it. */
-  readonly callId: string;
-  readonly personaId: string;
-  /** The persona's avatar at the vendor (its id there), when the EIR recorded one. */
-  readonly avatarRef: string | null;
-  /** Seconds the call may still last: the vendor session ends by itself then. */
-  readonly maxSeconds: number;
+/**
+ * A synthesized voice for calls other than Amazon Polly: the EIR's cloned voice at a vendor (ElevenLabs, or the
+ * development stand-in `fake`). It synthesizes only {@link VerifiedSpeechUnit}s, on the server, with the vendor key
+ * the API holds: no voice credential ever reaches the browser.
+ */
+export interface VoiceProvider {
+  readonly id: 'elevenlabs' | 'fake';
+  /** The vendor model, metered as `<id>:<model>`. */
+  readonly model: string;
+  /** Price per 1,000 characters (packages/core/media-vendors.json). */
+  readonly usdPer1kCharacters: number;
+  synthesize(input: VoiceSynthesisInput): Promise<SynthesizedSpeech>;
+}
+
+export interface VoiceSynthesisInput {
+  readonly unit: VerifiedSpeechUnit;
+  /** The persona's voice at the vendor (`persona_media.vendor_ref`). */
+  readonly voiceRef: string;
+  /** `mp3` for the call's speakers, `pcm_24000` for a face. */
+  readonly format: 'mp3' | 'pcm_24000';
   readonly requestId: string;
+  readonly signal?: AbortSignal;
 }
 
-export interface IssuedEmbodimentSession {
-  /** Single-use credential for the browser SDK. A credential: never logged, stored or replayed. */
-  readonly token: string;
-  /** ISO-8601 time after which the token no longer opens a session. */
-  readonly expiresAt: string;
-}
-
-/** Thrown when a vendor session cannot be minted (vendor down, key missing, quota): the call keeps the presence. */
+/** Thrown when a vendor face session cannot be started or driven (vendor down, key missing, quota). */
 export class EmbodimentSessionError extends Error {
   override readonly name = 'EmbodimentSessionError';
 }
 
-/**
- * The face of calls (docs/architecture/calls.md §4): mints a vendor's single-use realtime-avatar session for a
- * live call, with the vendor key held by the API (Secrets Manager). The vendor only ever renders what the call
- * already validated: our audio (`audio`) or our signed text (`text`). Absent: every call keeps the built-in
- * presence. The local API can run the development stand-in (`fake`, no one's likeness).
- */
-export interface EmbodimentSessionIssuer {
-  /** The provider id the call screen loads (`EmbodimentProviderId`). */
-  readonly provider: 'fake' | 'heygen' | 'tavus' | 'simli';
-  readonly voicing: EmbodimentVoicing;
+export interface FaceSessionRequest {
+  /** The caller's live call: the vendor session belongs to it and ends with it. */
+  readonly callId: string;
+  readonly personaId: string;
+  /** The persona's avatar at the vendor (`persona_media.vendor_ref`); null for the stand-in. */
+  readonly avatarRef: string | null;
+  /** Seconds the face may last: the vendor session ends by itself then (`max_session_duration`). */
+  readonly maxSeconds: number;
+  readonly requestId: string;
+}
+
+export interface StartedFaceSession {
   /**
-   * Whether the face is a real person's likeness (a vendor avatar of the EIR): then it serves only personas
-   * configured for this provider whose likeness consent is in force. The stand-in draws no one and serves any.
+   * What the browser joins the face's video with: a short-lived room token that can only watch (a LiveKit client
+   * token) and the room URL. A credential: never logged or stored.
+   */
+  readonly browser: { readonly token: string; readonly url: string | null; readonly expiresAt: string };
+  /** The vendor's session id (not a secret). */
+  readonly sessionRef: string;
+  /**
+   * The server-held control channel (LITE's `ws_url`), which can make the face speak: never sent to the
+   * browser, stored only encrypted, erased when the face ends. Null when the vendor has none (the stand-in).
+   */
+  readonly control: string | null;
+}
+
+/** A live face session, as the API drives it. */
+export interface FaceSessionHandle {
+  readonly sessionRef: string;
+  readonly control: string | null;
+  readonly requestId: string;
+}
+
+/**
+ * Audio the face may render: PCM (16-bit mono little-endian, 24 kHz) our server synthesized from a
+ * {@link VerifiedSpeechUnit} of this call, checked against the server's face-audio manifest. Only the face relay
+ * makes one.
+ */
+export interface VerifiedFaceAudio {
+  readonly [verifiedFaceAudioBrand]: true;
+  readonly pcm: Uint8Array;
+  /** The unit it belongs to (`call_speech` key): the vendor groups its chunks into one utterance. */
+  readonly utterance: string;
+  /** The first and last parts of the unit (a long unit arrives in several parts). */
+  readonly first: boolean;
+  readonly last: boolean;
+}
+declare const verifiedFaceAudioBrand: unique symbol;
+
+/**
+ * The face of calls (docs/architecture/calls.md §4): a vendor's realtime avatar that renders audio our server
+ * synthesized from validated units (HeyGen LiveAvatar LITE), driven entirely from the API with the vendor key it
+ * holds (Secrets Manager). The browser only watches. Absent: every call keeps the built-in presence. The local
+ * API can run the development stand-in (`fake`, no one's likeness).
+ */
+export interface EmbodimentProvider {
+  /** The provider id the call screen loads (`EmbodimentProviderId`). */
+  readonly id: 'fake' | 'heygen';
+  /** The face renders the call's own audio (`AvatarVoicing` `audio`). */
+  readonly voicing: 'audio';
+  /**
+   * Whether the face is a real person's likeness (a vendor avatar of the EIR): then it serves only personas whose
+   * face is ready under likeness consent. The stand-in draws no one and serves any.
    */
   readonly likeness: boolean;
-  start(request: EmbodimentSessionRequest): Promise<IssuedEmbodimentSession>;
+  /** Per minute of face session (packages/core/media-vendors.json); the vendor bills elapsed time. */
+  readonly usdPerMinute: number;
+  createSession(request: FaceSessionRequest): Promise<StartedFaceSession>;
+  /** Makes the face render one part of a unit's audio (and close the utterance on its last part). */
+  speak(session: FaceSessionHandle, audio: VerifiedFaceAudio): Promise<void>;
+  /** Barge-in: discards what the face still has to say. */
+  interrupt(session: FaceSessionHandle): Promise<void>;
+  /** Keeps an idle session from timing out at the vendor. */
+  keepAlive(session: FaceSessionHandle): Promise<void>;
+  /** Ends the vendor session (so it stops billing). Never throws for a session already gone. */
+  end(session: FaceSessionHandle, reason: 'call_ended' | 'face_stopped' | 'face_dropped'): Promise<void>;
 }
 
 export interface JobQueue {

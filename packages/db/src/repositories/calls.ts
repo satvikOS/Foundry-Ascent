@@ -21,6 +21,10 @@ import { p } from '../params.js';
 import { queryFirst, queryNumber, queryOne, queryRows } from './common.js';
 
 type CallEndReasonValue = z.infer<typeof CallEndReason>;
+
+/** The voice a call started with (`calls.voice_vendor`). */
+export const CALL_VOICE_VENDORS = ['polly', 'elevenlabs', 'fake'] as const;
+export type CallVoiceVendor = (typeof CALL_VOICE_VENDORS)[number];
 type CallStateValue = z.infer<typeof CallState>;
 
 export interface CallRecord {
@@ -34,6 +38,11 @@ export interface CallRecord {
   readonly provider: z.infer<typeof AvatarProviderId>;
   readonly inputMode: z.infer<typeof CallInputMode>;
   readonly voiceId: string;
+  /**
+   * The voice the call started with (0017): `polly` (a stock voice, `voiceId`), or `elevenlabs` / `fake` (the
+   * EIR's cloned voice, with `voiceId` as its stock fallback). Never changes.
+   */
+  readonly voiceVendor: CallVoiceVendor;
   readonly maxSeconds: number;
   readonly startedAt: string;
   readonly lastHeartbeatAt: string | null;
@@ -51,7 +60,7 @@ export interface CallRecord {
 }
 
 const COLUMNS = `c.id, c.tenant_id, c.venture_id, c.session_id, c.persona_id, c.started_by, c.status, c.provider,
-  c.input_mode, c.voice_id, c.max_seconds, c.started_at, c.last_heartbeat_at, c.ended_at, c.end_reason, c.end_detail,
+  c.input_mode, c.voice_id, c.voice_vendor, c.max_seconds, c.started_at, c.last_heartbeat_at, c.ended_at, c.end_reason, c.end_detail,
   c.stt_grants, c.speech_characters, c.mic_open_seconds,
   floor(extract(epoch FROM coalesce(c.ended_at, now()) - c.started_at))::integer AS elapsed_seconds,
   floor(extract(epoch FROM now() - coalesce(c.last_heartbeat_at, c.started_at)))::integer AS idle_seconds`;
@@ -68,6 +77,7 @@ function decodeCall(r: RawRow): CallRecord {
     provider: col.enum(AvatarProviderId.options).decode(r.provider, 'provider'),
     inputMode: col.enum(CallInputMode.options).decode(r.input_mode, 'input_mode'),
     voiceId: col.text.decode(r.voice_id, 'voice_id'),
+    voiceVendor: col.enum(CALL_VOICE_VENDORS).decode(r.voice_vendor, 'voice_vendor'),
     maxSeconds: col.int.decode(r.max_seconds, 'max_seconds'),
     startedAt: col.ts.decode(r.started_at, 'started_at'),
     lastHeartbeatAt: col.ts.nullable.decode(r.last_heartbeat_at, 'last_heartbeat_at'),
@@ -125,6 +135,8 @@ export interface StartCallInput {
   readonly provider: z.infer<typeof AvatarProviderId>;
   readonly inputMode: z.infer<typeof CallInputMode>;
   readonly voiceId: string;
+  /** Default `polly`. */
+  readonly voiceVendor?: CallVoiceVendor;
   readonly maxSeconds: number;
 }
 
@@ -136,8 +148,9 @@ export function startCall(ex: SqlExecutor, input: StartCallInput): Promise<CallR
   return queryOne(
     ex,
     `INSERT INTO calls AS c (tenant_id, venture_id, session_id, persona_id, started_by, provider, input_mode, voice_id,
-                             max_seconds)
-     VALUES (:tenantId, :ventureId, :sessionId, :personaId, :startedBy, :provider, :inputMode, :voiceId, :maxSeconds)
+                             voice_vendor, max_seconds)
+     VALUES (:tenantId, :ventureId, :sessionId, :personaId, :startedBy, :provider, :inputMode, :voiceId, :voiceVendor,
+             :maxSeconds)
      RETURNING ${COLUMNS}`,
     {
       tenantId: p.uuid(input.tenantId),
@@ -148,6 +161,7 @@ export function startCall(ex: SqlExecutor, input: StartCallInput): Promise<CallR
       provider: p.text(input.provider),
       inputMode: p.text(input.inputMode),
       voiceId: p.text(input.voiceId),
+      voiceVendor: p.text(input.voiceVendor ?? 'polly'),
       maxSeconds: p.int(Math.max(0, Math.floor(input.maxSeconds))),
     },
     decodeCall,

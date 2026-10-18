@@ -442,6 +442,7 @@ describe('calls', () => {
       expiresAt: null,
       voiceId: 'Matthew',
       voicing: 'engine',
+      url: null,
     });
   });
 });

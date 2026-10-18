@@ -15,9 +15,10 @@ import { createRequestContext, type RequestContext } from '../context.js';
 import { createCore, type Core } from '../core.js';
 import {
   type Clock,
-  type EmbodimentSessionIssuer,
+  type EmbodimentProvider,
   type SpeechSynthesizer,
   type SttGrantIssuer,
+  type VoiceProvider,
 } from '../ports.js';
 import { MemoryJobQueue, MemoryObjectStore, RecordingLogger, Utf8TextExtractor } from './fakes.js';
 
@@ -33,7 +34,9 @@ export interface CoreHarnessOptions {
   /** Speech-to-text grants for calls (absent: calls start without one). */
   readonly sttGrants?: SttGrantIssuer;
   /** Vendor faces for calls (absent: every call keeps the built-in presence). */
-  readonly embodiment?: EmbodimentSessionIssuer;
+  readonly embodiment?: EmbodimentProvider;
+  /** The EIRs' cloned voices (absent: calls speak with stock voices). */
+  readonly clonedVoice?: VoiceProvider;
 }
 
 /**
@@ -118,6 +121,8 @@ export interface CoreHarness {
   ctxFor(principalId: string, tenantId?: string): Promise<RequestContext>;
   /** A second core over the same database with different config (e.g. tight limits). */
   withConfig(overrides: ConfigOverrides): Core;
+  /** A second core over the same database with other call ports (speech, face, cloned voice). */
+  withPorts(ports: Pick<CoreHarnessOptions, 'speech' | 'sttGrants' | 'embodiment' | 'clonedVoice'>): Core;
   cleanup(): Promise<void>;
 }
 
@@ -139,7 +144,7 @@ export async function createCoreHarness(options: CoreHarnessOptions = {}): Promi
   const objectStore = new MemoryObjectStore();
   const jobQueue = new MemoryJobQueue();
   const logger = new RecordingLogger();
-  const build = (cfg: CoreConfig): Core =>
+  const build = (cfg: CoreConfig, ports: CoreHarnessOptions = options): Core =>
     createCore({
       db: t.db,
       gateway,
@@ -150,9 +155,10 @@ export async function createCoreHarness(options: CoreHarnessOptions = {}): Promi
       logger,
       ...(options.random ? { random: options.random } : {}),
       ...(options.clock ? { clock: options.clock } : {}),
-      ...(options.speech ? { speech: options.speech } : {}),
-      ...(options.sttGrants ? { sttGrants: options.sttGrants } : {}),
-      ...(options.embodiment ? { embodiment: options.embodiment } : {}),
+      ...(ports.speech ? { speech: ports.speech } : {}),
+      ...(ports.sttGrants ? { sttGrants: ports.sttGrants } : {}),
+      ...(ports.embodiment ? { embodiment: ports.embodiment } : {}),
+      ...(ports.clonedVoice ? { clonedVoice: ports.clonedVoice } : {}),
     });
   const core = build(config);
   const venture = (key: string): SeededVenture =>
@@ -200,6 +206,7 @@ export async function createCoreHarness(options: CoreHarnessOptions = {}): Promi
       });
     },
     withConfig: (overrides) => build(coreConfig({ appEnv: 'test', ...options.config, ...overrides })),
+    withPorts: (ports) => build(config, ports),
     cleanup: () => t.cleanup(),
   };
 }

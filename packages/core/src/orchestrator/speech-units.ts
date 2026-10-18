@@ -1,6 +1,7 @@
 import { createHmac, hkdfSync, timingSafeEqual } from 'node:crypto';
 
 import { type SessionSigningKey } from '../auth/session-token.js';
+import { type VerifiedSpeechUnit } from '../ports.js';
 
 /**
  * Signed speech units (ADR-0010, docs/architecture/calls.md).
@@ -67,4 +68,23 @@ export function verifySpeechUnit(
   }
   const expected = mac(key, claims);
   return given.length === expected.length && timingSafeEqual(given, expected);
+}
+
+/**
+ * The unit as a {@link VerifiedSpeechUnit} when its signature verifies, else null. The only way to make one: the
+ * cloned voice and the face are handed nothing else (docs/architecture/calls.md §4).
+ */
+export function verifiedSpeechUnit(
+  keys: readonly SessionSigningKey[],
+  claims: SpeechUnitClaims,
+  sig: string | undefined,
+): VerifiedSpeechUnit | null {
+  if (sig === undefined || !verifySpeechUnit(keys, claims, sig)) return null;
+  return {
+    sessionId: claims.sessionId,
+    turnId: claims.turnId,
+    seq: claims.seq,
+    text: claims.text,
+    sig,
+  } as unknown as VerifiedSpeechUnit;
 }

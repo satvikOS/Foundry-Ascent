@@ -25,6 +25,7 @@ import {
   venturesRepo,
   assignmentsRepo,
   eirRepo,
+  twinRepo,
 } from './repositories/index.js';
 import { type SeedResult } from './seed/seed.js';
 import { GUIDE_DOCTRINE, GUIDE_STYLE } from './seed/doctrine.js';
@@ -281,6 +282,23 @@ async function buildFixture(db: Db): Promise<Fixture> {
       subjectPrincipalId: lead.id,
       assetTypes: ['style'],
     });
+    // A draft vEIR of the partner's EIR with a face being prepared at the vendor (the digital twin, 0017).
+    const partnerTwin = await personasRepo.createPersona(sx, {
+      tenantId: tenant.id,
+      name: 'Partner EIR’s vEIR',
+      kind: 'eir_persona',
+      eirProfileId: eirProfile.id,
+      status: 'draft',
+    });
+    await twinRepo.upsertPersonaMedia(sx, {
+      personaId: partnerTwin.id,
+      tenantId: tenant.id,
+      kind: 'face',
+      vendor: 'heygen',
+      vendorRef: 'partner-avatar',
+      status: 'pending',
+      updatedBy: lead.id,
+    });
     const source = await knowledgeRepo.createKnowledgeSource(sx, {
       tenantId: tenant.id,
       scope: 'venture',
@@ -459,6 +477,7 @@ const CLOSED_TABLES = [
   'schema_migrations',
   'call_speech',
   'memory_forgotten',
+  'call_faces',
 ] as const;
 
 /** Every table with a venture_id column that app_rls can read, and how rows map to a venture. */
@@ -490,6 +509,7 @@ const TENANT_TABLES = [
   'personas',
   'resources',
   'patterns',
+  'persona_media',
 ] as const;
 
 describe('RLS coverage', () => {
@@ -501,7 +521,13 @@ describe('RLS coverage', () => {
       ),
     );
     const discovered = r.rows.map((row) => String(row.table_name)).sort();
-    const covered = [...VENTURE_TABLES, ...TENANT_TABLES, 'usage_ledger', 'audit_events'].sort();
+    const covered = [
+      ...VENTURE_TABLES,
+      ...TENANT_TABLES,
+      'usage_ledger',
+      'audit_events',
+      'call_faces',
+    ].sort();
     expect(discovered).toEqual(covered);
   });
 

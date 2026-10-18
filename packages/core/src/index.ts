@@ -29,11 +29,16 @@ export {
   type CoreLogFields,
   type CoreLogger,
   EmbodimentSessionError,
-  type EmbodimentSessionIssuer,
-  type EmbodimentSessionRequest,
-  type EmbodimentVoicing,
+  type EmbodimentProvider,
+  type FaceSessionHandle,
+  type FaceSessionRequest,
+  type StartedFaceSession,
+  type VerifiedFaceAudio,
+  type VerifiedSpeechUnit,
+  type VoiceProvider,
+  type VoiceSynthesisInput,
+  type SpeechFormat,
   type EnqueueOptions,
-  type IssuedEmbodimentSession,
   type ExtractedText,
   type IdGenerator,
   type JobQueue,
@@ -75,6 +80,15 @@ export {
   type VeirService,
 } from './services/veir.js';
 export { type SpeechService } from './services/speech.js';
+export { type FaceService, MIN_FACE_SECONDS } from './services/face.js';
+export { type TwinService } from './services/twin.js';
+export { MEDIA_VENDORS, faceCostUsd, voiceCostUsd, type MediaVendors } from './services/media-vendors.js';
+export {
+  FACE_CHUNK_BYTES,
+  FACE_MAX_PART_CHUNKS,
+  FACE_SAMPLE_RATE,
+  pcmToWav,
+} from './orchestrator/face-audio.js';
 export {
   historyAsHeard,
   isCrisisMessage,
