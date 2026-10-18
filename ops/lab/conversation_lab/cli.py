@@ -429,7 +429,14 @@ def suite_ui(ctx: Context, *, browser: dict[str, str], **_: Any) -> dict[str, An
     report = ctx.private / "ui" / "report.json"
     rc = run_playwright(
         ctx,
-        specs=["--retries=1", "--trace=off", f"--output={ctx.private / 'ui' / 'test-results'}"],
+        # Steps that genuinely cannot hold for a real model carry the @mock-only tag (with their reason); CI runs
+        # them on the mock, the lab leaves them out.
+        specs=[
+            "--retries=1",
+            "--trace=off",
+            "--grep-invert=@mock-only",
+            f"--output={ctx.private / 'ui' / 'test-results'}",
+        ],
         config=None,
         report=report,
         extra_env=browser,
