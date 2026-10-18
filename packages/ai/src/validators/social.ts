@@ -64,9 +64,14 @@ export function withinSocialBudget(text: string, social: SocialTurn): string {
 const REPEAT_REQUEST =
   /\b(?:repeat (?:that|it|this|yourself|what you said)|say (?:that|it|this) again|one more time|come again|(?:what|which) was (?:that|it|the (?:first|second|last|next) (?:step|one|thing|point))|remind me what you (?:said|suggested)|go over (?:that|it) again|(?:can|could) you (?:say|explain) (?:that|it) again|(?:sorry|pardon),? what\?)/i;
 
-/** Whether the founder asks to hear the last reply (or part of it) again. */
+/**
+ * Whether the founder asks to hear the last reply (or part of it) again: in so many words, or by asking what the
+ * vEIR remembers or where they were (the answer names it again, on purpose).
+ */
 export function asksToRepeat(founderText: string): boolean {
-  return REPEAT_REQUEST.test(founderText.replace(/[‘’ʼ]/g, "'"));
+  if (REPEAT_REQUEST.test(founderText.replace(/[‘’ʼ]/g, "'"))) return true;
+  const moves = founderMoves(founderText);
+  return moves.includes('recall') || moves.includes('resume');
 }
 
 /** Four-word sequences of a text (lower case, citation keys and punctuation out), the evals' repetition unit. */

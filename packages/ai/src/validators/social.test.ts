@@ -56,7 +56,14 @@ describe('never the previous reply again (repeated_reply, LAB-M3, LAB-M10)', () 
   });
 
   it('a founder who asks to hear it again may', () => {
-    for (const text of ['Can you repeat that?', 'Sorry, what was the first step?', 'Say that again?']) {
+    for (const text of [
+      'Can you repeat that?',
+      'Sorry, what was the first step?',
+      'Say that again?',
+      // A recall or "where were we?" names it again on purpose.
+      'Do you remember what we talked about last time?',
+      'Where were we?',
+    ]) {
       expect(asksToRepeat(text), text).toBe(true);
     }
     expect(asksToRepeat('What should we repeat in the second pilot?')).toBe(false);

@@ -1245,6 +1245,16 @@ describe('validateCoachResponse — conversation craft the lab still heard (wave
       previousReply: previous,
     });
     expect(asked.response.answer).toBe(previous);
+    // A recall names the plan again on purpose, even right after an opener that named it.
+    const opener = 'Hi Rafi, did you get to run five more interviews at the bus station this week?';
+    const recall =
+      'I do. You were going to run five more interviews at the bus station this week. How did that go?';
+    const recalled = validateCoachResponse(base({ answer: recall }), {
+      ...opts(),
+      founderText: 'Do you remember what we talked about last time?',
+      previousReply: opener,
+    });
+    expect(recalled.response.answer).toBe(recall);
   });
 
   it('a call’s reply that ends on a statement hands the turn back, within 70 words', () => {
