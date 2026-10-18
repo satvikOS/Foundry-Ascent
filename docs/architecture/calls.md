@@ -53,16 +53,19 @@ and the heartbeats keep both warm. Clients report first-audio p50/p95, barge-ins
 
 Contracts in `packages/contracts/src/calls.ts`; errors are problem+json.
 
-| Endpoint                                                 | Who                              | Result                                                                                                                                                                                                                                                         |
-| -------------------------------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /sessions/:id/calls` `{inputMode, replace?}`       | founder/team, as themselves      | 201 `{call, sttGrant, intro}`. Never stored for idempotent replay (the grant is a credential).                                                                                                                                                                 |
-| `GET /calls/:id`                                         | founders, team, assigned EIR     | `{call, summary}`; the summary once the call ended.                                                                                                                                                                                                            |
-| `POST /calls/:id/stt-grant`                              | the caller                       | A fresh Transcribe URL on reconnect or unmute, under the heartbeat's checks (20 per call, 100 a day).                                                                                                                                                          |
-| `POST /calls/:id/heartbeat` `{state, micOpenSeconds}`    | the caller                       | `{remainingSeconds, action: continue \| terminate, reason}`. A terminate also ends the call.                                                                                                                                                                   |
-| `POST /calls/:id/end` `{reason, clientStats?}`           | the caller                       | `{call, summary}`. Idempotent: an ended call is returned as it is, with its first reason.                                                                                                                                                                      |
-| `POST /turns/:id/interrupt` `{callId, heardSeq, heard?}` | the caller                       | 204. Records what the founder heard of the reply (verified); the first record wins.                                                                                                                                                                            |
-| `POST /speech`                                           | the caller, in a live call       | `audio/mpeg`, streamed (§2.5).                                                                                                                                                                                                                                 |
-| `POST /calls/notice/acknowledge`                         | anyone signed in, for themselves | `{acknowledgedAt}`. The first-call privacy notice was read; stored with the person (migration 0010), idempotent, audited once. `GET /ventures/:id/call-config` reports it as `callNoticeAcknowledgedAt`, and the call screen shows the notice until it is set. |
+| Endpoint                                                     | Who                              | Result                                                                                                                                                                                                                                                         |
+| ------------------------------------------------------------ | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /sessions/:id/calls` `{inputMode, replace?}`           | founder/team, as themselves      | 201 `{call, sttGrant, intro}`. Never stored for idempotent replay (the grant is a credential).                                                                                                                                                                 |
+| `GET /calls/:id`                                             | founders, team, assigned EIR     | `{call, summary}`; the summary once the call ended.                                                                                                                                                                                                            |
+| `POST /calls/:id/stt-grant`                                  | the caller                       | A fresh Transcribe URL on reconnect or unmute, under the heartbeat's checks (20 per call, 100 a day).                                                                                                                                                          |
+| `POST /calls/:id/heartbeat` `{state, micOpenSeconds, face?}` | the caller                       | `{remainingSeconds, action: continue \| terminate, reason, face?}`. A terminate also ends the call; `face: stop` only its face.                                                                                                                                |
+| `POST /calls/:id/end` `{reason, clientStats?}`               | the caller                       | `{call, summary}`. Idempotent: an ended call is returned as it is, with its first reason.                                                                                                                                                                      |
+| `POST /turns/:id/interrupt` `{callId, heardSeq, heard?}`     | the caller                       | 204. Records what the founder heard of the reply (verified); the first record wins.                                                                                                                                                                            |
+| `POST /speech`                                               | the caller, in a live call       | `audio/mpeg`, streamed (§2.5); `audio/wav` with `x-face-manifest` for a unit the call's face may show (§4.2).                                                                                                                                                  |
+| `POST /calls/notice/acknowledge`                             | anyone signed in, for themselves | `{acknowledgedAt}`. The first-call privacy notice was read; stored with the person (migration 0010), idempotent, audited once. `GET /ventures/:id/call-config` reports it as `callNoticeAcknowledgedAt`, and the call screen shows the notice until it is set. |
+| `POST /calls/avatar-session` `{ventureId, callId}`           | founder/team                     | The face of the live call (§4.3): a room token for a vendor face, or the presence (no token).                                                                                                                                                                  |
+| `POST /calls/:id/face/speak`                                 | the caller                       | 204. Hands the face a unit's exact PCM with its `x-face-manifest` (§4.2); 422 otherwise.                                                                                                                                                                       |
+| `POST /calls/:id/face/interrupt`, `/face/end`                | the caller                       | 204. Barge-in on the face; the face is no longer shown (its vendor session ends).                                                                                                                                                                              |
 
 Someone else's call or turn is 404, as is a conversation the caller cannot see. Refusals:
 
@@ -406,59 +409,87 @@ conversation is saved, and you can keep going in chat") or today's AI allowance,
 until midnight UTC ("Your conversation is saved"). A voice turn refused for the allowance says the same
 instead of a generic error.
 
-## 4. Avatar provider seam
+## 4. The face and the voice of a call (the digital twin)
 
-The call engine owns the conversation (speech in, validated speech out); an avatar provider only embodies it.
-`apps/web/src/lib/realtime/avatar.ts` and `playback.ts` (the code is authoritative):
+The call engine owns the conversation (speech in, validated speech out); a face only embodies it and a cloned voice
+only says what the engine already validated. Both are off by default (`faces_enabled`, `cloned_voice_enabled`), each
+needs its own consent scope, and each falls back without a word. How to turn them on:
+[docs/runbooks/avatars.md](../runbooks/avatars.md). The code is authoritative.
+
+### 4.1 Seams
 
 ```text
-AvatarProvider
-  id                         builtin | heygen | tavus | simli | fake   (EmbodimentProviderId)
-  drawsFace                  true when the provider renders its own face (vendor video)
-  voicing                    engine | audio | text
-  mount(stage, options)      attach to the stage element; honours reduced motion
-  setState(state)            connecting | listening | thinking | speaking | muted | idle
-  setLevels({veir, founder}) both voices' loudness (0–1), every animation frame
-  speak({text})              a validated unit starts being heard
-  unmount()                  release the stage (and any vendor session)
-  vendor faces only:
-  connect(session, signal)   open the vendor session with the API's single-use token; resolves at the first frame
-  video()                    the face's live MediaStream for the call tile
-  renderer()                 voicing `audio`: the FaceRenderer the call hands its audio to
-  onLost(listener)           the face stopped (vendor dropped, video ended)
+Server (packages/core ports)                                   Vendors (apps/api adapters)
+EmbodimentProvider  id fake | heygen, voicing audio, likeness  heygen-liveavatar.ts (LITE), development-face.ts
+  createSession({callId, personaId, avatarRef, maxSeconds})      → browser {token, url, expiresAt}, sessionRef, control
+  speak(handle, VerifiedFaceAudio) / interrupt / keepAlive / end
+VoiceProvider       id elevenlabs | fake, model, price         elevenlabs-voice.ts, development-voice.ts
+  synthesize({unit: VerifiedSpeechUnit, voiceRef, format})
+SpeechSynthesizer   Amazon Polly (stock voices; pcm_16000 for a face)
 
-FaceRenderer
-  ready()                                   connected and showing video
-  render(buffer, {context, destination}, {onStart, onEnd('ended' | 'failed')}) → stop
+Browser (apps/web)
+AvatarProvider      builtin (presence) | fake (canvas) | heygen (lib/realtime/embodiment/liveavatar.ts)
+  connect(session, signal, relay) · video() · renderer() · onLost()
+FaceRenderer        render(buffer, output, handlers, audio: {pcm, manifest} | null) → stop
+FaceRelay           speak(audio) → POST /calls/:id/face/speak · interrupt() → POST /calls/:id/face/interrupt
+CallFaceController  features/calls/use-call-face.ts: one per engine; the face belongs to the call
 ```
 
-**Voicing.** `engine`: the call plays its own audio and the face follows its loudness (the built-in presence).
-`audio`: the face renders the call's validated audio itself, lip-synced (a vendor's speech-to-video). The player
-fetches and decodes each unit from `POST /speech` as before and hands the buffer to the face, which plays it into
-the player's own gain node (a vendor adapter routes its remote audio track there with `createMediaStreamSource`;
-the tile's `<video>` stays muted), so ducking for barge-in, loudness and the captions' timing are unchanged. A unit
-is announced (captions, first-audio timing, heard units) at the face's first sound; a unit the face fails before its
-first sound is played through the speakers instead, so no sentence is lost to the face. `text` (a vendor voicing
-validated text) is reserved: it would need a per-unit receipt route before any text leaves the call, and it hands the
-voice to the vendor.
+Configuration: `MEDIA_FACE_PROVIDER` (`none` | `heygen-liveavatar`), `MEDIA_FACE_SANDBOX`, `MEDIA_VOICE_PROVIDER`
+(`polly` | `elevenlabs`), `MEDIA_VOICE_MODEL`, `MEDIA_VOICE_ZERO_RETENTION` (infra `media`, off in production.json).
+Vendor keys come from Secrets Manager (`foundry-ascent/media/heygen`, `foundry-ascent/media/elevenlabs`, JSON
+`{"apiKey"}`; names and prices in `packages/core/media-vendors.json`), read on first use, cached 5 minutes, never
+logged, never sent to the browser. The local API runs stand-ins with `EMBODIMENT_PROVIDER=fake` and
+`VOICE_CLONE_PROVIDER=fake` (refused outside development).
 
-**The face of a call.** The call settings (`GET /ventures/:id/call-config`) name the provider. Once the call is
-live, the stage (`features/calls/use-call-face.ts`) asks `POST /calls/avatar-session {ventureId, callId}`. The API
-(`veir.avatarSession`) mints a vendor session only through the `EmbodimentSessionIssuer` port, only for the caller's
-own live call in that venture with that persona (409 `call_not_active` otherwise), ending with the call's time left,
-and only when a face of a real person's likeness is the persona's provider under likeness consent (`faceIssuer`).
-The vendor round trip happens outside the database transaction; the token is never stored, logged or audited (the
-audit records the provider and voicing). Any failure, and a call with less than 15 s left, answers the presence
-(`provider: builtin`, no token). The stage then loads the vendor adapter (its own chunk), connects within 8 s and,
-at the first frame, becomes a 16:9 video tile (the face, its name, the active-speaker edge, the founder's initials
-in the corner; the camera stays off) and attaches the face to the engine (`CallEngine.attachFace`). A face that
-fails, is late or drops later gives way to the presence without a word, its join is cancelled, and the call goes on
-with its own audio.
+### 4.2 Only validated speech reaches the face and the clone
 
-**Development stand-in.** `EMBODIMENT_PROVIDER=fake` on the local API (`apps/api/src/adapters/development-face.ts`,
-refused outside `APP_ENV=development`) gives every call the stand-in face (`lib/realtime/embodiment/fake-face.ts`):
-a canvas face captured as a `MediaStream`, voicing `audio`, no one's likeness. `e2e/video-calls.spec.ts` drives the
-same path against the production build.
+- **The clone** is handed only a `VerifiedSpeechUnit`, which only `verifiedSpeechUnit()` makes, from a unit whose
+  signature (`sessionId|turnId|seq|text`, after the identity guard, meta-narration gate and sentence gate) verifies
+  in that request. Passages of a stored reply (unsigned) and the crisis line use a stock voice. It speaks only in a
+  call that started with it (`calls.voice_vendor`), while `cloned_voice_enabled` is on and the persona's voice is
+  ready under `voice` consent; otherwise the next unit is the call's stock voice, or the platform voice when that
+  call's clone was withdrawn (the call goes on).
+- **The face's speak channel stays on the server.** LiveAvatar LITE's `ws_url` is stored only encrypted
+  (AES-256-GCM, a key derived from the session-signing key, bound to the call) in `call_faces` and erased when the
+  face or the call ends; the browser gets the room's client token and URL only, and never publishes into the room.
+- **Face audio is checked byte for byte.** For a call with a live face, `POST /speech` returns a signed unit as
+  24 kHz PCM in a WAV (the browser can always play it itself) with `x-face-manifest`: an HMAC over the unit, the
+  call, the face session and the SHA-256 of every one-second chunk. When the unit's turn comes, the face's relay
+  sends those bytes back (`POST /calls/:id/face/speak`, parts of at most 18 s, `x-face-part`); the server checks the
+  manifest and every chunk, counts one hand-over per unit (`call_speech.face_plays`), and only then relays them to
+  the vendor. Anything else (other audio, a changed sample, another call's manifest, a replay, an unsigned unit) is
+  refused (422, audited `call.face_refused`) before the vendor sees it. One synthesis serves both the speakers'
+  copy and the face.
+
+### 4.3 The face of a call
+
+1. The call settings (`GET /ventures/:id/call-config`) name the face only while `faces_enabled` is on, a provider
+   is wired and, for a real likeness, the persona's face is ready under `likeness` consent (`app.persona_twin`),
+   with the video minutes left (`faceMinutesLeft`).
+2. Once the call is live the stage asks the call's `CallFaceController` for it; the controller asks
+   `POST /calls/avatar-session {ventureId, callId}` once per call. The server opens a vendor session only for the
+   caller's own live call in that venture with that persona, for at most the call's time left, the per-call video
+   limit (`face_minutes_per_call`, 20) and the person's video minutes this month (`face_minutes_per_principal_month`,
+   60), never above the platform spend cap, outside any transaction; one face per call (`call_faces`). Anything else
+   answers the presence (no token); the audit names the provider and the reason, never a token.
+3. The adapter (its own chunk) joins within 8 s; at the first frame the same tile shows the face's video (muted),
+   the name tag stays, the founder's initials sit in the corner, and the engine hands the face each unit (§4.2).
+   A unit is announced at the face's first sound (the vendor's speak event, or its audio track's level); a unit the
+   face cannot start within 3 s, or the server refused, is played by the call itself.
+4. The face belongs to the call: minimizing keeps it (the mini bar shows it as a thumbnail, the monogram with
+   reduced motion); a face that drops, or the stage giving it up, tells the server (`POST /calls/:id/face/end`).
+5. Heartbeats report whether the face is shown and answer `face: stop` (and the server ends the vendor session)
+   when faces are switched off, likeness consent is withdrawn, the month's video minutes are used up, or the face is
+   no longer shown. A crisis turn drops the face to the presence at once: a human-looking face never says the
+   crisis line. Ending the call ends its face (a database trigger erases the control channel; the vendor session is
+   stopped after commit).
+
+**Metering.** Face seconds come from the server's clock (`call_faces.metered_seconds`, never beyond the face's
+limit) and go into the usage ledger as heartbeats come and when the face or the call ends, in the same transaction
+as the counter (exactly once), as `heygen:liveavatar-lite` at the vendor's per-minute price. Clone characters are
+metered per unit as `elevenlabs:<model>` at its per-1,000-characters price. Both are purpose `speech`, so the
+platform's daily cap counts them and a person's AI cap does not; the call's speech budget (§2.5) bounds the clone.
 
 **Built-in presence** (`presence.ts`, `presence.css`): concentric hairlines and a soft halo drawn only from the
 colour tokens, so it follows the theme. The outer ring and halo follow the vEIR's voice (the playback
@@ -467,16 +498,7 @@ measure), the inner ring follows the founder's microphone, an arc turns while co
 sentence gives the halo a soft lift. Levels reach CSS as custom properties set through the CSSOM, which the
 strict CSP allows. With `prefers-reduced-motion` it is still and the state shows only in words. It implies no
 likeness: the face is the vEIR's monogram (serif initials in a hairline ring) unless the EIR consented to a
-portrait.
-
-**What a real vendor adds** (the design: wave 6 avatar design, HeyGen LiveAvatar LITE first, Anam as fallback):
-the vendor approved (security, privacy, accessibility, procurement; retention and training terms), the EIR's
-`likeness` and `voice` consent and the vendor's own consent step recorded, the key in Secrets Manager
-(`foundry-ascent/media/<vendor>`, AWS-managed encryption) read by the API role only, an `EmbodimentSessionIssuer`
-adapter, the browser adapter bundled from npm (`script-src 'self'`), and the vendor's exact hosts in `connect-src`
-(a test forbids `*`). The cloned voice is only ever synthesized by `POST /speech` from signed units: no voice
-credential reaches the browser. A vendor whose speak channel the browser holds can be made to lip-sync other audio
-in that browser's own session; before real students the speak channel stays on the API.
+portrait. It is the face whenever no vendor face is live.
 
 ## 5. Privacy, consent and safety
 
@@ -503,8 +525,10 @@ in that browser's own session; before real students the speak channel stays on t
   afterwards.
 - **Voice consent.** A vEIR speaks with its EIR's chosen voice only while the EIR's consent covers `voice`;
   otherwise calls are refused rather than switched to another voice. Heartbeats re-check the consent, so a
-  revoked or expired consent ends a live call within 15 s. Likeness (portraits, vendor avatars) needs
-  `likeness` consent and is not used by the built-in presence.
+  revoked or expired consent ends a live call within 15 s. The EIR's cloned voice (§4) also needs `voice`;
+  withdrawn mid-call, the call goes on in the platform voice. Likeness (portraits, the video face) needs
+  `likeness` consent and is not used by the built-in presence; withdrawn, the face ends at once. Each scope can
+  be withdrawn on its own (`POST /consents/:id/withdraw-scope`) without suspending the vEIR.
 - **Crisis.** Spoken turns go through the same risk classification and crisis path as typed ones: a crisis
   is answered with fixed human-support text, no model call, and a P1 escalation draft the founder chooses to
   share. On a call the fixed spoken message is played for the turn's author whatever the call's state, the
