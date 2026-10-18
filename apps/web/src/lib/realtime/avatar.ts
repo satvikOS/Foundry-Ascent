@@ -1,6 +1,6 @@
 import type { AvatarSessionResponse, AvatarVoicing, EmbodimentProviderId } from '@foundry/contracts';
 
-import type { FaceRenderer } from './playback';
+import type { FaceRenderer, FaceUnitAudio } from './playback';
 import { PresenceAvatar } from './presence';
 
 /**
@@ -14,7 +14,18 @@ import { PresenceAvatar } from './presence';
 
 export type AvatarState = 'connecting' | 'listening' | 'thinking' | 'speaking' | 'muted' | 'idle';
 
-export type { FaceRenderer } from './playback';
+export type { FaceRenderer, FaceUnitAudio } from './playback';
+
+/**
+ * The server path a face's audio takes (`POST /calls/:id/face/*`): the face's speak channel stays on the server,
+ * which relays a unit only when it is exactly the audio it synthesized for this call. The browser only watches.
+ */
+export interface FaceRelay {
+  /** Hands the server one unit's audio for the face; rejects when the server would not relay it. */
+  speak(audio: FaceUnitAudio, signal: AbortSignal): Promise<void>;
+  /** Barge-in: the face drops what it still has to say (best effort). */
+  interrupt(): void;
+}
 
 /** Loudness of both sides, 0–1, sampled every animation frame. */
 export interface AudioLevels {
@@ -54,10 +65,10 @@ export interface AvatarProvider {
   // Vendor faces only ---------------------------------------------------------------------------------
 
   /**
-   * Opens the vendor session with the API's single-use token (`POST /calls/avatar-session`); resolves once the
-   * first frame arrived, rejects when it cannot (the call keeps the presence).
+   * Joins the vendor session with the API's room token (`POST /calls/avatar-session`); resolves once the first
+   * frame arrived, rejects when it cannot (the call keeps the presence). Audio for the face goes through `relay`.
    */
-  connect?(session: AvatarSessionResponse, signal: AbortSignal): Promise<void>;
+  connect?(session: AvatarSessionResponse, signal: AbortSignal, relay: FaceRelay): Promise<void>;
   /** The face's live video for the call tile (a vendor's WebRTC stream). */
   video?(): MediaStream | null;
   /** Voicing `audio`: where the call hands each validated unit's audio. */
@@ -82,6 +93,11 @@ const VENDOR_FACES: Partial<Record<EmbodimentProviderId, () => Promise<AvatarPro
   fake: async () => {
     const { FakeFaceAvatar, browserFakeFaceDeps } = await import('./embodiment/fake-face');
     return new FakeFaceAvatar(browserFakeFaceDeps());
+  },
+  // HeyGen LiveAvatar (LITE): the room's video and audio over LiveKit, watched only.
+  heygen: async () => {
+    const { LiveAvatarFace, browserLiveAvatarDeps } = await import('./embodiment/liveavatar');
+    return new LiveAvatarFace(await browserLiveAvatarDeps());
   },
 };
 

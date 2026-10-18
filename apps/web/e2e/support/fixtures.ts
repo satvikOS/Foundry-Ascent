@@ -393,6 +393,23 @@ export async function setCallsEnabled(baseURL: string, enabled: boolean): Promis
   }
 }
 
+/**
+ * Turns the vEIR's video faces on or off for the platform as the owner (`PATCH /admin/settings`). The e2e API
+ * runs the development stand-in face (EMBODIMENT_PROVIDER=fake), which draws no one; faces ship off.
+ */
+export async function setFacesEnabled(baseURL: string, enabled: boolean): Promise<void> {
+  const owner = await playwrightRequest.newContext({ baseURL, storageState: OWNER_STATE });
+  try {
+    const response = await owner.patch('/api/v1/admin/settings', {
+      headers: WRITE_HEADERS,
+      data: { facesEnabled: enabled },
+    });
+    expect(response.status(), 'PATCH /admin/settings').toBe(200);
+  } finally {
+    await owner.dispose();
+  }
+}
+
 /** The seeded EIR whose vEIR coaches QuietQuad (the founder's venture). */
 export const SEEDED_EIR_FIRST_NAME = 'Corin';
 

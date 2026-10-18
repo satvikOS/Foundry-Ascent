@@ -120,6 +120,49 @@ export function interruptTurn(turnId: string, body: InterruptBody): Promise<void
   });
 }
 
+/** The face-audio manifest of a unit (`POST /speech` response, `POST /calls/:id/face/speak` request). */
+export const FACE_MANIFEST_HEADER = 'x-face-manifest';
+/** The first one-second chunk a face hand-over carries. */
+export const FACE_PART_HEADER = 'x-face-part';
+/** Bytes of one second of the face's audio (16-bit mono at 24 kHz). */
+export const FACE_CHUNK_BYTES = 48_000;
+/** Seconds of audio one hand-over may carry (the API reads at most 1 MiB per request). */
+export const FACE_PART_CHUNKS = 18;
+
+/**
+ * `POST /calls/:id/face/speak` — hands the call's face one unit's audio (in parts of at most 18 s): the exact PCM
+ * `POST /speech` returned with its manifest. The server checks every chunk before relaying it to the face.
+ */
+export async function sendFaceAudio(
+  callId: string,
+  audio: { readonly pcm: Uint8Array; readonly manifest: string },
+  signal: AbortSignal,
+): Promise<void> {
+  const part = FACE_CHUNK_BYTES * FACE_PART_CHUNKS;
+  for (let offset = 0; offset < audio.pcm.byteLength; offset += part) {
+    await apiSend(path`/calls/${callId}/face/speak`, {
+      method: 'POST',
+      rawBody: audio.pcm.subarray(offset, Math.min(audio.pcm.byteLength, offset + part)),
+      headers: {
+        [FACE_MANIFEST_HEADER]: audio.manifest,
+        [FACE_PART_HEADER]: String(offset / FACE_CHUNK_BYTES),
+      },
+      signal,
+      waitForResume: false,
+    });
+  }
+}
+
+/** `POST /calls/:id/face/interrupt` — barge-in: the face drops what it still has to say. Best effort. */
+export function interruptFace(callId: string): Promise<void> {
+  return apiSend(path`/calls/${callId}/face/interrupt`, { method: 'POST', waitForResume: false });
+}
+
+/** `POST /calls/:id/face/end` — the face is no longer shown: the vendor session ends. Best effort. */
+export function endFace(callId: string): Promise<void> {
+  return apiSend(path`/calls/${callId}/face/end`, { method: 'POST', waitForResume: false });
+}
+
 /**
  * Audio for one validated unit (`POST /speech`, `audio/mpeg`). Signed units and the intro carry `seq` and
  * `sig`; a passage of a stored reply carries neither. 501 `speech_unavailable` means this server has no
@@ -141,10 +184,12 @@ export async function fetchSpeech(
       method: 'POST',
       body,
       signal,
-      accept: 'audio/mpeg, application/problem+json',
+      accept: 'audio/mpeg, audio/wav, application/problem+json',
       waitForResume: false,
     });
-    return { kind: 'audio', data: await response.arrayBuffer() };
+    const faceManifest = response.headers.get(FACE_MANIFEST_HEADER);
+    const data = await response.arrayBuffer();
+    return faceManifest ? { kind: 'audio', data, faceManifest } : { kind: 'audio', data };
   } catch (error) {
     if (isAbortError(error)) throw error;
     if (!isApiError(error)) return { kind: 'failed' };

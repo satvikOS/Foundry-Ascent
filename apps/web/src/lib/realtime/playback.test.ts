@@ -7,9 +7,11 @@ import {
   type FaceRenderer,
   type FaceRendererOutput,
   type FaceRenderHandlers,
+  type FaceUnitAudio,
   type PlayerAudio,
   type SpeechFetchResult,
   type SpeechUnitToPlay,
+  wavPayload,
 } from './playback';
 import { FakeAudioContext, FakeSpeechSynthesis, FakeUtterance, fakeVoice, flush } from './testing';
 
@@ -319,13 +321,19 @@ class ScriptedFace implements FaceRenderer {
     buffer: AudioBuffer;
     output: FaceRendererOutput;
     handlers: FaceRenderHandlers;
+    audio: FaceUnitAudio | null;
     stopped: boolean;
   }[] = [];
   ready(): boolean {
     return this.live;
   }
-  render(buffer: AudioBuffer, output: FaceRendererOutput, handlers: FaceRenderHandlers): () => void {
-    const entry = { buffer, output, handlers, stopped: false };
+  render(
+    buffer: AudioBuffer,
+    output: FaceRendererOutput,
+    handlers: FaceRenderHandlers,
+    audio: FaceUnitAudio | null,
+  ): () => void {
+    const entry = { buffer, output, handlers, audio, stopped: false };
     this.renders.push(entry);
     return () => {
       entry.stopped = true;
@@ -333,7 +341,64 @@ class ScriptedFace implements FaceRenderer {
   }
 }
 
+/** A WAV of `pcm` (16-bit mono at 24 kHz), as `POST /speech` returns a unit for a face. */
+function wavOf(pcm: Uint8Array): ArrayBuffer {
+  const out = new Uint8Array(44 + pcm.byteLength);
+  const view = new DataView(out.buffer);
+  const ascii = (offset: number, text: string) => {
+    for (let i = 0; i < text.length; i += 1) out[offset + i] = text.charCodeAt(i);
+  };
+  ascii(0, 'RIFF');
+  view.setUint32(4, 36 + pcm.byteLength, true);
+  ascii(8, 'WAVE');
+  ascii(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, 24_000, true);
+  view.setUint32(28, 48_000, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  ascii(36, 'data');
+  view.setUint32(40, pcm.byteLength, true);
+  out.set(pcm, 44);
+  return out.buffer;
+}
+
+describe('wavPayload', () => {
+  it('finds the PCM of a WAV, and refuses anything else', () => {
+    const pcm = new Uint8Array([1, 2, 3, 4, 5, 6]);
+    expect(wavPayload(wavOf(pcm))).toEqual(pcm);
+    expect(wavPayload(new TextEncoder().encode('MP3:not a wav').buffer)).toBeNull();
+    expect(wavPayload(new ArrayBuffer(4))).toBeNull();
+  });
+});
+
 describe('SpeechPlayer with a face that renders the call’s audio (voicing audio)', () => {
+  it('hands the face the exact PCM and manifest the server sent for it, copied before decoding', async () => {
+    const { pending, player, context } = setup();
+    const face = new ScriptedFace();
+    player.setFace(face);
+    player.enqueue(unit(0));
+    const pcm = new Uint8Array(96).map((_, i) => i);
+    const wav = wavOf(pcm);
+    // decodeAudioData takes (detaches) the bytes it decodes: the face's copy must not depend on them.
+    context.decodeAudioData = vi.fn((data: ArrayBuffer) => {
+      new Uint8Array(data).fill(0);
+      return Promise.resolve({ duration: 1 });
+    }) as unknown as typeof context.decodeAudioData;
+    pending[0]?.resolve({ kind: 'audio', data: wav, faceManifest: 'fa1.k1.payload.mac' });
+    await flush();
+    expect(face.renders[0]?.audio).toEqual({ pcm, manifest: 'fa1.k1.payload.mac' });
+    // A unit without a manifest (a passage of a stored reply, the crisis line) gives the face nothing.
+    face.renders[0]?.handlers.onEnd('ended');
+    player.enqueue(unit(1));
+    await flush();
+    pending[1]?.resolve({ kind: 'audio', data: wavOf(pcm) });
+    await flush();
+    expect(face.renders[1]?.audio).toBeNull();
+  });
+
   it('hands each unit’s audio to the face and announces it at the face’s first sound', async () => {
     const { context, pending, player, log, audioOf } = setup();
     const face = new ScriptedFace();

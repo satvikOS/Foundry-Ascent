@@ -10,7 +10,7 @@ import type { CallEngine } from '@/lib/realtime/call-engine';
 import { cn } from '@/lib/utils';
 
 import { CallFaceVideo } from './call-video-tile';
-import { BROWSER_FACE_DEPS, useCallFace, type CallFaceDeps } from './use-call-face';
+import { useCallFace, type CallFaceController } from './use-call-face';
 import type { CallVeir } from './use-call-veir';
 
 interface CallStageProps {
@@ -28,8 +28,8 @@ interface CallStageProps {
   className?: string;
   /** The face became a live video (true) or went back to the presence (false). */
   onVideoChange?: (live: boolean) => void;
-  /** Injectable for tests. */
-  faceDeps?: CallFaceDeps;
+  /** The call's face (it outlives this screen: minimized, the call keeps it). Null: always the presence. */
+  face?: CallFaceController | null;
 }
 
 /**
@@ -51,14 +51,20 @@ export function CallStage({
   callId = null,
   className,
   onVideoChange,
-  faceDeps = BROWSER_FACE_DEPS,
+  face: controller = null,
 }: CallStageProps) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const presence = useMemo(() => createAvatarProvider(), []);
-  const face = useCallFace({ provider: veir.provider, ventureId, callId, engine, reducedMotion }, faceDeps);
+  const face = useCallFace(controller);
   const video = face.status === 'live';
   const active = face.status === 'live' ? face.provider : presence;
+
+  // Once the call is live, ask for its face (once per call; the controller keeps it while minimized).
+  useEffect(() => {
+    if (controller === null || ventureId === null || callId === null) return;
+    controller.request({ provider: veir.provider, ventureId, callId, reducedMotion });
+  }, [controller, veir.provider, ventureId, callId, reducedMotion]);
   const speaking = state === 'speaking';
   const me = useMe();
   const levels = useCallback(() => engine.levels(), [engine]);

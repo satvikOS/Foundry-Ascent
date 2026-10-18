@@ -18,6 +18,8 @@ import {
 import type { CallEngine } from '@/lib/realtime/call-engine';
 import { IDLE_CALL, type CallSnapshot } from '@/lib/realtime/call-state';
 
+import type { CallFaceController } from './use-call-face';
+
 /**
  * The engine, the call screen and the mini bar load on demand: most visits never open them. They are
  * warmed once the app is idle, so the first Call opens at once.
@@ -68,6 +70,8 @@ interface CallContextValue {
   readonly me: Me;
   /** Null until the engine has loaded (it loads when the call screen first opens, or when idle). */
   readonly engine: CallEngine | null;
+  /** The face of the engine's calls (a vendor's video while one is live); null until the engine has loaded. */
+  readonly face: CallFaceController | null;
   readonly snapshot: CallSnapshot;
   readonly route: CallRoute | null;
   /** Opens the call screen of the live (or just ended) call. */
@@ -154,13 +158,16 @@ export function CallProvider({ me, children }: { me: Me; children: ReactNode }) 
   const arrivedByHistory = useCallback(() => traversedTo.current !== null, []);
 
   const [engine, setEngine] = useState<CallEngine | null>(null);
+  const [face, setFace] = useState<CallFaceController | null>(null);
   const engineRequested = useRef(false);
   const ensureEngine = useCallback(() => {
     if (engineRequested.current) return;
     engineRequested.current = true;
     loadEngine()
-      .then(({ createCallEngine }) => {
-        setEngine(createCallEngine(queryClient));
+      .then(({ createCallEngine, createCallFace }) => {
+        const created = createCallEngine(queryClient);
+        setFace(createCallFace(created));
+        setEngine(created);
       })
       .catch(() => {
         // Offline or a stale deployment: the next Call tries again.
@@ -248,8 +255,19 @@ export function CallProvider({ me, children }: { me: Me; children: ReactNode }) 
   }, [engine, hideCall]);
 
   const value = useMemo<CallContextValue>(
-    () => ({ me, engine, snapshot, route, showCall, hideCall, switchToChat, quietEnd, arrivedByHistory }),
-    [me, engine, snapshot, route, showCall, hideCall, switchToChat, quietEnd, arrivedByHistory],
+    () => ({
+      me,
+      engine,
+      face,
+      snapshot,
+      route,
+      showCall,
+      hideCall,
+      switchToChat,
+      quietEnd,
+      arrivedByHistory,
+    }),
+    [me, engine, face, snapshot, route, showCall, hideCall, switchToChat, quietEnd, arrivedByHistory],
   );
 
   return (

@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { fetchSpeech } from './call-api';
+import {
+  FACE_CHUNK_BYTES,
+  FACE_MANIFEST_HEADER,
+  FACE_PART_HEADER,
+  fetchSpeech,
+  sendFaceAudio,
+} from './call-api';
 
 const SESSION = '1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e02';
 const TURN = '7d1f2c4e-1a2b-4c3d-8e9f-0a1b2c3d4e5f';
@@ -69,5 +75,42 @@ describe('fetchSpeech: what each answer of POST /speech means for the call', () 
     expect(await speechOutcome(problem(429, 'some_future_limit'))).toEqual({ kind: 'failed' });
     expect(await speechOutcome(problem(409, 'something_new'))).toEqual({ kind: 'failed' });
     expect(await speechOutcome(problem(502, 'internal'))).toEqual({ kind: 'failed' });
+  });
+});
+
+describe('the face of a call over HTTP', () => {
+  it('keeps the face-audio manifest POST /speech sent with a unit for the face', async () => {
+    const outcome = await speechOutcome(
+      new Response(new Uint8Array([82, 73, 70, 70]), {
+        status: 200,
+        headers: { 'content-type': 'audio/wav', [FACE_MANIFEST_HEADER]: 'fa1.k1.payload.mac' },
+      }),
+    );
+    expect(outcome).toMatchObject({ kind: 'audio', faceManifest: 'fa1.k1.payload.mac' });
+    const plain = await speechOutcome(new Response(new Uint8Array([1]), { status: 200 }));
+    expect(plain).not.toHaveProperty('faceManifest');
+  });
+
+  it('hands the face a unit’s exact bytes in parts of at most 18 seconds, each with its manifest, part and hash', async () => {
+    const sent: { url: string; headers: Headers; body: Uint8Array }[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: string, init: RequestInit) => {
+        sent.push({ url: input, headers: new Headers(init.headers), body: init.body as Uint8Array });
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }),
+    );
+    const pcm = new Uint8Array(FACE_CHUNK_BYTES * 20 + 100).map((_, i) => i % 251);
+    await sendFaceAudio('call-1', { pcm, manifest: 'fa1.k1.p.m' }, new AbortController().signal);
+    expect(sent.map((s) => s.url)).toEqual([
+      '/api/v1/calls/call-1/face/speak',
+      '/api/v1/calls/call-1/face/speak',
+    ]);
+    expect(sent.map((s) => s.headers.get(FACE_PART_HEADER))).toEqual(['0', '18']);
+    expect(sent.every((s) => s.headers.get(FACE_MANIFEST_HEADER) === 'fa1.k1.p.m')).toBe(true);
+    expect(sent[0]?.headers.get('content-type')).toBe('application/octet-stream');
+    expect(sent[0]?.headers.get('x-amz-content-sha256')).toMatch(/^[0-9a-f]{64}$/);
+    expect(sent[0]?.body.byteLength).toBe(FACE_CHUNK_BYTES * 18);
+    expect(sent[1]?.body).toEqual(pcm.subarray(FACE_CHUNK_BYTES * 18));
   });
 });

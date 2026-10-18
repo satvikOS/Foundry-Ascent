@@ -2,15 +2,32 @@ import type { AvatarSessionResponse } from '@foundry/contracts';
 import { act, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { AvatarProvider, FaceRenderer } from '@/lib/realtime/avatar';
+import type { AvatarProvider, FaceRelay, FaceRenderer } from '@/lib/realtime/avatar';
 
 import { CallStage } from './call-stage';
-import { fakeEngine, json, renderWithRouter, stubFetch } from './testing';
-import type { CallFaceDeps } from './use-call-face';
+import { LIVE, fakeEngine, json, renderWithRouter, stubFetch } from './testing';
+import { CallFaceController, type CallFaceDeps } from './use-call-face';
 import type { CallVeir } from './use-call-veir';
 
 const VENTURE = '0b9d1f0e-6a0c-4f39-9d0e-5d3b8a1c2e01';
 const CALL = '7d1f2c4e-1a2b-4c3d-8e9f-0a1b2c3d4e5f';
+const LIVE_CALL = {
+  ...LIVE,
+  call: {
+    id: CALL,
+    sessionId: LIVE.sessionId ?? '',
+    ventureId: VENTURE,
+    personaId: '5a6b7c8d-9e0f-4a1b-8c3d-4e5f6a7b8c06',
+    status: 'live' as const,
+    provider: 'builtin' as const,
+    inputMode: 'transcribe' as const,
+    startedAt: '2026-10-17T12:00:00.000Z',
+    endedAt: null,
+    endReason: null,
+    maxSeconds: 1800,
+    durationSeconds: null,
+  },
+};
 
 const SESSION: AvatarSessionResponse = {
   provider: 'fake',
@@ -53,7 +70,7 @@ function vendorFace() {
     speak: vi.fn(),
     unmount: vi.fn(),
     connect: vi.fn(
-      (_session: AvatarSessionResponse, _signal: AbortSignal) =>
+      (_session: AvatarSessionResponse, _signal: AbortSignal, _relay: FaceRelay) =>
         new Promise<void>((resolve, reject) => {
           connected = resolve;
           failed = reject;
@@ -85,11 +102,42 @@ function vendorFace() {
 }
 
 function deps(face: ReturnType<typeof vendorFace>, session: AvatarSessionResponse = SESSION) {
+  const relay: FaceRelay = { speak: vi.fn(() => Promise.resolve()), interrupt: vi.fn() };
   return {
     startSession: vi.fn((_venture: string, _call: string, _signal: AbortSignal) => Promise.resolve(session)),
     loadProvider: vi.fn(() => Promise.resolve(face.provider as AvatarProvider)),
+    relayFor: vi.fn((_callId: string) => relay),
+    endFace: vi.fn((_callId: string) => Promise.resolve()),
     connectTimeoutMs: 8_000,
   } satisfies CallFaceDeps;
+}
+
+/** A call's face controller over a fake engine with a live call. */
+function controllerWith(face: ReturnType<typeof vendorFace>, session?: AvatarSessionResponse) {
+  const fake = fakeEngine(LIVE_CALL);
+  const faceDeps = deps(face, session);
+  return { ...fake, faceDeps, controller: new CallFaceController(fake.asEngine, faceDeps) };
+}
+
+function stage(props: {
+  controller: CallFaceController;
+  engine: ReturnType<typeof fakeEngine>['asEngine'];
+  provider?: CallVeir['provider'];
+  callId?: string | null;
+  state?: 'listening' | 'speaking' | 'connecting';
+  onVideoChange?: (live: boolean) => void;
+}) {
+  return (
+    <CallStage
+      veir={veir(props.provider ?? 'fake')}
+      engine={props.engine}
+      state={props.state ?? 'listening'}
+      ventureId={VENTURE}
+      callId={props.callId === undefined ? CALL : props.callId}
+      face={props.controller}
+      {...(props.onVideoChange ? { onVideoChange: props.onVideoChange } : {})}
+    />
+  );
 }
 
 /** The square stage of the presence (the face whenever no video is shown). */
@@ -108,45 +156,30 @@ afterEach(() => {
 
 describe('CallStage: the face of a call', () => {
   it('shows the presence for the built-in provider and never asks for a session', async () => {
-    const { asEngine, engine } = fakeEngine();
     const face = vendorFace();
-    const faceDeps = deps(face);
-    renderWithRouter(
-      <CallStage
-        veir={veir('builtin')}
-        engine={asEngine}
-        state="listening"
-        ventureId={VENTURE}
-        callId={CALL}
-        faceDeps={faceDeps}
-      />,
-    );
+    const { asEngine, engine, controller, faceDeps } = controllerWith(face);
+    renderWithRouter(stage({ controller, engine: asEngine, provider: 'builtin' }));
     await presenceShown();
     expect(faceDeps.startSession).not.toHaveBeenCalled();
     expect(engine.attachFace).not.toHaveBeenCalled();
+    // Without faces, the tile is exactly the presence tile (no layout change).
+    expect(document.querySelector('[data-slot="call-tile"]')).toHaveAttribute('data-face', 'presence');
   });
 
-  it('becomes a video tile once the vendor face shows its first frame, and hands it the call’s audio', async () => {
-    const { asEngine, engine } = fakeEngine();
+  it('becomes a video in the same tile once the vendor face shows its first frame, and hands it the call’s audio', async () => {
     const face = vendorFace();
-    const faceDeps = deps(face);
+    const { asEngine, engine, controller, faceDeps } = controllerWith(face);
     const onVideoChange = vi.fn();
     const { container } = renderWithRouter(
-      <CallStage
-        veir={veir('fake')}
-        engine={asEngine}
-        state="speaking"
-        ventureId={VENTURE}
-        callId={CALL}
-        faceDeps={faceDeps}
-        onVideoChange={onVideoChange}
-      />,
+      stage({ controller, engine: asEngine, state: 'speaking', onVideoChange }),
     );
     await waitFor(() => {
       expect(face.provider.connect).toHaveBeenCalled();
     });
     expect(faceDeps.startSession).toHaveBeenCalledWith(VENTURE, CALL, expect.any(AbortSignal));
     expect(face.provider.connect.mock.calls[0]?.[0]).toEqual(SESSION);
+    // The face's audio goes through the server for this call.
+    expect(faceDeps.relayFor).toHaveBeenCalledWith(CALL);
     // Until the first frame, the presence is the face.
     await presenceShown();
     expect(engine.attachFace).not.toHaveBeenCalledWith(face.renderer);
@@ -155,7 +188,6 @@ describe('CallStage: the face of a call', () => {
       face.connect();
     });
     await screen.findByRole('figure');
-    // The same tile, now a video: speaking edge and name tag unchanged.
     const tile = container.querySelector('[data-slot="call-tile"]');
     expect(tile).toHaveAttribute('data-face', 'video');
     expect(tile).toHaveAttribute('data-speaking', 'true');
@@ -165,26 +197,36 @@ describe('CallStage: the face of a call', () => {
     expect(video?.muted).toBe(true);
     expect(video?.srcObject).toBe(face.stream);
     expect(engine.attachFace).toHaveBeenLastCalledWith(face.renderer);
+    expect(engine.setFaceShown).toHaveBeenLastCalledWith(true);
     expect(onVideoChange).toHaveBeenLastCalledWith(true);
-    // The face follows the call's state.
     expect(face.provider.setState).toHaveBeenCalledWith('speaking');
   });
 
-  it('goes back to the presence, quietly, when the face drops mid-call', async () => {
-    const { asEngine, engine } = fakeEngine();
+  it('keeps the face while the call is minimized and shows it again, asking only once per call', async () => {
     const face = vendorFace();
+    const { asEngine, controller, faceDeps } = controllerWith(face);
+    const first = renderWithRouter(stage({ controller, engine: asEngine }));
+    await waitFor(() => {
+      expect(face.provider.connect).toHaveBeenCalled();
+    });
+    act(() => {
+      face.connect();
+    });
+    await screen.findByRole('figure');
+    // Minimized: the call screen unmounts, the face stays with the call.
+    first.unmount();
+    expect(face.provider.unmount).not.toHaveBeenCalled();
+    expect(controller.getSnapshot().status).toBe('live');
+    renderWithRouter(stage({ controller, engine: asEngine }));
+    await screen.findByRole('figure');
+    expect(faceDeps.startSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('goes back to the presence, quietly, when the face drops mid-call, and tells the server', async () => {
+    const face = vendorFace();
+    const { asEngine, engine, controller, faceDeps } = controllerWith(face);
     const onVideoChange = vi.fn();
-    renderWithRouter(
-      <CallStage
-        veir={veir('fake')}
-        engine={asEngine}
-        state="listening"
-        ventureId={VENTURE}
-        callId={CALL}
-        faceDeps={deps(face)}
-        onVideoChange={onVideoChange}
-      />,
-    );
+    renderWithRouter(stage({ controller, engine: asEngine, onVideoChange }));
     await waitFor(() => {
       expect(face.provider.connect).toHaveBeenCalled();
     });
@@ -197,42 +239,67 @@ describe('CallStage: the face of a call', () => {
     });
     await presenceShown();
     expect(engine.attachFace).toHaveBeenLastCalledWith(null);
+    expect(engine.setFaceShown).toHaveBeenLastCalledWith(false);
     expect(face.provider.unmount).toHaveBeenCalled();
+    expect(faceDeps.endFace).toHaveBeenCalledWith(CALL);
     expect(onVideoChange).toHaveBeenLastCalledWith(false);
+    // Never asked for again in this call.
+    renderWithRouter(stage({ controller, engine: asEngine }));
+    expect(faceDeps.startSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops the face when the server says stop, and for a crisis turn (a face never says the crisis line)', async () => {
+    const stopped = vendorFace();
+    const a = controllerWith(stopped);
+    renderWithRouter(stage({ controller: a.controller, engine: a.asEngine }));
+    await waitFor(() => {
+      expect(stopped.provider.connect).toHaveBeenCalled();
+    });
+    act(() => {
+      stopped.connect();
+    });
+    await screen.findByRole('figure');
+    act(() => {
+      a.stopFace();
+    });
+    await waitFor(() => {
+      expect(a.controller.getSnapshot().status).toBe('presence');
+    });
+    // The server already ended it.
+    expect(a.faceDeps.endFace).not.toHaveBeenCalled();
+
+    const crisis = vendorFace();
+    const b = controllerWith(crisis);
+    b.controller.request({ provider: 'fake', ventureId: VENTURE, callId: CALL, reducedMotion: false });
+    await waitFor(() => {
+      expect(crisis.provider.connect).toHaveBeenCalled();
+    });
+    crisis.connect();
+    await waitFor(() => {
+      expect(b.controller.getSnapshot().status).toBe('live');
+    });
+    b.setSnapshot({
+      ...LIVE_CALL,
+      blocked: { reason: 'crisis_support', message: 'Support is available.', resources: [] } as never,
+    });
+    expect(b.controller.getSnapshot().status).toBe('presence');
+    expect(b.faceDeps.endFace).toHaveBeenCalledWith(CALL);
   });
 
   it('keeps the presence when the API offers no face or the face cannot connect', async () => {
-    const { asEngine } = fakeEngine();
     const noToken = vendorFace();
-    const noTokenDeps = deps(noToken, { ...SESSION, provider: 'builtin', token: null, voicing: 'engine' });
-    const first = renderWithRouter(
-      <CallStage
-        veir={veir('fake')}
-        engine={asEngine}
-        state="listening"
-        ventureId={VENTURE}
-        callId={CALL}
-        faceDeps={noTokenDeps}
-      />,
-    );
+    const a = controllerWith(noToken, { ...SESSION, provider: 'builtin', token: null, voicing: 'engine' });
+    const first = renderWithRouter(stage({ controller: a.controller, engine: a.asEngine }));
     await waitFor(() => {
-      expect(noTokenDeps.startSession).toHaveBeenCalled();
+      expect(a.faceDeps.startSession).toHaveBeenCalled();
     });
-    expect(noTokenDeps.loadProvider).not.toHaveBeenCalled();
+    expect(a.faceDeps.loadProvider).not.toHaveBeenCalled();
     await presenceShown();
     first.unmount();
 
     const refused = vendorFace();
-    renderWithRouter(
-      <CallStage
-        veir={veir('fake')}
-        engine={asEngine}
-        state="listening"
-        ventureId={VENTURE}
-        callId={CALL}
-        faceDeps={deps(refused)}
-      />,
-    );
+    const b = controllerWith(refused);
+    renderWithRouter(stage({ controller: b.controller, engine: b.asEngine }));
     await waitFor(() => {
       expect(refused.provider.connect).toHaveBeenCalled();
     });
@@ -243,63 +310,37 @@ describe('CallStage: the face of a call', () => {
       expect(refused.provider.unmount).toHaveBeenCalled();
     });
     expect(screen.queryByRole('figure')).not.toBeInTheDocument();
+    expect(b.faceDeps.endFace).toHaveBeenCalledWith(CALL);
   });
 
-  it('gives up on a face that shows no frame in time', async () => {
-    const { asEngine, engine } = fakeEngine();
+  it('gives up on a face that shows no frame in time, cancelling its join', async () => {
     const slow = vendorFace();
-    renderWithRouter(
-      <CallStage
-        veir={veir('fake')}
-        engine={asEngine}
-        state="listening"
-        ventureId={VENTURE}
-        callId={CALL}
-        faceDeps={{ ...deps(slow), connectTimeoutMs: 30 }}
-      />,
-    );
+    const fake = fakeEngine(LIVE_CALL);
+    const faceDeps = { ...deps(slow), connectTimeoutMs: 30 };
+    const controller = new CallFaceController(fake.asEngine, faceDeps);
+    renderWithRouter(stage({ controller, engine: fake.asEngine }));
     await waitFor(() => {
       expect(slow.provider.unmount).toHaveBeenCalled();
     });
     // The vendor's join is cancelled, so no session goes on (and bills) unseen.
     expect(slow.provider.connect.mock.calls[0]?.[1].aborted).toBe(true);
-    // A frame arriving after the deadline changes nothing.
     act(() => {
       slow.connect();
     });
     await presenceShown();
     expect(screen.queryByRole('figure')).not.toBeInTheDocument();
-    expect(engine.attachFace).not.toHaveBeenCalledWith(slow.renderer);
+    expect(fake.engine.attachFace).not.toHaveBeenCalledWith(slow.renderer);
   });
 
   it('asks for no face before the call is live, and closes the face when the call ends', async () => {
-    const { asEngine, engine } = fakeEngine();
     const face = vendorFace();
-    const faceDeps = deps(face);
-    const view = renderWithRouter(
-      <CallStage
-        veir={veir('fake')}
-        engine={asEngine}
-        state="connecting"
-        ventureId={VENTURE}
-        callId={null}
-        faceDeps={faceDeps}
-      />,
-    );
+    const { asEngine, engine, controller, faceDeps, setSnapshot } = controllerWith(face);
+    const view = renderWithRouter(stage({ controller, engine: asEngine, callId: null, state: 'connecting' }));
     await presenceShown();
     expect(faceDeps.startSession).not.toHaveBeenCalled();
     view.unmount();
 
-    const live = renderWithRouter(
-      <CallStage
-        veir={veir('fake')}
-        engine={asEngine}
-        state="listening"
-        ventureId={VENTURE}
-        callId={CALL}
-        faceDeps={faceDeps}
-      />,
-    );
+    renderWithRouter(stage({ controller, engine: asEngine }));
     await waitFor(() => {
       expect(face.provider.connect).toHaveBeenCalled();
     });
@@ -308,9 +349,14 @@ describe('CallStage: the face of a call', () => {
     });
     await screen.findByRole('figure');
     const signal = faceDeps.startSession.mock.calls[0]?.[2];
-    live.unmount();
+    act(() => {
+      setSnapshot({ ...LIVE_CALL, phase: 'ended' });
+    });
     expect(signal?.aborted).toBe(true);
     expect(face.provider.unmount).toHaveBeenCalled();
     expect(engine.attachFace).toHaveBeenLastCalledWith(null);
+    // The call's end ended the face on the server; heartbeats no longer report one.
+    expect(faceDeps.endFace).not.toHaveBeenCalled();
+    expect(engine.setFaceShown).toHaveBeenLastCalledWith(null);
   });
 });

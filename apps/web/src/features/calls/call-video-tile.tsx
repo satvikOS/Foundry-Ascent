@@ -82,3 +82,48 @@ export function CallFaceVideo({ stream, you, levels, reducedMotion, className }:
     </figure>
   );
 }
+
+/**
+ * The face as a thumbnail (the mini call bar): the same live video, muted, in the place of the vEIR's monogram.
+ * The bar shows the monogram instead when motion is reduced (it is decoration there; the call screen shows the
+ * face itself).
+ */
+export function CallFaceThumbnail({
+  stream,
+  speaking,
+  className,
+}: {
+  stream: MediaStream | null;
+  speaking: boolean;
+  className?: string;
+}) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return undefined;
+    video.srcObject = stream;
+    return () => {
+      video.srcObject = null;
+    };
+  }, [stream]);
+  return (
+    <span
+      data-slot="call-face-thumbnail"
+      data-speaking={speaking || undefined}
+      className={cn(
+        'relative inline-flex size-6 shrink-0 overflow-hidden rounded-full bg-black ring-1 ring-border',
+        speaking && 'ring-2 ring-foreground/40',
+        className,
+      )}
+    >
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted
+        aria-hidden
+        className="size-full scale-125 object-cover"
+      />
+    </span>
+  );
+}

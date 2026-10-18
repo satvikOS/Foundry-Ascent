@@ -28,7 +28,11 @@ export interface SpeechUnitToPlay {
 export type VoiceRoute = 'server' | 'browser' | 'captions';
 
 export type SpeechFetchResult =
-  | { readonly kind: 'audio'; readonly data: ArrayBuffer }
+  /**
+   * The unit's audio. For a call with a live face the server sends PCM in a WAV with its face-audio manifest:
+   * the face may render exactly those bytes (docs/architecture/calls.md §4).
+   */
+  | { readonly kind: 'audio'; readonly data: ArrayBuffer; readonly faceManifest?: string }
   /** The server has no speech synthesis here (501); the browser may read validated text itself. */
   | { readonly kind: 'unavailable' }
   /** The server refused speech for this call (AI paused, caps reached, voice consent withdrawn). */
@@ -61,6 +65,31 @@ export interface FaceRendererOutput {
   readonly destination: AudioNode;
 }
 
+/**
+ * A unit's audio as a face may render it: the PCM the server synthesized (the WAV's payload, 16-bit mono 24 kHz)
+ * and the server's manifest of it. The face hands both back to the server, which relays them only if they match.
+ */
+export interface FaceUnitAudio {
+  readonly pcm: Uint8Array;
+  readonly manifest: string;
+}
+
+/** The PCM payload of a WAV (its `data` chunk), or null when the bytes are not a PCM WAV. */
+export function wavPayload(data: ArrayBuffer): Uint8Array | null {
+  const bytes = new Uint8Array(data);
+  const text = (offset: number) => String.fromCharCode(...bytes.subarray(offset, offset + 4));
+  if (bytes.byteLength < 12 || text(0) !== 'RIFF' || text(8) !== 'WAVE') return null;
+  const view = new DataView(data);
+  for (let offset = 12; offset + 8 <= bytes.byteLength;) {
+    const size = view.getUint32(offset + 4, true);
+    if (text(offset) === 'data') {
+      return bytes.slice(offset + 8, Math.min(bytes.byteLength, offset + 8 + size));
+    }
+    offset += 8 + size + (size % 2);
+  }
+  return null;
+}
+
 export interface FaceRenderHandlers {
   /** The unit's first sound is heard (captions and the first-audio timing follow this, not the hand-over). */
   onStart(): void;
@@ -79,8 +108,16 @@ export interface FaceRenderHandlers {
 export interface FaceRenderer {
   /** Whether it can take a unit now (connected, video flowing). Otherwise the call plays the unit itself. */
   ready(): boolean;
-  /** Makes one decoded unit heard; returns the function that stops it at once (barge-in, end). */
-  render(buffer: AudioBuffer, output: FaceRendererOutput, handlers: FaceRenderHandlers): () => void;
+  /**
+   * Makes one decoded unit heard; returns the function that stops it at once (barge-in, end). `audio` is what
+   * the face may render (null for a unit the server did not give the face: it is played by the call itself).
+   */
+  render(
+    buffer: AudioBuffer,
+    output: FaceRendererOutput,
+    handlers: FaceRenderHandlers,
+    audio: FaceUnitAudio | null,
+  ): () => void;
 }
 
 export interface PlayerEvents {
@@ -95,7 +132,7 @@ export interface PlayerEvents {
 }
 
 type Prepared = (
-  | { readonly kind: 'buffer'; readonly buffer: AudioBuffer }
+  | { readonly kind: 'buffer'; readonly buffer: AudioBuffer; readonly face?: FaceUnitAudio }
   | { readonly kind: 'browser' }
   | { readonly kind: 'captions' }
 ) & {
@@ -257,12 +294,18 @@ export class SpeechPlayer {
       case 'failed':
         // This unit only: the next one asks for the voice again.
         return { kind: 'captions' };
-      case 'audio':
+      case 'audio': {
+        // Copied before decoding (decodeAudioData takes the bytes): the face may render exactly these.
+        const pcm = result.faceManifest === undefined ? null : wavPayload(result.data);
+        const face =
+          pcm === null || result.faceManifest === undefined ? null : { pcm, manifest: result.faceManifest };
         try {
-          return { kind: 'buffer', buffer: await this.audio.context.decodeAudioData(result.data) };
+          const buffer = await this.audio.context.decodeAudioData(result.data);
+          return face === null ? { kind: 'buffer', buffer } : { kind: 'buffer', buffer, face };
         } catch {
           return { kind: 'captions' };
         }
+      }
     }
   }
 
@@ -340,7 +383,10 @@ export class SpeechPlayer {
     if (prepared.kind === 'buffer') {
       const face = this.face;
       if (face?.ready() === true) {
-        return { stop: this.renderOnFace(face, prepared.buffer, settle, started), deferred: true };
+        return {
+          stop: this.renderOnFace(face, prepared.buffer, prepared.face ?? null, settle, started),
+          deferred: true,
+        };
       }
       return { stop: this.playBuffer(prepared.buffer, settle), deferred: false };
     }
@@ -384,6 +430,7 @@ export class SpeechPlayer {
   private renderOnFace(
     face: FaceRenderer,
     buffer: AudioBuffer,
+    audio: FaceUnitAudio | null,
     settle: (completed: boolean) => void,
     started: () => void,
   ): () => void {
@@ -420,6 +467,7 @@ export class SpeechPlayer {
           settle(outcome === 'ended');
         },
       },
+      audio,
     );
     return () => {
       finished = true;

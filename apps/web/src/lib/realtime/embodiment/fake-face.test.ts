@@ -1,7 +1,8 @@
 import type { AvatarSessionResponse } from '@foundry/contracts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { FaceRenderHandlers, FaceRendererOutput } from '../playback';
+import type { FaceRelay } from '../avatar';
+import type { FaceRenderHandlers, FaceRendererOutput, FaceUnitAudio } from '../playback';
 import { FakeAudioContext, FakeGain, FakeTrack } from '../testing';
 import { FakeFaceAvatar, type FakeFaceDeps } from './fake-face';
 
@@ -47,6 +48,16 @@ function setup() {
     destination: new FakeGain() as unknown as AudioNode,
   };
   const buffer = { duration: 1.5 } as AudioBuffer;
+  const audio: FaceUnitAudio = { pcm: new Uint8Array(48), manifest: 'fa1.k.p.m' };
+  const relayed: FaceUnitAudio[] = [];
+  let refuse = false;
+  const relay = {
+    speak: vi.fn((unit: FaceUnitAudio, _signal: AbortSignal) => {
+      relayed.push(unit);
+      return refuse ? Promise.reject(new Error('refused')) : Promise.resolve();
+    }),
+    interrupt: vi.fn(),
+  } satisfies FaceRelay;
   const log: string[] = [];
   const handlers: FaceRenderHandlers = {
     onStart: () => log.push('start'),
@@ -65,6 +76,12 @@ function setup() {
     buffer,
     log,
     handlers,
+    audio,
+    relay,
+    relayed,
+    refuseRelay: () => {
+      refuse = true;
+    },
   };
 }
 
@@ -82,13 +99,15 @@ describe('FakeFaceAvatar (the development stand-in face)', () => {
   });
 
   it('opens only a stand-in session, after the join delay, and then streams video', async () => {
-    const { face, stream, captureStream } = setup();
+    const { face, stream, captureStream, relay } = setup();
     await expect(
-      face.connect({ ...SESSION, token: 'heygen.abc' }, new AbortController().signal),
-    ).rejects.toThrow(/stand-in/);
-    await expect(face.connect({ ...SESSION, token: null }, new AbortController().signal)).rejects.toThrow();
+      face.connect({ ...SESSION, token: 'heygen.abc' }, new AbortController().signal, setup().relay),
+    ).rejects.toThrow(/stand_in/);
+    await expect(
+      face.connect({ ...SESSION, token: null }, new AbortController().signal, setup().relay),
+    ).rejects.toThrow();
 
-    const connected = face.connect(SESSION, new AbortController().signal);
+    const connected = face.connect(SESSION, new AbortController().signal, relay);
     await vi.advanceTimersByTimeAsync(499);
     expect(face.video()).toBeNull();
     expect(face.renderer().ready()).toBe(false);
@@ -100,9 +119,9 @@ describe('FakeFaceAvatar (the development stand-in face)', () => {
   });
 
   it('gives up at once when the call closes it while it connects', async () => {
-    const { face, createCanvas } = setup();
+    const { face, createCanvas, relay } = setup();
     const controller = new AbortController();
-    const connected = face.connect(SESSION, controller.signal);
+    const connected = face.connect(SESSION, controller.signal, relay);
     controller.abort();
     await expect(connected).rejects.toMatchObject({ name: 'AbortError' });
     await vi.advanceTimersByTimeAsync(1000);
@@ -111,8 +130,8 @@ describe('FakeFaceAvatar (the development stand-in face)', () => {
   });
 
   it('never starts a face that was unmounted while it joined', async () => {
-    const { face, createCanvas } = setup();
-    void face.connect(SESSION, new AbortController().signal).catch(() => undefined);
+    const { face, createCanvas, relay } = setup();
+    void face.connect(SESSION, new AbortController().signal, relay).catch(() => undefined);
     face.unmount();
     await vi.advanceTimersByTimeAsync(1000);
     expect(createCanvas).not.toHaveBeenCalled();
@@ -120,12 +139,14 @@ describe('FakeFaceAvatar (the development stand-in face)', () => {
   });
 
   it('plays a unit into the call’s own output after its render delay, and reports its start and end', async () => {
-    const { face, context, output, buffer, log, handlers } = setup();
-    const connected = face.connect(SESSION, new AbortController().signal);
+    const { face, context, output, buffer, log, handlers, audio, relay, relayed } = setup();
+    const connected = face.connect(SESSION, new AbortController().signal, relay);
     await vi.advanceTimersByTimeAsync(500);
     await connected;
 
-    face.renderer().render(buffer, output, handlers);
+    face.renderer().render(buffer, output, handlers, audio);
+    // The server got exactly this unit's audio to check and relay; the face renders only after it accepted.
+    expect(relayed).toEqual([audio]);
     await vi.advanceTimersByTimeAsync(119);
     expect(context.sources).toHaveLength(0);
     await vi.advanceTimersByTimeAsync(1);
@@ -138,33 +159,51 @@ describe('FakeFaceAvatar (the development stand-in face)', () => {
   });
 
   it('stops a unit at once (barge-in), before or after its first sound, without reporting an end', async () => {
-    const { face, context, output, buffer, log, handlers } = setup();
-    const connected = face.connect(SESSION, new AbortController().signal);
+    const { face, context, output, buffer, log, handlers, audio, relay } = setup();
+    const connected = face.connect(SESSION, new AbortController().signal, relay);
     await vi.advanceTimersByTimeAsync(500);
     await connected;
 
-    const early = face.renderer().render(buffer, output, handlers);
+    const early = face.renderer().render(buffer, output, handlers, audio);
     early();
     await vi.advanceTimersByTimeAsync(500);
     expect(context.sources).toHaveLength(0);
 
-    const late = face.renderer().render(buffer, output, handlers);
+    const late = face.renderer().render(buffer, output, handlers, audio);
     await vi.advanceTimersByTimeAsync(120);
     late();
     expect(context.sources[0]?.stopped).toBe(true);
+    // The server tells the face to drop what it still had to say.
+    expect(relay.interrupt).toHaveBeenCalledTimes(1);
     context.sources[0]?.finish();
     expect(log).toEqual(['start']);
   });
 
+  it('gives a unit back to the call when the server gave the face nothing, or refused it', async () => {
+    const { face, context, output, buffer, log, handlers, audio, relay, refuseRelay } = setup();
+    const connected = face.connect(SESSION, new AbortController().signal, relay);
+    await vi.advanceTimersByTimeAsync(500);
+    await connected;
+    face.renderer().render(buffer, output, handlers, null);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(relay.speak).not.toHaveBeenCalled();
+    expect(log).toEqual(['end failed']);
+    refuseRelay();
+    face.renderer().render(buffer, output, handlers, audio);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(log).toEqual(['end failed', 'end failed']);
+    expect(context.sources).toHaveLength(0);
+  });
+
   it('hands a unit back when it dropped before the unit was heard, and tells the call it is gone', async () => {
-    const { face, output, buffer, log, handlers, tracks } = setup();
+    const { face, output, buffer, log, handlers, tracks, audio, relay } = setup();
     const lost = vi.fn();
     face.onLost(lost);
-    const connected = face.connect(SESSION, new AbortController().signal);
+    const connected = face.connect(SESSION, new AbortController().signal, relay);
     await vi.advanceTimersByTimeAsync(500);
     await connected;
 
-    face.renderer().render(buffer, output, handlers);
+    face.renderer().render(buffer, output, handlers, audio);
     face.drop();
     expect(lost).toHaveBeenCalledTimes(1);
     expect(tracks[0]?.readyState).toBe('ended');
@@ -174,10 +213,10 @@ describe('FakeFaceAvatar (the development stand-in face)', () => {
   });
 
   it('counts a video track that ended by itself as lost, once', async () => {
-    const { face, tracks } = setup();
+    const { face, tracks, relay } = setup();
     const lost = vi.fn();
     face.onLost(lost);
-    const connected = face.connect(SESSION, new AbortController().signal);
+    const connected = face.connect(SESSION, new AbortController().signal, relay);
     await vi.advanceTimersByTimeAsync(500);
     await connected;
     tracks[0]?.dispatchEvent(new Event('ended'));
@@ -186,8 +225,8 @@ describe('FakeFaceAvatar (the development stand-in face)', () => {
   });
 
   it('draws every frame while live and releases the video when unmounted', async () => {
-    const { face, frames, tracks, cancelFrame } = setup();
-    const connected = face.connect(SESSION, new AbortController().signal);
+    const { face, frames, tracks, cancelFrame, relay } = setup();
+    const connected = face.connect(SESSION, new AbortController().signal, relay);
     await vi.advanceTimersByTimeAsync(500);
     await connected;
     expect(frames).toHaveLength(1);

@@ -26,6 +26,8 @@ export interface ApiRequestOptions {
   method?: HttpMethod;
   /** JSON-serialisable request body. `undefined` sends no body (the SHA-256 header is then the empty hash). */
   body?: unknown;
+  /** Bytes sent as they are (`application/octet-stream`) instead of a JSON `body`. */
+  rawBody?: Uint8Array;
   query?: QueryParams;
   signal?: AbortSignal | undefined;
   /** Sent as `Idempotency-Key`; reuse the same key when retrying the same user intent. */
@@ -104,7 +106,10 @@ export async function prepareRequest(
 
   let body: Uint8Array<ArrayBuffer> | undefined;
   if (method !== 'GET') {
-    if (options.body !== undefined) {
+    if (options.rawBody !== undefined) {
+      body = new Uint8Array(options.rawBody);
+      headers.set('content-type', 'application/octet-stream');
+    } else if (options.body !== undefined) {
       body = new TextEncoder().encode(JSON.stringify(options.body));
       headers.set('content-type', 'application/json');
     }

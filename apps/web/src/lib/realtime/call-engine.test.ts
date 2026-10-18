@@ -1406,6 +1406,50 @@ describe('CallEngine · limits and ending', () => {
     expect(h.context.closed).toBe(true);
   });
 
+  it('reports whether the face is shown, and passes the server’s stop on to the face', async () => {
+    const h = setup({ grant: null });
+    await startLive(h);
+    const stops = vi.fn();
+    const off = h.engine.onFaceStop(stops);
+    h.engine.setFaceShown(true);
+    h.api.heartbeat.mockResolvedValueOnce({
+      remainingSeconds: 900,
+      action: 'continue',
+      reason: null,
+      face: 'stop',
+    });
+    await vi.advanceTimersByTimeAsync(15_000);
+    await flush(10);
+    expect(h.api.heartbeat).toHaveBeenLastCalledWith(CALL_ID, {
+      state: 'listening',
+      micOpenSeconds: 0,
+      face: 'live',
+    });
+    expect(stops).toHaveBeenCalledTimes(1);
+    // The call goes on.
+    expect(h.state().phase).toBe('live');
+    h.engine.setFaceShown(false);
+    await vi.advanceTimersByTimeAsync(15_000);
+    await flush(10);
+    expect(h.api.heartbeat).toHaveBeenLastCalledWith(CALL_ID, {
+      state: 'listening',
+      micOpenSeconds: 0,
+      face: 'off',
+    });
+    off();
+    h.engine.setFaceShown(null);
+    h.api.heartbeat.mockResolvedValueOnce({
+      remainingSeconds: 900,
+      action: 'continue',
+      reason: null,
+      face: 'stop',
+    });
+    await vi.advanceTimersByTimeAsync(15_000);
+    await flush(10);
+    expect(h.api.heartbeat).toHaveBeenLastCalledWith(CALL_ID, { state: 'listening', micOpenSeconds: 0 });
+    expect(stops).toHaveBeenCalledTimes(1);
+  });
+
   it('warns near the limit and ends at it', async () => {
     const h = setup({ grant: null });
     h.api.startCall.mockResolvedValueOnce({

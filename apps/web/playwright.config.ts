@@ -80,6 +80,9 @@ const webServer: PlaywrightTestConfig['webServer'] = localStack
           // Every run sends a handful of turns as the same founder; keep reruns against one database
           // (and Playwright retries) clear of the 20-per-10-minutes per-person turn limit.
           CORE_TURN_RATE_LIMIT: process.env.CORE_TURN_RATE_LIMIT ?? '200',
+          // The development stand-in face (a canvas, no one's likeness, no vendor): used only while a test
+          // switches faces on (they ship off), so every other test sees calls exactly as without faces.
+          EMBODIMENT_PROVIDER: 'fake',
         },
       },
       {

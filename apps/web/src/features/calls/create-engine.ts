@@ -7,6 +7,8 @@ import { refreshVentureAfterTurn } from '@/lib/api/venture-refresh';
 import { browserCallDeps } from '@/lib/realtime/browser';
 import { CallEngine } from '@/lib/realtime/call-engine';
 
+import { CallFaceController } from './use-call-face';
+
 /**
  * The person's one CallEngine, wired to the browser and to the query cache: a finished turn joins the
  * conversation's transcript, and the venture's data (memory, call minutes) is refreshed.
@@ -39,4 +41,9 @@ export function createCallEngine(queryClient: QueryClient): CallEngine {
     }),
   );
   return engine;
+}
+
+/** The face of the engine's calls (one controller per engine; it ends each face with its call). */
+export function createCallFace(engine: CallEngine): CallFaceController {
+  return new CallFaceController(engine);
 }

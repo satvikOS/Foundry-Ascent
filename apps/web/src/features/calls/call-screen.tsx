@@ -108,7 +108,7 @@ function useLiveCallPage(engine: CallEngine, live: boolean): void {
  * with the summary. Closing it keeps a live call going in the mini call bar.
  */
 export function CallScreen() {
-  const { me, engine, snapshot, route, hideCall, switchToChat, arrivedByHistory } = useLoadedCall();
+  const { me, engine, face, snapshot, route, hideCall, switchToChat, arrivedByHistory } = useLoadedCall();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const tenant = me.tenant.slug;
@@ -397,6 +397,7 @@ export function CallScreen() {
               engine={engine}
               snapshot={snapshot}
               veir={veir}
+              face={face}
               onSwitchToChat={switchToChat}
             />
           ) : (

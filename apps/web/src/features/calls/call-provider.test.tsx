@@ -95,8 +95,11 @@ class StandInEngine {
   onSpeak = () => () => undefined;
 }
 
-const engines = vi.hoisted((): { next: unknown } => ({ next: null }));
-vi.mock('./create-engine', () => ({ createCallEngine: () => engines.next }));
+const engines = vi.hoisted((): { next: unknown; face: unknown } => ({ next: null, face: null }));
+vi.mock('./create-engine', () => ({
+  createCallEngine: () => engines.next,
+  createCallFace: () => engines.face,
+}));
 
 const VENTURE = IDS.venture;
 const SESSION = IDS.session;
@@ -546,6 +549,39 @@ describe('the mini call bar', () => {
     const bar = await screen.findByRole('region', { name: "Call with Corin's vEIR" });
     return { ...app, bar };
   }
+
+  it('shows the live face as the bar’s thumbnail, and the monogram again once it is gone', async () => {
+    const stream = { getTracks: () => [] } as unknown as MediaStream;
+    const provider = { setState: vi.fn(), speak: vi.fn(), setLevels: vi.fn() };
+    let face: { status: string; stream?: MediaStream; provider?: typeof provider } = {
+      status: 'live',
+      stream,
+      provider,
+    };
+    const listeners = new Set<() => void>();
+    engines.face = {
+      subscribe: (listener: () => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      getSnapshot: () => face,
+      request: vi.fn(),
+      close: vi.fn(),
+    };
+    try {
+      const { bar } = await minimized();
+      const video = bar.querySelector<HTMLVideoElement>('[data-slot="call-face-thumbnail"] video');
+      expect(video?.muted).toBe(true);
+      expect(video?.srcObject).toBe(stream);
+      act(() => {
+        face = { status: 'presence' };
+        for (const listener of [...listeners]) listener();
+      });
+      expect(bar.querySelector('[data-slot="call-face-thumbnail"]')).toBeNull();
+    } finally {
+      engines.face = null;
+    }
+  });
 
   it('warns when the time is nearly up, and says when the call ended out of view', async () => {
     const { engine, bar } = await minimized();

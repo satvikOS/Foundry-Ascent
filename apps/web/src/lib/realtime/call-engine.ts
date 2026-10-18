@@ -209,6 +209,9 @@ export class CallEngine {
   private player: SpeechPlayer | null = null;
   /** The face that renders the call's audio (voicing `audio`), or null: the speakers. */
   private face: FaceRenderer | null = null;
+  /** Whether the call's vendor face is shown (reported in heartbeats, so a dropped face stops billing). */
+  private faceShown: boolean | null = null;
+  private readonly faceStopListeners = new Set<() => void>();
   private capture: MicCapture | null = null;
   private stt: TranscribeStream | null = null;
   private grant: SttGrant | null = null;
@@ -287,6 +290,22 @@ export class CallEngine {
   attachFace(face: FaceRenderer | null): void {
     this.face = face;
     this.player?.setFace(face);
+  }
+
+  /**
+   * Whether the call's vendor face is on screen (`null`: the call has none). Heartbeats report it, so the server
+   * ends a face the founder no longer sees.
+   */
+  setFaceShown(shown: boolean | null): void {
+    this.faceShown = shown;
+  }
+
+  /** The server said the face has to go (faces switched off, likeness withdrawn, minutes used up). */
+  onFaceStop(listener: () => void): () => void {
+    this.faceStopListeners.add(listener);
+    return () => {
+      this.faceStopListeners.delete(listener);
+    };
   }
 
   private set(patch: Partial<CallSnapshot>): void {
@@ -1248,10 +1267,12 @@ export class CallEngine {
       const result = await this.deps.api.heartbeat(call.id, {
         state: this.callState(),
         micOpenSeconds: this.micOpenSeconds(),
+        ...(this.faceShown === null ? {} : { face: this.faceShown ? 'live' : 'off' }),
       });
       if (epoch !== this.epoch) return;
       this.missedHeartbeats = 0;
       this.set({ remaining: { seconds: result.remainingSeconds, at: this.deps.clock.now() } });
+      if (result.face === 'stop') for (const listener of [...this.faceStopListeners]) listener();
       if (result.action === 'terminate') void this.end(result.reason ?? 'disabled');
     } catch {
       if (epoch !== this.epoch) return;

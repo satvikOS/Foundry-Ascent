@@ -1,7 +1,14 @@
 import type { AvatarSessionResponse } from '@foundry/contracts';
 
-import type { AudioLevels, AvatarMountOptions, AvatarProvider, AvatarState, SpokenUnit } from '../avatar';
-import type { FaceRenderer, FaceRendererOutput, FaceRenderHandlers } from '../playback';
+import type {
+  AudioLevels,
+  AvatarMountOptions,
+  AvatarProvider,
+  AvatarState,
+  FaceRelay,
+  SpokenUnit,
+} from '../avatar';
+import type { FaceRenderer, FaceRendererOutput, FaceRenderHandlers, FaceUnitAudio } from '../playback';
 
 /**
  * The development stand-in for a vendor face (docs/architecture/calls.md §4): a face drawn on a canvas and
@@ -9,9 +16,10 @@ import type { FaceRenderer, FaceRendererOutput, FaceRenderHandlers } from '../pl
  * of the call's validated audio (voicing `audio`) and every fallback run without a vendor account. It draws no
  * one's likeness. The local API serves it with `EMBODIMENT_PROVIDER=fake`; its session token starts `fake.`.
  *
- * A real speech-to-video vendor takes the same place: `connect` opens its WebRTC session with the API's token,
- * `video()` is its remote stream, and `render` sends the unit's audio (resampled to the vendor's PCM rate)
- * while the vendor's own audio track plays into `output.destination` in step with its video.
+ * Like a real vendor face it renders only what the server relays: `render` hands the unit's audio back to the
+ * server (`POST /calls/:id/face/speak`, which checks it against its manifest) and only once the server accepted
+ * it plays that audio into the call's own output, as a vendor's audio track would arrive in step with its video.
+ * A unit the server did not give the face, or refused, is played by the call itself.
  */
 
 export interface FakeFaceDeps {
@@ -63,7 +71,7 @@ const PALETTE = {
 } as const;
 
 function abortError(): DOMException {
-  return new DOMException('The face was closed before it connected', 'AbortError');
+  return new DOMException('face_closed', 'AbortError');
 }
 
 export class FakeFaceAvatar implements AvatarProvider {
@@ -82,9 +90,10 @@ export class FakeFaceAvatar implements AvatarProvider {
   private mouth = 0;
   private target = 0;
   private readonly lostListeners = new Set<() => void>();
+  private relay: FaceRelay | null = null;
   private readonly face: FaceRenderer = {
     ready: () => this.live,
-    render: (buffer, output, handlers) => this.render(buffer, output, handlers),
+    render: (buffer, output, handlers, audio) => this.render(buffer, output, handlers, audio),
   };
 
   constructor(private readonly deps: FakeFaceDeps) {}
@@ -105,10 +114,11 @@ export class FakeFaceAvatar implements AvatarProvider {
     // The mouth follows the audio itself (setLevels); nothing to do per sentence.
   }
 
-  connect(session: AvatarSessionResponse, signal: AbortSignal): Promise<void> {
+  connect(session: AvatarSessionResponse, signal: AbortSignal, relay: FaceRelay): Promise<void> {
     if (session.provider !== 'fake' || session.token?.startsWith('fake.') !== true) {
-      return Promise.reject(new Error('Not a stand-in face session'));
+      return Promise.reject(new Error('not_stand_in_session'));
     }
+    this.relay = relay;
     if (signal.aborted) return Promise.reject(abortError());
     return new Promise<void>((resolve, reject) => {
       const onAbort = () => {
@@ -136,7 +146,7 @@ export class FakeFaceAvatar implements AvatarProvider {
           resolve();
         } catch (err) {
           this.release();
-          reject(err instanceof Error ? err : new Error('The face could not start'));
+          reject(err instanceof Error ? err : new Error('face_not_started'));
         }
       }, this.deps.connectMs ?? CONNECT_MS);
       this.joining = timer;
@@ -171,30 +181,58 @@ export class FakeFaceAvatar implements AvatarProvider {
 
   // Internals -----------------------------------------------------------------------------------------
 
-  private render(buffer: AudioBuffer, output: FaceRendererOutput, handlers: FaceRenderHandlers): () => void {
+  private render(
+    buffer: AudioBuffer,
+    output: FaceRendererOutput,
+    handlers: FaceRenderHandlers,
+    audio: FaceUnitAudio | null,
+  ): () => void {
     let stopped = false;
+    let relayed = false;
     let source: AudioBufferSourceNode | null = null;
-    // The vendor's pipeline: the audio comes back with the video a moment later, and plays into the call's
-    // own gain (ducking and loudness unchanged).
-    const timer = this.deps.setTimeout(() => {
-      if (stopped) return;
-      if (!this.live) {
-        handlers.onEnd('failed');
-        return;
-      }
-      const node = output.context.createBufferSource();
-      node.buffer = buffer;
-      node.connect(output.destination);
-      node.onended = () => {
-        if (!stopped) handlers.onEnd('ended');
-      };
-      node.start();
-      source = node;
-      handlers.onStart();
-    }, this.deps.renderMs ?? RENDER_MS);
+    let timer: unknown = null;
+    const controller = new AbortController();
+    const relay = this.relay;
+    const fail = () => {
+      if (!stopped) handlers.onEnd('failed');
+    };
+    if (audio === null || relay === null || !this.live) {
+      // The server gave the face nothing to render (a unit it may not show): the call plays it itself.
+      timer = this.deps.setTimeout(fail, 0);
+    } else {
+      relay.speak(audio, controller.signal).then(
+        () => {
+          relayed = true;
+          if (stopped) return;
+          // The vendor's pipeline: the audio comes back with the video a moment later, and plays into the
+          // call's own gain (ducking and loudness unchanged).
+          timer = this.deps.setTimeout(() => {
+            if (stopped) return;
+            if (!this.live) {
+              fail();
+              return;
+            }
+            const node = output.context.createBufferSource();
+            node.buffer = buffer;
+            node.connect(output.destination);
+            node.onended = () => {
+              if (!stopped) handlers.onEnd('ended');
+            };
+            node.start();
+            source = node;
+            handlers.onStart();
+          }, this.deps.renderMs ?? RENDER_MS);
+        },
+        () => {
+          fail();
+        },
+      );
+    }
     return () => {
       stopped = true;
-      this.deps.clearTimeout(timer);
+      controller.abort();
+      if (timer !== null) this.deps.clearTimeout(timer);
+      if (relayed) relay?.interrupt();
       const node = source;
       source = null;
       if (node === null) return;
