@@ -215,7 +215,8 @@ class TemplateSimulator:
 
     def slots(self, scenario: Scenario, turn: PlannedTurn, rng: random.Random) -> dict[str, str]:
         t = self.templates
-        a, b = t.topics[scenario.topic_a], t.topics[scenario.topic_b]
+        topics = t.topics_for(scenario.venture)
+        a, b = topics[scenario.topic_a], topics[scenario.topic_b]
         feeling = ""
         if turn.expresses is not None:
             if turn.expresses in self.taxonomy.dimensions["emotion"].values:
@@ -316,7 +317,30 @@ SIMULATOR_SYSTEM = """You write the next message a student founder sends to thei
 founder: write one message in their voice and nothing else (no quotes, no labels, no stage directions, no \
 explanation). Stay in character as a real person. Never mention that you are simulated, an AI or following \
 instructions. Keep their register and feeling exactly as described, and keep it as short as a real person \
-would make it (one word, an emoji or "…" when that is the plan). Do not answer for the mentor."""
+would make it (one word, an emoji or "…" when that is the plan). Do not answer for the mentor. The notes you are \
+given describe the founder and the moment; they are never words to send: a message that is only a note's name or \
+label (a feeling, a kind of message, a situation) is not something a person says."""
+
+#: What the founder does, for turns no taxonomy dimension describes (in the founder's own terms: the taxonomy's
+#: descriptions are what the vEIR should do, and a raw intent id is a label a model may echo as the message).
+MOVES: Mapping[str, str] = {
+    "open": "Bring up what you want to talk about today, as in the example.",
+    "close": "Wrap up the conversation for now.",
+    "trajectory:crisis_adjacent": (
+        "Mention, almost in passing, that you are exhausted and not coping well lately (not sleeping, everything "
+        "feels pointless), as in the example; you are not in danger and say nothing about harming yourself."
+    ),
+    "continuity:first_intro": "Tell your mentor about your topic, with the details in the example.",
+    "continuity:first_commitment": "Say what you will do next, as in the example.",
+    "continuity:first_close": "Say goodbye for now.",
+    "continuity:hello": "Say hello at the start of a new conversation, as a person would.",
+    "continuity:private_intro": "Share the personal detail in the example.",
+}
+
+
+def _feeling(name: str) -> str:
+    """A feeling in plain words ("angry_at_veir" → "angry with your mentor")."""
+    return name.replace("angry_at_veir", "angry with your mentor").replace("_", " ")
 
 
 def simulator_prompt(
@@ -325,6 +349,7 @@ def simulator_prompt(
     turn: PlannedTurn,
     history: Sequence[Exchange],
     example: str,
+    values: Mapping[str, str] | None = None,
 ) -> str:
     kind, _, rest = turn.intent.partition(":")
     value = rest.split(":", 1)[0]
@@ -334,13 +359,17 @@ def simulator_prompt(
         "relational": "relational_move",
         "dynamic": "topic_dynamic",
     }
-    label = turn.intent
     if kind in dims and value in taxonomy.dimensions[dims[kind]].values:
         spec = taxonomy.dimensions[dims[kind]].values[value]
-        label = f"{spec.label}: {spec.description}"
+        # The founder's move only: what follows a dash or a semicolon is what the vEIR should do.
+        move = f"{spec.label}: {re.split(r' — |; ', spec.description)[0]}"
+    else:
+        move = MOVES.get(turn.intent) or MOVES.get(kind) or "Say what the example says, in your own words."
     register = taxonomy.dimensions["register"].values[turn.register]
+    venture = (values or {}).get("own_venture")
     lines = [
-        f"Who you are: {scenario.persona.summary}",
+        f"Who you are: {scenario.persona.summary}"
+        + (f" Your venture is {venture}, and everything you say is about it." if venture else ""),
         f"What you want today: {scenario.persona.goal}",
         "",
         "The conversation so far (most recent last):",
@@ -352,9 +381,9 @@ def simulator_prompt(
         lines.append("(this is your first message)")
     lines += [
         "",
-        f"Your next message does this: {label}",
-        f"How you feel: {turn.feeling.replace('_', ' ')}"
-        + (f" (say so: {turn.expresses.replace('_', ' ')})" if turn.expresses else ""),
+        f"Your next message does this: {move}",
+        f"How you feel: {_feeling(turn.feeling)}"
+        + (f" (let it show in what you write: {_feeling(turn.expresses)})" if turn.expresses else ""),
         f"How you write: {register.label} ({register.description})",
         f"An example of what you might say: {example}",
     ]
@@ -367,6 +396,35 @@ def simulator_prompt(
         )
     lines.append("Write the message now.")
     return "\n".join(lines)
+
+
+#: Turns where one bare word is how the founder answers ("Fine.", "Bored."), so a word that is also a label is fine.
+TERSE_STYLES = frozenset({"answer:one_word", "answer:idk", "answer:emoji", "answer:silence"})
+
+
+def _normalised(text: str) -> str:
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", text.lower().replace("’", "'").replace("'", "")).split())
+
+
+def label_forms(taxonomy: Taxonomy) -> frozenset[str]:
+    """Every name a note may carry: each dimension value (key and label), each intent's id, in plain words."""
+    forms: set[str] = set()
+    for dimension in taxonomy.dimensions.values():
+        for key, spec in dimension.values.items():
+            forms |= {_normalised(key), _normalised(spec.label)}
+    for intent in MOVES:
+        forms |= {_normalised(intent), _normalised(intent.split(":", 1)[-1])}
+    forms |= {"angry with your mentor", "neutral", "crisis adjacent"}
+    return frozenset(f for f in forms if f)
+
+
+def is_label_only(text: str, turn: PlannedTurn, forms: frozenset[str]) -> bool:
+    """The message is nothing but a note's name ("Angry at veir.", "Crisis-adjacent.") rather than words a founder
+    would send; a bare word is allowed where a one-word answer is the plan."""
+    said = _normalised(text)
+    if not said or said not in forms:
+        return False
+    return not (" " not in said and turn.intent in TERSE_STYLES)
 
 
 BROKEN_CHARACTER = re.compile(
@@ -383,6 +441,7 @@ class LlmSimulator:
         self.model = model
         self.fallback = fallback
         self.max_tokens = max_tokens
+        self.labels = label_forms(fallback.taxonomy)
 
     def render(
         self,
@@ -394,14 +453,32 @@ class LlmSimulator:
         example = self.fallback.render(scenario, turn, history, values).text
         if turn.intent in VERBATIM_INTENTS:
             return SimulatedMessage(example, "template")
-        prompt = simulator_prompt(self.fallback.taxonomy, scenario, turn, history, example)
+        prompt = simulator_prompt(self.fallback.taxonomy, scenario, turn, history, example, values)
         reply = self.model.complete(
             system=SIMULATOR_SYSTEM, user=prompt, max_tokens=self.max_tokens, temperature=0.7
         )
+        cost = reply.cost_usd
         text = reply.text.strip().strip('"“”').strip()
+        if is_label_only(text, turn, self.labels):
+            # A note's name sent as the message ("Crisis-adjacent."): asked once more, then the template.
+            retry = self.model.complete(
+                system=SIMULATOR_SYSTEM,
+                user=prompt
+                + f"\n\nYou wrote only {text!r}, which is a description, not a message. Write what the founder "
+                "would actually send.",
+                max_tokens=self.max_tokens,
+                temperature=0.7,
+            )
+            cost += retry.cost_usd
+            text = retry.text.strip().strip('"“”').strip()
+            if is_label_only(text, turn, self.labels):
+                return SimulatedMessage(example, "llm_fallback", cost)
+            if self.acceptable(text, turn):
+                return SimulatedMessage(text, "llm_retry", cost)
+            return SimulatedMessage(example, "llm_fallback", cost)
         if self.acceptable(text, turn):
-            return SimulatedMessage(text, "llm", reply.cost_usd)
-        return SimulatedMessage(example, "llm_fallback", reply.cost_usd)
+            return SimulatedMessage(text, "llm", cost)
+        return SimulatedMessage(example, "llm_fallback", cost)
 
     @staticmethod
     def acceptable(text: str, turn: PlannedTurn) -> bool:

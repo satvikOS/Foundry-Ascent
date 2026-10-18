@@ -209,6 +209,17 @@ def _suite_tables(suite: str, result: Mapping[str, Any]) -> list[str]:
             f"({aged['after_distillation']} after the conversation was distilled)."
         )
         out.append("")
+    skipped = result.get("skipped") if suite == "matrix" else None
+    if skipped:
+        reasons: dict[str, list[str]] = {}
+        for item in skipped:
+            reasons.setdefault(item["reason"], []).append(item["id"])
+        out.append(
+            f"Skipped: {len(skipped)} ("
+            + "; ".join(f"{reason}: {', '.join(ids)}" for reason, ids in sorted(reasons.items()))
+            + ")."
+        )
+        out.append("")
     if suite == "matrix" and result.get("evals_report_md"):
         out.append(
             f"Source: {result.get('source')} (exit {result.get('evals_exit')}). Its report (ids, codes, numbers):"

@@ -130,6 +130,13 @@ def test_a_run_plays_every_scenario_and_cleans_up(tmp_path: Path, monkeypatch: p
             assert session["privacy"] == "ephemeral"
     assert api.notebooks[lab.id]["summary"] == ""
     assert api.notebooks[lab.id]["nextOpener"] is None
+    # A single-session scenario runs in the venture it was planned for, whose topics it talks about.
+    single = [c for c in results["cases"] if not c["matrix"]["multiSession"]]
+    assert single
+    assert all(c["venture"] == c["matrix"]["plannedVenture"] for c in single)
+    assert {c["venture"] for c in single} == {"quietquad", "benchtally", "solesignal", "emberloop"} & {
+        v.key for v in api.ventures.values()
+    }
     # after_private: its first session was private, even in the memory lab.
     cases = {c["id"]: c for c in results["cases"]}
     private = next(c for c in results["cases"] if c["matrix"]["values"]["continuity"] == "after_private")
@@ -759,3 +766,41 @@ def test_the_between_sessions_command_must_be_a_command_line(capsys: pytest.Capt
             cli.build_parser().parse_args(["run", "--suite", "matrix", "--between-sessions-cmd", bad])
     args = cli.build_parser().parse_args(["run", "--suite", "matrix", "--between-sessions-cmd", "a 'b c'"])
     assert args.between_sessions_cmd == ("a", "b c")
+
+
+def test_priority_order_puts_identity_first_and_remembered_before_the_rest() -> None:
+    """--matrix-priority: under a spend cap the least important scenarios are the ones skipped."""
+    from foundry_evals.matrix.runner import plan_matrix, prioritised, priority_class
+
+    scenarios = generate(load_taxonomy(), load_templates(), budget="smoke")
+    ordered = prioritised(scenarios)
+    classes = [priority_class(s) for s in ordered]
+    assert classes == sorted(classes)
+    assert set(classes) >= {1, 2, 3, 4}
+    assert all(s.id.startswith("MX-P") or s.values["question_type"] in ("identity", "capability", "meta")
+               or s.values["relational_move"] == "boundary_test" for s in ordered if priority_class(s) == 1)  # fmt: skip
+    assert all(s.multi_session for s in ordered if priority_class(s) == 2)
+    # Stable: generator order within a class.
+    ids = [s.id for s in scenarios]
+    for c in set(classes):
+        mine = [s.id for s in ordered if priority_class(s) == c]
+        assert mine == sorted(mine, key=ids.index)
+    # A cap that fits the identity and remembered scenarios and a little more skips only the less important.
+    cap = sum(s.turn_count for s in ordered if priority_class(s) <= 2) + 10
+    plan = plan_matrix(ordered, turn_cap=cap)
+    assert plan.skipped
+    assert {s.id for s in ordered if priority_class(s) <= 2} <= {s.id for s in plan.planned}
+    assert min(priority_class(s) for s in plan.skipped) >= 3
+
+
+def test_the_priority_flag_orders_the_plan(capsys: pytest.CaptureFixture[str]) -> None:
+    for extra in ((), ("--matrix-priority",)):
+        args = cli.build_parser().parse_args(["run", "--suite", "matrix", "--matrix-budget", "smoke", *extra])
+        setup = matrix_cli.setup_matrix(args, turn_cap=10_000)
+        assert not isinstance(setup, int)
+        first = setup.plan.planned[0].id
+        assert first.startswith("MX-P")  # the presence probe leads either way
+    from foundry_evals.matrix.runner import priority_class
+
+    classes = [priority_class(s) for s in setup.plan.planned]
+    assert classes == sorted(classes)

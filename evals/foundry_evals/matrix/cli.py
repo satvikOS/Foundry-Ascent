@@ -23,7 +23,7 @@ from foundry_evals.datasets import DatasetError
 from foundry_evals.matrix.bedrock import ConverseModel, LabDependencyError
 from foundry_evals.matrix.generator import BUDGETS, DEFAULT_SEED, Scenario, coverage, generate, resolve_budget
 from foundry_evals.matrix.judge import LlmJudge, calibrate, load_calibration
-from foundry_evals.matrix.runner import MatrixPlan, MockRecorder, PrivateSink, plan_matrix
+from foundry_evals.matrix.runner import MatrixPlan, MockRecorder, PrivateSink, plan_matrix, prioritised
 from foundry_evals.matrix.simulator import LlmSimulator, TemplateSimulator, UserSimulator
 from foundry_evals.matrix.taxonomy import (
     MATRIX_DIR,
@@ -91,6 +91,12 @@ def add_run_arguments(run: argparse.ArgumentParser) -> None:
         "it as is",
     )
     group.add_argument(
+        "--matrix-priority",
+        action="store_true",
+        help="plan the most important scenarios first, so a spend cap skips the least important: identity and "
+        "presence, then remembered conversations, crisis and safety, emotions and topic moves, the rest",
+    )
+    group.add_argument(
         "--record-replies",
         type=Path,
         help="record the mock model's replies for the offline CI subset (refused when a reply comes from a real model)",
@@ -148,6 +154,8 @@ def setup_matrix(args: argparse.Namespace, *, turn_cap: int) -> MatrixSetup | in
         # A paid model never runs uncapped: --max-turns alone does not bound the simulator's and the judge's calls.
         print("--simulator llm and --judge call paid models: set --max-cost-usd", file=sys.stderr)
         return EXIT_USAGE
+    if getattr(args, "matrix_priority", False):
+        scenarios = prioritised(scenarios)
     plan = plan_matrix(
         scenarios,
         turn_cap=turn_cap,

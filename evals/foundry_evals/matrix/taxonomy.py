@@ -208,7 +208,12 @@ class Topic(_Strict):
 class Templates(_Strict):
     version: Literal[1]
     personas: list[Persona] = Field(min_length=2)
+    #: The default topics: the remembered (multi-session) conversations in the dedicated memory venture, and any
+    #: venture without topics of its own.
     topics: dict[str, Topic] = Field(min_length=4)
+    #: Each seeded venture's own topics, drawn from its seed facts (a founder of one venture never asks about
+    #: another's product). A single-session scenario is planned for one of these ventures and takes its topics.
+    venture_topics: dict[str, dict[str, Topic]] = Field(default_factory=dict)
     private_detail: str = Field(min_length=10, max_length=240)
     private_terms: list[str] = Field(min_length=1)
     phrases: dict[str, object]
@@ -219,7 +224,18 @@ class Templates(_Strict):
             for topic in persona.topics:
                 if topic not in self.topics:
                     raise ValueError(f"persona {persona.id}: unknown topic {topic!r}")
-        for key, topic in self.topics.items():
+        for venture, own in self.venture_topics.items():
+            if len(own) < 2:
+                raise ValueError(f"venture {venture}: at least two topics (a scenario moves between two)")
+        everything = [
+            *self.topics.items(),
+            *(
+                (f"{venture}.{key}", topic)
+                for venture, own in self.venture_topics.items()
+                for key, topic in own.items()
+            ),
+        ]
+        for key, topic in everything:
             # A topic's own sentences must carry the terms graders look for, or a check could never pass.
             if not mentions_any(topic.detail, topic.recall_terms):
                 raise ValueError(f"topic {key}: the detail does not say any recall term")
@@ -253,6 +269,10 @@ class Templates(_Strict):
             if unknown:
                 raise ValueError(f"unknown placeholders {sorted(unknown)} in {text!r}")
         return self
+
+    def topics_for(self, venture: str | None) -> dict[str, Topic]:
+        """The topics a scenario planned for ``venture`` talks about (its own, else the default topics)."""
+        return self.venture_topics.get(venture or "", self.topics)
 
     def bank(self, *path: str) -> list[str]:
         """A phrase list by its path (``bank("question", "open")``); a missing one is a dataset error."""

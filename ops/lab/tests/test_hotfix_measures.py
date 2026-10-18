@@ -330,6 +330,7 @@ def test_the_evals_matrix_runs_with_the_probed_models_and_keeps_content_private(
     assert "--max-cost-usd 2.50" in joined
     assert f"--est-cost-per-turn {cli.EVALS_EST_TURN_USD}" in joined
     assert "--turn-rate-limit 1000 --actors-per-venture 3" in joined
+    assert "--matrix-priority" in cmd
     assert "--memory-venture" not in joined
     remembered = cli.evals_matrix_command(
         base_url="x",
@@ -375,3 +376,15 @@ def test_evals_simulator_and_judge_costs_join_the_lab_ledger() -> None:
     assert guard.ledger.by_purpose()["judge"]["usd"] == 0.035399
     cli.record_evals_model_costs(guard, {"simulatorCostUsd": 0.0, "judgeCostUsd": None}, None, None)
     assert len(guard.ledger.charges) == 2
+
+
+def test_the_summary_lists_what_evals_skipped() -> None:
+    from conversation_lab.report import render
+
+    result = {
+        "passed": 1,
+        "run": 1,
+        "skipped": [{"id": "MX-0040", "reason": "budget"}, {"id": "MX-0039", "reason": "budget"}],
+    }
+    text = render({"suite": "matrix", "result": result, "spend": {}, "models": {}})
+    assert "Skipped: 2 (budget: MX-0040, MX-0039)." in text

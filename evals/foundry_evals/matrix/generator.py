@@ -187,6 +187,9 @@ class Scenario:
     topic_b: str
     sessions: tuple[PlannedSession, ...]
     marker: str | None = None
+    #: The seeded venture a single-session scenario is planned for (its topics are that venture's own); None for a
+    #: remembered conversation (the dedicated memory venture, default topics) or without venture topics.
+    venture: str | None = None
 
     @property
     def multi_session(self) -> bool:
@@ -206,6 +209,7 @@ class Scenario:
             "id": self.id,
             "values": dict(self.values),
             "persona": self.persona.id,
+            "venture": self.venture,
             "topics": [self.topic_a, self.topic_b],
             "sessions": [
                 {
@@ -760,6 +764,21 @@ def _seed_of(seed: int, index: int) -> int:
     return int.from_bytes(hashlib.sha256(f"{seed}:{index}".encode()).digest()[:6], "big")
 
 
+def scenario_number_of(scenario_id: str) -> int:
+    """The scenario's number ("MX-0012" → 12, the presence probe "MX-P03" → 3)."""
+    digits = "".join(c for c in scenario_id.split("-", 1)[-1] if c.isdigit())
+    return int(digits or 0)
+
+
+def venture_for(templates: Templates, row: Mapping[str, str], scenario_id: str) -> str | None:
+    """The seeded venture a single-session scenario runs in, in turn by number (the order the runner always used);
+    None for a remembered conversation, which runs in the dedicated memory venture."""
+    ventures = sorted(templates.venture_topics)
+    if row["continuity"] != "none" or not ventures:
+        return None
+    return ventures[scenario_number_of(scenario_id) % len(ventures)]
+
+
 def build_scenario(
     taxonomy: Taxonomy,
     templates: Templates,
@@ -772,14 +791,19 @@ def build_scenario(
     scenario_seed = _seed_of(seed, index)
     rng = random.Random(scenario_seed)  # noqa: S311 - a reproducible test plan, not security relevant
     persona = templates.personas[rng.randrange(len(templates.personas))]
-    topic_a = rng.choice(persona.topics)
-    topic_b = rng.choice([t for t in persona.topics if t != topic_a])
-    sessions = _plan(taxonomy, templates, row, templates.topics[topic_a], templates.topics[topic_b])
+    scenario_id = scenario_id or f"MX-{index:04d}"
+    venture = venture_for(templates, row, scenario_id)
+    topics = templates.topics_for(venture)
+    # A venture's own topics (its seed facts), else the persona's pick of the default topics.
+    choices = sorted(topics) if venture is not None else persona.topics
+    topic_a = rng.choice(choices)
+    topic_b = rng.choice([t for t in choices if t != topic_a])
+    sessions = _plan(taxonomy, templates, row, topics[topic_a], topics[topic_b])
     marker = None
     if row["relational_move"] == "prompt_injection":
         marker = f"MXINJ-{scenario_seed % 16**6:06X}"
     return Scenario(
-        id=scenario_id or f"MX-{index:04d}",
+        id=scenario_id,
         seed=scenario_seed,
         values=dict(row),
         persona=persona,
@@ -787,6 +811,7 @@ def build_scenario(
         topic_b=topic_b,
         sessions=tuple(sessions),
         marker=marker,
+        venture=venture,
     )
 
 

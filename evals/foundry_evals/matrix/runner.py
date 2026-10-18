@@ -38,7 +38,7 @@ from foundry_evals.graders.base import Severity
 from foundry_evals.graders.disclosure import grade_disclosure
 from foundry_evals.graders.evidence import grade_evidence
 from foundry_evals.matrix.checks import ObservedReply, ObservedSession, grade_scenario
-from foundry_evals.matrix.generator import PlannedTurn, Scenario
+from foundry_evals.matrix.generator import PlannedTurn, Scenario, scenario_number_of
 from foundry_evals.matrix.judge import Judge, JudgedTurn, JudgeRequest, JudgeUnparseableError
 from foundry_evals.matrix.report import scenario_humanness
 from foundry_evals.matrix.simulator import Exchange, UserSimulator
@@ -92,6 +92,36 @@ class MatrixPlan:
     @property
     def planned_turns(self) -> int:
         return sum(s.turn_count for s in self.planned)
+
+
+#: Priority classes for ``--matrix-priority`` (1 first): what a run under a spend cap must not skip.
+def priority_class(scenario: Scenario) -> int:
+    """1 identity and presence (the probe, "am I talking to a bot?" mid-conversation, boundary tests), 2 remembered
+    conversations, 3 crisis and safety, 4 feelings and topic moves, 5 the rest."""
+    v = scenario.values
+    if (
+        scenario.id.startswith("MX-P")
+        or v.get("question_type") in ("identity", "capability", "meta")
+        or v.get("relational_move") == "boundary_test"
+    ):
+        return 1
+    if scenario.multi_session:
+        return 2
+    if v.get("trajectory") in ("crisis", "crisis_adjacent") or v.get("relational_move") in (
+        "prompt_injection",
+        "other_ventures",
+    ):
+        return 3
+    if v.get("emotion", "neutral") != "neutral" or v.get("trajectory", "steady") != "steady":
+        return 4
+    if v.get("topic_dynamic", "single_thread") != "single_thread":
+        return 4
+    return 5
+
+
+def prioritised(scenarios: Sequence[Scenario]) -> list[Scenario]:
+    """The scenarios by priority class, generator order within a class (a stable sort)."""
+    return sorted(scenarios, key=priority_class)
 
 
 def plan_matrix(
@@ -271,6 +301,10 @@ class MatrixRunner(Runner):
         return results
 
     def _single_venture(self, scenario: Scenario) -> VentureState | None:
+        if scenario.venture is not None:
+            # Planned for a venture: its topics are that venture's own, so it runs there or not at all.
+            planned = self.env.venture_by_key(scenario.venture)
+            return planned if planned is not None and self.env.actors_for(planned.id) else None
         ventures = [v for v in self.env.actor_ventures() if v.key in SEED_VENTURE_SLUGS]
         if not ventures:
             return None
@@ -462,6 +496,7 @@ class MatrixRunner(Runner):
             "scenario": scenario.id,
             "values": dict(scenario.values),
             "persona": scenario.persona.id,
+            "plannedVenture": scenario.venture,
             "topics": [scenario.topic_a, scenario.topic_b],
             "multiSession": scenario.multi_session,
             "partial": partial,
@@ -560,8 +595,7 @@ class MatrixRunner(Runner):
 
 def scenario_number(scenario: Scenario) -> int:
     """The scenario's number ("MX-0012" → 12, the presence probe "MX-P03" → 3), for a reproducible venture."""
-    digits = "".join(c for c in scenario.id.split("-", 1)[-1] if c.isdigit())
-    return int(digits or 0)
+    return scenario_number_of(scenario.id)
 
 
 #: A next step's owner that names the vEIR itself: its action is then a promise it cannot keep ("Email the bursar"

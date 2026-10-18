@@ -522,6 +522,8 @@ def evals_matrix_command(
         "--private-out",
         str(private / "evals-matrix" / "private"),
         "--include-transcripts",
+        # Under the spend cap the least important scenarios are the ones skipped (identity and presence first).
+        "--matrix-priority",
     ]
     if simulator_model:
         cmd += ["--simulator", "llm", "--simulator-model", simulator_model]
@@ -604,6 +606,11 @@ def suite_matrix_evals(
         "run": sum(1 for c in cases if c.get("status") in ("passed", "failed", "error")),
         "evals_report_md": report,
         "aged_gaps": aged_gaps(log_dir / "aging.log"),
+        "skipped": [
+            {"id": str(c.get("id")), "reason": str(c.get("reason"))}
+            for c in cases
+            if c.get("status") == "skipped"
+        ],
         "stopped_by": None,
     }
 

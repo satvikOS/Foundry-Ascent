@@ -11,11 +11,11 @@ version: 1
 
 personas:
   - id: first_year
-    summary: A first-year student building a campus app with a friend; eager, a little unsure of themselves.
+    summary: A first-year student building their first venture with a friend; eager, a little unsure of themselves.
     goal: Work out what to do next on the venture this week.
     topics: [pricing, pilot, channel, competitor]
   - id: phd_builder
-    summary: A PhD student turning lab software into a product; precise, short on time, impatient with fluff.
+    summary: A PhD student turning their research into a product; precise, short on time, impatient with fluff.
     goal: Get a straight answer and get back to work.
     topics: [mvp, hiring, grant, thesis]
   - id: second_timer
@@ -27,7 +27,7 @@ personas:
     goal: Be understood and get practical next steps.
     topics: [interviews, channel, grant, pilot]
   - id: design_student
-    summary: A design student building a consumer app; casual, funny, easily discouraged.
+    summary: A design student on their first venture; casual, funny, easily discouraged.
     goal: Feel less alone with the startup and know what to do next.
     topics: [mvp, pitch, interviews, cofounder]
   - id: mba_student
@@ -234,6 +234,305 @@ topics:
     ramble_term: [whiteboard]
     ramble: me and Sam both want to do the product stuff, like yesterday we both redesigned the same screen on the whiteboard without telling each other, and nobody wants to do sales because it's scary, and I don't want to fight, he's my best friend
     vent: Sam redid my whole design without asking and I'm so annoyed.
+
+# Each seeded venture's own topics. A single-session scenario is planned for one of these ventures and takes its
+# topics, so an EmberLoop founder never asks about a seat-finding app. They are drawn from the venture's seed facts
+# (packages/db/src/seed/ventures.ts) with new specifics of their own: the recall terms are words the venture's seeded
+# records never say, so naming them still shows the vEIR followed or remembered this conversation.
+venture_topics:
+  quietquad:
+    pricing:
+      name: library licensing
+      recall_hint: the licence question
+      detail: We're keeping the student app free and choosing between £900 a term per library or one licence through the students' union.
+      terms: [licen*, pric*, price*, charg*, £900, per library, free]
+      recall_terms: [£900, nine hundred, students' union, students union]
+      options: [£900 a term per library, one licence through the students' union]
+      option_terms:
+        [[£900, per library, nine hundred, each library], [students' union, students union, one licence]]
+      fact: The east library's manager said £900 a term sounds fair.
+      fact_terms: [£900, fair]
+      contradiction: Honestly, no library has talked budget with us yet.
+      subtopic: a free trial during reading week
+      subtopic_terms: [trial]
+      commitment: I'll send the union treasurer our one-page licence proposal by Thursday.
+      commitment_terms: [treasurer, one-page, one page]
+      ramble_term: [reading week]
+      ramble: so the licence thing, the east library manager liked the idea but said budgets are set in spring, and the union might pay instead but their treasurer only meets once a month, and Devin thinks we should just pilot free through reading week and ask after, which sounds nice but then nobody ever pays for something they got free, right? I keep going round in circles
+      vent: The union treasurer has moved our licence meeting three times now.
+    pilot:
+      name: the exam-week pilot
+      recall_hint: the pilot
+      detail: We want to pilot the live map in the Merrow library and the science library for the two weeks before finals.
+      terms: [pilot, library, libraries, live map, finals]
+      recall_terms: [merrow]
+      options: [just the Merrow library, both libraries at once]
+      option_terms: [[merrow, one library, just the], [both, two libraries]]
+      fact: 340 students have already joined the pilot invite list.
+      fact_terms: ['340', invite list]
+      contradiction: Wait, the invite list is really closer to 40 people.
+      subtopic: what counts as a repeat visit
+      subtopic_terms: [repeat]
+      commitment: I'll get the Merrow floor plans from the library office on Monday.
+      commitment_terms: [floor plan*]
+      ramble_term: [timetable]
+      ramble: ok so the pilot, finals start on the twelfth but the exam timetable keeps moving, and the Merrow library closes one floor for cleaning on Sundays, and Devin wants both libraries so the numbers look bigger but I think one library done properly is better, and the library office still hasn't sent us anything, so I don't even know which floors we get
+      vent: Every time we fix the pilot dates the exam timetable moves again.
+    data:
+      name: occupancy data
+      recall_hint: the data question
+      detail: The data protection officer has to sign off before facilities share the door-counter data.
+      terms: [door-counter, door counter, occupancy, data, facilities, counts]
+      recall_terms: [data protection officer, dpo]
+      options: [wait for the door-counter totals, start with seat reports from students]
+      option_terms: [[door-counter, door counter, totals, wait], [seat reports, from students, crowdsourc*]]
+      fact: The data protection officer only reviews requests on the first Tuesday of the month.
+      fact_terms: [first tuesday, tuesday]
+      contradiction: Actually, I'm not sure facilities even keep those totals.
+      subtopic: what the map shows if the counts arrive late
+      subtopic_terms: [late, delay*]
+      commitment: I'll book a slot with the data protection officer for the first Tuesday.
+      commitment_terms: [slot]
+      ramble_term: [anonymis*, anonymiz*]
+      ramble: so for the data, facilities were friendly but said they can't share anything without the data protection officer, and she only looks at requests once a month, and even then the totals might have to be anonymised by hour, which might be fine for us, but if it slips past the exam window the whole pilot is just us counting seats by hand again
+      vent: I've emailed facilities four times about the door counters and still no answer.
+    habit:
+      name: the group-chat habit
+      recall_hint: the chat habit
+      detail: The Barrow seat bot and course group chats are how most students find seats now.
+      terms: [group chat*, chat*, seat bot, habit, workaround]
+      recall_terms: [barrow, seat bot]
+      options: [a share-to-chat button, a map that's faster than posting]
+      option_terms: [[share-to-chat, share to chat, button], [faster, map]]
+      fact: In our survey, 61 of 90 students said they check a group chat first.
+      fact_terms: ['61', group chat*]
+      contradiction: Hmm, actually most people I asked said they just walk around.
+      subtopic: whether to post our map into the chats
+      subtopic_terms: [post*]
+      commitment: I'll message the admins of three course chats about trying the map.
+      commitment_terms: [admin*]
+      ramble_term: [screenshot*]
+      ramble: the thing with the chats is people already trust them, someone posts a screenshot of an empty table and ten people run over, and the Barrow seat bot is clunky but it's there, so I keep wondering if we should plug into the chats instead of fighting them, but then we're just a bot too and nobody needs another bot honestly
+      vent: People keep telling me the group chat already works fine for them.
+  benchtally:
+    pricing:
+      name: pricing
+      recall_hint: pricing
+      detail: For pricing we're weighing $1,800 a year per department against $40 per lab a month.
+      terms: [pric*, price*, $40, subscription, per lab, department]
+      recall_terms: ['$1,800', '1,800', eighteen hundred]
+      options: [$40 per lab a month, one department subscription]
+      option_terms: [[$40, per lab, forty], [department, subscription]]
+      fact: The chemistry chair said $1,800 a year fits her discretionary budget.
+      fact_terms: [chair, discretionary]
+      contradiction: Actually, nobody in the department has mentioned a budget yet.
+      subtopic: a discount for labs that sign before summer
+      subtopic_terms: [discount*]
+      commitment: I'll send the chemistry chair a one-page department offer by Friday.
+      commitment_terms: [chemistry chair, one-page, one page]
+      ramble_term: [fiscal year]
+      ramble: so pricing, the lab managers like $40 because it's under their card limit and skips procurement, but the chemistry chair says a department deal is easier to approve once a year, except the fiscal year resets in July, so if we go department-wide we wait months, and Priya wants revenue now, and I honestly don't know which one gets us paid first
+      vent: Every lab manager loves the demo and then says they need to ask someone else.
+    pilot:
+      name: the paid pilots
+      recall_hint: the pilots
+      detail: Two labs in the Hollis building want to start the paid three-month pilot on 1 March.
+      terms: [pilot*, lab*, paid, three-month]
+      recall_terms: [hollis, 1 march, first of march]
+      options: [both Hollis labs together, one lab first and the second in April]
+      option_terms: [[both, together], [one lab, april, second]]
+      fact: The Hollis lab managers already signed the pilot letter.
+      fact_terms: [signed, letter]
+      contradiction: Wait, only one of them has actually signed anything.
+      subtopic: what counts as a successful pilot
+      subtopic_terms: [success*]
+      commitment: I'll import both labs' spreadsheets into the prototype by Wednesday.
+      commitment_terms: [spreadsheet*, import*]
+      ramble_term: [freezer*]
+      ramble: ok so the pilots, the first lab is easy, everything is on shelves, but the second one keeps half its reagents in a shared freezer room with three other groups, so scanning gets messy, and the managers want weekly reports but the students only scan when they remember, so I'm not sure what we'd even show them after a month
+      vent: Half the scans in the test week were missing because nobody remembered to do them.
+    procurement:
+      name: procurement
+      recall_hint: the procurement thing
+      detail: Procurement sent us a 60-question vendor security questionnaire before any lab can pay.
+      terms: [procurement, security, questionnaire, vendor]
+      recall_terms: [60-question, 60 questions, sixty questions]
+      options: [fill in the questionnaire now, stay under the card limit and skip procurement]
+      option_terms: [[questionnaire, fill], [card limit, skip, under]]
+      fact: Procurement said reviews take about six weeks.
+      fact_terms: [six weeks]
+      contradiction: Actually, I'm not sure the card-limit route is even allowed for software.
+      subtopic: where the lab data is stored
+      subtopic_terms: [stor*, hosting, server*]
+      commitment: I'll ask the campus legal clinic to look at the questionnaire by Tuesday.
+      commitment_terms: [legal clinic]
+      ramble_term: [encrypt*]
+      ramble: the procurement thing is huge, sixty questions, half of them about encryption and where data is stored, and we're two people with a prototype, and the clinic said they can help but not until after their exams, and meanwhile the labs could just pay on a card if we stay small, which feels like cheating but also kind of the point
+      vent: We've spent more time on security paperwork this month than on the product.
+    adoption:
+      name: student adoption
+      recall_hint: the scanning problem
+      detail: Grad students in the Okafor lab keep forgetting to scan reagents back in after using them.
+      terms: [scan*, student*, adopt*, habit]
+      recall_terms: [okafor]
+      options: [a weekly shelf audit, scanning built into the reorder button]
+      option_terms: [[weekly, audit], [reorder, button]]
+      fact: A full shelf audit of 50 items took one student eleven minutes.
+      fact_terms: [eleven minutes]
+      contradiction: Hmm, actually the students say scanning is fine, it's the labels falling off.
+      subtopic: labels that survive the freezer
+      subtopic_terms: [label*]
+      commitment: I'll sit in on the Okafor lab's Monday meeting to watch how they reorder.
+      commitment_terms: [monday meeting]
+      ramble_term: [gloves]
+      ramble: so in the Okafor lab people are wearing gloves and holding three things at once, nobody wants to pull out a phone to scan, and the lab manager says just make it mandatory but that never works with grad students, so maybe the scan has to happen when they reorder instead, but then we lose the expiry tracking which is the whole point
+      vent: The lab manager keeps saying it's a discipline problem, but I think it's our design.
+  solesignal:
+    pricing:
+      name: pricing and reimbursement
+      recall_hint: the price
+      detail: Our $150-a-pair price matters less to clinics than whether they can bill the monitoring time.
+      terms: [pric*, price*, reimburs*, bill*, $150, monitoring]
+      recall_terms: [$150, 150 a pair, hundred and fifty]
+      options: [$150 a pair upfront, a monthly monitoring fee the clinic pays]
+      option_terms: [[$150, upfront, a pair], [monthly, monitoring fee]]
+      fact: Two clinic managers said $150 a pair is fine if patients don't pay out of pocket.
+      fact_terms: [out of pocket, clinic managers]
+      contradiction: Actually, none of the clinics has said anything about price yet.
+      subtopic: who pays when an insole is replaced
+      subtopic_terms: [replac*]
+      commitment: I'll ask the Westbrook practice manager how they bill follow-up visits by Thursday.
+      commitment_terms: [practice manager]
+      ramble_term: [billing code*]
+      ramble: so the money question, the clinics don't really care if it's $150 or $100, they care whether there's a billing code for the monitoring, and nobody can tell me if there is one, and Graham says not to promise anything about reimbursement until we know if it's even a device, which makes sense but then I can't answer the first question every clinic asks
+      vent: Every clinic asks about reimbursement and I still don't have an answer.
+    pilot:
+      name: the clinic trial
+      recall_hint: the clinic trial
+      detail: The Westbrook podiatry clinic wants a trial of the insole with ten of its patients this spring.
+      terms: [trial, pilot, clinic, practice, patients]
+      recall_terms: [westbrook]
+      options: [start with ten patients this spring, wait until after the pathway review]
+      option_terms: [[ten patients, start, spring], [wait, pathway review, after]]
+      fact: Westbrook already has six patients in mind who see them every quarter.
+      fact_terms: [six patients, quarter*]
+      contradiction: Wait, Westbrook only said they'd think about it.
+      subtopic: what the podiatrist sees between visits
+      subtopic_terms: [between visits, dashboard, alert*]
+      commitment: I'll send Westbrook a one-page trial outline by Friday.
+      commitment_terms: [outline]
+      ramble_term: [ethics]
+      ramble: so Westbrook is keen, which is great, but anything with patients probably needs an ethics review, and Graham says we shouldn't even call it a trial before the pathway review, and the clinic wants to start in spring, and I'm also deciding about the master's, so honestly I don't know if spring is realistic or if I'm just saying yes because they're excited
+      vent: Every time we get close to real patients there's another review in the way.
+    regulatory:
+      name: the regulatory pathway
+      recall_hint: the regulatory question
+      detail: The device-classification workshop in April is our first chance at regulatory advice.
+      terms: [regulat*, pathway, classification, device, advisor]
+      recall_terms: [classification workshop, april workshop]
+      options: [wait for the April workshop, pay a private consultant now]
+      option_terms: [[wait, april, workshop], [consultant, pay]]
+      fact: A private regulatory consultant quoted £2,000 for a first opinion.
+      fact_terms: ['£2,000', '2,000', consultant]
+      contradiction: Actually, I'm not even sure the workshop covers wearables.
+      subtopic: what evidence the clinics will want first
+      subtopic_terms: [evidence]
+      commitment: I'll write up our intended-use statement before the workshop.
+      commitment_terms: [intended-use, intended use]
+      ramble_term: [timeline]
+      ramble: the regulatory thing scares me, if it's a device then which class, and if it's a higher class then the whole timeline changes, and the advisor can't see us until the workshop, and a consultant wants two thousand pounds just for a first opinion, which is basically our whole prototype budget, so do we wait and lose two months or pay and have nothing left
+      vent: I hate not knowing whether we're even allowed to build what we're building.
+    ip:
+      name: sensor IP
+      recall_hint: the sensor ownership
+      detail: The Halden lab might co-own our sensor design, says the tech transfer office.
+      terms: [ip, patent*, tech transfer, licen*, owner*, sensor]
+      recall_terms: [halden, co-owned]
+      options: [license the design from the university, redesign the sensor from scratch]
+      option_terms: [[licen*, university], [redesign, from scratch]]
+      fact: The tech transfer office takes about eight weeks to answer ownership questions.
+      fact_terms: [eight weeks]
+      contradiction: Hmm, actually they only said they'd check, not that anyone else owns it.
+      subtopic: whether we can show the prototype at the showcase
+      subtopic_terms: [showcase, demo]
+      commitment: I'll send the tech transfer office the lab notebook pages by Monday.
+      commitment_terms: [notebook pages, lab notebook]
+      ramble_term: [bench]
+      ramble: so IP, the sensor came out of my lab project, and the tech transfer office thinks the Halden lab might have a claim because we used their bench for two weeks, and the showcase is next month and everyone says don't demo anything before ownership is clear, but the showcase is where the clinics are, so it feels like we lose either way
+      vent: Nobody can tell me who owns the thing I built.
+  emberloop:
+    pricing:
+      name: lease pricing
+      recall_hint: the lease pricing
+      detail: We're choosing between taking 30% of measured gas savings or a flat £45-a-month lease.
+      terms: [lease, pric*, price*, savings, £45, flat]
+      recall_terms: [30%, thirty percent, £45]
+      options: [30% of measured savings, a flat £45 a month]
+      option_terms: [[30%, thirty percent, savings], [flat, £45]]
+      fact: Three of the ten studios said a flat fee is easier for their accountant.
+      fact_terms: [accountant, flat fee]
+      contradiction: Actually, none of the studios has replied to the quotes yet.
+      subtopic: what happens when a studio fires less in summer
+      subtopic_terms: [summer]
+      commitment: I'll send the three studios a flat-fee version of the quote by Friday.
+      commitment_terms: [flat-fee version, flat fee version]
+      ramble_term: [meter*]
+      ramble: so pricing, the savings share is fair but it means reading every studio's gas meter each month and arguing about whether they fired less, and the flat fee is simple but in summer some studios barely fire so they'd be paying for nothing, and Ines thinks the savings share is the whole story we tell, so I keep flipping between the two
+      vent: Every studio loves the 18% number and then goes quiet when the quote arrives.
+    installs:
+      name: the next installs
+      recall_hint: the installs
+      detail: The Kilnworks co-op wants the next install, but it's two and a half hours away.
+      terms: [install*, studio*, co-op, drive, distance]
+      recall_terms: [kilnworks, two and a half hours]
+      options: [install at Kilnworks anyway, only studios within two hours]
+      option_terms: [[kilnworks, anyway], [within two hours, two hours, closer]]
+      fact: Kilnworks fires five times a week, more than our pilot studio.
+      fact_terms: [five times]
+      contradiction: Wait, Kilnworks hasn't actually committed to anything.
+      subtopic: who services a module that far away
+      subtopic_terms: [servic*, maintenance]
+      commitment: I'll ask a local installer near Kilnworks for a call-out price by Thursday.
+      commitment_terms: [call-out, call out]
+      ramble_term: [van]
+      ramble: ok so Kilnworks is exactly the studio we want, they fire all the time so the savings would be huge, but it's two and a half hours each way and we don't have a van, and if something breaks we can't just pop over, and Ines said two hours max, but turning down our best lead feels wrong too
+      vent: Our best lead is the one studio we said we'd never drive to.
+    certification:
+      name: safety certification
+      recall_hint: the safety question
+      detail: Gas Safe sign-off on every kiln retrofit is the safety rule an inspector told us about.
+      terms: [safety, certif*, inspect*, sign-off, gas]
+      recall_terms: [gas safe]
+      options: [a sign-off on each install, type approval for the module once]
+      option_terms: [[each install, per install, each], [type approval, type-approved, once]]
+      fact: A sign-off costs about £180 per visit.
+      fact_terms: [£180]
+      contradiction: Actually, the inspector might have meant electric kilns, I'm not sure.
+      subtopic: who carries the insurance if something goes wrong
+      subtopic_terms: [insur*]
+      commitment: I'll book the inspector to look at the pilot studio's kiln next week.
+      commitment_terms: [inspector]
+      ramble_term: [flue]
+      ramble: the safety thing, the inspector was nice but said anything touching the flue on a gas kiln needs a sign-off every time, and that's another £180 per install, which kills the margin on small studios, and type approval would fix it but takes months and costs thousands, and we haven't even got ten installs yet
+      vent: Every time we price an install there's another fee we didn't know about.
+    manufacturing:
+      name: fabrication
+      recall_hint: the fabrication quotes
+      detail: Two fabricators quoted £310 and £420 a unit for a 20-unit run.
+      terms: [fabricat*, quote*, units, manufactur*, unit price]
+      recall_terms: [£310, £420]
+      options: [the £310 shop with a long lead time, the £420 shop that can start now]
+      option_terms: [[£310, long lead time], [£420, start now]]
+      fact: The cheaper fabricator needs ten weeks before they can start.
+      fact_terms: [ten weeks]
+      contradiction: Hmm, actually the £310 quote didn't include the brackets.
+      subtopic: whether to order 10 units instead of 20
+      subtopic_terms: [10 units, ten units]
+      commitment: I'll ask both fabricators for a 10-unit price by Wednesday.
+      commitment_terms: [10-unit, ten-unit]
+      ramble_term: [stainless]
+      ramble: so the fabricators, the cheap one is £310 but ten weeks out and they want the drawings changed for their press brake, the other one is £420 and can start now, and we only have letters of intent from two studios, so ordering twenty feels like a lot, but ten units makes the price worse, and stainless went up again this month anyway
+      vent: We can't get a good unit price without orders, and we can't get orders without units.
 
 # The private conversation of `continuity: after_private` (it must never come back). The terms are what only the
 # private detail says: "full-time" is ordinary hiring advice ("a part-time contractor or a full-time hire").

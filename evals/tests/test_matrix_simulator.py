@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import builtins
 import dataclasses
+import json
 import random
 from typing import Any
 
@@ -19,11 +20,14 @@ from foundry_evals.matrix.bedrock import (
 from foundry_evals.matrix.generator import PlannedTurn, Scenario, generate
 from foundry_evals.matrix.judge import ModelReply
 from foundry_evals.matrix.simulator import (
+    SIMULATOR_SYSTEM,
     Exchange,
     LlmSimulator,
     TemplateSimulator,
     apply_register,
     apply_typos,
+    is_label_only,
+    label_forms,
     simulator_prompt,
 )
 from foundry_evals.matrix.taxonomy import Taxonomy, Templates, load_taxonomy, load_templates
@@ -121,7 +125,7 @@ class TestTemplateSimulator:
             .render(s, turn_of(s, "answer:typos_slang"), [], VALUES)
             .text
         )
-        fact = templates.topics[s.topic_a].fact
+        fact = templates.topics_for(s.venture)[s.topic_a].fact
         assert text != fact
         assert apply_typos(fact, templates.mapping("typos")) in text
 
@@ -250,7 +254,7 @@ class TestLlmSimulator:
         hello = s.sessions[1].turns[0]
         assert hello.intent == "continuity:hello"
         assert hello.must_not_say
-        topic = templates.topics[s.topic_a]
+        topic = templates.topics_for(s.venture)[s.topic_a]
         leak = f"Hey! Quick update on the {topic.commitment_terms[0].rstrip('*')} thing."
         model = FakeModel(leak)
         message = LlmSimulator(model, TemplateSimulator(taxonomy, templates)).render(s, hello, [], VALUES)
@@ -372,3 +376,124 @@ class TestBedrock:
         model.complete(system="s", user="u", max_tokens=5, temperature=0)
         model.complete(system="s", user="u", max_tokens=5, temperature=0)
         assert built == ["eu-west-1"]
+
+
+class TestLabelsNeverBecomeTheMessage:
+    """E-1: the model playing the founder once sent the notes' names as whole turns ("Angry at veir.",
+    "Crisis-adjacent."). The prompt never shows a raw intent id, and a label-only turn is asked for once more, then
+    replaced by the template's message."""
+
+    def _crisis_adjacent(self, scenarios: list[Scenario]) -> tuple[Scenario, PlannedTurn]:
+        s = find(scenarios, trajectory="crisis_adjacent")
+        return s, turn_of(s, "trajectory:crisis_adjacent")
+
+    def test_the_prompt_describes_moves_and_feelings_in_the_founders_words(
+        self, taxonomy: Taxonomy, templates: Templates, scenarios: list[Scenario]
+    ) -> None:
+        s, t = self._crisis_adjacent(scenarios)
+        prompt = simulator_prompt(taxonomy, s, t, [], "an example", {"own_venture": "EmberLoop"})
+        assert "trajectory:crisis_adjacent" not in prompt
+        assert "Crisis-adjacent" not in prompt
+        assert "exhausted" in prompt
+        assert "Your venture is EmberLoop" in prompt
+        angry = next(x for x in scenarios for u in x.turns() if u.feeling == "angry_at_veir")
+        turn = next(u for u in angry.turns() if u.feeling == "angry_at_veir")
+        assert "angry_at_veir" not in simulator_prompt(taxonomy, angry, turn, [], "x")
+        assert "angry with your mentor" in simulator_prompt(taxonomy, angry, turn, [], "x")
+        assert "never words to send" in SIMULATOR_SYSTEM
+
+    @pytest.mark.parametrize(
+        "label", ["Crisis-adjacent.", "Angry at veir.", "angry_at_veir", "Crisis adjacent", "Neutral."]
+    )
+    def test_a_label_is_asked_for_again_once(
+        self, taxonomy: Taxonomy, templates: Templates, scenarios: list[Scenario], label: str
+    ) -> None:
+        s, t = self._crisis_adjacent(scenarios)
+        said = "Honestly I haven't slept properly in days and nothing feels worth it lately."
+        model = FakeModel(label, said)
+        message = LlmSimulator(model, TemplateSimulator(taxonomy, templates)).render(s, t, [], VALUES)
+        assert message.source == "llm_retry"
+        assert message.text == said
+        assert message.cost_usd == pytest.approx(0.0008)  # both calls are paid for
+        assert len(model.calls) == 2
+        assert "which is a description, not a message" in model.calls[1]["user"]
+
+    def test_a_second_label_falls_back_to_the_template(
+        self, taxonomy: Taxonomy, templates: Templates, scenarios: list[Scenario]
+    ) -> None:
+        s, t = self._crisis_adjacent(scenarios)
+        fallback = TemplateSimulator(taxonomy, templates)
+        model = FakeModel("Crisis-adjacent.", "Crisis adjacent")
+        message = LlmSimulator(model, fallback).render(s, t, [], VALUES)
+        assert message.source == "llm_fallback"
+        assert message.text == fallback.render(s, t, [], VALUES).text
+        assert len(model.calls) == 2
+
+    def test_a_real_message_or_a_planned_one_word_answer_is_not_a_label(
+        self, taxonomy: Taxonomy, scenarios: list[Scenario]
+    ) -> None:
+        forms = label_forms(taxonomy)
+        _, t = self._crisis_adjacent(scenarios)
+        assert is_label_only("Crisis-adjacent.", t, forms)
+        assert not is_label_only("I'm so tired, I feel kind of crisis-adjacent honestly.", t, forms)
+        assert not is_label_only("You're not listening to me.", t, forms)
+        one_word = find(scenarios, answer_style="one_word")
+        answer = turn_of(one_word, "answer:one_word")
+        assert not is_label_only("Frustrated.", answer, forms)
+        assert is_label_only("Angry at veir.", answer, forms)  # two words are never a one-word answer
+
+
+class TestEachVentureTalksAboutItself:
+    """E-2: a single-session scenario is planned for one seeded venture and talks about that venture's own topics
+    (no EmberLoop founder asking about a seat-finding app); remembered ones keep the memory venture's topics."""
+
+    def test_single_session_scenarios_take_their_ventures_topics(
+        self, templates: Templates, scenarios: list[Scenario]
+    ) -> None:
+        single = [s for s in scenarios if not s.multi_session]
+        assert {s.venture for s in single} == set(templates.venture_topics)
+        for s in single:
+            assert s.venture is not None
+            own = templates.venture_topics[s.venture]
+            assert s.topic_a in own
+            assert s.topic_b in own
+            assert s.topic_a != s.topic_b
+        for s in (s for s in scenarios if s.multi_session):
+            assert s.venture is None
+            assert s.topic_a in templates.topics
+
+    def test_no_founder_names_another_ventures_facts(
+        self, taxonomy: Taxonomy, templates: Templates, scenarios: list[Scenario]
+    ) -> None:
+        """What only another venture's (or the default) topics say never appears in a founder's message."""
+        sim = TemplateSimulator(taxonomy, templates)
+
+        def distinctive(topics: dict[str, Any]) -> set[str]:
+            return {
+                term.rstrip("*").lower() for t in topics.values() for term in t.recall_terms if len(term) > 4
+            }
+
+        checked = 0
+        for s in scenarios[:400]:
+            if s.multi_session or s.venture is None:
+                continue
+            others = distinctive(dict(templates.topics))
+            for venture, topics in templates.venture_topics.items():
+                if venture != s.venture:
+                    others |= distinctive(dict(topics))
+            # Words the venture's own topics say anywhere are its own (QuietQuad's "live map").
+            own_text = json.dumps(templates.venture_topics[s.venture], default=dict).lower()
+            others = {term for term in others if term not in own_text}
+            for t in s.turns():
+                text = sim.render(s, t, [], VALUES).text.lower()
+                leaked = sorted(term for term in others if term in text)
+                assert not leaked, (s.id, s.venture, leaked)
+                checked += 1
+        assert checked > 1000
+        # The reported example: the EmberLoop founder asking about SeatSpot.
+        assert any(term == "seatspot" for term in distinctive(dict(templates.topics)))
+
+    def test_the_plan_records_the_venture(self, scenarios: list[Scenario]) -> None:
+        single = next(s for s in scenarios if not s.multi_session)
+        assert single.to_dict()["venture"] == single.venture
+        assert next(s for s in scenarios if s.multi_session).to_dict()["venture"] is None
