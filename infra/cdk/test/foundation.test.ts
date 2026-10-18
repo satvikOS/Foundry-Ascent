@@ -225,7 +225,7 @@ describe('FoundryAscent-Foundation', () => {
         {
           Sid: 'SynthesizeSpeech',
           Effect: 'Allow',
-          Action: 'polly:SynthesizeSpeech',
+          Action: ['polly:DescribeVoices', 'polly:SynthesizeSpeech'],
           Resource: '*',
           Condition: inRegion,
         },

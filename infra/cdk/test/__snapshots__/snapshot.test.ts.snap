@@ -3749,7 +3749,10 @@ exports[`template snapshots > FoundryAscent-Foundation 1`] = `
               "Sid": "InvokeLabModels",
             },
             {
-              "Action": "polly:SynthesizeSpeech",
+              "Action": [
+                "polly:DescribeVoices",
+                "polly:SynthesizeSpeech",
+              ],
               "Condition": {
                 "StringEquals": {
                   "aws:RequestedRegion": "us-east-1",

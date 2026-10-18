@@ -14,8 +14,8 @@ name: Ops - conversation lab
 #
 # Runs only from main, in the `conversation-lab` GitHub environment, whose OIDC subject is the only one the
 # FoundryAscent-ConversationLab role trusts (infra/cdk/src/stacks/foundation-stack.ts). That role may invoke the
-# app's and the lab's Bedrock models, Polly SynthesizeSpeech and Transcribe streaming, nothing else: no database,
-# bucket, queue, function, log or secret of the platform. Nothing here touches production data.
+# app's and the lab's Bedrock models, Polly SynthesizeSpeech and DescribeVoices and Transcribe streaming, nothing
+# else: no database, bucket, queue, function, log or secret of the platform. Nothing here touches production data.
 #
 # THE REPOSITORY IS PUBLIC: this log, the job summary and artifacts are world-readable. The harness prints only pass
 # rates, latencies, counts, ids, codes, fixed test titles and dollars. Transcripts, judge rationales, failure

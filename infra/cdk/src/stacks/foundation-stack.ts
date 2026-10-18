@@ -306,7 +306,9 @@ export class FoundationStack extends Stack {
         }),
         new iam.PolicyStatement({
           sid: 'SynthesizeSpeech',
-          actions: ['polly:SynthesizeSpeech'],
+          // DescribeVoices: the app's free connection warm-up at a call's start (polly-speech.ts prewarm, LAB-P2),
+          // as on the API role.
+          actions: ['polly:SynthesizeSpeech', 'polly:DescribeVoices'],
           resources: ['*'],
           conditions: inLabRegion,
         }),
@@ -329,7 +331,7 @@ export class FoundationStack extends Stack {
       {
         id: wildcardResource(this, '*'),
         reason:
-          'polly:SynthesizeSpeech has no resource-level permissions without a lexicon (none is used) and transcribe:StartStreamTranscriptionWebSocket has no resource types; both are limited to the platform region by aws:RequestedRegion and create nothing that persists.',
+          'polly:SynthesizeSpeech and polly:DescribeVoices have no resource-level permissions without a lexicon (none is used) and transcribe:StartStreamTranscriptionWebSocket has no resource types; all are limited to the platform region by aws:RequestedRegion and create nothing that persists.',
       },
     );
 

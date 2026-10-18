@@ -297,6 +297,8 @@ OWN_ROLE_WORKFLOWS: dict[str, OwnRole] = {
             "bedrock-runtime:ConverseStream": "bedrock:InvokeModelWithResponseStream",
             "bedrock-runtime:InvokeModel": "bedrock:InvokeModel",
             "polly:SynthesizeSpeech": "polly:SynthesizeSpeech",
+            # The app's free Polly connection warm-up at a call's start (polly-speech.ts prewarm, LAB-P2).
+            "polly:DescribeVoices": "polly:DescribeVoices",
             # The app presigns the browser's streaming URL with the role's credentials (SigV4, service transcribe).
             "transcribe:StartStreamTranscriptionWebSocket": "transcribe:StartStreamTranscriptionWebSocket",
         },
@@ -315,12 +317,14 @@ TS_COMMANDS = {
     "ConverseStreamCommand": "bedrock-runtime:ConverseStream",
     "InvokeModelCommand": "bedrock-runtime:InvokeModel",
     "SynthesizeSpeechCommand": "polly:SynthesizeSpeech",
+    "DescribeVoicesCommand": "polly:DescribeVoices",
 }
 PY_METHODS = {
     "converse": "bedrock-runtime:Converse",
     "converse_stream": "bedrock-runtime:ConverseStream",
     "invoke_model": "bedrock-runtime:InvokeModel",
     "synthesize_speech": "polly:SynthesizeSpeech",
+    "describe_voices": "polly:DescribeVoices",
 }
 
 
