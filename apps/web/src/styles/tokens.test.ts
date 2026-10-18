@@ -194,6 +194,34 @@ const FILLED_PAIRS = [
 const STATUS_TEXT = ['--destructive', '--success', '--warning', '--info'] as const;
 const STATUS_BACKDROPS = ['--background', '--card', '--popover'] as const;
 
+/**
+ * Text colours drawn on the bars that text scrolls under: the neutral text tokens, and the status colours the
+ * mini call bar writes on its glass ("· 2 min left", "Microphone disconnected", "Sound is off" in --warning).
+ */
+const BAR_TEXT = [...TEXT_TOKENS, ...STATUS_TEXT] as const;
+
+/** The source files that draw a sticky bar on the bars' glass, and the colour tokens their `text-*` classes name. */
+function barSources(): { where: string; textTokens: string[] }[] {
+  const root = join(here, '..');
+  const found: { where: string; textTokens: string[] }[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir)) {
+      const path = join(dir, entry);
+      if (statSync(path).isDirectory()) walk(path);
+      else if (entry.endsWith('.tsx') && !entry.endsWith('.test.tsx')) {
+        const source = readFileSync(path, 'utf8');
+        if (!/['"`\s]glass-bar['"`\s]/.test(source)) continue;
+        const named = [...source.matchAll(/\btext-([a-z][\w-]*)/g)]
+          .map((match) => `--${match[1] ?? ''}`)
+          .filter((token) => tokens.has(token));
+        found.push({ where: path.slice(root.length + 1), textTokens: [...new Set(named)].sort() });
+      }
+    }
+  };
+  walk(root);
+  return found;
+}
+
 /** Component boundaries and focus (WCAG 1.4.11 non-text contrast, 3:1), on the surfaces they sit on. */
 const NON_TEXT = [
   // Fields, checkboxes, radios and switches sit on the page, on cards and in dialogs and menus.
@@ -258,7 +286,7 @@ describe('colour tokens (globals.css)', () => {
           ...STATUS_TEXT,
           ...FILLED_PAIRS.map(([, fill]) => fill),
         ].map((name) => ({ name, color: resolve(name, scheme) }));
-        const pairs = TEXT_TOKENS.flatMap((text) =>
+        const pairs = BAR_TEXT.flatMap((text) =>
           contents.map((content) => {
             const bg = over(bar, content.color);
             return {
@@ -268,7 +296,7 @@ describe('colour tokens (globals.css)', () => {
             };
           }),
         );
-        expect(pairs.length).toBeGreaterThan(250);
+        expect(pairs.length).toBeGreaterThan(350);
         expect(failures(pairs, 4.5)).toEqual([]);
         // The page's lighter glass would not hold there: that is why the bars have their own.
         const thin = resolve('--glass-bg', scheme);
@@ -428,6 +456,28 @@ describe('colour tokens (globals.css)', () => {
       'features/chat/conversation-header.tsx',
       'routes/index.tsx',
     ]);
+  });
+
+  it('every text colour a bar’s source names is one the bar contrast check measures', () => {
+    const sources = barSources();
+    // The conversation header, the phone bar, the mini call bar and the landing page's header.
+    expect(sources.map((s) => s.where).sort()).toEqual([
+      'components/shell/app-shell.tsx',
+      'features/calls/mini-call-bar-view.tsx',
+      'features/chat/conversation-header.tsx',
+      'routes/index.tsx',
+    ]);
+    const measured = new Set<string>(BAR_TEXT);
+    const unmeasured = sources.flatMap(({ where, textTokens }) =>
+      textTokens.filter((token) => !measured.has(token)).map((token) => `${where}: ${token}`),
+    );
+    // Decoration, not text (WCAG 1.4.3 exempts it): the header's aria-hidden "/" between the name and the title.
+    const decorative = ['features/chat/conversation-header.tsx: --border-strong'];
+    expect(unmeasured).toEqual(decorative);
+    // The mini call bar's warnings are among them.
+    expect(sources.find((s) => s.where.endsWith('mini-call-bar-view.tsx'))?.textTokens).toContain(
+      '--warning',
+    );
   });
 
   it('no component fades a text token with an opacity modifier (that would bypass these checks)', () => {
