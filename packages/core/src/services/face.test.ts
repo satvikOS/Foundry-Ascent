@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import { FakeVoiceProvider } from '../testing/fakes.js';
 import { callCanSpeak, callVoiceVendor } from './calls.js';
-import { MIN_FACE_SECONDS, faceAllowance, faceStopCause } from './face.js';
+import { MIN_FACE_SECONDS, faceAllowance, faceMinutesCause, faceStopCause } from './face.js';
 import { faceCostUsd, voiceCostUsd, MEDIA_VENDORS } from './media-vendors.js';
-import { chooseVoice } from './speech.js';
+import { CloneRest, chooseVoice } from './speech.js';
 import { DEFAULT_SPEECH_VOICE } from './voices.js';
 
 const ON = { facesEnabled: true, faceMinutesPerPrincipalMonth: 60, faceMinutesPerCall: 20 };
@@ -16,6 +16,7 @@ describe('faceAllowance: whether a call may have a face, and for how long', () =
   const base = {
     settings: ON,
     provider: LIKENESS,
+    callerRoles: [] as const,
     twinFace: READY,
     monthSecondsUsed: 0,
     callSecondsLeft: 1800,
@@ -37,6 +38,16 @@ describe('faceAllowance: whether a call may have a face, and for how long', () =
     expect(faceAllowance({ ...base, twinFace: null })).toEqual({ ok: false, reason: 'no_face' });
     // The stand-in draws no one: no face record is needed.
     expect(faceAllowance({ ...base, provider: STAND_IN, twinFace: null }).ok).toBe(true);
+  });
+
+  it('offers a vendor sandbox (the stock avatar under the EIR’s name) to platform admins only', () => {
+    const sandbox = { likeness: true, sandbox: true };
+    expect(faceAllowance({ ...base, provider: sandbox })).toEqual({ ok: false, reason: 'sandbox_only' });
+    expect(faceAllowance({ ...base, provider: sandbox, callerRoles: ['program_lead', 'eir'] })).toEqual({
+      ok: false,
+      reason: 'sandbox_only',
+    });
+    expect(faceAllowance({ ...base, provider: sandbox, callerRoles: ['platform_admin'] }).ok).toBe(true);
   });
 
   it('stops at the spend cap, the month’s minutes and a call about to end', () => {
@@ -75,6 +86,34 @@ describe('faceStopCause: when a live face has to go', () => {
     expect(faceStopCause({ ...base, spendCapReached: true })).toBe('spend_cap');
     expect(faceStopCause({ ...base, monthSecondsUsed: 3600 })).toBe('face_minutes');
     expect(faceStopCause({ ...base, clientOff: true })).toBe('face_dropped');
+  });
+});
+
+describe('faceMinutesCause: a face’s video minutes', () => {
+  const base = { lasted: 30, maxSeconds: 60, monthSecondsUsed: 600, monthMinutes: 60 };
+
+  it('keeps a face within the call’s limit and the month’s minutes', () => {
+    expect(faceMinutesCause(base)).toBeNull();
+  });
+
+  it('stops at the per-call limit, at the month’s minutes, and when the month cannot be read', () => {
+    expect(faceMinutesCause({ ...base, lasted: 60 })).toBe('face_limit');
+    expect(faceMinutesCause({ ...base, monthSecondsUsed: 3600 })).toBe('face_minutes');
+    expect(faceMinutesCause({ ...base, monthSecondsUsed: null })).toBe('face_check_failed');
+    // The call's limit is the face's own: it holds whatever the month says.
+    expect(faceMinutesCause({ ...base, lasted: 61, monthSecondsUsed: null })).toBe('face_limit');
+  });
+});
+
+describe('CloneRest: a cloned voice that failed is left alone for a while', () => {
+  it('rests one voice for the rest period, and only that voice', () => {
+    const rest = new CloneRest(60_000);
+    expect(rest.resting('elevenlabs:VoiceA', 0)).toBe(false);
+    rest.failed('elevenlabs:VoiceA', 1_000);
+    expect(rest.resting('elevenlabs:VoiceA', 60_999)).toBe(true);
+    expect(rest.resting('elevenlabs:VoiceB', 2_000)).toBe(false);
+    expect(rest.resting('elevenlabs:VoiceA', 61_000)).toBe(false);
+    expect(rest.resting('elevenlabs:VoiceA', 61_001)).toBe(false);
   });
 });
 

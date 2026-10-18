@@ -8,13 +8,20 @@ import {
 import { assignmentsRepo, personasRepo, principalsRepo, settingsRepo, type SqlExecutor } from '@foundry/db';
 import { type z } from 'zod';
 
+import { loadPrincipalRoles } from '../authz/roles.js';
 import { requireVentureAccess } from '../authz/venture-access.js';
 import { type RequestContext } from '../context.js';
 import { DomainError } from '../errors.js';
 import { veirEirName } from '../internal/eir-names.js';
 import { requireId, type Kit, type RequestScope } from '../internal/kit.js';
 import { callSecondsToday, remainingDailyMinutes } from './call-usage.js';
-import { type FaceService, MIN_FACE_SECONDS, faceSecondsThisMonth, twinFaceFor } from './face.js';
+import {
+  type FaceService,
+  MIN_FACE_SECONDS,
+  faceOfferedTo,
+  faceSecondsThisMonth,
+  twinFaceFor,
+} from './face.js';
 
 /**
  * Who a founder talks to (the venture's vEIR as shown in chat and calls) and what a call may use: the
@@ -129,11 +136,13 @@ export function createVeirService(kit: Kit, face: FaceService): VeirService {
         const { identity } = await requireVeir(scope, ventureId);
         const settings = await settingsRepo.getPlatformSettings(scope.tx);
         const used = await callSecondsToday(scope.tx, ctx.principalId);
-        // A vendor face for this vEIR: faces on, a provider wired, and (for a real likeness) its face ready under
-        // likeness consent. The video minutes left are read below (owner role).
+        // A vendor face for this vEIR: faces on, a provider wired (a sandbox one for platform admins only), and
+        // (for a real likeness) its face ready under likeness consent. The video minutes left are read below
+        // (owner role).
         const faceOn =
           provider !== undefined &&
           settings.facesEnabled &&
+          (provider.sandbox !== true || faceOfferedTo(provider, await loadPrincipalRoles(scope.tx, ctx))) &&
           (!provider.likeness || (await twinFaceFor(scope.tx, provider, identity.personaId)) !== null);
         const response: CallConfigResponse = {
           veir: identity,

@@ -222,6 +222,10 @@ export class FakeEmbodimentProvider implements EmbodimentProvider {
   readonly voicing = 'audio' as const;
   failNext = false;
   failSpeak = false;
+  /** How many of the next `end` calls fail (after being recorded), like a vendor 5xx. */
+  failEnds = 0;
+  /** A vendor sandbox (offered to platform admins only). */
+  sandbox = false;
   /** The control channel each session gets (a credential at a real vendor). */
   control: string | null = 'wss://face.test.invalid/control';
 
@@ -266,6 +270,10 @@ export class FakeEmbodimentProvider implements EmbodimentProvider {
 
   end(handle: FaceSessionHandle, reason: string): Promise<void> {
     this.ended.push({ handle, reason });
+    if (this.failEnds > 0) {
+      this.failEnds -= 1;
+      return Promise.reject(new EmbodimentSessionError('vendor unavailable'));
+    }
     return Promise.resolve();
   }
 }

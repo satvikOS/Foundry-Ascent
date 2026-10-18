@@ -223,6 +223,59 @@ describe('the face of a call: off by default, then the stand-in', () => {
     await expect(faceSession(local, callId)).rejects.toMatchObject({ reason: 'call_not_active' });
   });
 
+  it('offers a vendor sandbox face to platform admins only (never a stock avatar to founders)', async () => {
+    const sandboxFace = new FakeEmbodimentProvider('fake', false, 0);
+    sandboxFace.sandbox = true;
+    const sandboxed = h.withPorts({ speech: polly, embodiment: sandboxFace });
+    expect(CallConfigResponse.parse(await sandboxed.veir.callConfig(ctx.maya, quietquad())).provider).toBe(
+      'builtin',
+    );
+    const started = await startCall(sandboxed);
+    try {
+      expect(await faceSession(sandboxed, started.call.id)).toMatchObject({
+        provider: 'builtin',
+        token: null,
+      });
+      expect(sandboxFace.sessions).toHaveLength(0);
+      expect(await lastAudit('call.avatar_session')).toMatchObject({
+        outcome: 'denied',
+        policy_reason: 'sandbox_only',
+      });
+    } finally {
+      await sandboxed.calls.end(ctx.maya, started.call.id, { reason: 'user' });
+    }
+    // The owner running the first live checks, on a venture they belong to.
+    await h.t.db.system((sx) =>
+      sx.query(`INSERT INTO role_grants (principal_id, role) VALUES (:p, 'platform_admin')`, {
+        p: p.uuid(h.people.maya),
+      }),
+    );
+    try {
+      const admin = await h.ctxFor(h.people.maya);
+      expect(CallConfigResponse.parse(await sandboxed.veir.callConfig(admin, quietquad())).provider).toBe(
+        'fake',
+      );
+      const sessionId = (await sandboxed.sessions.create(admin, quietquad(), {})).id;
+      const call = StartCallResponse.parse(
+        await sandboxed.calls.start(admin, sessionId, { inputMode: 'typed' }),
+      ).call;
+      const minted = AvatarSessionResponse.parse(
+        await sandboxed.veir.avatarSession(admin, { ventureId: quietquad(), callId: call.id }),
+      );
+      expect(minted).toMatchObject({ provider: 'fake', token: 'fake.session-1' });
+      await sandboxed.calls.end(admin, call.id, { reason: 'user' });
+    } finally {
+      await h.t.db.system((sx) =>
+        sx.query(
+          `UPDATE role_grants SET revoked_at = now() WHERE principal_id = :p AND role = 'platform_admin'`,
+          {
+            p: p.uuid(h.people.maya),
+          },
+        ),
+      );
+    }
+  });
+
   it('keeps the presence when the vendor is down or the call is about to end', async () => {
     const started = await startCall(local);
     try {
@@ -279,12 +332,203 @@ describe('the face of a call: off by default, then the stand-in', () => {
     }
   });
 
+  it('bills the seconds since the last heartbeat when the call ends: the ledger holds the face’s seconds', async () => {
+    const before = await usage('fake:face');
+    const started = await startCall(local);
+    const callId = started.call.id;
+    await faceSession(local, callId);
+    await ageFace(callId, 90);
+    expect((await beat(local, callId, 'live')).face).toBe('continue');
+    await ageFace(callId, 300);
+    await local.calls.end(ctx.maya, callId, { reason: 'user' });
+    const face = await h.t.db.system((sx) => twinRepo.getCallFace(sx, callId));
+    expect(face?.meteredSeconds).toBeGreaterThanOrEqual(300);
+    expect((await usage('fake:face')).units - before.units).toBe(face?.meteredSeconds);
+  });
+
+  it('bills the face of a call the daily maintenance closed, once', async () => {
+    const before = await usage('fake:face');
+    const started = await startCall(local);
+    const callId = started.call.id;
+    await faceSession(local, callId);
+    await ageFace(callId, 240);
+    // The browser went away 200 s ago: no heartbeat since.
+    await h.t.db.system(async (sx) => {
+      await sx.query('ALTER TABLE calls DISABLE TRIGGER calls_guard');
+      await sx.query(
+        `UPDATE calls SET started_at = now() - interval '240 seconds',
+                          last_heartbeat_at = now() - interval '200 seconds' WHERE id = :id`,
+        { id: p.uuid(callId) },
+      );
+      await sx.query('ALTER TABLE calls ENABLE TRIGGER calls_guard');
+    });
+    await local.maintenance.runDaily({ requestId: 'maintenance-call-faces' });
+    const face = await h.t.db.system((sx) => twinRepo.getCallFace(sx, callId));
+    expect(face?.endReason).toBe('call_ended');
+    // The reaper ends the call at its last heartbeat plus the stale window: 240 - 200 + 60 seconds of face.
+    expect(face?.meteredSeconds).toBeGreaterThanOrEqual(99);
+    expect(face?.meteredSeconds).toBeLessThanOrEqual(102);
+    expect((await usage('fake:face')).units - before.units).toBe(face?.meteredSeconds);
+    await local.maintenance.runDaily({ requestId: 'maintenance-call-faces-again' });
+    expect((await usage('fake:face')).units - before.units).toBe(face?.meteredSeconds);
+  });
+
+  it('ends a face at its per-call limit, whatever the month still leaves', async () => {
+    await setting('face_minutes_per_call', '1');
+    const started = await startCall(local);
+    try {
+      await faceSession(local, started.call.id);
+      expect(standIn.sessions.at(-1)?.maxSeconds).toBe(60);
+      await ageFace(started.call.id, 30);
+      expect((await beat(local, started.call.id, 'live')).face).toBe('continue');
+      await ageFace(started.call.id, 75);
+      expect(await beat(local, started.call.id, 'live')).toMatchObject({ action: 'continue', face: 'stop' });
+      expect(standIn.ended.at(-1)?.reason).toBe('face_stopped');
+      expect(await lastAudit('call.face_ended')).toMatchObject({ policy_reason: 'face_limit' });
+    } finally {
+      await setting('face_minutes_per_call', '20');
+      await local.calls.end(ctx.maya, started.call.id, { reason: 'user' });
+    }
+  });
+
+  it('stops the face when the month’s video minutes cannot be read, never waving it through', async () => {
+    let monthFails = false;
+    const flaky = h.withPorts(
+      { speech: polly, embodiment: standIn },
+      {
+        db: (db) => ({
+          driver: db.driver,
+          withContext: (c, fn) => db.withContext(c, fn),
+          ping: (o) => db.ping(o),
+          close: () => db.close(),
+          system: (fn, o) =>
+            db.system(
+              (sx) =>
+                fn({
+                  ...sx,
+                  query: (sql, params) =>
+                    monthFails && sql.includes("date_trunc('month'")
+                      ? Promise.reject(new Error('statement timeout'))
+                      : sx.query(sql, params),
+                }),
+              o,
+            ),
+        }),
+      },
+    );
+    const started = await startCall(flaky);
+    try {
+      await faceSession(flaky, started.call.id);
+      expect((await beat(flaky, started.call.id, 'live')).face).toBe('continue');
+      monthFails = true;
+      expect(await beat(flaky, started.call.id, 'live')).toMatchObject({ action: 'continue', face: 'stop' });
+      expect(standIn.ended.at(-1)?.reason).toBe('face_stopped');
+      expect(await lastAudit('call.face_ended')).toMatchObject({ policy_reason: 'face_check_failed' });
+    } finally {
+      monthFails = false;
+      await flaky.calls.end(ctx.maya, started.call.id, { reason: 'user' });
+    }
+  });
+
+  it('asks the vendor to stop a session again when the first stop fails', async () => {
+    const started = await startCall(local);
+    await faceSession(local, started.call.id);
+    const ended = standIn.ended.length;
+    standIn.failEnds = 1;
+    await local.calls.end(ctx.maya, started.call.id, { reason: 'user' });
+    expect(standIn.ended.length).toBe(ended + 2);
+    expect(standIn.ended.at(-1)?.reason).toBe('call_ended');
+    expect(standIn.failEnds).toBe(0);
+  });
+
   it('ends a face the browser stopped showing, so it stops billing', async () => {
     const started = await startCall(local);
     await faceSession(local, started.call.id);
     expect((await beat(local, started.call.id, 'off')).face).toBe('stop');
     expect(standIn.ended.at(-1)?.reason).toBe('face_dropped');
     await local.calls.end(ctx.maya, started.call.id, { reason: 'user' });
+  });
+
+  it('takes each part of a unit once, in order, one unit at a time, and nothing of it after barge-in', async () => {
+    const started = await startCall(local);
+    const callId = started.call.id;
+    const sessionId = started.call.sessionId;
+    const intro = started.intro;
+    if (intro === null) throw new Error('no intro');
+    try {
+      await faceSession(local, callId);
+      const spoken = await speak(local, {
+        sessionId,
+        turnId: null,
+        seq: 0,
+        text: intro.text,
+        sig: intro.sig,
+      });
+      const manifest = spoken.faceManifest ?? '';
+      const pcm = spoken.bytes.subarray(44);
+      expect(Math.ceil(pcm.length / FACE_CHUNK_BYTES)).toBeGreaterThanOrEqual(4);
+      /** One second of the intro, as its own part. */
+      const second = (i: number) =>
+        pcm.subarray(i * FACE_CHUNK_BYTES, Math.min(pcm.length, (i + 1) * FACE_CHUNK_BYTES));
+      const hand = (i: number) =>
+        local.face.speak(ctx.maya, callId, { manifest, firstChunk: i, pcm: second(i) });
+      const refused = async (i: number, reason: string) => {
+        await expect(hand(i)).rejects.toMatchObject({ code: 'validation_failed' });
+        expect(await lastAudit('call.face_refused')).toMatchObject({ policy_reason: reason });
+      };
+      const shown = standIn.spoken.length;
+
+      // Every part passes the manifest on its own; the server still takes them only in order, once each.
+      await refused(1, 'part_out_of_order');
+      await hand(0);
+      await refused(2, 'part_out_of_order');
+      await hand(1);
+      await refused(1, 'part_out_of_order');
+      await refused(0, 'already_shown');
+      expect(standIn.spoken.length).toBe(shown + 2);
+      expect(standIn.spoken.slice(shown).map((s) => s.audio.pcm.byteLength)).toEqual([
+        FACE_CHUNK_BYTES,
+        FACE_CHUNK_BYTES,
+      ]);
+
+      // Another unit starts: the rest of the intro can no longer be spliced in after it.
+      const units = await spokenUnits(
+        local,
+        sessionId,
+        callId,
+        'What should I test first with ten customers?',
+      );
+      const unit = units.reduce((a, b) => (b.text.length > a.text.length ? b : a));
+      const other = await speak(local, {
+        sessionId,
+        turnId: unit.turnId,
+        seq: unit.seq,
+        text: unit.text,
+        sig: unit.sig,
+      });
+      const otherPcm = other.bytes.subarray(44);
+      expect(Math.ceil(otherPcm.length / FACE_CHUNK_BYTES)).toBeGreaterThanOrEqual(2);
+      await local.face.speak(ctx.maya, callId, {
+        manifest: other.faceManifest ?? '',
+        firstChunk: 0,
+        pcm: otherPcm.subarray(0, FACE_CHUNK_BYTES),
+      });
+      await refused(2, 'part_out_of_order');
+
+      // Barge-in: what the face was saying is over, so its next part is refused too.
+      await local.face.interrupt(ctx.maya, callId);
+      await expect(
+        local.face.speak(ctx.maya, callId, {
+          manifest: other.faceManifest ?? '',
+          firstChunk: 1,
+          pcm: otherPcm.subarray(FACE_CHUNK_BYTES, Math.min(otherPcm.length, 2 * FACE_CHUNK_BYTES)),
+        }),
+      ).rejects.toMatchObject({ code: 'validation_failed' });
+      expect(await lastAudit('call.face_refused')).toMatchObject({ policy_reason: 'part_out_of_order' });
+      expect(standIn.spoken.length).toBe(shown + 3);
+    } finally {
+      await local.calls.end(ctx.maya, callId, { reason: 'user' });
+    }
   });
 });
 
@@ -489,6 +733,46 @@ describe('a real likeness and the cloned voice', () => {
     expect(spoken.faceManifest).toBeUndefined();
     expect(spoken.contentType).toBe('audio/mpeg');
     expect(polly.calls.at(-1)?.voiceId).not.toBe('VoiceClone01');
+  });
+
+  it('speaks with the stock voice when the cloned voice fails, and leaves the clone alone for a while', async () => {
+    const callVoice = String(
+      (
+        await h.t.db.system((sx) =>
+          sx.query('SELECT voice_id FROM calls WHERE id = :id', { id: p.uuid(callId) }),
+        )
+      ).rows[0]?.voice_id,
+    );
+    const [first] = await spokenUnits(vendor, sessionId, callId, 'How should I price the first pilot?');
+    if (first === undefined) throw new Error('no spoken unit');
+    const cloned = clone.calls.length;
+    const pollied = polly.calls.length;
+    const billedClone = await usage('elevenlabs:test_model');
+    clone.failNext = true;
+    const spoken = await speak(vendor, {
+      sessionId,
+      turnId: first.turnId,
+      seq: first.seq,
+      text: first.text,
+      sig: first.sig,
+    });
+    // The clone was tried once; the same verified unit was then spoken in the call's stock voice, face included.
+    expect(clone.calls.length).toBe(cloned + 1);
+    expect(polly.calls.length).toBe(pollied + 1);
+    expect(polly.calls.at(-1)).toMatchObject({ voiceId: callVoice, format: 'pcm_16000' });
+    expect(callVoice).not.toBe('VoiceClone01');
+    expect(spoken.contentType).toBe('audio/wav');
+    expect(spoken.faceManifest).toMatch(/^fa1\./);
+    // Billed as the voice that spoke: no clone characters.
+    expect(await usage('elevenlabs:test_model')).toEqual(billedClone);
+    expect((await lastAudit('speech.synthesized')).raw).toContain(callVoice);
+
+    // The next units skip the clone for a while instead of waiting on it again.
+    const [next] = await spokenUnits(vendor, sessionId, callId, 'And what if they say no?');
+    if (next === undefined) throw new Error('no spoken unit');
+    await speak(vendor, { sessionId, turnId: next.turnId, seq: next.seq, text: next.text, sig: next.sig });
+    expect(clone.calls.length).toBe(cloned + 1);
+    expect(polly.calls.length).toBe(pollied + 2);
   });
 
   it('withdrawing likeness ends the face at once; withdrawing voice falls back to the platform voice', async () => {

@@ -334,6 +334,11 @@ export interface EmbodimentProvider {
    * face is ready under likeness consent. The stand-in draws no one and serves any.
    */
   readonly likeness: boolean;
+  /**
+   * Vendor sandbox sessions (LiveAvatar's stock avatar, whatever the persona): for the owner's first live checks
+   * only, so a face is then offered to platform admins alone, never to founders under an EIR's name.
+   */
+  readonly sandbox?: boolean;
   /** Per minute of face session (packages/core/media-vendors.json); the vendor bills elapsed time. */
   readonly usdPerMinute: number;
   createSession(request: FaceSessionRequest): Promise<StartedFaceSession>;

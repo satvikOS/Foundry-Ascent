@@ -331,16 +331,32 @@ describe('migration 0017_digital_twin', () => {
         id: p.uuid(call.id),
       }),
     );
-    expect(await t.db.system((sx) => twinRepo.meterCallFace(sx, call.id))).toBe(5);
-    expect(await t.db.system((sx) => twinRepo.meterCallFace(sx, call.id))).toBe(0);
+    expect(must(await t.db.system((sx) => twinRepo.meterCallFace(sx, call.id))).added).toBe(5);
+    expect(must(await t.db.system((sx) => twinRepo.meterCallFace(sx, call.id))).added).toBe(0);
     expect(await t.db.system((sx) => twinRepo.faceSecondsThisMonth(sx, maya.principalId))).toBe(5);
-    // Ending the call ends the face and erases the control channel.
+    // Ending the call ends the face and erases the control channel; the seconds since the last meter are left
+    // to the metering (which bills them), never moved by the trigger.
+    await t.db.system((sx) =>
+      sx.query(
+        `UPDATE call_faces SET max_seconds = 60, started_at = now() - interval '40 seconds' WHERE call_id = :id`,
+        {
+          id: p.uuid(call.id),
+        },
+      ),
+    );
     await t.db.withContext(maya, (tx) =>
       callsRepo.endCall(tx, { callId: call.id, reason: 'user', detail: 'client_user' }),
     );
     const ended = must(await t.db.system((sx) => twinRepo.getCallFace(sx, call.id)));
     expect(ended).toMatchObject({ endReason: 'call_ended', control: null, meteredSeconds: 5 });
     expect(ended.endedAt).not.toBeNull();
+    expect(
+      await t.db.system((sx) => twinRepo.faceSecondsThisMonth(sx, maya.principalId)),
+    ).toBeGreaterThanOrEqual(40);
+    const tail = must(await t.db.system((sx) => twinRepo.meterCallFace(sx, call.id)));
+    expect(tail.added).toBeGreaterThanOrEqual(35);
+    expect(tail).toMatchObject({ vendor: 'heygen', startedBy: maya.principalId, ventureId: call.ventureId });
+    expect(must(await t.db.system((sx) => twinRepo.meterCallFace(sx, call.id))).added).toBe(0);
     // A call's voice vendor never changes.
     expect(
       await sqlState(
@@ -351,23 +367,62 @@ describe('migration 0017_digital_twin', () => {
     ).toBe('55000');
   });
 
-  it('hands a unit to the face only after the call synthesized it, and only as often as allowed', async () => {
+  it('hands the face a unit only after the call synthesized it: once, part after part, one unit at a time', async () => {
     const maya = ctx('maya');
     const call = await liveCall(maya);
-    const unit = 'intro';
-    const reserve = () =>
-      t.db.system((sx) => twinRepo.reserveFacePlay(sx, { callId: call.id, unit, maxPlays: 1 }));
-    expect(await reserve()).toBe(false);
     await t.db.system((sx) =>
-      sx.query(`INSERT INTO call_speech (call_id, unit, plays, characters) VALUES (:id, 'intro', 1, 10)`, {
-        id: p.uuid(call.id),
+      twinRepo.startCallFace(sx, {
+        callId: call.id,
+        startedBy: maya.principalId,
+        vendor: 'fake',
+        sessionRef: 'sess-parts',
+        control: null,
+        maxSeconds: 600,
       }),
     );
-    expect(await reserve()).toBe(true);
-    expect(await reserve()).toBe(false);
+    const admit = (unit: string, first: number, chunks: number, total = 5, sessionRef = 'sess-parts') =>
+      t.db.system((sx) =>
+        twinRepo.admitFacePart(sx, { callId: call.id, sessionRef, unit, first, chunks, total, maxPlays: 1 }),
+      );
+    // Not synthesized yet: nothing to hand over.
+    expect(await admit('intro', 0, 2)).toBe(false);
+    await t.db.system((sx) =>
+      sx.query(
+        `INSERT INTO call_speech (call_id, unit, plays, characters)
+         VALUES (:id, 'intro', 1, 10), (:id, 'unit.' || :turn || '.0', 1, 10)`,
+        { id: p.uuid(call.id), turn: p.text('7d1f2c4e-1a2b-4c3d-8e9f-0a1b2c3d4e5f') },
+      ),
+    );
+    const other = 'unit.7d1f2c4e-1a2b-4c3d-8e9f-0a1b2c3d4e5f.0';
+    expect(await admit('intro', 2, 1)).toBe(false); // a later part before the first
+    expect(await admit('intro', 0, 2, 5, 'another-session')).toBe(false); // another face session
+    expect(await admit('intro', 0, 2)).toBe(true);
+    expect(await admit('intro', 0, 2)).toBe(false); // the first part again
+    expect(await admit('intro', 3, 1)).toBe(false); // a skipped part
+    expect(await admit('intro', 2, 1)).toBe(true);
+    expect(await admit('intro', 2, 1)).toBe(false); // a replayed part
+    expect(await admit('intro', 3, 3)).toBe(false); // beyond the unit's last chunk
+    // Another unit starts: the rest of the intro is never spliced in after it.
+    expect(await admit(other, 0, 1, 2)).toBe(true);
+    expect(await admit('intro', 3, 2)).toBe(false);
+    // Barge-in seals what the face was saying.
+    expect(await t.db.system((sx) => twinRepo.sealFaceUtterance(sx, call.id))).toBe(true);
+    expect(await admit(other, 1, 1, 2)).toBe(false);
+    const counts = await t.db.system((sx) =>
+      sx.query(
+        'SELECT unit, face_plays, face_next_chunk FROM call_speech WHERE call_id = :id ORDER BY unit',
+        { id: p.uuid(call.id) },
+      ),
+    );
+    expect(counts.rows).toEqual([
+      { unit: 'intro', face_plays: 1, face_next_chunk: 3 },
+      { unit: other, face_plays: 1, face_next_chunk: 1 },
+    ]);
+    // A face that ended takes nothing.
     await t.db.withContext(maya, (tx) =>
       callsRepo.endCall(tx, { callId: call.id, reason: 'user', detail: 'client_user' }),
     );
+    expect(await admit('intro', 3, 2)).toBe(false);
   });
 
   it('is idempotent: re-running every statement, then the runner, changes nothing', async () => {

@@ -58,7 +58,7 @@ import {
   type CallConditions,
   type CallStopCause,
 } from './call-usage.js';
-import { type FaceHooks, faceSecondsThisMonth, faceStopCause } from './face.js';
+import { type FaceHooks, type FaceStopCause, faceStopCause } from './face.js';
 import { speakableRun, speakableText } from './spoken-text.js';
 import { DEFAULT_SPEECH_VOICE } from './voices.js';
 
@@ -841,7 +841,7 @@ export function createCallsService(
           micSeconds: number;
           ventureId: string;
           /** Whether the face (if any) has to stop, and why; undefined when no face is wired. */
-          faceStop?: string | null;
+          faceStop?: FaceStopCause | null;
           /** The video minutes a person may use a month (checked once the transaction is done). */
           faceMonthMinutes?: number;
         }> => {
@@ -895,11 +895,12 @@ export function createCallsService(
         await meterTranscription(ctx, { callId, ventureId: beat.ventureId, seconds: beat.micSeconds });
       }
       if (beat.faceStop !== undefined && beat.response.action === 'continue') {
-        // Video minutes this month (owner role: call_faces is closed to app_rls) decide too.
-        const used = await faceSecondsThisMonth(kit, ctx.principalId).catch(() => 0);
-        const stopCause =
-          beat.faceStop ?? (used >= (beat.faceMonthMinutes ?? 0) * 60 ? 'face_minutes' : null);
-        const faceAction = await face.heartbeat(ctx, { id: callId, ventureId: beat.ventureId }, stopCause);
+        // The face's video minutes (the call's limit, the month's, read with the owner role) decide there too.
+        const faceAction = await face.heartbeat(
+          ctx,
+          { id: callId, ventureId: beat.ventureId },
+          { stopCause: beat.faceStop, monthMinutes: beat.faceMonthMinutes ?? 0 },
+        );
         if (faceAction !== undefined) return { ...beat.response, face: faceAction };
       }
       return beat.response;

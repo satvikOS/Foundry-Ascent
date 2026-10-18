@@ -13,8 +13,11 @@
 --     like the call's other identity it never changes.
 --  3. call_faces: the vendor face session of a call, at most one. The control channel (LITE's ws_url) is a
 --     credential: stored only encrypted by the API, erased when the face or its call ends. Face seconds are metered
---     from the server's clock (`metered_seconds`, never beyond `max_seconds`). Owner role only.
---  4. call_speech.face_plays: how often a synthesized unit was handed to the call's face (bounded per unit).
+--     from the server's clock into the usage ledger (`metered_seconds` is what the ledger has, never beyond
+--     `max_seconds`; ending the call leaves the tail to that metering, so the two never disagree). `speaking_unit`
+--     is the unit whose later parts the face takes now (none after barge-in). Owner role only.
+--  4. call_speech.face_plays / face_next_chunk: how often a synthesized unit was handed to the call's face
+--     (bounded per unit), and the next one-second chunk of it the face may take (parts in order, each once).
 --  5. Settings: `faces_enabled` and `cloned_voice_enabled` (off), video minutes per person per month (60) and per
 --     call (20).
 
@@ -160,12 +163,16 @@ CREATE TABLE IF NOT EXISTS call_faces (
   control_ciphertext bytea,
   -- The vendor session ends by itself then: the smaller of the call's time left and the person's video minutes.
   max_seconds        integer NOT NULL,
+  -- Seconds billed into the usage ledger so far (the metering moves it and writes the ledger in one transaction).
   metered_seconds    integer NOT NULL DEFAULT 0,
   started_at         timestamptz NOT NULL DEFAULT now(),
   ended_at           timestamptz,
   end_reason         text,
+  -- The unit (call_speech key) the face is saying: only its next part is taken; null after barge-in.
+  speaking_unit      text,
   CONSTRAINT call_faces_vendor_check CHECK (vendor IN ('heygen', 'fake')),
   CONSTRAINT call_faces_session_check CHECK (length(session_ref) BETWEEN 1 AND 200),
+  CONSTRAINT call_faces_speaking_check CHECK (speaking_unit IS NULL OR length(speaking_unit) BETWEEN 1 AND 120),
   CONSTRAINT call_faces_seconds_check
     CHECK (max_seconds BETWEEN 0 AND 14400 AND metered_seconds BETWEEN 0 AND max_seconds),
   CONSTRAINT call_faces_end_check CHECK (
@@ -177,15 +184,15 @@ CREATE INDEX IF NOT EXISTS call_faces_starter_started_idx ON call_faces (started
 ALTER TABLE call_faces ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON call_faces FROM app_rls;
 
--- Whatever ends a call (hang-up, a server stop, the reaper) ends its face and erases the control channel.
+-- Whatever ends a call (hang-up, a server stop, the reaper) ends its face and erases the control channel. The face's
+-- seconds up to that end are billed by the metering (the API right after, or the daily maintenance), which moves
+-- metered_seconds and writes the usage ledger together: the trigger never moves it, or the tail would go unbilled.
 CREATE OR REPLACE FUNCTION app.calls_end_face() RETURNS trigger
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 BEGIN
   UPDATE call_faces f
      SET ended_at = greatest(f.started_at, coalesce(NEW.ended_at, now())), end_reason = 'call_ended',
-         control_ciphertext = NULL,
-         metered_seconds = least(f.max_seconds, greatest(f.metered_seconds,
-           ceil(extract(epoch FROM greatest(f.started_at, coalesce(NEW.ended_at, now())) - f.started_at))::integer))
+         control_ciphertext = NULL, speaking_unit = NULL
    WHERE f.call_id = NEW.id AND f.ended_at IS NULL;
   RETURN NEW;
 END
@@ -203,6 +210,10 @@ CREATE TRIGGER calls_end_face AFTER UPDATE OF status ON calls
 ALTER TABLE call_speech ADD COLUMN IF NOT EXISTS face_plays integer NOT NULL DEFAULT 0;
 ALTER TABLE call_speech DROP CONSTRAINT IF EXISTS call_speech_face_plays_check;
 ALTER TABLE call_speech ADD CONSTRAINT call_speech_face_plays_check CHECK (face_plays BETWEEN 0 AND 100);
+-- The next one-second chunk of the unit the face may take (a unit is at most 90 chunks: 600 characters).
+ALTER TABLE call_speech ADD COLUMN IF NOT EXISTS face_next_chunk integer NOT NULL DEFAULT 0;
+ALTER TABLE call_speech DROP CONSTRAINT IF EXISTS call_speech_face_next_chunk_check;
+ALTER TABLE call_speech ADD CONSTRAINT call_speech_face_next_chunk_check CHECK (face_next_chunk BETWEEN 0 AND 90);
 
 -- ---------------------------------------------------------------------------------------------------
 -- 5. Settings

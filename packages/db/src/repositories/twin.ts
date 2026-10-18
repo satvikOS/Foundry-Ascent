@@ -191,23 +191,58 @@ export function startCallFace(
   );
 }
 
+/** What one metering of a face added, and whom the usage ledger bills it to. */
+export interface FaceMetering {
+  /** Seconds this metering added (0 when nothing was due). */
+  readonly added: number;
+  readonly tenantId: string;
+  readonly ventureId: string;
+  /** The person whose call it is (the face's starter). */
+  readonly startedBy: string;
+  readonly vendor: 'heygen' | 'fake';
+}
+
 /**
- * Brings a face's metered seconds up to the server's clock (never beyond its `max_seconds`) and returns how many
- * seconds this added (0 when none, or the face is unknown). Ending the face meters up to its end.
+ * Brings a face's metered seconds up to the server's clock (up to its end once it ended, never beyond its
+ * `max_seconds`) and returns how many seconds this added, with whom to bill them; null when the call has no face.
+ * The caller writes the usage-ledger row in the same transaction, so `metered_seconds` is always what the ledger
+ * holds (the row lock makes concurrent meterings add each second once).
  */
-export async function meterCallFace(sx: SystemExecutor, callId: string): Promise<number> {
-  const added = await queryFirst(
+export function meterCallFace(sx: SystemExecutor, callId: string): Promise<FaceMetering | null> {
+  return queryFirst(
     sx,
     `WITH prev AS (SELECT f.call_id, f.metered_seconds AS before FROM call_faces f WHERE f.call_id = :call FOR UPDATE)
      UPDATE call_faces AS f
         SET metered_seconds = least(f.max_seconds, greatest(f.metered_seconds,
               ceil(extract(epoch FROM coalesce(f.ended_at, now()) - f.started_at))::integer))
-       FROM prev WHERE f.call_id = prev.call_id
-     RETURNING (f.metered_seconds - prev.before)::integer AS added`,
+       FROM prev, calls c WHERE f.call_id = prev.call_id AND c.id = f.call_id
+     RETURNING greatest(0, f.metered_seconds - prev.before)::integer AS added, f.tenant_id, c.venture_id,
+               f.started_by, f.vendor`,
     { call: p.uuid(callId) },
-    (r) => col.int.decode(r.added, 'added'),
+    (r) => ({
+      added: col.int.decode(r.added, 'added'),
+      tenantId: col.uuid.decode(r.tenant_id, 'tenant_id'),
+      ventureId: col.uuid.decode(r.venture_id, 'venture_id'),
+      startedBy: col.uuid.decode(r.started_by, 'started_by'),
+      vendor: col.enum(['heygen', 'fake'] as const).decode(r.vendor, 'vendor'),
+    }),
   );
-  return Math.max(0, added ?? 0);
+}
+
+/**
+ * Faces that ended with seconds not yet billed (their call was closed by the reaper, or the metering after the
+ * end did not run): the calls to meter. Oldest first, at most `limit`.
+ */
+export function unbilledEndedFaces(sx: SystemExecutor, input: { readonly limit: number }): Promise<string[]> {
+  return queryRows(
+    sx,
+    `SELECT f.call_id FROM call_faces f
+      WHERE f.ended_at IS NOT NULL
+        AND f.metered_seconds < least(f.max_seconds, ceil(extract(epoch FROM f.ended_at - f.started_at))::integer)
+      ORDER BY f.ended_at LIMIT :limit`,
+    { limit: p.int(input.limit) },
+    (r) => col.uuid.decode(r.call_id, 'call_id'),
+  );
 }
 
 /**
@@ -223,7 +258,8 @@ export function endCallFace(
     `WITH prev AS (
        SELECT f.call_id, encode(f.control_ciphertext, 'base64') AS control
          FROM call_faces f WHERE f.call_id = :call AND f.ended_at IS NULL FOR UPDATE)
-     UPDATE call_faces AS f SET ended_at = now(), end_reason = :reason, control_ciphertext = NULL
+     UPDATE call_faces AS f SET ended_at = now(), end_reason = :reason, control_ciphertext = NULL,
+                                speaking_unit = NULL
        FROM prev WHERE f.call_id = prev.call_id
      RETURNING f.call_id, f.tenant_id, f.started_by, f.vendor, f.session_ref, prev.control, f.max_seconds,
                f.metered_seconds, f.started_at, f.ended_at, f.end_reason,
@@ -234,15 +270,16 @@ export function endCallFace(
 }
 
 /**
- * Video seconds a person used this calendar month (UTC): metered seconds of ended faces, and the server's clock
- * (within each face's limit) for live ones.
+ * Video seconds a person used this calendar month (UTC), from the server's clock: each face from its start to its
+ * end (or now, while live), within its limit. It does not wait for the metering, so a face whose billing is still
+ * due counts in full.
  */
 export function faceSecondsThisMonth(ex: SystemExecutor, principalId: string): Promise<number> {
   return queryNumber(
     ex,
-    `SELECT coalesce(sum(CASE WHEN f.ended_at IS NULL
-                              THEN least(f.max_seconds, ceil(extract(epoch FROM now() - f.started_at))::integer)
-                              ELSE f.metered_seconds END), 0)::integer AS n
+    `SELECT coalesce(sum(least(f.max_seconds,
+                               ceil(extract(epoch FROM coalesce(f.ended_at, now()) - f.started_at))::integer)),
+                     0)::integer AS n
        FROM call_faces f
       WHERE f.started_by = :principal
         AND f.started_at >= date_trunc('month', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
@@ -251,32 +288,69 @@ export function faceSecondsThisMonth(ex: SystemExecutor, principalId: string): P
 }
 
 /**
- * Counts one hand-over of a synthesized unit to the call's face (at most `maxPlays` per unit, and only for a unit
- * the call synthesized). False when refused.
+ * Admits one part of a synthesized unit's audio to the call's live face (`sessionRef`): the `chunks` one-second
+ * chunks from chunk `first`, of a unit `total` chunks long. In one statement, under the face's row lock:
+ *  - the unit's first part (chunk 0) counts its hand-over (at most `maxPlays`) and makes it the unit the face is
+ *    saying;
+ *  - every later part must be of the unit the face is saying, start exactly where the last one ended, and stay
+ *    within the unit (nothing after its last chunk).
+ * So validated speech reaches the face only as whole units in their own order, each part once, never resumed
+ * after barge-in or after another unit began. False when refused.
  */
-export async function reserveFacePlay(
+export async function admitFacePart(
   sx: SystemExecutor,
-  input: { readonly callId: string; readonly unit: string; readonly maxPlays: number },
+  input: {
+    readonly callId: string;
+    readonly sessionRef: string;
+    readonly unit: string;
+    readonly first: number;
+    readonly chunks: number;
+    readonly total: number;
+    readonly maxPlays: number;
+  },
 ): Promise<boolean> {
-  const updated = await queryFirst(
+  const admitted = await queryFirst(
     sx,
-    `UPDATE call_speech SET face_plays = face_plays + 1
-      WHERE call_id = :call AND unit = :unit AND plays >= 1 AND face_plays < :max
-      RETURNING face_plays`,
-    { call: p.uuid(input.callId), unit: p.text(input.unit), max: p.int(input.maxPlays) },
-    (r) => col.int.decode(r.face_plays, 'face_plays'),
+    `WITH face AS (
+       SELECT f.call_id FROM call_faces f
+        WHERE f.call_id = :call AND f.session_ref = :ref AND f.ended_at IS NULL
+          AND (:first = 0 OR f.speaking_unit = :unit)
+        FOR UPDATE),
+     part AS (
+       UPDATE call_speech s
+          SET face_next_chunk = :first + :chunks,
+              face_plays = s.face_plays + (CASE WHEN :first = 0 THEN 1 ELSE 0 END)
+         FROM face
+        WHERE s.call_id = face.call_id AND s.unit = :unit AND s.plays >= 1
+          AND s.face_next_chunk = :first AND :chunks >= 1 AND :first + :chunks <= :total
+          AND (:first > 0 OR s.face_plays < :max)
+        RETURNING s.call_id, s.unit)
+     UPDATE call_faces f SET speaking_unit = part.unit FROM part WHERE f.call_id = part.call_id
+     RETURNING f.call_id`,
+    {
+      call: p.uuid(input.callId),
+      ref: p.text(input.sessionRef),
+      unit: p.text(input.unit),
+      first: p.int(input.first),
+      chunks: p.int(input.chunks),
+      total: p.int(input.total),
+      max: p.int(input.maxPlays),
+    },
+    (r) => col.uuid.decode(r.call_id, 'call_id'),
   );
-  return updated !== null;
+  return admitted !== null;
 }
 
-/** Hand-overs of a unit to the call's face so far (0 when none). */
-export function facePlays(
-  sx: SystemExecutor,
-  input: { readonly callId: string; readonly unit: string },
-): Promise<number> {
-  return queryNumber(
+/**
+ * Barge-in: the face no longer says the unit it was saying, so no later part of it is admitted. True when the
+ * call has a live face.
+ */
+export async function sealFaceUtterance(sx: SystemExecutor, callId: string): Promise<boolean> {
+  const sealed = await queryFirst(
     sx,
-    `SELECT coalesce((SELECT s.face_plays FROM call_speech s WHERE s.call_id = :call AND s.unit = :unit), 0) AS n`,
-    { call: p.uuid(input.callId), unit: p.text(input.unit) },
+    `UPDATE call_faces SET speaking_unit = NULL WHERE call_id = :call AND ended_at IS NULL RETURNING call_id`,
+    { call: p.uuid(callId) },
+    (r) => col.uuid.decode(r.call_id, 'call_id'),
   );
+  return sealed !== null;
 }

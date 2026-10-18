@@ -7,7 +7,7 @@ import {
   type MockGenerateContext,
   type MockModelGatewayOptions,
 } from '@foundry/ai';
-import { notebooksRepo, principalsRepo, type SeedResult, type SeededVenture } from '@foundry/db';
+import { type Db, notebooksRepo, principalsRepo, type SeedResult, type SeededVenture } from '@foundry/db';
 import { createTestDatabase, type TestDatabase } from '@foundry/db/testing';
 
 import { coreConfig, type CoreConfig } from '../config.js';
@@ -121,8 +121,14 @@ export interface CoreHarness {
   ctxFor(principalId: string, tenantId?: string): Promise<RequestContext>;
   /** A second core over the same database with different config (e.g. tight limits). */
   withConfig(overrides: ConfigOverrides): Core;
-  /** A second core over the same database with other call ports (speech, face, cloned voice). */
-  withPorts(ports: Pick<CoreHarnessOptions, 'speech' | 'sttGrants' | 'embodiment' | 'clonedVoice'>): Core;
+  /**
+   * A second core over the same database with other call ports (speech, face, cloned voice); `db` wraps the
+   * database it uses (e.g. to make one query fail).
+   */
+  withPorts(
+    ports: Pick<CoreHarnessOptions, 'speech' | 'sttGrants' | 'embodiment' | 'clonedVoice'>,
+    options?: { readonly db?: (db: Db) => Db },
+  ): Core;
   cleanup(): Promise<void>;
 }
 
@@ -144,9 +150,9 @@ export async function createCoreHarness(options: CoreHarnessOptions = {}): Promi
   const objectStore = new MemoryObjectStore();
   const jobQueue = new MemoryJobQueue();
   const logger = new RecordingLogger();
-  const build = (cfg: CoreConfig, ports: CoreHarnessOptions = options): Core =>
+  const build = (cfg: CoreConfig, ports: CoreHarnessOptions = options, db: Db = t.db): Core =>
     createCore({
-      db: t.db,
+      db,
       gateway,
       config: cfg,
       objectStore,
@@ -206,7 +212,7 @@ export async function createCoreHarness(options: CoreHarnessOptions = {}): Promi
       });
     },
     withConfig: (overrides) => build(coreConfig({ appEnv: 'test', ...options.config, ...overrides })),
-    withPorts: (ports) => build(config, ports),
+    withPorts: (ports, wrap) => build(config, ports, wrap?.db ? wrap.db(t.db) : t.db),
     cleanup: () => t.cleanup(),
   };
 }

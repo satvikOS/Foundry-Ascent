@@ -194,7 +194,15 @@ export function signFaceAudio(
 }
 
 export type FaceAudioCheck =
-  | { readonly ok: true; readonly audio: VerifiedFaceAudio; readonly unit: string; readonly chunks: number }
+  | {
+      readonly ok: true;
+      readonly audio: VerifiedFaceAudio;
+      readonly unit: string;
+      /** The unit's length in one-second chunks. */
+      readonly chunks: number;
+      /** The chunks this part carries (from `firstChunk`). */
+      readonly partChunks: number;
+    }
   /** `manifest_invalid`: not a manifest this server made; `wrong_call`: another call or face session;
    * `audio_mismatch`: the bytes are not the audio it covers. */
   | { readonly ok: false; readonly reason: 'manifest_invalid' | 'wrong_call' | 'audio_mismatch' };
@@ -255,6 +263,7 @@ export function verifyFaceAudio(
     ok: true,
     unit: body.u,
     chunks: body.h.length,
+    partChunks: chunks.length,
     audio: { pcm: part.pcm, utterance: body.u, first: first === 0, last } as unknown as VerifiedFaceAudio,
   };
 }
