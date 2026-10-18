@@ -51,7 +51,10 @@ def _codes(value: Any) -> list[str]:
     return [c.strip() for c in raw if isinstance(c, str) and SAFE_CODE.match(c.strip())]
 
 
-#: Per-turn server stages (ms since the turn was accepted), from `turn.timing`.
+#: Per-turn server stages from `turn.timing` (apps/api/src/http/turn-timing.ts). Offsets since the request
+#: reached the API: modelStartMs, firstDeltaMs, firstSpeechMs, totalMs. Durations: retrievalMs (embedding wait +
+#: queries), embedMs (every embedding call of the request, including any after the reply), modelFirstTokenMs
+#: (model start → first token, i.e. time to first token).
 TURN_STAGES = (
     "retrievalMs",
     "embedMs",
@@ -79,8 +82,9 @@ def _epoch_ms(stamp: Any) -> float | None:
 
 
 def turn_breakdown(events: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Every turn's server stages, the gap from the model's first token to the first released words, and the
-    Polly first-audio time of the first speech request after the turn's first speech (numbers only)."""
+    """Every turn's server stages, when the model's first token arrived (offset), the gap from it to the first
+    released words (the gate's hold), and the Polly first-audio time of the first speech request after the
+    turn's first speech (numbers only)."""
     speech = sorted(
         (t, _ms(e.get("firstAudioMs")))
         for e in events
@@ -93,9 +97,13 @@ def turn_breakdown(events: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
         row: dict[str, Any] = {"voice": bool(e.get("voice"))}
         for stage in TURN_STAGES:
             row[stage] = _ms(e.get(stage))
-        first_token, first_delta = row["modelFirstTokenMs"], row["firstDeltaMs"]
+        model_start, ttft, first_delta = row["modelStartMs"], row["modelFirstTokenMs"], row["firstDeltaMs"]
+        first_token_at = model_start + ttft if model_start is not None and ttft is not None else None
+        row["modelFirstTokenAtMs"] = first_token_at
         row["firstTokenToDeltaMs"] = (
-            round(first_delta - first_token) if first_token is not None and first_delta is not None else None
+            round(first_delta - first_token_at)
+            if first_token_at is not None and first_delta is not None
+            else None
         )
         end, total, first_speech = _epoch_ms(e.get("time")), row["totalMs"], row["firstSpeechMs"]
         row["pollyFirstAudioMs"] = None

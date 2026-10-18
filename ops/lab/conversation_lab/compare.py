@@ -40,24 +40,39 @@ VOICE_STAGES = (
     "retrievalMs",
     "embedMs",
     "modelStartMs",
-    "timeToFirstTokenMs",
+    "modelFirstTokenMs",
     "firstTokenToDeltaMs",
     "firstSpeechMs",
     "pollyFirstAudioMs",
 )
 
 
+STAGE_LABELS = {
+    "retrievalMs": "retrieval",
+    "embedMs": "Titan embed (all calls)",
+    "modelStartMs": "model start (offset)",
+    "modelFirstTokenMs": "time to first token",
+    "firstTokenToDeltaMs": "gate hold (first token → first delta)",
+    "firstSpeechMs": "first speech (offset)",
+    "pollyFirstAudioMs": "Polly first audio",
+}
+
+
+def _gate_hold(turn: Mapping[str, Any]) -> float | None:
+    """First released words minus the first token's arrival, from the logged fields themselves (summaries
+    written before 2026-10-18 stored this gap with the time to first token taken as an offset)."""
+    start, ttft, delta = turn.get("modelStartMs"), turn.get("modelFirstTokenMs"), turn.get("firstDeltaMs")
+    if all(isinstance(v, int | float) for v in (start, ttft, delta)):
+        return float(delta) - float(start) - float(ttft)  # type: ignore[arg-type]
+    return None
+
+
 def voice_stage_medians(logs: Mapping[str, Any]) -> dict[str, float]:
     turns = [t for t in logs.get("turns") or [] if isinstance(t, Mapping) and t.get("voice")]
     out: dict[str, float] = {}
     for stage in VOICE_STAGES:
-        if stage == "timeToFirstTokenMs":
-            values = [
-                t["modelFirstTokenMs"] - t["modelStartMs"]
-                for t in turns
-                if isinstance(t.get("modelFirstTokenMs"), int | float)
-                and isinstance(t.get("modelStartMs"), int | float)
-            ]
+        if stage == "firstTokenToDeltaMs":
+            values = [g for t in turns if (g := _gate_hold(t)) is not None]
         else:
             values = [t[stage] for t in turns if isinstance(t.get(stage), int | float)]
         if values:
@@ -180,7 +195,12 @@ def compare(current: Mapping[str, Any], baseline: Mapping[str, Any]) -> dict[str
         stages_b, stages_c = voice_stage_medians(logs_b), voice_stage_medians(logs_c)
         for stage in VOICE_STAGES:
             if stage in stages_b or stage in stages_c:
-                row(f"voice turn median {stage} (ms)", stages_b.get(stage), stages_c.get(stage), 0)
+                row(
+                    f"voice turn median {STAGE_LABELS.get(stage, stage)} (ms)",
+                    stages_b.get(stage),
+                    stages_c.get(stage),
+                    0,
+                )
     if base.get("findings") is not None or cur.get("findings") is not None:
         for key in ("structured_leak", "volunteered_ai_disclaimer", "repeated_reply", "stacked_questions"):
             row(

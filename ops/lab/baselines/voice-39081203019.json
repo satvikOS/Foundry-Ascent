@@ -170,8 +170,9 @@
         "firstDeltaMs": 1332.0,
         "firstSpeechMs": 1333.0,
         "totalMs": 3122.0,
-        "firstTokenToDeltaMs": 605,
-        "pollyFirstAudioMs": 117.0
+        "firstTokenToDeltaMs": 84,
+        "pollyFirstAudioMs": 117.0,
+        "modelFirstTokenAtMs": 1248.0
       },
       {
         "voice": true,
@@ -182,8 +183,9 @@
         "firstDeltaMs": 926.0,
         "firstSpeechMs": 926.0,
         "totalMs": 3275.0,
-        "firstTokenToDeltaMs": 409,
-        "pollyFirstAudioMs": 122.0
+        "firstTokenToDeltaMs": 233,
+        "pollyFirstAudioMs": 122.0,
+        "modelFirstTokenAtMs": 693.0
       },
       {
         "voice": true,
@@ -194,8 +196,9 @@
         "firstDeltaMs": 1013.0,
         "firstSpeechMs": 1013.0,
         "totalMs": 3889.0,
-        "firstTokenToDeltaMs": 437,
-        "pollyFirstAudioMs": 73.0
+        "firstTokenToDeltaMs": 228,
+        "pollyFirstAudioMs": 73.0,
+        "modelFirstTokenAtMs": 785.0
       },
       {
         "voice": true,
@@ -206,8 +209,9 @@
         "firstDeltaMs": 774.0,
         "firstSpeechMs": 774.0,
         "totalMs": 2675.0,
-        "firstTokenToDeltaMs": 252,
-        "pollyFirstAudioMs": 164.0
+        "firstTokenToDeltaMs": 45,
+        "pollyFirstAudioMs": 164.0,
+        "modelFirstTokenAtMs": 729.0
       }
     ]
   },

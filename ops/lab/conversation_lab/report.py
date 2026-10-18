@@ -124,9 +124,14 @@ def _log_tables(logs: Mapping[str, Any] | None) -> list[str]:
     voice_turns = [t for t in logs.get("turns") or [] if t.get("voice")]
     if voice_turns:
         out.append(
-            "| Voice turn | Retrieval | Embed | Model start | First token | First delta | Token→delta | First speech | Polly first audio | Total |"
+            'Per voice turn (ms; "at" = since the request reached the API, the rest are durations; Titan embed '
+            "sums every embedding call of the request, including any after the reply):"
         )
-        out.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+        out.append("")
+        out.append(
+            "| Voice turn | Retrieval | Titan embed | Model start (at) | Time to first token | First token (at) | First delta (at) | Gate hold | First speech (at) | Polly first audio | Total |"
+        )
+        out.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
         for n, t in enumerate(voice_turns, start=1):
             cells = [
                 t.get(k)
@@ -135,6 +140,7 @@ def _log_tables(logs: Mapping[str, Any] | None) -> list[str]:
                     "embedMs",
                     "modelStartMs",
                     "modelFirstTokenMs",
+                    "modelFirstTokenAtMs",
                     "firstDeltaMs",
                     "firstTokenToDeltaMs",
                     "firstSpeechMs",

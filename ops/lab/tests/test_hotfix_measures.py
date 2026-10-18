@@ -93,7 +93,10 @@ def test_logstats_counts_first_attempt_failures_by_purpose_and_groups_issue_code
     assert out["stream_fallbacks"] == {"meta_narration": 1}
     assert out["interrupt_requests"] == 1
     voice_turn = next(t for t in out["turns"] if t["voice"])
-    assert voice_turn["firstTokenToDeltaMs"] == 600
+    # modelFirstTokenMs is the time to first token (a span from model start, turn-timing.ts): the token arrived
+    # at 400 + 700 = 1100 ms and the first words were released at 1300 ms, so the gate held 200 ms.
+    assert voice_turn["modelFirstTokenAtMs"] == 1100
+    assert voice_turn["firstTokenToDeltaMs"] == 200
     assert voice_turn["retrievalMs"] == 380
     # The turn started at 00:00:07.000 and spoke at +900 ms; the speech request after that took 200 ms.
     assert voice_turn["pollyFirstAudioMs"] == 200
@@ -257,25 +260,25 @@ def test_comparison_sets_the_voice_turn_stages_side_by_side() -> None:
             "retrievalMs": 150,
             "embedMs": embed,
             "modelStartMs": 200,
-            "modelFirstTokenMs": 520,
+            "modelFirstTokenMs": 320,
         }
         return {
             "suite": "voice",
             "result": {"passed": 1, "run": 1},
             "app_logs": {
-                "turns": [{**turn, "firstTokenToDeltaMs": gate}, {**turn, "voice": False, "embedMs": 999}]
+                "turns": [{**turn, "firstDeltaMs": 520 + gate}, {**turn, "voice": False, "embedMs": 999}]
             },
         }
 
     rows = {r["metric"]: r for r in compare(run(441, 526), run(177, 423))["headline"]}
-    assert rows["voice turn median embedMs (ms)"] == {
-        "metric": "voice turn median embedMs (ms)",
+    assert rows["voice turn median Titan embed (all calls) (ms)"] == {
+        "metric": "voice turn median Titan embed (all calls) (ms)",
         "baseline": 177.0,
         "now": 441.0,
         "change": 264,
     }
-    assert rows["voice turn median firstTokenToDeltaMs (ms)"]["change"] == 103
-    assert rows["voice turn median timeToFirstTokenMs (ms)"]["now"] == 320.0
+    assert rows["voice turn median gate hold (first token → first delta) (ms)"]["change"] == 103
+    assert rows["voice turn median time to first token (ms)"]["now"] == 320.0
 
 
 def test_recall_comparison_and_report_show_the_greeting_and_openers() -> None:
