@@ -276,6 +276,13 @@ test.describe('conversation composer', () => {
             const top = p.getBoundingClientRect().top + window.scrollY;
             window.scrollTo(0, top - (bar ? bar.getBoundingClientRect().height / 2 : 0));
           });
+        // Colours settle first: under reduced motion every element still transitions for 0.01 ms, and a colour read
+        // before that transition has ticked is the previous theme's (a dark bar with the light theme's grey text).
+        await page.waitForFunction(
+          () => !document.getAnimations().some((animation) => animation instanceof CSSTransition),
+          undefined,
+          { polling: 'raf' },
+        );
         // What can pass beneath the bar: the page, the prose (its text colour as a solid block: the worst case, as a
         // filled button of the same colour passes unblurred) and the founder's message bubble.
         const under = await page.evaluate(() => {
@@ -296,7 +303,7 @@ test.describe('conversation composer', () => {
         expect(measured.length, 'the header has text').toBeGreaterThan(0);
         const failing = measured
           .filter((m) => m.ratio < 4.5)
-          .map((m) => `"${m.text}" ${m.ratio.toFixed(2)}:1`);
+          .map((m) => `"${m.text}" ${m.ratio.toFixed(2)}:1 (${m.colours} over ${under.join(' / ')})`);
         expect(
           failing,
           `${String(size.width)}×${String(size.height)} ${scheme}: header text below 4.5:1`,

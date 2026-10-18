@@ -5,6 +5,8 @@ export interface TextContrast {
   text: string;
   /** The lowest WCAG contrast of the text over any of the backdrops. */
   ratio: number;
+  /** The text's colour and the layers under it, as computed (for the failure message). */
+  colours: string;
 }
 
 /**
@@ -61,7 +63,11 @@ export async function barTextContrast(bar: Locator, under: readonly string[]): P
           return (hi + 0.05) / (lo + 0.05);
         }),
       );
-      return { text: element.textContent.trim().slice(0, 40), ratio };
+      return {
+        text: element.textContent.trim().slice(0, 40),
+        ratio,
+        colours: `${colour} on [${layers.filter((l) => l !== 'rgba(0, 0, 0, 0)').join(' | ')}], transitions running: ${String(element.getAnimations().length)}/${String(document.getAnimations().length)}`,
+      };
     });
   }, under);
 }
