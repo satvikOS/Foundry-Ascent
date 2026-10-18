@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { addressFounder, isTopicLine, topicOf } from './opener-topic.js';
+import { addressFounder, isTopicLine, properNounsIn, topicOf } from './opener-topic.js';
 
 const PEOPLE = { founder: 'Maya Patel', team: ['Maya Patel', 'Noor Haddad'] };
 
@@ -123,5 +123,25 @@ describe('addressFounder (LAB-U2: said to the founder, names in their real case)
     expect(addressFounder('the numbers the founder will get', { founder: null })).toBe(
       'the numbers you will get',
     );
+  });
+});
+
+describe('names in their real case where the founder typed them in lower case (wave 7, item 2)', () => {
+  it('reads the proper nouns the vEIR wrote, never a sentence’s first word', () => {
+    expect(
+      properNounsIn([
+        'Booking Harbour Hall early is smart. Ask Hartwell whether QuietQuad can use it on Monday.',
+      ]),
+    ).toEqual(expect.arrayContaining(['Harbour Hall', 'Hartwell', 'QuietQuad']));
+    expect(properNounsIn(['Booking early is smart. The pilot starts soon.'])).toEqual([]);
+  });
+
+  it('gives a line the case the conversation wrote the names in', () => {
+    expect(
+      addressFounder('your plan to book the harbour hall study room with hartwell', {
+        ...PEOPLE,
+        names: ['Harbour Hall', 'Hartwell'],
+      }),
+    ).toBe('your plan to book the Harbour Hall study room with Hartwell');
   });
 });

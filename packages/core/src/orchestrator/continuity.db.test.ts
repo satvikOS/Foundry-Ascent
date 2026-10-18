@@ -938,6 +938,31 @@ describe('how a new conversation opens', () => {
     }
   });
 
+  it('says a name the founder typed in lower case with the case the vEIR wrote it in (wave 7, item 2)', async () => {
+    await ageEverything(3);
+    const named = createCore({
+      db: h.t.db,
+      gateway: new MockModelGateway({
+        streamDelayMs: 0,
+        streamFixture: () => 'Booking Harbour Hall early is smart. Which day suits the kickoff?',
+      }),
+      config: h.config,
+      objectStore: h.objectStore,
+      jobQueue: h.jobQueue,
+    });
+    const first = await named.sessions.create(maya, quietquad(), {});
+    await named.orchestrator.runTurn(
+      maya,
+      first.id,
+      { text: "we're booking the harbour hall study room for the pilot kickoff on monday" },
+      () => undefined,
+    );
+    const next = await named.sessions.create(maya, quietquad(), {});
+    expect(next.opener ?? '').toContain('Harbour Hall');
+    expect(next.opener ?? '').not.toContain('harbour hall');
+    h.jobQueue.drain();
+  });
+
   it('carries over a conversation the venture had with its previous coach, as the founder’s, never as its own', async () => {
     await ageEverything(3);
     const before = await h.core.sessions.create(maya, quietquad(), {});

@@ -27,6 +27,29 @@ export interface OpenerPeople {
   readonly founder: string | null;
   /** Display names of the venture's people (the founder among them is ignored). */
   readonly team?: readonly string[];
+  /**
+   * Proper nouns the conversation wrote with their capitals (the vEIR's own replies, its digest:
+   * {@link properNounsIn}): what the founder typed in lower case gets that case back ("harbour hall" → "Harbour Hall").
+   */
+  readonly names?: readonly string[];
+}
+
+/**
+ * The proper nouns in `texts` (written by the vEIR, so in their real case): one to three capitalised words in a row
+ * that do not open a sentence, at least one of them no everyday word ("Harbour Hall", "Hartwell", "QuietQuad").
+ */
+export function properNounsIn(texts: readonly string[]): string[] {
+  const found = new Set<string>();
+  for (const text of texts) {
+    for (const m of text.matchAll(
+      /(?<=[\p{Ll}\p{N},;:'’)] )\p{Lu}[\p{L}'’-]*(?: \p{Lu}[\p{L}'’-]*){0,2}/gu,
+    )) {
+      const phrase = m[0].replace(/['’]s$/, '');
+      const words = phrase.split(' ');
+      if (words.some((w) => !isEverydayWord(w)) && phrase.length >= 3) found.add(phrase);
+    }
+  }
+  return [...found].sort((a, b) => b.length - a.length);
 }
 
 function escapeRegExp(text: string): string {
@@ -107,6 +130,11 @@ export function addressFounder(text: string, people: OpenerPeople): string | nul
       if (part.length < 2 || part.toLowerCase() === founderFirst) continue;
       out = out.replace(new RegExp(`\\b${escapeRegExp(part)}\\b`, 'giu'), part);
     }
+  }
+  // Names the conversation wrote with capitals, where the founder typed them in lower case (wave 7, item 2).
+  for (const name of people.names ?? []) {
+    if (name.toLowerCase() === founderFirst) continue;
+    out = out.replace(new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(name)}(?![\\p{L}\\p{N}])`, 'giu'), name);
   }
   return tidyFounderWords(out);
 }

@@ -26,7 +26,7 @@ import {
   type LeftOffThreads,
   type OpenerSubject,
 } from './continuity-prompt.js';
-import { addressFounder, topicWords, type OpenerPeople } from './opener-topic.js';
+import { addressFounder, properNounsIn, topicWords, type OpenerPeople } from './opener-topic.js';
 
 /**
  * What the vEIR remembers when a turn starts (the specific pool): the founder's first name, the notebook of
@@ -329,14 +329,6 @@ export async function chooseOpener(
     personaEirName: await personasRepo.getPersonaEirName(tx, args.persona.id),
   };
   const principal = await principalsRepo.getPrincipal(tx, args.principalId);
-  const people: OpenerPeople = { founder: principal?.displayName ?? null, team: args.team ?? [] };
-  const next = notebook?.content.nextOpener ?? null;
-  // The distillation writes about the founder; the opener speaks to them.
-  const stored = next === null ? null : validatedOpener(addressFounder(next, people), guards);
-  // The conversation it was drawn from, so deleting that conversation erases this copy too. A null source means
-  // a person wrote it (the copy stays); a missing one means its origin is unknown, and deleting any conversation
-  // of the venture erases the copy.
-  const source = notebook?.content.nextOpenerSource;
   const last = await loadLeftOff(tx, {
     ventureId: args.ventureId,
     personaId: args.persona.id,
@@ -346,6 +338,27 @@ export async function chooseOpener(
     ownOnly: true,
   });
   const latest = last?.conversations[0] ?? null;
+  // Names in their real case: the team's, and the proper nouns the vEIR wrote in that conversation (item 2: the
+  // founder's lower case, "the harbour hall study room", is never said back as typed).
+  const people: OpenerPeople = {
+    founder: principal?.displayName ?? null,
+    team: args.team ?? [],
+    names:
+      latest === null
+        ? []
+        : properNounsIn([
+            ...latest.exchanges.map((x) => x.answer ?? ''),
+            latest.digest?.summary ?? '',
+            ...(latest.digest?.topics ?? []),
+          ]),
+  };
+  const next = notebook?.content.nextOpener ?? null;
+  // The distillation writes about the founder; the opener speaks to them.
+  const stored = next === null ? null : validatedOpener(addressFounder(next, people), guards);
+  // The conversation it was drawn from, so deleting that conversation erases this copy too. A null source means
+  // a person wrote it (the copy stays); a missing one means its origin is unknown, and deleting any conversation
+  // of the venture erases the copy.
+  const source = notebook?.content.nextOpenerSource;
   const found = (opener: ChosenOpener | null) => ({ opener, latest });
   // Drawn from a conversation someone else had (a teammate's plan): never said to this person as theirs.
   const fromSomeoneElse =
