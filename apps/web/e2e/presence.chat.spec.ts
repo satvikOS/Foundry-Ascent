@@ -258,9 +258,8 @@ test.describe('talking with the vEIR', () => {
         expect(body.intro, 'the call greets Maya').not.toBeNull();
         expect(body.intro?.text).toMatch(/^Hi Maya\. /);
         expect(body.intro?.text).not.toMatch(/an AI coach|digital twin/);
-        await expectNoBareEirName(page, 'the call tile', [
-          /^I'm Corin's digital twin, built from how Corin coaches/,
-        ]);
+        // The conversation behind the call holds the twin's own answers, which name Corin on purpose.
+        await expectNoBareEirName(page, 'the call tile', [/Corin['’]s digital twin/]);
         await screen.getByRole('button', { name: 'End call' }).click();
         await expect(screen.getByRole('heading', { name: 'Call ended' })).toBeVisible({ timeout: 20_000 });
         for (const id of calls) {
