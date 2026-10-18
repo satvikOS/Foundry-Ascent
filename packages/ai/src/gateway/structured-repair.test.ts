@@ -9,7 +9,7 @@ import { Deadline } from './deadline.js';
 import { restoreOptionalNulls, toStrictJsonSchema } from './json-schema.js';
 import { MAX_REPAIR_OUTPUT_TOKENS, NovaProvider, SUBMIT_TOOL_NAME } from './nova.js';
 import { parseStructuredText, validateStructured, type ProviderRequest } from './provider.js';
-import { extractJsonValue, repairStructured } from './structured-repair.js';
+import { extractJsonValue, nearestEnumMember, repairStructured } from './structured-repair.js';
 
 /**
  * LAB-M6 / LAB-R7: Nova 2 Lite's structured output failed validation on about 25% of first turn attempts and 50%
@@ -185,6 +185,130 @@ const CASES: readonly Case[] = [
   },
 ];
 
+/** A memory candidate of the annotations (a turn's phase B) with `patch` applied. */
+const withCandidate = (patch: Record<string, unknown>): Record<string, unknown> => ({
+  ...clone(ANNOTATIONS),
+  memory_candidates: [{ ...clone(CANDIDATE), ...patch }],
+});
+const CANDIDATE: CoachAnnotations['memory_candidates'][number] = {
+  type: 'decision',
+  title: 'Price per library',
+  content: 'The founder decided to price the pilot per library.',
+  evidence_ids: [],
+  confidence: 0.8,
+  source: 'founder_stated',
+};
+const WITH_CANDIDATE = (type: CoachAnnotations['memory_candidates'][number]['type']): CoachAnnotations => ({
+  ...ANNOTATIONS,
+  memory_candidates: [{ ...CANDIDATE, type }],
+});
+
+/**
+ * The lab's post-hotfix runs (wave 6): what still failed on the first attempt. Each failed validation before and
+ * now passes in one call.
+ */
+const LAB_CASES: readonly Case[] = [
+  {
+    name: 'a goal as a memory type (the prompts ask for goals): the nearest member',
+    schema: CoachAnnotations,
+    expected: WITH_CANDIDATE('milestone'),
+    input: withCandidate({ type: 'goal' }),
+    repair: 'enum_near:memory_candidates[0].type',
+  },
+  {
+    name: 'a constraint as a memory type: a fact',
+    schema: CoachAnnotations,
+    expected: WITH_CANDIDATE('fact'),
+    input: withCandidate({ type: 'Constraint' }),
+    repair: 'enum_near:memory_candidates[0].type',
+  },
+  {
+    name: 'a plural memory type',
+    schema: CoachAnnotations,
+    expected: WITH_CANDIDATE('decision'),
+    input: withCandidate({ type: 'decisions' }),
+    repair: 'enum_near:memory_candidates[0].type',
+  },
+  {
+    name: 'a misspelt memory type',
+    schema: CoachAnnotations,
+    expected: WITH_CANDIDATE('hypothesis'),
+    input: withCandidate({ type: 'hypothsis' }),
+    repair: 'enum_near:memory_candidates[0].type',
+  },
+  {
+    name: 'a memory type that is no member at all: the candidate is dropped, not the response',
+    schema: CoachAnnotations,
+    expected: ANNOTATIONS,
+    input: withCandidate({ type: 'vibe' }),
+    repair: 'dropped_item:memory_candidates[0]',
+  },
+  {
+    name: 'a distillation memory type that is no member: only that candidate goes',
+    schema: DistillDraft,
+    expected: DRAFT,
+    input: (() => {
+      const v = clone(DRAFT);
+      const kept = (v.memory_candidates as Record<string, unknown>[])[0];
+      v.memory_candidates = [{ ...kept, type: 'misc', title: 'Other' }, kept];
+      return v;
+    })(),
+    repair: 'dropped_item:memory_candidates[0]',
+  },
+  {
+    name: 'a candidate’s unknown source reads as not said (null)',
+    schema: CoachAnnotations,
+    expected: {
+      ...ANNOTATIONS,
+      memory_candidates: [{ ...CANDIDATE, source: undefined }],
+    },
+    input: withCandidate({ source: 'founder said' }),
+    repair: 'enum_null:memory_candidates[0].source',
+  },
+  {
+    name: 'one evidence id as a string',
+    schema: CoachAnnotations,
+    expected: ANNOTATIONS,
+    input: { ...clone(ANNOTATIONS), claims: [{ ...clone(ANNOTATIONS.claims[0]), evidence_ids: 'E1' }] },
+    repair: 'string_list:claims[0].evidence_ids',
+  },
+  {
+    name: 'two evidence ids in one string',
+    schema: CoachAnnotations,
+    expected: { ...ANNOTATIONS, claims: [{ ...ANNOTATIONS.claims[0], evidence_ids: ['E1', 'E2'] }] },
+    input: { ...clone(ANNOTATIONS), claims: [{ ...clone(ANNOTATIONS.claims[0]), evidence_ids: 'E1, E2' }] },
+    repair: 'string_list:claims[0].evidence_ids',
+  },
+  {
+    name: '"none" for a list of evidence ids',
+    schema: CoachAnnotations,
+    expected: { ...ANNOTATIONS, claims: [{ ...ANNOTATIONS.claims[0], evidence_ids: [] }] },
+    input: { ...clone(ANNOTATIONS), claims: [{ ...clone(ANNOTATIONS.claims[0]), evidence_ids: 'none' }] },
+    repair: 'string_list:claims[0].evidence_ids',
+  },
+  {
+    name: 'a title written as a number',
+    schema: DistillDraft,
+    expected: { ...DRAFT, title: '2026' },
+    input: { ...clone(DRAFT), title: 2026 },
+    repair: 'scalar_string:title',
+  },
+  {
+    name: 'a title written as a list of words',
+    schema: DistillDraft,
+    expected: { ...DRAFT, title: 'Pricing the pilot' },
+    input: { ...clone(DRAFT), title: ['Pricing', 'the pilot'] },
+    repair: 'list_string:title',
+  },
+  {
+    name: 'a title written as a one-field object',
+    schema: DistillDraft,
+    expected: DRAFT,
+    input: { ...clone(DRAFT), title: { text: DRAFT.title } },
+    repair: 'object_string:title',
+  },
+];
+
 function strictParse(schema: z.ZodType, value: unknown): boolean {
   return schema.safeParse(restoreOptionalNulls(value, toStrictJsonSchema(schema))).success;
 }
@@ -200,6 +324,43 @@ describe('repairStructured: each failure mode of hand-written structured output'
     expect(outcome.repairs).toContain(repair);
     // Codes only: field names and indices, never what the model wrote.
     for (const code of outcome.repairs) expect(code).not.toMatch(/Hartwell|facilities|library|\s/);
+  });
+
+  it.each(LAB_CASES)('lab: $name', ({ schema, expected, input, repair }) => {
+    // Without the repair it failed (the model was asked again), or lost what was written (a title read as none).
+    const unrepaired = schema.safeParse(restoreOptionalNulls(input, toStrictJsonSchema(schema)));
+    expect(unrepaired.success ? unrepaired.data : undefined).not.toEqual(expected);
+    const outcome = validateStructured(input, schema, toStrictJsonSchema(schema));
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.value).toEqual(expected);
+    expect(outcome.repairs).toContain(repair);
+    for (const code of outcome.repairs) expect(code).not.toMatch(/goal|vibe|misc|Pricing|\s/);
+  });
+
+  it('a distillation without a title (or a null one) is no failure: the conversation keeps its own title', () => {
+    for (const title of [undefined, null, { a: 'x', b: 'y' }]) {
+      const v = clone(DRAFT);
+      if (title === undefined) delete v.title;
+      else v.title = title;
+      const outcome = validateStructured(v, DistillDraft, toStrictJsonSchema(DistillDraft));
+      expect(outcome.ok).toBe(true);
+      if (outcome.ok) expect(outcome.value.title).toBe('');
+    }
+  });
+
+  it('maps an enum value to a member only when exactly one fits', () => {
+    const memory = ['fact', 'hypothesis', 'decision', 'experiment', 'evidence', 'action', 'milestone'];
+    expect(nearestEnumMember('Goals', memory)).toBe('milestone');
+    expect(nearestEnumMember('next step', memory)).toBe('action');
+    expect(nearestEnumMember('test', memory)).toBe('experiment');
+    expect(nearestEnumMember('facts', memory)).toBe('fact');
+    // Too short or too far to guess, or no member at all.
+    expect(nearestEnumMember('fat', memory)).toBeNull();
+    expect(nearestEnumMember('mentor', ['coach', 'teach', 'challenge'])).toBeNull();
+    expect(nearestEnumMember('', memory)).toBeNull();
+    // A synonym applies only where its member is a value of the enum.
+    expect(nearestEnumMember('goal', ['fact', 'inference'])).toBeNull();
   });
 
   it('changes nothing that is already valid', () => {
@@ -218,6 +379,12 @@ describe('repairStructured: each failure mode of hand-written structured output'
     for (const input of [
       { ...clone(ANNOTATIONS), mode: 'mentor' },
       { ...clone(ANNOTATIONS), claims: [{ text: 'x', kind: 'maybe', evidence_ids: [] }] },
+      // A claim is never dropped (only candidates are): its unknown kind still fails.
+      { ...clone(ANNOTATIONS), claims: [{ text: 'x', kind: 'vibe', evidence_ids: ['E1'] }] },
+      {
+        ...clone(ANNOTATIONS),
+        next_actions: [{ owner: 'founder', action: { a: 1, b: 2 }, target_date: null }],
+      },
       (() => {
         const v = clone(ANNOTATIONS);
         delete v.claims;
@@ -292,7 +459,7 @@ describe('NovaProvider: one call where a repair round was needed', () => {
     };
   }
 
-  it.each(CASES)('$name', async ({ schema, expected, input }) => {
+  it.each([...CASES, ...LAB_CASES])('$name', async ({ schema, expected, input }) => {
     const { nova, inputs } = provider([output([tool(input)])]);
     const result = await nova.generate(request(schema, 'X'));
     expect(result.value).toEqual(expected);

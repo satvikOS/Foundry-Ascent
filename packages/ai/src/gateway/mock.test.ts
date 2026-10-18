@@ -191,7 +191,8 @@ describe('MockModelGateway.generateStructured', () => {
   });
 
   it('rejects fixtures that violate the schema', async () => {
-    const gw = new MockModelGateway({ fixtures: { Generic: () => ({ echo: 1 }) } });
+    // A value no schema-guided repair can make a string (a number would now be read as one: structured-repair.ts).
+    const gw = new MockModelGateway({ fixtures: { Generic: () => ({ echo: { a: 1, b: [2] } }) } });
     await expect(
       gw.generateStructured({
         ...turn({}),

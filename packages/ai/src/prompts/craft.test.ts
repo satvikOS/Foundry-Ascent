@@ -235,6 +235,6 @@ describe('conversation craft in the system prompt', () => {
   });
 
   it('is part of the versioned policy', () => {
-    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-10-17.1');
+    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-10-18.1');
   });
 });
