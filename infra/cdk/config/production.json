@@ -58,7 +58,7 @@
       "model": "eleven_flash_v2_5",
       "zeroRetention": false
     },
-    "note": "The vEIR's digital twin, off: no vendor face (provider none) and stock voices only (provider polly). To turn on, follow docs/runbooks/avatars.md: create the secrets foundry-ascent/media/heygen and foundry-ascent/media/elevenlabs ({\"apiKey\": \"...\"}), set face.provider to heygen-liveavatar (sandbox true for the first session) with the exact LiveKit origins the sandbox session showed in face.csp.connect, set voice.provider to elevenlabs, deploy, then switch faces and cloned voices on in Admin > Settings and mark each EIR's face and voice ready in the studio. The API role can read only the secrets of the vendors set here."
+    "note": "The vEIR's digital twin, off: no vendor face (provider none) and stock voices only (provider polly). To turn on, follow docs/runbooks/avatars.md: create the secrets foundry-ascent/media/heygen and foundry-ascent/media/elevenlabs ({\"apiKey\": \"...\"}), set face.provider to heygen-liveavatar (sandbox true for the first session: faces then only for platform admins) with face.csp.connect [\"wss://heygen-feapbkvq.livekit.cloud\", \"https://heygen-feapbkvq.livekit.cloud\"] (synth refuses a wired face without both; confirm them in the first session), set voice.provider to elevenlabs, deploy, then switch faces and cloned voices on in Admin > Settings and mark each EIR's face and voice ready in the studio. The API role can read only the secrets of the vendors set here."
   },
   "logRetentionDays": 30
 }

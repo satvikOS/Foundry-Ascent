@@ -221,7 +221,7 @@ are the infrastructure-level off switches (no permission, no schedule).
 | --------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `media.face.provider`       | `none`                   | `MEDIA_FACE_PROVIDER`; `heygen-liveavatar` wires the vendor face and lets the API role read `foundry-ascent/media/heygen` (only that secret) |
 | `media.face.sandbox`        | `false`                  | `MEDIA_FACE_SANDBOX`: LiveAvatar sandbox sessions (free, about a minute, the sandbox avatar) for the first live test                         |
-| `media.face.csp`            | `connect: [], media: []` | exact `wss://`/`https://` origins added to the CSP while a face is wired (no wildcard; must be empty with `none`)                            |
+| `media.face.csp`            | `connect: [], media: []` | exact `wss://`/`https://` origins added to the CSP while a face is wired (no wildcard; empty with `none`; both schemes required when wired)  |
 | `media.voice.provider`      | `polly`                  | `MEDIA_VOICE_PROVIDER`; `elevenlabs` wires the cloned voices and lets the API role read `foundry-ascent/media/elevenlabs` (only that secret) |
 | `media.voice.model`         | `eleven_flash_v2_5`      | `MEDIA_VOICE_MODEL`                                                                                                                          |
 | `media.voice.zeroRetention` | `false`                  | `MEDIA_VOICE_ZERO_RETENTION`: asks ElevenLabs to keep nothing (Enterprise accounts only)                                                     |

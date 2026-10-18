@@ -106,13 +106,21 @@ describe('config', () => {
   });
 
   it('keeps the CSP strict: exact origins only, and none while no face is wired', () => {
+    const room = ['wss://heygen-feapbkvq.livekit.cloud', 'https://heygen-feapbkvq.livekit.cloud'];
     const media = (face: Record<string, unknown>, voice: Record<string, unknown> = {}) => ({
       ...valid(),
       media: {
-        face: { provider: 'heygen-liveavatar', sandbox: false, csp: { connect: [], media: [] }, ...face },
+        face: { provider: 'heygen-liveavatar', sandbox: false, csp: { connect: room, media: [] }, ...face },
         voice: { provider: 'polly', model: 'eleven_flash_v2_5', zeroRetention: false, ...voice },
       },
     });
+    expect(parseConfig(media({})).media.face.csp.connect).toEqual(room);
+    // A wired face with a CSP that blocks its room would never show: refused at synth, not found in a session.
+    for (const connect of [[], [room[0]], [room[1]]]) {
+      expect(() => parseConfig(media({ csp: { connect, media: [] } }))).toThrow(
+        /media.face.csp.connect.*wss:\/\/ and https:\/\/ origins/,
+      );
+    }
     expect(() => parseConfig(media({ csp: { connect: ['wss://*.livekit.cloud'], media: [] } }))).toThrow(
       /exact wss:\/\/ or https:\/\/ origin/,
     );

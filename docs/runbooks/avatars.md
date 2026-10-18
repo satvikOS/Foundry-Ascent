@@ -17,7 +17,8 @@ for a fictional EIR).
 - The founder's voice still goes only to Amazon Transcribe. ElevenLabs receives the vEIR's validated words;
   HeyGen receives the vEIR's synthesized audio. No founder audio, transcript, memory or document leaves AWS.
 - No vendor key reaches a browser. The face's speak channel stays on our server; the browser only watches.
-- A face or voice that fails costs the call nothing: the presence tile and a standard voice take over silently.
+- A face or voice that fails costs the call nothing: the presence tile takes over from a face silently, and a
+  standard voice speaks the same sentence when the cloned voice fails (that clone is then skipped for a minute).
 - The crisis line is never said by the face or the cloned voice.
 
 ## 1. Accounts and plans (owner)
@@ -117,16 +118,22 @@ records it on their vEIR's **Consent** tab with the scopes it covers. The twin n
 ## 5. Turning it on
 
 1. **Sandbox first.** In `infra/cdk/config/production.json` → `media`: `face.provider: "heygen-liveavatar"`,
-   `face.sandbox: true`, `voice.provider: "elevenlabs"`. Deploy ([deploy and rollback](deploy-and-rollback.md)).
-   The deploy adds the two secret grants and the `MEDIA_*` variables; nothing changes for anyone yet.
+   `face.sandbox: true`, `face.csp.connect: ["wss://heygen-feapbkvq.livekit.cloud",
+"https://heygen-feapbkvq.livekit.cloud"]` (LiveAvatar's LiveKit project, from its firewall documentation; §8.2
+   confirms it), `voice.provider: "elevenlabs"`. Deploy ([deploy and rollback](deploy-and-rollback.md)). The deploy
+   adds the two secret grants, the `MEDIA_*` variables and those two CSP origins; synth refuses a wired face
+   without both origins (the room would be blocked and the face would never show). Nothing changes for founders:
+   while `sandbox` is true a face is offered only to **platform admins** (the sandbox shows the vendor's stock
+   avatar, whatever the EIR).
 2. **Admin › Settings**: turn on **Video faces** and **Cloned voices** (each asks first and says the price). Set
    **Video minutes per person per month** (60) and **per call** (20 on Essential).
 3. **Studio › the vEIR › Consent › Digital twin** (program lead or the EIR): paste the **HeyGen avatar ID** (the
    sandbox uses the vendor's sandbox avatar whatever is entered) and the **ElevenLabs voice ID**, status **Ready**.
    Ready needs the matching scope in the consent in force.
-4. Run the **first live session checks** (§8) on a test venture.
-5. **Production:** add the exact LiveKit origins from §8.2 to `media.face.csp.connect`, set `face.sandbox: false`,
-   enter the EIR's real avatar ID, deploy. Pilot with named EIRs and founders first.
+4. Run the **first live session checks** (§8) signed in as a platform admin who is a founder of a test venture
+   (founders and team members are the only people who can call).
+5. **Production:** keep or correct the LiveKit origins in `media.face.csp.connect` from §8.2, set
+   `face.sandbox: false`, enter the EIR's real avatar ID, deploy. Pilot with named EIRs and founders first.
 
 Per persona: a vEIR without a ready face shows the presence; one without a ready voice speaks with its standard
 voice. A call that started with the stock voice keeps it until it ends.
@@ -147,8 +154,11 @@ founder's personal cap.
 | **One EIR, face and voice**                   | **≈ $340** |
 | Two EIRs, face and voice (Scale)              | ≈ $640     |
 
-The app's own caps keep this bounded: 60 video minutes per founder per month and 20 per call (the vendor session
-ends itself at that limit), the daily platform cap, and one face per call.
+The app's own caps keep this bounded: 60 video minutes per founder per month and 20 per call, the daily platform cap,
+and one face per call. The per-call limit is enforced twice: the vendor session is opened with it
+(`max_session_duration`; if the vendor refuses the value, no session opens and calls keep the presence, so keep
+**per call** at or below the plan's session length: 20 on Essential), and the heartbeat ends the face there itself.
+A call left on hold (page hidden) for a minute gives its face up, since LITE bills idle minutes.
 
 ## 7. Stopping it
 
@@ -164,14 +174,22 @@ ends itself at that limit), the daily platform cap, and one face per call.
 A withdrawn EIR's models are deleted at the vendors by hand for now (HeyGen avatar, ElevenLabs voice), within 7
 days (30 promised).
 
+A face whose browser vanished (tab closed, network gone) is no longer kept alive by heartbeats, so the vendor
+closes it after its 5-minute idle timeout; the daily maintenance then bills its seconds up to the call's end
+(`maintenance.call_faces` in the audit log).
+
 ## 8. First live session: what to check (sandbox, then once in production)
 
 Written from the vendors' documentation; these are the points no test without keys can settle. Use a test venture,
 DevTools open, faces and voices on.
 
-1. **The speak channel takes a new connection per sentence.** The server opens `ws_url` for each unit and closes it.
-   Speak several sentences in a row: every one must lip-sync. If the second fails, LiveAvatar wants one held
-   connection per session; faces stay off (the app falls back) until the relay runs in a per-call worker.
+1. **The speak channel takes a new connection per hand-over.** The server opens `ws_url` for each part of a unit
+   (at most 18 s), waits for `connected`, sends one-second chunks, waits until the vendor acknowledged them (and,
+   on the unit's last part, `agent.audio_buffer_committed`), and closes. The vendor allows one socket per session
+   and says a new one replaces the old. Speak several sentences in a row and one long answer (over 18 s, so it
+   arrives in two parts): every one must lip-sync to the end. If an utterance stops when its socket closes, or the
+   second part of a long one is lost, LiveAvatar wants one held connection per session: faces stay off (the app
+   falls back on its own) until the relay runs in a per-call worker.
 2. **CSP hosts.** Note the exact `wss://` and `https://` LiveKit origins the room uses (Network tab; LiveAvatar's
    project is `heygen-feapbkvq.livekit.cloud`). Put exactly those in `media.face.csp.connect` (no wildcards) and
    check the console shows no CSP violation. TURN (UDP 3478, TCP 443) is not governed by the CSP; university
@@ -184,9 +202,13 @@ DevTools open, faces and voices on.
    on, against off). Expect 0.3–0.6 s more; above about 1 s, compare with Anam (the fallback in the design).
 5. **The face's voice is heard and ducks.** In Chrome, Safari and Firefox: the face's audio plays through the call
    (not the video element), barge-in stops it at once, and no sentence is heard twice.
-6. **The session limit and the commands.** The token request carries `max_session_duration` (the adapter retries
-   without it if refused) and the session must end by itself at the per-call limit; `agent.speak`,
-   `agent.speak_end` and `agent.interrupt` behave as documented; ending a call stops the vendor session (credits stop).
+6. **The session limit, the envelope and the commands.** The token request carries `max_session_duration` (a 422
+   means it is above the plan's session length: lower **per call**); the session must end by itself at the per-call
+   limit. Responses must carry `code: 1000` on success (the vendor's SDK checks 1000; its API reference shows a
+   default of 100: if a successful start returns another code, every face falls back to the presence and the
+   adapter's success code needs changing). `session.state_updated: connected` arrives on each new socket, and
+   `agent.speak`, `agent.speak_end` and `agent.interrupt` are acknowledged as documented; ending a call stops the
+   vendor session (credits stop).
 7. **The clone on the faster model.** The default is `eleven_flash_v2_5` (about 190 ms to first audio). Ask
    ElevenLabs whether professional clones run on v4 Turbo; that model needs a different (WebSocket) endpoint, so it
    is not a configuration change.
@@ -196,6 +218,10 @@ DevTools open, faces and voices on.
 ## What still needs real keys or a decision
 
 - Every point of §8 (nothing here has run against the vendors).
-- Deleting a withdrawn EIR's models at the vendors automatically, and a nightly usage reconciliation.
+- Until §8.3 shows the browser's room token cannot publish data (or our own LiveKit project issues subscribe-only
+  tokens), keep faces to a pilot: `faces_enabled` is platform-wide, so mark only the pilot EIRs' faces **Ready** (a
+  vEIR without a ready face shows the presence to everyone).
+- Deleting a withdrawn EIR's models at the vendors automatically, and a nightly usage reconciliation (both need the
+  vendors' delete and usage APIs called with real keys; until then §7 and §8.8 by hand).
 - The privacy review: ElevenLabs (the vEIR's words) and HeyGen (the vEIR's audio and the EIR's likeness) as new
   processors.

@@ -299,6 +299,17 @@ function parseMedia(raw: unknown): PlatformConfig['media'] {
   if (faceProvider === 'none' && (connect.length > 0 || mediaOrigins.length > 0)) {
     throw new ConfigError('$.media.face.csp', 'must be empty while media.face.provider is none');
   }
+  // A wired face whose room the CSP blocks would silently never show (livekit-client signals over wss:// and
+  // asks the same host over https:// for its regions), so the first deploy already names both.
+  if (
+    faceProvider !== 'none' &&
+    !(connect.some((o) => o.startsWith('wss://')) && connect.some((o) => o.startsWith('https://')))
+  ) {
+    throw new ConfigError(
+      '$.media.face.csp.connect',
+      'must name the vendor room’s wss:// and https:// origins while a face is wired (docs/runbooks/avatars.md §5)',
+    );
+  }
   return {
     face: {
       provider: faceProvider,

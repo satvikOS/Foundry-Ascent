@@ -449,7 +449,10 @@ logged, never sent to the browser. The local API runs stand-ins with `EMBODIMENT
   in that request. Passages of a stored reply (unsigned) and the crisis line use a stock voice. It speaks only in a
   call that started with it (`calls.voice_vendor`), while `cloned_voice_enabled` is on and the persona's voice is
   ready under `voice` consent; otherwise the next unit is the call's stock voice, or the platform voice when that
-  call's clone was withdrawn (the call goes on).
+  call's clone was withdrawn (the call goes on). A clone that fails (vendor error, timeout, missing key) costs the
+  unit nothing: the same verified words are spoken in that stock voice within the same reservation (billed as the
+  stock voice), and that clone rests for a minute in that container, so its next units skip it instead of waiting
+  on it again.
 - **The face's speak channel stays on the server.** LiveAvatar LITE's `ws_url` is stored only encrypted
   (AES-256-GCM, a key derived from the session-signing key, bound to the call) in `call_faces` and erased when the
   face or the call ends; the browser gets the room's client token and URL only, and never publishes into the room.
@@ -457,37 +460,54 @@ logged, never sent to the browser. The local API runs stand-ins with `EMBODIMENT
   24 kHz PCM in a WAV (the browser can always play it itself) with `x-face-manifest`: an HMAC over the unit, the
   call, the face session and the SHA-256 of every one-second chunk. When the unit's turn comes, the face's relay
   sends those bytes back (`POST /calls/:id/face/speak`, parts of at most 18 s, `x-face-part`); the server checks the
-  manifest and every chunk, counts one hand-over per unit (`call_speech.face_plays`), and only then relays them to
-  the vendor. Anything else (other audio, a changed sample, another call's manifest, a replay, an unsigned unit) is
-  refused (422, audited `call.face_refused`) before the vendor sees it. One synthesis serves both the speakers'
-  copy and the face.
+  manifest and every chunk, then admits the part in one statement under the face's row lock
+  (`twinRepo.admitFacePart`): a unit's first part counts its one hand-over (`call_speech.face_plays`) and makes it
+  the unit the face is saying (`call_faces.speaking_unit`); every later part must be of that unit and start exactly
+  at its next chunk (`call_speech.face_next_chunk`), and nothing follows its last chunk. Barge-in
+  (`POST /calls/:id/face/interrupt`) seals it. Only then are the bytes relayed to the vendor. Anything else (other
+  audio, a changed sample, another call's manifest, a replayed, skipped or reordered part, a part of a unit the face
+  is no longer saying, an unsigned unit) is refused (422, audited `call.face_refused`: `already_shown`,
+  `part_out_of_order`, …) before the vendor sees it, so validated speech cannot be cut up and re-sequenced. One
+  synthesis serves both the speakers' copy and the face.
+- **The vendor's control protocol** (LITE events): the server waits for `session.state_updated: connected` before
+  any command, sends one-second `agent.speak` chunks each with its own `event_id`, waits for every
+  `agent.audio_buffer_appended`, and on a unit's last part sends `agent.speak_end` and waits for
+  `agent.audio_buffer_committed` before closing; `error` fails the hand-over (the call then plays the unit itself).
 
 ### 4.3 The face of a call
 
 1. The call settings (`GET /ventures/:id/call-config`) name the face only while `faces_enabled` is on, a provider
-   is wired and, for a real likeness, the persona's face is ready under `likeness` consent (`app.persona_twin`),
-   with the video minutes left (`faceMinutesLeft`).
+   is wired (a vendor sandbox, which shows the vendor's stock avatar, only to platform admins: the owner's first
+   live checks) and, for a real likeness, the persona's face is ready under `likeness` consent
+   (`app.persona_twin`), with the video minutes left (`faceMinutesLeft`).
 2. Once the call is live the stage asks the call's `CallFaceController` for it; the controller asks
    `POST /calls/avatar-session {ventureId, callId}` once per call. The server opens a vendor session only for the
    caller's own live call in that venture with that persona, for at most the call's time left, the per-call video
    limit (`face_minutes_per_call`, 20) and the person's video minutes this month (`face_minutes_per_principal_month`,
-   60), never above the platform spend cap, outside any transaction; one face per call (`call_faces`). Anything else
+   60), never above the platform spend cap, outside any transaction; one face per call (`call_faces`). The vendor
+   session carries that limit (`max_session_duration`); a vendor that refuses it opens no session. Anything else
    answers the presence (no token); the audit names the provider and the reason, never a token.
 3. The adapter (its own chunk) joins within 8 s; at the first frame the same tile shows the face's video (muted),
    the name tag stays, the founder's initials sit in the corner, and the engine hands the face each unit (§4.2).
    A unit is announced at the face's first sound (the vendor's speak event, or its audio track's level); a unit the
    face cannot start within 3 s, or the server refused, is played by the call itself.
 4. The face belongs to the call: minimizing keeps it (the mini bar shows it as a thumbnail, the monogram with
-   reduced motion); a face that drops, or the stage giving it up, tells the server (`POST /calls/:id/face/end`).
-5. Heartbeats report whether the face is shown and answer `face: stop` (and the server ends the vendor session)
-   when faces are switched off, likeness consent is withdrawn, the month's video minutes are used up, or the face is
-   no longer shown. A crisis turn drops the face to the presence at once: a human-looking face never says the
+   reduced motion); a face that drops, the stage giving it up, or a call left on hold (page hidden) for over a
+   minute (the vendor bills an idle face) tells the server (`POST /calls/:id/face/end`).
+5. Heartbeats report whether the face is shown and answer `face: stop` (and the server ends the vendor session,
+   asking twice if the first stop fails) when faces are switched off, likeness consent is withdrawn, the call's
+   video limit or the month's video minutes are used up, the month's minutes cannot be read (the face never goes
+   on unchecked), or the face is no longer shown. A crisis turn drops the face to the presence at once: a human-looking face never says the
    crisis line. Ending the call ends its face (a database trigger erases the control channel; the vendor session is
    stopped after commit).
 
-**Metering.** Face seconds come from the server's clock (`call_faces.metered_seconds`, never beyond the face's
-limit) and go into the usage ledger as heartbeats come and when the face or the call ends, in the same transaction
-as the counter (exactly once), as `heygen:liveavatar-lite` at the vendor's per-minute price. Clone characters are
+**Metering.** Face seconds come from the server's clock and go into the usage ledger as heartbeats come and when the
+face or the call ends, in the same transaction as the counter (`call_faces.metered_seconds`, never beyond the
+face's limit: exactly once), as `heygen:liveavatar-lite` at the vendor's per-minute price. Ending a call ends its
+face in the database but leaves the seconds since the last heartbeat to that metering (right after commit), and the
+daily maintenance bills any ended face whose seconds are not all in the ledger (a call the reaper closed, a
+metering that failed): `maintenance.call_faces`. The month's video minutes count each face by the clock, whether or
+not its billing ran yet. Clone characters are
 metered per unit as `elevenlabs:<model>` at its per-1,000-characters price. Both are purpose `speech`, so the
 platform's daily cap counts them and a person's AI cap does not; the call's speech budget (§2.5) bounds the clone.
 
