@@ -255,7 +255,29 @@ describe('SentenceGate', () => {
       }
       // Spoken too: the first unit goes to speech at once.
       const spoken = gate({ spoken: true, spokenWordBudget: 70, maxUnitChars: 280 });
-      expect(spoken.push('Got it. ').units).toEqual([{ text: 'Got it.', spoken: 'Got it.' }]);
+      expect(spoken.push('Talk soon. ').units).toEqual([{ text: 'Talk soon.', spoken: 'Talk soon.' }]);
+    });
+
+    it('on a call, an acknowledgement that can open thinking aloud waits for the next unit: never said before narration', () => {
+      const call = { spoken: true, spokenWordBudget: 70, maxUnitChars: 280 };
+      for (const lead of ['Okay.', 'Got it.', 'Alright.']) {
+        const g = gate(call);
+        expect(g.push(`${lead} `).units).toEqual([]);
+        expect(g.push('The founder is asking about pricing per library. ').units).toEqual([]);
+        expect(g.end().units).toEqual([]);
+        expect(g.fallback).toBe('meta_narration');
+        // Speech after it: both are said once the next unit shows it.
+        const ok = gate(call);
+        expect(ok.push(`${lead} `).units).toEqual([]);
+        const rest = [...ok.push('Price per library and test two this term. ').units, ...ok.end().units];
+        expect(rest.map((u) => u.spoken).join(' ')).toBe(`${lead} Price per library and test two this term.`);
+      }
+      // Typed, it is shown at once: the preview is replaced if the reply is written whole.
+      expect(
+        gate()
+          .push('Okay. ')
+          .units.map((u) => u.text),
+      ).toEqual(['Okay.']);
     });
 
     it('still checks it: narration, a claim to be the EIR, a canary', () => {

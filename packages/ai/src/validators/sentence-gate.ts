@@ -60,7 +60,9 @@ import { clampWords, toSpeakable } from './speech.js';
  * that cannot change its verdict: the opening's 20 characters (a finished sentence is prose, never the start of
  * structured output), the hold-back (a guarded string that starts inside it would have to span its sentence end,
  * so the skip applies only when no guarded string contains sentence punctuation), and, for an acknowledgement
- * ("Got it.", "Okay."), the look at the next unit (a thinking-aloud opener such as "Let me think." still waits).
+ * ("Got it.", "Okay.") on a typed turn, the look at the next unit (a thinking-aloud opener such as "Let me think."
+ * still waits, and on a call so does an acknowledgement that can open thinking aloud: said, it cannot be taken back
+ * when narration follows it).
  *
  * The final validation of the whole response stays authoritative: units are a preview the client replaces
  * with `turn.completed`. Units never carry raw model output that failed a check, and their concatenation
@@ -538,7 +540,9 @@ export class SentenceGate {
       if (
         this.#nothingReleased() &&
         isThinkingAloudOpener(rawUnit) &&
-        !(leadIn && ACKNOWLEDGEMENT.test(rawUnit.trim()))
+        // Typed, an acknowledgement is shown at once (the preview is replaced if the reply is written whole); said on a
+        // call it cannot be taken back, so it waits like any thinking-aloud opener ("Okay." then narration).
+        !(leadIn && this.#options.spoken !== true && ACKNOWLEDGEMENT.test(rawUnit.trim()))
       ) {
         // "Okay, let's see." opening a reply is said only once the next unit shows that speech follows it.
         const next =
