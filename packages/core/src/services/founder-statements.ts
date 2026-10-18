@@ -100,7 +100,15 @@ export function statedMemory(
     .replace(/\s+/g, ' ')
     .trim()
     .split(/(?<=[.!?])\s+/);
-  for (const sentence of sentences) {
+  // A statement can follow another clause of the sentence ("Our riskiest assumption still needs a cheap test, so we've
+  // decided to rerun the map in exam week."): each clause after "so", "and" or "but" is read on its own too. A
+  // question is never read, and a hedge only stops the clause it is in.
+  const clauses = sentences.flatMap((sentence) =>
+    /\?\s*$/.test(sentence)
+      ? []
+      : sentence.split(/\s*(?:[,;]|\s[—–-])\s*(?:so|and|but|and so)\s+(?=(?:we|i)\b)/i),
+  );
+  for (const sentence of clauses) {
     if (sentence === '' || HEDGE.test(sentence)) continue;
     const who = (pronoun: string): string =>
       /^i$/i.test(pronoun) ? (options.founderName ?? 'The founder') : 'The team';

@@ -515,6 +515,15 @@ describe('memory kept automatically', () => {
         origin: 'ai',
       }),
     ]);
+    // The turn records it with its candidates, so the answer's "Saved to Knowledge" line finds it (the line reads
+    // the turn's candidates; with only the model's on the turn, nothing showed within 30 s in the lab).
+    expect(turn.response?.memory_candidates).toEqual([
+      expect.objectContaining({
+        type: 'decision',
+        title: 'Ask each library for a paid commitment before the pilot starts',
+        source: 'founder_stated',
+      }),
+    ]);
     // No model call for it, and no distillation: the turn's own stream and annotations only.
     const calls = scriptedModel.calls.slice(generated).map((c) => c.schemaName ?? c.kind);
     expect(calls.filter((c) => c !== 'embed' && c !== 'stream')).toEqual([COACH_ANNOTATIONS_SCHEMA_NAME]);
@@ -777,9 +786,11 @@ describe('what the vEIR keeps', () => {
     );
     const constraint = await legacy('No hiring yet', 'The team cannot hire before the pilot.', '2026-10-04');
     const report = await scripted.maintenance.runDaily({ requestId: 'maintenance-legacy' });
-    expect(report.pendingProposals).toMatchObject({ kept: 2, duplicates: 1, notTheFounders: 1 });
+    // The constraint the founder stated after "and" was kept by the turn itself (founder-statements.ts reads each
+    // clause), so the legacy proposal of it is a duplicate; the goal is kept from the proposals.
+    expect(report.pendingProposals).toMatchObject({ kept: 1, duplicates: 2, notTheFounders: 1 });
     expect(await statusOf(goal)).toBe('confirmed');
-    expect(await statusOf(constraint)).toBe('confirmed');
+    expect(await statusOf(constraint)).toBe('expired');
     expect(await statusOf(advice)).toBe('expired');
     expect(await statusOf(restated)).toBe('expired');
     const kept = await h.t.db.system((sx) => memoryRepo.getMemory(sx, goal));
