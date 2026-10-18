@@ -13,6 +13,7 @@ import {
   CROSS_VENTURE_BLOCK_ANSWER,
   MockModelGateway,
   NARROWING_NOTE_PREFIX,
+  SPOKEN_HAND_BACKS,
   SPOKEN_NARROWING_CAVEAT,
   mockCoachResponse,
   type EmbedOptions,
@@ -978,14 +979,18 @@ describe('spoken turns', () => {
       .join(' ');
     expect(said.split(/\s+/).length).toBe(70);
     const turn = completed(events);
-    expect(turn.validator?.notes).toContain('stream_spoken_cut');
-    // The transcript is what was said, to the end of the sentence the budget ran out in, and nothing after.
+    expect(turn.validator?.notes).toEqual(expect.arrayContaining(['stream_spoken_cut', 'stream_hand_back']));
+    // The transcript is what was said, to the end of the sentence the budget ran out in, and then the hand-back the
+    // budget kept room for (it stopped mid-thought before: the lab's spoken_no_handback).
     const shown = deltas(events)
       .map((d) => d.text)
       .join('')
       .trim();
     expect(turn.response?.answer).toBe(shown);
-    expect(shown).toBe(sentences.slice(0, 8).join(' '));
+    const handBack = SPOKEN_HAND_BACKS.find((h) => shown.endsWith(h));
+    expect(handBack).toBeDefined();
+    expect(shown).toBe(`${sentences.slice(0, 8).join(' ')} ${handBack ?? ''}`);
+    expect(said.endsWith(handBack ?? '?')).toBe(true);
     expect(turn.response?.answer).not.toContain('Point 9');
   });
 
@@ -1168,6 +1173,99 @@ describe('spoken turns', () => {
       ).toBe(true);
     } finally {
       await h.core.admin.updateSettings(owner, { streamingEnabled: true });
+    }
+  });
+});
+
+describe('conversation craft the lab still heard (wave 7)', () => {
+  const SM19 =
+    "You're welcome. Let's keep moving. First, call the dean about the budget. Then book the second library for Tuesday.";
+
+  it('SM-19: a thanks gets a short warm reply only, typed or spoken, and reports nothing', async () => {
+    for (const channel of ['text', 'voice'] as const) {
+      const gateway = new MockModelGateway({
+        streamDelayMs: 0,
+        streamFixture: () => SM19,
+        fixtures: {
+          // The annotations of a social turn still came with next steps (social_turn_report x4).
+          [COACH_ANNOTATIONS_SCHEMA_NAME]: (context) => {
+            const { answer: _a, spoken: _s, ...annotations } = mockCoachResponse(context);
+            return {
+              ...annotations,
+              next_actions: [{ owner: 'founder', action: 'Call the dean.', target_date: null }],
+            };
+          },
+        },
+      });
+      const { core, orchestrator } = coreWith(gateway);
+      const session = await core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+      const { events, outcome } = await run(orchestrator, session.id, {
+        text: 'Thank you, this is genuinely helpful',
+        mode: 'coach',
+        ...(channel === 'voice' ? { channel, callId: CALL_ID } : {}),
+      });
+      expect(outcome.status).toBe('completed');
+      const turn = completed(events);
+      expect(turn.response?.answer).toBe("You're welcome. Let's keep moving.");
+      expect(turn.response?.next_actions).toEqual([]);
+      expect(turn.response?.claims).toEqual([]);
+      expect(turn.response?.memory_candidates).toEqual([]);
+      for (const d of deltas(events)) expect(d.text).not.toMatch(/dean|library/);
+      for (const u of speechUnits(events)) expect(u.text).not.toMatch(/dean|library|What do you think/);
+      expect(turn.validator?.notes).toEqual(expect.arrayContaining(['social_turn_cleared']));
+    }
+  });
+
+  it('a reply never says the previous one again', async () => {
+    const repeat =
+      "Ask three students what they'd give up to skip the group chat and the walking. That's the price signal you need before the pilot starts.";
+    const gateway = new MockModelGateway({
+      streamDelayMs: 0,
+      streamFixture: (context) =>
+        context.founderText.startsWith('Any tips') ? `${repeat} Book both chats for Thursday.` : repeat,
+    });
+    const { core, orchestrator } = coreWith(gateway);
+    const session = await core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+    await run(orchestrator, session.id, { text: 'How do we find the price signal?', mode: 'coach' });
+    const { events } = await run(orchestrator, session.id, {
+      text: 'Any tips on speedrunning these meetings?',
+      mode: 'coach',
+    });
+    expect(completed(events).response?.answer).toBe('Book both chats for Thursday.');
+    expect(
+      deltas(events)
+        .map((d) => d.text)
+        .join('')
+        .trim(),
+    ).toBe('Book both chats for Thursday.');
+  });
+
+  it('a call’s reply that ends on a statement hands the turn back as it is said', async () => {
+    for (const [text, expected] of [
+      ['How do we get the first ten users?', SPOKEN_HAND_BACKS as readonly string[]],
+      ["I'm so stressed, nothing is working this week.", ['What would help most right now?']],
+    ] as const) {
+      const gateway = new MockModelGateway({
+        streamDelayMs: 0,
+        streamFixture: () => 'Start with the two libraries that already count seats. Set it up by Friday.',
+      });
+      const { core, orchestrator } = coreWith(gateway);
+      const session = await core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+      const { events } = await run(orchestrator, session.id, {
+        text,
+        mode: 'coach',
+        channel: 'voice',
+        callId: CALL_ID,
+      });
+      const units = speechUnits(events).map((u) => u.text);
+      expect(expected).toContain(units.at(-1));
+      const turn = completed(events);
+      expect(turn.response?.answer).toBe(
+        `Start with the two libraries that already count seats. Set it up by Friday. ${units.at(-1) ?? ''}`,
+      );
+      // Said before the annotations, right after the reply.
+      const validating = events.findIndex((e) => e.event === 'turn.status' && e.phase === 'validating');
+      expect(events.findLastIndex((e) => e.event === 'turn.speech')).toBeLessThan(validating);
     }
   });
 });

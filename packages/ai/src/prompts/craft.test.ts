@@ -78,7 +78,9 @@ describe('conversation craft in the system prompt', () => {
   it('answers a hello after its own opener with a hello, never the recall or its question again', () => {
     // Integration: the opener said "Last time you planned to call facilities… How did it go?" and the reply to
     // "Hi!" said "When we talked a moment ago, we were on pricing." all over again.
-    expect(craft).toContain('After your own opener, a hello gets a brief, warm hello and nothing more.');
+    expect(craft).toContain(
+      'After your own opener, never repeat its question; if it said hi, never greet again.',
+    );
   });
 
   it('answers "do you remember" only from the last conversation, never from older notes or venture facts', () => {
@@ -122,7 +124,7 @@ describe('conversation craft in the system prompt', () => {
     expect(craft).toContain(
       '"…" or an emoji: a short reply offering one option, never your last answer again.',
     );
-    expect(craft).toContain('empty; thanks never gets the advice again.');
+    expect(craft).toContain('empty; thanks gets a warm line, never the advice or plan again.');
   });
 
   it('covers listening, topic moves, social turns, tone, repair, disagreement, closings and variety', () => {

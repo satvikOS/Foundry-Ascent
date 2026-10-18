@@ -35,14 +35,23 @@ export {
   conversationCraftRules,
 } from './craft.js';
 export {
+  asksSomething,
   contentWords,
   deriveConversationState,
+  directChoiceOf,
   endsWithQuestion,
   founderMoves,
   gistOf,
   openingOf,
   renderConversationState,
+  socialTurnOf,
 } from './conversation-state.js';
-export type { ConversationState, ConversationThread, FounderMove, StateTurn } from './conversation-state.js';
+export type {
+  ConversationState,
+  ConversationThread,
+  FounderMove,
+  SocialTurn,
+  StateTurn,
+} from './conversation-state.js';
 export { COACH_RESPONSE_SCHEMA_NAME, DEFAULT_PERSONA_NAME, POLICY_VERSION } from './version.js';
 export { tidyFounderWords } from './founder-words.js';

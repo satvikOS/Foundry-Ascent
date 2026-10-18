@@ -212,6 +212,20 @@ export {
   withoutRepeatedGreeting,
 } from './validators/greeting.js';
 export {
+  CLOSING_FALLBACK,
+  REPEAT_FALLBACK,
+  SOCIAL_BUDGETS,
+  SPOKEN_HAND_BACKS,
+  STRESSED_HAND_BACK,
+  asksToRepeat,
+  endsWithHandBack,
+  fourGramsOf,
+  repeatsPrevious,
+  spokenHandBackFor,
+  withinSocialBudget,
+  withoutRepeats,
+} from './validators/social.js';
+export {
   SentenceGate,
   findUnitEnd,
   holdBackFor,

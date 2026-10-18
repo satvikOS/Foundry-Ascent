@@ -6,6 +6,9 @@ import {
   deriveSpoken,
   isModelGatewayError,
   openerSaidHello,
+  SOCIAL_BUDGETS,
+  socialTurnOf,
+  spokenHandBackFor,
   validateCoachResponse,
   type CoachResponseValidation,
   type GateBlockReason,
@@ -219,6 +222,13 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
   const evidenceKeys = new Set(shown.map((k) => k.item.key));
   // The first reply after an opening line that said hello (a call's intro) does not greet again.
   const greeted = spec.history.length === 0 && context.openerReplayed && openerSaidHello(spec.opener);
+  // Conversation craft (validators/social.ts): a social turn gets a short reply, a reply never says the previous one
+  // (or the opener) again, and a call's reply that ends on a statement hands the turn back.
+  const social = socialTurnOf(spec.founderText);
+  const lastAnswer = spec.history.at(-1)?.answer ?? null;
+  const previousReply =
+    spec.history.length > 0 ? lastAnswer : context.openerReplayed ? (spec.opener ?? null) : null;
+  const handBack = spec.channel === 'voice' ? spokenHandBackFor(spec.founderText, spec.ids.turnId) : null;
 
   // Step 5: generate (streamed through the sentence gate, or whole when streaming is switched off).
   await emit({ event: 'turn.status', phase: 'reasoning', detail: null, evidenceCount: shown.length });
@@ -238,6 +248,7 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
     signal: spec.signal,
     startedAt: spec.startedAt,
     narration: { founder: spec.continuity.founderFirstName ?? null, people: guards.addressees },
+    handBack,
   };
   let generation: Generation;
   try {
@@ -253,6 +264,8 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
             addressees: guards.addressees,
             founderName: spec.continuity.founderFirstName ?? null,
             greeted,
+            replyBudget: social === null ? null : SOCIAL_BUDGETS[social],
+            previousReply,
             founderText: spec.founderText,
             otherVentureNames: guards.others.names,
             otherVentureCanaries: guards.others.canaries,
@@ -285,6 +298,9 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
     addressees: guards.addressees,
     founderName: spec.continuity.founderFirstName ?? null,
     greeted,
+    previousReply,
+    // A streamed reply handed the turn back as it was said (generate.ts); a reply written whole gets it here.
+    handBack: generation.stream?.fallback === null ? null : handBack,
     founderText: spec.founderText,
     channel: spec.channel,
   });

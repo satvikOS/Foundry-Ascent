@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { REPEATED_GREETING_FALLBACK } from './greeting.js';
+import { REPEAT_FALLBACK } from './social.js';
 import { sanitizeMarkdown } from './markdown.js';
 import {
   SentenceGate,
@@ -292,6 +293,36 @@ describe('SentenceGate', () => {
           .push('Okay. ')
           .units.map((u) => u.text),
       ).toEqual(['Okay.']);
+    });
+  });
+
+  describe('a short reply’s budget and the previous reply (wave 7)', () => {
+    it('stops releasing once a thanks reply’s budget is used: the plan is never shown or said', () => {
+      const sm19 =
+        "You're welcome. Let's keep moving. First, call the dean about the budget. Then book the second library.";
+      for (const options of [{}, { spoken: true, spokenWordBudget: 70, maxUnitChars: 280 }]) {
+        for (const chunks of chunkings(sm19)) {
+          const g = gate({ ...options, replyBudget: { sentences: 2, words: 30 } });
+          const units: GateUnit[] = [];
+          for (const chunk of chunks) units.push(...g.push(chunk).units);
+          units.push(...g.end().units);
+          expect(joined(units)).toBe("You're welcome. Let's keep moving.");
+          expect(g.full).toBe(true);
+        }
+      }
+    });
+
+    it('never releases a unit that says the previous reply again; a reply of nothing else becomes a short line', () => {
+      const previous =
+        "Ask three students what they'd give up to skip the group chat and the walking. That's the price signal you need before the pilot starts.";
+      const g = gate({ previousReply: previous, founderText: 'any tips?' });
+      const { units } = run(g, [`${previous} Then run the pilot in two libraries.`]);
+      expect(joined(units)).toBe('Then run the pilot in two libraries.');
+      expect(joined(run(gate({ previousReply: previous }), [previous]).units)).toBe(REPEAT_FALLBACK);
+      // Asked to hear it again: said again.
+      expect(
+        joined(run(gate({ previousReply: previous, founderText: 'Can you repeat that?' }), [previous]).units),
+      ).toBe(previous);
     });
   });
 

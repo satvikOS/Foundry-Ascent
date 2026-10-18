@@ -139,7 +139,8 @@ describe('vEIR attribution when the reviewing EIR is not the vEIR’s own', () =
     // Met now: the next call in another conversation greets her.
     const next = SessionView.parse(await h.core.sessions.create(priya, ventureId, {}));
     const again = StartCallResponse.parse(await h.core.calls.start(priya, next.id, {}));
-    expect(again.intro?.text).toMatch(/^Hi Priya\. /);
+    expect(again.intro?.text).toMatch(/^Hi Priya, /);
+    expect(again.intro?.text).not.toMatch(/digital twin/);
     await h.core.calls.end(priya, again.call.id, { reason: 'user' });
   });
 });

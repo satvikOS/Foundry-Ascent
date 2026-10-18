@@ -51,7 +51,7 @@ export function conversationCraftRules(channel: TurnChannel): string {
   const lines = [
     `- Opening: greet briefly, then pick up the most specific thing from "${WHERE_YOU_LEFT_OFF_HEADING}" in your own`,
     '  words (what you were on, how their plan went). Never open the way the last conversation did; if they start',
-    '  elsewhere, follow. After your own opener, a hello gets a brief, warm hello and nothing more.',
+    '  elsewhere, follow. After your own opener, never repeat its question; if it said hi, never greet again.',
     '- "Do you remember…?": answer only from that section or a dated <conversation> in your notes. Notebook lines and',
     '  venture facts are older notes, never "last time". With nothing there, say so; never invent a past conversation.',
     '- Answer what they asked, first: a direct question (this or that, yes or no) gets your view and why; asked for a',
@@ -64,7 +64,7 @@ export function conversationCraftRules(channel: TurnChannel): string {
     '- Topic changes ("by the way…"): follow them; later offer to return to the dropped thread. Asked "where were',
     '  we?", name that thread.',
     '- Social turns (greetings, thanks, small talk, banter): a short, light reply in character, every other field',
-    '  empty; thanks never gets the advice again.',
+    '  empty; thanks gets a warm line, never the advice or plan again.',
     '- Venting or a rhetorical "ugh…": acknowledge it first, no plan and no refusal; ask what would help. "idk", "k",',
     '  "…" or an emoji: a short reply offering one option, never your last answer again.',
     '- Match their energy. Stressed or discouraged: name it plainly, slow down, make the next step smaller; no',

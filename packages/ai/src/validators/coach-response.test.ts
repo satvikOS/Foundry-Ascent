@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { classifyRisk } from '../risk/classifier.js';
 import { DISCLAIMER_FALLBACK } from './identity.js';
 import { REPEATED_GREETING_FALLBACK } from './greeting.js';
+import { REPEAT_FALLBACK } from './social.js';
 import {
   CROSS_VENTURE_BLOCK_ANSWER,
   EMPTY_ANSWER_FALLBACK,
@@ -1175,6 +1176,111 @@ describe('validateCoachResponse — structured-output leak', () => {
     expect(out.results.notes).not.toContain('structured_leak_cut');
     // Nothing of the reply before the leaked line: left as it is (the schema check owns that case).
     expect(cutStructuredLeak('coach\nRun the pilot.')).toEqual({ text: 'coach\nRun the pilot.', cut: false });
+  });
+});
+
+describe('validateCoachResponse — conversation craft the lab still heard (wave 7)', () => {
+  it('a thanks gets a short warm reply only, and reports nothing (SM-19, social_turn_report)', () => {
+    for (const channel of ['text', 'voice'] as const) {
+      const reply =
+        "You're welcome. Let's keep moving. First, call the dean about the budget. Then book the second library for Tuesday.";
+      const checked = validateCoachResponse(
+        base({ answer: reply, spoken: channel === 'voice' ? reply : null }),
+        {
+          ...opts(),
+          channel,
+          founderText: 'Thank you, this is genuinely helpful',
+          handBack: 'What do you think?',
+        },
+      );
+      expect(checked.response.answer).toBe("You're welcome. Let's keep moving.");
+      if (channel === 'voice') expect(checked.response.spoken).toBe("You're welcome. Let's keep moving.");
+      expect(checked.response).toMatchObject({
+        claims: [],
+        uncertainty: [],
+        challenge: null,
+        next_actions: [],
+        memory_candidates: [],
+        follow_up_questions: [],
+      });
+      expect(checked.results.notes).toEqual(
+        expect.arrayContaining(['social_turn_cleared', 'social_reply_trimmed']),
+      );
+      expect(checked.results.notes).not.toContain('spoken_hand_back_added');
+    }
+  });
+
+  it('a wrap-up on a call: a warm sign-off, no new question, nothing to report', () => {
+    const checked = validateCoachResponse(
+      base({
+        answer: 'Maya, talk soon. What will you tackle first tomorrow?',
+        spoken: 'Maya, talk soon. What will you tackle first tomorrow?',
+      }),
+      { ...opts(), channel: 'voice', founderText: "Okay, thanks, that's helpful. Talk soon." },
+    );
+    expect(checked.response.spoken).toBe('Maya, talk soon.');
+    expect(checked.response.next_actions).toEqual([]);
+  });
+
+  it('never says the previous reply again, unless the founder asked to hear it', () => {
+    const previous =
+      "Ask three students what they'd give up to skip the group chat and the walking. That's the price signal you need before the pilot starts.";
+    const again = `${previous} Then run the pilot in two libraries.`;
+    const checked = validateCoachResponse(base({ answer: again }), {
+      ...opts(),
+      founderText: 'Any tips on speedrunning these meetings?',
+      previousReply: previous,
+    });
+    expect(checked.response.answer).toBe('Then run the pilot in two libraries.');
+    expect(checked.results.notes).toContain('repeated_sentences_removed:2');
+    const all = validateCoachResponse(base({ answer: previous }), {
+      ...opts(),
+      founderText: 'idk',
+      previousReply: previous,
+    });
+    expect(all.response.answer).toBe(REPEAT_FALLBACK);
+    const asked = validateCoachResponse(base({ answer: previous }), {
+      ...opts(),
+      founderText: 'Sorry, can you repeat that?',
+      previousReply: previous,
+    });
+    expect(asked.response.answer).toBe(previous);
+  });
+
+  it('a call’s reply that ends on a statement hands the turn back, within 70 words', () => {
+    const statement = 'Set the pilot up by Friday and agree what result moves it to a paid contract.';
+    const checked = validateCoachResponse(base({ answer: statement, spoken: statement }), {
+      ...opts(),
+      channel: 'voice',
+      founderText: 'How do we get the first ten users?',
+      handBack: 'What do you think?',
+    });
+    expect(checked.response.spoken).toBe(`${statement} What do you think?`);
+    expect(checked.response.answer).toBe(`${statement} What do you think?`);
+    expect(checked.results.notes).toContain('spoken_hand_back_added');
+    // A reply that already hands back is left alone; a long one makes room.
+    const asks = validateCoachResponse(
+      base({ answer: 'Price per library. Does Friday work?', spoken: null }),
+      {
+        ...opts(),
+        channel: 'voice',
+        founderText: 'How should we price it?',
+        handBack: 'What do you think?',
+      },
+    );
+    expect(asks.response.spoken).toBe('Price per library. Does Friday work?');
+    const long = Array.from(
+      { length: 10 },
+      (_, i) => `Point ${String(i + 1)} is about the pilot counts.`,
+    ).join(' ');
+    const roomy = validateCoachResponse(base({ answer: long, spoken: long }), {
+      ...opts(),
+      channel: 'voice',
+      founderText: 'What should we check?',
+      handBack: 'What do you think?',
+    });
+    expect(roomy.response.spoken?.split(/\s+/).length).toBeLessThanOrEqual(70);
+    expect(roomy.response.spoken?.endsWith('What do you think?')).toBe(true);
   });
 });
 

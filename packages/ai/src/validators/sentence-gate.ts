@@ -16,6 +16,7 @@ import {
 import { sanitizeMarkdown } from './markdown.js';
 import { REPEATED_GREETING_FALLBACK, withoutRepeatedGreeting } from './greeting.js';
 import { findMetaNarration, isThinkingAloudOpener, type NarrationNames } from './meta-narration.js';
+import { REPEAT_FALLBACK, asksToRepeat, fourGramsOf, repeatsPrevious } from './social.js';
 import { clampWords, toSpeakable } from './speech.js';
 
 /**
@@ -101,6 +102,17 @@ export interface SentenceGateOptions {
    * becomes a short hand-back.
    */
   greeted?: boolean;
+  /**
+   * A short reply's budget (a social turn: thanks, a wrap-up, a hello; validators/social.ts `SOCIAL_BUDGETS`): once
+   * the units released reach it, nothing more is released and the gate is `full` (the caller stops the model; the
+   * reply is what was shown). The first unit is always released.
+   */
+  replyBudget?: { readonly sentences: number; readonly words: number } | null;
+  /**
+   * The vEIR's previous reply in this conversation: a unit that mostly says it again is never released (unless the
+   * founder asked to hear it again). A reply that was nothing but repeats becomes a short line instead.
+   */
+  previousReply?: string | null;
   /**
    * The founder's message this reply answers. When it sincerely asks who or what the coach is ("are you real?"),
    * the reply's honest answer stands as written: no disclaimer is rewritten out of it.
@@ -338,6 +350,14 @@ export class SentenceGate {
   #afterDroppedDisclaimer = false;
   /** A greeting the opening line already gave was left out of the reply's start (`greeted`). */
   #droppedGreeting = false;
+  /** The previous reply's four-word sequences (null: no repeat check). */
+  readonly #previousGrams: ReadonlySet<string> | null;
+  /** Units left out because they said the previous reply again. */
+  #repeatsDropped = 0;
+  /** Units and words released (the reply budget). */
+  #released = { units: 0, words: 0 };
+  /** The reply budget is used up: nothing more is released. */
+  #full = false;
   /**
    * What the founder's sincere question about the coach asks (`founderText`), or null: then no disclaimer is
    * rewritten out, and the first unit is read as its answer (a bare "Yes!" to "is this really Corin?").
@@ -363,6 +383,11 @@ export class SentenceGate {
     this.#keys = options.evidenceKeys ? new Set([...options.evidenceKeys].map(normalizeKey)) : null;
     this.#question =
       options.founderText === undefined ? null : identityQuestionOf(options.founderText, this.#identity);
+    const previous = options.previousReply ?? null;
+    this.#previousGrams =
+      previous === null || previous.trim() === '' || asksToRepeat(options.founderText ?? '')
+        ? null
+        : fourGramsOf(previous);
   }
 
   /** Everything received so far (unvalidated). */
@@ -380,6 +405,11 @@ export class SentenceGate {
 
   get cut(): GateCutReason | null {
     return this.#cut;
+  }
+
+  /** The reply budget (`replyBudget`) is used up: the reply is what was released. */
+  get full(): boolean {
+    return this.#full;
   }
 
   /** Counts for audit metadata (no content). */
@@ -406,7 +436,7 @@ export class SentenceGate {
   }
 
   #stopped(): boolean {
-    return this.#blocked !== null || this.#fallback !== null || this.#cut !== null;
+    return this.#blocked !== null || this.#fallback !== null || this.#cut !== null || this.#full;
   }
 
   #nothing(): GateResult {
@@ -522,6 +552,20 @@ export class SentenceGate {
         this.#cut = 'meta_narration';
         return { units, blocked: null, fallback: null, cut: this.#cut };
       }
+      if (this.#previousGrams !== null && repeatsPrevious(rawUnit, this.#previousGrams)) {
+        // The previous reply again: never said twice.
+        this.#cursor = end;
+        this.#repeatsDropped += 1;
+        continue;
+      }
+      const budget = this.#options.replyBudget ?? null;
+      if (budget !== null && this.#released.units > 0) {
+        const n = words(rawUnit);
+        if (this.#released.units >= budget.sentences || this.#released.words + n > budget.words) {
+          this.#full = true;
+          break;
+        }
+      }
       const unit = this.#process(rawUnit);
       this.#cursor = end;
       if (unit === 'identity' || unit === 'cross_venture') return this.#block(unit, units);
@@ -530,10 +574,18 @@ export class SentenceGate {
         return this.#block('cross_venture', units);
       }
       this.#show(unit, units);
+      this.#released.units += 1;
+      this.#released.words += words(unit.text);
     }
-    if (this.#ended && this.#droppedGreeting && this.#nothingReleased()) {
-      // The reply was only the greeting the opening line already gave: a short hand-back instead.
-      const unit = this.#process(REPEATED_GREETING_FALLBACK);
+    if (this.#ended && this.#nothingReleased()) {
+      // The reply was only the greeting the opening line already gave, or only the previous reply again: a short
+      // line instead.
+      const instead = this.#droppedGreeting
+        ? REPEATED_GREETING_FALLBACK
+        : this.#repeatsDropped > 0
+          ? REPEAT_FALLBACK
+          : null;
+      const unit = instead === null ? null : this.#process(instead);
       if (unit !== null && typeof unit !== 'string') this.#show(unit, units);
     }
     return { units, blocked: null, fallback: null, cut: null };

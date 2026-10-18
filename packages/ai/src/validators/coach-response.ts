@@ -29,8 +29,16 @@ import {
   type IdentityViolationKind,
 } from './identity.js';
 import { sanitizeMarkdown, sanitizePlainText } from './markdown.js';
+import { socialTurnOf } from '../prompts/conversation-state.js';
 import { REPEATED_GREETING_FALLBACK, withoutRepeatedGreeting } from './greeting.js';
 import { cutMetaNarration } from './meta-narration.js';
+import {
+  REPEAT_FALLBACK,
+  asksToRepeat,
+  endsWithHandBack,
+  withinSocialBudget,
+  withoutRepeats,
+} from './social.js';
 import { SPOKEN_MAX_CHARS, SPOKEN_MAX_WORDS, clampWords, deriveSpoken, toSpeakable } from './speech.js';
 
 export interface CoachResponseLimits {
@@ -111,6 +119,16 @@ export interface ValidateCoachResponseOptions {
    * greeting becomes a short hand-back.
    */
   greeted?: boolean;
+  /**
+   * The vEIR's previous reply in this conversation (as the founder heard it): sentences that mostly say it again are
+   * left out (`repeated_sentences_removed`), unless the founder asked to hear it again (validators/social.ts).
+   */
+  previousReply?: string | null;
+  /**
+   * A call's turn: the hand-back said after a spoken reply that ends on a statement (`spoken_hand_back_added`), or
+   * null for none (a typed turn, or the founder wrapping up). The turn engine picks it (`spokenHandBackFor`).
+   */
+  handBack?: string | null;
   /**
    * The founder's message this response answers. When it sincerely asks who or what the coach is ("are you
    * real?"), the honest answer stands as written: no volunteered disclaimer is rewritten out of the reply.
@@ -359,6 +377,24 @@ export function validateCoachResponse(
     r.rehearsal = null;
     notes.push('rehearsal_removed');
   }
+  // A social turn (thanks, a wrap-up, a hello) carries nothing to cite, plan or remember (validators/social.ts).
+  const social = options.founderText === undefined ? null : socialTurnOf(options.founderText);
+  if (social !== null) {
+    const reported =
+      r.claims.length +
+      r.uncertainty.length +
+      r.next_actions.length +
+      r.memory_candidates.length +
+      r.follow_up_questions.length +
+      (r.challenge === null ? 0 : 1);
+    if (reported > 0) notes.push('social_turn_cleared');
+    r.claims = [];
+    r.uncertainty = [];
+    r.challenge = null;
+    r.next_actions = [];
+    r.memory_candidates = [];
+    r.follow_up_questions = [];
+  }
 
   // 3. Sanitise ---------------------------------------------------------------------------------------
   const md = sanitizeMarkdown(r.answer);
@@ -396,6 +432,30 @@ export function validateCoachResponse(
     return out.text.trim() === '' ? REPEATED_GREETING_FALLBACK : out.text;
   };
   r.answer = regreeting(r.answer);
+  // A social turn gets a short reply; a reply never says the previous one again (unless asked to).
+  const previous =
+    options.previousReply === undefined ||
+    options.previousReply === null ||
+    (options.founderText !== undefined && asksToRepeat(options.founderText))
+      ? null
+      : options.previousReply;
+  const crafted = (text: string, note: boolean): string => {
+    let out = text;
+    if (previous !== null) {
+      const unrepeated = withoutRepeats(out, previous);
+      if (unrepeated.dropped > 0) {
+        if (note) notes.push(`repeated_sentences_removed:${unrepeated.dropped}`);
+        out = unrepeated.text === '' ? REPEAT_FALLBACK : unrepeated.text;
+      }
+    }
+    if (social !== null) {
+      const trimmed = withinSocialBudget(out, social);
+      if (trimmed !== out && note) notes.push('social_reply_trimmed');
+      out = trimmed;
+    }
+    return out;
+  };
+  r.answer = crafted(r.answer, true);
   if (md.htmlRemoved > 0) notes.push(`html_removed:${md.htmlRemoved}`);
   if (md.unsafeLinksRemoved > 0) notes.push(`unsafe_links_removed:${md.unsafeLinksRemoved}`);
   if (md.imagesRemoved > 0) notes.push(`images_removed:${md.imagesRemoved}`);
@@ -474,7 +534,8 @@ export function validateCoachResponse(
   // Spoken text: plain sentences on a call (citation keys and Markdown removed), never on typed turns.
   // Identity is checked on the model's own lines first (a sign-off stands on its own line there) and
   // again on the flattened text in step 6, where "Best,\nCorin" has become "Best, Corin.".
-  let modelSpoken = typeof r.spoken === 'string' && r.spoken.trim() !== '' ? regreeting(r.spoken) : '';
+  let modelSpoken =
+    typeof r.spoken === 'string' && r.spoken.trim() !== '' ? crafted(regreeting(r.spoken), false) : '';
   if (channel === 'voice' && modelSpoken.trim() !== '') {
     // Never said aloud: the spoken reply up to any narration (all of it narration: derived from the answer).
     const spokenNarration = cutMetaNarration(modelSpoken, names);
@@ -694,6 +755,29 @@ export function validateCoachResponse(
   }
   if (channel === 'voice' && !r.spoken) {
     r.spoken = deriveSpoken(r.answer, limits.spokenMaxWords) || deriveSpoken(EMPTY_ANSWER_FALLBACK);
+  }
+  // A spoken reply hands the turn back, unless the founder is wrapping up or only being social.
+  const handBack = options.handBack ?? null;
+  if (
+    channel === 'voice' &&
+    handBack !== null &&
+    social === null &&
+    r.spoken &&
+    !endsWithHandBack(r.spoken)
+  ) {
+    const room = limits.spokenMaxWords - handBack.split(/\s+/).length;
+    let spoken = r.spoken;
+    while (spoken.split(/\s+/).filter(Boolean).length > room) {
+      const cut = spoken.replace(/\s*[^.!?]*[.!?…]?\s*$/u, '').trim();
+      if (cut === '' || cut === spoken) break;
+      spoken = cut;
+    }
+    r.spoken = `${spoken} ${handBack}`;
+    // The transcript is what was said.
+    if (!endsWithHandBack(r.answer) && r.answer.length + handBack.length < limits.answerMaxChars) {
+      r.answer = `${r.answer.trimEnd()} ${handBack}`;
+    }
+    notes.push('spoken_hand_back_added');
   }
   if (truncated > 0) notes.push(`truncated:${truncated}`);
   if (dropped.claims + dropped.other > 0) notes.push(`items_dropped:${dropped.claims + dropped.other}`);

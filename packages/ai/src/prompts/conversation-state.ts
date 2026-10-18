@@ -41,9 +41,18 @@ export interface ConversationThread {
   readonly messagesAgo: number;
 }
 
+/** A message that is only social: thanks, a wrap-up or a hello, with nothing asked or told ({@link socialTurnOf}). */
+export type SocialTurn = 'thanks' | 'closing' | 'greeting';
+
 export interface ConversationState {
   /** What the new message does, in order of importance. */
   readonly moves: readonly FounderMove[];
+  /** The message is only social (thanks, a wrap-up, a hello): a short reply and nothing to report. */
+  readonly social?: SocialTurn | null;
+  /** The message asks the vEIR to choose or give its view ("per branch or a flat fee?"): answer it first. */
+  readonly directChoice?: boolean;
+  /** The opening line it answers said hello (a call's intro): never greet again. */
+  readonly openerGreeted?: boolean;
   /** Words in the new message. */
   readonly words: number;
   /** Median words of the founder's earlier messages in view, or null without any. */
@@ -166,6 +175,57 @@ export function founderMoves(text: string): FounderMove[] {
   if (words <= 5 && SHORT_REPLY.test(t) && !moves.includes('thanks')) moves.push('short_reply');
   if (t.endsWith('?') || (QUESTION_START.test(t) && words > 2)) moves.push('question');
   return moves;
+}
+
+// Social turns and direct questions ------------------------------------------------------------------------
+
+/** Social lead-ins before a founder's actual question ("Sure, but who pays?"). */
+const SOCIAL_LEAD =
+  /^(?:(?:hi|hey|hello|hiya|good (?:morning|afternoon|evening)|thanks|thank you|thx|cheers|ok|okay|sure|yes|yeah|yep|no|nope|right|great|perfect|cool|got it|makes sense|fair enough|sounds good|and|but|so)\b[\s,.!:;-]*)+/i;
+/** "How are you?" and its kin: a social question, answered socially. */
+const HOW_ARE_YOU =
+  /\bhow(?:'s| is| are| have) (?:it going|you(?: been| doing)?|things|your (?:day|week))\b[?!.]*/gi;
+const ASKING_WORD =
+  /^(?:what|how|why|when|where|who|which|should|could|would|can|do|does|did|is|are|will|any)\b/i;
+
+/**
+ * Whether the founder's message asks something that needs an answer, however short ("Sure, but who pays?"): a
+ * question left after the greeting, thanks or "ok" around it. "How are you?" alone is social.
+ */
+export function asksSomething(text: string, moves: readonly FounderMove[] = founderMoves(text)): boolean {
+  if (!moves.includes('question')) return false;
+  const rest = text.replace(SOCIAL_LEAD, '').replace(HOW_ARE_YOU, '').replace(SOCIAL_LEAD, '').trim();
+  return rest.includes('?') || (ASKING_WORD.test(rest) && wordCount(rest) > 2);
+}
+
+/**
+ * What a message that is only social does (doctrine "Conversation craft"; the lab's SM-19 and SM-13): thanks
+ * ("Thank you, this is genuinely helpful"), a wrap-up ("Okay, thanks, that's helpful. Talk soon.") or a hello, with
+ * nothing asked and next to nothing told. Null for a message with venture substance or a real question.
+ */
+export function socialTurnOf(text: string): SocialTurn | null {
+  const moves = founderMoves(text);
+  if (asksSomething(text, moves)) return null;
+  const content = contentWords(text).size;
+  if (moves.includes('closing') && content < 4) return 'closing';
+  if (moves.includes('thanks') && content < 3) return 'thanks';
+  if (moves.includes('greeting') && content < 2) return 'greeting';
+  return null;
+}
+
+/** "X or Y?" asked of the vEIR, or a request for its pick or verdict. */
+const CHOICE =
+  /(?:\b(?:should|shall|do|would|could|can|is|are)\b[^?]{1,120}\bor\b[^?]{1,80}\?|^[^?]{1,60}\bor\b[^?]{1,60}\?$|\b(?:which (?:one|is better|would you|should (?:we|i))|what would you (?:do|pick|choose|go with)|(?:just )?(?:decide|pick|choose) for (?:me|us)|your (?:pick|call|honest (?:view|take)|recommendation)|what do you recommend|which do you recommend|yes or no)\b)/i;
+
+/**
+ * Whether the message asks the vEIR to choose or give its view, directly (LAB-V3: "per branch or a flat campus
+ * fee?" was answered with demand-validation questions). The reply answers it in its first sentence.
+ */
+export function directChoiceOf(text: string): boolean {
+  const flat = normalize(text);
+  return flat.includes('?') || /\b(?:decide|pick|choose) for (?:me|us)\b|\byour (?:pick|call)\b/.test(flat)
+    ? CHOICE.test(flat)
+    : false;
 }
 
 // Content words ------------------------------------------------------------------------------------------
@@ -455,6 +515,9 @@ export function deriveConversationState(
   const open = parked.filter((p) => p !== current).slice(0, MAX_PARKED);
   return {
     moves,
+    social: socialTurnOf(founderText),
+    directChoice: directChoiceOf(founderText),
+    openerGreeted: afterOpener && /^(?:hi|hello|hey|hiya)\b/i.test(opener),
     words: wordCount(founderText),
     typicalWords: median(turns.map((t) => wordCount(t.founderText))),
     // A thread the new message leaves unsettled is reported once, as parked.
@@ -509,7 +572,7 @@ function ago(n: number): string {
  * conversation with no notable move). Founder words in it are escaped data.
  */
 export function renderConversationState(state: ConversationState): string {
-  const notable = state.moves.some((m) => NOTABLE.has(m));
+  const notable = state.moves.some((m) => NOTABLE.has(m)) || state.directChoice === true;
   if (state.earlierTurns === 0 && !notable && !state.afterOpener) return '';
   const what = state.moves.map((m) => MOVE_LABELS[m]);
   const length =
@@ -518,7 +581,27 @@ export function renderConversationState(state: ConversationState): string {
       : `${state.words} words (their messages usually run about ${state.typicalWords})`;
   const lines = [`- Their message${what.length > 0 ? ` ${what.join(', ')}` : ''}; ${length}.`];
   if (state.afterOpener) {
-    lines.push('- It answers your opening line, which already picked up last time: never say that again.');
+    lines.push(
+      state.openerGreeted === true
+        ? '- It answers your opening line, which already greeted them and picked up last time: never greet them or say that again.'
+        : '- It answers your opening line, which already picked up last time: never say that again.',
+    );
+  }
+  if (state.social === 'thanks') {
+    lines.push(
+      '- A thanks and nothing more: a short, warm reply only. No advice, plan or recap, and no other field.',
+    );
+  } else if (state.social === 'closing') {
+    lines.push(
+      '- They are wrapping up: a warm sign-off (their one next step in a line at most), no new question, no other field.',
+    );
+  } else if (state.social === 'greeting' && state.earlierTurns > 0) {
+    lines.push('- A hello and nothing more: a few warm words, no advice.');
+  }
+  if (state.directChoice === true) {
+    lines.push(
+      '- They asked you to choose or give your view: open with your answer and why, before anything you ask.',
+    );
   }
   if (state.previous !== null) lines.push(`- You were on: ${quoted(state.previous.gist)}.`);
   for (const p of state.parked) {

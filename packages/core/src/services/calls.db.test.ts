@@ -1549,11 +1549,14 @@ describe('the turn engine and the calls service together', () => {
       'Which librarian can you reach first?',
     ];
     const seen: (readonly ChatMessage[])[] = [];
+    // The first reply opens differently: a reply never says what the founder already heard again (the repeat guard).
+    let replies = 0;
     const gateway = new MockModelGateway({
       streamDelayMs: 30,
       streamFixture: (context) => {
         seen.push(context.messages);
-        return sentences.join(' ');
+        replies += 1;
+        return replies === 1 ? `First things first. ${sentences.join(' ')}` : sentences.join(' ');
       },
     });
     const core = createCore({

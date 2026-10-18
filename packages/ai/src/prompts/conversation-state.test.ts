@@ -434,3 +434,38 @@ describe('renderConversationState', () => {
     expect(last.indexOf('</conversation_state>')).toBeLessThan(last.indexOf('<founder_message>'));
   });
 });
+
+describe('what the new message needs of the reply (wave 7)', () => {
+  const block = (history: { founderText: string; answer: string }[], text: string, opener?: string) =>
+    renderConversationState(deriveConversationState(history, text, opener === undefined ? {} : { opener }));
+  const earlier = [
+    { founderText: 'How should we price the pilot?', answer: 'Per library: it is simpler to sell.' },
+  ];
+
+  it('a thanks or a wrap-up asks for a short reply and nothing to report (SM-19, social_turn_report)', () => {
+    expect(block(earlier, 'Thank you, this is genuinely helpful')).toContain(
+      '- A thanks and nothing more: a short, warm reply only. No advice, plan or recap, and no other field.',
+    );
+    expect(block(earlier, "Okay, thanks, that's helpful. Talk soon.")).toContain('- They are wrapping up:');
+    expect(block(earlier, 'Should we price per library or per seat?')).not.toMatch(
+      /thanks and nothing|wrapping up/,
+    );
+  });
+
+  it('a request to choose asks for the answer first (LAB-V3), even on the first message', () => {
+    const first = block([], 'Should we charge per branch or a flat campus fee?');
+    expect(first).toContain('- They asked you to choose or give your view: open with your answer and why');
+    expect(block(earlier, 'We interviewed twelve librarians this week.')).not.toContain(
+      'choose or give your view',
+    );
+  });
+
+  it('after an intro that said hello: never greet them again', () => {
+    expect(block([], 'Hi again!', 'Hi Mina, how did the interviews go?')).toContain(
+      'which already greeted them and picked up last time: never greet them or say that again.',
+    );
+    expect(block([], 'Hi!', 'Good to have you back. Last time, we talked about pricing.')).toContain(
+      'which already picked up last time: never say that again.',
+    );
+  });
+});
