@@ -111,7 +111,8 @@ def heard_text(outcome: TurnOutcome, voice: bool) -> str:
     turn = outcome.turn
     response = turn.response if turn is not None else None
     if outcome.kind == "blocked":
-        return outcome.support_message or ""
+        # A crisis support message, or the reply the blocked turn stored (a refusal is still what they read).
+        return outcome.support_message or (response.answer if response is not None else "")
     if response is None:
         return ""
     if voice:

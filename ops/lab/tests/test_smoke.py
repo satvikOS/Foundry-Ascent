@@ -240,6 +240,18 @@ def test_max_scenarios_bounds_the_run(
     assert [r.id for r in results] == ["SM-0", "SM-1"]
 
 
+def test_a_blocked_turn_is_judged_on_what_the_founder_read(turn_payload: dict[str, Any]) -> None:
+    from conversation_lab.smoke import heard_text
+
+    data = copy.deepcopy(turn_payload)
+    data["response"]["answer"] = "I can't share other ventures' work. Let's keep working on yours."
+    turn = TurnView.model_validate(data)
+    blocked = TurnOutcome(kind="blocked", turn_id=turn.id, turn=turn, support_message=None)
+    assert heard_text(blocked, voice=False).startswith("I can't share")
+    crisis = TurnOutcome(kind="blocked", turn_id=turn.id, turn=turn, support_message="Please call 988.")
+    assert heard_text(crisis, voice=False) == "Please call 988."
+
+
 def test_decide_rules() -> None:
     base = ScenarioResult(id="x", tags={}, channel="chat")
     assert decide(base) == (True, "pass_rules_only")
