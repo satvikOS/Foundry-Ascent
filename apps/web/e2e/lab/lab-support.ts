@@ -124,6 +124,61 @@ export function turnTimer(): { started: () => void; seconds: () => number } {
   };
 }
 
+/**
+ * Counts the app's speech playback (Web Audio buffer sources) in the page, so a typed call can wait for the vEIR
+ * to finish speaking before the founder answers, as a person on a call does (typing over it is a barge-in).
+ */
+export async function trackSpeech(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const now = (): number => performance.timeOrigin + performance.now();
+    const state = { playing: 0, last: 0 };
+    (window as unknown as { __labSpeech: typeof state }).__labSpeech = state;
+    type Play = (this: AudioBufferSourceNode, ...args: number[]) => void;
+    const proto = AudioBufferSourceNode.prototype;
+    const start: Play = Reflect.get<AudioBufferSourceNode, 'start'>(proto, 'start');
+    proto.start = function (this: AudioBufferSourceNode, ...args: number[]) {
+      state.playing += 1;
+      state.last = now();
+      this.addEventListener(
+        'ended',
+        () => {
+          state.playing = Math.max(0, state.playing - 1);
+          state.last = now();
+        },
+        { once: true },
+      );
+      start.apply(this, args);
+    };
+  });
+}
+
+/**
+ * Waits until no speech has played for `quietMs` (at most `timeoutMs`); a no-op where nothing is tracked. With
+ * `firstSpeech`, it first gives the vEIR up to 8 s to start speaking (a call's greeting starts a moment after the
+ * call opens; without speech, as locally, it goes on).
+ */
+export async function waitForQuiet(
+  page: Page,
+  { quietMs = 1200, timeoutMs = 60_000, firstSpeech = false } = {},
+): Promise<void> {
+  const read = () =>
+    page.evaluate(
+      () => (window as unknown as { __labSpeech?: { playing: number; last: number } }).__labSpeech ?? null,
+    );
+  const started = Date.now();
+  const deadline = started + timeoutMs;
+  while (firstSpeech && Date.now() - started < 8_000) {
+    const state = await read();
+    if (state === null || state.last > 0) break;
+    await page.waitForTimeout(200);
+  }
+  while (Date.now() < deadline) {
+    const state = await read();
+    if (state === null || (state.playing === 0 && Date.now() - state.last > quietMs)) return;
+    await page.waitForTimeout(200);
+  }
+}
+
 export function callScreen(page: Page): Locator {
   return page.getByRole('dialog', { name: /^Call with / });
 }
@@ -200,12 +255,15 @@ export async function converse(
     out.opening = call.intro;
     try {
       for (const [index, line] of lines.entries()) {
+        // The founder answers once the vEIR has finished speaking (the greeting, or the last reply).
+        await waitForQuiet(page, { firstSpeech: index === 0 });
         const timer = turnTimer();
         timer.started();
         await typeOnCall(page, line);
         out.replies.push(await replyOf(page, out.sessionId, index + 1, true));
         out.turnSeconds.push(timer.seconds());
       }
+      await waitForQuiet(page);
     } finally {
       await hangUp(page);
     }

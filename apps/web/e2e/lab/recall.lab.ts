@@ -6,6 +6,7 @@ import {
   errorName,
   privateDir,
   readScenarios,
+  trackSpeech,
   writePrivate,
   type Captured,
 } from './lab-support';
@@ -42,6 +43,7 @@ test.describe('conversation lab: recall', () => {
         test.skip(true, 'budget reached');
         return;
       }
+      await trackSpeech(page);
       await acknowledgeNotices(page);
       const record: {
         id: string;
