@@ -367,6 +367,39 @@ describe('starting a call', () => {
     }
   });
 
+  it('chooses, phrases and keeps the opener in one transaction before it responds (wave 7 review)', async () => {
+    let transactions = 0;
+    const db = new Proxy(h.t.db, {
+      get(target, prop) {
+        const value: unknown = Reflect.get(target, prop, target);
+        if (typeof value !== 'function') return value;
+        const fn = value as (...args: unknown[]) => unknown;
+        if (prop !== 'withContext') return fn.bind(target);
+        return (...args: unknown[]) => {
+          transactions += 1;
+          return fn.apply(target, args);
+        };
+      },
+    });
+    const counted = createCore({
+      db,
+      gateway: h.gateway,
+      config: h.config,
+      objectStore: h.objectStore,
+      jobQueue: h.jobQueue,
+    });
+    const sessionId = await newSession('maya', 'quietquad');
+    transactions = 0;
+    const started = StartCallResponse.parse(
+      await counted.calls.start(ctx.maya, sessionId, { inputMode: 'typed' }),
+    );
+    expect(started.intro).not.toBeNull();
+    // The call itself, then its opener chosen, said and kept: no third round before the greeting can be spoken.
+    expect(transactions).toBe(2);
+    expect((await h.core.sessions.get(ctx.maya, sessionId)).session.opener).toBe(started.intro?.text);
+    await endCall('maya', started.call.id);
+  });
+
   it('starts with typed input where speech recognition is unavailable or fails', async () => {
     const bare = createCore({
       db: h.t.db,

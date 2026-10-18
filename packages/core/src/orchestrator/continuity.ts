@@ -267,7 +267,8 @@ export interface ChosenOpener {
   readonly byPerson: boolean;
   /**
    * What it is about, when it was phrased around a thread or the last conversation's subject (a call's greeting is
-   * phrased around it in one sentence); null for a stored sentence or a line that names nothing.
+   * phrased around it in one sentence); null for a line that names nothing (the generic invitation); absent for a
+   * stored sentence (a person's, or the notebook's), which a greeting reads itself (`readOpener`).
    */
   readonly subject?: OpenerSubject | null;
 }
@@ -372,11 +373,12 @@ export async function chooseOpener(
     (latest.withThisVeir &&
       notebook?.updatedAt != null &&
       Date.parse(notebook.updatedAt) > Date.parse(latest.lastActivityAt));
-  const drawn = (text: string, subject: OpenerSubject | null = null): ChosenOpener => ({
+  // A stored sentence's subject is read from it (undefined); a line phrased around a thread carries its own.
+  const drawn = (text: string, subject?: OpenerSubject | null): ChosenOpener => ({
     text,
     sourceSessionId: source ?? null,
     byPerson: false,
-    subject,
+    ...(subject === undefined ? {} : { subject }),
   });
   if (stored !== null && current && !fromSomeoneElse) {
     const topic = notebook?.content.nextTopic ?? null;

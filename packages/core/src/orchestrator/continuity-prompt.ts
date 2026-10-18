@@ -327,44 +327,87 @@ export interface OpenerSubject {
   readonly text: string;
 }
 
+/** Words a clause opens with, never a noun phrase said mid-sentence: subject pronouns and their contractions. */
+const CLAUSE_START =
+  /^(?:i|i'm|i've|i'll|i'd|we|we're|we've|we'll|we'd|you|you're|you've|you'll|you'd|they|they're|they've|they'll|they'd|he|he's|he'll|he'd|she|she's|she'll|she'd|it|it's|it'll|it'd|that's|there's|let's)(?![\p{L}'])/iu;
+/** Question words: a phrase opening with one is a clause ("where we left off yesterday"), unless it is the question. */
+const WH_START = /^(?:where|what|when|who|whom|why|how|which|whether)(?![\p{L}'])/iu;
+/** A subject pronoun with its verb anywhere ("the union said they'll promote us"): a clause, not a phrase. */
+const PRONOUN_CLAUSE =
+  /(?<![\p{L}'])(?:i|we|you|they|he|she|it)(?:'(?:ll|re|ve|d|m|s)|\s+(?:will|would|are|were|have|had|is|was|am|can|could|should|did|do|does|said|say|says))(?![\p{L}'])/iu;
+
 /**
- * What a stored opening sentence is about, read from the shapes openers take ("Last time you planned five
- * library-staff interviews. How did they go?", "…we left off on the pilot pricing…", "…we talked about
- * per-library pricing…"), so a call can greet around it in one sentence; null for any other sentence.
+ * Whether `phrase` (the words an opener says it was about) is a clause cut from a sentence rather than something to
+ * name mid-sentence (LAB-R3b, "we left off on They'll promote QuietQuad"): it opens with a pronoun or a capitalised
+ * everyday word (a sentence's first word), or a pronoun and its verb sit in it.
  */
-export function subjectOfOpener(text: string): OpenerSubject | null {
+function isClauseFragment(phrase: string): boolean {
+  if (CLAUSE_START.test(phrase) || PRONOUN_CLAUSE.test(phrase)) return true;
+  const first = /^\p{Lu}[\p{Ll}'’-]+(?![\p{L}])/u.exec(phrase)?.[0];
+  return first !== undefined && isEverydayWord(first.replace(/['’]s$/, ''));
+}
+
+/** Longest phrase read from a stored opener (a greeting shortens it to fit; see calls.ts `repeatGreeting`). */
+const OPENER_PHRASE_CHARS = 120;
+
+/**
+ * What a stored opening sentence is about, read from the shapes openers take, or why it cannot be said: a subject;
+ * `fragment` when it has one of those shapes around a clause cut from the founder's line (never said again); null
+ * for any other sentence. "Said you'd X", "were going to X" and "planned to X" are a plan: `your plan to X`.
+ */
+export function readOpener(text: string): OpenerSubject | 'fragment' | null {
   const flat = text.replace(/[‘’ʼ]/g, "'").replace(/\s+/g, ' ').trim();
-  const phrase = (raw: string | undefined): string | null => {
+  /** The phrase a shape names (`{ cut }`), `fragment`, or null when it names nothing sayable. */
+  const phrase = (
+    raw: string | undefined,
+    question = false,
+  ): { readonly cut: string } | 'fragment' | null => {
     const cut = (raw ?? '').split(/[.!?;:]|,\s|\s—\s|\s-\s/)[0]?.trim() ?? '';
-    return cut === '' || cut.length > 60 || topicWords(cut).length === 0 ? null : cut;
+    if (cut === '' || cut.length > OPENER_PHRASE_CHARS || topicWords(cut).length === 0) return null;
+    if (isClauseFragment(cut)) return 'fragment';
+    // A question word opens a clause ("pick up where we left off yesterday"): a subject only as the question asked.
+    return !question && WH_START.test(cut) ? null : { cut };
   };
-  const planned = /\blast time,? you (?:planned|were going|said you'd|said you would)( to)? (.+)$/i.exec(
-    flat,
-  );
+  const planned =
+    /\blast time,? you (planned|were (?:going|planning|hoping)|said you'd|said you would|said you were going|wanted|hoped)( to)? (.+)$/i.exec(
+      flat,
+    );
   if (planned !== null) {
-    const what = phrase(planned[2]);
-    if (what === null) return null;
-    if (planned[1] !== undefined) return { kind: 'thread', text: `your plan to ${what}` };
+    const what = phrase(planned[3]);
+    if (what === null || what === 'fragment') return what;
+    // "said you'd email the dean": a plan, never a noun phrase ("how did email the dean go?").
+    if (planned[2] !== undefined || /^said/i.test(planned[1] ?? '')) {
+      return { kind: 'thread', text: `your plan to ${what.cut}` };
+    }
+    if (!/^planned$/i.test(planned[1] ?? '')) return null;
     return {
       kind: 'thread',
-      text: /^(?:\d|one|two|three|four|five|six|seven|eight|nine|ten)\b/i.test(what) ? `the ${what}` : what,
+      text: /^(?:\d|one|two|three|four|five|six|seven|eight|nine|ten)\b/i.test(what.cut)
+        ? `the ${what.cut}`
+        : what.cut,
     };
   }
   const left = /\b(?:we left off on|come back to|pick up|we were on)\s+(.+)$/i.exec(flat);
   if (left !== null) {
     const what = phrase(left[1]?.replace(/,? or (?:is )?something else.*$/i, ''));
-    return what === null ? null : { kind: 'thread', text: what };
+    return what === null || what === 'fragment' ? what : { kind: 'thread', text: what.cut };
   }
   const talked = /\bwe (?:talked|spoke) about\s+(.+)$/i.exec(flat);
   if (talked !== null) {
-    const what = phrase(talked[1]);
-    if (what === null) return null;
-    return {
-      kind: /^(?:whether|how|what|which|when|where|who)\b/i.test(what) ? 'question' : 'topics',
-      text: what,
-    };
+    const what = phrase(talked[1], true);
+    if (what === null || what === 'fragment') return what;
+    return { kind: WH_START.test(what.cut) ? 'question' : 'topics', text: what.cut };
   }
   return null;
+}
+
+/**
+ * What a stored opening sentence is about (see {@link readOpener}), so a call can greet around it in one sentence;
+ * null for any other sentence and for one that names a clause fragment.
+ */
+export function subjectOfOpener(text: string): OpenerSubject | null {
+  const read = readOpener(text);
+  return read === 'fragment' ? null : read;
 }
 
 /** What the last conversation was about (never a thread: see {@link OpenerSubject}). */

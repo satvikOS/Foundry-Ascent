@@ -593,8 +593,11 @@ test.describe('vEIR calls', () => {
         expect(intro).toMatch(/^Hi Maya, /);
         expect(intro.length).toBeLessThanOrEqual(90);
         expect(intro).not.toContain('what would you like to work on?');
-        expect(intro).toMatch(
-          /last time|pick up|carry on|land on|where are things|did you get to|how did|we talked about|pric/i,
+        // It names what the first call was about (pricing), in a sentence that reads right: never a clause spliced
+        // in as the topic ("how did where we left off yesterday go?", "shall we pick up They'll…").
+        expect(intro).toMatch(/pric/i);
+        expect(intro).not.toMatch(
+          /\b(?:how did|with|pick up|carry on with|land on) (?:where|what|when|how|who|they|we|it|email|call)\b/i,
         );
         await expectNoBareEirName(page, 'the second call');
       });

@@ -76,6 +76,28 @@ describe('topicOf: summarised, never quoted', () => {
   it('finds nothing to name in filler', () => {
     expect(topicOf('Hi there, ok')).toBeNull();
   });
+
+  it('never makes a topic of a clause fragment: a pronoun and its verb are no noun phrase (LAB-R3b)', () => {
+    for (const line of [
+      "They'll promote QuietQuad if we add group booking.",
+      "The student union said they'll promote QuietQuad if we add group booking.",
+      'Big news! The union will promote us if we add group booking.',
+      "She'll review the budget on Friday.",
+      "It's the SSO question that worries them.",
+    ]) {
+      const topic = topicOf(line)?.text ?? '';
+      expect(topic, line).not.toMatch(
+        /^(?:they|they'll|she'll|he'll|it's|it'll|we|we'll|you'll|i|i'll)\b|^(?:promote|add|review)\b/i,
+      );
+    }
+    expect(topicOf("They'll promote QuietQuad if we add group booking.")?.text).toMatch(
+      /QuietQuad|group booking/,
+    );
+    // "Big news!" names nothing: the news itself does.
+    expect(topicOf('Big news! The union will promote us if we add group booking.')?.text).toBe(
+      'group booking',
+    );
+  });
 });
 
 describe('addressFounder (LAB-U2: said to the founder, names in their real case)', () => {

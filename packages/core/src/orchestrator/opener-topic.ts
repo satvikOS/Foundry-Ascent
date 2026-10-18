@@ -120,7 +120,8 @@ export const FILLER = new Set(
     'hi hello hey hiya howdy yo hullo greetings morning afternoon evening good day night test testing tested ' +
     'hear me can you there are ok okay sure yes yeah yep yup no nope nah thanks thank cheers please sorry um ' +
     'uh umm hmm right great cool fine well again back just quick question something talk chat call start let ' +
-    'what how about anything want would like need help got minute moment am doing do going today now here'
+    'what how about anything want would like need help got minute moment am doing do going today now here ' +
+    'news big huge exciting update updates guess'
   ).split(' '),
 );
 
@@ -164,7 +165,20 @@ const BREAKERS = new Set(
     'love hate sure ok okay well right great good bad hi hey hello thanks please quick question still even already ' +
     'now today tomorrow yesterday week since because while until though although thing things stuff something ' +
     'anything everything nothing one lot lots pays month months year years day days hour hours minute minutes ' +
-    'time times long ago different same other single whole'
+    "time times long ago different same other single whole they'll they've they'd he'll he's he'd she'll she's " +
+    "she'd it'll it'd you'll you've you'd that's that'll there's here's let's who's what's won't can't don't " +
+    "doesn't didn't isn't aren't wasn't weren't shouldn't wouldn't couldn't haven't hasn't hadn't"
+  ).split(' '),
+);
+/**
+ * Words after which the next word is a verb, not the start of a noun phrase (a subject pronoun, a modal, "to"):
+ * "they'll promote QuietQuad" and "if we add group booking" name no "promote QuietQuad" or "add group booking"
+ * (LAB-R3b: "we talked about They'll promote QuietQuad").
+ */
+const BEFORE_A_VERB = new Set(
+  (
+    "i we you they he she it i'll we'll you'll they'll he'll she'll it'll i'd we'd you'd they'd he'd she'd " +
+    "will would can could should shall may might must to don't doesn't didn't won't can't let's"
   ).split(' '),
 );
 const DETERMINERS = new Set([
@@ -226,6 +240,13 @@ function nounPhrase(sentence: string): Phrase | null {
       determiner = first.toLowerCase();
       words.push(determiner);
       j += 1;
+    }
+    // A lower-case word right after a subject or a modal is its verb ("they'll promote …", "we add …"): no phrase
+    // starts there ("What would Corin say?" still names Corin).
+    const before = (raw[i - 1] ?? '').replace(/^[^\p{L}']+|[^\p{L}']+$/gu, '').toLowerCase();
+    if (determiner === null && BEFORE_A_VERB.has(before) && /^\p{Ll}/u.test(first)) {
+      i += 1;
+      continue;
     }
     let content = 0;
     let rejected = false;
