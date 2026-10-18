@@ -6,7 +6,10 @@ the environment the lab workflow sets up (GitHub OIDC → a least-privilege role
 
 Cost: every call reports Bedrock's token usage; the price per million tokens comes from ``PRICES`` (or explicit
 overrides) and is charged against the run's ``--max-cost-usd`` together with the app's own turn costs. An unknown
-model is priced at the most expensive row, so a budget cap stays conservative rather than optimistic.
+model is priced at ``FALLBACK_PRICE``, at least the dearest text model Bedrock serves (Claude Opus 4 / 4.1 at
+$15 / $75), so a budget cap stays conservative rather than optimistic. Prices are list prices per million tokens
+(Anthropic's published rates, which Bedrock's on-demand Claude rates follow; Amazon's for Nova); check
+https://aws.amazon.com/bedrock/pricing/ before trusting a cap to the cent.
 """
 
 from __future__ import annotations
@@ -18,16 +21,29 @@ from typing import Any
 from foundry_evals.matrix.judge import ModelReply
 
 #: USD per million tokens (input, output), by model id prefix (cross-region "us." / "global." profiles included).
+#: The first matching prefix wins, so a specific id comes before the family it shares a prefix with.
 PRICES: tuple[tuple[str, float, float], ...] = (
     ("amazon.nova-micro", 0.035, 0.14),
     ("amazon.nova-lite", 0.06, 0.24),
     ("amazon.nova-2-lite", 0.33, 2.75),
     ("amazon.nova-pro", 0.8, 3.2),
+    ("anthropic.claude-haiku-5-5", 0.1, 0.5),
     ("anthropic.claude-haiku-4-5", 1.0, 5.0),
     ("anthropic.claude-3-5-haiku", 0.8, 4.0),
+    ("anthropic.claude-sonnet-5", 2.0, 10.0),
     ("anthropic.claude-sonnet-4", 3.0, 15.0),
+    ("anthropic.claude-opus-5-5", 4.0, 20.0),
+    ("anthropic.claude-opus-5", 5.0, 25.0),
+    ("anthropic.claude-opus-4-8", 5.0, 25.0),
+    ("anthropic.claude-opus-4-7", 5.0, 25.0),
+    ("anthropic.claude-opus-4-6", 5.0, 25.0),
+    ("anthropic.claude-opus-4-5", 5.0, 25.0),
+    ("anthropic.claude-opus-4", 15.0, 75.0),
+    ("anthropic.claude-fable", 10.0, 50.0),
+    ("anthropic.claude-mythos", 10.0, 50.0),
 )
-FALLBACK_PRICE = (3.0, 15.0)
+#: An unpriced model: at least the dearest row, so an unknown judge never makes the cap optimistic.
+FALLBACK_PRICE = (15.0, 75.0)
 
 
 def price_for(model_id: str) -> tuple[float, float]:

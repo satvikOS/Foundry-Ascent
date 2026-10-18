@@ -409,7 +409,14 @@ class CalibrationReport:
     distance: float = 0.0
     unparseable: int = 0
     na_mismatch: int = 0
+    #: Criteria the human ranges score (not null), over the cases the judge answered: what it should have scored.
+    expected: int = 0
     by_criterion: dict[str, list[int]] = field(default_factory=dict)  # criterion -> [in_range, compared]
+
+    @property
+    def coverage(self) -> float | None:
+        """The share of the criteria a human scores that the judge scored too (an abstaining judge scores few)."""
+        return self.compared / self.expected if self.expected else None
 
     @property
     def agreement(self) -> float | None:
@@ -419,13 +426,20 @@ class CalibrationReport:
     def mean_distance(self) -> float | None:
         return self.distance / self.compared if self.compared else None
 
-    def passed(self, *, min_agreement: float = 0.8, max_distance: float = 0.5) -> bool:
-        agreement, distance = self.agreement, self.mean_distance
+    def passed(
+        self, *, min_agreement: float = 0.8, max_distance: float = 0.5, min_coverage: float = 0.9
+    ) -> bool:
+        """Agrees with the human ranges, misses by little, always answers, and scores (nearly) every criterion a
+        human scores: a judge that returns null for whatever it is unsure of would otherwise agree on a handful of
+        easy scores and pass."""
+        agreement, distance, coverage = self.agreement, self.mean_distance, self.coverage
         return (
             agreement is not None
             and distance is not None
+            and coverage is not None
             and agreement >= min_agreement
             and distance <= max_distance
+            and coverage >= min_coverage - 1e-12
             and self.unparseable == 0
         )
 
@@ -438,6 +452,8 @@ class CalibrationReport:
             "meanDistance": self.mean_distance,
             "unparseable": self.unparseable,
             "naMismatch": self.na_mismatch,
+            "expected": self.expected,
+            "coverage": self.coverage,
             "byCriterion": {
                 k: {"inRange": v[0], "compared": v[1]} for k, v in sorted(self.by_criterion.items())
             },
@@ -462,6 +478,8 @@ def calibrate(judge: Judge, cases: Sequence[CalibrationCase]) -> CalibrationRepo
             continue
         for criterion, bounds in case.expected.items():
             got = verdict.scores[criterion].score if criterion in verdict.scores else None
+            if bounds is not None:
+                report.expected += 1
             if bounds is None or got is None:
                 if (bounds is None) != (got is None):
                     report.na_mismatch += 1

@@ -199,6 +199,7 @@ class TestCalibration:
         assert report.mean_distance == 0
         assert report.passed()
         assert report.na_mismatch == 0
+        assert report.coverage == 1.0
 
     def test_a_judge_that_says_four_to_everything_fails(self) -> None:
         cases = load_calibration(CALIBRATION).cases
@@ -207,6 +208,31 @@ class TestCalibration:
         assert report.agreement is not None
         assert report.agreement < 0.6
         assert report.na_mismatch > 0  # it scored criteria that cannot apply
+
+    def test_a_judge_that_abstains_on_most_criteria_fails(self) -> None:
+        """Null on whatever it is unsure of, a correct score on one easy criterion: perfect agreement on a handful
+        of scores is not calibration."""
+        cases = load_calibration(CALIBRATION).cases
+
+        class Abstainer:
+            name = "abstainer"
+
+            def __init__(self) -> None:
+                self.by_id = {c.id: c for c in cases}
+
+            def score(self, request: JudgeRequest) -> JudgeVerdict:
+                case = self.by_id[request.scenario_id]
+                first = next(k for k, v in case.expected.items() if v is not None)
+                scores = {k: (case.expected[k][0] if k == first else None) for k in case.expected}  # type: ignore[index]
+                return parse_verdict(answer(scores))
+
+        report = calibrate(Abstainer(), cases)
+        assert report.agreement == 1.0
+        assert report.mean_distance == 0
+        assert report.coverage is not None
+        assert report.coverage < 0.5
+        assert not report.passed()
+        assert report.to_dict()["passed"] is False
 
     def test_an_invalid_calibration_file(self, tmp_path: Path) -> None:
         path = tmp_path / "cal.yaml"
