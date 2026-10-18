@@ -1051,6 +1051,27 @@ describe('validateCoachResponse — meta-narration (LAB-M1)', () => {
     }
   });
 
+  it('holds back SM-39’s turns: the reasoning stored as answer and spoken on a call (run 39084323076)', () => {
+    // The lab saw only `spoken_sanitized` and `spoken_truncated` on these: the streamed call reply is stored as both
+    // fields, so the spoken copy was cleaned and clamped and nothing else happened.
+    for (const reasoning of [
+      'Okay, let’s tackle this. The founder is asking whether to charge each library a flat fee or per seat. First, I need to figure out the mode. The venture is in validation with two libraries interested, so the founder needs a decision. Looking at what they said, coach mode fits, and I should give options with trade-offs and then a recommendation [E1].',
+      'Okay, let’s see. The founder just asked about the second library. First, looking at the evidence: E1 mentions three library-staff interviews and E2 the facilities budget. So the answer should connect those and end with one question.',
+    ]) {
+      const checked = validateCoachResponse(base({ answer: reasoning, spoken: reasoning }), {
+        ...opts(),
+        channel: 'voice',
+      });
+      expect(checked.blocked).toBe(true);
+      expect(checked.blockReason).toBe('invalid_schema');
+      expect(checked.response.answer).toBe(INVALID_RESPONSE_ANSWER);
+      expect(`${checked.response.answer} ${checked.response.spoken ?? ''}`).not.toMatch(
+        /founder|mode|evidence|E1/i,
+      );
+      expect(checked.results.notes.some((n) => n.startsWith('meta_narration_blocked'))).toBe(true);
+    }
+  });
+
   it('keeps a forced escalation when it holds the answer back', () => {
     const checked = validateCoachResponse(base({ answer: 'This is a social turn. Hi!' }), {
       ...opts(),

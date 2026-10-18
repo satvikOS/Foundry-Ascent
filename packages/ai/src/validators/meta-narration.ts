@@ -70,6 +70,10 @@ const CUES: readonly (readonly [MetaNarrationCue, RegExp])[] = [
         String.raw`\bhow (?:i should|should i|do i|best to|i'll|i will|i'd) (?:respond|reply)(?: (?:here|to (?:this|that|it|them|the founder|the user|their (?:message|question|greeting))))?\s*(?:[.?:,;]|$)`,
         String.raw`\blet me (?:think about|figure out|work out|decide|consider) (?:how to (?:respond|reply|answer)|what to (?:say|reply|respond)|the (?:mode|response|reply|best response|right response))\b`,
         String.raw`\b(?:let me|let's|i'll|i will) think (?:this )?(?:through )?step by step\b`,
+        // SM-39: "First, looking at the evidence: E1 mentions…"
+        // ("Looking at the evidence, your interviews show…" is speech: only an ordinal lead-in or a colon narrates.)
+        String.raw`^(?:okay,? |so,? )?(?:first|now|next|then|second)(?:ly)?[,\s]+(?:looking at|checking|reviewing|going through|scanning) (?:the |my )?(?:evidence|notes|rules|instructions|context|history|conversation state)\b`,
+        String.raw`\b(?:looking at|checking|reviewing) (?:the |my )?(?:evidence|notes|rules|instructions|context)\s*:`,
       ].join('|'),
     ),
   ],
@@ -124,7 +128,11 @@ const CUES: readonly (readonly [MetaNarrationCue, RegExp])[] = [
 
 /** A whole sentence that only opens thinking aloud: narration only when narration follows it. */
 const THINKING_ALOUD = new RegExp(
-  `${LEAD}(?:let's see|let me see|let me think|let me think about (?:this|that|it)|let me figure (?:this|it) out|hmm+|okay|ok|alright|got it|thinking)[\\s.…!,:—–-]*$`,
+  `${LEAD}(?:let's see|let me see|let me think|let me think about (?:this|that|it)|let me figure (?:this|it) out|` +
+    // SM-39: "Okay, let's tackle this. The founder is asking…"
+    `(?:let's|let me) (?:tackle|unpack|handle|address|process|break down|work through|think through|go through|look at) (?:this|that|it)|` +
+    `(?:let's|let me) break (?:this|it) down|let's (?:dig in|dive in|get into it|get started|figure (?:this|it) out)|` +
+    `hmm+|okay|ok|alright|got it|thinking|right then)[\\s.…!,:—–-]*$`,
 );
 
 function normalize(text: string): string {
@@ -218,6 +226,9 @@ export function findMetaNarration(
   return null;
 }
 
+/** Fewest words of reply before narration for it to stand as the reply (fewer: the narration opens it). */
+export const MIN_KEPT_WORDS = 6;
+
 export interface MetaNarrationCut {
   /** The text before the narration (trimmed), or '' when the narration opens it. */
   readonly text: string;
@@ -236,7 +247,9 @@ export function cutMetaNarration(text: string): MetaNarrationCut {
   const found = findMetaNarration(text);
   if (found === null) return { text, cue: null, at: null };
   const kept = text.slice(0, found.start).trimEnd();
-  const substantive = /\p{L}/u.test(kept.replace(/^[\s>#*_\-+•\d.)]+/gm, ''));
+  // A lead-in of a few words ("Okay, here goes.") is no reply: the narration opens it.
+  const words = kept.replace(/^[\s>#*_\-+•\d.)]+/gm, '').match(/\p{L}[\p{L}'’-]*/gu) ?? [];
+  const substantive = words.length >= MIN_KEPT_WORDS;
   return substantive
     ? { text: kept, cue: found.cue, at: 'later' }
     : { text: '', cue: found.cue, at: 'opening' };

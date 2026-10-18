@@ -195,6 +195,7 @@ export {
   toSpeakable,
 } from './validators/speech.js';
 export {
+  MIN_KEPT_WORDS,
   cutMetaNarration,
   findMetaNarration,
   isThinkingAloudOpener,

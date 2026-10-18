@@ -34,10 +34,28 @@ export interface AnswerPromptOptions {
   readonly allowedModes: readonly CoachMode[];
 }
 
-/** Phase A system prompt: the turn's rules, then how to write the reply as plain text. */
-export function answerSystemPrompt(system: string, options: AnswerPromptOptions): string {
+/**
+ * The call's section of the turn system prompt (`# Voice call`): the reply's output contract as two fields, `spoken`
+ * (at most 70 words) and `answer` (its transcript). It sits just before the output section, so cutting at that section
+ * kept it in a call's phase A, which then asked for two fields and, a few lines later, for the text itself with no
+ * field names. Nova 2 Lite reconciled that by reasoning in the open, and the call said it (LAB-M1: 5 of 14 call turns,
+ * 0 of about 98 typed ones). Phase A leaves the section out and says its one rule that is not about fields itself.
+ */
+export const VOICE_SECTION_MARKER = '\n# Voice call\n';
+
+/** The turn's rules for phase A: everything before the output section, without the call's field contract. */
+function phaseARules(system: string): string {
   const cut = system.lastIndexOf(OUTPUT_SECTION_MARKER);
   const rules = cut < 0 ? system : system.slice(0, cut);
+  const voice = rules.indexOf(VOICE_SECTION_MARKER);
+  if (voice < 0) return rules;
+  const end = rules.indexOf('\n\n', voice + VOICE_SECTION_MARKER.length);
+  return end < 0 ? rules.slice(0, voice) : `${rules.slice(0, voice)}${rules.slice(end)}`;
+}
+
+/** Phase A system prompt: the turn's rules, then how to write the reply as plain text. */
+export function answerSystemPrompt(system: string, options: AnswerPromptOptions): string {
+  const rules = phaseARules(system);
   const lines = [
     '',
     'Output: write your reply to the founder now, as the text itself. No JSON, no field names, no preamble.',
@@ -58,6 +76,8 @@ export function answerSystemPrompt(system: string, options: AnswerPromptOptions)
     lines.push(
       '- This is a voice call: write only what you will say aloud, at most 70 words. No Markdown, lists, headings,',
       '  citation ids like [E1], URLs, caveats or labels read out.',
+      "- The founder's message is a speech transcript and may contain recognition errors: read it charitably, and ask",
+      '  when something important is unclear.',
       `- ${SPOKEN_REGISTER}`,
       '- Follow "Conversation craft": a social turn gets a short, natural reply, not advice.',
     );

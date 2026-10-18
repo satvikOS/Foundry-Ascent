@@ -2,6 +2,7 @@ import {
   COACH_ANNOTATIONS_SCHEMA_NAME,
   COACH_RESPONSE_SCHEMA_NAME,
   CoachAnnotations,
+  MIN_KEPT_WORDS,
   SPOKEN_MAX_WORDS,
   SentenceGate,
   clampWords,
@@ -537,8 +538,11 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
   if (reply.missing) return wholeInstead('structured_output', phaseAMs, null);
   // Nothing presentable (an empty or whitespace reply, or one the Markdown subset removes entirely).
   if (gate.stats.units + gate.stats.withheld === 0) return wholeInstead('empty', phaseAMs, null);
-  // Cut before narration with nothing of the reply shown (only units withheld from the preview): write it whole.
-  if (gate.cut !== null && said.shown.trim() === '') return wholeInstead(gate.cut, phaseAMs, null);
+  // Cut before narration with no reply shown before it (nothing, units withheld from the preview, or a lead-in of a few
+  // words such as "Okay, here goes."): the reply is written whole, as the final validation would hold it back.
+  if (gate.cut !== null && (said.shown.match(/\p{L}[\p{L}'’-]*/gu) ?? []).length < MIN_KEPT_WORDS) {
+    return wholeInstead(gate.cut, phaseAMs, null);
+  }
   if (streamed.stopReason === 'max_tokens') notes.push('answer_truncated');
   // The reply was taken out of structured output, or cut where the response's other fields began.
   if (reply.shape !== 'prose') notes.push(`stream_structured_${reply.shape ?? 'unknown'}`);

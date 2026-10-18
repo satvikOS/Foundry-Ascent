@@ -271,6 +271,20 @@ describe('SentenceGate', () => {
         }
       }
       expect(run(gate(), ['This is a social turn. ', 'Hi Maya!']).units).toEqual([]);
+      // SM-39: a lead-in, then the narration. Nothing is said.
+      for (const text of [
+        'Okay, let’s tackle this. The founder is asking about pricing. First, I need to figure out the mode.',
+        'Okay, let’s see. The founder just asked about the pilot. First, looking at the evidence: E1 mentions it.',
+      ]) {
+        for (const chunks of chunkings(text)) {
+          const g = gate({ spoken: true, spokenWordBudget: 70, maxUnitChars: 280 });
+          const units: GateUnit[] = [];
+          for (const chunk of chunks) units.push(...g.push(chunk).units);
+          units.push(...g.end().units);
+          expect(units).toEqual([]);
+          expect(g.fallback).toBe('meta_narration');
+        }
+      }
     });
 
     it('holds a thinking-aloud opener until the next unit shows whether speech follows', () => {

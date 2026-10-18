@@ -50,6 +50,10 @@ const NARRATION: readonly string[] = [
   'The founder_message mentions Noor.',
   'I should not list next_actions here.',
   "Let me think step by step about what they're asking.",
+  // SM-39 (run 39084323076, a teammate's two questions on a call): both turns' stored answer and spoken.
+  'Okay, let’s tackle this. The founder is asking whether to price per library. First, I need to figure out the mode.',
+  'Okay, let’s see. The founder just asked about the pilot. First, looking at the evidence: E1 mentions three libraries.',
+  'First, looking at the evidence, E1 mentions three libraries.',
 ];
 
 /** Human speech that looks close (the calibration's near misses). None of it is narration. */
@@ -88,6 +92,10 @@ const NATURAL: readonly string[] = [
   'Your interviews show students already work around the problem [E1, E2].',
   "I'm Corin's digital twin — built from how Corin coaches. So, about the pricing call…",
   'Good to talk again. Want to pick up where we left off, or start on something new?',
+  'Based on the evidence, I’d price per library.',
+  'Looking at the evidence, your interviews show demand in exam weeks.',
+  "Let's tackle this one step at a time: first the price, then the pilot.",
+  "Let's break it down: who pays, and when?",
 ];
 
 function stringsIn(value: unknown, out: string[] = []): string[] {
@@ -222,6 +230,19 @@ describe('thinking-aloud openers', () => {
 });
 
 describe('cutMetaNarration', () => {
+  it('holds back SM-39’s replies whole: a lead-in of a few words is no reply', () => {
+    const turn1 =
+      'Okay, let’s tackle this. The founder is asking whether to price per library or per seat. First, I need to figure out the mode. The venture is in validation.';
+    const turn2 =
+      'Okay, let’s see. The founder just asked about the second library. First, looking at the evidence: E1 mentions three library interviews.';
+    expect(cutMetaNarration(turn1)).toMatchObject({ text: '', at: 'opening' });
+    expect(cutMetaNarration(turn2)).toMatchObject({ text: '', at: 'opening' });
+    expect(cutMetaNarration('Sure, here goes. The founder says hi.')).toMatchObject({
+      text: '',
+      at: 'opening',
+    });
+  });
+
   it('holds back a reply that opens with narration, whole', () => {
     const lab =
       "Okay, let's see. The founder says they have five interviews. First, I need to figure out the mode. The venture is in the discovery stage, so the next step is more interviews.";

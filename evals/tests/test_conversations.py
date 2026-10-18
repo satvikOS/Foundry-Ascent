@@ -118,6 +118,9 @@ class TestReplyGraders:
             "So the founder is asking about pricing.",
             "My reply should acknowledge the stress first.",
             "Start small. The founder_message mentions Noor.",
+            # SM-39 (run 39084323076): both turns of a teammate's call, stored as answer and spoken.
+            "Okay, let's tackle this. The founder is asking about pricing. First, I need to figure out the mode.",
+            "Okay, let's see. The founder just asked about the pilot. First, looking at the evidence: E1 mentions it.",
         ):
             assert codes(grade_reply(reply(narration))) == ["structured_leak"], narration
             heard = reply("Start small. Who pays?", voice=True, spoken="Who pays?", speech=narration)
