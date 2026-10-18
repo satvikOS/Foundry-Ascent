@@ -59,6 +59,8 @@ class Context:
     #: Only these scenarios (matrix), each run `repeat` times; voice runs its call `repeat` times.
     scenario_ids: tuple[str, ...] = ()
     repeat: int = 1
+    #: The matrix suite's scenarios: the lab's built-in set, or evals' conversation matrix (foundry_evals.matrix).
+    matrix_source: str = "builtin"
 
     @property
     def private(self) -> Path:
@@ -158,6 +160,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         recall_gap_seconds=args.recall_gap_seconds,
         scenario_ids=tuple(i.strip() for i in (args.scenarios or "").split(",") if i.strip()),
         repeat=int(args.repeat),
+        matrix_source=str(args.matrix_source),
     )
     ctx.private.mkdir(parents=True, exist_ok=True)
     ctx.public.mkdir(parents=True, exist_ok=True)
@@ -415,6 +418,10 @@ def suite_matrix(
     judge_model: str | None,
     **_: Any,
 ) -> dict[str, Any]:
+    if ctx.matrix_source == "evals":
+        return suite_matrix_evals(
+            ctx, admin=admin, guard=guard, simulator_model=simulator_model, judge_model=judge_model
+        )
     from conversation_lab.app import FOUNDER_NAME
     from conversation_lab.judge import Judge
     from conversation_lab.simulator import LlmSimulator, TemplateSimulator
@@ -454,6 +461,94 @@ def suite_matrix(
         founder_name=str(smoke["founder"]["name"]),
         llm_simulator=simulator_model is not None,
     )
+
+
+def evals_matrix_command(
+    *,
+    base_url: str,
+    scenarios: int,
+    max_cost_usd: float,
+    simulator_model: str | None,
+    judge_model: str | None,
+    private: Path,
+) -> list[str]:
+    """`python -m foundry_evals run --suite matrix` against the lab's app: Bedrock simulator and judge when the
+    probes found them, transcripts and judge rationales to the private folder, reports (ids, codes, numbers) beside
+    them."""
+    cmd = [
+        sys.executable,
+        "-m",
+        "foundry_evals",
+        "run",
+        "--suite",
+        "matrix",
+        "--base-url",
+        base_url,
+        "--matrix-budget",
+        str(scenarios),
+        "--max-cost-usd",
+        f"{max_cost_usd:.2f}",
+        "--max-turns",
+        "600",
+        "--turn-rate-limit",
+        "1000",
+        "--out",
+        str(private / "evals-matrix" / "out"),
+        "--private-out",
+        str(private / "evals-matrix" / "private"),
+        "--include-transcripts",
+    ]
+    if simulator_model:
+        cmd += ["--simulator", "llm", "--simulator-model", simulator_model]
+    if judge_model:
+        cmd += ["--judge", "--judge-model", judge_model]
+    return cmd
+
+
+def suite_matrix_evals(
+    ctx: Context, *, admin: Any, guard: Any, simulator_model: str | None, judge_model: str | None
+) -> dict[str, Any]:
+    """The conversation matrix of evals/ (w6-matrix) run against the lab's app. Its report holds ids, codes and
+    numbers only (evals' reporting contract) and is printed as it is; its log and transcripts stay private."""
+    remaining = max(0.0, guard.app_budget + guard.lab_budget - guard.snapshot()["total_usd"])
+    cmd = evals_matrix_command(
+        base_url=admin.base_url,
+        scenarios=ctx.max_scenarios,
+        max_cost_usd=remaining,
+        simulator_model=simulator_model,
+        judge_model=judge_model,
+        private=ctx.private,
+    )
+    env = {**ctx.env, "FA_OWNER_ACCESS_CODE": ctx.env.get("E2E_OWNER_ACCESS_CODE", "")}
+    log_dir = ctx.private / "evals-matrix"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    with (log_dir / "evals.log").open("wb") as log:
+        try:
+            done = subprocess.run(  # noqa: S603 - fixed arguments
+                cmd,
+                cwd=REPO / "evals",
+                env=env,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                timeout=50 * 60,
+                check=False,
+            )
+            code = done.returncode
+        except subprocess.TimeoutExpired:
+            code = 124
+    out = ctx.private / "evals-matrix" / "out"
+    report = (out / "report.md").read_text(encoding="utf-8") if (out / "report.md").is_file() else None
+    results = out / "results.json"
+    document = json.loads(results.read_text(encoding="utf-8")) if results.is_file() else {}
+    cases = [c for c in document.get("cases", []) if isinstance(c, dict)]
+    return {
+        "source": "evals conversation matrix",
+        "evals_exit": code,
+        "passed": sum(1 for c in cases if c.get("status") == "passed"),
+        "run": sum(1 for c in cases if c.get("status") in ("passed", "failed", "error")),
+        "evals_report_md": report,
+        "stopped_by": None,
+    }
 
 
 def matrix_result(
@@ -547,6 +642,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     run.add_argument("--scenarios", default="", help="matrix: only these scenario ids, comma-separated")
     run.add_argument(
         "--repeat", type=int, default=1, help="matrix: run each scenario this many times; voice: calls"
+    )
+    run.add_argument(
+        "--matrix-source",
+        choices=("builtin", "evals"),
+        default="builtin",
+        help="matrix: the lab's 40 scenarios, or evals' conversation matrix (run --suite matrix)",
     )
     run.add_argument("--out", required=True)
     run.add_argument("--api-port", type=int, default=8787)

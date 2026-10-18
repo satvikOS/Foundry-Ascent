@@ -150,6 +150,32 @@ def _log_tables(logs: Mapping[str, Any] | None) -> list[str]:
 def _suite_tables(suite: str, result: Mapping[str, Any]) -> list[str]:
     out: list[str] = []
     scenarios: Sequence[Mapping[str, Any]] = result.get("scenarios") or []
+    greeting = result.get("greeting") if suite == "recall" else None
+    if greeting:
+        out.append(
+            f"Greeting (RG-01): typed while the greeting played {greeting.get('greeting_playing_when_typed')}; "
+            f"call opened → turn sent {greeting.get('call_to_turn_ms')} ms; typed → turn sent "
+            f"{greeting.get('typed_to_turn_ms')} ms; greeting stopped {greeting.get('greeting_stopped')}; "
+            f"{'pass' if greeting.get('passed') else 'fail'}"
+            + (f" ({greeting['error']})" if greeting.get("error") else "")
+            + "."
+        )
+        out.append("")
+    openers = result.get("openers") if suite == "recall" else None
+    if openers:
+        flagged = [
+            o for o in openers if o["quoted_question"] or o["lowercase_name"] or o["third_person_name"]
+        ]
+        out.append(
+            f"Openers: {len(openers)} checked, {len(flagged)} flagged"
+            + (
+                ": " + ", ".join(f"{o['id']} {o['conversation']}" for o in flagged)
+                if flagged
+                else " (no quoted question, no lower-case or third-person name)"
+            )
+            + "."
+        )
+        out.append("")
     if suite == "recall" and scenarios:
         out.append("| Scenario | Passed | Why | Facts named | Judge accuracy / natural / invented |")
         out.append("| --- | --- | --- | --- | --- |")
@@ -167,6 +193,13 @@ def _suite_tables(suite: str, result: Mapping[str, Any]) -> list[str]:
             out.append(
                 f"| {s['id']} | {'yes' if s['passed'] else 'no'} | {s['reason']} | {facts} | {judge or '-'} |"
             )
+        out.append("")
+    if suite == "matrix" and result.get("evals_report_md"):
+        out.append(
+            f"Source: {result.get('source')} (exit {result.get('evals_exit')}). Its report (ids, codes, numbers):"
+        )
+        out.append("")
+        out.append(str(result["evals_report_md"]).replace("\n# ", "\n#### ").replace("\n## ", "\n#### "))
         out.append("")
     if suite == "matrix" and scenarios:
         out.append("| Scenario | Passed | Why | Judge mean | Findings |")

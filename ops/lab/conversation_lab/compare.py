@@ -65,6 +65,18 @@ def voice_stage_medians(logs: Mapping[str, Any]) -> dict[str, float]:
     return out
 
 
+def _flagged(openers: Any) -> int | None:
+    """Openings that quote a question or name the founder in lower case or in the third person."""
+    if not isinstance(openers, list):
+        return None
+    return sum(
+        1
+        for o in openers
+        if isinstance(o, Mapping)
+        and (o.get("quoted_question") or o.get("lowercase_name") or o.get("third_person_name"))
+    )
+
+
 def _rate(cell: Mapping[str, Any] | None) -> float | None:
     if not cell or not cell.get("run"):
         return None
@@ -131,6 +143,16 @@ def compare(current: Mapping[str, Any], baseline: Mapping[str, Any]) -> dict[str
             0,
         )
         row("self-interruptions", voice_b.get("self_interruptions"), voice_c.get("self_interruptions"), 0)
+    greet_b, greet_c = base.get("greeting") or {}, cur.get("greeting") or {}
+    if greet_b or greet_c:
+        row(
+            "greeting: call opened → turn sent (ms)",
+            greet_b.get("call_to_turn_ms"),
+            greet_c.get("call_to_turn_ms"),
+            0,
+        )
+    if base.get("openers") is not None or cur.get("openers") is not None:
+        row("openers flagged", _flagged(base.get("openers")), _flagged(cur.get("openers")), 0)
     row(
         "spend (USD)",
         (baseline.get("spend") or {}).get("total_usd"),

@@ -70,6 +70,17 @@ test.describe('conversation lab: recall', () => {
     });
     try {
       const call = await startCall(page);
+      // Type while the greeting is being spoken: wait (at most 8 s) for its audio to start.
+      await expect
+        .poll(
+          () =>
+            page.evaluate(
+              () => ((window as unknown as { __labSpeech?: { playing: number } }).__labSpeech?.playing ?? 0) > 0,
+            ),
+          { timeout: 8_000, intervals: [50, 100] },
+        )
+        .toBe(true)
+        .catch(() => undefined);
       const reply = callScreen(page).getByRole('textbox', { name: /^Reply to / });
       await reply.fill('Quick one before you go on: should the pilot start in the east library?');
       // Whether the greeting was still being spoken when the founder sent the line.

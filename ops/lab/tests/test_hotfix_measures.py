@@ -275,3 +275,37 @@ def test_comparison_sets_the_voice_turn_stages_side_by_side() -> None:
     }
     assert rows["voice turn median firstTokenToDeltaMs (ms)"]["change"] == 103
     assert rows["voice turn median timeToFirstTokenMs (ms)"]["now"] == 320.0
+
+
+def test_recall_comparison_and_report_show_the_greeting_and_openers() -> None:
+    from conversation_lab.report import render
+
+    flags = [
+        {
+            "id": "RC-02",
+            "conversation": "first",
+            "quoted_question": True,
+            "lowercase_name": False,
+            "third_person_name": False,
+        }
+    ]
+    base = {
+        "suite": "recall",
+        "result": {"passed": 3, "run": 3, "greeting": {"call_to_turn_ms": 11867}, "openers": flags},
+    }
+    clean = [{**flags[0], "quoted_question": False}]
+    greeting = {
+        "call_to_turn_ms": 124,
+        "typed_to_turn_ms": 13,
+        "greeting_playing_when_typed": True,
+        "greeting_stopped": True,
+        "passed": True,
+        "error": None,
+    }
+    now = {"suite": "recall", "result": {"passed": 2, "run": 3, "greeting": greeting, "openers": clean}}
+    rows = {r["metric"]: r for r in compare(now, base)["headline"]}
+    assert rows["greeting: call opened → turn sent (ms)"]["change"] == -11743
+    assert rows["openers flagged"] == {"metric": "openers flagged", "baseline": 1, "now": 0, "change": -1}
+    text = render({**now, "spend": {}, "models": {}})
+    assert "call opened → turn sent 124 ms; typed → turn sent 13 ms; greeting stopped True; pass." in text
+    assert "Openers: 1 checked, 0 flagged" in text

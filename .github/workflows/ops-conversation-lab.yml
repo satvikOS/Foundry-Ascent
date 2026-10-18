@@ -54,6 +54,11 @@ on:
         description: matrix - run each chosen scenario this many times; voice - calls in a row (1 to 5 for voice, 1 to 10 for matrix)
         type: string
         default: '1'
+      matrix_source:
+        description: matrix only - the lab's 40 scenarios (builtin) or evals' conversation matrix (evals)
+        type: choice
+        options: [builtin, evals]
+        default: builtin
       baseline_run_id:
         description: Compare with an earlier lab run (its run id; a committed ops/lab/baselines file or its public summary artifact); empty = no comparison
         type: string
@@ -175,6 +180,7 @@ jobs:
       LAB_BASELINE_RUN_ID: ${{ inputs.baseline_run_id }}
       LAB_SCENARIO_IDS: ${{ inputs.scenario_ids }}
       LAB_REPEAT: ${{ inputs.repeat }}
+      LAB_MATRIX_SOURCE: ${{ inputs.matrix_source }}
     steps:
       - name: Validate the sealing key, set the output folder
         env:
@@ -297,7 +303,7 @@ jobs:
           python -m conversation_lab run --suite "${LAB_SUITE}" --budget-usd "${LAB_BUDGET_USD}" \
             --max-scenarios "${LAB_MAX_SCENARIOS}" --out "${LAB_OUT}" \
             --baseline-run-id "${LAB_BASELINE_RUN_ID}" --baseline-file "${RUNNER_TEMP}/baseline/summary.json" \
-            --scenarios "${LAB_SCENARIO_IDS}" --repeat "${LAB_REPEAT}"
+            --scenarios "${LAB_SCENARIO_IDS}" --repeat "${LAB_REPEAT}" --matrix-source "${LAB_MATRIX_SOURCE}"
 
       - name: Seal the private outputs
         if: always() && env.LAB_PUBLIC_KEY != ''
