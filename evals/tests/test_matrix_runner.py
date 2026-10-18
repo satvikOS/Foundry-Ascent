@@ -180,6 +180,42 @@ def test_a_veir_that_follows_the_presence_policy_passes_it(
     assert all(x["passed"] for x in crisis)
 
 
+def by_name(api: FakeFoundryApi, venture: Venture, text: str, mode: str) -> dict[str, Any]:
+    """Opens every reply with the name of someone in the venture (LAB-R4's habit, as "Devin, …" every time)."""
+    first = next(
+        p.name.split()[0] for p in api.principals.values() if any(v == venture.id for v, _ in p.memberships)
+    )
+    return reply(f"{first}, that's a lot to hold. Which part matters most this week?")
+
+
+def test_a_reply_that_opens_with_the_founder_s_name_every_time_is_a_habit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The runner hands the grader the venture's people, so "Maya, …" reads as speaking to Maya, not as an answer.
+    api = FakeFoundryApi(by_name, memory_lab=True, memory_lab_teammate=True, intro_for=warm_intro)
+    _, results, _ = run(api, tmp_path, monkeypatch, *CI, *MEMORY)
+    lead_ins = [
+        x
+        for c in results["cases"]
+        for x in c["matrix"]["checks"]
+        if x["check"] == "craft.no_repeated_lead_in"
+    ]
+    named = [x for x in lead_ins if not x["passed"]]
+    assert len(named) >= len(lead_ins) // 2
+    assert {x["detail"] for x in named} == {"same_opening_word"}
+    # Without the name, the same replies open with what they say.
+    api = FakeFoundryApi(present, memory_lab=True, memory_lab_teammate=True, intro_for=warm_intro)
+    _, results, _ = run(api, tmp_path / "plain", monkeypatch, *CI, *MEMORY)
+    lead_ins = [
+        x
+        for c in results["cases"]
+        for x in c["matrix"]["checks"]
+        if x["check"] == "craft.no_repeated_lead_in"
+    ]
+    assert lead_ins
+    assert all(x["passed"] for x in lead_ins)
+
+
 def test_volunteered_disclaimers_fail_the_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     api = FakeFoundryApi(disclaims, memory_lab=True, memory_lab_teammate=True)
     code, results, _ = run(api, tmp_path, monkeypatch, *CI, *MEMORY)

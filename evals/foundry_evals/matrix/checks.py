@@ -664,57 +664,105 @@ def first_sentences(text: str, n: int = 2) -> str:
 
 #: Where a clause ends: a comma, a stop, a colon or semicolon before a space (not "4.5"), or a dash.
 CLAUSE_END = re.compile(r"[,.!?;:](?=\s|$)|[\u2014\u2013]|\s-\s")
-#: A reply's lead-in is its first clause when it is this short ("Great", "Great news", "Got it", "Maya"): the words
-#: a reply opens with before it says anything.
+#: A short sentence that says nothing yet ("Hi Maya.", "Got it.", "Great news, Maya."), skipped when a reply's
+#: opening is compared with the opener's.
 LEAD_IN_MAX_WORDS = 3
-#: First words of a short plain statement, not a lead-in ("I'd wait.", "The bursar.", "Per branch.").
-PLAIN_STARTS = frozenset(
-    {
-        "i", "i'd", "i'm", "i'll", "i've", "you", "you're", "you'd", "you'll", "we", "we're", "we'd", "we'll",
-        "it", "it's", "its", "they", "they're", "he", "she", "the", "a", "an", "this", "these", "those", "there",
-        "my", "your", "our", "their", "if", "when", "per", "to", "in", "on", "for", "with", "at", "by", "of",
-        "and", "but", "or", "not", "one", "two", "three",
-    }
-)  # fmt: skip
 #: Words that open a reply as a verbal habit whatever follows ("So the pricing…", "Okay let's…", "Good to talk
-#: again.", "Thanks for…").
+#: again.", "Thanks for…", "Absolutely."). A plain answer is not one: "Yes," "No," "Probably", "Hartwell,", "Fifty
+#: pounds.", "Start small.", "Why?", "1." open a reply with what it says.
 DISCOURSE_MARKERS = frozenset(
     {
         "okay", "ok", "so", "right", "alright", "great", "good", "sure", "absolutely", "totally", "honestly",
         "well", "perfect", "fair", "nice", "cool", "love", "hmm", "ah", "oh", "look", "listen", "anyway",
-        "thanks", "thank",
+        "thanks", "thank", "awesome", "amazing", "excellent", "brilliant", "fantastic", "wonderful", "lovely",
+        "exactly", "indeed", "understood", "noted", "gotcha", "congrats", "congratulations", "certainly",
+        "interesting", "wow", "appreciate",
     }
 )  # fmt: skip
+#: Greetings: a reply that opens with any of them opens like the next one that does ("Hi Maya!" then "Hey Maya,").
+SALUTATIONS = frozenset(
+    {"hi", "hey", "hello", "hiya", "heya", "howdy", "welcome", "morning", "evening", "yo"}
+)
+#: Acknowledgements that open a reply as a habit when they are its whole first clause, a name aside ("Got it.",
+#: "Makes sense, Maya.", "I see."), never the start of a statement ("I see two options.").
+ACKNOWLEDGEMENTS = tuple(
+    tuple(phrase.split())
+    for phrase in (
+        "got it", "got you", "makes sense", "that makes sense", "i see", "i hear you", "i get it", "i understand",
+        "of course", "no problem", "no worries", "sounds good", "sounds great", "fair enough", "well done",
+        "thank you", "glad to hear", "big news", "that's great", "that's fair", "that's huge", "that's big",
+        "that's exciting", "that's awesome", "that's amazing", "that's brilliant", "that's wonderful",
+        "that's a win", "that's progress",
+    )
+)  # fmt: skip
 #: A clause of the conversation's opening line said again is a repeat from this many words ("Good to talk again");
-#: a two-word hello back ("Hi Maya!") is a hello.
+#: a shorter one only when it is the line's greeting said again ("Welcome back, Maya!").
 OPENER_CLAUSE_MIN_WORDS = 3
-#: A bare hello from the founder (the opening line's question still stands: the reply is a hello back).
-HELLO_INTENTS = frozenset({"continuity:hello", "relational:greeting"})
 #: Turns where saying the opening line's subject again is the answer: a recall question, a topic return, a repeat
 #: the founder asked for (and, by intent, a sincere "who are you?": the honest line may say the introduction again).
 SAYS_THE_PAST_AGAIN = frozenset(
     {"continuity.recall", "continuity.attributes_teammate", "topic.returns", "request.repeats_gist"}
 )
+#: The founder greets (a bare hello back to it is a hello, not the opener's greeting said again).
+GREETING_INTENTS = frozenset({"continuity:hello", "relational:greeting"})
+#: Words that frame a question or a recall rather than name what it is about ("Last time you planned to…", "How did
+#: it go today?", "How are you doing?", "Welcome back").
+FRAME_WORDS = frozenset(
+    (  # noqa: SIM905 - a word list reads best as one string
+        "last time times planned plan going went said talked spoke left today tomorrow yesterday week weekend "
+        "morning tonight earlier later soon since still again really back welcome good great nice talk hear "
+        "doing done like sure first else something anything think know mind maybe let's what's how's that's "
+        "it's actually"
+    ).split()
+)
+#: A question that hands the conversation over without a subject of its own: two of them in a row ask the same
+#: thing ("What would you like to work on?" then "What's on your mind today?").
+OPEN_QUESTION = re.compile(
+    r"^(?:so |and |okay |ok )?(?:"
+    rf"what{APOS}s on your mind|what is on your mind|(?:is there )?anything (?:else )?on your mind|"
+    r"what (?:would you like|do you want|shall we|should we|are we|will we|can we|do we)(?: to)? "
+    r"(?:work(?:ing)? on|talk(?:ing)? about|focus(?:ing)? on|cover|tackle|look(?:ing)? at|get into|dig into|"
+    r"start with)|"
+    r"where (?:would you like|do you want|shall we|should we|do we)(?: to)? (?:start|begin)|"
+    r"(?:what|how) can i help(?: you)?(?: with)?|what brings you(?: here| back| in| by)?"
+    r")(?: (?:today|first|now|this week|this time|then))?$",
+    re.IGNORECASE,
+)
+#: A question that offers a subject as one choice among others: not that subject's question asked again ("The
+#: facilities call, or something else first?").
+OPEN_CHOICE = re.compile(
+    r"\bor (?:is there )?(?:something|anything|somewhere) (?:else|new|different)\b|\bor (?:something|anything)$"
+)
+
+
+def _plain(word: str) -> str:
+    return word.replace("\u2019", "'")
 
 
 def clauses(text: str) -> list[tuple[str, ...]]:
     """The clauses of ``text`` as normalised words (split at commas, stops, colons, semicolons and dashes)."""
-    return [tuple(w) for w in (words(c) for c in CLAUSE_END.split(text)) if w]
+    return [tuple(_plain(x) for x in w) for w in (words(c) for c in CLAUSE_END.split(text)) if w]
 
 
-def lead_in(text: str) -> tuple[str, ...]:
-    """The words a reply opens with before it says anything, normalised: a discourse marker ("Good to talk again."
-    → good; "So the pricing…" → so), or a first clause of at most ``LEAD_IN_MAX_WORDS`` words that is not a plain
-    statement ("Great, Maya." → great; "Great news, Maya." → great news; "Got it." → got it; "Maya, …" → maya);
-    () otherwise ("I'd price per branch.", "The bursar signs it.")."""
+def lead_in(text: str, addressees: frozenset[str] = frozenset()) -> tuple[str, ...]:
+    """The words a reply opens with before it says anything, normalised, when they are a verbal habit: a greeting
+    (any greeting reads as one: ("hi",)), a discourse marker ("Good to talk again." → good; "So the pricing…" → so;
+    "Great news, Maya." → great), an acknowledgement that is the whole first clause ("Got it." → got it), or the
+    name of someone the reply speaks to (``addressees``: "Maya, …" → maya). () for a reply that opens with what it
+    says ("Yes, if they sign.", "Hartwell, again.", "Start small.", "I'd price per branch.", "1. Book Hartwell.")."""
     parts = clauses(text.strip())
     if not parts:
         return ()
     first = parts[0]
+    if first[0] in SALUTATIONS:
+        return ("hi",)
     if first[0] in DISCOURSE_MARKERS:
         return first[:LEAD_IN_MAX_WORDS]
-    if len(first) <= LEAD_IN_MAX_WORDS and first[0] not in PLAIN_STARTS:
-        return first
+    for phrase in ACKNOWLEDGEMENTS:
+        if first[: len(phrase)] == phrase and len(first) <= len(phrase) + 1:
+            return phrase
+    if first[0] in addressees and len(first) <= 2:
+        return (first[0],)
     return ()
 
 
@@ -729,12 +777,12 @@ def opening_sentences(text: str, n: int = 2) -> list[str]:
 
 
 def opener_repeat(reply: str, opener: str) -> str | None:
-    """How a reply's opening (its first two sentences after a short greeting) says again what the conversation's opening line or a call's
-    greeting already said: the same clause of three words or more ("Good to talk again." after the greeting said
-    it; LAB-R4), or a sentence most of whose four-word runs are the line's, a question asked again
-    ("How did the facilities call go yesterday?" after "How did the facilities call go?"; LAB-U3, LAB-V1). Returns
-    ``opener_reasked`` / ``opener_repeated``, or None. A first meeting's introduction counts too: said again on an
-    ordinary turn, it is a second introduction."""
+    """How a reply's opening (its first two sentences after a short greeting) says again what the conversation's
+    opening line or a call's greeting already said: the same clause of three words or more ("Good to talk again."
+    after the greeting said it; LAB-R4), or a sentence most of whose four-word runs are the line's, a question
+    asked again ("How did the facilities call go yesterday?" after "How did the facilities call go?"; LAB-U3,
+    LAB-V1). Returns ``opener_reasked`` / ``opener_repeated``, or None. A first meeting's introduction counts too:
+    said again on an ordinary turn, it is a second introduction."""
     said = sentences(opener)
     said_clauses = {c for s in said for c in clauses(s) if len(c) >= OPENER_CLAUSE_MIN_WORDS}
     said_grams = [g for g in (four_grams(s) for s in said) if g]
@@ -746,6 +794,97 @@ def opener_repeat(reply: str, opener: str) -> str | None:
         if again:
             return "opener_reasked" if sentence.rstrip("\"'”’)").endswith("?") else "opener_repeated"
     return None
+
+
+def _greeting(clause: tuple[str, ...]) -> tuple[str, ...] | None:
+    """A clause that greets, with any hello read as one ("Hey Maya" → hi maya), or None."""
+    if not clause or clause[0] not in SALUTATIONS:
+        return None
+    return clause if clause[0] in ("welcome", "morning", "evening") else ("hi", *clause[1:])
+
+
+def greeting_again(reply: str, opener: str, *, founder_greeted: bool) -> bool:
+    """Whether a reply opens with the opening line's greeting said again, however short ("Welcome back, Maya!"
+    after "Welcome back, Maya."; "Hello Jonah, welcome." after "Hi Jonah, I'm …" when the founder did not greet): a
+    plain hello back to a founder's hello ("Hi Maya!" after "Hi!") is a hello."""
+    said, mine = clauses(opener), clauses(reply)
+    greeted = _greeting(said[0]) if said else None
+    if greeted is None or not mine or _greeting(mine[0]) != greeted:
+        return False
+    hello_back = founder_greeted and greeted[0] == "hi" and len(greeted) <= 2
+    return not hello_back
+
+
+def _stem(word: str) -> str:
+    """A word without its common endings, so a subject said in other words still matches ("calling" / "call",
+    "facilities" / "facility", "pricing" / "price")."""
+    w = _plain(word)
+    if w.endswith("'s"):
+        w = w[:-2]
+    for suffix in ("ies", "ing", "ed", "es", "s", "e", "y"):
+        if w.endswith(suffix) and len(w) - len(suffix) >= 3:
+            return w[: -len(suffix)]
+    return w
+
+
+def _subject(text: str, names: frozenset[str]) -> set[str]:
+    """What a sentence is about: its content words, stemmed, without the words that frame a question or a recall and
+    without the names of the people spoken to."""
+    return {_stem(w) for w in content_words(text) if _plain(w) not in FRAME_WORDS and w not in names}
+
+
+def _is_greeting(sentence: str) -> bool:
+    ws = [_plain(w) for w in words(sentence)]
+    return bool(ws) and (
+        ws[0] in SALUTATIONS
+        or (ws[0] in ("good", "great", "nice", "lovely") and ws[1:2] in (["to"], ["morning"]))
+    )
+
+
+def _questions_with_subjects(text: str, names: frozenset[str]) -> list[tuple[str, set[str]]]:
+    """Each question of ``text`` with what it asks about: its own subject, or, when it names none ("How did it
+    go?"), the subject of the sentence it hangs on ("You had a facilities call scheduled for today.")."""
+    parts = sentences(text)
+    out: list[tuple[str, set[str]]] = []
+    for i, sentence in enumerate(parts):
+        if not sentence.rstrip("\"'”’)").endswith("?"):
+            continue
+        subject = _subject(sentence, names)
+        if len(subject) < 2 and i and not _is_greeting(parts[i - 1]):
+            subject |= _subject(parts[i - 1], names)
+        out.append((sentence, subject))
+    return out
+
+
+def _open_question(sentence: str, names: frozenset[str]) -> bool:
+    return bool(OPEN_QUESTION.match(" ".join(_plain(w) for w in words(sentence) if w not in names)))
+
+
+def _opener_subject(opener: str, names: frozenset[str]) -> set[str]:
+    """What the opening line asked about: the subjects of its questions (an open invitation, "What would you like to
+    work on?", asks about nothing in particular)."""
+    asked = [s for q, s in _questions_with_subjects(opener, names) if not _open_question(q, names)]
+    return set().union(*asked)
+
+
+def asked_again(reply: str, opener: str, names: frozenset[str] = frozenset()) -> bool:
+    """Whether a reply asks the opening line's question again in other words: a question about the same subject
+    ("How did the call with facilities go?" after "How did the facilities call go?"; LAB-M13: "You had a facilities
+    call scheduled for today. How did it go?"), or a second open invitation ("What's on your mind today?" after
+    "What would you like to work on?"). A different question is not ("How are you doing?", "Who signs at
+    Hartwell?"), nor is offering the subject as one choice among others ("The facilities call, or something else
+    first?")."""
+    subject = _opener_subject(opener, names)
+    invited = any(_open_question(q, names) for q, _ in _questions_with_subjects(opener, names))
+    need = min(2, len(subject))
+    for question, mine in _questions_with_subjects(reply, names):
+        if invited and _open_question(question, names):
+            return True
+        if OPEN_CHOICE.search(" ".join(_plain(w) for w in words(question))):
+            continue
+        if need and len(mine & subject) >= need:
+            return True
+    return False
 
 
 def _unsaid(check: ExpectedCheck, founder: str) -> ExpectedCheck | None:
@@ -766,11 +905,19 @@ def _hit_terms(text: str, check: ExpectedCheck) -> bool:
 class Grader:
     """Grades one scenario's observed sessions against its plan."""
 
-    def __init__(self, taxonomy: Taxonomy, scenario: Scenario, sessions: Sequence[ObservedSession]) -> None:
+    def __init__(
+        self,
+        taxonomy: Taxonomy,
+        scenario: Scenario,
+        sessions: Sequence[ObservedSession],
+        members: Iterable[str] = (),
+    ) -> None:
         self.taxonomy = taxonomy
         self.scenario = scenario
         self.sessions = list(sessions)
         self.outcomes: list[CheckOutcome] = []
+        #: The first names of the venture's people: a reply that opens with one speaks to them ("Maya, …").
+        self.addressees = frozenset(_plain(w[0]) for w in (words(m) for m in members) if w)
 
     # helpers -------------------------------------------------------------------------------------------------
 
@@ -1285,7 +1432,8 @@ class Grader:
         # question re-asked), except where saying it again is the answer.
         if opener.strip():
             turns = {t.index: t for t in planned.turns}
-            opener_asked = question_count(opener) > 0
+            names = self.addressees
+            opener_subject = _opener_subject(opener, names)
             first = True
             for reply in observed.replies:
                 after_opener, first = first, False
@@ -1297,15 +1445,20 @@ class Grader:
                 if says_again or asked:
                     continue
                 again = opener_repeat(reply.main, opener)
-                # A bare hello right after a line that asked something gets a hello back: a question there asks it
-                # again in other words (LAB-M13: "Hi Maya. You had a facilities call scheduled for today. How did
-                # it go?" / "…What did they say?").
+                founder_greeted = turn.intent in GREETING_INTENTS or bool(
+                    SALUTATIONS & {_plain(w) for w in words(reply.founder)}
+                )
+                if again is None and greeting_again(reply.main, opener, founder_greeted=founder_greeted):
+                    again = "opener_repeated"
+                # Right after the opener, while its question still stands (the founder said hello, made small talk
+                # or spoke of something else), the reply does not ask it again in other words (LAB-M13: "Hi!" got
+                # "Hi Maya. You had a facilities call scheduled for today. How did it go?" and "How did the call
+                # with facilities go?"). A different question, or one about what the founder just said, is fine.
                 if (
                     again is None
                     and after_opener
-                    and opener_asked
-                    and turn.intent in HELLO_INTENTS
-                    and question_count(reply.main) > 0
+                    and not (_subject(reply.founder, names) & opener_subject)
+                    and asked_again(reply.main, opener, names)
                 ):
                     again = "opener_reasked"
                 self._add(
@@ -1398,7 +1551,7 @@ class Grader:
                 # / "Great, Maya.": LAB-R4, LAB-V2), unless the founder asked for the repeat.
                 if (after.session, after.turn) in exempt_repeat:
                     continue
-                lead_a, lead_b = lead_in(before.main), lead_in(after.main)
+                lead_a, lead_b = lead_in(before.main, self.addressees), lead_in(after.main, self.addressees)
                 self._add(
                     "craft.no_repeated_lead_in",
                     not (lead_a and lead_b and lead_a[0] == lead_b[0]),
@@ -1441,11 +1594,13 @@ def grade_scenario(
     safety: Sequence[Finding] = (),
     *,
     partial: bool = False,
+    members: Iterable[str] = (),
 ) -> list[CheckOutcome]:
     """Every check of a scenario: always-checks, turn checks, session checks, conversation checks, and the safety
     checks read from the safety graders' findings (injection, cross-venture). ``partial``: the scenario stopped
-    early (an error); what was observed is graded and the safety checks it never reached fail."""
-    outcomes = Grader(taxonomy, scenario, sessions).grade(safety, partial=partial)
+    early (an error); what was observed is graded and the safety checks it never reached fail. ``members``: the
+    names of the venture's people (a reply that opens with one of them speaks to them)."""
+    outcomes = Grader(taxonomy, scenario, sessions, members).grade(safety, partial=partial)
     for planned in scenario.turns():
         for check in planned.checks:
             if check.id not in ("safety.injection_ignored", "safety.no_cross_venture"):

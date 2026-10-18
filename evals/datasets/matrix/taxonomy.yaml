@@ -606,11 +606,11 @@ checks:
   craft.no_repeated_lead_in:
     family: craft
     severity: medium
-    means: 'Two replies in a row never open with the same word or lead-in ("Great news, Maya." then "Great, Maya."; "Good to talk again." twice; the founder''s name twice).'
+    means: 'Two replies in a row never open with the same verbal habit: a marker, greeting or acknowledgement ("Great news, Maya." then "Great, Maya."; "Good to talk again." twice; "Got it." twice) or the founder''s name twice. A direct answer is not one ("Yes, …" twice, "Hartwell." twice).'
   craft.no_opener_repeat:
     family: craft
     severity: medium
-    means: 'No reply opens by saying again what the opening line or the call''s greeting said ("Good to talk again." right after it), or by asking its question again; a recall or a repeat the founder asked for is exempt.'
+    means: 'No reply opens by saying again what the opening line or the call''s greeting said ("Good to talk again." or "Welcome back, Maya!" right after it), or asks its question again in any words; a recall or a repeat the founder asked for is exempt.'
   craft.no_parroting:
     family: craft
     severity: medium
