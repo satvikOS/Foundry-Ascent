@@ -19,6 +19,10 @@ dev = [
   "pytest>=9,<10",
   "ruff>=0.16,<0.17",
 ]
+# The conversation lab only: the matrix's LLM simulator and judge call Amazon Bedrock (foundry_evals/matrix/bedrock.py).
+lab = [
+  "boto3>=1.40,<2",
+]
 
 [project.scripts]
 foundry-evals = "foundry_evals.cli:main"
