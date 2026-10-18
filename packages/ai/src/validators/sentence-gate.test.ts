@@ -364,6 +364,25 @@ describe('SentenceGate', () => {
       }
     });
 
+    it('releases nothing of a reply that narrates by the founder’s name (LAB-M1b), typed and spoken', () => {
+      const lab =
+        "Okay, let's break this down. Maya's asking about structuring the two-library pilot timeline. From the evidence, I see they've already got two libraries.";
+      const names = { founderName: 'Maya', addressees: ['Maya Okafor-Lindqvist', 'Noor Haddad'] };
+      for (const options of [names, { ...names, spoken: true, spokenWordBudget: 70, maxUnitChars: 280 }]) {
+        for (const chunks of chunkings(lab)) {
+          const g = gate(options);
+          const units: GateUnit[] = [];
+          for (const chunk of chunks) units.push(...g.push(chunk).units);
+          units.push(...g.end().units);
+          expect(units).toEqual([]);
+          expect(g.fallback).toBe('meta_narration');
+        }
+      }
+      // Talking to her by name is speech.
+      const speech = "Maya, you're close. Price per library and ask Noor to book the second visit.";
+      expect(joined(run(gate(names), [speech]).units)).toBe(speech);
+    });
+
     it('holds a thinking-aloud opener until the next unit shows whether speech follows', () => {
       const g = gate();
       expect(g.push("Okay, let's see. ").units).toEqual([]);

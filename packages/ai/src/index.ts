@@ -204,6 +204,7 @@ export {
   metaNarrationCue,
   type MetaNarrationCue,
   type MetaNarrationCut,
+  type NarrationNames,
 } from './validators/meta-narration.js';
 export {
   SentenceGate,

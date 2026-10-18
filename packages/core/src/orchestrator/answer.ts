@@ -234,6 +234,7 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
     fallbackMode: spec.fallbackMode,
     signal: spec.signal,
     startedAt: spec.startedAt,
+    narration: { founder: spec.continuity.founderFirstName ?? null, people: guards.addressees },
   };
   let generation: Generation;
   try {
@@ -247,6 +248,7 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
             eirNames: guards.eirNames,
             personaEirName: spec.personaEirName,
             addressees: guards.addressees,
+            founderName: spec.continuity.founderFirstName ?? null,
             founderText: spec.founderText,
             otherVentureNames: guards.others.names,
             otherVentureCanaries: guards.others.canaries,
@@ -277,6 +279,7 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
     eirNames: guards.eirNames,
     personaEirName: spec.personaEirName,
     addressees: guards.addressees,
+    founderName: spec.continuity.founderFirstName ?? null,
     founderText: spec.founderText,
     channel: spec.channel,
   });

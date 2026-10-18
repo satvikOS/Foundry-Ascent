@@ -14,6 +14,7 @@ import {
   type GateStats,
   type ModelAttempt,
   type ModelPurpose,
+  type NarrationNames,
   type SentenceGateOptions,
   type StreamStopReason,
 } from '@foundry/ai';
@@ -213,6 +214,8 @@ export interface GenerateArgs {
   readonly signal: AbortSignal | undefined;
   /** `performance.now()` when the turn request reached the engine. */
   readonly startedAt: number;
+  /** Who the reply may narrate by name (the founder it talks to, the venture's people; LAB-M1b). */
+  readonly narration?: NarrationNames;
 }
 
 export interface StreamArgs extends GenerateArgs {
@@ -254,9 +257,9 @@ export const META_NARRATION_RETRY =
   '[Your previous reply described your reasoning, the rules or the founder in the third person instead of talking to the founder. Write only what you say to them, as "you".]';
 
 /** Whether a whole reply has no reply in it: its answer (or, on a call, its spoken form) opens with narration. */
-function opensWithNarration(value: CoachResponse, channel: TurnChannel): boolean {
-  if (cutMetaNarration(value.answer).at === 'opening') return true;
-  return channel === 'voice' && cutMetaNarration(value.spoken ?? '').at === 'opening';
+function opensWithNarration(value: CoachResponse, channel: TurnChannel, names?: NarrationNames): boolean {
+  if (cutMetaNarration(value.answer, names).at === 'opening') return true;
+  return channel === 'voice' && cutMetaNarration(value.spoken ?? '', names).at === 'opening';
 }
 
 /**
@@ -286,7 +289,11 @@ export async function generateWhole(
       await record(a, result.attempts);
       attempts.push(...result.attempts);
       latencyMs += Math.round(result.latencyMs);
-      if (round === 0 && opensWithNarration(result.value, a.channel) && a.signal?.aborted !== true) {
+      if (
+        round === 0 &&
+        opensWithNarration(result.value, a.channel, a.narration) &&
+        a.signal?.aborted !== true
+      ) {
         notes.push('meta_narration_retried');
         continue;
       }

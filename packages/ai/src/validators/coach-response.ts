@@ -100,6 +100,11 @@ export interface ValidateCoachResponseOptions {
    */
   addressees?: readonly string[];
   /**
+   * The first name of the person the reply talks to: a sentence that reports on them by name ("Maya's asking
+   * about…") is narration and is cut like "The founder says…" (LAB-M1b).
+   */
+  founderName?: string | null;
+  /**
    * The founder's message this response answers. When it sincerely asks who or what the coach is ("are you
    * real?"), the honest answer stands as written: no volunteered disclaimer is rewritten out of the reply.
    */
@@ -356,7 +361,8 @@ export function validateCoachResponse(
     r.answer = leak.text;
     notes.push('structured_leak_cut');
   }
-  const narration = cutMetaNarration(r.answer);
+  const names = { founder: options.founderName ?? null, people: options.addressees ?? [] };
+  const narration = cutMetaNarration(r.answer, names);
   if (narration.at === 'opening') {
     notes.push(`meta_narration_blocked:${narration.cue ?? 'unknown'}`);
     results.escalationForced = forced !== null;
@@ -452,7 +458,7 @@ export function validateCoachResponse(
   let modelSpoken = typeof r.spoken === 'string' ? r.spoken : '';
   if (channel === 'voice' && modelSpoken.trim() !== '') {
     // Never said aloud: the spoken reply up to any narration (all of it narration: derived from the answer).
-    const spokenNarration = cutMetaNarration(modelSpoken);
+    const spokenNarration = cutMetaNarration(modelSpoken, names);
     if (spokenNarration.cue !== null) {
       modelSpoken = spokenNarration.text;
       notes.push(`meta_narration_spoken_cut:${spokenNarration.cue}`);

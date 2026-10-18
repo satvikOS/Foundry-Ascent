@@ -594,7 +594,9 @@ describe('rewriteIdentity — a vEIR persona never claims to be its EIR', () => 
     );
     // No legal sentence is left anywhere.
     for (const text of [out.text, human.text, endorsement.text, guide.text]) {
-      expect(text).not.toMatch(/To be clear|Approval decisions belong|an AI built from|not a (?:person|human)/);
+      expect(text).not.toMatch(
+        /To be clear|Approval decisions belong|an AI built from|not a (?:person|human)/,
+      );
     }
   });
 

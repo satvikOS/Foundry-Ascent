@@ -795,6 +795,28 @@ describe('spoken turns', () => {
       }
     });
 
+    it('LAB-M1b: a reply that narrates by the founder’s name is never shown or said, typed or spoken', async () => {
+      const lab =
+        "Okay, let's break this down. Maya's asking about structuring the two-library pilot timeline. From the evidence, I see they've already got two libraries interested.";
+      for (const channel of ['text', 'voice'] as const) {
+        const gateway = new MockModelGateway({ streamDelayMs: 0, streamFixture: () => lab });
+        const { core, orchestrator } = coreWith(gateway);
+        const session = await core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+        const { events, outcome } = await run(orchestrator, session.id, {
+          text: 'How should we structure the two-library pilot timeline?',
+          mode: 'coach',
+          ...(channel === 'voice' ? { channel, callId: CALL_ID } : {}),
+        });
+        expect(outcome.status).toBe('completed');
+        const named = /Maya's asking|break this down|I see they/i;
+        for (const u of speechUnits(events)) expect(u.text).not.toMatch(named);
+        for (const d of deltas(events)) expect(d.text).not.toMatch(named);
+        const turn = completed(events);
+        expect(turn.response?.answer).not.toMatch(named);
+        expect(turn.validator?.notes).toContain('stream_meta_narration');
+      }
+    });
+
     it('a typed reply ends before narration that follows its start, and is annotated as shown', async () => {
       const start = 'Three interviews is a solid start. Which librarian can you reach first?';
       const gateway = new MockModelGateway({

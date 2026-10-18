@@ -14,7 +14,7 @@ import {
   type IdentityViolationKind,
 } from './identity.js';
 import { sanitizeMarkdown } from './markdown.js';
-import { findMetaNarration, isThinkingAloudOpener } from './meta-narration.js';
+import { findMetaNarration, isThinkingAloudOpener, type NarrationNames } from './meta-narration.js';
 import { clampWords, toSpeakable } from './speech.js';
 
 /**
@@ -74,6 +74,11 @@ export interface SentenceGateOptions {
   personaEirName?: string | null;
   /** Display names of the founder and their team: "Thanks, Ruth." to one of them is not an EIR's sign-off. */
   addressees?: readonly string[];
+  /**
+   * The first name of the person the reply talks to: a unit that reports on them by name ("Maya's asking about…")
+   * is narration (LAB-M1b), like "The founder says…".
+   */
+  founderName?: string | null;
   /**
    * The founder's message this reply answers. When it sincerely asks who or what the coach is ("are you real?"),
    * the reply's honest answer stands as written: no disclaimer is rewritten out of it.
@@ -438,12 +443,12 @@ export class SentenceGate {
         const next =
           findUnitEnd(this.#raw, end, this.#maxUnitChars) ?? (this.#ended ? this.#raw.length : null);
         if (next === null || (!this.#ended && stable.length < next + this.#holdBack)) break;
-        if (findMetaNarration(this.#raw.slice(end, next)) !== null) {
+        if (findMetaNarration(this.#raw.slice(end, next), this.#names) !== null) {
           this.#fallback = 'meta_narration';
           return { units, blocked: null, fallback: this.#fallback, cut: null };
         }
       }
-      if (findMetaNarration(rawUnit) !== null) {
+      if (findMetaNarration(rawUnit, this.#names) !== null) {
         this.#cursor = end;
         if (this.#nothingReleased()) {
           this.#fallback = 'meta_narration';
@@ -553,6 +558,11 @@ export class SentenceGate {
   /** How a unit's volunteered disclaimers are rewritten out (one sentence of a reply that keeps its honest answer). */
   get #disclaimers(): { disclaimers: 'unit'; identityAsked: boolean; identified: boolean } {
     return { disclaimers: 'unit', identityAsked: this.#question !== null, identified: this.#identified };
+  }
+
+  /** Who a unit may narrate by name (meta-narration). */
+  get #names(): NarrationNames {
+    return { founder: this.#options.founderName ?? null, people: this.#options.addressees ?? [] };
   }
 
   get #identity(): IdentityCheckOptions {

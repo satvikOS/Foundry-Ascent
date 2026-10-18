@@ -1216,6 +1216,39 @@ describe('validateCoachResponse — meta-narration (LAB-M1)', () => {
     }
   });
 
+  it('holds back narration by the founder’s name (LAB-M1b), typed and spoken', () => {
+    const lab =
+      "Okay, let's break this down. Maya's asking about structuring the two-library pilot timeline. From the evidence, I see they've already got two libraries interested [E1].";
+    for (const channel of ['text', 'voice'] as const) {
+      const checked = validateCoachResponse(base({ answer: lab, spoken: channel === 'voice' ? lab : null }), {
+        ...opts(),
+        channel,
+        founderName: 'Maya',
+        addressees: ['Maya Okafor-Lindqvist'],
+      });
+      expect(checked.blocked).toBe(true);
+      expect(checked.response.answer).toBe(INVALID_RESPONSE_ANSWER);
+      expect(checked.results.notes).toContain('meta_narration_blocked:founder_third_person');
+    }
+    // Later in a reply: cut there, typed and spoken.
+    const later = validateCoachResponse(
+      base({
+        answer:
+          'Price per library, it keeps the pilot simple. Maya wants to know the number, so I should give one.',
+        spoken: 'Price per library, the pilot stays simple. Maya seems stressed, so I should keep it short.',
+      }),
+      { ...opts(), channel: 'voice', founderName: 'Maya' },
+    );
+    expect(later.response.answer).toBe('Price per library, it keeps the pilot simple.');
+    expect(later.response.spoken).toBe('Price per library, the pilot stays simple.');
+    // Without the founder's name nothing is read as narration by name.
+    const unnamed = validateCoachResponse(
+      base({ answer: "Maya's asking about the pilot, and that's fair." }),
+      opts(),
+    );
+    expect(unnamed.results.notes.some((n) => n.startsWith('meta_narration'))).toBe(false);
+  });
+
   it('keeps a forced escalation when it holds the answer back', () => {
     const checked = validateCoachResponse(base({ answer: 'This is a social turn. Hi!' }), {
       ...opts(),
