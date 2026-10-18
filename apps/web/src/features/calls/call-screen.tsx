@@ -26,7 +26,6 @@ import { prefersHalfDuplex } from '@/lib/realtime/browser';
 import { discardConversation } from '@/lib/realtime/call-api';
 import type { CallEngine } from '@/lib/realtime/call-engine';
 import { cn } from '@/lib/utils';
-import { veirWelcome } from '@/lib/veir';
 
 import { newConversationRequest } from '../chat/first-message';
 import { startPrivacy, takeChoiceInView, useStartPrivacy } from '../chat/privacy-choice';
@@ -35,7 +34,7 @@ import { CallLive } from './call-live';
 import { callBlocker, CallLobby } from './call-lobby';
 import { CallSummaryPanel } from './call-summary';
 import { useCallNotice } from './call-notice';
-import { useVeirWelcome } from '../veir/welcome';
+import { inlineWelcome, useVeirWelcome } from '../veir/welcome';
 import { CAPTION_SIZES, storedTalkMode, useAnnounceCaptions, useCaptionSize } from './preferences';
 import { formatClock, spokenDuration, useCallClock } from './use-call-clock';
 import { useCallConfig, useCallVeir, type CallVeir } from './use-call-veir';
@@ -119,16 +118,19 @@ export function CallScreen() {
   const ventureId = (active ? snapshot.ventureId : null) ?? routeVenture;
   const writable = ventureId !== null && canWrite(me, ventureId);
   const config = useCallConfig(routeVenture, open && writable && !active);
-  const veir = useCallVeir(ventureId, config.data?.veir) ?? FALLBACK_VEIR;
+  const knownVeir = useCallVeir(ventureId, config.data?.veir);
+  const veir = knownVeir ?? FALLBACK_VEIR;
   const createSession = useCreateSession(routeVenture ?? '');
   // A call from New chat takes New chat's choice: remembered (the default) or private, a one-off.
   const [newPrivacy, setNewPrivacy] = useStartPrivacy(routeVenture ?? '');
   const privacy = useSessionPrivacy(snapshot.sessionId ?? route?.sessionId ?? null);
   // Stored with the person on the server: the first call in any browser says how voice is handled.
   const [noticeSeen, acknowledgeNotice] = useCallNotice(me.principal.id, config.data);
-  // Stored with the person: someone who opens a call before meeting their vEIR reads the welcome here.
+  // Stored with the person: someone who opens a call before meeting their coach (a vEIR or the program's guide)
+  // reads the welcome here.
   const [welcomeSeen, acknowledgeWelcome] = useVeirWelcome(me);
-  const welcomeHere = !welcomeSeen && writable && veir.kind === 'eir_persona';
+  const welcome = inlineWelcome(welcomeSeen, writable, knownVeir);
+  const welcomeHere = welcome !== null;
   const [createError, setCreateError] = useState<string | null>(null);
   /** The conversation (or New chat) this screen already tried to start a call in. */
   const attempted = useRef<string | null>(null);
@@ -406,7 +408,7 @@ export function CallScreen() {
               failure={snapshot.phase === 'failed' ? snapshot.error : null}
               busy={createSession.isPending}
               voiceNotice={!noticeSeen}
-              welcome={welcomeHere ? veirWelcome(veir) : null}
+              welcome={welcome}
               privacy={
                 route?.sessionId === null && writable ? { value: newPrivacy, onChange: setNewPrivacy } : null
               }

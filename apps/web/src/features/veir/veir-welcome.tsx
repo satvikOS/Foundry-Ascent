@@ -59,8 +59,9 @@ export function VeirWelcomeDialog({
 }
 
 /**
- * Shows the welcome over a venture to its founders and team the first time, while they have not read it and the
- * venture's coach is an EIR's vEIR. A call screen opened first says the same in its start screen instead.
+ * Shows the welcome over a venture to its founders and team the first time, while they have not read it: for an
+ * EIR's vEIR ("Meet Corin's vEIR") and for the program's neutral guide ("Meet Foundry Guide") alike, since every
+ * coach discloses what it is once, up front. A call screen opened first says the same in its start screen instead.
  */
 export function VeirWelcomeGate({ ventureId }: { ventureId: string }) {
   const me = useRequiredMe();
@@ -70,6 +71,6 @@ export function VeirWelcomeGate({ ventureId }: { ventureId: string }) {
   const venture = useQuery({ ...ventureQueryOptions(ventureId), enabled: writer });
   const [seen, acknowledge] = useVeirWelcome(me);
   const veir = writer ? veirDisplay(venture.data) : null;
-  if (veir?.kind !== 'eir_persona') return null;
+  if (veir === null) return null;
   return <VeirWelcomeDialog veir={veir} open={!seen && route?.open !== true} onAcknowledge={acknowledge} />;
 }

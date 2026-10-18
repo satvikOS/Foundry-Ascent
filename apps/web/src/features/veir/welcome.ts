@@ -5,6 +5,19 @@ import { useCallback } from 'react';
 import { api, createIdempotencyKey } from '@/lib/api/client';
 import { meQueryOptions } from '@/lib/api/hooks/auth';
 import { queryKeys } from '@/lib/api/query-keys';
+import { veirWelcome, type VeirDisplay } from '@/lib/veir';
+
+/**
+ * The welcome a call's start screen says to someone who has not read it yet (they opened a call first): the
+ * coach's own, a vEIR's or the program's neutral guide's, once the coach is known and the person can talk to it.
+ */
+export function inlineWelcome(
+  seen: boolean,
+  writable: boolean,
+  veir: Pick<VeirDisplay, 'kind' | 'name' | 'eirFirstName' | 'eirSeesWork'> | null,
+): ReturnType<typeof veirWelcome> | null {
+  return !seen && writable && veir !== null ? veirWelcome(veir) : null;
+}
 
 /**
  * Whether this person has read the welcome that introduces their vEIR, and a way to say they have. The server
