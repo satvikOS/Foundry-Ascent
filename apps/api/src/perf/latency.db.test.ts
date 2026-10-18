@@ -55,8 +55,9 @@ describe('the latency harness', () => {
         expect(num(t.speech?.firstAudioMs)).toBeGreaterThanOrEqual(num(t.speech?.reservedMs));
       }
     }
-    // The second spoken message is a quick question: its reply is one sentence, said as one unit.
-    expect(result.turns.at(-1)?.units).toBe(1);
+    // The second spoken message is a quick question: its reply is one sentence, said as one unit, then the short
+    // hand-back a reply that ends on a statement is given (wave 7: spoken_no_handback).
+    expect(result.turns.at(-1)?.units).toBe(2);
     expect(result.requests.map((r) => r.name)).toEqual([
       'me',
       'venture',
