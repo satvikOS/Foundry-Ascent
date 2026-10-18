@@ -290,13 +290,16 @@ _LEAD = (
 META_NARRATION = re.compile(
     "|".join(
         [
-            _LEAD + r"(?:the|this|our) (?:founder|user)(?:'s)? (?:says|said|just said|is saying|asks|asked|"
+            _LEAD + r"(?:the|this|our) founder(?:'s)? (?:says|said|just said|is saying|asks|asked|"
             r"just asked|is asking|wants|wanted|would like|mentioned|mentions|told|tells|stated|states|greeted|"
             r"thanked|replied|responded|shared|provided|wrote|typed|is venting|vented|is joking|joked)\b",
-            r"\b(?:the|this) (?:founder|user)(?:'s)? (?:just said|just asked|is asking (?:me|about|for|if|whether)|"
+            r"\b(?:the|this) founder(?:'s)? (?:just said|just asked|is asking (?:me|about|for|if|whether)|"
             r"asked me|told me|wants me to|wants to know|is wondering|greeted me|thanked me|"
             r"(?:last|latest|new|current|first) (?:message|question|line|turn)|"
             r"(?:message|question|request|reply|greeting|turn|tone) (?:is|was|seems|sounds))\b",
+            # "The user" is also a product's user: only as the one talking to the model.
+            r"\b(?:the|this) user(?:'s)? (?:is asking me|asked me|told me|wants me to|just said|just asked|"
+            r"greeted me|thanked me|(?:last |latest |new )?(?:message|question|request) (?:is|was|seems))\b",
             _LEAD + r"i (?:need|have|should|must|want|ought|will need|am going|'m going|'ll need) to "
             r"(?:figure out|determine|decide(?: on)?|work out|identify|classify|choose|pick|select|analy[sz]e)\b"
             r".{0,40}?\b(?:mode|response|reply|answer|tone|intent|move|category|rules?)\b",

@@ -47,9 +47,12 @@ const CUES: readonly (readonly [MetaNarrationCue, RegExp])[] = [
     'founder_third_person',
     new RegExp(
       [
-        `${LEAD}(?:the|this|our) (?:founder|user)(?:'s)? (?:${REPORTING})\\b`,
-        `${LEAD}(?:the|this) (?:founder|user) (?:is|seems|sounds|appears|feels) (?:(?:very|quite|a bit|a little|really|pretty|clearly|probably|likely|just) )?(?:${STATES})\\b`,
-        String.raw`\b(?:the|this) (?:founder|user)(?:'s)? (?:just said|just asked|is asking (?:me|about|for|if|whether)|asked me|told me|wants me to|wants to know|is wondering|greeted me|thanked me|mentioned (?:that|earlier|before)|(?:last|latest|new|current|first) (?:message|question|line|turn)|(?:message|question|request|reply|greeting|turn|tone) (?:is|was|seems|sounds))\b`,
+        // "The user" is also a product's user ("The user wants a faster check-in"): only the founder, or the user
+        // as the one talking to the model ("the user is asking me", "the user's message").
+        `${LEAD}(?:the|this|our) founder(?:'s)? (?:${REPORTING})\\b`,
+        `${LEAD}(?:the|this) founder (?:is|seems|sounds|appears|feels) (?:(?:very|quite|a bit|a little|really|pretty|clearly|probably|likely|just) )?(?:${STATES})\\b`,
+        String.raw`\b(?:the|this) founder(?:'s)? (?:just said|just asked|is asking (?:me|about|for|if|whether)|asked me|told me|wants me to|wants to know|is wondering|greeted me|thanked me|mentioned (?:that|earlier|before)|(?:last|latest|new|current|first) (?:message|question|line|turn)|(?:message|question|request|reply|greeting|turn|tone) (?:is|was|seems|sounds))\b`,
+        String.raw`\b(?:the|this) user(?:'s)? (?:is asking me|asked me|told me|wants me to|just said|just asked|greeted me|thanked me|(?:last |latest |new )?(?:message|question|request) (?:is|was|seems))\b`,
       ].join('|'),
     ),
   ],

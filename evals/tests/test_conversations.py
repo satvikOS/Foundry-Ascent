@@ -129,6 +129,7 @@ class TestReplyGraders:
             "Investors back the founder, not the deck. Who signs?",
             "According to the rules of the accelerator, you need a prototype by June. Can you make it?",
             "Your team is in survival mode, so cut the side projects. Which one goes first?",
+            "The user wants to book a seat in under ten seconds. What blocks that today?",
         ):
             assert grade_reply(reply(fine)) == [], fine
 
