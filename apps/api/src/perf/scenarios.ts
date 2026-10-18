@@ -28,6 +28,8 @@ export interface TurnSample {
   readonly units: number;
   /** The terminal event (`turn.completed`). */
   readonly completedMs: number | null;
+  /** The response stream ended (the API is free for the next request; work after the response excluded). */
+  readonly streamEndMs: number | null;
   /** The `turn.timing` log line of the request. */
   readonly server: Readonly<Record<string, unknown>> | null;
   /** The `speech.timing` log line of the first unit's `/speech` request (voice). */
@@ -148,6 +150,8 @@ const TEXT_MESSAGES = [
   'Should we price per library or per seat for the first paid pilot?',
   'What would make you confident that quiet-space demand is real?',
   'I am worried we are building too much before the pilot. What should we cut?',
+  // A decision stated in the founder's own words is kept with the turn, and settled by meaning (an embedding).
+  "We've decided to ask each library for a paid commitment before the pilot starts.",
 ];
 
 /** One turn as the chat or call screen sends it, timed from the browser's side. */
@@ -233,6 +237,7 @@ export async function turn(
         break;
     }
   });
+  const streamEndMs = performance.now() - started;
   const audio = await firstAudio;
   await Promise.all(speechFetches);
   const completedTurn = finished as TurnView | null;
@@ -247,6 +252,7 @@ export async function turn(
     lastSpeechMs: marks.lastSpeech,
     units: speechFetches.length,
     completedMs: marks.completed,
+    streamEndMs,
     server: logLine(rig, requestId, 'turn.timing'),
     speech: audio === null ? null : logLine(rig, audio.requestId, 'speech.timing'),
     evidenceItems: completedTurn?.evidence.length ?? null,

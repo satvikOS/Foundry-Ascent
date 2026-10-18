@@ -47,6 +47,7 @@ describe('the latency harness', () => {
       expect(num(s.dbRoundTrips)).toBeGreaterThan(10);
       expect(t.firstDeltaMs).not.toBeNull();
       expect(t.completedMs).not.toBeNull();
+      expect(t.streamEndMs).toBeGreaterThanOrEqual(t.completedMs ?? Number.POSITIVE_INFINITY);
       if (t.channel === 'voice') {
         expect(s.voice).toBe(true);
         expect(num(s.firstSpeechMs)).toBeLessThanOrEqual(total);

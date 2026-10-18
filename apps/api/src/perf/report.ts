@@ -39,6 +39,7 @@ function turnRows(group: string, turns: readonly TurnSample[]): ReportRow[] {
     ['client: first audio bytes', turns.map((t) => t.firstAudioMs)],
     ['client: last spoken unit', turns.map((t) => t.lastSpeechMs)],
     ['client: completed', turns.map((t) => t.completedMs)],
+    ['client: stream end', turns.map((t) => t.streamEndMs)],
     ['server: auth', server('authMs')],
     ['server: accepted (auth + preflight + admission)', server('acceptedMs')],
     ['server: admission transaction', server('admissionMs')],

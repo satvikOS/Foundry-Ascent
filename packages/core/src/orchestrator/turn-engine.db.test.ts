@@ -1172,6 +1172,89 @@ describe('spoken turns', () => {
   });
 });
 
+describe('what a turn kept is settled after the response (LAB-P1)', () => {
+  /** The mock model, holding every embedding after the first (the turn's query) until `release`. */
+  class HeldMemoryEmbeds extends MockModelGateway {
+    #embeds = 0;
+    #open: () => void = () => undefined;
+    readonly held = new Promise<void>((resolve) => {
+      this.#open = resolve;
+    });
+
+    release(): void {
+      this.#open();
+    }
+
+    override async embed(texts: readonly string[], options: EmbedOptions): Promise<EmbedResult> {
+      this.#embeds += 1;
+      if (this.#embeds > 1) await this.held;
+      return super.embed(texts, options);
+    }
+  }
+
+  it('a turn that kept a decision completes without waiting for its embedding; the host keeps it alive', async () => {
+    const gateway = new HeldMemoryEmbeds({ streamDelayMs: 0 });
+    const after: Promise<unknown>[] = [];
+    const deps = {
+      db: h.t.db,
+      gateway,
+      config: h.config,
+      objectStore: h.objectStore,
+      jobQueue: h.jobQueue,
+      logger: h.logger,
+      random: () => 0.99,
+      afterResponse: (task: Promise<unknown>) => {
+        after.push(task);
+      },
+    };
+    const kit = new Kit(resolveDeps(deps));
+    const orchestrator = createOrchestrator(kit, new DirectoryCache(kit), {
+      admitVoiceTurn: () => Promise.resolve(),
+    });
+    const session = await createCore(deps).sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+    const turn = run(orchestrator, session.id, {
+      text: "We've decided to ask each library for a paid commitment before the pilot starts.",
+      mode: 'coach',
+    });
+    // The turn resolves while the kept decision's embedding is still held (it used to wait for it).
+    const first = await Promise.race([
+      turn.then(() => 'turn'),
+      new Promise<string>((resolve) => {
+        setTimeout(() => {
+          resolve('timeout');
+        }, 5_000);
+      }),
+    ]);
+    expect(first).toBe('turn');
+    const { outcome, events } = await turn;
+    expect(outcome.status).toBe('completed');
+    expect(completed(events).id).toBe(outcome.turnId);
+    // On the turn's path: one query embedding (started at admission, shared by retrieval), the reply and its
+    // annotations. Nothing else embeds before the reply is complete.
+    expect(gateway.calls.map((c) => `${c.kind}:${c.schemaName ?? ''}`)).toEqual([
+      'embed:',
+      'stream:',
+      'generate:CoachAnnotations',
+    ]);
+    // The settling was handed to the host, and finishes once the embedding comes back.
+    expect(after).toHaveLength(1);
+    const embedded = async (): Promise<number> => {
+      const r = await h.t.db.system((sx) =>
+        sx.query(
+          `SELECT count(*)::int AS n FROM memory_objects m
+            WHERE m.embedding IS NOT NULL AND m.source_refs::text LIKE :turn`,
+          { turn: p.text(`%${outcome.turnId ?? 'none'}%`) },
+        ),
+      );
+      return Number(r.rows[0]?.n);
+    };
+    expect(await embedded()).toBe(0);
+    gateway.release();
+    await Promise.all(after);
+    expect(await embedded()).toBe(1);
+  });
+});
+
 describe('a turn and the delete of its conversation', () => {
   it('a message sent just as its conversation is deleted is refused and stores nothing', async () => {
     const gateway = new MockModelGateway({ streamDelayMs: 0 });

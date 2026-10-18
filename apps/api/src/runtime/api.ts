@@ -80,6 +80,10 @@ export function createApiRuntime(env: EnvLike): ApiRuntime {
       region: config.awsRegion,
     }),
     logger: logger.child({ component: 'core' }),
+    // Settling a turn's kept memory follows the response: the handler drains it before the invocation returns.
+    afterResponse: (task) => {
+      void inflight.track(task);
+    },
     ...speechFor(env, config),
     ...sttGrantsFor(env, config),
   });

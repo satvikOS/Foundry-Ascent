@@ -1008,13 +1008,19 @@ export function createOrchestrator(
       return { status: 'blocked', turnId: turn.id, replayed: false, error: null };
     }
     await emit({ event: 'turn.completed', turn: persisted.view });
-    // Only now, with the reply complete: what the turn kept is settled by meaning (never throws).
-    await settleKeptMemory(kit, ctx, {
-      ventureId,
-      sessionId: pre.session.id,
-      items: persisted.kept,
-      grounding,
-    });
+    // Only now, with the reply complete: what the turn kept is settled by meaning (never throws). That embeds it, so
+    // it runs after the response (LAB-P1: the stream stayed open, and the API busy, for a Titan call after every
+    // turn that kept something): the host keeps the process alive for it, or the turn waits for it (tests).
+    if (persisted.kept.length > 0) {
+      const settling = settleKeptMemory(kit, ctx, {
+        ventureId,
+        sessionId: pre.session.id,
+        items: persisted.kept,
+        grounding,
+      });
+      if (kit.deps.afterResponse === undefined) await settling;
+      else kit.deps.afterResponse(settling);
+    }
     return { status: 'completed', turnId: turn.id, replayed: false, error: null };
   }
 

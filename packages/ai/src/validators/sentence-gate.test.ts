@@ -226,12 +226,72 @@ describe('SentenceGate', () => {
   it('holds a unit back until a canary arriving across two chunks is complete, then stops', () => {
     expect(holdBackFor([CANARY])).toBe(2 * CANARY.length + 8);
     const g = gate();
-    // The first sentence is complete, but the text after it is still within the hold-back window.
-    expect(g.push('Your notes look solid. Another team logged ZX-CAN').units).toEqual([]);
+    // The first sentence is complete, but the text after it is still within the hold-back window (a lead-in of four
+    // words or fewer is not held: see 'releases a short lead-in…').
+    expect(g.push('Your interview notes look solid. Another team logged ZX-CAN').units).toEqual([]);
     const second = g.push('ARY-4471 last week. Keep going.');
     expect(second.units).toEqual([]);
     expect(second.blocked).toBe('cross_venture');
     expect(g.end().units).toEqual([]);
+  });
+
+  describe('a lead-in of four words or fewer is released as soon as it ends (LAB-P1)', () => {
+    it('releases "Got it." and "Talk soon." at once, with other ventures guarded', () => {
+      for (const lead of [
+        'Got it.',
+        'Talk soon.',
+        "That's the right question.",
+        'Okay, Maya.',
+        'Fair enough!',
+      ]) {
+        const g = gate();
+        expect(g.push(`${lead} `).units.map((u) => u.text)).toEqual([lead]);
+        const rest = g.push('Price per library and test it with two of them this term.');
+        expect(joined([...rest.units, ...g.end().units])).toBe(
+          ' Price per library and test it with two of them this term.',
+        );
+      }
+      // Spoken too: the first unit goes to speech at once.
+      const spoken = gate({ spoken: true, spokenWordBudget: 70, maxUnitChars: 280 });
+      expect(spoken.push('Got it. ').units).toEqual([{ text: 'Got it.', spoken: 'Got it.' }]);
+    });
+
+    it('still checks it: narration, a claim to be the EIR, a canary', () => {
+      const narration = gate();
+      expect(narration.push('The founder says hi. ').units).toEqual([]);
+      expect(narration.fallback).toBe('meta_narration');
+      const eir = gate();
+      expect(eir.push('Corin here. ').units).toEqual([]);
+      expect(eir.blocked).toBe('identity');
+      const leak = gate();
+      expect(leak.push(`Logged ${CANARY} today. `).units).toEqual([]);
+      expect(leak.blocked).toBe('cross_venture');
+    });
+
+    it('a guarded name in the next sentence is never shown, though the lead-in before it was', () => {
+      const g = gate();
+      expect(g.push('Got it. ').units.map((u) => u.text)).toEqual(['Got it.']);
+      const next = g.push('BenchTally ran the same pilot last term, so ask them.');
+      expect(next.units).toEqual([]);
+      expect(g.end().units).toEqual([]);
+      expect(g.blocked).toBe('cross_venture');
+    });
+
+    it('waits as before when a guarded string has sentence punctuation in it, or the unit is longer', () => {
+      const dotted = gate({ otherVentureNames: ['St. Ives Labs'] });
+      expect(dotted.push('Got it. ').units).toEqual([]);
+      expect(gate().push('Five interviews is a solid start. ').units).toEqual([]);
+    });
+
+    it('a thinking-aloud opener still waits for the next unit; an acknowledgement does not', () => {
+      expect(gate().push('Let me think. ').units).toEqual([]);
+      expect(gate().push("Okay, let's see. ").units).toEqual([]);
+      expect(
+        gate()
+          .push('Okay. ')
+          .units.map((u) => u.text),
+      ).toEqual(['Okay.']);
+    });
   });
 
   it('stops on another venture name or member name before any unit naming it is shown', () => {
@@ -245,10 +305,10 @@ describe('SentenceGate', () => {
 
   it('releases everything once the stream ends without a leak', () => {
     const g = gate();
-    expect(g.push('Short answer first. ').units).toEqual([]); // inside the hold-back window
+    expect(g.push('The short answer comes first. ').units).toEqual([]); // inside the hold-back window
     const end = g.end();
     expect(end.blocked).toBeNull();
-    expect(joined(end.units)).toBe('Short answer first.');
+    expect(joined(end.units)).toBe('The short answer comes first.');
   });
 
   it('keeps only the Markdown subset and removes citations that were never shown', () => {
