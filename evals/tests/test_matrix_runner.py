@@ -633,3 +633,93 @@ def test_recording_the_mock(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     assert sum(len(s["turns"]) for s in document["sessions"]) == results["run"]["turnsUsed"]
     # JSON Lines: the header, then one session per line (a re-recording diffs scenario by scenario).
     assert raw.count("\n") == len(document["sessions"]) + 1
+
+
+def test_days_and_weeks_later_are_aged_by_the_between_sessions_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With --between-sessions-cmd, each remembered conversation that stands for days or weeks has its ended
+    session handed to the command with that gap, and is no longer noted as compressed."""
+    import subprocess
+
+    calls: list[list[str]] = []
+
+    def fake_run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        assert kwargs["capture_output"] is True
+        assert kwargs["check"] is False
+        assert "shell" not in kwargs
+        calls.append(list(argv))
+        return subprocess.CompletedProcess(argv, 0, b"", b"")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    api = FakeFoundryApi(present, memory_lab=True, memory_lab_teammate=True, intro_for=warm_intro)
+    _, results, report = run(
+        api, tmp_path, monkeypatch, *CI, *MEMORY, "--between-sessions-cmd", "lab-age --wait-seconds 0"
+    )
+    gaps = {"recall_days": "3", "recall_weeks": "14"}
+    aged = [c for c in results["cases"] if c["matrix"]["values"]["continuity"] in gaps]
+    assert aged, "the CI plan covers days and weeks later"
+    lab = api.venture("memorylab")
+    expected = []
+    for case in aged:
+        sessions = case["sessionIds"]
+        for ended in sessions[:-1]:
+            who = api.sessions[ended]["by"]
+            expected.append(
+                [
+                    "lab-age",
+                    "--wait-seconds",
+                    "0",
+                    "--venture",
+                    "memorylab",
+                    "--venture-id",
+                    lab.id,
+                    "--session-id",
+                    ended,
+                    "--actor",
+                    case["actor"],
+                    "--principal-id",
+                    who,
+                    "--gap-days",
+                    gaps[case["matrix"]["values"]["continuity"]],
+                ]
+            )
+        assert "time_compressed" not in case["notes"]
+        assert f"time_aged_days:{gaps[case['matrix']['values']['continuity']]}" in case["notes"]
+    assert calls == expected
+    # Minutes later, or any other continuity: never aged.
+    for case in results["cases"]:
+        if case["matrix"]["values"]["continuity"] not in gaps:
+            assert not any(n.startswith("time_") for n in case["notes"])
+
+    # A command that fails leaves the gap compressed, and says so with a code only.
+    def failing_run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.CompletedProcess(argv, 2, b"secret output", b"")
+
+    monkeypatch.setattr(subprocess, "run", failing_run)
+    api = FakeFoundryApi(present, memory_lab=True, memory_lab_teammate=True, intro_for=warm_intro)
+    _, results, report = run(
+        api, tmp_path / "b", monkeypatch, *CI, *MEMORY, "--between-sessions-cmd", "lab-age"
+    )
+    for case in results["cases"]:
+        if case["matrix"]["values"]["continuity"] in gaps:
+            assert "time_compressed" in case["notes"]
+            assert "between_sessions_failed:exit_2" in case["notes"]
+    assert "secret output" not in json.dumps(results) + report
+
+    # Without the command the gap is compressed, as before.
+    api = FakeFoundryApi(present, memory_lab=True, memory_lab_teammate=True, intro_for=warm_intro)
+    _, results, _ = run(api, tmp_path / "c", monkeypatch, *CI, *MEMORY)
+    assert all(
+        "time_compressed" in c["notes"]
+        for c in results["cases"]
+        if c["matrix"]["values"]["continuity"] in gaps
+    )
+
+
+def test_the_between_sessions_command_must_be_a_command_line(capsys: pytest.CaptureFixture[str]) -> None:
+    for bad in ("", "lab-age 'unterminated"):
+        with pytest.raises(SystemExit):
+            cli.build_parser().parse_args(["run", "--suite", "matrix", "--between-sessions-cmd", bad])
+    args = cli.build_parser().parse_args(["run", "--suite", "matrix", "--between-sessions-cmd", "a 'b c'"])
+    assert args.between_sessions_cmd == ("a", "b c")

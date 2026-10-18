@@ -10,6 +10,7 @@ and remove the setup. Console lines carry case ids, venture keys, statuses and g
 from __future__ import annotations
 
 import json
+import subprocess
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -77,6 +78,15 @@ class RunnerOptions:
     #: Key of the dedicated synthetic venture where multi-session (remembered) conversations run; None skips them.
     #: Never a seeded or shared venture: they write to its vEIR notebook and memory (see ``_run_conversation``).
     memory_venture: str | None = None
+    #: A command run after a session of a remembered conversation ends and before the next one starts, when the
+    #: conversation stands for a gap of a day or more (``recall_days``, ``recall_weeks``): the conversation lab
+    #: ages the ended conversation in its own database by that gap, so "days later" is real rather than
+    #: compressed (ops/lab, apps/api lab-age-conversation.ts). Appended arguments: ``--venture KEY --venture-id ID
+    #: --session-id ID --actor LABEL --principal-id ID --gap-days N``. Never run through a shell; its output is
+    #: never printed or kept, only whether it succeeded.
+    between_sessions_cmd: tuple[str, ...] = ()
+    #: Longest the command may take (it waits for the conversation's distillation first).
+    between_sessions_timeout: float = 300.0
 
 
 class Runner:
@@ -102,6 +112,35 @@ class Runner:
         self.turns_used = 0
         self.cost_usd = 0.0
         self.aborted: str | None = None
+
+    def _between_sessions(
+        self, actor: Actor, venture: VentureState, session_id: str, gap_days: int
+    ) -> str | None:
+        """Runs ``between_sessions_cmd`` for an ended session; None when it succeeded, else a content-free code."""
+        argv = [
+            *self.options.between_sessions_cmd,
+            "--venture",
+            venture.key,
+            "--venture-id",
+            venture.id,
+            "--session-id",
+            session_id,
+            "--actor",
+            actor.label,
+            "--principal-id",
+            actor.principal_id,
+            "--gap-days",
+            str(gap_days),
+        ]
+        try:
+            done = subprocess.run(  # noqa: S603 - the operator's own command, never a shell
+                argv, capture_output=True, timeout=self.options.between_sessions_timeout, check=False
+            )
+        except subprocess.TimeoutExpired:
+            return "timeout"
+        except OSError:
+            return "not_runnable"
+        return None if done.returncode == 0 else f"exit_{done.returncode}"
 
     # Cases ----------------------------------------------------------------------------------------------
 

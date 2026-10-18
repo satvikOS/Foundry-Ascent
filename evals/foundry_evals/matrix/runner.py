@@ -202,6 +202,10 @@ class PrivateSink:
             f.write(json.dumps({"scenario": scenario_id, **payload}, ensure_ascii=False) + "\n")
 
 
+#: The gap a remembered conversation stands for, in days: what ``--between-sessions-cmd`` ages it by.
+GAP_DAYS: dict[str, int] = {"recall_days": 3, "recall_weeks": 14}
+
+
 class MatrixRunner(Runner):
     def __init__(
         self,
@@ -310,7 +314,10 @@ class MatrixRunner(Runner):
             status="passed",
             severity="high",
         )
-        if scenario.values["continuity"] in ("recall_days", "recall_weeks"):
+        # Days or weeks later: compressed into the run unless --between-sessions-cmd ages every gap.
+        gap_days = GAP_DAYS.get(scenario.values["continuity"], 0)
+        aged_gaps = 0
+        if gap_days:
             result.notes.append("time_compressed")
         if scenario.multi_session and not self._prepare_notebook(actor, venture, None, result):
             result.finalize()
@@ -409,7 +416,16 @@ class MatrixRunner(Runner):
                     break
                 who.client.end_session(session.id)
                 if planned.index < len(scenario.sessions):
+                    if gap_days and self.options.between_sessions_cmd:
+                        failure = self._between_sessions(who, venture, session.id, gap_days)
+                        if failure is None:
+                            aged_gaps += 1
+                        else:
+                            result.notes.append(f"between_sessions_failed:{failure}")
                     self._sleep(self.options.session_gap_seconds)
+            if gap_days and aged_gaps == len(scenario.sessions) - 1:
+                result.notes.remove("time_compressed")
+                result.notes.append(f"time_aged_days:{gap_days}")
         except BudgetExhaustedError:
             result.status, result.reason = "skipped", "budget"
             self.aborted = "budget"

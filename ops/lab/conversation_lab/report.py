@@ -202,6 +202,13 @@ def _suite_tables(suite: str, result: Mapping[str, Any]) -> list[str]:
                 f"| {s['id']} | {'yes' if s['passed'] else 'no'} | {s['reason']} | {facts} | {judge or '-'} |"
             )
         out.append("")
+    aged = result.get("aged_gaps") if suite == "matrix" else None
+    if aged:
+        out.append(
+            f"Days and weeks later: {aged['aged']} gaps aged in the lab's database "
+            f"({aged['after_distillation']} after the conversation was distilled)."
+        )
+        out.append("")
     if suite == "matrix" and result.get("evals_report_md"):
         out.append(
             f"Source: {result.get('source')} (exit {result.get('evals_exit')}). Its report (ids, codes, numbers):"

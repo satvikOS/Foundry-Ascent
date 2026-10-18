@@ -35,10 +35,17 @@ runs the harness (`ops/lab`, `python -m conversation_lab`):
   starts, the lab adds one to its own freshly reset database: **Lanternwise**, with two synthetic founders and a
   synthetic teammate, QuietQuad's vEIR as its coach and an empty notebook
   (`packages/db/src/seed/lab-memory-venture.ts`, run by `apps/api/src/scripts/lab-memory-venture.ts`, which refuses
-  anything but a local Postgres outside production). The lab passes it as `--memory-venture lanternwise`; evals gives each
-  scenario the venture's least-used member, and waits out the app's per-person voice-turn limit (40 per 10
-  minutes), which (unlike the typed limit) the lab cannot raise. evals' "days later" and "weeks later" scenarios still run
-  with the gap compressed (noted `time_compressed`): the app has no clock the lab can move.
+  anything but a local Postgres outside production). The lab passes it as `--memory-venture lanternwise`; evals gives
+  each scenario the venture's least-used member, and waits out the app's per-person voice-turn limit (40 per 10
+  minutes), which (unlike the typed limit) the lab cannot raise. evals' "days later" and "weeks later" scenarios are
+  real, not compressed: after such a conversation ends, evals calls the lab's `--between-sessions-cmd`
+  (`apps/api/src/scripts/lab-age-conversation.ts`), which waits for the conversation's distillation and then moves it,
+  the venture's earlier live conversations and everything they produced (turns, digests, notebook lines and due dates,
+  memory items and their history, escalations) back 3 or 14 days in the lab's database
+  (`packages/db/src/lab/age-conversations.ts`; same local-only refusal). The next conversation's opener and "Where you
+  left off" then say "3 days ago" or "2 weeks ago". The usage ledger, calls (their minutes count today, and a call's
+  start never changes) and the audit log stay. The summary counts the gaps aged; evals notes each such scenario
+  `time_aged_days:N` (or `time_compressed` with `between_sessions_failed:<code>` when aging failed).
 
 The founder simulator and the judge are Amazon Bedrock models of `ops/lab/models.json`: Nova Pro plays the founder
 (fallback Nova 2 Lite), Nova Premier judges (fallback Nova Pro). Each run probes them with a one-token request and

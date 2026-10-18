@@ -15,3 +15,4 @@ export {
 } from './data-api.js';
 export * from './repositories/index.js';
 export * from './seed/index.js';
+export * from './lab/age-conversations.js';

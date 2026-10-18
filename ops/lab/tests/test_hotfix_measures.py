@@ -340,7 +340,9 @@ def test_the_evals_matrix_runs_with_the_probed_models_and_keeps_content_private(
         private=tmp_path,
         memory_venture="lanternwise",
     )
-    assert remembered[-2:] == ["--memory-venture", "lanternwise"]
+    assert remembered[-4:-2] == ["--memory-venture", "lanternwise"]
+    assert remembered[-2] == "--between-sessions-cmd"
+    assert remembered[-1].endswith("--filter @foundry/api exec tsx src/scripts/lab-age-conversation.ts")
     assert "--simulator llm --simulator-model us.amazon.nova-pro-v1:0" in joined
     assert "--judge --judge-model us.amazon.nova-pro-v1:0" in joined
     assert f"--private-out {tmp_path / 'evals-matrix' / 'private'}" in joined
@@ -349,6 +351,17 @@ def test_the_evals_matrix_runs_with_the_probed_models_and_keeps_content_private(
     )
     assert "--simulator" not in template
     assert "--judge" not in template
+
+
+def test_the_summary_counts_the_aged_gaps(tmp_path: Path) -> None:
+    log = tmp_path / "aging.log"
+    assert cli.aged_gaps(log) is None
+    log.write_text(
+        "lab-age: days=3 sessions=1 turns=8 memory=2 notebooks=1 digests=1 distilled=yes\n"
+        "lab-age: days=14 sessions=1 turns=6 memory=0 notebooks=1 digests=0 distilled=no\n"
+        "something else\n"
+    )
+    assert cli.aged_gaps(log) == {"aged": 2, "after_distillation": 1}
 
 
 def test_evals_simulator_and_judge_costs_join_the_lab_ledger() -> None:

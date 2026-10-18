@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import subprocess
 import sys
 import time
@@ -527,7 +528,15 @@ def evals_matrix_command(
     if judge_model:
         cmd += ["--judge", "--judge-model", judge_model]
     if memory_venture:
-        cmd += ["--memory-venture", memory_venture]
+        from conversation_lab.stack import PNPM
+
+        # Days and weeks later are real: after each such session the lab ages it in its own database.
+        cmd += [
+            "--memory-venture",
+            memory_venture,
+            "--between-sessions-cmd",
+            f"{shlex.quote(PNPM)} --filter @foundry/api exec tsx src/scripts/lab-age-conversation.ts",
+        ]
     return cmd
 
 
@@ -561,9 +570,13 @@ def suite_matrix_evals(
         private=ctx.private,
         memory_venture=ctx.memory_venture,
     )
-    env = {**ctx.env, "FA_OWNER_ACCESS_CODE": ctx.env.get("E2E_OWNER_ACCESS_CODE", "")}
     log_dir = ctx.private / "evals-matrix"
     log_dir.mkdir(parents=True, exist_ok=True)
+    env = {
+        **ctx.env,
+        "FA_OWNER_ACCESS_CODE": ctx.env.get("E2E_OWNER_ACCESS_CODE", ""),
+        "LAB_AGE_LOG": str(log_dir / "aging.log"),
+    }
     with (log_dir / "evals.log").open("wb") as log:
         try:
             done = subprocess.run(  # noqa: S603 - fixed arguments
@@ -590,7 +603,20 @@ def suite_matrix_evals(
         "passed": sum(1 for c in cases if c.get("status") == "passed"),
         "run": sum(1 for c in cases if c.get("status") in ("passed", "failed", "error")),
         "evals_report_md": report,
+        "aged_gaps": aged_gaps(log_dir / "aging.log"),
         "stopped_by": None,
+    }
+
+
+def aged_gaps(log: Path) -> dict[str, int] | None:
+    """How many remembered conversations the lab aged between sessions, and how many after their distillation
+    (counts from apps/api lab-age-conversation.ts's own lines)."""
+    if not log.is_file():
+        return None
+    lines = [line for line in log.read_text(encoding="utf-8").splitlines() if line.startswith("lab-age: ")]
+    return {
+        "aged": len(lines),
+        "after_distillation": sum(1 for line in lines if line.endswith("distilled=yes")),
     }
 
 

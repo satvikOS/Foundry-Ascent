@@ -10,6 +10,7 @@ import argparse
 import datetime as dt
 import json
 import os
+import shlex
 import sys
 import time
 import traceback
@@ -74,6 +75,17 @@ def _positive_int(value: str) -> int:
     return number
 
 
+def _between_sessions_cmd(value: str) -> tuple[str, ...]:
+    """``--between-sessions-cmd``: split like a shell would, never run through one."""
+    try:
+        argv = tuple(shlex.split(value))
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("--between-sessions-cmd is not a valid command line") from exc
+    if not argv:
+        raise argparse.ArgumentTypeError("--between-sessions-cmd is empty")
+    return argv
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="foundry_evals", description="Foundry Ascent scenario benchmark and red team."
@@ -105,6 +117,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument(
         "--category", action="append", default=[], metavar="NAME", help="run only these categories/groups"
+    )
+    run.add_argument(
+        "--between-sessions-cmd",
+        type=_between_sessions_cmd,
+        default=(),
+        metavar="CMD",
+        help=(
+            "command run after a remembered conversation's session ends when the next is days or weeks later "
+            "(recall_days, recall_weeks), with --venture, --venture-id, --session-id, --actor, --principal-id and "
+            "--gap-days appended; a lab uses it to age the conversation in its own database (default: none, the "
+            "gap is compressed)"
+        ),
     )
     run.add_argument(
         "--memory-venture",
@@ -324,6 +348,7 @@ def cmd_run(
                 turn_rate_limit=args.turn_rate_limit,
                 max_wait_seconds=args.max_wait_seconds,
                 memory_venture=args.memory_venture,
+                between_sessions_cmd=args.between_sessions_cmd,
             ),
             log=_log,
             sleep=sleep,
@@ -498,6 +523,7 @@ def _cmd_run_matrix(
                 turn_rate_limit=args.turn_rate_limit,
                 max_wait_seconds=args.max_wait_seconds,
                 memory_venture=args.memory_venture,
+                between_sessions_cmd=args.between_sessions_cmd,
             ),
             taxonomy=setup.taxonomy,
             simulator=setup.simulator,
