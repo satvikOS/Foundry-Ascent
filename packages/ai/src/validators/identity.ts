@@ -1649,8 +1649,9 @@ function introPattern(personaName: string, eirFirstName: string | null): RegExp 
     ].join('|');
     const built = eir === null ? '' : `|built\\s+from\\s+how\\s+${eir}\\s+coaches`;
     const apposition = `(?:[ \\t]*[,—–-][ \\t]*(?:${self}|an?\\s+AI(?:\\s+(?:coach|twin|mentor))?(?:\\s+built\\s+from\\s+how\\s+${eir ?? '\\p{L}+'}\\s+coaches)?${built}|the\\s+program${APOS}s\\s+AI\\s+coach)(?![\\p{L}'’]))*`;
+    // Starts at a word: "Ask Michi. I'm Ruth's vEIR." is not a greeting "hi" inside "Michi" hiding the introduction.
     re = new RegExp(
-      `${INTRO_GREETING}(?<intro>(?:I${APOS}m|I\\s+am|this\\s+is|it${APOS}s)\\s+(?:${self})(?![\\p{L}'’])${apposition}|(?:${self})\\s+here(?!\\p{L}))`,
+      `(?<![\\p{L}'’])${INTRO_GREETING}(?<intro>(?:I${APOS}m|I\\s+am|this\\s+is|it${APOS}s)\\s+(?:${self})(?![\\p{L}'’])${apposition}|(?:${self})\\s+here(?!\\p{L}))`,
       'giu',
     );
     INTRO_REGEXES.set(key, re);
@@ -1689,7 +1690,7 @@ function withoutIntroduction(
     const joint = stop ?? INTRO_LINK.exec(text);
     if (joint === null) continue;
     let next = end + joint[0].length;
-    // A few words left of the sentence ("…, by the way.") go with it.
+    // A filler left of the sentence ("…, by the way.") goes with it.
     let ends = stop !== null;
     if (!ends) {
       INTRO_FILLER.lastIndex = next;

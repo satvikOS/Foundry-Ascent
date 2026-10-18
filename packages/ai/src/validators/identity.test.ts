@@ -1084,6 +1084,12 @@ describe('rewriteIdentity — once met, a reply never introduces the vEIR again 
     expect(later("I'm Ruth's vEIR.", { disclaimers: 'unit' }).text).toBe('');
   });
 
+  it('reads an introduction from the start of a word, wherever its sentence starts', () => {
+    // "hi" inside "Michi" is no greeting, so the introduction after it is still found.
+    expect(later("Ask Michi. I'm Ruth's vEIR, by the way.").text).toBe('Ask Michi.');
+    expect(later("Sushi, I'm Ruth's vEIR.")).toEqual({ text: "Sushi, I'm Ruth's vEIR.", findings: [] });
+  });
+
   it('names the neutral guide’s introduction too', () => {
     const out = rewriteIdentity("Hi Ines, I'm Foundry Guide, the program's AI coach. What's next?", {
       ...GUIDE,
