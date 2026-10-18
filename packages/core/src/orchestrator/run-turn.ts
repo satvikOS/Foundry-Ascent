@@ -444,7 +444,9 @@ export function createOrchestrator(
           release,
           allowedModes,
           personaEirName: presence.eirName,
-          presence,
+          // A private conversation is one the EIR never reads (turns_read RLS, 0003): the vEIR never says there
+          // that its EIR sees the work.
+          presence: { ...presence, eirSeesWork: presence.eirSeesWork && session.privacy !== 'ephemeral' },
           history,
           heardHistory: historyAsHeard(history, interruptions),
           // The opener is the conversation's first message: replayed while the history reaches back to it.

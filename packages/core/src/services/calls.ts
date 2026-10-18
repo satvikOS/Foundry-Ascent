@@ -720,11 +720,15 @@ export function createCallsService(
           // message, so the call says exactly what the vEIR believes it opened with (none for temporary chats).
           opener: turnCount === 0 ? session.opener : null,
           conversationStarted: turnCount > 0,
-          firstMeeting: !(await sessionsRepo.startedEarlierConversation(tx, {
-            ventureId,
-            principalId: ctx.principalId,
-            exceptSessionId: sessionId,
-          })),
+          // A first meeting: nothing said yet here, and no earlier conversation. A call in a conversation already
+          // under way picks it up instead of introducing the vEIR again.
+          firstMeeting:
+            turnCount === 0 &&
+            !(await sessionsRepo.startedEarlierConversation(tx, {
+              ventureId,
+              principalId: ctx.principalId,
+              exceptSessionId: sessionId,
+            })),
         };
       });
 

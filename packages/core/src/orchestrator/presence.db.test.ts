@@ -41,7 +41,11 @@ interface Run {
 }
 
 /** A typed turn on QuietQuad whose model streams `reply`; returns the system prompt it was given. */
-async function turn(reply: string, text = 'Where do we start?'): Promise<Run> {
+async function turn(
+  reply: string,
+  text = 'Where do we start?',
+  privacy: 'standard' | 'ephemeral' = 'standard',
+): Promise<Run> {
   const systems: string[] = [];
   const deps = {
     db: h.t.db,
@@ -62,7 +66,7 @@ async function turn(reply: string, text = 'Where do we start?'): Promise<Run> {
     admitVoiceTurn: () => Promise.resolve(),
   });
   const core = createCore(deps);
-  const session = await core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+  const session = await core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach', privacy });
   const events: TurnStreamEvent[] = [];
   const outcome = await orchestrator.runTurn(maya, session.id, { text, mode: 'coach' }, (e) => {
     events.push(TurnStreamEvent.parse(e));
@@ -108,6 +112,35 @@ describe('the vEIR’s presence, enforced by the server', () => {
     expect((await h.core.ventures.get(maya, h.ventures.quietquad.id)).persona?.firstPerson).toBe(true);
   });
 
+  it('never says Corin sees the work in a private conversation, which Corin never reads', async () => {
+    const { system, outcome } = await turn('Start with the door counts.', 'Where do we start?', 'ephemeral');
+    expect(outcome.status).toBe('completed');
+    expect(system).toContain(
+      "Be present, like Corin on a video call: first person, in Corin's voice and style",
+    );
+    expect(system).not.toContain('Corin sees what');
+    expect(system).not.toContain('sees what we work on');
+  });
+
+  it('keeps a real model’s honest answer, streamed and validated, and lets it stand when the founder asked', async () => {
+    const reply = "Honestly? I'm just an AI. Start with the door counts.";
+    const completedAnswer = (run: Run): string | undefined => {
+      const last = run.events.at(-1);
+      if (last?.event !== 'turn.completed') throw new Error('expected turn.completed');
+      return last.turn.response?.answer;
+    };
+    const shownOf = (run: Run): string =>
+      run.events.flatMap((e) => (e.event === 'turn.delta' ? [e.text] : [])).join('');
+    const asked = await turn(reply, 'Wait, are you real?');
+    expect(completedAnswer(asked)).toBe(reply);
+    expect(shownOf(asked)).toBe(reply);
+    const unasked = await turn(reply, 'Where do we start?');
+    const honest =
+      "Honestly? I'm Corin's digital twin, built from how Corin coaches. Start with the door counts.";
+    expect(completedAnswer(unasked)).toBe(honest);
+    expect(shownOf(unasked)).toBe(honest);
+  });
+
   it('rewrites a volunteered disclaimer out of the streamed answer, without blocking or an identity violation', async () => {
     const { events, outcome } = await turn(
       "As an AI, I don't have a life. But here's the plan: count the door traffic for a week.",
@@ -120,6 +153,27 @@ describe('the vEIR’s presence, enforced by the server', () => {
     if (completed?.event !== 'turn.completed') throw new Error('expected turn.completed');
     expect(completed.turn.response?.answer).toBe("Here's the plan: count the door traffic for a week.");
     expect(completed.turn.validator?.identityViolation).toBe(false);
+  });
+});
+
+describe('a call introduces the vEIR only on a first meeting', () => {
+  it('introduces it in a person’s first conversation, then greets once that conversation is under way', async () => {
+    const devin = await h.ctxFor(h.people.devin);
+    const session = await h.core.sessions.create(devin, h.ventures.quietquad.id, { mode: 'coach' });
+    const first = await h.core.calls.start(devin, session.id, { inputMode: 'typed' });
+    expect(first.intro?.text).toMatch(/^Hi Devin, I'm Corin's vEIR, Corin's digital twin\. /);
+    await h.core.calls.end(devin, first.call.id, { reason: 'user' });
+    // Devin chats by text in this, his only conversation, then presses Call: they have met.
+    const typed = await h.core.orchestrator.runTurn(
+      devin,
+      session.id,
+      { text: 'Where do we start?', mode: 'coach' },
+      () => undefined,
+    );
+    expect(typed.status).toBe('completed');
+    const again = await h.core.calls.start(devin, session.id, { inputMode: 'typed' });
+    expect(again.intro?.text).toBe('Hi Devin. Where would you like to pick up?');
+    await h.core.calls.end(devin, again.call.id, { reason: 'user' });
   });
 });
 
