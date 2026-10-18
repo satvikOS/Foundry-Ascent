@@ -16,6 +16,7 @@ import {
   LEFT_OFF_CONVERSATIONS,
   LEFT_OFF_EXCHANGES,
   continuityOpener,
+  newsSubjectOf,
   relativeWhen,
   subjectOf,
   threadOpener,
@@ -25,7 +26,7 @@ import {
   type LeftOffThreads,
   type OpenerSubject,
 } from './continuity-prompt.js';
-import { addressFounder, type OpenerPeople } from './opener-topic.js';
+import { addressFounder, topicWords, type OpenerPeople } from './opener-topic.js';
 
 /**
  * What the vEIR remembers when a turn starts (the specific pool): the founder's first name, the notebook of
@@ -217,8 +218,10 @@ export async function loadLeftOff(
     LEFT_OFF_CONVERSATIONS,
   );
   if (picked.length === 0) return null;
+  // Every picked conversation's last exchanges: the ones its digest does not cover are shown as said, and the
+  // founder's own lines of all of them are read for what they told (news, numbers, names, worries: LAB-R6b, RC-01).
   const exchanges = await sessionsRepo.listLastExchanges(tx, {
-    sessionIds: picked.filter((c) => c.distillVersion < c.completedTurns).map((c) => c.id),
+    sessionIds: picked.map((c) => c.id),
     perSession: LEFT_OFF_EXCHANGES,
   });
   return {
@@ -245,6 +248,7 @@ export async function loadLeftOff(
       exchanges: exchanges
         .filter((x) => x.sessionId === c.id && c.completedTurns - x.fromEnd + 1 > c.distillVersion)
         .map((x) => ({ founder: x.founderText, answer: x.answer })),
+      said: exchanges.filter((x) => x.sessionId === c.id).map((x) => x.founderText),
     })),
   };
 }
@@ -386,7 +390,15 @@ export async function chooseOpener(
     byPerson: false,
     ...(subject === undefined ? {} : { subject }),
   });
-  if (stored !== null && current && !fromSomeoneElse) {
+  // The founder's news in their latest conversation comes first: a stored line that does not name it (the coach's
+  // framing, "anchoring the pilot price") gives way to a line around the news (LAB-R6b).
+  const news = latest === null ? null : newsSubjectOf(latest, people);
+  const namesNews =
+    news === null ||
+    topicWords(`${stored ?? ''} ${notebook?.content.nextTopic ?? ''}`).some((w) =>
+      topicWords(news.text).includes(w),
+    );
+  if (stored !== null && current && !fromSomeoneElse && namesNews) {
     const topic = notebook?.content.nextTopic ?? null;
     const around =
       topic === null

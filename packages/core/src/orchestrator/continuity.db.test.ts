@@ -883,6 +883,61 @@ describe('how a new conversation opens', () => {
     h.jobQueue.drain();
   });
 
+  it('opens and recalls with what the founder told, never only the coach’s framing (LAB-R6b, RC-01)', async () => {
+    await ageEverything(3);
+    const first = await h.core.sessions.create(maya, quietquad(), {});
+    for (const text of [
+      'Big news. We just signed a letter of intent with Hartwell.',
+      "They'll pay $900 per semester for the pilot.",
+      "I'm worried their SSO requirement will slow everything down.",
+    ]) {
+      await talk(maya, first.id, text);
+    }
+    // Distilled in the coach's framing: the digest and the notebook's thread are the vEIR's own advice.
+    const digest = {
+      summary: 'We worked on anchoring the pilot price to the workaround cost and an SSO kill criterion.',
+      topics: ['anchoring the pilot price'],
+      commitments: [],
+      openQuestions: [],
+      generatedAt: new Date().toISOString(),
+    };
+    await h.t.db.system(async (sx) => {
+      await sx.query(
+        'UPDATE coaching_sessions SET digest = CAST(:d AS jsonb), distill_version = 3 WHERE id = :id',
+        { d: p.text(JSON.stringify(digest)), id: p.uuid(first.id) },
+      );
+      const key = { ventureId: quietquad(), personaId: h.ventures.quietquad.personaId };
+      const current = await notebooksRepo.getNotebook(sx, key);
+      await notebooksRepo.saveNotebook(sx, {
+        tenantId: h.seed.tenantId,
+        ...key,
+        expectedVersion: current?.version ?? 0,
+        content: {
+          ...(current?.content ?? notebooksRepo.EMPTY_NOTEBOOK),
+          nextOpener:
+            'Last time, we left off on anchoring the pilot price to the workaround cost. Where are things now?',
+          nextTopic: 'anchoring the pilot price to the workaround cost',
+        },
+        suppressed: current?.suppressed ?? [],
+        editedBy: 'veir',
+        sourceSessionId: first.id,
+      });
+    });
+    // The next conversation opens with the founder's news…
+    const next = await h.core.sessions.create(maya, quietquad(), {});
+    expect(next.opener ?? '').toMatch(/letter of intent with Hartwell/);
+    expect(next.opener ?? '').not.toMatch(/anchoring/);
+    // …and its "Where you left off" carries what they told, in their words, before the summary.
+    await talk(maya, next.id, 'Do you remember what we talked about last time?');
+    const prompt = seen.at(-1)?.messages.at(-1)?.content ?? '';
+    const said = prompt.indexOf('<they_said');
+    expect(said).toBeGreaterThan(0);
+    expect(said).toBeLessThan(prompt.indexOf('<summary>We worked on anchoring'));
+    for (const fact of ['letter of intent with Hartwell', '$900 per semester', 'SSO requirement']) {
+      expect(prompt).toContain(fact);
+    }
+  });
+
   it('carries over a conversation the venture had with its previous coach, as the founder’s, never as its own', async () => {
     await ageEverything(3);
     const before = await h.core.sessions.create(maya, quietquad(), {});
