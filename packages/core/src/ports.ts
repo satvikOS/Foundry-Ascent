@@ -162,6 +162,11 @@ export class SpeechSynthesisError extends Error {
  */
 export interface SpeechSynthesizer {
   synthesize(input: SpeechSynthesisInput): Promise<SynthesizedSpeech>;
+  /**
+   * Opens (or keeps warm) the connection speech is synthesized on, with a free request, so a call's first spoken
+   * reply does not pay a new connection (LAB-P2). Never rejects; optional.
+   */
+  prewarm?(): Promise<void>;
 }
 
 export interface EnqueueOptions {

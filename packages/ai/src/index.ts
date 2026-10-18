@@ -108,6 +108,13 @@ export type {
   ProviderStreamResult,
 } from './gateway/provider.js';
 export { cosineSimilarity, hashEmbedding } from './gateway/hash-embedding.js';
+export {
+  CountingAgent,
+  KEEP_ALIVE_MSECS,
+  awsConnectionStats,
+  sharedAwsAgent,
+  type ConnectionStats,
+} from './gateway/http-agent.js';
 
 // Pricing -------------------------------------------------------------------------------------------
 export {

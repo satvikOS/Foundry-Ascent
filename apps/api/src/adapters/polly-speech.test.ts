@@ -151,3 +151,27 @@ describe('speech wiring', () => {
     expect(speechFor(off, config)).toEqual({});
   });
 });
+
+describe('prewarming the Polly connection (LAB-P2)', () => {
+  it('sends one free DescribeVoices request, and never rejects', async () => {
+    const sent: unknown[] = [];
+    const ok = new PollySpeechSynthesizer({
+      region: 'us-east-1',
+      engine: 'neural',
+      client: {
+        send: (command: { input: unknown; constructor: { name: string } }) => {
+          sent.push([command.constructor.name, command.input]);
+          return Promise.resolve({ Voices: [] });
+        },
+      },
+    });
+    await ok.prewarm();
+    expect(sent).toEqual([['DescribeVoicesCommand', { LanguageCode: 'en-US' }]]);
+    const failing = new PollySpeechSynthesizer({
+      region: 'us-east-1',
+      engine: 'neural',
+      client: { send: () => Promise.reject(named('AccessDeniedException')) },
+    });
+    await expect(failing.prewarm()).resolves.toBeUndefined();
+  });
+});

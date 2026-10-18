@@ -973,6 +973,15 @@ export function createCallsService(
         };
       });
 
+      // The connections the call's first turn and its first spoken reply use (the Bedrock runtime, Polly) are opened
+      // while the greeting is prepared, with free requests (LAB-P2: after idle gaps every AWS call paid a new
+      // connection). The host keeps the process alive for them; they never hold the response or fail the call.
+      const warming = Promise.all([kit.deps.gateway.prewarm?.(), kit.deps.speech?.prewarm?.()]).then(
+        () => undefined,
+        () => undefined,
+      );
+      if (kit.deps.afterResponse === undefined) void warming;
+      else kit.deps.afterResponse(warming);
       const intro = await openCall(ctx, started);
       let sttGrant: SttGrant | null = null;
       if (started.call.inputMode === 'transcribe') {

@@ -400,6 +400,43 @@ describe('starting a call', () => {
     await endCall('maya', started.call.id);
   });
 
+  it('opens the model and speech connections while it prepares the greeting, without holding it (LAB-P2)', async () => {
+    const warmed: string[] = [];
+    class Warming extends MockModelGateway {
+      prewarm(): Promise<void> {
+        warmed.push('model');
+        return Promise.resolve();
+      }
+    }
+    const after: Promise<unknown>[] = [];
+    const counted = createCore({
+      db: h.t.db,
+      gateway: new Warming(),
+      config: h.config,
+      objectStore: h.objectStore,
+      jobQueue: h.jobQueue,
+      speech: Object.assign(new FakeSpeechSynthesizer(), {
+        prewarm: () => {
+          warmed.push('speech');
+          // Never answers: the call starts all the same.
+          return new Promise<void>(() => undefined);
+        },
+      }),
+      afterResponse: (task) => {
+        after.push(task);
+      },
+    });
+    const sessionId = await newSession('maya', 'quietquad');
+    const started = StartCallResponse.parse(
+      await counted.calls.start(ctx.maya, sessionId, { inputMode: 'typed' }),
+    );
+    expect(started.intro).not.toBeNull();
+    expect(warmed.sort()).toEqual(['model', 'speech']);
+    // Handed to the host to keep alive after the response, never awaited by it.
+    expect(after).toHaveLength(1);
+    await endCall('maya', started.call.id);
+  });
+
   it('starts with typed input where speech recognition is unavailable or fails', async () => {
     const bare = createCore({
       db: h.t.db,

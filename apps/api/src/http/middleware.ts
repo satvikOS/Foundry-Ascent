@@ -13,7 +13,12 @@ import { getCookie } from 'hono/cookie';
 import { routePath } from 'hono/route';
 
 import { errorFields, type Logger, principalHash } from '../logging.js';
-import { currentRequestMetrics, RequestMetrics, withRequestMetrics } from '../runtime/request-metrics.js';
+import {
+  currentRequestMetrics,
+  openRequest,
+  RequestMetrics,
+  withRequestMetrics,
+} from '../runtime/request-metrics.js';
 import { classifyError, httpError, problemResponse } from './problem.js';
 import { clearedSessionCookie, resolveRequestId } from './request-meta.js';
 import { type AppContext, type AppEnv } from './types.js';
@@ -64,7 +69,12 @@ export function requestContext({
     c.set('session', undefined);
     c.set('rawBody', undefined);
     c.set('errorCode', undefined);
-    await withRequestMetrics(metrics, next);
+    const close = openRequest(metrics);
+    try {
+      await withRequestMetrics(metrics, next);
+    } finally {
+      close();
+    }
     const res = c.res;
     res.headers.set(REQUEST_ID_HEADER, requestId);
     applySecurityHeaders(res.headers);
@@ -81,6 +91,8 @@ export function requestContext({
       streaming: res.headers.get('content-type')?.startsWith('text/event-stream') === true ? true : undefined,
       authMs: metrics.authMs === null ? undefined : Math.round(metrics.authMs),
       ...metrics.dbFields(),
+      ...metrics.inflightFields(),
+      ...metrics.connectionFields(),
     };
     if (status >= 500) logger.error('http.request', fields);
     else if (status >= 400) logger.warn('http.request', fields);

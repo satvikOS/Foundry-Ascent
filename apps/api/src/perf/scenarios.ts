@@ -289,8 +289,19 @@ export interface ScenarioResult {
  */
 export async function runScenario(
   rig: LatencyRig,
-  options: { readonly textTurns: number; readonly voiceTurns: number },
+  options: {
+    readonly textTurns: number;
+    readonly voiceTurns: number;
+    /**
+     * Milliseconds between one turn's end and the next turn, as a person paces a call (LAB-P2: browser call turns
+     * were about ten seconds apart). Default 0: back to back.
+     */
+    readonly turnGapMs?: number;
+  },
 ): Promise<ScenarioResult> {
+  const gap = async (): Promise<void> => {
+    if ((options.turnGapMs ?? 0) > 0) await new Promise((resolve) => setTimeout(resolve, options.turnGapMs));
+  };
   const turns: TurnSample[] = [];
   const requests: RequestSample[] = [];
   const cookie = await rig.signIn(rig.founderId);
@@ -313,6 +324,7 @@ export async function runScenario(
   const typed = await newConversation(rig, cookie);
   requests.push(typed);
   for (let i = 0; i < options.textTurns; i += 1) {
+    if (i > 0) await gap();
     turns.push(
       await turn(rig, {
         cookie,
@@ -349,6 +361,7 @@ export async function runScenario(
       requests.push(intro.sample);
     }
     for (let i = 0; i < options.voiceTurns; i += 1) {
+      await gap();
       turns.push(
         await turn(rig, {
           cookie,

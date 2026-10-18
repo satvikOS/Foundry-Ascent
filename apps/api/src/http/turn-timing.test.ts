@@ -64,6 +64,7 @@ describe('TurnTimeline', () => {
       admissionMs: 62,
       retrievalMs: 268,
       embedMs: 91,
+      embedCalls: 1,
       promptMs: 10,
       modelStartMs: 400,
       modelFirstTokenMs: 650,
@@ -76,6 +77,10 @@ describe('TurnTimeline', () => {
       dbRoundTrips: 1,
       dbTransactions: 0,
       dbWaitMs: 20,
+      inflightAtStart: 0,
+      inflightMax: 0,
+      awsConnectionsOpened: 0,
+      awsConnectionsReused: 0,
     });
   });
 

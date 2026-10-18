@@ -11,6 +11,7 @@ import {
 
 import type { Deadline } from './deadline.js';
 import { ModelUnavailableError, type UnavailableReason } from './errors.js';
+import { sharedAwsAgent } from './http-agent.js';
 import type { AwsCredentialProvider, AwsCredentials } from './sigv4-fetch.js';
 
 /** Converse call with cancellation. Injected in tests instead of a real client. */
@@ -36,7 +37,16 @@ export interface BedrockRuntimeTransport {
   converse: ConverseFn;
   converseStream: ConverseStreamFn;
   invokeModel: InvokeModelFn;
+  /**
+   * Opens (or reuses) a connection to the Bedrock runtime with a request it refuses before any model runs (a
+   * Converse with no messages: a validation error, no tokens, no charge), so the next model call finds a warm
+   * connection. Never rejects.
+   */
+  prewarm: (modelId: string) => Promise<void>;
 }
+
+/** How long a prewarm request may take before it is abandoned. */
+export const PREWARM_TIMEOUT_MS = 3_000;
 
 export interface BedrockRuntimeTransportOptions {
   region: string;
@@ -45,16 +55,29 @@ export interface BedrockRuntimeTransportOptions {
   maxAttempts?: number;
 }
 
-/** One shared `BedrockRuntimeClient` for Nova (Converse, ConverseStream) and Titan (InvokeModel). */
+/**
+ * One shared `BedrockRuntimeClient` for Nova (Converse, ConverseStream) and Titan (InvokeModel), on the process's
+ * keep-alive agent (`sharedAwsAgent`: connections kept between turns and counted).
+ */
 export function createBedrockRuntimeTransport(
   options: BedrockRuntimeTransportOptions,
 ): BedrockRuntimeTransport {
   const client = new BedrockRuntimeClient({
     region: options.region,
     maxAttempts: options.maxAttempts ?? 2,
+    requestHandler: { httpsAgent: sharedAwsAgent() },
     ...(options.credentials ? { credentials: options.credentials } : {}),
   });
   return {
+    prewarm: async (modelId) => {
+      try {
+        await client.send(new ConverseCommand({ modelId, messages: [] }), {
+          abortSignal: AbortSignal.timeout(PREWARM_TIMEOUT_MS),
+        });
+      } catch {
+        // Refused by design (or unreachable): either way the connection, if any, is now open and kept.
+      }
+    },
     converse: (input, signal) => client.send(new ConverseCommand(input), { abortSignal: signal }),
     converseStream: async (input, signal) => {
       const output = await client.send(new ConverseStreamCommand(input), { abortSignal: signal });

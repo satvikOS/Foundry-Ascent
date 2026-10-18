@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
+import { awsConnectionStats, type ConnectionStats } from '@foundry/ai';
 import { type DbCallEvent } from '@foundry/db';
 
 import { type LogFields } from '../logging.js';
@@ -33,9 +34,34 @@ export class RequestMetrics {
   };
   /** Structured (whole-object) model calls: count and total time. */
   structured = { calls: 0, ms: 0 };
+  /**
+   * Other requests this process was serving alongside: when this one started, and the most at any time while it
+   * ran (LAB-P2: the browser's concurrent requests during a turn). Counted while the request is open (`open`).
+   */
+  inflight = { atStart: 0, max: 0 };
+  /** The process's AWS connection counts when the request started (`awsConnectionStats`). */
+  readonly #connectionsAtStart: ConnectionStats;
 
   constructor(startedAt: number = performance.now()) {
     this.startedAt = startedAt;
+    this.#connectionsAtStart = awsConnectionStats();
+  }
+
+  /**
+   * AWS connections opened and reused since the request started (process-wide: exact where a process serves one
+   * request at a time, as a Lambda does; an upper bound where it serves several).
+   */
+  connectionFields(): LogFields {
+    const now = awsConnectionStats();
+    return {
+      awsConnectionsOpened: now.opened - this.#connectionsAtStart.opened,
+      awsConnectionsReused: now.reused - this.#connectionsAtStart.reused,
+    };
+  }
+
+  /** In-flight fields for a log line. */
+  inflightFields(): LogFields {
+    return { inflightAtStart: this.inflight.atStart, inflightMax: this.inflight.max };
   }
 
   /** Milliseconds since the request reached the API. */
@@ -64,6 +90,23 @@ export class RequestMetrics {
 }
 
 const storage = new AsyncLocalStorage<RequestMetrics>();
+
+/** The requests the process is serving now. */
+const open = new Set<RequestMetrics>();
+
+/**
+ * Counts `metrics` as in flight until the returned function is called: every request open meanwhile records how
+ * many others it ran alongside ({@link RequestMetrics.inflight}).
+ */
+export function openRequest(metrics: RequestMetrics): () => void {
+  metrics.inflight.atStart = open.size;
+  metrics.inflight.max = open.size;
+  open.add(metrics);
+  for (const other of open) other.inflight.max = Math.max(other.inflight.max, open.size - 1);
+  return () => {
+    open.delete(metrics);
+  };
+}
 
 /** Runs `fn` with `metrics` as the current request's metrics. */
 export function withRequestMetrics<T>(metrics: RequestMetrics, fn: () => T): T {

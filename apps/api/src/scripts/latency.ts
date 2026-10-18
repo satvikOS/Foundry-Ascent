@@ -1,12 +1,14 @@
 /**
  *   pnpm --filter @foundry/api latency [--profile production|local] [--text N] [--voice N] [--json file]
- *                                      [--duplicate-memory N] [--set dbRoundTripMs=45 …]
+ *                                      [--duplicate-memory N] [--gap-ms N] [--set dbRoundTripMs=45 …]
  *
  * The local latency harness (docs/runbooks/latency.md): the whole API in one process over a fresh seeded
  * database on the local cluster, with production-like latency added at the far ends (database round trips,
  * model, embedding, speech; `perf/simulation.ts`). Runs a founder's flow (sign in, open the venture, type
  * N messages, start a call and talk N times) and prints a Markdown table of the client's and the server's
- * stage timings. `--json` also writes the raw samples. Nothing here needs AWS.
+ * stage timings. `--json` also writes the raw samples. `--gap-ms` waits between turns as a person paces a call
+ * (LAB-P2: browser call turns were about ten seconds apart). Nothing here needs AWS, so connection reuse to AWS is
+ * reported (`turn.timing` awsConnectionsOpened/awsConnectionsReused) but only a deployed run can show its effect.
  */
 import { writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
@@ -25,6 +27,7 @@ async function main(): Promise<void> {
       json: { type: 'string' },
       label: { type: 'string' },
       'duplicate-memory': { type: 'string', default: '0' },
+      'gap-ms': { type: 'string', default: '0' },
       // One simulated latency changed from the profile's (calibration): `--set modelFirstTokenMs=1800`.
       set: { type: 'string', multiple: true, default: [] },
     },
@@ -46,6 +49,7 @@ async function main(): Promise<void> {
     const result = await runScenario(rig, {
       textTurns: Number(values.text),
       voiceTurns: Number(values.voice),
+      turnGapMs: Number(values['gap-ms']),
     });
     const label = values.label ?? `Profile ${profile}`;
     process.stdout.write(`${markdownReport(reportRows(result), latency, label)}\n`);

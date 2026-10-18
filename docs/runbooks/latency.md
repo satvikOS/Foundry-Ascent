@@ -55,12 +55,12 @@ re-run the insights workflow after this work deploys.
 
 The API writes these lines (numbers and identifiers only, never content):
 
-| Event              | Fields                                                                                                                                                                                                                                                                                                                                                                        |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `http.request`     | `latencyMs` (to the response headers), `authMs` (session check), `dbRoundTrips`, `dbTransactions`, `dbWaitMs` (until the headers)                                                                                                                                                                                                                                             |
-| `turn.timing`      | ms since the request arrived: `acceptedMs`, `modelStartMs`, `firstDeltaMs` (first sentence), `firstSpeechMs` (first spoken unit), `totalMs`; stage durations: `authMs`, `admissionMs`, `retrievalMs` (embedding wait + queries), `embedMs`, `promptMs`, `modelFirstTokenMs`, `generationMs`, `structuredMs`, `finishMs`; the whole turn's `dbRoundTrips`, `dbWaitMs`, `voice` |
-| `speech.timing`    | ms since the speech request reached the service, cumulative: `verifiedMs`, `plannedMs` (checks), `capsCheckedMs`, `reservedMs`, `synthesizedMs` (Polly answered), `firstAudioMs` (first bytes handed to the response); `characters`. The bookkeeping (ledger, counters, audit) runs while the audio streams                                                                   |
-| `ai.model.attempt` | per model call: `latencyMs`, `inputTokens`, `cachedInputTokens` (read from Bedrock's prompt cache, included in `inputTokens`), `outputTokens`, `outcome`                                                                                                                                                                                                                      |
+| Event              | Fields                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `http.request`     | `latencyMs` (to the response headers), `authMs` (session check), `dbRoundTrips`, `dbTransactions`, `dbWaitMs` (until the headers), `inflightAtStart` / `inflightMax` (other requests the process served alongside), `awsConnectionsOpened` / `awsConnectionsReused` (AWS HTTPS connections, process-wide deltas)                                                                                                                                                              |
+| `turn.timing`      | ms since the request arrived: `acceptedMs`, `modelStartMs`, `firstDeltaMs` (first sentence), `firstSpeechMs` (first spoken unit), `totalMs`; stage durations: `authMs`, `admissionMs`, `retrievalMs` (embedding wait + queries), `embedMs`, `promptMs`, `modelFirstTokenMs`, `generationMs`, `structuredMs`, `finishMs`; the whole turn's `dbRoundTrips`, `dbWaitMs`, `voice`; `embedCalls`, `inflightAtStart`, `inflightMax`, `awsConnectionsOpened`, `awsConnectionsReused` |
+| `speech.timing`    | ms since the speech request reached the service, cumulative: `verifiedMs`, `plannedMs` (checks), `capsCheckedMs`, `reservedMs`, `synthesizedMs` (Polly answered), `firstAudioMs` (first bytes handed to the response); `characters`. The bookkeeping (ledger, counters, audit) runs while the audio streams                                                                                                                                                                   |
+| `ai.model.attempt` | per model call: `latencyMs`, `inputTokens`, `cachedInputTokens` (read from Bedrock's prompt cache, included in `inputTokens`), `outputTokens`, `outcome`                                                                                                                                                                                                                                                                                                                      |
 
 CloudWatch Logs Insights, log group `/aws/lambda/<api function>`:
 
@@ -87,6 +87,18 @@ filter event = "http.request" and route like "/api/v1/" | stats pct(latencyMs, 5
 
 `dbWaitMs / dbRoundTrips` is the measured Data API round trip: put it into the harness (§4) with
 `--set dbRoundTripMs=…` to replace the calibrated figure there.
+
+Connection reuse (LAB-P2: on browser-paced call turns Titan, Bedrock's first token and Polly's first audio were all
+slower than on back-to-back turns). The Bedrock and Polly clients share one keep-alive agent per process
+(`sharedAwsAgent`, packages/ai), and a call's start opens both connections with free requests while the greeting is
+prepared (a Converse the runtime refuses before any model runs, and `DescribeVoices`). A turn that opened a new
+connection rather than reusing one shows it:
+
+```text
+filter event = "turn.timing" and outcome = "completed"
+| stats pct(embedMs, 50), pct(modelFirstTokenMs, 50), avg(awsConnectionsOpened), avg(embedCalls), avg(inflightMax)
+  by voice, awsConnectionsOpened > 0
+```
 
 ## 4. Measuring locally (the harness)
 
