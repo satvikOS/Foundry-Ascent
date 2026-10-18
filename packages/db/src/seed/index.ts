@@ -1,6 +1,12 @@
 export * from './access-code.js';
 export * from './doctrine.js';
 export { SEED_NAMESPACE, seedId, uuidV5, ventureCanary } from './ids.js';
+export {
+  LAB_MEMORY_VENTURE,
+  LAB_MEMORY_VENTURE_KEY,
+  seedLabMemoryVenture,
+  type LabMemoryVentureResult,
+} from './lab-memory-venture.js';
 export { SEED_PATTERNS, SEED_RESOURCES, type SeedPattern, type SeedResource } from './resources.js';
 export * from './seed.js';
 export {

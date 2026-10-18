@@ -22,8 +22,23 @@ runs the harness (`ops/lab`, `python -m conversation_lab`):
 | `matrix` | Conversations across the matrix of human conversation (question types, answer styles, emotions, topic changes, relational moves, chat and call, registers): founder turns from an LLM simulator, graded by the deterministic graders and an LLM judge.                                                                                                                                                                                                  | Every turn answered, no blocking or presence finding, and the judge found the scenario's expectation met, the founder heard (≥ 4), no presence slip    |
 | `ui`     | The whole Playwright suite (`apps/web/e2e`) against the real model, speech off as in CI. Its assertions hold for any model (a recall names the earlier topic's key term, memory is matched loosely by topic, citations are asked of questions only the seed's records answer); a step that genuinely cannot hold for a real model carries `@mock-only` with its reason, and the lab passes `--grep-invert @mock-only` (CI runs everything on the mock). | Playwright's own outcome per test (retried once)                                                                                                       |
 
-Until the conversation-matrix suite of `evals/` lands, `matrix` runs the built-in smoke set
-(`ops/lab/scenarios/smoke.json`, 14 scenarios); the summary says which source ran.
+`matrix` has two sources (input `matrix_source`); the summary says which ran:
+
+- `builtin` (default): the lab's own scenarios (`ops/lab/scenarios/smoke.json`, 40, of which `max_scenarios` run).
+- `evals`: the conversation matrix of `evals/` (`python -m foundry_evals run --suite matrix`) against the lab's
+  app, with the probed simulator and judge. Its report (ids, grader codes and numbers, by evals' own contract,
+  gates G1–G17 included) is printed in the summary; its transcripts and judge rationales go to the sealed outputs.
+  The lab passes evals a planning estimate of USD 0.006 a turn (measured), caps evals' spend at the run's budget,
+  and charges evals' simulator and judge spend to the lab's ledger.
+
+  Its remembered (multi-session) scenarios need a dedicated synthetic venture that nobody else uses. Before the app
+  starts, the lab adds one to its own freshly reset database: **Lanternwise**, with two synthetic founders and a
+  synthetic teammate, QuietQuad's vEIR as its coach and an empty notebook
+  (`packages/db/src/seed/lab-memory-venture.ts`, run by `apps/api/src/scripts/lab-memory-venture.ts`, which refuses
+  anything but a local Postgres outside production). The lab passes it as `--memory-venture lanternwise`; evals gives each
+  scenario the venture's least-used member, and waits out the app's per-person voice-turn limit (40 per 10
+  minutes), which (unlike the typed limit) the lab cannot raise. evals' "days later" and "weeks later" scenarios still run
+  with the gap compressed (noted `time_compressed`): the app has no clock the lab can move.
 
 The founder simulator and the judge are Amazon Bedrock models of `ops/lab/models.json`: Nova Pro plays the founder
 (fallback Nova 2 Lite), Nova Premier judges (fallback Nova Pro). Each run probes them with a one-token request and
@@ -164,6 +179,15 @@ Expected cost per run, from the prices (actual figures are in each summary): rec
 chat turns with distillation and Polly, 4 judge calls), voice ≈ USD 0.05–0.10, matrix ≈ USD 0.30–0.60 for 14
 scenarios (≈ 35 turns, simulator and judge), ui ≈ USD 0.50–1.00 (the suite's ≈ 80 turns). A full `all` run stays
 well under the default USD 5.
+
+The evals matrix (`matrix_source=evals`) cost USD 0.45 for 12 scenarios (run 39093976745), so all of it (41
+scenarios plus the 8 remembered ones) is about USD 1.5–2. Its planner over-estimates turns, so give it a cap of
+about USD 3 to plan everything:
+
+```sh
+gh workflow run ops-conversation-lab.yml -f suite=matrix -f matrix_source=evals -f budget_usd=3 \
+  -f max_scenarios=40 -f public_key="$(cat "$dir/public.b64")"
+```
 
 ## Locally
 

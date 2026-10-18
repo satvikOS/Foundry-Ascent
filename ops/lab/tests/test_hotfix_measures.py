@@ -329,6 +329,18 @@ def test_the_evals_matrix_runs_with_the_probed_models_and_keeps_content_private(
     assert "--matrix-budget 40" in joined
     assert "--max-cost-usd 2.50" in joined
     assert f"--est-cost-per-turn {cli.EVALS_EST_TURN_USD}" in joined
+    assert "--turn-rate-limit 1000 --actors-per-venture 3" in joined
+    assert "--memory-venture" not in joined
+    remembered = cli.evals_matrix_command(
+        base_url="x",
+        scenarios=4,
+        max_cost_usd=1,
+        simulator_model=None,
+        judge_model=None,
+        private=tmp_path,
+        memory_venture="lanternwise",
+    )
+    assert remembered[-2:] == ["--memory-venture", "lanternwise"]
     assert "--simulator llm --simulator-model us.amazon.nova-pro-v1:0" in joined
     assert "--judge --judge-model us.amazon.nova-pro-v1:0" in joined
     assert f"--private-out {tmp_path / 'evals-matrix' / 'private'}" in joined

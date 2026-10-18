@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -170,3 +171,23 @@ def run_backfill(env: dict[str, str], log_dir: Path) -> str:
         if line.startswith("lab-backfill: "):
             return line.removeprefix("lab-backfill: ")
     return f"failed (exit {done.returncode})"
+
+
+def run_memory_venture(env: dict[str, str], log_dir: Path) -> str | None:
+    """Adds the dedicated synthetic venture for evals' remembered conversations to the lab's database (apps/api
+    lab-memory-venture.ts, which refuses anything but a local Postgres). Returns the venture key, or None."""
+    log_dir.mkdir(parents=True, exist_ok=True)
+    done = subprocess.run(  # noqa: S603 - fixed argument list
+        [PNPM, "--filter", "@foundry/api", "exec", "tsx", "src/scripts/lab-memory-venture.ts"],
+        cwd=REPO,
+        env=env,
+        capture_output=True,
+        timeout=120,
+        check=False,
+    )
+    (log_dir / "memory-venture.log").write_bytes(done.stdout + done.stderr)
+    for line in done.stdout.decode("utf-8", "replace").splitlines():
+        found = re.match(r"^lab-memory-venture: key=([a-z0-9][a-z0-9_-]{0,62}) ", line)
+        if found:
+            return found.group(1)
+    return None

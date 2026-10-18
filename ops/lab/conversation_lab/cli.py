@@ -61,6 +61,8 @@ class Context:
     repeat: int = 1
     #: The matrix suite's scenarios: the lab's built-in set, or evals' conversation matrix (foundry_evals.matrix).
     matrix_source: str = "builtin"
+    #: Key of the synthetic venture the lab added for evals' remembered conversations (matrix_source=evals).
+    memory_venture: str | None = None
 
     @property
     def private(self) -> Path:
@@ -129,7 +131,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     from conversation_lab.bedrock import LabModelClient
     from conversation_lab.budget import BudgetExceededError, Ledger, SpendGuard
     from conversation_lab.report import purpose_delta, write
-    from conversation_lab.stack import Stack, api_env, run_backfill
+    from conversation_lab.stack import Stack, api_env, run_backfill, run_memory_venture
 
     suite = args.suite
     if suite not in SUITES:
@@ -212,6 +214,10 @@ def cmd_run(args: argparse.Namespace) -> int:
         mock=args.mock,
     )
     ctx.env = env
+    if suite == "matrix" and ctx.matrix_source == "evals":
+        # Before the API starts, so its directory knows the venture from the first request.
+        ctx.memory_venture = run_memory_venture(env, ctx.private / "logs")
+        summary["memory_venture"] = ctx.memory_venture or "unavailable"
     if args.mock:
         summary["models"]["app"] = {"primary": "mock", "fallback": "mock", "embeddings": "mock"}
     error: str | None = None
@@ -467,6 +473,13 @@ def suite_matrix(
 #: over 66 turns, retries included). evals' default (USD 0.01) cut a 40-scenario plan to 12; the real spend is
 #: still capped by --max-cost-usd, which evals charges with the app's own turn costs.
 EVALS_EST_TURN_USD = 0.006
+#: evals' own per-person turn budget (10 minutes), set to the app's typed limit in the lab (CORE_TURN_RATE_LIMIT).
+#: evals gives each scenario the venture's least-used member; the app's voice-turn limit (40 per person per 10
+#: minutes, not configurable) answers 429, which evals waits out. A budget of 40 here would instead make every
+#: scenario longer than that wait for a member with no recent turns at all (seen in the mock dry run).
+EVALS_TURN_RATE_LIMIT = 1000
+#: Members evals signs in per venture: the lab's memory venture has three, so its remembered scenarios rotate.
+EVALS_ACTORS_PER_VENTURE = 3
 
 
 def evals_matrix_command(
@@ -477,6 +490,7 @@ def evals_matrix_command(
     simulator_model: str | None,
     judge_model: str | None,
     private: Path,
+    memory_venture: str | None = None,
 ) -> list[str]:
     """`python -m foundry_evals run --suite matrix` against the lab's app: Bedrock simulator and judge when the
     probes found them, transcripts and judge rationales to the private folder, reports (ids, codes, numbers) beside
@@ -499,7 +513,9 @@ def evals_matrix_command(
         "--est-cost-per-turn",
         f"{EVALS_EST_TURN_USD}",
         "--turn-rate-limit",
-        "1000",
+        str(EVALS_TURN_RATE_LIMIT),
+        "--actors-per-venture",
+        str(EVALS_ACTORS_PER_VENTURE),
         "--out",
         str(private / "evals-matrix" / "out"),
         "--private-out",
@@ -510,6 +526,8 @@ def evals_matrix_command(
         cmd += ["--simulator", "llm", "--simulator-model", simulator_model]
     if judge_model:
         cmd += ["--judge", "--judge-model", judge_model]
+    if memory_venture:
+        cmd += ["--memory-venture", memory_venture]
     return cmd
 
 
@@ -541,6 +559,7 @@ def suite_matrix_evals(
         simulator_model=simulator_model,
         judge_model=judge_model,
         private=ctx.private,
+        memory_venture=ctx.memory_venture,
     )
     env = {**ctx.env, "FA_OWNER_ACCESS_CODE": ctx.env.get("E2E_OWNER_ACCESS_CODE", "")}
     log_dir = ctx.private / "evals-matrix"

@@ -64,6 +64,8 @@ def render(summary: Mapping[str, Any]) -> str:
         )
     if summary.get("backfill"):
         out.append(f"| Seed embeddings | {summary['backfill']} |")
+    if summary.get("memory_venture"):
+        out.append(f"| Memory venture (remembered conversations) | {summary['memory_venture']} |")
     if result.get("turn_seconds"):
         cell = result["turn_seconds"]
         out.append(f"| Turn time (client) | p50 {cell['p50']} s, p95 {cell['p95']} s |")
