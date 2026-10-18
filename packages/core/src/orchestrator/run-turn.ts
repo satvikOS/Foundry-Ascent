@@ -52,6 +52,7 @@ import {
 } from '../services/call-admission.js';
 import { createDraftEscalation } from '../services/escalations.js';
 import { proposeMemoryCandidates, settleKeptMemory } from '../services/memory.js';
+import { statedMemory } from '../services/founder-statements.js';
 import { conversationGrounding } from '../services/memory-dedupe.js';
 import { historyAsHeard } from '../services/spoken-text.js';
 import { answerTurn, generationError } from './answer.js';
@@ -805,9 +806,20 @@ export function createOrchestrator(
     const { context, shown, generation, checked } = answered;
     const status = checked.blocked ? 'blocked' : 'completed';
     // What the turn taught is kept automatically, checked by its words now; its meaning is settled after the turn
-    // completed (settleKeptMemory), so the reply never waits for an embedding.
+    // completed (settleKeptMemory), so the reply never waits for an embedding. A decision, goal or constraint the
+    // founder stated in plain first-person words is kept with it too when the model's candidates do not say it
+    // (founder-statements.ts, LAB-K1: no model call; a chat is otherwise distilled only after nine idle minutes).
+    const proposed = checked.response.memory_candidates;
     const keepable =
-      !checked.blocked && pre.session.privacy === 'standard' ? checked.response.memory_candidates : [];
+      !checked.blocked && pre.session.privacy === 'standard'
+        ? [
+            ...proposed,
+            ...statedMemory(turn.founderText, {
+              founderName: coach.memory.continuity.founderFirstName ?? null,
+              modelCandidates: proposed,
+            }),
+          ]
+        : [];
     // A call ends a streamed reply with its last unit (and a caveat when the answer was narrowed). A reply
     // written whole (streaming off, or a stream that broke, was empty or was not prose) is said as its
     // validated spoken form. A blocked turn says nothing more.

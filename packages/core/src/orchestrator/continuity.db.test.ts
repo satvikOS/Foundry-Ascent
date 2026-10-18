@@ -166,6 +166,8 @@ const candidate = (title: string, content: string, source?: MemoryCandidate['sou
 });
 
 let scripted: ReturnType<typeof createCore>;
+/** The scripted core's model (what it was asked, in order). */
+let scriptedModel: MeaningGateway;
 
 beforeAll(async () => {
   // Many messages from one founder in a few minutes: the per-person message limit is not what is tested here.
@@ -196,6 +198,7 @@ beforeAll(async () => {
       },
     },
   });
+  scriptedModel = gateway;
   scripted = createCore({
     db: h.t.db,
     gateway,
@@ -492,6 +495,34 @@ async function liveTitled(title: string): Promise<memoryRepo.MemoryRecord[]> {
 }
 
 describe('memory kept automatically', () => {
+  it('keeps a decision the founder states in a chat with that turn, though the model proposed nothing (LAB-K1)', async () => {
+    const session = await scripted.sessions.create(maya, quietquad(), {});
+    const generated = scriptedModel.calls.length;
+    const turn = await say(
+      maya,
+      session.id,
+      "We've decided to ask each library for a paid commitment before the pilot starts.",
+    );
+    expect(turn.status).toBe('completed');
+    const kept = await learnedFrom(turn.id);
+    expect(kept).toEqual([
+      expect.objectContaining({
+        type: 'decision',
+        content: 'The team decided to ask each library for a paid commitment before the pilot starts.',
+        status: 'confirmed',
+        keptAutomatically: true,
+        origin: 'ai',
+      }),
+    ]);
+    // No model call for it, and no distillation: the turn's own stream and annotations only.
+    const calls = scriptedModel.calls.slice(generated).map((c) => c.schemaName ?? c.kind);
+    expect(calls.filter((c) => c !== 'embed' && c !== 'stream')).toEqual([COACH_ANNOTATIONS_SCHEMA_NAME]);
+    // A private chat keeps nothing.
+    const temporary = await scripted.sessions.create(maya, quietquad(), { privacy: 'ephemeral' });
+    const unkept = await say(maya, temporary.id, "We've decided to ask each library for a deposit first.");
+    expect(await learnedFrom(unkept.id)).toEqual([]);
+  });
+
   it('is visible to the team at once, editable and forgettable, and goes with its conversation', async () => {
     proposals.Two = [
       candidate('Pilot agreement', 'Two libraries agreed to a pilot in November.'),
