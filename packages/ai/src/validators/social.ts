@@ -146,20 +146,59 @@ export function endsWithHandBack(spoken: string): boolean {
   return /\?["'”’)\]*_]*$/.test(last) || INVITATION.test(last.replace(/^[^\p{L}]+/u, ''));
 }
 
-/** Short hand-backs said after a spoken reply that ended on a statement (one per turn, varied by its id). */
-export const SPOKEN_HAND_BACKS = ['What do you think?', 'How does that sound?'] as const;
-/** The hand-back after a reply to someone who sounds stressed or discouraged. */
-export const STRESSED_HAND_BACK = 'What would help most right now?';
+/**
+ * Short hand-backs said after a spoken reply that ended on a statement: varied by turn, and never one the conversation
+ * already heard (the evals' `repeated_question` flags an exact repeat anywhere in a conversation; two fixed lines
+ * repeated on any call of three or more such replies).
+ */
+export const SPOKEN_HAND_BACKS = [
+  'What do you think?',
+  'How does that sound?',
+  'Does that fit where you are?',
+  'Which part do you want to start with?',
+  'Does that match what you are seeing?',
+  "Anything you'd change?",
+  "What's your gut on that?",
+  'Want to try that?',
+  'Does that feel doable?',
+  'Where would you start?',
+  'What would get in the way?',
+  'Shall we go with that?',
+] as const;
+/** Hand-backs after a reply to someone who sounds stressed or discouraged: about them, not the plan. */
+export const STRESSED_HAND_BACKS = [
+  'What would help most right now?',
+  'How are you holding up?',
+  'What feels heaviest right now?',
+  'Want to take it one piece at a time?',
+  'What would make this week lighter?',
+] as const;
+/** The first stressed hand-back (kept for callers that name one). */
+export const STRESSED_HAND_BACK = STRESSED_HAND_BACKS[0];
+
+function plainLine(text: string): string {
+  return text.replace(/[‘’ʼ]/g, "'").replace(/\s+/g, ' ').toLowerCase();
+}
 
 /**
  * The hand-back of a call's turn (see the module comment): none when the founder is only being social or wrapping
- * up; a question about what would help when they sound stressed; else one of {@link SPOKEN_HAND_BACKS}, varied by
- * `seed` (the turn's id).
+ * up; one about what would help when they sound stressed ({@link STRESSED_HAND_BACKS}); else one of
+ * {@link SPOKEN_HAND_BACKS}. Chosen by `seed` (the turn's id) among those the conversation has not heard yet
+ * (`earlier`: the replies in view, and the opener): null once every one was said.
  */
-export function spokenHandBackFor(founderText: string, seed: string): string | null {
+export function spokenHandBackFor(
+  founderText: string,
+  seed: string,
+  earlier: readonly (string | null | undefined)[] = [],
+): string | null {
   if (socialTurnOf(founderText) !== null) return null;
-  if (founderMoves(founderText).includes('stress')) return STRESSED_HAND_BACK;
+  const pool: readonly string[] = founderMoves(founderText).includes('stress')
+    ? STRESSED_HAND_BACKS
+    : SPOKEN_HAND_BACKS;
+  const heard = earlier.map((text) => plainLine(text ?? '')).join('\n');
+  const fresh = pool.filter((line) => !heard.includes(plainLine(line)));
+  if (fresh.length === 0) return null;
   let hash = 0;
   for (let i = 0; i < seed.length; i += 1) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
-  return SPOKEN_HAND_BACKS[hash % SPOKEN_HAND_BACKS.length] ?? SPOKEN_HAND_BACKS[0];
+  return fresh[hash % fresh.length] ?? null;
 }

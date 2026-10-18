@@ -14,6 +14,7 @@ import {
   MockModelGateway,
   NARROWING_NOTE_PREFIX,
   SPOKEN_HAND_BACKS,
+  STRESSED_HAND_BACKS,
   SPOKEN_NARROWING_CAVEAT,
   mockCoachResponse,
   type EmbedOptions,
@@ -1256,7 +1257,7 @@ describe('conversation craft the lab still heard (wave 7)', () => {
   it('a call’s reply that ends on a statement hands the turn back as it is said', async () => {
     for (const [text, expected] of [
       ['How do we get the first ten users?', SPOKEN_HAND_BACKS as readonly string[]],
-      ["I'm so stressed, nothing is working this week.", ['What would help most right now?']],
+      ["I'm so stressed, nothing is working this week.", STRESSED_HAND_BACKS as readonly string[]],
     ] as const) {
       const gateway = new MockModelGateway({
         streamDelayMs: 0,
@@ -1280,6 +1281,40 @@ describe('conversation craft the lab still heard (wave 7)', () => {
       const validating = events.findIndex((e) => e.event === 'turn.status' && e.phase === 'validating');
       expect(events.findLastIndex((e) => e.event === 'turn.speech')).toBeLessThan(validating);
     }
+  });
+
+  it('never hands back twice with the same line in one call (repeated_question)', async () => {
+    const replies = [
+      'Start with the two libraries that already count seats.',
+      'Book the facilities manager for a twenty-minute walk-through.',
+      'Put the per-library price in the one-page plan.',
+      'Send the plan to both librarians before the weekend.',
+    ];
+    let n = 0;
+    const gateway = new MockModelGateway({
+      streamDelayMs: 0,
+      streamFixture: () => replies[n++ % replies.length] ?? '',
+    });
+    const { core, orchestrator } = coreWith(gateway);
+    const session = await core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+    const handBacks: string[] = [];
+    for (const text of [
+      'How do we get the first ten users?',
+      'Who should we talk to first?',
+      'What goes in the plan?',
+      'And then what?',
+    ]) {
+      const { events } = await run(orchestrator, session.id, {
+        text,
+        mode: 'coach',
+        channel: 'voice',
+        callId: CALL_ID,
+      });
+      const last = speechUnits(events).at(-1)?.text ?? '';
+      expect(SPOKEN_HAND_BACKS as readonly string[]).toContain(last);
+      handBacks.push(last);
+    }
+    expect(new Set(handBacks).size).toBe(4);
   });
 });
 

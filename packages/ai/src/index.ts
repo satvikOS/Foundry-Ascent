@@ -217,6 +217,7 @@ export {
   SOCIAL_BUDGETS,
   SPOKEN_HAND_BACKS,
   STRESSED_HAND_BACK,
+  STRESSED_HAND_BACKS,
   asksToRepeat,
   endsWithHandBack,
   fourGramsOf,

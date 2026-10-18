@@ -5,6 +5,7 @@ import {
   CLOSING_FALLBACK,
   SPOKEN_HAND_BACKS,
   STRESSED_HAND_BACK,
+  STRESSED_HAND_BACKS,
   asksToRepeat,
   endsWithHandBack,
   spokenHandBackFor,
@@ -117,6 +118,27 @@ describe('a spoken reply hands the turn back (spoken_no_handback)', () => {
       STRESSED_HAND_BACK,
     );
     expect(SPOKEN_HAND_BACKS).toContain(spokenHandBackFor('How do we get the first ten users?', 't1'));
+  });
+
+  it('never hands back with a line the conversation already heard: four statement-ending call turns, four lines', () => {
+    for (const [founder, pool] of [
+      ['How do we get the first ten users?', SPOKEN_HAND_BACKS],
+      ["I'm so stressed, nothing is working this week.", STRESSED_HAND_BACKS],
+    ] as const) {
+      const answers: string[] = [];
+      const said: string[] = [];
+      for (let turn = 0; turn < 4; turn += 1) {
+        // The same seed every turn: only what was heard can change the line.
+        const line = spokenHandBackFor(founder, 'same-turn-id', answers);
+        expect(line).not.toBeNull();
+        expect(pool as readonly string[]).toContain(line);
+        said.push(line ?? '');
+        answers.push(`Start with the two libraries that already count seats. ${line ?? ''}`);
+      }
+      expect(new Set(said).size).toBe(4);
+    }
+    // Once every line was said, none rather than a repeat.
+    expect(spokenHandBackFor('How do we get users?', 't', [SPOKEN_HAND_BACKS.join(' ')])).toBeNull();
   });
 });
 

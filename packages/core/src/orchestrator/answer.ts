@@ -230,7 +230,14 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
   // A hello that opens the conversation (nothing said before it) is answered with the pick-up of last time.
   const read = socialTurnOf(spec.founderText);
   const social = read === 'greeting' && previousReply === null ? null : read;
-  const handBack = spec.channel === 'voice' ? spokenHandBackFor(spec.founderText, spec.ids.turnId) : null;
+  // Never a hand-back the conversation already heard (the replies in view, and the opener).
+  const handBack =
+    spec.channel === 'voice'
+      ? spokenHandBackFor(spec.founderText, spec.ids.turnId, [
+          ...spec.history.map((t) => t.answer),
+          spec.opener ?? null,
+        ])
+      : null;
 
   // Step 5: generate (streamed through the sentence gate, or whole when streaming is switched off).
   await emit({ event: 'turn.status', phase: 'reasoning', detail: null, evidenceCount: shown.length });
