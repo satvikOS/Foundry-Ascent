@@ -58,7 +58,7 @@ export function MiniCallBarView() {
       className={cn(
         // Below the phone bar when the page shows it, at the top otherwise (a conversation's own header
         // replaces the phone bar, and sits below this bar).
-        'glass-strong sticky top-(--phone-bar-height) z-20 flex h-(--mini-call-bar-height) shrink-0 items-center gap-2 border-b px-3 sm:gap-3 sm:px-4 md:top-0',
+        'glass-bar sticky top-(--phone-bar-height) z-20 flex h-(--mini-call-bar-height) shrink-0 items-center gap-2 border-b px-3 sm:gap-3 sm:px-4 md:top-0',
       )}
     >
       <span role="status" className="sr-only">

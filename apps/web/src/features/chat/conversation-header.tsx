@@ -71,7 +71,7 @@ export function ConversationHeader({
   const phoneStatus = [isPrivate ? 'Private' : null, active ? null : 'Ended'].filter(Boolean).join(' · ');
   const name = veir?.name ?? session.personaName;
   return (
-    <header className="glass sticky top-(--mini-call-height) z-20 border-b" data-print="hide">
+    <header className="glass-bar sticky top-(--mini-call-height) z-20 border-b" data-print="hide">
       <div className="mx-auto flex h-14 w-full max-w-(--content-width) items-center gap-2.5 px-4 sm:px-6">
         {openNavigation ? (
           <Button

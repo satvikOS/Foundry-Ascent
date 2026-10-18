@@ -148,8 +148,8 @@ const SOLID_SURFACES = [
   '--sidebar-accent',
 ] as const;
 
-/** Translucent layers (`.glass`, `.glass-strong`): measured composited over every solid surface. */
-const GLASS_LAYERS = ['--glass-bg', '--glass-bg-strong'] as const;
+/** Translucent layers (`.glass`, `.glass-bar`, `.glass-strong`): measured composited over every solid surface. */
+const GLASS_LAYERS = ['--glass-bg', '--glass-bg-bar', '--glass-bg-strong'] as const;
 
 /** A surface as it renders: solids as declared, glass composited over each solid it can float over. */
 function surfaces(scheme: Scheme): { name: string; color: Rgba }[] {
@@ -245,6 +245,42 @@ describe('colour tokens (globals.css)', () => {
         );
         expect(pairs.length).toBeGreaterThan(200);
         expect(failures(pairs, 4.5)).toEqual([]);
+      });
+
+      it('text on the bars that text scrolls under keeps 4.5:1 over the worst content passing beneath', () => {
+        // A sticky header over a conversation (03-conversation-mobile-light.png): a line of prose or a filled
+        // button passes under the bar as a solid block of its colour at its centre, so no credit is given for the
+        // blur. Every surface, every text colour and every fill is a possible backdrop.
+        const bar = resolve('--glass-bg-bar', scheme);
+        const contents = [
+          ...SOLID_SURFACES,
+          ...TEXT_TOKENS,
+          ...STATUS_TEXT,
+          ...FILLED_PAIRS.map(([, fill]) => fill),
+        ].map((name) => ({ name, color: resolve(name, scheme) }));
+        const pairs = TEXT_TOKENS.flatMap((text) =>
+          contents.map((content) => {
+            const bg = over(bar, content.color);
+            return {
+              label: `${text} on --glass-bg-bar over ${content.name} (${hex(bg)})`,
+              fg: resolve(text, scheme),
+              bg,
+            };
+          }),
+        );
+        expect(pairs.length).toBeGreaterThan(250);
+        expect(failures(pairs, 4.5)).toEqual([]);
+        // The page's lighter glass would not hold there: that is why the bars have their own.
+        const thin = resolve('--glass-bg', scheme);
+        const worst = Math.min(
+          ...contents.map((content) =>
+            contrast(
+              over(resolve('--muted-foreground', scheme), over(thin, content.color)),
+              over(thin, content.color),
+            ),
+          ),
+        );
+        expect(worst).toBeLessThan(4.5);
       });
 
       it('text on filled controls reaches 4.5:1', () => {
@@ -361,6 +397,37 @@ describe('colour tokens (globals.css)', () => {
         expect(runtime?.[1]?.toLowerCase(), `theme.ts THEME_COLORS.${scheme}`).toBe(canvas);
       }
     });
+  });
+
+  it('every sticky bar at the top of a page is on the bars’ glass, never the thinner page glass', () => {
+    const root = join(here, '..');
+    const bars: string[] = [];
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir)) {
+        const path = join(dir, entry);
+        if (statSync(path).isDirectory()) walk(path);
+        else if (entry.endsWith('.tsx') && !entry.endsWith('.test.tsx')) {
+          const source = readFileSync(path, 'utf8');
+          for (const match of source.matchAll(/(['"`])([^'"`]*\bsticky\b[^'"`]*)\1/g)) {
+            const classes = match[2] ?? '';
+            if (!/(?:^|\s)top-/.test(classes)) continue;
+            const where = path.slice(root.length + 1);
+            if (/(?:^|\s)glass-bar(?:\s|$)/.test(classes)) bars.push(where);
+            else if (/(?:^|\s)glass(?:-strong)?(?:\s|$)/.test(classes)) offenders.push(where);
+          }
+        }
+      }
+    };
+    walk(root);
+    expect(offenders).toEqual([]);
+    // The conversation header, the phone bar, the mini call bar and the landing page's header.
+    expect(bars.sort()).toEqual([
+      'components/shell/app-shell.tsx',
+      'features/calls/mini-call-bar-view.tsx',
+      'features/chat/conversation-header.tsx',
+      'routes/index.tsx',
+    ]);
   });
 
   it('no component fades a text token with an opacity modifier (that would bypass these checks)', () => {

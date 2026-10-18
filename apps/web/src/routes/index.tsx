@@ -101,7 +101,7 @@ function LandingPage() {
 
   return (
     <div className="flex min-h-dvh flex-col">
-      <header className="glass sticky top-0 z-30 border-b">
+      <header className="glass-bar sticky top-0 z-30 border-b">
         <div className="mx-auto flex h-16 max-w-6xl items-center gap-4 px-4 sm:px-6">
           <Link
             to="/"

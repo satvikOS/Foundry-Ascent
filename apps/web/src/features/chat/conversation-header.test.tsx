@@ -71,8 +71,8 @@ describe('ConversationHeader', () => {
     );
   });
 
-  it('sits on the shared glass surface', async () => {
+  it('sits on the bars’ glass, dense enough for its text over the prose scrolling under it', async () => {
     const heading = await renderHeader('standard');
-    expect(heading.closest('header')).toHaveClass('glass');
+    expect(heading.closest('header')).toHaveClass('glass-bar');
   });
 });

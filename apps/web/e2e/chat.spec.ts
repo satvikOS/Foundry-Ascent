@@ -1,5 +1,6 @@
 import { expect, type Page } from '@playwright/test';
 
+import { barTextContrast } from './support/contrast';
 import {
   composer,
   expectNoHorizontalScroll,
@@ -17,7 +18,7 @@ import { feedLongAnswers, LONG_FOLLOW_UPS, LONG_PARAGRAPHS } from './support/lon
  * composer never cover each other, and a chip never wipes what the founder was typing. With a real model's
  * answer (four paragraphs) and its long follow-up questions (LAB-U1), the end of the answer and its actions are
  * kept in view above the composer area as it finishes, the chips stay on one line, and a reader who scrolled up
- * while it streamed is left where they are.
+ * while it streamed is left where they are. The conversation's header stays legible over the prose under it.
  */
 
 /** Room kept between the latest answer's actions and the glass composer area below them. */
@@ -151,9 +152,9 @@ test.describe('conversation composer', () => {
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await askFirstQuestion(page);
-    // The composer area and the header are the shared glass surface over the transcript.
+    // The composer area is glass over the transcript; the header, which prose scrolls under, the denser bar glass.
     await expect(page.locator('[data-slot="composer-dock"]')).toHaveClass(/(^|\s)glass(\s|$)/);
-    await expect(page.getByRole('main').locator('header').first()).toHaveClass(/(^|\s)glass(\s|$)/);
+    await expect(page.getByRole('main').locator('header').first()).toHaveClass(/(^|\s)glass-bar(\s|$)/);
     // The first answer fit until it finished: the page keeps its end in view, actions and chips together.
     await expectActionsClearOfChips(page, 'the first answer as it finished, 1440×900');
 
@@ -247,6 +248,61 @@ test.describe('conversation composer', () => {
     expect(Math.abs(after - before), 'the page did not move after the reader scrolled away').toBeLessThan(2);
     // So the end of the answer is still below, out of view, for them to read down to.
     await expect(second.getByRole('button', { name: 'Copy answer' })).not.toBeInViewport();
+  });
+
+  test('the conversation header keeps AA contrast over the prose under it, on a phone and a desktop', async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    await feedLongAnswers(page);
+    await page.setViewportSize(PHONE);
+    await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' });
+    await openVenture(page);
+    await startConversation(page, `Is per-branch pricing too complicated? ${runToken()}`);
+    const answer = page.getByRole('article', { name: 'Exchange 1' });
+    await expect(answer.getByRole('button', { name: 'Copy answer' })).toBeVisible({ timeout: 30_000 });
+    const header = page.getByRole('main').locator('header').first();
+    for (const size of [PHONE, DESKTOP]) {
+      await page.setViewportSize(size);
+      for (const scheme of ['light', 'dark'] as const) {
+        await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
+        await useTheme(page, scheme);
+        // Prose under the header: the answer's first paragraph scrolled to the header's line.
+        await answer
+          .locator('p')
+          .first()
+          .evaluate((p) => {
+            const bar = document.querySelector('main header');
+            const top = p.getBoundingClientRect().top + window.scrollY;
+            window.scrollTo(0, top - (bar ? bar.getBoundingClientRect().height / 2 : 0));
+          });
+        // What can pass beneath the bar: the page, the prose (its text colour as a solid block: the worst case, as a
+        // filled button of the same colour passes unblurred) and the founder's message bubble.
+        const under = await page.evaluate(() => {
+          const prose = document.querySelector('[data-slot="veir-answer"] p');
+          const bubble = [...document.querySelectorAll('article p')].find((p) =>
+            p.querySelector('.sr-only')?.textContent.startsWith('Message'),
+          );
+          return [
+            getComputedStyle(document.body).backgroundColor,
+            prose ? getComputedStyle(prose).color : '',
+            bubble ? getComputedStyle(bubble).backgroundColor : '',
+          ];
+        });
+        expect(under.filter(Boolean), 'the page, the prose and a message bubble were measured').toHaveLength(
+          3,
+        );
+        const measured = await barTextContrast(header, under);
+        expect(measured.length, 'the header has text').toBeGreaterThan(0);
+        const failing = measured
+          .filter((m) => m.ratio < 4.5)
+          .map((m) => `"${m.text}" ${m.ratio.toFixed(2)}:1`);
+        expect(
+          failing,
+          `${String(size.width)}×${String(size.height)} ${scheme}: header text below 4.5:1`,
+        ).toEqual([]);
+      }
+    }
   });
 
   test('a follow-up chip sends its question and leaves an unsent draft where it was', async ({ page }) => {
