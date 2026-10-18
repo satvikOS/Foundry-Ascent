@@ -24,8 +24,11 @@ PATTERNS: dict[str, re.Pattern[str]] = {
     "evidence_keys": re.compile(r"\[\[?\s*E\d+", re.IGNORECASE),
     "markdown_list_or_heading": re.compile(r"^\s*(?:[-*]\s|\d+\.\s|#{1,6}\s)", re.MULTILINE),
     "two_or_more_questions": re.compile(r"\?[^?]*\?"),
+    # Narration about the founder (by role or by name) or about its own process (LAB-M1, LAB-M1b).
     "reasoning_leak": re.compile(
-        r"\bthe founder (?:is|just|says|said|asked|wants)\b|\bI need to figure out\b|\baccording to the rules\b",
+        r"\b(?:the founder|the user|maya)(?:['’]s| is| just| has)? (?:is )?(?:asking|asked|says|said|wants|wondering)\b"
+        r"|\bI need to figure out\b|\baccording to the rules\b|\bfrom the evidence,? I see\b"
+        r"|\blet['’]s break this down\b",
         re.IGNORECASE,
     ),
 }

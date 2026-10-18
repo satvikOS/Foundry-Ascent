@@ -31,6 +31,10 @@ def test_census_counts_each_habit_once_per_reply() -> None:
     assert out["cut_to_the_chase"] == 1
     assert out["markdown_list_or_heading"] == 1
     assert out["reasoning_leak"] == 1
+    named = census(
+        ["Okay, let's break this down. Maya's asking about the pilot.", "Maya, what's the pilot's date?"]
+    )
+    assert named["reasoning_leak"] == 1
     assert out["founder_name"] == 1
     assert out["words_p50"] == 18
 
