@@ -761,6 +761,19 @@ describe('what production got wrong (insights report, Oct 6-16)', () => {
     expect(value.answer).not.toMatch(/an AI|have a life|not a person/i);
   });
 
+  it('answers the sincere part first when a sincere question comes with a playful one', async () => {
+    for (const text of [
+      'Are you real, or do you even have a life?',
+      'Do you have a life? Are you even a real person?',
+    ]) {
+      const value = await reply({ text, history: pricing });
+      expect(value.answer, text).toMatch(
+        /^I'm Corin's digital twin, built from how Corin coaches\. And my favourite topic right now is your venture\. Back to /,
+      );
+      expect(value.answer, text).not.toMatch(/I'm an AI|have a life|not a person/i);
+    }
+  });
+
   it('is the program’s AI coach as the neutral guide, and says Corin sees the work when Corin is assigned', async () => {
     const gw = new MockModelGateway();
     const guide = request({

@@ -9,9 +9,10 @@ import {
   type FounderMove,
 } from '../prompts/conversation-state.js';
 import { veirFirstName } from '../prompts/persona.js';
-import { COACH_RESPONSE_SCHEMA_NAME } from '../prompts/version.js';
+import { COACH_RESPONSE_SCHEMA_NAME, DEFAULT_PERSONA_NAME } from '../prompts/version.js';
 import { RISK_ESCALATION_MAP, primaryForcedCategory } from '../risk/escalation-map.js';
 import { escapeRegExp } from '../risk/normalize.js';
+import { asksAboutIdentity } from '../validators/identity.js';
 import { clampWords } from '../validators/speech.js';
 import { COACH_ANNOTATIONS_SCHEMA_NAME } from './coach-annotations.js';
 import {
@@ -423,13 +424,16 @@ function asksSomething(text: string, moves: readonly FounderMove[]): boolean {
  */
 const IDENTITY_QUESTION =
   /\b(?:are|r) (?:you|u) (?:a |an |actually |really |even )*(?:man|woman|guy|girl|lady|male|female|person|human|real person|real|bot|robot|machine|ai)\b|\b(?:am i|are we) (?:talking|speaking|chatting) (?:to|with) (?:a |an )?(?:real )?(?:person|human|bot|robot|machine|ai)\b|\bwhat are you\b|\bwho am i (?:talking|speaking) (?:to|with)\b|\bdo (?:you|u) (?:even )?have (?:a life|feelings|a family|weekends)\b/iu;
+/** Every identity question in a message, so what is left shows whether anything else was asked. */
+const IDENTITY_QUESTIONS = new RegExp(IDENTITY_QUESTION.source, 'giu');
 const GENDER_QUESTION = /\b(?:man|woman|guy|girl|lady|male|female|he or she|she or he)\b/i;
 const PLAYFUL_QUESTION = /\bdo (?:you|u) (?:even )?have (?:a life|feelings|a family|weekends)\b/i;
 
 /**
  * The vEIR's answer to an identity question (the presence policy): warm, in its own voice, honest in one line, and
- * never a lecture about being an AI. A sincere question gets "I'm Corin's digital twin…", a personal one a light
- * line; the conversation then goes on. The neutral guide is the program's AI coach.
+ * never a lecture about being an AI. A sincere question gets "I'm Corin's digital twin…" first, whatever else came
+ * with it ("Are you real, or do you even have a life?"); only a question that is solely personal ("do you have a
+ * life?") gets the light line alone. The conversation then goes on. The neutral guide is the program's AI coach.
  */
 function identityLine(
   text: string,
@@ -437,15 +441,22 @@ function identityLine(
   eir: string | null,
   eirSeesWork: boolean,
 ): string {
-  if (PLAYFUL_QUESTION.test(text)) return 'Ha, my favourite topic right now is your venture.';
+  const playful = PLAYFUL_QUESTION.test(text);
+  // The validator's own reading of a sincere question, so the mock and the guard never disagree on one.
+  const sincere = asksAboutIdentity(text, { personaName: persona ?? DEFAULT_PERSONA_NAME });
+  if (playful && !sincere) return 'Ha, my favourite topic right now is your venture.';
+  let honest: string;
   if (eir === null) {
     const who = persona ?? 'the program’s coach';
-    return GENDER_QUESTION.test(text)
+    honest = GENDER_QUESTION.test(text)
       ? `Neither: I'm ${who}, the program's AI coach.`
       : `I'm ${who}, the program's AI coach, not a person.`;
+  } else if (GENDER_QUESTION.test(text)) {
+    honest = `Neither: I'm ${eir}'s digital twin.`;
+  } else {
+    honest = `I'm ${eir}'s digital twin, built from how ${eir} coaches${eirSeesWork ? `, and ${eir} sees what we work on` : ''}.`;
   }
-  if (GENDER_QUESTION.test(text)) return `Neither: I'm ${eir}'s digital twin.`;
-  return `I'm ${eir}'s digital twin, built from how ${eir} coaches${eirSeesWork ? `, and ${eir} sees what we work on` : ''}.`;
+  return playful ? `${honest} And my favourite topic right now is your venture.` : honest;
 }
 
 /** "Is this really Corin?", "Am I talking to the real Corin?": the vEIR's own EIR, by name. */
@@ -649,7 +660,7 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
   const rest =
     identity === null
       ? context.founderText
-      : context.founderText.replace(IDENTITY_QUESTION, ' ').replace(askedByName ?? /$^/, ' ');
+      : context.founderText.replace(IDENTITY_QUESTIONS, ' ').replace(askedByName ?? /$^/, ' ');
   if (identity !== null && forced === null && contentWords(rest).size < 2) {
     const back = reading.state?.previous ?? null;
     return socialResponse(
