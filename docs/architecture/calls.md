@@ -194,14 +194,24 @@ stream-transcription-websocket` URL (en-US, PCM, 16 kHz, partial-results stabili
   A synthesis that fails gives its play and characters back; one billed differently is corrected to the
   bill. Each refusal is audited (`speech.refused`).
 
-- **The intro** greets the founder by first name, says the vEIR is an AI coach, and continues with the
-  conversation's opener before its first turn (`coaching_sessions.opener`: the notebook's next opener as it
-  was when the conversation was created, which the turn engine replays as the vEIR's first message; none in
-  a temporary chat), "What would you like to work on?" without one, and "Where would you like to pick up?"
-  on a conversation under way. The vEIR introduces itself by its persona name unless
-  that name presents it as an EIR ("Corin Halvorsen", "Coach Corin"); it then says "Corin's vEIR". The
-  opener is a person-editable note: it is stored, shown and spoken only if it names no EIR at all and passes
-  the identity rules and the cross-venture check; otherwise it is left out.
+- **The intro** greets the founder by first name. On a first meeting the vEIR introduces itself once ("Hi Maya,
+  I'm Corin's vEIR, Corin's digital twin.") and continues with the conversation's opener, or "What would you like
+  to work on?". With someone it has met, it is one sentence of at most 90 characters (`repeatGreetingOf`): phrased
+  around what the opener is about ("Hi Maya, where are things with the facilities budget call you planned?"),
+  shortened to fit rather than dropped ("…the Harbour Hall study room for the pilot kickoff on Monday" loses "on
+  Monday", then "for the pilot kickoff"), else the opener itself as one sentence, else "Hi Maya, what would you like
+  to work on?" ("…where would you like to pick up?" on a conversation under way). An opener built around a clause
+  cut from the founder's line ("we left off on They'll promote QuietQuad") is never said, and an opener a person
+  wrote that cannot be shortened is said whole rather than dropped. The opener is chosen afresh at call start for a
+  conversation nobody has said anything in (`chooseOpener`, with what it is about: none for the generic invitation),
+  phrased and kept in the same transaction: the intro becomes that conversation's first message
+  (`coaching_sessions.opener`, replayed by the turn engine) when it says the opener, so the vEIR's history holds the
+  greeting it gave and its first reply never greets again (the sentence gate and the validator leave a greeting
+  out); a bare invitation never replaces a substantive opener (`openerKept`). The vEIR introduces
+  itself by its persona name unless that name presents it as an EIR ("Corin Halvorsen", "Coach Corin"); it then
+  says "Corin's vEIR". The opener is a person-editable note: it is stored, shown and spoken only if it names no EIR
+  at all and passes the identity rules and the cross-venture check; otherwise it is left out. None in a temporary
+  chat.
 
 ### 2.6 Barge-in, end and summary
 

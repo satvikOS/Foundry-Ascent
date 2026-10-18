@@ -307,21 +307,41 @@ test.describe('memory', () => {
     page,
   }) => {
     test.setTimeout(90_000);
-    await openVenture(page);
+    const ventureId = await openVenture(page);
     // The founder says what is worth remembering in their own words, a fact and a decision (the coach's framing
     // alone is never kept): any model that keeps what founders decide saves it with this answer.
     await startConversation(
       page,
       `How should we price the pilot for libraries? Willingness to pay has not been tested with a paid commitment yet. We've decided to ask each library for a paid commitment before the pilot starts. ${runToken()}`,
     );
+    const conversationId = /\/c\/([0-9a-f-]{36})/.exec(page.url())?.[1] ?? '';
     const saved = page.getByRole('article', { name: 'Exchange 1' }).getByTestId('memory-saved');
     await expect(saved).toBeVisible({ timeout: 30_000 });
+    // Everything this conversation taught (removed again at the end, so a later run finds the memory as it was).
+    const listed = await page.request.get(`/api/v1/ventures/${ventureId}/memory?status=confirmed&limit=100`);
+    expect(listed.status()).toBe(200);
+    const { items } = (await listed.json()) as {
+      items: {
+        id: string;
+        type: string;
+        keptAutomatically?: boolean;
+        sourceRefs: { kind: string; id: string }[];
+      }[];
+    };
+    const learned = items.filter(
+      (m) =>
+        m.keptAutomatically === true &&
+        m.sourceRefs.some((r) => r.kind === 'session' && r.id === conversationId),
+    );
+    // One item saved links it; several ("2 items") link Knowledge, where the founder's decision is opened.
     const href = (await saved.getByRole('link').getAttribute('href')) ?? '';
-    const memoryId = /[?&]m=([0-9a-f-]{36})/.exec(href)?.[1] ?? '';
+    const memoryId =
+      /[?&]m=([0-9a-f-]{36})/.exec(href)?.[1] ?? learned.find((m) => m.type === 'decision')?.id ?? '';
     expect(memoryId, 'the saved line links the item in Knowledge').not.toBe('');
-    const ids = [memoryId];
+    const ids = [...new Set([memoryId, ...learned.map((m) => m.id)])];
     try {
-      await saved.getByRole('link').click();
+      if (href.includes('m=')) await saved.getByRole('link').click();
+      else await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?m=${memoryId}`);
       const panel = page.getByRole('complementary', { name: 'Memory inspector' });
       await expect(panel.getByText(/^Learned from /)).toBeVisible();
       const corrected = page.waitForResponse(

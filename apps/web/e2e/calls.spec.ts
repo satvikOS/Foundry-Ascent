@@ -588,10 +588,17 @@ test.describe('vEIR calls', () => {
       await test.step('a second call opens by picking up the first, not with the same greeting', async () => {
         const { sessionId, intro } = await callFromSidebar();
         expect(sessionId).not.toBe(first);
-        // Met before: a greeting (no self-introduction, no "an AI coach"), then the pick-up.
-        expect(intro).toMatch(/^Hi Maya\. /);
-        expect(intro).not.toContain('What would you like to work on?');
-        expect(intro).toMatch(/last time|when we last spoke|we talked about|you said|you asked|pric/i);
+        // Met before: one sentence that greets her and picks the first call up (no self-introduction, no "an AI
+        // coach"), at most 90 characters.
+        expect(intro).toMatch(/^Hi Maya, /);
+        expect(intro.length).toBeLessThanOrEqual(90);
+        expect(intro).not.toContain('what would you like to work on?');
+        // It names what the first call was about (pricing), in a sentence that reads right: never a clause spliced
+        // in as the topic ("how did where we left off yesterday go?", "shall we pick up They'll…").
+        expect(intro).toMatch(/pric/i);
+        expect(intro).not.toMatch(
+          /\b(?:how did|with|pick up|carry on with|land on) (?:where|what|when|how|who|they|we|it|email|call)\b/i,
+        );
         await expectNoBareEirName(page, 'the second call');
       });
 

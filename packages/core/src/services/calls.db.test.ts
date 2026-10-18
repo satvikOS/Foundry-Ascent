@@ -296,8 +296,13 @@ describe('starting a call', () => {
     expect(CALL_LIMITS.sttGrantSeconds).toBeLessThanOrEqual(30);
     const intro = started.intro;
     if (intro === null) throw new Error('expected an intro');
-    // Maya has met her vEIR (the seeded conversation): a greeting, then the opener.
-    expect(intro.text).toMatch(/^Hi Maya\. Last time you planned five/);
+    // Maya has met her vEIR (the seeded conversation): one sentence of at most 90 characters, greeting her around
+    // the opener's thread (the seeded notebook's five library-staff interviews).
+    expect(intro.text).toMatch(/^Hi Maya, .*five library-staff interviews.*\?$/);
+    expect(intro.text.length).toBeLessThanOrEqual(90);
+    expect(intro.text.split(/(?<=[.!?])\s+/)).toHaveLength(1);
+    // What the call said is the conversation's first message: the vEIR's history holds the greeting it gave.
+    expect((await h.core.sessions.get(ctx.maya, sessionId)).session.opener).toBe(intro.text);
     expect(
       verifySpeechUnit(
         await keys.verificationKeys(),
@@ -314,7 +319,7 @@ describe('starting a call', () => {
     // A conversation under way gets an invitation to continue instead of the opener.
     await talk('maya', sessionId, again.call.id, 'Can we test the seat map this week?');
     const third = await startCall('maya', sessionId);
-    expect(third.intro?.text).toBe('Hi Maya. Where would you like to pick up?');
+    expect(third.intro?.text).toBe('Hi Maya, where would you like to pick up?');
     await endCall('maya', third.call.id);
     expect(await auditActions()).toEqual(expect.arrayContaining(['call.started', 'call.ended']));
     // The grant URL and the intro are content: never logged.
@@ -335,8 +340,8 @@ describe('starting a call', () => {
     const sessionId = await newSession('maya', 'quietquad');
     const started = await startCall('maya', sessionId);
     // Never the stored line: the call picks up Maya's last conversation (the test above) instead.
-    expect(started.intro?.text).toMatch(/^Hi Maya\. /);
-    expect(started.intro?.text).toContain('we talked about whether you can test the seat map this week.');
+    expect(started.intro?.text).toMatch(/^Hi Maya, /);
+    expect(started.intro?.text).toContain('whether you can test the seat map this week?');
     expect(started.intro?.text).not.toMatch(/Corin here|myself/);
     await endCall('maya', started.call.id);
   });
@@ -354,12 +359,82 @@ describe('starting a call', () => {
     try {
       const sessionId = await newSession('maya', 'quietquad');
       const started = await startCall('maya', sessionId);
-      expect(started.intro?.text).toMatch(/^Hi Maya\. /);
+      expect(started.intro?.text).toMatch(/^Hi Maya, /);
       expect(started.intro?.text).not.toMatch(/Corin Halvorsen|Corin asked/);
       await endCall('maya', started.call.id);
     } finally {
       await rename("Corin's vEIR");
     }
+  });
+
+  it('chooses, phrases and keeps the opener in one transaction before it responds (wave 7 review)', async () => {
+    let transactions = 0;
+    const db = new Proxy(h.t.db, {
+      get(target, prop) {
+        const value: unknown = Reflect.get(target, prop, target);
+        if (typeof value !== 'function') return value;
+        const fn = value as (...args: unknown[]) => unknown;
+        if (prop !== 'withContext') return fn.bind(target);
+        return (...args: unknown[]) => {
+          transactions += 1;
+          return fn.apply(target, args);
+        };
+      },
+    });
+    const counted = createCore({
+      db,
+      gateway: h.gateway,
+      config: h.config,
+      objectStore: h.objectStore,
+      jobQueue: h.jobQueue,
+    });
+    const sessionId = await newSession('maya', 'quietquad');
+    transactions = 0;
+    const started = StartCallResponse.parse(
+      await counted.calls.start(ctx.maya, sessionId, { inputMode: 'typed' }),
+    );
+    expect(started.intro).not.toBeNull();
+    // The call itself, then its opener chosen, said and kept: no third round before the greeting can be spoken.
+    expect(transactions).toBe(2);
+    expect((await h.core.sessions.get(ctx.maya, sessionId)).session.opener).toBe(started.intro?.text);
+    await endCall('maya', started.call.id);
+  });
+
+  it('opens the model and speech connections while it prepares the greeting, without holding it (LAB-P2)', async () => {
+    const warmed: string[] = [];
+    class Warming extends MockModelGateway {
+      prewarm(): Promise<void> {
+        warmed.push('model');
+        return Promise.resolve();
+      }
+    }
+    const after: Promise<unknown>[] = [];
+    const counted = createCore({
+      db: h.t.db,
+      gateway: new Warming(),
+      config: h.config,
+      objectStore: h.objectStore,
+      jobQueue: h.jobQueue,
+      speech: Object.assign(new FakeSpeechSynthesizer(), {
+        prewarm: () => {
+          warmed.push('speech');
+          // Never answers: the call starts all the same.
+          return new Promise<void>(() => undefined);
+        },
+      }),
+      afterResponse: (task) => {
+        after.push(task);
+      },
+    });
+    const sessionId = await newSession('maya', 'quietquad');
+    const started = StartCallResponse.parse(
+      await counted.calls.start(ctx.maya, sessionId, { inputMode: 'typed' }),
+    );
+    expect(started.intro).not.toBeNull();
+    expect(warmed.sort()).toEqual(['model', 'speech']);
+    // Handed to the host to keep alive after the response, never awaited by it.
+    expect(after).toHaveLength(1);
+    await endCall('maya', started.call.id);
   });
 
   it('starts with typed input where speech recognition is unavailable or fails', async () => {
@@ -1544,11 +1619,14 @@ describe('the turn engine and the calls service together', () => {
       'Which librarian can you reach first?',
     ];
     const seen: (readonly ChatMessage[])[] = [];
+    // The first reply opens differently: a reply never says what the founder already heard again (the repeat guard).
+    let replies = 0;
     const gateway = new MockModelGateway({
       streamDelayMs: 30,
       streamFixture: (context) => {
         seen.push(context.messages);
-        return sentences.join(' ');
+        replies += 1;
+        return replies === 1 ? `First things first. ${sentences.join(' ')}` : sentences.join(' ');
       },
     });
     const core = createCore({
@@ -1742,9 +1820,9 @@ describe('the turn engine and the calls service together', () => {
     const started = await startCall('maya', session.id, 'typed');
     const intro = started.intro;
     if (intro === null) throw new Error('expected an intro');
-    expect(intro.text).toBe(`Hi Maya. ${since}`);
+    expect(intro.text).toBe('Hi Maya, what did the second library say about the seat counts?');
     // What the vEIR believes it opened with (its first history message) is what the call said.
-    expect((await h.core.sessions.get(ctx.maya, session.id)).session.opener).toBe(since);
+    expect((await h.core.sessions.get(ctx.maya, session.id)).session.opener).toBe(intro.text);
     expect(
       verifySpeechUnit(
         await keys.verificationKeys(),
@@ -1757,7 +1835,7 @@ describe('the turn engine and the calls service together', () => {
     const temporary = await h.core.sessions.create(ctx.maya, quietquad, { privacy: 'ephemeral' });
     expect(temporary.opener).toBeNull();
     const call = await startCall('maya', temporary.id, 'typed');
-    expect(call.intro?.text).toBe('Hi Maya. What would you like to work on?');
+    expect(call.intro?.text).toBe('Hi Maya, what would you like to work on?');
     await endCall('maya', call.call.id);
   });
 

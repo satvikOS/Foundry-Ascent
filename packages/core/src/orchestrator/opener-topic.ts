@@ -1,4 +1,4 @@
-import { contentTokens, founderMoves, isEverydayWord } from '@foundry/ai';
+import { contentTokens, founderMoves, isEverydayWord, tidyFounderWords } from '@foundry/ai';
 
 /**
  * What an opening line says the last conversation was about, and how it speaks of the founder.
@@ -15,6 +15,10 @@ import { contentTokens, founderMoves, isEverydayWord } from '@foundry/ai';
  * distilled line an opener uses is addressed to the founder first ({@link addressFounder}): their name or "the
  * founder" becomes "you"/"your", other people's names get their real case back, and a line that still speaks of
  * the founder in the third person is dropped.
+ *
+ * Wave 7 (the w6 integrator's list): openers echoed the founder's own chat shorthand and lower case ("…at the bus
+ * station this week fr", "…call facilities monday"). What an opener says of them is tidied the way it would be
+ * written (`tidyFounderWords`: slang dropped, shorthand spelt out, days and months capitalised).
  */
 
 /** The people an opener may speak of: the founder (said as "you") and their team (names in their real case). */
@@ -23,6 +27,29 @@ export interface OpenerPeople {
   readonly founder: string | null;
   /** Display names of the venture's people (the founder among them is ignored). */
   readonly team?: readonly string[];
+  /**
+   * Proper nouns the conversation wrote with their capitals (the vEIR's own replies, its digest:
+   * {@link properNounsIn}): what the founder typed in lower case gets that case back ("harbour hall" → "Harbour Hall").
+   */
+  readonly names?: readonly string[];
+}
+
+/**
+ * The proper nouns in `texts` (written by the vEIR, so in their real case): one to three capitalised words in a row
+ * that do not open a sentence, at least one of them no everyday word ("Harbour Hall", "Hartwell", "QuietQuad").
+ */
+export function properNounsIn(texts: readonly string[]): string[] {
+  const found = new Set<string>();
+  for (const text of texts) {
+    for (const m of text.matchAll(
+      /(?<=[\p{Ll}\p{N},;:'’)] )\p{Lu}[\p{L}'’-]*(?: \p{Lu}[\p{L}'’-]*){0,2}/gu,
+    )) {
+      const phrase = m[0].replace(/['’]s$/, '');
+      const words = phrase.split(' ');
+      if (words.some((w) => !isEverydayWord(w)) && phrase.length >= 3) found.add(phrase);
+    }
+  }
+  return [...found].sort((a, b) => b.length - a.length);
 }
 
 function escapeRegExp(text: string): string {
@@ -104,7 +131,12 @@ export function addressFounder(text: string, people: OpenerPeople): string | nul
       out = out.replace(new RegExp(`\\b${escapeRegExp(part)}\\b`, 'giu'), part);
     }
   }
-  return out;
+  // Names the conversation wrote with capitals, where the founder typed them in lower case (wave 7, item 2).
+  for (const name of people.names ?? []) {
+    if (name.toLowerCase() === founderFirst) continue;
+    out = out.replace(new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(name)}(?![\\p{L}\\p{N}])`, 'giu'), name);
+  }
+  return tidyFounderWords(out);
 }
 
 /**
@@ -116,7 +148,8 @@ export const FILLER = new Set(
     'hi hello hey hiya howdy yo hullo greetings morning afternoon evening good day night test testing tested ' +
     'hear me can you there are ok okay sure yes yeah yep yup no nope nah thanks thank cheers please sorry um ' +
     'uh umm hmm right great cool fine well again back just quick question something talk chat call start let ' +
-    'what how about anything want would like need help got minute moment am doing do going today now here'
+    'what how about anything want would like need help got minute moment am doing do going today now here ' +
+    'news big huge exciting update updates guess'
   ).split(' '),
 );
 
@@ -160,7 +193,20 @@ const BREAKERS = new Set(
     'love hate sure ok okay well right great good bad hi hey hello thanks please quick question still even already ' +
     'now today tomorrow yesterday week since because while until though although thing things stuff something ' +
     'anything everything nothing one lot lots pays month months year years day days hour hours minute minutes ' +
-    'time times long ago different same other single whole'
+    "time times long ago different same other single whole they'll they've they'd he'll he's he'd she'll she's " +
+    "she'd it'll it'd you'll you've you'd that's that'll there's here's let's who's what's won't can't don't " +
+    "doesn't didn't isn't aren't wasn't weren't shouldn't wouldn't couldn't haven't hasn't hadn't"
+  ).split(' '),
+);
+/**
+ * Words after which the next word is a verb, not the start of a noun phrase (a subject pronoun, a modal, "to"):
+ * "they'll promote QuietQuad" and "if we add group booking" name no "promote QuietQuad" or "add group booking"
+ * (LAB-R3b: "we talked about They'll promote QuietQuad").
+ */
+const BEFORE_A_VERB = new Set(
+  (
+    "i we you they he she it i'll we'll you'll they'll he'll she'll it'll i'd we'd you'd they'd he'd she'd " +
+    "will would can could should shall may might must to don't doesn't didn't won't can't let's"
   ).split(' '),
 );
 const DETERMINERS = new Set([
@@ -222,6 +268,13 @@ function nounPhrase(sentence: string): Phrase | null {
       determiner = first.toLowerCase();
       words.push(determiner);
       j += 1;
+    }
+    // A lower-case word right after a subject or a modal is its verb ("they'll promote …", "we add …"): no phrase
+    // starts there ("What would Corin say?" still names Corin).
+    const before = (raw[i - 1] ?? '').replace(/^[^\p{L}']+|[^\p{L}']+$/gu, '').toLowerCase();
+    if (determiner === null && BEFORE_A_VERB.has(before) && /^\p{Ll}/u.test(first)) {
+      i += 1;
+      continue;
     }
     let content = 0;
     let rejected = false;
@@ -398,5 +451,5 @@ export function topicOf(line: string): LineTopic | null {
     if (found !== null && found.text.length <= 70 && (best === null || found.score > best.score))
       best = found;
   }
-  return best;
+  return best === null ? null : { ...best, text: tidyFounderWords(best.text) };
 }

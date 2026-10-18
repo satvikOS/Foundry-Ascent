@@ -19,6 +19,7 @@ import { createTestDatabase, type TestDatabase } from '@foundry/db/testing';
 
 import { type ApiApp, createApp } from '../app.js';
 import { createJsonLogger, type Logger } from '../logging.js';
+import { InflightTracker } from '../runtime/inflight.js';
 import { observeGateway } from '../runtime/observed-gateway.js';
 import { recordDbCall } from '../runtime/request-metrics.js';
 import { buildRequest, nextViewerIp, type RequestOptions, sessionTokenFrom } from '../testing/api-harness.js';
@@ -108,6 +109,8 @@ export async function createLatencyRig(
   );
   const speech = new FakeSpeechSynthesizer();
   speech.delayMs = latency.speechFirstByteMs;
+  // As in production: work after a response (settling a turn's kept memory) is drained, never waited for.
+  const inflight = new InflightTracker();
   const core = createCore({
     db,
     gateway,
@@ -119,8 +122,11 @@ export async function createLatencyRig(
     logger: logger.child({ component: 'core' }),
     speech,
     sttGrants: new FakeSttGrantIssuer(),
+    afterResponse: (task) => {
+      void inflight.track(task);
+    },
   });
-  const app = createApp({ core, db, logger, appEnv: 'test', appVersion: 'latency-harness' });
+  const app = createApp({ core, db, logger, appEnv: 'test', appVersion: 'latency-harness', inflight });
   const request = async (path: string, options?: RequestOptions): Promise<Response> =>
     app.request(buildRequest(path, options));
 
@@ -160,6 +166,7 @@ export async function createLatencyRig(
       return token;
     },
     async cleanup() {
+      await inflight.drain(10_000);
       await db.close();
       await t.cleanup();
     },

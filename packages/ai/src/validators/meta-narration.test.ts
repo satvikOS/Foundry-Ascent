@@ -98,6 +98,50 @@ const NATURAL: readonly string[] = [
   "Let's break it down: who pays, and when?",
 ];
 
+/** LAB-M1b: who the replies below talk to (Maya) and the venture's people (Maya and her teammate Noor). */
+const NAMES = { founder: 'Maya', people: ['Maya Okafor-Lindqvist', 'Noor Haddad'] };
+
+/** LAB-M1b (run 39088463537, SM-14 and SM-19): narration by the founder's name, paraphrased, and its kin. */
+const NAMED_NARRATION: readonly string[] = [
+  "Okay, let's break this down. Maya's asking about structuring the two-library pilot timeline.",
+  "Maya's asking about structuring the pilot.",
+  'Maya is asking whether to price per library.',
+  'Maya wants to know whether to price per library.',
+  'Maya says they have five interviews done.',
+  'So Maya just asked about the second library.',
+  'Maya seems stressed, so I should keep it short.',
+  'Maya Okafor-Lindqvist asked about the pilot.',
+  'From the evidence, I see Maya has already run five interviews.',
+  'From the evidence, I see the founder has already got two libraries interested.',
+  "Maya's message is a greeting.",
+  "Maya's last question was about pricing.",
+  'MAYA IS ASKING ABOUT THE PILOT.',
+];
+
+/** Talking to someone by name, and about a teammate: speech (the calibration's near misses for LAB-M1b). */
+const NAMED_NATURAL: readonly string[] = [
+  'Maya, you said the pilot starts in May.',
+  'Thanks, Maya. That helps.',
+  "So, Maya, what's the plan for the second library?",
+  'Good talking with you, Maya.',
+  "Maya, here's what I'd do: price per library.",
+  'Noor said the library budget closes in May.',
+  'Noor asked last week whether the budget closes in May; did she hear back?',
+  "Noor's asking for a flat fee, which is fair.",
+  'Noor wants a decision by Friday, so let’s settle pricing.',
+  'From the evidence, I see two libraries already said yes.',
+  'Based on the evidence, I’d price per library.',
+  'Mayan temples draw the most tourists in July.',
+  // A teammate's message talked about, and "they" for the customers (the wave 7 review's probe).
+  "Noor's question is a good one.",
+  "Noor's question was whether to charge per seat.",
+  "Noor's request is reasonable: a flat fee is simpler.",
+  "Noor's reply was quick, which is a good sign.",
+  "Based on the evidence, I see they're willing to pay $900.",
+  'Looking at the notes, I see they agreed to the pilot.',
+  'From the evidence, I see she signed the letter of intent last week.',
+];
+
 function stringsIn(value: unknown, out: string[] = []): string[] {
   if (typeof value === 'string') out.push(value);
   else if (Array.isArray(value)) for (const item of value) stringsIn(item, out);
@@ -211,6 +255,43 @@ describe('metaNarrationCue', () => {
     expect(corpus.length).toBeGreaterThan(300);
     const flagged = corpus.filter((s) => findMetaNarration(s) !== null);
     expect(flagged).toEqual([]);
+  });
+});
+
+describe('narration by name (LAB-M1b)', () => {
+  it('flags the founder reported on by name, and anyone’s message classified by name', () => {
+    for (const text of NAMED_NARRATION) {
+      expect(findMetaNarration(text, NAMES), text).not.toBeNull();
+    }
+    expect(metaNarrationCue("Maya's asking about the pilot.", NAMES)).toBe('founder_third_person');
+    // The lab's reply is held back whole: the thinking-aloud opener goes with the narration after it.
+    expect(
+      cutMetaNarration(
+        "Okay, let's break this down. Maya's asking about structuring the two-library pilot timeline. From the evidence, I see they've already got two libraries.",
+        NAMES,
+      ),
+    ).toMatchObject({ text: '', at: 'opening', cue: 'founder_third_person' });
+  });
+
+  it('never flags talking to someone by name or about a teammate', () => {
+    for (const text of [...NAMED_NATURAL, ...NATURAL]) {
+      expect(findMetaNarration(text, NAMES), text).toBeNull();
+    }
+  });
+
+  it('reads a name only when it was given (the narration cues stay the same without names)', () => {
+    expect(findMetaNarration("Maya's asking about the pilot.")).toBeNull();
+    expect(findMetaNarration("Maya's asking about the pilot.", { founder: 'Ruth', people: [] })).toBeNull();
+    // A teammate is the founder of the conversation they are in.
+    expect(
+      findMetaNarration("Noor's asking about the pilot.", { founder: 'Noor', people: NAMES.people }),
+    ).not.toBeNull();
+  });
+
+  it('never flags a real answer that names its founder (the mock model’s replies to Maya)', async () => {
+    const corpus = (await mockAnswers()).filter((s) => /\p{L}{3}/u.test(s));
+    expect(corpus.some((s) => /\bMaya\b/.test(s))).toBe(true);
+    expect(corpus.filter((s) => findMetaNarration(s, NAMES) !== null)).toEqual([]);
   });
 });
 

@@ -69,6 +69,7 @@ export class TurnTimeline {
       admissionMs: ms(this.#admissionMs),
       retrievalMs: span(this.#retrievalStart, this.#retrievalDone),
       embedMs: m.embed.calls === 0 ? null : ms(m.embed.ms),
+      embedCalls: m.embed.calls,
       promptMs: span(this.#retrievalDone, modelStart ?? this.#reasoning),
       modelStartMs: ms(modelStart),
       modelFirstTokenMs: span(modelStart, m.stream.firstTokenAt),
@@ -79,6 +80,9 @@ export class TurnTimeline {
       finishMs: span(this.#validating, this.#end),
       totalMs: ms(this.#end),
       ...m.dbFields(),
+      // LAB-P2: what else the process was serving, and the AWS connections the turn opened or reused.
+      ...m.inflightFields(),
+      ...m.connectionFields(),
     };
   }
 }

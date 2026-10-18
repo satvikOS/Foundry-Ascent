@@ -10,6 +10,8 @@ import { currentRequestMetrics } from './request-metrics.js';
 export function observeGateway(gateway: ModelGateway): ModelGateway {
   return {
     info: gateway.info,
+    // Opening the model connection ahead of a call's first turn (LAB-P2) passes through.
+    ...(gateway.prewarm ? { prewarm: () => gateway.prewarm?.() ?? Promise.resolve() } : {}),
     async embed(texts, options) {
       const metrics = currentRequestMetrics();
       const started = performance.now();

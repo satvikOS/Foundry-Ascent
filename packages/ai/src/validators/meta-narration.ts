@@ -23,6 +23,16 @@ import { CoachMode } from '@foundry/contracts';
  * opener ("Okay, let's see.", "Let me think.") is only narration when narration follows it
  * ({@link isThinkingAloudOpener}).
  *
+ * LAB-M1b (wave 6, run 39088463537, 2 of 81 chat replies): the same narration by the founder's NAME, which the
+ * cues above never saw: "Okay, let's break this down. Maya's asking about structuring the two-library pilot… From
+ * the evidence, I see they've already got…". With {@link NarrationNames} (the person the reply talks to, and the
+ * venture's people), `founder_third_person` also reads the founder reported on by name ("Maya's asking about…",
+ * "Maya wants to know…", "Maya seems stressed"), their message classified by name ("Maya's message is a greeting"),
+ * and the evidence read out about them ("From the evidence, I see Maya has…"). Talking to someone by name ("Maya, you
+ * said…", "Thanks, Maya.") and talking about a teammate ("Noor said the budget closes in May", "Noor's asking for a
+ * flat fee", "Noor's question is a good one") stay speech, and so does "they" after "from the evidence, I see" (the
+ * customers as often as the team: the wave 7 review's near misses).
+ *
  * Callers: the sentence gate (per unit, typed and spoken: before the first unit the reply is written whole
  * instead; later the reply ends before the unit) and `validateCoachResponse` (the answer and the spoken reply are
  * cut before the first narrated sentence, or held back when nothing of the reply comes before it).
@@ -126,6 +136,85 @@ const CUES: readonly (readonly [MetaNarrationCue, RegExp])[] = [
   ],
 ];
 
+/**
+ * The names a reply may narrate by (LAB-M1b): the person it talks to (`founder`: their first name, or display name),
+ * and the venture's people (`people`: display names of the founder and their team).
+ */
+export interface NarrationNames {
+  readonly founder?: string | null;
+  readonly people?: readonly string[];
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** The forms a name is written in, normalised like the text (lower case), longest first. */
+function nameForms(names: Iterable<string>): string[] {
+  const forms = new Set<string>();
+  for (const raw of names) {
+    const full = raw.normalize('NFKC').replace(/[‘’ʼ]/g, "'").replace(/\s+/g, ' ').trim().toLowerCase();
+    if (!/\p{L}{2}/u.test(full)) continue;
+    forms.add(full);
+    const first = full.split(' ')[0] ?? '';
+    if (/^\p{L}[\p{L}'-]{1,}$/u.test(first)) forms.add(first);
+  }
+  return [...forms].sort((a, b) => b.length - a.length).map(escapeRegExp);
+}
+
+const NAMED_CUES = new Map<string, RegExp | null>();
+
+/** A name as a whole word (JavaScript's `\b` is ASCII-only: "Zoë"). */
+function wholeName(alternation: string): string {
+  return `(?<![\\p{L}\\p{N}_])(?:${alternation})(?![\\p{L}\\p{N}_])`;
+}
+
+/** The name cues for `names` (cached per set of names), or null without any name. */
+function namedCue(names: NarrationNames | undefined): RegExp | null {
+  if (names === undefined) return null;
+  const people = names.people ?? [];
+  const founder = names.founder?.trim() ?? '';
+  const first = founder.split(/\s+/)[0]?.toLowerCase() ?? '';
+  // The founder's display name too, from the venture's people ("Maya Patel asked…").
+  const founderNames =
+    founder === ''
+      ? []
+      : [founder, ...people.filter((p) => p.trim().toLowerCase().split(/\s+/)[0] === first)];
+  const key = `${founderNames.join('|')}\n${people.join('|')}`;
+  const cached = NAMED_CUES.get(key);
+  if (cached !== undefined) return cached;
+  const speaker = nameForms(founderNames).join('|');
+  const parts: string[] = [];
+  if (speaker !== '') {
+    const n = wholeName(speaker);
+    parts.push(
+      // "Maya says…", "Maya just asked…", "Maya wants…" opening a sentence, as "The founder says…" does.
+      `${LEAD}${n}(?:'s)? (?:${REPORTING})\\b`,
+      // "Maya's asking about…", "Maya is wondering whether…".
+      `${LEAD}${n}(?:'s| is) (?:asking|wondering|looking for|venting|joking|greeting|thanking|saying|after|trying to (?:figure out|decide|work out|understand|get))\\b`,
+      `${LEAD}${n} (?:is|seems|sounds|appears|feels) (?:(?:very|quite|a bit|a little|really|pretty|clearly|probably|likely|just) )?(?:${STATES})\\b`,
+      `${n}(?:'s)? (?:just said|just asked|is asking (?:me|about|for|if|whether)|asked me|told me|wants me to|wants to know|is wondering|greeted me|thanked me)\\b`,
+      `${EVIDENCE_READ}${n}`,
+      // The message of the person spoken to, classified by their name ("Maya's message is a greeting"). Only theirs: a
+      // teammate's question talked about is speech ("Noor's question is a good one").
+      `${n}(?:'s)? (?:(?:last|latest|new|current|first) )?(?:message|question|request|reply|greeting|turn|tone) (?:is|was|seems|sounds)\\b`,
+    );
+  }
+  const cue = parts.length === 0 ? null : new RegExp(parts.join('|'), 'u');
+  if (NAMED_CUES.size > 200) NAMED_CUES.clear();
+  NAMED_CUES.set(key, cue);
+  return cue;
+}
+
+/** "From the evidence, I see …": the prompt's evidence read out (what follows says about whom). */
+const EVIDENCE_READ = String.raw`\b(?:from|based on|looking at|reading|going by) the (?:evidence|context|notes|history|transcript|records?)(?: (?:provided|given|shown|above|here|so far))?,? i (?:see|can see|notice|gather)(?: that)? `;
+
+/**
+ * The evidence read out about the person spoken to ("From the evidence, I see the founder has…"). Not "they", "he" or
+ * "she": that is the customers or a teammate as often as not ("Based on the evidence, I see they're willing to pay").
+ */
+const EVIDENCE_ABOUT_THEM = new RegExp(`${EVIDENCE_READ}(?:the founder|the user)\\b`);
+
 /** A whole sentence that only opens thinking aloud: narration only when narration follows it. */
 const THINKING_ALOUD = new RegExp(
   `${LEAD}(?:let's see|let me see|let me think|let me think about (?:this|that|it)|let me figure (?:this|it) out|` +
@@ -150,11 +239,15 @@ function normalize(text: string): string {
   );
 }
 
-/** The strongest sign that `sentence` (one sentence or a short unit) narrates the prompt; null when it is speech. */
-export function metaNarrationCue(sentence: string): MetaNarrationCue | null {
+/**
+ * The strongest sign that `sentence` (one sentence or a short unit) narrates the prompt; null when it is speech.
+ * `names`: the people it may narrate by (LAB-M1b, see the module comment).
+ */
+export function metaNarrationCue(sentence: string, names?: NarrationNames): MetaNarrationCue | null {
   const text = normalize(sentence);
   if (text === '') return null;
   for (const [cue, pattern] of CUES) if (pattern.test(text)) return cue;
+  if (EVIDENCE_ABOUT_THEM.test(text) || (namedCue(names)?.test(text) ?? false)) return 'founder_third_person';
   return null;
 }
 
@@ -208,12 +301,13 @@ export function sentenceSpans(text: string): SentenceSpan[] {
 /** The first narrated sentence of `text`, with the thinking-aloud openers right before it, or null. */
 export function findMetaNarration(
   text: string,
+  names?: NarrationNames,
 ): { readonly cue: MetaNarrationCue; readonly start: number; readonly sentence: number } | null {
   const spans = sentenceSpans(text);
   for (let i = 0; i < spans.length; i += 1) {
     const span = spans[i];
     if (span === undefined) continue;
-    const cue = metaNarrationCue(text.slice(span.start, span.end));
+    const cue = metaNarrationCue(text.slice(span.start, span.end), names);
     if (cue === null) continue;
     let first = i;
     while (first > 0) {
@@ -243,8 +337,8 @@ export interface MetaNarrationCut {
  * thinking, not talking, so it is cut whole (the sentences after a cue are usually more of the same, worded like
  * speech: "The venture is in the discovery stage."). `at: 'opening'` when nothing of the reply comes before it.
  */
-export function cutMetaNarration(text: string): MetaNarrationCut {
-  const found = findMetaNarration(text);
+export function cutMetaNarration(text: string, names?: NarrationNames): MetaNarrationCut {
+  const found = findMetaNarration(text, names);
   if (found === null) return { text, cue: null, at: null };
   const kept = text.slice(0, found.start).trimEnd();
   // A lead-in of a few words ("Okay, here goes.") is no reply: the narration opens it.

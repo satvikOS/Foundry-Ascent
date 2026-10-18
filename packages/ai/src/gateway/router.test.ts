@@ -544,3 +544,14 @@ describe('modelGatewayConfigFromEnv', () => {
     ).toThrow(/Invalid model gateway environment: .*MODEL_PROVIDER/);
   });
 });
+
+describe('prewarming the Bedrock connection (LAB-P2)', () => {
+  it('is offered by the Bedrock gateway, does nothing over injected transports, and never rejects', async () => {
+    const unused: Behaviour = () => Promise.reject(new Error('unused'));
+    const { gw } = gateway(unused, unused);
+    expect('prewarm' in gw).toBe(true);
+    await expect(gw.prewarm?.()).resolves.toBeUndefined();
+    // The mock has no network to warm.
+    expect('prewarm' in createModelGateway({ provider: 'mock' })).toBe(false);
+  });
+});

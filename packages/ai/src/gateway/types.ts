@@ -203,6 +203,11 @@ export interface ModelGateway {
    */
   streamText(request: StreamTextRequest, onText: TextChunkHandler): Promise<StreamTextResult>;
   embed(texts: readonly string[], options: EmbedOptions): Promise<EmbedResult>;
+  /**
+   * Opens (or keeps warm) the connection the next model calls use, without a billed call (LAB-P2: a call's turns
+   * paid a new TLS connection after idle gaps). Never rejects; absent where there is no network (the mock).
+   */
+  prewarm?(): Promise<void>;
 }
 
 /** Structured-log sink. Fields are identifiers, counts and timings only, never content. */

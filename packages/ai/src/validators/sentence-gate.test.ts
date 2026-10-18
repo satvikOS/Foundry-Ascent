@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { REPEATED_GREETING_FALLBACK } from './greeting.js';
+import { NEWS_FALLBACK, REPEAT_FALLBACK } from './social.js';
 import { sanitizeMarkdown } from './markdown.js';
 import {
   SentenceGate,
@@ -297,12 +299,223 @@ describe('SentenceGate', () => {
   it('holds a unit back until a canary arriving across two chunks is complete, then stops', () => {
     expect(holdBackFor([CANARY])).toBe(2 * CANARY.length + 8);
     const g = gate();
-    // The first sentence is complete, but the text after it is still within the hold-back window.
-    expect(g.push('Your notes look solid. Another team logged ZX-CAN').units).toEqual([]);
+    // The first sentence is complete, but the text after it is still within the hold-back window (a lead-in of four
+    // words or fewer is not held: see 'releases a short lead-in…').
+    expect(g.push('Your interview notes look solid. Another team logged ZX-CAN').units).toEqual([]);
     const second = g.push('ARY-4471 last week. Keep going.');
     expect(second.units).toEqual([]);
     expect(second.blocked).toBe('cross_venture');
     expect(g.end().units).toEqual([]);
+  });
+
+  describe('a lead-in of four words or fewer is released as soon as it ends (LAB-P1)', () => {
+    it('releases "Got it." and "Talk soon." at once, with other ventures guarded', () => {
+      for (const lead of [
+        'Got it.',
+        'Talk soon.',
+        "That's the right question.",
+        'Okay, Maya.',
+        'Fair enough!',
+      ]) {
+        const g = gate();
+        expect(g.push(`${lead} `).units.map((u) => u.text)).toEqual([lead]);
+        const rest = g.push('Price per library and test it with two of them this term.');
+        expect(joined([...rest.units, ...g.end().units])).toBe(
+          ' Price per library and test it with two of them this term.',
+        );
+      }
+      // Spoken too: the first unit goes to speech at once.
+      const spoken = gate({ spoken: true, spokenWordBudget: 70, maxUnitChars: 280 });
+      expect(spoken.push('Talk soon. ').units).toEqual([{ text: 'Talk soon.', spoken: 'Talk soon.' }]);
+    });
+
+    it('on a call, an acknowledgement that can open thinking aloud waits for the next unit: never said before narration', () => {
+      const call = { spoken: true, spokenWordBudget: 70, maxUnitChars: 280 };
+      for (const lead of ['Okay.', 'Got it.', 'Alright.']) {
+        const g = gate(call);
+        expect(g.push(`${lead} `).units).toEqual([]);
+        expect(g.push('The founder is asking about pricing per library. ').units).toEqual([]);
+        expect(g.end().units).toEqual([]);
+        expect(g.fallback).toBe('meta_narration');
+        // Speech after it: both are said once the next unit shows it.
+        const ok = gate(call);
+        expect(ok.push(`${lead} `).units).toEqual([]);
+        const rest = [...ok.push('Price per library and test two this term. ').units, ...ok.end().units];
+        expect(rest.map((u) => u.spoken).join(' ')).toBe(`${lead} Price per library and test two this term.`);
+      }
+      // Typed, it is shown at once: the preview is replaced if the reply is written whole.
+      expect(
+        gate()
+          .push('Okay. ')
+          .units.map((u) => u.text),
+      ).toEqual(['Okay.']);
+    });
+
+    it('still checks it: narration, a claim to be the EIR, a canary', () => {
+      const narration = gate();
+      expect(narration.push('The founder says hi. ').units).toEqual([]);
+      expect(narration.fallback).toBe('meta_narration');
+      const eir = gate();
+      expect(eir.push('Corin here. ').units).toEqual([]);
+      expect(eir.blocked).toBe('identity');
+      const leak = gate();
+      expect(leak.push(`Logged ${CANARY} today. `).units).toEqual([]);
+      expect(leak.blocked).toBe('cross_venture');
+    });
+
+    it('a guarded name in the next sentence is never shown, though the lead-in before it was', () => {
+      const g = gate();
+      expect(g.push('Got it. ').units.map((u) => u.text)).toEqual(['Got it.']);
+      const next = g.push('BenchTally ran the same pilot last term, so ask them.');
+      expect(next.units).toEqual([]);
+      expect(g.end().units).toEqual([]);
+      expect(g.blocked).toBe('cross_venture');
+    });
+
+    it('waits as before when a guarded string has sentence punctuation in it, or the unit is longer', () => {
+      const dotted = gate({ otherVentureNames: ['St. Ives Labs'] });
+      expect(dotted.push('Got it. ').units).toEqual([]);
+      expect(gate().push('Five interviews is a solid start. ').units).toEqual([]);
+    });
+
+    it('a thinking-aloud opener still waits for the next unit; an acknowledgement does not', () => {
+      expect(gate().push('Let me think. ').units).toEqual([]);
+      expect(gate().push("Okay, let's see. ").units).toEqual([]);
+      expect(
+        gate()
+          .push('Okay. ')
+          .units.map((u) => u.text),
+      ).toEqual(['Okay.']);
+    });
+  });
+
+  describe('a short reply’s budget and the previous reply (wave 7)', () => {
+    it('stops releasing once a thanks reply’s budget is used: the plan is never shown or said', () => {
+      const sm19 =
+        "You're welcome. Let's keep moving. First, call the dean about the budget. Then book the second library.";
+      for (const options of [{}, { spoken: true, spokenWordBudget: 70, maxUnitChars: 280 }]) {
+        for (const chunks of chunkings(sm19)) {
+          const g = gate({ ...options, replyBudget: { sentences: 2, words: 30 } });
+          const units: GateUnit[] = [];
+          for (const chunk of chunks) units.push(...g.push(chunk).units);
+          units.push(...g.end().units);
+          expect(joined(units)).toBe("You're welcome. Let's keep moving.");
+          expect(g.full).toBe(true);
+        }
+      }
+    });
+
+    it('never releases a unit that says the previous reply again; a reply of nothing else becomes a short line', () => {
+      const previous =
+        "Ask three students what they'd give up to skip the group chat and the walking. That's the price signal you need before the pilot starts.";
+      const g = gate({ previousReply: previous, founderText: 'any tips?' });
+      const { units } = run(g, [`${previous} Then run the pilot in two libraries.`]);
+      expect(joined(units)).toBe('Then run the pilot in two libraries.');
+      expect(joined(run(gate({ previousReply: previous }), [previous]).units)).toBe(REPEAT_FALLBACK);
+      // Asked to hear it again: said again.
+      expect(
+        joined(run(gate({ previousReply: previous, founderText: 'Can you repeat that?' }), [previous]).units),
+      ).toBe(previous);
+    });
+
+    it('never asks the previous reply’s question again in other words (item 20), typed or spoken', () => {
+      const previous =
+        "That's a real step. Do you have a written agreement on what success looks like and what happens if the pilot doesn't hit it?";
+      const reply =
+        "That's a real risk: SSO can stall a library pilot for months. Is there a written success agreement, and what happens if the pilot misses? Ask their IT lead now what SSO they need.";
+      for (const options of [{}, { spoken: true, spokenWordBudget: 70, maxUnitChars: 280 }]) {
+        for (const chunks of chunkings(reply)) {
+          const units = run(
+            gate({ ...options, previousReply: previous, founderText: "I'm worried about their SSO." }),
+            chunks,
+          ).units;
+          expect(joined(units)).toBe(
+            "That's a real risk: SSO can stall a library pilot for months. Ask their IT lead now what SSO they need.",
+          );
+        }
+      }
+    });
+
+    it('never drops the honest answer to a sincere bot question as a repeat of the intro or the last reply', () => {
+      // A first meeting: the intro said what the vEIR is, then the founder asks sincerely.
+      const intro =
+        "Hi Maya, I'm Corin's vEIR, Corin's digital twin. Last time you planned five library-staff interviews. How did they go?";
+      const reply = "Yes, I'm Corin's vEIR, Corin's digital twin. So, about those interviews?";
+      for (const options of [{}, { spoken: true, spokenWordBudget: 70, maxUnitChars: 280 }]) {
+        for (const chunks of chunkings(reply)) {
+          const units = run(
+            gate({ ...options, previousReply: intro, founderText: 'Wait, am I talking to a bot?' }),
+            chunks,
+          ).units;
+          expect(joined(units)).toContain("Corin's digital twin");
+        }
+      }
+      // Asked again in the next turn: the honest line said a moment ago is said again.
+      const before =
+        "I'm Corin's digital twin, built from how Corin coaches, and Corin sees what we work on. What's on your mind?";
+      const again = run(gate({ previousReply: before, founderText: 'Sorry, but are you a real person?' }), [
+        "I'm Corin's digital twin, built from how Corin coaches, and Corin sees what we work on. Back to the pilot?",
+      ]).units;
+      expect(joined(again)).toContain("I'm Corin's digital twin, built from how Corin coaches");
+    });
+  });
+
+  describe('a reply to the founder’s news (LAB-R8)', () => {
+    it('never shows or says a sentence that parks the news for the vEIR’s own question, typed or spoken', () => {
+      const lab =
+        "One thing at a time — let's finish the student union question first, then we'll talk about Noor. What will Noor work on first?";
+      for (const options of [{}, { spoken: true, spokenWordBudget: 70, maxUnitChars: 280 }]) {
+        for (const chunks of chunkings(lab)) {
+          const units = run(
+            gate({ ...options, founderText: "We're bringing on a designer called Noor." }),
+            chunks,
+          ).units;
+          expect(joined(units).trim()).toBe('What will Noor work on first?');
+          expect(units.map((u) => u.spoken).join(' ')).not.toMatch(/one thing at a time/i);
+        }
+      }
+      // Without news it is left to the model (a founder may ask to finish one thing first).
+      expect(joined(run(gate({ founderText: 'What next?' }), [lab]).units)).toContain('One thing at a time');
+      // A reply of nothing else becomes a short line about the news.
+      expect(
+        joined(
+          run(gate({ founderText: 'Big news, we signed Hartwell!' }), [
+            "Before we talk about that, let's finish the interviews first.",
+          ]).units,
+        ),
+      ).toBe(NEWS_FALLBACK);
+    });
+  });
+
+  describe('the first reply after an intro that said hello (wave 7)', () => {
+    const greeted = { greeted: true, founderName: 'Mina', addressees: ['Mina Castellane'] };
+
+    it('never shows or says a greeting again, typed or spoken', () => {
+      for (const options of [
+        greeted,
+        { ...greeted, spoken: true, spokenWordBudget: 70, maxUnitChars: 280 },
+      ]) {
+        for (const chunks of chunkings('Hello Mina, nice to hear from you. How did the interviews go?')) {
+          const units = run(gate(options), chunks).units;
+          expect(joined(units)).toBe('How did the interviews go?');
+          expect(units.map((u) => u.spoken).join(' ')).not.toMatch(/hello|nice to hear/i);
+        }
+      }
+      expect(joined(run(gate(greeted), ['Hi Mina, five interviews is a solid start.']).units)).toBe(
+        'Five interviews is a solid start.',
+      );
+    });
+
+    it('says a short hand-back when the reply was only the greeting', () => {
+      const { units } = run(gate({ ...greeted, spoken: true }), ['Hello Mina, nice to hear from you.']);
+      expect(units).toEqual([{ text: REPEATED_GREETING_FALLBACK, spoken: REPEATED_GREETING_FALLBACK }]);
+    });
+
+    it('greets as written when the opening line did not say hello', () => {
+      expect(joined(run(gate({ founderName: 'Mina' }), ['Hello Mina, nice to hear from you.']).units)).toBe(
+        'Hello Mina, nice to hear from you.',
+      );
+    });
   });
 
   it('stops on another venture name or member name before any unit naming it is shown', () => {
@@ -316,10 +529,10 @@ describe('SentenceGate', () => {
 
   it('releases everything once the stream ends without a leak', () => {
     const g = gate();
-    expect(g.push('Short answer first. ').units).toEqual([]); // inside the hold-back window
+    expect(g.push('The short answer comes first. ').units).toEqual([]); // inside the hold-back window
     const end = g.end();
     expect(end.blocked).toBeNull();
-    expect(joined(end.units)).toBe('Short answer first.');
+    expect(joined(end.units)).toBe('The short answer comes first.');
   });
 
   it('keeps only the Markdown subset and removes citations that were never shown', () => {
@@ -432,6 +645,36 @@ describe('SentenceGate', () => {
           expect(units).toEqual([]);
           expect(g.fallback).toBe('meta_narration');
         }
+      }
+    });
+
+    it('releases nothing of a reply that narrates by the founder’s name (LAB-M1b), typed and spoken', () => {
+      const lab =
+        "Okay, let's break this down. Maya's asking about structuring the two-library pilot timeline. From the evidence, I see they've already got two libraries.";
+      const names = { founderName: 'Maya', addressees: ['Maya Okafor-Lindqvist', 'Noor Haddad'] };
+      for (const options of [names, { ...names, spoken: true, spokenWordBudget: 70, maxUnitChars: 280 }]) {
+        for (const chunks of chunkings(lab)) {
+          const g = gate(options);
+          const units: GateUnit[] = [];
+          for (const chunk of chunks) units.push(...g.push(chunk).units);
+          units.push(...g.end().units);
+          expect(units).toEqual([]);
+          expect(g.fallback).toBe('meta_narration');
+        }
+      }
+      // Talking to her by name is speech.
+      const speech = "Maya, you're close. Price per library and ask Noor to book the second visit.";
+      expect(joined(run(gate(names), [speech]).units)).toBe(speech);
+      // So is talking about a teammate's question, or about the customers as "they", at the opening or later.
+      for (const text of [
+        "Noor's question is a good one. A flat fee is simpler to sell.",
+        "Based on the evidence, I see they're willing to pay $900. Anchor the price there.",
+        'Five interviews in. Looking at the notes, I see they agreed to the pilot. Book the kickoff.',
+      ]) {
+        const g = gate(names);
+        expect(joined(run(g, [text]).units), text).toBe(text);
+        expect(g.fallback).toBeNull();
+        expect(g.cut).toBeNull();
       }
     });
 

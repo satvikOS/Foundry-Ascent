@@ -37,6 +37,12 @@ export interface CoreDeps {
   readonly logger?: CoreLogger;
   /** Uniform random number in [0, 1) for review sampling (injectable for tests). */
   readonly random?: () => number;
+  /**
+   * Work that follows a response and must not hold it (settling by meaning what a turn kept, which embeds it): the
+   * host keeps the process alive until it settles (the API Lambda drains it after the response stream ends) and
+   * the response ends at once. Absent (tests, scripts): the work runs before the call returns.
+   */
+  readonly afterResponse?: (task: Promise<unknown>) => void;
 }
 
 /** Deps with every optional port resolved. */

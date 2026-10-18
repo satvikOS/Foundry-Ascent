@@ -44,9 +44,15 @@ describe('the latency harness', () => {
       expect(firstDelta).toBeLessThanOrEqual(total);
       expect(num(s.admissionMs)).toBeLessThanOrEqual(accepted);
       expect(num(s.embedMs)).toBeGreaterThanOrEqual(0);
+      // One query embedding per turn on the response's path (LAB-P1/P2: what a turn kept is embedded after it).
+      expect(num(s.embedCalls)).toBe(1);
+      expect(num(s.inflightMax)).toBeGreaterThanOrEqual(0);
+      // No AWS here: nothing opened or reused (a deployed run reports both).
+      expect([num(s.awsConnectionsOpened), num(s.awsConnectionsReused)]).toEqual([0, 0]);
       expect(num(s.dbRoundTrips)).toBeGreaterThan(10);
       expect(t.firstDeltaMs).not.toBeNull();
       expect(t.completedMs).not.toBeNull();
+      expect(t.streamEndMs).toBeGreaterThanOrEqual(t.completedMs ?? Number.POSITIVE_INFINITY);
       if (t.channel === 'voice') {
         expect(s.voice).toBe(true);
         expect(num(s.firstSpeechMs)).toBeLessThanOrEqual(total);
@@ -54,8 +60,9 @@ describe('the latency harness', () => {
         expect(num(t.speech?.firstAudioMs)).toBeGreaterThanOrEqual(num(t.speech?.reservedMs));
       }
     }
-    // The second spoken message is a quick question: its reply is one sentence, said as one unit.
-    expect(result.turns.at(-1)?.units).toBe(1);
+    // The second spoken message is a quick question: its reply is one sentence, said as one unit, then the short
+    // hand-back a reply that ends on a statement is given (wave 7: spoken_no_handback).
+    expect(result.turns.at(-1)?.units).toBe(2);
     expect(result.requests.map((r) => r.name)).toEqual([
       'me',
       'venture',

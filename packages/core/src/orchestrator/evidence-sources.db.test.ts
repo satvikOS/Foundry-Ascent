@@ -3,11 +3,13 @@
  * is linked to its own document or library source even when a program source and the vEIR's library carry the
  * very name of one of the venture's files (the web used to match by title and counted them as that file).
  */
+import { MockModelGateway } from '@foundry/ai';
 import { TurnEvidenceResponse } from '@foundry/contracts';
 import { knowledgeRepo } from '@foundry/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { type RequestContext } from '../context.js';
+import { createCore } from '../core.js';
 import { type IngestDocumentJob } from '../ports.js';
 import { createCoreHarness, type CoreHarness } from '../testing/harness.js';
 
@@ -126,5 +128,33 @@ describe('the source of a cited passage', () => {
     const detail = await h.core.sessions.get(maya, session.id);
     const turn = detail.turns.find((t) => t.id === turnId);
     expect(turn?.evidence.map((item) => item.source)).toEqual(evidence.map((item) => item.source));
+  });
+});
+
+describe('program guidance for a definitional question (LAB-C1)', () => {
+  it('puts the handbook passage in front of the model, asked short or long, first or later in a conversation', async () => {
+    const seen: string[] = [];
+    const gateway = new MockModelGateway({
+      streamDelayMs: 0,
+      streamFixture: (context) => {
+        seen.push(context.messages.at(-1)?.content ?? '');
+        return 'What would you test first, and what result would change your plan?';
+      },
+    });
+    const core = createCore({
+      db: h.t.db,
+      gateway,
+      config: h.config,
+      objectStore: h.objectStore,
+      jobQueue: h.jobQueue,
+    });
+    const session = await core.sessions.create(maya, h.ventures.quietquad.id, {});
+    for (const text of [
+      'What should an experiment card state? I need a success threshold set in advance and a time box.',
+      "What's an experiment card?",
+    ]) {
+      await core.orchestrator.runTurn(maya, session.id, { text }, () => undefined);
+      expect(seen.at(-1), text).toContain('Every experiment card states');
+    }
   });
 });

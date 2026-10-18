@@ -21,7 +21,11 @@ import {
   type CallStopCause,
 } from './call-usage.js';
 import {
+  REPEAT_GREETING_MAX_CHARS,
+  callIntro,
   callIntroText,
+  openerKept,
+  repeatGreeting,
   callVoiceFor,
   distinctActions,
   greetingName,
@@ -40,6 +44,7 @@ import {
   splitSentences,
 } from './spoken-text.js';
 import { DEFAULT_SPEECH_VOICE } from './voices.js';
+import { subjectOfOpener, type OpenerSubject } from '../orchestrator/continuity-prompt.js';
 
 const CAPS = { maxCallMinutes: 30, dailyCallMinutesPerPrincipal: 60 };
 
@@ -223,20 +228,48 @@ describe('the voice of a call', () => {
 });
 
 describe('the call intro', () => {
-  it('greets by first name like someone already met, then picks up the notebook opener', () => {
+  it('greets someone already met in one sentence of at most 90 characters, the opener in it (wave 7)', () => {
     expect(greetingName('Maya Okafor')).toBe('Maya');
     expect(greetingName('  Ines  ')).toBe('Ines');
     expect(greetingName('[admin] Maya')).toBeNull();
+    const met = {
+      firstName: 'Maya',
+      personaName: "Corin's vEIR",
+      eirFirstName: 'Corin',
+      firstMeeting: false,
+      conversationStarted: false,
+      seed: 'session-1',
+    } as const;
+    // The lab heard 103–114 characters over two sentences ("Hi Mina. Last time you planned to … How did it go?").
+    // A stored sentence is read for what it is about; a line chosen as naming nothing is said as one sentence.
     expect(
       callIntroText({
-        firstName: 'Maya',
-        personaName: "Corin's vEIR",
-        eirFirstName: 'Corin',
-        firstMeeting: false,
+        ...met,
         opener: 'Last time you planned five library-staff interviews. How did they go?',
-        conversationStarted: false,
       }),
-    ).toBe('Hi Maya. Last time you planned five library-staff interviews. How did they go?');
+    ).toBe('Hi Maya, how did the five library-staff interviews go?');
+    expect(
+      callIntroText({
+        ...met,
+        opener: 'Last time you planned five library-staff interviews. How did they go?',
+        subject: null,
+      }),
+    ).toBe('Hi Maya, last time you planned five library-staff interviews — how did they go?');
+    // Around the opener's subject when it was chosen around one.
+    const thread = callIntroText({
+      ...met,
+      opener:
+        'Welcome back. Last time, we left off on the facilities budget call you planned. Where are things now?',
+      subject: { kind: 'thread', text: 'the facilities budget call you planned' },
+    });
+    expect(thread).toMatch(/^Hi Maya, .*the facilities budget call you planned.*\?$/);
+    const question = callIntroText({
+      ...met,
+      opener:
+        'Good to talk again. Last time, we talked about whether to price per library or per seat. Where did you land on it?',
+      subject: { kind: 'question', text: 'whether to price per library or per seat' },
+    });
+    expect(question).toMatch(/^Hi Maya, .*whether to price per library or per seat\?$/);
     expect(
       callIntroText({
         firstName: null,
@@ -246,7 +279,155 @@ describe('the call intro', () => {
         opener: null,
         conversationStarted: true,
       }),
-    ).toBe('Hi. Where would you like to pick up?');
+    ).toBe('Hi, where would you like to pick up?');
+  });
+
+  it('never makes a repeat greeting longer than one sentence of 90 characters, whatever the opener', () => {
+    const openers = [
+      'Last time you planned to run five more interviews at the bus station this week. How did it go?',
+      'Good to have you back. Last time (about 2 hours ago, on a call), we talked about per-library pricing. Want to pick that up, or is something else on your mind?',
+      'What did the second library say about the seat counts?',
+      'Last time you planned five library-staff interviews about occupancy data. How many have you done, and what did they tell you about the evening peak?',
+      'Shall we look at the pilot budget?',
+    ];
+    for (const opener of openers) {
+      for (const seed of ['a', 'b', 'c', 'd']) {
+        const text = repeatGreeting({
+          firstName: 'Maya',
+          opener,
+          subject: subjectOfOpener(opener),
+          conversationStarted: false,
+          seed,
+        });
+        expect(text.length, text).toBeLessThanOrEqual(REPEAT_GREETING_MAX_CHARS);
+        expect(text.split(/(?<=[.!?])\s+/), text).toHaveLength(1);
+        expect(text).toMatch(/^Hi Maya, /);
+      }
+    }
+    // A long stored opener is greeted around what it is about, not dropped.
+    expect(
+      repeatGreeting({
+        firstName: 'Maya',
+        opener: openers[3] ?? '',
+        subject: subjectOfOpener(openers[3] ?? ''),
+        conversationStarted: false,
+        seed: 'a',
+      }),
+    ).toMatch(/five library-staff interviews/);
+  });
+
+  it('is always grammatical: the generic opener, a "said you’d" plan, a fragment (wave 7 review)', () => {
+    const seeds = ['a', 'b', 'c', 'd', 'e', 'f'];
+    const greet = (opener: string, subject?: OpenerSubject | null): string[] =>
+      seeds.map((seed) =>
+        repeatGreeting({
+          firstName: 'Maya',
+          opener,
+          subject: subject === undefined ? subjectOfOpener(opener) : subject,
+          conversationStarted: false,
+          seed,
+        }),
+      );
+    // The generic opener, chosen at call start with no subject (null) or read from the stored sentence: never "how
+    // did where we left off yesterday go?" or "shall we pick up where…?", and it still says where.
+    const generic =
+      'Good to talk again. Want to pick up where we left off yesterday, or start on something new?';
+    expect(subjectOfOpener(generic)).toBeNull();
+    for (const subject of [null, undefined]) {
+      for (const text of greet(generic, subject)) {
+        expect(text).not.toMatch(/how did where|with where|pick up where we left off yesterday\?/i);
+        expect(text).toMatch(/where we left off yesterday/);
+        expect(text.length).toBeLessThanOrEqual(REPEAT_GREETING_MAX_CHARS);
+      }
+    }
+    // "said you'd X" is a plan to X, never a noun phrase ("how did email the dean go?").
+    for (const [opener, plan] of [
+      ["Last time you said you'd email the dean about the budget. How did it go?", 'email the dean'],
+      ['Last time you said you would call facilities on Monday. How did it go?', 'call facilities'],
+    ] as const) {
+      expect(subjectOfOpener(opener)?.text).toMatch(/^your plan to /);
+      for (const text of greet(opener)) {
+        expect(text, text).not.toMatch(new RegExp(`(?:did|with|up|on) ${plan}`));
+        expect(text).toContain(plan);
+      }
+    }
+    // A clause cut from the founder's line is never spliced in as a topic (LAB-R3b).
+    const fragment =
+      "Welcome back. Last time, we left off on They'll promote QuietQuad. Where are things now?";
+    expect(subjectOfOpener(fragment)).toBeNull();
+    for (const text of greet(fragment)) expect(text).not.toMatch(/They'll promote/i);
+    for (const opener of [
+      'Last time, we talked about they will promote us at the fair. How has it gone since?',
+      'Last time, we left off on Where to run the pilot. How is it going?',
+    ]) {
+      expect(subjectOfOpener(opener), opener).toBeNull();
+    }
+  });
+
+  it('shortens a long plan rather than dropping it (MX-0022, MX-0024), and says what it is about', () => {
+    const opener =
+      'Last time you planned to book the Harbour Hall study room for the pilot kickoff on Monday. How did it go?';
+    for (const seed of ['a', 'b', 'c', 'd']) {
+      const intro = callIntro({
+        firstName: 'Mina',
+        personaName: "Corin's vEIR",
+        eirFirstName: 'Corin',
+        firstMeeting: false,
+        opener,
+        subject: subjectOfOpener(opener),
+        conversationStarted: false,
+        seed,
+      });
+      expect(intro.text, intro.text).toMatch(/^Hi Mina, .*Harbour Hall study room.*\?$/);
+      expect(intro.text.length).toBeLessThanOrEqual(REPEAT_GREETING_MAX_CHARS);
+      expect(intro.carriesOpener).toBe(true);
+    }
+    // A long thread chosen at call start too.
+    const thread = repeatGreeting({
+      firstName: 'Mina',
+      opener: 'Welcome back. I wanted to come back to it. How is it going?',
+      subject: {
+        kind: 'thread',
+        text: 'the five library-staff interviews about occupancy data you planned with the facilities team before exams',
+      },
+      conversationStarted: false,
+      seed: 'a',
+    });
+    expect(thread).toMatch(/library-staff interviews/);
+    expect(thread.length).toBeLessThanOrEqual(REPEAT_GREETING_MAX_CHARS);
+  });
+
+  it('says an opener a person wrote whole when it cannot be shortened, and only the generic line carries none', () => {
+    const written =
+      'Ready to walk through the Harbour Hall launch plan with the facilities team, the student union and both librarians?';
+    const intro = callIntro({
+      firstName: 'Mina',
+      personaName: "Corin's vEIR",
+      eirFirstName: 'Corin',
+      firstMeeting: false,
+      opener: written,
+      subject: null,
+      conversationStarted: false,
+      seed: 'a',
+    });
+    expect(intro.text).toContain('Harbour Hall launch plan');
+    expect(intro.carriesOpener).toBe(true);
+    const none = callIntro({
+      firstName: 'Mina',
+      personaName: "Corin's vEIR",
+      eirFirstName: 'Corin',
+      firstMeeting: false,
+      opener: null,
+      conversationStarted: false,
+      seed: 'a',
+    });
+    expect(none).toEqual({ text: 'Hi Mina, what would you like to work on?', carriesOpener: false });
+    // The conversation keeps what the intro said only when it says the opener; never the bare invitation instead.
+    const plan =
+      'Last time you planned to book the Harbour Hall study room for the pilot kickoff on Monday. How did it go?';
+    expect(openerKept(none, plan)).toBe(plan);
+    expect(openerKept(intro, written)).toBe(intro.text);
+    expect(openerKept(null, plan)).toBe(plan);
   });
 
   it('introduces the vEIR once, on a first meeting, as its EIR’s digital twin (never "an AI coach" again)', () => {

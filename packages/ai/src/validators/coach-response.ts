@@ -29,7 +29,18 @@ import {
   type IdentityViolationKind,
 } from './identity.js';
 import { sanitizeMarkdown, sanitizePlainText } from './markdown.js';
+import { contentWords, founderMoves, socialTurnOf, type SocialTurn } from '../prompts/conversation-state.js';
+import { REPEATED_GREETING_FALLBACK, withoutRepeatedGreeting } from './greeting.js';
 import { cutMetaNarration } from './meta-narration.js';
+import {
+  NEWS_FALLBACK,
+  REPEAT_FALLBACK,
+  asksToRepeat,
+  endsWithHandBack,
+  withinSocialBudget,
+  withoutAgendaPush,
+  withoutRepeats,
+} from './social.js';
 import { SPOKEN_MAX_CHARS, SPOKEN_MAX_WORDS, clampWords, deriveSpoken, toSpeakable } from './speech.js';
 
 export interface CoachResponseLimits {
@@ -100,6 +111,32 @@ export interface ValidateCoachResponseOptions {
    */
   addressees?: readonly string[];
   /**
+   * The first name of the person the reply talks to: a sentence that reports on them by name ("Maya's asking
+   * about…") is narration and is cut like "The founder says…" (LAB-M1b).
+   */
+  founderName?: string | null;
+  /**
+   * A greeting was already given: the conversation's opening line said hello (a call's intro) and this is the first
+   * reply, or this is a later reply and the founder did not greet. A greeting the answer and the spoken reply open
+   * with is left out (`repeated_greeting_removed`), and a reply that was only that greeting becomes a short hand-back.
+   */
+  greeted?: boolean;
+  /**
+   * The vEIR's previous reply in this conversation (as the founder heard it): sentences that mostly say it again are
+   * left out (`repeated_sentences_removed`), unless the founder asked to hear it again (validators/social.ts).
+   */
+  previousReply?: string | null;
+  /**
+   * A call's turn: the hand-back said after a spoken reply that ends on a statement (`spoken_hand_back_added`), or
+   * null for none (a typed turn, or the founder wrapping up). The turn engine picks it (`spokenHandBackFor`).
+   */
+  handBack?: string | null;
+  /**
+   * What the founder's message does socially, as the turn engine read it (`socialTurnOf`, with a first message's
+   * hello left to pick up the last conversation). Omitted: read from `founderText`.
+   */
+  social?: SocialTurn | null;
+  /**
    * The founder's message this response answers. When it sincerely asks who or what the coach is ("are you
    * real?"), the honest answer stands as written: no volunteered disclaimer is rewritten out of the reply.
    */
@@ -142,12 +179,12 @@ const NO_ESCALATION: EscalationProposal = {
   requested_role: null,
 };
 
-export const NARROWING_NOTE_PREFIX = '> **Limited evidence:**';
 /**
- * Said on a call when the answer was narrowed (the transcript carries the full note): the uncertainty in plain
- * words, not caveat boilerplate read out ("A quick caveat: …" was spoken in production).
+ * The block quote narrowed answers used to open with. Never added any more (LAB-M14): the limit of the evidence is
+ * said under Sources & reasoning (the uncertainty item and the validator's `narrowed` result), never as a reply's
+ * first words and never aloud on a call; answers stored before still carry it, and the app hides it.
  */
-export const SPOKEN_NARROWING_CAVEAT = 'Some of that is general advice, not something your records show yet.';
+export const NARROWING_NOTE_PREFIX = '> **Limited evidence:**';
 export const EMPTY_ANSWER_FALLBACK =
   "I don't have enough to give you a reliable answer yet. Could you share a bit more detail about what you've observed so far?";
 /**
@@ -271,8 +308,8 @@ export function forcedEscalationFor(preRisk: { categories: readonly RiskCategory
  *    `meta_narration_blocked`), and a spoken reply that opens with it is derived from the answer instead;
  * 4. unknown evidence ids removed (claims, memory candidates, inline `[E#]` citations);
  * 5. `fact` claims without valid evidence downgraded to `inference`; grounding coverage computed;
- *    answer narrowed (explicit uncertainty note + uncertainty item) when coverage < threshold
- *    with ≥ 2 facts;
+ *    narrowed when coverage < threshold with ≥ 2 facts: an uncertainty item first (Sources & reasoning), never
+ *    a note in the reply or its spoken form (LAB-M14);
  * 6. identity: sentences claiming to be human, the EIR, or approving/endorsing are replaced;
  *    EIR impersonation blocks the turn by default. Each field is checked cut to its limit (plus a
  *    sentence of margin), so an over-long output cannot make the check expensive;
@@ -353,6 +390,38 @@ export function validateCoachResponse(
     r.rehearsal = null;
     notes.push('rehearsal_removed');
   }
+  // A social turn (thanks, a wrap-up, a hello) carries nothing to cite, plan or remember (validators/social.ts).
+  const social =
+    options.social !== undefined
+      ? options.social
+      : options.founderText === undefined
+        ? null
+        : socialTurnOf(options.founderText);
+  if (social !== null) {
+    // What the founder said in this very message stays kept, however the turn was read (LAB-K1: a decision said
+    // with a goodbye, "Okay, we'll go with $900. Talk soon.", must never be lost to a social reading).
+    const said = contentWords(options.founderText ?? '');
+    const stated = r.memory_candidates.filter(
+      (m) =>
+        m.source === 'founder_stated' &&
+        [...contentWords(`${m.title} ${m.content}`)].some((w) => said.has(w)),
+    );
+    const reported =
+      r.claims.length +
+      r.uncertainty.length +
+      r.next_actions.length +
+      r.memory_candidates.length -
+      stated.length +
+      r.follow_up_questions.length +
+      (r.challenge === null ? 0 : 1);
+    if (reported > 0) notes.push('social_turn_cleared');
+    r.claims = [];
+    r.uncertainty = [];
+    r.challenge = null;
+    r.next_actions = [];
+    r.memory_candidates = stated;
+    r.follow_up_questions = [];
+  }
 
   // 3. Sanitise ---------------------------------------------------------------------------------------
   const md = sanitizeMarkdown(r.answer);
@@ -362,7 +431,8 @@ export function validateCoachResponse(
     r.answer = leak.text;
     notes.push('structured_leak_cut');
   }
-  const narration = cutMetaNarration(r.answer);
+  const names = { founder: options.founderName ?? null, people: options.addressees ?? [] };
+  const narration = cutMetaNarration(r.answer, names);
   if (narration.at === 'opening') {
     notes.push(`meta_narration_blocked:${narration.cue ?? 'unknown'}`);
     results.escalationForced = forced !== null;
@@ -377,6 +447,62 @@ export function validateCoachResponse(
     r.answer = narration.text;
     notes.push(`meta_narration_cut:${narration.cue ?? 'unknown'}`);
   }
+  // A call's intro already greeted them: the first reply does not greet again.
+  const greetingNames = [options.founderName ?? '', ...(options.addressees ?? [])].filter(
+    (n) => n.trim() !== '',
+  );
+  const regreeting = (text: string): string => {
+    if (options.greeted !== true) return text;
+    const out = withoutRepeatedGreeting(text, greetingNames);
+    if (!out.removed) return text;
+    if (!notes.includes('repeated_greeting_removed')) notes.push('repeated_greeting_removed');
+    return out.text.trim() === '' ? REPEATED_GREETING_FALLBACK : out.text;
+  };
+  r.answer = regreeting(r.answer);
+  const identityOptions = {
+    personaName,
+    ...(options.eirNames ? { eirNames: options.eirNames } : {}),
+    ...(options.personaEirName !== undefined ? { personaEirName: options.personaEirName } : {}),
+    ...(options.addressees ? { addressees: options.addressees } : {}),
+  };
+  const question =
+    options.founderText === undefined ? null : identityQuestionOf(options.founderText, identityOptions);
+  const identityAsked = question !== null;
+  // A social turn gets a short reply; a reply never says the previous one again (unless asked to, or the founder
+  // sincerely asks who or what the coach is: its honest answer is never dropped, however recently it was said).
+  const previous =
+    options.previousReply === undefined ||
+    options.previousReply === null ||
+    identityAsked ||
+    (options.founderText !== undefined && asksToRepeat(options.founderText))
+      ? null
+      : options.previousReply;
+  // Their news comes first: a sentence that parks it for the vEIR's own agenda is left out (LAB-R8).
+  const news = options.founderText !== undefined && founderMoves(options.founderText).includes('news');
+  const crafted = (text: string, note: boolean): string => {
+    let out = text;
+    if (news) {
+      const unparked = withoutAgendaPush(out);
+      if (unparked.dropped > 0) {
+        if (note) notes.push(`agenda_push_removed:${unparked.dropped}`);
+        out = unparked.text === '' ? NEWS_FALLBACK : unparked.text;
+      }
+    }
+    if (previous !== null) {
+      const unrepeated = withoutRepeats(out, previous);
+      if (unrepeated.dropped > 0) {
+        if (note) notes.push(`repeated_sentences_removed:${unrepeated.dropped}`);
+        out = unrepeated.text === '' ? REPEAT_FALLBACK : unrepeated.text;
+      }
+    }
+    if (social !== null) {
+      const trimmed = withinSocialBudget(out, social);
+      if (trimmed !== out && note) notes.push('social_reply_trimmed');
+      out = trimmed;
+    }
+    return out;
+  };
+  r.answer = crafted(r.answer, true);
   if (md.htmlRemoved > 0) notes.push(`html_removed:${md.htmlRemoved}`);
   if (md.unsafeLinksRemoved > 0) notes.push(`unsafe_links_removed:${md.unsafeLinksRemoved}`);
   if (md.imagesRemoved > 0) notes.push(`images_removed:${md.imagesRemoved}`);
@@ -412,15 +538,6 @@ export function validateCoachResponse(
   // Identity runs on text already cut to its limit (plus a sentence of margin, so a sentence that crosses
   // the limit is judged whole): an over-long output cannot make the check expensive.
   const identityFindings: IdentityFinding[] = [];
-  const identityOptions = {
-    personaName,
-    ...(options.eirNames ? { eirNames: options.eirNames } : {}),
-    ...(options.personaEirName !== undefined ? { personaEirName: options.personaEirName } : {}),
-    ...(options.addressees ? { addressees: options.addressees } : {}),
-  };
-  const question =
-    options.founderText === undefined ? null : identityQuestionOf(options.founderText, identityOptions);
-  const identityAsked = question !== null;
   /**
    * The answer and what a call says are the reply (`reply`: its honest answer is kept, and a reply that was only a
    * disclaimer leaves a line back to the founder); every other field is `field`, where a lone disclaimer leaves ''
@@ -456,10 +573,11 @@ export function validateCoachResponse(
   // Spoken text: plain sentences on a call (citation keys and Markdown removed), never on typed turns.
   // Identity is checked on the model's own lines first (a sign-off stands on its own line there) and
   // again on the flattened text in step 6, where "Best,\nCorin" has become "Best, Corin.".
-  let modelSpoken = typeof r.spoken === 'string' ? r.spoken : '';
+  let modelSpoken =
+    typeof r.spoken === 'string' && r.spoken.trim() !== '' ? crafted(regreeting(r.spoken), false) : '';
   if (channel === 'voice' && modelSpoken.trim() !== '') {
     // Never said aloud: the spoken reply up to any narration (all of it narration: derived from the answer).
-    const spokenNarration = cutMetaNarration(modelSpoken);
+    const spokenNarration = cutMetaNarration(modelSpoken, names);
     if (spokenNarration.cue !== null) {
       modelSpoken = spokenNarration.text;
       notes.push(`meta_narration_spoken_cut:${spokenNarration.cue}`);
@@ -517,8 +635,7 @@ export function validateCoachResponse(
   // The answer's identity check comes before a spoken reply is derived from it, so a call never says a
   // sentence the transcript replaced (step 6 checks the rest).
   r.answer = fixIdentity(r.answer, limits.answerMaxChars, { disclaimers: 'reply' });
-  // A call needs something to say: the model's spoken reply, or else the answer made speakable (before
-  // the limited-evidence note below is added to the answer).
+  // A call needs something to say: the model's spoken reply, or else the answer made speakable.
   if (channel === 'voice' && (r.spoken ?? '') === '') {
     const derived = deriveSpoken(r.answer, limits.spokenMaxWords);
     r.spoken = derived === '' ? null : derived;
@@ -542,18 +659,16 @@ export function validateCoachResponse(
     if (results.groundingCoverage < threshold && factsBefore >= 2) {
       results.narrowed = true;
       notes.push('narrowed');
-      const note = `${NARROWING_NOTE_PREFIX} only ${grounded} of ${factsBefore} factual statements in this answer are backed by your venture records. Treat the rest as unverified until you can check them.`;
-      // A typed answer opens with the note. A call's transcript is what was said, so it carries no note: the
-      // uncertainty below (Sources & reasoning) and the validator's `narrowed` result say it instead.
-      if (channel !== 'voice') r.answer = r.answer === '' ? note : `${note}\n\n${r.answer}`;
+      // Said under Sources & reasoning only (LAB-M14: "Some of that is general advice, not something your records
+      // show yet." opened a call's reply to "Big news, we signed a letter of intent"): never the reply's first words,
+      // never aloud, typed or spoken.
       r.uncertainty = [
         {
-          item: 'Several statements in this answer are not backed by evidence from your venture records.',
+          item: `Only ${grounded} of ${factsBefore} factual statements in this answer are backed by your venture records: treat the rest as unverified until you can check them.`,
           level: 'high' as const,
         },
         ...r.uncertainty,
       ];
-      if (r.spoken) r.spoken = `${SPOKEN_NARROWING_CAVEAT} ${r.spoken}`;
     }
   }
 
@@ -676,6 +791,29 @@ export function validateCoachResponse(
   }
   if (channel === 'voice' && !r.spoken) {
     r.spoken = deriveSpoken(r.answer, limits.spokenMaxWords) || deriveSpoken(EMPTY_ANSWER_FALLBACK);
+  }
+  // A spoken reply hands the turn back, unless the founder is wrapping up or only being social.
+  const handBack = options.handBack ?? null;
+  if (
+    channel === 'voice' &&
+    handBack !== null &&
+    social === null &&
+    r.spoken &&
+    !endsWithHandBack(r.spoken)
+  ) {
+    const room = limits.spokenMaxWords - handBack.split(/\s+/).length;
+    let spoken = r.spoken;
+    while (spoken.split(/\s+/).filter(Boolean).length > room) {
+      const cut = spoken.replace(/\s*[^.!?]*[.!?…]?\s*$/u, '').trim();
+      if (cut === '' || cut === spoken) break;
+      spoken = cut;
+    }
+    r.spoken = `${spoken} ${handBack}`;
+    // The transcript is what was said.
+    if (!endsWithHandBack(r.answer) && r.answer.length + handBack.length < limits.answerMaxChars) {
+      r.answer = `${r.answer.trimEnd()} ${handBack}`;
+    }
+    notes.push('spoken_hand_back_added');
   }
   if (truncated > 0) notes.push(`truncated:${truncated}`);
   if (dropped.claims + dropped.other > 0) notes.push(`items_dropped:${dropped.claims + dropped.other}`);

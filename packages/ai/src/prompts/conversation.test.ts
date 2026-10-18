@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   MAX_PROMPT_DIGESTS,
+  RAISED_NOTE,
   buildContinuityBlock,
   buildRetrievalQuery,
   lastQuestionOf,
@@ -423,6 +424,27 @@ describe('continuity', () => {
     expect(explicit).not.toContain('Install the door counter');
   });
 
+  it('marks an open commitment already raised in this conversation, so it is not pushed again (LAB-R8)', () => {
+    const asked = 'Before we talk about Noor: what did you learn from the five library staff interviews?';
+    const messages = buildMessages(
+      [{ founderText: 'We got the union on board.', answer: asked }],
+      "We're hiring Noor as a designer.",
+      { continuity: CONTINUITY, today: '2026-10-16' },
+    );
+    const notes = messages.at(-1)?.content ?? '';
+    expect(notes).toContain(`- Interview five library staff (due 2026-10-10, overdue) [${RAISED_NOTE}]`);
+    expect(notes).toContain('- Install the door counter (due 2026-10-30)\n');
+    // Raised by the opener too; never marked when nothing in the conversation raised it.
+    const opened = buildMessages([], 'Hi!', {
+      continuity: CONTINUITY,
+      today: '2026-10-16',
+      opener: 'Hi Maya, how did the five library staff interviews go?',
+    });
+    expect(opened.at(-1)?.content).toContain(RAISED_NOTE);
+    const fresh = buildMessages([], 'Hi!', { continuity: CONTINUITY, today: '2026-10-16' });
+    expect(fresh.at(-1)?.content).not.toContain(RAISED_NOTE);
+  });
+
   it('shows at most three digests, newest first, with dates and calls marked', () => {
     const block = buildContinuityBlock(CONTINUITY, { today: '2026-10-16' });
     const dates = [...block.matchAll(/<conversation date="([^"]+)"/g)].map((m) => m[1]);
@@ -527,6 +549,15 @@ describe('buildRetrievalQuery', () => {
       'Yes, the second one.\nWhich one should we test first?',
     );
     expect(lastQuestionOf(previousAnswer)).toBe('Which one should we test first?');
+  });
+
+  it('never mixes the vEIR’s last question into a short question of their own (LAB-C1)', () => {
+    expect(buildRetrievalQuery({ founderText: "What's an experiment card?", previousAnswer })).toBe(
+      "What's an experiment card?",
+    );
+    expect(buildRetrievalQuery({ founderText: 'Which one?', previousAnswer })).toBe(
+      'Which one?\nWhich one should we test first?',
+    );
   });
 
   it('leaves a self-contained message alone, and adds the current goal', () => {

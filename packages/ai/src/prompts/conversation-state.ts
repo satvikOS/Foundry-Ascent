@@ -1,4 +1,4 @@
-import { CONVERSATION_STATE_TAG } from './craft.js';
+import { CONVERSATION_STATE_TAG, OVERUSED_PHRASES } from './craft.js';
 import { escapeData, truncate } from './escape.js';
 
 /**
@@ -25,6 +25,8 @@ export type FounderMove =
   | 'thanks'
   | 'stress'
   | 'humour'
+  | 'sarcasm'
+  | 'news'
   | 'short_reply'
   | 'question';
 
@@ -41,9 +43,25 @@ export interface ConversationThread {
   readonly messagesAgo: number;
 }
 
+/** A message that is only social: thanks, a wrap-up or a hello, with nothing asked or told ({@link socialTurnOf}). */
+export type SocialTurn = 'thanks' | 'closing' | 'greeting';
+
 export interface ConversationState {
   /** What the new message does, in order of importance. */
   readonly moves: readonly FounderMove[];
+  /** The message is only social (thanks, a wrap-up, a hello): a short reply and nothing to report. */
+  readonly social?: SocialTurn | null;
+  /** The message asks the vEIR to choose or give its view ("per branch or a flat fee?"): answer it first. */
+  readonly directChoice?: boolean;
+  /** The message asks for a number ("give me a number", "how much should we charge?"): a reasoned range first. */
+  readonly asksForNumber?: boolean;
+  /**
+   * Overused phrases ({@link OVERUSED_PHRASES}) the vEIR already said in this conversation (in the replies in view or
+   * its opener), so it never says them again.
+   */
+  readonly usedPhrases?: readonly string[];
+  /** The opening line it answers said hello (a call's intro): never greet again. */
+  readonly openerGreeted?: boolean;
   /** Words in the new message. */
   readonly words: number;
   /** Median words of the founder's earlier messages in view, or null without any. */
@@ -112,7 +130,7 @@ const MOVE_CUES: readonly (readonly [FounderMove, RegExp])[] = [
       [
         String.raw`\b(?:goodbye|bye(?:-bye)?|talk (?:soon|later|tomorrow|next week)|speak soon|catch you later|signing off|good night|i'll let you go|until next time)\b`,
         String.raw`\bsee you(?: (?:soon|later|tomorrow|next (?:week|time)|then))?(?=\s*(?:[.!,]|$))`,
-        String.raw`(?:^|(?:^|[\s,.!;])(?:i|we|i've|we've|ok|okay|anyway|sorry|well|so|but|alright|right|and|thanks)(?: really| actually| just)?[\s,]+)(?:(?:have|need|got) to|gotta|must)\s+(?:go|run|jump|dash|head (?:off|out)|hop off|leave)(?: now| soon| in a (?:sec|second|minute|bit))?(?=\s*(?:[.!,;:]|$|(?:but|thanks|thank|bye|talk|see)\b))`,
+        String.raw`(?:^|(?:^|[\s,.!;])(?:i|we|i've|we've|ok|okay|anyway|sorry|well|so|but|alright|right|and|thanks)(?: really| actually| just)?[\s,]+)(?:(?:have|need|got|have got) to|gotta|must)\s+(?:go|run|jump|dash|head (?:off|out)|hop off|leave)(?: now| soon| in a (?:sec|second|minute|bit))?(?=\s*(?:[.!,;:]|$|(?:but|thanks|thank|bye|talk|see)\b))`,
         String.raw`\b(?:(?:that's|that is) (?:all|it|everything|enough) for (?:now|today)|let's (?:stop|wrap(?: it)? up|leave it) (?:here|there|for (?:now|today))|i'm done for (?:now|today))\b`,
       ].join('|'),
     ),
@@ -138,6 +156,8 @@ const MOVE_CUES: readonly (readonly [FounderMove, RegExp])[] = [
         String.raw`\b(?:i|we) (?:feel|felt) like (?:a failure|giving up|quitting|i'm failing|we're failing)\b`,
         String.raw`\b(?:rough|tough|awful|terrible|brutal) (?:day|week|month|few days|few weeks)\b`,
         String.raw`\b(?:this|it)(?:'s| is| has been|'s been) (?:so |really |getting |all )?(?:stressful|overwhelming|exhausting|too much)\b`,
+        // Worn down without saying "stressed" (the matrix's crisis-adjacent turn).
+        String.raw`\b(?:i |we )?(?:haven't|have not|hardly|barely) slept\b|\b(?:don't|do not) know how (?:much )?longer (?:i|we) can\b|\bcan't keep (?:doing|going on with) (?:this|it)\b`,
       ].join('|'),
     ),
   ],
@@ -145,7 +165,37 @@ const MOVE_CUES: readonly (readonly [FounderMove, RegExp])[] = [
     'humour',
     /(?:\b(?:ha(?:ha)+|hah|he(?:he)+|lol|lmao|rofl)\b|[\u{1F602}\u{1F923}\u{1F605}\u{1F604}\u{1F606}\u{1F61C}\u{1F609}])/u,
   ],
+  [
+    'sarcasm',
+    // Praise for something unwelcome ("Oh great, ANOTHER meeting. Love that for me."): the matrix's SM-08.
+    /(?:\blove (?:that|this) for (?:me|us)\b|^oh,? (?:great|joy|wonderful|perfect|fantastic|lovely|brilliant|goody)\b[^?]*\b(?:another|more|again)\b|\bjust what (?:i|we) (?:needed|wanted)\b|\b(?:yay|woohoo|whoopee),? (?:another|more)\b|\bcan't wait (?:for|to do) (?:another|more)\b|\bthanks a lot,? (?:for nothing|really)\b)/,
+  ],
 ];
+
+/**
+ * News the founder brings (LAB-R8: "we're hiring Noor" and "the union will promote us" were answered with the vEIR's
+ * own pending question): a sentence that tells something happened or is happening, never one that asks about it.
+ */
+const NEWS = new RegExp(
+  [
+    String.raw`\b(?:big|good|great|bad|some|exciting|quick|huge|sad) (?:news|update)\b|\bguess what\b|^update\b|\bheads up\b`,
+    String.raw`\b(?:we|i)(?:'ve| have)? (?:just |finally |officially |actually )?(?:signed|landed|closed|won|lost|raised|launched|hired|shipped|secured|onboarded|got (?:a|an|the|our|my|into|accepted)|got approved|were accepted|was accepted)\b`,
+    String.raw`\b(?:we're|we are|i'm|i am) (?:officially |finally |now )?(?:hiring|bringing (?:on|in)|onboarding|launching|pivoting|moving|joining|leaving|signing)\b`,
+    String.raw`\b(?:signed (?:a|an|the|our)? ?(?:letter of intent|loi|contract|deal|agreement|lease)|letter of intent|\bloi\b)`,
+    String.raw`\b(?:said yes|agreed to|approved (?:our|the)|offered (?:us|me|a|to)|promised (?:us|to)|committed to|(?:will|'ll|would) promote|(?:is|are) joining|joined (?:us|the team)|pulled out|dropped out|backed out|quit|resigned|signed (?:on|up|the|it))\b`,
+  ].join('|'),
+);
+
+/** Whether `text` brings news: a statement with a news cue (a question about the same thing is no news). */
+function bringsNews(text: string): boolean {
+  return text
+    .split(/(?<=[.!?])\s+/)
+    .some((sentence) => !/\?\s*$/.test(sentence) && NEWS.test(sentence.replace(/[.!]+$/, '')));
+}
+
+/** A request for a number: the matrix's SM-16 ("Give me a number") and a price asked outright. */
+const NUMBER_REQUEST =
+  /\b(?:give me (?:a|the|some) (?:number|figure|price|ballpark|range)|(?:just )?(?:tell|give) me (?:a|the) (?:number|figure|price)|how much should (?:we|i)|what (?:should|would) (?:we|i) charge|what(?:'s| is) (?:a|the) (?:right|fair|good) (?:price|number|figure)|(?:a )?ballpark|rough (?:number|figure|estimate)|put a number on)\b/;
 
 const SHORT_REPLY =
   /^(?:yes|yeah|yep|yup|sure|ok|okay|right|exactly|correct|no|nope|maybe|makes sense|got it|true|fair|fair enough|sounds good|will do|agreed|definitely|of course|not really|kind of|sort of|perfect|great)\b/;
@@ -162,10 +212,121 @@ export function founderMoves(text: string): FounderMove[] {
   const t = normalize(text);
   if (t === '') return [];
   const moves: FounderMove[] = MOVE_CUES.filter(([, cue]) => cue.test(t)).map(([move]) => move);
+  if (bringsNews(t)) moves.push('news');
   const words = wordCount(t);
   if (words <= 5 && SHORT_REPLY.test(t) && !moves.includes('thanks')) moves.push('short_reply');
   if (t.endsWith('?') || (QUESTION_START.test(t) && words > 2)) moves.push('question');
   return moves;
+}
+
+// Social turns and direct questions ------------------------------------------------------------------------
+
+/** Social lead-ins before a founder's actual question ("Sure, but who pays?"). */
+const SOCIAL_LEAD =
+  /^(?:(?:hi|hey|hello|hiya|good (?:morning|afternoon|evening)|thanks|thank you|thx|cheers|ok|okay|sure|yes|yeah|yep|no|nope|right|great|perfect|cool|got it|makes sense|fair enough|sounds good|and|but|so)\b[\s,.!:;-]*)+/i;
+/** "How are you?" and its kin: a social question, answered socially. */
+const HOW_ARE_YOU =
+  /\bhow(?:'s| is| are| have) (?:it going|you(?: been| doing)?|things|your (?:day|week))\b[?!.]*/gi;
+const ASKING_WORD =
+  /^(?:what|how|why|when|where|who|which|should|could|would|can|do|does|did|is|are|will|any)\b/i;
+
+/**
+ * Whether the founder's message asks something that needs an answer, however short ("Sure, but who pays?"): a
+ * question left after the greeting, thanks or "ok" around it. "How are you?" alone is social.
+ */
+export function asksSomething(text: string, moves: readonly FounderMove[] = founderMoves(text)): boolean {
+  if (!moves.includes('question')) return false;
+  const rest = text.replace(SOCIAL_LEAD, '').replace(HOW_ARE_YOU, '').replace(SOCIAL_LEAD, '').trim();
+  return rest.includes('?') || (ASKING_WORD.test(rest) && wordCount(rest) > 2);
+}
+
+/**
+ * The words of a social message that say nothing else: thanks and appreciation, a goodbye, a hello, an "okay". What a
+ * message keeps once they are taken out is what it tells ({@link tellsSomething}).
+ */
+const SOCIAL_PHRASES = new RegExp(
+  [
+    // Thanks and appreciation ("Thanks so much for your help", "I really appreciate it", "That's genuinely helpful").
+    String.raw`\b(?:many |big )?(?:thanks|thank you|thank u|thx|ty|cheers)(?: (?:so|very) much| a (?:lot|ton|bunch)| again| heaps)?(?: (?:for|4) (?:(?:all )?(?:the|your) (?:help|time|advice|input|tips|ideas|insights?|support|chat|call|talk|thoughts|feedback)|(?:helping|listening|that|this|everything|all (?:that|this|of (?:that|this))|today|the chat|the call)))?`,
+    String.raw`\b(?:much appreciated|(?:i )?(?:really |truly )?appreciate (?:it|that|this|you|the help|your help|your time)(?: a lot| so much)?)`,
+    String.raw`\b(?:that's|that is|that was|this is|this was|it's|it is|it was|you're|you are|you've been|that has been|this has been)(?: (?:really|super|very|so|genuinely|incredibly|truly|extremely|honestly|actually|quite|such|a|so so))* (?:helpful|useful|great|perfect|amazing|awesome|brilliant|clear|good|excellent|fantastic|the best|(?:a )?(?:big|huge|real) help|a lifesaver|gold|clarifying)`,
+    String.raw`\b(?:(?:super|really|very|so|genuinely) (?:helpful|useful|clear)|(?:that|this) (?:helps|helped)(?: a lot| loads)?|(?:that |this )?makes (?:total |a lot of |perfect )?sense|got it|sounds (?:good|great|perfect)|will do|love (?:it|that|this))`,
+    // Taking the advice on board, with nothing new in it ("Thanks, I'll do that.").
+    String.raw`\b(?:i'll|i will|we'll|we will) (?:do (?:that|it|this|so)|try (?:that|it|this)|think about (?:it|that)|keep (?:that|it|this) in mind|give (?:it|that) a (?:go|try|shot)|let you know(?: how (?:it|that|they) (?:goes|go|went))?|see)\b`,
+    // A goodbye ("Talk soon", "I have to run", "Have a good one").
+    String.raw`\b(?:goodbye|bye(?:-bye| for now)?|talk (?:soon|later|tomorrow|next week)|speak soon|catch you later|signing off|good ?night|i'll let you go|until next time|take care|see you(?: (?:soon|later|tomorrow|next (?:week|time)|then))?|have a (?:good|great|nice|lovely) (?:one|day|evening|night|weekend|week))`,
+    String.raw`\b(?:(?:i|we|i've|we've|i'm|we're)(?: really| actually| just)? (?:(?:have |'ve )?got to|have to|need to|gotta|going to have to)|gotta|must) (?:go|run|jump|dash|head (?:off|out)|hop off|leave)(?: now| soon| in a (?:sec|second|minute|bit))?`,
+    // Relief, said in passing ("Phew, that takes some pressure off", "I feel a lot better about this now").
+    String.raw`\b(?:phew|whew|(?:that's|that is|what) a relief|relieved|(?:that |this )?takes (?:some |the |a lot of )?(?:pressure|weight) off|i feel (?:a lot |so much |much |way )?(?:better|calmer|lighter)(?: about (?:this|it|that|things))?)`,
+    // Chat slang that adds nothing ("talk soon! no cap", "thanks! fr").
+    String.raw`\b(?:no cap|fr|frfr|ngl|not gonna lie|tbh|tbf|lol|lmao|haha+|ty|thx|bro|dude|mate|fam)\b`,
+    String.raw`\b(?:(?:that's|that is) (?:all|it|everything|enough) for (?:now|today)|let's (?:stop|wrap(?: it)? up|leave it) (?:here|there|for (?:now|today))|i'm done for (?:now|today))`,
+    // A hello ("Hey, good morning", "How's it going?").
+    String.raw`\b(?:hi|hey|hello|hiya|howdy|yo|good (?:morning|afternoon|evening|day)|morning|evening)(?: there| again)?`,
+    String.raw`\bhow(?:'s| is| are| have) (?:it going|you(?: been| doing)?|things|your (?:day|week))`,
+    // Acknowledgements and fillers.
+    String.raw`\b(?:ok|okay|alright|all right|right|sure|yes|yeah|yep|yup|great|perfect|cool|nice|awesome|amazing|brilliant|excellent|wonderful|lovely|fantastic|so|well|anyway|again|and|oh|ah|wow|haha|lol|too|as always|then|now)\b`,
+  ].join('|'),
+  'giu',
+);
+
+/** A first-person subject or possessive: the founder telling something of their own ("we signed", "my cofounder"). */
+const FIRST_PERSON =
+  /(?<![\p{L}'])(?:i|im|i'm|i've|ive|i'll|i'd|we|we're|we've|we'll|we'd|my|our|ours)(?![\p{L}'])/iu;
+
+/**
+ * Whether a message tells something besides its social words ({@link SOCIAL_PHRASES}): a number, the founder's own
+ * news or plan (a first-person subject: "we signed", "my cofounder left"), or any content word ("the dean said yes").
+ * A name said to them ("Thanks, Corin!") tells nothing.
+ */
+function tellsSomething(text: string): boolean {
+  const rest = text.normalize('NFKC').replace(APOSTROPHES, "'").replace(SOCIAL_PHRASES, ' ');
+  if (/\p{N}|[$€£¥%]/u.test(rest)) return true;
+  if (FIRST_PERSON.test(rest)) return true;
+  const content = (rest.match(/\p{L}[\p{L}'-]*/gu) ?? []).filter((w) => contentWords(w).size > 0);
+  if (content.length === 0) return false;
+  // One capitalised word and nothing else: a name they said to the vEIR.
+  return !(content.length === 1 && /^\p{Lu}/u.test(content[0] ?? ''));
+}
+
+/**
+ * What a message that is only social does (doctrine "Conversation craft"; the lab's SM-19 and SM-13): thanks
+ * ("Thank you, this is genuinely helpful"), a wrap-up ("Okay, thanks, that's helpful. Talk soon.") or a hello, with
+ * nothing asked and nothing told: once its social words are taken out, nothing is left ({@link tellsSomething}).
+ * Null for a message with a real question, or with news, a decision, a number or a plan in it ("Thanks! We signed
+ * Hartwell.", "Okay, we'll go with $900. Talk soon."): that is answered, and kept, like any other.
+ */
+export function socialTurnOf(text: string): SocialTurn | null {
+  const moves = founderMoves(text);
+  if (asksSomething(text, moves)) return null;
+  const kind: SocialTurn | null = moves.includes('closing')
+    ? 'closing'
+    : moves.includes('thanks')
+      ? 'thanks'
+      : moves.includes('greeting')
+        ? 'greeting'
+        : null;
+  return kind === null || tellsSomething(text) ? null : kind;
+}
+
+/** "X or Y?" asked of the vEIR, or a request for its pick or verdict. */
+const CHOICE =
+  /(?:\b(?:should|shall|do|would|could|can|is|are)\b[^?]{1,120}\bor\b[^?]{1,80}\?|^[^?]{1,60}\bor\b[^?]{1,60}\?$|\b(?:which (?:one|is better|would you|should (?:we|i))|what would you (?:do|pick|choose|go with)|(?:just )?(?:decide|pick|choose) for (?:me|us)|your (?:pick|call|honest (?:view|take)|recommendation)|what do you recommend|which do you recommend|yes or no)\b)/i;
+
+/** Whether the message asks for a number ("Give me a number", "how much should we charge?"): SM-16. */
+export function asksForNumber(text: string): boolean {
+  return NUMBER_REQUEST.test(normalize(text));
+}
+
+/**
+ * Whether the message asks the vEIR to choose or give its view, directly (LAB-V3: "per branch or a flat campus
+ * fee?" was answered with demand-validation questions). The reply answers it in its first sentence.
+ */
+export function directChoiceOf(text: string): boolean {
+  const flat = normalize(text);
+  return flat.includes('?') || /\b(?:decide|pick|choose) for (?:me|us)\b|\byour (?:pick|call)\b/.test(flat)
+    ? CHOICE.test(flat)
+    : false;
 }
 
 // Content words ------------------------------------------------------------------------------------------
@@ -453,8 +614,15 @@ export function deriveConversationState(
 
   const prev: Thread | null = previous;
   const open = parked.filter((p) => p !== current).slice(0, MAX_PARKED);
+  const said = [...turns.map((t) => t.answer ?? ''), opener].join('\n').replace(/[‘’ʼ]/g, "'").toLowerCase();
+  const usedPhrases = OVERUSED_PHRASES.filter((phrase) => said.includes(phrase));
   return {
     moves,
+    social: socialTurnOf(founderText),
+    directChoice: directChoiceOf(founderText),
+    asksForNumber: asksForNumber(founderText),
+    usedPhrases,
+    openerGreeted: afterOpener && /^(?:hi|hello|hey|hiya)\b/i.test(opener),
     words: wordCount(founderText),
     typicalWords: median(turns.map((t) => wordCount(t.founderText))),
     // A thread the new message leaves unsettled is reported once, as parked.
@@ -479,6 +647,8 @@ const MOVE_LABELS: Readonly<Record<FounderMove, string>> = {
   greeting: 'greets you',
   stress: 'sounds stressed or discouraged',
   humour: 'is joking around',
+  sarcasm: 'is being sarcastic',
+  news: 'brings news',
   short_reply: 'is a short reply to your last message',
   question: 'asks a question',
 };
@@ -494,6 +664,8 @@ const NOTABLE: ReadonlySet<FounderMove> = new Set([
   'greeting',
   'stress',
   'humour',
+  'sarcasm',
+  'news',
 ]);
 
 function quoted(text: string): string {
@@ -509,7 +681,8 @@ function ago(n: number): string {
  * conversation with no notable move). Founder words in it are escaped data.
  */
 export function renderConversationState(state: ConversationState): string {
-  const notable = state.moves.some((m) => NOTABLE.has(m));
+  const notable =
+    state.moves.some((m) => NOTABLE.has(m)) || state.directChoice === true || state.asksForNumber === true;
   if (state.earlierTurns === 0 && !notable && !state.afterOpener) return '';
   const what = state.moves.map((m) => MOVE_LABELS[m]);
   const length =
@@ -518,7 +691,45 @@ export function renderConversationState(state: ConversationState): string {
       : `${state.words} words (their messages usually run about ${state.typicalWords})`;
   const lines = [`- Their message${what.length > 0 ? ` ${what.join(', ')}` : ''}; ${length}.`];
   if (state.afterOpener) {
-    lines.push('- It answers your opening line, which already picked up last time: never say that again.');
+    lines.push(
+      state.openerGreeted === true
+        ? '- It answers your opening line, which already greeted them and picked up last time: never greet them or say that again.'
+        : '- It answers your opening line, which already picked up last time: never say that again.',
+    );
+  }
+  if (state.social === 'thanks') {
+    lines.push(
+      '- A thanks and nothing more: a short, warm reply only. No advice, plan or recap, and no other field.',
+    );
+  } else if (state.social === 'closing') {
+    lines.push(
+      '- They are wrapping up: a warm sign-off (their one next step in a line at most), no new question, no other field.',
+    );
+  } else if (state.social === 'greeting' && state.earlierTurns > 0) {
+    lines.push('- A hello and nothing more: a few warm words, no advice.');
+  }
+  if (state.moves.includes('news')) {
+    lines.push(
+      '- They bring news: react to it and ask about it first, in your own words. In this reply never steer back to an',
+      '  earlier question, plan or parked thread.',
+    );
+  }
+  if (state.moves.includes('sarcasm')) {
+    lines.push(
+      '- They are being sarcastic: meet it lightly in a few words of your own, then one practical line; no framework.',
+    );
+  }
+  if (state.directChoice === true) {
+    lines.push(
+      '- They asked you to choose or give your view: open with one pick, outright (no "only if"), and why in a line,',
+      '  before anything you ask.',
+    );
+  }
+  if (state.asksForNumber === true) {
+    lines.push(
+      '- They asked for a number: give a reasoned range and the one assumption behind it, before anything else; never',
+      '  withhold it for want of evidence.',
+    );
   }
   if (state.previous !== null) lines.push(`- You were on: ${quoted(state.previous.gist)}.`);
   for (const p of state.parked) {
@@ -537,6 +748,11 @@ export function renderConversationState(state: ConversationState): string {
   }
   if (state.openQuestion) {
     lines.push('- They did not take up your last question: answer what they said, and do not ask it again.');
+  }
+  if ((state.usedPhrases ?? []).length > 0) {
+    lines.push(
+      `- Phrases you already used in this conversation (never again): ${(state.usedPhrases ?? []).map(quoted).join(' | ')}`,
+    );
   }
   return [`<${CONVERSATION_STATE_TAG}>`, ...lines, `</${CONVERSATION_STATE_TAG}>`].join('\n');
 }

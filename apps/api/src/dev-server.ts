@@ -86,6 +86,10 @@ async function main(): Promise<void> {
     jobQueue,
     textExtractor: new DocumentTextExtractor(),
     logger: logger.child({ component: 'core' }),
+    // As in production: settling a turn's kept memory follows the response (this process keeps running).
+    afterResponse: (task) => {
+      void task;
+    },
     ...localSpeechFor(env, config),
   });
   const workerDeps = workerDepsFor(core, { db, gateway, logger, maxReceiveCount: LOCAL_JOB_ATTEMPTS });

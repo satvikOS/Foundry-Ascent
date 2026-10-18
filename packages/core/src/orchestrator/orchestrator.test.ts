@@ -262,8 +262,9 @@ describe('context budget', () => {
     expect(ctx.shownKeys.has('E1')).toBe(true);
     const shown = [...ctx.shownKeys];
     expect(shown).toEqual(evidence.slice(0, shown.length).map((e) => e.key));
-    const text = ctx.messages.map((m) => m.content).join('\n');
-    expect(estimateTokens(text) + estimateTokens('s'.repeat(8_000))).toBe(ctx.estimatedInputTokens);
+    // The estimate counts exactly what is sent: each message, and the system prompt.
+    const sent = ctx.messages.reduce((acc, m) => acc + estimateTokens(m.content), 0);
+    expect(sent + estimateTokens('s'.repeat(8_000))).toBe(ctx.estimatedInputTokens);
   });
 });
 

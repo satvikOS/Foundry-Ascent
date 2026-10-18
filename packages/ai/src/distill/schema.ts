@@ -46,7 +46,12 @@ export type LessonCandidate = z.infer<typeof LessonCandidate>;
  * outputs. Limits are enforced by `sanitizeDistill`, not the schema.
  */
 export const DistillDraft = z.object({
-  title: z.string(),
+  /*
+   * A title the model left out, wrote as null or in a shape no repair reads reads as no title ('' →
+   * `sanitizeDistill` keeps none): the lab's distillations failed whole on `title: invalid_type` (wave 6) and
+   * were asked for again, for a title the conversation's first message already gives.
+   */
+  title: z.string().catch(''),
   digest: z.object({
     summary: z.string(),
     topics: z.array(z.string()),

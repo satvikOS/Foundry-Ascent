@@ -31,6 +31,11 @@ export interface PreviousConversation {
   readonly openings: readonly string[];
   /** The text it was read from (seeds the mock's choices, so each new conversation varies). */
   readonly source: string;
+  /**
+   * The teammate who had it (`with="Rafi"`), or null when it was the person talking now: then its plan is the
+   * teammate's, never theirs (MX-0005).
+   */
+  readonly teammate?: string | null;
 }
 
 /** The parsed `<conversation_state>` block. */
@@ -197,7 +202,11 @@ function fromSection(
   const relative = RELATIVE_TIME.exec(scope)?.[0] ?? null;
   const date = /\b(\d{4}-\d{2}-\d{2})\b/.exec(scope)?.[1] ?? null;
   const channel = channelIn(scope);
+  const withWhom = firstMatch(/<conversation\b[^>]*>/.exec(scope)?.[0] ?? '', /\bwith="([^"]+)"/);
+  const teammate =
+    withWhom === null || withWhom === 'you' ? null : withWhom === 'a teammate' ? 'your teammate' : withWhom;
   return build({
+    teammate,
     topicText: [topics, title, founderLines.join(' '), summary]
       .filter((t): t is string => t !== null)
       .join(' '),
@@ -251,6 +260,7 @@ function whenFromDate(date: string, today: string | null): string | null {
 }
 
 function build(args: {
+  teammate?: string | null;
   topicText: string;
   topicLabel: string | null;
   gist: string | null;
@@ -279,6 +289,7 @@ function build(args: {
     opening: args.openings[0] ?? null,
     openings: args.openings,
     source: args.source,
+    teammate: args.teammate ?? null,
   };
 }
 

@@ -242,7 +242,8 @@ describe('a second call minutes after the first', () => {
     const call2 = await startCall(maya, second.id);
     // Maya has met her vEIR: it greets her (no self-introduction, no "an AI coach"), then picks up the first call,
     // summarised (never the question quoted back: LAB-R3).
-    expect(call2.intro?.text).toMatch(/^Hi Maya\. /);
+    expect(call2.intro?.text).toMatch(/^Hi Maya, /);
+    expect(call2.intro?.text.length).toBeLessThanOrEqual(90);
     expect(call2.intro?.text).toContain('whether to price per library or per seat for the pilot');
 
     const turn = await talk(
@@ -348,7 +349,7 @@ describe('a private (temporary) conversation', () => {
     expect(temporary.opener).toBeNull();
     const call = await startCall(maya, temporary.id);
     // A private call opens without picking anything up either.
-    expect(call.intro?.text).toBe('Hi Maya. What would you like to work on?');
+    expect(call.intro?.text).toBe('Hi Maya, what would you like to work on?');
     const turn = await talk(maya, temporary.id, secret, call.call.id);
     // Nothing from "Where you left off" reaches a temporary conversation.
     expect(seen.at(-1)?.messages.at(-1)?.content).not.toContain(LEFT_OFF_HEADING);
@@ -512,6 +513,15 @@ describe('memory kept automatically', () => {
         status: 'confirmed',
         keptAutomatically: true,
         origin: 'ai',
+      }),
+    ]);
+    // The turn records it with its candidates, so the answer's "Saved to Knowledge" line finds it (the line reads
+    // the turn's candidates; with only the model's on the turn, nothing showed within 30 s in the lab).
+    expect(turn.response?.memory_candidates).toEqual([
+      expect.objectContaining({
+        type: 'decision',
+        title: 'Ask each library for a paid commitment before the pilot starts',
+        source: 'founder_stated',
       }),
     ]);
     // No model call for it, and no distillation: the turn's own stream and annotations only.
@@ -776,9 +786,11 @@ describe('what the vEIR keeps', () => {
     );
     const constraint = await legacy('No hiring yet', 'The team cannot hire before the pilot.', '2026-10-04');
     const report = await scripted.maintenance.runDaily({ requestId: 'maintenance-legacy' });
-    expect(report.pendingProposals).toMatchObject({ kept: 2, duplicates: 1, notTheFounders: 1 });
+    // The constraint the founder stated after "and" was kept by the turn itself (founder-statements.ts reads each
+    // clause), so the legacy proposal of it is a duplicate; the goal is kept from the proposals.
+    expect(report.pendingProposals).toMatchObject({ kept: 1, duplicates: 2, notTheFounders: 1 });
     expect(await statusOf(goal)).toBe('confirmed');
-    expect(await statusOf(constraint)).toBe('confirmed');
+    expect(await statusOf(constraint)).toBe('expired');
     expect(await statusOf(advice)).toBe('expired');
     expect(await statusOf(restated)).toBe('expired');
     const kept = await h.t.db.system((sx) => memoryRepo.getMemory(sx, goal));
@@ -811,10 +823,11 @@ describe('how a new conversation opens', () => {
     const meanwhile = await h.core.sessions.create(maya, quietquad(), {});
     await talk(maya, meanwhile.id, 'We booked the auditorium for demo day.');
     const call = await startCall(maya, empty.id);
-    expect(call.intro?.text).toContain('we talked about booking the auditorium for demo day.');
-    // The conversation keeps that line as its first message: the vEIR's history says what the call said.
+    // One sentence around what they talked about (wave 7: the greeting of someone already met).
+    expect(call.intro?.text).toMatch(/^Hi Maya, .*booking the auditorium for demo day\?$/);
+    // The conversation keeps what the call said as its first message: the vEIR's history holds its greeting.
     const opener = (await h.core.sessions.get(maya, empty.id)).session.opener ?? '';
-    expect(call.intro?.text.endsWith(opener)).toBe(true);
+    expect(opener).toBe(call.intro?.text);
     await h.core.calls.end(maya, call.call.id, { reason: 'user' });
     h.jobQueue.drain();
   });
@@ -842,6 +855,145 @@ describe('how a new conversation opens', () => {
     const next = await h.core.sessions.create(maya, quietquad(), {});
     expect(next.opener).not.toBe(question);
     expect(next.opener).toContain('we talked about whether to charge libraries per seat.');
+  });
+
+  it('picks up the most recent conversation, call or chat, though an older one was distilled after it (LAB-R6c)', async () => {
+    await ageEverything(3);
+    // A call about pilot success criteria, ten minutes ago.
+    const call = await h.core.sessions.create(maya, quietquad(), {});
+    await talk(maya, call.id, 'How do we define the pilot success criteria?');
+    await idle(call.id, 10);
+    // Then a chat about the student union, just now.
+    const chat = await h.core.sessions.create(maya, quietquad(), {});
+    await talk(maya, chat.id, 'Should we add group booking for study groups before exams?');
+    // The call's distillation finishes only now, after the chat's turn: the notebook's opener is drawn from the call.
+    await h.t.db.system(async (sx) => {
+      const key = { ventureId: quietquad(), personaId: h.ventures.quietquad.personaId };
+      const current = await notebooksRepo.getNotebook(sx, key);
+      await notebooksRepo.saveNotebook(sx, {
+        tenantId: h.seed.tenantId,
+        ...key,
+        expectedVersion: current?.version ?? 0,
+        content: {
+          ...(current?.content ?? notebooksRepo.EMPTY_NOTEBOOK),
+          nextOpener: 'Last time, we talked about the pilot success criteria. How has it gone since?',
+          nextTopic: null,
+        },
+        suppressed: current?.suppressed ?? [],
+        editedBy: 'veir',
+        sourceSessionId: call.id,
+      });
+    });
+    // The next conversation, chat or call, picks up the chat: the most recent conversation across channels.
+    const next = await h.core.sessions.create(maya, quietquad(), {});
+    expect(next.opener ?? '').toMatch(/student union|group booking/);
+    expect(next.opener ?? '').not.toMatch(/success criteria/);
+    const ringing = await startCall(maya, next.id);
+    expect(ringing.intro?.text ?? '').toMatch(/student union|group booking/);
+    await h.core.calls.end(maya, ringing.call.id, { reason: 'user' });
+    h.jobQueue.drain();
+    // Once the chat itself is distilled and its distillation kept that opener, the opener is current again.
+    await h.core.sessions.remove(maya, next.id);
+    const digest = {
+      summary: 'The union offered promotion for group booking.',
+      topics: ['group booking'],
+      commitments: [],
+      openQuestions: [],
+      generatedAt: new Date().toISOString(),
+    };
+    await h.t.db.system(async (sx) => {
+      await sx.query(
+        `UPDATE coaching_sessions SET digest = CAST(:d AS jsonb), distill_version = 1,
+                last_activity_at = now() - interval '1 minute' WHERE id = :id`,
+        { d: p.text(JSON.stringify(digest)), id: p.uuid(chat.id) },
+      );
+      await sx.query(
+        'UPDATE veir_notebooks SET updated_at = now() WHERE venture_id = :v AND persona_id = :pe',
+        { v: p.uuid(quietquad()), pe: p.uuid(h.ventures.quietquad.personaId) },
+      );
+    });
+    const kept = await h.core.sessions.create(maya, quietquad(), {});
+    expect(kept.opener ?? '').toMatch(/success criteria/);
+  });
+
+  it('opens and recalls with what the founder told, never only the coach’s framing (LAB-R6b, RC-01)', async () => {
+    await ageEverything(3);
+    const first = await h.core.sessions.create(maya, quietquad(), {});
+    for (const text of [
+      'Big news. We just signed a letter of intent with Hartwell.',
+      "They'll pay $900 per semester for the pilot.",
+      "I'm worried their SSO requirement will slow everything down.",
+    ]) {
+      await talk(maya, first.id, text);
+    }
+    // Distilled in the coach's framing: the digest and the notebook's thread are the vEIR's own advice.
+    const digest = {
+      summary: 'We worked on anchoring the pilot price to the workaround cost and an SSO kill criterion.',
+      topics: ['anchoring the pilot price'],
+      commitments: [],
+      openQuestions: [],
+      generatedAt: new Date().toISOString(),
+    };
+    await h.t.db.system(async (sx) => {
+      await sx.query(
+        'UPDATE coaching_sessions SET digest = CAST(:d AS jsonb), distill_version = 3 WHERE id = :id',
+        { d: p.text(JSON.stringify(digest)), id: p.uuid(first.id) },
+      );
+      const key = { ventureId: quietquad(), personaId: h.ventures.quietquad.personaId };
+      const current = await notebooksRepo.getNotebook(sx, key);
+      await notebooksRepo.saveNotebook(sx, {
+        tenantId: h.seed.tenantId,
+        ...key,
+        expectedVersion: current?.version ?? 0,
+        content: {
+          ...(current?.content ?? notebooksRepo.EMPTY_NOTEBOOK),
+          nextOpener:
+            'Last time, we left off on anchoring the pilot price to the workaround cost. Where are things now?',
+          nextTopic: 'anchoring the pilot price to the workaround cost',
+        },
+        suppressed: current?.suppressed ?? [],
+        editedBy: 'veir',
+        sourceSessionId: first.id,
+      });
+    });
+    // The next conversation opens with the founder's news…
+    const next = await h.core.sessions.create(maya, quietquad(), {});
+    expect(next.opener ?? '').toMatch(/letter of intent with Hartwell/);
+    expect(next.opener ?? '').not.toMatch(/anchoring/);
+    // …and its "Where you left off" carries what they told, in their words, before the summary.
+    await talk(maya, next.id, 'Do you remember what we talked about last time?');
+    const prompt = seen.at(-1)?.messages.at(-1)?.content ?? '';
+    const said = prompt.indexOf('<they_said');
+    expect(said).toBeGreaterThan(0);
+    expect(said).toBeLessThan(prompt.indexOf('<summary>We worked on anchoring'));
+    for (const fact of ['letter of intent with Hartwell', '$900 per semester', 'SSO requirement']) {
+      expect(prompt).toContain(fact);
+    }
+  });
+
+  it('says a name the founder typed in lower case with the case the vEIR wrote it in (wave 7, item 2)', async () => {
+    await ageEverything(3);
+    const named = createCore({
+      db: h.t.db,
+      gateway: new MockModelGateway({
+        streamDelayMs: 0,
+        streamFixture: () => 'Booking Harbour Hall early is smart. Which day suits the kickoff?',
+      }),
+      config: h.config,
+      objectStore: h.objectStore,
+      jobQueue: h.jobQueue,
+    });
+    const first = await named.sessions.create(maya, quietquad(), {});
+    await named.orchestrator.runTurn(
+      maya,
+      first.id,
+      { text: "we're booking the harbour hall study room for the pilot kickoff on monday" },
+      () => undefined,
+    );
+    const next = await named.sessions.create(maya, quietquad(), {});
+    expect(next.opener ?? '').toContain('Harbour Hall');
+    expect(next.opener ?? '').not.toContain('harbour hall');
+    h.jobQueue.drain();
   });
 
   it('carries over a conversation the venture had with its previous coach, as the founder’s, never as its own', async () => {
@@ -1089,6 +1241,61 @@ describe('continuity keyed by the venture and the founder (review)', () => {
     expect((await scripted.sessions.create(maya, quietquad(), {})).opener).toBe(
       'How are the staff interviews going?',
     );
+  });
+
+  it('never puts a teammate’s plan to the founder as theirs (MX-0005)', async () => {
+    await ageAll(8);
+    const current = await scripted.notebook.get(maya, quietquad());
+    if (current.nextOpener !== null) {
+      await scripted.notebook.update(maya, quietquad(), {
+        expectedVersion: current.version,
+        edit: { action: 'remove_opener' },
+      });
+    }
+    // Devin, Maya's teammate, planned something; the notebook's opener was drawn from his conversation.
+    const devins = await scripted.sessions.create(devin, quietquad(), {});
+    await say(devin, devins.id, 'I will order the occupancy sensors from the second supplier.');
+    await scripted.distill.distillSession({ sessionId: devins.id, requestId: 'distill-mx5', settled: true });
+    const notebook = await scripted.notebook.get(maya, quietquad());
+    expect(notebook.nextOpener).toMatch(/you planned to order the occupancy sensors/i);
+    // Said to Devin, it is his plan…
+    expect((await scripted.sessions.create(devin, quietquad(), {})).opener).toMatch(/occupancy sensors/);
+    // …but never to Maya as hers, in a chat or on a call.
+    const hers = await scripted.sessions.create(maya, quietquad(), {});
+    expect(hers.opener ?? '').not.toMatch(/occupancy sensors|you planned/i);
+    const call = StartCallResponse.parse(await scripted.calls.start(maya, hers.id, { inputMode: 'typed' }));
+    expect(call.intro?.text ?? '').not.toMatch(/occupancy sensors|you planned/i);
+    await scripted.calls.end(maya, call.call.id, { reason: 'user' });
+    h.jobQueue.drain();
+  });
+
+  it('never echoes the founder’s chat shorthand or lower case back in an opener (wave 7)', async () => {
+    await ageAll(8);
+    const current = await scripted.notebook.get(maya, quietquad());
+    if (current.nextOpener !== null) {
+      await scripted.notebook.update(maya, quietquad(), {
+        expectedVersion: current.version,
+        edit: { action: 'remove_opener' },
+      });
+    }
+    const before = await scripted.sessions.create(maya, quietquad(), {});
+    await say(maya, before.id, 'I will call facilities about the budget monday fr');
+    await scripted.distill.distillSession({
+      sessionId: before.id,
+      requestId: 'distill-slang',
+      settled: true,
+    });
+    // The notebook keeps the plan as it was written…
+    expect((await scripted.notebook.get(maya, quietquad())).nextOpener).toMatch(/monday fr\./);
+    // …and the opener says it the way it would be written.
+    const first = await scripted.sessions.create(maya, quietquad(), {});
+    expect(first.opener).toBe(
+      'Last time you planned to call facilities about the budget Monday. How did it go?',
+    );
+    for (let i = 0; i < 2; i += 1) {
+      const opened = await scripted.sessions.create(maya, quietquad(), {});
+      expect(opened.opener).not.toMatch(/\bfr\b|monday/);
+    }
   });
 
   it('says a thread distilled about the founder to them, never by name in lower case (LAB-U2)', async () => {

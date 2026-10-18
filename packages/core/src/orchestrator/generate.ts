@@ -7,6 +7,7 @@ import {
   SentenceGate,
   clampWords,
   cutMetaNarration,
+  endsWithHandBack,
   isModelGatewayError,
   type ChatMessage,
   type GateBlockReason,
@@ -14,6 +15,7 @@ import {
   type GateStats,
   type ModelAttempt,
   type ModelPurpose,
+  type NarrationNames,
   type SentenceGateOptions,
   type StreamStopReason,
 } from '@foundry/ai';
@@ -99,8 +101,7 @@ const MAX_SPEECH_UNIT_CHARS = 600;
  * (usually the question that hands the turn back) without waiting for the annotations and the final
  * validation (docs/runbooks/latency.md). None of its units is marked final (`turn.completed` ends the turn),
  * and nothing is said after it: a closing unit offered to `finish` would come a whole model call after the
- * hand-back, over or after the founder's answer, so it is not said (the written reply carries the narrowing
- * note). When the stream is given up and the reply is written whole after all, `sayWhole` makes the stream
+ * hand-back, over or after the founder's answer, so it is not said. When the stream is given up and the reply is written whole after all, `sayWhole` makes the stream
  * hold and finish like a reply said whole. Every unit was validated by the sentence gate either way.
  */
 export class SpeechStream {
@@ -137,8 +138,8 @@ export class SpeechStream {
   }
 
   /**
-   * Ends the turn's speech. Held: `closing` (e.g. the spoken narrowing caveat) is said after the reply and the
-   * last unit is marked final. Eager (a streamed reply): everything was already said and nothing follows it.
+   * Ends the turn's speech. Held: `closing`, if any, is said after the reply and the last unit is marked final.
+   * Eager (a streamed reply): everything was already said and nothing follows it.
    */
   async finish(closing?: string): Promise<void> {
     if (this.#eager) return;
@@ -213,6 +214,13 @@ export interface GenerateArgs {
   readonly signal: AbortSignal | undefined;
   /** `performance.now()` when the turn request reached the engine. */
   readonly startedAt: number;
+  /** Who the reply may narrate by name (the founder it talks to, the venture's people; LAB-M1b). */
+  readonly narration?: NarrationNames;
+  /**
+   * A call's turn: said right after a streamed reply that ends on a statement (`spokenHandBackFor`), so the founder
+   * knows it is their turn without waiting for the annotations; null for none.
+   */
+  readonly handBack?: string | null;
 }
 
 export interface StreamArgs extends GenerateArgs {
@@ -254,9 +262,9 @@ export const META_NARRATION_RETRY =
   '[Your previous reply described your reasoning, the rules or the founder in the third person instead of talking to the founder. Write only what you say to them, as "you".]';
 
 /** Whether a whole reply has no reply in it: its answer (or, on a call, its spoken form) opens with narration. */
-function opensWithNarration(value: CoachResponse, channel: TurnChannel): boolean {
-  if (cutMetaNarration(value.answer).at === 'opening') return true;
-  return channel === 'voice' && cutMetaNarration(value.spoken ?? '').at === 'opening';
+function opensWithNarration(value: CoachResponse, channel: TurnChannel, names?: NarrationNames): boolean {
+  if (cutMetaNarration(value.answer, names).at === 'opening') return true;
+  return channel === 'voice' && cutMetaNarration(value.spoken ?? '', names).at === 'opening';
 }
 
 /**
@@ -286,7 +294,11 @@ export async function generateWhole(
       await record(a, result.attempts);
       attempts.push(...result.attempts);
       latencyMs += Math.round(result.latencyMs);
-      if (round === 0 && opensWithNarration(result.value, a.channel) && a.signal?.aborted !== true) {
+      if (
+        round === 0 &&
+        opensWithNarration(result.value, a.channel, a.narration) &&
+        a.signal?.aborted !== true
+      ) {
         notes.push('meta_narration_retried');
         continue;
       }
@@ -334,9 +346,11 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
   const notes: string[] = [];
   const attempts: ModelAttempt[] = [];
   const voice = a.channel === 'voice';
+  // A call's reply leaves room for its hand-back within the spoken budget (it is said after the reply).
+  const spokenBudget = SPOKEN_MAX_WORDS - (voice && a.handBack ? a.handBack.split(/\s+/).length : 0);
   const gate = new SentenceGate({
     ...a.gate,
-    ...(voice ? { maxUnitChars: SPOKEN_UNIT_CHARS, spokenWordBudget: SPOKEN_MAX_WORDS, spoken: true } : {}),
+    ...(voice ? { maxUnitChars: SPOKEN_UNIT_CHARS, spokenWordBudget: spokenBudget, spoken: true } : {}),
   });
   const speech =
     voice && a.speechKey
@@ -360,7 +374,7 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
    * heard, so the model is stopped and the reply is what was shown (`full`). Production's spoken replies were
    * the first 50–70 words of written answers about twice as long, which the transcript then showed unsaid.
    */
-  const said = { words: 0, shown: '', full: false, cut: false };
+  const said = { words: 0, shown: '', spoken: '', full: false, cut: false };
 
   const release = async (result: GateResult): Promise<void> => {
     for (const unit of result.units) {
@@ -372,10 +386,12 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
         said.shown += unit.text;
       }
       if (unit.spoken !== '') said.words += unit.spoken.split(/\s+/).filter((w) => w !== '').length;
+      if (unit.spoken !== '') said.spoken += ` ${unit.spoken}`;
       if (speech && unit.spoken !== '') await speech.queue(unit.spoken);
     }
     if (result.blocked !== null || result.fallback !== null || result.cut !== null) stop.abort();
-    else if (voice && !said.full && said.words >= SPOKEN_MAX_WORDS) {
+    else if (!said.full && (gate.full || (voice && said.words >= spokenBudget))) {
+      // All of the reply that can be said was said: a call's spoken budget, or a short reply's (a thanks).
       said.full = true;
       stop.abort();
     }
@@ -529,8 +545,9 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
     // Ends the gate (nothing more once that last push stopped it).
     await release(gate.end());
   }
-  // The gate ended the reply before the model's narration (while streaming, or on its last sentence at the end).
-  if (gate.cut !== null) said.cut = true;
+  // The gate ended the reply before the model's narration (while streaming, or on its last sentence at the end), or
+  // a short reply's budget was used up.
+  if (gate.cut !== null || gate.full) said.cut = true;
   const phaseAMs = Math.round(performance.now() - phaseAStarted);
   if (gate.blocked !== null) return blockedBy(gate.blocked, streamed.modelId, phaseAMs);
   if (gate.fallback !== null) return wholeInstead(gate.fallback, phaseAMs, null);
@@ -548,8 +565,26 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
   if (reply.shape !== 'prose') notes.push(`stream_structured_${reply.shape ?? 'unknown'}`);
   else if (reply.isDone()) notes.push('stream_fields_cut');
   if (gate.cut !== null) notes.push(`stream_${gate.cut}_cut`);
+  else if (gate.full) notes.push('stream_reply_budget_cut');
   else if (said.cut) notes.push('stream_spoken_cut');
-  const replyText = said.cut ? said.shown.trim() : reply.text;
+  let replyText = said.cut ? said.shown.trim() : reply.text;
+  // A call's reply that ended on a statement hands the turn back now, not after the annotations.
+  const handBack = voice ? (a.handBack ?? null) : null;
+  if (
+    handBack !== null &&
+    speech !== null &&
+    a.signal?.aborted !== true &&
+    !endsWithHandBack(said.spoken) &&
+    !endsWithHandBack(replyText) &&
+    said.words + handBack.split(/\s+/).length <= SPOKEN_MAX_WORDS
+  ) {
+    // Shown and said, like any unit of the reply (the transcript is what was said).
+    await a.emit({ event: 'turn.delta', turnId: a.turnId, seq: timing.deltas, text: ` ${handBack}` });
+    timing.deltas += 1;
+    await speech.queue(handBack);
+    replyText = `${replyText.trimEnd()} ${handBack}`;
+    notes.push('stream_hand_back');
+  }
 
   // Phase B: the structured fields of exactly that reply.
   const phaseBStarted = performance.now();

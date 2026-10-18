@@ -172,7 +172,7 @@ describe('a call introduces the vEIR only on a first meeting', () => {
     );
     expect(typed.status).toBe('completed');
     const again = await h.core.calls.start(devin, session.id, { inputMode: 'typed' });
-    expect(again.intro?.text).toBe('Hi Devin. Where would you like to pick up?');
+    expect(again.intro?.text).toBe('Hi Devin, where would you like to pick up?');
     await h.core.calls.end(devin, again.call.id, { reason: 'user' });
   });
 });

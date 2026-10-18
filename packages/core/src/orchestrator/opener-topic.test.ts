@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { addressFounder, isTopicLine, topicOf } from './opener-topic.js';
+import { addressFounder, isTopicLine, properNounsIn, topicOf } from './opener-topic.js';
 
 const PEOPLE = { founder: 'Maya Patel', team: ['Maya Patel', 'Noor Haddad'] };
 
@@ -76,6 +76,28 @@ describe('topicOf: summarised, never quoted', () => {
   it('finds nothing to name in filler', () => {
     expect(topicOf('Hi there, ok')).toBeNull();
   });
+
+  it('never makes a topic of a clause fragment: a pronoun and its verb are no noun phrase (LAB-R3b)', () => {
+    for (const line of [
+      "They'll promote QuietQuad if we add group booking.",
+      "The student union said they'll promote QuietQuad if we add group booking.",
+      'Big news! The union will promote us if we add group booking.',
+      "She'll review the budget on Friday.",
+      "It's the SSO question that worries them.",
+    ]) {
+      const topic = topicOf(line)?.text ?? '';
+      expect(topic, line).not.toMatch(
+        /^(?:they|they'll|she'll|he'll|it's|it'll|we|we'll|you'll|i|i'll)\b|^(?:promote|add|review)\b/i,
+      );
+    }
+    expect(topicOf("They'll promote QuietQuad if we add group booking.")?.text).toMatch(
+      /QuietQuad|group booking/,
+    );
+    // "Big news!" names nothing: the news itself does.
+    expect(topicOf('Big news! The union will promote us if we add group booking.')?.text).toBe(
+      'group booking',
+    );
+  });
 });
 
 describe('addressFounder (LAB-U2: said to the founder, names in their real case)', () => {
@@ -101,5 +123,25 @@ describe('addressFounder (LAB-U2: said to the founder, names in their real case)
     expect(addressFounder('the numbers the founder will get', { founder: null })).toBe(
       'the numbers you will get',
     );
+  });
+});
+
+describe('names in their real case where the founder typed them in lower case (wave 7, item 2)', () => {
+  it('reads the proper nouns the vEIR wrote, never a sentence’s first word', () => {
+    expect(
+      properNounsIn([
+        'Booking Harbour Hall early is smart. Ask Hartwell whether QuietQuad can use it on Monday.',
+      ]),
+    ).toEqual(expect.arrayContaining(['Harbour Hall', 'Hartwell', 'QuietQuad']));
+    expect(properNounsIn(['Booking early is smart. The pilot starts soon.'])).toEqual([]);
+  });
+
+  it('gives a line the case the conversation wrote the names in', () => {
+    expect(
+      addressFounder('your plan to book the harbour hall study room with hartwell', {
+        ...PEOPLE,
+        names: ['Harbour Hall', 'Hartwell'],
+      }),
+    ).toBe('your plan to book the Harbour Hall study room with Hartwell');
   });
 });

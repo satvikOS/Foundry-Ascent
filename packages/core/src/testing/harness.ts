@@ -7,7 +7,7 @@ import {
   type MockGenerateContext,
   type MockModelGatewayOptions,
 } from '@foundry/ai';
-import { notebooksRepo, principalsRepo, type SeedResult, type SeededVenture } from '@foundry/db';
+import { notebooksRepo, p, principalsRepo, type SeedResult, type SeededVenture } from '@foundry/db';
 import { createTestDatabase, type TestDatabase } from '@foundry/db/testing';
 
 import { coreConfig, type CoreConfig } from '../config.js';
@@ -64,6 +64,10 @@ export async function storeOpenerUnchecked(
   h: Pick<CoreHarness, 't' | 'seed'>,
   venture: SeededVenture,
   text: string,
+  options: {
+    /** Forget which conversation the opener was drawn from (a notebook written before sources were recorded). */
+    readonly unknownSource?: boolean;
+  } = {},
 ): Promise<void> {
   await h.t.db.system(async (sx) => {
     const key = { ventureId: venture.id, personaId: venture.personaId };
@@ -77,6 +81,13 @@ export async function storeOpenerUnchecked(
       editedBy: 'veir',
     });
     if (saved === null) throw new Error('the notebook changed while storing the opener');
+    if (options.unknownSource === true) {
+      await sx.query(
+        `UPDATE veir_notebooks SET content = content - 'nextOpenerSource'
+         WHERE venture_id = :ventureId AND persona_id = :personaId`,
+        { ventureId: p.uuid(key.ventureId), personaId: p.uuid(key.personaId) },
+      );
+    }
   });
 }
 

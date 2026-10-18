@@ -3,12 +3,13 @@ import { describe, expect, it } from 'vitest';
 
 import { classifyRisk } from '../risk/classifier.js';
 import { DISCLAIMER_FALLBACK } from './identity.js';
+import { REPEATED_GREETING_FALLBACK } from './greeting.js';
+import { REPEAT_FALLBACK } from './social.js';
 import {
   CROSS_VENTURE_BLOCK_ANSWER,
   EMPTY_ANSWER_FALLBACK,
   INVALID_RESPONSE_ANSWER,
   NARROWING_NOTE_PREFIX,
-  SPOKEN_NARROWING_CAVEAT,
   cutStructuredLeak,
   forcedEscalationFor,
   responseStrings,
@@ -174,10 +175,12 @@ describe('facts, coverage and narrowing', () => {
       opts(),
     );
     expect(out.results.narrowed).toBe(true);
-    expect(out.response.answer.startsWith(NARROWING_NOTE_PREFIX)).toBe(true);
-    expect(out.response.answer).toContain('only 1 of 3 factual statements');
+    // LAB-M14: the limit of the evidence never leads the reply; Sources & reasoning says it.
+    expect(out.response.answer).not.toContain(NARROWING_NOTE_PREFIX);
+    expect(out.response.answer).not.toMatch(/limited evidence|general advice|records show/i);
+    expect(out.response.answer.startsWith('Your interviews point to scheduling pain')).toBe(true);
     expect(out.response.uncertainty[0]).toEqual({
-      item: 'Several statements in this answer are not backed by evidence from your venture records.',
+      item: 'Only 1 of 3 factual statements in this answer are backed by your venture records: treat the rest as unverified until you can check them.',
       level: 'high',
     });
     expect(out.results.notes).toContain('narrowed');
@@ -369,7 +372,7 @@ describe('identity', () => {
       opts(),
     );
     expect(out.results.identityViolation).toBe(true);
-    expect(out.response.answer).toContain("I'm Foundry Guide, the program's AI coach, not a person.");
+    expect(out.response.answer).toContain("I'm Foundry Guide, the program's AI coach.");
     expect(out.response.answer).not.toContain(sentence);
     expect(out.response.answer).toContain('Test pricing first.');
     expect(out.blocked).toBe(false);
@@ -952,7 +955,7 @@ describe('spoken text (voice channel)', () => {
     expect(out.results.notes).toContain('spoken_truncated');
   });
 
-  it('says a short caveat first when the answer was narrowed', () => {
+  it('never says a caveat on a call when the answer was narrowed (LAB-M14), and never on news', () => {
     const out = validateCoachResponse(
       base({
         claims: [
@@ -965,24 +968,35 @@ describe('spoken text (voice channel)', () => {
       voice(),
     );
     expect(out.results.narrowed).toBe(true);
-    expect(out.response.spoken).toBe(`${SPOKEN_NARROWING_CAVEAT} Run the pilot first.`);
+    expect(out.response.spoken).toBe('Run the pilot first.');
     // The call's transcript is what was said: no "Limited evidence" block quote and no evidence keys in it; the
     // uncertainty item (Sources & reasoning) and `narrowed` carry it.
     expect(out.response.answer).toBe('Your interviews point to scheduling pain. Consider a concierge test.');
     expect(out.response.answer).not.toContain(NARROWING_NOTE_PREFIX);
     expect(out.response.uncertainty[0]?.level).toBe('high');
     expect(out.results.notes).toEqual(expect.arrayContaining(['narrowed', 'transcript_citations_removed']));
-    // Said in plain words, not caveat boilerplate read out (production spoke "A quick caveat: …"), and still
-    // honest that part of the answer is not from the venture's records.
-    expect(SPOKEN_NARROWING_CAVEAT).not.toMatch(/caveat|disclaimer|limited evidence|note:/i);
-    expect(SPOKEN_NARROWING_CAVEAT).toMatch(/not something your records show/);
     expect(out.results.identityViolation).toBe(false);
+    // The lab's case: news, on a call, with a narrowed answer: the reply is the reaction, nothing before it.
+    const news = validateCoachResponse(
+      base({
+        answer: "Great, that's a big step. What did Hartwell commit to?",
+        spoken: "Great, that's a big step. What did Hartwell commit to?",
+        claims: [
+          { text: 'a', kind: 'fact', evidence_ids: [] },
+          { text: 'b', kind: 'fact', evidence_ids: [] },
+        ],
+      }),
+      { ...voice(), founderText: 'Big news. We just signed a letter of intent with Hartwell.' },
+    );
+    expect(news.results.narrowed).toBe(true);
+    expect(news.response.spoken).toBe("Great, that's a big step. What did Hartwell commit to?");
+    expect(news.response.answer).toBe("Great, that's a big step. What did Hartwell commit to?");
   });
 
   it('rewrites identity violations in the spoken reply and blocks EIR impersonation', () => {
     const human = validateCoachResponse(base({ spoken: 'I am a real person. Run the pilot.' }), voice());
     expect(human.blocked).toBe(false);
-    expect(human.response.spoken).toContain("I'm Foundry Guide, the program's AI coach, not a person.");
+    expect(human.response.spoken).toContain("I'm Foundry Guide, the program's AI coach.");
     expect(human.response.spoken).not.toContain('real person');
 
     const eir = validateCoachResponse(
@@ -1231,6 +1245,245 @@ describe('validateCoachResponse — structured-output leak', () => {
   });
 });
 
+describe('validateCoachResponse — conversation craft the lab still heard (wave 7)', () => {
+  it('a thanks gets a short warm reply only, and reports nothing (SM-19, social_turn_report)', () => {
+    for (const channel of ['text', 'voice'] as const) {
+      const reply =
+        "You're welcome. Let's keep moving. First, call the dean about the budget. Then book the second library for Tuesday.";
+      const checked = validateCoachResponse(
+        base({ answer: reply, spoken: channel === 'voice' ? reply : null }),
+        {
+          ...opts(),
+          channel,
+          founderText: 'Thank you, this is genuinely helpful',
+          handBack: 'What do you think?',
+        },
+      );
+      expect(checked.response.answer).toBe("You're welcome. Let's keep moving.");
+      if (channel === 'voice') expect(checked.response.spoken).toBe("You're welcome. Let's keep moving.");
+      expect(checked.response).toMatchObject({
+        claims: [],
+        uncertainty: [],
+        challenge: null,
+        next_actions: [],
+        memory_candidates: [],
+        follow_up_questions: [],
+      });
+      expect(checked.results.notes).toEqual(
+        expect.arrayContaining(['social_turn_cleared', 'social_reply_trimmed']),
+      );
+      expect(checked.results.notes).not.toContain('spoken_hand_back_added');
+    }
+  });
+
+  it('news or a decision said with thanks is answered and kept like any turn (LAB-K1, LAB-R8)', () => {
+    const decision = {
+      type: 'decision' as const,
+      title: 'Pilot price',
+      content: 'The pilot is priced at $900 per library.',
+      evidence_ids: [],
+      confidence: 0.9,
+      source: 'founder_stated' as const,
+    };
+    const advice = {
+      ...decision,
+      title: 'Anchor it',
+      content: 'Anchor the price.',
+      source: 'coach_advice' as const,
+    };
+    const reply = 'Good call on $900. It leaves room for the second library. Send the dean the one-pager.';
+    const told = validateCoachResponse(base({ answer: reply, memory_candidates: [decision] }), {
+      ...opts(),
+      founderText: "Okay, we'll go with $900. Talk soon.",
+    });
+    expect(told.response.memory_candidates).toEqual([decision]);
+    expect(told.response.answer).toBe(reply);
+    expect(told.results.notes).not.toContain('social_turn_cleared');
+    // Even when the turn engine read it as a wrap-up, what the founder said in it is kept; nothing else is.
+    const read = validateCoachResponse(base({ answer: reply, memory_candidates: [decision, advice] }), {
+      ...opts(),
+      founderText: "Okay, we'll go with $900. Talk soon.",
+      social: 'closing',
+    });
+    expect(read.response.memory_candidates).toEqual([decision]);
+    expect(read.response.next_actions).toEqual([]);
+    // A plain thanks keeps no candidate, however it is labelled.
+    const thanks = validateCoachResponse(base({ answer: 'Glad it helped.', memory_candidates: [decision] }), {
+      ...opts(),
+      founderText: 'Thanks so much!',
+    });
+    expect(thanks.response.memory_candidates).toEqual([]);
+  });
+
+  it('a wrap-up on a call: a warm sign-off, no new question, nothing to report', () => {
+    const checked = validateCoachResponse(
+      base({
+        answer: 'Maya, talk soon. What will you tackle first tomorrow?',
+        spoken: 'Maya, talk soon. What will you tackle first tomorrow?',
+      }),
+      { ...opts(), channel: 'voice', founderText: "Okay, thanks, that's helpful. Talk soon." },
+    );
+    expect(checked.response.spoken).toBe('Maya, talk soon.');
+    expect(checked.response.next_actions).toEqual([]);
+  });
+
+  it('never says the previous reply again, unless the founder asked to hear it', () => {
+    const previous =
+      "Ask three students what they'd give up to skip the group chat and the walking. That's the price signal you need before the pilot starts.";
+    const again = `${previous} Then run the pilot in two libraries.`;
+    const checked = validateCoachResponse(base({ answer: again }), {
+      ...opts(),
+      founderText: 'Any tips on speedrunning these meetings?',
+      previousReply: previous,
+    });
+    expect(checked.response.answer).toBe('Then run the pilot in two libraries.');
+    expect(checked.results.notes).toContain('repeated_sentences_removed:2');
+    const all = validateCoachResponse(base({ answer: previous }), {
+      ...opts(),
+      founderText: 'idk',
+      previousReply: previous,
+    });
+    expect(all.response.answer).toBe(REPEAT_FALLBACK);
+    const asked = validateCoachResponse(base({ answer: previous }), {
+      ...opts(),
+      founderText: 'Sorry, can you repeat that?',
+      previousReply: previous,
+    });
+    expect(asked.response.answer).toBe(previous);
+    // A recall names the plan again on purpose, even right after an opener that named it.
+    const opener = 'Hi Rafi, did you get to run five more interviews at the bus station this week?';
+    const recall =
+      'I do. You were going to run five more interviews at the bus station this week. How did that go?';
+    const recalled = validateCoachResponse(base({ answer: recall }), {
+      ...opts(),
+      founderText: 'Do you remember what we talked about last time?',
+      previousReply: opener,
+    });
+    expect(recalled.response.answer).toBe(recall);
+  });
+
+  it('never parks the founder’s news for its own agenda (LAB-R8), typed or spoken', () => {
+    const reply =
+      "Before we talk about that, let's finish the core seat-finding test. What did you learn from the five library staff interviews? Congrats on Hartwell, by the way.";
+    for (const channel of ['text', 'voice'] as const) {
+      const checked = validateCoachResponse(
+        base({ answer: reply, spoken: channel === 'voice' ? reply : null }),
+        { ...opts(), channel, founderText: 'Big news, we just signed a letter of intent with Hartwell!' },
+      );
+      expect(checked.response.answer).toBe(
+        'What did you learn from the five library staff interviews? Congrats on Hartwell, by the way.',
+      );
+      if (channel === 'voice') expect(checked.response.spoken).not.toMatch(/before we talk about that/i);
+      expect(checked.results.notes).toContain('agenda_push_removed:1');
+    }
+  });
+
+  it('never drops the honest answer to a sincere bot question as a repeat (the presence policy)', () => {
+    const intro =
+      "Hi Maya, I'm Corin's vEIR, Corin's digital twin. Last time you planned five library-staff interviews. How did they go?";
+    const reply = "Yes, I'm Corin's vEIR, Corin's digital twin. So, about those interviews?";
+    for (const channel of ['text', 'voice'] as const) {
+      const checked = validateCoachResponse(
+        base({ answer: reply, spoken: channel === 'voice' ? reply : null }),
+        {
+          ...opts({ personaName: "Corin's vEIR", eirNames: ['Corin Halvorsen'] }),
+          channel,
+          founderText: 'Wait, am I talking to a bot?',
+          previousReply: intro,
+        },
+      );
+      expect(checked.response.answer).toContain("Corin's digital twin");
+      if (channel === 'voice') expect(checked.response.spoken).toContain("Corin's digital twin");
+      expect(checked.results.notes.some((n) => n.startsWith('repeated_sentences_removed'))).toBe(false);
+    }
+    // Asked again in the next turn.
+    const before =
+      "I'm Corin's digital twin, built from how Corin coaches, and Corin sees what we work on. What's on your mind?";
+    const again = validateCoachResponse(
+      base({
+        answer:
+          "I'm Corin's digital twin, built from how Corin coaches, and Corin sees what we work on. Back to the pilot?",
+      }),
+      {
+        ...opts({ personaName: "Corin's vEIR", eirNames: ['Corin Halvorsen'] }),
+        founderText: 'Sorry, but are you a real person?',
+        previousReply: before,
+      },
+    );
+    expect(again.response.answer).toContain("I'm Corin's digital twin, built from how Corin coaches");
+  });
+
+  it('a call’s reply that ends on a statement hands the turn back, within 70 words', () => {
+    const statement = 'Set the pilot up by Friday and agree what result moves it to a paid contract.';
+    const checked = validateCoachResponse(base({ answer: statement, spoken: statement }), {
+      ...opts(),
+      channel: 'voice',
+      founderText: 'How do we get the first ten users?',
+      handBack: 'What do you think?',
+    });
+    expect(checked.response.spoken).toBe(`${statement} What do you think?`);
+    expect(checked.response.answer).toBe(`${statement} What do you think?`);
+    expect(checked.results.notes).toContain('spoken_hand_back_added');
+    // A reply that already hands back is left alone; a long one makes room.
+    const asks = validateCoachResponse(
+      base({ answer: 'Price per library. Does Friday work?', spoken: null }),
+      {
+        ...opts(),
+        channel: 'voice',
+        founderText: 'How should we price it?',
+        handBack: 'What do you think?',
+      },
+    );
+    expect(asks.response.spoken).toBe('Price per library. Does Friday work?');
+    const long = Array.from(
+      { length: 10 },
+      (_, i) => `Point ${String(i + 1)} is about the pilot counts.`,
+    ).join(' ');
+    const roomy = validateCoachResponse(base({ answer: long, spoken: long }), {
+      ...opts(),
+      channel: 'voice',
+      founderText: 'What should we check?',
+      handBack: 'What do you think?',
+    });
+    expect(roomy.response.spoken?.split(/\s+/).length).toBeLessThanOrEqual(70);
+    expect(roomy.response.spoken?.endsWith('What do you think?')).toBe(true);
+  });
+});
+
+describe('validateCoachResponse — no second greeting after an intro that said hello (wave 7)', () => {
+  it('leaves the greeting out of the answer and the spoken reply, typed and spoken', () => {
+    for (const channel of ['text', 'voice'] as const) {
+      const reply = 'Hello Mina, nice to hear from you. How did the interviews go?';
+      const checked = validateCoachResponse(
+        base({ answer: reply, spoken: channel === 'voice' ? reply : null }),
+        {
+          ...opts(),
+          channel,
+          greeted: true,
+          founderName: 'Mina',
+        },
+      );
+      expect(checked.response.answer).toBe('How did the interviews go?');
+      if (channel === 'voice') expect(checked.response.spoken).toBe('How did the interviews go?');
+      expect(checked.results.notes).toContain('repeated_greeting_removed');
+    }
+  });
+
+  it('a reply that was only the greeting becomes a short hand-back; without an intro it stands', () => {
+    const only = validateCoachResponse(base({ answer: 'Hi Mina, good to see you.' }), {
+      ...opts(),
+      greeted: true,
+      founderName: 'Mina',
+    });
+    expect(only.response.answer).toBe(REPEATED_GREETING_FALLBACK);
+    const chat = validateCoachResponse(base({ answer: 'Hi Mina, good to see you.' }), {
+      ...opts(),
+      founderName: 'Mina',
+    });
+    expect(chat.response.answer).toBe('Hi Mina, good to see you.');
+  });
+});
+
 describe('validateCoachResponse — meta-narration (LAB-M1)', () => {
   const LAB =
     "Okay, let's see. The founder says they have five interviews. First, I need to figure out the mode. The venture is in the discovery stage.";
@@ -1268,6 +1521,39 @@ describe('validateCoachResponse — meta-narration (LAB-M1)', () => {
       );
       expect(checked.results.notes.some((n) => n.startsWith('meta_narration_blocked'))).toBe(true);
     }
+  });
+
+  it('holds back narration by the founder’s name (LAB-M1b), typed and spoken', () => {
+    const lab =
+      "Okay, let's break this down. Maya's asking about structuring the two-library pilot timeline. From the evidence, I see they've already got two libraries interested [E1].";
+    for (const channel of ['text', 'voice'] as const) {
+      const checked = validateCoachResponse(base({ answer: lab, spoken: channel === 'voice' ? lab : null }), {
+        ...opts(),
+        channel,
+        founderName: 'Maya',
+        addressees: ['Maya Okafor-Lindqvist'],
+      });
+      expect(checked.blocked).toBe(true);
+      expect(checked.response.answer).toBe(INVALID_RESPONSE_ANSWER);
+      expect(checked.results.notes).toContain('meta_narration_blocked:founder_third_person');
+    }
+    // Later in a reply: cut there, typed and spoken.
+    const later = validateCoachResponse(
+      base({
+        answer:
+          'Price per library, it keeps the pilot simple. Maya wants to know the number, so I should give one.',
+        spoken: 'Price per library, the pilot stays simple. Maya seems stressed, so I should keep it short.',
+      }),
+      { ...opts(), channel: 'voice', founderName: 'Maya' },
+    );
+    expect(later.response.answer).toBe('Price per library, it keeps the pilot simple.');
+    expect(later.response.spoken).toBe('Price per library, the pilot stays simple.');
+    // Without the founder's name nothing is read as narration by name.
+    const unnamed = validateCoachResponse(
+      base({ answer: "Maya's asking about the pilot, and that's fair." }),
+      opts(),
+    );
+    expect(unnamed.results.notes.some((n) => n.startsWith('meta_narration'))).toBe(false);
   });
 
   it('keeps a forced escalation when it holds the answer back', () => {

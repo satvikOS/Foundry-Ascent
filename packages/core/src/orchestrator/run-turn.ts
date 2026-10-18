@@ -2,7 +2,6 @@ import {
   CRISIS_SPOKEN_MESSAGE,
   CRISIS_SUPPORT_MESSAGE,
   POLICY_VERSION,
-  SPOKEN_NARROWING_CAVEAT,
   buildCrisisResponse,
   buildRetrievalQuery,
   classifyRisk,
@@ -821,19 +820,22 @@ export function createOrchestrator(
     // founder stated in plain first-person words is kept with it too when the model's candidates do not say it
     // (founder-statements.ts, LAB-K1: no model call; a chat is otherwise distilled only after nine idle minutes).
     const proposed = checked.response.memory_candidates;
-    const keepable =
+    const stated =
       !checked.blocked && pre.session.privacy === 'standard'
-        ? [
-            ...proposed,
-            ...statedMemory(turn.founderText, {
-              founderName: coach.memory.continuity.founderFirstName ?? null,
-              modelCandidates: proposed,
-            }),
-          ]
+        ? statedMemory(turn.founderText, {
+            founderName: coach.memory.continuity.founderFirstName ?? null,
+            modelCandidates: proposed,
+          })
         : [];
-    // A call ends a streamed reply with its last unit (and a caveat when the answer was narrowed). A reply
-    // written whole (streaming off, or a stream that broke, was empty or was not prose) is said as its
-    // validated spoken form. A blocked turn says nothing more.
+    const keepable = !checked.blocked && pre.session.privacy === 'standard' ? [...proposed, ...stated] : [];
+    // What the founder stated is recorded with the turn's own candidates: the answer's "Saved to Knowledge" line reads
+    // them (LAB-K1: a decision kept from the founder's words showed no saved line, since only the model's candidates
+    // were on the turn).
+    const recorded =
+      stated.length === 0 ? checked.response : { ...checked.response, memory_candidates: keepable };
+    // A call ends a streamed reply with its last unit; a narrowed answer adds nothing aloud (Sources & reasoning
+    // says it: LAB-M14). A reply written whole (streaming off, or a stream that broke, was empty or was not prose)
+    // is said as its validated spoken form. A blocked turn says nothing more.
     const stream = generation.stream;
     const speech =
       stream?.speech ??
@@ -847,7 +849,7 @@ export function createOrchestrator(
       else if (writtenWhole) {
         await speech.queue(checked.response.spoken ?? deriveSpoken(checked.response.answer));
         await speech.finish();
-      } else await speech.finish(checked.results.narrowed ? SPOKEN_NARROWING_CAVEAT : undefined);
+      } else await speech.finish();
     }
     // Ephemeral sessions are never shared with the assigned EIR (RLS turns_read enforces it as well).
     const sampled =
@@ -874,7 +876,7 @@ export function createOrchestrator(
       const finished = await turnsRepo.finishTurn(tx, {
         turnId: turn.id,
         status,
-        response: checked.response,
+        response: recorded,
         validatorResults: checked.results,
         modelId: generation.modelId,
         fallbackUsed: generation.fallbackUsed,
@@ -1008,13 +1010,19 @@ export function createOrchestrator(
       return { status: 'blocked', turnId: turn.id, replayed: false, error: null };
     }
     await emit({ event: 'turn.completed', turn: persisted.view });
-    // Only now, with the reply complete: what the turn kept is settled by meaning (never throws).
-    await settleKeptMemory(kit, ctx, {
-      ventureId,
-      sessionId: pre.session.id,
-      items: persisted.kept,
-      grounding,
-    });
+    // Only now, with the reply complete: what the turn kept is settled by meaning (never throws). That embeds it, so
+    // it runs after the response (LAB-P1: the stream stayed open, and the API busy, for a Titan call after every
+    // turn that kept something): the host keeps the process alive for it, or the turn waits for it (tests).
+    if (persisted.kept.length > 0) {
+      const settling = settleKeptMemory(kit, ctx, {
+        ventureId,
+        sessionId: pre.session.id,
+        items: persisted.kept,
+        grounding,
+      });
+      if (kit.deps.afterResponse === undefined) await settling;
+      else kit.deps.afterResponse(settling);
+    }
     return { status: 'completed', turnId: turn.id, replayed: false, error: null };
   }
 

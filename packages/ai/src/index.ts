@@ -108,6 +108,13 @@ export type {
   ProviderStreamResult,
 } from './gateway/provider.js';
 export { cosineSimilarity, hashEmbedding } from './gateway/hash-embedding.js';
+export {
+  CountingAgent,
+  KEEP_ALIVE_MSECS,
+  awsConnectionStats,
+  sharedAwsAgent,
+  type ConnectionStats,
+} from './gateway/http-agent.js';
 
 // Pricing -------------------------------------------------------------------------------------------
 export {
@@ -162,7 +169,6 @@ export {
   EMPTY_ANSWER_FALLBACK,
   INVALID_RESPONSE_ANSWER,
   NARROWING_NOTE_PREFIX,
-  SPOKEN_NARROWING_CAVEAT,
   containsOtherVenture,
   forcedEscalationFor,
   responseStrings,
@@ -204,7 +210,28 @@ export {
   metaNarrationCue,
   type MetaNarrationCue,
   type MetaNarrationCut,
+  type NarrationNames,
 } from './validators/meta-narration.js';
+export {
+  REPEATED_GREETING_FALLBACK,
+  openerSaidHello,
+  withoutRepeatedGreeting,
+} from './validators/greeting.js';
+export {
+  CLOSING_FALLBACK,
+  REPEAT_FALLBACK,
+  SOCIAL_BUDGETS,
+  SPOKEN_HAND_BACKS,
+  STRESSED_HAND_BACK,
+  STRESSED_HAND_BACKS,
+  asksToRepeat,
+  endsWithHandBack,
+  fourGramsOf,
+  repeatsPrevious,
+  spokenHandBackFor,
+  withinSocialBudget,
+  withoutRepeats,
+} from './validators/social.js';
 export {
   SentenceGate,
   findUnitEnd,

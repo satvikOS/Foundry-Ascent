@@ -75,7 +75,7 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain(
       'Every "fact" MUST cite at least one evidence id that appears in the <evidence> block',
     );
-    expect(prompt).toMatch(/fact = .*\n.*inference = .*\n.*hypothesis = .*\n.*recommendation = /);
+    expect(prompt).toMatch(/fact = .*\n.*\n.*inference = .*\n.*hypothesis = .*\n.*recommendation = /);
     expect(prompt).toContain('say what is unknown');
     expect(prompt).toContain('Ask evidence-seeking questions before prescribing');
     expect(prompt).toContain('If fewer than 60% of your facts can be grounded');
@@ -232,10 +232,28 @@ describe('buildSystemPrompt', () => {
     );
   });
 
+  it('cites the program guidance that answers a question, a definition included (LAB-C1)', () => {
+    // The lab: "What should an experiment card state?" was answered from memory, citing nothing, though the
+    // handbook passage was in the evidence.
+    const p = buildSystemPrompt(INPUT);
+    expect(p).toContain(
+      'fact = a statement directly supported by evidence items: about this venture, or what',
+    );
+    expect(p).toContain('the program guidance or\n  library says');
+    expect(p).toContain(
+      'When an evidence item answers the question (program guidance or a library document on a definition, a',
+    );
+    expect(p).toContain('never answer that from memory instead.');
+    const teach = buildSystemPrompt({ ...INPUT, mode: 'teach' });
+    expect(teach).toContain(
+      'Teach from the program guidance in the evidence when it covers the concept, and cite it.',
+    );
+  });
+
   it('keeps preferred vocabulary from becoming a refrain', () => {
     // The lab census: "The riskiest assumption…" in 21 of 81 replies.
     expect(buildSystemPrompt(INPUT)).toContain(
-      'Preferred vocabulary (sparingly; never the same phrase reply after reply): riskiest assumption',
+      'Preferred vocabulary (each at most once in a conversation, never as a stock phrase): riskiest assumption',
     );
   });
 

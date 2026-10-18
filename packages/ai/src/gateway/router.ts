@@ -127,6 +127,8 @@ class BedrockModelGateway implements ModelGateway {
   readonly #logger: ModelLogger;
   readonly #primaryTimeoutMs: number;
   readonly #fallbackTimeoutMs: number;
+  /** Opens the Bedrock runtime connection without a billed call (null when the transports are injected). */
+  readonly #prewarm: (() => Promise<void>) | null;
 
   constructor(config: BedrockGatewayConfig) {
     this.#pricing = createPricingTable(config.pricing);
@@ -145,6 +147,7 @@ class BedrockModelGateway implements ModelGateway {
     const runtime = needsRuntime
       ? createBedrockRuntimeTransport({ region: config.region, ...credentials })
       : null;
+    this.#prewarm = runtime === null ? null : () => runtime.prewarm(config.primaryModelId);
     const converse = config.transports?.converse ?? runtime?.converse;
     const converseStream = config.transports?.converseStream ?? runtime?.converseStream;
 
@@ -184,6 +187,10 @@ class BedrockModelGateway implements ModelGateway {
       embeddingsModelId: this.#embedder.modelId,
       embeddingDimensions: this.#embedder.dimensions,
     };
+  }
+
+  async prewarm(): Promise<void> {
+    await this.#prewarm?.();
   }
 
   #logAttempts(attempts: readonly ModelAttempt[], requestId: string, purpose: string): void {

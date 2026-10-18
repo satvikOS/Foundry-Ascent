@@ -169,6 +169,16 @@ describe('buildDistillPrompt', () => {
     today: '2026-10-16',
   };
 
+  it('puts what the founder told first in the digest and the next opener (LAB-R6b, RC-01)', () => {
+    const { system } = buildDistillPrompt(INPUT);
+    expect(system).toContain("summary: two to four sentences, the founder's side first");
+    expect(system).toContain(
+      'every\n    number, price and date, the people and organisations they named, the worries they raised',
+    );
+    expect(system).toContain('Your own advice comes last, never in place of what they told you.');
+    expect(system).toContain('their news, decision or plan before your own advice');
+  });
+
   it('states the persona identity and the de-identification rules', () => {
     const { system } = buildDistillPrompt(INPUT);
     expect(system).toContain(

@@ -7,6 +7,7 @@ import type {
   VeirNotebook,
 } from '@foundry/contracts';
 
+import { contentWords } from './conversation-state.js';
 import { escapeData, escapeInline, truncate } from './escape.js';
 
 /** One earlier conversation, summarised by distillation. */
@@ -68,6 +69,32 @@ export interface ContinuityBlockOptions {
   today?: string;
   /** Upper bound on the rendered block. Default 6 000 characters. */
   maxChars?: number;
+  /**
+   * What the vEIR already said in this conversation (its replies and the opener): an open commitment it already
+   * raised is marked so, and is not pushed again (LAB-R8: the seeded notebook's open action was put to the founder
+   * three times in one conversation, over their news).
+   */
+  saidInConversation?: readonly (string | null | undefined)[];
+}
+
+/** A note that an open commitment was already raised in this conversation. */
+export const RAISED_NOTE = 'already raised in this conversation: not again unless they bring it up';
+
+/**
+ * Whether `commitment` was already raised in what was said: one reply (or the opener) holds two of its content words,
+ * or all of them when it has fewer.
+ */
+export function raisedIn(commitment: string, said: readonly (string | null | undefined)[]): boolean {
+  const words = contentWords(commitment);
+  if (words.size === 0) return false;
+  const needed = Math.min(2, words.size);
+  return said.some((text) => {
+    if (text === null || text === undefined || text.trim() === '') return false;
+    const there = contentWords(text);
+    let n = 0;
+    for (const w of words) if (there.has(w)) n += 1;
+    return n >= needed;
+  });
 }
 
 /** Digests rendered into a prompt. */
@@ -124,12 +151,17 @@ function section(tag: string, lines: readonly string[]): string[] {
   return lines.length === 0 ? [] : [`<${tag}>`, ...lines, `</${tag}>`];
 }
 
-/** `today` marks overdue commitments; null renders the due date only. */
-function commitmentLine(c: PromptCommitment | NotebookCommitment, today: string | null): string {
+/** `today` marks overdue commitments; null renders the due date only. `raised`: already raised in this conversation. */
+function commitmentLine(
+  c: PromptCommitment | NotebookCommitment,
+  today: string | null,
+  raised = false,
+): string {
   const due = isoDate(c.due);
   const overdue = today !== null && due !== null && due < today;
   const when = due === null ? '' : ` (due ${due}${overdue ? ', overdue' : ''})`;
-  return `- ${escapeData(truncate(c.text.replace(/\s+/g, ' ').trim(), MAX_ENTRY_CHARS))}${when}`;
+  const note = raised ? ` [${RAISED_NOTE}]` : '';
+  return `- ${escapeData(truncate(c.text.replace(/\s+/g, ' ').trim(), MAX_ENTRY_CHARS))}${when}${note}`;
 }
 
 /** Whether there is anything to remember beyond the founder's name. */
@@ -201,9 +233,10 @@ export function buildContinuityBlock(
   if (summary !== '')
     core.push(`<summary>${escapeData(truncate(summary.replace(/\s+/g, ' '), 1_200))}</summary>`);
   if (opener !== '') core.push(`<next_opener>${escapeData(truncate(opener, MAX_ENTRY_CHARS))}</next_opener>`);
+  const said = options.saidInConversation ?? [];
   const commitments = openCommitmentsOf(continuity)
     .slice(0, MAX_ENTRIES.commitments)
-    .map((c) => commitmentLine(c, today));
+    .map((c) => commitmentLine(c, today, said.length > 0 && raisedIn(c.text, said)));
 
   // Optional parts in the order they are given up when the block is too long (last dropped first).
   const profile = section('founder_profile', entries(nb?.founderProfile, MAX_ENTRIES.founderProfile));
@@ -305,13 +338,16 @@ export function lastQuestionOf(answer: string): string | null {
 
 /**
  * Retrieval query that understands the conversation: the founder's message; when it is a short reply
- * (under 12 words, such as "yes, the second one") the question the vEIR just asked; and the current
- * goal. Citation keys, Markdown, link targets and URLs are stripped from what is added.
+ * (under 12 words, such as "yes, the second one"; never a question of their own) the question the vEIR just
+ * asked; and the current goal. Citation keys, Markdown, link targets and URLs are stripped from what is added.
  */
 export function buildRetrievalQuery(input: RetrievalQueryInput): string {
   const parts = [input.founderText.trim()];
   const words = parts[0]?.split(/\s+/).filter((w) => w !== '').length ?? 0;
-  if (words < SHORT_REPLY_WORDS && input.previousAnswer) {
+  // A short question of their own ("What's an experiment card?") is not a reply: the vEIR's last question would only
+  // pull the search away from what they asked (LAB-C1: program guidance on a definition went uncited).
+  const ownQuestion = (parts[0] ?? '').includes('?') && contentWords(parts[0] ?? '').size >= 2;
+  if (words < SHORT_REPLY_WORDS && !ownQuestion && input.previousAnswer) {
     const question = lastQuestionOf(input.previousAnswer);
     if (question !== null) parts.push(question);
   }

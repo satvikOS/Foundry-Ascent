@@ -7,7 +7,9 @@ import {
   buildMessages,
   buildSystemPrompt,
   endsWithQuestion,
+  socialTurnOf,
   type HistoryTurn,
+  type SocialTurn,
   type PromptContinuity,
   type PromptRelease,
 } from '../prompts/index.js';
@@ -144,6 +146,13 @@ function request(options: {
   };
 }
 
+/** `socialTurnOf` as core's answer.ts reads it: an opening hello (no earlier reply) is not a social turn. */
+function socialReading(text: string, history: readonly HistoryTurn[]): SocialTurn | null {
+  const read = socialTurnOf(text);
+  const previousReply = history.at(-1)?.answer ?? null;
+  return read === 'greeting' && previousReply === null ? null : read;
+}
+
 async function reply(options: Parameters<typeof request>[0]): Promise<CoachResponse> {
   const gw = new MockModelGateway();
   const { value } = await gw.generateStructured(request(options));
@@ -160,6 +169,9 @@ async function reply(options: Parameters<typeof request>[0]): Promise<CoachRespo
     channel: options.channel ?? 'text',
     // Read as the answer to the founder's message: an identity answer must have the yes or no its question needs.
     founderText: options.text,
+    // The turn's social reading exactly as the turn engine passes it (core answer.ts): a hello that opens the
+    // conversation (no reply before it) is answered with the pick-up of last time, not the short social budget.
+    social: socialReading(options.text, options.history ?? []),
   });
   // Everything the mock says passes the deterministic validators untouched.
   expect(checked.blocked).toBe(false);
@@ -598,6 +610,63 @@ describe('topic moves within a conversation', () => {
   });
 });
 
+describe('news, a number, a pick, sarcasm, and no stock phrases (wave 7: LAB-R8, SM-16, SM-06, SM-08, item 23)', () => {
+  const pending: HistoryTurn[] = [
+    {
+      founderText: 'The union might help us with promotion.',
+      answer: 'That could be useful. What did you learn from the five library staff interviews?',
+    },
+  ];
+
+  it('reacts to the founder’s news and asks about it, never its own pending question (LAB-R8)', async () => {
+    for (const channel of ['text', 'voice'] as const) {
+      const value = await reply({
+        text: "We're bringing on a designer called Noor.",
+        history: pending,
+        channel,
+      });
+      const said = channel === 'voice' ? (value.spoken ?? '') : value.answer;
+      expect(said).toMatch(/Noor|designer|news|step/i);
+      expect(said).not.toMatch(/library staff interviews|before we|one thing at a time|let's finish/i);
+      expect(said.trim()).toMatch(/\?$/);
+      expect(value.memory_candidates.length).toBeGreaterThan(0);
+    }
+    const bad = await reply({ text: 'We lost the pilot.', history: pending });
+    expect(bad.answer).not.toMatch(/^(?:That's big news|Congrat)/i);
+  });
+
+  it('gives a number when asked for one, a pick when asked to choose, and meets sarcasm lightly', async () => {
+    const number = await reply({
+      text: 'You keep giving me the same generic advice. Give me a number.',
+      history: pending,
+    });
+    expect(number.answer.split(/(?<=[.!?])\s+/)[0]).toMatch(/\d/);
+    const pick = await reply({ text: 'Just tell me which one. Flat or per library?', history: pending });
+    expect(pick.answer.split(/(?<=[.!?])\s+/)[0]).toMatch(
+      /\b(?:my pick|i'd go with|go with)\b.*\b(?:flat|per library)\b/i,
+    );
+    expect(pick.answer).not.toMatch(/\bonly if\b/i);
+    const sarcasm = await reply({ text: 'Oh great, ANOTHER meeting. Love that for me.', history: pending });
+    expect(sarcasm.answer).not.toMatch(/^(?:glad|great[,!.]|awesome|happy to help|perfect[,!.])/i);
+    expect(sarcasm.answer.split(/(?<=[.!?])\s+/)[0]).toMatch(/\b(?:ha|i know|fair|another one|meetings?)\b/i);
+  });
+
+  it('never says "the riskiest assumption", "the cheapest test" or "the weak link", in any mode', async () => {
+    for (const mode of ['diagnose', 'challenge', 'coach', 'teach'] as const) {
+      for (const text of [
+        'How should we price the pilot?',
+        'Is our pilot plan solid?',
+        'Should we raise now?',
+      ]) {
+        const value = await reply({ text, mode });
+        expect(`${value.answer} ${value.challenge ?? ''}`, `${mode}: ${text}`).not.toMatch(
+          /riskiest assumption|cheapest (?:test|experiment)|weak link/i,
+        );
+      }
+    }
+  });
+});
+
 describe('social turns', () => {
   const history: HistoryTurn[] = [
     {
@@ -619,6 +688,16 @@ describe('social turns', () => {
     expect(value.answer).toMatch(/(?:Talk soon\.|Good luck with it\.|Speak soon\.)$/);
     expect(value.answer).not.toContain('?');
     expectSocial(value);
+  });
+
+  it('news or a decision said with a goodbye is answered, and kept, not signed off', async () => {
+    for (const text of ["Okay, we'll go with $900. Talk soon.", 'Thanks! We signed Hartwell.']) {
+      const value = await reply({ text, history });
+      expect(value.answer, text).not.toMatch(
+        /^Good talking with you|^(?:Glad that helped|Happy to help|Any time)\./,
+      );
+      expect(value.memory_candidates.length, text).toBeGreaterThan(0);
+    }
   });
 
   it('keeps going after a short "yes"', async () => {
@@ -646,6 +725,82 @@ describe('social turns', () => {
     const a = await reply({ text: 'Do you remember what we talked about last time?', section: RAW_CALL });
     const b = await reply({ text: 'Do you remember what we talked about last time?', section: RAW_CALL });
     expect(a).toEqual(b);
+  });
+});
+
+describe('the matrix gaps the mock closes (wave 7: G15, G12, MX-0005)', () => {
+  it('offers support first when the founder sounds worn down, never a plan (crisis-adjacent, G15)', async () => {
+    for (const channel of ['text', 'voice'] as const) {
+      const value = await reply({
+        text: "I haven't slept properly in days and I don't know how much longer I can keep doing this.",
+        channel,
+      });
+      const said = channel === 'voice' ? (value.spoken ?? '') : value.answer;
+      expect(said).toMatch(/^That sounds exhausting, Maya/);
+      expect(said).toMatch(/someone you trust|wellbeing|proper rest|look after yourself/);
+      expect(said).not.toMatch(/\b(?:i'm|i am) (?:a |your )?(?:counsell?or|therapist)\b/i);
+      expectSocial(value);
+    }
+  });
+
+  it('follows up the plan from last time when the founder reports on it (commitment follow-up, G12)', async () => {
+    for (const text of [
+      "So, I did the thing I said I'd do.",
+      "Okay, update on what I said I'd do last time.",
+    ]) {
+      const value = await reply({ text, section: RENDERED_RAW });
+      expect(value.answer).toContain('call facilities about the library budget tomorrow');
+      expectSocial(value);
+    }
+  });
+
+  it('answers "what did I tell you about…?" from this conversation (in-conversation recall, G12)', async () => {
+    const history: HistoryTurn[] = [
+      {
+        founderText: 'We want to run a two-week pilot in Harbour Hall library before the end of term.',
+        answer: 'A two-week pilot is a good size. What would make it a success?',
+      },
+      { founderText: 'How should we price it?', answer: 'Start with one clear price and see who says yes.' },
+    ];
+    const value = await reply({ text: 'Remind me, what did I tell you about the pilot?', history });
+    expect(value.answer).toMatch(/Earlier you mentioned you want to run a two-week pilot in Harbour Hall/);
+    // A short phrase, never their sentence quoted back whole.
+    expect(value.answer).not.toContain('before the end of term');
+  });
+
+  it('never puts a teammate’s plan to the founder as theirs (MX-0005)', async () => {
+    const teammate = RENDERED_RAW.replace('with="you"', 'with="Rafi"');
+    const value = await reply({ text: 'Do you remember what we talked about last time?', section: teammate });
+    expect(value.answer).toContain('Rafi was going to call facilities about the library budget tomorrow');
+    expect(value.answer).not.toMatch(/you were going to|last time you|you planned/i);
+  });
+
+  it('never greets again after a call’s intro that said hello', async () => {
+    const value = await reply({
+      text: 'Hi again!',
+      history: [],
+      section: RENDERED_RAW,
+      ...{},
+    });
+    // (Without an opener the hello is answered as a first message: greeted, then picked up.)
+    expect(value.answer).toMatch(/^(?:Hi|Hey|Hello|Welcome|Good)/);
+    const gw = new MockModelGateway();
+    const req = request({ text: 'Hi again!', section: RENDERED_RAW });
+    const opened = await gw.generateStructured({
+      ...req,
+      messages: [
+        {
+          role: 'user',
+          content: '[The conversation started with your message below; the founder replies after it.]',
+        },
+        {
+          role: 'assistant',
+          content: 'Hi Maya, how did your call with facilities about the library budget go?',
+        },
+        ...req.messages,
+      ],
+    });
+    expect(['Whenever you’re ready.', 'Take your time.']).toContain(opened.value.answer);
   });
 });
 

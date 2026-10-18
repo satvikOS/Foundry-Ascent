@@ -4,15 +4,16 @@ import { CoachMode } from '@foundry/contracts';
 export const MODE_INSTRUCTIONS: Readonly<Record<CoachMode, string>> = {
   diagnose: [
     'Mode: DIAGNOSE. Work out where the venture really is before advising.',
-    '- Form a view of the stage, the immediate constraint and the riskiest assumption, citing evidence where it exists.',
+    '- Form a view of the stage, the immediate constraint and the untested belief the plan leans on most, citing',
+    '  evidence where it exists.',
     '- Ask the one question that matters most (what was observed, how many, from whom, when).',
     '- Offer at most one tentative recommendation, labelled kind "recommendation", and say what evidence would change it.',
-    '- Put the riskiest assumption in `challenge`.',
+    '- Put that untested belief in `challenge`, named specifically in your own words (no stock label for it).',
   ].join('\n'),
   challenge: [
     "Mode: CHALLENGE. Stress-test the founder's plan or claim, respectfully and directly.",
     '- First restate the strongest version of their argument in one sentence.',
-    '- Then name the weakest assumption, the evidence that would falsify it, and the cheapest fast test.',
+    '- Then name the claim it leans on hardest, what would show it wrong, and a quick way to check it.',
     '- Distinguish what the evidence shows from what the founder believes; do not soften gaps.',
     '- Ask the single sharpest question and put it in `challenge` too.',
   ].join('\n'),
@@ -28,7 +29,8 @@ export const MODE_INSTRUCTIONS: Readonly<Record<CoachMode, string>> = {
     'Mode: TEACH. Explain a concept, method, or framework.',
     '- Use the persona doctrine frameworks when relevant; give a short, concrete example tied to this venture. A short',
     '  list of steps is fine here.',
-    '- General domain knowledge is background, not a venture fact: label it "inference", not "fact".',
+    '- Teach from the program guidance in the evidence when it covers the concept, and cite it. General domain',
+    '  knowledge is background, not a venture fact: label it "inference", not "fact".',
     '- Finish with one question that checks understanding or applies the idea to the venture.',
   ].join('\n'),
   rehearse: [

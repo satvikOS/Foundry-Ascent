@@ -6,6 +6,7 @@
  * are always answered; and the checks are shown without revealing which names the cross-venture guard knows.
  */
 import {
+  COACH_ANNOTATIONS_SCHEMA_NAME,
   CRISIS_SUPPORT_MESSAGE,
   MockModelGateway,
   mockCoachResponse,
@@ -270,6 +271,56 @@ describe('test bench: what it runs and what it leaves', () => {
     const logged = JSON.stringify(events);
     expect(logged).not.toContain('quiet study seats');
     expect(logged).not.toContain(result.response?.answer.slice(0, 40) ?? '<none>');
+  });
+
+  it('reads the shapes that failed first attempts in one call, and keeps what the founder said (item 15)', async () => {
+    // The lab's test_bench first attempts (30% invalid_output) failed on the turn's shapes: a memory type that is no
+    // member, one evidence id as a string. The bench answers through the same repair as a founder's turn.
+    const { core, gateway } = benchCore(
+      new MockModelGateway({
+        streamDelayMs: 0,
+        fixtures: {
+          [COACH_ANNOTATIONS_SCHEMA_NAME]: (context: MockGenerateContext) => {
+            const { answer: _a, spoken: _s, ...annotations } = mockCoachResponse(context);
+            return {
+              ...annotations,
+              claims: [
+                { text: 'Students pay for quiet seats in exam week.', kind: 'inference', evidence_ids: 'E1' },
+              ],
+              memory_candidates: [
+                {
+                  type: 'pricing',
+                  title: '$900 per semester',
+                  content: 'The library pays $900 per semester for the pilot.',
+                  evidence_ids: [],
+                  confidence: 0.8,
+                  source: 'founder_stated',
+                },
+                {
+                  type: 'timeline',
+                  title: 'Anchor the price',
+                  content: 'Anchor the price to the workaround cost.',
+                  evidence_ids: [],
+                  confidence: 0.6,
+                  source: 'coach',
+                },
+              ],
+            };
+          },
+        },
+      }),
+    );
+    const ctx = await again(corin);
+    const result = TestTurnResponse.parse(
+      await core.testBench.runTestTurn(ctx, personaId, { releaseId: activeReleaseId, text: QUESTION }),
+    );
+    expect(result.status).toBe('completed');
+    expect(gateway.calls.filter((c) => c.requestId === ctx.requestId && c.kind === 'generate')).toHaveLength(
+      1,
+    );
+    expect(result.response?.memory_candidates).toEqual([
+      expect.objectContaining({ type: 'fact', title: '$900 per semester', source: 'founder_stated' }),
+    ]);
   });
 
   it('tries a draft with the draft’s doctrine, never a withdrawn release or another persona’s', async () => {

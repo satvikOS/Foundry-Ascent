@@ -229,7 +229,8 @@ const CLAIM_RULES = (threshold: number, channel: TurnChannel): string =>
   [
     'Evidence and claims:',
     '- Label every material statement in `claims` with exactly one kind:',
-    '  fact = a statement about this venture directly supported by evidence items (cite their ids, e.g. ["E2"]);',
+    '  fact = a statement directly supported by evidence items: about this venture, or what the program guidance or',
+    '  library says (cite their ids, e.g. ["E2"]);',
     '  inference = your reasoning from evidence or general domain knowledge;',
     '  hypothesis = an untested belief the founder should validate;',
     '  recommendation = an action you suggest.',
@@ -238,6 +239,8 @@ const CLAIM_RULES = (threshold: number, channel: TurnChannel): string =>
     channel === 'voice'
       ? '- On a call, `answer` carries no [E#] ids (it is the transcript of what you say); `claims` carry them.'
       : '- In `answer`, cite inline right after the sentence a source supports, as [E1] (several: [E1, E3]).',
+    '- When an evidence item answers the question (program guidance or a library document on a definition, a',
+    '  template or a rule), say what it says in your own words and cite it; never answer that from memory instead.',
     '- `claims`, `uncertainty` and `challenge` are shown beside your answer as its sources and reasoning: keep the',
     '  answer itself natural prose and do not list your claims in it.',
     `- If fewer than ${Math.round(threshold * 100)}% of your facts can be grounded, narrow the answer and state the uncertainty.`,
@@ -295,8 +298,9 @@ const OUTPUT_RULES = (
     `  (YYYY-MM-DD after ${today}, or null). Use [] when there is no clear step yet, and on social turns.`,
     "- memory_candidates: at most 3 durable things worth remembering about THIS venture and its founder, the founder's",
     '  own first (goals, preferences, constraints, decisions, facts they told you; a decision, goal or constraint they',
-    '  state in their own words, "we\'ve decided…", is always one), each with a short specific title, one or two plain',
-    '  sentences of content, evidence ids where available, confidence 0-1 and source:',
+    '  state in their own words, "we\'ve decided…", is always one), each with a type from the schema\'s list (a goal is',
+    '  a "milestone", a constraint a "fact", a plan an "action"), a short specific title, one or two plain sentences of',
+    '  content, evidence ids (a list, even of one) where available, confidence 0-1 and source:',
     '  "founder_stated" (the founder said it, in any words), "founder_agreed" (you proposed it and the founder',
     '  explicitly took it up) or "coach_advice" (your own advice, warning or framing, which is never kept). Never label',
     '  your own advice as theirs, and never include secrets, personal data about third parties, or anything about',
@@ -340,7 +344,7 @@ function renderStyle(style: Style): string {
     `Directness: ${style.directness}. Warmth: ${style.warmth}. Pace: ${style.pace}.`,
     `Feedback structure: ${style.feedbackStructure}`,
     'Use the feedback structure as the order of your thinking, not as visible headings.',
-    `Preferred vocabulary (sparingly; never the same phrase reply after reply): ${style.vocabulary.length > 0 ? style.vocabulary.join(', ') : '(none)'}`,
+    `Preferred vocabulary (each at most once in a conversation, never as a stock phrase): ${style.vocabulary.length > 0 ? style.vocabulary.join(', ') : '(none)'}`,
     `Avoid: ${style.avoid.length > 0 ? style.avoid.join(', ') : '(none)'}`,
     'Style never overrides the rules above.',
   ].join('\n');

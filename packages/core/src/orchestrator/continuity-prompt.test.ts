@@ -165,6 +165,50 @@ describe('renderLeftOffSection', () => {
   });
 });
 
+describe('what the founder told comes first (LAB-R6b, RC-01)', () => {
+  const rc01 = conversation({
+    title: 'Hartwell pilot',
+    lastActivityAt: ago(3),
+    ended: true,
+    // Distilled in the coach's framing: the founder's news, price and worry are not in it.
+    digest: {
+      summary: 'We worked on anchoring the pilot price to the workaround cost and an SSO kill criterion.',
+      topics: ['anchoring the pilot price', 'kill criterion'],
+      commitments: [],
+      openQuestions: [],
+    },
+    exchanges: [],
+    said: [
+      'Big news. We just signed a letter of intent with Hartwell.',
+      "They'll pay $900 per semester for the pilot.",
+      "I'm worried their SSO requirement will slow everything down.",
+      'Can you hear me okay?',
+    ],
+  });
+
+  it('shows what they said that carries a fact (news, a number, a name, a worry) before the summary', () => {
+    const section = renderLeftOffSection({ conversations: [rc01] }, { now: NOW });
+    const said = section.indexOf('<they_said');
+    expect(said).toBeGreaterThan(0);
+    expect(said).toBeLessThan(section.indexOf('<summary>'));
+    for (const fact of ['letter of intent with Hartwell', '$900 per semester', 'SSO requirement']) {
+      expect(section).toContain(fact);
+    }
+    expect(section).not.toContain('Can you hear me');
+    expect(section).toContain('lead with what the founder told you');
+    // A conversation not summarised yet shows its exchanges as said: no second copy.
+    expect(renderLeftOffSection({ conversations: [conversation()] }, { now: NOW })).not.toContain(
+      '<they_said',
+    );
+  });
+
+  it('the opener names the founder’s news, not the coach’s framing', () => {
+    const { withTopic } = continuityOpener(rc01, { now: NOW, seed: 's1' });
+    expect(withTopic).toMatch(/letter of intent with Hartwell/);
+    expect(withTopic).not.toMatch(/anchoring/);
+  });
+});
+
 describe('a conversation with the venture’s previous coach', () => {
   it('is carried over as the founder’s history, never as this vEIR’s own conversation', () => {
     const earlier = conversation({ withThisVeir: false });

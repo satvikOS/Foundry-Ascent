@@ -41,6 +41,23 @@ describe('statedMemory (LAB-K1: what the founder states is kept with the turn)',
     expect(statedMemory(said, none).map((c) => c.content)).toEqual([content]);
   });
 
+  it('keeps a statement that follows another clause of the sentence ("…, so we\'ve decided to…")', () => {
+    expect(
+      statedMemory(
+        "How many repeat visitors did our seat map get? Our riskiest assumption still needs a cheap test, so we've decided to rerun the map in exam week.",
+        none,
+      ).map((c) => c.content),
+    ).toEqual(['The team decided to rerun the map in exam week.']);
+    expect(
+      statedMemory("The dean said yes, and we've agreed to start the pilot in March.", none).map(
+        (c) => c.content,
+      ),
+    ).toEqual(['The team agreed to start the pilot in March.']);
+    // The other clause's hedge is not the decision's; a question stays unread.
+    expect(statedMemory("Maybe it slips, but we've decided to keep the launch date.", none)).toHaveLength(1);
+    expect(statedMemory("It's late, so should we decide to wait?", none)).toEqual([]);
+  });
+
   it('keeps nothing that is a question, a hedge or not a plain first-person statement', () => {
     for (const said of [
       'Should we ask each library for a paid commitment?',

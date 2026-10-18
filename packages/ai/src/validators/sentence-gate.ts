@@ -15,7 +15,19 @@ import {
   type IdentityViolationKind,
 } from './identity.js';
 import { sanitizeMarkdown } from './markdown.js';
-import { findMetaNarration, isThinkingAloudOpener } from './meta-narration.js';
+import { REPEATED_GREETING_FALLBACK, withoutRepeatedGreeting } from './greeting.js';
+import { findMetaNarration, isThinkingAloudOpener, type NarrationNames } from './meta-narration.js';
+import {
+  NEWS_FALLBACK,
+  REPEAT_FALLBACK,
+  asksToRepeat,
+  fourGramsOf,
+  parksTheirNews,
+  questionsOf,
+  reasksQuestion,
+  repeatsPrevious,
+} from './social.js';
+import { founderMoves } from '../prompts/conversation-state.js';
 import { clampWords, toSpeakable } from './speech.js';
 
 /**
@@ -53,10 +65,27 @@ import { clampWords, toSpeakable } from './speech.js';
  *    narration follows. After units were released, the reply ends before the unit (`cut`), and nothing more is
  *    released: what follows a narrated sentence is more of the same.
  *
+ * A lead-in of at most {@link LEAD_IN_MAX_WORDS} words that ends a sentence ("Got it.", "Talk soon.", "That's the
+ * right question.") is released the moment it ends (LAB-P1: the gate held every first sentence 383–526 ms, and 8 of
+ * 12 first sentences were such lead-ins). It passes every per-unit check like any unit; it skips only the waits
+ * that cannot change its verdict: the opening's 20 characters (a finished sentence is prose, never the start of
+ * structured output), the hold-back (a guarded string that starts inside it would have to span its sentence end,
+ * so the skip applies only when no guarded string contains sentence punctuation), and, for an acknowledgement
+ * ("Got it.", "Okay.") on a typed turn, the look at the next unit (a thinking-aloud opener such as "Let me think."
+ * still waits, and on a call so does an acknowledgement that can open thinking aloud: said, it cannot be taken back
+ * when narration follows it).
+ *
  * The final validation of the whole response stays authoritative: units are a preview the client replaces
  * with `turn.completed`. Units never carry raw model output that failed a check, and their concatenation
  * passes the Markdown subset unchanged.
  */
+
+/** Most words of a lead-in released as soon as its sentence ends (see the module comment). */
+export const LEAD_IN_MAX_WORDS = 4;
+
+/** An acknowledgement said to the founder, not a thinking-aloud opener: it never waits for the next unit. */
+const ACKNOWLEDGEMENT =
+  /^(?:okay|ok|alright|all right|got it|right|sure|understood|of course|fair enough)(?:[\s,]+\p{Lu}[\p{L}'’-]*)?[\s.!…]*$/iu;
 
 export type GateBlockReason = 'cross_venture' | 'identity';
 
@@ -75,6 +104,29 @@ export interface SentenceGateOptions {
   personaEirName?: string | null;
   /** Display names of the founder and their team: "Thanks, Ruth." to one of them is not an EIR's sign-off. */
   addressees?: readonly string[];
+  /**
+   * The first name of the person the reply talks to: a unit that reports on them by name ("Maya's asking about…")
+   * is narration (LAB-M1b), like "The founder says…".
+   */
+  founderName?: string | null;
+  /**
+   * A greeting was already given (a call's intro that said hello, `openerSaidHello`, before the first reply; any
+   * earlier exchange when the founder does not greet): a greeting the reply opens with is left out
+   * (validators/greeting.ts), and a reply that was only that greeting becomes a short hand-back.
+   */
+  greeted?: boolean;
+  /**
+   * A short reply's budget (a social turn: thanks, a wrap-up, a hello; validators/social.ts `SOCIAL_BUDGETS`): once
+   * the units released reach it, nothing more is released and the gate is `full` (the caller stops the model; the
+   * reply is what was shown). The first unit is always released.
+   */
+  replyBudget?: { readonly sentences: number; readonly words: number } | null;
+  /**
+   * The vEIR's previous reply in this conversation: a unit that mostly says it again is never released (unless the
+   * founder asked to hear it again, or sincerely asks who or what the coach is: the honest answer is never dropped).
+   * A reply that was nothing but repeats becomes a short line instead.
+   */
+  previousReply?: string | null;
   /**
    * The founder's message this reply answers. When it sincerely asks who or what the coach is ("are you real?"),
    * the reply's honest answer stands as written: no disclaimer is rewritten out of it.
@@ -292,6 +344,8 @@ function words(text: string): number {
 export class SentenceGate {
   readonly #options: SentenceGateOptions;
   readonly #holdBack: number;
+  /** No guarded string contains sentence punctuation: a finished lead-in needs no hold-back. */
+  readonly #leadInsSafe: boolean;
   readonly #maxUnitChars: number;
   readonly #blockOn: ReadonlySet<IdentityViolationKind>;
   readonly #keys: ReadonlySet<string> | null;
@@ -314,6 +368,22 @@ export class SentenceGate {
   #said = '';
   /** The last unit was only a volunteered disclaimer and was dropped: the next one loses a leaning "But". */
   #afterDroppedDisclaimer = false;
+  /** A greeting the opening line already gave was left out of the reply's start (`greeted`). */
+  #droppedGreeting = false;
+  /** The previous reply's four-word sequences (null: no repeat check). */
+  readonly #previousGrams: ReadonlySet<string> | null;
+  /** The previous reply's questions, as content words: never asked again in other words. */
+  readonly #previousQuestions: readonly ReadonlySet<string>[];
+  /** Units left out because they said the previous reply again. */
+  #repeatsDropped = 0;
+  /** The founder's message brings news: a unit that parks it for the vEIR's agenda is left out (LAB-R8). */
+  readonly #news: boolean;
+  /** Units left out because they parked the founder's news. */
+  #agendaDropped = 0;
+  /** Units and words released (the reply budget). */
+  #released = { units: 0, words: 0 };
+  /** The reply budget is used up: nothing more is released. */
+  #full = false;
   /**
    * What the founder's sincere question about the coach asks (`founderText`), or null: then no disclaimer is
    * rewritten out, and the first unit is read as its answer (a bare "Yes!" to "is this really Corin?").
@@ -332,16 +402,30 @@ export class SentenceGate {
 
   constructor(options: SentenceGateOptions) {
     this.#options = options;
-    this.#holdBack = holdBackFor([
+    const guarded = [
       ...options.otherVentureNames,
       ...options.otherVentureCanaries,
       ...(options.otherVentureMemberNames ?? []),
-    ]);
+    ];
+    this.#holdBack = holdBackFor(guarded);
+    this.#leadInsSafe = !guarded.some((g) => /[.!?…]/.test(g));
     this.#maxUnitChars = Math.max(80, options.maxUnitChars ?? DEFAULT_MAX_UNIT_CHARS);
     this.#blockOn = new Set(options.blockOnIdentity ?? ['claims_eir']);
     this.#keys = options.evidenceKeys ? new Set([...options.evidenceKeys].map(normalizeKey)) : null;
     this.#question =
       options.founderText === undefined ? null : identityQuestionOf(options.founderText, this.#identity);
+    this.#news = founderMoves(options.founderText ?? '').includes('news');
+    const previous = options.previousReply ?? null;
+    // No repeat check for a sincere question about the coach: its honest answer is said however recently it was
+    // said (the intro of a first meeting, or the last reply when they ask again; the presence policy).
+    this.#previousGrams =
+      previous === null ||
+      previous.trim() === '' ||
+      asksToRepeat(options.founderText ?? '') ||
+      this.#question !== null
+        ? null
+        : fourGramsOf(previous);
+    this.#previousQuestions = this.#previousGrams === null || previous === null ? [] : questionsOf(previous);
   }
 
   /** Everything received so far (unvalidated). */
@@ -359,6 +443,11 @@ export class SentenceGate {
 
   get cut(): GateCutReason | null {
     return this.#cut;
+  }
+
+  /** The reply budget (`replyBudget`) is used up: the reply is what was released. */
+  get full(): boolean {
+    return this.#full;
   }
 
   /** Counts for audit metadata (no content). */
@@ -385,11 +474,28 @@ export class SentenceGate {
   }
 
   #stopped(): boolean {
-    return this.#blocked !== null || this.#fallback !== null || this.#cut !== null;
+    return this.#blocked !== null || this.#fallback !== null || this.#cut !== null || this.#full;
   }
 
   #nothing(): GateResult {
     return { units: [], blocked: this.#blocked, fallback: this.#fallback, cut: this.#cut };
+  }
+
+  /** A unit of at most {@link LEAD_IN_MAX_WORDS} words that ends a sentence (see the module comment). */
+  #isLeadIn(unit: string): boolean {
+    const text = unit.trim();
+    return (
+      text !== '' &&
+      words(text) <= LEAD_IN_MAX_WORDS &&
+      /[.!?…]["'”’)\]*_]*$/.test(text) &&
+      !/[[\]<>()`*_#]/.test(text.replace(/[*_]+$/, ''))
+    );
+  }
+
+  /** Whether the unit starting at `from` is complete and a lead-in. */
+  #leadInAt(from: number): boolean {
+    const end = findUnitEnd(this.#raw, from, this.#maxUnitChars);
+    return end !== null && this.#isLeadIn(this.#raw.slice(from, end));
   }
 
   /** Nothing of the reply was released yet (shown, or withheld from the preview and said). */
@@ -426,7 +532,10 @@ export class SentenceGate {
         this.#fallback = 'structured_output';
         return this.#nothing();
       }
-      if (!this.#ended && opening.length < OPENING_CHARS) return this.#nothing();
+      // A finished lead-in is prose: nothing can make it structured output any more.
+      if (!this.#ended && opening.length < OPENING_CHARS && !this.#leadInAt(this.#cursor)) {
+        return this.#nothing();
+      }
     }
     const stable = this.#stable();
     let checked = false;
@@ -436,7 +545,8 @@ export class SentenceGate {
         if (!this.#ended || this.#cursor >= this.#raw.length) break;
         end = this.#raw.length; // the tail of a finished stream
       }
-      if (!this.#ended && stable.length < end + this.#holdBack) break;
+      const leadIn = !this.#ended && this.#isLeadIn(this.#raw.slice(this.#cursor, end));
+      if (!this.#ended && stable.length < end + this.#holdBack && !(leadIn && this.#leadInsSafe)) break;
       if (!checked) {
         checked = true;
         // Only what is new since the last check, with a window before it for a string that straddles it.
@@ -444,18 +554,36 @@ export class SentenceGate {
         this.#leakCheckedTo = stable.length;
         if (this.#leaks([stable.slice(from)])) return this.#block('cross_venture', units);
       }
-      const rawUnit = this.#raw.slice(this.#cursor, end);
-      if (this.#nothingReleased() && isThinkingAloudOpener(rawUnit)) {
+      let rawUnit = this.#raw.slice(this.#cursor, end);
+      if (this.#options.greeted === true && this.#opening) {
+        // The opening line already said hello: the reply's own greeting is left out (a whole unit, or its start).
+        const greeting = withoutRepeatedGreeting(rawUnit, this.#greetingNames);
+        if (greeting.removed) {
+          this.#droppedGreeting = true;
+          if (greeting.text.trim() === '') {
+            this.#cursor = end;
+            continue;
+          }
+          rawUnit = greeting.text;
+        }
+      }
+      if (
+        this.#nothingReleased() &&
+        isThinkingAloudOpener(rawUnit) &&
+        // Typed, an acknowledgement is shown at once (the preview is replaced if the reply is written whole); said on a
+        // call it cannot be taken back, so it waits like any thinking-aloud opener ("Okay." then narration).
+        !(leadIn && this.#options.spoken !== true && ACKNOWLEDGEMENT.test(rawUnit.trim()))
+      ) {
         // "Okay, let's see." opening a reply is said only once the next unit shows that speech follows it.
         const next =
           findUnitEnd(this.#raw, end, this.#maxUnitChars) ?? (this.#ended ? this.#raw.length : null);
         if (next === null || (!this.#ended && stable.length < next + this.#holdBack)) break;
-        if (findMetaNarration(this.#raw.slice(end, next)) !== null) {
+        if (findMetaNarration(this.#raw.slice(end, next), this.#names) !== null) {
           this.#fallback = 'meta_narration';
           return { units, blocked: null, fallback: this.#fallback, cut: null };
         }
       }
-      if (findMetaNarration(rawUnit) !== null) {
+      if (findMetaNarration(rawUnit, this.#names) !== null) {
         this.#cursor = end;
         if (this.#nothingReleased()) {
           this.#fallback = 'meta_narration';
@@ -464,6 +592,30 @@ export class SentenceGate {
         this.#cut = 'meta_narration';
         return { units, blocked: null, fallback: null, cut: this.#cut };
       }
+      if (
+        this.#previousGrams !== null &&
+        (repeatsPrevious(rawUnit, this.#previousGrams) ||
+          reasksQuestion(rawUnit.trim(), this.#previousQuestions))
+      ) {
+        // The previous reply again: never said twice.
+        this.#cursor = end;
+        this.#repeatsDropped += 1;
+        continue;
+      }
+      if (this.#news && parksTheirNews(rawUnit.trim())) {
+        // Their news parked for the vEIR's own question ("Before we talk about that, let's finish…"): never said.
+        this.#cursor = end;
+        this.#agendaDropped += 1;
+        continue;
+      }
+      const budget = this.#options.replyBudget ?? null;
+      if (budget !== null && this.#released.units > 0) {
+        const n = words(rawUnit);
+        if (this.#released.units >= budget.sentences || this.#released.words + n > budget.words) {
+          this.#full = true;
+          break;
+        }
+      }
       const unit = this.#process(rawUnit);
       this.#cursor = end;
       if (unit === 'identity' || unit === 'cross_venture') return this.#block(unit, units);
@@ -471,17 +623,44 @@ export class SentenceGate {
       if (this.#leaks([this.#shown.slice(-CUMULATIVE_WINDOW_CHARS) + unit.text])) {
         return this.#block('cross_venture', units);
       }
-      if (!this.#withholding && this.#formsRemovedMarkdown(unit.text)) this.#withholding = true;
-      if (this.#withholding) {
-        this.#stats.withheld += 1;
-        if (unit.spoken !== '') units.push({ text: '', spoken: unit.spoken });
-        continue;
-      }
-      this.#shown += unit.text;
-      this.#stats.units += 1;
-      units.push(unit);
+      this.#show(unit, units);
+      this.#released.units += 1;
+      this.#released.words += words(unit.text);
+    }
+    if (this.#ended && this.#nothingReleased()) {
+      // The reply was only the greeting the opening line already gave, or only the previous reply again: a short
+      // line instead.
+      const instead = this.#droppedGreeting
+        ? REPEATED_GREETING_FALLBACK
+        : this.#agendaDropped > 0
+          ? NEWS_FALLBACK
+          : this.#repeatsDropped > 0
+            ? REPEAT_FALLBACK
+            : null;
+      const unit = instead === null ? null : this.#process(instead);
+      if (unit !== null && typeof unit !== 'string') this.#show(unit, units);
     }
     return { units, blocked: null, fallback: null, cut: null };
+  }
+
+  /** Shows a checked unit, or withholds it from the preview (still said on a call). */
+  #show(unit: GateUnit, units: GateUnit[]): void {
+    if (!this.#withholding && this.#formsRemovedMarkdown(unit.text)) this.#withholding = true;
+    if (this.#withholding) {
+      this.#stats.withheld += 1;
+      if (unit.spoken !== '') units.push({ text: '', spoken: unit.spoken });
+      return;
+    }
+    this.#shown += unit.text;
+    this.#stats.units += 1;
+    units.push(unit);
+  }
+
+  /** The founder's names a greeting may carry ("Hi Maya"). */
+  get #greetingNames(): string[] {
+    return [this.#options.founderName ?? '', ...(this.#options.addressees ?? [])].filter(
+      (n) => n.trim() !== '',
+    );
   }
 
   /**
@@ -578,6 +757,11 @@ export class SentenceGate {
       identified: this.#identified,
       introduced: this.#options.introduced === true,
     };
+  }
+
+  /** Who a unit may narrate by name (meta-narration). */
+  get #names(): NarrationNames {
+    return { founder: this.#options.founderName ?? null, people: this.#options.addressees ?? [] };
   }
 
   get #identity(): IdentityCheckOptions {

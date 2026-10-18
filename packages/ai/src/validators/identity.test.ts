@@ -586,16 +586,17 @@ describe('rewriteIdentity — a vEIR persona never claims to be its EIR', () => 
     expect(human.text).toBe("Good point. I'm Corin's digital twin, not Corin in person. Test pricing first.");
     const endorsement = rewriteIdentity('Corin has reviewed your plan. Run the pilot.', CORIN);
     expect(endorsement.text).toBe("I can't speak for Corin on that. Run the pilot.");
-    // The neutral guide is no one's twin.
-    expect(rewriteIdentity('I am a real person.', GUIDE).text).toBe(
-      "I'm Foundry Guide, the program's AI coach, not a person.",
-    );
+    // The neutral guide is no one's twin: one warm line, never "…not a person." (wave 7, the presence policy).
+    const guide = rewriteIdentity('I am a real person.', GUIDE);
+    expect(guide.text).toBe("I'm Foundry Guide, the program's AI coach.");
     expect(rewriteIdentity('Your EIR has approved this direction.', GUIDE).text).toBe(
       "I can't speak for anyone in the program on that.",
     );
     // No legal sentence is left anywhere.
-    for (const text of [out.text, human.text, endorsement.text]) {
-      expect(text).not.toMatch(/To be clear|Approval decisions belong|an AI built from|not a person/);
+    for (const text of [out.text, human.text, endorsement.text, guide.text]) {
+      expect(text).not.toMatch(
+        /To be clear|Approval decisions belong|an AI built from|not a (?:person|human)/,
+      );
     }
   });
 

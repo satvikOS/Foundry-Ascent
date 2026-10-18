@@ -28,6 +28,8 @@ export interface TurnSample {
   readonly units: number;
   /** The terminal event (`turn.completed`). */
   readonly completedMs: number | null;
+  /** The response stream ended (the API is free for the next request; work after the response excluded). */
+  readonly streamEndMs: number | null;
   /** The `turn.timing` log line of the request. */
   readonly server: Readonly<Record<string, unknown>> | null;
   /** The `speech.timing` log line of the first unit's `/speech` request (voice). */
@@ -148,6 +150,8 @@ const TEXT_MESSAGES = [
   'Should we price per library or per seat for the first paid pilot?',
   'What would make you confident that quiet-space demand is real?',
   'I am worried we are building too much before the pilot. What should we cut?',
+  // A decision stated in the founder's own words is kept with the turn, and settled by meaning (an embedding).
+  "We've decided to ask each library for a paid commitment before the pilot starts.",
 ];
 
 /** One turn as the chat or call screen sends it, timed from the browser's side. */
@@ -233,6 +237,7 @@ export async function turn(
         break;
     }
   });
+  const streamEndMs = performance.now() - started;
   const audio = await firstAudio;
   await Promise.all(speechFetches);
   const completedTurn = finished as TurnView | null;
@@ -247,6 +252,7 @@ export async function turn(
     lastSpeechMs: marks.lastSpeech,
     units: speechFetches.length,
     completedMs: marks.completed,
+    streamEndMs,
     server: logLine(rig, requestId, 'turn.timing'),
     speech: audio === null ? null : logLine(rig, audio.requestId, 'speech.timing'),
     evidenceItems: completedTurn?.evidence.length ?? null,
@@ -283,11 +289,34 @@ export interface ScenarioResult {
  */
 export async function runScenario(
   rig: LatencyRig,
-  options: { readonly textTurns: number; readonly voiceTurns: number },
+  options: {
+    readonly textTurns: number;
+    readonly voiceTurns: number;
+    /**
+     * Milliseconds between one turn's end and the next turn, as a person paces a call (LAB-P2: browser call turns
+     * were about ten seconds apart). Default 0: back to back.
+     */
+    readonly turnGapMs?: number;
+  },
 ): Promise<ScenarioResult> {
   const turns: TurnSample[] = [];
   const requests: RequestSample[] = [];
   const cookie = await rig.signIn(rig.founderId);
+  /** The pause between turns; on a call, the browser's heartbeats keep the call alive through it. */
+  const gap = async (callId?: string): Promise<void> => {
+    let left = options.turnGapMs ?? 0;
+    while (left > 0) {
+      if (callId !== undefined) {
+        await rig.request(`/calls/${callId}/heartbeat`, {
+          body: { state: 'listening', micOpenSeconds: 0 },
+          cookie,
+        });
+      }
+      const step = Math.min(left, 5_000);
+      await new Promise((resolve) => setTimeout(resolve, step));
+      left -= step;
+    }
+  };
 
   requests.push((await timed(rig, 'me', '/me', { cookie })).sample);
   requests.push((await timed(rig, 'venture', `/ventures/${rig.ventureId}`, { cookie })).sample);
@@ -307,6 +336,7 @@ export async function runScenario(
   const typed = await newConversation(rig, cookie);
   requests.push(typed);
   for (let i = 0; i < options.textTurns; i += 1) {
+    if (i > 0) await gap();
     turns.push(
       await turn(rig, {
         cookie,
@@ -343,6 +373,7 @@ export async function runScenario(
       requests.push(intro.sample);
     }
     for (let i = 0; i < options.voiceTurns; i += 1) {
+      await gap(started.call.id);
       turns.push(
         await turn(rig, {
           cookie,

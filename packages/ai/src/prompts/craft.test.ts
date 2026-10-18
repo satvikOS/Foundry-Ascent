@@ -7,6 +7,7 @@ import {
   WHERE_YOU_LEFT_OFF_HEADING,
   conversationCraftRules,
 } from './craft.js';
+import { MODE_INSTRUCTIONS } from './modes.js';
 import { buildSystemPrompt, type SystemPromptInput } from './system.js';
 import { POLICY_VERSION } from './version.js';
 
@@ -78,7 +79,9 @@ describe('conversation craft in the system prompt', () => {
   it('answers a hello after its own opener with a hello, never the recall or its question again', () => {
     // Integration: the opener said "Last time you planned to call facilities… How did it go?" and the reply to
     // "Hi!" said "When we talked a moment ago, we were on pricing." all over again.
-    expect(craft).toContain('After your own opener, a hello gets a brief, warm hello and nothing more.');
+    expect(craft).toContain(
+      'After your own opener, never repeat its question; if it said hi, never greet again.',
+    );
   });
 
   it('answers "do you remember" only from the last conversation, never from older notes or venture facts', () => {
@@ -106,8 +109,10 @@ describe('conversation craft in the system prompt', () => {
   it('answers a direct question directly, gives a range for a number, and honours time or mood (wave 6 lab)', () => {
     // LAB-V3: "per-branch vs flat fee?" was deflected; LAB-M11: "give me a number" was refused; LAB-V1: "I only
     // have a few minutes" was ignored.
+    expect(craft).toContain('a direct question (this or that, yes or no) gets one pick and why; asked for a');
+    // LAB-R8: the founder's news was parked for the vEIR's own pending question.
     expect(craft).toContain(
-      'a direct question (this or that, yes or no) gets your view and why; asked for a',
+      'Their news comes first:\n  react and ask about it, never parked for your agenda.',
     );
     expect(craft).toContain('number, a reasoned range.');
     expect(craft).toContain('Act at once on what they say about their time or mood.');
@@ -122,7 +127,7 @@ describe('conversation craft in the system prompt', () => {
     expect(craft).toContain(
       '"…" or an emoji: a short reply offering one option, never your last answer again.',
     );
-    expect(craft).toContain('empty; thanks never gets the advice again.');
+    expect(craft).toContain('empty; thanks gets a warm line, never the advice or plan again.');
   });
 
   it('covers listening, topic moves, social turns, tone, repair, disagreement, closings and variety', () => {
@@ -229,14 +234,29 @@ describe('conversation craft in the system prompt', () => {
     expect(section(neutral, 'Identity')).toContain('Never claim to be human');
   });
 
+  it('never teaches a stock phrase: no mode instruction says "riskiest assumption" or "cheapest test" (item 23)', () => {
+    // The after-set matrix: "the riskiest assumption" in 26% of replies, copied from the diagnose and challenge modes.
+    for (const [mode, text] of Object.entries(MODE_INSTRUCTIONS)) {
+      expect(text, mode).not.toMatch(/riskiest|cheapest|weakest assumption/i);
+    }
+    // The only place the prompt names them is the ban.
+    const all = buildSystemPrompt({ ...INPUT, allowedModes: ['diagnose', 'challenge', 'coach'] });
+    const mentions = all.match(/riskiest assumption|cheapest test/gi) ?? [];
+    expect(mentions.length).toBeLessThanOrEqual(2);
+    expect(section(all, 'Conversation craft')).toContain('"the riskiest assumption", "the cheapest\n  test"');
+  });
+
   it('stays within its token budget (every token is paid on every turn)', () => {
-    // Raised for the wave 6 lab's rules (direct answers, pushback, venting, short replies): about 70 tokens.
-    expect(tokens(conversationCraftRules('text'))).toBeLessThanOrEqual(720);
-    expect(tokens(conversationCraftRules('voice'))).toBeLessThanOrEqual(780);
-    expect(tokens(craft)).toBeLessThanOrEqual(730);
+    // Raised for the wave 6 lab's rules (direct answers, pushback, venting, short replies): about 70 tokens; and by 20
+    // for wave 7 (LAB-R8: the founder's news first; "the cheapest test" banned with the other stock phrases). What
+    // only some turns need (news, sarcasm, a number asked for) is said in <conversation_state> on those turns only.
+    expect(tokens(conversationCraftRules('text'))).toBeLessThanOrEqual(740);
+    expect(tokens(conversationCraftRules('voice'))).toBeLessThanOrEqual(800);
+    expect(tokens(craft)).toBeLessThanOrEqual(750);
   });
 
   it('is part of the versioned policy', () => {
-    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-10-17.2');
+    // 2026-10-18.3: wave 7's craft (w7-ai, 2026-10-18.2) merged with the honesty hotfix (LAB-M15/M16, 2026-10-17.2).
+    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-10-18.3');
   });
 });

@@ -245,8 +245,9 @@ maxHistoryChars })` — the last N completed turns, then one user message with t
   `ConversationDigest`s with dates, newest first. Over budget, the oldest digests go first, then advice,
   open questions and the profile. Empty when there is nothing to remember.
 - `buildRetrievalQuery({ founderText, previousAnswer?, currentGoal? })` — the founder message; for a
-  short reply (under 12 words, e.g. "yes, the second one") the question the vEIR just asked; and the
-  current goal, so retrieval follows the conversation.
+  short reply (under 12 words, e.g. "yes, the second one"; never a short question of their own such as
+  "What's an experiment card?") the question the vEIR just asked; and the current goal, so retrieval
+  follows the conversation.
 - `resolvePersonaIdentity`, `veirFirstName("Corin's vEIR") === 'Corin'` and `buildVeirDisclosure({
 personaName, eirName })` (a disclosure that passes the persistent-disclosure checks).
 

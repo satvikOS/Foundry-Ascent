@@ -4,7 +4,12 @@ import {
   INVALID_RESPONSE_ANSWER,
   buildSystemPrompt,
   deriveSpoken,
+  founderMoves,
   isModelGatewayError,
+  openerSaidHello,
+  SOCIAL_BUDGETS,
+  socialTurnOf,
+  spokenHandBackFor,
   validateCoachResponse,
   type CoachResponseValidation,
   type GateBlockReason,
@@ -230,6 +235,28 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
   });
   const shown: KeyedEvidence[] = spec.evidence.filter((k) => context.shownKeys.has(k.item.key));
   const evidenceKeys = new Set(shown.map((k) => k.item.key));
+  // The first reply after an opening line that said hello (a call's intro) does not greet again, and no later reply
+  // does unless the founder greets (LAB-R4: "Good to talk again." opened both replies after the intro said it).
+  const greeted =
+    spec.history.length === 0
+      ? context.openerReplayed && openerSaidHello(spec.opener)
+      : !founderMoves(spec.founderText).includes('greeting');
+  // Conversation craft (validators/social.ts): a social turn gets a short reply, a reply never says the previous one
+  // (or the opener) again, and a call's reply that ends on a statement hands the turn back.
+  const lastAnswer = spec.history.at(-1)?.answer ?? null;
+  const previousReply =
+    spec.history.length > 0 ? lastAnswer : context.openerReplayed ? (spec.opener ?? null) : null;
+  // A hello that opens the conversation (nothing said before it) is answered with the pick-up of last time.
+  const read = socialTurnOf(spec.founderText);
+  const social = read === 'greeting' && previousReply === null ? null : read;
+  // Never a hand-back the conversation already heard (the replies in view, and the opener).
+  const handBack =
+    spec.channel === 'voice'
+      ? spokenHandBackFor(spec.founderText, spec.ids.turnId, [
+          ...spec.history.map((t) => t.answer),
+          spec.opener ?? null,
+        ])
+      : null;
 
   const introduced = alreadyIntroduced(spec);
 
@@ -250,6 +277,8 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
     fallbackMode: spec.fallbackMode,
     signal: spec.signal,
     startedAt: spec.startedAt,
+    narration: { founder: spec.continuity.founderFirstName ?? null, people: guards.addressees },
+    handBack,
   };
   let generation: Generation;
   try {
@@ -263,6 +292,10 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
             eirNames: guards.eirNames,
             personaEirName: spec.personaEirName,
             addressees: guards.addressees,
+            founderName: spec.continuity.founderFirstName ?? null,
+            greeted,
+            replyBudget: social === null ? null : SOCIAL_BUDGETS[social],
+            previousReply,
             founderText: spec.founderText,
             introduced,
             otherVentureNames: guards.others.names,
@@ -294,6 +327,12 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
     eirNames: guards.eirNames,
     personaEirName: spec.personaEirName,
     addressees: guards.addressees,
+    founderName: spec.continuity.founderFirstName ?? null,
+    greeted,
+    previousReply,
+    // A streamed reply handed the turn back as it was said (generate.ts); a reply written whole gets it here.
+    handBack: generation.stream?.fallback === null ? null : handBack,
+    social,
     founderText: spec.founderText,
     introduced,
     channel: spec.channel,
