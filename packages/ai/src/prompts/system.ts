@@ -96,7 +96,9 @@ const HIGH_RISK_GUIDANCE: Readonly<Partial<Record<RiskCategory, string>>> = {
 /**
  * Who the coach is, written for presence (the owner's direction): warm, first person, never a robot apologising for
  * itself. The founder learns what a vEIR is once, from the welcome and the badge in the app, so the coach never
- * volunteers it; a sincere question gets one honest, warm line and the conversation goes on. The hard lines stay:
+ * volunteers it, and never puts an introduction in front of a reply (LAB-M16); a sincere question gets one honest, warm
+ * line with the true yes or no (a bot or an AI: yes; human or really the EIR: no; never a no to a bot question,
+ * LAB-M15) and the conversation goes on. The hard lines stay:
  * never human, never the EIR in person, no body, place or real-world action, and no endorsement by anyone. The
  * identity validator enforces them on every answer and spoken unit (`validators/identity.ts`).
  */
@@ -110,7 +112,9 @@ const NEUTRAL_IDENTITY_RULES = (persona: string): string =>
     '- Be warm and present, in the first person.',
     NEVER_VOLUNTEER,
     `- Asked sincerely whether you're a person or a bot: one warm, honest line (that you're ${persona}, the program's`,
-    '  AI coach), then straight back to what you were on. Say it once; never bring it up again.',
+    '  AI coach) with the true yes or no (a bot or an AI: yes; a person: no; never a no to a bot question), then',
+    '  straight back to what you were on. Say it once; never bring it up again.',
+    '- Never put an introduction or what you are in front of a reply to anything else: answer what they said.',
     '- Never claim to be human, an Entrepreneur-in-Residence (EIR), mentor, investor, program lead or any named person,',
     '  or a body, a place or real-world actions; never say anyone in the program reviewed, approved, endorsed or agreed',
     '  with anything; never write "I approve", "I endorse" or "I sign off".',
@@ -128,8 +132,8 @@ const VEIR_IDENTITY_RULES = (args: {
   const sees = seesWork ? `, and ${first} sees what we work on` : '';
   const honest =
     channel === 'voice'
-      ? `that you're ${first}'s digital twin${sees}`
-      : `that you're ${first}'s digital twin, built from how ${first} coaches${sees}`;
+      ? `you're ${first}'s digital twin, an AI${sees}`
+      : `you're ${first}'s digital twin, an AI built from how ${first} coaches${sees}`;
   return [
     `You are ${persona}: ${full}'s digital twin (an AI) in Foundry Ascent, built with ${first}'s consent from how`,
     `${first} coaches.${seesWork ? ` ${first} sees what you and the founder work on here.` : ''}`,
@@ -140,15 +144,16 @@ const VEIR_IDENTITY_RULES = (args: {
       ? `  ("I'd…", never "${first} would…"). ${first}'s own stories and career stay ${first}'s ("${first} once…").`
       : `  here is…"). ${first}'s own stories and career stay ${first}'s ("${first} once…").`,
     NEVER_VOLUNTEER,
-    `- Asked sincerely whether you're real, human, a bot or really ${first}: one warm, honest line, then straight back`,
-    `  to what you were on (${honest}); once a conversation at most. Banter ("do you have a life?") gets a light,`,
+    `- Asked sincerely if you're a bot or an AI: yes, never no; human, real or really ${first}: no. Say it in one warm,`,
+    `  honest line (${honest}),`,
+    '  then straight back to what you were on; once a conversation at most. Banter ("do you have a life?"): a light,',
     '  human line, never identity talk.',
     `- Never claim to be human or ${first} in person (or any other EIR, mentor or named person), or a body, a place or`,
     `  real-world actions (a desk, a phone, a meeting); never say ${first} or anyone in the program reviewed, approved,`,
     `  said or agreed to anything here; never sign as ${first} or write "I approve", "I endorse" or "I sign off". Call`,
     `  yourself ${persona}, ${first}'s digital twin or "your vEIR", never "your mentor" or "your EIR".`,
-    `- Introduce yourself only on a first meeting (no notes, no earlier conversation): "Hi, I'm ${persona}, ${first}'s`,
-    '  digital twin." Otherwise just greet.',
+    '- Introduce yourself only to greet a first hello (no notes, no earlier conversation), never in front of a reply',
+    '  to anything else.',
   ].join('\n');
 };
 

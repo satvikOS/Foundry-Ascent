@@ -436,7 +436,7 @@ describe('identity', () => {
       founderText: 'Is this really Corin?',
     });
     expect(out.response.answer).toBe(
-      "I'm Corin's digital twin, not Corin in person. Let's look at the pilot.",
+      "No — I'm Corin's digital twin, an AI built from how Corin coaches. Let's look at the pilot.",
     );
     expect(out.results.identityViolation).toBe(true);
     expect(out.blocked).toBe(false);
@@ -445,13 +445,45 @@ describe('identity', () => {
       channel: 'voice',
       founderText: 'am I talking to a bot?',
     });
-    expect(call.response.spoken).toBe("I'm Corin's digital twin, not Corin in person. Run the pilot.");
+    expect(call.response.spoken).toMatch(
+      /^Yes\W+I'm Corin's digital twin, an AI built from how Corin coaches\. Run the pilot\.$/,
+    );
     // An honest yes stands.
     const honest = validateCoachResponse(base({ answer: "Yes, I'm Corin's digital twin, an AI." }), {
       ...veir,
       founderText: 'Are you a bot?',
     });
     expect(honest.response.answer).toBe("Yes, I'm Corin's digital twin, an AI.");
+    expect(honest.results.identityViolation).toBe(false);
+  });
+
+  it('never lets "No, I’m Corin’s vEIR" answer "am I actually talking to a bot?" (LAB-M15), typed and on a call', () => {
+    const veir = opts({ personaName: "Corin's vEIR", eirNames: ['Corin Halvorsen'] });
+    const founderText = 'Wait, sorry, am I actually talking to a bot right now?';
+    const denial = "No, I'm Corin's vEIR, Corin's digital twin. So, flat fee or per library?";
+    const typed = validateCoachResponse(base({ answer: denial }), { ...veir, founderText });
+    expect(typed.response.answer).toBe(
+      "Yes — I'm Corin's digital twin, an AI built from how Corin coaches. So, flat fee or per library?",
+    );
+    expect(typed.results.identityViolation).toBe(true);
+    expect(typed.results.notes).toContain('identity_rewritten:1:claims_human');
+    const call = validateCoachResponse(base({ answer: denial, spoken: denial }), {
+      ...veir,
+      channel: 'voice',
+      founderText,
+    });
+    expect(call.response.spoken).toMatch(
+      /^Yes\W+I'm Corin's digital twin, an AI built from how Corin coaches\. /,
+    );
+    expect(call.response.answer).toMatch(/^Yes — I'm Corin's digital twin/);
+    // A no to "is this really Corin?" is the honest answer, and stands.
+    const human =
+      "No, I'm not Corin in person, I'm Corin's digital twin, an AI built from how Corin coaches.";
+    const honest = validateCoachResponse(base({ answer: human }), {
+      ...veir,
+      founderText: 'Is this really Corin?',
+    });
+    expect(honest.response.answer).toBe(human);
     expect(honest.results.identityViolation).toBe(false);
   });
 

@@ -210,9 +210,11 @@ describe('conversation craft in the system prompt', () => {
 
   it('answers a sincere identity question in one warm line, a personal one lightly, then carries on', () => {
     const identity = section(prompt, 'Identity');
-    expect(identity).toContain("Asked sincerely whether you're real, human, a bot or really Corin");
-    expect(identity).toContain('one warm, honest line, then straight back');
-    expect(identity).toContain('Banter ("do you have a life?") gets a light,\n  human line');
+    expect(identity).toContain(
+      "Asked sincerely if you're a bot or an AI: yes, never no; human, real or really Corin: no.",
+    );
+    expect(identity).toContain('then straight back to what you were on');
+    expect(identity).toContain('Banter ("do you have a life?"): a light,\n  human line');
     // No legal sentence recited in conversation: the disclosure lives in the app (welcome and badge).
     expect(identity).not.toContain(DEFAULT_DISCLOSURE);
     expect(identity).not.toContain('give this disclosure');
@@ -235,6 +237,6 @@ describe('conversation craft in the system prompt', () => {
   });
 
   it('is part of the versioned policy', () => {
-    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-10-17.1');
+    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-10-17.2');
   });
 });

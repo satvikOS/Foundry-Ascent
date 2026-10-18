@@ -5,6 +5,7 @@ import {
   identityQuestionOf,
   identityFindingsAdded,
   identityReplacementFor,
+  isAnswerPreface,
   isStyleFinding,
   rewriteIdentity,
   withoutLeaningConnector,
@@ -312,8 +313,13 @@ export class SentenceGate {
    * rewritten out, and the first unit is read as its answer (a bare "Yes!" to "is this really Corin?").
    */
   readonly #question: IdentityQuestion | null;
-  /** No unit was read yet: the next one opens the reply. */
+  /**
+   * No unit was read yet, or only a preface before the answer ("Ha, fair question! "): the next one opens the reply
+   * and is read as the answer to the founder's question about the coach.
+   */
   #opening = true;
+  /** The units read while the reply was still opening (a preface is at most a few words: see `isAnswerPreface`). */
+  #answerLead = '';
   /** A released unit said honestly what the coach is: a later disclaimer that says it again is only removed. */
   #identified = false;
   #stats = { units: 0, withheld: 0, identityRewrites: 0, citationsRemoved: 0, markdownRemovals: 0 };
@@ -509,7 +515,10 @@ export class SentenceGate {
       });
     }
     const answers = this.#opening ? this.#question : null;
-    this.#opening = false;
+    // A unit that is only a preface answers nothing yet ("Ha, fair question! " then "No, I'm…"): the next one is read
+    // as the answer too.
+    this.#answerLead = answers === null ? '' : `${this.#answerLead}${text}`;
+    this.#opening = answers !== null && isAnswerPreface(this.#answerLead);
     const identity = rewriteIdentity(text, { ...this.#identity, ...this.#disclaimers, answers });
     if (identity.findings.some((f) => this.#blockOn.has(f.kind))) return 'identity';
     this.#stats.identityRewrites += identity.findings.length;

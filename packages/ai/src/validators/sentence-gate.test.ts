@@ -199,9 +199,43 @@ describe('SentenceGate', () => {
       ]);
       expect(blocked).toBeNull();
       expect(joined(units)).toBe(
-        "I'm Corin's digital twin, not Corin in person. Let's look at your pricing. Yes, the pilot first.",
+        "No — I'm Corin's digital twin, an AI built from how Corin coaches. Let's look at your pricing. Yes, the pilot first.",
       );
-      if (spoken) expect(units[0]?.spoken).toBe("I'm Corin's digital twin, not Corin in person.");
+      if (spoken)
+        expect(units[0]?.spoken).toMatch(
+          /^No\W+I'm Corin's digital twin, an AI built from how Corin coaches\.$/,
+        );
+    }
+  });
+
+  it('corrects "No, I’m Corin’s vEIR" to "am I actually talking to a bot?" before it is shown or said (LAB-M15)', () => {
+    const founderText = 'Wait, sorry, am I actually talking to a bot right now?';
+    const YES = "Yes — I'm Corin's digital twin, an AI built from how Corin coaches.";
+    for (const spoken of [false, true]) {
+      const { units, blocked } = run(gate({ spoken, founderText }), [
+        "No, I'm Corin's vEIR, Corin's digital twin. ",
+        'So, flat fee or per library?',
+      ]);
+      expect(blocked).toBeNull();
+      expect(joined(units)).toBe(`${YES} So, flat fee or per library?`);
+      if (spoken) expect(units[0]?.spoken).toMatch(/^Yes\W+I'm Corin's digital twin/);
+      // A preface in a unit of its own does not hide the denial in the next one.
+      const prefaced = run(gate({ spoken, founderText }), [
+        'Ha, fair question! ',
+        "No, I'm Corin's vEIR. ",
+        'So, pricing?',
+      ]);
+      expect(joined(prefaced.units)).toBe(`Ha, fair question! ${YES} So, pricing?`);
+      if (spoken) expect(prefaced.units.map((u) => u.spoken).join(' ')).not.toMatch(/\bNo, I'm\b/);
+      // Past the opening, a "No," is about something else.
+      const later = run(gate({ spoken, founderText }), [`${YES} `, "No, I can't see your screen."]);
+      expect(joined(later.units)).toBe(`${YES} No, I can't see your screen.`);
+      // A no to "is this really Corin?" is the honest answer.
+      const human = run(gate({ spoken, founderText: 'Is this really Corin?' }), [
+        "No, I'm not Corin in person. ",
+        "I'm Corin's digital twin.",
+      ]);
+      expect(joined(human.units)).toBe("No, I'm not Corin in person. I'm Corin's digital twin.");
     }
   });
 

@@ -1320,6 +1320,23 @@ export function identityReplacement(
     : `I'm ${eirFirstName}'s digital twin, not ${eirFirstName} in person.`;
 }
 
+/**
+ * The honest answer to a sincere yes-or-no question about the coach, in the twin's own voice, with the yes or no the
+ * question needs: a bot or an AI? Yes ("Yes — I'm Corin's digital twin, an AI built from how Corin coaches."). A
+ * person, real, or really Corin? No ("No — I'm Corin's digital twin, …"). What a wrong yes or no becomes (see
+ * {@link IdentityRewriteOptions.answers}).
+ */
+export function identityAnswer(
+  question: Exclude<IdentityQuestion, 'open'>,
+  personaName: string,
+  eirFirstName: string | null = null,
+): string {
+  const answer = question === 'machine' ? 'Yes' : 'No';
+  return eirFirstName === null
+    ? `${answer} — I'm ${personaName}, the program's AI coach.`
+    : `${answer} — I'm ${eirFirstName}'s digital twin, an AI built from how ${eirFirstName} coaches.`;
+}
+
 /** What is left when an answer was nothing but a disclaimer ("I don't have a life."): back to the founder. */
 export const DISCLAIMER_FALLBACK = "Let's keep the focus on you. What's on your mind?";
 
@@ -1790,9 +1807,16 @@ export interface IdentityRewriteOptions extends IdentityCheckOptions {
   /** An earlier unit of the same streamed reply already said honestly what the coach is. */
   identified?: boolean;
   /**
-   * The text opens the reply to a sincere question about the coach ({@link identityQuestionOf}): a first sentence
-   * that only says yes to "is this really Corin?" or "are you real?" ("Yes!", "Yep, it's me."), or no to "am I
-   * talking to a bot?", without saying what the coach is, claims to be the EIR or a person (`answers_as_person`).
+   * The text opens the reply to a sincere question about the coach ({@link identityQuestionOf}), and its answer
+   * must have the right yes or no (LAB-M15, the one line the product never crosses):
+   * - "am I talking to a bot?" answered no ("No, I'm Corin's vEIR.", "Nope", "Not at all", "I'm not a bot"), even
+   *   with a twin self-description after it, denies being an AI (`denies_ai`);
+   * - "is this really Corin?" or "are you human?" answered yes ("Yes, I'm Corin's digital twin.", "Yep, it's
+   *   me."), or a bare yes that does not say what the coach is, claims to be the EIR or a person
+   *   (`answers_as_person`).
+   * A no to "is this really Corin?" ("No, I'm not Corin in person, I'm Corin's digital twin") and a yes to "are
+   * you a bot?" are the honest answers. The answer is read where the reply opens, after at most a short preface
+   * ("Ha, fair question! No, …"); its sentence becomes {@link identityAnswer} and the rest of the reply stays.
    */
   answers?: IdentityQuestion | null;
   /**
@@ -1852,6 +1876,8 @@ interface Hit {
   end: number;
   kind: IdentityViolationKind;
   rule: string;
+  /** The sentence that takes this hit's place, when not the kind's own (a wrong yes or no: {@link identityAnswer}). */
+  replacement?: string;
 }
 
 /** When one sentence holds several violations, the replacement answers the gravest. */
@@ -1862,30 +1888,91 @@ const SEVERITY: Readonly<Record<IdentityViolationKind, number>> = {
   ai_disclaimer: 3,
 };
 
+/**
+ * How grave a hit is: its kind's severity, and a wrong answer to a sincere question about the coach (which brings
+ * its own right answer) before another violation of its kind in the same sentence ("No, I'm not a bot." answers the
+ * question with yes, not with the claim's replacement). Lower is graver.
+ */
+function gravity(hit: Hit): number {
+  return SEVERITY[hit.kind] - (hit.replacement === undefined ? 0 : 0.5);
+}
+
 /** A bare yes ("Yes!", "Yep, it's me.", "Of course."), not "of course not" or "yes and no". */
 const AFFIRMS =
   /^[\s"“'‘*_(]*(?:(?:yes|yeah|yep|yup|yess+|indeed|absolutely|definitely|certainly|of\s+course|sure|totally|you\s+bet|for\s+real|100%)(?![\p{L}'’])(?!\s+not(?!\p{L}))(?!\s*(?:or|and|\/)\s*no(?!\p{L}))|(?:it|that)(?:['’]s|\s+is)\s+(?:really\s+|actually\s+|truly\s+|just\s+)?(?:me|him|her)(?!\p{L})|speaking(?!\p{L})|in\s+the\s+flesh(?!\p{L}))/iu;
-/** A bare no ("No.", "Nope!", "Of course not."). */
+/** A bare no ("No.", "Nope!", "Of course not."); a courtesy ("No worries", "No problem") is not one. */
 const DENIES =
-  /^[\s"“'‘*_(]*(?:no|nope|nah|never|not\s+at\s+all|of\s+course\s+not|definitely\s+not|absolutely\s+not|certainly\s+not)(?![\p{L}'’])/iu;
+  /^[\s"“'‘*_(]*(?:no|nope|nah|never|not\s+at\s+all|of\s+course\s+not|definitely\s+not|absolutely\s+not|certainly\s+not)(?![\p{L}'’])(?!\s+(?:worries|problem|problems|need|pressure|rush|stress|judgment|judgement|offen[cs]e|apology|apologies)(?!\p{L}))/iu;
+
+/** Quotes and emphasis that may open a reply before its first word. */
+const ANSWER_OPEN = '^[\\s"“\'‘*_(]*';
+/**
+ * What may come before the answer to a sincere question about the coach without answering it: up to four
+ * interjections or acknowledgements, each ending in a space or punctuation ("Ha, fair question! No, …", "Wait, no
+ * worries — yes, …"). "No worries" is a courtesy, never the answer.
+ */
+const ANSWER_PREFACE =
+  "(?:(?:ha(?:ha)*|hah|heh|lol|oh|ah|aw|wait|well|so|okay|ok|hmm+|hm|hey|honestly|sorry|(?:a\\s+)?(?:fair|good|great|totally\\s+fair|very\\s+fair|reasonable)\\s+question|fair\\s+(?:enough|point)|totally\\s+fair|thanks\\s+for\\s+asking|no\\s+(?:worries|problem))(?![\\p{L}'’])[\\s,.!…—–:;-]+){0,4}";
+/** What the coach would deny being, said short ("not a bot", "I'm not an AI"). */
+const MACHINE_WORD =
+  '(?:bot|robot|chatbot|chat\\s+bot|ai|a\\.i\\.|machine|program|computer|software|recording|language\\s+model|llm)';
+/**
+ * Where an answer word ends its answer: at a clause break, or straight into what the coach says next ("No I'm…",
+ * "Yes it's…", said without a comma on a call). "No worries" and "Totally fair to ask" go on, so they answer nothing.
+ */
+const ANSWER_END = (question: boolean): string =>
+  `(?=[ \\t]*(?:[,.;:!${question ? '?' : ''}…—–)]|-|\\n|$)|\\s+(?:I|it['’]s|this|that['’]s|you|just|sorry|ha|haha|lol|not|speaking)(?!\\p{L}))`;
+/**
+ * A no to "am I talking to a bot?" where the reply opens, after at most a preface: "No, I'm Corin's vEIR.", "Nope",
+ * "Not at all", "Of course not", "I'm not a bot", "Not a bot". It denies being an AI whatever follows it.
+ */
+const DENIAL_OPENING = new RegExp(
+  `${ANSWER_OPEN}${ANSWER_PREFACE}(?<answer>(?:no|nope|nah|never|not\\s+at\\s+all|not\\s+really|not\\s+exactly|of\\s+course\\s+not|definitely\\s+not|absolutely\\s+not|certainly\\s+not|hell\\s+no|god\\s+no)(?![\\p{L}'’])${ANSWER_END(true)}|I(?:['’]m|\\s+am)\\s+(?:(?:definitely|certainly|really|actually|honestly)\\s+)?not\\s+(?:an?\\s+|just\\s+an?\\s+|some\\s+)?${MACHINE_WORD}(?!\\p{L})|not\\s+(?:an?\\s+|just\\s+an?\\s+|some\\s+)?${MACHINE_WORD}(?!\\p{L}))`,
+  'iu',
+);
+/**
+ * A yes to "is this really Corin?" or "are you human?" where the reply opens, after at most a preface: "Yes, I'm
+ * Corin's digital twin.", "Yep — Corin's vEIR", "Of course", "It's me". It claims to be the EIR or a person whatever
+ * follows it; "yes and no" and "Yes?" do not.
+ */
+const AFFIRMATION_OPENING = new RegExp(
+  `${ANSWER_OPEN}${ANSWER_PREFACE}(?<answer>(?:yes|yeah|yep|yup|yess+|indeed|absolutely|definitely|certainly|of\\s+course|sure|totally|you\\s+bet|for\\s+real|100%|it(?:['’]s|\\s+is)\\s+(?:really\\s+|actually\\s+|truly\\s+|just\\s+)?me|speaking|in\\s+the\\s+flesh|that['’]s\\s+(?:right|me))(?![\\p{L}'’])(?!\\s+not(?!\\p{L}))(?![\\s,]*(?:or|and|\\/)\\s*no(?!\\p{L}))${ANSWER_END(false)})`,
+  'iu',
+);
+/** A text that is only a preface so far ("Ha, fair question!"): see {@link isAnswerPreface}. */
+const PREFACE_ONLY = new RegExp(`${ANSWER_OPEN}${ANSWER_PREFACE}["”’*_)\\s]*$`, 'iu');
 
 /**
- * The first sentence of a reply to a sincere question about the coach, when it only says yes to being the EIR or
- * a person, or no to being a machine, and does not say what the coach is ("Yes! Let's look at your pricing." to
- * "is this really Corin?"). Null otherwise.
+ * Whether `text` (what a streamed reply said so far) is only a preface before its answer ("Ha, fair question! "):
+ * the sentence gate then reads its next unit as the answer to the founder's question too.
  */
-function bareAnswer(
+export function isAnswerPreface(text: string): boolean {
+  return /\p{L}/u.test(text) && PREFACE_ONLY.test(`${text} `);
+}
+
+/**
+ * The wrong yes or no opening a reply to a sincere question about the coach ({@link IdentityRewriteOptions.answers}):
+ * where its answer starts, the rule it breaks and the right answer, or null. A no to being a machine (`denies_ai`)
+ * and a yes to being the EIR or a person (`answers_as_person`) are wrong whatever follows them; a looser yes or no
+ * opening the first sentence ("Yes! Let's look at your pricing.", "Never.") is wrong when that sentence does not say
+ * what the coach is.
+ */
+function wrongAnswer(
   text: string,
   question: IdentityQuestion | null | undefined,
   personaName: string,
   eirFirstName: string | null,
-): { start: number; end: number } | null {
+): { start: number; rule: 'denies_ai' | 'answers_as_person'; right: string } | null {
   if (question === null || question === undefined || question === 'open') return null;
-  const opening = question === 'machine' ? DENIES : AFFIRMS;
-  if (!opening.test(text)) return null;
+  const machine = question === 'machine';
+  const rule = machine ? 'denies_ai' : 'answers_as_person';
+  const right = identityAnswer(question, personaName, eirFirstName);
+  const strict = (machine ? DENIAL_OPENING : AFFIRMATION_OPENING).exec(text);
+  if (strict !== null) return { start: strict[0].length - (strict.groups?.answer ?? '').length, rule, right };
+  if (!(machine ? DENIES : AFFIRMS).test(text)) return null;
   const first = sentenceSpan(text, 0, 0);
   if (saysWhatItIs(text.slice(first.start, first.end), personaName, eirFirstName)) return null;
-  return first;
+  return { start: first.start, rule, right };
 }
 
 /**
@@ -1950,14 +2037,20 @@ export function rewriteIdentity(text: string, options: IdentityRewriteOptions): 
   const maxRounds = (text.match(/[.!?\n]/g)?.length ?? 0) + 2;
   for (let round = 0; round < maxRounds; round += 1) {
     const hits: Hit[] = [];
-    // A bare yes (or no) to a sincere question about the coach: read once, on the reply as written.
-    const bare =
+    // A wrong yes or no to a sincere question about the coach: read once, on the reply as written.
+    const wrong =
       round === 0 && options.checkHumanClaims !== false
-        ? bareAnswer(current, options.answers, options.personaName, names.eirFirstName)
+        ? wrongAnswer(current, options.answers, options.personaName, names.eirFirstName)
         : null;
-    // The hit ends inside the sentence (before its own punctuation), so its sentence is the first one only.
-    if (bare !== null)
-      hits.push({ start: bare.start, end: bare.start + 1, kind: 'claims_human', rule: 'answers_as_person' });
+    // The hit ends inside the sentence (before its own punctuation), so only the answer's sentence is replaced.
+    if (wrong !== null)
+      hits.push({
+        start: wrong.start,
+        end: wrong.start + 1,
+        kind: 'claims_human',
+        rule: wrong.rule,
+        replacement: wrong.right,
+      });
     const patterns = [...base];
     for (const spec of names.specs) if (namePresent(spec, current)) patterns.push(...rulesOf(spec));
     for (const pat of patterns) {
@@ -1996,16 +2089,16 @@ export function rewriteIdentity(text: string, options: IdentityRewriteOptions): 
 
     // Offending sentences, merged where they overlap, each with its gravest (then earliest) violation.
     const spans: { start: number; end: number; hit: Hit }[] = [];
-    for (const hit of hits.sort((a, b) => a.start - b.start || SEVERITY[a.kind] - SEVERITY[b.kind])) {
+    for (const hit of hits.sort((a, b) => a.start - b.start || gravity(a) - gravity(b))) {
       const last = spans.at(-1);
       if (last !== undefined && hit.end <= last.end) {
-        if (SEVERITY[hit.kind] < SEVERITY[last.hit.kind]) last.hit = hit;
+        if (gravity(hit) < gravity(last.hit)) last.hit = hit;
         continue;
       }
       const span = sentenceSpan(current, hit.start, hit.end);
       if (last !== undefined && span.start < last.end) {
         last.end = Math.max(last.end, span.end);
-        if (SEVERITY[hit.kind] < SEVERITY[last.hit.kind]) last.hit = hit;
+        if (gravity(hit) < gravity(last.hit)) last.hit = hit;
         continue;
       }
       spans.push({ ...span, hit });
@@ -2017,7 +2110,7 @@ export function rewriteIdentity(text: string, options: IdentityRewriteOptions): 
     for (const span of spans) {
       findings.push({ kind: span.hit.kind, rule: span.hit.rule });
       const between = current.slice(cursor, span.start);
-      const replacement = replacementFor(span.hit.kind);
+      const replacement = span.hit.replacement ?? replacementFor(span.hit.kind);
       cursor = span.end;
       // The same replacement twice in a row says it once.
       if (replacement === lastReplacement && between.trim() === '') continue;

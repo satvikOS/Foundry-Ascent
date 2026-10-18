@@ -151,17 +151,42 @@ describe('vEIR identity rules', () => {
 
   it('answers a sincere question in one warm, honest line and carries on', () => {
     expect(prompt).toContain(
-      "Asked sincerely whether you're real, human, a bot or really Corin: one warm, honest line, then straight back",
+      "Asked sincerely if you're a bot or an AI: yes, never no; human, real or really Corin: no. Say it in one warm,",
     );
-    expect(prompt).toContain("(that you're Corin's digital twin, built from how Corin coaches)");
+    expect(prompt).toContain("(you're Corin's digital twin, an AI built from how Corin coaches)");
     // The wave 6 lab: the honest line was said to banter and repeated atop the next, unrelated reply.
-    expect(prompt).toContain('once a conversation at most. Banter ("do you have a life?") gets a light,');
-    expect(prompt).toContain('human line, never identity talk.');
+    expect(prompt).toContain('once a conversation at most.');
+    expect(prompt).toContain('Banter ("do you have a life?"): a light,\n  human line, never identity talk.');
     // Corin sees the venture's work only when Corin is its assigned EIR.
     expect(prompt).not.toContain('Corin sees what');
     const assigned = buildSystemPrompt({ ...BASE, release: { ...BASE.release, eirSeesWork: true } });
     expect(assigned).toContain('Corin sees what you and the founder work on here.');
     expect(assigned).toContain('built from how Corin coaches, and Corin sees what we work on)');
+  });
+
+  it('gives the true yes or no to a sincere question: yes to a bot or an AI, no to human or really Corin (LAB-M15)', () => {
+    // SM-03 got "No, I'm Corin's vEIR…" to "am I actually talking to a bot?": a denial of being an AI.
+    for (const channel of ['text', 'voice'] as const) {
+      const p = buildSystemPrompt({ ...BASE, channel });
+      const identity = p.slice(p.indexOf('# Identity'), p.indexOf('# How you talk')).replace(/\n\s*/g, ' ');
+      expect(identity).toContain(
+        "Asked sincerely if you're a bot or an AI: yes, never no; human, real or really Corin: no.",
+      );
+      // The pattern is described, never a sentence to say word for word (LAB-M7).
+      expect(identity).not.toMatch(/"(?:Yes|No)\b[^"]*digital twin/);
+    }
+    const neutral = buildSystemPrompt({
+      ...BASE,
+      release: {
+        ...BASE.release,
+        personaName: 'Foundry Guide',
+        eirName: null,
+        disclosureText: DEFAULT_DISCLOSURE,
+      },
+    }).replace(/\n\s*/g, ' ');
+    expect(neutral).toContain(
+      'with the true yes or no (a bot or an AI: yes; a person: no; never a no to a bot question)',
+    );
   });
 
   it('describes its examples instead of quoting reusable lines (LAB-M7)', () => {
@@ -195,10 +220,16 @@ describe('vEIR identity rules', () => {
     expect(p).toContain('Never claim to be human or Corin in person');
   });
 
-  it('introduces itself only on a first meeting', () => {
-    expect(prompt).toContain(
-      "Introduce yourself only on a first meeting (no notes, no earlier conversation): \"Hi, I'm Corin's vEIR, Corin's\n  digital twin.\" Otherwise just greet.",
+  it('introduces itself only to greet a first meeting, never in front of a reply (LAB-M16)', () => {
+    const identity = prompt
+      .slice(prompt.indexOf('# Identity'), prompt.indexOf('# How you talk'))
+      .replace(/\n\s*/g, ' ');
+    // SM-35: "Hi Maya. I'm Corin's vEIR, Corin's digital twin." opened a reply to a question about another venture.
+    expect(identity).toContain(
+      'Introduce yourself only to greet a first hello (no notes, no earlier conversation), never in front of a reply to anything else.',
     );
+    // No quoted introduction to parrot (LAB-M7).
+    expect(identity).not.toContain('"Hi, I\'m');
   });
 
   it('keeps the spoken identity line short on a call', () => {
@@ -207,7 +238,7 @@ describe('vEIR identity rules', () => {
       channel: 'voice',
       release: { ...BASE.release, eirSeesWork: true },
     });
-    expect(p).toContain("(that you're Corin's digital twin, and Corin sees what we work on)");
+    expect(p).toContain("(you're Corin's digital twin, an AI, and Corin sees what we work on)");
   });
 
   it('spends fewer tokens on identity than the disclosure-reciting rules did', () => {
@@ -243,9 +274,9 @@ describe('vEIR identity rules', () => {
     });
     expect(p).toContain("You are Foundry Guide, the program's AI venture coach in Foundry Ascent.");
     expect(p).toContain('Never claim to be human, an Entrepreneur-in-Residence (EIR), mentor');
-    expect(p).toContain(
-      "one warm, honest line (that you're Foundry Guide, the program's\n  AI coach), then straight back to what you were on",
-    );
+    expect(p).toContain("one warm, honest line (that you're Foundry Guide, the program's\n  AI coach)");
+    expect(p).toContain('then\n  straight back to what you were on');
+    expect(p).toContain('Never put an introduction or what you are in front of a reply to anything else');
     // Never "not a person" (the owner's complaint) and no quotable topic line.
     expect(p).not.toMatch(/not a person|back to your pricing/);
     expect(p).toContain('The founder already knows what you are.');

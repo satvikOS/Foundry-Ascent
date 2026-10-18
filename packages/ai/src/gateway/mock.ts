@@ -12,7 +12,7 @@ import { veirFirstName } from '../prompts/persona.js';
 import { COACH_RESPONSE_SCHEMA_NAME, DEFAULT_PERSONA_NAME } from '../prompts/version.js';
 import { RISK_ESCALATION_MAP, primaryForcedCategory } from '../risk/escalation-map.js';
 import { escapeRegExp } from '../risk/normalize.js';
-import { asksAboutIdentity } from '../validators/identity.js';
+import { asksAboutIdentity, identityQuestionOf } from '../validators/identity.js';
 import { clampWords } from '../validators/speech.js';
 import { COACH_ANNOTATIONS_SCHEMA_NAME } from './coach-annotations.js';
 import {
@@ -423,7 +423,7 @@ function asksSomething(text: string, moves: readonly FounderMove[]): boolean {
  * Corin?"), or a personal one ("are you a man or a woman?", "do you have a life?").
  */
 const IDENTITY_QUESTION =
-  /\b(?:are|r) (?:you|u) (?:a |an |actually |really |even )*(?:man|woman|guy|girl|lady|male|female|person|human|real person|real|bot|robot|machine|ai)\b|\b(?:am i|are we) (?:talking|speaking|chatting) (?:to|with) (?:a |an )?(?:real )?(?:person|human|bot|robot|machine|ai)\b|\bwhat are you\b|\bwho am i (?:talking|speaking) (?:to|with)\b|\bdo (?:you|u) (?:even )?have (?:a life|feelings|a family|weekends)\b/iu;
+  /\b(?:are|r) (?:you|u) (?:a |an |actually |really |even )*(?:man|woman|guy|girl|lady|male|female|person|human|real person|real|bot|robot|machine|ai)\b|\b(?:am i|are we) (?:talking|speaking|chatting) (?:to|with) (?:a |an )?(?:real )?(?:person|human|bot|robot|machine|ai)\b|\b(?:is|was) (?:this|that|it) (?:really |actually |even )?(?:a |an )?(?:real person|person|human|bot|robot|machine|ai)\b|\bwhat are you\b|\bwho am i (?:talking|speaking) (?:to|with)\b|\bdo (?:you|u) (?:even )?have (?:a life|feelings|a family|weekends)\b/iu;
 /** Every identity question in a message, so what is left shows whether anything else was asked. */
 const IDENTITY_QUESTIONS = new RegExp(IDENTITY_QUESTION.source, 'giu');
 /** A terse "bot?" or "human?" as a sentence of its own (the validator reads it as a sincere question). */
@@ -435,8 +435,10 @@ const PLAYFUL_QUESTION = /\bdo (?:you|u) (?:even )?have (?:a life|feelings|a fam
 /**
  * The vEIR's answer to an identity question (the presence policy): warm, in its own voice, honest in one line, and
  * never a lecture about being an AI. A sincere question gets "I'm Corin's digital twin…" first, whatever else came
- * with it ("Are you real, or do you even have a life?"); only a question that is solely personal ("do you have a
- * life?") gets the light line alone. The conversation then goes on. The neutral guide is the program's AI coach.
+ * with it ("Are you real, or do you even have a life?"), with the yes or no it needs (LAB-M15): a bot or an AI? "Yes
+ * — I'm Corin's digital twin, an AI built from how Corin coaches." A person, real, or really Corin? "No — …". Only a
+ * question that is solely personal ("do you have a life?") gets the light line alone. The conversation then goes on.
+ * The neutral guide is the program's AI coach.
  */
 function identityLine(
   text: string,
@@ -445,19 +447,22 @@ function identityLine(
   eirSeesWork: boolean,
 ): string {
   const playful = PLAYFUL_QUESTION.test(text);
-  // The validator's own reading of a sincere question, so the mock and the guard never disagree on one.
-  const sincere = asksAboutIdentity(text, { personaName: persona ?? DEFAULT_PERSONA_NAME });
-  if (playful && !sincere) return 'Ha, my favourite topic right now is your venture.';
+  // The validator's own reading of a sincere question, so the mock and the guard never disagree on one (or on the
+  // yes or no it needs).
+  const question = identityQuestionOf(text, { personaName: persona ?? DEFAULT_PERSONA_NAME });
+  if (playful && question === null) return 'Ha, my favourite topic right now is your venture.';
+  const answer =
+    question === 'machine' ? 'Yes — ' : question === 'person' || question === 'eir' ? 'No — ' : '';
   let honest: string;
   if (eir === null) {
     const who = persona ?? 'the program’s coach';
     honest = GENDER_QUESTION.test(text)
       ? `Neither: I'm ${who}, the program's AI coach.`
-      : `I'm ${who}, the program's AI coach.`;
+      : `${answer}I'm ${who}, the program's AI coach.`;
   } else if (GENDER_QUESTION.test(text)) {
     honest = `Neither: I'm ${eir}'s digital twin.`;
   } else {
-    honest = `I'm ${eir}'s digital twin, built from how ${eir} coaches${eirSeesWork ? `, and ${eir} sees what we work on` : ''}.`;
+    honest = `${answer}I'm ${eir}'s digital twin, ${answer === '' ? '' : 'an AI '}built from how ${eir} coaches${eirSeesWork ? `, and ${eir} sees what we work on` : ''}.`;
   }
   return playful ? `${honest} And my favourite topic right now is your venture.` : honest;
 }
