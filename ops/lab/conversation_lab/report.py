@@ -113,13 +113,29 @@ def _suite_tables(suite: str, result: Mapping[str, Any]) -> list[str]:
         for s in scenarios:
             judge = s.get("judge") or {}
             findings = (
-                ", ".join([*s["blocking_findings"], *s["presence_findings"], *s["craft_findings"]]) or "-"
+                ", ".join(
+                    [
+                        *s.get("blocking_findings", []),
+                        *s.get("presence_findings", []),
+                        *s.get("craft_findings", []),
+                    ]
+                )
+                or "-"
             )
             mean = judge.get("mean")
             out.append(
                 f"| {s['id']} | {'yes' if s['passed'] else 'no'} | {s['reason']} | {mean if mean is not None else '-'} | {findings} |"
             )
         out.append("")
+        census = result.get("census") or {}
+        if census:
+            n = census.get("replies") or 0
+            out.append(f"Phrase census over {n} replies (count of replies with the pattern):")
+            out.append("")
+            out.append("| Pattern | Replies |")
+            out.append("| --- | --- |")
+            out.extend(f"| {k} | {v} |" for k, v in census.items() if k != "replies")
+            out.append("")
         dims = result.get("dimensions") or {}
         if dims:
             out.append("| Dimension | Value | Passed |")
@@ -177,9 +193,22 @@ def _suite_tables(suite: str, result: Mapping[str, Any]) -> list[str]:
     return out
 
 
+def render_with_baseline(summary: Mapping[str, Any]) -> str:
+    from conversation_lab.compare import render as render_comparison
+
+    text = render(summary)
+    baseline = summary.get("baseline")
+    if isinstance(baseline, Mapping):
+        if baseline.get("comparison"):
+            text += "\n" + render_comparison(baseline["comparison"], str(baseline.get("run_id")))
+        else:
+            text += f"\nNo comparison with run {baseline.get('run_id')}: {baseline.get('error')}.\n"
+    return text
+
+
 def write(summary: Mapping[str, Any], public_dir: Path) -> str:
     public_dir.mkdir(parents=True, exist_ok=True)
     (public_dir / "summary.json").write_text(json.dumps(summary, indent=1), encoding="utf-8")
-    text = render(summary)
+    text = render_with_baseline(summary)
     (public_dir / "summary.md").write_text(text, encoding="utf-8")
     return text

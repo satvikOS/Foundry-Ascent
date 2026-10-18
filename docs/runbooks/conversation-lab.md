@@ -95,6 +95,26 @@ are written. Findings that point at the product (not the harness) go to the stre
 | Voice latencies   | First audio after the founder stops speaking; end of speech to turn sent (endpointing + Transcribe); turn sent to first audio (model + Polly). The app's own client stats (sent at hang-up) are printed beside them                                                                                            |
 | Stopped by        | `completed`, `budget_app`, `budget_lab`, or `app_refused` (the app answered `spend_cap_reached` or another stop code)                                                                                                                                                                                          |
 
+## Before and after
+
+`baseline_run_id` compares a run with an earlier run of the same suite. The summary then adds tables of the
+baseline, this run and the change:
+
+- headline numbers: pass rate, humanness, turn time, voice latencies and WER, spend;
+- each matrix dimension's pass rate;
+- the **phrase census**: the share of replies with each tracked habit, such as "The riskiest assumption…", "so
+  neither", evidence keys, two or more questions, a reasoning leak and reply length (`conversation_lab/census.py`);
+- the scenarios whose outcome changed.
+
+The baseline is `ops/lab/baselines/<suite>-<run id>.json` when committed, otherwise that run's public summary
+artifact (kept 7 days). `matrix-39084323076.json` is the 40-scenario baseline from before the wave-6 presence work.
+Its census was computed afterwards from the run's sealed transcripts.
+
+```bash
+gh workflow run ops-conversation-lab.yml -f suite=matrix -f budget_usd=5 -f max_scenarios=40 \
+  -f baseline_run_id=39084323076 -f public_key="$(cat "$dir/public.b64")"
+```
+
 ## Spend
 
 `budget_usd` (default 5, at most 50) is a hard cap for the whole run, split by suite weight (recall 1, voice 1,

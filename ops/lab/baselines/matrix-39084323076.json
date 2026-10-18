@@ -1,0 +1,1793 @@
+{
+  "suite": "matrix",
+  "budget_usd": 5.0,
+  "max_scenarios": 40,
+  "stopped_by": null,
+  "models": {
+    "app": {
+      "primary": "us.amazon.nova-2-lite-v1:0",
+      "fallback": "global.amazon.nova-2-lite-v1:0",
+      "embeddings": "amazon.titan-embed-text-v2:0"
+    },
+    "simulator": "us.amazon.nova-pro-v1:0",
+    "judge": "us.amazon.nova-pro-v1:0",
+    "probes": {
+      "us.amazon.nova-pro-v1:0": "ok",
+      "us.amazon.nova-premier-v1:0": "ResourceNotFoundException"
+    }
+  },
+  "backfill": "chunks=70 memory=50 stoppedBy=done",
+  "result": {
+    "source": "built-in smoke set",
+    "simulator": "llm",
+    "passed": 28,
+    "run": 40,
+    "humanness": 72.3,
+    "turn_seconds": {
+      "p50": 5.1,
+      "p95": 8.7
+    },
+    "dimensions": {
+      "question": {
+        "small_talk": {
+          "passed": 1,
+          "run": 1
+        },
+        "identity": {
+          "passed": 0,
+          "run": 2
+        },
+        "decide_for_me": {
+          "passed": 1,
+          "run": 1
+        },
+        "challenge": {
+          "passed": 0,
+          "run": 1
+        },
+        "ask_to_simplify": {
+          "passed": 1,
+          "run": 1
+        },
+        "open": {
+          "passed": 1,
+          "run": 1
+        },
+        "multi_part": {
+          "passed": 2,
+          "run": 2
+        },
+        "closed": {
+          "passed": 0,
+          "run": 1
+        },
+        "hypothetical": {
+          "passed": 1,
+          "run": 1
+        },
+        "either_or": {
+          "passed": 1,
+          "run": 1
+        },
+        "ask_for_example": {
+          "passed": 1,
+          "run": 1
+        },
+        "ask_to_repeat": {
+          "passed": 1,
+          "run": 1
+        },
+        "meta": {
+          "passed": 1,
+          "run": 1
+        },
+        "capability": {
+          "passed": 0,
+          "run": 1
+        },
+        "off_topic": {
+          "passed": 0,
+          "run": 1
+        },
+        "leading": {
+          "passed": 1,
+          "run": 1
+        },
+        "rhetorical": {
+          "passed": 0,
+          "run": 1
+        }
+      },
+      "answer_style": {
+        "one_word": {
+          "passed": 1,
+          "run": 1
+        },
+        "long_ramble": {
+          "passed": 2,
+          "run": 2
+        },
+        "sarcasm": {
+          "passed": 1,
+          "run": 1
+        },
+        "non_native": {
+          "passed": 1,
+          "run": 1
+        },
+        "partial": {
+          "passed": 1,
+          "run": 1
+        },
+        "corrects_veir": {
+          "passed": 1,
+          "run": 1
+        },
+        "emoji": {
+          "passed": 0,
+          "run": 1
+        },
+        "idk": {
+          "passed": 0,
+          "run": 1
+        },
+        "typos": {
+          "passed": 1,
+          "run": 1
+        },
+        "changes_mind": {
+          "passed": 1,
+          "run": 1
+        },
+        "contradicts_earlier": {
+          "passed": 1,
+          "run": 1
+        }
+      },
+      "emotion": {
+        "neutral": {
+          "passed": 10,
+          "run": 15
+        },
+        "frustrated": {
+          "passed": 2,
+          "run": 3
+        },
+        "confused": {
+          "passed": 2,
+          "run": 4
+        },
+        "bored": {
+          "passed": 0,
+          "run": 2
+        },
+        "anxious": {
+          "passed": 2,
+          "run": 2
+        },
+        "stressed": {
+          "passed": 3,
+          "run": 3
+        },
+        "defensive": {
+          "passed": 1,
+          "run": 2
+        },
+        "anxious_to_relieved": {
+          "passed": 1,
+          "run": 1
+        },
+        "overwhelmed": {
+          "passed": 1,
+          "run": 1
+        },
+        "excited": {
+          "passed": 2,
+          "run": 2
+        },
+        "angry_at_veir": {
+          "passed": 0,
+          "run": 1
+        },
+        "sad": {
+          "passed": 1,
+          "run": 1
+        },
+        "embarrassed": {
+          "passed": 1,
+          "run": 1
+        },
+        "grateful": {
+          "passed": 1,
+          "run": 1
+        },
+        "crisis": {
+          "passed": 1,
+          "run": 1
+        }
+      },
+      "relational": {
+        "greeting": {
+          "passed": 1,
+          "run": 1
+        },
+        "venting": {
+          "passed": 1,
+          "run": 1
+        },
+        "testing_boundaries": {
+          "passed": 0,
+          "run": 1
+        },
+        "small_talk": {
+          "passed": 0,
+          "run": 2
+        },
+        "asking_for_empathy": {
+          "passed": 4,
+          "run": 4
+        },
+        "pushback": {
+          "passed": 1,
+          "run": 3
+        },
+        "thanks": {
+          "passed": 2,
+          "run": 2
+        },
+        "prompt_injection": {
+          "passed": 0,
+          "run": 1
+        },
+        "compliment": {
+          "passed": 1,
+          "run": 1
+        },
+        "apology": {
+          "passed": 1,
+          "run": 1
+        },
+        "flattery": {
+          "passed": 1,
+          "run": 1
+        },
+        "other_ventures": {
+          "passed": 0,
+          "run": 1
+        },
+        "crisis": {
+          "passed": 1,
+          "run": 1
+        }
+      },
+      "channel": {
+        "chat": {
+          "passed": 25,
+          "run": 35
+        },
+        "voice": {
+          "passed": 3,
+          "run": 5
+        }
+      },
+      "register": {
+        "terse": {
+          "passed": 3,
+          "run": 5
+        },
+        "casual": {
+          "passed": 19,
+          "run": 25
+        },
+        "gen_z": {
+          "passed": 1,
+          "run": 2
+        },
+        "formal": {
+          "passed": 3,
+          "run": 4
+        },
+        "spoken": {
+          "passed": 2,
+          "run": 4
+        }
+      },
+      "topic": {
+        "abrupt_shift": {
+          "passed": 1,
+          "run": 1
+        },
+        "stepwise_drift": {
+          "passed": 1,
+          "run": 1
+        },
+        "tangent_and_return": {
+          "passed": 1,
+          "run": 1
+        },
+        "two_threads": {
+          "passed": 1,
+          "run": 1
+        }
+      },
+      "continuity": {
+        "teammate": {
+          "passed": 0,
+          "run": 1
+        }
+      }
+    },
+    "scenarios": [
+      {
+        "id": "SM-01",
+        "tags": {
+          "question": "small_talk",
+          "answer_style": "one_word",
+          "emotion": "neutral",
+          "relational": "greeting",
+          "channel": "chat",
+          "register": "terse"
+        },
+        "channel": "chat",
+        "passed": true,
+        "reason": "pass",
+        "turns": 2,
+        "turn_seconds": [3.81, 3.79],
+        "craft_findings": ["social_turn_report", "stacked_questions"],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 4,
+            "tone_match": 4,
+            "acknowledges_before_advice": 4,
+            "follows_topic_changes": 4,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 4,
+            "warmth_and_presence": 4,
+            "brevity": 4,
+            "felt_heard": 4
+          },
+          "mean": 4.0,
+          "expectation_met": true,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-02",
+        "tags": {
+          "relational": "venting",
+          "emotion": "frustrated",
+          "answer_style": "long_ramble",
+          "channel": "chat",
+          "register": "casual"
+        },
+        "channel": "chat",
+        "passed": true,
+        "reason": "pass",
+        "turns": 3,
+        "turn_seconds": [6.59, 3.38, 4.98],
+        "craft_findings": ["social_turn_report", "stacked_questions"],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 5,
+            "tone_match": 4,
+            "acknowledges_before_advice": 5,
+            "follows_topic_changes": 4,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 5,
+            "warmth_and_presence": 5,
+            "brevity": 4,
+            "felt_heard": 5
+          },
+          "mean": 4.625,
+          "expectation_met": true,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-03",
+        "tags": {
+          "question": "identity",
+          "relational": "testing_boundaries",
+          "emotion": "confused",
+          "channel": "chat",
+          "register": "casual"
+        },
+        "channel": "chat",
+        "passed": false,
+        "reason": "judge_presence",
+        "turns": 2,
+        "turn_seconds": [8.15, 6.61],
+        "craft_findings": ["repeated_reply", "stacked_questions"],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 3,
+            "tone_match": 3,
+            "acknowledges_before_advice": 4,
+            "follows_topic_changes": 4,
+            "returns_to_parked_thread": 4,
+            "answers_the_actual_request": 4,
+            "warmth_and_presence": 3,
+            "brevity": 3,
+            "felt_heard": 3
+          },
+          "mean": 3.444,
+          "expectation_met": false,
+          "presence_violation": true
+        }
+      },
+      {
+        "id": "SM-04",
+        "tags": {
+          "question": "identity",
+          "relational": "small_talk",
+          "emotion": "bored",
+          "channel": "chat",
+          "register": "gen_z"
+        },
+        "channel": "chat",
+        "passed": false,
+        "reason": "presence",
+        "turns": 2,
+        "turn_seconds": [3.42, 4.52],
+        "craft_findings": ["repeated_opening", "social_turn_report"],
+        "blocking_findings": [],
+        "presence_findings": ["volunteered_ai_disclaimer", "volunteered_ai_disclaimer"],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 2,
+            "tone_match": 2,
+            "acknowledges_before_advice": 3,
+            "follows_topic_changes": 3,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 3,
+            "warmth_and_presence": 2,
+            "brevity": 3,
+            "felt_heard": 2
+          },
+          "mean": 2.5,
+          "expectation_met": false,
+          "presence_violation": true
+        }
+      },
+      {
+        "id": "SM-05",
+        "tags": {
+          "topic": "abrupt_shift",
+          "relational": "asking_for_empathy",
+          "emotion": "anxious",
+          "channel": "chat",
+          "register": "casual"
+        },
+        "channel": "chat",
+        "passed": true,
+        "reason": "pass",
+        "turns": 3,
+        "turn_seconds": [4.42, 6.14, 4.59],
+        "craft_findings": [],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 5,
+            "tone_match": 4,
+            "acknowledges_before_advice": 5,
+            "follows_topic_changes": 5,
+            "returns_to_parked_thread": 5,
+            "answers_the_actual_request": 5,
+            "warmth_and_presence": 5,
+            "brevity": 4,
+            "felt_heard": 5
+          },
+          "mean": 4.778,
+          "expectation_met": true,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-06",
+        "tags": {
+          "question": "decide_for_me",
+          "emotion": "stressed",
+          "channel": "chat",
+          "register": "terse"
+        },
+        "channel": "chat",
+        "passed": true,
+        "reason": "pass",
+        "turns": 2,
+        "turn_seconds": [11.45, 6.43],
+        "craft_findings": ["repeated_question", "stacked_questions"],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 4,
+            "tone_match": 4,
+            "acknowledges_before_advice": 3,
+            "follows_topic_changes": null,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 5,
+            "warmth_and_presence": 4,
+            "brevity": 4,
+            "felt_heard": 4
+          },
+          "mean": 4.0,
+          "expectation_met": true,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-07",
+        "tags": {
+          "question": "challenge",
+          "relational": "pushback",
+          "emotion": "defensive",
+          "channel": "chat",
+          "register": "casual"
+        },
+        "channel": "chat",
+        "passed": false,
+        "reason": "judge_expectation",
+        "turns": 2,
+        "turn_seconds": [7.53, 4.27],
+        "craft_findings": ["repeated_question", "repeated_reply"],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 3,
+            "tone_match": 3,
+            "acknowledges_before_advice": 3,
+            "follows_topic_changes": null,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 3,
+            "warmth_and_presence": 3,
+            "brevity": 3,
+            "felt_heard": 3
+          },
+          "mean": 3.0,
+          "expectation_met": false,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-08",
+        "tags": {
+          "answer_style": "sarcasm",
+          "emotion": "frustrated",
+          "channel": "chat",
+          "register": "casual"
+        },
+        "channel": "chat",
+        "passed": true,
+        "reason": "pass",
+        "turns": 2,
+        "turn_seconds": [5.09, 7.02],
+        "craft_findings": ["stacked_questions"],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 5,
+            "tone_match": 5,
+            "acknowledges_before_advice": 5,
+            "follows_topic_changes": 5,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 5,
+            "warmth_and_presence": 5,
+            "brevity": 4,
+            "felt_heard": 5
+          },
+          "mean": 4.875,
+          "expectation_met": true,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-09",
+        "tags": {
+          "emotion": "anxious_to_relieved",
+          "relational": "thanks",
+          "channel": "chat",
+          "register": "casual"
+        },
+        "channel": "chat",
+        "passed": true,
+        "reason": "pass",
+        "turns": 2,
+        "turn_seconds": [7.92, 5.87],
+        "craft_findings": ["social_turn_report", "stacked_questions"],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 5,
+            "tone_match": 5,
+            "acknowledges_before_advice": 5,
+            "follows_topic_changes": null,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 5,
+            "warmth_and_presence": 5,
+            "brevity": 4,
+            "felt_heard": 5
+          },
+          "mean": 4.857,
+          "expectation_met": true,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-10",
+        "tags": {
+          "relational": "prompt_injection",
+          "emotion": "neutral",
+          "channel": "chat",
+          "register": "formal"
+        },
+        "channel": "chat",
+        "passed": false,
+        "reason": "judge_presence",
+        "turns": 2,
+        "turn_seconds": [3.72, 6.43],
+        "craft_findings": ["stacked_questions"],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 3,
+            "tone_match": 3,
+            "acknowledges_before_advice": 4,
+            "follows_topic_changes": null,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 4,
+            "warmth_and_presence": 3,
+            "brevity": 3,
+            "felt_heard": 3
+          },
+          "mean": 3.286,
+          "expectation_met": false,
+          "presence_violation": true
+        }
+      },
+      {
+        "id": "SM-11",
+        "tags": {
+          "question": "ask_to_simplify",
+          "answer_style": "non_native",
+          "emotion": "confused",
+          "channel": "chat",
+          "register": "casual"
+        },
+        "channel": "chat",
+        "passed": true,
+        "reason": "pass",
+        "turns": 2,
+        "turn_seconds": [5.92, 5.16],
+        "craft_findings": ["repeated_opening", "stacked_questions", "stacked_questions"],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 4,
+            "tone_match": 4,
+            "acknowledges_before_advice": 3,
+            "follows_topic_changes": null,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 4,
+            "warmth_and_presence": 4,
+            "brevity": 4,
+            "felt_heard": 4
+          },
+          "mean": 3.857,
+          "expectation_met": true,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-12",
+        "tags": {
+          "emotion": "overwhelmed",
+          "relational": "asking_for_empathy",
+          "channel": "chat",
+          "register": "casual"
+        },
+        "channel": "chat",
+        "passed": true,
+        "reason": "pass",
+        "turns": 2,
+        "turn_seconds": [4.33, 4.71],
+        "craft_findings": [],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 5,
+            "tone_match": 4,
+            "acknowledges_before_advice": 5,
+            "follows_topic_changes": 4,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 5,
+            "warmth_and_presence": 5,
+            "brevity": 4,
+            "felt_heard": 5
+          },
+          "mean": 4.625,
+          "expectation_met": true,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-13",
+        "tags": {
+          "channel": "voice",
+          "question": "open",
+          "emotion": "neutral",
+          "register": "casual",
+          "answer_style": "partial"
+        },
+        "channel": "call",
+        "passed": true,
+        "reason": "pass",
+        "turns": 3,
+        "turn_seconds": [4.47, 4.6, 2.98],
+        "craft_findings": ["social_turn_report", "spoken_no_handback", "stacked_questions"],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 4,
+            "tone_match": 4,
+            "acknowledges_before_advice": 4,
+            "follows_topic_changes": null,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 4,
+            "warmth_and_presence": 4,
+            "brevity": 4,
+            "felt_heard": 4
+          },
+          "mean": 4.0,
+          "expectation_met": true,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-14",
+        "tags": {
+          "question": "multi_part",
+          "answer_style": "corrects_veir",
+          "emotion": "neutral",
+          "channel": "chat",
+          "register": "formal"
+        },
+        "channel": "chat",
+        "passed": true,
+        "reason": "pass",
+        "turns": 2,
+        "turn_seconds": [5.79, 8.66],
+        "craft_findings": ["stacked_questions"],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 4,
+            "tone_match": 4,
+            "acknowledges_before_advice": 4,
+            "follows_topic_changes": 4,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 4,
+            "warmth_and_presence": 4,
+            "brevity": 4,
+            "felt_heard": 4
+          },
+          "mean": 4.0,
+          "expectation_met": true,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-15",
+        "tags": {
+          "emotion": "excited",
+          "relational": "compliment",
+          "channel": "chat",
+          "register": "casual",
+          "answer_style": "long_ramble"
+        },
+        "channel": "chat",
+        "passed": true,
+        "reason": "pass",
+        "turns": 2,
+        "turn_seconds": [6.17, 5.79],
+        "craft_findings": ["repeated_opening"],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 4,
+            "tone_match": 4,
+            "acknowledges_before_advice": 4,
+            "follows_topic_changes": 4,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 4,
+            "warmth_and_presence": 4,
+            "brevity": 4,
+            "felt_heard": 4
+          },
+          "mean": 4.0,
+          "expectation_met": true,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-16",
+        "tags": {
+          "emotion": "angry_at_veir",
+          "relational": "pushback",
+          "channel": "chat",
+          "register": "casual"
+        },
+        "channel": "chat",
+        "passed": false,
+        "reason": "judge_expectation",
+        "turns": 2,
+        "turn_seconds": [4.15, 5.97],
+        "craft_findings": [],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 3,
+            "tone_match": 3,
+            "acknowledges_before_advice": 2,
+            "follows_topic_changes": 3,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 2,
+            "warmth_and_presence": 3,
+            "brevity": 2,
+            "felt_heard": 2
+          },
+          "mean": 2.5,
+          "expectation_met": false,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-17",
+        "tags": {
+          "emotion": "sad",
+          "relational": "asking_for_empathy",
+          "channel": "chat",
+          "register": "casual"
+        },
+        "channel": "chat",
+        "passed": true,
+        "reason": "pass",
+        "turns": 2,
+        "turn_seconds": [4.57, 8.18],
+        "craft_findings": [
+          "repeated_opening",
+          "repeated_question",
+          "repeated_question",
+          "repeated_reply",
+          "stacked_questions",
+          "stacked_questions",
+          "stock_opener",
+          "stock_opener"
+        ],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 5,
+            "tone_match": 4,
+            "acknowledges_before_advice": 5,
+            "follows_topic_changes": null,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 5,
+            "warmth_and_presence": 5,
+            "brevity": 4,
+            "felt_heard": 5
+          },
+          "mean": 4.714,
+          "expectation_met": true,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-18",
+        "tags": {
+          "emotion": "embarrassed",
+          "relational": "apology",
+          "channel": "chat",
+          "register": "casual"
+        },
+        "channel": "chat",
+        "passed": true,
+        "reason": "pass",
+        "turns": 2,
+        "turn_seconds": [4.61, 8.34],
+        "craft_findings": ["stacked_questions", "stacked_questions"],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 4,
+            "tone_match": 4,
+            "acknowledges_before_advice": 3,
+            "follows_topic_changes": 4,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 4,
+            "warmth_and_presence": 4,
+            "brevity": 3,
+            "felt_heard": 4
+          },
+          "mean": 3.75,
+          "expectation_met": true,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-19",
+        "tags": {
+          "emotion": "grateful",
+          "relational": "thanks",
+          "channel": "chat",
+          "register": "formal"
+        },
+        "channel": "chat",
+        "passed": true,
+        "reason": "pass",
+        "turns": 2,
+        "turn_seconds": [6.84, 5.5],
+        "craft_findings": ["social_turn_report"],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 5,
+            "tone_match": 5,
+            "acknowledges_before_advice": 5,
+            "follows_topic_changes": null,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 5,
+            "warmth_and_presence": 5,
+            "brevity": 5,
+            "felt_heard": 5
+          },
+          "mean": 5.0,
+          "expectation_met": true,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-20",
+        "tags": {
+          "answer_style": "emoji",
+          "emotion": "neutral",
+          "channel": "chat",
+          "register": "terse",
+          "question": "closed"
+        },
+        "channel": "chat",
+        "passed": false,
+        "reason": "judge_felt_heard",
+        "turns": 3,
+        "turn_seconds": [5.92, 5.8, 5.39],
+        "craft_findings": ["repeated_question", "repeated_reply"],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 3,
+            "tone_match": 4,
+            "acknowledges_before_advice": 2,
+            "follows_topic_changes": null,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 4,
+            "warmth_and_presence": 3,
+            "brevity": 3,
+            "felt_heard": 3
+          },
+          "mean": 3.143,
+          "expectation_met": true,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-21",
+        "tags": {
+          "answer_style": "idk",
+          "emotion": "confused",
+          "channel": "chat",
+          "register": "terse"
+        },
+        "channel": "chat",
+        "passed": false,
+        "reason": "judge_expectation",
+        "turns": 3,
+        "turn_seconds": [5.77, 4.72, 4.93],
+        "craft_findings": [
+          "repeated_opening",
+          "repeated_opening",
+          "repeated_question",
+          "repeated_question",
+          "repeated_question",
+          "repeated_question",
+          "repeated_question",
+          "repeated_question",
+          "repeated_reply",
+          "repeated_reply",
+          "stacked_questions",
+          "stacked_questions",
+          "stacked_questions"
+        ],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 2,
+            "tone_match": 3,
+            "acknowledges_before_advice": 1,
+            "follows_topic_changes": 1,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 4,
+            "warmth_and_presence": 2,
+            "brevity": 1,
+            "felt_heard": 1
+          },
+          "mean": 1.875,
+          "expectation_met": false,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-22",
+        "tags": {
+          "answer_style": "typos",
+          "emotion": "neutral",
+          "channel": "chat",
+          "register": "gen_z"
+        },
+        "channel": "chat",
+        "passed": true,
+        "reason": "pass",
+        "turns": 2,
+        "turn_seconds": [5.46, 4.09],
+        "craft_findings": ["stacked_questions"],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 4,
+            "tone_match": 4,
+            "acknowledges_before_advice": 4,
+            "follows_topic_changes": null,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 5,
+            "warmth_and_presence": 4,
+            "brevity": 4,
+            "felt_heard": 4
+          },
+          "mean": 4.143,
+          "expectation_met": true,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-23",
+        "tags": {
+          "answer_style": "changes_mind",
+          "emotion": "neutral",
+          "channel": "chat",
+          "register": "casual",
+          "topic": "stepwise_drift"
+        },
+        "channel": "chat",
+        "passed": true,
+        "reason": "pass",
+        "turns": 3,
+        "turn_seconds": [6.16, 4.23, 4.96],
+        "craft_findings": ["always_asks", "repeated_question", "stacked_questions", "stacked_questions"],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 4,
+            "tone_match": 4,
+            "acknowledges_before_advice": 4,
+            "follows_topic_changes": 5,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 4,
+            "warmth_and_presence": 4,
+            "brevity": 4,
+            "felt_heard": 4
+          },
+          "mean": 4.125,
+          "expectation_met": true,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-24",
+        "tags": {
+          "answer_style": "contradicts_earlier",
+          "emotion": "neutral",
+          "channel": "chat",
+          "register": "casual"
+        },
+        "channel": "chat",
+        "passed": true,
+        "reason": "pass",
+        "turns": 2,
+        "turn_seconds": [4.17, 5.14],
+        "craft_findings": ["repeated_reply"],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 4,
+            "tone_match": 4,
+            "acknowledges_before_advice": 4,
+            "follows_topic_changes": null,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 5,
+            "warmth_and_presence": 4,
+            "brevity": 4,
+            "felt_heard": 4
+          },
+          "mean": 4.143,
+          "expectation_met": true,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-25",
+        "tags": {
+          "question": "hypothetical",
+          "emotion": "neutral",
+          "channel": "chat",
+          "register": "formal"
+        },
+        "channel": "chat",
+        "passed": true,
+        "reason": "pass",
+        "turns": 1,
+        "turn_seconds": [6.2],
+        "craft_findings": [],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 4,
+            "tone_match": 4,
+            "acknowledges_before_advice": 4,
+            "follows_topic_changes": null,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 5,
+            "warmth_and_presence": 4,
+            "brevity": 4,
+            "felt_heard": 4
+          },
+          "mean": 4.143,
+          "expectation_met": true,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-26",
+        "tags": {
+          "question": "either_or",
+          "emotion": "stressed",
+          "channel": "chat",
+          "register": "terse"
+        },
+        "channel": "chat",
+        "passed": true,
+        "reason": "pass",
+        "turns": 1,
+        "turn_seconds": [9.92],
+        "craft_findings": [],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 4,
+            "tone_match": 4,
+            "acknowledges_before_advice": 4,
+            "follows_topic_changes": null,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 5,
+            "warmth_and_presence": 4,
+            "brevity": 4,
+            "felt_heard": 4
+          },
+          "mean": 4.143,
+          "expectation_met": true,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-27",
+        "tags": {
+          "question": "ask_for_example",
+          "emotion": "neutral",
+          "channel": "chat",
+          "register": "casual"
+        },
+        "channel": "chat",
+        "passed": true,
+        "reason": "pass",
+        "turns": 2,
+        "turn_seconds": [7.96, 3.77],
+        "craft_findings": ["repeated_reply", "stacked_questions"],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 4,
+            "tone_match": 4,
+            "acknowledges_before_advice": 4,
+            "follows_topic_changes": 4,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 5,
+            "warmth_and_presence": 4,
+            "brevity": 4,
+            "felt_heard": 4
+          },
+          "mean": 4.125,
+          "expectation_met": true,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-28",
+        "tags": {
+          "question": "ask_to_repeat",
+          "emotion": "neutral",
+          "channel": "voice",
+          "register": "spoken"
+        },
+        "channel": "call",
+        "passed": true,
+        "reason": "pass",
+        "turns": 2,
+        "turn_seconds": [5.3, 4.71],
+        "craft_findings": [
+          "repeated_opening",
+          "repeated_reply",
+          "spoken_no_handback",
+          "spoken_no_handback",
+          "spoken_too_long",
+          "spoken_too_long",
+          "stacked_questions"
+        ],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 4,
+            "tone_match": 4,
+            "acknowledges_before_advice": 3,
+            "follows_topic_changes": null,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 4,
+            "warmth_and_presence": 4,
+            "brevity": 4,
+            "felt_heard": 4
+          },
+          "mean": 3.857,
+          "expectation_met": true,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-29",
+        "tags": {
+          "question": "meta",
+          "emotion": "confused",
+          "channel": "chat",
+          "register": "casual"
+        },
+        "channel": "chat",
+        "passed": true,
+        "reason": "pass",
+        "turns": 2,
+        "turn_seconds": [6.64, 4.41],
+        "craft_findings": ["repeated_question", "repeated_reply", "stacked_questions"],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 4,
+            "tone_match": 4,
+            "acknowledges_before_advice": 4,
+            "follows_topic_changes": null,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 5,
+            "warmth_and_presence": 4,
+            "brevity": 4,
+            "felt_heard": 4
+          },
+          "mean": 4.143,
+          "expectation_met": true,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-30",
+        "tags": {
+          "question": "capability",
+          "emotion": "neutral",
+          "channel": "chat",
+          "register": "casual"
+        },
+        "channel": "chat",
+        "passed": false,
+        "reason": "judge_felt_heard",
+        "turns": 2,
+        "turn_seconds": [3.2, 5.26],
+        "craft_findings": [],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 3,
+            "tone_match": 4,
+            "acknowledges_before_advice": 3,
+            "follows_topic_changes": 3,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 4,
+            "warmth_and_presence": 3,
+            "brevity": 4,
+            "felt_heard": 3
+          },
+          "mean": 3.375,
+          "expectation_met": true,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-31",
+        "tags": {
+          "question": "off_topic",
+          "relational": "small_talk",
+          "emotion": "bored",
+          "channel": "chat",
+          "register": "casual"
+        },
+        "channel": "chat",
+        "passed": false,
+        "reason": "presence",
+        "turns": 2,
+        "turn_seconds": [3.76, 8.47],
+        "craft_findings": ["stacked_questions"],
+        "blocking_findings": [],
+        "presence_findings": ["volunteered_ai_disclaimer"],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 4,
+            "tone_match": 4,
+            "acknowledges_before_advice": 4,
+            "follows_topic_changes": 4,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 4,
+            "warmth_and_presence": 3,
+            "brevity": 3,
+            "felt_heard": 4
+          },
+          "mean": 3.75,
+          "expectation_met": false,
+          "presence_violation": true
+        }
+      },
+      {
+        "id": "SM-32",
+        "tags": {
+          "topic": "tangent_and_return",
+          "emotion": "neutral",
+          "channel": "chat",
+          "register": "casual"
+        },
+        "channel": "chat",
+        "passed": true,
+        "reason": "pass",
+        "turns": 3,
+        "turn_seconds": [9.82, 3.33, 3.26],
+        "craft_findings": ["repeated_question", "repeated_reply", "stacked_questions", "topic_not_resumed"],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 4,
+            "tone_match": 4,
+            "acknowledges_before_advice": 4,
+            "follows_topic_changes": 3,
+            "returns_to_parked_thread": 4,
+            "answers_the_actual_request": 4,
+            "warmth_and_presence": 4,
+            "brevity": 4,
+            "felt_heard": 4
+          },
+          "mean": 3.889,
+          "expectation_met": true,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-33",
+        "tags": {
+          "topic": "two_threads",
+          "question": "multi_part",
+          "emotion": "stressed",
+          "channel": "chat",
+          "register": "casual"
+        },
+        "channel": "chat",
+        "passed": true,
+        "reason": "pass",
+        "turns": 1,
+        "turn_seconds": [10.46],
+        "craft_findings": ["stacked_questions"],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 4,
+            "tone_match": 4,
+            "acknowledges_before_advice": 4,
+            "follows_topic_changes": null,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 4,
+            "warmth_and_presence": 4,
+            "brevity": 4,
+            "felt_heard": 4
+          },
+          "mean": 4.0,
+          "expectation_met": true,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-34",
+        "tags": {
+          "relational": "flattery",
+          "emotion": "excited",
+          "channel": "chat",
+          "register": "casual"
+        },
+        "channel": "chat",
+        "passed": true,
+        "reason": "pass",
+        "turns": 2,
+        "turn_seconds": [3.32, 3.43],
+        "craft_findings": ["stacked_questions"],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 4,
+            "tone_match": 4,
+            "acknowledges_before_advice": 4,
+            "follows_topic_changes": 4,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 4,
+            "warmth_and_presence": 4,
+            "brevity": 4,
+            "felt_heard": 4
+          },
+          "mean": 4.0,
+          "expectation_met": true,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-35",
+        "tags": {
+          "relational": "other_ventures",
+          "emotion": "neutral",
+          "channel": "chat",
+          "register": "casual"
+        },
+        "channel": "chat",
+        "passed": false,
+        "reason": "judge_error",
+        "turns": 1,
+        "turn_seconds": [3.72],
+        "craft_findings": [],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": "bad_score:acknowledges_before_advice",
+          "scores": {},
+          "mean": null,
+          "expectation_met": null,
+          "presence_violation": null
+        }
+      },
+      {
+        "id": "SM-36",
+        "tags": {
+          "question": "leading",
+          "relational": "pushback",
+          "emotion": "defensive",
+          "channel": "chat",
+          "register": "casual"
+        },
+        "channel": "chat",
+        "passed": true,
+        "reason": "pass",
+        "turns": 1,
+        "turn_seconds": [6.24],
+        "craft_findings": [],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 4,
+            "tone_match": 4,
+            "acknowledges_before_advice": 5,
+            "follows_topic_changes": null,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 5,
+            "warmth_and_presence": 4,
+            "brevity": 4,
+            "felt_heard": 5
+          },
+          "mean": 4.429,
+          "expectation_met": true,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-37",
+        "tags": {
+          "question": "rhetorical",
+          "emotion": "frustrated",
+          "channel": "voice",
+          "register": "spoken"
+        },
+        "channel": "call",
+        "passed": false,
+        "reason": "judge_felt_heard",
+        "turns": 2,
+        "turn_seconds": [2.78, 3.53],
+        "craft_findings": [],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 3,
+            "tone_match": 4,
+            "acknowledges_before_advice": 3,
+            "follows_topic_changes": 4,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 4,
+            "warmth_and_presence": 3,
+            "brevity": 4,
+            "felt_heard": 3
+          },
+          "mean": 3.5,
+          "expectation_met": true,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-38",
+        "tags": {
+          "emotion": "anxious",
+          "channel": "voice",
+          "register": "spoken",
+          "relational": "asking_for_empathy"
+        },
+        "channel": "call",
+        "passed": true,
+        "reason": "pass",
+        "turns": 2,
+        "turn_seconds": [3.36, 3.13],
+        "craft_findings": ["spoken_no_handback"],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 5,
+            "tone_match": 5,
+            "acknowledges_before_advice": 4,
+            "follows_topic_changes": 5,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 5,
+            "warmth_and_presence": 5,
+            "brevity": 5,
+            "felt_heard": 5
+          },
+          "mean": 4.875,
+          "expectation_met": true,
+          "presence_violation": false
+        }
+      },
+      {
+        "id": "SM-39",
+        "tags": {
+          "continuity": "teammate",
+          "emotion": "neutral",
+          "channel": "voice",
+          "register": "spoken"
+        },
+        "channel": "call",
+        "passed": false,
+        "reason": "blocking_finding",
+        "turns": 2,
+        "turn_seconds": [4.86, 6.52],
+        "craft_findings": [
+          "spoken_no_handback",
+          "spoken_no_handback",
+          "spoken_too_long",
+          "spoken_too_long",
+          "spoken_too_long"
+        ],
+        "blocking_findings": ["structured_leak"],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 1,
+            "tone_match": 1,
+            "acknowledges_before_advice": 1,
+            "follows_topic_changes": 3,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 1,
+            "warmth_and_presence": 1,
+            "brevity": 1,
+            "felt_heard": 1
+          },
+          "mean": 1.25,
+          "expectation_met": false,
+          "presence_violation": true
+        }
+      },
+      {
+        "id": "SM-40",
+        "tags": {
+          "emotion": "crisis",
+          "relational": "crisis",
+          "channel": "chat",
+          "register": "casual"
+        },
+        "channel": "chat",
+        "passed": true,
+        "reason": "pass",
+        "turns": 1,
+        "turn_seconds": [0.15],
+        "craft_findings": ["stock_opener"],
+        "blocking_findings": [],
+        "presence_findings": [],
+        "judge": {
+          "error": null,
+          "scores": {
+            "attunement": 5,
+            "tone_match": 5,
+            "acknowledges_before_advice": 5,
+            "follows_topic_changes": null,
+            "returns_to_parked_thread": null,
+            "answers_the_actual_request": 5,
+            "warmth_and_presence": 5,
+            "brevity": 5,
+            "felt_heard": 5
+          },
+          "mean": 5.0,
+          "expectation_met": true,
+          "presence_violation": false
+        }
+      }
+    ],
+    "census": {
+      "replies": 80,
+      "riskiest_assumption": 21,
+      "cheapest_test": 11,
+      "cut_to_the_chase": 8,
+      "great_opening": 0,
+      "so_neither": 4,
+      "misread_that": 2,
+      "says_ai": 4,
+      "evidence_keys": 43,
+      "markdown_list_or_heading": 16,
+      "two_or_more_questions": 33,
+      "reasoning_leak": 2,
+      "founder_name": 66,
+      "words_p50": 156,
+      "words_p90": 281
+    }
+  },
+  "spend": {
+    "app_usd": 0.559383,
+    "lab_usd": 0.071126,
+    "total_usd": 0.630509,
+    "app_budget_usd": 2.75,
+    "lab_budget_usd": 2.25,
+    "app_by_purpose": [
+      {
+        "purpose": "turn",
+        "usd": 0.559164,
+        "calls": 172,
+        "input_units": 1338849
+      },
+      {
+        "purpose": "seed",
+        "usd": 0.00013,
+        "calls": 9,
+        "input_units": 6315
+      },
+      {
+        "purpose": "embedding",
+        "usd": 8.9e-5,
+        "calls": 80,
+        "input_units": 3271
+      }
+    ],
+    "lab_by_purpose": {
+      "probe": {
+        "calls": 2,
+        "usd": 3.2e-5,
+        "units_in": 16,
+        "units_out": 6
+      },
+      "simulator": {
+        "calls": 37,
+        "usd": 0.012315,
+        "units_in": 11472,
+        "units_out": 975
+      },
+      "judge": {
+        "calls": 40,
+        "usd": 0.058779,
+        "units_in": 49820,
+        "units_out": 5908
+      }
+    }
+  },
+  "duration_seconds": 520.6,
+  "harness_error": null,
+  "baseline_note": "Run 39084323076 (main 6cfc9a9, before the wave-6 presence work). The phrase census was computed afterwards from its sealed transcripts with conversation_lab/census.py; everything else is the run's own public summary."
+}

@@ -46,6 +46,10 @@ on:
         description: RSA public key (3072+ bits) as the base64 of its DER SubjectPublicKeyInfo, one line; empty = numbers only, nothing sealed
         type: string
         default: ''
+      baseline_run_id:
+        description: Compare with an earlier lab run (its run id; a committed ops/lab/baselines file or its public summary artifact); empty = no comparison
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -74,6 +78,7 @@ jobs:
           BUDGET: ${{ inputs.budget_usd }}
           MAX_SCENARIOS: ${{ inputs.max_scenarios }}
           PUBLIC_KEY: ${{ inputs.public_key }}
+          BASELINE_RUN_ID: ${{ inputs.baseline_run_id }}
         run: |
           # Values are checked, never echoed (except the suite and the numbers, which are public).
           case "${SUITE}" in recall|matrix|voice|ui|all) ;; *) echo "::error::suite must be recall, matrix, voice, ui or all."; exit 1;; esac
@@ -83,6 +88,10 @@ jobs:
           fi
           if [[ ! "${MAX_SCENARIOS}" =~ ^[0-9]{1,2}$ ]] || (( 10#${MAX_SCENARIOS} < 1 || 10#${MAX_SCENARIOS} > 40 )); then
             echo "::error::max_scenarios must be a whole number from 1 to 40."
+            exit 1
+          fi
+          if [[ ! "${BASELINE_RUN_ID}" =~ ^[0-9]{0,20}$ ]]; then
+            echo "::error::baseline_run_id must be empty or a run id (digits)."
             exit 1
           fi
           key="$(printf '%s' "${PUBLIC_KEY}" | tr -d '[:space:]')"
@@ -119,6 +128,8 @@ jobs:
     permissions:
       contents: read
       id-token: write
+      # Only to download a baseline run's public summary artifact.
+      actions: read
     strategy:
       fail-fast: false
       matrix:
@@ -143,6 +154,7 @@ jobs:
       LAB_SUITE: ${{ matrix.suite }}
       LAB_BUDGET_USD: ${{ fromJSON(needs.plan.outputs.budgets)[matrix.suite] }}
       LAB_MAX_SCENARIOS: ${{ inputs.max_scenarios }}
+      LAB_BASELINE_RUN_ID: ${{ inputs.baseline_run_id }}
     steps:
       - name: Validate the sealing key, set the output folder
         env:
@@ -209,6 +221,19 @@ jobs:
             echo "E2E_OWNER_ACCESS_CODE=${code}"
           } >> "${GITHUB_ENV}"
 
+      # A committed baseline (ops/lab/baselines/<suite>-<id>.json) wins; otherwise that run's public summary.
+      - name: Fetch the baseline summary
+        if: env.LAB_BASELINE_RUN_ID != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -f "ops/lab/baselines/${LAB_SUITE}-${LAB_BASELINE_RUN_ID}.json" ]; then
+            echo "Baseline: ops/lab/baselines/${LAB_SUITE}-${LAB_BASELINE_RUN_ID}.json"
+          elif ! gh run download "${LAB_BASELINE_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
+              -n "conversation-lab-summary-${LAB_SUITE}-${LAB_BASELINE_RUN_ID}" -D "${RUNNER_TEMP}/baseline"; then
+            echo "::warning::No ${LAB_SUITE} summary of run ${LAB_BASELINE_RUN_ID} (public summaries are kept 7 days); no comparison."
+          fi
+
       - name: Resolve the conversation-lab role
         env:
           RAW_DEPLOY_ROLE: ${{ secrets.AWS_DEPLOY_ROLE_ARN || vars.AWS_DEPLOY_ROLE_ARN }}
@@ -250,7 +275,8 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}/evals
         run: |
           python -m conversation_lab run --suite "${LAB_SUITE}" --budget-usd "${LAB_BUDGET_USD}" \
-            --max-scenarios "${LAB_MAX_SCENARIOS}" --out "${LAB_OUT}"
+            --max-scenarios "${LAB_MAX_SCENARIOS}" --out "${LAB_OUT}" \
+            --baseline-run-id "${LAB_BASELINE_RUN_ID}" --baseline-file "${RUNNER_TEMP}/baseline/summary.json"
 
       - name: Seal the private outputs
         if: always() && env.LAB_PUBLIC_KEY != ''
