@@ -110,7 +110,8 @@ export interface SentenceGateOptions {
   replyBudget?: { readonly sentences: number; readonly words: number } | null;
   /**
    * The vEIR's previous reply in this conversation: a unit that mostly says it again is never released (unless the
-   * founder asked to hear it again). A reply that was nothing but repeats becomes a short line instead.
+   * founder asked to hear it again, or sincerely asks who or what the coach is: the honest answer is never dropped).
+   * A reply that was nothing but repeats becomes a short line instead.
    */
   previousReply?: string | null;
   /**
@@ -384,8 +385,13 @@ export class SentenceGate {
     this.#question =
       options.founderText === undefined ? null : identityQuestionOf(options.founderText, this.#identity);
     const previous = options.previousReply ?? null;
+    // No repeat check for a sincere question about the coach: its honest answer is said however recently it was
+    // said (the intro of a first meeting, or the last reply when they ask again; the presence policy).
     this.#previousGrams =
-      previous === null || previous.trim() === '' || asksToRepeat(options.founderText ?? '')
+      previous === null ||
+      previous.trim() === '' ||
+      asksToRepeat(options.founderText ?? '') ||
+      this.#question !== null
         ? null
         : fourGramsOf(previous);
   }

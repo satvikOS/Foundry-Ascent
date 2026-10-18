@@ -324,6 +324,29 @@ describe('SentenceGate', () => {
         joined(run(gate({ previousReply: previous, founderText: 'Can you repeat that?' }), [previous]).units),
       ).toBe(previous);
     });
+
+    it('never drops the honest answer to a sincere bot question as a repeat of the intro or the last reply', () => {
+      // A first meeting: the intro said what the vEIR is, then the founder asks sincerely.
+      const intro =
+        "Hi Maya, I'm Corin's vEIR, Corin's digital twin. Last time you planned five library-staff interviews. How did they go?";
+      const reply = "Yes, I'm Corin's vEIR, Corin's digital twin. So, about those interviews?";
+      for (const options of [{}, { spoken: true, spokenWordBudget: 70, maxUnitChars: 280 }]) {
+        for (const chunks of chunkings(reply)) {
+          const units = run(
+            gate({ ...options, previousReply: intro, founderText: 'Wait, am I talking to a bot?' }),
+            chunks,
+          ).units;
+          expect(joined(units)).toContain("Corin's digital twin");
+        }
+      }
+      // Asked again in the next turn: the honest line said a moment ago is said again.
+      const before =
+        "I'm Corin's digital twin, built from how Corin coaches, and Corin sees what we work on. What's on your mind?";
+      const again = run(gate({ previousReply: before, founderText: 'Sorry, but are you a real person?' }), [
+        "I'm Corin's digital twin, built from how Corin coaches, and Corin sees what we work on. Back to the pilot?",
+      ]).units;
+      expect(joined(again)).toContain("I'm Corin's digital twin, built from how Corin coaches");
+    });
   });
 
   describe('the first reply after an intro that said hello (wave 7)', () => {

@@ -1257,6 +1257,41 @@ describe('validateCoachResponse — conversation craft the lab still heard (wave
     expect(recalled.response.answer).toBe(recall);
   });
 
+  it('never drops the honest answer to a sincere bot question as a repeat (the presence policy)', () => {
+    const intro =
+      "Hi Maya, I'm Corin's vEIR, Corin's digital twin. Last time you planned five library-staff interviews. How did they go?";
+    const reply = "Yes, I'm Corin's vEIR, Corin's digital twin. So, about those interviews?";
+    for (const channel of ['text', 'voice'] as const) {
+      const checked = validateCoachResponse(
+        base({ answer: reply, spoken: channel === 'voice' ? reply : null }),
+        {
+          ...opts({ personaName: "Corin's vEIR", eirNames: ['Corin Halvorsen'] }),
+          channel,
+          founderText: 'Wait, am I talking to a bot?',
+          previousReply: intro,
+        },
+      );
+      expect(checked.response.answer).toContain("Corin's digital twin");
+      if (channel === 'voice') expect(checked.response.spoken).toContain("Corin's digital twin");
+      expect(checked.results.notes.some((n) => n.startsWith('repeated_sentences_removed'))).toBe(false);
+    }
+    // Asked again in the next turn.
+    const before =
+      "I'm Corin's digital twin, built from how Corin coaches, and Corin sees what we work on. What's on your mind?";
+    const again = validateCoachResponse(
+      base({
+        answer:
+          "I'm Corin's digital twin, built from how Corin coaches, and Corin sees what we work on. Back to the pilot?",
+      }),
+      {
+        ...opts({ personaName: "Corin's vEIR", eirNames: ['Corin Halvorsen'] }),
+        founderText: 'Sorry, but are you a real person?',
+        previousReply: before,
+      },
+    );
+    expect(again.response.answer).toContain("I'm Corin's digital twin, built from how Corin coaches");
+  });
+
   it('a call’s reply that ends on a statement hands the turn back, within 70 words', () => {
     const statement = 'Set the pilot up by Friday and agree what result moves it to a paid contract.';
     const checked = validateCoachResponse(base({ answer: statement, spoken: statement }), {

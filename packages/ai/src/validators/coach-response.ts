@@ -442,10 +442,21 @@ export function validateCoachResponse(
     return out.text.trim() === '' ? REPEATED_GREETING_FALLBACK : out.text;
   };
   r.answer = regreeting(r.answer);
-  // A social turn gets a short reply; a reply never says the previous one again (unless asked to).
+  const identityOptions = {
+    personaName,
+    ...(options.eirNames ? { eirNames: options.eirNames } : {}),
+    ...(options.personaEirName !== undefined ? { personaEirName: options.personaEirName } : {}),
+    ...(options.addressees ? { addressees: options.addressees } : {}),
+  };
+  const question =
+    options.founderText === undefined ? null : identityQuestionOf(options.founderText, identityOptions);
+  const identityAsked = question !== null;
+  // A social turn gets a short reply; a reply never says the previous one again (unless asked to, or the founder
+  // sincerely asks who or what the coach is: its honest answer is never dropped, however recently it was said).
   const previous =
     options.previousReply === undefined ||
     options.previousReply === null ||
+    identityAsked ||
     (options.founderText !== undefined && asksToRepeat(options.founderText))
       ? null
       : options.previousReply;
@@ -501,15 +512,6 @@ export function validateCoachResponse(
   // Identity runs on text already cut to its limit (plus a sentence of margin, so a sentence that crosses
   // the limit is judged whole): an over-long output cannot make the check expensive.
   const identityFindings: IdentityFinding[] = [];
-  const identityOptions = {
-    personaName,
-    ...(options.eirNames ? { eirNames: options.eirNames } : {}),
-    ...(options.personaEirName !== undefined ? { personaEirName: options.personaEirName } : {}),
-    ...(options.addressees ? { addressees: options.addressees } : {}),
-  };
-  const question =
-    options.founderText === undefined ? null : identityQuestionOf(options.founderText, identityOptions);
-  const identityAsked = question !== null;
   /**
    * The answer and what a call says are the reply (`reply`: its honest answer is kept, and a reply that was only a
    * disclaimer leaves a line back to the founder); every other field is `field`, where a lone disclaimer leaves ''
