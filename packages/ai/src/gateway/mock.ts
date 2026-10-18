@@ -737,9 +737,15 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
   // Mirror the founder: a short follow-up gets a short reply.
   const compact = !reading.firstMessage && wordsIn(context.founderText) <= 8;
   const doctrine = doctrineSummaryIn(context.system);
-  const approach =
+  // A doctrine that already opens with "Ruth's approach:" is said once ("Ruth's approach comes down to this: Ruth's
+  // approach: …" was the matrix's recording).
+  const doctrineText =
     eir !== null && doctrine !== null
-      ? `${eir}'s approach comes down to this: ${lowerFirst(doctrine, names)}`
+      ? doctrine.replace(new RegExp(`^${escapeRegExp(eir)}['’]s approach:\\s*`, 'iu'), '')
+      : null;
+  const approach =
+    eir !== null && doctrineText !== null && doctrineText !== ''
+      ? `${eir}'s approach comes down to this: ${lowerFirst(doctrineText, names)}`
       : null;
   if (
     !compact &&

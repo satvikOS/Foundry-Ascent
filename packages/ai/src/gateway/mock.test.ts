@@ -334,6 +334,26 @@ describe('mock conversation realism', () => {
     expect(checked.response.answer).toBe(value.answer);
   });
 
+  it('says a doctrine that already names the approach only once', async () => {
+    // The matrix recording: "Ruth's approach comes down to this: Ruth's approach: research and hardware…".
+    const named: PromptRelease = {
+      ...veirRelease,
+      doctrine: { ...veirRelease.doctrine, summary: "Corin's approach: customer evidence before building." },
+    };
+    const system = buildSystemPrompt({
+      release: named,
+      mode: 'coach',
+      policy: { riskCategories: [], groundingThreshold: 0.6 },
+      ventureContext: { name: 'Acme', stage: 'discovery', domain: 'software', currentGoal: null },
+      today: '2026-10-16',
+      continuity,
+    });
+    const base = veirTurn({ text: 'How should we price the library pilot?' });
+    const { value } = await new MockModelGateway().generateStructured({ ...base, system });
+    expect(value.answer).toContain("Corin's approach comes down to this: customer evidence before building.");
+    expect(value.answer).not.toMatch(/approach comes down to this: Corin's approach/i);
+  });
+
   it('never presents the notebook’s older lines as "last time" (production recited a seeded notebook)', async () => {
     const gw = new MockModelGateway();
     const first = await gw.generateStructured(veirTurn({ text: 'Where should we focus this week?' }));
