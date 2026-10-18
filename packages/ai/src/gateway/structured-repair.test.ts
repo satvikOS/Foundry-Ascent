@@ -240,7 +240,14 @@ const LAB_CASES: readonly Case[] = [
     name: 'a memory type that is no member at all: the candidate is dropped, not the response',
     schema: CoachAnnotations,
     expected: ANNOTATIONS,
-    input: withCandidate({ type: 'vibe' }),
+    input: withCandidate({ type: 'vibe', source: 'coach_advice' }),
+    repair: 'dropped_item:memory_candidates[0]',
+  },
+  {
+    name: 'a memory type that is no member, from nobody said: dropped',
+    schema: CoachAnnotations,
+    expected: ANNOTATIONS,
+    input: withCandidate({ type: 'vibe', source: null }),
     repair: 'dropped_item:memory_candidates[0]',
   },
   {
@@ -250,7 +257,7 @@ const LAB_CASES: readonly Case[] = [
     input: (() => {
       const v = clone(DRAFT);
       const kept = (v.memory_candidates as Record<string, unknown>[])[0];
-      v.memory_candidates = [{ ...kept, type: 'misc', title: 'Other' }, kept];
+      v.memory_candidates = [{ ...kept, type: 'misc', title: 'Other', source: 'coach_advice' }, kept];
       return v;
     })(),
     repair: 'dropped_item:memory_candidates[0]',
@@ -262,8 +269,90 @@ const LAB_CASES: readonly Case[] = [
       ...ANNOTATIONS,
       memory_candidates: [{ ...CANDIDATE, source: undefined }],
     },
-    input: withCandidate({ source: 'founder said' }),
+    input: withCandidate({ source: 'unclear' }),
     repair: 'enum_null:memory_candidates[0].source',
+  },
+  {
+    name: 'a candidate’s source in other words: the founder said it',
+    schema: CoachAnnotations,
+    expected: WITH_CANDIDATE('decision'),
+    input: withCandidate({ source: 'founder said' }),
+    repair: 'enum_near:memory_candidates[0].source',
+  },
+  ...['coach', 'vEIR suggestion', 'assistant advice', 'Coach recommendation'].map((source): Case => ({
+    name: `a candidate’s source "${source}" is the coach’s advice, never "not said" (memory-dedupe keeps it out)`,
+    schema: CoachAnnotations,
+    expected: { ...ANNOTATIONS, memory_candidates: [{ ...CANDIDATE, source: 'coach_advice' }] },
+    input: withCandidate({ source }),
+    repair: 'enum_near:memory_candidates[0].source',
+  })),
+  {
+    name: 'what the founder said, under a type that is no member: kept as a fact (LAB-K1)',
+    schema: CoachAnnotations,
+    expected: {
+      ...ANNOTATIONS,
+      memory_candidates: [
+        {
+          ...CANDIDATE,
+          type: 'fact',
+          title: '$900 per semester',
+          content: 'Hartwell pays $900 per semester per library.',
+        },
+      ],
+    },
+    input: withCandidate({
+      type: 'pricing',
+      title: '$900 per semester',
+      content: 'Hartwell pays $900 per semester per library.',
+    }),
+    repair: 'enum_fallback:memory_candidates[0].type',
+  },
+  {
+    name: 'what the founder decided, under a type that is no member: kept as a decision (LAB-K1)',
+    schema: CoachAnnotations,
+    expected: {
+      ...ANNOTATIONS,
+      memory_candidates: [
+        { ...CANDIDATE, type: 'decision', title: 'Pilot price', content: "We'll go with $900 per library." },
+      ],
+    },
+    input: withCandidate({
+      type: 'Pricing decision made',
+      title: 'Pilot price',
+      content: "We'll go with $900 per library.",
+    }),
+    repair: 'enum_fallback:memory_candidates[0].type',
+  },
+  {
+    name: 'what the founder agreed to, in a distillation, under a type that is no member: kept',
+    schema: DistillDraft,
+    expected: {
+      ...DRAFT,
+      memory_candidates: [
+        {
+          ...DRAFT.memory_candidates[0],
+          type: 'fact',
+          title: 'Hartwell letter of intent',
+          content: 'Hartwell signed a letter of intent.',
+          source: 'founder_agreed',
+        },
+      ],
+    },
+    input: (() => {
+      const v = clone(DRAFT);
+      const kept = (v.memory_candidates as Record<string, unknown>[])[0];
+      v.memory_candidates = [
+        {
+          ...kept,
+          type: 'letter_of_intent',
+          title: 'Hartwell letter of intent',
+          content: 'Hartwell signed a letter of intent.',
+          source: 'founder_agreed',
+        },
+      ];
+      return v;
+    })(),
+    repair: 'enum_fallback:memory_candidates[0].type',
   },
   {
     name: 'one evidence id as a string',

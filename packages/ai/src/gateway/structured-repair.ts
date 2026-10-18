@@ -28,6 +28,11 @@ import { stripReasoning } from './reasoning-filter.js';
  *
  * - `enum_near`: an enum value that is a plural, a misspelling or a common synonym of exactly one member
  *   (`"goal"` → `milestone`, `"constraint"` → `fact`, `"decisions"` → `decision`; {@link ENUM_SYNONYMS});
+ * - `enum_fallback`: a memory candidate the founder stated or agreed to whose type is still none of the members is
+ *   kept as a `decision` (it says something was decided) or a `fact`, never dropped (LAB-K1, wave 7 review: "pricing",
+ *   "timeline", "letter_of_intent" lost the founder's own decision); a candidate's source said in other words maps
+ *   to its member (`"coach"`, `"vEIR suggestion"` → `coach_advice`; `"founder said"` → `founder_stated`), so the
+ *   coach's advice is never read as unlabelled;
  * - `dropped_item`: an item of a list of candidates (`memory_candidates`, `lesson_candidates`: suggestions the server
  *   filters anyway) whose enum value is still none of the members is dropped, never the whole response; there an
  *   unknown value of an enum that may be null (a candidate's `source`) becomes null (`enum_null`, "not said");
@@ -212,6 +217,26 @@ export function nearestEnumMember(value: string, members: readonly string[]): st
   );
 }
 
+/**
+ * Where a memory candidate came from, said in other words (`MemoryCandidateSource`): "agreed" is the founder taking a
+ * proposal up, "coach", "advice", "vEIR" or "suggestion" the coach's own advice, "founder said" the founder's words.
+ * Null for anything else, and where the enum is not a candidate's source.
+ */
+function sourceNear(value: string, members: readonly string[]): string | null {
+  if (!members.includes('coach_advice') || !members.includes('founder_stated')) return null;
+  const key = value.toLowerCase();
+  if (members.includes('founder_agreed') && /agree|accept|took (?:it )?up|adopt|confirm/.test(key))
+    return 'founder_agreed';
+  if (/coach|advi[cs]|assistant|veir|\bai\b|model|suggest|recommend|\bbot\b|mentor/.test(key))
+    return 'coach_advice';
+  if (/founder|user|stated|said|told|mention|own words|themsel/.test(key)) return 'founder_stated';
+  return null;
+}
+
+/** Words of a candidate that say something was decided: kept as a decision rather than a fact. */
+const DECIDED =
+  /\b(?:decid\w*|decision|chose|chosen|agreed|settled|committed|will|we'll|i'll|going to|plan(?:s|ned)? to)\b/i;
+
 /** Lists of candidates the server filters anyway: an item no repair can make valid is dropped, not the response. */
 const DROPPABLE_LISTS: ReadonlySet<string> = new Set(['memory_candidates', 'lesson_candidates']);
 
@@ -371,7 +396,7 @@ class Repairer {
           this.note('enum_case', path);
           return matches[0];
         }
-        const near = nearestEnumMember(value, members);
+        const near = nearestEnumMember(value, members) ?? sourceNear(value, members);
         if (near !== null) {
           this.note('enum_near', path);
           return near;
@@ -411,10 +436,41 @@ class Repairer {
     return value;
   }
 
+  /**
+   * The type a memory candidate the founder stated or agreed to is kept under when its own type maps to no member
+   * (LAB-K1: "pricing", "timeline", "letter_of_intent" dropped the founder's $900 decision): `decision` when it says
+   * something was decided, else `fact`. Null for any other object, a type that maps, or a candidate from the coach.
+   */
+  memoryTypeFallback(value: JsonObject, properties: JsonObject, path: string): string | null {
+    if (!/(?:^|\.)memory_candidates\[\d+\]$/.test(path) || typeof value.type !== 'string') return null;
+    const typeNode = resolve(properties.type, this.root);
+    const sourceNode = resolve(properties.source, this.root);
+    const members = typeNode === null ? null : enumOf(typeNode, this.root);
+    if (members === null || sourceNode === null) return null;
+    const type = value.type;
+    if (members.some((m) => enumKey(m) === enumKey(type)) || nearestEnumMember(type, members) !== null)
+      return null;
+    const sources = enumOf(sourceNode, this.root) ?? [];
+    const raw = typeof value.source === 'string' ? value.source : '';
+    const source = sources.includes(raw)
+      ? raw
+      : (nearestEnumMember(raw, sources) ?? sourceNear(raw, sources));
+    if (source !== 'founder_stated' && source !== 'founder_agreed') return null;
+    const words = [type, value.title, value.content].filter((v) => typeof v === 'string').join(' ');
+    if (DECIDED.test(words.replace(/_/g, ' ')) && members.includes('decision')) return 'decision';
+    return members.includes('fact') ? 'fact' : null;
+  }
+
   object(value: JsonObject, schema: JsonObject, path: string, droppable = false): JsonObject | typeof DROP {
     const properties = isObject(schema.properties) ? schema.properties : {};
     const out: JsonObject = {};
+    const typeFallback = this.memoryTypeFallback(value, properties, path);
     for (const [key, child] of Object.entries(value)) {
+      if (key === 'type' && typeFallback !== null) {
+        this.note('enum_fallback', `${path}.type`);
+        out[key] = typeFallback;
+        continue;
+      }
       const childSchema = resolve(properties[key], this.root);
       const repaired = this.value(child, childSchema, path === '' ? key : `${path}.${key}`, droppable);
       if (repaired === DROP) return DROP;
