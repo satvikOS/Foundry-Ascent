@@ -67,7 +67,7 @@ describe('toStrictJsonSchema', () => {
     const modelOutput = { a: 'x', b: null, level: null, c: { d: null, e: [{ f: null }, { f: true }] } };
     expect(restoreOptionalNulls(modelOutput, strict)).toEqual({ a: 'x', c: { e: [{}, { f: true }] } });
     const outcome = validateStructured(modelOutput, Schema, strict);
-    expect(outcome).toEqual({ ok: true, value: { a: 'x', c: { e: [{}, { f: true }] } } });
+    expect(outcome).toEqual({ ok: true, value: { a: 'x', c: { e: [{}, { f: true }] } }, repairs: [] });
   });
 
   it('keeps nulls for nullable (required) properties', () => {
@@ -122,7 +122,7 @@ describe('toStrictJsonSchema', () => {
     };
     // The model must send it; null means "nothing to say aloud" and parses as absent.
     const silent = validateStructured({ ...response, spoken: null }, CoachResponse, strict);
-    expect(silent).toEqual({ ok: true, value: response });
+    expect(silent).toEqual({ ok: true, value: response, repairs: [] });
     const spoken = validateStructured({ ...response, spoken: 'Run the pilot.' }, CoachResponse, strict);
     expect(spoken.ok && spoken.value.spoken).toBe('Run the pilot.');
     // A response stored before calls existed still parses.

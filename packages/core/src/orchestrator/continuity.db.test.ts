@@ -166,6 +166,8 @@ const candidate = (title: string, content: string, source?: MemoryCandidate['sou
 });
 
 let scripted: ReturnType<typeof createCore>;
+/** The scripted core's model (what it was asked, in order). */
+let scriptedModel: MeaningGateway;
 
 beforeAll(async () => {
   // Many messages from one founder in a few minutes: the per-person message limit is not what is tested here.
@@ -196,6 +198,7 @@ beforeAll(async () => {
       },
     },
   });
+  scriptedModel = gateway;
   scripted = createCore({
     db: h.t.db,
     gateway,
@@ -227,16 +230,20 @@ describe('a second call minutes after the first', () => {
     expect(preview.lastConversation).toMatchObject({ sessionId: first.id, channel: 'call', title: question });
     const second = await h.core.sessions.create(maya, quietquad(), {});
     expect(second.opener).toBe(preview.opener);
-    expect(second.opener).toContain(question);
+    // What it was about, summarised (never the question quoted back: LAB-R3).
+    expect(second.opener).toContain(
+      'we talked about whether to price per library or per seat for the pilot.',
+    );
     expect(second.opener).toMatch(/about 3 minutes ago, on a call/i);
     // Starting it distils the first at once too (it is well inside the 8-minute active window).
     await h.core.distill.afterCreate(maya, second);
     expect(distillJobs()).toEqual([[first.id, true, 0]]);
 
     const call2 = await startCall(maya, second.id);
-    // Maya has met her vEIR: it greets her (no self-introduction, no "an AI coach"), then picks up the first call.
+    // Maya has met her vEIR: it greets her (no self-introduction, no "an AI coach"), then picks up the first call,
+    // summarised (never the question quoted back: LAB-R3).
     expect(call2.intro?.text).toMatch(/^Hi Maya\. /);
-    expect(call2.intro?.text).toContain(question);
+    expect(call2.intro?.text).toContain('whether to price per library or per seat for the pilot');
 
     const turn = await talk(
       maya,
@@ -488,6 +495,34 @@ async function liveTitled(title: string): Promise<memoryRepo.MemoryRecord[]> {
 }
 
 describe('memory kept automatically', () => {
+  it('keeps a decision the founder states in a chat with that turn, though the model proposed nothing (LAB-K1)', async () => {
+    const session = await scripted.sessions.create(maya, quietquad(), {});
+    const generated = scriptedModel.calls.length;
+    const turn = await say(
+      maya,
+      session.id,
+      "We've decided to ask each library for a paid commitment before the pilot starts.",
+    );
+    expect(turn.status).toBe('completed');
+    const kept = await learnedFrom(turn.id);
+    expect(kept).toEqual([
+      expect.objectContaining({
+        type: 'decision',
+        content: 'The team decided to ask each library for a paid commitment before the pilot starts.',
+        status: 'confirmed',
+        keptAutomatically: true,
+        origin: 'ai',
+      }),
+    ]);
+    // No model call for it, and no distillation: the turn's own stream and annotations only.
+    const calls = scriptedModel.calls.slice(generated).map((c) => c.schemaName ?? c.kind);
+    expect(calls.filter((c) => c !== 'embed' && c !== 'stream')).toEqual([COACH_ANNOTATIONS_SCHEMA_NAME]);
+    // A private chat keeps nothing.
+    const temporary = await scripted.sessions.create(maya, quietquad(), { privacy: 'ephemeral' });
+    const unkept = await say(maya, temporary.id, "We've decided to ask each library for a deposit first.");
+    expect(await learnedFrom(unkept.id)).toEqual([]);
+  });
+
   it('is visible to the team at once, editable and forgettable, and goes with its conversation', async () => {
     proposals.Two = [
       candidate('Pilot agreement', 'Two libraries agreed to a pilot in November.'),
@@ -776,7 +811,7 @@ describe('how a new conversation opens', () => {
     const meanwhile = await h.core.sessions.create(maya, quietquad(), {});
     await talk(maya, meanwhile.id, 'We booked the auditorium for demo day.');
     const call = await startCall(maya, empty.id);
-    expect(call.intro?.text).toContain('“We booked the auditorium for demo day”');
+    expect(call.intro?.text).toContain('we talked about booking the auditorium for demo day.');
     // The conversation keeps that line as its first message: the vEIR's history says what the call said.
     const opener = (await h.core.sessions.get(maya, empty.id)).session.opener ?? '';
     expect(call.intro?.text.endsWith(opener)).toBe(true);
@@ -806,7 +841,7 @@ describe('how a new conversation opens', () => {
     });
     const next = await h.core.sessions.create(maya, quietquad(), {});
     expect(next.opener).not.toBe(question);
-    expect(next.opener).toContain('“Should we charge libraries per seat?”');
+    expect(next.opener).toContain('we talked about whether to charge libraries per seat.');
   });
 
   it('carries over a conversation the venture had with its previous coach, as the founder’s, never as its own', async () => {
@@ -825,7 +860,7 @@ describe('how a new conversation opens', () => {
     );
     const now = await h.core.sessions.create(maya, quietquad(), {});
     expect(now.opener).toMatch(/^Good to have you here\. Your last conversation here \(a moment ago\)/);
-    expect(now.opener).toContain('“Our goal is ten paying libraries by June”');
+    expect(now.opener).toContain('was about your goal of ten paying libraries by June.');
     await talk(maya, now.id, 'Do you remember my goal?');
     const prompt = seen.at(-1)?.messages.at(-1)?.content ?? '';
     expect(prompt).toContain('coach="another coach of this venture"');
@@ -878,7 +913,7 @@ describe('continuity keyed by the venture and the founder (review)', () => {
     // Her next conversation opens with her own, never the teammate's or the notebook's older line.
     expect((await leftOffFor(maya, null, true))?.conversations.map((c) => c.sessionId)).toEqual([own.id]);
     const next = await h.core.sessions.create(maya, quietquad(), {});
-    expect(next.opener).toContain('“We decided to price per library, not per seat”');
+    expect(next.opener).toContain('we talked about your decision to price per library.');
     expect(next.opener).not.toMatch(/sensors|Devin/);
   });
 
@@ -1056,6 +1091,34 @@ describe('continuity keyed by the venture and the founder (review)', () => {
     );
   });
 
+  it('says a thread distilled about the founder to them, never by name in lower case (LAB-U2)', async () => {
+    await ageAll(8);
+    const current = await scripted.notebook.get(maya, quietquad());
+    if (current.nextOpener !== null) {
+      await scripted.notebook.update(maya, quietquad(), {
+        expectedVersion: current.version,
+        edit: { action: 'remove_opener' },
+      });
+    }
+    const before = await scripted.sessions.create(maya, quietquad(), {});
+    await say(maya, before.id, 'I will get the facility budget numbers from the dean by Friday.');
+    // continuity-chat.spec.ts against the real model: "Shall we pick up the facility budget numbers maya will get…"
+    nextTopic = 'the facility budget numbers maya will get';
+    try {
+      await scripted.distill.distillSession({ sessionId: before.id, requestId: 'distill-u2', settled: true });
+    } finally {
+      nextTopic = undefined;
+    }
+    expect((await scripted.notebook.get(maya, quietquad())).nextTopic).toBe(
+      'the facility budget numbers maya will get',
+    );
+    for (let i = 0; i < 3; i += 1) {
+      const opened = await scripted.sessions.create(maya, quietquad(), {});
+      expect(opened.opener).toContain('the facility budget numbers you will get');
+      expect(opened.opener).not.toMatch(/maya|the founder/i);
+    }
+  });
+
   it('deleting the conversation the thread came from clears it with the opener', async () => {
     await ageAll(9);
     // Nothing a person chose stands in the way (the test before rewrote the opener).
@@ -1085,6 +1148,16 @@ describe('continuity keyed by the venture and the founder (review)', () => {
     expect(after.nextTopic ?? null).toBeNull();
   });
 
+  it('never opens with the founder’s recall question, but with what it was about (LAB-R3)', async () => {
+    await ageAll(11);
+    const chat = await h.core.sessions.create(maya, quietquad(), {});
+    await talk(maya, chat.id, "We're pricing the Hartwell pilot at $900 per semester.");
+    await talk(maya, chat.id, 'Hey, do you remember what we talked about last time?');
+    const next = await h.core.sessions.create(maya, quietquad(), {});
+    expect(next.opener).not.toMatch(/remember|you asked|[“”]/i);
+    expect(next.opener).toContain('we talked about pricing the Hartwell pilot at $900 per semester.');
+  });
+
   it('never opens with a greeting the founder said, but with what they brought (review)', async () => {
     await ageAll(10);
     const call = await h.core.sessions.create(maya, quietquad(), {});
@@ -1093,7 +1166,8 @@ describe('continuity keyed by the venture and the founder (review)', () => {
     await talk(maya, call.id, 'ok');
     const next = await h.core.sessions.create(maya, quietquad(), {});
     expect(next.opener).not.toMatch(/“Hi”|“ok”/);
-    expect(next.opener).toContain('you asked “Should the pilot run in two libraries or three?”');
+    // Summarised, never quoted back (LAB-R3).
+    expect(next.opener).toContain('we talked about whether the pilot should run in two libraries or three.');
   });
 });
 

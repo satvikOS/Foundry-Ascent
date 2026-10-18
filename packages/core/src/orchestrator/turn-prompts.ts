@@ -34,16 +34,37 @@ export interface AnswerPromptOptions {
   readonly allowedModes: readonly CoachMode[];
 }
 
-/** Phase A system prompt: the turn's rules, then how to write the reply as plain text. */
-export function answerSystemPrompt(system: string, options: AnswerPromptOptions): string {
+/**
+ * The call's section of the turn system prompt (`# Voice call`): the reply's output contract as two fields, `spoken`
+ * (at most 70 words) and `answer` (its transcript). It sits just before the output section, so cutting at that section
+ * kept it in a call's phase A, which then asked for two fields and, a few lines later, for the text itself with no
+ * field names. Nova 2 Lite reconciled that by reasoning in the open, and the call said it (LAB-M1: 5 of 14 call turns,
+ * 0 of about 98 typed ones). Phase A leaves the section out and says its one rule that is not about fields itself.
+ */
+export const VOICE_SECTION_MARKER = '\n# Voice call\n';
+
+/** The turn's rules for phase A: everything before the output section, without the call's field contract. */
+function phaseARules(system: string): string {
   const cut = system.lastIndexOf(OUTPUT_SECTION_MARKER);
   const rules = cut < 0 ? system : system.slice(0, cut);
+  const voice = rules.indexOf(VOICE_SECTION_MARKER);
+  if (voice < 0) return rules;
+  const end = rules.indexOf('\n\n', voice + VOICE_SECTION_MARKER.length);
+  return end < 0 ? rules.slice(0, voice) : `${rules.slice(0, voice)}${rules.slice(end)}`;
+}
+
+/** Phase A system prompt: the turn's rules, then how to write the reply as plain text. */
+export function answerSystemPrompt(system: string, options: AnswerPromptOptions): string {
+  const rules = phaseARules(system);
   const lines = [
     '',
     'Output: write your reply to the founder now, as the text itself. No JSON, no field names, no preamble.',
     options.mode === null
-      ? `- First decide which mode fits best (one of ${options.allowedModes.map((m) => `"${m}"`).join(', ')}) and answer in that mode; you will name it in the next step.`
+      ? `- Answer in the mode that fits best (one of ${options.allowedModes.map((m) => `"${m}"`).join(', ')}), chosen silently; you will name it in the next step.`
       : `- Answer in the "${options.mode}" mode.`,
+    // LAB-M1: asked to "first decide" the mode, Nova 2 Lite reasoned in the open and a call spoke it.
+    '- Never think aloud: no reasoning, plans, rules or modes in the reply, and never "the founder" in the third',
+    '  person. Every word is said to the founder.',
     '- The rules above that name response fields (`answer`, `spoken`, `claims`, `next_actions`, `mode` and the',
     '  others) apply to a separate step that collects claims, uncertainty, next actions, memory suggestions and',
     '  follow-up questions. Do not list those in the reply, and never start it with a label such as "Answer:".',
@@ -55,6 +76,8 @@ export function answerSystemPrompt(system: string, options: AnswerPromptOptions)
     lines.push(
       '- This is a voice call: write only what you will say aloud, at most 70 words. No Markdown, lists, headings,',
       '  citation ids like [E1], URLs, caveats or labels read out.',
+      "- The founder's message is a speech transcript and may contain recognition errors: read it charitably, and ask",
+      '  when something important is unclear.',
       `- ${SPOKEN_REGISTER}`,
       '- Follow "Conversation craft": a social turn gets a short, natural reply, not advice.',
     );

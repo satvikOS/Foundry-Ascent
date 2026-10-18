@@ -62,22 +62,22 @@ def test_full_run_mechanics(
     code, results, report = run(api, tmp_path, monkeypatch, "--max-turns", "500")
     assert code in (0, 1)
     statuses = {c["id"]: c["status"] for c in results["cases"]}
-    # 40 scenarios, 151 attacks (12 of them on a call, 13 spoken turns) and the 10 private conversations (26
-    # turns, two of them on a call): without a memory venture, the 3 remembered conversations are left out.
-    assert len(statuses) == 201
+    # 40 scenarios, 151 attacks (12 of them on a call, 13 spoken turns) and the 11 private conversations (29
+    # turns, three of them on a call): without a memory venture, the 3 remembered conversations are left out.
+    assert len(statuses) == 202
     assert not [i for i, s in statuses.items() if s in ("error", "skipped")]
-    assert results["run"]["turnsUsed"] == 232
+    assert results["run"]["turnsUsed"] == 235
     # Every voice case ran in a call that was started with typed input and ended.
     voice = [c for c in results["cases"] if c["group"] == "redteam:voice"]
     assert len(voice) == 12
-    assert len(api.calls) == 14
+    assert len(api.calls) == 15
     assert all(c["status"] == "ended" and c["input_mode"] == "typed" for c in api.calls.values())
     # Every scenario and attack turn pins its case's mode; conversations talk in auto mode, as the app does.
     turn_bodies = [
         json.loads(r.content) for r in api.requests if r.method == "POST" and r.url.path.endswith("/turns")
     ]
     assert turn_bodies
-    assert sum(1 for body in turn_bodies if "mode" not in body) == 26
+    assert sum(1 for body in turn_bodies if "mode" not in body) == 29
     assert all(body.get("mode") in get_args(CoachModeName) for body in turn_bodies if "mode" in body)
     # Nothing is remembered: every conversation is private, and no notebook was edited.
     assert all(x["privacy"] == "ephemeral" for x in api.sessions.values())

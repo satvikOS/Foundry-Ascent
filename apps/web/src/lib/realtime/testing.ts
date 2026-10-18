@@ -118,14 +118,19 @@ export class FakeWebSocket implements WebSocketLike {
 export function transcriptEvent(
   resultId: string,
   transcript: string,
-  options: { partial?: boolean; stable?: boolean } = {},
+  options: { partial?: boolean; stable?: boolean; stableWords?: number } = {},
 ): Uint8Array {
   const partial = options.partial ?? true;
   const stable = options.stable ?? !partial;
   const items = transcript
     .split(/\s+/)
     .filter(Boolean)
-    .map((word) => ({ Content: word, Type: 'pronunciation', Stable: stable }));
+    .map((word, i) => ({
+      Content: word,
+      Type: 'pronunciation',
+      // `stableWords`: only the first n words are marked stable (Transcribe's stabilised lead of a partial).
+      Stable: options.stableWords === undefined ? stable : i < options.stableWords,
+    }));
   const payload = {
     Transcript: {
       Results: [

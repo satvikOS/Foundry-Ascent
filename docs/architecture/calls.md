@@ -355,9 +355,15 @@ mic ─ getUserMedia (echo cancellation, noise suppression) ─ AudioWorklet /wo
   A crisis turn's fixed support line (signed units before `turn.blocked`) plays to its end, and nothing cuts
   it off (Esc, Interrupt and a barge-in are ignored while it plays); any other blocked turn stops at once.
 - **Barge-in.** A VAD onset while the vEIR speaks ducks it to 20 % at once. The founder takes the floor
-  with a settled word (a final segment, or every word marked stable), or two words while the transcript
-  still changes, that are neither in what the vEIR has said of this reply (the echo guard) nor a
-  backchannel ("yeah", "mm-hmm", "right", "got it"). That stops the audio, aborts the turn stream and sends
+  with a word that is neither in what the vEIR has said of this reply (the echo guard) nor a backchannel
+  ("yeah", "mm-hmm", "right", "got it"; "sorry" or "wait" open a turn): a settled one (a final segment, or
+  every word marked stable), one Transcribe already marked stable in a partial, one while the voice has run
+  on for 0.3 s, or two while the transcript still changes; or with the voice alone running on for about
+  0.7 s (short gaps between words included) when no word heard yet says it is only a backchannel or the echo
+  (the lab measured 2.0 s to stop while it waited for confirmed words). On a call where voice alone stopped
+  the reply and no word followed within 3 s (speakers, a room), only words stop it from then on. A line
+  typed or said while the call's greeting is still on its way or playing stops the greeting and is sent at
+  once. That stops the audio, aborts the turn stream and sends
   `POST /turns/:id/interrupt {callId, heardSeq, heard}`, where `heardSeq` is the last unit heard to its end
   (-1 for none) and `heard` the units 0…heardSeq as played (signed units with their `sig`, stored passages
   as text). Echo and

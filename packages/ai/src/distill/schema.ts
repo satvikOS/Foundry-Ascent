@@ -4,6 +4,14 @@ import { z } from 'zod';
 /** Name of the structured output schema sent to the model for distillation. */
 export const DISTILL_SCHEMA_NAME = 'DistillDraft';
 
+/**
+ * Output bound of a distillation call. The draft rewrites the whole notebook every time (up to 8 profile notes,
+ * 10 commitments, 6 questions, 5 advice notes, each up to 400 characters) besides the digest and the memory and
+ * lesson candidates, which together can pass the gateway's default of 4,096 tokens on a rich conversation: the
+ * call was cut off and retried (LAB-R7). Only the tokens written are billed.
+ */
+export const DISTILL_MAX_OUTPUT_TOKENS = 8_192;
+
 /** A notebook line as the model returns it: the id of the entry it keeps, or null for a new one. */
 export const DistillNote = z.object({
   id: z.string().nullable(),

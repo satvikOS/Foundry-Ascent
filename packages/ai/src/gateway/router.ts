@@ -201,6 +201,7 @@ class BedrockModelGateway implements ModelGateway {
         outputTokens: a.usage.outputTokens,
         costUsd: a.costUsd,
         errorName: a.errorName,
+        ...(a.issues && a.issues.length > 0 ? { issues: a.issues.slice(0, 8).join(',') } : {}),
       };
       if (a.outcome === 'ok') this.#logger.info('ai.model.attempt', fields);
       else this.#logger.warn('ai.model.attempt', fields);

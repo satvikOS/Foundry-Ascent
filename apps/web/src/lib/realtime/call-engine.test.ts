@@ -320,6 +320,66 @@ describe('CallEngine · typed fallback', () => {
   });
 });
 
+describe('CallEngine · speaking over the greeting (LAB-R1)', () => {
+  /** The greeting's audio is still being fetched: its `/speech` request never answers. */
+  function holdGreeting(h: ReturnType<typeof setup>): void {
+    h.api.fetchSpeech.mockImplementationOnce((_sessionId: string, unit: SpeechUnitToPlay) => {
+      h.speechRequests.push(unit);
+      return new Promise<SpeechFetchResult>(() => undefined);
+    });
+  }
+
+  it('a line typed while the greeting is still on its way stops it and is sent at once', async () => {
+    // Lab: every call's first line waited 11–14 s for the greeting to play out.
+    const h = setup({ grant: null, intro: true });
+    holdGreeting(h);
+    await startLive(h);
+    expect(h.speechRequests[0]).toMatchObject({ turnId: null, seq: 0 });
+    expect(h.state().activity).toBe('connecting');
+
+    h.engine.sendText('We finished five library interviews.');
+    await flush();
+    expect(h.script.calls).toHaveLength(1);
+    expect(h.script.calls[0]?.body.text).toBe('We finished five library interviews.');
+    expect(h.state()).toMatchObject({ activity: 'thinking', queued: 0 });
+    // The greeting never plays after the founder spoke.
+    await flush(10);
+    expect(h.synthesis.spoken).toEqual([]);
+    expect(h.context.sources).toHaveLength(0);
+  });
+
+  it('a line typed while the greeting plays stops it and is sent at once', async () => {
+    const h = setup({ grant: null, intro: true });
+    h.setSpeechResult({ kind: 'audio', data: new ArrayBuffer(20_000) });
+    await startLive(h);
+    expect(h.state().activity).toBe('speaking');
+    h.engine.sendText('Quick one: pricing.');
+    await flush();
+    expect(h.context.sources[0]?.stopped).toBe(true);
+    expect(h.script.calls).toHaveLength(1);
+    expect(h.state()).toMatchObject({ activity: 'thinking', queued: 0 });
+  });
+
+  it('a line spoken while the greeting is still on its way stops it and is sent at once', async () => {
+    const h = setup({ intro: true });
+    holdGreeting(h);
+    await startLive(h);
+    const socket = FakeWebSocket.last();
+    socket.serverOpen();
+    expect(h.speechRequests[0]).toMatchObject({ turnId: null, seq: 0 });
+    h.frame(0.2);
+    h.frame(0.2);
+    socket.serverSend(transcriptEvent('r1', 'We finished five interviews', { partial: false }));
+    for (let i = 0; i < 14; i++) {
+      vi.advanceTimersByTime(50);
+      h.frame(0.001);
+    }
+    await flush();
+    expect(h.script.calls[0]?.body.text).toBe('We finished five interviews');
+    expect(h.state()).toMatchObject({ activity: 'thinking', queued: 0 });
+  });
+});
+
 describe('CallEngine · a call already live in another conversation', () => {
   it('asks to move the call here instead of failing, and starts again with replace', async () => {
     const h = setup({ grant: null });
@@ -970,6 +1030,86 @@ describe('CallEngine · barge-in', () => {
     await flush();
     expect(h.state().activity).toBe('listening');
     expect(h.api.interruptTurn).toHaveBeenCalledTimes(1);
+  });
+
+  /** 50 ms microphone frames: 'x' the founder's voice, '.' quiet. */
+  async function voice(h: ReturnType<typeof setup>, pattern: string): Promise<void> {
+    for (const c of pattern) {
+      vi.advanceTimersByTime(50);
+      h.frame(c === 'x' ? 0.2 : 0.001);
+    }
+    await flush();
+  }
+
+  it('stops on the founder’s voice running on over it, in under a second, before any word (LAB-V4)', async () => {
+    // Lab: 2.0 s from the start of a barge-in to the reply stopping, waiting for confirmed words.
+    const h = setup();
+    await speaking(h);
+    await voice(h, 'xxxxxxxxxx'); // 0.5 s: ducked, still speaking
+    expect(h.state().activity).toBe('speaking');
+    expect(h.api.interruptTurn).not.toHaveBeenCalled();
+    await voice(h, 'xxxxx'); // 0.75 s
+    expect(h.state().activity).toBe('listening');
+    expect(h.context.sources[0]?.stopped).toBe(true);
+    expect(h.api.interruptTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it('never cuts the vEIR off for backchannels, short or strung together', async () => {
+    const h = setup();
+    const socket = await speaking(h);
+    // "Yeah." … "Mm-hmm.": short sounds with pauses between them.
+    await voice(h, 'xxxxxx........xxxxxxxx........');
+    expect(h.state().activity).toBe('speaking');
+    // A long "mm-hmm, yeah, right": the voice runs on, but its words say it is only listening.
+    socket.serverSend(transcriptEvent('r1', 'mm-hmm yeah right', { partial: true, stable: false }));
+    await voice(h, 'xxxxxxxxxxxxxxxxxxxx');
+    expect(h.state().activity).toBe('speaking');
+    expect(h.api.interruptTurn).not.toHaveBeenCalled();
+  });
+
+  it('stops on one word Transcribe already marked stable that is not a backchannel ("Sorry, with…")', async () => {
+    const h = setup();
+    const socket = await speaking(h);
+    // "with" is the vEIR's own echo; "sorry" opens a turn and Transcribe will not revise it.
+    socket.serverSend(transcriptEvent('r1', 'sorry with', { partial: true, stableWords: 1 }));
+    await flush();
+    expect(h.state().activity).toBe('listening');
+    expect(h.api.interruptTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops on one unsettled word that is not a backchannel once the voice has run on', async () => {
+    const h = setup();
+    const socket = await speaking(h);
+    socket.serverSend(transcriptEvent('r1', 'actually', { partial: true, stable: false }));
+    await flush();
+    expect(h.state().activity).toBe('speaking');
+    await voice(h, 'xxxxxxx');
+    socket.serverSend(transcriptEvent('r1', 'actually', { partial: true, stable: false }));
+    await flush();
+    expect(h.state().activity).toBe('listening');
+  });
+
+  it('needs words on a call where voice alone stopped the vEIR once and no word followed (speakers)', async () => {
+    const h = setup();
+    const socket = await speaking(h);
+    await voice(h, 'xxxxxxxxxxxxxxx');
+    expect(h.state().activity).toBe('listening');
+    // Nothing is said: the sound was the room, not the founder.
+    await vi.advanceTimersByTimeAsync(3_100);
+    h.engine.sendText('Go on.');
+    await flush();
+    h.script.push(
+      { event: 'turn.accepted', turnId: TURN_ID, ordinal: 2 },
+      speech(0, 'Start with one library.'),
+    );
+    await flush(20);
+    expect(h.state().activity).toBe('speaking');
+    await voice(h, 'xxxxxxxxxxxxxxxxxxxx');
+    expect(h.state().activity).toBe('speaking');
+    // Words still stop it.
+    socket.serverSend(transcriptEvent('r9', 'wait stop', { partial: true }));
+    await flush();
+    expect(h.state().activity).toBe('listening');
   });
 
   it('suggests push-to-talk after repeated sound without words', async () => {

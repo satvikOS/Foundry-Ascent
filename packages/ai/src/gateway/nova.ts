@@ -26,10 +26,14 @@ import {
   type ProviderStreamResult,
   type StructuredProvider,
 } from './provider.js';
+import { ReasoningFilter } from './reasoning-filter.js';
+import { extractJsonValue } from './structured-repair.js';
 import type { AwsCredentialProvider, AwsCredentials } from './sigv4-fetch.js';
 import type { ChatMessage, RawModelAttempt, StreamStopReason } from './types.js';
 
 export const SUBMIT_TOOL_NAME = 'submit_response';
+/** Most output tokens a repair after a cut-off answer asks for (it doubles the request's bound up to this). */
+export const MAX_REPAIR_OUTPUT_TOKENS = 16_000;
 
 export interface NovaProviderOptions {
   /** e.g. `amazon.nova-2-lite-v1:0` or an inference profile id such as `us.amazon.nova-2-lite-v1:0`. */
@@ -119,6 +123,13 @@ export function toConverseMessages(messages: readonly ChatMessage[]): Message[] 
   return merged.map((m) => ({ role: m.role, content: [{ text: m.text }] }));
 }
 
+/** The text blocks of a Converse answer (what the model wrote instead of, or before, a tool call). */
+function textOf(output: ConverseCommandOutput): string {
+  return (output.output?.message?.content ?? [])
+    .map((block) => (typeof block.text === 'string' ? block.text : ''))
+    .join('');
+}
+
 function findToolUse(output: ConverseCommandOutput): ContentBlock.ToolUseMember | null {
   const content = output.output?.message?.content ?? [];
   for (const block of content) {
@@ -191,10 +202,12 @@ export class NovaProvider implements StructuredProvider {
   }
 
   /**
-   * Streams plain text through ConverseStream. Each text delta goes to `onText` as it arrives. A failure
-   * after text was delivered is never retried (not even the inference-profile retry) and is marked
+   * Streams plain text through ConverseStream. Each text delta goes to `onText` as it arrives, without the
+   * model's reasoning: reasoning content blocks are never handed on, and reasoning the model writes into its
+   * text inside `<thinking>` tags is dropped as it streams (`ReasoningFilter`; on a call it would be spoken). A
+   * failure after text was delivered is never retried (not even the inference-profile retry) and is marked
    * `textDelivered`; usage the stream never reported (it ended early) is estimated once the request reached
-   * Bedrock (`estimatedStreamUsage`; no reasoning is enabled here, so output is the visible text).
+   * Bedrock (`estimatedStreamUsage`, from everything the model generated, reasoning included).
    */
   async streamText(request: ProviderStreamRequest): Promise<ProviderStreamResult> {
     const { deadline } = request;
@@ -205,7 +218,11 @@ export class NovaProvider implements StructuredProvider {
     for (;;) {
       const modelId = this.effectiveModelId;
       const started = performance.now();
+      /** What reached `onText`: the visible reply. */
       let text = '';
+      /** Everything the model generated, reasoning included (for a usage estimate). */
+      let generated = '';
+      const reasoning = new ReasoningFilter();
       let stopReason: StopReason | undefined;
       let usage: { inputTokens: number; outputTokens: number } | null = null;
       let cached: number | undefined;
@@ -220,7 +237,12 @@ export class NovaProvider implements StructuredProvider {
           latencyMs: Math.round(performance.now() - started),
           usage:
             usage ??
-            estimatedStreamUsage(request, text, { outcome, opened, cancelledBeforeSend, reasoning: false }),
+            estimatedStreamUsage(request, generated, {
+              outcome,
+              opened,
+              cancelledBeforeSend,
+              reasoning: false,
+            }),
           ...(cached === undefined ? {} : { cachedInputTokens: cached }),
           errorName,
         });
@@ -239,10 +261,18 @@ export class NovaProvider implements StructuredProvider {
         for await (const event of events) {
           const thrown = streamException(event);
           if (thrown) throw thrown;
-          const chunk = event.contentBlockDelta?.delta?.text;
+          const delta = event.contentBlockDelta?.delta;
+          const chunk = delta?.text;
           if (typeof chunk === 'string' && chunk !== '') {
-            text += chunk;
-            await request.onText(chunk);
+            generated += chunk;
+            const visible = reasoning.push(chunk);
+            if (visible !== '') {
+              text += visible;
+              await request.onText(visible);
+            }
+          } else if (delta?.reasoningContent !== undefined) {
+            // The model's reasoning, kept apart by Bedrock: never part of the reply.
+            generated += delta.reasoningContent.text ?? '';
           } else if (event.messageStop) {
             stopReason = event.messageStop.stopReason;
           } else if (event.metadata?.usage) {
@@ -266,6 +296,12 @@ export class NovaProvider implements StructuredProvider {
         throw mapped;
       }
 
+      // What the filter still held (a "<" that turned out not to open a reasoning block) is the reply's end.
+      const tail = reasoning.end();
+      if (tail !== '') {
+        text += tail;
+        await request.onText(tail);
+      }
       if (stopReason === 'content_filtered' || stopReason === 'guardrail_intervened') {
         record('refusal', null);
         const refusal = new ModelRefusalError(modelId, 'content_filter');
@@ -291,6 +327,7 @@ export class NovaProvider implements StructuredProvider {
     let lastIssues: string[];
     let repairs = 0;
     let kind: RawModelAttempt['kind'] = 'initial';
+    let maxTokens = request.maxOutputTokens;
 
     for (;;) {
       const modelId = this.effectiveModelId;
@@ -302,7 +339,7 @@ export class NovaProvider implements StructuredProvider {
             modelId,
             system: [{ text: request.system }],
             messages,
-            inferenceConfig: this.#inferenceConfig(modelId, request.maxOutputTokens),
+            inferenceConfig: this.#inferenceConfig(modelId, maxTokens),
             toolConfig: {
               tools: [
                 {
@@ -343,7 +380,7 @@ export class NovaProvider implements StructuredProvider {
         outputTokens: output.usage?.outputTokens ?? 0,
       };
       const cached = output.usage?.cacheReadInputTokens;
-      const record = (outcome: RawModelAttempt['outcome']): void => {
+      const record = (outcome: RawModelAttempt['outcome'], issues: readonly string[] = []): void => {
         rawAttempts.push({
           provider: 'nova',
           modelId,
@@ -353,6 +390,7 @@ export class NovaProvider implements StructuredProvider {
           usage,
           ...(cached === undefined ? {} : { cachedInputTokens: cached }),
           errorName: null,
+          ...(issues.length > 0 ? { issues } : {}),
         });
       };
 
@@ -362,27 +400,41 @@ export class NovaProvider implements StructuredProvider {
       }
 
       const toolUse = findToolUse(output);
+      const truncated = output.stopReason === 'max_tokens';
       let feedback: string;
       if (toolUse) {
         const outcome = validateStructured(toolUse.toolUse.input, request.zodSchema, request.strict);
         if (outcome.ok) {
-          record('ok');
+          record('ok', outcome.repairs);
           return { value: outcome.value, modelId, rawAttempts };
         }
         lastIssues = outcome.issues;
         feedback = outcome.feedback;
-        if (output.stopReason === 'max_tokens') {
+        if (truncated) {
           feedback = `- The tool input was cut off before it was complete. Respond more concisely.\n${feedback}`;
         }
       } else {
-        lastIssues = [`(root): no_tool_use:${output.stopReason ?? 'unknown'}`];
+        // No tool call: the model may have written the object as text (alone, fenced, after prose or reasoning).
+        const written = extractJsonValue(textOf(output));
+        const outcome =
+          written === undefined ? null : validateStructured(written, request.zodSchema, request.strict);
+        if (outcome?.ok) {
+          record('ok', ['text_output:(root)', ...outcome.repairs]);
+          return { value: outcome.value, modelId, rawAttempts };
+        }
+        lastIssues =
+          outcome === null ? [`(root): no_tool_use:${output.stopReason ?? 'unknown'}`] : outcome.issues;
         feedback = `- You must call the ${SUBMIT_TOOL_NAME} tool with the complete object.`;
+        if (outcome !== null) feedback = `${feedback}\n${outcome.feedback}`;
       }
-      record('invalid_output');
+      record('invalid_output', truncated ? ['(root): max_tokens', ...lastIssues] : lastIssues);
 
       if (repairs >= this.#maxRepairAttempts || deadline.remainingMs() < MIN_REPAIR_BUDGET_MS) break;
       repairs += 1;
       kind = 'repair';
+      // Cut off at the output bound: the repair gets room to finish (a second answer at the same bound would be
+      // cut off again).
+      if (truncated) maxTokens = Math.max(maxTokens, Math.min(maxTokens * 2, MAX_REPAIR_OUTPUT_TOKENS));
       const instruction = repairInstruction(request.schemaName, feedback);
       messages = toolUse?.toolUse.toolUseId
         ? [

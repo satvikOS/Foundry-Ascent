@@ -31,8 +31,8 @@ CONVERSATIONS = load_conversations()
 class TestConversations:
     def test_size_ids_and_coverage(self) -> None:
         c = CONVERSATIONS.conversations
-        assert [x.id for x in c] == [f"CO-{i:03d}" for i in range(1, 15)]
-        assert Counter(x.kind for x in c) == {"multi_turn": 10, "multi_session": 4}
+        assert [x.id for x in c] == [f"CO-{i:03d}" for i in range(1, 16)]
+        assert Counter(x.kind for x in c) == {"multi_turn": 11, "multi_session": 4}
         checks = Counter(t.check for x in c for s in x.sessions for t in s.turns if t.check)
         assert set(checks) == {"recall", "topic_return", "social", "closing", "identity", "after_opener"}
         # Wave-4 integration: a hello right after the opening line is graded in every remembered case.

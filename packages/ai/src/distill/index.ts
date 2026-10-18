@@ -1,5 +1,6 @@
 export {
   DISTILL_LIMITS,
+  DISTILL_MAX_OUTPUT_TOKENS,
   DISTILL_SCHEMA_NAME,
   DistillCommitment,
   DistillDraft,

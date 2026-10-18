@@ -9,6 +9,7 @@ import {
   CRISIS_SPOKEN_MESSAGE,
   CRISIS_SUPPORT_MESSAGE,
   COACH_ANNOTATIONS_SCHEMA_NAME,
+  COACH_RESPONSE_SCHEMA_NAME,
   CROSS_VENTURE_BLOCK_ANSWER,
   MockModelGateway,
   NARROWING_NOTE_PREFIX,
@@ -741,6 +742,170 @@ describe('spoken turns', () => {
       'stream:',
       'generate:CoachAnnotations',
     ]);
+  });
+
+  describe('the model thinking aloud (LAB-M1)', () => {
+    const LAB =
+      "Okay, let's see. The founder says they did three interviews. First, I need to figure out the mode. The venture is in the discovery stage.";
+    const NARRATED = /founder|figure out|the mode|the rules|social turn/i;
+
+    it('a call’s reply that opens with narration is never said: it is written whole and said instead', async () => {
+      const gateway = new MockModelGateway({ streamDelayMs: 0, streamFixture: () => LAB });
+      const { core, orchestrator } = coreWith(gateway);
+      const session = await core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+      const { events, outcome } = await run(orchestrator, session.id, {
+        text: 'We did three of the library interviews.',
+        mode: 'coach',
+        channel: 'voice',
+        callId: CALL_ID,
+      });
+      expect(outcome.status).toBe('completed');
+      const units = speechUnits(events);
+      expect(units.length).toBeGreaterThan(0);
+      for (const u of units) expect(u.text).not.toMatch(NARRATED);
+      for (const d of deltas(events)) expect(d.text).not.toMatch(NARRATED);
+      const turn = completed(events);
+      expect(turn.response?.answer).not.toMatch(NARRATED);
+      expect(turn.response?.spoken ?? '').not.toMatch(NARRATED);
+      expect(turn.validator?.notes).toContain('stream_meta_narration');
+      expect(withoutMemoryVectors(gateway.calls)).toEqual(['embed:', 'stream:', 'generate:CoachResponse']);
+      expect(await auditMetadata(turn.id, 'turn.completed')).toMatchObject({ stream: 'meta_narration' });
+    });
+
+    it('SM-39: a call’s reply that opens with a lead-in and then narrates is never said', async () => {
+      const sm39 =
+        'Okay, let’s tackle this. The founder is asking whether to charge per library. First, I need to figure out the mode. The venture is in validation.';
+      for (const stream of [sm39, `Sure, here goes. ${sm39.slice(sm39.indexOf('The founder'))}`]) {
+        const gateway = new MockModelGateway({ streamDelayMs: 0, streamFixture: () => stream });
+        const { core, orchestrator } = coreWith(gateway);
+        const session = await core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+        const { events, outcome } = await run(orchestrator, session.id, {
+          text: 'Should we charge each library a flat fee or per seat?',
+          mode: 'coach',
+          channel: 'voice',
+          callId: CALL_ID,
+        });
+        expect(outcome.status).toBe('completed');
+        for (const u of speechUnits(events)) expect(u.text).not.toMatch(NARRATED);
+        const turn = completed(events);
+        expect(turn.response?.answer).not.toMatch(NARRATED);
+        expect(turn.response?.spoken ?? '').not.toMatch(NARRATED);
+        expect(turn.validator?.notes).toContain('stream_meta_narration');
+        expect(withoutMemoryVectors(gateway.calls)).toEqual(['embed:', 'stream:', 'generate:CoachResponse']);
+      }
+    });
+
+    it('a typed reply ends before narration that follows its start, and is annotated as shown', async () => {
+      const start = 'Three interviews is a solid start. Which librarian can you reach first?';
+      const gateway = new MockModelGateway({
+        streamDelayMs: 0,
+        streamFixture: () =>
+          `${start} This is a social turn, so I should keep it short. According to the rules, one question.`,
+      });
+      const { core, orchestrator } = coreWith(gateway);
+      const session = await core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+      const { events, outcome } = await run(orchestrator, session.id, {
+        text: 'We did three of the library interviews.',
+        mode: 'coach',
+      });
+      expect(outcome.status).toBe('completed');
+      expect(
+        deltas(events)
+          .map((d) => d.text)
+          .join(''),
+      ).toBe(start);
+      const turn = completed(events);
+      expect(turn.response?.answer).toBe(start);
+      expect(turn.validator?.notes).toContain('stream_meta_narration_cut');
+      expect(gateway.calls.map((c) => `${c.kind}:${c.schemaName ?? ''}`)).toEqual([
+        'embed:',
+        'stream:',
+        'generate:CoachAnnotations',
+      ]);
+    });
+
+    it('a reply whose last sentence is narration ends before it, typed and spoken', async () => {
+      const start = 'Three interviews is a solid start. Which librarian can you reach first?';
+      for (const channel of ['text', 'voice'] as const) {
+        const gateway = new MockModelGateway({
+          streamDelayMs: 0,
+          streamFixture: () => `${start} My reply should end there.`,
+        });
+        const { core, orchestrator } = coreWith(gateway);
+        const session = await core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+        const { events, outcome } = await run(orchestrator, session.id, {
+          text: 'We did three of the library interviews.',
+          mode: 'coach',
+          ...(channel === 'voice' ? { channel, callId: CALL_ID } : {}),
+        });
+        expect(outcome.status).toBe('completed');
+        const turn = completed(events);
+        expect(turn.response?.answer).toBe(start);
+        expect(turn.validator?.notes).toContain('stream_meta_narration_cut');
+        // Phase B annotated exactly the reply that was shown.
+        expect(turn.validator?.notes.some((n) => n.startsWith('meta_narration_cut'))).toBe(false);
+        for (const u of speechUnits(events)) expect(u.text).not.toMatch(NARRATED);
+      }
+    });
+
+    it('a whole reply that opens with narration is asked for once more; a second one is held back', async () => {
+      let asked = 0;
+      const narrating = new MockModelGateway({
+        streamDelayMs: 0,
+        streamFixture: () => LAB,
+        fixtures: {
+          [COACH_RESPONSE_SCHEMA_NAME]: (context) => {
+            asked += 1;
+            const response = mockCoachResponse(context);
+            return asked === 1 ? { ...response, answer: LAB, spoken: LAB } : response;
+          },
+        },
+      });
+      const first = coreWith(narrating);
+      const session = await first.core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+      const once = await run(first.orchestrator, session.id, {
+        text: 'We did three of the library interviews.',
+        mode: 'coach',
+        channel: 'voice',
+        callId: CALL_ID,
+      });
+      expect(once.outcome.status).toBe('completed');
+      const turn = completed(once.events);
+      expect(turn.response?.answer).not.toMatch(NARRATED);
+      expect(turn.validator?.notes).toEqual(
+        expect.arrayContaining(['stream_meta_narration', 'meta_narration_retried']),
+      );
+      expect(withoutMemoryVectors(narrating.calls)).toEqual([
+        'embed:',
+        'stream:',
+        'generate:CoachResponse',
+        'generate:CoachResponse',
+      ]);
+
+      const always = new MockModelGateway({
+        streamDelayMs: 0,
+        streamFixture: () => LAB,
+        fixtures: {
+          [COACH_RESPONSE_SCHEMA_NAME]: (context) => ({
+            ...mockCoachResponse(context),
+            answer: LAB,
+            spoken: LAB,
+          }),
+        },
+      });
+      const second = coreWith(always);
+      const other = await second.core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+      const twice = await run(second.orchestrator, other.id, {
+        text: 'We did three of the library interviews.',
+        mode: 'coach',
+        channel: 'voice',
+        callId: CALL_ID,
+      });
+      expect(twice.outcome.status).toBe('blocked');
+      for (const u of speechUnits(twice.events)) expect(u.text).not.toMatch(NARRATED);
+      const blocked = twice.events.find((e) => e.event === 'turn.blocked');
+      expect(blocked).toMatchObject({ reason: 'invalid_schema' });
+    });
   });
 
   it('a call’s turn reads fewer evidence items than a typed turn on the same question', async () => {

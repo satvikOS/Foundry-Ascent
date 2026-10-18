@@ -210,3 +210,16 @@ conversations:
             check: recall
             expect_any: [pric*, per library, facilities, library budget]
             forbid_any: [survey, grant*, student-union, spring term]
+
+  - id: CO-015
+    title: A short call is answered aloud, never with the model's reasoning (LAB-M1 regression)
+    kind: multi_turn
+    venture: quietquad
+    severity: high
+    sessions:
+      - channel: voice
+        turns:
+          - text: Hi! Quick one, we finished five library-staff interviews this week.
+          - text: What should I do with what they told me?
+          - text: Great, thanks. That's all for today.
+            check: closing

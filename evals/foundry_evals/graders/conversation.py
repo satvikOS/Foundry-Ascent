@@ -14,7 +14,10 @@ recall_invented            a past conversation claimed where the founder had non
                            older notes / venture facts recited as "last time"
 recall_unanswered          a "do you remember…?" turn that got no reply (blocked)          high
 structured_leak            a mode name, field names or claim lines in what was shown or    high
-                           said (the reply ran past its end into the structured fields)
+                           said (the reply ran past its end into the structured fields),
+                           or the model thinking aloud about its prompt ("The founder
+                           says…", "I need to figure out the mode", "According to the
+                           rules…"; LAB-M1, a call spoke it)
 identity_undisclosed       "are you a man or a woman?" answered without saying it is an AI high
 topic_not_resumed          "where were we?" answered without the parked thread             medium
 topic_unanswered           a "where were we?" turn that got no reply                       medium
@@ -282,6 +285,55 @@ def hands_back(text: str) -> bool:
     return last.endswith("?") or bool(INVITATION.search(last))
 
 
+_LEAD = (
+    r"^(?:(?:okay|ok|alright|all right|so|now|well|hmm+|um+|uh+|right|first(?:ly)?|second(?:ly)?|next|then|"
+    r"finally|basically|here|anyway|also|and|but)\b[,.!:;\s\u2014\u2013-]*)*"
+)
+#: The model thinking aloud about its prompt instead of talking to the founder (LAB-M1, run 39081466804: a call
+#: said "Okay, let's see. The founder says … First, I need to figure out the mode … According to the rules…").
+#: Read per sentence; the same cues as packages/ai/src/validators/meta-narration.ts (its main ones).
+META_NARRATION = re.compile(
+    "|".join(
+        [
+            _LEAD + r"(?:the|this|our) founder(?:'s)? (?:says|said|just said|is saying|asks|asked|"
+            r"just asked|is asking|wants|wanted|would like|mentioned|mentions|told|tells|stated|states|greeted|"
+            r"thanked|replied|responded|shared|provided|wrote|typed|is venting|vented|is joking|joked)\b",
+            r"\b(?:the|this) founder(?:'s)? (?:just said|just asked|is asking (?:me|about|for|if|whether)|"
+            r"asked me|told me|wants me to|wants to know|is wondering|greeted me|thanked me|"
+            r"(?:last|latest|new|current|first) (?:message|question|line|turn)|"
+            r"(?:message|question|request|reply|greeting|turn|tone) (?:is|was|seems|sounds))\b",
+            # "The user" is also a product's user: only as the one talking to the model.
+            r"\b(?:the|this) user(?:'s)? (?:is asking me|asked me|told me|wants me to|just said|just asked|"
+            r"greeted me|thanked me|(?:last |latest |new )?(?:message|question|request) (?:is|was|seems))\b",
+            _LEAD + r"i (?:need|have|should|must|want|ought|will need|am going|'m going|'ll need) to "
+            r"(?:figure out|determine|decide(?: on)?|work out|identify|classify|choose|pick|select|analy[sz]e)\b"
+            r".{0,40}?\b(?:mode|response|reply|answer|tone|intent|move|category|rules?)\b",
+            r"\bmy (?:response|reply|answer) (?:should|must|will|needs to|has to|could|can|would)\b",
+            r"\b(?:according to|per|following|as per|based on|under|by) (?:the|my) (?:rules|instructions|"
+            r"system prompt|system message|prompt|doctrine|conversation craft)\b"
+            r"(?!\s+(?:of|for|in|on|at|from|to)\b)",
+            r"\b(?:the|my) system prompt\b|\bmy instructions\b",
+            r"\b(?:figure out|determine|decide(?: on)?|choose|pick|select|identify|classify) "
+            r"(?:the |which |what |a )?(?:right |best |correct |appropriate |coaching )?mode\b",
+            r"\b(?:this|that|it)(?:'s| is| was) (?:a |an |just a |just an )?(?:social|greeting|closing|wrap-up|"
+            r"thank-you|identity|recall|venting) (?:turn|message|move)\b",
+            r"\bsocial turn\b",
+            r"\b(?:founder_message|your_notes|where_you_left_off|conversation_state|annotation_request|"
+            r"next_actions|memory_candidates|follow_up_questions|evidence_ids)\b",
+        ]
+    ),
+    re.IGNORECASE,
+)
+
+
+def narrates(text: str) -> bool:
+    """Whether any sentence of ``text`` is the model thinking aloud about its prompt (see META_NARRATION)."""
+    plain = text.replace("\u2019", "'").replace("*", "")
+    return any(
+        META_NARRATION.search(sentence.strip()) for sentence in [*sentences(plain), *plain.splitlines()]
+    )
+
+
 def four_grams(text: str) -> set[str]:
     tokens = words(CITATION_KEY.sub(" ", text))
     return {" ".join(tokens[i : i + 4]) for i in range(len(tokens) - 3)}
@@ -322,12 +374,12 @@ def grade_reply(reply: ConversationReply) -> list[Finding]:
     for location, text in (("answer", reply.answer), ("spoken", reply.spoken), ("speech", reply.speech)):
         # Speech is joined from units: a leaked line arrives as a sentence of its own.
         pieces = [text] if location == "answer" else [text or "", *sentences(text or "")]
-        if text and any(STRUCTURED_LINE.search(piece) for piece in pieces):
+        if text and (any(STRUCTURED_LINE.search(piece) for piece in pieces) or narrates(text)):
             out.append(
                 _finding(
                     "structured_leak",
                     Severity.HIGH,
-                    "a mode name, field or claim line in the reply",
+                    "a mode name, field or claim line, or the model's own reasoning, in the reply",
                     reply,
                     location,
                 )

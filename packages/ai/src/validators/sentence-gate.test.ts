@@ -330,6 +330,82 @@ describe('SentenceGate', () => {
     expect(prose.units.length).toBe(2);
   });
 
+  describe('meta-narration (LAB-M1: the model thinking aloud on a call)', () => {
+    const LAB =
+      "Okay, let's see. The founder says they have five interviews. First, I need to figure out the mode. The venture is in the discovery stage.";
+
+    it('releases nothing of a reply that opens with narration and asks for it to be written whole', () => {
+      for (const options of [{}, { spoken: true, spokenWordBudget: 70, maxUnitChars: 280 }]) {
+        for (const chunks of chunkings(LAB)) {
+          const g = gate(options);
+          const units: GateUnit[] = [];
+          for (const chunk of chunks) units.push(...g.push(chunk).units);
+          const end = g.end();
+          units.push(...end.units);
+          expect(units).toEqual([]);
+          expect(g.fallback).toBe('meta_narration');
+          expect(end).toMatchObject({ blocked: null, fallback: 'meta_narration', cut: null });
+        }
+      }
+      expect(run(gate(), ['This is a social turn. ', 'Hi Maya!']).units).toEqual([]);
+      // SM-39: a lead-in, then the narration. Nothing is said.
+      for (const text of [
+        'Okay, let’s tackle this. The founder is asking about pricing. First, I need to figure out the mode.',
+        'Okay, let’s see. The founder just asked about the pilot. First, looking at the evidence: E1 mentions it.',
+      ]) {
+        for (const chunks of chunkings(text)) {
+          const g = gate({ spoken: true, spokenWordBudget: 70, maxUnitChars: 280 });
+          const units: GateUnit[] = [];
+          for (const chunk of chunks) units.push(...g.push(chunk).units);
+          units.push(...g.end().units);
+          expect(units).toEqual([]);
+          expect(g.fallback).toBe('meta_narration');
+        }
+      }
+    });
+
+    it('holds a thinking-aloud opener until the next unit shows whether speech follows', () => {
+      const g = gate();
+      expect(g.push("Okay, let's see. ").units).toEqual([]);
+      expect(g.push('Five interviews ').units).toEqual([]);
+      const rest = g.push('is a solid start. What surprised you most?');
+      const end = g.end();
+      expect(joined([...rest.units, ...end.units])).toBe(
+        "Okay, let's see. Five interviews is a solid start. What surprised you most?",
+      );
+      expect(g.fallback).toBeNull();
+      // "Let me think about that with you" is speech.
+      expect(joined(run(gate(), ['Let me think about that with you. Which price felt wrong?']).units)).toBe(
+        'Let me think about that with you. Which price felt wrong?',
+      );
+    });
+
+    it('ends the reply before narration that comes after released units, typed and spoken', () => {
+      const text =
+        'That sounds like a lot this week. Take tonight off. This is a social turn, so I should keep it short. According to the rules, one question.';
+      for (const options of [{}, { spoken: true, spokenWordBudget: 70, maxUnitChars: 280 }]) {
+        for (const chunks of chunkings(text)) {
+          const g = gate(options);
+          const units: GateUnit[] = [];
+          let cut = null;
+          for (const chunk of chunks) {
+            const result = g.push(chunk);
+            units.push(...result.units);
+            cut ??= result.cut;
+          }
+          const end = g.end();
+          units.push(...end.units);
+          cut ??= end.cut;
+          expect(joined(units)).toBe('That sounds like a lot this week. Take tonight off.');
+          expect(units.map((u) => u.spoken).join(' ')).not.toMatch(/social turn|rules/i);
+          expect(cut).toBe('meta_narration');
+          expect(g.cut).toBe('meta_narration');
+          expect(g.fallback).toBeNull();
+        }
+      }
+    });
+  });
+
   it('releases nothing and needs no fallback for a reply of only whitespace', () => {
     const g = gate();
     const { units } = run(g, ['   ', '\n\n ']);

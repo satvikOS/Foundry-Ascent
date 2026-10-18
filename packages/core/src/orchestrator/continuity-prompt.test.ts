@@ -7,7 +7,6 @@ import {
   continuityOpener,
   leftOffTopic,
   midSentence,
-  quotable,
   relativeWhen,
   renderLeftOffSection,
   threadOpener,
@@ -175,7 +174,7 @@ describe('a conversation with the venture’s previous coach', () => {
     expect(section).not.toContain('<you>');
     const line = continuityOpener(earlier, { now: NOW, seed: 'a' });
     expect(line.withTopic).toBe(
-      'Good to have you here. Your last conversation here (about 20 minutes ago, on a call) was about “Should we price per library or per seat?” Want to pick that up, or start somewhere new?',
+      'Good to have you here. Your last conversation here (about 20 minutes ago, on a call) was about whether to price per library or per seat. Want to pick that up, or start somewhere new?',
     );
     expect(line.withTopic).not.toMatch(/\bwe (were|talked)\b/i);
     expect(validatedOpener(line.withTopic, GUARDS)).toBe(line.withTopic);
@@ -188,8 +187,9 @@ describe('continuityOpener', () => {
     const line = continuityOpener(conversation(), { now: NOW, seed: 'a' });
     expect(line.withTopic).toMatch(/about 20 minutes ago/);
     expect(line.withTopic).toMatch(/on a call/);
-    expect(line.withTopic).toContain('you asked “Should we price per library or per seat?”');
-    expect(line.withTopic).not.toMatch(/\?”\./);
+    // Summarised, never quoted back (LAB-R3).
+    expect(line.withTopic).toContain('we talked about whether to price per library or per seat.');
+    expect(line.withTopic).not.toMatch(/[“”"]|Should we/);
     expect(line.generic).not.toContain('price');
   });
 
@@ -205,7 +205,7 @@ describe('continuityOpener', () => {
       continuityOpener(conversation({ title: null, exchanges: [] }), { now: NOW, seed: 'c' }).withTopic,
     ).toBeNull();
     expect(leftOffTopic({ title: 'We signed the first library!', digest: null })).toBe(
-      'you said “We signed the first library”',
+      'we talked about signing the first library',
     );
   });
 
@@ -234,7 +234,7 @@ describe('continuityOpener', () => {
       }),
       { now: NOW, seed: 'a' },
     );
-    expect(later.withTopic).toContain('you said “We decided to price per library, not per seat”');
+    expect(later.withTopic).toContain('we talked about your decision to price per library.');
     // Too long to say in one breath: the first sentence, or nothing.
     const long = conversation({
       title:
@@ -242,9 +242,57 @@ describe('continuityOpener', () => {
       exchanges: [],
     });
     expect(continuityOpener(long, { now: NOW, seed: 'a' }).withTopic).toBeNull();
-    expect(quotable('We booked two rooms. Then the second library called back about a trial.')).toBe(
-      'We booked two rooms.',
-    );
+  });
+
+  it('names the topic, never the founder’s recall, meta or greeting line (LAB-R3)', () => {
+    // RC-02: the chat's last line was a recall question; the opener quoted it back as the subject.
+    const recalled = conversation({
+      channel: 'chat',
+      title: "We're pricing the Hartwell pilot at $900 per semester.",
+      exchanges: [
+        {
+          founder: "We're pricing the Hartwell pilot at $900 per semester.",
+          answer: 'That is a clear number.',
+        },
+        {
+          founder: 'Hey, do you remember what we talked about last time?',
+          answer: 'Yes: the Hartwell pilot.',
+        },
+      ],
+    });
+    // RC-03: the call's last line asked what the founder had said in a chat.
+    const asked = conversation({
+      title: 'What did I tell you in our chat about the student union?',
+      exchanges: [
+        { founder: 'What did I tell you in our chat about the student union?', answer: 'The group booking.' },
+      ],
+    });
+    for (const seed of ['a', 'b', 'c', 'd', 'e']) {
+      const line = continuityOpener(recalled, { now: NOW, seed }).withTopic ?? '';
+      expect(line).toContain('we talked about pricing the Hartwell pilot at $900 per semester.');
+      expect(line).not.toMatch(/remember|you asked|[“”"]/i);
+      // Nothing but a memory question to go on: the generic line, never the question.
+      expect(continuityOpener(asked, { now: NOW, seed }).withTopic).toBeNull();
+      expect(continuityOpener(asked, { now: NOW, seed }).generic).not.toMatch(/tell you|student union/i);
+    }
+    for (const title of ['Am I talking to a bot?', 'Is this really Corin?', 'Do you even have a life?']) {
+      expect(
+        continuityOpener(conversation({ title, exchanges: [] }), { now: NOW, seed: 'a' }).withTopic,
+      ).toBeNull();
+    }
+  });
+
+  it('says distilled topics to the founder, with names in their real case (LAB-U2)', () => {
+    const digest = (topics: string[]) => ({ summary: 's', topics, commitments: [], openQuestions: [] });
+    const people = { founder: 'Maya Patel', team: ['Maya Patel', 'Noor Haddad'] };
+    const line =
+      continuityOpener(conversation({ digest: digest(["maya's pilot budget", "noor's first task"]) }), {
+        now: NOW,
+        seed: 'a',
+        people,
+      }).withTopic ?? '';
+    expect(line).toContain("we talked about your pilot budget and Noor's first task");
+    expect(line).not.toMatch(/maya/i);
   });
 
   it('says a capitalised topic label as part of the sentence, never as a heading (review)', () => {
@@ -312,6 +360,22 @@ describe('threadOpener (the notebook’s next topic, phrased afresh each time)',
     }
     expect(threadOpener('Pilot pricing.', { seed: 'x' })).toMatch(/pilot pricing[.,]/);
     expect(threadOpener('Hi', { seed: 'x' })).toBeNull();
+  });
+
+  it('says a thread distilled about the founder to them, or not at all (LAB-U2)', () => {
+    // continuity-chat.spec.ts, real model: "Shall we pick up the facility budget numbers maya will get, …?"
+    const people = { founder: 'Maya Patel', team: ['Maya Patel', 'Noor Haddad'] };
+    for (let i = 0; i < 12; i += 1) {
+      const line = threadOpener('the facility budget numbers maya will get', {
+        seed: `s${String(i)}`,
+        people,
+      });
+      expect(line).toContain('the facility budget numbers you will get');
+      expect(line).not.toMatch(/maya|the founder/i);
+      expect(validatedOpener(line, GUARDS)).toBe(line);
+    }
+    expect(threadOpener("noor's first task", { seed: 'x', people })).toContain("Noor's first task");
+    expect(threadOpener('whether she will sign the order', { seed: 'x', people })).toBeNull();
   });
 });
 

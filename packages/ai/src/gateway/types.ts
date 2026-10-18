@@ -72,6 +72,13 @@ export interface RawModelAttempt {
   cachedInputTokens?: number;
   /** Provider error class name (e.g. `ThrottlingException`), never the error message. */
   errorName: string | null;
+  /**
+   * Structured output: why it failed validation (`path: code`, e.g. `digest.topics: invalid_type`) on an
+   * `invalid_output` attempt, or the schema-guided repairs it needed (`code:path`, e.g. `missing_null:challenge`)
+   * on an `ok` one. Field names, indices and codes only, never values: logged so the lab can see the real failure
+   * modes (LAB-M6, LAB-R7).
+   */
+  issues?: readonly string[];
 }
 
 /** One priced network call. Each attempt is billable and should become one `usage_ledger` row. */

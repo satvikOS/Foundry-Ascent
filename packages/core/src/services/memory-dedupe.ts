@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { contentTokens, jaccardSimilarity, textKey } from '@foundry/ai';
+import { contentTokens, contentWords, jaccardSimilarity, textKey } from '@foundry/ai';
 
 /**
  * When an AI memory candidate restates something the venture already has (pure rules, unit tested; used by
@@ -188,6 +188,59 @@ function aboutTheFounder(text: string, speakers: readonly string[]): boolean {
   return (named || SELF_SUBJECT.test(text)) && STANCE.test(text);
 }
 
+/** Common irregular verb forms, as their base (after `contentWords`' crude stemming): "paid" says "pay". */
+const IRREGULAR: Readonly<Record<string, string>> = {
+  paid: 'pay',
+  bought: 'buy',
+  sold: 'sell',
+  made: 'make',
+  took: 'take',
+  taken: 'take',
+  gave: 'give',
+  given: 'give',
+  got: 'get',
+  gotten: 'get',
+  went: 'go',
+  gone: 'go',
+  ran: 'run',
+  met: 'meet',
+  found: 'find',
+  kept: 'keep',
+  sent: 'send',
+  spent: 'spend',
+  built: 'build',
+  chose: 'choos',
+  chosen: 'choos',
+  wrote: 'writ',
+  written: 'writ',
+  thought: 'think',
+  told: 'tell',
+  said: 'say',
+  began: 'begin',
+  begun: 'begin',
+  left: 'leav',
+  lost: 'los',
+  won: 'win',
+};
+
+/** The stems of `text`'s content words ("libraries" → "library", "priced" → "pric", "paid" → "pay"). */
+function stems(text: string): Set<string> {
+  return new Set([...contentWords(text)].map((w) => IRREGULAR[w] ?? w));
+}
+
+/**
+ * The share of a candidate's content stems found in `texts`. The model labels a candidate with where it came from,
+ * and it rewords what the founder said ("ask each library for a paid commitment" kept as "libraries must pay before
+ * the pilot"): exact words miss that, so a labelled candidate is judged by stems (LAB-K1).
+ */
+function stemShare(candidate: string, texts: readonly string[], framing: ReadonlySet<string>): number {
+  const framed = new Set([...framing].map((w) => [...stems(w)][0] ?? w));
+  const words = [...stems(candidate)].filter((w) => !framed.has(w));
+  if (words.length === 0) return 0;
+  const known = stems(texts.join(' '));
+  return words.filter((w) => known.has(w)).length / words.length;
+}
+
 /** Where the model says a candidate came from (contract `MemoryCandidate.source`); null when it did not say. */
 export type CandidateProvenance = 'founder_stated' | 'founder_agreed' | 'coach_advice' | null;
 
@@ -200,7 +253,9 @@ export type CandidateProvenance = 'founder_stated' | 'founder_agreed' | 'coach_a
  * - `founder_agreed` is kept only when the founder explicitly took up an answer ({@link agreesWith}) that shares
  *   words with it, or a third of its words are the founder's own;
  * - `founder_stated` is kept, however reworded ("make a lot of money fast" kept as "become wealthy quickly"),
- *   unless it is phrased as advice ({@link adviceShaped}) and barely any of it is the founder's words.
+ *   unless it is phrased as advice ({@link adviceShaped}) and barely any of it is the founder's words, read by
+ *   stems so inflections and common irregular forms count ("libraries must pay" for "a paid commitment from each
+ *   library", LAB-K1).
  * Without a label (an older model or a mock), it is judged from the words: kept when the founder took up advice
  * saying it, when at least a third of its words are the founder's own and it is not advice, or when it states
  * what the founder (or their team) wants, prefers or cannot do; otherwise it is the coach's. Citing the venture's
@@ -225,11 +280,17 @@ export function isCoachEcho(
   const founderShare = share(grounding.founder);
   const agreedShare = share(grounding.agreed);
   const advice = adviceShaped(candidate.content);
+  // A labelled candidate: the founder's words read by stems as well (the model rewords them).
+  const labelledShare = (texts: readonly string[], exact: number): number =>
+    Math.max(exact, stemShare(`${candidate.title} ${candidate.content}`, texts, framing));
   switch (source) {
     case 'founder_agreed':
-      return !(agreedShare > 0 || founderShare >= FOUNDER_SHARE);
+      return !(
+        labelledShare(grounding.agreed, agreedShare) > 0 ||
+        labelledShare(grounding.founder, founderShare) >= FOUNDER_SHARE
+      );
     case 'founder_stated':
-      return advice && founderShare < FOUNDER_SHARE && agreedShare === 0;
+      return advice && labelledShare(grounding.founder, founderShare) < FOUNDER_SHARE && agreedShare === 0;
     default:
       if (agreedShare >= 0.5) return false;
       if (advice) return founderShare < 0.5;

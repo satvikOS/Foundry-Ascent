@@ -156,6 +156,46 @@ describe('NovaProvider.streamText (ConverseStream)', () => {
     expect(inputs[0]).not.toHaveProperty('toolConfig');
   });
 
+  it('never hands on the model’s reasoning: reasoning blocks, or <thinking> written into the text (LAB-M1)', async () => {
+    const reasoningDelta = (text: string): ConverseStreamOutput => ({
+      contentBlockDelta: { contentBlockIndex: 0, delta: { reasoningContent: { text } } },
+    });
+    const { provider } = nova([
+      () =>
+        events([
+          reasoningDelta("Okay, let's see. The founder says they have five interviews."),
+          reasoningDelta(' First, I need to figure out the mode.'),
+          textDelta('<thin'),
+          textDelta('king>According to the rules, a short reply.</thinking>\n'),
+          textDelta('Five interviews is a solid start. '),
+          textDelta('What surprised you?'),
+          stop('end_turn'),
+          metadata,
+        ]),
+    ]);
+    const chunks: string[] = [];
+    const result = await provider.streamText(streamRequest((t) => chunks.push(t)));
+    expect(chunks.join('')).toBe('Five interviews is a solid start. What surprised you?');
+    expect(result.text).toBe('Five interviews is a solid start. What surprised you?');
+    expect(chunks.join('')).not.toMatch(/founder|mode|rules|thinking/i);
+  });
+
+  it('estimates a broken stream’s usage from everything generated, reasoning included', async () => {
+    const { provider } = nova([
+      () =>
+        events([
+          textDelta(`<thinking>${'The founder says hi. '.repeat(40)}`),
+          { modelStreamErrorException: { message: 'boom' } } as unknown as ConverseStreamOutput,
+        ]),
+    ]);
+    const error = await captureError(provider.streamText(streamRequest(() => undefined)));
+    expect(error).toBeInstanceOf(ModelUnavailableError);
+    if (!(error instanceof ModelUnavailableError)) return;
+    // Nothing visible was delivered, but the reasoning was generated and is billed.
+    expect(error.textDelivered).toBe(false);
+    expect(error.rawAttempts[0]?.usage.outputTokens).toBeGreaterThan(150);
+  });
+
   it('marks a failure after text as delivered, estimates its usage and never retries', async () => {
     const { provider } = nova([
       () =>

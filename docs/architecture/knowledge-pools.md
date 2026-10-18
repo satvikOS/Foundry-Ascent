@@ -298,8 +298,12 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
   library-staff interviews you planned. How is it going?"), or the stored sentence when there is no thread (never
   when it only repeats the question that conversation ended on, or already opened a conversation since); otherwise
   with a line built from that latest conversation ("Good to have you back. Last time (about 3 minutes ago, on a
-  call), you asked “…”"): its digest's topics said mid-sentence, else the founder's own words worth quoting (never
-  a greeting such as "Hi", never more than a breath), else a generic line. Phrasing varies with how many
+  call), we talked about whether to price per library or per seat."): its digest's topics said mid-sentence, else
+  a summary of what the founder brought, never their words quoted back ("whether to …", "how to …", "your plan to
+  …", "booking the auditorium", or its most telling noun phrase; never a greeting, a check, a recall or memory
+  question, a question about the vEIR, thanks or a wrap-up), else a generic line. Every distilled line it uses (the
+  thread, the stored sentence, the topics) is said to the founder: their name or "the founder" becomes "you", team
+  names keep their real case, and a line still in the third person is left out. Phrasing varies with how many
   conversations the person opened since, so two never open alike. The line is validated like any opener and
   stored with the conversation it came from (`coaching_sessions.opener`). A call says it after introducing itself; a call that
   starts a conversation nobody has said anything in chooses the line again at call start and keeps it as the
@@ -346,9 +350,14 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
   compares.
 - **Provenance**: the model labels each candidate `founder_stated`, `founder_agreed` or `coach_advice`. Advice is
   dropped; "agreed" needs an answer the founder explicitly took up ("sounds good, let's do that"; never a bare
-  "sure", "ok" or "right, but…"); a stated note phrased as advice with almost none of the founder's words is the
-  coach's. Without a label, a note is the founder's when a third of its words are theirs and it is not advice, or
-  when it says what the founder wants, prefers or cannot do. Citations never make a note the founder's.
+  "sure", "ok" or "right, but…"); a stated note phrased as advice with almost none of the founder's words (read by
+  stems, so "libraries must pay" counts for "a paid commitment from each library") is the coach's. Without a label,
+  a note is the founder's when a third of its words are theirs and it is not advice, or when it says what the
+  founder wants, prefers or cannot do. Citations never make a note the founder's.
+- **Stated in the founder's words**: a turn also keeps a decision, goal or constraint the founder states in a plain
+  first-person sentence ("We've decided to…", "Our goal is…", "We can't…"; never a question or a hedge) when the
+  model's candidates do not say it, as a `founder_stated` candidate through the same checks, without a model call.
+  A chat is distilled only nine minutes after its last turn; this keeps what was decided with the turn.
 - **Forgetting**: deleting an item learned from a conversation, or correcting one the vEIR kept, records per
   conversation a fingerprint (`memory_forgotten`, closed to app_rls; `app.record_forgotten_memory`,
   `app.forgotten_memory`): hashes of its words and numbers and a SimHash of its embedding. A candidate from the same

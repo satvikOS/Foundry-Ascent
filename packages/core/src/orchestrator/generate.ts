@@ -2,9 +2,11 @@ import {
   COACH_ANNOTATIONS_SCHEMA_NAME,
   COACH_RESPONSE_SCHEMA_NAME,
   CoachAnnotations,
+  MIN_KEPT_WORDS,
   SPOKEN_MAX_WORDS,
   SentenceGate,
   clampWords,
+  cutMetaNarration,
   isModelGatewayError,
   type ChatMessage,
   type GateBlockReason,
@@ -45,10 +47,11 @@ export interface Generation {
 
 /**
  * Why a streamed turn's reply was written whole after all: the stream broke after text was shown
- * (`interrupted`), produced nothing presentable (`empty`), or was structured output with no reply field the
- * extractor could stream (`structured_output`). Units already sent are superseded by `turn.completed`.
+ * (`interrupted`), produced nothing presentable (`empty`), was structured output with no reply field the
+ * extractor could stream (`structured_output`), or opened with the model thinking aloud about its prompt
+ * (`meta_narration`, the sentence gate). Units already sent are superseded by `turn.completed`.
  */
-export type StreamFallback = 'interrupted' | 'empty' | 'structured_output';
+export type StreamFallback = 'interrupted' | 'empty' | 'structured_output' | 'meta_narration';
 
 export interface StreamDetails {
   /** Milliseconds from the start of the turn request to the first `turn.delta`; null when none was sent. */
@@ -243,36 +246,64 @@ function attemptsOf(err: unknown): readonly ModelAttempt[] {
   return isModelGatewayError(err) ? err.attempts : [];
 }
 
-/** The whole reply in one structured call (streaming switched off, or a stream that broke after text). */
+/**
+ * Asked again once when a whole reply opens with the model thinking aloud about its prompt instead of talking
+ * to the founder (LAB-M1). Server-written, appended to the founder's message.
+ */
+export const META_NARRATION_RETRY =
+  '[Your previous reply described your reasoning, the rules or the founder in the third person instead of talking to the founder. Write only what you say to them, as "you".]';
+
+/** Whether a whole reply has no reply in it: its answer (or, on a call, its spoken form) opens with narration. */
+function opensWithNarration(value: CoachResponse, channel: TurnChannel): boolean {
+  if (cutMetaNarration(value.answer).at === 'opening') return true;
+  return channel === 'voice' && cutMetaNarration(value.spoken ?? '').at === 'opening';
+}
+
+/**
+ * The whole reply in one structured call (streaming switched off, or a stream that broke after text). A reply
+ * that opens with meta-narration is asked for once more (`meta_narration_retried`); the validator holds back a
+ * second one.
+ */
 export async function generateWhole(
   a: GenerateArgs,
   earlier: readonly ModelAttempt[] = [],
 ): Promise<Generation> {
-  try {
-    const result = await a.kit.deps.gateway.generateStructured({
-      purpose: a.meter.purpose,
-      system: a.system,
-      messages: a.messages,
-      schemaName: COACH_RESPONSE_SCHEMA_NAME,
-      zodSchema: CoachResponse,
-      requestId: a.ctx.requestId,
-      timeoutMs: a.kit.config.turns.modelTimeoutMs,
-      ...(a.signal ? { signal: a.signal } : {}),
-    });
-    await record(a, result.attempts);
-    return {
-      raw: result.value,
-      modelId: result.modelId,
-      fallbackUsed: result.fallbackUsed,
-      attempts: [...earlier, ...result.attempts],
-      latencyMs: Math.round(result.latencyMs),
-      notes: [],
-      gateBlocked: null,
-      stream: null,
-    };
-  } catch (err) {
-    await record(a, attemptsOf(err));
-    throw new GenerationFailure(err, [...earlier, ...attemptsOf(err)]);
+  const attempts: ModelAttempt[] = [...earlier];
+  const notes: string[] = [];
+  let latencyMs = 0;
+  for (let round = 0; ; round += 1) {
+    try {
+      const result = await a.kit.deps.gateway.generateStructured({
+        purpose: a.meter.purpose,
+        system: a.system,
+        messages: round === 0 ? a.messages : [...a.messages, { role: 'user', content: META_NARRATION_RETRY }],
+        schemaName: COACH_RESPONSE_SCHEMA_NAME,
+        zodSchema: CoachResponse,
+        requestId: a.ctx.requestId,
+        timeoutMs: a.kit.config.turns.modelTimeoutMs,
+        ...(a.signal ? { signal: a.signal } : {}),
+      });
+      await record(a, result.attempts);
+      attempts.push(...result.attempts);
+      latencyMs += Math.round(result.latencyMs);
+      if (round === 0 && opensWithNarration(result.value, a.channel) && a.signal?.aborted !== true) {
+        notes.push('meta_narration_retried');
+        continue;
+      }
+      return {
+        raw: result.value,
+        modelId: result.modelId,
+        fallbackUsed: result.fallbackUsed,
+        attempts,
+        latencyMs,
+        notes,
+        gateBlocked: null,
+        stream: null,
+      };
+    } catch (err) {
+      await record(a, attemptsOf(err));
+      throw new GenerationFailure(err, [...attempts, ...attemptsOf(err)]);
+    }
   }
 }
 
@@ -343,7 +374,7 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
       if (unit.spoken !== '') said.words += unit.spoken.split(/\s+/).filter((w) => w !== '').length;
       if (speech && unit.spoken !== '') await speech.queue(unit.spoken);
     }
-    if (result.blocked !== null || result.fallback !== null) stop.abort();
+    if (result.blocked !== null || result.fallback !== null || result.cut !== null) stop.abort();
     else if (voice && !said.full && said.words >= SPOKEN_MAX_WORDS) {
       said.full = true;
       stop.abort();
@@ -408,7 +439,7 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
     return {
       ...whole,
       latencyMs: whole.latencyMs + phaseAMs,
-      notes: [`stream_${fallback}`],
+      notes: [`stream_${fallback}`, ...whole.notes],
       stream: { ...details(phaseAMs, 0, null), fallback },
     } satisfies Generation;
   };
@@ -440,7 +471,14 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
       },
       async (chunk) => {
         timing.modelFirstTextAt ??= performance.now();
-        if (gate.blocked !== null || gate.fallback !== null || reply.isDone() || said.full) return;
+        if (
+          gate.blocked !== null ||
+          gate.fallback !== null ||
+          gate.cut !== null ||
+          reply.isDone() ||
+          said.full
+        )
+          return;
         const text = reply.push(chunk);
         if (text !== '') await release(gate.push(text));
         // The reply is complete and what follows is the response's other fields: stop the model.
@@ -467,10 +505,10 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
     }
     if (a.signal?.aborted) throw new GenerationFailure(err, attempts);
     if (gate.fallback !== null) return wholeInstead(gate.fallback, phaseAMs, null);
-    if ((reply.isDone() || said.full) && stop.signal.aborted) {
-      // Stopped here once the reply was complete, or all of a call's reply that can be said was said: the
-      // reply stands as the stream gave it.
-      said.cut = said.full;
+    if ((reply.isDone() || said.full || gate.cut !== null) && stop.signal.aborted) {
+      // Stopped here once the reply was complete, all of a call's reply that can be said was said, or the gate
+      // ended it before the model's narration: the reply stands as the stream gave it.
+      said.cut = said.full || gate.cut !== null;
       streamed = {
         modelId: failed.at(-1)?.modelId ?? 'unknown',
         fallbackUsed: failed.length > 1 && failed.at(-1)?.modelId !== failed[0]?.modelId,
@@ -491,6 +529,8 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
     // Ends the gate (nothing more once that last push stopped it).
     await release(gate.end());
   }
+  // The gate ended the reply before the model's narration (while streaming, or on its last sentence at the end).
+  if (gate.cut !== null) said.cut = true;
   const phaseAMs = Math.round(performance.now() - phaseAStarted);
   if (gate.blocked !== null) return blockedBy(gate.blocked, streamed.modelId, phaseAMs);
   if (gate.fallback !== null) return wholeInstead(gate.fallback, phaseAMs, null);
@@ -498,11 +538,17 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
   if (reply.missing) return wholeInstead('structured_output', phaseAMs, null);
   // Nothing presentable (an empty or whitespace reply, or one the Markdown subset removes entirely).
   if (gate.stats.units + gate.stats.withheld === 0) return wholeInstead('empty', phaseAMs, null);
+  // Cut before narration with no reply shown before it (nothing, units withheld from the preview, or a lead-in of a few
+  // words such as "Okay, here goes."): the reply is written whole, as the final validation would hold it back.
+  if (gate.cut !== null && (said.shown.match(/\p{L}[\p{L}'’-]*/gu) ?? []).length < MIN_KEPT_WORDS) {
+    return wholeInstead(gate.cut, phaseAMs, null);
+  }
   if (streamed.stopReason === 'max_tokens') notes.push('answer_truncated');
   // The reply was taken out of structured output, or cut where the response's other fields began.
   if (reply.shape !== 'prose') notes.push(`stream_structured_${reply.shape ?? 'unknown'}`);
   else if (reply.isDone()) notes.push('stream_fields_cut');
-  if (said.cut) notes.push('stream_spoken_cut');
+  if (gate.cut !== null) notes.push(`stream_${gate.cut}_cut`);
+  else if (said.cut) notes.push('stream_spoken_cut');
   const replyText = said.cut ? said.shown.trim() : reply.text;
 
   // Phase B: the structured fields of exactly that reply.

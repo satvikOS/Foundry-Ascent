@@ -6,6 +6,8 @@
  * resolutions feeding the notebook.
  */
 import {
+  DISTILL_MAX_OUTPUT_TOKENS,
+  DISTILL_SCHEMA_NAME,
   type DistillDraft,
   type GenerateStructuredRequest,
   MockModelGateway,
@@ -39,6 +41,8 @@ let scripted: ((context: MockGenerateContext) => DistillDraft) | null = null;
 let whileAnswering: (() => Promise<void>) | null = null;
 /** The next model call of the scripted core fails with this error (billed like a real failed attempt). */
 let failNext: Error | null = null;
+/** The output bound of every distillation call the scripted gateway saw. */
+const distillBounds: (number | undefined)[] = [];
 let scriptedCore: Core;
 /** The model of the scripted core (answers with `scripted`). */
 let scriptedGateway: ModelGateway;
@@ -198,6 +202,7 @@ beforeAll(async () => {
   const gateway: ModelGateway = {
     info: mock.info,
     generateStructured: async <T>(request: GenerateStructuredRequest<T>) => {
+      if (request.schemaName === DISTILL_SCHEMA_NAME) distillBounds.push(request.maxOutputTokens);
       const failure = failNext;
       failNext = null;
       if (failure) throw failure;
@@ -463,6 +468,15 @@ describe('distillSession', () => {
     }
     return prompts;
   }
+
+  it('gives the model room to rewrite the whole notebook (LAB-R7: cut off at the default bound)', async () => {
+    const id = await conversation(priya, ['We will price the sensor pilot per lab, two labs first.'], bench);
+    await idle(id, 15);
+    distillBounds.length = 0;
+    expect((await scriptedCore.distill.distillSession(job(id))).status).toBe('distilled');
+    expect(distillBounds).toEqual([DISTILL_MAX_OUTPUT_TOKENS]);
+    expect(DISTILL_MAX_OUTPUT_TOKENS).toBeGreaterThan(4_096);
+  });
 
   it('sends a continued conversation’s digest and only its new turns, and covers exactly those', async () => {
     const id = await conversation(

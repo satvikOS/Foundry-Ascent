@@ -12,6 +12,12 @@ export interface TranscriptResult {
   readonly partial: boolean;
   /** Every word carries Transcribe's partial-results-stabilisation "Stable" flag. */
   readonly stable: boolean;
+  /**
+   * The leading words Transcribe already marked "Stable" (it will not revise them): the whole text of a finished
+   * segment, '' when none (or when the transcriber does not say). One of them that is not a backchannel is the
+   * founder taking the floor.
+   */
+  readonly stableText?: string;
 }
 
 export interface EndpointerOptions {
@@ -147,7 +153,8 @@ export class Endpointer {
 
 /**
  * Sounds people make to show they are listening, not to take the floor ("yeah", "mm-hmm", "right", "got it",
- * "I see"). Said while the vEIR speaks, they neither cut it off nor become a turn of their own.
+ * "I see"). Said while the vEIR speaks, they neither cut it off nor become a turn of their own. Never an opener of
+ * a turn such as "sorry", "wait", "but" or "actually": "Sorry to cut in" takes the floor (LAB-V4).
  */
 const BACKCHANNELS: ReadonlySet<string> = new Set([
   'ah',
@@ -192,4 +199,53 @@ const BACKCHANNELS: ReadonlySet<string> = new Set([
 export function floorWords(heard: string, spoken: string): string[] {
   const echo = new Set(words(spoken));
   return words(heard).filter((word) => !echo.has(word) && !BACKCHANNELS.has(word));
+}
+
+/**
+ * How long the founder's voice runs on while the vEIR speaks before it is taken as them taking the floor, words
+ * or not (the transcript lags the voice by a second or more). Backchannels are shorter: "yeah" or "okay" about
+ * 300 ms, "mm-hmm" about 500 ms. The lab measured 2.0 s from the start of a barge-in to the reply stopping, while
+ * the stop waited for confirmed words (LAB-V4); with this, about 0.8 s.
+ */
+export const BARGE_SUSTAIN_MS = 700;
+/** A pause longer than this ends a run of voice (the gaps between words are shorter). */
+export const BARGE_GAP_MS = 250;
+/** A single unsettled word that is not a backchannel takes the floor once the voice has run this long. */
+export const BARGE_WORD_SUSTAIN_MS = 300;
+
+/**
+ * One run of the founder's voice while the vEIR speaks, from the VAD's frames: how long it has gone on, with the
+ * short gaps between words inside it. Pure apart from the injected clock.
+ */
+export class VoiceRun {
+  private startedAt: number | null = null;
+  private lastVoicedAt = Number.NEGATIVE_INFINITY;
+
+  constructor(
+    private readonly now: () => number,
+    private readonly gapMs = BARGE_GAP_MS,
+  ) {}
+
+  /** A microphone frame; returns how long the current run has gone on (0 when there is none). */
+  frame(voiced: boolean): number {
+    const now = this.now();
+    if (voiced) {
+      if (this.startedAt === null || now - this.lastVoicedAt > this.gapMs) this.startedAt = now;
+      this.lastVoicedAt = now;
+    } else if (this.startedAt !== null && now - this.lastVoicedAt > this.gapMs) {
+      this.startedAt = null;
+    }
+    return this.duration();
+  }
+
+  /** How long the current run has gone on (ms), 0 when the founder is quiet. */
+  duration(): number {
+    if (this.startedAt === null || this.now() - this.lastVoicedAt > this.gapMs) return 0;
+    return this.lastVoicedAt - this.startedAt;
+  }
+
+  reset(): void {
+    this.startedAt = null;
+    this.lastVoicedAt = Number.NEGATIVE_INFINITY;
+  }
 }

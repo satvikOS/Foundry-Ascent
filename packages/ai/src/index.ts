@@ -197,10 +197,21 @@ export {
   toSpeakable,
 } from './validators/speech.js';
 export {
+  MIN_KEPT_WORDS,
+  cutMetaNarration,
+  findMetaNarration,
+  isThinkingAloudOpener,
+  metaNarrationCue,
+  type MetaNarrationCue,
+  type MetaNarrationCut,
+} from './validators/meta-narration.js';
+export {
   SentenceGate,
   findUnitEnd,
   holdBackFor,
   type GateBlockReason,
+  type GateCutReason,
+  type GateFallbackReason,
   type GateResult,
   type GateStats,
   type GateUnit,

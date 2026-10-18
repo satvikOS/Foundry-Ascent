@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { Endpointer, floorWords } from './endpointing';
+import { BARGE_SUSTAIN_MS, Endpointer, VoiceRun, floorWords } from './endpointing';
 import { VoiceActivityDetector } from './vad';
 
 function clock(start = 1_000) {
@@ -93,6 +93,44 @@ describe('floorWords', () => {
     expect(floorWords('yeah but price', spoken)).toEqual(['but', 'price']);
     expect(floorWords('twelve', '')).toEqual(['twelve']);
     expect(floorWords('  ', spoken)).toEqual([]);
+  });
+
+  it('never takes "sorry", "wait" or "actually" for a backchannel: they open a turn (LAB-V4)', () => {
+    const spoken = 'Start with one library and a written success threshold.';
+    expect(floorWords('Sorry to cut in', spoken)).toEqual(['sorry', 'to', 'cut', 'in']);
+    expect(floorWords('wait, actually', spoken)).toEqual(['wait', 'actually']);
+    for (const backchannel of ['mm', 'yeah', 'right', 'okay', 'mm-hmm', 'uh-huh', 'got it']) {
+      expect(floorWords(backchannel, spoken), backchannel).toEqual([]);
+    }
+  });
+});
+
+describe('VoiceRun (LAB-V4: barge-in on the voice, before the transcript)', () => {
+  /** Feeds 50 ms frames of the pattern ('x' voiced, '.' quiet); returns the run's length after each. */
+  function feed(run: VoiceRun, time: ReturnType<typeof clock>, pattern: string): number[] {
+    return pattern.split('').map((c) => {
+      time.advance(50);
+      return run.frame(c === 'x');
+    });
+  }
+
+  it('measures a run of voice across the short gaps between words', () => {
+    const time = clock();
+    const run = new VoiceRun(time.now);
+    const lengths = feed(run, time, 'xxxxxx.xxxxxxxx');
+    expect(lengths.at(-1)).toBeGreaterThanOrEqual(BARGE_SUSTAIN_MS);
+    expect(Math.max(...lengths.slice(0, 10))).toBeLessThan(BARGE_SUSTAIN_MS);
+  });
+
+  it('ends a run at a real pause, so backchannels never add up to one', () => {
+    const time = clock();
+    const run = new VoiceRun(time.now);
+    // "Yeah." … "Right." … "Mm-hmm.": each shorter than a barge-in, with pauses between them.
+    const lengths = feed(run, time, 'xxxxxx......xxxxx......xxxxxxxxx......');
+    expect(Math.max(...lengths)).toBeLessThan(BARGE_SUSTAIN_MS);
+    expect(run.duration()).toBe(0);
+    run.reset();
+    expect(feed(run, time, 'x')).toEqual([0]);
   });
 });
 

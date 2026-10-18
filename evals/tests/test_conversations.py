@@ -110,6 +110,32 @@ class TestReplyGraders:
         heard = reply("x", voice=True, spoken="Who pays?", speech="Pricing follows the budget.")
         assert codes(grade_reply(heard)) == ["spoken_no_handback"]
 
+    def test_the_model_thinking_aloud_is_a_leak(self) -> None:
+        # LAB-M1 (run 39081466804, SM-13): every unit of a call was the model's reasoning (paraphrased).
+        for narration in (
+            "Okay, let's see. The founder says they have five interviews. First, I need to figure out the mode.",
+            "Hi Maya! This is a social turn. According to the rules, I keep it short.",
+            "So the founder is asking about pricing.",
+            "My reply should acknowledge the stress first.",
+            "Start small. The founder_message mentions Noor.",
+            # SM-39 (run 39084323076): both turns of a teammate's call, stored as answer and spoken.
+            "Okay, let's tackle this. The founder is asking about pricing. First, I need to figure out the mode.",
+            "Okay, let's see. The founder just asked about the pilot. First, looking at the evidence: E1 mentions it.",
+        ):
+            assert codes(grade_reply(reply(narration))) == ["structured_leak"], narration
+            heard = reply("Start small. Who pays?", voice=True, spoken="Who pays?", speech=narration)
+            assert "structured_leak" in codes(grade_reply(heard)), narration
+        # Human speech that comes close is not narration.
+        for fine in (
+            "Let me think about that with you. Which price felt wrong?",
+            "Okay, let's see. Five interviews is a solid start. What surprised you?",
+            "Investors back the founder, not the deck. Who signs?",
+            "According to the rules of the accelerator, you need a prototype by June. Can you make it?",
+            "Your team is in survival mode, so cut the side projects. Which one goes first?",
+            "The user wants to book a seat in under ten seconds. What blocks that today?",
+        ):
+            assert grade_reply(reply(fine)) == [], fine
+
     def test_no_evidence_keys_in_a_call_transcript(self) -> None:
         # Production: [E4, E6] in 5 of 9 call answers' transcript text.
         assert codes(grade_reply(reply("Your records show interest [E4, E6].", voice=True))) == [
@@ -720,6 +746,39 @@ def test_a_robotic_coach_shows_up_in_the_craft_gate(tmp_path: Path, monkeypatch:
     assert g13["blocking"] is False
     found = {f["code"] for f in results["cases"][0]["findings"]}
     assert {"stock_opener", "stacked_questions", "social_turn_report", "repeated_question"} <= found
+
+
+def test_the_spoken_reasoning_regression_case(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # LAB-M1: a call spoke the model's reasoning as its reply. The case fails on it, and passes on speech.
+    def narrates(api: FakeFoundryApi, venture: Venture, text: str, mode: str) -> dict[str, Any]:
+        response = human_responder(api, venture, text, mode)
+        if "interviews" in text.casefold():
+            thinking = "Okay, let's see. The founder says they finished five interviews. I need to figure out the mode."
+            return response | {"answer": thinking, "spoken": thinking}
+        return response
+
+    _, results, _ = run(
+        FakeFoundryApi(narrates),
+        tmp_path,
+        monkeypatch,
+        "--case",
+        "CO-015",
+        "--no-data-ok",
+        suite="conversations",
+    )
+    case = results["cases"][0]
+    assert "structured_leak" in {f["code"] for f in case["findings"]}
+    assert case["status"] == "failed"
+    _, clean, _ = run(
+        FakeFoundryApi(human_responder),
+        tmp_path / "clean",
+        monkeypatch,
+        "--case",
+        "CO-015",
+        "--no-data-ok",
+        suite="conversations",
+    )
+    assert clean["cases"][0]["status"] == "passed", clean["cases"][0]["findings"]
 
 
 def test_the_structured_output_leak_regression_case(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

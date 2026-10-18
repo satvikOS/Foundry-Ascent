@@ -14,6 +14,7 @@ import {
   type IdentityViolationKind,
 } from './identity.js';
 import { sanitizeMarkdown } from './markdown.js';
+import { findMetaNarration, isThinkingAloudOpener } from './meta-narration.js';
 import { clampWords, toSpeakable } from './speech.js';
 
 /**
@@ -44,6 +45,13 @@ import { clampWords, toSpeakable } from './speech.js';
  * Before the first unit, a reply that opens like structured output (JSON, a code fence, a field label such
  * as `answer:`) is not prose for the founder: the gate releases nothing and asks for the whole-reply path.
  *
+ * 5. meta-narration, per unit (typed and spoken): a unit in which the model thinks aloud about its prompt ("The
+ *    founder says…", "I need to figure out the mode", "According to the rules…"; validators/meta-narration.ts) is
+ *    never released. Before the first unit the reply is written whole instead (`fallback: 'meta_narration'`); a
+ *    reply that opens with a thinking-aloud sentence ("Okay, let's see.") is held until the next unit shows whether
+ *    narration follows. After units were released, the reply ends before the unit (`cut`), and nothing more is
+ *    released: what follows a narrated sentence is more of the same.
+ *
  * The final validation of the whole response stays authoritative: units are a preview the client replaces
  * with `turn.completed`. Units never carry raw model output that failed a check, and their concatenation
  * passes the Markdown subset unchanged.
@@ -52,7 +60,10 @@ import { clampWords, toSpeakable } from './speech.js';
 export type GateBlockReason = 'cross_venture' | 'identity';
 
 /** Why the stream cannot be shown at all and the reply must be written whole instead. */
-export type GateFallbackReason = 'structured_output';
+export type GateFallbackReason = 'structured_output' | 'meta_narration';
+
+/** Why the reply ends early: what was released stands, and nothing more is. */
+export type GateCutReason = 'meta_narration';
 
 export interface SentenceGateOptions {
   /** Persona display name ("Corin's vEIR"). */
@@ -104,6 +115,8 @@ export interface GateResult {
   readonly blocked: GateBlockReason | null;
   /** Set when the reply is not prose (before any unit): stop the stream and write the reply whole. */
   readonly fallback: GateFallbackReason | null;
+  /** Set when the reply ends before the rest of the stream (after units were released): stop the stream. */
+  readonly cut: GateCutReason | null;
 }
 
 export interface GateStats {
@@ -281,6 +294,7 @@ export class SentenceGate {
   #ended = false;
   #blocked: GateBlockReason | null = null;
   #fallback: GateFallbackReason | null = null;
+  #cut: GateCutReason | null = null;
   /** Set once joining a unit to the shown text would form Markdown the subset removes. */
   #withholding = false;
   #spokenWords = 0;
@@ -331,6 +345,10 @@ export class SentenceGate {
     return this.#fallback;
   }
 
+  get cut(): GateCutReason | null {
+    return this.#cut;
+  }
+
   /** Counts for audit metadata (no content). */
   get stats(): GateStats {
     return { ...this.#stats };
@@ -355,11 +373,16 @@ export class SentenceGate {
   }
 
   #stopped(): boolean {
-    return this.#blocked !== null || this.#fallback !== null;
+    return this.#blocked !== null || this.#fallback !== null || this.#cut !== null;
   }
 
   #nothing(): GateResult {
-    return { units: [], blocked: this.#blocked, fallback: this.#fallback };
+    return { units: [], blocked: this.#blocked, fallback: this.#fallback, cut: this.#cut };
+  }
+
+  /** Nothing of the reply was released yet (shown, or withheld from the preview and said). */
+  #nothingReleased(): boolean {
+    return this.#shown === '' && this.#stats.withheld === 0;
   }
 
   /**
@@ -384,7 +407,7 @@ export class SentenceGate {
 
   #release(): GateResult {
     const units: GateUnit[] = [];
-    if (this.#shown === '' && this.#stats.withheld === 0) {
+    if (this.#nothingReleased()) {
       // Nothing is shown before the opening is known to be prose.
       const opening = this.#raw.trimStart();
       if (STRUCTURED_OPENING.test(opening)) {
@@ -409,7 +432,27 @@ export class SentenceGate {
         this.#leakCheckedTo = stable.length;
         if (this.#leaks([stable.slice(from)])) return this.#block('cross_venture', units);
       }
-      const unit = this.#process(this.#raw.slice(this.#cursor, end));
+      const rawUnit = this.#raw.slice(this.#cursor, end);
+      if (this.#nothingReleased() && isThinkingAloudOpener(rawUnit)) {
+        // "Okay, let's see." opening a reply is said only once the next unit shows that speech follows it.
+        const next =
+          findUnitEnd(this.#raw, end, this.#maxUnitChars) ?? (this.#ended ? this.#raw.length : null);
+        if (next === null || (!this.#ended && stable.length < next + this.#holdBack)) break;
+        if (findMetaNarration(this.#raw.slice(end, next)) !== null) {
+          this.#fallback = 'meta_narration';
+          return { units, blocked: null, fallback: this.#fallback, cut: null };
+        }
+      }
+      if (findMetaNarration(rawUnit) !== null) {
+        this.#cursor = end;
+        if (this.#nothingReleased()) {
+          this.#fallback = 'meta_narration';
+          return { units, blocked: null, fallback: this.#fallback, cut: null };
+        }
+        this.#cut = 'meta_narration';
+        return { units, blocked: null, fallback: null, cut: this.#cut };
+      }
+      const unit = this.#process(rawUnit);
       this.#cursor = end;
       if (unit === 'identity' || unit === 'cross_venture') return this.#block(unit, units);
       if (unit === null) continue;
@@ -426,7 +469,7 @@ export class SentenceGate {
       this.#stats.units += 1;
       units.push(unit);
     }
-    return { units, blocked: null, fallback: null };
+    return { units, blocked: null, fallback: null, cut: null };
   }
 
   /**
@@ -445,7 +488,7 @@ export class SentenceGate {
 
   #block(reason: GateBlockReason, units: GateUnit[]): GateResult {
     this.#blocked = reason;
-    return { units, blocked: reason, fallback: null };
+    return { units, blocked: reason, fallback: null, cut: null };
   }
 
   #process(raw: string): GateUnit | GateBlockReason | null {

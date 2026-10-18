@@ -1,11 +1,13 @@
+import { WHERE_YOU_LEFT_OFF_HEADING, escapeData, escapeInline, isEverydayWord, truncate } from '@foundry/ai';
+
 import {
-  WHERE_YOU_LEFT_OFF_HEADING,
-  contentTokens,
-  escapeData,
-  escapeInline,
-  isEverydayWord,
-  truncate,
-} from '@foundry/ai';
+  addressFounder,
+  isTopicLine,
+  topicOf,
+  topicWords,
+  type LineTopic,
+  type OpenerPeople,
+} from './opener-topic.js';
 
 /**
  * "Where you left off": what the vEIR knows about the venture's most recent earlier conversations at the moment a
@@ -314,96 +316,51 @@ export function midSentence(label: string): string {
   return isEverydayWord(first) ? `${first.toLowerCase()}${text.slice(first.length)}` : text;
 }
 
-/**
- * Words that open, check or fill a conversation without naming anything to talk about: greetings, "can you hear
- * me", acknowledgements, and the bare frame of a request ("I have a quick question").
- */
-const FILLER = new Set(
-  (
-    'hi hello hey hiya howdy yo hullo greetings morning afternoon evening good day night test testing tested ' +
-    'hear me can you there are ok okay sure yes yeah yep yup no nope nah thanks thank cheers please sorry um ' +
-    'uh umm hmm right great cool fine well again back just quick question something talk chat call start let ' +
-    'what how about anything want would like need help got minute moment am doing do going today now here'
-  ).split(' '),
-);
-
-/** Words that name something to talk about (content words that are not {@link FILLER}). */
-function topicWords(text: string): string[] {
-  return [...contentTokens(text)].filter((w) => !FILLER.has(w));
-}
-
-/** At most this many words, and characters, are quoted back from what the founder said. */
-const QUOTE_MAX_WORDS = 16;
-const QUOTE_MAX_CHARS = 110;
-/** What a quote must name to be worth saying back ("Hi", "sure" or "can you hear me" never are). */
-const QUOTE_MIN_TOPIC_WORDS = 3;
-
-/**
- * The founder's words as the vEIR can quote them back: the first sentence of `text` when it names something to
- * talk about ({@link QUOTE_MIN_TOPIC_WORDS} topic words) and is short enough to say in one breath; else null (a
- * weak or long quote reads as machine output, and the generic line is better).
- */
-export function quotable(text: string | null): string | null {
-  if (text === null) return null;
-  const plain = oneLine(text.replace(/[“”"]/g, ''));
-  const sentence = /^.+?[.!?](?=\s|$)/u.exec(plain)?.[0] ?? plain;
-  const words = sentence.split(' ').filter((w) => w !== '');
-  if (words.length > QUOTE_MAX_WORDS || sentence.length > QUOTE_MAX_CHARS) return null;
-  return topicWords(sentence).length >= QUOTE_MIN_TOPIC_WORDS ? sentence : null;
-}
-
 /** What the last conversation was about, in the pieces a line is built from. */
-type Subject =
-  | { readonly kind: 'topics'; readonly text: string }
-  | { readonly kind: 'question' | 'statement'; readonly text: string };
+interface Subject {
+  /** `question`: a question the founder asked, summarised ("whether to price per library or per seat"). */
+  readonly kind: 'topics' | 'question';
+  readonly text: string;
+}
 
 /**
- * What the last conversation was about: the digest's topics (one or two, said mid-sentence), else the founder's
- * own words worth quoting, from its first message (the title) or, failing that, the most substantive of its last
- * messages. Null when nothing names a topic (a conversation of greetings, or one too long to quote).
+ * What the last conversation was about: the digest's topics (one or two, said mid-sentence, addressed to the
+ * founder), else a summary of the most telling thing the founder brought (opener-topic.ts `topicOf`), from its
+ * last messages or its first one (the title). Greetings, checks, recall and memory questions, questions about the
+ * vEIR, thanks and wrap-ups are never a subject, and nothing the founder said is quoted back (LAB-R3). Null when
+ * nothing names a topic.
  */
-function subjectOf(c: Pick<LeftOffConversationData, 'digest' | 'title' | 'exchanges'>): Subject | null {
+function subjectOf(
+  c: Pick<LeftOffConversationData, 'digest' | 'title' | 'exchanges'>,
+  people: OpenerPeople,
+): Subject | null {
   const topics = (c.digest?.topics ?? [])
-    .map((t) => midSentence(t).replace(/[.!?]+$/, ''))
-    .filter((t) => t !== '' && t.length <= 60);
+    .map((t) => addressFounder(midSentence(t).replace(/[.!?]+$/, ''), people))
+    .filter((t): t is string => t !== null && t !== '' && t.length <= 60);
   if (topics.length > 0) return { kind: 'topics', text: topics.slice(0, 2).join(' and ') };
-  let quote = quotable(c.title);
-  if (quote === null) {
-    let best = -1;
-    for (const x of [...c.exchanges].reverse()) {
-      const q = quotable(x.founder);
-      const weight = q === null ? -1 : topicWords(q).length;
-      if (weight > best) {
-        best = weight;
-        quote = q;
-      }
-    }
+  // The newest messages first: they are where the conversation left off.
+  const lines = [...[...c.exchanges].reverse().map((x) => x.founder), ...(c.title === null ? [] : [c.title])];
+  let best: LineTopic | null = null;
+  for (const line of lines) {
+    if (!isTopicLine(line)) continue;
+    const topic = topicOf(line);
+    if (topic !== null && (best === null || topic.score > best.score)) best = topic;
   }
-  if (quote === null) return null;
-  return quote.endsWith('?')
-    ? { kind: 'question', text: quote }
-    : { kind: 'statement', text: quote.replace(/[.!]+$/, '') };
+  if (best === null) return null;
+  const text = addressFounder(best.text, people);
+  return text === null ? null : { kind: best.question ? 'question' : 'topics', text };
 }
 
 /**
  * What the last conversation was about, as the vEIR can say it after "Last time,": "we talked about per-library
- * pricing", "you asked “Is a two-week test enough?”", "you said “We signed the first library”". Null when
- * nothing names a topic.
+ * pricing", "we talked about whether to run a two-week test". Null when nothing names a topic.
  */
 export function leftOffTopic(
   c: Pick<LeftOffConversationData, 'digest' | 'title'> & Partial<Pick<LeftOffConversationData, 'exchanges'>>,
+  people: OpenerPeople = { founder: null },
 ): string | null {
-  const subject = subjectOf({ exchanges: [], ...c });
-  if (subject === null) return null;
-  if (subject.kind === 'topics') return `we talked about ${subject.text}`;
-  return subject.kind === 'question' ? `you asked “${subject.text}”` : `you said “${subject.text}”`;
-}
-
-/** What the last conversation was about, without "we": its topics, else the founder's words in quotes. */
-function leftOffSubject(c: Pick<LeftOffConversationData, 'digest' | 'title' | 'exchanges'>): string | null {
-  const subject = subjectOf(c);
-  if (subject === null) return null;
-  return subject.kind === 'topics' ? subject.text : `“${subject.text}”`;
+  const subject = subjectOf({ exchanges: [], ...c }, people);
+  return subject === null ? null : `we talked about ${subject.text}`;
 }
 
 const GREETINGS = [
@@ -413,7 +370,7 @@ const GREETINGS = [
   'Nice to hear from you again.',
 ];
 
-/** Endings after a question the founder asked. */
+/** Endings after a question the founder asked (summarised as "whether to …", "how to …"). */
 const ENDINGS = [
   'Where did you land on it?',
   'Want to pick that up, or is something else on your mind?',
@@ -431,43 +388,39 @@ const OPEN_ENDINGS = [
  * The deterministic opening line of a new conversation that follows `last` (the person's own latest one), for
  * when no better opener is stored: it says when that was and what it was about, and invites them to carry on.
  * The phrasing varies with `seed`, so one conversation after another rarely opens alike. It names nobody and
- * claims nothing about a person (callers still run it through the opener checks). `withTopic` is null when the
- * last conversation has nothing worth naming (only greetings, or words too long to quote); `generic` never names
- * one.
+ * claims nothing about a person (callers still run it through the opener checks). What it was about is
+ * summarised, never quoted, and said to the founder (`people`); `withTopic` is null when the last conversation has
+ * nothing worth naming (only greetings, checks, recall or identity questions); `generic` never names one.
  */
 export function continuityOpener(
   last: Pick<LeftOffConversationData, 'digest' | 'title' | 'channel' | 'lastActivityAt' | 'withThisVeir'> &
     Partial<Pick<LeftOffConversationData, 'exchanges'>>,
-  options: { readonly now: Date; readonly seed: string },
+  options: { readonly now: Date; readonly seed: string; readonly people?: OpenerPeople },
 ): { readonly withTopic: string | null; readonly generic: string } {
   const seed = seedOf(options.seed);
   const when = relativeWhen(last.lastActivityAt, options.now);
   const onCall = last.channel === 'call' ? ', on a call' : '';
-  const conversation = { exchanges: [], ...last };
-  const subject = subjectOf(conversation);
+  const subject = subjectOf({ exchanges: [], ...last }, options.people ?? { founder: null });
   const greeting = GREETINGS[seed % GREETINGS.length] ?? GREETINGS[0];
   if (!last.withThisVeir) {
     // Another coach had it: the founder's history, never "we".
-    const about = leftOffSubject(conversation);
     return {
       withTopic:
-        about === null
+        subject === null
           ? null
-          : `Good to have you here. Your last conversation here (${when}${onCall}) was about ${about}${/[?!]”$/.test(about) ? '' : '.'} Want to pick that up, or start somewhere new?`,
+          : `Good to have you here. Your last conversation here (${when}${onCall}) was about ${subject.text}. Want to pick that up, or start somewhere new?`,
       generic: `Good to have you here. Want to pick up where your last conversation here left off ${when}, or start on something new?`,
     };
   }
   const generic = `${greeting} Want to pick up where we left off ${when}, or start on something new?`;
   if (subject === null) return { withTopic: null, generic };
-  const topic = leftOffTopic(conversation) ?? '';
-  // A quoted question already ends the sentence ("you asked “Is a two-week test enough?”").
-  const stop = /[?!]”$/.test(topic) ? '' : '.';
+  const topic = `we talked about ${subject.text}`;
   const endings = subject.kind === 'question' ? ENDINGS : OPEN_ENDINGS;
   const ending = endings[(seed >>> 5) % endings.length] ?? OPEN_ENDINGS[0];
   const withTopic = [
-    `${greeting} Last time (${when}${onCall}), ${topic}${stop} ${ending}`,
-    `${greeting} ${capitalise(when)}${onCall}, ${topic}${stop} ${ending}`,
-    `${greeting} When we last spoke (${when}${onCall}), ${topic}${stop} ${ending}`,
+    `${greeting} Last time (${when}${onCall}), ${topic}. ${ending}`,
+    `${greeting} ${capitalise(when)}${onCall}, ${topic}. ${ending}`,
+    `${greeting} When we last spoke (${when}${onCall}), ${topic}. ${ending}`,
   ][(seed >>> 3) % 3];
   return { withTopic: withTopic ?? null, generic };
 }
@@ -475,15 +428,20 @@ export function continuityOpener(
 /**
  * The opening line that comes back to a thread the vEIR noted to pick up next time (the notebook's next topic, a
  * short phrase such as "the five library-staff interviews you planned"), phrased afresh for each conversation
- * (`seed`), with when that was when it is known. The thread is said mid-sentence; callers still run the line
+ * (`seed`), with when that was when it is known. The thread is said mid-sentence and to the founder (`people`:
+ * distilled about them, it is rephrased in the second person, or no line is made); callers still run the line
  * through the opener checks.
  */
 export function threadOpener(
   topic: string,
-  options: { readonly seed: string; readonly when?: string | null },
+  options: { readonly seed: string; readonly when?: string | null; readonly people?: OpenerPeople },
 ): string | null {
-  const thread = midSentence(topic).replace(/[.!?]+$/, '');
-  if (topicWords(thread).length === 0 || thread.length > 120) return null;
+  // Distilled about the founder ("the facility budget numbers maya will get"): said to them, or not at all (LAB-U2).
+  const thread = addressFounder(
+    midSentence(topic).replace(/[.!?]+$/, ''),
+    options.people ?? { founder: null },
+  );
+  if (thread === null || topicWords(thread).length === 0 || thread.length > 120) return null;
   const seed = seedOf(options.seed);
   const greeting = GREETINGS[seed % GREETINGS.length] ?? GREETINGS[0];
   const last = options.when ? `Last time (${options.when})` : 'Last time';

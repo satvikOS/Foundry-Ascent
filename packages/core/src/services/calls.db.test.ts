@@ -336,7 +336,7 @@ describe('starting a call', () => {
     const started = await startCall('maya', sessionId);
     // Never the stored line: the call picks up Maya's last conversation (the test above) instead.
     expect(started.intro?.text).toMatch(/^Hi Maya\. /);
-    expect(started.intro?.text).toContain('“Can we test the seat map this week?”');
+    expect(started.intro?.text).toContain('we talked about whether you can test the seat map this week.');
     expect(started.intro?.text).not.toMatch(/Corin here|myself/);
     await endCall('maya', started.call.id);
   });

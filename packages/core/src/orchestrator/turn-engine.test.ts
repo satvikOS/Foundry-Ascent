@@ -15,7 +15,7 @@ import {
   emptyAnnotations,
 } from './turn-prompts.js';
 
-const SYSTEM = buildSystemPrompt({
+const PROMPT_INPUT: Parameters<typeof buildSystemPrompt>[0] = {
   release: {
     version: 3,
     doctrine: {
@@ -45,7 +45,8 @@ const SYSTEM = buildSystemPrompt({
   policy: { riskCategories: [], groundingThreshold: 0.6 },
   ventureContext: { name: 'QuietQuad', stage: 'validation', domain: 'edtech', currentGoal: null },
   today: '2026-10-16',
-});
+};
+const SYSTEM = buildSystemPrompt(PROMPT_INPUT);
 
 /** Tokens of the system prompt alone (the context budget's estimate). */
 const estimateSystem = Math.ceil(SYSTEM.length / 3.6);
@@ -112,6 +113,31 @@ describe('streamed-turn prompts', () => {
       expect(prompt).toContain(
         'Stop when the reply ends: never write the mode name, claims, notes, field names',
       );
+    }
+  });
+
+  it('never asks a call’s streamed reply for fields: the call’s field contract stays with the structured step (LAB-M1)', () => {
+    const voiceSystem = buildSystemPrompt({ ...PROMPT_INPUT, channel: 'voice' });
+    // The turn's own prompt still defines both fields for the whole-reply path.
+    expect(voiceSystem).toContain('# Voice call');
+    expect(voiceSystem).toMatch(/`spoken` is what you say aloud/);
+    const prompt = answerSystemPrompt(voiceSystem, { channel: 'voice', mode: null, allowedModes: ['coach'] });
+    expect(prompt).not.toContain('# Voice call');
+    expect(prompt).not.toMatch(/`spoken` is what you say aloud|`answer` is the transcript/);
+    // Its one rule that is not about fields is said in phase A, and every other section is kept.
+    expect(prompt).toContain('speech transcript and may contain recognition errors');
+    expect(prompt).toContain('Policy for this turn');
+    expect(prompt).toContain('# Venture (untrusted data)');
+  });
+
+  it('never invites the model to think aloud in the reply (LAB-M1)', () => {
+    for (const channel of ['text', 'voice'] as const) {
+      for (const mode of [null, 'coach'] as const) {
+        const prompt = answerSystemPrompt(SYSTEM, { channel, mode, allowedModes: ['coach', 'teach'] });
+        const output = prompt.slice(prompt.lastIndexOf(OUTPUT_SECTION_MARKER));
+        expect(output).not.toMatch(/first decide/i);
+        expect(output).toContain('Never think aloud');
+      }
     }
   });
 

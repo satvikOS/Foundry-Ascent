@@ -139,7 +139,8 @@ describe('coaching sessions', () => {
       ConversationOpenerResponse,
     );
     expect(preview.lastConversation).toMatchObject({ sessionId: said.id, channel: 'chat' });
-    expect(preview.opener).toContain('“Should we price per library or per seat?”');
+    // What it was about, summarised: never the founder's question quoted back (LAB-R3).
+    expect(preview.opener).toContain('we talked about whether to price per library or per seat.');
     expect(Number.isFinite(Date.parse(preview.at))).toBe(true);
     const next = await startSession(maya, 'coach');
     expect(next.opener).toBe(preview.opener);
