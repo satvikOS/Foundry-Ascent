@@ -764,7 +764,6 @@ DRAFT_LEAD_WORDS = frozenset(
         "reply",
         "respond",
         "write",
-        "note",
         "letter",
         "opener",
         "open",

@@ -218,7 +218,8 @@
         "I'll give you a call tomorrow.",
         "I'll send you an email tonight.",
         "See you at demo day!",
-        "Good luck with the pilot. I'll call you Thursday to confirm."
+        "Good luck with the pilot. I'll call you Thursday to confirm.",
+        "Note: I'll call you tomorrow to check in."
       ],
       "allowed": [
         "I'm Corin's vEIR, an AI mentor built from Corin's approach.",

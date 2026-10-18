@@ -779,7 +779,6 @@ const DRAFT_LEAD_WORDS = new Set([
   'reply',
   'respond',
   'write',
-  'note',
   'letter',
   'opener',
   'open',
