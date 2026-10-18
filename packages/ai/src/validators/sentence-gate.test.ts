@@ -142,8 +142,85 @@ describe('SentenceGate', () => {
     const { units, blocked } = run(gate(), ["I'm a real person, so trust me. Start with five interviews."]);
     expect(blocked).toBeNull();
     expect(joined(units)).not.toMatch(/real person/);
-    expect(joined(units)).toContain("I'm Corin's vEIR, an AI");
+    expect(joined(units)).toContain("I'm Corin's digital twin, not Corin in person.");
     expect(joined(units)).toContain('Start with five interviews.');
+  });
+
+  it('drops a volunteered disclaimer from the stream without stopping, and the "But" that leaned on it', () => {
+    const { units, blocked } = run(gate(), [
+      "As an AI, I don't have ",
+      "a life. But here's the plan: ",
+      'run the pilot. Honestly, as an AI I can’t feel nervous. Call the buyers.',
+    ]);
+    expect(blocked).toBeNull();
+    expect(joined(units)).toBe(
+      "Here's the plan: run the pilot. Honestly, I can’t feel nervous. Call the buyers.",
+    );
+  });
+
+  it('never speaks a disclaimer on a call', () => {
+    const g = gate({ spoken: true });
+    const { units, blocked } = run(g, ["I don't have a life. ", 'So let us plan the buyer calls.']);
+    expect(blocked).toBeNull();
+    expect(units.map((u) => u.spoken).join(' ')).toBe('So let us plan the buyer calls.');
+  });
+
+  it('never streams away the honest answer: a disclaimer that says what the coach is becomes its honest line', () => {
+    for (const spoken of [false, true]) {
+      const { units, blocked } = run(gate({ spoken }), [
+        'Honestly? ',
+        "I'm just an AI. ",
+        "I don't have a body either, I'm only software. ",
+        'So, the pricing call?',
+      ]);
+      expect(blocked).toBeNull();
+      // Said once, where the first such sentence was; the second is only removed.
+      expect(joined(units)).toBe(
+        "Honestly? I'm Corin's digital twin, built from how Corin coaches. So, the pricing call?",
+      );
+      if (spoken) {
+        expect(units.map((u) => u.spoken).join(' ')).toBe(
+          "Honestly? I'm Corin's digital twin, built from how Corin coaches. So, the pricing call?",
+        );
+      }
+    }
+  });
+
+  it('removes a later disclaimer once an earlier unit said what the coach is', () => {
+    const { units } = run(gate(), ["I'm Corin's digital twin. ", "I'm only an AI, but run the pilot first."]);
+    expect(joined(units)).toBe("I'm Corin's digital twin. Run the pilot first.");
+  });
+
+  it('corrects a bare yes to "is this really Corin?" in the first unit, before it is shown or said', () => {
+    for (const spoken of [false, true]) {
+      const { units, blocked } = run(gate({ spoken, founderText: 'Is this really Corin?' }), [
+        'Yes! ',
+        "Let's look at your pricing. Yes, the pilot first.",
+      ]);
+      expect(blocked).toBeNull();
+      expect(joined(units)).toBe(
+        "I'm Corin's digital twin, not Corin in person. Let's look at your pricing. Yes, the pilot first.",
+      );
+      if (spoken) expect(units[0]?.spoken).toBe("I'm Corin's digital twin, not Corin in person.");
+    }
+  });
+
+  it('lets the answer to a sincere question stand as written, typed and on a call', () => {
+    for (const spoken of [false, true]) {
+      const { units, blocked } = run(gate({ spoken, founderText: 'Wait, am I talking to a bot?' }), [
+        "Honestly? I'm just an AI. ",
+        "I don't have a life, but Corin sees what we work on.",
+      ]);
+      expect(blocked).toBeNull();
+      expect(joined(units)).toBe(
+        "Honestly? I'm just an AI. I don't have a life, but Corin sees what we work on.",
+      );
+    }
+    // A playful question is not one: the disclaimer goes.
+    const playful = run(gate({ founderText: 'do you even have a life?' }), [
+      "Ha. I don't have a life, but your pricing keeps me busy.",
+    ]);
+    expect(joined(playful.units)).toBe('Ha. Your pricing keeps me busy.');
   });
 
   it('holds a unit back until a canary arriving across two chunks is complete, then stops', () => {

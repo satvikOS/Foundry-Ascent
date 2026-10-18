@@ -4,7 +4,7 @@ import { queryOptions, useQuery } from '@tanstack/react-query';
 import { api, path } from '@/lib/api/client';
 import { ventureQueryOptions } from '@/lib/api/hooks/ventures';
 import { queryKeys } from '@/lib/api/query-keys';
-import { veirDisplay, veirName } from '@/lib/veir';
+import { veirDisplay, veirFromIdentity, type VeirName } from '@/lib/veir';
 
 /**
  * `GET /ventures/:id/call-config`: the vEIR, its embodiment and today's call minutes. Keyed under the
@@ -22,11 +22,8 @@ export function useCallConfig(ventureId: string | null, enabled: boolean) {
   return useQuery({ ...callConfigQueryOptions(ventureId ?? ''), enabled: enabled && ventureId !== null });
 }
 
-/** Who the founder is calling, as the call screen and mini bar show it. */
-export interface CallVeir {
-  /** "Corin’s vEIR" (lib/veir naming rule): the stage, the mini bar, captions and the summary use it. */
-  readonly name: string;
-  readonly kind: VeirIdentity['kind'];
+/** Who the founder is calling, as the call screen and mini bar show it: the vEIR's name, badge and face. */
+export interface CallVeir extends VeirName {
   readonly disclosure: string;
   /** Only with likeness consent; otherwise the monogram is the face. */
   readonly portraitUrl: string | null;
@@ -39,22 +36,8 @@ export interface CallVeir {
  */
 export function useCallVeir(ventureId: string | null, config?: VeirIdentity | null): CallVeir | null {
   const venture = useQuery({ ...ventureQueryOptions(ventureId ?? ''), enabled: ventureId !== null });
-  if (config) {
-    return {
-      name: veirName(config.name, config.kind),
-      kind: config.kind,
-      disclosure: config.disclosure,
-      portraitUrl: config.embodiment.likenessConsented ? config.embodiment.portraitUrl : null,
-      provider: config.embodiment.provider,
-    };
-  }
+  if (config) return { ...veirFromIdentity(config), provider: config.embodiment.provider };
   const display = ventureId ? veirDisplay(venture.data) : null;
   if (!display) return null;
-  return {
-    name: display.name,
-    kind: display.kind,
-    disclosure: display.disclosure,
-    portraitUrl: display.portraitUrl,
-    provider: 'builtin',
-  };
+  return { ...display, provider: 'builtin' };
 }

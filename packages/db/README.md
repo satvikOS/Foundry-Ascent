@@ -226,6 +226,14 @@ person's own value: app_rls holds column privileges on `principals` that leave i
 through `app.call_notice_acknowledged_at()` and `app.acknowledge_call_notice()`, for the request principal. A
 column added to `principals` later must be granted to app_rls explicitly.
 
+Added for the vEIR's presence (migration 0016, ADR-0020): `principalsRepo.veirWelcomeAcknowledgedAt` and
+`acknowledgeVeirWelcome` (the one-time welcome, the same pattern as the call notice:
+`principals.veir_welcome_acknowledged_at` is not granted to app_rls and is read and set through
+`app.veir_welcome_acknowledged_at()` and `app.acknowledge_veir_welcome()`); `consents.asset_types` admits `first_person`; `personasRepo.getPersonaPresence`
+(one round trip: the persona's EIR, whether its consent in force covers `first_person`, whether that EIR is the
+venture's assigned EIR); `sessionsRepo.startedEarlierConversation` (a call introduces the vEIR only on a first
+meeting). The seed extends its fictional EIRs' own seeded consents with `first_person` once, never a revoked one.
+
 Added for platform insights (docs/runbooks/insights.md): `insightsRepo` (S; `beginReadOnly` — callers make the
 transaction read-only first —, `listConversations`, `listCalls`, `turnStats`, `turnTrace` — what each turn's audit
 says it remembered and how long it took —, `validatorNoteCounts`, `usageByPurposeAndModel`, `ventureKnowledge`,

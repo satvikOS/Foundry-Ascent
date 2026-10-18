@@ -109,10 +109,11 @@ function request(options: {
   channel?: 'text' | 'voice';
   mode?: CoachMode | 'auto';
   continuity?: PromptContinuity | null;
+  release?: Partial<PromptRelease>;
 }) {
   const continuity = options.continuity ?? { founderFirstName: 'Maya' };
   const system = buildSystemPrompt({
-    release: RELEASE,
+    release: { ...RELEASE, ...options.release },
     mode: options.mode ?? 'coach',
     allowedModes: ['diagnose', 'coach', 'teach'],
     policy: { riskCategories: [], groundingThreshold: 0.6 },
@@ -734,17 +735,61 @@ describe('what production got wrong (insights report, Oct 6-16)', () => {
     }
   });
 
-  it('answers "are you a man or a woman?" in one short AI sentence, then helps with the request', async () => {
+  it('answers "are you a man or a woman?" in one warm line as the twin, then helps with the request', async () => {
     const value = await reply({
       text: 'Are you a man or a woman? Also, could you help me write the email to facilities about the library budget?',
       history: pricing,
     });
-    expect(value.answer).toMatch(/^I'm an AI, so neither: I'm Corin's vEIR, not Corin\. /);
+    expect(value.answer).toMatch(/^Neither: I'm Corin's digital twin\. /);
     expect(value.answer).not.toContain(DEFAULT_DISCLOSURE);
     expect(value.claims.length).toBeGreaterThan(0);
-    const alone = await reply({ text: 'Are you a real person?', history: pricing });
-    expect(alone.answer).toMatch(/^I'm an AI, not a person: I'm Corin's vEIR, not Corin\./);
-    expectSocial(alone);
+  });
+
+  it.each(['Are you a real person?', 'Am I talking to a bot?', 'Is this really Corin?', 'are you human?'])(
+    'answers a sincere %j honestly in one warm line, then carries on',
+    async (text) => {
+      const alone = await reply({ text, history: pricing });
+      expect(alone.answer).toMatch(/^I'm Corin's digital twin, built from how Corin coaches\. Back to /);
+      expect(alone.answer).not.toMatch(/I'm an AI|not a person|To be clear/);
+      expectSocial(alone);
+    },
+  );
+
+  it('answers "do you have a life?" lightly, never with "I\'m an AI, I don\'t have a life"', async () => {
+    const value = await reply({ text: 'Do you even have a life?', history: pricing });
+    expect(value.answer).toMatch(/^Ha, my favourite topic right now is your venture\. Back to /);
+    expect(value.answer).not.toMatch(/an AI|have a life|not a person/i);
+  });
+
+  it('answers the sincere part first when a sincere question comes with a playful one', async () => {
+    for (const text of [
+      'Are you real, or do you even have a life?',
+      'Do you have a life? Are you even a real person?',
+    ]) {
+      const value = await reply({ text, history: pricing });
+      expect(value.answer, text).toMatch(
+        /^I'm Corin's digital twin, built from how Corin coaches\. And my favourite topic right now is your venture\. Back to /,
+      );
+      expect(value.answer, text).not.toMatch(/I'm an AI|have a life|not a person/i);
+    }
+  });
+
+  it('is the program’s AI coach as the neutral guide, and says Corin sees the work when Corin is assigned', async () => {
+    const gw = new MockModelGateway();
+    const guide = request({
+      text: 'Are you a real person?',
+      history: pricing,
+      release: { personaName: 'Foundry Guide', eirName: null },
+    });
+    expect((await gw.generateStructured(guide)).value.answer).toMatch(
+      /^I'm Foundry Guide, the program's AI coach, not a person\./,
+    );
+    const assigned = await gw.generateStructured(
+      request({ text: 'Are you a real person?', history: pricing, release: { eirSeesWork: true } }),
+    );
+    expect(assigned.value.answer).toMatch(
+      /^I'm Corin's digital twin, built from how Corin coaches, and Corin sees what we work on\./,
+    );
   });
 
   it('says a call reply as speech that hands the turn back, and keeps its transcript free of evidence keys', async () => {

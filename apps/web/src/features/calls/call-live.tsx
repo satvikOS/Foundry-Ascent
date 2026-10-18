@@ -2,8 +2,6 @@ import type { TurnBlockedDetail } from '@foundry/contracts';
 import { ArrowUp, Info, Mic, Play, Volume2, VolumeX } from 'lucide-react';
 import { useEffect, useRef, useState, type RefObject } from 'react';
 
-import { DisclosureBanner } from '@/components/disclosure-banner';
-import { VeirBadge } from '@/components/faces/veir-badge';
 import { Button } from '@/components/ui/button';
 import { BlockedPanel } from '@/features/coach/blocked-panel';
 import { useHotkeys } from '@/lib/hooks/use-hotkeys';
@@ -12,7 +10,7 @@ import { cn } from '@/lib/utils';
 
 import { CallCaptions } from './call-captions';
 import { CallDock, HoldToTalk } from './call-dock';
-import { CallStage } from './call-stage';
+import { CallNameTag, CallStage } from './call-stage';
 import { storeTalkMode, useAnnounceCaptions, useCaptionSize, useCaptionsPreference } from './preferences';
 import type { CallVeir } from './use-call-veir';
 
@@ -73,8 +71,10 @@ interface CallLiveProps {
 }
 
 /**
- * The call in progress: the presence and the vEIR's name and state, live captions (or, after a held-back
- * turn, the support it offers), any notice, the typed line, the controls and the AI disclosure.
+ * The call in progress: the vEIR's tile (its presence, and its name tag with the vEIR badge, which explains what
+ * it is) and its state, live captions (or, after a held-back turn, the support it offers), any notice, the typed
+ * line and the controls. No disclaimer line: the person read what a vEIR is once, and the badge keeps it a tap
+ * away.
  */
 export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: CallLiveProps) {
   const [captions, setCaptions] = useCaptionsPreference();
@@ -177,23 +177,18 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: Cal
     // running under the dock.
     <div className="flex flex-1 flex-col">
       <div className="flex flex-1 flex-col items-center justify-center gap-5 px-4 py-4 sm:gap-6">
-        {snapshot.blocked ? null : (
+        {snapshot.blocked ? (
+          <CallNameTag veir={veir} speaking={false} headingRef={nameRef} />
+        ) : (
           <CallStage
             veir={veir}
             engine={engine}
             state={engine.avatarState()}
-            className="w-[min(15rem,58vw,32dvh)] sm:w-[min(18rem,34dvh)]"
+            nameTag={<CallNameTag veir={veir} speaking={speaking} headingRef={nameRef} />}
+            className="h-[min(20rem,34dvh)] sm:h-[min(24rem,40dvh)]"
           />
         )}
         <div className="flex flex-col items-center gap-1.5">
-          <h2
-            ref={nameRef}
-            tabIndex={-1}
-            className="flex items-center gap-2 font-serif text-subheading font-normal outline-none"
-          >
-            {veir.name}
-            <VeirBadge kind={veir.kind} mode="Live voice" />
-          </h2>
           {/* Always present, so each new line is announced (a live region added with its text is not). */}
           <p className="sr-only" aria-live="polite" aria-atomic="true">
             {readCaptions && veirLine ? `${veir.name}: ${veirLine}` : ''}
@@ -334,12 +329,6 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: Cal
           onEnd={() => {
             void engine.end('user');
           }}
-        />
-        <DisclosureBanner
-          variant="line"
-          text={veir.disclosure}
-          veirName={veir.name}
-          className="max-w-2xl text-center"
         />
       </div>
     </div>

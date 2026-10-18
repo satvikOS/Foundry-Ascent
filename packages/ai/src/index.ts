@@ -180,8 +180,10 @@ export {
   type SanitizeReport,
 } from './validators/markdown.js';
 export {
+  DISCLAIMER_FALLBACK,
   IDENTITY_MARGIN_CHARS,
   identityReplacement,
+  isStyleFinding,
   rewriteIdentity,
   type IdentityCheckOptions,
   type IdentityFinding,

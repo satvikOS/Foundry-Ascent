@@ -9,8 +9,13 @@ import { fakeEngine, renderWithRouter } from './testing';
 import type { CallVeir } from './use-call-veir';
 
 const VEIR: CallVeir = {
-  name: "Corin's vEIR",
+  name: 'Corin · vEIR',
+  shortName: 'Corin',
+  badge: 'vEIR',
   kind: 'eir_persona',
+  eirFirstName: 'Corin',
+  firstPerson: true,
+  eirSeesWork: true,
   disclosure: "You are talking with Corin's vEIR, an AI coach. It is not a person.",
   portraitUrl: null,
   provider: 'builtin',
@@ -31,6 +36,7 @@ describe('CallLobby', () => {
         failure={{ message: CALL_ELSEWHERE_MESSAGE, retry: false, elsewhere: true }}
         busy={false}
         voiceNotice={false}
+        welcome={null}
         privacy={null}
         onStart={vi.fn()}
         onRetry={onRetry}
@@ -48,8 +54,40 @@ describe('CallLobby', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Not now' }));
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(onRetry).not.toHaveBeenCalled();
-    // The disclosure travels with every call view.
-    expect(screen.getByRole('note', { name: 'AI disclosure' })).toHaveTextContent("Corin's vEIR is an AI");
+    // No disclaimer line: the tile's name tag carries the vEIR badge.
+    expect(screen.queryByRole('note', { name: 'AI disclosure' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'vEIR: what is Corin · vEIR?' })).toBeInTheDocument();
+  });
+
+  it('says what a vEIR is before a first meeting, beside how voice is handled', async () => {
+    const { asEngine } = fakeEngine();
+    renderWithRouter(
+      <CallLobby
+        engine={asEngine}
+        veir={VEIR}
+        config={undefined}
+        blocker={null}
+        failure={null}
+        busy={false}
+        voiceNotice
+        welcome={{
+          title: 'Meet Corin’s vEIR',
+          lines: [
+            'Corin’s digital twin: an AI built with Corin’s consent from how Corin coaches.',
+            'Corin sees what you work on here.',
+          ],
+        }}
+        privacy={null}
+        onStart={vi.fn()}
+        onRetry={vi.fn()}
+        onMoveHere={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    const welcome = await screen.findByTestId('veir-welcome-inline');
+    expect(welcome).toHaveTextContent('Corin’s digital twin: an AI built with Corin’s consent');
+    expect(welcome).toHaveTextContent('Corin sees what you work on here.');
+    expect(screen.getByTestId('voice-notice')).toHaveTextContent('Amazon Transcribe');
   });
 
   it('offers Remember (preselected) or Private before a call that starts a new conversation', async () => {
@@ -65,6 +103,7 @@ describe('CallLobby', () => {
         failure={null}
         busy={false}
         voiceNotice
+        welcome={null}
         privacy={{ value: 'standard', onChange }}
         onStart={onStart}
         onRetry={vi.fn()}
@@ -76,7 +115,7 @@ describe('CallLobby', () => {
     const remember = within(group).getByRole('radio', { name: 'Remember this call' });
     expect(remember).toBeChecked();
     expect(group).toHaveAccessibleDescription(
-      "Corin's vEIR will remember this call and pick up from it next time.",
+      'Corin · vEIR will remember this call and pick up from it next time.',
     );
     await userEvent.click(within(group).getByRole('radio', { name: 'Private, a one-off' }));
     expect(onChange).toHaveBeenCalledWith('ephemeral');
@@ -93,6 +132,7 @@ describe('CallLobby', () => {
         failure={null}
         busy={false}
         voiceNotice={false}
+        welcome={null}
         privacy={null}
         onStart={vi.fn()}
         onRetry={vi.fn()}
@@ -100,7 +140,7 @@ describe('CallLobby', () => {
         onClose={vi.fn()}
       />,
     );
-    expect(await screen.findByRole('heading', { name: "Call Corin's vEIR" })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Call Corin · vEIR' })).toBeInTheDocument();
     expect(screen.queryByRole('radio')).toBeNull();
   });
 });

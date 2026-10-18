@@ -21,6 +21,11 @@ export const CONSENT_ASSETS: readonly {
   { value: 'cases', label: 'Cases', description: 'Examples from the EIR’s own experience.' },
   { value: 'voice', label: 'Voice', description: 'A synthetic voice on calls.' },
   { value: 'likeness', label: 'Likeness', description: 'A portrait as the vEIR’s face.' },
+  {
+    value: 'first_person',
+    label: 'First-person twin',
+    description: 'Founders meet it under the EIR’s first name with a vEIR badge, as their digital twin.',
+  },
 ];
 
 export function assetLabel(asset: ConsentAssetType): string {

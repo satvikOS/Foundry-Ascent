@@ -2,7 +2,6 @@ import type { CallConfigResponse } from '@foundry/contracts';
 import { AudioLines, Phone } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 
-import { DisclosureBanner } from '@/components/disclosure-banner';
 import { Button } from '@/components/ui/button';
 import type { CallEngine, CallFailure } from '@/lib/realtime/call-engine';
 
@@ -70,6 +69,11 @@ interface CallLobbyProps {
   /** The first call: say how the founder's voice is handled before it starts. */
   voiceNotice: boolean;
   /**
+   * The person has not met their vEIR yet (the call screen opened before the welcome): its two lines, said here
+   * once, and Start call acknowledges them. Null when already read.
+   */
+  welcome: { readonly title: string; readonly lines: readonly [string, string] } | null;
+  /**
    * A call that starts a new conversation (from New chat): remembered (the default) or private, chosen before
    * it starts. Null for a call in an existing conversation, which keeps that conversation's choice.
    */
@@ -84,7 +88,8 @@ interface CallLobbyProps {
 /**
  * Before the call: start it (a click is what lets the browser play audio), or learn why it can't start.
  * When the person arrived by clicking Call, the call starts on its own and this shows only "Connecting";
- * the first call ever waits here so the founder reads how their voice is handled. A call that starts a new
+ * the first call ever waits here so the founder reads how their voice is handled (and, on a first meeting,
+ * what a vEIR is: the welcome, said here instead of over the page). A call that starts a new
  * conversation offers Remember (the default) or Private here, and waits for Start call unless it came from
  * New chat's Call button, beside the same choice.
  */
@@ -96,6 +101,7 @@ export function CallLobby({
   failure,
   busy,
   voiceNotice,
+  welcome,
   privacy,
   onStart,
   onRetry,
@@ -135,7 +141,7 @@ export function CallLobby({
           veir={veir}
           engine={engine}
           state={busy ? 'connecting' : 'idle'}
-          className="w-[min(15rem,58vw,32dvh)] sm:w-[min(18rem,34dvh)]"
+          className="h-[min(16rem,30dvh)] sm:h-[min(20rem,34dvh)]"
         />
         <div className="flex max-w-md flex-col items-center gap-2">
           <h2 className="font-serif text-heading font-normal">
@@ -154,6 +160,17 @@ export function CallLobby({
             disabled={busy}
             className="max-w-md sm:flex-col"
           />
+        ) : null}
+        {welcome && !problem ? (
+          <div
+            data-testid="veir-welcome-inline"
+            data-slot="veir-welcome"
+            className="grid max-w-md gap-1 text-body text-pretty text-muted-foreground"
+          >
+            {welcome.lines.map((line) => (
+              <p key={line}>{line}</p>
+            ))}
+          </div>
         ) : null}
         {voiceNotice && !problem ? (
           <p
@@ -194,14 +211,6 @@ export function CallLobby({
             {problem && !moveHere ? 'Back to chat' : 'Not now'}
           </Button>
         </div>
-      </div>
-      <div className="flex shrink-0 justify-center px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))]">
-        <DisclosureBanner
-          variant="line"
-          text={veir.disclosure}
-          veirName={veir.name}
-          className="max-w-2xl text-center"
-        />
       </div>
     </div>
   );

@@ -156,7 +156,6 @@ function Conversation() {
   // Named after the conversation's own persona: an older conversation can be with one the venture no longer has.
   const withVeir = session ? conversationVeir(session, veir) : null;
   const personaName = withVeir?.name ?? veir?.name ?? 'your vEIR';
-  const personaKind = withVeir?.kind ?? veir?.kind ?? 'neutral_guide';
 
   const setMode = useCallback(
     (next: ComposerMode) => {
@@ -338,21 +337,11 @@ function Conversation() {
         ventureId={ventureId}
         session={session}
         title={title}
-        personaName={personaName}
-        personaKind={personaKind}
+        veir={withVeir ?? veir}
         portraitUrl={veir?.portraitUrl}
         canEdit
         onAction={onMenu}
-      >
-        {ended ? (
-          <DisclosureBanner
-            variant="line"
-            text={session.disclosure}
-            veirName={personaName}
-            className="justify-start"
-          />
-        ) : null}
-      </ConversationHeader>
+      />
 
       <div className="mx-auto w-full max-w-(--content-width) flex-1 px-4 pt-8 pb-10 sm:px-6">
         <DisclosureBanner variant="print" text={session.disclosure} className="mb-8 hidden print:block" />
@@ -453,8 +442,6 @@ function Conversation() {
               value={text}
               onChange={setText}
               personaName={personaName}
-              disclosure={session.disclosure}
-              veirName={personaName}
               mode={mode}
               onModeChange={setMode}
               allowedModes={venture.data?.persona?.allowedModes}

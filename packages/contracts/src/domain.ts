@@ -225,8 +225,20 @@ export const Me = z.object({
   aiEnabled: z.boolean(),
   /** Additive: older APIs send none. */
   notices: z.array(AccountNotice).default([]),
+  /**
+   * When this person acknowledged the welcome that introduces their vEIR (`POST /me/veir-welcome/acknowledge`);
+   * null until then, and the venture shows the welcome once. Additive: absent (an older API) counts as read.
+   */
+  veirWelcomeAcknowledgedAt: Timestamp.nullable().optional(),
 });
 export type Me = z.infer<typeof Me>;
+
+/**
+ * `POST /me/veir-welcome/acknowledge` — the person read the one-time welcome that says what a vEIR is. Stored
+ * with the person, not the browser; idempotent: a repeat returns the first time.
+ */
+export const VeirWelcomeAcknowledgement = z.object({ acknowledgedAt: Timestamp });
+export type VeirWelcomeAcknowledgement = z.infer<typeof VeirWelcomeAcknowledgement>;
 
 export const PersonaSummary = z.object({
   personaId: Id,
@@ -237,6 +249,12 @@ export const PersonaSummary = z.object({
   status: PersonaStatus,
   disclosure: z.string(),
   allowedModes: z.array(CoachMode),
+  /** The first name of the EIR an `eir_persona` is built from ("Corin"); null for a guide. Additive. */
+  eirFirstName: z.string().nullable().optional(),
+  /** The EIR's consent covers `first_person` (see `VeirIdentity.firstPerson`). Additive: absent means no. */
+  firstPerson: z.boolean().optional(),
+  /** The persona's EIR is the venture's assigned EIR (see `VeirIdentity.eirSeesWork`). Additive. */
+  eirSeesWork: z.boolean().optional(),
 });
 export type PersonaSummary = z.infer<typeof PersonaSummary>;
 

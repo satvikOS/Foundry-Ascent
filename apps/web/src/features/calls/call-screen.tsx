@@ -34,13 +34,19 @@ import { CallLive } from './call-live';
 import { callBlocker, CallLobby } from './call-lobby';
 import { CallSummaryPanel } from './call-summary';
 import { useCallNotice } from './call-notice';
+import { inlineWelcome, useVeirWelcome } from '../veir/welcome';
 import { CAPTION_SIZES, storedTalkMode, useAnnounceCaptions, useCaptionSize } from './preferences';
 import { formatClock, spokenDuration, useCallClock } from './use-call-clock';
 import { useCallConfig, useCallVeir, type CallVeir } from './use-call-veir';
 
 const FALLBACK_VEIR: CallVeir = {
   name: 'your vEIR',
+  shortName: 'your vEIR',
+  badge: 'AI',
   kind: 'eir_persona',
+  eirFirstName: null,
+  firstPerson: false,
+  eirSeesWork: false,
   disclosure: '',
   portraitUrl: null,
   provider: 'builtin',
@@ -112,13 +118,19 @@ export function CallScreen() {
   const ventureId = (active ? snapshot.ventureId : null) ?? routeVenture;
   const writable = ventureId !== null && canWrite(me, ventureId);
   const config = useCallConfig(routeVenture, open && writable && !active);
-  const veir = useCallVeir(ventureId, config.data?.veir) ?? FALLBACK_VEIR;
+  const knownVeir = useCallVeir(ventureId, config.data?.veir);
+  const veir = knownVeir ?? FALLBACK_VEIR;
   const createSession = useCreateSession(routeVenture ?? '');
   // A call from New chat takes New chat's choice: remembered (the default) or private, a one-off.
   const [newPrivacy, setNewPrivacy] = useStartPrivacy(routeVenture ?? '');
   const privacy = useSessionPrivacy(snapshot.sessionId ?? route?.sessionId ?? null);
   // Stored with the person on the server: the first call in any browser says how voice is handled.
   const [noticeSeen, acknowledgeNotice] = useCallNotice(me.principal.id, config.data);
+  // Stored with the person: someone who opens a call before meeting their coach (a vEIR or the program's guide)
+  // reads the welcome here.
+  const [welcomeSeen, acknowledgeWelcome] = useVeirWelcome(me);
+  const welcome = inlineWelcome(welcomeSeen, writable, knownVeir);
+  const welcomeHere = welcome !== null;
   const [createError, setCreateError] = useState<string | null>(null);
   /** The conversation (or New chat) this screen already tried to start a call in. */
   const attempted = useRef<string | null>(null);
@@ -173,6 +185,7 @@ export function CallScreen() {
       };
       setCreateError(null);
       acknowledgeNotice();
+      if (welcomeHere) acknowledgeWelcome();
       engine.reset();
       if (sessionId) {
         attempted.current = sessionId;
@@ -214,7 +227,17 @@ export function CallScreen() {
         },
       });
     },
-    [acknowledgeNotice, createSession, discard, engine, navigate, route, tenant],
+    [
+      acknowledgeNotice,
+      acknowledgeWelcome,
+      createSession,
+      discard,
+      engine,
+      navigate,
+      route,
+      tenant,
+      welcomeHere,
+    ],
   );
 
   // Leaving the screen forgets what it tried, so the next Call starts afresh.
@@ -281,10 +304,20 @@ export function CallScreen() {
   useEffect(() => {
     if (route?.open !== true || !ready || snapshot.phase !== 'idle' || createSession.isPending) return;
     const key = route.sessionId ?? `new:${route.ventureId}`;
-    if (attempted.current === key || !noticeSeen || !hasUserActivation() || arrivedByHistory()) return;
+    if (attempted.current === key || !noticeSeen || welcomeHere || !hasUserActivation() || arrivedByHistory())
+      return;
     if (route.sessionId === null && !choiceSeen.current) return;
     begin();
-  }, [arrivedByHistory, begin, createSession.isPending, noticeSeen, ready, route, snapshot.phase]);
+  }, [
+    arrivedByHistory,
+    begin,
+    createSession.isPending,
+    noticeSeen,
+    ready,
+    route,
+    snapshot.phase,
+    welcomeHere,
+  ]);
 
   const live = snapshot.phase === 'starting' || snapshot.phase === 'live' || snapshot.phase === 'ending';
   const ended = snapshot.phase === 'ended' ? snapshot.ended : null;
@@ -375,6 +408,7 @@ export function CallScreen() {
               failure={snapshot.phase === 'failed' ? snapshot.error : null}
               busy={createSession.isPending}
               voiceNotice={!noticeSeen}
+              welcome={welcome}
               privacy={
                 route?.sessionId === null && writable ? { value: newPrivacy, onChange: setNewPrivacy } : null
               }

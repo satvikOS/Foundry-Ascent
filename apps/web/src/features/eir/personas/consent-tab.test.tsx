@@ -121,6 +121,12 @@ describe('ConsentTab', () => {
     expect(doctrine).toBeDisabled();
     expect(within(dialog).getByRole('checkbox', { name: 'Voice' })).toBeChecked();
     await user.click(within(dialog).getByRole('checkbox', { name: 'Likeness' }));
+    // The presence scope: founders meet the vEIR under the EIR's first name ("Corin · vEIR").
+    const firstPerson = within(dialog).getByRole('checkbox', { name: 'First-person twin' });
+    expect(firstPerson).toHaveAccessibleDescription(
+      'Founders meet it under the EIR’s first name with a vEIR badge, as their digital twin.',
+    );
+    await user.click(firstPerson);
     await user.click(within(dialog).getByRole('button', { name: 'Record consent' }));
     await waitFor(() => {
       expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(true);
@@ -128,7 +134,7 @@ describe('ConsentTab', () => {
     const post = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST');
     expect(post?.[0]).toBe(`/api/v1/personas/${IDS.corin}/consents`);
     expect(sentJson(post?.[1])).toEqual({
-      assetTypes: ['doctrine', 'style', 'voice', 'likeness'],
+      assetTypes: ['doctrine', 'style', 'voice', 'likeness', 'first_person'],
       approvedUses: ['veir_coaching'],
       audiences: ['program_founders'],
       evidenceRef: 'SYN-CH-2026-01',

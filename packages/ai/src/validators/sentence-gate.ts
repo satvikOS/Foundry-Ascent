@@ -1,11 +1,16 @@
 import { normalizeForMatching } from '../risk/normalize.js';
 import { textsContainOtherVenture } from './coach-response.js';
 import {
+  identifiesHonestly,
+  identityQuestionOf,
   identityFindingsAdded,
   identityReplacementFor,
+  isStyleFinding,
   rewriteIdentity,
+  withoutLeaningConnector,
   type IdentityCheckOptions,
   type IdentityFinding,
+  type IdentityQuestion,
   type IdentityViolationKind,
 } from './identity.js';
 import { sanitizeMarkdown } from './markdown.js';
@@ -22,7 +27,11 @@ import { clampWords, toSpeakable } from './speech.js';
  *    the rest of the answer is withheld from the preview (`turn.completed` brings it);
  * 2. citations: `[E#]` keys that were not shown to the model are removed;
  * 3. identity, per sentence: claims to be human are rewritten like the validator does; claims to be (or
- *    sign as) the EIR block the stream, as they block the turn. Each unit is also read after a bounded tail
+ *    sign as) the EIR block the stream, as they block the turn; a volunteered AI disclaimer ("I'm just an AI")
+ *    is rewritten out, never blocking, and never takes the honest answer with it: the first disclaimer sentence
+ *    that says what the coach is becomes its honest line unless an earlier unit already said it, and nothing is
+ *    rewritten out of the answer to a sincere question about it (`founderText`). Each unit is also read after a
+ *    bounded tail
  *    of the one before it (typed, and as heard on a call), so a claim split across units ("This is" then
  *    "Corin.", "Has Corin approved your plan?" then "Yes, she has.") is judged whole: a unit that completes
  *    a blocking claim stops the stream, one that completes another claim is replaced by the disclosure;
@@ -54,6 +63,11 @@ export interface SentenceGateOptions {
   personaEirName?: string | null;
   /** Display names of the founder and their team: "Thanks, Ruth." to one of them is not an EIR's sign-off. */
   addressees?: readonly string[];
+  /**
+   * The founder's message this reply answers. When it sincerely asks who or what the coach is ("are you real?"),
+   * the reply's honest answer stands as written: no disclaimer is rewritten out of it.
+   */
+  founderText?: string;
   /**
    * The reply is said on a call: each unit's spoken form is checked as speech too, where an EIR's name counts
    * in any case and a unit that is only the name ("Corin.", "Best, Corin.") signs off.
@@ -158,6 +172,7 @@ const GRAVITY: Readonly<Record<IdentityViolationKind, number>> = {
   claims_eir: 0,
   claims_human: 1,
   endorsement: 2,
+  ai_disclaimer: 3,
 };
 
 /**
@@ -276,6 +291,17 @@ export class SentenceGate {
   #spokenTail = '';
   /** The end of what was said on the call (spoken forms), read again with each unit for other ventures. */
   #said = '';
+  /** The last unit was only a volunteered disclaimer and was dropped: the next one loses a leaning "But". */
+  #afterDroppedDisclaimer = false;
+  /**
+   * What the founder's sincere question about the coach asks (`founderText`), or null: then no disclaimer is
+   * rewritten out, and the first unit is read as its answer (a bare "Yes!" to "is this really Corin?").
+   */
+  readonly #question: IdentityQuestion | null;
+  /** No unit was read yet: the next one opens the reply. */
+  #opening = true;
+  /** A released unit said honestly what the coach is: a later disclaimer that says it again is only removed. */
+  #identified = false;
   #stats = { units: 0, withheld: 0, identityRewrites: 0, citationsRemoved: 0, markdownRemovals: 0 };
 
   constructor(options: SentenceGateOptions) {
@@ -288,6 +314,8 @@ export class SentenceGate {
     this.#maxUnitChars = Math.max(80, options.maxUnitChars ?? DEFAULT_MAX_UNIT_CHARS);
     this.#blockOn = new Set(options.blockOnIdentity ?? ['claims_eir']);
     this.#keys = options.evidenceKeys ? new Set([...options.evidenceKeys].map(normalizeKey)) : null;
+    this.#question =
+      options.founderText === undefined ? null : identityQuestionOf(options.founderText, this.#identity);
   }
 
   /** Everything received so far (unvalidated). */
@@ -437,17 +465,27 @@ export class SentenceGate {
         return `${whole.startsWith(' ') ? ' ' : ''}[${[...new Set(kept)].join(', ')}]`;
       });
     }
-    const identity = rewriteIdentity(text, this.#identity);
+    const answers = this.#opening ? this.#question : null;
+    this.#opening = false;
+    const identity = rewriteIdentity(text, { ...this.#identity, ...this.#disclaimers, answers });
     if (identity.findings.some((f) => this.#blockOn.has(f.kind))) return 'identity';
     this.#stats.identityRewrites += identity.findings.length;
     text = identity.text.trim();
-    if (text === '') return null;
+    if (text === '') {
+      this.#afterDroppedDisclaimer = identity.findings.length > 0 && identity.findings.every(isStyleFinding);
+      return null;
+    }
+    if (this.#afterDroppedDisclaimer) {
+      this.#afterDroppedDisclaimer = false;
+      text = withoutLeaningConnector(text);
+    }
     const split = this.#splitClaim(this.#tail, lead === '' ? ' ' : lead, text, this.#identity);
     if (split === null) return 'identity';
     text = split;
     const spoken = this.#speak(text);
     if ('blocked' in spoken) return spoken.blocked;
     this.#tail = identityTail(text);
+    if (!this.#identified && identifiesHonestly(text, this.#identity)) this.#identified = true;
     return { text: `${lead}${text}`, spoken: spoken.said };
   }
 
@@ -458,12 +496,20 @@ export class SentenceGate {
    */
   #splitClaim(tail: string, gap: string, unit: string, options: IdentityCheckOptions): string | null {
     if (tail === '' || !/\p{L}/u.test(unit)) return unit;
-    const added = identityFindingsAdded(tail, `${tail}${gap}${unit}`, options);
+    // A disclaimer is judged within its own sentence (the unit itself, above); the whole answer is checked again.
+    const added = identityFindingsAdded(tail, `${tail}${gap}${unit}`, options).filter(
+      (f) => !isStyleFinding(f),
+    );
     if (added.length === 0) return unit;
     if (added.some((f) => this.#blockOn.has(f.kind))) return null;
     this.#stats.identityRewrites += added.length;
     const gravest = added.reduce((a: IdentityFinding, b) => (GRAVITY[b.kind] < GRAVITY[a.kind] ? b : a));
     return identityReplacementFor(gravest.kind, options);
+  }
+
+  /** How a unit's volunteered disclaimers are rewritten out (one sentence of a reply that keeps its honest answer). */
+  get #disclaimers(): { disclaimers: 'unit'; identityAsked: boolean; identified: boolean } {
+    return { disclaimers: 'unit', identityAsked: this.#question !== null, identified: this.#identified };
   }
 
   get #identity(): IdentityCheckOptions {
@@ -488,7 +534,7 @@ export class SentenceGate {
       // Heard, not read: the spoken form is checked as speech before it is said, alone and after the end of
       // the unit said before it.
       const options = { ...this.#identity, spoken: true };
-      const heard = rewriteIdentity(speakable, options);
+      const heard = rewriteIdentity(speakable, { ...options, ...this.#disclaimers });
       if (heard.findings.some((f) => this.#blockOn.has(f.kind))) return { blocked: 'identity' };
       this.#stats.identityRewrites += heard.findings.length;
       speakable = heard.text.trim();

@@ -179,21 +179,23 @@ describe('conversation craft in the system prompt', () => {
     }
   });
 
-  it('answers "are you a man or a woman?" briefly and as an AI, then carries on (identity unchanged)', () => {
+  it('answers a sincere identity question in one warm line, a personal one lightly, then carries on', () => {
     const identity = section(prompt, 'Identity');
-    expect(identity).toContain('a personal question ("are you a man or a woman?")');
-    expect(identity).toContain(`("I'm an AI, so neither: I'm Corin's vEIR, not Corin.")`);
-    expect(identity).toContain('then carry on with what they asked in the same reply.');
-    // The full disclosure stays, for "what are you?" and "is a person involved?".
-    expect(identity).toContain(`whether a person is involved, give this disclosure: "${DEFAULT_DISCLOSURE}"`);
-    // Every identity rule is still there.
-    expect(identity).toContain('Never claim or imply that you are human');
-    expect(identity).toContain('never say or imply that you');
+    expect(identity).toContain("Asked sincerely whether you're real, human, a bot or really Corin");
+    expect(identity).toContain('one warm, honest line, then carry on');
+    expect(identity).toContain('A playful personal question ("do you have a life?") gets a light line');
+    // No legal sentence recited in conversation: the disclosure lives in the app (welcome and badge).
+    expect(identity).not.toContain(DEFAULT_DISCLOSURE);
+    expect(identity).not.toContain('give this disclosure');
+    // Every hard line is still there.
+    expect(identity).toContain('Never claim to be human or Corin in person');
+    expect(identity).toContain('never say Corin or anyone in the program reviewed, approved');
     const neutral = buildSystemPrompt({
       ...INPUT,
       release: { ...INPUT.release, personaName: 'Foundry Guide', eirName: null },
     });
-    expect(section(neutral, 'Identity')).toContain(`("I'm an AI, so neither: I'm Foundry Guide.")`);
+    expect(section(neutral, 'Identity')).toContain("Asked sincerely whether you're a person or a bot");
+    expect(section(neutral, 'Identity')).toContain('Never claim to be human');
   });
 
   it('stays within its token budget (every token is paid on every turn)', () => {

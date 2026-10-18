@@ -148,19 +148,27 @@ export function introName(args: {
 }
 
 /**
- * The words a call opens with (plain text): a greeting that says the vEIR is an AI, then the conversation's opener
- * on a fresh conversation, or an invitation to continue one already under way.
+ * The words a call opens with (plain text), the presence policy: on a first meeting the vEIR introduces itself
+ * once ("Hi Maya, I'm Corin's vEIR, Corin's digital twin."; the neutral guide as the program's AI coach); later
+ * it just greets, like anyone you have met. Then the conversation's opener on a fresh conversation, or an
+ * invitation to continue one already under way. What a vEIR is, the person read in the welcome.
  */
 export function callIntroText(args: {
   readonly firstName: string | null;
   readonly personaName: string;
+  /** The EIR's first name for a vEIR ("Corin"); null for the neutral guide. */
+  readonly eirFirstName: string | null;
+  /** The person has never had a conversation with this vEIR in the venture. */
+  readonly firstMeeting: boolean;
   readonly opener: string | null;
   readonly conversationStarted: boolean;
 }): string {
-  const hello =
-    args.firstName === null
-      ? `Hi, this is ${args.personaName}, an AI coach.`
-      : `Hi ${args.firstName}, this is ${args.personaName}, an AI coach.`;
+  const hi = args.firstName === null ? 'Hi' : `Hi ${args.firstName}`;
+  const hello = !args.firstMeeting
+    ? `${hi}.`
+    : args.eirFirstName === null
+      ? `${hi}, I'm ${args.personaName}, the program's AI coach.`
+      : `${hi}, I'm ${args.personaName}, ${args.eirFirstName}'s digital twin.`;
   const next =
     args.opener ??
     (args.conversationStarted ? 'Where would you like to pick up?' : 'What would you like to work on?');
@@ -267,6 +275,8 @@ interface Started {
   /** The conversation's stored opener (`coaching_sessions.opener`), offered only before its first turn. */
   readonly opener: string | null;
   readonly conversationStarted: boolean;
+  /** The caller started no other conversation of the venture: the vEIR introduces itself once. */
+  readonly firstMeeting: boolean;
 }
 
 export function createCallsService(
@@ -436,7 +446,16 @@ export function createCallsService(
       // The opener is a person-editable note: spoken only when it names no EIR at all (no endorsement, review
       // or presence claims) and passes the identity and cross-venture rules.
       const opener = started.opener === null ? '' : toSpeakable(started.opener).trim();
-      const base = { firstName: started.firstName, personaName };
+      const eirFirstName =
+        started.personaKind === 'eir_persona'
+          ? (started.eirDisplayName?.trim().split(/\s+/)[0] ?? null)
+          : null;
+      const base = {
+        firstName: started.firstName,
+        personaName,
+        eirFirstName: eirFirstName === '' ? null : eirFirstName,
+        firstMeeting: started.firstMeeting,
+      };
       const candidates = [
         ...(opener === '' || mentionsEir(opener, eirNames) || !safe(opener)
           ? []
@@ -701,6 +720,15 @@ export function createCallsService(
           // message, so the call says exactly what the vEIR believes it opened with (none for temporary chats).
           opener: turnCount === 0 ? session.opener : null,
           conversationStarted: turnCount > 0,
+          // A first meeting: nothing said yet here, and no earlier conversation. A call in a conversation already
+          // under way picks it up instead of introducing the vEIR again.
+          firstMeeting:
+            turnCount === 0 &&
+            !(await sessionsRepo.startedEarlierConversation(tx, {
+              ventureId,
+              principalId: ctx.principalId,
+              exceptSessionId: sessionId,
+            })),
         };
       });
 

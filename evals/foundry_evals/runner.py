@@ -25,7 +25,7 @@ from foundry_evals.graders.base import Finding, GradingContext, Severity
 from foundry_evals.graders.behaviours import TurnSignals, check_behaviours
 from foundry_evals.graders.conversation import ConversationReply, grade_conversation, reply_of
 from foundry_evals.graders.cross_venture import find_secret
-from foundry_evals.graders.disclosure import grade_disclosure
+from foundry_evals.graders.disclosure import grade_disclosure, grade_founder_disclosure
 from foundry_evals.graders.escalation import TurnEscalation, findings_for, observe, turn_escalation
 from foundry_evals.graders.evidence import grade_evidence
 from foundry_evals.graders.high_risk import detect_definitive_advice, detect_guarantees, is_limited
@@ -97,6 +97,8 @@ class Runner:
         self._clock = clock
         self._transcript = transcript
         self._rotation = 0
+        #: What each actor's founder-facing disclosure check found, per venture (asked once per run).
+        self._founder_disclosure: dict[tuple[str, str], list[Finding]] = {}
         self.turns_used = 0
         self.cost_usd = 0.0
         self.aborted: str | None = None
@@ -181,7 +183,7 @@ class Runner:
             session_id = session.id
             result.session_ids.append(session.id)
             result.sessions_created += 1
-            disclosure = grade_disclosure(session.disclosure)
+            disclosure = grade_disclosure(session.disclosure) + self._founder_disclosed(actor, venture.id)
             result.findings += disclosure
             if case.channel == "voice":
                 call_id = self._start_call(actor, session.id, result, ctx)
@@ -202,7 +204,7 @@ class Runner:
                 fields = turn_fields(outcome.turn, support_message=outcome.support_message)
                 # What the call said before the turn completed: each unit, and the units together.
                 fields += speech_fields(outcome.speech)
-                result.findings += grade_turn_safety(fields, ctx, index)
+                result.findings += grade_turn_safety(fields, ctx, index, founder_text=text)
                 self._write_transcript(case, index, text, outcome)
                 if outcome.kind == "error":
                     result.status, result.reason = "error", f"turn_error:{outcome.error_code}"
@@ -328,7 +330,7 @@ class Runner:
                 created.append(session.id)
                 result.session_ids.append(session.id)
                 result.sessions_created += 1
-                disclosure = grade_disclosure(session.disclosure)
+                disclosure = grade_disclosure(session.disclosure) + self._founder_disclosed(actor, venture.id)
                 result.findings += disclosure
                 if not disclosure:
                     result.sessions_with_disclosure += 1
@@ -351,7 +353,7 @@ class Runner:
                         result.turns.append(record)
                         fields = turn_fields(outcome.turn, support_message=outcome.support_message)
                         fields += speech_fields(outcome.speech)
-                        result.findings += grade_turn_safety(fields, ctx, case_turn)
+                        result.findings += grade_turn_safety(fields, ctx, case_turn, founder_text=text)
                         self._write_transcript(case, case_turn, text, outcome)
                         if outcome.kind == "error":
                             result.status, result.reason = "error", f"turn_error:{outcome.error_code}"
@@ -439,6 +441,16 @@ class Runner:
             self._log(
                 f"warning: the notebook of {case_id}'s memory venture could not be cleared ({_error_code(exc)})"
             )
+
+    def _founder_disclosed(self, actor: Actor, venture_id: str) -> list[Finding]:
+        """The founder-facing disclosure for this actor in this venture (the welcome and the badge), checked once
+        per run: a session counts as disclosed only when the founder is shown what the coach is."""
+        key = (actor.label, venture_id)
+        if key not in self._founder_disclosure:
+            self._founder_disclosure[key] = grade_founder_disclosure(
+                actor.client.get_venture(venture_id).persona, actor.client.me()
+            )
+        return list(self._founder_disclosure[key])
 
     def _start_conversation_call(
         self, actor: Actor, session_id: str, result: CaseResult, ctx: GradingContext, turn: int

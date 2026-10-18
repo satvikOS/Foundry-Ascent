@@ -2,6 +2,7 @@ import { CoachResponse, ValidatorResults, type CoachResponse as CoachResponseTyp
 import { describe, expect, it } from 'vitest';
 
 import { classifyRisk } from '../risk/classifier.js';
+import { DISCLAIMER_FALLBACK } from './identity.js';
 import {
   CROSS_VENTURE_BLOCK_ANSWER,
   EMPTY_ANSWER_FALLBACK,
@@ -368,7 +369,7 @@ describe('identity', () => {
       opts(),
     );
     expect(out.results.identityViolation).toBe(true);
-    expect(out.response.answer).toContain('To be clear, I am Foundry Guide, an AI coach, not a person.');
+    expect(out.response.answer).toContain("I'm Foundry Guide, the program's AI coach, not a person.");
     expect(out.response.answer).not.toContain(sentence);
     expect(out.response.answer).toContain('Test pricing first.');
     expect(out.blocked).toBe(false);
@@ -384,8 +385,153 @@ describe('identity', () => {
     const out = validateCoachResponse(base({ answer: `${sentence} Next, run the pilot.` }), opts());
     expect(out.results.identityViolation).toBe(true);
     expect(out.response.answer).not.toContain(sentence);
-    expect(out.response.answer).toContain('Approval decisions belong to people');
+    expect(out.response.answer).toContain("I can't speak for anyone in the program on that.");
     expect(out.blocked).toBe(false);
+  });
+
+  it('rewrites a volunteered disclaimer out as style, not as an identity violation', () => {
+    const out = validateCoachResponse(
+      base({ answer: "As an AI, I don't have a life. But here's the plan: run the pilot." }),
+      opts(),
+    );
+    expect(out.response.answer).toBe("Here's the plan: run the pilot.");
+    expect(out.results.identityViolation).toBe(false);
+    expect(out.results.notes).toContain('ai_disclaimer_removed:2');
+    expect(out.results.notes.some((n) => n.startsWith('identity_rewritten'))).toBe(false);
+    expect(out.blocked).toBe(false);
+    // Spoken on a call too.
+    const spoken = validateCoachResponse(
+      base({ spoken: "I'm just an AI, so run the pilot." }),
+      opts({ channel: 'voice' }),
+    );
+    // "I'm just an AI" says what the coach is: the call says its honest line instead, never nothing.
+    expect(spoken.response.spoken).toBe("I'm Foundry Guide, the program's AI coach. Run the pilot.");
+    expect(spoken.blocked).toBe(false);
+  });
+
+  it('keeps the honest answer to a sincere question, and lets it stand as written when the founder asked', () => {
+    const answer = "Honestly? I'm just an AI. Corin built me from how Corin coaches.";
+    const veir = opts({ personaName: "Corin's vEIR", eirNames: ['Corin Halvorsen'] });
+    const unasked = validateCoachResponse(base({ answer }), veir);
+    expect(unasked.response.answer).toBe(
+      "Honestly? I'm Corin's digital twin, built from how Corin coaches. Corin built me from how Corin coaches.",
+    );
+    expect(unasked.response.answer).not.toBe(DISCLAIMER_FALLBACK);
+    const asked = validateCoachResponse(base({ answer }), { ...veir, founderText: 'Wait, are you real?' });
+    expect(asked.response.answer).toBe(answer);
+    expect(asked.results.notes.some((n) => n.startsWith('ai_disclaimer_removed'))).toBe(false);
+    // On a call too.
+    const call = validateCoachResponse(base({ answer, spoken: "Honestly? I'm just an AI." }), {
+      ...veir,
+      channel: 'voice',
+      founderText: 'am I talking to a bot?',
+    });
+    expect(call.response.spoken).toBe("Honestly? I'm just an AI.");
+  });
+
+  it('corrects a bare yes to "is this really Corin?" as a claim to be a person, typed and on a call', () => {
+    const veir = opts({ personaName: "Corin's vEIR", eirNames: ['Corin Halvorsen'] });
+    const out = validateCoachResponse(base({ answer: "Yep, it's me. Let's look at the pilot." }), {
+      ...veir,
+      founderText: 'Is this really Corin?',
+    });
+    expect(out.response.answer).toBe(
+      "I'm Corin's digital twin, not Corin in person. Let's look at the pilot.",
+    );
+    expect(out.results.identityViolation).toBe(true);
+    expect(out.blocked).toBe(false);
+    const call = validateCoachResponse(base({ answer: 'Run the pilot.', spoken: 'Nope! Run the pilot.' }), {
+      ...veir,
+      channel: 'voice',
+      founderText: 'am I talking to a bot?',
+    });
+    expect(call.response.spoken).toBe("I'm Corin's digital twin, not Corin in person. Run the pilot.");
+    // An honest yes stands.
+    const honest = validateCoachResponse(base({ answer: "Yes, I'm Corin's digital twin, an AI." }), {
+      ...veir,
+      founderText: 'Are you a bot?',
+    });
+    expect(honest.response.answer).toBe("Yes, I'm Corin's digital twin, an AI.");
+    expect(honest.results.identityViolation).toBe(false);
+  });
+
+  it('drops a field that was only a disclaimer instead of writing a line meant for the founder into it', () => {
+    const out = validateCoachResponse(
+      base({
+        claims: [
+          {
+            text: "I don't have personal experiences with library budgets.",
+            kind: 'inference',
+            evidence_ids: [],
+          },
+          { text: 'Door counts rose after the pilot.', kind: 'inference', evidence_ids: [] },
+        ],
+        uncertainty: [
+          { item: "I'm just an AI here.", level: 'low' },
+          { item: 'Whether the budget holds.', level: 'medium' },
+        ],
+        memory_candidates: [
+          {
+            type: 'fact',
+            title: 'About me',
+            content: "I'm just an AI here.",
+            evidence_ids: [],
+            confidence: 0.5,
+          },
+        ],
+        follow_up_questions: ["I don't have a life.", 'Who signs the purchase order?'],
+      }),
+      opts(),
+    );
+    const strings = [
+      ...out.response.claims.map((c) => c.text),
+      ...out.response.uncertainty.map((u) => u.item),
+      ...out.response.memory_candidates.map((m) => m.content),
+      ...out.response.follow_up_questions,
+    ];
+    expect(strings).not.toContain(DISCLAIMER_FALLBACK);
+    expect(out.response.claims.map((c) => c.text)).toEqual(['Door counts rose after the pilot.']);
+    expect(out.response.uncertainty.map((u) => u.item)).toEqual(['Whether the budget holds.']);
+    expect(out.response.memory_candidates).toEqual([]);
+    expect(out.response.follow_up_questions).toEqual(['Who signs the purchase order?']);
+    expect(out.results.identityViolation).toBe(false);
+  });
+
+  it('never rewrites a draft, a script or a next action into the coach’s correction line', () => {
+    const veir = opts({
+      personaName: "Corin's vEIR",
+      eirNames: ['Corin Halvorsen'],
+      addressees: ['Maya Chen'],
+    });
+    const answer =
+      'Here is a draft for Dana:\n\nHi Dana, thanks for meeting. I\'ll call you Thursday to confirm the pilot.\n\nSay: "I\'ll call you tomorrow with the numbers."';
+    const out = validateCoachResponse(
+      base({
+        answer,
+        next_actions: [
+          {
+            owner: 'founder',
+            action: "Email Dana: I'll see you at the kickoff on Monday.",
+            target_date: null,
+          },
+          { owner: 'founder', action: "I'll call you Thursday to confirm, Dana.", target_date: null },
+        ],
+      }),
+      veir,
+    );
+    expect(out.response.answer).toBe(answer);
+    expect(out.response.next_actions.map((a) => a.action)).toEqual([
+      "Email Dana: I'll see you at the kickoff on Monday.",
+      "I'll call you Thursday to confirm, Dana.",
+    ]);
+    expect(out.results.identityViolation).toBe(false);
+    // The coach claiming it in its own voice is still corrected.
+    const own = validateCoachResponse(
+      base({ answer: "Good luck. I'll call you Thursday to confirm." }),
+      veir,
+    );
+    expect(own.response.answer).toBe("Good luck. I'm Corin's digital twin, not Corin in person.");
+    expect(own.results.identityViolation).toBe(true);
   });
 
   it('blocks EIR impersonation by default', () => {
@@ -782,7 +928,7 @@ describe('spoken text (voice channel)', () => {
   it('rewrites identity violations in the spoken reply and blocks EIR impersonation', () => {
     const human = validateCoachResponse(base({ spoken: 'I am a real person. Run the pilot.' }), voice());
     expect(human.blocked).toBe(false);
-    expect(human.response.spoken).toContain('To be clear, I am Foundry Guide, an AI coach, not a person.');
+    expect(human.response.spoken).toContain("I'm Foundry Guide, the program's AI coach, not a person.");
     expect(human.response.spoken).not.toContain('real person');
 
     const eir = validateCoachResponse(
@@ -870,7 +1016,7 @@ describe('spoken text (voice channel)', () => {
     expect(out.blocked).toBe(true);
     expect(out.blockReason).toBe('identity');
     expect(out.response.spoken).not.toMatch(/—\s*Corin/);
-    expect(out.response.spoken).toContain("I'm Corin's vEIR");
+    expect(out.response.spoken).toContain("I'm Corin's digital twin");
   });
 
   it('counts a violation once when the spoken reply is derived from the answer', () => {
@@ -980,9 +1126,7 @@ describe('vEIR personas', () => {
       corin(),
     );
     expect(out.blocked).toBe(false);
-    expect(out.response.answer).toBe(
-      "Approval decisions belong to people, not to me: I'm an AI, and I can't speak for Corin or anyone else in the program. Launch the pilot.",
-    );
+    expect(out.response.answer).toBe("I can't speak for Corin on that. Launch the pilot.");
   });
 
   it('uses an explicit persona EIR name', () => {

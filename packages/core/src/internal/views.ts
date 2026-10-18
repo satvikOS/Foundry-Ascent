@@ -4,7 +4,13 @@ import {
   type PersonaSummary,
   type ResourceView,
 } from '@foundry/contracts';
-import { type assignmentsRepo, type escalationsRepo, type memoryRepo, type resourcesRepo } from '@foundry/db';
+import {
+  type assignmentsRepo,
+  type escalationsRepo,
+  type memoryRepo,
+  type personasRepo,
+  type resourcesRepo,
+} from '@foundry/db';
 
 /** Contract view of a memory record (drops tenant id and embedding flag). */
 export function toMemoryView(m: memoryRepo.MemoryRecord): MemoryObjectView {
@@ -76,9 +82,18 @@ export function toResourceView(r: resourcesRepo.ResourceRecord): ResourceView {
   };
 }
 
-/** Persona summary for venture detail (null when the venture has no usable release). */
-export function toPersonaSummary(resolved: assignmentsRepo.ResolvedAssignment | null): PersonaSummary | null {
+/**
+ * Persona summary for venture detail (null when the venture has no usable release). `presence` says how the vEIR
+ * appears to founders (`personasRepo.getPersonaPresence`): under the EIR's first name with the first-person
+ * consent ("Corin · vEIR"), and whether its EIR sees the venture's work.
+ */
+export function toPersonaSummary(
+  resolved: assignmentsRepo.ResolvedAssignment | null,
+  presence: personasRepo.PersonaPresence | null = null,
+): PersonaSummary | null {
   if (resolved?.release == null) return null;
+  const veir = resolved.persona.kind === 'eir_persona';
+  const eirFirstName = veir ? (presence?.eirName?.trim().split(/\s+/)[0] ?? null) : null;
   return {
     personaId: resolved.persona.id,
     releaseId: resolved.release.id,
@@ -88,5 +103,8 @@ export function toPersonaSummary(resolved: assignmentsRepo.ResolvedAssignment | 
     status: resolved.persona.status,
     disclosure: resolved.release.disclosureText,
     allowedModes: resolved.assignment.allowedModes.filter((m) => resolved.release?.allowedModes.includes(m)),
+    eirFirstName: eirFirstName === '' ? null : eirFirstName,
+    firstPerson: veir && presence?.firstPerson === true,
+    eirSeesWork: veir && presence?.eirSeesWork === true,
   };
 }

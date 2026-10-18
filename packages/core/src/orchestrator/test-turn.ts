@@ -92,6 +92,8 @@ interface Admitted {
   readonly settings: Awaited<ReturnType<typeof settingsRepo.getPlatformSettings>>;
   readonly via: CuratorVia;
   readonly personaEirName: string | null;
+  /** First-person consent; no venture, so its EIR sees no venture's work here. */
+  readonly presence: Pick<personasRepo.PersonaPresence, 'firstPerson' | 'eirSeesWork'>;
   /** The fixed mode of this message, or null when the vEIR picks one. */
   readonly mode: CoachMode | null;
 }
@@ -232,14 +234,18 @@ export function createTestBench(kit: Kit, directory: DirectoryCache): TestBench 
           crisis: args.crisis,
         },
       });
+      const presence = await personasRepo.getPersonaPresence(tx, {
+        personaId: persona.id,
+        assignedEirProfileId: null,
+      });
       return {
         persona,
         release,
         settings,
         via,
         mode,
-        personaEirName:
-          persona.kind === 'eir_persona' ? await personasRepo.getPersonaEirName(tx, persona.id) : null,
+        personaEirName: persona.kind === 'eir_persona' ? presence.eirName : null,
+        presence,
       };
     });
   }
@@ -364,6 +370,7 @@ export function createTestBench(kit: Kit, directory: DirectoryCache): TestBench 
           release,
           personaName: persona.name,
           personaEirName: admitted.personaEirName,
+          presence: admitted.presence,
           mode: admitted.mode,
           allowedModes,
           fallbackMode: allowedModes[0] ?? 'diagnose',

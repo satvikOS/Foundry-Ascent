@@ -22,6 +22,7 @@ import {
   type TurnStreamEvent,
   type ValidatorResults,
 } from '@foundry/contracts';
+import { type personasRepo } from '@foundry/db';
 
 import { type SessionSigningKey } from '../auth/session-token.js';
 import { type RequestContext } from '../context.js';
@@ -55,6 +56,11 @@ export interface AnswerSpec {
   readonly personaName: string;
   /** Display name of the EIR the persona is built from (its own consented profile); null for a guide. */
   readonly personaEirName: string | null;
+  /**
+   * How the vEIR is present (`personasRepo.getPersonaPresence`): it speaks in its EIR's own voice only with the
+   * first-person consent, and says its EIR sees the work only when that EIR is the venture's. Default: neither.
+   */
+  readonly presence?: Pick<personasRepo.PersonaPresence, 'firstPerson' | 'eirSeesWork'>;
   /** The fixed mode, or null when the model picks one (auto mode). */
   readonly mode: CoachMode | null;
   readonly allowedModes: readonly CoachMode[];
@@ -176,6 +182,8 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
       disclosureText: spec.release.disclosureText,
       personaName: spec.personaName,
       eirName: spec.personaEirName,
+      firstPerson: spec.presence?.firstPerson === true,
+      eirSeesWork: spec.presence?.eirSeesWork === true,
     },
     mode: spec.mode ?? AUTO_MODE,
     allowedModes: spec.allowedModes,
@@ -239,6 +247,7 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
             eirNames: guards.eirNames,
             personaEirName: spec.personaEirName,
             addressees: guards.addressees,
+            founderText: spec.founderText,
             otherVentureNames: guards.others.names,
             otherVentureCanaries: guards.others.canaries,
             otherVentureMemberNames: guards.others.memberNames,
@@ -268,6 +277,7 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
     eirNames: guards.eirNames,
     personaEirName: spec.personaEirName,
     addressees: guards.addressees,
+    founderText: spec.founderText,
     channel: spec.channel,
   });
   validated.results.notes.push(...generation.notes);

@@ -80,6 +80,7 @@ export async function resolveVeir(ex: SqlExecutor, ventureId: string): Promise<R
   if (persona === null) return null;
   const assets = await personasRepo.personaConsentAssets(ex, persona.id);
   const eirDisplayName = await veirEirName(ex, persona);
+  const veir = persona.kind === 'eir_persona';
   return {
     assignment: resolved,
     identity: {
@@ -91,6 +92,10 @@ export async function resolveVeir(ex: SqlExecutor, ventureId: string): Promise<R
       tagline: persona.tagline,
       disclosure: resolved.release?.disclosureText ?? '',
       embodiment: embodimentView(persona, assets),
+      // Presence: under the EIR's first name only with that consent; the EIR sees the work when assigned here.
+      firstPerson: veir && assets.includes('first_person'),
+      eirSeesWork:
+        veir && persona.eirProfileId !== null && persona.eirProfileId === (resolved.eir?.id ?? null),
     },
   };
 }

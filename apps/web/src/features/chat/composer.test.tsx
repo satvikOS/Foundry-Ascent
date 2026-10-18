@@ -10,8 +10,6 @@ import { Composer, MAX_TURN_CHARS, STOP_GRACE_MS, type ComposerMode } from './co
 import { initialTurnProgress, turnProgressReducer } from '../coach/progress';
 import { TurnProgressList } from '../coach/turn-progress';
 
-const DISCLOSURE = 'Foundry Guide is an AI coach. It is not a person.';
-
 function Harness({
   initialText = '',
   initialMode = 'diagnose',
@@ -35,7 +33,6 @@ function Harness({
       value={text}
       onChange={setText}
       personaName="Foundry Guide"
-      disclosure={DISCLOSURE}
       mode={mode}
       onModeChange={setMode}
       counterpart={counterpart}
@@ -124,14 +121,13 @@ describe('Composer', () => {
     expect(options).toContain('Rehearse');
   });
 
-  it('explains why it is disabled and always carries one AI disclosure line', () => {
+  it('explains why it is disabled, with no disclaimer line under it', () => {
     renderWithProviders(<Harness onSend={vi.fn()} disabledReason="AI is paused" />);
     const input = screen.getByRole('textbox', { name: 'Message Foundry Guide' });
     expect(input).toBeDisabled();
     expect(input).toHaveAttribute('placeholder', 'AI is paused');
-    const notes = screen.getAllByRole('note', { name: 'AI disclosure' });
-    expect(notes).toHaveLength(1);
-    expect(notes[0]).toHaveTextContent(DISCLOSURE);
+    // The presence policy: the vEIR's badge and its one-time welcome disclose it, not a line per composer.
+    expect(screen.queryByRole('note', { name: 'AI disclosure' })).toBeNull();
   });
 });
 
@@ -180,7 +176,6 @@ describe('TurnProgressList', () => {
           value={text}
           onChange={setText}
           personaName="Foundry Guide"
-          disclosure={DISCLOSURE}
           mode="auto"
           onModeChange={() => undefined}
           counterpart=""

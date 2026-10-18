@@ -691,7 +691,7 @@ describe('sanitizeDistill — notebook merge', () => {
         notebook: { ...draft().notebook, summary: 'I am Corin Halvorsen. Maya is close to a pilot.' },
       }),
     );
-    expect(out.notebookDelta.summary).toContain("To be clear, I'm Corin's vEIR");
+    expect(out.notebookDelta.summary).toContain("I'm Corin's digital twin, not Corin in person.");
     expect(out.notebookDelta.summary).not.toContain('I am Corin Halvorsen');
     expect(out.stats.identityRewrites).toBe(1);
   });

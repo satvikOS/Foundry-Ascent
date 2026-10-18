@@ -223,7 +223,7 @@ describe('the voice of a call', () => {
 });
 
 describe('the call intro', () => {
-  it('greets by first name, says it is an AI, then picks up the notebook opener', () => {
+  it('greets by first name like someone already met, then picks up the notebook opener', () => {
     expect(greetingName('Maya Okafor')).toBe('Maya');
     expect(greetingName('  Ines  ')).toBe('Ines');
     expect(greetingName('[admin] Maya')).toBeNull();
@@ -231,44 +231,70 @@ describe('the call intro', () => {
       callIntroText({
         firstName: 'Maya',
         personaName: "Corin's vEIR",
+        eirFirstName: 'Corin',
+        firstMeeting: false,
         opener: 'Last time you planned five library-staff interviews. How did they go?',
         conversationStarted: false,
       }),
-    ).toBe(
-      "Hi Maya, this is Corin's vEIR, an AI coach. Last time you planned five library-staff interviews. How did they go?",
-    );
+    ).toBe('Hi Maya. Last time you planned five library-staff interviews. How did they go?');
     expect(
       callIntroText({
         firstName: null,
         personaName: 'Foundry Guide',
+        eirFirstName: null,
+        firstMeeting: false,
         opener: null,
         conversationStarted: true,
       }),
-    ).toBe('Hi, this is Foundry Guide, an AI coach. Where would you like to pick up?');
+    ).toBe('Hi. Where would you like to pick up?');
+  });
+
+  it('introduces the vEIR once, on a first meeting, as its EIR’s digital twin (never "an AI coach" again)', () => {
     expect(
       callIntroText({
         firstName: 'Priya',
         personaName: "Ruth's vEIR",
+        eirFirstName: 'Ruth',
+        firstMeeting: true,
         opener: null,
         conversationStarted: false,
       }),
-    ).toBe("Hi Priya, this is Ruth's vEIR, an AI coach. What would you like to work on?");
-  });
-
-  it('passes the identity rules for every persona', () => {
-    for (const personaName of ["Corin's vEIR", "Ruth's vEIR", 'Foundry Guide']) {
-      const text = callIntroText({
-        firstName: 'Maya',
-        personaName,
+    ).toBe("Hi Priya, I'm Ruth's vEIR, Ruth's digital twin. What would you like to work on?");
+    expect(
+      callIntroText({
+        firstName: 'Priya',
+        personaName: 'Foundry Guide',
+        eirFirstName: null,
+        firstMeeting: true,
         opener: null,
         conversationStarted: false,
-      });
-      const checked = rewriteIdentity(text, {
-        personaName,
-        eirNames: ['Corin Halvorsen', 'Ruth Abernathy-Song'],
-        checkHumanClaims: true,
-      });
-      expect(checked.findings, personaName).toEqual([]);
+      }),
+    ).toBe("Hi Priya, I'm Foundry Guide, the program's AI coach. What would you like to work on?");
+  });
+
+  it('passes the identity rules for every persona, met or not', () => {
+    for (const [personaName, eirFirstName] of [
+      ["Corin's vEIR", 'Corin'],
+      ["Ruth's vEIR", 'Ruth'],
+      ['Foundry Guide', null],
+    ] as const) {
+      for (const firstMeeting of [true, false]) {
+        const text = callIntroText({
+          firstName: 'Maya',
+          personaName,
+          eirFirstName,
+          firstMeeting,
+          opener: null,
+          conversationStarted: false,
+        });
+        const checked = rewriteIdentity(text, {
+          personaName,
+          eirNames: ['Corin Halvorsen', 'Ruth Abernathy-Song'],
+          checkHumanClaims: true,
+        });
+        expect(checked.findings, personaName).toEqual([]);
+        expect(text).not.toMatch(/an AI coach\.|not a person/);
+      }
     }
     // An opener a person edited to impersonate the EIR is caught by the same rules (it is then left out).
     expect(
@@ -311,10 +337,12 @@ describe('the names a call may say', () => {
       const text = callIntroText({
         firstName: 'Maya',
         personaName: name,
+        eirFirstName: 'Corin',
+        firstMeeting: true,
         opener: null,
         conversationStarted: false,
       });
-      expect(text).toBe("Hi Maya, this is Corin's vEIR, an AI coach. What would you like to work on?");
+      expect(text).toBe("Hi Maya, I'm Corin's vEIR, Corin's digital twin. What would you like to work on?");
       expect(
         rewriteIdentity(text, { personaName: name, eirNames: EIRS, checkHumanClaims: true }).findings,
       ).toEqual([]);

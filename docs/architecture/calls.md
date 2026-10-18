@@ -297,7 +297,8 @@ it):
   Switch to chat, End. 48 px targets with names and pressed states. Esc interrupts the vEIR while it speaks,
   otherwise minimizes. No single key ends a call.
 - **Timer** with the minutes left (from the heartbeat; the last two minutes count down and warn).
-- **One AI disclosure line**: the persona release's disclosure, `role="note"`, named "AI disclosure".
+- **The vEIR's tile** (ADR-0020): the presence in a call tile with a name tag ("Corin · vEIR", its badge
+  explains what the vEIR is) and a speaking indicator; no disclaimer line.
 - **Notices**: a failed turn (shown, never spoken, in the server's words), "Spoken replies are unavailable right now."
   while replies are on screen only, the two-minute warning, and the push-to-talk suggestion. A held-back
   turn shows the conversation's own `BlockedPanel` in place of the captions (`role="alert"`): the
@@ -481,10 +482,13 @@ and voices the face from text this platform validated; our turn endpoint stays t
   residual exposure is bounded by those caps and by the account's Transcribe quotas.
 - **Validated speech only.** A call speaks only signed units the validators approved, the signed intro,
   whole sentences of a stored validated reply, or the fixed crisis support message. Units of a reply that is
-  blocked in the end are never spoken again. The vEIR never claims to be its EIR: the intro states it is an
-  AI coach under a name that is not the EIR's, and a person-edited opener that names an EIR or breaks the
-  identity rules is left out.
-- **Disclosure.** The intro says the vEIR is an AI; the call screen keeps the one-line AI disclosure.
+  blocked in the end are never spoken again. The vEIR never claims to be its EIR: the intro (on a first meeting)
+  names it the EIR's digital twin under a name that is not the EIR's, and a person-edited opener that names an
+  EIR or breaks the identity rules is left out.
+- **Disclosure.** Said once, in the welcome stored with the person (a call opened first says it on its start
+  screen, beside the voice notice; Start call stores both); the tile's badge keeps it a tap away. The intro
+  introduces the vEIR only on a first meeting ("Hi Maya, I'm Corin's vEIR, Corin's digital twin."), and greets
+  afterwards.
 - **Voice consent.** A vEIR speaks with its EIR's chosen voice only while the EIR's consent covers `voice`;
   otherwise calls are refused rather than switched to another voice. Heartbeats re-check the consent, so a
   revoked or expired consent ends a live call within 15 s. Likeness (portraits, vendor avatars) needs

@@ -245,6 +245,18 @@ def test_clean_subset_passes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     assert "**Result: PASSED**" in report
 
 
+def test_g5_fails_when_the_founder_is_not_shown_what_the_coach_is(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The record alone is printed, never seen: without the welcome and the badge no session is disclosed.
+    code, results, _report = run(
+        FakeFoundryApi(founder_disclosure=False), tmp_path, monkeypatch, "--case", "SC-001", "--no-data-ok"
+    )
+    assert code != cli.EXIT_OK
+    assert gate(results, "G5")["status"] == "fail"
+    assert gate(results, "G5")["title"] == "Sessions disclosed (welcome, badge, record)"
+
+
 def test_missed_escalation_fails_recall(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     def never_escalates(api: FakeFoundryApi, venture: Venture, text: str, mode: str) -> dict[str, Any]:
         response = default_responder(api, venture, "plain question", mode)

@@ -234,7 +234,8 @@ describe('a second call minutes after the first', () => {
     expect(distillJobs()).toEqual([[first.id, true, 0]]);
 
     const call2 = await startCall(maya, second.id);
-    expect(call2.intro?.text).toMatch(/^Hi Maya, this is Corin's vEIR, an AI coach\. /);
+    // Maya has met her vEIR: it greets her (no self-introduction, no "an AI coach"), then picks up the first call.
+    expect(call2.intro?.text).toMatch(/^Hi Maya\. /);
     expect(call2.intro?.text).toContain(question);
 
     const turn = await talk(
@@ -340,9 +341,7 @@ describe('a private (temporary) conversation', () => {
     expect(temporary.opener).toBeNull();
     const call = await startCall(maya, temporary.id);
     // A private call opens without picking anything up either.
-    expect(call.intro?.text).toBe(
-      "Hi Maya, this is Corin's vEIR, an AI coach. What would you like to work on?",
-    );
+    expect(call.intro?.text).toBe('Hi Maya. What would you like to work on?');
     const turn = await talk(maya, temporary.id, secret, call.call.id);
     // Nothing from "Where you left off" reaches a temporary conversation.
     expect(seen.at(-1)?.messages.at(-1)?.content).not.toContain(LEFT_OFF_HEADING);

@@ -76,8 +76,22 @@ export async function pageShowsText(page: Page, text: string): Promise<boolean> 
   return page.evaluate((needle) => document.body.innerText.includes(needle), text);
 }
 
-/** Sign in through the real form and wait for the signed-in shell. */
-export async function signIn(page: Page, accessCode: string): Promise<void> {
+/** The one-time welcome that introduces a founder's or teammate's vEIR ("Meet Corin’s vEIR"). */
+export function veirWelcome(page: Page): Locator {
+  return page.getByRole('dialog', { name: /^Meet / });
+}
+
+/**
+ * Sign in through the real form and wait for the signed-in shell. A founder or teammate who has not met their
+ * coach yet lands under its one-time welcome (a vEIR's or the program's guide's): `welcome: 'keep'` waits for it
+ * and leaves it open for a test about it; by default it is acknowledged through the API and the page reloaded, so
+ * no welcome can open late over an unrelated test (the venture loading after a short wait would put it there).
+ */
+export async function signIn(
+  page: Page,
+  accessCode: string,
+  options: { welcome?: 'continue' | 'keep' } = {},
+): Promise<void> {
   await page.goto('/sign-in');
   const field = page.getByRole('textbox', { name: 'Access code' });
   await fillSecret(field, accessCode);
@@ -85,7 +99,26 @@ export async function signIn(page: Page, accessCode: string): Promise<void> {
   expect((await field.inputValue()).length, 'the access code was accepted by the field').toBe(23);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await page.waitForURL((url) => !url.pathname.startsWith('/sign-in'));
+  const me = (await (await page.request.get('/api/v1/me')).json()) as {
+    memberships: { role: string }[];
+    veirWelcomeAcknowledgedAt?: string | null;
+  };
+  const writer = me.memberships.some((m) => m.role === 'founder' || m.role === 'team');
+  if (writer && me.veirWelcomeAcknowledgedAt === null) {
+    // They land in their venture, where the welcome opens over New chat.
+    await page.waitForURL(/\/app\/v\/[0-9a-f-]{36}/);
+    if (options.welcome === 'keep') {
+      await expect(veirWelcome(page)).toBeVisible({ timeout: 20_000 });
+      return;
+    }
+    const acknowledged = await page.request.post('/api/v1/me/veir-welcome/acknowledge', {
+      headers: { 'x-requested-with': 'foundry-ascent', 'idempotency-key': runToken() },
+    });
+    expect(acknowledged.status(), 'POST /me/veir-welcome/acknowledge').toBe(200);
+    await page.reload();
+  }
   await expect(page.getByRole('button', { name: /^Account menu for / })).toBeVisible();
+  await expect(veirWelcome(page)).toHaveCount(0);
 }
 
 export async function signOut(page: Page): Promise<void> {
@@ -182,17 +215,21 @@ export async function startConversation(page: Page, firstMessage: string): Promi
 }
 
 /**
- * The view's one AI disclosure line shows its whole summary, never cut off: the vEIR is an AI, not a person,
- * and no human wrote or approved its answers. It lies entirely inside the viewport.
+ * The view's persistent disclosure (the presence policy): the vEIR badge beside its name, inside the viewport,
+ * which explains in one short paragraph what the vEIR is; and no disclaimer line under the composer.
  */
-export async function expectDisclosureInView(page: Page): Promise<void> {
-  const note = page.getByRole('note', { name: 'AI disclosure' });
-  await expect(note).toHaveCount(1);
-  const summary = note.locator('[data-slot="disclosure-summary"]');
-  await expect(summary).toBeVisible();
-  await expect(summary).toContainText('is an AI, not a person.');
-  await expect(summary).toContainText('No human wrote or approved its answers.');
-  await expect(summary).toBeInViewport({ ratio: 1 });
+export async function expectVeirBadgeInView(page: Page): Promise<void> {
+  await expect(page.getByRole('note', { name: 'AI disclosure' })).toHaveCount(0);
+  const badge = page.locator('[data-slot="veir-badge"]').filter({ visible: true }).first();
+  await expect(badge).toBeVisible();
+  await expect(badge).toHaveText(/^(?:vEIR|AI)$/);
+  await expect(badge).toBeInViewport({ ratio: 1 });
+  await badge.click();
+  const about = page.getByRole('dialog', { name: /^About / });
+  await expect(about).toBeVisible();
+  await expect(about).toContainText(/digital twin: an AI|AI coach/);
+  await page.keyboard.press('Escape');
+  await expect(about).toBeHidden();
 }
 
 const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
@@ -360,9 +397,11 @@ export async function setCallsEnabled(baseURL: string, enabled: boolean): Promis
 export const SEEDED_EIR_FIRST_NAME = 'Corin';
 
 /**
- * Naming invariant: the AI is always "Corin's vEIR"; a bare "Corin" only ever means the person. Checks the
- * page's visible text and its accessible labels (aria-label, title, placeholder), leaving out the AI
- * disclosure (whose sentence names the EIR on purpose) and the person's full name ("Corin Halvorsen").
+ * Naming invariant (the presence policy): the AI is "Corin · vEIR" (the first name beside its vEIR badge, or that
+ * text) or "Corin's vEIR"; a bare "Corin" anywhere else only ever means the person. Checks the page's visible text
+ * and its accessible labels (aria-label, title, placeholder), leaving out the name beside its badge, the AI
+ * disclosure, the badge's explanation and the welcome (whose sentences name the EIR on purpose) and the person's
+ * full name ("Corin Halvorsen").
  */
 export async function expectNoBareEirName(
   page: Page,
@@ -371,10 +410,12 @@ export async function expectNoBareEirName(
   allow: readonly RegExp[] = [],
 ): Promise<void> {
   const found = await page.evaluate((name) => {
-    const bare = new RegExp(`\\b${name}\\b(?!['’]s vEIR)(?! Halvorsen)`);
+    const bare = new RegExp(`\\b${name}\\b(?!['’]s vEIR)(?! Halvorsen)(?! · vEIR)`);
     const hits: string[] = [];
     const disclosure = (element: Element) =>
-      element.closest('[role="note"][aria-label="AI disclosure"]') !== null;
+      element.closest(
+        '[role="note"][aria-label="AI disclosure"], [data-slot="veir-name"], [data-slot="veir-explanation"], [data-slot="veir-welcome"]',
+      ) !== null;
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
       const parent = node.parentElement;

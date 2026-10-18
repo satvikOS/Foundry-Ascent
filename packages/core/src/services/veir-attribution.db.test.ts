@@ -126,11 +126,20 @@ describe('vEIR attribution when the reviewing EIR is not the vEIR’s own', () =
     expect(JSON.stringify(reloaded.session)).not.toContain('Corin');
   });
 
-  it('the call introduces Noor’s vEIR', async () => {
+  it('the call introduces Noor’s vEIR on a first meeting, as Noor’s digital twin, and greets afterwards', async () => {
+    // A first meeting: none of Priya's earlier conversations of the venture is left.
+    for (const earlier of await h.core.sessions.list(priya, ventureId)) {
+      await h.core.sessions.remove(priya, earlier.id);
+    }
     const session = SessionView.parse(await h.core.sessions.create(priya, ventureId, {}));
     const started = StartCallResponse.parse(await h.core.calls.start(priya, session.id, {}));
-    expect(started.intro?.text).toMatch(/^Hi Priya, this is Noor's vEIR, an AI coach\./);
+    expect(started.intro?.text).toMatch(/^Hi Priya, I'm Noor's vEIR, Noor's digital twin\. /);
     expect(started.intro?.text).not.toContain('Corin');
     await h.core.calls.end(priya, started.call.id, { reason: 'user' });
+    // Met now: the next call in another conversation greets her.
+    const next = SessionView.parse(await h.core.sessions.create(priya, ventureId, {}));
+    const again = StartCallResponse.parse(await h.core.calls.start(priya, next.id, {}));
+    expect(again.intro?.text).toMatch(/^Hi Priya\. /);
+    await h.core.calls.end(priya, again.call.id, { reason: 'user' });
   });
 });

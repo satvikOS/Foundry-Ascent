@@ -311,8 +311,9 @@ test.describe('vEIR calls', () => {
       sessionId = /\/c\/([0-9a-f-]{36})/.exec(page.url())?.[1] ?? '';
       const body = (await (await started).json()) as { call: { id: string }; intro: { text: string } | null };
       callId = body.call.id;
-      await expect(screen.getByRole('note', { name: 'AI disclosure' })).toHaveCount(1);
-      await expect(screen.getByRole('note', { name: 'AI disclosure' })).toContainText('not a person');
+      // The presence policy: a call tile named "Corin · vEIR" (the badge explains it), no disclaimer line.
+      await expect(screen.getByRole('note', { name: 'AI disclosure' })).toHaveCount(0);
+      await expect(screen.locator('[data-slot="call-name-tag"]')).toHaveText('CorinvEIR');
       // The intro is the vEIR's first line. There is no server voice here (501), so it is on screen only,
       // and the call says so once.
       if (body.intro) {
@@ -384,8 +385,8 @@ test.describe('vEIR calls', () => {
       await expect(page).toHaveURL(new RegExp(`/c/${sessionId}$`));
       const bar = page.getByRole('region', { name: /^Call with / });
       await expect(bar).toBeVisible();
-      // The vEIR's AI marker travels with its name.
-      await expect(bar).toContainText(/AI/);
+      // The vEIR's badge travels with its name ("Corin · vEIR").
+      await expect(bar.locator('[data-slot="veir-name"]')).toHaveText('CorinvEIR');
       await expectNoBareEirName(page, 'the mini call bar over the conversation');
       await expect(page.getByRole('main').getByText(token).first()).toBeVisible();
       await bar.getByRole('button', { name: 'Return to call' }).click();
@@ -402,7 +403,7 @@ test.describe('vEIR calls', () => {
       await expect(screen.getByRole('heading', { name: 'Call ended' })).toBeFocused();
       const response = await ended;
       expect(response.request().postDataJSON()).toMatchObject({ reason: 'user' });
-      await expect(screen.getByRole('note', { name: 'AI disclosure' })).toHaveCount(1);
+      await expect(screen.getByRole('note', { name: 'AI disclosure' })).toHaveCount(0);
       await expectNoBareEirName(page, 'the after-call summary');
       // What the call learned goes to memory by itself, never as a proposal waiting for anyone.
       const { summary } = (await response.json()) as {
@@ -593,7 +594,8 @@ test.describe('vEIR calls', () => {
       await test.step('a second call opens by picking up the first, not with the same greeting', async () => {
         const { sessionId, intro } = await callFromSidebar();
         expect(sessionId).not.toBe(first);
-        expect(intro).toMatch(/^Hi Maya, this is .+, an AI coach\. /);
+        // Met before: a greeting (no self-introduction, no "an AI coach"), then the pick-up.
+        expect(intro).toMatch(/^Hi Maya\. /);
         expect(intro).not.toContain('What would you like to work on?');
         expect(intro).toMatch(/last time|when we last spoke|we talked about|you said|you asked|pric/i);
         await expectNoBareEirName(page, 'the second call');
@@ -673,7 +675,8 @@ test.describe('vEIR calls', () => {
       await expect(notice).toContainText('Amazon Transcribe');
       await expect(notice).toContainText('No audio is kept');
       await expect(notice).toContainText('saved here like chat');
-      await expect(screen.getByRole('note', { name: 'AI disclosure' })).toContainText('not a person');
+      // They read the vEIR's welcome when they signed in: it is not said again here (presence.chat.spec.ts).
+      await expect(screen.getByTestId('veir-welcome-inline')).toHaveCount(0);
       // The notice holds the call until the person starts it.
       await expect(screen.getByRole('button', { name: 'Start call' })).toBeVisible();
       await expectNoSeriousA11yViolations(page, 'call pre-join with the voice notice');
@@ -1014,8 +1017,8 @@ test.describe('vEIR calls', () => {
       await expect(turnOn).toBeVisible();
       await expect(bar).toContainText('Sound is off');
       await expect(bar.getByRole('status')).toHaveText('Sound is off. Turn on sound to hear replies.');
-      // The vEIR stays marked as AI next to its name.
-      await expect(bar).toContainText('vEIR · AI');
+      // The vEIR keeps its badge next to its name.
+      await expect(bar.locator('[data-slot="veir-badge"]')).toHaveText('vEIR');
       await turnOn.click();
       await expect(turnOn).toHaveCount(0);
       await expect(bar).not.toContainText('Sound is off');
@@ -1091,7 +1094,7 @@ test.describe('vEIR calls', () => {
         await interruptCallAudio(page);
         const turnOn = bar.getByRole('button', { name: 'Turn on sound' });
         await expect(turnOn).toBeVisible();
-        await expect(bar).toContainText('vEIR · AI');
+        await expect(bar.locator('[data-slot="veir-badge"]')).toHaveText('vEIR');
         await expectNoHorizontalScroll(page);
         for (const name of ['Turn on sound', 'Return to call', 'End call']) {
           await expectReachable(page, bar.getByRole('button', { name }));

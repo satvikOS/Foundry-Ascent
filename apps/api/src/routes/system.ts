@@ -128,4 +128,7 @@ export function registerSystemRoutes(r: RouteBuilder, deps: SystemRouteDeps): vo
   });
 
   r.get('/me', async (c, ctx) => c.json(await core.me.get(ctx)));
+  // The welcome that introduces the person's vEIR was read: stored with the person, once (idempotent, audited
+  // the first time).
+  r.post('/me/veir-welcome/acknowledge', async (c, ctx) => c.json(await core.me.acknowledgeVeirWelcome(ctx)));
 }

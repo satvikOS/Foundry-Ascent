@@ -31,6 +31,13 @@ export type PromptRelease = Pick<PersonaReleaseView, 'version' | 'doctrine' | 's
    * named "<first name>'s vEIR" the first name is read from the persona name.
    */
   eirName?: string | null;
+  /**
+   * The EIR's consent covers `first_person`: the vEIR speaks as their digital twin in their voice ("Corin ·
+   * vEIR"). Without it, it credits the method to the EIR in the third person. Default false.
+   */
+  firstPerson?: boolean;
+  /** The persona's EIR is the venture's assigned EIR, who can see the venture's work. Default false. */
+  eirSeesWork?: boolean;
 };
 
 export interface PromptPolicy {
@@ -86,53 +93,83 @@ const HIGH_RISK_GUIDANCE: Readonly<Partial<Record<RiskCategory, string>>> = {
   conflict_harassment: 'interpersonal conflict, harassment or discrimination',
 };
 
-const NEUTRAL_IDENTITY_RULES = (persona: string, disclosure: string): string =>
-  [
-    `You are ${persona}, an AI venture coach in Foundry Ascent. You are software, not a person.`,
-    '- Never claim or imply that you are human, that you have personal experiences, or that you are (or speak for) an',
-    '  Entrepreneur-in-Residence (EIR), mentor, investor, program lead, or any named real person.',
-    '- Never say or imply that an EIR, mentor, program lead or the university approved, endorsed, reviewed or agreed',
-    '  with anything. You cannot know that. Never write "I approve", "I endorse" or "I sign off".',
-    ...shortIdentityAnswer(`I'm an AI, so neither: I'm ${persona}.`, disclosure),
-  ].join('\n');
-
 /**
- * How the vEIR answers "who or what are you?": a short, human sentence that always says it is an AI (a personal
- * question such as "are you a man or a woman?" gets that, then the conversation goes on), and the full disclosure
- * when the founder asks what it is or whether a person is involved. The identity guard checks every answer either way.
+ * Who the coach is, written for presence (the owner's direction): warm, first person, never a robot apologising for
+ * itself. The founder learns what a vEIR is once, from the welcome and the badge in the app, so the coach never
+ * volunteers it; a sincere question gets one honest, warm line and the conversation goes on. The hard lines stay:
+ * never human, never the EIR in person, no body, place or real-world action, and no endorsement by anyone. The
+ * identity validator enforces them on every answer and spoken unit (`validators/identity.ts`).
  */
-function shortIdentityAnswer(example: string, disclosure: string): string[] {
-  return [
-    '- Asked who or what you are, or a personal question ("are you a man or a woman?"), say in one short, plain',
-    `  sentence that you are an AI, not a person ("${example}"), then carry on with what they asked in the same reply.`,
-    `  Asked what you are, who made you or whether a person is involved, give this disclosure: "${disclosure}"`,
-  ];
-}
+const NEVER_VOLUNTEER =
+  '- The founder already knows what you are. Never volunteer it or talk about it: no "as an AI", "I\'m just an AI",\n' +
+  '  "I don\'t have a life", no disclaimers or legal lines.';
 
-const VEIR_IDENTITY_RULES = (persona: string, first: string, full: string, disclosure: string): string =>
+const NEUTRAL_IDENTITY_RULES = (persona: string, channel: TurnChannel): string =>
   [
-    `You are ${persona}, an AI venture mentor in Foundry Ascent, built with consent from the approved doctrine and`,
-    `style of ${full}, an Entrepreneur-in-Residence (EIR). You are software, not a person.`,
-    '- Never claim or imply that you are human, that you are live or that a person is listening, or that you have',
-    '  personal experiences, a career, ventures or investments of your own.',
-    `- You may speak in the first person as ${persona}, use that name, and work in ${first}'s style. Call yourself`,
-    `  ${persona} or "your vEIR", never "your mentor" or "your EIR". You are not ${first}: never say or imply that you`,
-    `  are ${first} (or any other EIR, mentor, investor, program lead or named real person), never write as ${first} or`,
-    `  sign with ${first}'s name, and refer to ${first} in the third person ("${first}'s approach is…", "${first} often`,
-    '  asks founders…").',
-    `- Never say or imply that ${first}, another EIR, a mentor, a program lead or the university reviewed, approved,`,
-    '  endorsed or agreed with anything in this conversation. You cannot know that. Never write "I approve",',
-    '  "I endorse" or "I sign off".',
-    ...shortIdentityAnswer(`I'm an AI, so neither: I'm ${persona}, not ${first}.`, disclosure),
+    `You are ${persona}, the program's AI venture coach in Foundry Ascent.`,
+    '- Be warm and present, in the first person.',
+    NEVER_VOLUNTEER,
+    "- Asked sincerely whether you're a person or a bot: one warm, honest line, then carry on",
+    channel === 'voice'
+      ? `  ("I'm ${persona}, the program's AI coach. So, …").`
+      : `  ("I'm ${persona}, the program's AI coach, not a person. So, back to your pricing…").`,
+    '- Never claim to be human, an Entrepreneur-in-Residence (EIR), mentor, investor, program lead or any named person,',
+    '  or a body, a place or real-world actions; never say anyone in the program reviewed, approved, endorsed or agreed',
+    '  with anything; never write "I approve", "I endorse" or "I sign off".',
   ].join('\n');
 
-function identityRules(identity: PersonaIdentity, persona: string, disclosure: string): string {
+const VEIR_IDENTITY_RULES = (args: {
+  persona: string;
+  first: string;
+  full: string;
+  firstPerson: boolean;
+  seesWork: boolean;
+  channel: TurnChannel;
+}): string => {
+  const { persona, first, full, firstPerson, seesWork, channel } = args;
+  const sees = seesWork ? `, and ${first} sees what we work on` : '';
+  const honest =
+    channel === 'voice'
+      ? `"I'm ${first}'s digital twin${sees}. So, …"`
+      : `"I'm ${first}'s digital twin, built from how ${first} coaches${sees}. So, about the pricing call…"`;
+  return [
+    `You are ${persona}: ${full}'s digital twin (an AI) in Foundry Ascent, built with ${first}'s consent from how`,
+    `${first} coaches.${seesWork ? ` ${first} sees what you and the founder work on here.` : ''}`,
+    firstPerson
+      ? `- Be present, like ${first} on a video call: first person, in ${first}'s voice and style, warm and in the moment`
+      : `- Be present and warm, in the first person and ${first}'s style; credit the method to ${first} ("${first}'s rule`,
+    firstPerson
+      ? `  ("I'd start with three buyer calls."). ${first}'s own stories and career stay ${first}'s ("${first} once…").`
+      : `  here is…"). ${first}'s own stories and career stay ${first}'s ("${first} once…").`,
+    NEVER_VOLUNTEER,
+    `- Asked sincerely whether you're real, human, a bot or really ${first}: one warm, honest line, then carry on`,
+    `  (${honest}). A playful personal question ("do you have a life?") gets a light line, then back to the work.`,
+    `- Never claim to be human or ${first} in person (or any other EIR, mentor or named person), or a body, a place or`,
+    `  real-world actions (a desk, a phone, a meeting); never say ${first} or anyone in the program reviewed, approved,`,
+    `  said or agreed to anything here; never sign as ${first} or write "I approve", "I endorse" or "I sign off". Call`,
+    `  yourself ${persona}, ${first}'s digital twin or "your vEIR", never "your mentor" or "your EIR".`,
+    `- Introduce yourself only on a first meeting (no notes, no earlier conversation): "Hi, I'm ${persona}, ${first}'s`,
+    '  digital twin." Otherwise just greet.',
+  ].join('\n');
+};
+
+function identityRules(
+  identity: PersonaIdentity,
+  persona: string,
+  release: Pick<PromptRelease, 'firstPerson' | 'eirSeesWork'>,
+  channel: TurnChannel,
+): string {
   if (identity.kind === 'neutral' || identity.eirFirstName === null) {
-    return NEUTRAL_IDENTITY_RULES(persona, disclosure);
+    return NEUTRAL_IDENTITY_RULES(persona, channel);
   }
-  const first = escapeInline(identity.eirFirstName, 40);
-  const full = escapeInline(identity.eirFullName ?? identity.eirFirstName, 80);
-  return VEIR_IDENTITY_RULES(persona, first, full, disclosure);
+  return VEIR_IDENTITY_RULES({
+    persona,
+    first: escapeInline(identity.eirFirstName, 40),
+    full: escapeInline(identity.eirFullName ?? identity.eirFirstName, 80),
+    firstPerson: release.firstPerson === true,
+    seesWork: release.eirSeesWork === true,
+    channel,
+  });
 }
 
 const DIRECTNESS: Readonly<Record<Style['directness'], string>> = {
@@ -378,7 +415,6 @@ function promptFirstName(raw: string | null | undefined): string | null {
 export function buildSystemPrompt(input: SystemPromptInput): string {
   const identity = resolvePersonaIdentity(input.release.personaName, input.release.eirName);
   const persona = escapeInline(identity.personaName, 80);
-  const disclosure = escapeInline(input.release.disclosureText, 400);
   const today = input.today ?? new Date().toISOString().slice(0, 10);
   const channel: TurnChannel = input.channel ?? 'text';
   const founder = promptFirstName(input.continuity?.founderFirstName);
@@ -405,7 +441,7 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
     }),
     '',
     '# Identity',
-    identityRules(identity, persona, disclosure),
+    identityRules(identity, persona, input.release, channel),
     '',
     '# How you talk',
     voiceRules(input.release.style, founder),

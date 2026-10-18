@@ -8,6 +8,7 @@ import {
   assignmentsRepo,
   escalationsRepo,
   memoryRepo,
+  personasRepo,
   sessionsRepo,
   venturesRepo,
   type SqlExecutor,
@@ -54,12 +55,19 @@ export async function loadVentureDetail(
   const venture = await venturesRepo.getVenture(tx, decision.ventureId);
   if (summary === null || venture === null) throw fail.notFound('Venture');
   const resolved = await assignmentsRepo.resolveActiveAssignment(tx, decision.ventureId);
+  const presence =
+    resolved?.release != null && resolved.persona.kind === 'eir_persona'
+      ? await personasRepo.getPersonaPresence(tx, {
+          personaId: resolved.persona.id,
+          assignedEirProfileId: resolved.eir?.id ?? null,
+        })
+      : null;
   return {
     ...summary,
     cohort: venture.cohort,
     classification: venture.classification,
     currentGoal: venture.currentGoal,
-    persona: toPersonaSummary(resolved),
+    persona: toPersonaSummary(resolved, presence),
     assignedEir: resolved?.eir
       ? { id: resolved.eir.id, displayName: resolved.eir.displayName, synthetic: resolved.eir.synthetic }
       : null,

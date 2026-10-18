@@ -22,8 +22,9 @@ interface DisclosureBannerProps {
   /** The vEIR's full name ("Corin's vEIR"), for the line's always-visible summary. */
   veirName?: string | null | undefined;
   /**
-   * "line" (one quiet line under a composer or a conversation header: the view's single disclosure),
-   * "inline" (a callout on public pages and reviews), "print" (exports; serif, always visible).
+   * "line" (one quiet line: the EIR studio's test bench, beside a release its author is trying), "inline" (a
+   * callout on public pages and reviews), "print" (exports; serif, always visible). Founder conversations and
+   * calls carry no line (ADR-0020): the vEIR's one-time welcome and its badge disclose it.
    */
   variant?: 'line' | 'inline' | 'print';
   className?: string;
@@ -42,9 +43,10 @@ export function disclosureSummary(veirName?: string | null): string {
 }
 
 /**
- * Persistent AI disclosure (system-design §9; blueprint 01 F-09). REQUIRED in every conversation view, call
- * and export. It is not dismissible, uses a label + text (never colour alone), and is exposed as a note
- * named "AI disclosure" so assistive technology reads it in context.
+ * The AI disclosure as text (system-design §9; blueprint 01 F-09): on public pages, in exports and in the studio.
+ * In founder conversations and calls the disclosure is the vEIR's one-time welcome and the badge beside its name
+ * (ADR-0020). It is not dismissible, uses a label + text (never colour alone), and is exposed as a note named
+ * "AI disclosure" so assistive technology reads it in context.
  */
 export function DisclosureBanner({ text, veirName, variant = 'line', className }: DisclosureBannerProps) {
   // Read the cached principal only: public pages must not call GET /me (it would wake the paused DB).

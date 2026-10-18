@@ -154,6 +154,42 @@ export async function acknowledgeCallNotice(
 }
 
 // ------------------------------------------------------------------------------------------------
+// The vEIR welcome (migration 0016): the caller's own value only
+// ------------------------------------------------------------------------------------------------
+
+/**
+ * When the request's principal acknowledged the welcome that introduces their vEIR, or null. The column is
+ * closed to app_rls; this reads the caller's own value through `app.veir_welcome_acknowledged_at()` (null
+ * without a request principal).
+ */
+export async function veirWelcomeAcknowledgedAt(ex: SqlExecutor): Promise<string | null> {
+  return (
+    (await queryFirst(ex, 'SELECT app.veir_welcome_acknowledged_at() AS at', {}, (r) =>
+      col.ts.nullable.decode(r.at, 'at'),
+    )) ?? null
+  );
+}
+
+/**
+ * Acknowledges the welcome for the request's principal, once: a repeat keeps the first time. `firstTime` says
+ * whether this call set it. Null without an active request principal.
+ */
+export async function acknowledgeVeirWelcome(
+  ex: SqlExecutor,
+): Promise<{ acknowledgedAt: string; firstTime: boolean } | null> {
+  const row = await queryFirst(
+    ex,
+    'SELECT w.acknowledged_at, w.first_time FROM app.acknowledge_veir_welcome() AS w',
+    {},
+    (r) => ({
+      acknowledgedAt: col.ts.nullable.decode(r.acknowledged_at, 'acknowledged_at'),
+      firstTime: col.bool.decode(r.first_time, 'first_time'),
+    }),
+  );
+  return row?.acknowledgedAt ? { acknowledgedAt: row.acknowledgedAt, firstTime: row.firstTime } : null;
+}
+
+// ------------------------------------------------------------------------------------------------
 // Role grants
 // ------------------------------------------------------------------------------------------------
 

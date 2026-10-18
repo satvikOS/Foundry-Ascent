@@ -164,7 +164,8 @@ describe('seed', () => {
         expect(persona).toMatchObject({ kind: 'eir_persona', status: 'active', consentId: v.consentId });
         expect(persona?.embodiment.voiceId).toMatch(/^(Matthew|Ruth)$/);
         const consent = await personasRepo.getConsent(tx, v.consentId);
-        expect(consent?.assetTypes).toEqual(['doctrine', 'style', 'voice', 'cases']);
+        // The fictional EIRs agree to meet founders under their first name (0016): "Corin · vEIR".
+        expect(consent?.assetTypes).toEqual(['doctrine', 'style', 'voice', 'cases', 'first_person']);
         const release = await personasRepo.getActiveRelease(tx, v.personaId);
         expect(release).toMatchObject({ version: 1, status: 'approved' });
         expect(release?.disclosureText).toMatch(/AI coach.*not a person, and no human EIR/);

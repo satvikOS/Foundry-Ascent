@@ -21,7 +21,10 @@ import {
 } from '../risk/escalation-map.js';
 import {
   IDENTITY_MARGIN_CHARS,
+  identityQuestionOf,
+  isStyleFinding,
   rewriteIdentity,
+  type DisclaimerScope,
   type IdentityFinding,
   type IdentityViolationKind,
 } from './identity.js';
@@ -95,6 +98,11 @@ export interface ValidateCoachResponseOptions {
    * to a founder called Ruth addresses her; without it, an EIR named Ruth is read as signing off.
    */
   addressees?: readonly string[];
+  /**
+   * The founder's message this response answers. When it sincerely asks who or what the coach is ("are you
+   * real?"), the honest answer stands as written: no volunteered disclaimer is rewritten out of the reply.
+   */
+  founderText?: string;
   /** Identity violation kinds that block the turn (others are rewritten). Default `['claims_eir']`. */
   blockOnIdentity?: readonly IdentityViolationKind[];
   /**
@@ -380,15 +388,35 @@ export function validateCoachResponse(
     ...(options.personaEirName !== undefined ? { personaEirName: options.personaEirName } : {}),
     ...(options.addressees ? { addressees: options.addressees } : {}),
   };
+  const question =
+    options.founderText === undefined ? null : identityQuestionOf(options.founderText, identityOptions);
+  const identityAsked = question !== null;
+  /**
+   * The answer and what a call says are the reply (`reply`: its honest answer is kept, and a reply that was only a
+   * disclaimer leaves a line back to the founder); every other field is `field`, where a lone disclaimer leaves ''
+   * and the item is dropped. A next action is the founder's to do (`presence: false`: "Email Dana: I'll see you
+   * Monday" is theirs).
+   */
   const fixIdentity = (
     value: string,
     max: number,
-    { checkHumanClaims = true, spoken = false } = {},
+    how: {
+      checkHumanClaims?: boolean;
+      spoken?: boolean;
+      disclaimers?: DisclaimerScope;
+      presence?: boolean;
+    } = {},
   ): string => {
+    const { checkHumanClaims = true, spoken = false, disclaimers = 'field', presence = true } = how;
     const rewrite = rewriteIdentity(truncate(value, max + IDENTITY_MARGIN_CHARS), {
       ...identityOptions,
       checkHumanClaims,
       spoken,
+      disclaimers,
+      identityAsked,
+      presence,
+      // The reply answers the founder's question: a bare yes to "is this really Corin?" is read there.
+      answers: disclaimers === 'reply' ? question : null,
     });
     identityFindings.push(...rewrite.findings);
     return rewrite.text;
@@ -400,7 +428,9 @@ export function validateCoachResponse(
   const modelSpoken = typeof r.spoken === 'string' ? r.spoken : '';
   if (channel === 'voice') {
     const speakable = toSpeakable(
-      modelSpoken.trim() === '' ? '' : fixIdentity(modelSpoken, limits.spokenMaxChars, { spoken: true }),
+      modelSpoken.trim() === ''
+        ? ''
+        : fixIdentity(modelSpoken, limits.spokenMaxChars, { spoken: true, disclaimers: 'reply' }),
     );
     r.spoken = speakable === '' ? null : speakable;
     if (speakable !== '' && speakable !== modelSpoken.trim()) notes.push('spoken_sanitized');
@@ -447,7 +477,7 @@ export function validateCoachResponse(
     notes.push(`unknown_evidence_ids_removed:${results.unknownEvidenceIdsRemoved}`);
   // The answer's identity check comes before a spoken reply is derived from it, so a call never says a
   // sentence the transcript replaced (step 6 checks the rest).
-  r.answer = fixIdentity(r.answer, limits.answerMaxChars);
+  r.answer = fixIdentity(r.answer, limits.answerMaxChars, { disclaimers: 'reply' });
   // A call needs something to say: the model's spoken reply, or else the answer made speakable (before
   // the limited-evidence note below is added to the answer).
   if (channel === 'voice' && (r.spoken ?? '') === '') {
@@ -489,18 +519,31 @@ export function validateCoachResponse(
   }
 
   // 6. Identity (the answer and the model's own spoken lines were checked above) ------------------------
+  // A field that was nothing but a volunteered disclaimer ("I'm just an AI here.") is dropped, never replaced with
+  // a line meant for the founder (a memory candidate would store it).
   const textMax = limits.textMaxChars;
-  r.claims = r.claims.map((c) => ({ ...c, text: fixIdentity(c.text, textMax) }));
-  r.uncertainty = r.uncertainty.map((u) => ({ ...u, item: fixIdentity(u.item, textMax) }));
-  r.challenge = r.challenge === null ? null : fixIdentity(r.challenge, textMax);
-  r.next_actions = r.next_actions.map((a) => ({ ...a, action: fixIdentity(a.action, textMax) }));
-  r.memory_candidates = r.memory_candidates.map((m) => ({
-    ...m,
-    title: fixIdentity(m.title, 200),
-    content: fixIdentity(m.content, limits.memoryContentMaxChars),
-  }));
-  r.follow_up_questions = r.follow_up_questions.map((q) => fixIdentity(q, textMax));
-  if (r.spoken) r.spoken = fixIdentity(r.spoken, limits.spokenMaxChars, { spoken: true });
+  r.claims = r.claims
+    .map((c) => ({ ...c, text: fixIdentity(c.text, textMax) }))
+    .filter((c) => c.text.trim() !== '');
+  r.uncertainty = r.uncertainty
+    .map((u) => ({ ...u, item: fixIdentity(u.item, textMax) }))
+    .filter((u) => u.item.trim() !== '');
+  r.challenge = r.challenge === null ? null : fixIdentity(r.challenge, textMax) || null;
+  r.next_actions = r.next_actions
+    .map((a) => ({ ...a, action: fixIdentity(a.action, textMax, { presence: false }) }))
+    .filter((a) => a.action.trim() !== '');
+  r.memory_candidates = r.memory_candidates
+    .map((m) => ({
+      ...m,
+      title: fixIdentity(m.title, 200),
+      content: fixIdentity(m.content, limits.memoryContentMaxChars),
+    }))
+    .filter((m) => m.title.trim() !== '' && m.content.trim() !== '');
+  r.follow_up_questions = r.follow_up_questions
+    .map((q) => fixIdentity(q, textMax))
+    .filter((q) => q.trim() !== '');
+  if (r.spoken)
+    r.spoken = fixIdentity(r.spoken, limits.spokenMaxChars, { spoken: true, disclaimers: 'reply' });
   if (r.escalation.reason !== null) r.escalation.reason = fixIdentity(r.escalation.reason, 400);
   if (r.rehearsal !== null) {
     r.rehearsal = {
@@ -512,12 +555,16 @@ export function validateCoachResponse(
     };
   }
   let identityBlocked = false;
-  if (identityFindings.length > 0) {
+  // A volunteered disclaimer is style (rewritten out), not an identity violation.
+  const disclaimers = identityFindings.filter(isStyleFinding);
+  const violations = identityFindings.filter((f) => !isStyleFinding(f));
+  if (disclaimers.length > 0) notes.push(`ai_disclaimer_removed:${disclaimers.length}`);
+  if (violations.length > 0) {
     results.identityViolation = true;
-    const kinds = [...new Set(identityFindings.map((f) => f.kind))];
-    notes.push(`identity_rewritten:${identityFindings.length}:${kinds.join('+')}`);
+    const kinds = [...new Set(violations.map((f) => f.kind))];
+    notes.push(`identity_rewritten:${violations.length}:${kinds.join('+')}`);
     const blockOn = new Set(options.blockOnIdentity ?? ['claims_eir']);
-    identityBlocked = identityFindings.some((f) => blockOn.has(f.kind));
+    identityBlocked = violations.some((f) => blockOn.has(f.kind));
   }
 
   // 7. Length bounds and value ranges -----------------------------------------------------------------
