@@ -22,8 +22,12 @@ import {
  *
  * Counted: every rendered word (text and empty-field placeholders) a sighted person can see, shell included.
  * Not counted: words read only by screen readers, the AI disclosure (never cut for brevity), what the vEIR
- * or the founder wrote (the answer, its follow-ups, call captions, the founder's own message, conversation
- * titles), toasts, and dialogs layered over the screen.
+ * or the founder wrote (the answer, its follow-ups, its next steps' text, owner and date, call captions, the
+ * founder's own message, conversation titles), toasts, and dialogs layered over the screen.
+ *
+ * The call is measured as typed with no microphone found: the browser is told there is none, so the reason
+ * line is the same on every host (a laptop whose headless browser refuses its microphone would otherwise
+ * show the longer "blocked" line, and the count would depend on the machine).
  *
  * Measured as Priya (BenchTally's founder), whose venture no other spec writes to, so both runs of the suite
  * see the same screens. The conversation is private and deleted at the end, leaving nothing behind.
@@ -63,6 +67,7 @@ async function visibleWords(root: Locator, skipText: readonly string[] = []): Pr
     const EXCLUDED = [
       '[role="note"][aria-label="AI disclosure"]',
       '[data-slot="markdown"]',
+      '[data-slot="next-step"]',
       '[aria-label="Follow-up questions"]',
       '[aria-label="Captions"]',
       '[aria-label="Recent conversations"]',
@@ -103,6 +108,18 @@ async function visibleWords(root: Locator, skipText: readonly string[] = []): Pr
   }, skipText);
 }
 
+/** Every microphone request fails as on a machine with none, before any page script runs. */
+async function withoutMicrophone(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const devices = navigator.mediaDevices as MediaDevices | undefined;
+    if (!devices) return;
+    Object.defineProperty(devices, 'getUserMedia', {
+      configurable: true,
+      value: () => Promise.reject(new DOMException('Requested device not found', 'NotFoundError')),
+    });
+  });
+}
+
 async function settle(page: Page): Promise<void> {
   await page.waitForLoadState('networkidle');
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
@@ -129,6 +146,7 @@ async function deleteSession(request: APIRequestContext, id: string): Promise<vo
 test.describe('word budgets', () => {
   test('the main founder screens stay within their word budgets', async ({ page, browser }) => {
     test.setTimeout(120_000);
+    await withoutMicrophone(page);
     const owner = await browser.newContext({ storageState: OWNER_STATE });
     const code = await issueAccessCodeViaApi(owner.request, FOUNDER);
     await owner.close();
@@ -187,6 +205,17 @@ test.describe('word budgets', () => {
         ).toBeVisible({ timeout: 30_000 });
         await settle(page);
         counts.Conversation = await visibleWords(body, [message]);
+        // The vEIR's next step is its own words (they change with the model), so they are not counted.
+        const step = await page
+          .getByRole('article', { name: 'Exchange 1' })
+          .getByRole('region', { name: 'Suggested next steps' })
+          .getByRole('listitem')
+          .first()
+          .locator('p')
+          .first()
+          .innerText();
+        expect(step.trim(), 'the answer suggests a next step').not.toBe('');
+        expect(counts.Conversation.text, 'next-step text is not counted').not.toContain(step.trim());
       });
 
       await test.step('Call (typed, as in a browser without a microphone)', async () => {
@@ -197,6 +226,8 @@ test.describe('word budgets', () => {
           .click();
         const screen = page.getByRole('dialog', { name: /^Call with / });
         await expect(screen.getByRole('textbox', { name: /^Reply to / })).toBeVisible();
+        // Measured on one footing: no microphone found (never the longer "blocked" line some hosts give).
+        await expect(screen.getByText(/^No microphone/)).toBeVisible();
         await settle(page);
         counts.Call = await visibleWords(screen);
         await screen.getByRole('button', { name: 'End call' }).click();

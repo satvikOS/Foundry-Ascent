@@ -34,7 +34,8 @@ export function NextStepList({
             key={`${index}-${action.action}`}
             className="flex flex-col gap-1.5 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
           >
-            <div className="min-w-0">
+            {/* The vEIR's own words (the step, its owner and date), apart from the controls around them. */}
+            <div data-slot="next-step" className="min-w-0">
               <p className="text-small font-medium">{action.action}</p>
               {action.owner || action.target_date ? (
                 <p className="tabular text-caption text-muted-foreground">
