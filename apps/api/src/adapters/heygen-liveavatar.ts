@@ -17,23 +17,38 @@ import { type ApiKeySource } from './media-secrets.js';
  * behaviour of its web SDK 0.0.19; never called in CI (tests use recorded responses).
  *
  * - `createSession`: `POST /v1/sessions/token` with the API key (`X-API-KEY`; Secrets Manager
- *   `foundry-ascent/media/heygen`) for a LITE session of the persona's avatar, then `POST /v1/sessions/start` with
- *   that session token. The browser gets only `livekit_url` and `livekit_client_token` (it watches the room);
- *   `ws_url`, the channel that makes the face speak, stays on the server.
- * - `speak`: opens `ws_url`, sends the unit's PCM (16-bit mono 24 kHz, base64) as `agent.speak` events under one
- *   `event_id`, then `agent.speak_end` on the unit's last part, and closes. `interrupt` sends `agent.interrupt`.
- * - `keepAlive` / `end`: `POST /v1/sessions/keep-alive` and `/v1/sessions/stop` with the API key.
+ *   `foundry-ascent/media/heygen`) for a LITE session of the persona's avatar that ends by itself at the call's
+ *   limit (`max_session_duration`; a vendor that refuses the limit gets no session at all, so nothing bills past
+ *   it), then `POST /v1/sessions/start` with that session token. The browser gets only `livekit_url` and
+ *   `livekit_client_token` (it watches the room); `ws_url`, the channel that makes the face speak, stays on the
+ *   server.
+ * - The control channel follows the vendor's LITE events (docs.liveavatar.com/docs/lite-mode/events, 2026-10-18):
+ *   after the socket opens, nothing is sent until `session.state_updated` says `connected`; every command carries
+ *   its own `event_id` and is acknowledged by an event whose `source_event_id` names it; an `error` event fails
+ *   the command. `speak` sends a part of a unit's PCM (16-bit mono 24 kHz, base64) as one-second `agent.speak`
+ *   chunks (the size the vendor recommends; the first chunk's id names the utterance), waits until the vendor
+ *   took every chunk (`agent.audio_buffer_appended`), and on the unit's last part sends `agent.speak_end` and
+ *   waits for `agent.audio_buffer_committed` before closing. `interrupt` sends `agent.interrupt` and waits for
+ *   `agent.audio_buffer_cleared`.
+ * - `keepAlive` / `end`: `POST /v1/sessions/keep-alive` and `/v1/sessions/stop` with the API key (no socket, so
+ *   they never replace a speak in progress: the vendor allows one socket per session).
  *
  * Responses are `{code, data, message}`; `code` 1000 is success. Nothing here logs or returns the API key, the
  * session token or `ws_url` in an error message.
  */
 
-/** LiveAvatar's success code in its response envelope. */
+/** LiveAvatar's success code in its response envelope (the vendor's web SDK 0.0.19 checks the same). */
 const SUCCESS_CODE = 1000;
-/** Bytes per `agent.speak` event: 20 ms of 24 kHz 16-bit mono, as the vendor's SDK sends it. */
-const SPEAK_CHUNK_BYTES = 960;
+/**
+ * Bytes per `agent.speak` event: one second of 24 kHz 16-bit mono, the chunk the vendor recommends (its web SDK
+ * 0.0.19 sends 400 ms, then 1 s). A face-audio part is whole seconds already, so each chunk is one manifest chunk.
+ */
+const SPEAK_CHUNK_BYTES = 48_000;
 const HTTP_TIMEOUT_MS = 8_000;
-const SOCKET_TIMEOUT_MS = 8_000;
+/** From opening the socket to the vendor's `connected`. */
+const CONNECT_TIMEOUT_MS = 8_000;
+/** From the last command sent to its acknowledgement. */
+const ACK_TIMEOUT_MS = 8_000;
 
 /** The sandbox's only avatar (vendor docs, "Developing in Sandbox Mode"). */
 export const LIVEAVATAR_SANDBOX_AVATAR = 'dd73ea75-1218-4ef3-92ce-606d5f7fbc0a';
@@ -41,10 +56,10 @@ export const LIVEAVATAR_SANDBOX_AVATAR = 'dd73ea75-1218-4ef3-92ce-606d5f7fbc0a';
 /** The part of a WebSocket the adapter uses (Node's global WebSocket; injectable for tests). */
 export interface FaceSocket {
   readonly readyState: number;
-  readonly bufferedAmount: number;
   send(data: string): void;
   close(code?: number): void;
   addEventListener(type: 'open' | 'error' | 'close', listener: () => void): void;
+  addEventListener(type: 'message', listener: (event: { readonly data: unknown }) => void): void;
 }
 
 export interface HeygenLiveAvatarOptions {
@@ -57,6 +72,8 @@ export interface HeygenLiveAvatarOptions {
   readonly fetch?: typeof fetch;
   readonly openSocket?: (url: string) => FaceSocket;
   readonly ids?: () => string;
+  /** Control-channel waits (tests shorten them). */
+  readonly timeouts?: { readonly connectMs?: number; readonly ackMs?: number };
 }
 
 interface Envelope<T> {
@@ -84,10 +101,121 @@ function failure(what: string, status?: number): EmbodimentSessionError {
   );
 }
 
+/** A server event on the control channel (only the fields the adapter reads). */
+interface ControlEvent {
+  readonly type?: unknown;
+  readonly source_event_id?: unknown;
+  readonly state?: unknown;
+  readonly error?: { readonly type?: unknown; readonly event_id?: unknown } | null;
+}
+
+/** The vendor's error type, when it is a plain identifier (never its message, which may echo anything). */
+function errorType(event: ControlEvent): string {
+  const type = event.error?.type;
+  return typeof type === 'string' && /^[a-z][a-z_]{0,39}$/.test(type) ? type : 'error';
+}
+
+/**
+ * One open control channel: commands sent after the vendor said `connected`, each awaited by its
+ * acknowledgement. Any `error` event (other than a video-starvation diagnostic), a `disconnected` state or the
+ * socket closing fails what is still awaited.
+ */
+class ControlChannel {
+  readonly #socket: FaceSocket;
+  readonly #ids: () => string;
+  readonly #ackMs: number;
+  #connected = false;
+  #failed: EmbodimentSessionError | null = null;
+  readonly #acked = new Set<string>();
+  #wake: (() => void) | null = null;
+
+  constructor(socket: FaceSocket, ids: () => string, ackMs: number) {
+    this.#socket = socket;
+    this.#ids = ids;
+    this.#ackMs = ackMs;
+    socket.addEventListener('message', (message) => {
+      this.#receive(message.data);
+    });
+    socket.addEventListener('error', () => {
+      this.#fail(failure('control channel lost'));
+    });
+    socket.addEventListener('close', () => {
+      this.#fail(failure('control channel lost'));
+    });
+  }
+
+  #receive(data: unknown): void {
+    if (typeof data !== 'string') return;
+    let event: ControlEvent;
+    try {
+      event = JSON.parse(data) as ControlEvent;
+    } catch {
+      return;
+    }
+    if (event.type === 'session.state_updated') {
+      if (event.state === 'connected') this.#connected = true;
+      if (event.state === 'disconnected') this.#fail(failure('control channel lost'));
+    } else if (event.type === 'error') {
+      // Video starvation is a frame-gap diagnostic: the audio was taken.
+      if (errorType(event) !== 'video_starvation') this.#fail(failure(`control ${errorType(event)}`));
+    } else if (typeof event.source_event_id === 'string') {
+      this.#acked.add(event.source_event_id);
+    }
+    this.#wake?.();
+  }
+
+  #fail(error: EmbodimentSessionError): void {
+    this.#failed ??= error;
+    this.#wake?.();
+  }
+
+  /** Resolves once `done()` holds, rejects on a failure or after `ms`. */
+  async #until(done: () => boolean, ms: number, timeout: string): Promise<void> {
+    const deadline = Date.now() + ms;
+    for (;;) {
+      if (this.#failed !== null) throw this.#failed;
+      if (done()) return;
+      const left = deadline - Date.now();
+      if (left <= 0) throw failure(timeout);
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, left);
+        this.#wake = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+      });
+      this.#wake = null;
+    }
+  }
+
+  /** Waits for the vendor's `connected` (nothing may be sent before it). */
+  connected(ms: number): Promise<void> {
+    return this.#until(() => this.#connected, ms, 'control channel not connected');
+  }
+
+  /** Sends a command with its own event id and returns the id (its acknowledgement names it). */
+  send(command: Record<string, unknown>): string {
+    if (this.#failed !== null) throw this.#failed;
+    const eventId = this.#ids();
+    this.#socket.send(JSON.stringify({ ...command, event_id: eventId }));
+    return eventId;
+  }
+
+  /** Waits until every one of `eventIds` was acknowledged. */
+  acknowledged(eventIds: readonly string[]): Promise<void> {
+    return this.#until(
+      () => eventIds.every((id) => this.#acked.has(id)),
+      this.#ackMs,
+      'control channel timed out',
+    );
+  }
+}
+
 export class HeygenLiveAvatarFace implements EmbodimentProvider {
   readonly id = 'heygen' as const;
   readonly voicing = 'audio' as const;
   readonly likeness = true;
+  readonly sandbox: boolean;
   readonly usdPerMinute: number;
   readonly #options: HeygenLiveAvatarOptions;
   readonly #fetch: typeof fetch;
@@ -96,6 +224,7 @@ export class HeygenLiveAvatarFace implements EmbodimentProvider {
 
   constructor(options: HeygenLiveAvatarOptions) {
     this.#options = options;
+    this.sandbox = options.sandbox;
     this.usdPerMinute = options.usdPerMinute;
     // Bound, so the global fetch never runs with this adapter as its receiver.
     this.#fetch = options.fetch ?? ((input, init) => fetch(input, init));
@@ -143,16 +272,13 @@ export class HeygenLiveAvatarFace implements EmbodimentProvider {
       video_settings: { quality: 'high', encoding: 'H264' },
       ...(this.#options.sandbox ? { is_sandbox: true } : {}),
     };
-    // The vendor session ends by itself at the call's (and the person's video minutes') limit.
-    let token = await this.#post<TokenData>(
+    // The vendor session ends by itself at the call's (and the person's video minutes') limit. A vendor that
+    // refuses the limit (422: above the plan's session length) starts nothing: the call keeps the presence.
+    const token = await this.#post<TokenData>(
       '/v1/sessions/token',
       { ...base, max_session_duration: Math.max(1, Math.floor(request.maxSeconds)) },
       { apiKey },
     );
-    if (token.status === 422) {
-      // An API that does not take the limit here: the call's own heartbeat still ends the face at its limit.
-      token = await this.#post<TokenData>('/v1/sessions/token', base, { apiKey });
-    }
     const tokenData = token.envelope?.data;
     if (token.status >= 300 || token.envelope?.code !== SUCCESS_CODE || !tokenData?.session_token) {
       throw failure('token', token.status);
@@ -185,33 +311,36 @@ export class HeygenLiveAvatarFace implements EmbodimentProvider {
     };
   }
 
-  /** Opens the control channel, runs `send`, waits for the bytes to leave, and closes it. */
-  async #withControl(handle: FaceSessionHandle, send: (socket: FaceSocket) => void): Promise<void> {
+  /**
+   * Opens the control channel, waits until it opened and the vendor reported the session `connected`, runs
+   * `use` (which waits for its own acknowledgements), and closes it.
+   */
+  async #withControl(
+    handle: FaceSessionHandle,
+    use: (channel: ControlChannel) => Promise<void>,
+  ): Promise<void> {
     if (handle.control === null) throw failure('has no control channel');
+    const connectMs = this.#options.timeouts?.connectMs ?? CONNECT_TIMEOUT_MS;
     const socket = this.#openSocket(handle.control);
+    const channel = new ControlChannel(socket, this.#ids, this.#options.timeouts?.ackMs ?? ACK_TIMEOUT_MS);
     try {
       await new Promise<void>((resolve, reject) => {
         const timer = setTimeout(() => {
-          reject(failure('control channel timed out'));
-        }, SOCKET_TIMEOUT_MS);
+          reject(failure('control channel not connected'));
+        }, connectMs);
         socket.addEventListener('open', () => {
           clearTimeout(timer);
           resolve();
         });
-        const lost = () => {
+        const refused = () => {
           clearTimeout(timer);
           reject(failure('control channel refused'));
         };
-        socket.addEventListener('error', lost);
-        socket.addEventListener('close', lost);
+        socket.addEventListener('error', refused);
+        socket.addEventListener('close', refused);
       });
-      send(socket);
-      // Wait until everything was handed to the network before closing (bounded).
-      const deadline = Date.now() + SOCKET_TIMEOUT_MS;
-      while (socket.bufferedAmount > 0 && Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      }
-      if (socket.bufferedAmount > 0) throw failure('control channel stalled');
+      await channel.connected(connectMs);
+      await use(channel);
     } finally {
       try {
         socket.close(1000);
@@ -222,25 +351,22 @@ export class HeygenLiveAvatarFace implements EmbodimentProvider {
   }
 
   async speak(handle: FaceSessionHandle, audio: VerifiedFaceAudio): Promise<void> {
-    const eventId = this.#ids();
-    await this.#withControl(handle, (socket) => {
+    await this.#withControl(handle, async (channel) => {
+      const sent: string[] = [];
       for (let offset = 0; offset < audio.pcm.byteLength; offset += SPEAK_CHUNK_BYTES) {
         const chunk = audio.pcm.subarray(offset, Math.min(audio.pcm.byteLength, offset + SPEAK_CHUNK_BYTES));
-        socket.send(
-          JSON.stringify({
-            type: 'agent.speak',
-            event_id: eventId,
-            audio: Buffer.from(chunk).toString('base64'),
-          }),
-        );
+        sent.push(channel.send({ type: 'agent.speak', audio: Buffer.from(chunk).toString('base64') }));
       }
-      if (audio.last) socket.send(JSON.stringify({ type: 'agent.speak_end', event_id: eventId }));
+      // The utterance stays open between parts; the unit's last part seals it, and the socket closes only once
+      // the vendor took all of it.
+      if (audio.last) sent.push(channel.send({ type: 'agent.speak_end' }));
+      await channel.acknowledged(sent);
     });
   }
 
   async interrupt(handle: FaceSessionHandle): Promise<void> {
-    await this.#withControl(handle, (socket) => {
-      socket.send(JSON.stringify({ type: 'agent.interrupt', event_id: this.#ids() }));
+    await this.#withControl(handle, async (channel) => {
+      await channel.acknowledged([channel.send({ type: 'agent.interrupt' })]);
     });
   }
 

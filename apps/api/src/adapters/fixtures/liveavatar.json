@@ -11,14 +11,14 @@
       "message": "success"
     }
   },
-  "tokenUnknownField": {
+  "tokenLimitRefused": {
     "status": 422,
     "body": {
       "detail": [
         {
           "loc": ["body", "max_session_duration"],
-          "msg": "Extra inputs are not permitted",
-          "type": "extra_forbidden"
+          "msg": "Value exceeds the session duration allowed by the subscription",
+          "type": "value_error"
         }
       ]
     }

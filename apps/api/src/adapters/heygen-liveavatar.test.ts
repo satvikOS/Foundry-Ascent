@@ -46,31 +46,110 @@ function vendor(queue: Record<string, Fixture[]>) {
   return { fetchFn, sent };
 }
 
-/** A control channel that opens (or refuses) and records what was sent. */
-function socket(options: { refuse?: boolean } = {}) {
-  const frames: Record<string, unknown>[] = [];
+type Frame = Record<string, unknown>;
+
+/** The vendor's acknowledgement of each command (docs.liveavatar.com, LITE mode events). */
+const ACKS: Record<string, string> = {
+  'agent.speak': 'agent.audio_buffer_appended',
+  'agent.speak_end': 'agent.audio_buffer_committed',
+  'agent.interrupt': 'agent.audio_buffer_cleared',
+};
+
+/**
+ * A control channel that behaves like LiveAvatar's: it opens (or refuses), reports the session `connected`
+ * (at once, or when the test says), acknowledges each command with `source_event_id` (unless `reply` answers
+ * otherwise, or holds it), and records what was sent and when it was closed.
+ */
+function socket(
+  options: {
+    refuse?: boolean;
+    connect?: 'auto' | 'manual';
+    /** Server events for a command: undefined for the usual acknowledgement, [] to hold it. */
+    reply?: (frame: Frame) => Frame[] | undefined;
+  } = {},
+) {
+  const frames: Frame[] = [];
   const opened: string[] = [];
   let closed = 0;
+  let sentBeforeConnected = 0;
+  let isConnected = false;
+  let emit: (event: Frame) => void = () => undefined;
+  let emitClose: () => void = () => undefined;
   const open = (url: string): FaceSocket => {
     opened.push(url);
-    const listeners: Record<string, (() => void)[]> = {};
+    const listeners: Record<string, ((event: { data: unknown }) => void)[]> = {};
+    const fire = (type: string, data?: unknown) => {
+      for (const fn of listeners[type] ?? []) fn({ data });
+    };
+    emit = (event) => {
+      if (event.type === 'session.state_updated' && event.state === 'connected') isConnected = true;
+      fire('message', JSON.stringify(event));
+    };
+    emitClose = () => {
+      fire('close');
+    };
     queueMicrotask(() => {
-      for (const fn of listeners[options.refuse ? 'error' : 'open'] ?? []) fn();
+      if (options.refuse) {
+        fire('error');
+        return;
+      }
+      fire('open');
+      if ((options.connect ?? 'auto') === 'auto') {
+        queueMicrotask(() => {
+          emit({
+            type: 'session.state_updated',
+            event_id: 'srv-0',
+            source_event_id: null,
+            state: 'connected',
+          });
+        });
+      }
     });
     return {
       readyState: 1,
-      bufferedAmount: 0,
-      send: (data: string) => frames.push(JSON.parse(data) as Record<string, unknown>),
+      send: (data: string) => {
+        const frame = JSON.parse(data) as Frame;
+        frames.push(frame);
+        if (!isConnected) sentBeforeConnected += 1;
+        const answer = options.reply?.(frame) ?? [
+          {
+            type: ACKS[String(frame.type)],
+            event_id: `ack-${String(frames.length)}`,
+            source_event_id: frame.event_id,
+          },
+        ];
+        queueMicrotask(() => {
+          for (const event of answer) emit(event);
+        });
+      },
       close: () => {
         closed += 1;
       },
-      addEventListener: (type, listener) => {
+      addEventListener: (type: string, listener: (event: { data: unknown }) => void) => {
         (listeners[type] ??= []).push(listener);
       },
     };
   };
-  return { open, frames, opened, closed: () => closed };
+  return {
+    open,
+    frames,
+    opened,
+    closed: () => closed,
+    sentBeforeConnected: () => sentBeforeConnected,
+    connect: () => {
+      emit({ type: 'session.state_updated', event_id: 'srv-0', source_event_id: null, state: 'connected' });
+    },
+    emit: (event: Frame) => {
+      emit(event);
+    },
+    drop: () => {
+      emitClose();
+    },
+  };
 }
+
+/** Lets queued microtasks and timers of 0 ms run. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 5));
 
 const KEY = 'la-test-api-key';
 const request = {
@@ -87,7 +166,13 @@ const f = (name: string): Fixture => {
   return structuredClone(fixture);
 };
 
-function adapter(fetchFn: typeof fetch, open = socket().open, sandbox = false) {
+function adapter(
+  fetchFn: typeof fetch,
+  open = socket().open,
+  sandbox = false,
+  timeouts: { connectMs?: number; ackMs?: number } = {},
+) {
+  let n = 0;
   return new HeygenLiveAvatarFace({
     apiKey: () => Promise.resolve(KEY),
     apiOrigin: 'https://api.liveavatar.com',
@@ -95,7 +180,11 @@ function adapter(fetchFn: typeof fetch, open = socket().open, sandbox = false) {
     usdPerMinute: 0.093,
     fetch: fetchFn,
     openSocket: open,
-    ids: () => 'evt-1',
+    ids: () => {
+      n += 1;
+      return `evt-${String(n)}`;
+    },
+    timeouts,
   });
 }
 
@@ -141,14 +230,14 @@ describe('HeygenLiveAvatarFace: a LITE session', () => {
     expect(sent[0]?.body).toMatchObject({ avatar_id: LIVEAVATAR_SANDBOX_AVATAR, is_sandbox: true });
   });
 
-  it('asks again without the session limit when the API does not take it there', async () => {
+  it('starts no session at all when the vendor refuses the per-call limit (never one without a limit)', async () => {
     const { fetchFn, sent } = vendor({
-      '/v1/sessions/token': [f('tokenUnknownField'), f('token')],
+      '/v1/sessions/token': [f('tokenLimitRefused'), f('token')],
       '/v1/sessions/start': [f('start')],
     });
-    await adapter(fetchFn).createSession(request);
-    expect(sent[0]?.body).toHaveProperty('max_session_duration');
-    expect(sent[1]?.body).not.toHaveProperty('max_session_duration');
+    await expect(adapter(fetchFn).createSession(request)).rejects.toThrow('liveavatar token 422');
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.body).toHaveProperty('max_session_duration', 900);
   });
 
   it('fails without leaking the key or a token, and stops a session that started half-way', async () => {
@@ -180,7 +269,11 @@ describe('HeygenLiveAvatarFace: a LITE session', () => {
 });
 
 describe('HeygenLiveAvatarFace: the server-held control channel', () => {
-  const handle = { sessionRef: 'sess-1', control: 'wss://control.test.invalid/ws?t=1', requestId: 'req-2' };
+  const handle = {
+    sessionRef: 'sess-1',
+    control: 'wss://control.test.invalid/ws?t=secret-control',
+    requestId: 'req-2',
+  };
   const audio = (bytes: number, last: boolean) =>
     ({
       pcm: new Uint8Array(bytes).fill(1),
@@ -188,35 +281,131 @@ describe('HeygenLiveAvatarFace: the server-held control channel', () => {
       first: true,
       last,
     }) as unknown as VerifiedFaceAudio;
+  const SECOND = 48_000;
 
-  it('speaks a unit as 20 ms agent.speak events under one event id, then agent.speak_end', async () => {
-    const control = socket();
-    await adapter(vendor({}).fetchFn, control.open).speak(handle, audio(2500, true));
+  it('sends nothing until the vendor reports the session connected', async () => {
+    const control = socket({ connect: 'manual' });
+    let done = false;
+    const speaking = adapter(vendor({}).fetchFn, control.open)
+      .speak(handle, audio(SECOND, true))
+      .then(() => {
+        done = true;
+      });
+    await settle();
     expect(control.opened).toEqual([handle.control]);
+    expect(control.frames).toEqual([]);
+    expect(done).toBe(false);
+    control.connect();
+    await speaking;
+    expect(control.sentBeforeConnected()).toBe(0);
+    expect(control.frames.map((frame) => frame.type)).toEqual(['agent.speak', 'agent.speak_end']);
+  });
+
+  it('speaks in one-second chunks and closes only once the vendor has committed the utterance', async () => {
+    const commits: Frame[] = [];
+    const control = socket({
+      reply: (frame) => {
+        if (frame.type !== 'agent.speak_end') return undefined;
+        commits.push({
+          type: 'agent.audio_buffer_committed',
+          event_id: 'srv-9',
+          source_event_id: frame.event_id,
+        });
+        return [];
+      },
+    });
+    let done = false;
+    const speaking = adapter(vendor({}).fetchFn, control.open)
+      .speak(handle, audio(2.5 * SECOND, true))
+      .then(() => {
+        done = true;
+      });
+    await settle();
     const speak = control.frames.filter((frame) => frame.type === 'agent.speak');
-    expect(speak).toHaveLength(3);
-    expect(speak.every((frame) => frame.event_id === 'evt-1')).toBe(true);
-    expect(Buffer.from(String(speak[0]?.audio), 'base64')).toHaveLength(960);
-    expect(Buffer.from(String(speak[2]?.audio), 'base64')).toHaveLength(580);
-    expect(control.frames.at(-1)).toEqual({ type: 'agent.speak_end', event_id: 'evt-1' });
+    expect(speak.map((frame) => Buffer.from(String(frame.audio), 'base64').length)).toEqual([
+      SECOND,
+      SECOND,
+      SECOND / 2,
+    ]);
+    // The first chunk's id names the utterance; every command has its own, so each acknowledgement is matched.
+    expect(new Set(control.frames.map((frame) => frame.event_id)).size).toBe(control.frames.length);
+    expect(control.frames.at(-1)?.type).toBe('agent.speak_end');
+    expect(done).toBe(false);
+    expect(control.closed()).toBe(0);
+    const commit = commits[0];
+    if (commit === undefined) throw new Error('no speak_end');
+    control.emit(commit);
+    await speaking;
     expect(control.closed()).toBe(1);
   });
 
-  it('leaves the utterance open on a part that is not the last, and interrupts on barge-in', async () => {
+  it('leaves the utterance open on a part that is not the last, once its audio was taken', async () => {
     const control = socket();
-    const face = adapter(vendor({}).fetchFn, control.open);
-    await face.speak(handle, audio(960, false));
+    await adapter(vendor({}).fetchFn, control.open).speak(handle, audio(SECOND, false));
     expect(control.frames.map((frame) => frame.type)).toEqual(['agent.speak']);
-    await face.interrupt(handle);
-    expect(control.frames.at(-1)).toEqual({ type: 'agent.interrupt', event_id: 'evt-1' });
+    expect(control.closed()).toBe(1);
+  });
+
+  it('fails on the vendor’s error event, without repeating what the vendor said', async () => {
+    const control = socket({
+      reply: (frame) =>
+        frame.type === 'agent.speak'
+          ? [
+              {
+                type: 'error',
+                event_id: 'srv-1',
+                source_event_id: frame.event_id,
+                error: {
+                  type: 'invalid_request_error',
+                  message: `bad ${handle.control}`,
+                  event_id: frame.event_id,
+                },
+              },
+            ]
+          : undefined,
+    });
+    const refused = await failure(
+      adapter(vendor({}).fetchFn, control.open).speak(handle, audio(SECOND, true)),
+    );
+    expect(refused.message).toBe('liveavatar control invalid_request_error');
+    expect(refused.message).not.toContain('secret');
+    expect(control.closed()).toBe(1);
+  });
+
+  it('gives up when the session never connects, or the channel closes before the vendor took the audio', async () => {
+    const silent = socket({ connect: 'manual' });
+    await expect(
+      adapter(vendor({}).fetchFn, silent.open, false, { connectMs: 20 }).speak(handle, audio(SECOND, true)),
+    ).rejects.toThrow('liveavatar control channel not connected');
+    expect(silent.frames).toEqual([]);
+    expect(silent.closed()).toBe(1);
+
+    const dropped = socket({ reply: () => [] });
+    const speaking = adapter(vendor({}).fetchFn, dropped.open).speak(handle, audio(SECOND, true));
+    await settle();
+    dropped.drop();
+    await expect(speaking).rejects.toThrow('liveavatar control channel lost');
+
+    const slow = socket({ reply: () => [] });
+    await expect(
+      adapter(vendor({}).fetchFn, slow.open, false, { ackMs: 20 }).speak(handle, audio(SECOND, true)),
+    ).rejects.toThrow('liveavatar control channel timed out');
+  });
+
+  it('interrupts on barge-in once connected, and waits for the vendor to clear its buffer', async () => {
+    const control = socket();
+    await adapter(vendor({}).fetchFn, control.open).interrupt(handle);
+    expect(control.frames).toEqual([{ type: 'agent.interrupt', event_id: 'evt-1' }]);
+    expect(control.sentBeforeConnected()).toBe(0);
+    expect(control.closed()).toBe(1);
   });
 
   it('fails when the channel refuses, or there is none', async () => {
     await expect(
-      adapter(vendor({}).fetchFn, socket({ refuse: true }).open).speak(handle, audio(960, true)),
+      adapter(vendor({}).fetchFn, socket({ refuse: true }).open).speak(handle, audio(SECOND, true)),
     ).rejects.toThrow(/control channel refused/);
     await expect(
-      adapter(vendor({}).fetchFn).speak({ ...handle, control: null }, audio(960, true)),
+      adapter(vendor({}).fetchFn).speak({ ...handle, control: null }, audio(SECOND, true)),
     ).rejects.toThrow(/no control channel/);
   });
 
