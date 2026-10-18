@@ -56,6 +56,17 @@ class TestReplyGraders:
         ]
         assert grade_reply(reply("Start with one clear price and see who says yes.")) == []
 
+    def test_the_labs_stock_openings(self) -> None:
+        # The wave 6 lab: "Great news, Maya." / "Great, Maya." on three replies in a row; "Good to talk again." twice.
+        for text in (
+            "Great news, Maya. What's next?",
+            "Great, Maya. Who pays?",
+            "Good to talk again. So, pricing?",
+        ):
+            assert codes(grade_reply(reply(text))) == ["stock_opener"], text
+        # A word that only starts with it is not the opener.
+        assert grade_reply(reply("Greater campus reach is the goal. Start with one hall.")) == []
+
     def test_productions_own_stock_openings(self) -> None:
         # 7 of 12 production answers opened with these.
         for opener in (

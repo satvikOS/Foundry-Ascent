@@ -89,6 +89,10 @@ STOCK_OPENERS: tuple[str, ...] = (
     "as an ai",
     "thanks for sharing",
     "thank you for sharing",
+    # The conversation lab (wave 6): "Great news, Maya." / "Great, Maya." opened three replies in a row, and "Good to
+    # talk again." twice right after the call's greeting had said it (craft.ts STOCK_OPENERS names both).
+    "great",
+    "good to talk again",
 )
 STOCK_OPENER = re.compile(r"^(?:" + "|".join(re.escape(s) for s in STOCK_OPENERS) + r")\b")
 GENERIC_PRAISE = re.compile(
