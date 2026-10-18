@@ -7,6 +7,7 @@ import {
   contentWords,
   endsWithQuestion,
   founderMoves,
+  socialTurnOf,
   type FounderMove,
 } from '../prompts/conversation-state.js';
 import { tidyFounderWords } from '../prompts/founder-words.js';
@@ -579,7 +580,6 @@ function socialReply(args: {
 }): string | null {
   const { text, moves, reading, name, seed, names } = args;
   const previous = reading.previous;
-  const content = contentWords(text).size;
   // Any real question gets an answer, however short the message ("Sure, but who pays?").
   const asks = asksSomething(text, moves);
   const lastTopic = lastTopicOf(reading.founderHistory);
@@ -616,11 +616,13 @@ function socialReply(args: {
     if (previous !== null) return callbackTo(previous);
     return "We hadn't got into anything yet. What's on your mind?";
   }
-  if (moves.includes('closing') && !asks) {
+  // Only social (nothing told besides it): news or a decision said with a goodbye is answered as coaching.
+  const social = socialTurnOf(text);
+  if (social === 'closing') {
     const step = reading.founderHistory.length > 0 ? ` The one thing to hold onto: ${nextStep}.` : '';
     return `Good talking with you${name !== null ? `, ${name}` : ''}.${step} ${pick(SIGN_OFFS, seed)}`;
   }
-  if (moves.includes('thanks') && !asks && content < 3) {
+  if (social === 'thanks') {
     // A thanks gets a short warm reply only, never the plan again (SM-19).
     return pick(THANKS_REPLIES, seed);
   }
@@ -633,7 +635,7 @@ function socialReply(args: {
   ) {
     return `Nice. You were going to ${tidyFounderWords(withoutFinalStop(previous.plan))}. How did it go, and what surprised you?`;
   }
-  if (moves.includes('greeting') && !asks && content < 2) {
+  if (social === 'greeting') {
     if (!reading.firstMessage)
       return `Hi again${name !== null ? `, ${name}` : ''}. Where would you like to pick up?`;
     const howAreYou = /\bhow(?:'s| is| are| have)\b/i.test(text) ? ' Thanks for asking.' : '';

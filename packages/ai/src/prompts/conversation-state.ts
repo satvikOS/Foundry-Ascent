@@ -201,18 +201,66 @@ export function asksSomething(text: string, moves: readonly FounderMove[] = foun
 }
 
 /**
+ * The words of a social message that say nothing else: thanks and appreciation, a goodbye, a hello, an "okay". What a
+ * message keeps once they are taken out is what it tells ({@link tellsSomething}).
+ */
+const SOCIAL_PHRASES = new RegExp(
+  [
+    // Thanks and appreciation ("Thanks so much for your help", "I really appreciate it", "That's genuinely helpful").
+    String.raw`\b(?:many |big )?(?:thanks|thank you|thank u|thx|ty|cheers)(?: (?:so|very) much| a (?:lot|ton|bunch)| again| heaps)?(?: (?:for|4) (?:(?:all )?(?:the|your) (?:help|time|advice|input|tips|ideas|insights?|support|chat|call|talk|thoughts|feedback)|(?:helping|listening|that|this|everything|all (?:that|this|of (?:that|this))|today|the chat|the call)))?`,
+    String.raw`\b(?:much appreciated|(?:i )?(?:really |truly )?appreciate (?:it|that|this|you|the help|your help|your time)(?: a lot| so much)?)`,
+    String.raw`\b(?:that's|that is|that was|this is|this was|it's|it is|it was|you're|you are|you've been|that has been|this has been)(?: (?:really|super|very|so|genuinely|incredibly|truly|extremely|honestly|actually|quite|such|a|so so))* (?:helpful|useful|great|perfect|amazing|awesome|brilliant|clear|good|excellent|fantastic|the best|(?:a )?(?:big|huge|real) help|a lifesaver|gold|clarifying)`,
+    String.raw`\b(?:(?:super|really|very|so|genuinely) (?:helpful|useful|clear)|(?:that|this) (?:helps|helped)(?: a lot| loads)?|(?:that |this )?makes (?:total |a lot of |perfect )?sense|got it|sounds (?:good|great|perfect)|will do|love (?:it|that|this))`,
+    // A goodbye ("Talk soon", "I have to run", "Have a good one").
+    String.raw`\b(?:goodbye|bye(?:-bye| for now)?|talk (?:soon|later|tomorrow|next week)|speak soon|catch you later|signing off|good ?night|i'll let you go|until next time|take care|see you(?: (?:soon|later|tomorrow|next (?:week|time)|then))?|have a (?:good|great|nice|lovely) (?:one|day|evening|night|weekend|week))`,
+    String.raw`\b(?:(?:i|we) (?:really |actually |just )?(?:have|need|got) to|gotta|must) (?:go|run|jump|dash|head (?:off|out)|hop off|leave)(?: now| soon| in a (?:sec|second|minute|bit))?`,
+    String.raw`\b(?:(?:that's|that is) (?:all|it|everything|enough) for (?:now|today)|let's (?:stop|wrap(?: it)? up|leave it) (?:here|there|for (?:now|today))|i'm done for (?:now|today))`,
+    // A hello ("Hey, good morning", "How's it going?").
+    String.raw`\b(?:hi|hey|hello|hiya|howdy|yo|good (?:morning|afternoon|evening|day)|morning|evening)(?: there| again)?`,
+    String.raw`\bhow(?:'s| is| are| have) (?:it going|you(?: been| doing)?|things|your (?:day|week))`,
+    // Acknowledgements and fillers.
+    String.raw`\b(?:ok|okay|alright|all right|right|sure|yes|yeah|yep|yup|great|perfect|cool|nice|awesome|amazing|brilliant|excellent|wonderful|lovely|fantastic|so|well|anyway|again|and|oh|ah|wow|haha|lol|too|as always|then|now)\b`,
+  ].join('|'),
+  'giu',
+);
+
+/** A first-person subject or possessive: the founder telling something of their own ("we signed", "my cofounder"). */
+const FIRST_PERSON =
+  /(?<![\p{L}'])(?:i|im|i'm|i've|ive|i'll|i'd|we|we're|we've|we'll|we'd|my|our|ours)(?![\p{L}'])/iu;
+
+/**
+ * Whether a message tells something besides its social words ({@link SOCIAL_PHRASES}): a number, the founder's own
+ * news or plan (a first-person subject: "we signed", "my cofounder left"), or any content word ("the dean said yes").
+ * A name said to them ("Thanks, Corin!") tells nothing.
+ */
+function tellsSomething(text: string): boolean {
+  const rest = text.normalize('NFKC').replace(APOSTROPHES, "'").replace(SOCIAL_PHRASES, ' ');
+  if (/\p{N}|[$€£¥%]/u.test(rest)) return true;
+  if (FIRST_PERSON.test(rest)) return true;
+  const content = (rest.match(/\p{L}[\p{L}'-]*/gu) ?? []).filter((w) => contentWords(w).size > 0);
+  if (content.length === 0) return false;
+  // One capitalised word and nothing else: a name they said to the vEIR.
+  return !(content.length === 1 && /^\p{Lu}/u.test(content[0] ?? ''));
+}
+
+/**
  * What a message that is only social does (doctrine "Conversation craft"; the lab's SM-19 and SM-13): thanks
  * ("Thank you, this is genuinely helpful"), a wrap-up ("Okay, thanks, that's helpful. Talk soon.") or a hello, with
- * nothing asked and next to nothing told. Null for a message with venture substance or a real question.
+ * nothing asked and nothing told: once its social words are taken out, nothing is left ({@link tellsSomething}).
+ * Null for a message with a real question, or with news, a decision, a number or a plan in it ("Thanks! We signed
+ * Hartwell.", "Okay, we'll go with $900. Talk soon."): that is answered, and kept, like any other.
  */
 export function socialTurnOf(text: string): SocialTurn | null {
   const moves = founderMoves(text);
   if (asksSomething(text, moves)) return null;
-  const content = contentWords(text).size;
-  if (moves.includes('closing') && content < 4) return 'closing';
-  if (moves.includes('thanks') && content < 3) return 'thanks';
-  if (moves.includes('greeting') && content < 2) return 'greeting';
-  return null;
+  const kind: SocialTurn | null = moves.includes('closing')
+    ? 'closing'
+    : moves.includes('thanks')
+      ? 'thanks'
+      : moves.includes('greeting')
+        ? 'greeting'
+        : null;
+  return kind === null || tellsSomething(text) ? null : kind;
 }
 
 /** "X or Y?" asked of the vEIR, or a request for its pick or verdict. */

@@ -619,6 +619,16 @@ describe('social turns', () => {
     expectSocial(value);
   });
 
+  it('news or a decision said with a goodbye is answered, and kept, not signed off', async () => {
+    for (const text of ["Okay, we'll go with $900. Talk soon.", 'Thanks! We signed Hartwell.']) {
+      const value = await reply({ text, history });
+      expect(value.answer, text).not.toMatch(
+        /^Good talking with you|^(?:Glad that helped|Happy to help|Any time)\./,
+      );
+      expect(value.memory_candidates.length, text).toBeGreaterThan(0);
+    }
+  });
+
   it('keeps going after a short "yes"', async () => {
     const value = await reply({ text: 'ok', history });
     expect(value.answer).toMatch(

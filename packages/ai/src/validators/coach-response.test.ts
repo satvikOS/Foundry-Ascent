@@ -1210,6 +1210,45 @@ describe('validateCoachResponse — conversation craft the lab still heard (wave
     }
   });
 
+  it('news or a decision said with thanks is answered and kept like any turn (LAB-K1, LAB-R8)', () => {
+    const decision = {
+      type: 'decision' as const,
+      title: 'Pilot price',
+      content: 'The pilot is priced at $900 per library.',
+      evidence_ids: [],
+      confidence: 0.9,
+      source: 'founder_stated' as const,
+    };
+    const advice = {
+      ...decision,
+      title: 'Anchor it',
+      content: 'Anchor the price.',
+      source: 'coach_advice' as const,
+    };
+    const reply = 'Good call on $900. It leaves room for the second library. Send the dean the one-pager.';
+    const told = validateCoachResponse(base({ answer: reply, memory_candidates: [decision] }), {
+      ...opts(),
+      founderText: "Okay, we'll go with $900. Talk soon.",
+    });
+    expect(told.response.memory_candidates).toEqual([decision]);
+    expect(told.response.answer).toBe(reply);
+    expect(told.results.notes).not.toContain('social_turn_cleared');
+    // Even when the turn engine read it as a wrap-up, what the founder said in it is kept; nothing else is.
+    const read = validateCoachResponse(base({ answer: reply, memory_candidates: [decision, advice] }), {
+      ...opts(),
+      founderText: "Okay, we'll go with $900. Talk soon.",
+      social: 'closing',
+    });
+    expect(read.response.memory_candidates).toEqual([decision]);
+    expect(read.response.next_actions).toEqual([]);
+    // A plain thanks keeps no candidate, however it is labelled.
+    const thanks = validateCoachResponse(base({ answer: 'Glad it helped.', memory_candidates: [decision] }), {
+      ...opts(),
+      founderText: 'Thanks so much!',
+    });
+    expect(thanks.response.memory_candidates).toEqual([]);
+  });
+
   it('a wrap-up on a call: a warm sign-off, no new question, nothing to report', () => {
     const checked = validateCoachResponse(
       base({

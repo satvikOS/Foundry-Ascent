@@ -29,7 +29,7 @@ import {
   type IdentityViolationKind,
 } from './identity.js';
 import { sanitizeMarkdown, sanitizePlainText } from './markdown.js';
-import { socialTurnOf, type SocialTurn } from '../prompts/conversation-state.js';
+import { contentWords, socialTurnOf, type SocialTurn } from '../prompts/conversation-state.js';
 import { REPEATED_GREETING_FALLBACK, withoutRepeatedGreeting } from './greeting.js';
 import { cutMetaNarration } from './meta-narration.js';
 import {
@@ -390,11 +390,20 @@ export function validateCoachResponse(
         ? null
         : socialTurnOf(options.founderText);
   if (social !== null) {
+    // What the founder said in this very message stays kept, however the turn was read (LAB-K1: a decision said
+    // with a goodbye, "Okay, we'll go with $900. Talk soon.", must never be lost to a social reading).
+    const said = contentWords(options.founderText ?? '');
+    const stated = r.memory_candidates.filter(
+      (m) =>
+        m.source === 'founder_stated' &&
+        [...contentWords(`${m.title} ${m.content}`)].some((w) => said.has(w)),
+    );
     const reported =
       r.claims.length +
       r.uncertainty.length +
       r.next_actions.length +
-      r.memory_candidates.length +
+      r.memory_candidates.length -
+      stated.length +
       r.follow_up_questions.length +
       (r.challenge === null ? 0 : 1);
     if (reported > 0) notes.push('social_turn_cleared');
@@ -402,7 +411,7 @@ export function validateCoachResponse(
     r.uncertainty = [];
     r.challenge = null;
     r.next_actions = [];
-    r.memory_candidates = [];
+    r.memory_candidates = stated;
     r.follow_up_questions = [];
   }
 

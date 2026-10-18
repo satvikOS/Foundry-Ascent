@@ -25,6 +25,40 @@ describe('social turns (SM-19, social_turn_report)', () => {
     expect(socialTurnOf('How should we price the pilot?')).toBeNull();
   });
 
+  it('reads more social forms, a name said to them included', () => {
+    for (const [text, kind] of [
+      ['Thanks so much, Corin!', 'thanks'],
+      ['Thank you for your help!', 'thanks'],
+      ['Thanks, that makes sense.', 'thanks'],
+      ['Appreciate it, really helpful.', 'thanks'],
+      ['Cheers, this was super useful 🙏', 'thanks'],
+      ['Okay, bye!', 'closing'],
+      ["Great, I'll let you go. Have a good one!", 'closing'],
+      ['Gotta run, thanks!', 'closing'],
+      ['Hey Corin, good morning!', 'greeting'],
+      ["Hi, how's it going?", 'greeting'],
+    ] as const) {
+      expect(socialTurnOf(text), text).toBe(kind);
+    }
+  });
+
+  it('news or a decision said with thanks or a goodbye is never a social turn', () => {
+    for (const text of [
+      'Thanks! We signed Hartwell.',
+      'Thanks, we are hiring Noor.',
+      'Thanks, my cofounder left.',
+      'Thanks — we lost the pilot.',
+      "Okay, we'll go with $900. Talk soon.",
+      "Great, we'll price per library. Bye!",
+      'Thanks, the dean said yes.',
+      'Bye! Sending the contract tonight.',
+      "Talk soon, I'll send the deck tomorrow.",
+      'Hi! Hartwell signed the letter of intent.',
+    ]) {
+      expect(socialTurnOf(text), text).toBeNull();
+    }
+  });
+
   it('keeps a thanks reply to a short warm line, never the plan again', () => {
     const sm19 =
       "You're welcome. Let's keep moving. First, call the dean about the budget. Then book the second library for Tuesday and send both of them the one-page plan.";
