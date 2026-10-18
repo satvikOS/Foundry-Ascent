@@ -8,6 +8,7 @@ baseline, this run and the change, so a comparison needs no reading of transcrip
 from __future__ import annotations
 
 import json
+import statistics
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,36 @@ def load_baseline(path: Path) -> dict[str, Any]:
     if not isinstance(data, dict) or "suite" not in data:
         raise ValueError("not a lab summary")
     return data
+
+
+#: The per-turn server stages compared between runs (medians over the run's voice turns).
+VOICE_STAGES = (
+    "retrievalMs",
+    "embedMs",
+    "modelStartMs",
+    "timeToFirstTokenMs",
+    "firstTokenToDeltaMs",
+    "firstSpeechMs",
+    "pollyFirstAudioMs",
+)
+
+
+def voice_stage_medians(logs: Mapping[str, Any]) -> dict[str, float]:
+    turns = [t for t in logs.get("turns") or [] if isinstance(t, Mapping) and t.get("voice")]
+    out: dict[str, float] = {}
+    for stage in VOICE_STAGES:
+        if stage == "timeToFirstTokenMs":
+            values = [
+                t["modelFirstTokenMs"] - t["modelStartMs"]
+                for t in turns
+                if isinstance(t.get("modelFirstTokenMs"), int | float)
+                and isinstance(t.get("modelStartMs"), int | float)
+            ]
+        else:
+            values = [t[stage] for t in turns if isinstance(t.get(stage), int | float)]
+        if values:
+            out[stage] = float(statistics.median(values))
+    return out
 
 
 def _rate(cell: Mapping[str, Any] | None) -> float | None:
@@ -124,6 +155,10 @@ def compare(current: Mapping[str, Any], baseline: Mapping[str, Any]) -> dict[str
                 0,
             )
         row("interrupt requests", logs_b.get("interrupt_requests"), logs_c.get("interrupt_requests"), 0)
+        stages_b, stages_c = voice_stage_medians(logs_b), voice_stage_medians(logs_c)
+        for stage in VOICE_STAGES:
+            if stage in stages_b or stage in stages_c:
+                row(f"voice turn median {stage} (ms)", stages_b.get(stage), stages_c.get(stage), 0)
     if base.get("findings") is not None or cur.get("findings") is not None:
         for key in ("structured_leak", "volunteered_ai_disclaimer", "repeated_reply", "stacked_questions"):
             row(

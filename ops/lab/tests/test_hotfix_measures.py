@@ -247,3 +247,31 @@ def test_run_arguments_carry_scenarios_and_repeats(monkeypatch: pytest.MonkeyPat
         == 0
     )
     assert (seen["scenarios"], seen["repeat"]) == ("SM-13,SM-39", 5)
+
+
+def test_comparison_sets_the_voice_turn_stages_side_by_side() -> None:
+    def run(embed: float, gate: float) -> dict[str, Any]:
+        turn = {
+            "voice": True,
+            "retrievalMs": 150,
+            "embedMs": embed,
+            "modelStartMs": 200,
+            "modelFirstTokenMs": 520,
+        }
+        return {
+            "suite": "voice",
+            "result": {"passed": 1, "run": 1},
+            "app_logs": {
+                "turns": [{**turn, "firstTokenToDeltaMs": gate}, {**turn, "voice": False, "embedMs": 999}]
+            },
+        }
+
+    rows = {r["metric"]: r for r in compare(run(441, 526), run(177, 423))["headline"]}
+    assert rows["voice turn median embedMs (ms)"] == {
+        "metric": "voice turn median embedMs (ms)",
+        "baseline": 177.0,
+        "now": 441.0,
+        "change": 264,
+    }
+    assert rows["voice turn median firstTokenToDeltaMs (ms)"]["change"] == 103
+    assert rows["voice turn median timeToFirstTokenMs (ms)"]["now"] == 320.0
