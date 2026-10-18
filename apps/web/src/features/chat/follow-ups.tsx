@@ -17,7 +17,7 @@ export function FollowUps({
   return (
     <ul
       aria-label="Follow-up questions"
-      className="-mx-4 flex gap-2 overflow-x-auto overscroll-x-contain px-4 pb-0.5 [mask-image:linear-gradient(to_right,transparent,#000_0.75rem,#000_calc(100%-1rem),transparent)] [scrollbar-width:none] sm:-mx-6 sm:px-6 pointer-fine:[scrollbar-width:thin]"
+      className="-mx-4 flex gap-2 overflow-x-auto overscroll-x-contain px-4 pb-0.5 [mask-image:linear-gradient(to_right,transparent,black_1rem,black_calc(100%-2rem),transparent)] [scrollbar-width:none] sm:-mx-6 sm:px-6 pointer-fine:[scrollbar-width:thin]"
     >
       {questions.map((question) => (
         <li key={question} className="max-w-[85%] shrink-0">
