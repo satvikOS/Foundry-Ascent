@@ -941,6 +941,53 @@ class TestOpeningHabits:
     @pytest.mark.parametrize(
         "reply",
         [
+            "Hi Maya. You had a facilities call scheduled for today. How did it go?",
+            "Hi Maya. You were calling facilities about the budget and pilot pricing tomorrow. What did they say?",
+        ],
+    )
+    def test_lab_m13_a_hello_after_a_recall_opener_gets_the_recall_again(self, reply: str) -> None:
+        opener = (
+            "Welcome back, Maya. Last time you planned to call facilities about the budget. How did it go?"
+        )
+        convo = Convo([T("Hi!", reply, intent="continuity:hello", session=2)], openers={2: opener})
+        outcomes = grade(convo)
+        assert results(outcomes, "craft.no_opener_repeat") == [False]
+        assert [o.detail for o in outcomes if o.check == "craft.no_opener_repeat"] == ["opener_reasked"]
+
+    def test_short_lead_in_sentences_do_not_hide_the_question_asked_again(self) -> None:
+        convo = Convo(
+            [T("I only have a few minutes.", "Sure. Quick then. How did the five interviews go?", session=2)],
+            openers={2: "Good to see you, Maya. How did the five interviews go?"},
+        )
+        assert results(grade(convo), "craft.no_opener_repeat") == [False]
+
+    def test_a_hello_later_in_the_conversation_may_ask_something(self) -> None:
+        convo = Convo(
+            [
+                T("Should we charge per branch?", "Per branch, yes.", session=2),
+                T("Hi again!", "Hi! Did Hartwell reply?", intent="continuity:hello", session=2),
+            ],
+            openers={2: "Welcome back, Maya. How did the facilities call go?"},
+        )
+        assert results(grade(convo), "craft.no_opener_repeat") == [True, True]
+
+    def test_a_question_after_a_hello_is_fine_when_the_opener_asked_none(self) -> None:
+        convo = Convo(
+            [T("Hi!", "Hi Maya! What's on your mind today?", intent="continuity:hello", session=2)],
+            openers={2: "Good to see you, Maya."},
+        )
+        assert results(grade(convo), "craft.no_opener_repeat") == [True]
+
+    def test_a_question_back_to_the_founder_s_own_question_is_fine(self) -> None:
+        convo = Convo(
+            [T("Should we charge per branch?", "Per branch, yes. Who signs at Hartwell?", session=2)],
+            openers={2: "Welcome back, Maya. How did the facilities call go?"},
+        )
+        assert results(grade(convo), "craft.no_opener_repeat") == [True]
+
+    @pytest.mark.parametrize(
+        "reply",
+        [
             "Hi Maya!",
             "Hey! The facilities call, or something else?",
             "Sure, quick it is. Per branch beats a flat fee here.",

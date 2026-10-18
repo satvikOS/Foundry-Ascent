@@ -688,6 +688,8 @@ DISCOURSE_MARKERS = frozenset(
 #: A clause of the conversation's opening line said again is a repeat from this many words ("Good to talk again");
 #: a two-word hello back ("Hi Maya!") is a hello.
 OPENER_CLAUSE_MIN_WORDS = 3
+#: A bare hello from the founder (the opening line's question still stands: the reply is a hello back).
+HELLO_INTENTS = frozenset({"continuity:hello", "relational:greeting"})
 #: Turns where saying the opening line's subject again is the answer: a recall question, a topic return, a repeat
 #: the founder asked for (and, by intent, a sincere "who are you?": the honest line may say the introduction again).
 SAYS_THE_PAST_AGAIN = frozenset(
@@ -716,8 +718,18 @@ def lead_in(text: str) -> tuple[str, ...]:
     return ()
 
 
+def opening_sentences(text: str, n: int = 2) -> list[str]:
+    """A reply's opening: its first ``n`` sentences after a short greeting or lead-in sentence ("Hi Maya.", "Got
+    it.", "Great news, Maya."), which says nothing yet."""
+    parts = sentences(text)
+    start = 0
+    while start < len(parts) - 1 and len(words(parts[start])) <= LEAD_IN_MAX_WORDS:
+        start += 1
+    return parts[start : start + n]
+
+
 def opener_repeat(reply: str, opener: str) -> str | None:
-    """How a reply's opening (its first two sentences) says again what the conversation's opening line or a call's
+    """How a reply's opening (its first two sentences after a short greeting) says again what the conversation's opening line or a call's
     greeting already said: the same clause of three words or more ("Good to talk again." after the greeting said
     it; LAB-R4), or a sentence most of whose four-word runs are the line's, a question asked again
     ("How did the facilities call go yesterday?" after "How did the facilities call go?"; LAB-U3, LAB-V1). Returns
@@ -726,7 +738,7 @@ def opener_repeat(reply: str, opener: str) -> str | None:
     said = sentences(opener)
     said_clauses = {c for s in said for c in clauses(s) if len(c) >= OPENER_CLAUSE_MIN_WORDS}
     said_grams = [g for g in (four_grams(s) for s in said) if g]
-    for sentence in sentences(reply)[:2]:
+    for sentence in opening_sentences(reply):
         grams = four_grams(sentence)
         again = any(c in said_clauses for c in clauses(sentence) if len(c) >= OPENER_CLAUSE_MIN_WORDS) or (
             bool(grams) and any(len(grams & g) / len(grams) >= QUESTION_OVERLAP for g in said_grams)
@@ -1273,7 +1285,10 @@ class Grader:
         # question re-asked), except where saying it again is the answer.
         if opener.strip():
             turns = {t.index: t for t in planned.turns}
+            opener_asked = question_count(opener) > 0
+            first = True
             for reply in observed.replies:
+                after_opener, first = first, False
                 turn = turns.get(reply.turn)
                 if not reply.answered or turn is None:
                     continue
@@ -1282,6 +1297,17 @@ class Grader:
                 if says_again or asked:
                     continue
                 again = opener_repeat(reply.main, opener)
+                # A bare hello right after a line that asked something gets a hello back: a question there asks it
+                # again in other words (LAB-M13: "Hi Maya. You had a facilities call scheduled for today. How did
+                # it go?" / "…What did they say?").
+                if (
+                    again is None
+                    and after_opener
+                    and opener_asked
+                    and turn.intent in HELLO_INTENTS
+                    and question_count(reply.main) > 0
+                ):
+                    again = "opener_reasked"
                 self._add(
                     "craft.no_opener_repeat",
                     again is None,
