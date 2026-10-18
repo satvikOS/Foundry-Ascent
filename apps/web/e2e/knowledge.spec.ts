@@ -306,10 +306,11 @@ test.describe('memory', () => {
   }) => {
     test.setTimeout(90_000);
     await openVenture(page);
-    // The founder says what is worth remembering in their own words (the coach's framing alone is never kept).
+    // The founder says what is worth remembering in their own words, a fact and a decision (the coach's framing
+    // alone is never kept): any model that keeps what founders decide saves it with this answer.
     await startConversation(
       page,
-      `How should we price the pilot for libraries? Willingness to pay has not been tested with a paid commitment yet. ${runToken()}`,
+      `How should we price the pilot for libraries? Willingness to pay has not been tested with a paid commitment yet. We've decided to ask each library for a paid commitment before the pilot starts. ${runToken()}`,
     );
     const saved = page.getByRole('article', { name: 'Exchange 1' }).getByTestId('memory-saved');
     await expect(saved).toBeVisible({ timeout: 30_000 });

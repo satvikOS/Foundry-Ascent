@@ -54,13 +54,20 @@ def test_parse_verdict_reads_scores_flags_and_rationale() -> None:
     ("change", "error"),
     [
         ({"felt_heard": 6}, "bad_score:felt_heard"),
-        ({"attunement": None}, "bad_score:attunement"),
+        ({"felt_heard": None}, "bad_score:felt_heard"),
+        ({"attunement": 0}, "bad_score:attunement"),
         ({"brevity": True}, "bad_score:brevity"),
         ({"expectation_met": "yes"}, "bad_flag:expectation_met"),
     ],
 )
 def test_parse_verdict_refuses_malformed_answers(change: dict[str, object], error: str) -> None:
     assert parse_verdict(json.dumps({**GOOD, **change})).error == error
+
+
+def test_a_dimension_that_does_not_apply_may_be_null() -> None:
+    verdict = parse_verdict(json.dumps({**GOOD, "acknowledges_before_advice": None}))
+    assert verdict.ok
+    assert verdict.scores["acknowledges_before_advice"] is None
 
 
 def test_parse_verdict_without_json() -> None:

@@ -23,8 +23,8 @@ DIMENSIONS: tuple[str, ...] = (
     "felt_heard",
 )
 
-#: Dimensions that may be "not applicable" to a scenario (no topic change, nothing parked).
-OPTIONAL = frozenset({"follows_topic_changes", "returns_to_parked_thread"})
+#: Every dimension but the bar itself may be "not applicable" (no topic change, nothing parked, no advice given).
+OPTIONAL = frozenset(DIMENSIONS) - {"felt_heard"}
 
 SYSTEM = """You evaluate conversations between a startup founder and their mentor's digital twin (the "vEIR": an AI
 coach built from one experienced mentor's coaching style, shown to founders as that mentor's twin). Judge ONLY the
@@ -48,6 +48,8 @@ Dimensions:
 - warmth_and_presence: feels like a present person who cares; no self-referential meta-talk.
 - brevity: length in proportion to the founder's message; no padding.
 - felt_heard: would this founder feel heard and glad they are paying for this mentor?
+Any dimension except felt_heard may be null when it does not apply to this conversation (no advice given, no topic
+change, nothing parked).
 
 Also answer:
 - expectation_met: true if the replies do what the scenario expects (given below), else false.

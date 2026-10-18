@@ -15,12 +15,12 @@ Corin's vEIR), embeds the seed with Titan as every deploy does, starts the API d
 `MODEL_PROVIDER=bedrock` and the models of `infra/cdk/config/production.json`, serves the production web build, and
 runs the harness (`ops/lab`, `python -m conversation_lab`):
 
-| Suite    | What it does                                                                                                                                                                                                                                                                                          | Passes when                                                                                                                                            |
-| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `recall` | Through the UI, typed: **RC-01** the owner's scenario (a call, hang up, a second call 150 s later, "do you remember what we talked about last time?" and "what did I say my biggest worry was?"); **RC-02** chat then call; **RC-03** call then chat (`ops/lab/scenarios/recall.json`).               | The reply names the earlier conversation's distinctive facts (synonym groups), the judge rates accuracy ≥ 4 with nothing invented, no presence finding |
-| `voice`  | A true voice call: Amazon Polly speaks the founder's four lines; Chromium hears line 1 through its fake microphone device and the rest mixed into the same microphone stream; the app streams to Amazon Transcribe, answers on the real model, speaks with Polly (muted). Line 3 interrupts the vEIR. | Speech-to-text was granted, every line heard with WER ≤ 0.25, the vEIR's audio started after each turn, and the barge-in sent the interrupt            |
-| `matrix` | Conversations across the matrix of human conversation (question types, answer styles, emotions, topic changes, relational moves, chat and call, registers): founder turns from an LLM simulator, graded by the deterministic graders and an LLM judge.                                                | Every turn answered, no blocking or presence finding, and the judge found the scenario's expectation met, the founder heard (≥ 4), no presence slip    |
-| `ui`     | The whole Playwright suite (`apps/web/e2e`) against the real model, speech off as in CI.                                                                                                                                                                                                              | Playwright's own outcome per test (retried once)                                                                                                       |
+| Suite    | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                            | Passes when                                                                                                                                            |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `recall` | Through the UI, typed: **RC-01** the owner's scenario (a call, hang up, a second call 150 s later, "do you remember what we talked about last time?" and "what did I say my biggest worry was?"); **RC-02** chat then call; **RC-03** call then chat (`ops/lab/scenarios/recall.json`).                                                                                                                                                                 | The reply names the earlier conversation's distinctive facts (synonym groups), the judge rates accuracy ≥ 4 with nothing invented, no presence finding |
+| `voice`  | A true voice call: Amazon Polly speaks the founder's four lines; Chromium hears line 1 through its fake microphone device and the rest mixed into the same microphone stream; the app streams to Amazon Transcribe, answers on the real model, speaks with Polly (muted). Line 3 interrupts the vEIR.                                                                                                                                                   | Speech-to-text was granted, every line heard with WER ≤ 0.25, the vEIR's audio started after each turn, and the barge-in sent the interrupt            |
+| `matrix` | Conversations across the matrix of human conversation (question types, answer styles, emotions, topic changes, relational moves, chat and call, registers): founder turns from an LLM simulator, graded by the deterministic graders and an LLM judge.                                                                                                                                                                                                  | Every turn answered, no blocking or presence finding, and the judge found the scenario's expectation met, the founder heard (≥ 4), no presence slip    |
+| `ui`     | The whole Playwright suite (`apps/web/e2e`) against the real model, speech off as in CI. Its assertions hold for any model (a recall names the earlier topic's key term, memory is matched loosely by topic, citations are asked of questions only the seed's records answer); a step that genuinely cannot hold for a real model carries `@mock-only` with its reason, and the lab passes `--grep-invert @mock-only` (CI runs everything on the mock). | Playwright's own outcome per test (retried once)                                                                                                       |
 
 Until the conversation-matrix suite of `evals/` lands, `matrix` runs the built-in smoke set
 (`ops/lab/scenarios/smoke.json`, 14 scenarios); the summary says which source ran.
@@ -94,6 +94,26 @@ are written. Findings that point at the product (not the harness) go to the stre
 | Humanness         | The judge's mean score over scenarios, 1–5 scaled to 0–100                                                                                                                                                                                                                                                     |
 | Voice latencies   | First audio after the founder stops speaking; end of speech to turn sent (endpointing + Transcribe); turn sent to first audio (model + Polly). The app's own client stats (sent at hang-up) are printed beside them                                                                                            |
 | Stopped by        | `completed`, `budget_app`, `budget_lab`, or `app_refused` (the app answered `spend_cap_reached` or another stop code)                                                                                                                                                                                          |
+
+## Before and after
+
+`baseline_run_id` compares a run with an earlier run of the same suite. The summary then adds tables of the
+baseline, this run and the change:
+
+- headline numbers: pass rate, humanness, turn time, voice latencies and WER, spend;
+- each matrix dimension's pass rate;
+- the **phrase census**: the share of replies with each tracked habit, such as "The riskiest assumption…", "so
+  neither", evidence keys, two or more questions, a reasoning leak and reply length (`conversation_lab/census.py`);
+- the scenarios whose outcome changed.
+
+The baseline is `ops/lab/baselines/<suite>-<run id>.json` when committed, otherwise that run's public summary
+artifact (kept 7 days). `matrix-39084323076.json` is the 40-scenario baseline from before the wave-6 presence work.
+Its census was computed afterwards from the run's sealed transcripts.
+
+```bash
+gh workflow run ops-conversation-lab.yml -f suite=matrix -f budget_usd=5 -f max_scenarios=40 \
+  -f baseline_run_id=39084323076 -f public_key="$(cat "$dir/public.b64")"
+```
 
 ## Spend
 

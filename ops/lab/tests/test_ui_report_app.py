@@ -184,3 +184,23 @@ def test_run_refuses_without_the_seeded_database(monkeypatch: pytest.MonkeyPatch
     monkeypatch.delenv("DATABASE_URL", raising=False)
     assert cli.main(["run", "--suite", "recall", "--budget-usd", "1", "--out", str(tmp_path)]) == 2
     assert cli.main(["run", "--suite", "bogus", "--budget-usd", "1", "--out", str(tmp_path)]) == 2
+
+
+def test_the_ui_suite_leaves_out_mock_only_tests_and_keeps_failures_private(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    seen: dict[str, Any] = {}
+
+    def fake_run(ctx: cli.Context, **kwargs: Any) -> int:
+        seen.update(kwargs)
+        return 0
+
+    monkeypatch.setattr(cli, "run_playwright", fake_run)
+    ctx = cli.Context(suite="ui", out=tmp_path, budget_usd=1, max_scenarios=1, recall_gap_seconds=None)
+    result = cli.suite_ui(ctx, browser={"E2E_BASE_URL": "http://localhost:4173"})
+    assert "--grep-invert=@mock-only" in seen["specs"]
+    assert "--retries=1" in seen["specs"]
+    assert seen["config"] is None
+    assert seen["report"] == tmp_path / "private" / "ui" / "report.json"
+    assert any(str(tmp_path / "private") in arg for arg in seen["specs"] if arg.startswith("--output="))
+    assert result == {"playwright_exit": 0, "passed": 0, "run": 0, "ui": None}

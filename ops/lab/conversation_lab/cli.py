@@ -265,6 +265,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     summary["spend"] = spend
     summary["duration_seconds"] = round(time.monotonic() - started, 1)
     summary["harness_error"] = error
+    if args.baseline_run_id:
+        attach_baseline(summary, suite, str(args.baseline_run_id), args.baseline_file)
     text = write(summary, ctx.public)
     print(text)
     step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
@@ -277,6 +279,23 @@ def cmd_run(args: argparse.Namespace) -> int:
         )
         return 1
     return 0
+
+
+def attach_baseline(summary: dict[str, Any], suite: str, run_id: str, downloaded: Path | None) -> None:
+    """Adds the before/after comparison with `run_id` (or says why there is none) to the summary."""
+    from conversation_lab.compare import baseline_path, compare, load_baseline
+
+    if not run_id.isdigit():
+        summary["baseline"] = {"run_id": None, "error": "bad_run_id"}
+        return
+    path = baseline_path(suite, run_id, downloaded)
+    if path is None:
+        summary["baseline"] = {"run_id": run_id, "error": "not_found"}
+        return
+    try:
+        summary["baseline"] = {"run_id": run_id, "comparison": compare(summary, load_baseline(path))}
+    except (ValueError, KeyError, TypeError) as exc:
+        summary["baseline"] = {"run_id": run_id, "error": type(exc).__name__}
 
 
 # ---- suites --------------------------------------------------------------------------------------------------
@@ -380,7 +399,7 @@ def suite_matrix(
     from conversation_lab.app import FOUNDER_NAME
     from conversation_lab.judge import Judge
     from conversation_lab.simulator import LlmSimulator, TemplateSimulator
-    from conversation_lab.smoke import SmokeRunner, dimension_rates, grading_context, humanness, load_smoke
+    from conversation_lab.smoke import SmokeRunner, grading_context, load_smoke
 
     smoke = load_smoke()
     founder = admin.founder(FOUNDER_NAME)
@@ -409,10 +428,27 @@ def suite_matrix(
         results, stopped = runner.run(smoke["scenarios"], ctx.max_scenarios)
     finally:
         founder.close()
+    return matrix_result(
+        results,
+        stopped,
+        founder_name=str(smoke["founder"]["name"]),
+        llm_simulator=simulator_model is not None,
+    )
+
+
+def matrix_result(
+    results: Sequence[Any], stopped: str | None, *, founder_name: str, llm_simulator: bool
+) -> dict[str, Any]:
+    """The matrix suite's public result: pass rates, dimensions, judge humanness and the phrase census."""
+    from conversation_lab.census import census
+    from conversation_lab.smoke import dimension_rates, humanness
+
     seconds = [t.seconds for r in results for t in r.turns if t.kind != "error"]
+    heard = [t.heard for r in results for t in r.turns if t.heard]
     return {
         "source": "built-in smoke set",
-        "simulator": "llm" if simulator_model else "template",
+        "census": census(heard, founder_names=(founder_name,)),
+        "simulator": "llm" if llm_simulator else "template",
         "passed": sum(r.passed for r in results),
         "run": len(results),
         "humanness": humanness(results),
@@ -429,7 +465,14 @@ def suite_ui(ctx: Context, *, browser: dict[str, str], **_: Any) -> dict[str, An
     report = ctx.private / "ui" / "report.json"
     rc = run_playwright(
         ctx,
-        specs=["--retries=1", "--trace=off", f"--output={ctx.private / 'ui' / 'test-results'}"],
+        # Steps that genuinely cannot hold for a real model carry the @mock-only tag (with their reason); CI runs
+        # them on the mock, the lab leaves them out.
+        specs=[
+            "--retries=1",
+            "--trace=off",
+            "--grep-invert=@mock-only",
+            f"--output={ctx.private / 'ui' / 'test-results'}",
+        ],
         config=None,
         report=report,
         extra_env=browser,
@@ -470,6 +513,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     run.add_argument("--out", required=True)
     run.add_argument("--api-port", type=int, default=8787)
     run.add_argument("--web-port", type=int, default=4173)
+    run.add_argument(
+        "--baseline-run-id",
+        default=None,
+        help="compare with this earlier run of the same suite (ops/lab/baselines/<suite>-<id>.json, else --baseline-file)",
+    )
+    run.add_argument("--baseline-file", type=Path, default=None, help="that run's downloaded summary.json")
     run.add_argument(
         "--mock",
         action="store_true",

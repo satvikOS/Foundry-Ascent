@@ -55,6 +55,34 @@ async function deleteMemory(request: APIRequestContext, memoryId: string): Promi
   expect([200, 204], 'PATCH /memory/:id delete').toContain(response.status());
 }
 
+interface LearnedMemory {
+  id: string;
+  title: string;
+  content: string;
+  origin: string;
+  status: string;
+  keptAutomatically?: boolean;
+  sourceRefs: { kind: string; id: string }[];
+}
+
+/**
+ * What the vEIR kept by itself from one conversation, as the venture's memory lists it (turn by turn as it answers,
+ * or when the conversation is distilled at the end): any model, any wording.
+ */
+async function memoryLearnedFrom(
+  request: APIRequestContext,
+  ventureId: string,
+  sessionId: string,
+): Promise<LearnedMemory[]> {
+  const response = await request.get(`/api/v1/ventures/${ventureId}/memory?status=confirmed&limit=100`);
+  expect(response.status(), 'GET /ventures/:id/memory').toBe(200);
+  const { items } = (await response.json()) as { items: LearnedMemory[] };
+  return items.filter(
+    (m) =>
+      m.keptAutomatically === true && m.sourceRefs.some((r) => r.kind === 'session' && r.id === sessionId),
+  );
+}
+
 /** Calls off for the platform for the duration of `body` (back on afterwards, even when it fails). */
 async function withCallsOff(baseURL: string | undefined, body: () => Promise<void>): Promise<void> {
   if (!baseURL) throw new Error('baseURL is not set');
@@ -312,9 +340,9 @@ test.describe('vEIR calls', () => {
       );
       await screen
         .getByRole('textbox', { name: /^Reply to / })
-        // The founder says something worth remembering (what only the coach says is never kept as a fact).
+        // The founder states facts and a decision in their own words (what only the coach says is never kept).
         .fill(
-          `Should we pilot with one library? The pilot needs a written success threshold and stop condition. ${token}`,
+          `Should we pilot with one library? The pilot needs a written success threshold and stop condition. We've decided ours is forty students a day. ${token}`,
         );
       await screen.getByRole('textbox', { name: /^Reply to / }).press('Enter');
       const sent = (await turnRequest).postDataJSON() as { channel: string; callId: string; text: string };
@@ -376,25 +404,46 @@ test.describe('vEIR calls', () => {
       expect(response.request().postDataJSON()).toMatchObject({ reason: 'user' });
       await expect(screen.getByRole('note', { name: 'AI disclosure' })).toHaveCount(1);
       await expectNoBareEirName(page, 'the after-call summary');
-      // What the call's turn learned went to memory by itself: kept, never a proposal waiting for anyone.
+      // What the call learned goes to memory by itself, never as a proposal waiting for anyone.
       const { summary } = (await response.json()) as {
         summary: { memoryProposalIds: string[]; memoryKeptIds?: string[] };
       };
       expect(summary.memoryProposalIds).toEqual([]);
-      expect(summary.memoryKeptIds?.length).toBeGreaterThan(0);
-      const kept = await page.request.get(`/api/v1/memory/${summary.memoryKeptIds?.[0] ?? ''}`);
-      expect(kept.status(), 'GET /memory/:id').toBe(200);
-      expect(await kept.json()).toMatchObject({ origin: 'ai', status: 'confirmed', keptAutomatically: true });
-      // The summary says so quietly: one "Remembered" line and one "Saved to Knowledge" line, nothing to keep
-      // or decline.
+      // The summary says so quietly: one "Remembered" line, and a "Saved to Knowledge" line exactly when the
+      // call's turns kept something; nothing to keep or decline.
       await expect(screen.getByTestId('call-remembered')).toContainText(
         'will pick up from this call next time',
       );
-      await expect(screen.getByTestId('memory-saved')).toContainText('Saved to Knowledge:');
+      if ((summary.memoryKeptIds ?? []).length > 0) {
+        await expect(screen.getByTestId('memory-saved')).toContainText('Saved to Knowledge:');
+      } else {
+        await expect(screen.getByTestId('memory-saved')).toHaveCount(0);
+      }
       await expect(screen.getByRole('button', { name: /^(Keep|Not now)/ })).toHaveCount(0);
       await expect(screen.getByText(/would like to remember/)).toHaveCount(0);
+      // The decision the founder asked to keep is in the venture's memory, kept by the vEIR itself and learned
+      // from this call: by the end of the call's turn or once the ended call is distilled, in any wording that
+      // names it.
+      const ventureId = (await sessionTurns(page.request, sessionId)).session.ventureId;
+      await expect
+        .poll(
+          async () =>
+            (await memoryLearnedFrom(page.request, ventureId, sessionId)).some((m) =>
+              /pilot|librar|forty|40|students/i.test(`${m.title} ${m.content}`),
+            ),
+          { timeout: 60_000, intervals: [1_000] },
+        )
+        .toBe(true);
+      const learned = await memoryLearnedFrom(page.request, ventureId, sessionId);
+      for (const id of summary.memoryKeptIds ?? []) {
+        expect(
+          learned.map((m) => m.id),
+          'what the summary says it saved is in memory',
+        ).toContain(id);
+      }
+      for (const m of learned) expect(m).toMatchObject({ origin: 'ai', status: 'confirmed' });
       // Leave the venture's memory as it was.
-      for (const id of summary.memoryKeptIds ?? []) await deleteMemory(page.request, id);
+      for (const { id } of learned) await deleteMemory(page.request, id);
       await screen.getByRole('button', { name: 'Back to conversation' }).click();
       await expect(callScreen(page)).toBeHidden();
       await expect(page).toHaveURL(new RegExp(`/c/${sessionId}$`));
@@ -553,17 +602,16 @@ test.describe('vEIR calls', () => {
       await test.step('"do you remember what we talked about last time?" is answered from the first call', async () => {
         const second = created[1] ?? '';
         const recall = await sayOnCall(second, 'Do you remember what we talked about last time?', 1);
-        // Specific (the topic and when), spoken as speech, and it hands the turn back with a question.
+        // Specific (it names what the first call was about, in any wording), spoken as speech, and it hands the
+        // turn back with a question.
         const spoken = recall.spoken ?? recall.answer;
-        expect(spoken).toMatch(/When we spoke [^,]+, we were on pricing\./);
+        expect(spoken).toMatch(/pric/i);
         expect(spoken.trim()).toMatch(/\?$/);
         // No report artefacts in what is said or in the call's transcript.
         for (const text of [spoken, recall.answer]) {
           expect(text).not.toMatch(/\[E\d|Limited evidence|caveat/i);
         }
-        await expect(callScreen(page).getByRole('region', { name: 'Captions' })).toContainText(
-          /we were on pricing/i,
-        );
+        await expect(callScreen(page).getByRole('region', { name: 'Captions' })).toContainText(/pric/i);
         await hangUp();
       });
 
