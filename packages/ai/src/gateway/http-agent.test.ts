@@ -37,7 +37,11 @@ beforeAll(async () => {
   port = (server.address() as AddressInfo).port;
 });
 afterAll(async () => {
-  await new Promise<void>((resolve) => server.close(() => { resolve(); }));
+  await new Promise<void>((resolve) =>
+    server.close(() => {
+      resolve();
+    }),
+  );
 });
 
 function get(agent: CountingAgent): Promise<string> {
@@ -46,7 +50,9 @@ function get(agent: CountingAgent): Promise<string> {
       let body = '';
       res.setEncoding('utf8');
       res.on('data', (chunk: string) => (body += chunk));
-      res.on('end', () => { resolve(body); });
+      res.on('end', () => {
+        resolve(body);
+      });
     });
     req.on('error', reject);
     req.end();
