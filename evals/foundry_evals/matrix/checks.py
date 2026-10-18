@@ -662,6 +662,80 @@ def first_sentences(text: str, n: int = 2) -> str:
     return " ".join(sentences(text)[:n])
 
 
+#: Where a clause ends: a comma, a stop, a colon or semicolon before a space (not "4.5"), or a dash.
+CLAUSE_END = re.compile(r"[,.!?;:](?=\s|$)|[\u2014\u2013]|\s-\s")
+#: A reply's lead-in is its first clause when it is this short ("Great", "Great news", "Got it", "Maya"): the words
+#: a reply opens with before it says anything.
+LEAD_IN_MAX_WORDS = 3
+#: First words of a short plain statement, not a lead-in ("I'd wait.", "The bursar.", "Per branch.").
+PLAIN_STARTS = frozenset(
+    {
+        "i", "i'd", "i'm", "i'll", "i've", "you", "you're", "you'd", "you'll", "we", "we're", "we'd", "we'll",
+        "it", "it's", "its", "they", "they're", "he", "she", "the", "a", "an", "this", "these", "those", "there",
+        "my", "your", "our", "their", "if", "when", "per", "to", "in", "on", "for", "with", "at", "by", "of",
+        "and", "but", "or", "not", "one", "two", "three",
+    }
+)  # fmt: skip
+#: Words that open a reply as a verbal habit whatever follows ("So the pricing…", "Okay let's…", "Good to talk
+#: again.", "Thanks for…").
+DISCOURSE_MARKERS = frozenset(
+    {
+        "okay", "ok", "so", "right", "alright", "great", "good", "sure", "absolutely", "totally", "honestly",
+        "well", "perfect", "fair", "nice", "cool", "love", "hmm", "ah", "oh", "look", "listen", "anyway",
+        "thanks", "thank",
+    }
+)  # fmt: skip
+#: A clause of the conversation's opening line said again is a repeat from this many words ("Good to talk again");
+#: a two-word hello back ("Hi Maya!") is a hello.
+OPENER_CLAUSE_MIN_WORDS = 3
+#: Turns where saying the opening line's subject again is the answer: a recall question, a topic return, a repeat
+#: the founder asked for (and, by intent, a sincere "who are you?": the honest line may say the introduction again).
+SAYS_THE_PAST_AGAIN = frozenset(
+    {"continuity.recall", "continuity.attributes_teammate", "topic.returns", "request.repeats_gist"}
+)
+
+
+def clauses(text: str) -> list[tuple[str, ...]]:
+    """The clauses of ``text`` as normalised words (split at commas, stops, colons, semicolons and dashes)."""
+    return [tuple(w) for w in (words(c) for c in CLAUSE_END.split(text)) if w]
+
+
+def lead_in(text: str) -> tuple[str, ...]:
+    """The words a reply opens with before it says anything, normalised: a discourse marker ("Good to talk again."
+    → good; "So the pricing…" → so), or a first clause of at most ``LEAD_IN_MAX_WORDS`` words that is not a plain
+    statement ("Great, Maya." → great; "Great news, Maya." → great news; "Got it." → got it; "Maya, …" → maya);
+    () otherwise ("I'd price per branch.", "The bursar signs it.")."""
+    parts = clauses(text.strip())
+    if not parts:
+        return ()
+    first = parts[0]
+    if first[0] in DISCOURSE_MARKERS:
+        return first[:LEAD_IN_MAX_WORDS]
+    if len(first) <= LEAD_IN_MAX_WORDS and first[0] not in PLAIN_STARTS:
+        return first
+    return ()
+
+
+def opener_repeat(reply: str, opener: str) -> str | None:
+    """How a reply's opening (its first two sentences) says again what the conversation's opening line or a call's
+    greeting already said: the same clause of three words or more ("Good to talk again." after the greeting said
+    it; LAB-R4), or a sentence most of whose four-word runs are the line's, a question asked again
+    ("How did the facilities call go yesterday?" after "How did the facilities call go?"; LAB-U3, LAB-V1). Returns
+    ``opener_reasked`` / ``opener_repeated``, or None. A first meeting's introduction counts too: said again on an
+    ordinary turn, it is a second introduction."""
+    said = sentences(opener)
+    said_clauses = {c for s in said for c in clauses(s) if len(c) >= OPENER_CLAUSE_MIN_WORDS}
+    said_grams = [g for g in (four_grams(s) for s in said) if g]
+    for sentence in sentences(reply)[:2]:
+        grams = four_grams(sentence)
+        again = any(c in said_clauses for c in clauses(sentence) if len(c) >= OPENER_CLAUSE_MIN_WORDS) or (
+            bool(grams) and any(len(grams & g) / len(grams) >= QUESTION_OVERLAP for g in said_grams)
+        )
+        if again:
+            return "opener_reasked" if sentence.rstrip("\"'”’)").endswith("?") else "opener_repeated"
+    return None
+
+
 def _unsaid(check: ExpectedCheck, founder: str) -> ExpectedCheck | None:
     """A memory check (recall, topic return) without the terms the founder's own message says: repeating what was
     just said is not remembering it. None when nothing is left to look for (the plan's fault: tested away)."""
@@ -1194,6 +1268,28 @@ class Grader:
                 sources=planned_greet.sources if planned_greet else ("structure:later_session",),
                 detail="reintroduced",
             )
+        # No reply opens by saying again what the opening line (or the call's greeting) said, nor asks its question
+        # again (LAB-R4: "Good to talk again." twice right after the greeting; LAB-U3 / LAB-V1: the opener's
+        # question re-asked), except where saying it again is the answer.
+        if opener.strip():
+            turns = {t.index: t for t in planned.turns}
+            for reply in observed.replies:
+                turn = turns.get(reply.turn)
+                if not reply.answered or turn is None:
+                    continue
+                says_again = bool({c.id for c in turn.checks} & SAYS_THE_PAST_AGAIN)
+                asked = turn.intent in SELF_DESCRIPTION_INTENTS or "craft.no_repeated_reply" in turn.exempt
+                if says_again or asked:
+                    continue
+                again = opener_repeat(reply.main, opener)
+                self._add(
+                    "craft.no_opener_repeat",
+                    again is None,
+                    session=s,
+                    turn=reply.case_turn,
+                    sources=("structure:opener",),
+                    detail=again,
+                )
         for check in planned.session_checks:
             if check.id == "continuity.follows_up_commitment":
                 window = [opener] + [r.heard for r in observed.replies[:2] if r.answered]
@@ -1271,6 +1367,19 @@ class Grader:
                     turn=after.case_turn,
                     sources=("always",),
                     detail="same_opening",
+                )
+                # The same opening word or lead-in on two replies in a row ("Great news, Maya." / "Great, Maya."
+                # / "Great, Maya.": LAB-R4, LAB-V2), unless the founder asked for the repeat.
+                if (after.session, after.turn) in exempt_repeat:
+                    continue
+                lead_a, lead_b = lead_in(before.main), lead_in(after.main)
+                self._add(
+                    "craft.no_repeated_lead_in",
+                    not (lead_a and lead_b and lead_a[0] == lead_b[0]),
+                    session=session,
+                    turn=after.case_turn,
+                    sources=("always",),
+                    detail="same_opening_word",
                 )
             if len(items) >= 3:
                 always = all(ends_with_question(r.main) for r in items)
