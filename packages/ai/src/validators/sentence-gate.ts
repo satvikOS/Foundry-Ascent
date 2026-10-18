@@ -22,6 +22,8 @@ import {
   asksToRepeat,
   fourGramsOf,
   parksTheirNews,
+  questionsOf,
+  reasksQuestion,
   repeatsPrevious,
 } from './social.js';
 import { founderMoves } from '../prompts/conversation-state.js';
@@ -363,6 +365,8 @@ export class SentenceGate {
   #droppedGreeting = false;
   /** The previous reply's four-word sequences (null: no repeat check). */
   readonly #previousGrams: ReadonlySet<string> | null;
+  /** The previous reply's questions, as content words: never asked again in other words. */
+  readonly #previousQuestions: readonly ReadonlySet<string>[];
   /** Units left out because they said the previous reply again. */
   #repeatsDropped = 0;
   /** The founder's message brings news: a unit that parks it for the vEIR's agenda is left out (LAB-R8). */
@@ -409,6 +413,7 @@ export class SentenceGate {
       this.#question !== null
         ? null
         : fourGramsOf(previous);
+    this.#previousQuestions = this.#previousGrams === null || previous === null ? [] : questionsOf(previous);
   }
 
   /** Everything received so far (unvalidated). */
@@ -575,7 +580,11 @@ export class SentenceGate {
         this.#cut = 'meta_narration';
         return { units, blocked: null, fallback: null, cut: this.#cut };
       }
-      if (this.#previousGrams !== null && repeatsPrevious(rawUnit, this.#previousGrams)) {
+      if (
+        this.#previousGrams !== null &&
+        (repeatsPrevious(rawUnit, this.#previousGrams) ||
+          reasksQuestion(rawUnit.trim(), this.#previousQuestions))
+      ) {
         // The previous reply again: never said twice.
         this.#cursor = end;
         this.#repeatsDropped += 1;

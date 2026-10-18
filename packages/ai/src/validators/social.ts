@@ -1,4 +1,4 @@
-import { founderMoves, socialTurnOf, type SocialTurn } from '../prompts/conversation-state.js';
+import { contentWords, founderMoves, socialTurnOf, type SocialTurn } from '../prompts/conversation-state.js';
 import { sentenceSpans } from './meta-narration.js';
 
 /**
@@ -103,12 +103,41 @@ export function repeatsPrevious(sentence: string, previous: ReadonlySet<string>)
   return seen / grams.size >= REPEAT_SENTENCE_SHARE;
 }
 
+/**
+ * The questions of a text (its sentences that end in a question mark), as content words: the questions a previous
+ * reply asked, which the next reply never asks again in other words (item 20: "do you have a written agreement on
+ * what success looks like…?" was asked two turns running, the second time in reply to the founder's SSO worry).
+ */
+export function questionsOf(text: string): ReadonlySet<string>[] {
+  return sentenceSpans(text)
+    .map((s) => text.slice(s.start, s.end))
+    .filter((sentence) => /\?["'”’)\]*_]*$/.test(sentence))
+    .map((sentence) => contentWords(sentence))
+    .filter((words) => words.size >= 3);
+}
+
+/**
+ * Whether `sentence` asks again one of `asked` (see {@link questionsOf}) in other words: a question that shares three
+ * content words or more with it, and most of its own (60%, or of the shorter one).
+ */
+export function reasksQuestion(sentence: string, asked: readonly ReadonlySet<string>[]): boolean {
+  if (asked.length === 0 || !/\?["'”’)\]*_]*\s*$/.test(sentence)) return false;
+  const words = contentWords(sentence);
+  if (words.size < 3) return false;
+  return asked.some((question) => {
+    let shared = 0;
+    for (const w of words) if (question.has(w)) shared += 1;
+    return shared >= 3 && shared / Math.min(words.size, question.size) >= 0.6;
+  });
+}
+
 /** What a reply says when every sentence of it was the previous reply again. */
 export const REPEAT_FALLBACK = 'That still stands from a moment ago. Which part do you want to dig into?';
 
 /**
- * `text` without the sentences that mostly repeat `previous` (the vEIR's previous reply; see the module comment).
- * `dropped` counts them; `text` is '' when every sentence was a repeat.
+ * `text` without the sentences that mostly repeat `previous` (the vEIR's previous reply; see the module comment), or
+ * ask one of its questions again in other words ({@link reasksQuestion}). `dropped` counts them; `text` is '' when
+ * every sentence was a repeat.
  */
 export function withoutRepeats(
   text: string,
@@ -116,8 +145,12 @@ export function withoutRepeats(
 ): { readonly text: string; readonly dropped: number } {
   const said = fourGramsOf(previous);
   if (said.size === 0) return { text, dropped: 0 };
+  const asked = questionsOf(previous);
   const spans = sentenceSpans(text);
-  const repeated = spans.filter((s) => repeatsPrevious(text.slice(s.start, s.end), said));
+  const repeated = spans.filter((s) => {
+    const sentence = text.slice(s.start, s.end);
+    return repeatsPrevious(sentence, said) || reasksQuestion(sentence, asked);
+  });
   if (repeated.length === 0) return { text, dropped: 0 };
   let out = '';
   let from = 0;

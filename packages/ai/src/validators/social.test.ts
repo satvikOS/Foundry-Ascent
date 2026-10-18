@@ -10,6 +10,8 @@ import {
   NEWS_FALLBACK,
   endsWithHandBack,
   parksTheirNews,
+  questionsOf,
+  reasksQuestion,
   spokenHandBackFor,
   withoutAgendaPush,
   withinSocialBudget,
@@ -197,5 +199,28 @@ describe('the founder’s news is never parked for the vEIR’s agenda (LAB-R8)'
     ).toEqual({ text: 'Congrats on bringing Noor in! What will Noor work on first?', dropped: 1 });
     expect(withoutAgendaPush("Before we talk about that, let's finish the interviews first.").text).toBe('');
     expect(NEWS_FALLBACK).toMatch(/\?$/);
+  });
+});
+
+describe('a question is never asked again in the next reply, in other words (item 20)', () => {
+  const previous =
+    "That's a real step. Do you have a written agreement on what success looks like and what happens if the pilot doesn't hit it?";
+
+  it('reads the lab’s re-asked question, and leaves a follow-up that builds on it', () => {
+    const asked = questionsOf(previous);
+    expect(
+      reasksQuestion('Is there a written success agreement, and what happens if the pilot misses?', asked),
+    ).toBe(true);
+    expect(reasksQuestion('Who signs the agreement on their side?', asked)).toBe(false);
+    expect(reasksQuestion('A written agreement on success is still the thing to get.', asked)).toBe(false);
+  });
+
+  it('leaves the re-asked question out of a reply to the founder’s worry, and keeps the rest', () => {
+    const reply =
+      "That's a real risk: SSO can stall a library pilot for months. Is there a written success agreement, and what happens if the pilot misses? Ask their IT lead now what SSO they need.";
+    expect(withoutRepeats(reply, previous)).toEqual({
+      text: "That's a real risk: SSO can stall a library pilot for months. Ask their IT lead now what SSO they need.",
+      dropped: 1,
+    });
   });
 });

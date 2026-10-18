@@ -347,6 +347,24 @@ describe('SentenceGate', () => {
       ).toBe(previous);
     });
 
+    it('never asks the previous reply’s question again in other words (item 20), typed or spoken', () => {
+      const previous =
+        "That's a real step. Do you have a written agreement on what success looks like and what happens if the pilot doesn't hit it?";
+      const reply =
+        "That's a real risk: SSO can stall a library pilot for months. Is there a written success agreement, and what happens if the pilot misses? Ask their IT lead now what SSO they need.";
+      for (const options of [{}, { spoken: true, spokenWordBudget: 70, maxUnitChars: 280 }]) {
+        for (const chunks of chunkings(reply)) {
+          const units = run(
+            gate({ ...options, previousReply: previous, founderText: "I'm worried about their SSO." }),
+            chunks,
+          ).units;
+          expect(joined(units)).toBe(
+            "That's a real risk: SSO can stall a library pilot for months. Ask their IT lead now what SSO they need.",
+          );
+        }
+      }
+    });
+
     it('never drops the honest answer to a sincere bot question as a repeat of the intro or the last reply', () => {
       // A first meeting: the intro said what the vEIR is, then the founder asks sincerely.
       const intro =
