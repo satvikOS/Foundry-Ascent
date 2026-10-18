@@ -168,21 +168,28 @@ export function useKeepEndInView({
     },
     [observe],
   );
+  /**
+   * Where the reader starts, measured again as each part attaches (the column may attach before the dock): following
+   * when the end of the conversation is in view above the dock.
+   */
+  const start = useCallback(() => {
+    if (end.current) following.current = hidden() <= AT_END_SLACK_PX;
+  }, [hidden]);
   const endRef = useCallback(
     (element: HTMLElement | null) => {
       end.current = element;
-      // Where the reader starts: following when the whole conversation is in view (or they are at its end).
-      if (element) following.current = hidden() <= AT_END_SLACK_PX;
+      start();
       observe();
     },
-    [hidden, observe],
+    [start, observe],
   );
   const dockRef = useCallback(
     (element: HTMLElement | null) => {
       dock.current = element;
+      start();
       observe();
     },
-    [observe],
+    [start, observe],
   );
   const follow = useCallback(() => {
     following.current = true;

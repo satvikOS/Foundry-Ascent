@@ -319,10 +319,12 @@ Access codes are typed with `fillSecret()` so they never appear in step titles o
 Tokens live in `src/styles/globals.css`, each declared once as `light-dark(<light>, <dark>)`:
 dark-first and OLED (`#000000` canvas and sidebar, `#0A0A0A` raised, `#141414` overlays, white hairline
 borders at 8–20 % alpha, `#F4F4F2` text, `#A6A6A3` secondary, `#FFFFFF` focus) with a matching light
-theme. `.glass` (bars in the page) and `.glass-strong` (menus, popovers, the command palette, toasts) are
-the translucent surfaces; dialogs and sheets stay solid over a dimmed, blurred backdrop, so glass never
-stacks on glass. `src/styles/tokens.test.ts` recomputes every text/surface contrast ratio from the CSS
-(glass composited over each surface) and fails below WCAG AA. Use the semantic Tailwind colours
+theme. `.glass` (the composer area, call controls), `.glass-bar` (every sticky bar at the top of a page that
+text scrolls under: page headers, the phone bar, the mini call bar) and `.glass-strong` (menus, popovers, the
+command palette, toasts) are the translucent surfaces; dialogs and sheets stay solid over a dimmed, blurred
+backdrop, so glass never stacks on glass. `src/styles/tokens.test.ts` recomputes every text/surface contrast
+ratio from the CSS (glass composited over each surface, and `.glass-bar` over any text or fill passing beneath
+it, with no credit for the blur) and fails below WCAG AA. Use the semantic Tailwind colours
 (`bg-background`, `bg-card`, `text-muted-foreground`, `border-border`, `text-success`, `bg-warning/10`,
 `bg-sidebar`…), never raw hex. Theme: `useTheme()` / `setTheme('system'|'dark'|'light')` (persisted,
 works before JS via `color-scheme`).
@@ -463,8 +465,9 @@ Text precedence: `text` prop → `Me.disclosure` → `DEFAULT_DISCLOSURE`. It is
 
 - `announce(message, 'polite' | 'assertive')` from `components/a11y/live-announcer`.
 - `useHotkeys({ 'g m': fn, 'mod+enter': fn })` — single keys are ignored while typing.
-- `useDockedBottom()` — a callback ref for sticky bottom content (the composer) that keeps
-  `scroll-padding-bottom` in step, so focused content never hides behind it (WCAG 2.4.11).
+- `useDockedBottom()` — a callback ref for sticky bottom content (the composer) that measures its real
+  height into `--docked-bottom-height`, the page's `scroll-padding-bottom`, so focused content never hides
+  behind it (WCAG 2.4.11).
 - Shortcuts: ⌘/Ctrl K search · `?` help · `[` sidebar · `g n` New chat · `g k/d/h/t` Knowledge,
   Documents, Human help, Team · `g e/p/a` staff workspaces.
 - Banners (database waking, offline, AI paused, new access code) render in the shell only while they

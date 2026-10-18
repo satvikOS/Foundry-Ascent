@@ -183,6 +183,21 @@ describe('useKeepEndInView', () => {
     expect(scrollBy).not.toHaveBeenCalled();
   });
 
+  it('an end hidden only by the dock is not "at the end", whichever part attaches first', () => {
+    page.end = 750;
+    const hook = renderHook((props: Props) => useKeepEndInView(props), {
+      initialProps: { changeKey: 'idle', streaming: false },
+    });
+    act(() => {
+      // React attaches the column's ref before the dock's (it comes first in the page).
+      hook.result.current.endRef(element(() => ({ bottom: page.end - page.scrollY })));
+      hook.result.current.dockRef(element(() => ({ height: page.dock })));
+    });
+    hook.rerender({ changeKey: 'streaming', streaming: true });
+    grow({ end: 1400 });
+    expect(scrollBy).not.toHaveBeenCalled();
+  });
+
   it('a message sent from further up follows its answer from then on', () => {
     page.end = 3000;
     const hook = mount();
