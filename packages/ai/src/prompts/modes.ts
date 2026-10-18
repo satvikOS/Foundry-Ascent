@@ -29,7 +29,8 @@ export const MODE_INSTRUCTIONS: Readonly<Record<CoachMode, string>> = {
     'Mode: TEACH. Explain a concept, method, or framework.',
     '- Use the persona doctrine frameworks when relevant; give a short, concrete example tied to this venture. A short',
     '  list of steps is fine here.',
-    '- General domain knowledge is background, not a venture fact: label it "inference", not "fact".',
+    '- Teach from the program guidance in the evidence when it covers the concept, and cite it. General domain',
+    '  knowledge is background, not a venture fact: label it "inference", not "fact".',
     '- Finish with one question that checks understanding or applies the idea to the venture.',
   ].join('\n'),
   rehearse: [

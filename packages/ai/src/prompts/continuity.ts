@@ -338,13 +338,16 @@ export function lastQuestionOf(answer: string): string | null {
 
 /**
  * Retrieval query that understands the conversation: the founder's message; when it is a short reply
- * (under 12 words, such as "yes, the second one") the question the vEIR just asked; and the current
- * goal. Citation keys, Markdown, link targets and URLs are stripped from what is added.
+ * (under 12 words, such as "yes, the second one"; never a question of their own) the question the vEIR just
+ * asked; and the current goal. Citation keys, Markdown, link targets and URLs are stripped from what is added.
  */
 export function buildRetrievalQuery(input: RetrievalQueryInput): string {
   const parts = [input.founderText.trim()];
   const words = parts[0]?.split(/\s+/).filter((w) => w !== '').length ?? 0;
-  if (words < SHORT_REPLY_WORDS && input.previousAnswer) {
+  // A short question of their own ("What's an experiment card?") is not a reply: the vEIR's last question would only
+  // pull the search away from what they asked (LAB-C1: program guidance on a definition went uncited).
+  const ownQuestion = (parts[0] ?? '').includes('?') && contentWords(parts[0] ?? '').size >= 2;
+  if (words < SHORT_REPLY_WORDS && !ownQuestion && input.previousAnswer) {
     const question = lastQuestionOf(input.previousAnswer);
     if (question !== null) parts.push(question);
   }

@@ -519,6 +519,15 @@ describe('buildRetrievalQuery', () => {
     expect(lastQuestionOf(previousAnswer)).toBe('Which one should we test first?');
   });
 
+  it('never mixes the vEIR’s last question into a short question of their own (LAB-C1)', () => {
+    expect(buildRetrievalQuery({ founderText: "What's an experiment card?", previousAnswer })).toBe(
+      "What's an experiment card?",
+    );
+    expect(buildRetrievalQuery({ founderText: 'Which one?', previousAnswer })).toBe(
+      'Which one?\nWhich one should we test first?',
+    );
+  });
+
   it('leaves a self-contained message alone, and adds the current goal', () => {
     const founderText =
       'How should we price the two-library pilot so the operations manager can sign it quickly?';

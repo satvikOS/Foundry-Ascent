@@ -225,7 +225,8 @@ const CLAIM_RULES = (threshold: number, channel: TurnChannel): string =>
   [
     'Evidence and claims:',
     '- Label every material statement in `claims` with exactly one kind:',
-    '  fact = a statement about this venture directly supported by evidence items (cite their ids, e.g. ["E2"]);',
+    '  fact = a statement directly supported by evidence items: about this venture, or what the program guidance or',
+    '  library says (cite their ids, e.g. ["E2"]);',
     '  inference = your reasoning from evidence or general domain knowledge;',
     '  hypothesis = an untested belief the founder should validate;',
     '  recommendation = an action you suggest.',
@@ -234,6 +235,8 @@ const CLAIM_RULES = (threshold: number, channel: TurnChannel): string =>
     channel === 'voice'
       ? '- On a call, `answer` carries no [E#] ids (it is the transcript of what you say); `claims` carry them.'
       : '- In `answer`, cite inline right after the sentence a source supports, as [E1] (several: [E1, E3]).',
+    '- When an evidence item answers the question (program guidance or a library document on a definition, a',
+    '  template or a rule), say what it says in your own words and cite it; never answer that from memory instead.',
     '- `claims`, `uncertainty` and `challenge` are shown beside your answer as its sources and reasoning: keep the',
     '  answer itself natural prose and do not list your claims in it.',
     `- If fewer than ${Math.round(threshold * 100)}% of your facts can be grounded, narrow the answer and state the uncertainty.`,
