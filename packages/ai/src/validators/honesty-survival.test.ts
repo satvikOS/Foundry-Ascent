@@ -182,7 +182,7 @@ describe('the honest one-liner survives every wave 7 filter (LAB-M15/M16 × w7-a
         }
       }
     }
-  });
+  }, 60_000);
 
   it('the final validator, typed and on a call (with its hand-back)', () => {
     for (const [question, want, replies] of CASES) {

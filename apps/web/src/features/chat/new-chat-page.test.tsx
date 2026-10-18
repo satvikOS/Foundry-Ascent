@@ -268,7 +268,11 @@ describe('New chat', () => {
     const calls = stubApi();
     renderNewChat(B);
     await screen.findByText(OPENER_LINE);
-    await userEvent.setup().type(composer(), 'It went well, they have a budget.{Enter}');
+    // Pasted, not typed key by key: the test is about what the conversation opens with, not typing speed.
+    const user = userEvent.setup();
+    await user.click(composer());
+    await user.paste('It went well, they have a budget.');
+    await user.keyboard('{Enter}');
     await screen.findByText('Conversation');
     const create = calls.find((c) => c.method === 'POST' && c.url === `/api/v1/ventures/${B}/sessions`);
     expect(create?.body).toMatchObject({ privacy: 'standard', openerShownAt: OPENER_AT });
