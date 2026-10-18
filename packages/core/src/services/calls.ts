@@ -384,6 +384,7 @@ export function createCallsService(
     try {
       const { eirNames } = await directory.get(ctx.tenantId);
       const others = await directory.others(ctx.tenantId, started.ventureId);
+      const team = await directory.addressees(ctx.tenantId, started.ventureId);
       const opener = await kit.inRequest(ctx, async ({ tx }) => {
         const { opener: chosen } = await chooseOpener(tx, {
           ventureId: started.ventureId,
@@ -397,6 +398,7 @@ export function createCallsService(
           },
           now: kit.now(),
           sessionId: started.call.sessionId,
+          team,
         });
         const text = chosen?.text ?? null;
         if (text === started.opener) return text;

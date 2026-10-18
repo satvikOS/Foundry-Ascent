@@ -22,6 +22,7 @@ import {
   type LeftOffData,
   type LeftOffThreads,
 } from './continuity-prompt.js';
+import { addressFounder, type OpenerPeople } from './opener-topic.js';
 
 /**
  * What the vEIR remembers when a turn starts (the specific pool): the founder's first name, the notebook of
@@ -280,6 +281,8 @@ const OPENER_ECHO_EXCHANGES = 3;
  *    what about), built without a model call from what was said, so it is right even before distillation ran
  *    (orchestrator/continuity-prompt.ts);
  * 4. an older notebook opener.
+ * Every distilled line is said to the person (`addressFounder`: "maya will get" becomes "you will get"; a line still
+ * in the third person is not said), with the team's names in their real case (`team`; LAB-U2).
  * Phrasing follows the latest conversation, the person and how many conversations they opened since it, so each
  * new conversation opens differently; a preview (no conversation yet) says what the next one opens with, and a
  * call starting in that conversation (`sessionId`, left out of the count) says it too. Every line must pass the
@@ -296,6 +299,8 @@ export async function chooseOpener(
     readonly now: Date;
     /** The conversation the opener is for, when it exists already (a call starting in it). */
     readonly sessionId?: string | null;
+    /** Display names of the venture's people, so a name in a distilled line keeps its real case. */
+    readonly team?: readonly string[];
   },
 ): Promise<{ readonly opener: ChosenOpener | null; readonly latest: LeftOffConversationData | null }> {
   const notebook = await notebooksRepo.getNotebook(tx, {
@@ -307,8 +312,11 @@ export async function chooseOpener(
     personaName: args.persona.name,
     personaEirName: await personasRepo.getPersonaEirName(tx, args.persona.id),
   };
+  const principal = await principalsRepo.getPrincipal(tx, args.principalId);
+  const people: OpenerPeople = { founder: principal?.displayName ?? null, team: args.team ?? [] };
   const next = notebook?.content.nextOpener ?? null;
-  const stored = next === null ? null : validatedOpener(next, guards);
+  // The distillation writes about the founder; the opener speaks to them.
+  const stored = next === null ? null : validatedOpener(addressFounder(next, people), guards);
   // The conversation it was drawn from, so deleting that conversation erases this copy too. A null source means
   // a person wrote it (the copy stays); a missing one means its origin is unknown, and deleting any conversation
   // of the venture erases the copy.
@@ -360,6 +368,7 @@ export async function chooseOpener(
         : validatedOpener(
             threadOpener(topic, {
               seed,
+              people,
               when:
                 latest !== null && source === latest.sessionId
                   ? relativeWhen(latest.lastActivityAt, args.now)
@@ -373,7 +382,7 @@ export async function chooseOpener(
     }
   }
   if (latest !== null) {
-    const lines = continuityOpener(latest, { now: args.now, seed });
+    const lines = continuityOpener(latest, { now: args.now, seed, people });
     for (const candidate of [lines.withTopic, lines.generic]) {
       const text = candidate === null ? null : validatedOpener(candidate, guards);
       if (text !== null) return found({ text, sourceSessionId: latest.sessionId, byPerson: false });

@@ -150,7 +150,11 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
     scope: RequestScope,
     ventureId: string,
     active: ActiveAssignment,
-    guards: { readonly others: OtherVentures; readonly eirNames: readonly string[] },
+    guards: {
+      readonly others: OtherVentures;
+      readonly eirNames: readonly string[];
+      readonly team: readonly string[];
+    },
     now: Date,
   ): ReturnType<typeof chooseOpener> {
     return chooseOpener(scope.tx, {
@@ -163,6 +167,7 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
         otherVentureCanaries: guards.others.canaries,
         otherVentureMemberNames: guards.others.memberNames,
       },
+      team: guards.team,
       now,
     });
   }
@@ -171,10 +176,15 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
   async function openerGuards(
     ctx: RequestContext,
     ventureId: string,
-  ): Promise<{ readonly others: OtherVentures; readonly eirNames: readonly string[] }> {
+  ): Promise<{
+    readonly others: OtherVentures;
+    readonly eirNames: readonly string[];
+    readonly team: readonly string[];
+  }> {
     return {
       others: await directory.others(ctx.tenantId, ventureId),
       eirNames: (await directory.get(ctx.tenantId)).eirNames,
+      team: await directory.addressees(ctx.tenantId, ventureId),
     };
   }
 

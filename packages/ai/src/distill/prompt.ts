@@ -196,6 +196,8 @@ export function buildDistillPrompt(input: DistillPromptInput): {
     '  - next_topic: that same thread as a short phrase of at most 12 words that reads after "we left off on", in',
     '    lower case except names (for example "the five library-staff interviews you planned"), or null with a',
     '    null next_opener. The greeting is phrased around it afresh each time, so it is a topic, never a question.',
+    '  - next_opener and next_topic are said TO the founder: "you" and "your", never their name or "the founder"',
+    '    ("the budget numbers you will get", not "the budget numbers Maya will get"); other names keep their case.',
     '- memory_candidates: at most 3 durable things worth remembering about THIS venture and its founder, the',
     "  founder's own first: goals they stated (personal ones about the venture too), preferences, constraints,",
     '  decisions and facts they told you. Each has a short specific title, one or two sentences of content, evidence',
