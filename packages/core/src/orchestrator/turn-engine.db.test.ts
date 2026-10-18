@@ -1216,6 +1216,19 @@ describe('conversation craft the lab still heard (wave 7)', () => {
     }
   });
 
+  it('a hello that opens a conversation keeps its pick-up of last time (no short-reply budget)', async () => {
+    const pickUp =
+      'Hi Maya, good to hear from you again. Last time we were on pricing. You were going to call facilities. How did that go?';
+    const gateway = new MockModelGateway({ streamDelayMs: 0, streamFixture: () => pickUp });
+    const { core, orchestrator } = coreWith(gateway);
+    const session = await core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+    await h.t.db.system((sx) =>
+      sx.query('UPDATE coaching_sessions SET opener = NULL WHERE id = :id', { id: p.uuid(session.id) }),
+    );
+    const { events } = await run(orchestrator, session.id, { text: 'Hi!', mode: 'coach' });
+    expect(completed(events).response?.answer).toBe(pickUp);
+  });
+
   it('a reply never says the previous one again', async () => {
     const repeat =
       "Ask three students what they'd give up to skip the group chat and the walking. That's the price signal you need before the pilot starts.";

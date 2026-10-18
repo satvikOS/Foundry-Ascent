@@ -29,7 +29,7 @@ import {
   type IdentityViolationKind,
 } from './identity.js';
 import { sanitizeMarkdown, sanitizePlainText } from './markdown.js';
-import { socialTurnOf } from '../prompts/conversation-state.js';
+import { socialTurnOf, type SocialTurn } from '../prompts/conversation-state.js';
 import { REPEATED_GREETING_FALLBACK, withoutRepeatedGreeting } from './greeting.js';
 import { cutMetaNarration } from './meta-narration.js';
 import {
@@ -129,6 +129,11 @@ export interface ValidateCoachResponseOptions {
    * null for none (a typed turn, or the founder wrapping up). The turn engine picks it (`spokenHandBackFor`).
    */
   handBack?: string | null;
+  /**
+   * What the founder's message does socially, as the turn engine read it (`socialTurnOf`, with a first message's
+   * hello left to pick up the last conversation). Omitted: read from `founderText`.
+   */
+  social?: SocialTurn | null;
   /**
    * The founder's message this response answers. When it sincerely asks who or what the coach is ("are you
    * real?"), the honest answer stands as written: no volunteered disclaimer is rewritten out of the reply.
@@ -378,7 +383,12 @@ export function validateCoachResponse(
     notes.push('rehearsal_removed');
   }
   // A social turn (thanks, a wrap-up, a hello) carries nothing to cite, plan or remember (validators/social.ts).
-  const social = options.founderText === undefined ? null : socialTurnOf(options.founderText);
+  const social =
+    options.social !== undefined
+      ? options.social
+      : options.founderText === undefined
+        ? null
+        : socialTurnOf(options.founderText);
   if (social !== null) {
     const reported =
       r.claims.length +

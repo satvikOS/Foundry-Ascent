@@ -224,10 +224,12 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
   const greeted = spec.history.length === 0 && context.openerReplayed && openerSaidHello(spec.opener);
   // Conversation craft (validators/social.ts): a social turn gets a short reply, a reply never says the previous one
   // (or the opener) again, and a call's reply that ends on a statement hands the turn back.
-  const social = socialTurnOf(spec.founderText);
   const lastAnswer = spec.history.at(-1)?.answer ?? null;
   const previousReply =
     spec.history.length > 0 ? lastAnswer : context.openerReplayed ? (spec.opener ?? null) : null;
+  // A hello that opens the conversation (nothing said before it) is answered with the pick-up of last time.
+  const read = socialTurnOf(spec.founderText);
+  const social = read === 'greeting' && previousReply === null ? null : read;
   const handBack = spec.channel === 'voice' ? spokenHandBackFor(spec.founderText, spec.ids.turnId) : null;
 
   // Step 5: generate (streamed through the sentence gate, or whole when streaming is switched off).
@@ -301,6 +303,7 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
     previousReply,
     // A streamed reply handed the turn back as it was said (generate.ts); a reply written whole gets it here.
     handBack: generation.stream?.fallback === null ? null : handBack,
+    social,
     founderText: spec.founderText,
     channel: spec.channel,
   });
