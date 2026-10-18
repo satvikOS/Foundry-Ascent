@@ -117,14 +117,18 @@
 
   /*
    * Glass: translucent surfaces over content.
-   *   `.glass`         bars that sit in the page (sticky headers, the phone bar, the composer, the mini call
-   *                    bar): canvas-coloured, so on OLED they are black until content scrolls beneath.
+   *   `.glass`         surfaces in the page with little text of their own (the composer area, call controls):
+   *                    canvas-coloured, so on OLED they are black until content scrolls beneath.
+   *   `.glass-bar`     bars at the top of the page that text scrolls under (a page's sticky header, the phone
+   *                    bar, the mini call bar): canvas-coloured too, and dense enough that their own text keeps
+   *                    4.5:1 over the worst content passing beneath, unblurred (a line of prose, a filled button).
    *   `.glass-strong`  layers that float above the page (menus, popovers, the command palette, toasts):
    *                    a lifted near-black, dense enough for text.
-   * Both fall back to a solid surface where blur is unsupported or transparency is reduced. Text on glass
+   * All fall back to a solid surface where blur is unsupported or transparency is reduced. Text on glass
    * meets 4.5:1 composited over every surface (tokens.test.ts). Never stack glass on glass.
    */
   --glass-bg: light-dark(rgb(255 255 255 / 0.72), rgb(0 0 0 / 0.72));
+  --glass-bg-bar: light-dark(rgb(255 255 255 / 0.9), rgb(0 0 0 / 0.86));
   --glass-bg-strong: light-dark(rgb(255 255 255 / 0.86), rgb(22 22 22 / 0.8));
   --glass-border: light-dark(rgb(17 17 16 / 0.08), rgb(255 255 255 / 0.08));
   --glass-blur: 20px;
@@ -146,6 +150,8 @@
   --phone-bar-height: 0px;
   --mini-call-bar-height: 3rem;
   --mini-call-height: 0px;
+  /* The measured height of content docked to the bottom (the conversation's composer), 0 when there is none. */
+  --docked-bottom-height: 0px;
   --sidebar-width: 16.5rem;
   --sidebar-width-collapsed: 3.5rem;
   --inspector-width: 24rem;
@@ -349,6 +355,8 @@
     text-rendering: optimizeLegibility;
     scrollbar-gutter: stable;
     font-optical-sizing: auto;
+    /* Anything scrolled or focused into view lands above a docked composer (its height: useDockedBottom). */
+    scroll-padding-bottom: var(--docked-bottom-height);
   }
 
   body {
@@ -472,6 +480,12 @@
     -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
     backdrop-filter: blur(var(--glass-blur)) saturate(140%);
   }
+  .glass-bar {
+    background-color: var(--glass-bg-bar);
+    border-color: var(--glass-border);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+    backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  }
   .glass-strong {
     background-color: var(--glass-bg-strong);
     border-color: var(--glass-border);
@@ -480,7 +494,8 @@
   }
   /* Toasts paint their own background from --normal-bg (components/ui/toast.tsx). */
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    .glass {
+    .glass,
+    .glass-bar {
       background-color: var(--background);
     }
     .glass-strong {
@@ -491,7 +506,8 @@
     }
   }
   @media (prefers-reduced-transparency: reduce) {
-    .glass {
+    .glass,
+    .glass-bar {
       background-color: var(--background);
     }
     .glass-strong {
@@ -501,6 +517,7 @@
       --normal-bg: var(--popover);
     }
     .glass,
+    .glass-bar,
     .glass-strong {
       -webkit-backdrop-filter: none;
       backdrop-filter: none;

@@ -171,30 +171,42 @@ function Conversation() {
   // First load: an ended conversation opened for its summary starts there; an open one at its latest
   // exchange. Answers that arrive later never move the page.
   useFirstLoadScroll(session, turns, search.view);
-  // When an answer finishes while the reader is at the end of the page, its actions and the follow-up chips
-  // (the composer grows by them at the same moment) stay in view together.
+  // While an answer streams in and when it finishes, its end, its actions and the follow-up chips (the composer
+  // grows by them at the same moment) stay in view above the composer, unless the reader scrolled away.
   const lastTurn = turns[turns.length - 1] ?? null;
   // The answer's "Saved to Knowledge" line appears once the venture's memory has refreshed, a moment after
   // the answer: it moves the end too.
   const lastSaved = lastTurn?.response
     ? savedFromTurn(lastTurn.response.memory_candidates, memory.data, lastTurn.id).length
     : 0;
-  const conversationRef = useKeepEndInView(
-    [
+  const endInView = useKeepEndInView({
+    changeKey: [
       state.status,
       lastTurn?.id ?? '',
       lastTurn?.status ?? '',
       lastTurn?.response?.follow_up_questions.length ?? 0,
       lastSaved,
     ].join('|'),
+    streaming: state.status === 'streaming',
+  });
+  // The dock is measured twice from one box: its height as the page's scroll padding, and what hides the end.
+  const { dockRef: endDockRef, follow: followEnd } = endInView;
+  const dockRef = useCallback(
+    (element: HTMLElement | null) => {
+      composerDockRef(element);
+      endDockRef(element);
+    },
+    [composerDockRef, endDockRef],
   );
 
-  // A message just sent: bring it to the top of the reading column, so the answer streams in below.
+  // A message just sent: bring it to the top of the reading column, so the answer streams in below, and follow
+  // the answer's end as it grows (until the reader scrolls away).
   const sentText = state.status === 'streaming' ? state.pendingText : null;
   useLayoutEffect(() => {
     if (sentText === null) return;
+    followEnd();
     liveRef.current?.scrollIntoView({ block: 'start', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
-  }, [sentText]);
+  }, [sentText, followEnd]);
 
   // Announce how a turn ended (content-free), saying only what happened (announcements.ts). Step-by-step
   // progress is announced by TurnProgressList.
@@ -330,7 +342,7 @@ function Conversation() {
   };
 
   return (
-    <div ref={conversationRef} className="@container/conv flex flex-1 flex-col">
+    <div ref={endInView.conversationRef} className="@container/conv flex flex-1 flex-col">
       <ConversationHeader
         tenant={tenant}
         ventureId={ventureId}
@@ -342,7 +354,10 @@ function Conversation() {
         onAction={onMenu}
       />
 
-      <div className="mx-auto w-full max-w-(--content-width) flex-1 px-4 pt-8 pb-10 sm:px-6">
+      <div
+        ref={endInView.endRef}
+        className="mx-auto w-full max-w-(--content-width) flex-1 px-4 pt-8 pb-10 sm:px-6"
+      >
         <DisclosureBanner variant="print" text={session.disclosure} className="mb-8 hidden print:block" />
         <section aria-label="Transcript" className="grid gap-12">
           {session.opener ? (
@@ -415,7 +430,7 @@ function Conversation() {
 
       {ended ? null : (
         <div
-          ref={composerDockRef}
+          ref={dockRef}
           data-slot="composer-dock"
           className="glass sticky bottom-0 z-10 pt-3 pb-3"
           data-print="hide"

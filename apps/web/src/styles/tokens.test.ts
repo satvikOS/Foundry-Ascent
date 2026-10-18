@@ -148,8 +148,8 @@ const SOLID_SURFACES = [
   '--sidebar-accent',
 ] as const;
 
-/** Translucent layers (`.glass`, `.glass-strong`): measured composited over every solid surface. */
-const GLASS_LAYERS = ['--glass-bg', '--glass-bg-strong'] as const;
+/** Translucent layers (`.glass`, `.glass-bar`, `.glass-strong`): measured composited over every solid surface. */
+const GLASS_LAYERS = ['--glass-bg', '--glass-bg-bar', '--glass-bg-strong'] as const;
 
 /** A surface as it renders: solids as declared, glass composited over each solid it can float over. */
 function surfaces(scheme: Scheme): { name: string; color: Rgba }[] {
@@ -193,6 +193,34 @@ const FILLED_PAIRS = [
 /** Status colours used as text (badges, inline errors), on page surfaces and their own tints. */
 const STATUS_TEXT = ['--destructive', '--success', '--warning', '--info'] as const;
 const STATUS_BACKDROPS = ['--background', '--card', '--popover'] as const;
+
+/**
+ * Text colours drawn on the bars that text scrolls under: the neutral text tokens, and the status colours the
+ * mini call bar writes on its glass ("· 2 min left", "Microphone disconnected", "Sound is off" in --warning).
+ */
+const BAR_TEXT = [...TEXT_TOKENS, ...STATUS_TEXT] as const;
+
+/** The source files that draw a sticky bar on the bars' glass, and the colour tokens their `text-*` classes name. */
+function barSources(): { where: string; textTokens: string[] }[] {
+  const root = join(here, '..');
+  const found: { where: string; textTokens: string[] }[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir)) {
+      const path = join(dir, entry);
+      if (statSync(path).isDirectory()) walk(path);
+      else if (entry.endsWith('.tsx') && !entry.endsWith('.test.tsx')) {
+        const source = readFileSync(path, 'utf8');
+        if (!/['"`\s]glass-bar['"`\s]/.test(source)) continue;
+        const named = [...source.matchAll(/\btext-([a-z][\w-]*)/g)]
+          .map((match) => `--${match[1] ?? ''}`)
+          .filter((token) => tokens.has(token));
+        found.push({ where: path.slice(root.length + 1), textTokens: [...new Set(named)].sort() });
+      }
+    }
+  };
+  walk(root);
+  return found;
+}
 
 /** Component boundaries and focus (WCAG 1.4.11 non-text contrast, 3:1), on the surfaces they sit on. */
 const NON_TEXT = [
@@ -245,6 +273,42 @@ describe('colour tokens (globals.css)', () => {
         );
         expect(pairs.length).toBeGreaterThan(200);
         expect(failures(pairs, 4.5)).toEqual([]);
+      });
+
+      it('text on the bars that text scrolls under keeps 4.5:1 over the worst content passing beneath', () => {
+        // A sticky header over a conversation (03-conversation-mobile-light.png): a line of prose or a filled
+        // button passes under the bar as a solid block of its colour at its centre, so no credit is given for the
+        // blur. Every surface, every text colour and every fill is a possible backdrop.
+        const bar = resolve('--glass-bg-bar', scheme);
+        const contents = [
+          ...SOLID_SURFACES,
+          ...TEXT_TOKENS,
+          ...STATUS_TEXT,
+          ...FILLED_PAIRS.map(([, fill]) => fill),
+        ].map((name) => ({ name, color: resolve(name, scheme) }));
+        const pairs = BAR_TEXT.flatMap((text) =>
+          contents.map((content) => {
+            const bg = over(bar, content.color);
+            return {
+              label: `${text} on --glass-bg-bar over ${content.name} (${hex(bg)})`,
+              fg: resolve(text, scheme),
+              bg,
+            };
+          }),
+        );
+        expect(pairs.length).toBeGreaterThan(350);
+        expect(failures(pairs, 4.5)).toEqual([]);
+        // The page's lighter glass would not hold there: that is why the bars have their own.
+        const thin = resolve('--glass-bg', scheme);
+        const worst = Math.min(
+          ...contents.map((content) =>
+            contrast(
+              over(resolve('--muted-foreground', scheme), over(thin, content.color)),
+              over(thin, content.color),
+            ),
+          ),
+        );
+        expect(worst).toBeLessThan(4.5);
       });
 
       it('text on filled controls reaches 4.5:1', () => {
@@ -361,6 +425,59 @@ describe('colour tokens (globals.css)', () => {
         expect(runtime?.[1]?.toLowerCase(), `theme.ts THEME_COLORS.${scheme}`).toBe(canvas);
       }
     });
+  });
+
+  it('every sticky bar at the top of a page is on the bars’ glass, never the thinner page glass', () => {
+    const root = join(here, '..');
+    const bars: string[] = [];
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir)) {
+        const path = join(dir, entry);
+        if (statSync(path).isDirectory()) walk(path);
+        else if (entry.endsWith('.tsx') && !entry.endsWith('.test.tsx')) {
+          const source = readFileSync(path, 'utf8');
+          for (const match of source.matchAll(/(['"`])([^'"`]*\bsticky\b[^'"`]*)\1/g)) {
+            const classes = match[2] ?? '';
+            if (!/(?:^|\s)top-/.test(classes)) continue;
+            const where = path.slice(root.length + 1);
+            if (/(?:^|\s)glass-bar(?:\s|$)/.test(classes)) bars.push(where);
+            else if (/(?:^|\s)glass(?:-strong)?(?:\s|$)/.test(classes)) offenders.push(where);
+          }
+        }
+      }
+    };
+    walk(root);
+    expect(offenders).toEqual([]);
+    // The conversation header, the phone bar, the mini call bar and the landing page's header.
+    expect(bars.sort()).toEqual([
+      'components/shell/app-shell.tsx',
+      'features/calls/mini-call-bar-view.tsx',
+      'features/chat/conversation-header.tsx',
+      'routes/index.tsx',
+    ]);
+  });
+
+  it('every text colour a bar’s source names is one the bar contrast check measures', () => {
+    const sources = barSources();
+    // The conversation header, the phone bar, the mini call bar and the landing page's header.
+    expect(sources.map((s) => s.where).sort()).toEqual([
+      'components/shell/app-shell.tsx',
+      'features/calls/mini-call-bar-view.tsx',
+      'features/chat/conversation-header.tsx',
+      'routes/index.tsx',
+    ]);
+    const measured = new Set<string>(BAR_TEXT);
+    const unmeasured = sources.flatMap(({ where, textTokens }) =>
+      textTokens.filter((token) => !measured.has(token)).map((token) => `${where}: ${token}`),
+    );
+    // Decoration, not text (WCAG 1.4.3 exempts it): the header's aria-hidden "/" between the name and the title.
+    const decorative = ['features/chat/conversation-header.tsx: --border-strong'];
+    expect(unmeasured).toEqual(decorative);
+    // The mini call bar's warnings are among them.
+    expect(sources.find((s) => s.where.endsWith('mini-call-bar-view.tsx'))?.textTokens).toContain(
+      '--warning',
+    );
   });
 
   it('no component fades a text token with an opacity modifier (that would bypass these checks)', () => {

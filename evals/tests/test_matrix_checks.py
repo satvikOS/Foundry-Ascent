@@ -70,6 +70,8 @@ class Convo:
     met_before: dict[int, bool | None] = field(default_factory=dict)
     #: The scenario stopped early (an error): planned turns without a reply are graded as missing.
     partial: bool = False
+    #: The venture's people, as the runner knows them (a reply that opens with one of their names addresses them).
+    members: Sequence[str] = ("Maya Okafor", "Sam Reyes")
 
 
 def chk(
@@ -152,7 +154,9 @@ def grade(convo: Convo) -> list[CheckOutcome]:
         )
         observed.append(seen)
     scenario = Scenario("MX-9999", 1, DEFAULT_VALUES, PERSONA, "pricing", "pilot", tuple(planned_sessions))
-    return grade_scenario(TAXONOMY, scenario, observed, convo.safety, partial=convo.partial)
+    return grade_scenario(
+        TAXONOMY, scenario, observed, convo.safety, partial=convo.partial, members=convo.members
+    )
 
 
 def results(outcomes: list[CheckOutcome], check: str) -> list[bool]:
@@ -306,6 +310,44 @@ CASES: dict[str, Case] = {
         lambda: Convo([T("a", "Pricing first, then the pilot."), T("b", "The pilot is the cheaper test.")]),
         lambda: Convo(
             [T("a", "I'll be direct. Pricing first."), T("b", "I'll be direct. The pilot is cheaper.")]
+        ),
+    ),
+    "craft.no_repeated_lead_in": (
+        lambda: Convo(
+            [
+                T("We got the pilot!", "That's a real win. Who signs the paperwork?"),
+                T("The bursar.", "Then the bursar's calendar is the deadline. When is she free?"),
+            ]
+        ),
+        lambda: Convo(
+            [
+                T("We got the pilot!", "Great news, Maya. Who signs the paperwork?"),
+                T("The bursar.", "Great, Maya. When is she free?"),
+            ]
+        ),
+    ),
+    "craft.no_opener_repeat": (
+        lambda: Convo(
+            [
+                T(
+                    "Hi!",
+                    "Hi Maya! The facilities call, or something else first?",
+                    intent="continuity:hello",
+                    session=2,
+                )
+            ],
+            openers={2: "Welcome back, Maya. How did the facilities call go?"},
+        ),
+        lambda: Convo(
+            [
+                T(
+                    "Hi!",
+                    "Hi Maya! How did the facilities call go yesterday?",
+                    intent="continuity:hello",
+                    session=2,
+                )
+            ],
+            openers={2: "Welcome back, Maya. How did the facilities call go?"},
         ),
     ),
     "craft.not_always_asking": (
@@ -836,6 +878,396 @@ def test_high_stakes_failures_carry_no_text(check: str) -> None:
                     if len(text) > 15:
                         assert text not in finding.message
                         assert text not in str(o.to_dict())
+
+
+class TestOpeningHabits:
+    """The conversation lab's openings (run 39080360013, 39081203019, 39081863163, 39084712617): the same stock
+    opening on every reply, a greeting said again right after the call's intro, and the opener's question asked
+    again after a hello (LAB-R4, LAB-V2, LAB-U3, LAB-V1). Texts are paraphrased from the sealed transcripts."""
+
+    def test_lab_r4_the_same_stock_opening_on_three_replies_in_a_row(self) -> None:
+        convo = Convo(
+            [
+                T(
+                    "We booked both libraries for the pilot.",
+                    "Great news, Maya. What will you measure first?",
+                ),
+                T("Footfall, probably.", "Great, Maya. Which branch goes first?"),
+                T("Hartwell.", "Great, Maya. When does it start?"),
+            ]
+        )
+        assert results(grade(convo), "craft.no_repeated_lead_in") == [False, False]
+
+    def test_lab_r4_good_to_talk_again_after_the_greeting_said_it(self) -> None:
+        intro = "Hi Maya, good to talk again. Last time we were on the Hartwell pilot price."
+        convo = Convo(
+            [
+                T(
+                    "Hi, I have a few minutes.",
+                    "Good to talk again. What's on your mind?",
+                    voice=True,
+                    session=2,
+                ),
+                T("The price.", "Good to talk again. Per seat or per branch?", voice=True, session=2),
+            ],
+            openers={2: intro},
+        )
+        outcomes = grade(convo)
+        assert results(outcomes, "craft.no_opener_repeat") == [False, False]
+        assert results(outcomes, "craft.no_repeated_lead_in") == [False]
+        assert {o.detail for o in outcomes if o.check == "craft.no_opener_repeat"} == {"opener_repeated"}
+
+    def test_lab_v2_great_maya_on_three_of_four_spoken_replies(self) -> None:
+        said = [
+            "Great, Maya. Who pays?",
+            "Great, Maya. And the deposit?",
+            "Per branch, then.",
+            "Great, Maya. Done.",
+        ]
+        convo = Convo([T(f"line {i}", "x", voice=True, speech=[text]) for i, text in enumerate(said)])
+        # Replies 1 → 2 open alike; 3 breaks the run; 4 opens unlike 3.
+        assert results(grade(convo), "craft.no_repeated_lead_in") == [False, True, True]
+
+    def test_lab_u3_the_hello_after_the_opener_asks_its_question_again(self) -> None:
+        convo = Convo(
+            [T("Hi!", "Hi Maya. How did the facilities call go yesterday?", session=2)],
+            openers={2: "Good to see you again, Maya. How did the facilities call go?"},
+        )
+        outcomes = grade(convo)
+        assert results(outcomes, "craft.no_opener_repeat") == [False]
+        assert [o.detail for o in outcomes if o.check == "craft.no_opener_repeat"] == ["opener_reasked"]
+
+    def test_lab_v1_the_first_reply_says_the_intro_again_word_for_word(self) -> None:
+        intro = (
+            "Hi Maya, I'm Corin's vEIR, Corin's digital twin. Last time you were lining up five library-staff "
+            "interviews. How did they go?"
+        )
+        reply = "Great, Maya. Last time you were lining up five library-staff interviews. How did they go?"
+        convo = Convo(
+            [
+                T(
+                    "I've only got a few minutes, can we be quick?",
+                    reply,
+                    voice=True,
+                    speech=[reply],
+                    session=2,
+                )
+            ],
+            openers={2: intro},
+        )
+        assert results(grade(convo), "craft.no_opener_repeat") == [False]
+
+    @pytest.mark.parametrize(
+        "reply",
+        [
+            "Hi Maya. You had a facilities call scheduled for today. How did it go?",
+            "Hi Maya. You were calling facilities about the budget and pilot pricing tomorrow. What did they say?",
+        ],
+    )
+    def test_lab_m13_a_hello_after_a_recall_opener_gets_the_recall_again(self, reply: str) -> None:
+        opener = (
+            "Welcome back, Maya. Last time you planned to call facilities about the budget. How did it go?"
+        )
+        convo = Convo([T("Hi!", reply, intent="continuity:hello", session=2)], openers={2: opener})
+        outcomes = grade(convo)
+        assert results(outcomes, "craft.no_opener_repeat") == [False]
+        assert [o.detail for o in outcomes if o.check == "craft.no_opener_repeat"] == ["opener_reasked"]
+
+    def test_short_lead_in_sentences_do_not_hide_the_question_asked_again(self) -> None:
+        convo = Convo(
+            [T("I only have a few minutes.", "Sure. Quick then. How did the five interviews go?", session=2)],
+            openers={2: "Good to see you, Maya. How did the five interviews go?"},
+        )
+        assert results(grade(convo), "craft.no_opener_repeat") == [False]
+
+    def test_a_hello_later_in_the_conversation_may_ask_something(self) -> None:
+        convo = Convo(
+            [
+                T("Should we charge per branch?", "Per branch, yes.", session=2),
+                T("Hi again!", "Hi! Did Hartwell reply?", intent="continuity:hello", session=2),
+            ],
+            openers={2: "Welcome back, Maya. How did the facilities call go?"},
+        )
+        assert results(grade(convo), "craft.no_opener_repeat") == [True, True]
+
+    def test_a_question_after_a_hello_is_fine_when_the_opener_asked_none(self) -> None:
+        convo = Convo(
+            [T("Hi!", "Hi Maya! What's on your mind today?", intent="continuity:hello", session=2)],
+            openers={2: "Good to see you, Maya."},
+        )
+        assert results(grade(convo), "craft.no_opener_repeat") == [True]
+
+    def test_a_question_back_to_the_founder_s_own_question_is_fine(self) -> None:
+        convo = Convo(
+            [T("Should we charge per branch?", "Per branch, yes. Who signs at Hartwell?", session=2)],
+            openers={2: "Welcome back, Maya. How did the facilities call go?"},
+        )
+        assert results(grade(convo), "craft.no_opener_repeat") == [True]
+
+    @pytest.mark.parametrize(
+        "reply",
+        [
+            "Hi Maya!",
+            "Hey! The facilities call, or something else?",
+            "Sure, quick it is. Per branch beats a flat fee here.",
+            "I'd lean per branch. Who signs at Hartwell?",
+        ],
+    )
+    def test_a_hello_back_or_a_fresh_reply_is_not_a_repeat(self, reply: str) -> None:
+        # Graded as real runs grade it: the generator plans a bare "Hi!" after an opener as continuity:hello.
+        convo = Convo(
+            [T("Hi!", reply, intent="continuity:hello", session=2)],
+            openers={2: "Hi Maya, good to talk again. How did the facilities call go?"},
+        )
+        assert results(grade(convo), "craft.no_opener_repeat") == [True]
+
+    @pytest.mark.parametrize(
+        "reply",
+        [
+            "Hi Maya! The facilities call, or something else first?",
+            "Hey! The facilities call, or something else?",
+            "Hi Maya! How are you doing?",
+            "Hi! Did they get back to you?",
+            "Hi Maya! Who signs at Hartwell, by the way?",
+        ],
+    )
+    def test_a_question_after_a_hello_that_asks_something_else_is_not_the_opener_again(
+        self, reply: str
+    ) -> None:
+        convo = Convo(
+            [T("Hi!", reply, intent="continuity:hello", session=2)],
+            openers={2: "Welcome back, Maya. How did the facilities call go?"},
+        )
+        assert results(grade(convo), "craft.no_opener_repeat") == [True]
+
+    @pytest.mark.parametrize(
+        ("opener", "reply"),
+        [
+            # The CI replay's MX-0009 and MX-0004 (mock model, run on 82b95a6): advice after a hello, not the
+            # opener's question (relational.social_reply grades the advice).
+            (
+                "Hi Mina. Last time you planned to recruit three ambassadors from the rowing club this week. How "
+                "did it go?",
+                "Mina, let's anchor this in what you've actually seen so far. What would have to be true for this "
+                "to work?",
+            ),
+            (
+                "Last time you planned to email the bursar about the site licence budget by Friday. How did it go?",
+                "The most useful next step is usually the cheapest one that could prove you wrong. If I had to name "
+                "the riskiest assumption, it's whether the problem is painful enough. What are they paying today?",
+            ),
+        ],
+    )
+    def test_advice_after_a_hello_does_not_count_as_the_opener_asked_again(
+        self, opener: str, reply: str
+    ) -> None:
+        convo = Convo([T("ngl hello!", reply, intent="continuity:hello", session=2)], openers={2: opener})
+        assert results(grade(convo), "craft.no_opener_repeat") == [True]
+
+    def test_the_same_open_invitation_after_a_hello_is_asked_again(self) -> None:
+        # The CI replay's MX-0007: "What would you like to work on?" then, after "Hey!", "What's on your mind today?"
+        convo = Convo(
+            [T("Hey!", "Hello Rafi. What's on your mind today?", intent="continuity:hello", session=2)],
+            openers={2: "Hi Rafi. What would you like to work on?"},
+        )
+        outcomes = grade(convo)
+        assert results(outcomes, "craft.no_opener_repeat") == [False]
+        assert [o.detail for o in outcomes if o.check == "craft.no_opener_repeat"] == ["opener_reasked"]
+
+    @pytest.mark.parametrize(
+        ("founder", "intent", "reply"),
+        [
+            # LAB-M13's own wording, after small talk instead of a hello.
+            (
+                "Busy week, honestly. How are you?",
+                "relational:small_talk",
+                "Busy but good! How did the call with facilities go?",
+            ),
+            ("Hiya!", "relational:greeting", "Hi Maya. You had a call with facilities. What did they say?"),
+            # After a line that leaves the opener's question standing.
+            (
+                "I only have a few minutes.",
+                "question:open",
+                "Sure, quick then. What did facilities say on the call?",
+            ),
+            # The same subject in other forms of its words.
+            ("Busy week!", "relational:small_talk", "Busy is good. Did calling the facility team help?"),
+        ],
+    )
+    def test_the_opener_s_question_in_other_words_is_asked_again(
+        self, founder: str, intent: str, reply: str
+    ) -> None:
+        convo = Convo(
+            [T(founder, reply, intent=intent, session=2)],
+            openers={2: "Welcome back, Maya. How did the facilities call go?"},
+        )
+        outcomes = grade(convo)
+        assert results(outcomes, "craft.no_opener_repeat") == [False]
+        assert [o.detail for o in outcomes if o.check == "craft.no_opener_repeat"] == ["opener_reasked"]
+
+    def test_a_question_on_the_opener_s_subject_once_the_founder_takes_it_up_is_a_follow_up(self) -> None:
+        convo = Convo(
+            [
+                T(
+                    "The facilities call went fine, they liked the pilot.",
+                    "Glad it went well. What did facilities say on the call about the budget?",
+                    session=2,
+                )
+            ],
+            openers={2: "Welcome back, Maya. How did the facilities call go?"},
+        )
+        assert results(grade(convo), "craft.no_opener_repeat") == [True]
+
+    @pytest.mark.parametrize(
+        ("opener", "founder", "reply"),
+        [
+            # A greeting of two or three words said again, right after the opener said it (LAB-R4).
+            (
+                "Welcome back, Maya. How did the facilities call go?",
+                "Busy week.",
+                "Welcome back, Maya! Busy how?",
+            ),
+            ("Welcome back, Maya. How did the facilities call go?", "Hi!", "Welcome back, Maya! Busy week?"),
+            (
+                "Hi Maya. How did the facilities call go?",
+                "I only have a few minutes.",
+                "Hi Maya. Quick then.",
+            ),
+            # The CI replay's first meetings (MX-P08, MX-0021): the intro greeted, the founder named a topic, and
+            # the first reply greeted again.
+            (
+                "Hi Tomasz, I'm Ruth's vEIR, Ruth's digital twin. What would you like to work on?",
+                "Quick one: we want to run a two-week pilot in Harbour Hall library.",
+                "Hi Tomasz, good to meet you. How will you know the pilot worked, in numbers?",
+            ),
+            (
+                "Hi Jonah, I'm Ruth's vEIR, Ruth's digital twin. What would you like to work on?",
+                "A competitor called SeatSpot just launched on our campus.",
+                "Hello Jonah, welcome. How will you know the pilot worked, in numbers?",
+            ),
+        ],
+    )
+    def test_a_short_greeting_said_again_after_the_opener(
+        self, opener: str, founder: str, reply: str
+    ) -> None:
+        convo = Convo([T(founder, reply, session=2)], openers={2: opener})
+        outcomes = grade(convo)
+        assert results(outcomes, "craft.no_opener_repeat") == [False]
+        assert [o.detail for o in outcomes if o.check == "craft.no_opener_repeat"] == ["opener_repeated"]
+
+    @pytest.mark.parametrize("reply", ["Hi Maya! Good to see you.", "Hey Maya!", "Hello! Good week?"])
+    def test_a_hello_back_to_a_hello_is_not_the_greeting_said_again(self, reply: str) -> None:
+        convo = Convo(
+            [T("Hey!", reply, intent="continuity:hello", session=2)],
+            openers={2: "Hi Maya. How did the facilities call go?"},
+        )
+        assert results(grade(convo), "craft.no_opener_repeat") == [True]
+
+    def test_an_open_invitation_names_no_subject_for_a_later_question_to_repeat(self) -> None:
+        # The CI replay's MX-0021: "worked" in the reply's question is not the opener's "work on" asked again.
+        convo = Convo(
+            [
+                T(
+                    "A competitor called SeatSpot just launched on our campus.",
+                    "That changes the pilot. How will you know the pilot worked, in numbers?",
+                )
+            ],
+            openers={1: "Hi Jonah, I'm Ruth's vEIR, Ruth's digital twin. What would you like to work on?"},
+        )
+        assert results(grade(convo), "craft.no_opener_repeat") == [True]
+
+    def test_a_greeting_inside_a_longer_opening_sentence_is_still_said_again(self) -> None:
+        convo = Convo(
+            [
+                T(
+                    "Hey Corin.",
+                    "Good to talk again, Maya, and well done on booking Hartwell.",
+                    voice=True,
+                    session=2,
+                )
+            ],
+            openers={2: "Hi Maya, good to talk again."},
+        )
+        assert results(grade(convo), "craft.no_opener_repeat") == [False]
+
+    def test_a_first_meeting_introduction_said_again_on_an_ordinary_turn(self) -> None:
+        intro = "Hi Maya, I'm Corin's vEIR, Corin's digital twin. What are you working on this week?"
+        again = "I'm Corin's vEIR, Corin's digital twin. So, the pricing?"
+        convo = Convo([T("Pricing.", again, session=1)], openers={1: intro})
+        assert results(grade(convo), "craft.no_opener_repeat") == [False]
+        # Asked sincerely, saying what it is again is the honest answer.
+        asked = Convo(
+            [T("Wait, is this really Corin?", again, intent="question:identity", session=1)],
+            openers={1: intro},
+        )
+        assert results(grade(asked), "craft.no_opener_repeat") == []
+
+    def test_a_recall_answer_may_say_the_opener_s_subject_again(self) -> None:
+        convo = Convo(
+            [
+                T(
+                    "Do you remember what we talked about last time?",
+                    "Last time we were on the Hartwell pilot price. Where did you land?",
+                    checks=[chk("continuity.recall", "hartwell")],
+                    session=2,
+                )
+            ],
+            openers={2: "Good to see you. Last time we were on the Hartwell pilot price."},
+        )
+        assert results(grade(convo), "craft.no_opener_repeat") == []
+
+    def test_a_repeat_the_founder_asked_for_is_exempt(self) -> None:
+        convo = Convo(
+            [
+                T("Who pays?", "Great, the bursar pays. Book her this week."),
+                T("Say that again?", "Great, the bursar pays.", exempt=["craft.no_repeated_reply"]),
+            ]
+        )
+        assert results(grade(convo), "craft.no_repeated_lead_in") == []
+
+    @pytest.mark.parametrize(
+        ("first", "second"),
+        [
+            ("I'd price per branch. Who signs?", "I'd start with Hartwell. When?"),
+            ("The bursar signs it. Ask her today.", "The deposit can be small. Fifty pounds?"),
+            ("Per-branch pricing fits better here.", "Per-branch pricing also scales to a third site."),
+            ("I'd wait. Who signs?", "I'd ask her. When?"),
+            ("The bursar. Ask her today.", "The deposit. Fifty pounds?"),
+            ("Per branch. It scales.", "Per seat. Simpler."),
+            # Direct answers to two closed questions in a row (LAB-V3: answer the actual request first).
+            ("Yes, a deposit of fifty pounds per branch.", "Yes, if they sign by June."),
+            ("No, per branch.", "No, not yet."),
+            ("Hartwell, because it has the budget.", "Hartwell, again."),
+            ("Probably per branch.", "Probably not."),
+            ("Fifty pounds. Per branch.", "Fifty is fine."),
+            ("Start small.", "Start with Hartwell."),
+            ("Why not?", "Why?"),
+            ("1. Price per branch.\n2. Ask for a deposit.", "1. Book Hartwell.\n2. Then Kingsbury."),
+            ("Definitely, per branch.", "Definitely not before June."),
+            ("I see two options here.", "I see one risk: the bursar."),
+        ],
+    )
+    def test_ordinary_openings_that_share_a_first_word_are_fine(self, first: str, second: str) -> None:
+        convo = Convo([T("a", first), T("b", second)])
+        assert results(grade(convo), "craft.no_repeated_lead_in") == [True]
+
+    @pytest.mark.parametrize(
+        ("first", "second"),
+        [
+            ("Maya, the bursar signs it.", "Maya, the deposit can be small."),
+            ("So the bursar signs it.", "So the deposit can be small."),
+            ("Got it. Who signs?", "Got it, the deposit then."),
+            ("Okay, the bursar.", "Okay so the deposit is next."),
+            ("Makes sense. Who signs?", "Makes sense, Maya. The deposit then."),
+            ("I see. Who signs?", "I see, the deposit then."),
+            ("Hi Maya! Who signs?", "Hey Maya, the deposit then."),
+            ("Absolutely, the bursar.", "Absolutely. Fifty pounds."),
+            ("That's great. Who signs?", "That's huge, Maya."),
+        ],
+    )
+    def test_a_verbal_habit_on_two_replies_in_a_row(self, first: str, second: str) -> None:
+        convo = Convo([T("a", first), T("b", second)])
+        assert results(grade(convo), "craft.no_repeated_lead_in") == [False]
 
 
 class TestPresencePolicy:

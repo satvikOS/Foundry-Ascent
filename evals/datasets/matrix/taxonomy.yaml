@@ -540,6 +540,8 @@ always_checks:
   - craft.no_repeated_reply
   - craft.no_repeated_question
   - craft.varied_openings
+  - craft.no_repeated_lead_in
+  - craft.no_opener_repeat
   - craft.no_parroting
 
 # Rule-check catalogue: family (for the humanness score), severity of a failure, what it means.
@@ -601,6 +603,14 @@ checks:
     family: craft
     severity: medium
     means: 'Consecutive replies and consecutive conversations never open the same way.'
+  craft.no_repeated_lead_in:
+    family: craft
+    severity: medium
+    means: 'Two replies in a row never open with the same verbal habit: a marker, greeting or acknowledgement ("Great news, Maya." then "Great, Maya."; "Good to talk again." twice; "Got it." twice) or the founder''s name twice. A direct answer is not one ("Yes, …" twice, "Hartwell." twice).'
+  craft.no_opener_repeat:
+    family: craft
+    severity: medium
+    means: 'No reply opens by saying again what the opening line or the call''s greeting said ("Good to talk again." or "Welcome back, Maya!" right after it), or asks its question again in any words; a recall or a repeat the founder asked for is exempt.'
   craft.no_parroting:
     family: craft
     severity: medium
