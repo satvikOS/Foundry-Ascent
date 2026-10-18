@@ -70,6 +70,68 @@ describe('config', () => {
     expect(config.distillation).toEqual({ sweepEnabled: true, sweepIntervalMinutes: 20 });
   });
 
+  it('ships the digital twin off, and reads it when configured', () => {
+    expect(loadConfig().media).toEqual({
+      face: { provider: 'none', sandbox: false, csp: { connect: [], media: [] } },
+      voice: { provider: 'polly', model: 'eleven_flash_v2_5', zeroRetention: false },
+    });
+    // Absent: off as well.
+    expect(parseConfig(valid()).media.face.provider).toBe('none');
+    const on = parseConfig({
+      ...valid(),
+      media: {
+        face: {
+          provider: 'heygen-liveavatar',
+          sandbox: true,
+          csp: {
+            connect: ['wss://heygen-feapbkvq.livekit.cloud', 'https://heygen-feapbkvq.livekit.cloud'],
+            media: [],
+          },
+        },
+        voice: { provider: 'elevenlabs', model: 'eleven_turbo_v2_5', zeroRetention: true },
+        note: 'ignored',
+      },
+    });
+    expect(on.media).toEqual({
+      face: {
+        provider: 'heygen-liveavatar',
+        sandbox: true,
+        csp: {
+          connect: ['wss://heygen-feapbkvq.livekit.cloud', 'https://heygen-feapbkvq.livekit.cloud'],
+          media: [],
+        },
+      },
+      voice: { provider: 'elevenlabs', model: 'eleven_turbo_v2_5', zeroRetention: true },
+    });
+  });
+
+  it('keeps the CSP strict: exact origins only, and none while no face is wired', () => {
+    const media = (face: Record<string, unknown>, voice: Record<string, unknown> = {}) => ({
+      ...valid(),
+      media: {
+        face: { provider: 'heygen-liveavatar', sandbox: false, csp: { connect: [], media: [] }, ...face },
+        voice: { provider: 'polly', model: 'eleven_flash_v2_5', zeroRetention: false, ...voice },
+      },
+    });
+    expect(() => parseConfig(media({ csp: { connect: ['wss://*.livekit.cloud'], media: [] } }))).toThrow(
+      /exact wss:\/\/ or https:\/\/ origin/,
+    );
+    expect(() => parseConfig(media({ csp: { connect: ['https://host.example/path'], media: [] } }))).toThrow(
+      ConfigError,
+    );
+    expect(() => parseConfig(media({ csp: { connect: ['http://host.example'], media: [] } }))).toThrow(
+      ConfigError,
+    );
+    expect(() =>
+      parseConfig(
+        media({ provider: 'none', csp: { connect: ['wss://heygen-feapbkvq.livekit.cloud'], media: [] } }),
+      ),
+    ).toThrow(/must be empty while media.face.provider is none/);
+    expect(() => parseConfig(media({ provider: 'tavus' }))).toThrow(/media.face.provider/);
+    expect(() => parseConfig(media({}, { provider: 'cartesia' }))).toThrow(/media.voice.provider/);
+    expect(() => parseConfig(media({}, { model: 'Bad Model' }))).toThrow(/media.voice.model/);
+  });
+
   it('turns speech and the distillation sweep off when their sections are absent', () => {
     const raw = valid();
     delete raw.speech;

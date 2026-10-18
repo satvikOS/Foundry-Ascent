@@ -142,6 +142,12 @@ const FAKE_ENV: Readonly<Record<string, string>> = {
   HOME_TENANT_NAME: 'Ain Foundry',
   SPEECH_ENABLED: 'true',
   SPEECH_ENGINE: 'neural',
+  // Both digital-twin vendors wired: the API must import with them without a key or any network.
+  MEDIA_FACE_PROVIDER: 'heygen-liveavatar',
+  MEDIA_FACE_SANDBOX: 'true',
+  MEDIA_VOICE_PROVIDER: 'elevenlabs',
+  MEDIA_VOICE_MODEL: 'eleven_flash_v2_5',
+  MEDIA_VOICE_ZERO_RETENTION: 'false',
 };
 
 /** Mirrors the Lambda runtime's `awslambda` global, which the streaming API handler needs at import. */

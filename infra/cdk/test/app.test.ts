@@ -270,6 +270,65 @@ describe('FoundryAscent-App', () => {
       expect(pollyActions.sort()).toEqual(['polly:DescribeVoices', 'polly:SynthesizeSpeech']);
     });
 
+    it('grants no vendor key while the digital twin is off (production.json)', () => {
+      const secrets = (name: string): Props[] =>
+        rolePolicyStatements(name).filter((s) => actionsOf(s).some((a) => a.startsWith('secretsmanager:')));
+      expect(secrets('FoundryAscent-Api')).toEqual([]);
+      expect(secrets('FoundryAscent-Worker')).toEqual([]);
+    });
+
+    it('lets only the API read exactly the key of each digital-twin vendor it wires, and the CSP name the face’s room', () => {
+      const config = loadConfig();
+      const room = ['wss://heygen-feapbkvq.livekit.cloud', 'https://heygen-feapbkvq.livekit.cloud'];
+      const { templates } = synthesize(
+        {},
+        {
+          ...config,
+          media: {
+            face: { provider: 'heygen-liveavatar', sandbox: false, csp: { connect: room, media: [] } },
+            voice: { provider: 'elevenlabs', model: 'eleven_flash_v2_5', zeroRetention: false },
+          },
+        },
+      );
+      const statements = (name: string) =>
+        functionPolicyStatements(templates.app, name).filter((s) =>
+          actionsOf(s).some((a) => a.startsWith('secretsmanager:')),
+        );
+      const secretArn = (name: string) => ({
+        'Fn::Join': [
+          '',
+          [
+            'arn:',
+            { Ref: 'AWS::Partition' },
+            ':secretsmanager:us-east-1:',
+            { Ref: 'AWS::AccountId' },
+            `:secret:foundry-ascent/media/${name}-??????`,
+          ],
+        ],
+      });
+      expect(statements('FoundryAscent-Api')).toEqual([
+        {
+          Sid: 'MediaVendorKeys',
+          Effect: 'Allow',
+          Action: 'secretsmanager:GetSecretValue',
+          // CDK sorts the resources.
+          Resource: [secretArn('elevenlabs'), secretArn('heygen')],
+        },
+      ]);
+      expect(statements('FoundryAscent-Worker')).toEqual([]);
+      expect(statements('FoundryAscent-Migrate')).toEqual([]);
+      const api = resourcesOfType(templates.app, 'AWS::Lambda::Function').find(
+        ([, p]) => p.FunctionName === 'FoundryAscent-Api',
+      )?.[1];
+      expect((api?.Environment as { Variables: Record<string, unknown> }).Variables).toMatchObject({
+        MEDIA_FACE_PROVIDER: 'heygen-liveavatar',
+        MEDIA_VOICE_PROVIDER: 'elevenlabs',
+      });
+      const csp = JSON.stringify(resourcesOfType(templates.app, 'AWS::CloudFront::ResponseHeadersPolicy'));
+      expect(csp).toContain(`${TRANSCRIBE_ORIGIN} ${room.join(' ')};`);
+      expect(csp).not.toContain('*.livekit');
+    });
+
     it('lets only the API presign Amazon Transcribe streaming URLs, pinned to the platform region', () => {
       const transcribe = (name: string): Props[] =>
         rolePolicyStatements(name).filter((s) => actionsOf(s).some((a) => a.startsWith('transcribe:')));
@@ -514,6 +573,38 @@ describe('FoundryAscent-App', () => {
       // worker-src, no blob: or remote script, and nothing framed.
       expect(directives.some((d) => /^(frame-src|child-src|worker-src) /.test(d))).toBe(false);
       expect(directives.find((d) => d.startsWith('script-src'))).toBe("script-src 'self'");
+    });
+
+    it('adds exactly the face’s room origins when a face is wired, and refuses a wildcard', () => {
+      const withFace = contentSecurityPolicy({
+        uploadOrigin: documentsUploadOrigin('docs-bucket', 'us-east-1'),
+        speechToTextOrigin: speechToTextOrigin('us-east-1'),
+        face: { connect: ['wss://room.livekit.example'], media: ['https://media.example'] },
+      }).split('; ');
+      expect(
+        withFace
+          .find((d) => d.startsWith('connect-src'))
+          ?.split(' ')
+          .slice(-1),
+      ).toEqual(['wss://room.livekit.example']);
+      expect(withFace.find((d) => d.startsWith('media-src'))).toBe(
+        "media-src 'self' blob: https://media.example",
+      );
+      // No face, or an empty one: the policy is unchanged.
+      expect(
+        contentSecurityPolicy({
+          uploadOrigin: documentsUploadOrigin('docs-bucket', 'us-east-1'),
+          speechToTextOrigin: speechToTextOrigin('us-east-1'),
+          face: { connect: [], media: [] },
+        }),
+      ).toBe(testPolicy());
+      expect(() =>
+        contentSecurityPolicy({
+          uploadOrigin: documentsUploadOrigin('docs-bucket', 'us-east-1'),
+          speechToTextOrigin: speechToTextOrigin('us-east-1'),
+          face: { connect: ['wss://*.livekit.cloud'], media: [] },
+        }),
+      ).toThrow(/exact origins/);
     });
 
     it('pins connect-src to the documents bucket endpoint the presigned uploads use (no S3 wildcard)', () => {
