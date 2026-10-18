@@ -350,9 +350,14 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
   compares.
 - **Provenance**: the model labels each candidate `founder_stated`, `founder_agreed` or `coach_advice`. Advice is
   dropped; "agreed" needs an answer the founder explicitly took up ("sounds good, let's do that"; never a bare
-  "sure", "ok" or "right, but…"); a stated note phrased as advice with almost none of the founder's words is the
-  coach's. Without a label, a note is the founder's when a third of its words are theirs and it is not advice, or
-  when it says what the founder wants, prefers or cannot do. Citations never make a note the founder's.
+  "sure", "ok" or "right, but…"); a stated note phrased as advice with almost none of the founder's words (read by
+  stems, so "libraries must pay" counts for "a paid commitment from each library") is the coach's. Without a label,
+  a note is the founder's when a third of its words are theirs and it is not advice, or when it says what the
+  founder wants, prefers or cannot do. Citations never make a note the founder's.
+- **Stated in the founder's words**: a turn also keeps a decision, goal or constraint the founder states in a plain
+  first-person sentence ("We've decided to…", "Our goal is…", "We can't…"; never a question or a hedge) when the
+  model's candidates do not say it, as a `founder_stated` candidate through the same checks, without a model call.
+  A chat is distilled only nine minutes after its last turn; this keeps what was decided with the turn.
 - **Forgetting**: deleting an item learned from a conversation, or correcting one the vEIR kept, records per
   conversation a fingerprint (`memory_forgotten`, closed to app_rls; `app.record_forgotten_memory`,
   `app.forgotten_memory`): hashes of its words and numbers and a SimHash of its embedding. A candidate from the same
