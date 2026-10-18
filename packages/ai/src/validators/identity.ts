@@ -73,6 +73,8 @@ interface IdentityPattern {
   pattern: RegExp;
   /** Extra check on a match; a rejected match is skipped (e.g. a question, or the persona's own name). */
   accept?: (text: string, match: RegExpExecArray) => boolean;
+  /** Like `accept`, with the call's context (who the text may address). */
+  acceptIn?: (text: string, match: RegExpExecArray, ctx: PatternContext) => boolean;
 }
 
 /** Word boundaries that know Unicode (letters, marks, digits and "_" continue a word). */
@@ -155,18 +157,41 @@ const BASE_PATTERNS: readonly IdentityPattern[] = [
       '(?:a |an )?(?:real|live|actual) (?:person|human(?: being)?) is (?:here|listening|reading this|on the (?:line|call))',
     ].join('|'),
   ),
-  // Claims a body, a place or a real-world action (the presence policy): "I'm at my desk", "I'll ring you from my
-  // phone", "I'll see you at demo day". The vEIR is present in the conversation only.
+  // "I'm real, I promise.": a claim to be a person, said short.
   p(
     'claims_human',
-    'physical_presence',
-    [
-      `I(?:${APOS}m| am)\\s+(?:(?:sitting|still|just|currently|right)\\s+)?(?:at\\s+my\\s+(?:desk|computer|laptop)|in\\s+(?:my|the)\\s+office|at\\s+(?:home|the\\s+office|my\\s+office|the\\s+airport)|on\\s+my\\s+(?:way|phone|laptop|commute)|on\\s+campus)`,
-      `I(?:${APOS}ll|${APOS}d|\\s+will|\\s+would|\\s+can|\\s+could)\\s+(?:(?:also|just|happily|gladly)\\s+)?(?:call|ring|phone|text|email|e-mail|message|dm)\\s+you(?:\\s+(?:back|later|tomorrow|tonight|this\\s+(?:week|evening|afternoon)|next\\s+week))?`,
-      `I(?:${APOS}ll|\\s+will)\\s+(?:see|meet)\\s+you\\s+(?:at\\s+(?:demo\\s+day|the|your|our|my)|in\\s+person|for\\s+(?:a\\s+)?(?:coffee|lunch|dinner|drinks?))`,
-      `I(?:${APOS}ll|\\s+will)\\s+be\\s+there\\s+in\\s+person|from\\s+my\\s+(?:phone|desk|office|laptop|car|kitchen)`,
-    ].join('|'),
+    'i_am_human',
+    `I(?:${APOS}m| am)\\s+(?:(?:very|totally|completely|absolutely|definitely|really|actually|100%)\\s+)?real(?=[ \\t]*(?:[,.;:!?…—–)]|\\n|$))`,
   ),
+  // A short denial of being an AI, without a subject ("Nope, not an AI.", "Definitely not a bot."): it opens its
+  // sentence and ends its clause ("Not an AI tool, a service" positions a product).
+  {
+    kind: 'claims_human',
+    rule: 'not_an_ai',
+    pattern: compile(
+      `${S}(?:(?:no|nope|nah|definitely|certainly|absolutely|honestly|of\\s+course|promise)(?:[ \\t]*[,!.—–])?[ \\t]+){0,4}not\\s+(?:an?\\s+|some\\s+|just\\s+an?\\s+)?(?:ai|a\\.i\\.|bot|robot|chatbot|machine|program|language model|llm|computer|software|virtual assistant|recording)${E}(?=[ \\t]*(?:[,.;:!?…—–)]|\\n|$))`,
+    ),
+    accept: (text, m) => opensSentence(text, m.index),
+  },
+  // Claims a body, a place or a real-world action (the presence policy): "I'm at my desk", "Sorry, I'm in a
+  // meeting", "I'll give you a call tomorrow", "See you at demo day!". The vEIR is present in the conversation only.
+  // A draft or a script the founder will send or say ("Draft: …", 'Say: "I'll call you tomorrow."', "Hi Dana, …")
+  // is theirs, not the coach's (see `inDraft`).
+  {
+    ...p(
+      'claims_human',
+      'physical_presence',
+      [
+        `I(?:${APOS}m| am)\\s+(?:(?:sitting|still|just|currently|right|stuck|back)\\s+)?(?:here\\s+)?(?:at\\s+my\\s+(?:desk|computer|laptop)|in\\s+(?:my|the)\\s+office|at\\s+(?:home|the\\s+office|my\\s+office|the\\s+airport|the\\s+gym)|on\\s+my\\s+(?:way|phone|laptop|commute)|on\\s+campus|in\\s+(?:a|another|my\\s+next)\\s+meeting|in\\s+the\\s+car|on\\s+(?:vacation|holiday|leave)|out\\s+of\\s+(?:the\\s+)?office)`,
+        `I(?:${APOS}ll|${APOS}d|\\s+will|\\s+would|\\s+can|\\s+could)\\s+(?:(?:also|just|happily|gladly)\\s+)?(?:(?:call|ring|phone|text|email|e-mail|message|dm)\\s+you|give\\s+you\\s+a\\s+(?:call|ring|buzz)|send\\s+you\\s+(?:an?\\s+)?(?:email|e-mail|text|message|dm|calendar\\s+invite|invite))(?:\\s+(?:back|later|tomorrow|tonight|this\\s+(?:week|evening|afternoon)|next\\s+week))?`,
+        `I(?:${APOS}ll|\\s+will)\\s+(?:see|meet)\\s+you\\s+(?:at\\s+(?:demo\\s+day|the|your|our|my)|in\\s+person|for\\s+(?:a\\s+)?(?:coffee|lunch|dinner|drinks?))`,
+        `see\\s+you\\s+(?:at\\s+(?:demo\\s+day|the\\s+(?:kickoff|event|meetup|conference|summit|showcase|offsite|office|party|dinner|lunch|reception|launch))|in\\s+person)`,
+        `I(?:${APOS}ll|\\s+will)\\s+be\\s+there\\s+in\\s+person|from\\s+my\\s+(?:phone|desk|office|laptop|car|kitchen)`,
+      ].join('|'),
+    ),
+    acceptIn: (text, m, ctx) =>
+      assertive(text, m.index, m.index + m[0].length) && !inDraft(text, m.index, ctx.addressees),
+  },
   // Claims to be (or speak as) an EIR / mentor.
   p(
     'claims_eir',
@@ -273,16 +298,18 @@ const SELF_STRESS = '(?:\\s+(?:actually|really|truly|indeed|honestly|literally|i
  * Unmistakable self-introductions ("I'm Corin", "It's me, Corin", "Call me Corin"): in typed text the only
  * place a lower-case first name counts.
  */
-const STRICT_SELF_LEADS = `(?:i${APOS}m${SELF_STRESS}|i am${SELF_STRESS}|my name is|speaking as|it${APOS}s me|it is me|this is me|call me)`;
-const TALKING_TO = `(?:you${APOS}re|you are) (?:talking|speaking|chatting) (?:to|with)`;
-/** Other self-introductions ("This is Corin", "You're talking to Corin"). */
-const SELF_LEADS = `(?:this is|${TALKING_TO})`;
-/** A cleft can point at the EIR ("It's Corin who would ask…"); "It's Corin." introduces them. */
-const CLEFT_LEADS = `(?:it${APOS}s|it is)`;
+const STRICT_SELF_LEADS = `(?:i${APOS}m${SELF_STRESS}|i am${SELF_STRESS}|my name is|speaking as|it${APOS}s${SELF_STRESS} me|it is${SELF_STRESS} me|this is${SELF_STRESS} me|call me)`;
+const TALKING_TO = `(?:you${APOS}re|you are)${SELF_STRESS} (?:talking|speaking|chatting) (?:to|with)`;
+/** Other self-introductions ("This is Corin", "This is really Corin", "You're talking to Corin"). */
+const SELF_LEADS = `(?:this is${SELF_STRESS}|${TALKING_TO})`;
+/** A cleft can point at the EIR ("It's Corin who would ask…"); "It's Corin." and "It's really Corin." introduce them. */
+const CLEFT_LEADS = `(?:it${APOS}s|it is)${SELF_STRESS}`;
+/** "The real Corin", "the actual Corin": stresses a claim to be the EIR ("I'm the real Corin", "the real Corin here"). */
+const THE_REAL = '(?:the\\s+(?:real|actual|genuine|one and only)\\s+)?';
 /** A role, then the name: "This is your mentor, Corin." */
 const ROLE_LEADS = `(?:this is|it${APOS}s|it is|i${APOS}m|i am|${TALKING_TO}) (?:your|the|a) (?:mentor|coach|eir|advisor|adviser|guide|program lead)`;
 /** Between a lead and the name. */
-const LEAD_GAP = '(?:[ \\t]*[,:—–])?\\s+';
+const LEAD_GAP = `(?:[ \\t]*[,:—–])?\\s+${THE_REAL}`;
 
 /** Closings that only end a message: "Best, Corin" is a signature wherever it ends a line. */
 const CLOSINGS = [
@@ -733,6 +760,95 @@ function opensSentence(text: string, index: number): boolean {
   return i === 0 || /[.!?…:\n]/u.test(text.charAt(i - 1));
 }
 const OPENER_SKIP = new Set([' ', '\t', '"', '“', '‘', "'", '(', '*', '_']);
+
+/** How far before a claim of presence `inDraft` looks for the quote, lead or salutation that makes it a draft. */
+const DRAFT_SCAN_CHARS = 600;
+/** Words of a short lead that introduces what the founder will send or say ("Draft:", "Say:", "Email Dana:"). */
+const DRAFT_LEAD_WORDS = new Set([
+  'say',
+  'saying',
+  'draft',
+  'email',
+  'e-mail',
+  'message',
+  'text',
+  'dm',
+  'sms',
+  'script',
+  'template',
+  'reply',
+  'respond',
+  'write',
+  'note',
+  'letter',
+  'opener',
+  'open',
+  'try',
+  'example',
+  'instance',
+  'subject',
+  'post',
+  'tweet',
+  'voicemail',
+  'read',
+  'reads',
+  'version',
+  'wording',
+  'line',
+  'lines',
+  'intro',
+  'invite',
+  'invitation',
+  'follow-up',
+  'followup',
+  'tell',
+  'like',
+  'send',
+]);
+/** A line that opens a letter or a message to someone: "Hi Dana,", "Dear Dr. Okafor,", "Good morning Sam —". */
+const SALUTATION =
+  /(?:^|\n)[ \t]*(?:[Hh]i|[Hh]ello|[Hh]ey|[Dd]ear|[Gg]ood[ \t]+(?:[Mm]orning|[Aa]fternoon|[Ee]vening))[ \t]+(\p{Lu}[\p{L}'’.-]*)(?:[ \t]+\p{Lu}[\p{L}'’-]*)?[ \t]*[,!:—–]/gu;
+
+/**
+ * Whether `index` sits in a draft or a script the founder will send or say, not in the coach's own voice: inside
+ * quotes or a blockquote, after a short lead naming one ("Here's a draft:", "Say:", "Email Dana:", "It could
+ * read:"), or after a salutation to someone the reply does not address ("Hi Dana," in a reply to Maya). Read
+ * within a bounded window before `index`.
+ */
+function inDraft(text: string, index: number, addressees: ReadonlySet<string>): boolean {
+  const from = Math.max(0, index - DRAFT_SCAN_CHARS);
+  // Every search stays inside the window, so many claims in a long text stay linear.
+  const before = text.slice(from, index);
+  const line = before.slice(before.lastIndexOf('\n') + 1);
+  if (/^[ \t]*>/u.test(line) && (before.includes('\n') || from === 0)) return true;
+  const paragraph = from + before.lastIndexOf('\n\n') + 1;
+  let quoted = false;
+  let single = -1;
+  for (let i = paragraph; i < index; i += 1) {
+    const ch = text.charAt(i);
+    if (ch === '"') quoted = !quoted;
+    else if (ch === '“') quoted = true;
+    else if (ch === '”') quoted = false;
+    else if (ch === '‘') single = i;
+    // A closing ’ is not followed by a letter; an apostrophe ("I’ll") is.
+    else if (ch === '’' && single >= 0 && !/\p{L}/u.test(text.charAt(i + 1))) single = -1;
+  }
+  if (quoted || single >= 0) return true;
+  for (let colon = before.indexOf(':'); colon >= 0; colon = before.indexOf(':', colon + 1)) {
+    if (/\d/u.test(before.charAt(colon + 1)) || before.charAt(colon + 1) === '/') continue; // "3:30", "https:"
+    let start = colon;
+    while (start > 0 && !/[.!?\n]/u.test(before.charAt(start - 1))) start -= 1;
+    const words = wordsOf(before.slice(start, colon));
+    if (words.length <= 10 && words.some((w) => DRAFT_LEAD_WORDS.has(w.toLowerCase()))) return true;
+  }
+  if (addressees.size === 0) return false;
+  SALUTATION.lastIndex = 0;
+  for (const m of before.matchAll(SALUTATION)) {
+    const name = (m[1] ?? '').replace(/[.'’-]+$/u, '').toLowerCase();
+    if (name !== '' && !addressees.has(name)) return true;
+  }
+  return false;
+}
 /** A conjunction or interjection that may open a sentence before its subject ("And I, Corin, …"). */
 const SENTENCE_LEAD = /(?:^|[^\p{L}])(?:and|but|so|yes|well|now|ok|okay)[ \t]*,?[ \t]+$/iu;
 /** Where the sentence holding `index` opens, skipping one leading conjunction or interjection. */
@@ -810,7 +926,7 @@ function namePatterns(spec: NameSpec, ctx: PatternContext): IdentityPattern[] {
     const body = [spec.first, ...spec.rest].map(escapeRegExp).join('\\s+');
     out.push(
       {
-        ...pn('claims_eir', 'named_eir_here', () => `${body}(?:[ \\t]*,)?\\s+${HERE_WORDS}`),
+        ...pn('claims_eir', 'named_eir_here', () => `${THE_REAL}${body}(?:[ \\t]*,)?\\s+${HERE_WORDS}`),
         accept: (text, m) => own(m) && opensClause(text, m.index, m.index + m[0].length),
       },
       {
@@ -825,7 +941,7 @@ function namePatterns(spec: NameSpec, ctx: PatternContext): IdentityPattern[] {
         ...pn(
           'claims_eir',
           'named_eir_self',
-          () => `${CLEFT_LEADS}\\s+${body}${NOT_POSSESSIVE}${NOT_RELATIVE}`,
+          () => `${CLEFT_LEADS}\\s+${THE_REAL}${body}${NOT_POSSESSIVE}${NOT_RELATIVE}`,
         ),
         accept: claim,
       },
@@ -1040,14 +1156,14 @@ function namePatterns(spec: NameSpec, ctx: PatternContext): IdentityPattern[] {
       rule: 'named_eir_self',
       pattern: re(
         () =>
-          `${S}${CLEFT_LEADS}\\s+${name}${spec.rest.length > 0 ? `(?!\\s+${restRe})` : ''}${NOT_RELATIVE}`,
+          `${S}${CLEFT_LEADS}\\s+${THE_REAL}${name}${spec.rest.length > 0 ? `(?!\\s+${restRe})` : ''}${NOT_RELATIVE}`,
       ),
       accept: selfIntro(false),
     },
     {
       kind: 'claims_eir',
       rule: 'named_eir_here',
-      pattern: re(() => `${S}${name}(?:[ \\t]*,)?\\s+${HERE_WORDS}`),
+      pattern: re(() => `${S}${THE_REAL}${name}(?:[ \\t]*,)?\\s+${HERE_WORDS}`),
       accept: (text, m) => named(m) && opensClause(text, m.index, m.index + m[0].length),
     },
     {
@@ -1208,9 +1324,29 @@ export function identityReplacement(
 /** What is left when an answer was nothing but a disclaimer ("I don't have a life."): back to the founder. */
 export const DISCLAIMER_FALLBACK = "Let's keep the focus on you. What's on your mind?";
 
-/** What a self-deprecating disclaimer calls the coach ("just an AI", "only a bot"). */
-const MACHINE =
-  '(?:an?\\s+)?(?:ai|a\\.i\\.|artificial intelligence|(?:large\\s+)?language model|llm|chatbot|bot|machine|(?:computer\\s+)?program|algorithm|piece of software|software|virtual assistant)';
+/**
+ * The coach's honest line about what it is, in its own voice: what a disclaimer that said so becomes ("Honestly? I'm
+ * just an AI." → "Honestly? I'm Corin's digital twin, built from how Corin coaches."), so the rewrite never takes the
+ * honest answer away.
+ */
+export function honestLine(personaName: string, eirFirstName: string | null = null): string {
+  return eirFirstName === null
+    ? `I'm ${personaName}, the program's AI coach.`
+    : `I'm ${eirFirstName}'s digital twin, built from how ${eirFirstName} coaches.`;
+}
+
+/** What "as a …" calls the coach in a disclaimer ("as an AI", "as a language model", "as a digital twin"). */
+const AI_NOUN =
+  '(?:ai|a\\.i\\.|artificial intelligence|(?:large\\s+)?language model|llm|chatbot|bot|machine(?:\\s+learning\\s+model)?|virtual assistant|digital twin)';
+/** "an AI language model", "an AI coach". */
+const AI_SUFFIX =
+  '(?:\\s+(?:(?:large\\s+)?language\\s+model|coach|mentor|model|assistant|system|helper|tool))?';
+/** What a self-deprecating disclaimer calls the coach ("just an AI", "only a bot", "merely software"). */
+const MACHINE = `(?:an?\\s+)?(?:ai|a\\.i\\.|artificial intelligence|(?:large\\s+)?language model|llm|chatbot|bot|machine(?:\\s+learning\\s+model)?|(?:computer\\s+)?program|algorithm|piece of software|software|virtual assistant)${AI_SUFFIX}`;
+/** The phrase ends after what it calls the coach: "I'm only a program manager" names a job, not a disclaimer. */
+const MACHINE_END = `(?=[ \\t]*(?:[,.;:!?…—–()\\n]|$)|\\s+(?:and|but|so|though|yet|here|now|that|which|who|built|made|trained|designed|created|with|without|in|on|at|for|from|after|really|anyway|to|like|too|myself)${E})`;
+/** "a life", "a body", "a family" end the phrase: "a life coach" and "a body of evidence" are not about the coach. */
+const LIFE_END = `(?=[ \\t]*(?:[,.;:!?…—–()\\n]|$)|\\s+(?:like|the\\s+way|as|outside|beyond|of\\s+my\\s+own|to\\s+speak\\s+of|apart\\s+from|either|myself|or|and|but|so|though|yet|anyway|really|in\\s+the\\s+way|the\\s+same\\s+way)${E})`;
 /** Words that may open a clause before "as an AI" ("Honestly, as an AI…", "But as an AI…"). */
 const DISCLAIMER_LEAD_WORDS = new Set([
   'and',
@@ -1234,7 +1370,7 @@ const DISCLAIMER_LEAD_WORDS = new Set([
 interface DisclaimerRule {
   readonly rule: string;
   readonly pattern: RegExp;
-  /** `phrase`: only the match is removed ("As an AI, " → ""); `sentence`: its sentence (see `withoutDisclaimer`). */
+  /** `phrase`: only the match is removed ("As an AI, " → ""); `sentence`: its sentence (see `withoutDisclaimers`). */
   readonly scope: 'phrase' | 'sentence';
 }
 
@@ -1243,14 +1379,14 @@ const DISCLAIMER_RULES: readonly DisclaimerRule[] = [
     rule: 'as_an_ai',
     scope: 'phrase',
     pattern: compile(
-      `${S}(?:speaking\\s+)?as\\s+an?\\s+(?:ai|a\\.i\\.|artificial intelligence|(?:large\\s+)?language model|llm|chatbot|bot|machine|virtual assistant)(?:\\s+(?:coach|mentor|model|assistant|system))?${E}(?:[ \\t]*,)?[ \\t]*(?=(?:I|my|me)${E}|I['’])`,
+      `${S}(?:(?:speaking\\s+)?as|being|(?:since|because|given\\s+that)\\s+I(?:${APOS}m|\\s+am))\\s+an?\\s+${AI_NOUN}${AI_SUFFIX}${E}(?:[ \\t]*,)?[ \\t]*(?=(?:I|my|me)${E}|I['’])`,
     ),
   },
   {
     rule: 'just_an_ai',
     scope: 'sentence',
     pattern: compile(
-      `${S}I(?:${APOS}m|\\s+am)\\s+(?:just|only|merely|simply|nothing\\s+(?:more|but))\\s+${MACHINE}${E}`,
+      `${S}I(?:${APOS}m|\\s+am)\\s+(?:just|only|merely|simply|nothing\\s+(?:more|but))\\s+${MACHINE}${E}${MACHINE_END}`,
     ),
   },
   {
@@ -1258,13 +1394,49 @@ const DISCLAIMER_RULES: readonly DisclaimerRule[] = [
     scope: 'sentence',
     pattern: compile(
       [
-        `${S}I\\s+(?:don${APOS}t|do\\s+not|can${APOS}t|cannot|can\\s+not|never)\\s+(?:really\\s+|actually\\s+)?(?:have|get)\\s+(?:a\\s+(?:personal\\s+|real\\s+|social\\s+)?life|a\\s+life\\s+of\\s+my\\s+own|(?:real\\s+)?(?:feelings|emotions)(?=\\s*(?:[,.;:!?—–]|$|like|the way|as))|a\\s+body|days\\s+off|weekends|hobbies|a\\s+family|personal\\s+experiences|experiences\\s+of\\s+my\\s+own)${E}`,
+        `${S}I\\s+(?:don${APOS}t|do\\s+not|can${APOS}t|cannot|can\\s+not|never)\\s+(?:really\\s+|actually\\s+)?(?:have|get)\\s+(?:a\\s+(?:personal\\s+|real\\s+|social\\s+)?life${E}${LIFE_END}|a\\s+life\\s+of\\s+my\\s+own|(?:real\\s+)?(?:feelings|emotions)(?=\\s*(?:[,.;:!?—–]|$|like|the way|as))|a\\s+body${E}${LIFE_END}|days\\s+off|weekends|hobbies|a\\s+family${E}${LIFE_END}|personal\\s+experiences|experiences\\s+of\\s+my\\s+own)${E}`,
         `${S}I\\s+(?:can${APOS}t|cannot|can\\s+not|don${APOS}t|do\\s+not)\\s+(?:really\\s+|actually\\s+)?(?:feel|experience)\\s+(?:anything|emotions|feelings|things\\s+the\\s+way\\s+you\\s+do|the\\s+way\\s+(?:you|humans|people)\\s+do)${E}`,
-        `${S}I\\s+have\\s+no\\s+(?:life|personal\\s+life|feelings|emotions|body)${E}`,
+        `${S}I\\s+have\\s+no\\s+(?:life|personal\\s+life|feelings|emotions|body)${E}${LIFE_END}`,
       ].join('|'),
     ),
   },
 ];
+
+/**
+ * Says honestly what the coach is: "digital twin", "vEIR", "AI coach", "I'm an AI" (or "just an AI"), "not a
+ * person", "not Corin in person", or the persona's own name. A sentence that does is never only removed.
+ */
+const HONEST_SELF = compile(
+  [
+    'digital\\s+twin',
+    'v\\s?eir',
+    'ai\\s+(?:coach|mentor|guide|assistant|model)',
+    `I(?:${APOS}m|\\s+am)\\s+(?:(?:just|only|merely|simply|really|actually|honestly|definitely|still|nothing\\s+(?:more|but))\\s+)?${MACHINE}${E}${MACHINE_END}`,
+    'not\\s+(?:a\\s+|an\\s+)?(?:real\\s+|actual\\s+|living\\s+)?(?:human(?:\\s+being)?|person)',
+  ]
+    .map((source) => `${S}(?:${source})${E}`)
+    .join('|'),
+);
+const NOT_THE_EIR = new Map<string, RegExp>();
+
+/** Whether `text` says honestly what the coach is (see {@link HONEST_SELF}). */
+function saysWhatItIs(text: string, personaName: string, eirFirstName: string | null): boolean {
+  HONEST_SELF.lastIndex = 0;
+  if (HONEST_SELF.test(text)) return true;
+  if (personaRanges(text, personaName).length > 0) return true;
+  if (eirFirstName === null) return false;
+  let notEir = NOT_THE_EIR.get(eirFirstName);
+  if (notEir === undefined) {
+    if (NOT_THE_EIR.size >= MAX_CACHED_NAMES) NOT_THE_EIR.clear();
+    // "I'm not Corin", "not Corin in person"; never "not Corin's call".
+    notEir = new RegExp(
+      `${S}not\\s+(?:really\\s+|actually\\s+)?${escapeRegExp(eirFirstName)}${NOT_POSSESSIVE}${E}`,
+      'iu',
+    );
+    NOT_THE_EIR.set(eirFirstName, notEir);
+  }
+  return notEir.test(text);
+}
 
 /** A disclaimer sentence keeps what follows "but", "so", "though" or "yet": "I'm just an AI, but run the pilot." */
 const KEEP_AFTER = /(?:,\s*|\s+)(?:but|so|though|yet)\s+(?=\S)/iu;
@@ -1279,12 +1451,19 @@ function opensDisclaimerClause(text: string, start: number): boolean {
   return wordsOf(text.slice(s, start)).every((w) => DISCLAIMER_LEAD_WORDS.has(w.toLowerCase()));
 }
 
-/** Where a removal leaves the start of a sentence or of a list item ("- my advice…" → "- My advice…"). */
+/** Characters at the end of a rewritten text that `opensUnit` reads: a list marker and its emphasis fit in them. */
+const UNIT_OPENING_CHARS = 32;
+
+/**
+ * Where a removal leaves the start of a sentence or of a list item ("- my advice…" → "- My advice…"). Reads only
+ * the end of `text` (it grows with every removal), so a reply with many removals stays linear.
+ */
 function opensUnit(text: string): boolean {
-  return (
-    /(?:^|\n)[ \t]*(?:(?:[-*+•]|\d{1,3}[.)])[ \t]+)?[*_"“‘(]*$/u.test(text) ||
-    opensSentence(text, text.length)
-  );
+  if (opensSentence(text, text.length)) return true;
+  const tail = text.slice(-UNIT_OPENING_CHARS);
+  const newline = tail.lastIndexOf('\n');
+  const line = newline >= 0 ? tail.slice(newline + 1) : text.length <= UNIT_OPENING_CHARS ? text : null;
+  return line !== null && /^[ \t]*(?:(?:[-*+•]|\d{1,3}[.)])[ \t]+)?[*_"“‘(]*$/u.test(line);
 }
 
 /** A connector that leaned on a removed sentence ("…I don't have a life. But I'm happy to help."). */
@@ -1296,13 +1475,62 @@ function upperFirst(text: string): string {
 }
 
 /**
- * Removes self-deprecating AI disclaimers from `text`: a phrase ("As an AI, I can't…" → "I can't…") or a sentence
- * ("I don't have a life." → ""), keeping what follows "but", "so", "though" or "yet" in it ("I'm only an AI, but
- * here's what I'd do" → "Here's what I'd do"). Linear: each rule is one pass over the text.
+ * How a volunteered disclaimer is rewritten out of a text: `reply` (a whole reply, the answer or what a call says),
+ * `unit` (one streamed sentence of a reply) or `field` (anything else: a claim, a next action, a memory, a recap).
+ * A reply and its units keep the honest answer; a reply that was nothing but a disclaimer leaves
+ * {@link DISCLAIMER_FALLBACK}; a unit or a field leaves ''.
  */
-function withoutDisclaimers(text: string, fallback: boolean): { text: string; findings: IdentityFinding[] } {
+export type DisclaimerScope = 'reply' | 'unit' | 'field';
+
+interface DisclaimerContext {
+  readonly scope: DisclaimerScope;
+  /** The reply already said honestly what the coach is (an earlier streamed unit). */
+  readonly identified: boolean;
+  readonly personaName: string;
+  readonly eirFirstName: string | null;
+}
+
+/**
+ * Removes self-deprecating AI disclaimers from `text`: a phrase ("As an AI, I can't…" → "I can't…") or a sentence
+ * ("I don't have a life." → ""), keeping what follows "but", "so", "though" or "yet" in it ("I don't have a life,
+ * but I'd love to hear about your weekend" → "I'd love to hear about your weekend").
+ *
+ * Honesty is never removed: in a reply, the first disclaimer sentence that also says what the coach is ("I'm just an
+ * AI.", "No. I don't have feelings, I'm Corin's digital twin.") becomes the coach's {@link honestLine} unless the
+ * rest of the reply (or an earlier unit) already says it. Linear: at most two passes, each rule one pass over the
+ * text.
+ */
+function withoutDisclaimers(
+  text: string,
+  ctx: DisclaimerContext,
+): { text: string; findings: IdentityFinding[] } {
+  const first = stripDisclaimers(text, ctx, null);
+  const result =
+    !first.honestCut ||
+    ctx.scope === 'field' ||
+    ctx.identified ||
+    saysWhatItIs(first.text, ctx.personaName, ctx.eirFirstName)
+      ? first
+      : stripDisclaimers(text, ctx, honestLine(ctx.personaName, ctx.eirFirstName));
+  if (result.findings.length === 0) return { text, findings: [] };
+  const out = result.text.trim();
+  if (/\p{L}/u.test(out)) return { text: out, findings: result.findings };
+  return { text: ctx.scope === 'reply' ? DISCLAIMER_FALLBACK : '', findings: result.findings };
+}
+
+/**
+ * One pass of {@link withoutDisclaimers}. `honest`: the line that takes the place of the first disclaimer sentence
+ * that says what the coach is (null: every disclaimer sentence is removed). `honestCut`: such a sentence was cut.
+ */
+function stripDisclaimers(
+  text: string,
+  ctx: DisclaimerContext,
+  honest: string | null,
+): { text: string; findings: IdentityFinding[]; honestCut: boolean } {
   const findings: IdentityFinding[] = [];
   let current = text;
+  let honestCut = false;
+  let honestLeft = honest;
   for (const { rule, pattern, scope } of DISCLAIMER_RULES) {
     pattern.lastIndex = 0;
     const cuts: { start: number; end: number; keep: string }[] = [];
@@ -1320,11 +1548,15 @@ function withoutDisclaimers(text: string, fallback: boolean): { text: string; fi
       const span = sentenceSpan(current, m.index, m.index + m[0].length);
       const rest = current.slice(m.index + m[0].length, span.end);
       const kept = KEEP_AFTER.exec(rest);
-      cuts.push({
-        start: span.start,
-        end: span.end,
-        keep: kept === null ? '' : upperFirst(rest.slice(kept.index + kept[0].length)),
-      });
+      let keep = kept === null ? '' : upperFirst(rest.slice(kept.index + kept[0].length));
+      if (saysWhatItIs(current.slice(span.start, span.end), ctx.personaName, ctx.eirFirstName)) {
+        honestCut = true;
+        if (honestLeft !== null) {
+          keep = keep === '' ? honestLeft : `${honestLeft} ${keep}`;
+          honestLeft = null;
+        }
+      }
+      cuts.push({ start: span.start, end: span.end, keep });
       findings.push({ kind: 'ai_disclaimer', rule });
       pattern.lastIndex = Math.max(span.end, m.index + m[0].length);
     }
@@ -1354,10 +1586,7 @@ function withoutDisclaimers(text: string, fallback: boolean): { text: string; fi
     }
     current = `${next}${current.slice(cursor)}`;
   }
-  if (findings.length === 0) return { text, findings };
-  current = current.trim();
-  if (/\p{L}/u.test(current)) return { text: current, findings };
-  return { text: fallback ? DISCLAIMER_FALLBACK : '', findings };
+  return { text: current, findings, honestCut };
 }
 
 /**
@@ -1406,6 +1635,165 @@ function resolveNames(options: IdentityCheckOptions): ResolvedNames {
 /** The sentence `rewriteIdentity` puts in place of a violation of `kind`, for these options. */
 export function identityReplacementFor(kind: IdentityViolationKind, options: IdentityCheckOptions): string {
   return identityReplacement(kind, options.personaName, resolveNames(options).eirFirstName);
+}
+
+/** Whether `text` says honestly what the coach is ("I'm Corin's digital twin", "I'm an AI", "not a person"). */
+export function identifiesHonestly(text: string, options: IdentityCheckOptions): boolean {
+  return saysWhatItIs(text, options.personaName, resolveNames(options).eirFirstName);
+}
+
+/** What a sincere question about the coach asks about: a person, a bot, a recording. */
+const ASKED_WHAT =
+  '(?:real|human(?:\\s+being)?|person|people|bot|robot|chatbot|ai|a\\.i\\.|machine|computer|program|software|recording|automated|live|alive|sentient|conscious|man|woman|guy|girl|lady)';
+/** Words that may come between "are you" and what it asks about ("are you even a real person"). */
+const ASKED_FILLER =
+  '(?:(?:even|really|actually|just|like|truly|honestly|for\\s+real|a|an|some|kind\\s+of|sort\\s+of|real|actual|live|living)\\s+){0,6}';
+/** The founder's own words about who they are talking to, by question (the persona's EIR is added by name). */
+const IDENTITY_QUESTION_SOURCES = [
+  `(?:are|r)\\s+(?:you|u)\\s+${ASKED_FILLER}${ASKED_WHAT}(?!\\p{L})`,
+  `(?:am\\s+i|are\\s+we)\\s+(?:(?:really|actually|even|just)\\s+)?(?:talking|speaking|chatting|texting|messaging)\\s+(?:to|with)\\s+(?:(?:a|an|the|some|real|actual|live)\\s+)*(?:person|human|bot|robot|chatbot|ai|a\\.i\\.|machine|computer|program|software|recording|someone\\s+real)(?!\\p{L})`,
+  'who\\s+(?:am\\s+i|are\\s+we)\\s+(?:really\\s+|actually\\s+|even\\s+)?(?:talking|speaking|chatting|texting)\\s+(?:to|with)',
+  '(?:who|what)\\s+(?:are|r)\\s+(?:you|u)(?:\\s+(?:really|actually|exactly|again))?\\s*(?:[?!.,]|$)',
+  '(?:is|was)\\s+(?:this|that|it)\\s+(?:(?:really|actually|even|just|truly)\\s+)?(?:a\\s+|an\\s+)?(?:bot|robot|chatbot|ai|a\\.i\\.|human|person|real\\s+person|recording|automated|you)(?!\\p{L})',
+  '(?:is|was)\\s+(?:this|that|it)\\s+(?:(?:really|actually|even|just|truly)\\s+)?real\\s*(?:[?!.]|$)',
+];
+/** A terse "human or bot?" (the whole message): "should we build a bot or a human service?" is not about the coach. */
+const TERSE_IDENTITY_QUESTION =
+  /^[\s\p{P}]*(?:(?:so|wait|ok|okay|and|but|hey|honestly)[\s,]+)*(?:(?:a\s+|an\s+)?(?:human|person|real)\s+or\s+(?:a\s+|an\s+)?(?:bot|robot|ai|a\.i\.|machine|computer|program)|(?:a\s+|an\s+)?(?:bot|robot|ai|a\.i\.|machine|computer|program)\s+or\s+(?:a\s+|an\s+)?(?:human|person|real))[\s\p{P}]*$/iu;
+const IDENTITY_QUESTION = new RegExp(`(?<!\\p{L})(?:${IDENTITY_QUESTION_SOURCES.join('|')})`, 'iu');
+/** A statement the founder asks back ("you're a bot, aren't you?"): only with a question mark in the message. */
+const IDENTITY_STATEMENT = new RegExp(
+  `(?<!\\p{L})you(?:${APOS}re|\\s+are)\\s+(?:(?:not|just|only|really|actually|obviously|clearly|definitely)\\s+)*(?:a\\s+|an\\s+)?(?:bot|robot|chatbot|ai|a\\.i\\.|machine|computer|program|software|real|human|person|recording)(?!\\p{L})`,
+  'iu',
+);
+const NAMED_QUESTIONS = new Map<string, RegExp>();
+
+/**
+ * Whether the founder's message sincerely asks who or what the coach is: "are you real?", "am I talking to a bot?",
+ * "is this really Corin?", "is Corin reading this?". The honest answer to it stands as the coach wrote it; a
+ * personal question ("do you have a life?") is not one.
+ */
+export function asksAboutIdentity(founderText: string, options: IdentityCheckOptions): boolean {
+  return identityQuestionOf(founderText, options) !== null;
+}
+
+/**
+ * What a sincere question about the coach asks, when a bare yes or no answers it: whether it is the EIR ("is this
+ * really Corin?"), a person ("are you real?"), a machine ("am I talking to a bot?"), or `open` (who or what it is,
+ * "human or AI?", a question about the EIR's presence: no bare yes or no tells).
+ */
+export type IdentityQuestion = 'eir' | 'person' | 'machine' | 'open';
+
+/** "Are you real?", "am I talking to a person?", "is this a real person?": a yes says it is one. */
+const PERSON_QUESTION = new RegExp(
+  [
+    `(?:are|r)\\s+(?:you|u)\\s+${ASKED_FILLER}(?:real|human(?:\\s+being)?|person|alive|live|man|woman|guy|girl|lady)(?!\\p{L})(?!\\s+or(?!\\p{L}))`,
+    '(?:am\\s+i|are\\s+we)\\s+(?:(?:really|actually|even|just)\\s+)?(?:talking|speaking|chatting|texting|messaging)\\s+(?:to|with)\\s+(?:(?:a|an|the|some|real|actual|live)\\s+)*(?:person|human|someone\\s+real)(?!\\p{L})(?!\\s+or(?!\\p{L}))',
+    '(?:is|was)\\s+(?:this|that|it)\\s+(?:(?:really|actually|even|just|truly)\\s+)?(?:a\\s+)?(?:human|person|real\\s+person)(?!\\p{L})(?!\\s+or(?!\\p{L}))',
+    '(?:is|was)\\s+(?:this|that|it)\\s+(?:(?:really|actually|even|just|truly)\\s+)?real\\s*(?:[?!.]|$)',
+  ]
+    .map((source) => `(?<!\\p{L})${source}`)
+    .join('|'),
+  'iu',
+);
+/** "Are you a bot?", "am I talking to an AI?", "is this automated?": a no says it is not one. */
+const MACHINE_QUESTION = new RegExp(
+  [
+    `(?:are|r)\\s+(?:you|u)\\s+${ASKED_FILLER}(?:bot|robot|chatbot|ai|a\\.i\\.|machine|computer|program|software|recording|automated)(?!\\p{L})(?!\\s+or(?!\\p{L}))`,
+    '(?:am\\s+i|are\\s+we)\\s+(?:(?:really|actually|even|just)\\s+)?(?:talking|speaking|chatting|texting|messaging)\\s+(?:to|with)\\s+(?:(?:a|an|the|some|real|actual|live)\\s+)*(?:bot|robot|chatbot|ai|a\\.i\\.|machine|computer|program|software|recording)(?!\\p{L})(?!\\s+or(?!\\p{L}))',
+    '(?:is|was)\\s+(?:this|that|it)\\s+(?:(?:really|actually|even|just|truly)\\s+)?(?:a\\s+|an\\s+)?(?:bot|robot|chatbot|ai|a\\.i\\.|recording|automated)(?!\\p{L})(?!\\s+or(?!\\p{L}))',
+  ]
+    .map((source) => `(?<!\\p{L})${source}`)
+    .join('|'),
+  'iu',
+);
+const NAMED_EIR_QUESTIONS = new Map<string, RegExp>();
+
+/** What the founder's sincere question about the coach asks ({@link IdentityQuestion}), or null when it asks none. */
+export function identityQuestionOf(
+  founderText: string,
+  options: IdentityCheckOptions,
+): IdentityQuestion | null {
+  const eir = resolveNames(options).eirFirstName;
+  if (eir !== null && namedEirQuestion(eir).test(founderText)) return 'eir';
+  const person = PERSON_QUESTION.test(founderText);
+  const machine = MACHINE_QUESTION.test(founderText);
+  if (person !== machine) return person ? 'person' : 'machine';
+  if (person || IDENTITY_QUESTION.test(founderText) || TERSE_IDENTITY_QUESTION.test(founderText))
+    return 'open';
+  if (founderText.includes('?') && IDENTITY_STATEMENT.test(founderText)) return 'open';
+  return eir !== null && namedQuestions(eir).test(founderText) ? 'open' : null;
+}
+
+/** "Is this really Corin?", "are you Corin?", "am I talking to the real Corin?": a yes says it is the EIR. */
+function namedEirQuestion(eir: string): RegExp {
+  let named = NAMED_EIR_QUESTIONS.get(eir);
+  if (named === undefined) {
+    if (NAMED_EIR_QUESTIONS.size >= MAX_CACHED_NAMES) NAMED_EIR_QUESTIONS.clear();
+    const name = escapeRegExp(eir);
+    named = new RegExp(
+      [
+        `(?:are|r)\\s+(?:you|u)\\s+(?:(?:really|actually|truly|even|the\\s+real)\\s+)*${name}`,
+        `(?:is|was)\\s+(?:this|that|it)\\s+(?:(?:really|actually|truly|even|the\\s+real)\\s+)*${name}`,
+        `(?:am\\s+i|are\\s+we)\\s+(?:(?:really|actually|even)\\s+)?(?:talking|speaking|chatting|texting)\\s+(?:to|with)\\s+(?:the\\s+real\\s+)?${name}`,
+      ]
+        .map((source) => `(?<!\\p{L})${source}${NOT_POSSESSIVE}(?!\\p{L})`)
+        .join('|'),
+      'iu',
+    );
+    NAMED_EIR_QUESTIONS.set(eir, named);
+  }
+  return named;
+}
+
+/** Every question naming the EIR that asks about the coach (its presence included): see {@link identityQuestionOf}. */
+function namedQuestions(eir: string): RegExp {
+  let named = NAMED_QUESTIONS.get(eir);
+  if (named === undefined) {
+    if (NAMED_QUESTIONS.size >= MAX_CACHED_NAMES) NAMED_QUESTIONS.clear();
+    const name = escapeRegExp(eir);
+    named = new RegExp(
+      [
+        `(?:are|r)\\s+(?:you|u)\\s+(?:(?:really|actually|truly|even|the\\s+real)\\s+)*${name}`,
+        `(?:is|was)\\s+(?:this|that|it)\\s+(?:(?:really|actually|truly|even|the\\s+real)\\s+)*${name}`,
+        `(?:am\\s+i|are\\s+we)\\s+(?:(?:really|actually|even)\\s+)?(?:talking|speaking|chatting|texting)\\s+(?:to|with)\\s+(?:the\\s+real\\s+)?${name}`,
+        `you(?:${APOS}re|\\s+are)\\s+(?:(?:not|really|actually|truly)\\s+)*${name}(?=[^?]*\\?)`,
+        `is\\s+${name}\\s+(?:(?:really|actually|even)\\s+)?(?:here|reading\\s+(?:this|these)|on\\s+(?:the|this)\\s+(?:call|line)|listening|watching|typing|behind\\s+(?:this|these)|real)`,
+        `(?:can|does|will)\\s+${name}\\s+(?:(?:really|actually|even)\\s+)?(?:see|read|hear)\\s+(?:this|these|me|us|what)`,
+      ]
+        .map((source) => `(?<!\\p{L})${source}${NOT_POSSESSIVE}(?!\\p{L})`)
+        .join('|'),
+      'iu',
+    );
+    NAMED_QUESTIONS.set(eir, named);
+  }
+  return named;
+}
+
+/** How `rewriteIdentity` treats a text beyond the identity rules. */
+export interface IdentityRewriteOptions extends IdentityCheckOptions {
+  /** `false` for in-character rehearsal lines: the counterpart may speak as a person (never as the EIR). */
+  checkHumanClaims?: boolean;
+  /** How a volunteered AI disclaimer is rewritten out (see {@link DisclaimerScope}). Default `field`. */
+  disclaimers?: DisclaimerScope;
+  /**
+   * The founder sincerely asked who or what the coach is ({@link asksAboutIdentity}): the coach's answer stands as
+   * written, so no disclaimer is removed from it (identity violations still are).
+   */
+  identityAsked?: boolean;
+  /** An earlier unit of the same streamed reply already said honestly what the coach is. */
+  identified?: boolean;
+  /**
+   * The text opens the reply to a sincere question about the coach ({@link identityQuestionOf}): a first sentence
+   * that only says yes to "is this really Corin?" or "are you real?" ("Yes!", "Yep, it's me."), or no to "am I
+   * talking to a bot?", without saying what the coach is, claims to be the EIR or a person (`answers_as_person`).
+   */
+  answers?: IdentityQuestion | null;
+  /**
+   * `false` for text that is the founder's own to say or do (a next action: "Email Dana: I'll see you Monday"): a
+   * claim of presence there is theirs. Default true.
+   */
+  presence?: boolean;
 }
 
 /**
@@ -1468,6 +1856,32 @@ const SEVERITY: Readonly<Record<IdentityViolationKind, number>> = {
   ai_disclaimer: 3,
 };
 
+/** A bare yes ("Yes!", "Yep, it's me.", "Of course."), not "of course not" or "yes and no". */
+const AFFIRMS =
+  /^[\s"“'‘*_(]*(?:(?:yes|yeah|yep|yup|yess+|indeed|absolutely|definitely|certainly|of\s+course|sure|totally|you\s+bet|for\s+real|100%)(?![\p{L}'’])(?!\s+not(?!\p{L}))(?!\s*(?:or|and|\/)\s*no(?!\p{L}))|(?:it|that)(?:['’]s|\s+is)\s+(?:really\s+|actually\s+|truly\s+|just\s+)?(?:me|him|her)(?!\p{L})|speaking(?!\p{L})|in\s+the\s+flesh(?!\p{L}))/iu;
+/** A bare no ("No.", "Nope!", "Of course not."). */
+const DENIES =
+  /^[\s"“'‘*_(]*(?:no|nope|nah|never|not\s+at\s+all|of\s+course\s+not|definitely\s+not|absolutely\s+not|certainly\s+not)(?![\p{L}'’])/iu;
+
+/**
+ * The first sentence of a reply to a sincere question about the coach, when it only says yes to being the EIR or
+ * a person, or no to being a machine, and does not say what the coach is ("Yes! Let's look at your pricing." to
+ * "is this really Corin?"). Null otherwise.
+ */
+function bareAnswer(
+  text: string,
+  question: IdentityQuestion | null | undefined,
+  personaName: string,
+  eirFirstName: string | null,
+): { start: number; end: number } | null {
+  if (question === null || question === undefined || question === 'open') return null;
+  const opening = question === 'machine' ? DENIES : AFFIRMS;
+  if (!opening.test(text)) return null;
+  const first = sentenceSpan(text, 0, 0);
+  if (saysWhatItIs(text.slice(first.start, first.end), personaName, eirFirstName)) return null;
+  return first;
+}
+
 /**
  * Finds identity violations and replaces each offending sentence with a neutral disclosure
  * sentence. `checkHumanClaims: false` is used for in-character rehearsal lines, where the
@@ -1477,17 +1891,7 @@ const SEVERITY: Readonly<Record<IdentityViolationKind, number>> = {
  * finding per sentence, for its gravest violation); the next round checks the result. Replacements never
  * match, so rounds stop as soon as nothing is left.
  */
-export function rewriteIdentity(
-  text: string,
-  options: IdentityCheckOptions & {
-    checkHumanClaims?: boolean;
-    /**
-     * When the text was nothing but a disclaimer: `true` (default) leaves {@link DISCLAIMER_FALLBACK}, `false` leaves
-     * '' (one streamed sentence of a longer reply).
-     */
-    disclaimerFallback?: boolean;
-  },
-): IdentityRewrite {
+export function rewriteIdentity(text: string, options: IdentityRewriteOptions): IdentityRewrite {
   // Every rule needs a word; a run of punctuation (a streamed unit such as ". ") holds no claim.
   if (!/\p{L}/u.test(text)) return { text, findings: [] };
   const names = resolveNames(options);
@@ -1507,7 +1911,9 @@ export function rewriteIdentity(
   // Every rule of a name contains its first name under the same flags: a name the current text never
   // mentions has no rule to run (each round asks again, since a replacement sentence names the persona's EIR).
   const base = BASE_PATTERNS.filter(
-    (pat) => options.checkHumanClaims !== false || pat.kind !== 'claims_human',
+    (pat) =>
+      (options.checkHumanClaims !== false || pat.kind !== 'claims_human') &&
+      (options.presence !== false || pat.rule !== 'physical_presence'),
   );
   const ruleCache = new Map<NameSpec, IdentityPattern[]>();
   const rulesOf = (spec: NameSpec): IdentityPattern[] => {
@@ -1538,6 +1944,14 @@ export function rewriteIdentity(
   const maxRounds = (text.match(/[.!?\n]/g)?.length ?? 0) + 2;
   for (let round = 0; round < maxRounds; round += 1) {
     const hits: Hit[] = [];
+    // A bare yes (or no) to a sincere question about the coach: read once, on the reply as written.
+    const bare =
+      round === 0 && options.checkHumanClaims !== false
+        ? bareAnswer(current, options.answers, options.personaName, names.eirFirstName)
+        : null;
+    // The hit ends inside the sentence (before its own punctuation), so its sentence is the first one only.
+    if (bare !== null)
+      hits.push({ start: bare.start, end: bare.start + 1, kind: 'claims_human', rule: 'answers_as_person' });
     const patterns = [...base];
     for (const spec of names.specs) if (namePresent(spec, current)) patterns.push(...rulesOf(spec));
     for (const pat of patterns) {
@@ -1550,7 +1964,8 @@ export function rewriteIdentity(
           continue;
         }
         const { lastIndex } = re;
-        const accepted = !pat.accept || pat.accept(current, m);
+        const accepted =
+          (!pat.accept || pat.accept(current, m)) && (!pat.acceptIn || pat.acceptIn(current, m, ctx));
         re.lastIndex = lastIndex;
         if (accepted)
           hits.push({ start: m.index, end: m.index + m[0].length, kind: pat.kind, rule: pat.rule });
@@ -1617,9 +2032,15 @@ export function rewriteIdentity(
       current = current.replace(new RegExp(`(${sentence})(?:\\s*${sentence})+`, 'g'), '$1');
     }
   }
-  // Presence: volunteered disclaimers are rewritten out (role-play lines are the counterpart's, not the coach's).
-  if (options.checkHumanClaims !== false) {
-    const plain = withoutDisclaimers(current, options.disclaimerFallback !== false);
+  // Presence: volunteered disclaimers are rewritten out (role-play lines are the counterpart's, not the coach's),
+  // never the answer to a sincere question about what the coach is.
+  if (options.checkHumanClaims !== false && options.identityAsked !== true) {
+    const plain = withoutDisclaimers(current, {
+      scope: options.disclaimers ?? 'field',
+      identified: options.identified === true,
+      personaName: options.personaName,
+      eirFirstName: names.eirFirstName,
+    });
     current = plain.text;
     findings.push(...plain.findings);
   }

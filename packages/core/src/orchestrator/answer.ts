@@ -247,6 +247,7 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
             eirNames: guards.eirNames,
             personaEirName: spec.personaEirName,
             addressees: guards.addressees,
+            founderText: spec.founderText,
             otherVentureNames: guards.others.names,
             otherVentureCanaries: guards.others.canaries,
             otherVentureMemberNames: guards.others.memberNames,
@@ -276,6 +277,7 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
     eirNames: guards.eirNames,
     personaEirName: spec.personaEirName,
     addressees: guards.addressees,
+    founderText: spec.founderText,
     channel: spec.channel,
   });
   validated.results.notes.push(...generation.notes);
