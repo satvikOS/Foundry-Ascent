@@ -35,6 +35,24 @@ def load_smoke(path: Path = SCENARIOS_DIR / "smoke.json") -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def select_scenarios(
+    scenarios: Sequence[Mapping[str, Any]], ids: Sequence[str] = (), repeat: int = 1
+) -> list[dict[str, Any]]:
+    """The scenarios to run, in file order: all, or only `ids`; each `repeat` times (a repeat's id gets `#n`, so its
+    private record and its row stay apart; the dimensions are counted per run)."""
+    wanted = [s for s in scenarios if not ids or s["id"] in ids]
+    missing = sorted(set(ids) - {s["id"] for s in scenarios})
+    if missing:
+        raise ValueError(f"unknown scenario ids: {', '.join(missing)}")
+    if not 1 <= repeat <= 10:
+        raise ValueError("repeat must be from 1 to 10")
+    out: list[dict[str, Any]] = []
+    for n in range(1, repeat + 1):
+        for s in wanted:
+            out.append(dict(s) if repeat == 1 else {**s, "id": f"{s['id']}#{n}"})
+    return out
+
+
 @dataclass
 class TurnRecord:
     founder: str

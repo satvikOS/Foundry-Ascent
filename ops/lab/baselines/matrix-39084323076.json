@@ -1738,7 +1738,32 @@
       "founder_name": 66,
       "words_p50": 156,
       "words_p90": 281
-    }
+    },
+    "validator_notes": {
+      "crisis_support": 1,
+      "facts_downgraded:1": 5,
+      "facts_downgraded:2": 2,
+      "narrowed": 3,
+      "no_model_call": 1,
+      "spoken_sanitized": 3,
+      "spoken_truncated": 4,
+      "stream_structured_output": 2
+    },
+    "findings": {
+      "always_asks": 1,
+      "repeated_opening": 7,
+      "repeated_question": 14,
+      "repeated_reply": 11,
+      "social_turn_report": 6,
+      "spoken_no_handback": 6,
+      "spoken_too_long": 5,
+      "stacked_questions": 28,
+      "stock_opener": 3,
+      "structured_leak": 1,
+      "topic_not_resumed": 1,
+      "volunteered_ai_disclaimer": 3
+    },
+    "voice_turns": 11
   },
   "spend": {
     "app_usd": 0.559383,
@@ -1789,5 +1814,41 @@
   },
   "duration_seconds": 520.6,
   "harness_error": null,
-  "baseline_note": "Run 39084323076 (main 6cfc9a9, before the wave-6 presence work). The phrase census was computed afterwards from its sealed transcripts with conversation_lab/census.py; everything else is the run's own public summary."
+  "baseline_note": "Run 39084323076 (main 6cfc9a9, before the wave-6 hotfix and presence work). The phrase census, validator notes, grader findings and app-log numbers were computed afterwards from its sealed outputs with conversation_lab (census.py, logstats.py); everything else is the run's own public summary. Invalid-output issue codes were not logged before the hotfix, so their counts are unknown (null).",
+  "app_logs": {
+    "model_attempts": {
+      "turn": {
+        "attempts": 172,
+        "first_attempts": 160,
+        "first_invalid_output": 12,
+        "invalid_output": 12,
+        "kind:repair": 12,
+        "first_invalid_share_pct": 7.5
+      }
+    },
+    "invalid_output_issues": {},
+    "root_max_tokens": null,
+    "turn_total_ms": {
+      "chat": {
+        "p50": 5253.0,
+        "p95": 9818.0,
+        "n": 70
+      },
+      "voice": {
+        "p50": 4466.0,
+        "p95": 6516.0,
+        "n": 11
+      }
+    },
+    "voice_first_speech_ms": {
+      "p50": 1362.0,
+      "p95": 1604.0,
+      "n": 11
+    },
+    "polly_first_audio_ms": null,
+    "stream_fallbacks": {
+      "structured_output": 2
+    },
+    "interrupt_requests": 0
+  }
 }

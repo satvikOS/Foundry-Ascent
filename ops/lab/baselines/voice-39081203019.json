@@ -1,0 +1,165 @@
+{
+  "suite": "voice",
+  "budget_usd": 1.0,
+  "max_scenarios": 4,
+  "stopped_by": null,
+  "models": {
+    "app": {
+      "primary": "us.amazon.nova-2-lite-v1:0",
+      "fallback": "global.amazon.nova-2-lite-v1:0",
+      "embeddings": "amazon.titan-embed-text-v2:0"
+    },
+    "simulator": null,
+    "judge": null,
+    "probes": {}
+  },
+  "backfill": "chunks=70 memory=50 stoppedBy=done",
+  "result": {
+    "playwright_exit": 0,
+    "passed": 1,
+    "run": 1,
+    "voice": {
+      "passed": true,
+      "reason": "pass",
+      "error": null,
+      "input_mode": "transcribe",
+      "mic_opened": true,
+      "device_line_heard": true,
+      "lines": [
+        {
+          "id": "VC-1",
+          "wer": 0.0,
+          "heard": true,
+          "end_of_speech_to_turn_ms": 646,
+          "turn_to_first_audio_ms": 1489,
+          "first_audio_ms": 2134
+        },
+        {
+          "id": "VC-2",
+          "wer": 0.0,
+          "heard": true,
+          "end_of_speech_to_turn_ms": 608,
+          "turn_to_first_audio_ms": 1088,
+          "first_audio_ms": 1695
+        },
+        {
+          "id": "VC-3",
+          "wer": 0.0,
+          "heard": true,
+          "end_of_speech_to_turn_ms": 624,
+          "turn_to_first_audio_ms": 1119,
+          "first_audio_ms": 1743
+        },
+        {
+          "id": "VC-4",
+          "wer": 0.0,
+          "heard": true,
+          "end_of_speech_to_turn_ms": 593,
+          "turn_to_first_audio_ms": 969,
+          "first_audio_ms": 1562
+        }
+      ],
+      "mean_wer": 0.0,
+      "first_audio_ms": {
+        "p50": 1695.1,
+        "p95": 2134.2
+      },
+      "end_of_speech_to_turn_ms": {
+        "p50": 607.5,
+        "p95": 645.6
+      },
+      "turn_to_first_audio_ms": {
+        "p50": 1087.6,
+        "p95": 1488.6
+      },
+      "barge_in": {
+        "attempted": true,
+        "interrupt_sent": true,
+        "reply_was_playing": true,
+        "stop_ms": 2002
+      },
+      "client_stats": {
+        "firstAudioMsP50": 1090.0,
+        "firstAudioMsP95": 1492.0,
+        "bargeIns": 1.0,
+        "reconnects": 0.0
+      },
+      "self_interruptions": null
+    }
+  },
+  "spend": {
+    "app_usd": 0.060828,
+    "lab_usd": 0.004944,
+    "total_usd": 0.065772,
+    "app_budget_usd": 0.85,
+    "lab_budget_usd": 0.15,
+    "app_by_purpose": [
+      {
+        "purpose": "speech",
+        "usd": 0.037456,
+        "calls": 17,
+        "input_units": 901
+      },
+      {
+        "purpose": "turn",
+        "usd": 0.023235,
+        "calls": 8,
+        "input_units": 64892
+      },
+      {
+        "purpose": "seed",
+        "usd": 0.000131,
+        "calls": 9,
+        "input_units": 6315
+      },
+      {
+        "purpose": "embedding",
+        "usd": 6e-6,
+        "calls": 6,
+        "input_units": 193
+      }
+    ],
+    "lab_by_purpose": {
+      "voice": {
+        "calls": 4,
+        "usd": 0.004944,
+        "units_in": 309,
+        "units_out": 0
+      }
+    }
+  },
+  "duration_seconds": 94.0,
+  "harness_error": null,
+  "app_logs": {
+    "model_attempts": {
+      "turn": {
+        "attempts": 8,
+        "first_attempts": 8,
+        "first_invalid_share_pct": 0.0
+      }
+    },
+    "invalid_output_issues": {},
+    "root_max_tokens": 0,
+    "turn_total_ms": {
+      "chat": null,
+      "voice": {
+        "p50": 3122.0,
+        "p95": 3889.0,
+        "n": 4
+      }
+    },
+    "voice_first_speech_ms": {
+      "p50": 926.0,
+      "p95": 1333.0,
+      "n": 4
+    },
+    "polly_first_audio_ms": {
+      "p50": 122.0,
+      "p95": 165.0,
+      "n": 13
+    },
+    "stream_fallbacks": {},
+    "interrupt_requests": 1
+  },
+  "baseline_note": "Run 39081203019 (main 8646563, one call, one barge-in). App-log numbers computed afterwards from its sealed outputs (logstats.py); self-interruptions were not recorded then."
+}
