@@ -27,10 +27,13 @@ import {
   type StructuredProvider,
 } from './provider.js';
 import { ReasoningFilter } from './reasoning-filter.js';
+import { extractJsonValue } from './structured-repair.js';
 import type { AwsCredentialProvider, AwsCredentials } from './sigv4-fetch.js';
 import type { ChatMessage, RawModelAttempt, StreamStopReason } from './types.js';
 
 export const SUBMIT_TOOL_NAME = 'submit_response';
+/** Most output tokens a repair after a cut-off answer asks for (it doubles the request's bound up to this). */
+export const MAX_REPAIR_OUTPUT_TOKENS = 16_000;
 
 export interface NovaProviderOptions {
   /** e.g. `amazon.nova-2-lite-v1:0` or an inference profile id such as `us.amazon.nova-2-lite-v1:0`. */
@@ -118,6 +121,13 @@ export function toConverseMessages(messages: readonly ChatMessage[]): Message[] 
     throw new TypeError('Converse conversation must contain at least one user message and end with one');
   }
   return merged.map((m) => ({ role: m.role, content: [{ text: m.text }] }));
+}
+
+/** The text blocks of a Converse answer (what the model wrote instead of, or before, a tool call). */
+function textOf(output: ConverseCommandOutput): string {
+  return (output.output?.message?.content ?? [])
+    .map((block) => (typeof block.text === 'string' ? block.text : ''))
+    .join('');
 }
 
 function findToolUse(output: ConverseCommandOutput): ContentBlock.ToolUseMember | null {
@@ -317,6 +327,7 @@ export class NovaProvider implements StructuredProvider {
     let lastIssues: string[];
     let repairs = 0;
     let kind: RawModelAttempt['kind'] = 'initial';
+    let maxTokens = request.maxOutputTokens;
 
     for (;;) {
       const modelId = this.effectiveModelId;
@@ -328,7 +339,7 @@ export class NovaProvider implements StructuredProvider {
             modelId,
             system: [{ text: request.system }],
             messages,
-            inferenceConfig: this.#inferenceConfig(modelId, request.maxOutputTokens),
+            inferenceConfig: this.#inferenceConfig(modelId, maxTokens),
             toolConfig: {
               tools: [
                 {
@@ -369,7 +380,7 @@ export class NovaProvider implements StructuredProvider {
         outputTokens: output.usage?.outputTokens ?? 0,
       };
       const cached = output.usage?.cacheReadInputTokens;
-      const record = (outcome: RawModelAttempt['outcome']): void => {
+      const record = (outcome: RawModelAttempt['outcome'], issues: readonly string[] = []): void => {
         rawAttempts.push({
           provider: 'nova',
           modelId,
@@ -379,6 +390,7 @@ export class NovaProvider implements StructuredProvider {
           usage,
           ...(cached === undefined ? {} : { cachedInputTokens: cached }),
           errorName: null,
+          ...(issues.length > 0 ? { issues } : {}),
         });
       };
 
@@ -388,27 +400,41 @@ export class NovaProvider implements StructuredProvider {
       }
 
       const toolUse = findToolUse(output);
+      const truncated = output.stopReason === 'max_tokens';
       let feedback: string;
       if (toolUse) {
         const outcome = validateStructured(toolUse.toolUse.input, request.zodSchema, request.strict);
         if (outcome.ok) {
-          record('ok');
+          record('ok', outcome.repairs);
           return { value: outcome.value, modelId, rawAttempts };
         }
         lastIssues = outcome.issues;
         feedback = outcome.feedback;
-        if (output.stopReason === 'max_tokens') {
+        if (truncated) {
           feedback = `- The tool input was cut off before it was complete. Respond more concisely.\n${feedback}`;
         }
       } else {
-        lastIssues = [`(root): no_tool_use:${output.stopReason ?? 'unknown'}`];
+        // No tool call: the model may have written the object as text (alone, fenced, after prose or reasoning).
+        const written = extractJsonValue(textOf(output));
+        const outcome =
+          written === undefined ? null : validateStructured(written, request.zodSchema, request.strict);
+        if (outcome?.ok) {
+          record('ok', ['text_output:(root)', ...outcome.repairs]);
+          return { value: outcome.value, modelId, rawAttempts };
+        }
+        lastIssues =
+          outcome === null ? [`(root): no_tool_use:${output.stopReason ?? 'unknown'}`] : outcome.issues;
         feedback = `- You must call the ${SUBMIT_TOOL_NAME} tool with the complete object.`;
+        if (outcome !== null) feedback = `${feedback}\n${outcome.feedback}`;
       }
-      record('invalid_output');
+      record('invalid_output', truncated ? ['(root): max_tokens', ...lastIssues] : lastIssues);
 
       if (repairs >= this.#maxRepairAttempts || deadline.remainingMs() < MIN_REPAIR_BUDGET_MS) break;
       repairs += 1;
       kind = 'repair';
+      // Cut off at the output bound: the repair gets room to finish (a second answer at the same bound would be
+      // cut off again).
+      if (truncated) maxTokens = Math.max(maxTokens, Math.min(maxTokens * 2, MAX_REPAIR_OUTPUT_TOKENS));
       const instruction = repairInstruction(request.schemaName, feedback);
       messages = toolUse?.toolUse.toolUseId
         ? [

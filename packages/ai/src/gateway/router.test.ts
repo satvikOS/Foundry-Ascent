@@ -261,6 +261,28 @@ describe('model router — primary/fallback policy', () => {
     expect(line?.fields).toMatchObject({ inputTokens: 3_100, cachedInputTokens: 3_000 });
   });
 
+  it('logs why a structured attempt failed, and the repairs a valid one needed, as codes (LAB-M6)', async () => {
+    const repaired: Behaviour = () =>
+      Promise.resolve({
+        value: VALID_ANSWER,
+        modelId: NOVA,
+        rawAttempts: [
+          {
+            ...attempt('nova', NOVA, 'invalid_output'),
+            issues: ['(root): max_tokens', 'tags: invalid_type'],
+          },
+          { ...attempt('nova', NOVA, 'ok'), kind: 'repair', issues: ['missing_null:note'] },
+        ],
+      });
+    const { gw, logger } = gateway(repaired, ok('nova', NOVA));
+    await gw.generateStructured(request);
+    const lines = logger.events.filter((e) => e.event === 'ai.model.attempt').map((e) => e.fields);
+    expect(lines).toMatchObject([
+      { outcome: 'invalid_output', issues: '(root): max_tokens,tags: invalid_type' },
+      { outcome: 'ok', issues: 'missing_null:note' },
+    ]);
+  });
+
   it('exposes model info', () => {
     const { gw } = gateway(ok('luna', LUNA), ok('nova', NOVA));
     expect(gw.info).toEqual({

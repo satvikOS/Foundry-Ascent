@@ -1,5 +1,6 @@
 import {
   DISTILL_LIMITS,
+  DISTILL_MAX_OUTPUT_TOKENS,
   DISTILL_SCHEMA_NAME,
   DistillDraft,
   MAX_DISTILL_TURNS,
@@ -621,6 +622,7 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
           messages: prompt.messages,
           schemaName: DISTILL_SCHEMA_NAME,
           zodSchema: DistillDraft,
+          maxOutputTokens: DISTILL_MAX_OUTPUT_TOKENS,
           timeoutMs: kit.config.turns.modelTimeoutMs,
           ...(remaining === null ? {} : { signal: AbortSignal.timeout(Math.max(1_000, remaining)) }),
         },

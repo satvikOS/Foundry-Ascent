@@ -2,6 +2,7 @@ import type { z } from 'zod';
 
 import type { Deadline } from './deadline.js';
 import { restoreOptionalNulls, type StrictJsonSchema } from './json-schema.js';
+import { extractJsonValue, repairStructured } from './structured-repair.js';
 import type {
   AttemptOutcome,
   ChatMessage,
@@ -121,7 +122,12 @@ export const MIN_REPAIR_BUDGET_MS = 1_500;
 const MAX_ECHO_CHARS = 24_000;
 
 export type ValidationOutcome<T> =
-  | { ok: true; value: T }
+  | {
+      ok: true;
+      value: T;
+      /** Repairs made before validation (`code:path`, safe to log; see structured-repair.ts). */
+      repairs: readonly string[];
+    }
   | {
       ok: false;
       /** `path: code` strings, safe to log. */
@@ -135,15 +141,20 @@ function formatPath(path: readonly PropertyKey[]): string {
   return path.map((p) => (typeof p === 'number' ? `[${p}]` : String(p))).join('.');
 }
 
-/** Validates an already-decoded JSON value against the request schema. */
+/**
+ * Validates an already-decoded JSON value against the request schema, after the schema-guided repairs of a
+ * model's hand-written JSON (`repairStructured`: left-out nullable fields, JSON in strings, wrappers, enum case…).
+ * The Zod schema validates the repaired value in full.
+ */
 export function validateStructured<T>(
   value: unknown,
   zodSchema: z.ZodType<T>,
   strict: StrictJsonSchema,
 ): ValidationOutcome<T> {
-  const restored = restoreOptionalNulls(value, strict);
+  const { value: repaired, repairs } = repairStructured(value, strict);
+  const restored = restoreOptionalNulls(repaired, strict);
   const parsed = zodSchema.safeParse(restored);
-  if (parsed.success) return { ok: true, value: parsed.data };
+  if (parsed.success) return { ok: true, value: parsed.data, repairs };
   const issues = parsed.error.issues.slice(0, 20);
   return {
     ok: false,
@@ -152,20 +163,18 @@ export function validateStructured<T>(
   };
 }
 
-/** Parses model text as JSON (tolerating a Markdown code fence) and validates it. */
+/**
+ * Parses model text as JSON and validates it. The JSON may stand alone, sit in a Markdown code fence, or follow
+ * prose or a reasoning block (`extractJsonValue`).
+ */
 export function parseStructuredText<T>(
   text: string,
   zodSchema: z.ZodType<T>,
   strict: StrictJsonSchema,
   truncated: boolean,
 ): ValidationOutcome<T> {
-  let candidate = text.trim();
-  const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(candidate);
-  if (fenced?.[1] !== undefined) candidate = fenced[1];
-  let decoded: unknown;
-  try {
-    decoded = JSON.parse(candidate);
-  } catch {
+  const decoded = extractJsonValue(text);
+  if (decoded === undefined) {
     return {
       ok: false,
       issues: [truncated ? '(root): truncated_json' : '(root): invalid_json'],
