@@ -458,6 +458,14 @@ describe('a real likeness and the cloned voice', () => {
     // The genuine audio goes through.
     await vendor.face.speak(ctx.maya, callId, { manifest, firstChunk: 0, pcm });
     expect(vendorFace.spoken.length).toBe(shown + 1);
+
+    // A passage of the stored reply (no signature): a stock voice on the call's speakers, never the clone or the face.
+    const clonedBefore = clone.calls.length;
+    const run = await speak(vendor, { sessionId, turnId: unit.turnId, text: unit.text });
+    expect(clone.calls.length).toBe(clonedBefore);
+    expect(run.faceManifest).toBeUndefined();
+    expect(run.contentType).toBe('audio/mpeg');
+    expect(polly.calls.at(-1)?.format).toBe('mp3');
     // Barge-in reaches the face from the server.
     await vendor.face.interrupt(ctx.maya, callId);
     expect(vendorFace.interrupts.length).toBeGreaterThan(0);
