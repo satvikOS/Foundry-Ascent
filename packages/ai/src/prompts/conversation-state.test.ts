@@ -454,7 +454,9 @@ describe('what the new message needs of the reply (wave 7)', () => {
 
   it('a request to choose asks for the answer first (LAB-V3), even on the first message', () => {
     const first = block([], 'Should we charge per branch or a flat campus fee?');
-    expect(first).toContain('- They asked you to choose or give your view: open with your answer and why');
+    expect(first).toContain('- They asked you to choose or give your view: open with one pick, outright');
+    // SM-06: "Just tell me which one" gets a pick, not a conditional one.
+    expect(block(earlier, 'Just tell me which one. Flat or per library?')).toContain('no "only if"');
     expect(block(earlier, 'We interviewed twelve librarians this week.')).not.toContain(
       'choose or give your view',
     );
@@ -467,5 +469,82 @@ describe('what the new message needs of the reply (wave 7)', () => {
     expect(block([], 'Hi!', 'Good to have you back. Last time, we talked about pricing.')).toContain(
       'which already picked up last time: never say that again.',
     );
+  });
+});
+
+describe('news, sarcasm, a number, and the vEIR’s own phrases (wave 7: LAB-R8, SM-16, SM-08, item 23)', () => {
+  const block = (history: { founderText: string; answer: string }[], text: string, opener?: string) =>
+    renderConversationState(deriveConversationState(history, text, opener === undefined ? {} : { opener }));
+  const earlier = [
+    {
+      founderText: 'How should we price the pilot?',
+      answer: 'Per library. What did you learn from the five library staff interviews?',
+    },
+  ];
+
+  it('hears the founder’s news, and never a question about it', () => {
+    for (const text of [
+      'Big news, we signed a letter of intent with Hartwell!',
+      "We're hiring Noor as a designer.",
+      "We're bringing on a designer called Noor.",
+      "The student union said they'll promote us if we add group booking.",
+      'Good news: the dean said yes.',
+      'We lost the pilot.',
+      'Hartwell signed the LOI this morning.',
+    ]) {
+      expect(founderMoves(text), text).toContain('news');
+    }
+    for (const text of [
+      'Has Hartwell signed yet?',
+      'Should we sign the letter of intent?',
+      'How do we hire a designer?',
+      'We need to run a pilot with two labs first.',
+    ]) {
+      expect(founderMoves(text), text).not.toContain('news');
+    }
+  });
+
+  it('news comes first: react and ask about it, never steer back to an earlier question (LAB-R8)', () => {
+    const news = block(earlier, "We're bringing on a designer called Noor.");
+    expect(news).toContain('- They bring news: react to it and ask about it first');
+    expect(news).toContain('never steer back');
+    expect(block(earlier, 'Should we price per seat instead?')).not.toContain('They bring news');
+  });
+
+  it('a request for a number asks for a reasoned range (SM-16)', () => {
+    for (const text of [
+      'You keep giving me the same generic advice. Give me a number.',
+      'How much should we charge per library?',
+      'Just give me a ballpark.',
+    ]) {
+      expect(block(earlier, text), text).toContain('- They asked for a number: give a reasoned range');
+    }
+    expect(block(earlier, 'We interviewed twelve librarians this week.')).not.toContain('asked for a number');
+  });
+
+  it('sarcasm is heard as sarcasm (SM-08)', () => {
+    for (const text of [
+      'Oh great, ANOTHER meeting. Love that for me.',
+      'Just what I needed, more paperwork.',
+    ]) {
+      expect(founderMoves(text), text).toContain('sarcasm');
+      expect(block(earlier, text)).toContain('- They are being sarcastic:');
+    }
+    expect(founderMoves('Great, the dean said yes!')).not.toContain('sarcasm');
+  });
+
+  it('a stock phrase the vEIR already used in this conversation is named, so it is not used again (item 23)', () => {
+    const used = [
+      {
+        founderText: 'What now?',
+        answer: 'The riskiest assumption is that libraries will pay. The cheapest test is a paid pilot.',
+      },
+    ];
+    const state = block(used, 'Okay, and then?');
+    expect(state).toMatch(
+      /Phrases you already used in this conversation \(never again\): .*riskiest assumption/,
+    );
+    expect(state).toContain('cheapest test');
+    expect(block(earlier, 'Okay, and then?')).not.toContain('Phrases you already used');
   });
 });

@@ -596,6 +596,63 @@ describe('topic moves within a conversation', () => {
   });
 });
 
+describe('news, a number, a pick, sarcasm, and no stock phrases (wave 7: LAB-R8, SM-16, SM-06, SM-08, item 23)', () => {
+  const pending: HistoryTurn[] = [
+    {
+      founderText: 'The union might help us with promotion.',
+      answer: 'That could be useful. What did you learn from the five library staff interviews?',
+    },
+  ];
+
+  it('reacts to the founder’s news and asks about it, never its own pending question (LAB-R8)', async () => {
+    for (const channel of ['text', 'voice'] as const) {
+      const value = await reply({
+        text: "We're bringing on a designer called Noor.",
+        history: pending,
+        channel,
+      });
+      const said = channel === 'voice' ? (value.spoken ?? '') : value.answer;
+      expect(said).toMatch(/Noor|designer|news|step/i);
+      expect(said).not.toMatch(/library staff interviews|before we|one thing at a time|let's finish/i);
+      expect(said.trim()).toMatch(/\?$/);
+      expect(value.memory_candidates.length).toBeGreaterThan(0);
+    }
+    const bad = await reply({ text: 'We lost the pilot.', history: pending });
+    expect(bad.answer).not.toMatch(/^(?:That's big news|Congrat)/i);
+  });
+
+  it('gives a number when asked for one, a pick when asked to choose, and meets sarcasm lightly', async () => {
+    const number = await reply({
+      text: 'You keep giving me the same generic advice. Give me a number.',
+      history: pending,
+    });
+    expect(number.answer.split(/(?<=[.!?])\s+/)[0]).toMatch(/\d/);
+    const pick = await reply({ text: 'Just tell me which one. Flat or per library?', history: pending });
+    expect(pick.answer.split(/(?<=[.!?])\s+/)[0]).toMatch(
+      /\b(?:my pick|i'd go with|go with)\b.*\b(?:flat|per library)\b/i,
+    );
+    expect(pick.answer).not.toMatch(/\bonly if\b/i);
+    const sarcasm = await reply({ text: 'Oh great, ANOTHER meeting. Love that for me.', history: pending });
+    expect(sarcasm.answer).not.toMatch(/^(?:glad|great[,!.]|awesome|happy to help|perfect[,!.])/i);
+    expect(sarcasm.answer.split(/(?<=[.!?])\s+/)[0]).toMatch(/\b(?:ha|i know|fair|another one|meetings?)\b/i);
+  });
+
+  it('never says "the riskiest assumption", "the cheapest test" or "the weak link", in any mode', async () => {
+    for (const mode of ['diagnose', 'challenge', 'coach', 'teach'] as const) {
+      for (const text of [
+        'How should we price the pilot?',
+        'Is our pilot plan solid?',
+        'Should we raise now?',
+      ]) {
+        const value = await reply({ text, mode });
+        expect(`${value.answer} ${value.challenge ?? ''}`, `${mode}: ${text}`).not.toMatch(
+          /riskiest assumption|cheapest (?:test|experiment)|weak link/i,
+        );
+      }
+    }
+  });
+});
+
 describe('social turns', () => {
   const history: HistoryTurn[] = [
     {

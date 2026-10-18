@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { REPEATED_GREETING_FALLBACK } from './greeting.js';
-import { REPEAT_FALLBACK } from './social.js';
+import { NEWS_FALLBACK, REPEAT_FALLBACK } from './social.js';
 import { sanitizeMarkdown } from './markdown.js';
 import {
   SentenceGate,
@@ -368,6 +368,33 @@ describe('SentenceGate', () => {
         "I'm Corin's digital twin, built from how Corin coaches, and Corin sees what we work on. Back to the pilot?",
       ]).units;
       expect(joined(again)).toContain("I'm Corin's digital twin, built from how Corin coaches");
+    });
+  });
+
+  describe('a reply to the founder’s news (LAB-R8)', () => {
+    it('never shows or says a sentence that parks the news for the vEIR’s own question, typed or spoken', () => {
+      const lab =
+        "One thing at a time — let's finish the student union question first, then we'll talk about Noor. What will Noor work on first?";
+      for (const options of [{}, { spoken: true, spokenWordBudget: 70, maxUnitChars: 280 }]) {
+        for (const chunks of chunkings(lab)) {
+          const units = run(
+            gate({ ...options, founderText: "We're bringing on a designer called Noor." }),
+            chunks,
+          ).units;
+          expect(joined(units).trim()).toBe('What will Noor work on first?');
+          expect(units.map((u) => u.spoken).join(' ')).not.toMatch(/one thing at a time/i);
+        }
+      }
+      // Without news it is left to the model (a founder may ask to finish one thing first).
+      expect(joined(run(gate({ founderText: 'What next?' }), [lab]).units)).toContain('One thing at a time');
+      // A reply of nothing else becomes a short line about the news.
+      expect(
+        joined(
+          run(gate({ founderText: 'Big news, we signed Hartwell!' }), [
+            "Before we talk about that, let's finish the interviews first.",
+          ]).units,
+        ),
+      ).toBe(NEWS_FALLBACK);
     });
   });
 

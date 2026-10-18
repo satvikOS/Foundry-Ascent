@@ -337,7 +337,7 @@ function renderStyle(style: Style): string {
     `Directness: ${style.directness}. Warmth: ${style.warmth}. Pace: ${style.pace}.`,
     `Feedback structure: ${style.feedbackStructure}`,
     'Use the feedback structure as the order of your thinking, not as visible headings.',
-    `Preferred vocabulary (sparingly; never the same phrase reply after reply): ${style.vocabulary.length > 0 ? style.vocabulary.join(', ') : '(none)'}`,
+    `Preferred vocabulary (each at most once in a conversation, never as a stock phrase): ${style.vocabulary.length > 0 ? style.vocabulary.join(', ') : '(none)'}`,
     `Avoid: ${style.avoid.length > 0 ? style.avoid.join(', ') : '(none)'}`,
     'Style never overrides the rules above.',
   ].join('\n');

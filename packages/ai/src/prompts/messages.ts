@@ -97,6 +97,8 @@ export function buildMessages(
   const notes = buildContinuityBlock(options.continuity, {
     ...(options.today !== undefined ? { today: options.today } : {}),
     ...(options.maxContinuityChars !== undefined ? { maxChars: options.maxContinuityChars } : {}),
+    // What the vEIR already said here: an open commitment it raised is not pushed again (LAB-R8).
+    saidInConversation: [...completed.map((t) => t.answer), options.opener ?? null],
   });
   const state =
     options.conversationState === false

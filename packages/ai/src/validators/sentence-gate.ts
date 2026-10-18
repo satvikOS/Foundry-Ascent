@@ -16,7 +16,15 @@ import {
 import { sanitizeMarkdown } from './markdown.js';
 import { REPEATED_GREETING_FALLBACK, withoutRepeatedGreeting } from './greeting.js';
 import { findMetaNarration, isThinkingAloudOpener, type NarrationNames } from './meta-narration.js';
-import { REPEAT_FALLBACK, asksToRepeat, fourGramsOf, repeatsPrevious } from './social.js';
+import {
+  NEWS_FALLBACK,
+  REPEAT_FALLBACK,
+  asksToRepeat,
+  fourGramsOf,
+  parksTheirNews,
+  repeatsPrevious,
+} from './social.js';
+import { founderMoves } from '../prompts/conversation-state.js';
 import { clampWords, toSpeakable } from './speech.js';
 
 /**
@@ -357,6 +365,10 @@ export class SentenceGate {
   readonly #previousGrams: ReadonlySet<string> | null;
   /** Units left out because they said the previous reply again. */
   #repeatsDropped = 0;
+  /** The founder's message brings news: a unit that parks it for the vEIR's agenda is left out (LAB-R8). */
+  readonly #news: boolean;
+  /** Units left out because they parked the founder's news. */
+  #agendaDropped = 0;
   /** Units and words released (the reply budget). */
   #released = { units: 0, words: 0 };
   /** The reply budget is used up: nothing more is released. */
@@ -386,6 +398,7 @@ export class SentenceGate {
     this.#keys = options.evidenceKeys ? new Set([...options.evidenceKeys].map(normalizeKey)) : null;
     this.#question =
       options.founderText === undefined ? null : identityQuestionOf(options.founderText, this.#identity);
+    this.#news = founderMoves(options.founderText ?? '').includes('news');
     const previous = options.previousReply ?? null;
     // No repeat check for a sincere question about the coach: its honest answer is said however recently it was
     // said (the intro of a first meeting, or the last reply when they ask again; the presence policy).
@@ -568,6 +581,12 @@ export class SentenceGate {
         this.#repeatsDropped += 1;
         continue;
       }
+      if (this.#news && parksTheirNews(rawUnit.trim())) {
+        // Their news parked for the vEIR's own question ("Before we talk about that, let's finish…"): never said.
+        this.#cursor = end;
+        this.#agendaDropped += 1;
+        continue;
+      }
       const budget = this.#options.replyBudget ?? null;
       if (budget !== null && this.#released.units > 0) {
         const n = words(rawUnit);
@@ -592,9 +611,11 @@ export class SentenceGate {
       // line instead.
       const instead = this.#droppedGreeting
         ? REPEATED_GREETING_FALLBACK
-        : this.#repeatsDropped > 0
-          ? REPEAT_FALLBACK
-          : null;
+        : this.#agendaDropped > 0
+          ? NEWS_FALLBACK
+          : this.#repeatsDropped > 0
+            ? REPEAT_FALLBACK
+            : null;
       const unit = instead === null ? null : this.#process(instead);
       if (unit !== null && typeof unit !== 'string') this.#show(unit, units);
     }

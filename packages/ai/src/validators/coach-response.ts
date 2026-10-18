@@ -29,14 +29,16 @@ import {
   type IdentityViolationKind,
 } from './identity.js';
 import { sanitizeMarkdown, sanitizePlainText } from './markdown.js';
-import { contentWords, socialTurnOf, type SocialTurn } from '../prompts/conversation-state.js';
+import { contentWords, founderMoves, socialTurnOf, type SocialTurn } from '../prompts/conversation-state.js';
 import { REPEATED_GREETING_FALLBACK, withoutRepeatedGreeting } from './greeting.js';
 import { cutMetaNarration } from './meta-narration.js';
 import {
+  NEWS_FALLBACK,
   REPEAT_FALLBACK,
   asksToRepeat,
   endsWithHandBack,
   withinSocialBudget,
+  withoutAgendaPush,
   withoutRepeats,
 } from './social.js';
 import { SPOKEN_MAX_CHARS, SPOKEN_MAX_WORDS, clampWords, deriveSpoken, toSpeakable } from './speech.js';
@@ -469,8 +471,17 @@ export function validateCoachResponse(
     (options.founderText !== undefined && asksToRepeat(options.founderText))
       ? null
       : options.previousReply;
+  // Their news comes first: a sentence that parks it for the vEIR's own agenda is left out (LAB-R8).
+  const news = options.founderText !== undefined && founderMoves(options.founderText).includes('news');
   const crafted = (text: string, note: boolean): string => {
     let out = text;
+    if (news) {
+      const unparked = withoutAgendaPush(out);
+      if (unparked.dropped > 0) {
+        if (note) notes.push(`agenda_push_removed:${unparked.dropped}`);
+        out = unparked.text === '' ? NEWS_FALLBACK : unparked.text;
+      }
+    }
     if (previous !== null) {
       const unrepeated = withoutRepeats(out, previous);
       if (unrepeated.dropped > 0) {

@@ -93,7 +93,7 @@ export const TOPICS: Readonly<Record<MockTopic, TopicBank>> = {
     title: 'When to raise',
     insights: [
       'Investors fund evidence of pull, not plans{cite}. The question is less "can we raise" and more "what would make this an easy yes".',
-      "Raising before your riskiest assumption is tested usually means a smaller round on worse terms{cite}. It's worth knowing which proof point would change the conversation.",
+      "Raising before your biggest open question is answered usually means a smaller round on worse terms{cite}. It's worth knowing which proof point would change the conversation.",
       "Most early rounds come down to one or two numbers that show momentum{cite}. It helps to decide now which numbers you'd want to show.",
     ],
     questions: [
@@ -103,7 +103,7 @@ export const TOPICS: Readonly<Record<MockTopic, TopicBank>> = {
     ],
     challenge: 'What evidence would an investor need to see that you do not have yet?',
     uncertainty: 'Which proof point investors in this space weigh most.',
-    inference: 'Raising before the riskiest assumption is tested tends to lead to weaker terms.',
+    inference: 'Raising before the biggest open question is answered tends to lead to weaker terms.',
     hypothesis: 'A short paid pilot would be the strongest signal for a first round.',
     action: 'Write down the single metric that would make the next raise easy, and how to reach it.',
     options: [
@@ -116,16 +116,16 @@ export const TOPICS: Readonly<Record<MockTopic, TopicBank>> = {
       note: 'The founder is weighing when to raise relative to the next proof point.',
     },
     followUps: ['Which metric matters most at our stage?', 'How long does a first round usually take?'],
-    advice: 'Raise after the riskiest assumption is tested, with the one proof point that matters.',
+    advice: 'Raise once the biggest open question is answered, with the one proof point that matters.',
     rehearsalLine:
       "You have a nice story, but what have customers actually done that tells me this isn't a nice-to-have?",
     lesson: {
       title: 'Raise from a proof point, not a plan',
       context:
-        'An early founder wanted to start fundraising before the riskiest assumption in the venture had been tested.',
+        "An early founder wanted to start fundraising before the venture's biggest open question had been answered.",
       signal: 'Investor conversations kept circling back to whether customers would really adopt and pay.',
       intervention:
-        'Name the one result that would answer that question, run the cheapest test that could produce it, and start raising once it exists.',
+        'Name the one result that would answer that question, run the smallest test that could produce it, and start raising once it exists.',
       outcome: 'The founder entered investor conversations with evidence instead of promises.',
       limits:
         'Some deep-technology ventures need capital before any proof is possible; then the proof point is a technical milestone instead.',
@@ -180,7 +180,7 @@ export const TOPICS: Readonly<Record<MockTopic, TopicBank>> = {
     insights: [
       "A good pilot answers one question you can't answer any other way{cite}. If it tries to prove everything, it usually proves nothing.",
       'Decide before you start what result would make you stop, and what would make you double down{cite}. Otherwise every outcome looks like progress.',
-      'The cheapest pilot that could prove you wrong is usually smaller than founders expect{cite}. Two sites done well beat five done loosely.',
+      'A pilot that could prove you wrong can be smaller than founders expect{cite}. Two sites done well beat five done loosely.',
     ],
     questions: [
       'What result would make you stop, and have you written it down?',
@@ -344,7 +344,7 @@ export const TOPICS: Readonly<Record<MockTopic, TopicBank>> = {
     insights: [
       "Let's anchor this in what you've actually seen so far{cite}. That's the quickest way to find the next useful step.",
       'There is a lot here, so let me focus on the part with the most uncertainty{cite}. That is usually where the next week should go.',
-      'The most useful next step is usually the cheapest one that could prove you wrong{cite}.',
+      'The most useful next step is usually the quickest one that could prove you wrong{cite}.',
     ],
     questions: [
       'What have you observed directly, and from how many people?',
@@ -355,25 +355,25 @@ export const TOPICS: Readonly<Record<MockTopic, TopicBank>> = {
     uncertainty: 'How representative the available evidence is.',
     inference: 'The current evidence base is thin, so conclusions are provisional.',
     hypothesis: 'The problem is painful enough that people already look for solutions.',
-    action: 'Pick the riskiest assumption and design the cheapest test that could disprove it.',
+    action: 'Pick the belief the plan leans on most and design a quick test that could disprove it.',
     options: [
-      'test the riskiest assumption with the cheapest possible experiment',
+      'test the belief the plan leans on most with a quick experiment',
       'keep building and look for feedback later',
     ],
     memory: {
       type: 'hypothesis',
       title: 'Current focus for the venture',
-      note: 'The riskiest assumption still needs a cheap test.',
+      note: 'The belief the plan leans on most still needs a quick test.',
     },
-    followUps: ['Can you help me find my riskiest assumption?', 'What should I do this week?'],
-    advice: 'Test the riskiest assumption with the cheapest experiment that could disprove it.',
+    followUps: ['Which belief should we test first?', 'What should I do this week?'],
+    advice: 'Test the belief the plan leans on most with a quick experiment that could disprove it.',
     rehearsalLine: 'Walk me through the evidence that customers will pay for this.',
     lesson: {
-      title: 'Test the riskiest assumption first',
+      title: 'Test the load-bearing belief first',
       context: 'An early founder had many open questions and was spreading effort across all of them.',
       signal: 'Weeks of work were not changing the founder’s confidence in the plan.',
       intervention:
-        'Name the single assumption that would sink the venture if wrong, and run the cheapest test that could disprove it.',
+        'Name the single assumption that would sink the venture if wrong, and run the smallest test that could disprove it.',
       outcome: 'Effort went to the question that mattered most, and the next decision became clear.',
       limits: 'Some assumptions cannot be tested cheaply; then look for the earliest leading signal instead.',
     },
@@ -474,6 +474,31 @@ export const REPAIR_LINES = ['Sorry, I misread that.', 'Ah, I got that wrong.'] 
 /** A light return when the founder jokes (only then). */
 export const HUMOUR_LINES = ['Ha, fair.', 'Ha, I like that.'] as const;
 
+/** Meeting sarcasm in kind, briefly ("Oh great, ANOTHER meeting. Love that for me."), before one practical line. */
+export const SARCASM_LINES = [
+  'Ha, I know, another one. Let’s make it a short one.',
+  'Fair, nobody needs more meetings. This one can be quick.',
+] as const;
+
+/** A reaction to good news, and a question about it (LAB-R8: the founder's news comes first). */
+export const GOOD_NEWS_LINES = [
+  'That’s big news.',
+  'That’s a real step forward.',
+  'Now that’s worth stopping on.',
+] as const;
+export const GOOD_NEWS_QUESTIONS = [
+  'How did it come together?',
+  'What did they commit to, exactly?',
+  'What changes for you now?',
+] as const;
+/** A reaction to bad news, and a question about it. */
+export const BAD_NEWS_LINES = ['Oof, that’s a hard one to hear.', 'That’s a blow, I’m sorry.'] as const;
+export const BAD_NEWS_QUESTIONS = [
+  'What happened?',
+  'What do you know about why?',
+  'How are you taking it?',
+] as const;
+
 /** How a recall answer starts when there is something to recall. */
 export const RECALL_LEADS = ['Yes.', 'I do.', 'Sure.'] as const;
 
@@ -502,7 +527,7 @@ export const HAND_BACKS = [
 /** Teaching steps, used in teach mode. */
 export const TEACH_STEPS = [
   'Name the assumption in one sentence.',
-  'Pick the cheapest test that could prove it wrong.',
+  'Pick a quick test that could prove it wrong.',
   'Decide in advance what result would change your plan.',
 ] as const;
 
@@ -529,6 +554,11 @@ export const BANK_PROPER_NOUNS: ReadonlySet<string> = new Set(
     STRESS_LINES,
     REPAIR_LINES,
     HUMOUR_LINES,
+    SARCASM_LINES,
+    GOOD_NEWS_LINES,
+    GOOD_NEWS_QUESTIONS,
+    BAD_NEWS_LINES,
+    BAD_NEWS_QUESTIONS,
     RECALL_LEADS,
     HELLO_AFTER_OPENER,
     HAND_BACKS,

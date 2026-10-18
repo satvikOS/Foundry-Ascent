@@ -235,7 +235,7 @@ describe('buildSystemPrompt', () => {
   it('keeps preferred vocabulary from becoming a refrain', () => {
     // The lab census: "The riskiest assumption…" in 21 of 81 replies.
     expect(buildSystemPrompt(INPUT)).toContain(
-      'Preferred vocabulary (sparingly; never the same phrase reply after reply): riskiest assumption',
+      'Preferred vocabulary (each at most once in a conversation, never as a stock phrase): riskiest assumption',
     );
   });
 

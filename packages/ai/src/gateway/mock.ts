@@ -3,8 +3,10 @@ import type { CoachMode, CoachResponse, CommitmentStatus, MemoryCandidate } from
 import { DISTILL_SCHEMA_NAME, type DistillDraft } from '../distill/schema.js';
 import { AUTO_MODE, parseControlBlock, type PromptControl } from '../prompts/control.js';
 import {
+  asksForNumber,
   asksSomething,
   contentWords,
+  directChoiceOf,
   endsWithQuestion,
   founderMoves,
   socialTurnOf,
@@ -31,7 +33,12 @@ import {
   BANK_PROPER_NOUNS,
   ESCALATION_AREAS,
   GREETINGS,
+  BAD_NEWS_LINES,
+  BAD_NEWS_QUESTIONS,
+  GOOD_NEWS_LINES,
+  GOOD_NEWS_QUESTIONS,
   HAND_BACKS,
+  SARCASM_LINES,
   HELLO_AFTER_OPENER,
   HUMOUR_LINES,
   LEADS,
@@ -772,6 +779,18 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
     return socialResponse(mode, wornDownReply(name), channel);
   }
 
+  // News first (LAB-R8): react to it and ask about it, never the conversation's pending question.
+  if (
+    identity === null &&
+    forced === null &&
+    mode !== 'rehearse' &&
+    moves.includes('news') &&
+    !asksSomething(context.founderText, moves) &&
+    socialTurnOf(context.founderText) === null
+  ) {
+    return newsResponse(mode, context.founderText, channel, openingSeed, reading.priorReplies.join('\n'));
+  }
+
   if (identity === null && forced === null && mode !== 'rehearse') {
     const social = socialReply({
       text: context.founderText,
@@ -791,7 +810,15 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
   if (identity !== null) opening.push(identity);
   if (moves.includes('repair')) opening.push(pick(REPAIR_LINES, seed));
   if (moves.includes('stress')) opening.push(pick(STRESS_LINES, seed));
-  if (moves.includes('humour')) opening.push(pick(HUMOUR_LINES, seed));
+  if (moves.includes('sarcasm')) opening.push(pick(SARCASM_LINES, seed));
+  else if (moves.includes('humour')) opening.push(pick(HUMOUR_LINES, seed));
+  // Asked to choose or for a number: the pick or the number first (LAB-V3, SM-06, SM-16).
+  const choice =
+    identity === null && directChoiceOf(context.founderText) ? pickOf(context.founderText, names) : null;
+  if (choice !== null) opening.unshift(`My pick: ${choice}, because it's the simpler one to test first.`);
+  if (identity === null && asksForNumber(context.founderText)) {
+    opening.unshift(NUMBER_LINES[topic] ?? NUMBER_LINES.general);
+  }
   if (reading.firstMessage && !reading.openerShown && name !== null) {
     opening.unshift(greetingFor(style.warmth, name, reading.previous, openingSeed));
   }
@@ -851,12 +878,12 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
   switch (mode) {
     case 'diagnose':
       paragraphs.push(
-        `If I had to name the riskiest assumption, it's whether ${lowerFirst(withoutFinalStop(bank.hypothesis), names)}${cite2}. I'd want evidence on that before anything else.`,
+        `What I'd want to know first is whether ${lowerFirst(withoutFinalStop(bank.hypothesis), names)}${cite2}: everything else leans on that.`,
       );
       break;
     case 'challenge':
       paragraphs.push(
-        `The strongest version of your case is that the need is real and you're close to it. The weak link is ${lowerFirst(withoutFinalStop(bank.uncertainty), names)}${cite2}. The cheapest test: ${lowerFirst(bank.action, names)}`,
+        `The strongest version of your case is that the need is real and you're close to it. Where it's thinnest is ${lowerFirst(withoutFinalStop(bank.uncertainty), names)}${cite2}. A quick way to check: ${lowerFirst(bank.action, names)}`,
       );
       break;
     case 'coach':
@@ -1012,6 +1039,71 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
           }
         : null,
     spoken: channel === 'voice' ? spoken : null,
+  };
+}
+
+/** A number when one is asked for (SM-16): a reasoned range and the assumption behind it. */
+const NUMBER_LINES: Readonly<Partial<Record<MockTopic, string>>> & { readonly general: string } = {
+  pricing:
+    'My number: $600 to $900 per library a term, if each one saves at least that in staff time on seat questions.',
+  general:
+    "My number: 10 conversations in the next 2 weeks, because fewer than that won't show you a pattern.",
+};
+
+/** The first option of "A or B?" as a pick ("per branch" from "Should we charge per branch or a flat fee?"). */
+function pickOf(text: string, names: readonly string[]): string | null {
+  const question = text.split(/(?<=[.!?])\s+/).find((s) => /\bor\b[^?]*\?/i.test(s)) ?? '';
+  const first = /^(.+?)\s+or\s+/i.exec(question.trim())?.[1];
+  if (first === undefined) return null;
+  let option = first.trim();
+  for (let i = 0; i < 6; i += 1) {
+    const next = option.replace(
+      /^(?:just tell me which one|which one|so|ok|okay|should|shall|do|would|could|can|is it|are|we|i|you|it|charge|price|go with|use|pick|choose|hire|build|run|start with|be)[\s,]+/i,
+      '',
+    );
+    if (next === option) break;
+    option = next;
+  }
+  const words = option.split(/\s+/).filter(Boolean);
+  if (words.length === 0 || words.length > 5) return null;
+  return lowerFirst(option.replace(/[,.;:]+$/, ''), names);
+}
+
+/** A reply to the founder's news (LAB-R8): a reaction in kind and a question about it, and the news kept. */
+function newsResponse(
+  mode: CoachMode,
+  text: string,
+  channel: string,
+  seed: number,
+  said: string,
+): CoachResponse {
+  const bad =
+    /\b(?:lost|pulled out|dropped out|backed out|quit|resigned|left|fell through|said no|rejected|declined|cancell?ed)\b/i.test(
+      text,
+    );
+  const reaction = pick(bad ? BAD_NEWS_LINES : GOOD_NEWS_LINES, seed);
+  const question =
+    freshOrNull(bad ? BAD_NEWS_QUESTIONS : GOOD_NEWS_QUESTIONS, seed >>> 3, said) ??
+    pick(bad ? BAD_NEWS_QUESTIONS : GOOD_NEWS_QUESTIONS, seed >>> 3);
+  const answer = `${reaction} ${question}`;
+  const told = tidyFounderWords(firstSentence(text.trim()).replace(/\s+/g, ' ')).slice(0, 200);
+  const title = told
+    .split(' ')
+    .slice(0, 6)
+    .join(' ')
+    .replace(/[.,;:!?]+$/, '');
+  return {
+    ...socialResponse(mode, answer, channel),
+    memory_candidates: [
+      {
+        type: /\b(?:decided|will|going to|hiring|bringing on|signed)\b/i.test(told) ? 'decision' : 'fact',
+        title,
+        content: told,
+        evidence_ids: [],
+        confidence: 0.8,
+        source: 'founder_stated',
+      },
+    ],
   };
 }
 

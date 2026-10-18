@@ -1,4 +1,4 @@
-import { CONVERSATION_STATE_TAG } from './craft.js';
+import { CONVERSATION_STATE_TAG, OVERUSED_PHRASES } from './craft.js';
 import { escapeData, truncate } from './escape.js';
 
 /**
@@ -25,6 +25,8 @@ export type FounderMove =
   | 'thanks'
   | 'stress'
   | 'humour'
+  | 'sarcasm'
+  | 'news'
   | 'short_reply'
   | 'question';
 
@@ -51,6 +53,13 @@ export interface ConversationState {
   readonly social?: SocialTurn | null;
   /** The message asks the vEIR to choose or give its view ("per branch or a flat fee?"): answer it first. */
   readonly directChoice?: boolean;
+  /** The message asks for a number ("give me a number", "how much should we charge?"): a reasoned range first. */
+  readonly asksForNumber?: boolean;
+  /**
+   * Overused phrases ({@link OVERUSED_PHRASES}) the vEIR already said in this conversation (in the replies in view or
+   * its opener), so it never says them again.
+   */
+  readonly usedPhrases?: readonly string[];
   /** The opening line it answers said hello (a call's intro): never greet again. */
   readonly openerGreeted?: boolean;
   /** Words in the new message. */
@@ -156,7 +165,37 @@ const MOVE_CUES: readonly (readonly [FounderMove, RegExp])[] = [
     'humour',
     /(?:\b(?:ha(?:ha)+|hah|he(?:he)+|lol|lmao|rofl)\b|[\u{1F602}\u{1F923}\u{1F605}\u{1F604}\u{1F606}\u{1F61C}\u{1F609}])/u,
   ],
+  [
+    'sarcasm',
+    // Praise for something unwelcome ("Oh great, ANOTHER meeting. Love that for me."): the matrix's SM-08.
+    /(?:\blove (?:that|this) for (?:me|us)\b|^oh,? (?:great|joy|wonderful|perfect|fantastic|lovely|brilliant|goody)\b[^?]*\b(?:another|more|again)\b|\bjust what (?:i|we) (?:needed|wanted)\b|\b(?:yay|woohoo|whoopee),? (?:another|more)\b|\bcan't wait (?:for|to do) (?:another|more)\b|\bthanks a lot,? (?:for nothing|really)\b)/,
+  ],
 ];
+
+/**
+ * News the founder brings (LAB-R8: "we're hiring Noor" and "the union will promote us" were answered with the vEIR's
+ * own pending question): a sentence that tells something happened or is happening, never one that asks about it.
+ */
+const NEWS = new RegExp(
+  [
+    String.raw`\b(?:big|good|great|bad|some|exciting|quick|huge|sad) (?:news|update)\b|\bguess what\b|^update\b|\bheads up\b`,
+    String.raw`\b(?:we|i)(?:'ve| have)? (?:just |finally |officially |actually )?(?:signed|landed|closed|won|lost|raised|launched|hired|shipped|secured|onboarded|got (?:a|an|the|our|my|into|accepted)|got approved|were accepted|was accepted)\b`,
+    String.raw`\b(?:we're|we are|i'm|i am) (?:officially |finally |now )?(?:hiring|bringing (?:on|in)|onboarding|launching|pivoting|moving|joining|leaving|signing)\b`,
+    String.raw`\b(?:signed (?:a|an|the|our)? ?(?:letter of intent|loi|contract|deal|agreement|lease)|letter of intent|\bloi\b)`,
+    String.raw`\b(?:said yes|agreed to|approved (?:our|the)|offered (?:us|me|a|to)|promised (?:us|to)|committed to|(?:will|'ll|would) promote|(?:is|are) joining|joined (?:us|the team)|pulled out|dropped out|backed out|quit|resigned|signed (?:on|up|the|it))\b`,
+  ].join('|'),
+);
+
+/** Whether `text` brings news: a statement with a news cue (a question about the same thing is no news). */
+function bringsNews(text: string): boolean {
+  return text
+    .split(/(?<=[.!?])\s+/)
+    .some((sentence) => !/\?\s*$/.test(sentence) && NEWS.test(sentence.replace(/[.!]+$/, '')));
+}
+
+/** A request for a number: the matrix's SM-16 ("Give me a number") and a price asked outright. */
+const NUMBER_REQUEST =
+  /\b(?:give me (?:a|the|some) (?:number|figure|price|ballpark|range)|(?:just )?(?:tell|give) me (?:a|the) (?:number|figure|price)|how much should (?:we|i)|what (?:should|would) (?:we|i) charge|what(?:'s| is) (?:a|the) (?:right|fair|good) (?:price|number|figure)|(?:a )?ballpark|rough (?:number|figure|estimate)|put a number on)\b/;
 
 const SHORT_REPLY =
   /^(?:yes|yeah|yep|yup|sure|ok|okay|right|exactly|correct|no|nope|maybe|makes sense|got it|true|fair|fair enough|sounds good|will do|agreed|definitely|of course|not really|kind of|sort of|perfect|great)\b/;
@@ -173,6 +212,7 @@ export function founderMoves(text: string): FounderMove[] {
   const t = normalize(text);
   if (t === '') return [];
   const moves: FounderMove[] = MOVE_CUES.filter(([, cue]) => cue.test(t)).map(([move]) => move);
+  if (bringsNews(t)) moves.push('news');
   const words = wordCount(t);
   if (words <= 5 && SHORT_REPLY.test(t) && !moves.includes('thanks')) moves.push('short_reply');
   if (t.endsWith('?') || (QUESTION_START.test(t) && words > 2)) moves.push('question');
@@ -266,6 +306,11 @@ export function socialTurnOf(text: string): SocialTurn | null {
 /** "X or Y?" asked of the vEIR, or a request for its pick or verdict. */
 const CHOICE =
   /(?:\b(?:should|shall|do|would|could|can|is|are)\b[^?]{1,120}\bor\b[^?]{1,80}\?|^[^?]{1,60}\bor\b[^?]{1,60}\?$|\b(?:which (?:one|is better|would you|should (?:we|i))|what would you (?:do|pick|choose|go with)|(?:just )?(?:decide|pick|choose) for (?:me|us)|your (?:pick|call|honest (?:view|take)|recommendation)|what do you recommend|which do you recommend|yes or no)\b)/i;
+
+/** Whether the message asks for a number ("Give me a number", "how much should we charge?"): SM-16. */
+export function asksForNumber(text: string): boolean {
+  return NUMBER_REQUEST.test(normalize(text));
+}
 
 /**
  * Whether the message asks the vEIR to choose or give its view, directly (LAB-V3: "per branch or a flat campus
@@ -563,10 +608,14 @@ export function deriveConversationState(
 
   const prev: Thread | null = previous;
   const open = parked.filter((p) => p !== current).slice(0, MAX_PARKED);
+  const said = [...turns.map((t) => t.answer ?? ''), opener].join('\n').replace(/[‘’ʼ]/g, "'").toLowerCase();
+  const usedPhrases = OVERUSED_PHRASES.filter((phrase) => said.includes(phrase));
   return {
     moves,
     social: socialTurnOf(founderText),
     directChoice: directChoiceOf(founderText),
+    asksForNumber: asksForNumber(founderText),
+    usedPhrases,
     openerGreeted: afterOpener && /^(?:hi|hello|hey|hiya)\b/i.test(opener),
     words: wordCount(founderText),
     typicalWords: median(turns.map((t) => wordCount(t.founderText))),
@@ -592,6 +641,8 @@ const MOVE_LABELS: Readonly<Record<FounderMove, string>> = {
   greeting: 'greets you',
   stress: 'sounds stressed or discouraged',
   humour: 'is joking around',
+  sarcasm: 'is being sarcastic',
+  news: 'brings news',
   short_reply: 'is a short reply to your last message',
   question: 'asks a question',
 };
@@ -607,6 +658,8 @@ const NOTABLE: ReadonlySet<FounderMove> = new Set([
   'greeting',
   'stress',
   'humour',
+  'sarcasm',
+  'news',
 ]);
 
 function quoted(text: string): string {
@@ -622,7 +675,8 @@ function ago(n: number): string {
  * conversation with no notable move). Founder words in it are escaped data.
  */
 export function renderConversationState(state: ConversationState): string {
-  const notable = state.moves.some((m) => NOTABLE.has(m)) || state.directChoice === true;
+  const notable =
+    state.moves.some((m) => NOTABLE.has(m)) || state.directChoice === true || state.asksForNumber === true;
   if (state.earlierTurns === 0 && !notable && !state.afterOpener) return '';
   const what = state.moves.map((m) => MOVE_LABELS[m]);
   const length =
@@ -648,9 +702,27 @@ export function renderConversationState(state: ConversationState): string {
   } else if (state.social === 'greeting' && state.earlierTurns > 0) {
     lines.push('- A hello and nothing more: a few warm words, no advice.');
   }
+  if (state.moves.includes('news')) {
+    lines.push(
+      '- They bring news: react to it and ask about it first, in your own words. In this reply never steer back to an',
+      '  earlier question, plan or parked thread.',
+    );
+  }
+  if (state.moves.includes('sarcasm')) {
+    lines.push(
+      '- They are being sarcastic: meet it lightly in a few words of your own, then one practical line; no framework.',
+    );
+  }
   if (state.directChoice === true) {
     lines.push(
-      '- They asked you to choose or give your view: open with your answer and why, before anything you ask.',
+      '- They asked you to choose or give your view: open with one pick, outright (no "only if"), and why in a line,',
+      '  before anything you ask.',
+    );
+  }
+  if (state.asksForNumber === true) {
+    lines.push(
+      '- They asked for a number: give a reasoned range and the one assumption behind it, before anything else; never',
+      '  withhold it for want of evidence.',
     );
   }
   if (state.previous !== null) lines.push(`- You were on: ${quoted(state.previous.gist)}.`);
@@ -670,6 +742,11 @@ export function renderConversationState(state: ConversationState): string {
   }
   if (state.openQuestion) {
     lines.push('- They did not take up your last question: answer what they said, and do not ask it again.');
+  }
+  if ((state.usedPhrases ?? []).length > 0) {
+    lines.push(
+      `- Phrases you already used in this conversation (never again): ${(state.usedPhrases ?? []).map(quoted).join(' | ')}`,
+    );
   }
   return [`<${CONVERSATION_STATE_TAG}>`, ...lines, `</${CONVERSATION_STATE_TAG}>`].join('\n');
 }

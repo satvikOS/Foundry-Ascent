@@ -1296,6 +1296,22 @@ describe('validateCoachResponse — conversation craft the lab still heard (wave
     expect(recalled.response.answer).toBe(recall);
   });
 
+  it('never parks the founder’s news for its own agenda (LAB-R8), typed or spoken', () => {
+    const reply =
+      "Before we talk about that, let's finish the core seat-finding test. What did you learn from the five library staff interviews? Congrats on Hartwell, by the way.";
+    for (const channel of ['text', 'voice'] as const) {
+      const checked = validateCoachResponse(
+        base({ answer: reply, spoken: channel === 'voice' ? reply : null }),
+        { ...opts(), channel, founderText: 'Big news, we just signed a letter of intent with Hartwell!' },
+      );
+      expect(checked.response.answer).toBe(
+        'What did you learn from the five library staff interviews? Congrats on Hartwell, by the way.',
+      );
+      if (channel === 'voice') expect(checked.response.spoken).not.toMatch(/before we talk about that/i);
+      expect(checked.results.notes).toContain('agenda_push_removed:1');
+    }
+  });
+
   it('never drops the honest answer to a sincere bot question as a repeat (the presence policy)', () => {
     const intro =
       "Hi Maya, I'm Corin's vEIR, Corin's digital twin. Last time you planned five library-staff interviews. How did they go?";

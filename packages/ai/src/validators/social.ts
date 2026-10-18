@@ -14,6 +14,8 @@ import { sentenceSpans } from './meta-narration.js';
  * - `repeated_reply` x3, LAB-M3, LAB-M10: a reply that says the previous one again. Its sentences that mostly repeat
  *   the previous reply (four-word sequences, as the evals measure) are left out ({@link withoutRepeats}), unless
  *   the founder asked to hear it again ({@link asksToRepeat}).
+ * - LAB-R8: the founder's news parked for the vEIR's own pending question ("Before we talk about that, let's
+ *   finish…"). In a reply to news, such a sentence is left out ({@link withoutAgendaPush}).
  */
 
 /** How long a social reply may run: whole sentences, within a number of words (the first sentence always stays). */
@@ -135,6 +137,46 @@ export function withoutRepeats(
   return { text: tidy, dropped: repeated.length };
 }
 
+/**
+ * A sentence that parks the founder's news for the vEIR's own agenda (LAB-R8, three times in one lab run: "Before we
+ * talk about that, let's finish… what did you learn from the five library staff interviews?", "One thing at a time —
+ * let's finish the student union question first, then we'll talk about Noor.").
+ */
+const AGENDA_PUSH =
+  /^(?:(?:but|so|okay|ok|great|nice|good|right|alright)[,!.]?\s+)?(?:before (?:we|you|i) (?:talk about|get (?:to|into)|dig into|go (?:there|into)|move on|jump|take (?:that|it|this) on|celebrate)|one thing at a time|(?:first,?\s+)?let's (?:first\s+)?(?:finish|wrap up|close out|settle|come back to)\b[^.?!]*\b(?:first|before)\b|first,? let's (?:finish|wrap up|close out|settle))/i;
+
+/** Whether `sentence` parks the founder's news for the vEIR's own agenda (see {@link AGENDA_PUSH}). */
+export function parksTheirNews(sentence: string): boolean {
+  return AGENDA_PUSH.test(sentence.replace(/[‘’ʼ]/g, "'").replace(/^[\s*_>"“]+/, ''));
+}
+
+/** What a reply to news says when every sentence of it parked the news. */
+export const NEWS_FALLBACK = 'That’s real news. How did it come about?';
+
+/**
+ * `text` without the sentences that park the founder's news for the vEIR's agenda ({@link parksTheirNews}), for a
+ * reply to a message that brings news; `dropped` counts them, and `text` is '' when nothing else was said.
+ */
+export function withoutAgendaPush(text: string): { readonly text: string; readonly dropped: number } {
+  const spans = sentenceSpans(text);
+  const pushed = spans.filter((s) => parksTheirNews(text.slice(s.start, s.end)));
+  if (pushed.length === 0) return { text, dropped: 0 };
+  let out = '';
+  let from = 0;
+  for (const span of pushed) {
+    out += text.slice(from, span.start);
+    from = span.end;
+  }
+  out += text.slice(from);
+  return {
+    text: out
+      .replace(/[ \t]{2,}/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim(),
+    dropped: pushed.length,
+  };
+}
+
 /** How a spoken reply hands the turn back without a question ("Tell me how that sits with you."). */
 const INVITATION =
   /^(?:tell me|walk me through|your turn|go ahead|over to you|let me know|say more|talk me through|what do you think|keep going|let's hear|i'd love to hear|try it and tell me)\b/i;
@@ -147,23 +189,24 @@ export function endsWithHandBack(spoken: string): boolean {
 }
 
 /**
- * Short hand-backs said after a spoken reply that ended on a statement: varied by turn, and never one the conversation
- * already heard (the evals' `repeated_question` flags an exact repeat anywhere in a conversation; two fixed lines
- * repeated on any call of three or more such replies).
+ * Short hand-backs (four words at most: the call's spoken budget keeps room for one) said after a spoken reply that
+ * ended on a statement: varied by turn, and never one the conversation already heard (the evals' `repeated_question`
+ * flags an exact repeat anywhere in a conversation; two fixed lines repeated on any call of three or more such
+ * replies).
  */
 export const SPOKEN_HAND_BACKS = [
   'What do you think?',
   'How does that sound?',
-  'Does that fit where you are?',
-  'Which part do you want to start with?',
-  'Does that match what you are seeing?',
-  "Anything you'd change?",
-  "What's your gut on that?",
+  'Does that fit?',
   'Want to try that?',
+  "Anything you'd change?",
+  "What's your gut?",
   'Does that feel doable?',
   'Where would you start?',
-  'What would get in the way?',
-  'Shall we go with that?',
+  'Sound right to you?',
+  'Which part first?',
+  'Does that match?',
+  'Shall we try it?',
 ] as const;
 /** Hand-backs after a reply to someone who sounds stressed or discouraged: about them, not the plan. */
 export const STRESSED_HAND_BACKS = [

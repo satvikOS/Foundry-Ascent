@@ -7,8 +7,11 @@ import {
   STRESSED_HAND_BACK,
   STRESSED_HAND_BACKS,
   asksToRepeat,
+  NEWS_FALLBACK,
   endsWithHandBack,
+  parksTheirNews,
   spokenHandBackFor,
+  withoutAgendaPush,
   withinSocialBudget,
   withoutRepeats,
 } from './social.js';
@@ -137,6 +140,8 @@ describe('a spoken reply hands the turn back (spoken_no_handback)', () => {
       }
       expect(new Set(said).size).toBe(4);
     }
+    // Short enough that a call's spoken budget always keeps room for one.
+    for (const line of SPOKEN_HAND_BACKS) expect(line.split(/\s+/).length).toBeLessThanOrEqual(4);
     // Once every line was said, none rather than a repeat.
     expect(spokenHandBackFor('How do we get users?', 't', [SPOKEN_HAND_BACKS.join(' ')])).toBeNull();
   });
@@ -159,5 +164,38 @@ describe('a direct question is answered first (LAB-V3)', () => {
     ]) {
       expect(directChoiceOf(text), text).toBe(false);
     }
+  });
+});
+
+describe('the founder’s news is never parked for the vEIR’s agenda (LAB-R8)', () => {
+  it('reads the lab’s deflections, and nothing else', () => {
+    for (const sentence of [
+      "Before we talk about that, let's finish the core seat-finding test: what did you learn from the five library staff interviews?",
+      "One thing at a time — let's finish the student union question first, then we'll talk about Noor.",
+      "Before you take that on, let's make sure core demand is solid.",
+      "One thing at a time: before we talk about Noor, let's finish the core seat-finding test.",
+      "Great. Before we get to that, let's wrap up pricing.",
+      "Let's finish the student union question first.",
+    ]) {
+      expect(parksTheirNews(sentence), sentence).toBe(true);
+    }
+    for (const sentence of [
+      'Before you sign, check the SSO clause.',
+      'Congrats on Hartwell, that is a big step.',
+      "Let's figure out what Noor works on first.",
+      'What will Noor take on first?',
+    ]) {
+      expect(parksTheirNews(sentence), sentence).toBe(false);
+    }
+  });
+
+  it('leaves the deflection out and keeps the rest; nothing else said is a short line about the news', () => {
+    expect(
+      withoutAgendaPush(
+        "Congrats on bringing Noor in! One thing at a time — let's finish the student union question first, then we'll talk about Noor. What will Noor work on first?",
+      ),
+    ).toEqual({ text: 'Congrats on bringing Noor in! What will Noor work on first?', dropped: 1 });
+    expect(withoutAgendaPush("Before we talk about that, let's finish the interviews first.").text).toBe('');
+    expect(NEWS_FALLBACK).toMatch(/\?$/);
   });
 });

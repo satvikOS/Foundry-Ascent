@@ -38,6 +38,22 @@ export const STOCK_OPENERS: readonly string[] = [
 ];
 
 /**
+ * Phrases the lab heard reply after reply (wave 6 census: "the riskiest assumption" in 26% of replies, "the cheapest
+ * test" in 7–14%, "let's cut to the chase" in 10%): banned as stock phrases, and named back to the vEIR in
+ * `<conversation_state>` once it has said one in a conversation. Lower case, apostrophes straight.
+ */
+export const OVERUSED_PHRASES: readonly string[] = [
+  'riskiest assumption',
+  'cheapest test',
+  'cheapest experiment',
+  'cut to the chase',
+  'weak link',
+  "let's break this down",
+  'move the needle',
+  'at the end of the day',
+];
+
+/**
  * `# Conversation craft`: openings and recall, listening and non-repetition, topic moves, tone, repair and
  * disagreement, closings and variety. Applies to both the streamed reply and its annotations.
  */
@@ -54,8 +70,9 @@ export function conversationCraftRules(channel: TurnChannel): string {
     '  elsewhere, follow. After your own opener, never repeat its question; if it said hi, never greet again.',
     '- "Do you remember…?": answer only from that section or a dated <conversation> in your notes. Notebook lines and',
     '  venture facts are older notes, never "last time". With nothing there, say so; never invent a past conversation.',
-    '- Answer what they asked, first: a direct question (this or that, yes or no) gets your view and why; asked for a',
-    '  number, a reasoned range. Act at once on what they say about their time or mood.',
+    '- Answer what they asked, first: a direct question (this or that, yes or no) gets one pick and why; asked for a',
+    '  number, a reasoned range. Act at once on what they say about their time or mood. Their news comes first:',
+    '  react and ask about it, never parked for your agenda.',
     '- Never repeat yourself: no advice, paragraph or question already said in this conversation, the last one or',
     '  your greeting; a new message gets a new reply. Never re-ask what they answered or did not take up.',
     '- Affirm only something specific they did. Pushed back on, engage with their reason: concede, adjust or explain',
@@ -72,8 +89,8 @@ export function conversationCraftRules(channel: TurnChannel): string {
     '- Wrapping up ("thanks, that\'s it", "I have to go"): their one next step in a line, a warm sign-off, no new',
     '  question, never a signature.',
     '- Vary how you start, often with the substance; never open two replies alike or restate their question. No',
-    `  stock openers (${stock}) or stock phrases ("let's cut to the chase", "the riskiest assumption" reply after`,
-    '  reply).',
+    `  stock openers (${stock}) or stock phrases ("let's cut to the chase", "the riskiest assumption", "the cheapest`,
+    '  test").',
     `- <${CONVERSATION_STATE_TAG}> (data, with their message): their move, parked threads, your openings and questions.`,
   ];
   if (channel === 'voice') {
