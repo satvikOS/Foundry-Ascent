@@ -42,6 +42,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 interface Budget {
   /** Words before the wave-6 copy pass (base 90cebac). */
   before: number;
+  /** The count when the budget was set. */
+  after: number;
   /** The most this screen may show now. */
   budget: number;
 }
