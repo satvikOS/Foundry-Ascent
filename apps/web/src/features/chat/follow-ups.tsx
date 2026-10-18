@@ -6,13 +6,14 @@
  * read by scrolling the row is exactly what is sent (and what screen readers hear).
  */
 /**
- * A focused chip is read from its start. The browser centres a focused chip in the row, and a chip wider than the
- * row (a long question on a phone) then shows only its middle: once that scroll is done, the row is brought back
- * so the chip's first word sits at the row's padding edge.
+ * A chip reached from the keyboard is read from its start. The browser centres a focused chip in the row, and a
+ * chip wider than the row (a long question on a phone) then shows only its middle: once that scroll is done, the
+ * row is brought back so the chip's first word sits at the row's padding edge. A chip pressed with a pointer is
+ * never moved under it (the press would land on another chip).
  */
 function showStart(chip: HTMLElement): void {
   const row = chip.closest('ul');
-  if (!row) return;
+  if (!row || !chip.matches(':focus-visible')) return;
   const edge = row.getBoundingClientRect().left + (parseFloat(getComputedStyle(row).paddingLeft) || 0);
   const by = chip.getBoundingClientRect().left - edge;
   if (by < -1) row.scrollBy({ left: by, behavior: 'instant' });

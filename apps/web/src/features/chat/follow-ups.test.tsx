@@ -57,23 +57,38 @@ describe('FollowUps', () => {
     expect(onPick).toHaveBeenCalledWith(QUESTIONS[1]);
   });
 
-  it('a focused chip wider than the row is read from its start, not from its middle', () => {
+  it('a chip reached with Tab that is wider than the row is read from its start, not from its middle', async () => {
     mount();
     // The browser centred the focused 800 px chip on the 390 px row: its first 205 px are left of the row's edge.
     chipLeft = -205;
-    act(() => {
-      screen.getByRole('button', { name: QUESTIONS[1] }).focus();
-    });
+    const user = userEvent.setup();
+    await user.tab();
+    await user.tab();
+    expect(screen.getByRole('button', { name: QUESTIONS[1] })).toHaveFocus();
     // Brought back so its first word sits at the row's padding edge (16 px in).
     expect(scrollBy).toHaveBeenCalledWith({ left: -221, behavior: 'instant' });
   });
 
-  it('a focused chip whose start already shows is left where it is', () => {
+  it('a chip pressed with a pointer is not moved under it', () => {
+    mount();
+    chipLeft = -205;
+    const chip = screen.getByRole('button', { name: QUESTIONS[1] });
+    // A press focuses without :focus-visible (the browser shows no ring for it).
+    const matches = chip.matches.bind(chip);
+    vi.spyOn(chip, 'matches').mockImplementation((selector: string) =>
+      selector === ':focus-visible' ? false : matches(selector),
+    );
+    act(() => {
+      chip.focus();
+    });
+    expect(scrollBy).not.toHaveBeenCalled();
+  });
+
+  it('a chip reached with Tab whose start already shows is left where it is', async () => {
     mount();
     chipLeft = 16;
-    act(() => {
-      screen.getByRole('button', { name: QUESTIONS[0] }).focus();
-    });
+    await userEvent.setup().tab();
+    expect(screen.getByRole('button', { name: QUESTIONS[0] })).toHaveFocus();
     expect(scrollBy).not.toHaveBeenCalled();
   });
 });
