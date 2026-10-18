@@ -747,11 +747,21 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
           .replace(askedByName ?? /$^/, ' ');
   if (identity !== null && forced === null && contentWords(rest).size < 2) {
     const back = reading.state?.previous ?? null;
+    // Never the question the last reply asked again ("What would you like to work on?" twice in a row).
+    const ask = fresh(
+      [
+        'What would you like to work on?',
+        "What's on your plate this week?",
+        'Where would you like to start?',
+      ],
+      0,
+      reading.priorReplies.at(-1) ?? '',
+    );
     return socialResponse(
       mode,
       back !== null
         ? `${identity} Back to ${threadPhrase(back)}: where were you on it?`
-        : `${identity} What would you like to work on?`,
+        : `${identity} ${ask}`,
       channel,
     );
   }
