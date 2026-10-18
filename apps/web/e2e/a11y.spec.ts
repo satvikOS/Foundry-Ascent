@@ -108,7 +108,8 @@ for (const scheme of ['dark', 'light'] as const) {
         await expect(remember).toBeChecked();
 
         const token = runToken();
-        await startConversation(page, `What should we test next? ${token}`);
+        // A question only the venture's own records answer, so the answer has sources to inspect.
+        await startConversation(page, `What did our hand-counted seat map show about repeat use? ${token}`);
         const answer = page.getByRole('article', { name: 'Exchange 1' });
         await expect(answer.getByRole('button', { name: /^Sources & reasoning/ })).toBeVisible({
           timeout: 30_000,

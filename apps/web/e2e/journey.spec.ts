@@ -147,14 +147,16 @@ test.describe('founder journey', () => {
       await expectNoBareEirName(page, 'New chat');
     });
 
-    // The founder says what is worth remembering in their own words (the coach's framing alone is never kept).
-    const question = `Which assumption should we test first? Our riskiest assumption still needs a cheap test. ${token}`;
+    // A question only the venture's own records answer (the seeded seat-map experiment), so any model that
+    // grounds its answer cites them; and what is worth remembering, in the founder's own words (the coach's
+    // framing alone is never kept).
+    const question = `How many repeat visitors did our hand-counted seat map get? Our riskiest assumption still needs a cheap test, so we've decided to rerun the map in exam week. ${token}`;
     let conversationId = '';
     await test.step('the first message starts the conversation, named after it, with a cited answer', async () => {
       const result = await startAndAwaitAnswer(page, question);
       conversationId = result.conversationId;
       await expectDisclosureInView(page);
-      await expect(page.getByRole('heading', { level: 1 })).toContainText('Which assumption should we test');
+      await expect(page.getByRole('heading', { level: 1 })).toContainText('How many repeat visitors');
       await expect(result.answer.getByRole('button', { name: /^Source 1: / }).first()).toBeVisible();
       // Citations are quiet numbers, and no report artefact (raw keys, a "Limited evidence" quote) shows.
       await expect(result.answer.getByRole('button', { name: /^Source 1: / }).first()).toHaveText('1');
@@ -166,7 +168,7 @@ test.describe('founder journey', () => {
         .getByRole('navigation', { name: 'Recent conversations' })
         .locator(`a[href$="/c/${conversationId}"]`);
       await expect(row).toHaveAttribute('aria-current', 'page');
-      await expect(row).toContainText('Which assumption should we test');
+      await expect(row).toContainText('How many repeat visitors');
       await expectNoBareEirName(page, 'a conversation with an answer');
     });
 

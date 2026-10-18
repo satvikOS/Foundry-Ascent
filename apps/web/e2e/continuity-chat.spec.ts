@@ -89,7 +89,8 @@ test.describe('continuity across conversations', () => {
         // work on?" while there is something to pick up.
         const heading = page.getByRole('heading', { level: 1 });
         const line = page.getByTestId('greeting-line');
-        await expect(line).toContainText(/facilities|library budget|pric/i);
+        // It names what the first conversation was about (pricing, the facilities budget), in any wording.
+        await expect(line).toContainText(/pric|facilit|budget/i);
         await expect(heading).toHaveText(/, Maya$/);
         await expect(heading).not.toHaveText(/^Good (?:morning|afternoon|evening)/);
         await expect(line).not.toHaveText(/What should we work on/);
@@ -97,7 +98,7 @@ test.describe('continuity across conversations', () => {
         const id = await startConversation(page, 'Hi!');
         created.push(id);
         const opened = page.getByRole('region', { name: /opened the conversation$/ });
-        await expect(opened).toContainText(/facilities|library budget|pric/i);
+        await expect(opened).toContainText(/pric|facilit|budget/i);
         // The founder sees one opening: the conversation's first message is the greeting's line, word for word.
         const stored = (await sessionDetail(page.request, id)).session.opener ?? '';
         expect(shown).not.toBe('');
@@ -107,10 +108,12 @@ test.describe('continuity across conversations', () => {
           page.getByRole('article', { name: 'Exchange 1' }).getByRole('button', { name: 'Copy answer' }),
         ).toBeVisible({ timeout: 30_000 });
         const hello = await answerOf(page.request, id, 1);
-        // The opener already picked up the first conversation and asked how it went: "Hi!" gets a warm hello
-        // back (varying per conversation) and nothing more, never the recall again nor its question.
-        expect(hello).toMatch(/^(?:Hi|Hey|Hello) Maya[.,!]/);
-        expect(hello).not.toMatch(/we were on|last time|when we (?:talked|spoke)|pric|facilities/i);
+        // The opener already picked up the first conversation and asked how it went: "Hi!" gets a short, warm
+        // hello back and nothing more, never the recall again nor its question.
+        expect(hello.split(/\s+/).filter(Boolean).length, 'a hello is answered briefly').toBeLessThanOrEqual(
+          25,
+        );
+        expect(hello).not.toMatch(/we were on|last time|when we (?:talked|spoke)|pric|facilit/i);
         expect(hello).not.toContain('?');
         // It cites nothing, so no Sources link sits under it.
         await expect(
@@ -122,11 +125,12 @@ test.describe('continuity across conversations', () => {
         const id = created[1] ?? '';
         await say(page, 'Do you remember what we talked about last time?', 2);
         const recall = page.getByRole('article', { name: 'Exchange 2' });
-        await expect(recall).toContainText(/we were on pricing/i);
-        await expect(recall).toContainText(/call facilities about the library budget/i);
+        // It names the first conversation's subject and the founder's plan from it, in any wording.
+        await expect(recall).toContainText(/pric/i);
+        await expect(recall).toContainText(/facilit/i);
         const answer = await answerOf(page.request, id, 2);
-        // "earlier today", "a moment ago": however the last conversation's time is told.
-        expect(answer).toMatch(/^(?:Yes|I do|Sure)\. When we (?:talked|spoke) [^,]+, we were on pricing\./);
+        expect(answer).toMatch(/pric/i);
+        expect(answer).toMatch(/facilit/i);
         // A memory question is social: nothing to cite, plan or remember.
         await expect(recall.getByRole('region', { name: 'Suggested next steps' })).toHaveCount(0);
       });

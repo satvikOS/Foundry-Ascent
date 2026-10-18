@@ -61,7 +61,8 @@ test.describe('mobile 390×844', () => {
       await expectReachable(page, page.getByRole('radio', { name: 'Remember this conversation' }));
       await expectReachable(page, page.getByRole('radio', { name: 'Private, a one-off' }));
 
-      await box.fill(`What is our riskiest assumption? ${token}`);
+      // A question only the venture's own records answer (the seeded seat-map experiment): the answer cites them.
+      await box.fill(`How many repeat visitors did our hand-counted seat map get? ${token}`);
       await expectReachable(page, page.getByRole('button', { name: 'Send message' }));
       await page.getByRole('button', { name: 'Send message' }).click();
       await page.waitForURL(/\/c\/[0-9a-f-]{36}/);
