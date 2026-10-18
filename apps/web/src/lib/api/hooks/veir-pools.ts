@@ -9,6 +9,7 @@ import {
   CreateLessonRequest,
   CreatePersonaKnowledgeRequest,
   CreatePersonaUploadResponse,
+  DigitalTwinView,
   EirCandidateListResponse,
   EirProfileListResponse,
   EirProfileView,
@@ -22,9 +23,14 @@ import {
   PersonaView,
   ProgramVentureRow,
   RevokeConsentResponse,
+  type TwinMediaKind,
   UpdateEirProfileRequest,
   UpdateEmbodimentRequest,
   UpdatePersonaKnowledgeRequest,
+  UpdateTwinMediaRequest,
+  WithdrawConsentScopeRequest,
+  WithdrawConsentScopeResponse,
+  type WithdrawableScope,
 } from '@foundry/contracts';
 import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { z } from 'zod';
@@ -398,5 +404,56 @@ export function useUpdateEmbodiment(personaId: string) {
     onSuccess: (embodiment) => {
       client.setQueryData(queryKeys.personas.embodiment(personaId), embodiment);
     },
+  });
+}
+
+// Digital twin ---------------------------------------------------------------------------------------
+
+/** GET /personas/:id/twin — the persona's face and cloned voice and the scopes that cover them (curators). */
+export function useDigitalTwin(personaId: string, options: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: queryKeys.personas.twin(personaId),
+    queryFn: ({ signal }) => api.get(path`/personas/${personaId}/twin`, DigitalTwinView, { signal }),
+    enabled: options.enabled ?? true,
+  });
+}
+
+export type UpdateTwinMediaInput = z.input<typeof UpdateTwinMediaRequest>;
+
+/** PATCH /personas/:id/twin/:kind — records the vendor id of the face or voice; `ready` needs its scope. */
+export function useUpdateTwinMedia(personaId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ kind, ...input }: UpdateTwinMediaInput & { kind: TwinMediaKind }) =>
+      api.patch(
+        path`/personas/${personaId}/twin/${kind}`,
+        DigitalTwinView,
+        encodeBody(UpdateTwinMediaRequest, input),
+        { idempotencyKey: createIdempotencyKey() },
+      ),
+    onSuccess: (twin) => {
+      client.setQueryData(queryKeys.personas.twin(personaId), twin);
+    },
+  });
+}
+
+/** POST /consents/:id/withdraw-scope — the consent continues without that scope; nobody is suspended. */
+export function useWithdrawScope(personaId: string) {
+  const invalidate = useInvalidateConsent(personaId);
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ consentId, assetType }: { consentId: string; assetType: WithdrawableScope }) =>
+      api.post(
+        path`/consents/${consentId}/withdraw-scope`,
+        WithdrawConsentScopeResponse,
+        encodeBody(WithdrawConsentScopeRequest, { assetType }),
+        { idempotencyKey: createIdempotencyKey() },
+      ),
+    onSuccess: () =>
+      Promise.all([
+        invalidate(),
+        client.invalidateQueries({ queryKey: queryKeys.personas.consents(personaId) }),
+        client.invalidateQueries({ queryKey: queryKeys.personas.twin(personaId) }),
+      ]),
   });
 }

@@ -17,7 +17,7 @@
     "Admin": {
       "before": 1222,
       "after": 1168,
-      "budget": 1204
+      "budget": 1258
     },
     "Call": {
       "before": 363,
@@ -92,7 +92,7 @@
     "Studio": {
       "before": 2429,
       "after": 2273,
-      "budget": 2342
+      "budget": 2401
     },
     "Team": {
       "before": 34,

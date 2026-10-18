@@ -6,9 +6,18 @@ import { LoadingRegion, Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast';
 import { usePlatformSettings, useUpdatePlatformSettings } from '@/lib/api/hooks/admin';
 
-import { FeatureSwitches } from './feature-switches';
+import { FeatureSwitches, type FeatureSwitchPatch } from './feature-switches';
 import { AiKillSwitch } from './kill-switch';
 import { LimitsCard, toLimitsFormValues } from './limits-form';
+
+/** What a switch change says once saved. */
+function switchMessage(patch: FeatureSwitchPatch): string {
+  if (patch.callsEnabled !== undefined) return `Voice calls ${patch.callsEnabled ? 'on' : 'off'}`;
+  if (patch.facesEnabled !== undefined) return `Video faces ${patch.facesEnabled ? 'on' : 'off'}`;
+  if (patch.clonedVoiceEnabled !== undefined)
+    return `Cloned voices ${patch.clonedVoiceEnabled ? 'on' : 'off'}`;
+  return `Streamed replies ${patch.streamingEnabled ? 'on' : 'off'}`;
+}
 
 /** Admin → Settings: the AI kill switch, calls and streaming, spend and call caps, and thresholds. */
 export function SettingsPage() {
@@ -59,15 +68,14 @@ export function SettingsPage() {
           <FeatureSwitches
             callsEnabled={settings.data.callsEnabled ?? true}
             streamingEnabled={settings.data.streamingEnabled ?? true}
+            facesEnabled={settings.data.facesEnabled ?? false}
+            clonedVoiceEnabled={settings.data.clonedVoiceEnabled ?? false}
             pending={features.isPending}
             error={features.error}
             onChange={(patch) => {
               features.mutate(patch, {
                 onSuccess: () => {
-                  const message =
-                    patch.callsEnabled !== undefined
-                      ? `Voice calls ${patch.callsEnabled ? 'on' : 'off'}`
-                      : `Streamed replies ${patch.streamingEnabled ? 'on' : 'off'}`;
+                  const message = switchMessage(patch);
                   toast.success(message);
                   announce(message, 'assertive');
                 },
