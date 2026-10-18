@@ -131,7 +131,7 @@ export function MiniCallBarView() {
               }}
             >
               <Volume2 aria-hidden />
-              <span className="hidden sm:inline">Turn on sound</span>
+              <span className="hidden sm:inline">Turn on</span>
             </Button>
           ) : null}
           {snapshot.input === 'voice' ? (

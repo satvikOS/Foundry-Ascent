@@ -170,7 +170,7 @@ export function KnowledgePage() {
         </TabsContent>
         {notebookVisible ? (
           <TabsContent value="notebook">
-            <NotebookEditor ventureId={ventureId} veirName={veirName} canEdit={team} />
+            <NotebookEditor tenant={tenant} ventureId={ventureId} veirName={veirName} canEdit={team} />
           </TabsContent>
         ) : null}
         {team ? (

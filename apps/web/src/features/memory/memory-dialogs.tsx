@@ -440,8 +440,14 @@ export function CreateMemoryDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" loading={mutation.isPending} loadingText="Adding…">
-              Add to memory
+            {/* The dialog's title says where it goes; the name keeps it for screen readers. */}
+            <Button
+              type="submit"
+              loading={mutation.isPending}
+              loadingText="Adding…"
+              aria-label="Add to memory"
+            >
+              Add
             </Button>
           </DialogFooter>
         </form>

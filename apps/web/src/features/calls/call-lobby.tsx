@@ -169,9 +169,15 @@ export function CallLobby({
         <div className="flex w-full max-w-xs flex-col gap-2 sm:max-w-none sm:flex-row sm:justify-center">
           {problem ? (
             moveHere ? (
-              <Button ref={primaryRef} size="lg" onClick={onMoveHere} loading={busy}>
+              <Button
+                ref={primaryRef}
+                size="lg"
+                onClick={onMoveHere}
+                loading={busy}
+                aria-label="Move here, ending the other call"
+              >
                 <Phone aria-hidden />
-                Move the call here
+                Move here
               </Button>
             ) : problem.retry ? (
               <Button ref={primaryRef} size="lg" onClick={onRetry}>
@@ -189,8 +195,9 @@ export function CallLobby({
             size="lg"
             variant="secondary"
             onClick={onClose}
+            aria-label={problem && !moveHere ? 'Back to chat' : undefined}
           >
-            {problem && !moveHere ? 'Back to chat' : 'Not now'}
+            {problem && !moveHere ? 'Back' : 'Not now'}
           </Button>
         </div>
       </div>

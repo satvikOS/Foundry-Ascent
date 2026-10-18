@@ -119,22 +119,26 @@ export function EscalationsPage() {
     );
   }
 
+  // One Ask a person button: in the header, or in the empty state while there are no requests.
+  const none = escalations.data?.length === 0;
+  const ask = (
+    <Button
+      onClick={() => {
+        setCreating(true);
+      }}
+    >
+      <HandHelping aria-hidden />
+      Ask a person
+    </Button>
+  );
+
   return (
     <PageContainer>
       <PageHeader
         title="Human help"
         description="Nothing is shared without your consent."
         info="Ask a person: an EIR, the program team or a specialist."
-        actions={
-          <Button
-            onClick={() => {
-              setCreating(true);
-            }}
-          >
-            <HandHelping aria-hidden />
-            Ask a person
-          </Button>
-        }
+        actions={none ? null : ask}
       />
 
       {awaiting > 0 ? (
@@ -145,13 +149,8 @@ export function EscalationsPage() {
 
       {escalations.isError ? (
         <ErrorState error={escalations.error} onRetry={() => void escalations.refetch()} headingLevel={2} />
-      ) : escalations.data?.length === 0 ? (
-        <EmptyState
-          icon={LifeBuoy}
-          headingLevel={2}
-          title="No requests yet"
-          description="Ask here or from a conversation."
-        />
+      ) : none ? (
+        <EmptyState icon={LifeBuoy} headingLevel={2} title="No requests yet" action={ask} />
       ) : (
         <div className="grid gap-10 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
           <div className={cn('grid content-start gap-4', selected && 'hidden lg:grid')}>
@@ -241,11 +240,12 @@ export function EscalationsPage() {
                   <Button
                     size="sm"
                     variant="secondary"
+                    aria-label="Back to the list"
                     onClick={() => {
                       select(undefined);
                     }}
                   >
-                    Back to the list
+                    Back
                   </Button>
                 }
               />

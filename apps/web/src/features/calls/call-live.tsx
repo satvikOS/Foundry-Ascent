@@ -220,14 +220,16 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: Cal
           </p>
         </div>
         {live && snapshot.audioBlocked ? (
+          // Beside "Sound is off": short on screen, the whole action in its name.
           <Button
             size="lg"
+            aria-label="Turn on sound"
             onClick={() => {
               engine.resumeAudio();
             }}
           >
             <Volume2 aria-hidden />
-            Turn on sound
+            Turn on
           </Button>
         ) : live && snapshot.held ? (
           <Button

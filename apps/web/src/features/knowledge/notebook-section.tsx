@@ -43,6 +43,7 @@ import {
   type RefusedOpener,
 } from './notebook-api';
 import { isNotebookEmpty } from './notebook-edit';
+import { StartChat } from './start-chat';
 
 /** Limits of the notebook contract (`NotebookEdit` in @foundry/contracts). */
 const LIMITS = { summary: 1200, entry: 400, commitment: 300, opener: 300 } as const;
@@ -60,6 +61,7 @@ const COMMITMENT_STATUS_LABEL: Record<CommitmentStatus, string> = {
 };
 
 interface NotebookEditorProps {
+  tenant: string;
   ventureId: string;
   /** The vEIR's name ("Corin’s vEIR", or "your vEIR"; lib/veir). */
   veirName: string;
@@ -73,7 +75,7 @@ interface NotebookEditorProps {
  * fact. Edits carry the version they were made against; when the notebook changed meanwhile it is
  * reloaded and the person is told.
  */
-export function NotebookEditor({ ventureId, veirName, canEdit }: NotebookEditorProps) {
+export function NotebookEditor({ tenant, ventureId, veirName, canEdit }: NotebookEditorProps) {
   const notebook = useNotebook(ventureId);
   const edit = useNotebookEdit(ventureId);
   const author = useVeirName(ventureId);
@@ -167,7 +169,7 @@ export function NotebookEditor({ ventureId, veirName, canEdit }: NotebookEditorP
           icon={NotebookPen}
           headingLevel={3}
           title="Nothing noted yet"
-          description="Notes appear after your first conversation."
+          action={canEdit ? <StartChat tenant={tenant} ventureId={ventureId} /> : null}
         />
       ) : (
         <div className="grid gap-7">

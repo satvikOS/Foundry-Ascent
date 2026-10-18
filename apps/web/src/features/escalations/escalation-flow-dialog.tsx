@@ -401,11 +401,12 @@ export function EscalationFlowDialog({
                   </Button>
                 ) : null}
                 <Button
+                  aria-label="Continue to consent"
                   onClick={() => {
                     setStep('consent');
                   }}
                 >
-                  Continue to consent
+                  Continue
                 </Button>
               </DialogFooter>
             ) : null}

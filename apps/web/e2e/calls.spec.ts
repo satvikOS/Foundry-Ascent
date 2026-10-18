@@ -722,7 +722,7 @@ test.describe('vEIR calls', () => {
     const moved = tab.waitForRequest(
       (request) => request.url().endsWith(`/sessions/${sessionId}/calls`) && request.method() === 'POST',
     );
-    await screen.getByRole('button', { name: 'Move the call here' }).click();
+    await screen.getByRole('button', { name: 'Move here, ending the other call' }).click();
     expect((await moved).postDataJSON()).toMatchObject({ replace: true });
     await expect(screen.getByRole('textbox', { name: /^Reply to / })).toBeFocused();
     await screen.getByRole('button', { name: 'End call' }).click();

@@ -131,8 +131,8 @@ export function CallSummaryPanel({
           <Phone aria-hidden />
           Call again
         </Button>
-        <Button size="lg" onClick={onBackToConversation}>
-          Back to conversation
+        <Button size="lg" onClick={onBackToConversation} aria-label="Back to conversation">
+          Back
         </Button>
       </div>
       <DisclosureBanner

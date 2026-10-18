@@ -28,6 +28,8 @@ import { TOPIC } from '@/features/chat/digest-view';
 import { formatIsoDate } from '@/features/memory/typed/attributes';
 import { useVeirName } from '@/features/venture/veir-name';
 
+import { StartChat } from './start-chat';
+
 type Digested = SessionView & { digest: NonNullable<SessionView['digest']> };
 
 /** Conversations with a digest, the most recent first. */
@@ -65,7 +67,8 @@ export function DigestsSection({ ventureId, tenant, canEdit }: DigestsSectionPro
         icon={MessagesSquare}
         headingLevel={2}
         title="No digests yet"
-        description="Each ended conversation gets one. Private chats never do."
+        description="Private chats never get one."
+        action={canEdit ? <StartChat tenant={tenant} ventureId={ventureId} /> : null}
       />
     );
   }

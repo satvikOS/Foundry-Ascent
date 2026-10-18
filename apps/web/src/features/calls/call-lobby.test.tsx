@@ -40,7 +40,7 @@ describe('CallLobby', () => {
     );
     expect(await screen.findByRole('heading', { name: 'You’re already in a call' })).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent('Move it here?');
-    const move = screen.getByRole('button', { name: 'Move the call here' });
+    const move = screen.getByRole('button', { name: 'Move here, ending the other call' });
     expect(move).toHaveFocus();
     expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
     await userEvent.click(move);
