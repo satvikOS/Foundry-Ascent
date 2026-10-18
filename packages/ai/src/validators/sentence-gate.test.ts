@@ -527,6 +527,17 @@ describe('SentenceGate', () => {
       // Talking to her by name is speech.
       const speech = "Maya, you're close. Price per library and ask Noor to book the second visit.";
       expect(joined(run(gate(names), [speech]).units)).toBe(speech);
+      // So is talking about a teammate's question, or about the customers as "they", at the opening or later.
+      for (const text of [
+        "Noor's question is a good one. A flat fee is simpler to sell.",
+        "Based on the evidence, I see they're willing to pay $900. Anchor the price there.",
+        'Five interviews in. Looking at the notes, I see they agreed to the pilot. Book the kickoff.',
+      ]) {
+        const g = gate(names);
+        expect(joined(run(g, [text]).units), text).toBe(text);
+        expect(g.fallback).toBeNull();
+        expect(g.cut).toBeNull();
+      }
     });
 
     it('holds a thinking-aloud opener until the next unit shows whether speech follows', () => {

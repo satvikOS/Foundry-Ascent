@@ -27,10 +27,11 @@ import { CoachMode } from '@foundry/contracts';
  * cues above never saw: "Okay, let's break this down. Maya's asking about structuring the two-library pilot… From
  * the evidence, I see they've already got…". With {@link NarrationNames} (the person the reply talks to, and the
  * venture's people), `founder_third_person` also reads the founder reported on by name ("Maya's asking about…",
- * "Maya wants to know…", "Maya seems stressed"), anyone's message classified by name ("Noor's question is…"), and
- * the evidence read out about them ("From the evidence, I see they've…"). Talking to someone by name ("Maya, you
+ * "Maya wants to know…", "Maya seems stressed"), their message classified by name ("Maya's message is a greeting"),
+ * and the evidence read out about them ("From the evidence, I see Maya has…"). Talking to someone by name ("Maya, you
  * said…", "Thanks, Maya.") and talking about a teammate ("Noor said the budget closes in May", "Noor's asking for a
- * flat fee") stay speech: a teammate is only narration when their message is classified.
+ * flat fee", "Noor's question is a good one") stay speech, and so does "they" after "from the evidence, I see" (the
+ * customers as often as the team: the wave 7 review's near misses).
  *
  * Callers: the sentence gate (per unit, typed and spoken: before the first unit the reply is written whole
  * instead; later the reply ends before the unit) and `validateCoachResponse` (the answer and the spoken reply are
@@ -183,7 +184,6 @@ function namedCue(names: NarrationNames | undefined): RegExp | null {
   const cached = NAMED_CUES.get(key);
   if (cached !== undefined) return cached;
   const speaker = nameForms(founderNames).join('|');
-  const anyone = nameForms([...founderNames, ...people]).join('|');
   const parts: string[] = [];
   if (speaker !== '') {
     const n = wholeName(speaker);
@@ -195,12 +195,9 @@ function namedCue(names: NarrationNames | undefined): RegExp | null {
       `${LEAD}${n} (?:is|seems|sounds|appears|feels) (?:(?:very|quite|a bit|a little|really|pretty|clearly|probably|likely|just) )?(?:${STATES})\\b`,
       `${n}(?:'s)? (?:just said|just asked|is asking (?:me|about|for|if|whether)|asked me|told me|wants me to|wants to know|is wondering|greeted me|thanked me)\\b`,
       `${EVIDENCE_READ}${n}`,
-    );
-  }
-  if (anyone !== '') {
-    // Anyone's message classified by name ("Noor's question is about pricing").
-    parts.push(
-      `${wholeName(anyone)}(?:'s)? (?:(?:last|latest|new|current|first) )?(?:message|question|request|reply|greeting|turn|tone) (?:is|was|seems|sounds)\\b`,
+      // The message of the person spoken to, classified by their name ("Maya's message is a greeting"). Only theirs: a
+      // teammate's question talked about is speech ("Noor's question is a good one").
+      `${n}(?:'s)? (?:(?:last|latest|new|current|first) )?(?:message|question|request|reply|greeting|turn|tone) (?:is|was|seems|sounds)\\b`,
     );
   }
   const cue = parts.length === 0 ? null : new RegExp(parts.join('|'), 'u');
@@ -212,8 +209,11 @@ function namedCue(names: NarrationNames | undefined): RegExp | null {
 /** "From the evidence, I see …": the prompt's evidence read out (what follows says about whom). */
 const EVIDENCE_READ = String.raw`\b(?:from|based on|looking at|reading|going by) the (?:evidence|context|notes|history|transcript|records?)(?: (?:provided|given|shown|above|here|so far))?,? i (?:see|can see|notice|gather)(?: that)? `;
 
-/** The evidence read out about someone in the third person ("From the evidence, I see they've already…"). */
-const EVIDENCE_ABOUT_THEM = new RegExp(`${EVIDENCE_READ}(?:they|he|she|the founder|the team)\\b`);
+/**
+ * The evidence read out about the person spoken to ("From the evidence, I see the founder has…"). Not "they", "he" or
+ * "she": that is the customers or a teammate as often as not ("Based on the evidence, I see they're willing to pay").
+ */
+const EVIDENCE_ABOUT_THEM = new RegExp(`${EVIDENCE_READ}(?:the founder|the user)\\b`);
 
 /** A whole sentence that only opens thinking aloud: narration only when narration follows it. */
 const THINKING_ALOUD = new RegExp(

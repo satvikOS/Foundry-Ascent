@@ -111,10 +111,10 @@ const NAMED_NARRATION: readonly string[] = [
   'So Maya just asked about the second library.',
   'Maya seems stressed, so I should keep it short.',
   'Maya Okafor-Lindqvist asked about the pilot.',
-  'From the evidence, I see they’ve already got two libraries interested.',
   'From the evidence, I see Maya has already run five interviews.',
+  'From the evidence, I see the founder has already got two libraries interested.',
   "Maya's message is a greeting.",
-  "Noor's question is about pricing.",
+  "Maya's last question was about pricing.",
   'MAYA IS ASKING ABOUT THE PILOT.',
 ];
 
@@ -132,6 +132,14 @@ const NAMED_NATURAL: readonly string[] = [
   'From the evidence, I see two libraries already said yes.',
   'Based on the evidence, I’d price per library.',
   'Mayan temples draw the most tourists in July.',
+  // A teammate's message talked about, and "they" for the customers (the wave 7 review's probe).
+  "Noor's question is a good one.",
+  "Noor's question was whether to charge per seat.",
+  "Noor's request is reasonable: a flat fee is simpler.",
+  "Noor's reply was quick, which is a good sign.",
+  "Based on the evidence, I see they're willing to pay $900.",
+  'Looking at the notes, I see they agreed to the pilot.',
+  'From the evidence, I see she signed the letter of intent last week.',
 ];
 
 function stringsIn(value: unknown, out: string[] = []): string[] {
