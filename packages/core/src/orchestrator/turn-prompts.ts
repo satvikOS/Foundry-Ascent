@@ -42,8 +42,11 @@ export function answerSystemPrompt(system: string, options: AnswerPromptOptions)
     '',
     'Output: write your reply to the founder now, as the text itself. No JSON, no field names, no preamble.',
     options.mode === null
-      ? `- First decide which mode fits best (one of ${options.allowedModes.map((m) => `"${m}"`).join(', ')}) and answer in that mode; you will name it in the next step.`
+      ? `- Answer in the mode that fits best (one of ${options.allowedModes.map((m) => `"${m}"`).join(', ')}), chosen silently; you will name it in the next step.`
       : `- Answer in the "${options.mode}" mode.`,
+    // LAB-M1: asked to "first decide" the mode, Nova 2 Lite reasoned in the open and a call spoke it.
+    '- Never think aloud: no reasoning, plans, rules or modes in the reply, and never "the founder" in the third',
+    '  person. Every word is said to the founder.',
     '- The rules above that name response fields (`answer`, `spoken`, `claims`, `next_actions`, `mode` and the',
     '  others) apply to a separate step that collects claims, uncertainty, next actions, memory suggestions and',
     '  follow-up questions. Do not list those in the reply, and never start it with a label such as "Answer:".',

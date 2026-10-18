@@ -115,6 +115,17 @@ describe('streamed-turn prompts', () => {
     }
   });
 
+  it('never invites the model to think aloud in the reply (LAB-M1)', () => {
+    for (const channel of ['text', 'voice'] as const) {
+      for (const mode of [null, 'coach'] as const) {
+        const prompt = answerSystemPrompt(SYSTEM, { channel, mode, allowedModes: ['coach', 'teach'] });
+        const output = prompt.slice(prompt.lastIndexOf(OUTPUT_SECTION_MARKER));
+        expect(output).not.toMatch(/first decide/i);
+        expect(output).toContain('Never think aloud');
+      }
+    }
+  });
+
   it('replays the streamed reply before asking for its fields', () => {
     const messages = annotationMessages([{ role: 'user', content: 'founder' }], 'The reply.');
     expect(messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user']);
