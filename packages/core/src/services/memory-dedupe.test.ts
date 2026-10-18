@@ -177,6 +177,38 @@ describe('isCoachEcho (the coach’s own advice is never kept as a fact about th
     ).toBe(false);
   });
 
+  it('never drops a decision the founder stated in their own words, however the model words it (LAB-K1)', () => {
+    // knowledge.spec against the real model: nothing was kept with the turn (2 of 2 attempts).
+    const decided = conversationGrounding([
+      {
+        founder: "We've decided to ask each library for a paid commitment before the pilot starts.",
+        answer: 'That is a strong filter. Which library do you ask first?',
+      },
+    ]);
+    for (const candidate of [
+      {
+        title: 'Paid commitment before the pilot',
+        content: 'The founder decided to ask each library for a paid commitment before the pilot starts.',
+      },
+      // Advice-shaped paraphrases: inflections and an irregular form ("paid" → "pay") once hid the founder's words.
+      { title: 'Deposit rule', content: 'Libraries must pay before the pilot begins.' },
+      { title: 'Paid commitments first', content: 'Ask every library to pay up front before the pilot.' },
+      {
+        title: 'Commitment before piloting',
+        content: 'Each library needs to commit with payment before piloting.',
+      },
+    ]) {
+      expect(isCoachEcho(candidate, decided, { source: 'founder_stated' }), candidate.content).toBe(false);
+    }
+    // Not weakened: advice the founder never said stays the coach's, labelled or not.
+    const advice = {
+      title: 'Pricing survey',
+      content: 'Run a pricing survey with ten students before deciding.',
+    };
+    expect(isCoachEcho(advice, decided, { source: 'founder_stated' })).toBe(true);
+    expect(isCoachEcho(advice, decided)).toBe(true);
+  });
+
   it('follows the model’s label, and checks the ones it can', () => {
     const note = { title: 'Weekly reports', content: 'Libraries receive weekly occupancy reports.' };
     const said = conversationGrounding([
