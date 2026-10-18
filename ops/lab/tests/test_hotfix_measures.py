@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -309,3 +310,26 @@ def test_recall_comparison_and_report_show_the_greeting_and_openers() -> None:
     text = render({**now, "spend": {}, "models": {}})
     assert "call opened → turn sent 124 ms; typed → turn sent 13 ms; greeting stopped True; pass." in text
     assert "Openers: 1 checked, 0 flagged" in text
+
+
+def test_the_evals_matrix_runs_with_the_probed_models_and_keeps_content_private(tmp_path: Path) -> None:
+    cmd = cli.evals_matrix_command(
+        base_url="http://localhost:8787",
+        scenarios=40,
+        max_cost_usd=2.5,
+        simulator_model="us.amazon.nova-pro-v1:0",
+        judge_model="us.amazon.nova-pro-v1:0",
+        private=tmp_path,
+    )
+    assert cmd[1:6] == ["-m", "foundry_evals", "run", "--suite", "matrix"]
+    joined = " ".join(cmd)
+    assert "--matrix-budget 40" in joined
+    assert "--max-cost-usd 2.50" in joined
+    assert "--simulator llm --simulator-model us.amazon.nova-pro-v1:0" in joined
+    assert "--judge --judge-model us.amazon.nova-pro-v1:0" in joined
+    assert f"--private-out {tmp_path / 'evals-matrix' / 'private'}" in joined
+    template = cli.evals_matrix_command(
+        base_url="x", scenarios=4, max_cost_usd=1, simulator_model=None, judge_model=None, private=tmp_path
+    )
+    assert "--simulator" not in template
+    assert "--judge" not in template

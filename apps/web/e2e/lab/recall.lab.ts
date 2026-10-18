@@ -75,7 +75,8 @@ test.describe('conversation lab: recall', () => {
         .poll(
           () =>
             page.evaluate(
-              () => ((window as unknown as { __labSpeech?: { playing: number } }).__labSpeech?.playing ?? 0) > 0,
+              () =>
+                ((window as unknown as { __labSpeech?: { playing: number } }).__labSpeech?.playing ?? 0) > 0,
             ),
           { timeout: 8_000, intervals: [50, 100] },
         )
