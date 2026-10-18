@@ -159,7 +159,57 @@
       "n": 13
     },
     "stream_fallbacks": {},
-    "interrupt_requests": 1
+    "interrupt_requests": 1,
+    "turns": [
+      {
+        "voice": true,
+        "retrievalMs": 164.0,
+        "embedMs": 225.0,
+        "modelStartMs": 521.0,
+        "modelFirstTokenMs": 727.0,
+        "firstDeltaMs": 1332.0,
+        "firstSpeechMs": 1333.0,
+        "totalMs": 3122.0,
+        "firstTokenToDeltaMs": 605,
+        "pollyFirstAudioMs": 117.0
+      },
+      {
+        "voice": true,
+        "retrievalMs": 141.0,
+        "embedMs": 316.0,
+        "modelStartMs": 176.0,
+        "modelFirstTokenMs": 517.0,
+        "firstDeltaMs": 926.0,
+        "firstSpeechMs": 926.0,
+        "totalMs": 3275.0,
+        "firstTokenToDeltaMs": 409,
+        "pollyFirstAudioMs": 122.0
+      },
+      {
+        "voice": true,
+        "retrievalMs": 163.0,
+        "embedMs": 128.0,
+        "modelStartMs": 209.0,
+        "modelFirstTokenMs": 576.0,
+        "firstDeltaMs": 1013.0,
+        "firstSpeechMs": 1013.0,
+        "totalMs": 3889.0,
+        "firstTokenToDeltaMs": 437,
+        "pollyFirstAudioMs": 73.0
+      },
+      {
+        "voice": true,
+        "retrievalMs": 160.0,
+        "embedMs": 129.0,
+        "modelStartMs": 207.0,
+        "modelFirstTokenMs": 522.0,
+        "firstDeltaMs": 774.0,
+        "firstSpeechMs": 774.0,
+        "totalMs": 2675.0,
+        "firstTokenToDeltaMs": 252,
+        "pollyFirstAudioMs": 164.0
+      }
+    ]
   },
   "baseline_note": "Run 39081203019 (main 8646563, one call, one barge-in). App-log numbers computed afterwards from its sealed outputs (logstats.py); self-interruptions were not recorded then."
 }
