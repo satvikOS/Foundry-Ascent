@@ -97,7 +97,8 @@ export class HeygenLiveAvatarFace implements EmbodimentProvider {
   constructor(options: HeygenLiveAvatarOptions) {
     this.#options = options;
     this.usdPerMinute = options.usdPerMinute;
-    this.#fetch = options.fetch ?? fetch;
+    // Bound, so the global fetch never runs with this adapter as its receiver.
+    this.#fetch = options.fetch ?? ((input, init) => fetch(input, init));
     this.#openSocket = options.openSocket ?? ((url) => new WebSocket(url));
     this.#ids = options.ids ?? randomUUID;
   }

@@ -45,7 +45,8 @@ export class ElevenLabsVoice implements VoiceProvider {
     this.#options = options;
     this.model = options.model;
     this.usdPer1kCharacters = options.usdPer1kCharacters;
-    this.#fetch = options.fetch ?? fetch;
+    // Bound, so the global fetch never runs with this adapter as its receiver.
+    this.#fetch = options.fetch ?? ((input, init) => fetch(input, init));
   }
 
   async synthesize(input: VoiceSynthesisInput): Promise<SynthesizedSpeech> {
