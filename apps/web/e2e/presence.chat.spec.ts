@@ -228,11 +228,13 @@ test.describe('talking with the vEIR', () => {
         await page.goto(`${page.url().split('?')[0] ?? ''}?call=1`);
         const screen = page.getByRole('dialog', { name: /^Call with / });
         await expect(screen).toBeVisible();
-        // Opened by a navigation (no click on this page yet), the call waits for Start call.
+        // The page was clicked before (the conversation above), so the call may start at once; else it waits for
+        // Start call. Either way it must reach the live call: every check below runs on both paths.
         const start = screen.getByRole('button', { name: 'Start call' });
-        await expect(start).toBeVisible();
-        await start.click();
-        await expect(screen.getByRole('textbox', { name: /^Reply to / })).toBeVisible({ timeout: 20_000 });
+        const reply = screen.getByRole('textbox', { name: /^Reply to / });
+        await expect(start.or(reply)).toBeVisible({ timeout: 20_000 });
+        if (await start.isVisible()) await start.click();
+        await expect(reply).toBeVisible({ timeout: 20_000 });
         const tag = screen.locator('[data-slot="call-name-tag"]');
         await expect(tag).toHaveText('CorinvEIR');
         await expect(tag.locator('xpath=ancestor::*[@data-slot="call-tile"]')).toHaveCount(1);
