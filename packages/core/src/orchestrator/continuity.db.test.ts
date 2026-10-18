@@ -854,7 +854,7 @@ describe('how a new conversation opens', () => {
     await idle(call.id, 10);
     // Then a chat about the student union, just now.
     const chat = await h.core.sessions.create(maya, quietquad(), {});
-    await talk(maya, chat.id, "The student union said they'll promote us if we add group booking.");
+    await talk(maya, chat.id, 'Should we add group booking for study groups before exams?');
     // The call's distillation finishes only now, after the chat's turn: the notebook's opener is drawn from the call.
     await h.t.db.system(async (sx) => {
       const key = { ventureId: quietquad(), personaId: h.ventures.quietquad.personaId };
@@ -881,6 +881,28 @@ describe('how a new conversation opens', () => {
     expect(ringing.intro?.text ?? '').toMatch(/student union|group booking/);
     await h.core.calls.end(maya, ringing.call.id, { reason: 'user' });
     h.jobQueue.drain();
+    // Once the chat itself is distilled and its distillation kept that opener, the opener is current again.
+    await h.core.sessions.remove(maya, next.id);
+    const digest = {
+      summary: 'The union offered promotion for group booking.',
+      topics: ['group booking'],
+      commitments: [],
+      openQuestions: [],
+      generatedAt: new Date().toISOString(),
+    };
+    await h.t.db.system(async (sx) => {
+      await sx.query(
+        `UPDATE coaching_sessions SET digest = CAST(:d AS jsonb), distill_version = 1,
+                last_activity_at = now() - interval '1 minute' WHERE id = :id`,
+        { d: p.text(JSON.stringify(digest)), id: p.uuid(chat.id) },
+      );
+      await sx.query(
+        'UPDATE veir_notebooks SET updated_at = now() WHERE venture_id = :v AND persona_id = :pe',
+        { v: p.uuid(quietquad()), pe: p.uuid(h.ventures.quietquad.personaId) },
+      );
+    });
+    const kept = await h.core.sessions.create(maya, quietquad(), {});
+    expect(kept.opener ?? '').toMatch(/success criteria/);
   });
 
   it('opens and recalls with what the founder told, never only the coach’s framing (LAB-R6b, RC-01)', async () => {

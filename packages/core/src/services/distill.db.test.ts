@@ -1674,7 +1674,15 @@ describe('what a distillation draws from a conversation, and its deletion', () =
     expect(content).toMatchObject({ nextOpener: OPENER, nextOpenerSource: drawn });
     expect(content?.summarySources).toContain(drawn);
 
-    // A later conversation opens with that line, and remembers where it came from.
+    // A later conversation opens with that line, and remembers where it came from (the conversation it was drawn
+    // from is Maya's latest: the earlier tests' conversations are older).
+    await h.t.db.system((sx) =>
+      sx.query(
+        `UPDATE coaching_sessions SET last_activity_at = now() - interval '1 hour'
+         WHERE venture_id = :v AND id <> :id`,
+        { v: p.uuid(quietquad()), id: p.uuid(drawn) },
+      ),
+    );
     const later = await h.core.sessions.create(maya, quietquad(), { mode: 'diagnose' });
     expect(await openerOf(later.id)).toEqual({ opener: OPENER, source: drawn });
 

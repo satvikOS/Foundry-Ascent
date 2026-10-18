@@ -385,14 +385,16 @@ export async function chooseOpener(
           opener: stored,
         });
   const seed = `${latest?.sessionId ?? 'first'}:${args.principalId}:${String(since.opened)}`;
-  // Current: drawn from the person's latest conversation, call or chat. Only an opener of unknown origin is judged by
-  // when the notebook was written: one drawn from an older conversation is never current, however late its
-  // distillation finished (LAB-R6c: a call right after a chat opened with the earlier call's topic, because the
-  // call's distillation wrote the notebook after the chat's last turn).
+  // Current: drawn from the person's latest conversation, call or chat; or written after that conversation's last
+  // turn once the latest conversation itself was distilled (its distillation saw the opener and kept it), or when the
+  // opener's origin is unknown. An opener drawn from an older conversation is never current while the latest one is
+  // not distilled, however late the older one's distillation finished (LAB-R6c: a call right after a chat opened with
+  // the earlier call's topic, because the call's distillation wrote the notebook after the chat's last turn).
+  const latestDistilled = latest !== null && latest.digest !== null && latest.exchanges.length === 0;
   const current =
     latest === null ||
     source === latest.sessionId ||
-    (source === undefined &&
+    ((source === undefined || latestDistilled) &&
       latest.withThisVeir &&
       notebook?.updatedAt != null &&
       Date.parse(notebook.updatedAt) > Date.parse(latest.lastActivityAt));

@@ -527,8 +527,9 @@ describe('continuity', () => {
     );
     expect(after.opener).not.toBe(notebook.nextOpener);
     await core.sessions.remove(maya, after.id);
-    // Written after her last conversation, the notebook's opener is the freshest line again.
-    await storeOpenerUnchecked(h, h.ventures.quietquad, notebook.nextOpener ?? '');
+    // Written after her last conversation (a notebook from before openers recorded their conversation), the
+    // notebook's opener is the freshest line again.
+    await storeOpenerUnchecked(h, h.ventures.quietquad, notebook.nextOpener ?? '', { unknownSource: true });
     const session = await core.sessions.create(maya, h.ventures.quietquad.id, {});
     expect(session.opener).toBe(notebook.nextOpener);
 
