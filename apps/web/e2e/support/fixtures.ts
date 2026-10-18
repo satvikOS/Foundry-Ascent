@@ -83,8 +83,9 @@ export function veirWelcome(page: Page): Locator {
 
 /**
  * Sign in through the real form and wait for the signed-in shell. A founder or teammate who has not met their
- * vEIR yet lands under its one-time welcome: by default it is read (Continue), so the shell is usable;
- * `welcome: 'keep'` leaves it open for a test about it.
+ * coach yet lands under its one-time welcome (a vEIR's or the program's guide's): `welcome: 'keep'` waits for it
+ * and leaves it open for a test about it; by default it is acknowledged through the API and the page reloaded, so
+ * no welcome can open late over an unrelated test (the venture loading after a short wait would put it there).
  */
 export async function signIn(
   page: Page,
@@ -104,20 +105,20 @@ export async function signIn(
   };
   const writer = me.memberships.some((m) => m.role === 'founder' || m.role === 'team');
   if (writer && me.veirWelcomeAcknowledgedAt === null) {
-    // They land in their venture, where the welcome opens over New chat (a guide's venture has none).
+    // They land in their venture, where the welcome opens over New chat.
     await page.waitForURL(/\/app\/v\/[0-9a-f-]{36}/);
-    const welcome = veirWelcome(page);
-    const shown = await welcome
-      .waitFor({ state: 'visible', timeout: 5_000 })
-      .then(() => true)
-      .catch(() => false);
-    if (shown && options.welcome === 'keep') return;
-    if (shown) {
-      await welcome.getByRole('button', { name: 'Continue' }).click();
-      await expect(welcome).toBeHidden();
+    if (options.welcome === 'keep') {
+      await expect(veirWelcome(page)).toBeVisible({ timeout: 20_000 });
+      return;
     }
+    const acknowledged = await page.request.post('/api/v1/me/veir-welcome/acknowledge', {
+      headers: { 'x-requested-with': 'foundry-ascent', 'idempotency-key': runToken() },
+    });
+    expect(acknowledged.status(), 'POST /me/veir-welcome/acknowledge').toBe(200);
+    await page.reload();
   }
   await expect(page.getByRole('button', { name: /^Account menu for / })).toBeVisible();
+  await expect(veirWelcome(page)).toHaveCount(0);
 }
 
 export async function signOut(page: Page): Promise<void> {

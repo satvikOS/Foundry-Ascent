@@ -228,8 +228,10 @@ test.describe('talking with the vEIR', () => {
         await page.goto(`${page.url().split('?')[0] ?? ''}?call=1`);
         const screen = page.getByRole('dialog', { name: /^Call with / });
         await expect(screen).toBeVisible();
+        // Opened by a navigation (no click on this page yet), the call waits for Start call.
         const start = screen.getByRole('button', { name: 'Start call' });
-        if (await start.isVisible().catch(() => false)) await start.click();
+        await expect(start).toBeVisible();
+        await start.click();
         await expect(screen.getByRole('textbox', { name: /^Reply to / })).toBeVisible({ timeout: 20_000 });
         const tag = screen.locator('[data-slot="call-name-tag"]');
         await expect(tag).toHaveText('CorinvEIR');
@@ -238,10 +240,9 @@ test.describe('talking with the vEIR', () => {
         await expect(screen.getByRole('note', { name: 'AI disclosure' })).toHaveCount(0);
         // Maya has met Corin's vEIR before: it greets her, it does not introduce itself or say "an AI coach".
         const body = (await (await intro).json()) as { intro: { text: string } | null };
-        if (body.intro) {
-          expect(body.intro.text).toMatch(/^Hi Maya\. /);
-          expect(body.intro.text).not.toMatch(/an AI coach|digital twin/);
-        }
+        expect(body.intro, 'the call greets Maya').not.toBeNull();
+        expect(body.intro?.text).toMatch(/^Hi Maya\. /);
+        expect(body.intro?.text).not.toMatch(/an AI coach|digital twin/);
         await expectNoBareEirName(page, 'the call tile', [
           /^I'm Corin's digital twin, built from how Corin coaches/,
         ]);
