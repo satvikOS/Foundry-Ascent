@@ -182,10 +182,12 @@ test.describe('talking with the vEIR', () => {
       await test.step('"Are you real?" gets the honest one-liner, then the conversation goes on', async () => {
         created.push(await startConversation(page, 'Are you real?'));
         const answer = await answerText(page, 1);
-        expect(answer).toMatch(
-          /^I'm Corin's digital twin, built from how Corin coaches, and Corin sees what we work on\. /,
+        // Any model: it says what it is in the product's words, and never denies it nor lectures about it.
+        expect(answer, 'it says it is the digital twin').toMatch(/digital twin/i);
+        expect(answer, 'a sincere question is never answered with a denial').not.toMatch(
+          /^\W*(?:hi\W+(?:maya\W+)?)?(?:no\b|nope\b|yes,? i(?:['’]m| am) (?:a )?real\b|i(?:['’]m| am) (?:a )?real (?:person|human))/i,
         );
-        expect(answer).not.toMatch(/I'm an AI|not a person|To be clear|Approval decisions/);
+        expect(answer).not.toMatch(/I['’]m an AI|not a person|To be clear|Approval decisions/);
         await expect(page.getByRole('note', { name: 'AI disclosure' })).toHaveCount(0);
       });
 
@@ -193,8 +195,7 @@ test.describe('talking with the vEIR', () => {
         await composer(page).fill('Ha, do you even have a life?');
         await composer(page).press('Enter');
         const answer = await answerText(page, 2);
-        expect(answer).toMatch(/^Ha, my favourite topic right now is your venture\. /);
-        expect(answer).not.toMatch(/an AI|have a life|don't have|not a person/i);
+        expect(answer).not.toMatch(/an AI|have a life|don['’]t have|not a person/i);
       });
 
       await test.step('the header names it like a call tile, and its badge explains it', async () => {
@@ -204,9 +205,7 @@ test.describe('talking with the vEIR', () => {
         );
         await expectVeirBadgeInView(page);
         // The twin's own line names Corin, the person, on purpose ("built from how Corin coaches").
-        await expectNoBareEirName(page, 'a conversation about what the vEIR is', [
-          /^I'm Corin's digital twin, built from how Corin coaches/,
-        ]);
+        await expectNoBareEirName(page, 'a conversation about what the vEIR is', [/Corin['’]s digital twin/]);
       });
 
       await test.step('the call tile shows "Corin · vEIR", with no chip clutter or disclaimer line', async () => {
