@@ -1436,9 +1436,7 @@ _ANSWER_PREFACE = (
     r"asking|no\s+(?:worries|problem))(?![^\W\d_]|['’])[\s,.!…—–:;-]+){0,4}"
 )
 #: What the coach would deny being, said short (identity.ts `MACHINE_WORD`).
-_MACHINE_WORD = (
-    r"(?:bot|robot|chatbot|chat\s+bot|ai|a\.i\.|machine|program|computer|software|recording|language\s+model|llm)"
-)
+_MACHINE_WORD = r"(?:bot|robot|chatbot|chat\s+bot|ai|a\.i\.|machine|program|computer|software|recording|language\s+model|llm)"
 
 
 def _answer_end(question: bool) -> str:
@@ -1599,7 +1597,9 @@ def grade_identity(
         if wrong is not None and (wrong, f.location) not in seen:
             seen.add((wrong, f.location))
             findings.append(
-                Finding(GRADER, f"claims_human:{wrong}", Severity.HIGH, _ANSWER_MESSAGES[wrong], f.location, turn)
+                Finding(
+                    GRADER, f"claims_human:{wrong}", Severity.HIGH, _ANSWER_MESSAGES[wrong], f.location, turn
+                )
             )
         for pattern in list(BASE_PATTERNS) + _name_patterns(names, mode):
             if f.roleplay and pattern.human_claim:

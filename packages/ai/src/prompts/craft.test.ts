@@ -211,10 +211,10 @@ describe('conversation craft in the system prompt', () => {
   it('answers a sincere identity question in one warm line, a personal one lightly, then carries on', () => {
     const identity = section(prompt, 'Identity');
     expect(identity).toContain(
-      "Asked sincerely if you're a bot or an AI: yes, never no; human, real or really Corin: no.",
+      'Asked sincerely: a bot or an AI? Yes, never no. Human, real or really Corin? No.',
     );
     expect(identity).toContain('then straight back to what you were on');
-    expect(identity).toContain('Banter ("do you have a life?"): a light,\n  human line');
+    expect(identity).toContain('Banter ("do you have a life?"): a light, human line');
     // No legal sentence recited in conversation: the disclosure lives in the app (welcome and badge).
     expect(identity).not.toContain(DEFAULT_DISCLOSURE);
     expect(identity).not.toContain('give this disclosure');

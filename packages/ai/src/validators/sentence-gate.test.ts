@@ -257,6 +257,43 @@ describe('SentenceGate', () => {
     expect(joined(playful.units)).toBe('Ha. Your pricing keeps me busy.');
   });
 
+  it('drops "Hi Ines, I’m Ruth’s vEIR." from a later reply before it is shown or said (LAB-M16, MX-P05)', () => {
+    const ruth = {
+      personaName: "Ruth's vEIR",
+      eirNames: ['Ruth Abernathy-Song'],
+      personaEirName: 'Ruth Abernathy-Song',
+      addressees: ['Ines Duarte'],
+    };
+    for (const spoken of [false, true]) {
+      const met = run(gate({ ...ruth, spoken, introduced: true }), [
+        "Hi Ines, I'm Ruth's vEIR. ",
+        'Facilities holds the budget, so start there.',
+      ]);
+      expect(met.blocked).toBeNull();
+      expect(joined(met.units)).toBe('Hi Ines. Facilities holds the budget, so start there.');
+      if (spoken) expect(met.units.map((u) => u.spoken).join(' ')).not.toMatch(/vEIR|veer/i);
+      // A unit that was only the introduction goes, and a "But" that leaned on it.
+      const alone = run(gate({ ...ruth, spoken, introduced: true }), [
+        "I'm Ruth's vEIR, Ruth's digital twin. ",
+        'But facilities holds the budget.',
+      ]);
+      expect(joined(alone.units)).toBe('Facilities holds the budget.');
+      // The first reply of a first meeting keeps it, and so does the answer to a sincere question.
+      const first = run(gate({ ...ruth, spoken }), [
+        "Hi Ines, I'm Ruth's vEIR. ",
+        'What would you like to work on?',
+      ]);
+      expect(joined(first.units)).toBe("Hi Ines, I'm Ruth's vEIR. What would you like to work on?");
+      const asked = run(
+        gate({ ...ruth, spoken, introduced: true, founderText: 'wait, is this really Ruth?' }),
+        ["No — I'm Ruth's digital twin, an AI built from how Ruth coaches. ", 'So, the budget?'],
+      );
+      expect(joined(asked.units)).toBe(
+        "No — I'm Ruth's digital twin, an AI built from how Ruth coaches. So, the budget?",
+      );
+    }
+  });
+
   it('holds a unit back until a canary arriving across two chunks is complete, then stops', () => {
     expect(holdBackFor([CANARY])).toBe(2 * CANARY.length + 8);
     const g = gate();

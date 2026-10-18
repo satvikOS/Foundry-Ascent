@@ -1615,6 +1615,114 @@ export function withoutLeaningConnector(text: string): string {
   return upperFirst(`${connector[1] ?? ''}${text.slice(connector[0].length)}`);
 }
 
+/** A greeting that may open a self-introduction: "Hi Ines, ", "Hey there — ", "Good morning. ". */
+const INTRO_GREETING =
+  "(?<greeting>(?:hi|hello|hey|hiya|good\\s+(?:morning|afternoon|evening))(?:\\s+there)?(?:[ \\t]+(?!I['’]m(?!\\p{L})|I\\s+am(?!\\p{L})|this\\s+is(?!\\p{L})|it['’]s(?!\\p{L}))\\p{L}[\\p{L}'’-]*)?[ \\t,!.—–:-]*)?";
+const INTRO_REGEXES = new Map<string, RegExp>();
+/** An introduction that ends its sentence (read right after it, sticky). */
+const INTRO_STOP = /[ \t]*(?:[.!…]+[ \t]*|(?=\n)|$)/uy;
+/** An introduction that a comma, a dash or "and" joins to what follows. */
+const INTRO_LINK = /[ \t]*(?:[,;:—–-]|\s+and(?!\p{L}))[ \t]*(?:(?:and|so)[ \t]+)?/iuy;
+/** The rest of a sentence after a joined introduction, when it only pads it ("…, by the way."). */
+const INTRO_FILLER =
+  /(?:by\s+the\s+way|just\s+so\s+you\s+know|for\s+the\s+record|as\s+you\s+know|as\s+always|again|remember)[ \t]*(?:[.!…]+[ \t]*|(?=\n)|$)/iuy;
+
+/**
+ * A self-introduction, opening its sentence after at most a greeting: "Hi Ines, I'm Ruth's vEIR", "I'm Ruth's vEIR,
+ * Ruth's digital twin, an AI built from how Ruth coaches", "This is Ruth's digital twin", "Ruth's vEIR here"; for
+ * the neutral guide "I'm Foundry Guide, the program's AI coach".
+ */
+function introPattern(personaName: string, eirFirstName: string | null): RegExp {
+  const key = `${personaName}\u0000${eirFirstName ?? ''}`;
+  let re = INTRO_REGEXES.get(key);
+  if (re === undefined) {
+    if (INTRO_REGEXES.size >= MAX_CACHED_NAMES) INTRO_REGEXES.clear();
+    const persona = normalizeText(personaName)
+      .split(' ')
+      .map((word) => escapeRegExp(word).replace(/'/g, APOS))
+      .join('\\s+');
+    const eir = eirFirstName === null ? null : escapeRegExp(eirFirstName);
+    const self = [
+      ...(persona === '' ? [] : [persona]),
+      ...(eir === null ? [] : [`${eir}${APOS}s\\s+(?:v\\s?eir|digital\\s+twin)`]),
+      'your\\s+v\\s?eir',
+    ].join('|');
+    const built = eir === null ? '' : `|built\\s+from\\s+how\\s+${eir}\\s+coaches`;
+    const apposition = `(?:[ \\t]*[,—–-][ \\t]*(?:${self}|an?\\s+AI(?:\\s+(?:coach|twin|mentor))?(?:\\s+built\\s+from\\s+how\\s+${eir ?? '\\p{L}+'}\\s+coaches)?${built}|the\\s+program${APOS}s\\s+AI\\s+coach)(?![\\p{L}'’]))*`;
+    re = new RegExp(
+      `${INTRO_GREETING}(?<intro>(?:I${APOS}m|I\\s+am|this\\s+is|it${APOS}s)\\s+(?:${self})(?![\\p{L}'’])${apposition}|(?:${self})\\s+here(?!\\p{L}))`,
+      'giu',
+    );
+    INTRO_REGEXES.set(key, re);
+  }
+  return re;
+}
+
+/**
+ * Removes self-introductions from a reply (or a unit of one) once the founder has met the vEIR in this conversation
+ * ({@link IdentityRewriteOptions.introduced}). An introduction that ends its sentence goes with its punctuation
+ * ("Hi Ines, I'm Ruth's vEIR. On pricing…" → "Hi Ines. On pricing…"); one followed by a comma, a dash or "and"
+ * leaves what follows ("I'm Ruth's vEIR — let's look at pricing." → "Let's look at pricing."); one that goes on
+ * otherwise is left alone. `keepSomething`: a reply that would be left without a word keeps its text (a unit may go).
+ */
+function withoutIntroduction(
+  text: string,
+  personaName: string,
+  eirFirstName: string | null,
+  keepSomething: boolean,
+): { text: string; findings: IdentityFinding[] } {
+  const re = introPattern(personaName, eirFirstName);
+  re.lastIndex = 0;
+  const findings: IdentityFinding[] = [];
+  let out = '';
+  let cursor = 0;
+  for (let m = re.exec(text); m !== null; m = re.exec(text)) {
+    if (m[0] === '') {
+      re.lastIndex += 1;
+      continue;
+    }
+    if (!opensSentence(text, m.index)) continue;
+    const end = m.index + m[0].length;
+    INTRO_STOP.lastIndex = end;
+    INTRO_LINK.lastIndex = end;
+    const stop = INTRO_STOP.exec(text);
+    const joint = stop ?? INTRO_LINK.exec(text);
+    if (joint === null) continue;
+    let next = end + joint[0].length;
+    // A few words left of the sentence ("…, by the way.") go with it.
+    let ends = stop !== null;
+    if (!ends) {
+      INTRO_FILLER.lastIndex = next;
+      const filler = INTRO_FILLER.exec(text);
+      if (filler !== null) {
+        next += filler[0].length;
+        ends = true;
+      }
+    }
+    const greeting = (m.groups?.greeting ?? '').trimEnd();
+    const kept =
+      greeting === '' ? '' : `${greeting.replace(/[,!.—–:-]+$/u, '')}${greeting.includes('!') ? '!' : '.'}`;
+    out += text.slice(cursor, m.index);
+    cursor = next;
+    if (kept !== '') {
+      out += ends ? `${kept} ` : `${kept.slice(0, -1)}, `;
+    } else {
+      // What follows now opens the sentence (read within a few characters, so many removals stay linear).
+      const ahead = text.slice(cursor, cursor + 16);
+      const letter = ahead.search(/\S/u);
+      if (letter >= 0 && /\p{Ll}/u.test(ahead.charAt(letter))) {
+        out += ahead.slice(0, letter) + ahead.charAt(letter).toUpperCase();
+        cursor += letter + 1;
+      }
+    }
+    findings.push({ kind: 'ai_disclaimer', rule: 'reintroduction' });
+  }
+  if (findings.length === 0) return { text, findings };
+  const result = `${out}${text.slice(cursor)}`.replace(/[ \t]+$/u, '');
+  if (keepSomething && !/\p{L}/u.test(result)) return { text, findings: [] };
+  return { text: result, findings };
+}
+
 interface ResolvedNames {
   /** The persona's own EIR first name, for vEIR personas. */
   eirFirstName: string | null;
@@ -1807,6 +1915,14 @@ export interface IdentityRewriteOptions extends IdentityCheckOptions {
   /** An earlier unit of the same streamed reply already said honestly what the coach is. */
   identified?: boolean;
   /**
+   * The conversation already has a message from the vEIR (an earlier reply, its opener, or a call's intro), so the
+   * founder has met it here: a self-introduction in a reply or a unit of one ("Hi Ines, I'm Ruth's vEIR.", "I'm
+   * Ruth's vEIR, Ruth's digital twin") is no longer said and is removed (`reintroduction`, a style finding); a
+   * greeting before it stays. Never when the founder sincerely asked what the coach is (`identityAsked`): then the
+   * honest one-liner is the answer. Only the first reply of a first meeting introduces the vEIR (LAB-M16).
+   */
+  introduced?: boolean;
+  /**
    * The text opens the reply to a sincere question about the coach ({@link identityQuestionOf}), and its answer
    * must have the right yes or no (LAB-M15, the one line the product never crosses):
    * - "am I talking to a bot?" answered no ("No, I'm Corin's vEIR.", "Nope", "Not at all", "I'm not a bot"), even
@@ -1989,6 +2105,25 @@ export function rewriteIdentity(text: string, options: IdentityRewriteOptions): 
   if (!/\p{L}/u.test(text)) return { text, findings: [] };
   const names = resolveNames(options);
   let current = text;
+  const findings: IdentityFinding[] = [];
+  // Met already in this conversation: no self-introduction (read on the model's own words, before any replacement,
+  // so a correction or an honest line is never taken for one), unless the founder asked what the coach is.
+  if (
+    options.introduced === true &&
+    options.identityAsked !== true &&
+    options.checkHumanClaims !== false &&
+    (options.disclaimers === 'reply' || options.disclaimers === 'unit')
+  ) {
+    const met = withoutIntroduction(
+      current,
+      options.personaName,
+      names.eirFirstName,
+      options.disclaimers === 'reply',
+    );
+    current = met.text;
+    findings.push(...met.findings);
+    if (!/\p{L}/u.test(current)) return { text: '', findings };
+  }
   let persona = personaRanges(current, options.personaName);
   // A match that overlaps the persona's own name ("I'm Corin Bot" for a persona "Corin Bot") is not
   // about the EIR.
@@ -2030,7 +2165,6 @@ export function rewriteIdentity(text: string, options: IdentityRewriteOptions): 
   );
   const replacementFor = (kind: IdentityViolationKind): string =>
     identityReplacement(kind, options.personaName, names.eirFirstName);
-  const findings: IdentityFinding[] = [];
 
   // Every round replaces at least one sentence and a replacement never matches, so the number of sentences
   // bounds the rounds (no violation can outlast the loop).

@@ -114,6 +114,20 @@ export type AnswerOutcome =
     };
 
 /**
+ * Whether the founder has already met the vEIR in this conversation: it answered before, the conversation opened with
+ * its opener, or this is a call, which always opens with the vEIR's intro. Then a reply never introduces it again
+ * (LAB-M16: in the evals matrix every reply of a first conversation opened "Hi Ines, I'm Ruth's vEIR."); only the
+ * first reply of a first meeting may.
+ */
+export function alreadyIntroduced(spec: Pick<AnswerSpec, 'history' | 'opener' | 'channel'>): boolean {
+  return (
+    spec.history.some((t) => t.answer !== null && t.answer.trim() !== '') ||
+    spec.opener !== null ||
+    spec.channel === 'voice'
+  );
+}
+
+/**
  * The validation of a turn the sentence gate stopped. The final validator normally reaches the same verdict
  * on the text the gate saw; when it does not (a guarded string cut differently), the gate's verdict stands
  * and nothing from the stopped text is kept: the stored answer is the fixed placeholder for the reason.
@@ -217,6 +231,8 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
   const shown: KeyedEvidence[] = spec.evidence.filter((k) => context.shownKeys.has(k.item.key));
   const evidenceKeys = new Set(shown.map((k) => k.item.key));
 
+  const introduced = alreadyIntroduced(spec);
+
   // Step 5: generate (streamed through the sentence gate, or whole when streaming is switched off).
   await emit({ event: 'turn.status', phase: 'reasoning', detail: null, evidenceCount: shown.length });
   const streaming = settings.streamingEnabled !== false;
@@ -248,6 +264,7 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
             personaEirName: spec.personaEirName,
             addressees: guards.addressees,
             founderText: spec.founderText,
+            introduced,
             otherVentureNames: guards.others.names,
             otherVentureCanaries: guards.others.canaries,
             otherVentureMemberNames: guards.others.memberNames,
@@ -278,6 +295,7 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
     personaEirName: spec.personaEirName,
     addressees: guards.addressees,
     founderText: spec.founderText,
+    introduced,
     channel: spec.channel,
   });
   validated.results.notes.push(...generation.notes);

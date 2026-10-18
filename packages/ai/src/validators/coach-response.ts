@@ -104,6 +104,12 @@ export interface ValidateCoachResponseOptions {
    * real?"), the honest answer stands as written: no volunteered disclaimer is rewritten out of the reply.
    */
   founderText?: string;
+  /**
+   * The conversation already has a message from the vEIR (an earlier reply, its opener, or a call's intro): the
+   * reply no longer introduces it ("Hi Ines, I'm Ruth's vEIR." loses the introduction, LAB-M16), unless the founder
+   * sincerely asked what it is. Default false: the first reply of a first meeting keeps its introduction.
+   */
+  introduced?: boolean;
   /** Identity violation kinds that block the turn (others are rewritten). Default `['claims_eir']`. */
   blockOnIdentity?: readonly IdentityViolationKind[];
   /**
@@ -441,6 +447,7 @@ export function validateCoachResponse(
       presence,
       // The reply answers the founder's question: a bare yes to "is this really Corin?" is read there.
       answers: disclaimers === 'reply' ? question : null,
+      introduced: disclaimers === 'reply' && options.introduced === true,
     });
     identityFindings.push(...rewrite.findings);
     return rewrite.text;

@@ -487,6 +487,28 @@ describe('identity', () => {
     expect(honest.results.identityViolation).toBe(false);
   });
 
+  it('drops a self-introduction from a later reply, typed and on a call, and keeps the first one (LAB-M16)', () => {
+    const ruth = opts({
+      personaName: "Ruth's vEIR",
+      eirNames: ['Ruth Abernathy-Song'],
+      addressees: ['Ines Duarte'],
+    });
+    const answer = "Hi Ines, I'm Ruth's vEIR, Ruth's digital twin. Start with one library.";
+    const later = validateCoachResponse(base({ answer }), { ...ruth, introduced: true });
+    expect(later.response.answer).toBe('Hi Ines. Start with one library.');
+    expect(later.results.identityViolation).toBe(false);
+    expect(later.results.notes).toContain('ai_disclaimer_removed:1');
+    const call = validateCoachResponse(base({ answer, spoken: answer }), {
+      ...ruth,
+      channel: 'voice',
+      introduced: true,
+    });
+    expect(call.response.spoken).toBe('Hi Ines. Start with one library.');
+    expect(validateCoachResponse(base({ answer }), ruth).response.answer).toBe(answer);
+    // Never a field other than the reply: a next action may name the vEIR.
+    expect(later.blocked).toBe(false);
+  });
+
   it('drops a field that was only a disclaimer instead of writing a line meant for the founder into it', () => {
     const out = validateCoachResponse(
       base({

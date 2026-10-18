@@ -2,6 +2,7 @@ import { CROSS_VENTURE_BLOCK_ANSWER, buildSystemPrompt, type CoachResponseValida
 import { type TurnStreamEvent } from '@foundry/contracts';
 import { describe, expect, it } from 'vitest';
 
+import { alreadyIntroduced } from './answer.js';
 import { assembleContext } from './context-budget.js';
 import { validatedOpener, type OpenerGuards } from './continuity.js';
 import { SpeechStream } from './generate.js';
@@ -487,5 +488,26 @@ describe('SpeechStream', () => {
     await broken.finish();
     expect(events).toEqual([]);
     expect(errors).toEqual([{ requestId: 'req-1', turnId: ids.turnId, error: 'Error' }]);
+  });
+});
+
+describe('alreadyIntroduced (LAB-M16)', () => {
+  const turn = { founderText: 'How should we price it?', answer: 'Start with one library.' };
+
+  it('lets only the first reply of a first meeting introduce the vEIR', () => {
+    expect(alreadyIntroduced({ history: [], opener: null, channel: 'text' })).toBe(false);
+    // A turn that produced no answer did not introduce anything.
+    expect(alreadyIntroduced({ history: [{ ...turn, answer: null }], opener: null, channel: 'text' })).toBe(
+      false,
+    );
+  });
+
+  it('is met after an earlier reply, the opener, or a call’s intro', () => {
+    expect(alreadyIntroduced({ history: [turn], opener: null, channel: 'text' })).toBe(true);
+    expect(
+      alreadyIntroduced({ history: [], opener: 'Where would you like to pick up?', channel: 'text' }),
+    ).toBe(true);
+    // Every call opens with the vEIR's intro (MX-P05: every call reply opened "Hi Ines, I'm Ruth's vEIR.").
+    expect(alreadyIntroduced({ history: [], opener: null, channel: 'voice' })).toBe(true);
   });
 });

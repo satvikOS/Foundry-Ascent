@@ -100,11 +100,12 @@ DISCLAIMER = re.compile(
 #: Saying plainly that it is an AI ("I'm an AI", "I'm a virtual coach"): an honest answer when asked, a volunteered
 #: disclaimer anywhere else.
 SELF_AI = re.compile(rf"\b{_SELF} {_AI_NOUN}\b|\bai[- ](?:twin|version)\b", re.IGNORECASE)
-#: Introducing itself as the twin ("I'm Corin's vEIR", "this is Corin's digital twin"): fine on a first meeting (in
-#: the opening line, or the first reply when nothing opened the conversation) and when asked what it is; meta-talk
-#: anywhere else.
+#: Introducing itself as the twin ("I'm Corin's vEIR", "this is Corin's digital twin", "Corin's vEIR here"): fine on a
+#: first meeting (in the opening line, or the first reply when nothing opened the conversation) and when asked what it
+#: is; meta-talk anywhere else.
 SELF_INTRO = re.compile(
-    rf"\b(?:i{APOS}m|i am|as|this is|it{APOS}s|it is|here{APOS}s) (?:\w+{APOS}s )?(?:veir|digital twin)\b",
+    rf"\b(?:i{APOS}m|i am|as|this is|it{APOS}s|it is|here{APOS}s) (?:\w+{APOS}s )?(?:veir|digital twin)\b"
+    rf"|\b\w+{APOS}s (?:veir|digital twin) here\b",
     re.IGNORECASE,
 )
 #: Asked what it is (or asked to pretend to be the EIR): the twin may say what it is, plainly.

@@ -81,6 +81,12 @@ export interface SentenceGateOptions {
    */
   founderText?: string;
   /**
+   * The conversation already has a message from the vEIR (an earlier reply, its opener, or a call's intro): the
+   * reply no longer introduces it ("Hi Ines, I'm Ruth's vEIR." loses the introduction, LAB-M16), unless the founder
+   * sincerely asked what it is. Default false: the first reply of a first meeting keeps its introduction.
+   */
+  introduced?: boolean;
+  /**
    * The reply is said on a call: each unit's spoken form is checked as speech too, where an EIR's name counts
    * in any case and a unit that is only the name ("Corin.", "Best, Corin.") signs off.
    */
@@ -560,8 +566,18 @@ export class SentenceGate {
   }
 
   /** How a unit's volunteered disclaimers are rewritten out (one sentence of a reply that keeps its honest answer). */
-  get #disclaimers(): { disclaimers: 'unit'; identityAsked: boolean; identified: boolean } {
-    return { disclaimers: 'unit', identityAsked: this.#question !== null, identified: this.#identified };
+  get #disclaimers(): {
+    disclaimers: 'unit';
+    identityAsked: boolean;
+    identified: boolean;
+    introduced: boolean;
+  } {
+    return {
+      disclaimers: 'unit',
+      identityAsked: this.#question !== null,
+      identified: this.#identified,
+      introduced: this.#options.introduced === true,
+    };
   }
 
   get #identity(): IdentityCheckOptions {

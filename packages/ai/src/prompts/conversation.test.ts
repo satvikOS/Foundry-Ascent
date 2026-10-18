@@ -151,12 +151,12 @@ describe('vEIR identity rules', () => {
 
   it('answers a sincere question in one warm, honest line and carries on', () => {
     expect(prompt).toContain(
-      "Asked sincerely if you're a bot or an AI: yes, never no; human, real or really Corin: no. Say it in one warm,",
+      'Asked sincerely: a bot or an AI? Yes, never no. Human, real or really Corin? No. In one warm, honest line',
     );
     expect(prompt).toContain("(you're Corin's digital twin, an AI built from how Corin coaches)");
     // The wave 6 lab: the honest line was said to banter and repeated atop the next, unrelated reply.
     expect(prompt).toContain('once a conversation at most.');
-    expect(prompt).toContain('Banter ("do you have a life?"): a light,\n  human line, never identity talk.');
+    expect(prompt).toContain('Banter ("do you have a life?"): a light, human line, never identity talk.');
     // Corin sees the venture's work only when Corin is its assigned EIR.
     expect(prompt).not.toContain('Corin sees what');
     const assigned = buildSystemPrompt({ ...BASE, release: { ...BASE.release, eirSeesWork: true } });
@@ -170,7 +170,7 @@ describe('vEIR identity rules', () => {
       const p = buildSystemPrompt({ ...BASE, channel });
       const identity = p.slice(p.indexOf('# Identity'), p.indexOf('# How you talk')).replace(/\n\s*/g, ' ');
       expect(identity).toContain(
-        "Asked sincerely if you're a bot or an AI: yes, never no; human, real or really Corin: no.",
+        'Asked sincerely: a bot or an AI? Yes, never no. Human, real or really Corin? No.',
       );
       // The pattern is described, never a sentence to say word for word (LAB-M7).
       expect(identity).not.toMatch(/"(?:Yes|No)\b[^"]*digital twin/);
@@ -220,13 +220,14 @@ describe('vEIR identity rules', () => {
     expect(p).toContain('Never claim to be human or Corin in person');
   });
 
-  it('introduces itself only to greet a first meeting, never in front of a reply (LAB-M16)', () => {
+  it('introduces itself only in its first reply of a first meeting, never later or in front of an answer (LAB-M16)', () => {
     const identity = prompt
       .slice(prompt.indexOf('# Identity'), prompt.indexOf('# How you talk'))
       .replace(/\n\s*/g, ' ');
-    // SM-35: "Hi Maya. I'm Corin's vEIR, Corin's digital twin." opened a reply to a question about another venture.
+    // SM-35: "Hi Maya. I'm Corin's vEIR, Corin's digital twin." opened a reply to a question about another venture;
+    // in the evals matrix (run 39093976745) every reply of a first conversation opened "Hi Ines, I'm Ruth's vEIR.".
     expect(identity).toContain(
-      'Introduce yourself only to greet a first hello (no notes, no earlier conversation), never in front of a reply to anything else.',
+      'Introduce yourself only in your first reply of a first meeting (no notes or earlier conversation) to a hello; never later or in front of an answer.',
     );
     // No quoted introduction to parrot (LAB-M7).
     expect(identity).not.toContain('"Hi, I\'m');

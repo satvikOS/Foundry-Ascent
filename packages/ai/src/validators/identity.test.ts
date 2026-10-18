@@ -1023,6 +1023,105 @@ describe('rewriteIdentity — the answer to a sincere question has the right yes
   }, 60_000);
 });
 
+describe('rewriteIdentity — once met, a reply never introduces the vEIR again (LAB-M16)', () => {
+  const RUTH_VEIR = { personaName: "Ruth's vEIR", eirNames: EIRS, addressees: ['Ines Duarte'] };
+  const later = (text: string, extra: Partial<IdentityRewriteOptions> = {}) =>
+    rewriteIdentity(text, { ...RUTH_VEIR, disclaimers: 'reply', introduced: true, ...extra });
+
+  it('removes "Hi Ines, I’m Ruth’s vEIR." from every later reply of a first conversation (MX-0001, MX-P05)', () => {
+    // The evals matrix (run 39093976745): turns 1–5 each opened with the introduction, in chat and on a call.
+    const replies = [
+      "Hi Ines, I'm Ruth's vEIR. What's the one thing you want from the pilot?",
+      "Hi Ines, I'm Ruth's vEIR. Two libraries is enough to learn from.",
+      "Hi Ines, I'm Ruth's vEIR. Facilities holds the budget, so start there.",
+      "Hi Ines, I'm Ruth's vEIR. A two-week window keeps it honest.",
+    ];
+    for (const spoken of [false, true]) {
+      for (const text of replies) {
+        const out = later(text, { spoken });
+        expect(out.text, text).toBe(text.replace(", I'm Ruth's vEIR.", '.'));
+        expect(out.findings).toEqual([{ kind: 'ai_disclaimer', rule: 'reintroduction' }]);
+      }
+    }
+  });
+
+  it('is a style finding: it never blocks and is not an identity violation', () => {
+    const out = later("Hi Ines, I'm Ruth's vEIR. Start with one library.");
+    expect(out.findings.every(isStyleFinding)).toBe(true);
+  });
+
+  it('keeps the first reply of a first meeting, and the honest one-liner to a sincere question', () => {
+    const intro = "Hi Ines, I'm Ruth's vEIR, Ruth's digital twin. What would you like to work on?";
+    expect(rewriteIdentity(intro, { ...RUTH_VEIR, disclaimers: 'reply' })).toEqual({
+      text: intro,
+      findings: [],
+    });
+    const asked = "Yes — I'm Ruth's digital twin, an AI built from how Ruth coaches. Back to the pilot?";
+    expect(later(asked, { identityAsked: true, answers: 'machine' })).toEqual({ text: asked, findings: [] });
+  });
+
+  it('never removes a correction or the honest line the rewrite puts in', () => {
+    // The correction of a claim to be Ruth, and the honest line a disclaimer that said what the coach is becomes.
+    const claim = later('I am Ruth Abernathy-Song. Start with one library.');
+    expect(claim.text).toBe("I'm Ruth's digital twin, not Ruth in person. Start with one library.");
+    const honest = later("Honestly? I'm just an AI. Start with one library.");
+    expect(honest.text).toBe(
+      "Honestly? I'm Ruth's digital twin, built from how Ruth coaches. Start with one library.",
+    );
+  });
+
+  it('leaves what is not an introduction, and fields other than the reply', () => {
+    for (const text of [
+      "Ruth's vEIR approach: evidence first.",
+      "I'm Ruth's vEIR assistant for the pilot and I can help.",
+      "Hi Ines. Ruth's rule here is to test with one library.",
+    ])
+      expect(later(text), text).toEqual({ text, findings: [] });
+    const field = "Hi Ines, I'm Ruth's vEIR. Start with one library.";
+    expect(rewriteIdentity(field, { ...RUTH_VEIR, introduced: true })).toEqual({ text: field, findings: [] });
+    // A reply that is nothing but the introduction keeps it (it is honest); a streamed unit of one is dropped.
+    expect(later("I'm Ruth's vEIR.")).toEqual({ text: "I'm Ruth's vEIR.", findings: [] });
+    expect(later("I'm Ruth's vEIR.", { disclaimers: 'unit' }).text).toBe('');
+  });
+
+  it('names the neutral guide’s introduction too', () => {
+    const out = rewriteIdentity("Hi Ines, I'm Foundry Guide, the program's AI coach. What's next?", {
+      ...GUIDE,
+      disclaimers: 'reply',
+      introduced: true,
+    });
+    expect(out.text).toBe("Hi Ines. What's next?");
+  });
+
+  it('reads introductions in linear time', () => {
+    // Timing ratios, interleaved best of three (see above).
+    const fragments = [
+      "Hi Ines, I'm Ruth's vEIR. ",
+      'hi                ',
+      "I'm Ruth's vEIR, ",
+      'Hey there — ',
+    ];
+    const time = (chars: number): number => {
+      let total = 0;
+      for (const fragment of fragments) {
+        const text = fragment.repeat(Math.ceil(chars / fragment.length)).slice(0, chars);
+        const started = performance.now();
+        rewriteIdentity(text, { ...RUTH_VEIR, disclaimers: 'reply', introduced: true });
+        total += performance.now() - started;
+      }
+      return total;
+    };
+    time(2_500);
+    let small = Infinity;
+    let large = Infinity;
+    for (let round = 0; round < 3; round += 1) {
+      small = Math.min(small, time(2_500));
+      large = Math.min(large, time(20_000));
+    }
+    expect(large).toBeLessThan(16 * small + 100);
+  }, 60_000);
+});
+
 describe('asksAboutIdentity — a sincere question about what the coach is', () => {
   it.each([
     'are you real?',
@@ -1183,6 +1282,8 @@ describe('rewriteIdentity agrees with the evals identity grader', () => {
     };
     /** Texts that do (`yes`) and do not (`no`) say honestly what the coach is. */
     says_what_it_is?: Record<'yes' | 'no', string[]>;
+    /** Self-introductions in a reply once the founder has met the vEIR, and what removing them leaves (LAB-M16). */
+    reintroductions?: { text: string; rewritten: string }[];
   }
   const casesPath = fileURLToPath(
     new URL('../../../../evals/tests/fixtures/identity_cases.json', import.meta.url),
@@ -1270,6 +1371,35 @@ describe('rewriteIdentity agrees with the evals identity grader', () => {
         }
         for (const { asked, text } of suite.identity_answers?.allowed ?? [])
           expect(answering(asked, text, spoken), `${asked} → ${text}`).toEqual({ text, findings: [] });
+      }
+    });
+
+    it('drops a self-introduction once the founder has met the vEIR, typed and spoken, like the matrix grades it', () => {
+      for (const { text, rewritten } of suite.reintroductions ?? []) {
+        for (const spoken of [false, true]) {
+          const later = rewriteIdentity(text, { ...options, spoken, disclaimers: 'reply', introduced: true });
+          expect(later.text, text).toBe(rewritten);
+          expect(later.findings, text).toEqual([{ kind: 'ai_disclaimer', rule: 'reintroduction' }]);
+          expect(
+            rewriteIdentity(rewritten, { ...options, spoken, disclaimers: 'reply', introduced: true }),
+          ).toEqual({
+            text: rewritten,
+            findings: [],
+          });
+          // The first reply of a first meeting keeps it, and so does the answer to a sincere question.
+          expect(rewriteIdentity(text, { ...options, spoken, disclaimers: 'reply' }), text).toEqual({
+            text,
+            findings: [],
+          });
+          const askedAgain = rewriteIdentity(text, {
+            ...options,
+            spoken,
+            disclaimers: 'reply',
+            introduced: true,
+            identityAsked: true,
+          });
+          expect(askedAgain, text).toEqual({ text, findings: [] });
+        }
       }
     });
 
