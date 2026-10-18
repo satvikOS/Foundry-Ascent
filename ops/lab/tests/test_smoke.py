@@ -155,6 +155,11 @@ def test_a_warm_conversation_passes_on_rules_and_writes_its_transcript_privately
         "vEIR": "Hey Maya! Good to hear from you.",
         "kind": "completed",
     }
+    detail = private["turn_detail"][0]
+    assert detail["answer"] == "Hey Maya! Good to hear from you."
+    assert detail["speech_units"] == []
+    assert set(detail["validator"]) >= {"notes", "identity_violation"}
+    assert "turn_detail" not in public
 
 
 def test_a_volunteered_ai_disclaimer_fails_the_scenario(

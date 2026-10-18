@@ -42,6 +42,23 @@ class TurnRecord:
     kind: str
     seconds: float
     error_code: str | None = None
+    #: Private diagnostics: every text field the founder could see or hear, and the validators' verdict.
+    detail: dict[str, Any] = field(default_factory=dict)
+
+
+def turn_detail(outcome: TurnOutcome) -> dict[str, Any]:
+    turn = outcome.turn
+    response = turn.response if turn is not None else None
+    validator = turn.validator if turn is not None else None
+    return {
+        "answer": response.answer if response is not None else None,
+        "spoken": response.spoken if response is not None else None,
+        "speech_units": list(outcome.speech),
+        "phases": list(outcome.phases),
+        "model": turn.usage.model_id if turn is not None and turn.usage is not None else None,
+        "fallback_used": turn.usage.fallback_used if turn is not None and turn.usage is not None else None,
+        "validator": validator.model_dump() if validator is not None else None,
+    }
 
 
 @dataclass
@@ -84,6 +101,7 @@ class ScenarioResult:
         return {
             **self.public(),
             "transcript": [{"founder": t.founder, "vEIR": t.heard, "kind": t.kind} for t in self.turns],
+            "turn_detail": [t.detail for t in self.turns],
             "judge_rationale": self.verdict.rationale if self.verdict else None,
         }
 
@@ -234,6 +252,7 @@ class SmokeRunner:
                         kind=outcome.kind,
                         seconds=outcome.duration_seconds,
                         error_code=outcome.error_code,
+                        detail=turn_detail(outcome),
                     )
                 )
                 outcomes.append(outcome)
