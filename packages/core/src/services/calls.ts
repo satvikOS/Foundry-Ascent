@@ -179,10 +179,10 @@ function sentencesOf(text: string): string[] {
 
 /**
  * The greeting of a call with someone the vEIR has met (wave 7): one sentence of at most
- * {@link REPEAT_GREETING_MAX_CHARS} characters, the name and what the conversation opens with in it ("Hi Maya, how's
- * the pilot pricing going?"). Phrased around the opener's subject when it has one, else the opener itself as one
- * sentence ("Hi Maya, last time you planned five interviews — how did they go?"), else an invitation. The phrasing
- * varies with `seed` (the conversation).
+ * {@link REPEAT_GREETING_MAX_CHARS} characters, the name and what the conversation opens with in it ("Hi Maya,
+ * where are things with the pilot pricing?"). Phrased around the opener's subject when it has one, else the opener
+ * itself as one sentence ("Hi Maya, last time you planned five interviews — how did they go?"), else an
+ * invitation. The phrasing varies with `seed` (the conversation).
  */
 export function repeatGreeting(args: {
   readonly firstName: string | null;
