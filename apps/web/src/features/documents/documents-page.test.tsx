@@ -77,7 +77,7 @@ function stubApi(documents: DocumentView[]) {
   });
 }
 
-async function renderDocuments() {
+async function mountDocuments() {
   const client = testQueryClient();
   client.setQueryData(meQueryOptions().queryKey, ME);
   const root = createRootRoute({ component: Outlet });
@@ -114,6 +114,10 @@ async function renderDocuments() {
     );
     await router.load();
   });
+}
+
+async function renderDocuments() {
+  await mountDocuments();
   const list = await screen.findByRole('list', { name: 'Venture documents' });
   return within(list).getByRole('listitem', { name: UNFINISHED.filename });
 }
@@ -134,6 +138,30 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+describe('The Documents page', () => {
+  it('says who can see the files on the page, and what they are for behind its info button', async () => {
+    stubApi([{ ...UNFINISHED, status: 'ready', failureReason: null }]);
+    await renderDocuments();
+    // Privacy is read before uploading, so it is never only behind the info button.
+    expect(screen.getByText('Private to this venture.', { exact: true })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'About Documents' })).toHaveAccessibleDescription(
+      /^Files .+ can cite\.$/,
+    );
+    expect(screen.getByRole('button', { name: 'Upload files' })).toBeVisible();
+  });
+
+  it('shows an empty list as one line and its one action, Upload files', async () => {
+    stubApi([]);
+    await mountDocuments();
+    const heading = await screen.findByRole('heading', { level: 2, name: 'No documents yet' });
+    const empty = heading.closest<HTMLElement>('[data-slot="empty-state"]');
+    if (!empty) throw new Error('no empty state');
+    expect(within(empty).getByRole('button', { name: 'Upload files' })).toBeVisible();
+    // The header does not repeat it.
+    expect(screen.getAllByRole('button', { name: 'Upload files' })).toHaveLength(1);
+  });
 });
 
 describe('Opening a document', () => {

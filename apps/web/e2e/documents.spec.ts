@@ -27,9 +27,11 @@ test('a founder uploads a document and it becomes searchable evidence', async ({
   await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Documents' }).click();
   await expect(page).toHaveURL(new RegExp(`/${TENANT}/app/v/${ventureId}/documents$`));
   await expect(page.getByRole('heading', { level: 1, name: 'Documents' })).toBeVisible();
-  // The page's note (behind its info button) names the venture's vEIR, never a hard-coded persona.
+  // Who can see the files is on the page; what they are for is behind the info button, which names the
+  // venture's vEIR, never a hard-coded persona.
+  await expect(page.getByText('Private to this venture.', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'About Documents' })).toHaveAccessibleDescription(
-    /^Files Corin['’]s vEIR can cite\. Private to this venture\.$/,
+    /^Files Corin(?:['’]s| ·) vEIR can cite\.$/,
   );
   await expectNoBareEirName(page, 'Documents');
 

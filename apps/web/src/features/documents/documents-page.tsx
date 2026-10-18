@@ -304,19 +304,23 @@ export function DocumentsPage() {
     });
   };
 
+  // One Upload button: in the header, or in the empty state while there is nothing to list.
+  const empty = documents.isSuccess && rows.length === 0;
+  const upload = canEdit ? (
+    <Button aria-describedby={hintId} onClick={() => inputRef.current?.click()}>
+      <Upload aria-hidden />
+      Upload files
+    </Button>
+  ) : null;
+
   return (
     <PageContainer className="relative max-w-4xl" {...dropHandlers}>
+      {/* Who can see an upload stays on the page; what the files are for sits behind the info button. */}
       <PageHeader
         title="Documents"
-        info={`Files ${veirName} can cite. Private to this venture.`}
-        actions={
-          canEdit ? (
-            <Button aria-describedby={hintId} onClick={() => inputRef.current?.click()}>
-              <Upload aria-hidden />
-              Upload files
-            </Button>
-          ) : null
-        }
+        description="Private to this venture."
+        info={`Files ${veirName} can cite.`}
+        actions={empty ? null : upload}
       />
       {canEdit ? (
         <input
@@ -433,7 +437,7 @@ export function DocumentsPage() {
       ) : documents.isPending ? (
         <HairlineSkeleton rows={3} label="Loading documents…" />
       ) : rows.length === 0 ? (
-        <EmptyState icon={FileText} headingLevel={2} title="No documents yet" />
+        <EmptyState icon={FileText} headingLevel={2} title="No documents yet" action={upload} />
       ) : (
         <ul aria-label="Venture documents" className="divide-y divide-border border-y border-border">
           {rows.map((doc) => (
