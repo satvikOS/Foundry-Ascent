@@ -47,7 +47,9 @@ async function expectLongChips(page: Page): Promise<void> {
 
 /**
  * The follow-up chips sit on one line whatever their length: one row of chips, no chip wraps onto a second line,
- * the row scrolls sideways inside itself (the page never does), and the last chip can be brought into view.
+ * none is cut short (every word of the question is on the chip, so scrolling the row reads all of it before a tap
+ * sends it), the row scrolls sideways inside itself (the page never does), and the last chip can be brought into
+ * view.
  */
 async function expectChipsOnOneLine(page: Page, where: string): Promise<void> {
   const layout = await page.evaluate(() => {
@@ -65,9 +67,14 @@ async function expectChipsOnOneLine(page: Page, where: string): Promise<void> {
         return content / parseFloat(style.lineHeight);
       }),
       tallest: Math.max(...buttons.map((b) => b.getBoundingClientRect().height)),
+      // A chip whose text is wider than the chip itself shows only part of the question.
+      cut: buttons
+        .filter((b) => b.scrollWidth > b.clientWidth + 1 || getComputedStyle(b).textOverflow === 'ellipsis')
+        .map((b) => `${String(b.clientWidth)}px of ${String(b.scrollWidth)}px`),
     };
   });
   if (!layout) throw new Error(`${where}: no follow-up chips`);
+  expect(layout.cut, `${where}: no chip is cut short`).toEqual([]);
   expect(new Set(layout.tops).size, `${where}: the chips share one row`).toBe(1);
   for (const lines of layout.lines) {
     expect(lines, `${where}: no chip wraps onto a second line`).toBeLessThan(1.5);
@@ -78,17 +85,23 @@ async function expectChipsOnOneLine(page: Page, where: string): Promise<void> {
   expect(['auto', 'scroll'], `${where}: the chip row scrolls sideways`).toContain(layout.overflowX);
   expect(layout.scrolls, `${where}: long chips overflow the row (and scroll)`).toBe(true);
   await expectNoHorizontalScroll(page);
-  // The last chip is reachable inside the row (Tab brings it into view).
+  // The last chip is reachable inside the row (Tab brings it into view), read from its start even when it is
+  // wider than the row.
   const last = page.getByRole('list', { name: 'Follow-up questions' }).getByRole('button').last();
   await last.focus();
-  const visible = await last.evaluate((button) => {
-    const list = button.closest('ul');
-    if (!list) return false;
-    const b = button.getBoundingClientRect();
-    const l = list.getBoundingClientRect();
-    return b.left >= l.left - 1 && b.left < l.right;
-  });
-  expect(visible, `${where}: the last chip scrolls into view when focused`).toBe(true);
+  await expect
+    .poll(
+      () =>
+        last.evaluate((button) => {
+          const list = button.closest('ul');
+          if (!list) return false;
+          const b = button.getBoundingClientRect();
+          const l = list.getBoundingClientRect();
+          return b.left >= l.left - 1 && b.left < l.right;
+        }),
+      { message: `${where}: the last chip scrolls into view from its start when focused`, timeout: 2_000 },
+    )
+    .toBe(true);
   await last.blur();
 }
 
