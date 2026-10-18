@@ -101,8 +101,7 @@ const MAX_SPEECH_UNIT_CHARS = 600;
  * (usually the question that hands the turn back) without waiting for the annotations and the final
  * validation (docs/runbooks/latency.md). None of its units is marked final (`turn.completed` ends the turn),
  * and nothing is said after it: a closing unit offered to `finish` would come a whole model call after the
- * hand-back, over or after the founder's answer, so it is not said (the written reply carries the narrowing
- * note). When the stream is given up and the reply is written whole after all, `sayWhole` makes the stream
+ * hand-back, over or after the founder's answer, so it is not said. When the stream is given up and the reply is written whole after all, `sayWhole` makes the stream
  * hold and finish like a reply said whole. Every unit was validated by the sentence gate either way.
  */
 export class SpeechStream {
@@ -139,8 +138,8 @@ export class SpeechStream {
   }
 
   /**
-   * Ends the turn's speech. Held: `closing` (e.g. the spoken narrowing caveat) is said after the reply and the
-   * last unit is marked final. Eager (a streamed reply): everything was already said and nothing follows it.
+   * Ends the turn's speech. Held: `closing`, if any, is said after the reply and the last unit is marked final.
+   * Eager (a streamed reply): everything was already said and nothing follows it.
    */
   async finish(closing?: string): Promise<void> {
     if (this.#eager) return;

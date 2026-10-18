@@ -15,7 +15,6 @@ import {
   NARROWING_NOTE_PREFIX,
   SPOKEN_HAND_BACKS,
   STRESSED_HAND_BACKS,
-  SPOKEN_NARROWING_CAVEAT,
   mockCoachResponse,
   type EmbedOptions,
   type EmbedResult,
@@ -704,12 +703,56 @@ describe('spoken turns', () => {
     expect(turn.response?.uncertainty[0]?.level).toBe('high');
     const units = speechUnits(events);
     expect(units.map((u) => u.text)).toEqual(sentences);
-    expect(units.map((u) => u.text)).not.toContain(SPOKEN_NARROWING_CAVEAT);
+    expect(units.map((u) => u.text).join(' ')).not.toMatch(/general advice|records show|limited evidence/i);
     // Nothing is said once the reply handed the turn back: every unit went out before the annotations.
     const validating = events.findIndex((e) => e.event === 'turn.status' && e.phase === 'validating');
     expect(validating).toBeGreaterThan(0);
     const lastUnit = events.findLastIndex((e) => e.event === 'turn.speech');
     expect(lastUnit).toBeLessThan(validating);
+  });
+
+  it('a narrowed reply said whole on a call opens with the reply, never a caveat (LAB-M14)', async () => {
+    const reply = "Great, that's a big step. What did Hartwell commit to?";
+    // The stream opens with narration, so the reply is written whole; two facts without evidence narrow it.
+    const gateway = new MockModelGateway({
+      streamDelayMs: 0,
+      streamFixture: () => 'The founder says they signed a letter of intent. I need to figure out the mode.',
+      fixtures: {
+        [COACH_RESPONSE_SCHEMA_NAME]: () => ({
+          mode: 'coach',
+          answer: reply,
+          spoken: reply,
+          claims: [
+            { text: 'Hartwell signed a letter of intent.', kind: 'fact', evidence_ids: [] },
+            { text: 'The pilot starts next term.', kind: 'fact', evidence_ids: [] },
+          ],
+          uncertainty: [],
+          challenge: null,
+          next_actions: [],
+          escalation: { required: false, category: null, priority: null, reason: null, requested_role: null },
+          memory_candidates: [],
+          follow_up_questions: [],
+          rehearsal: null,
+        }),
+      },
+    });
+    const { core, orchestrator } = coreWith(gateway);
+    const session = await core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+    const { events, outcome } = await run(orchestrator, session.id, {
+      text: 'Big news. We just signed a letter of intent with Hartwell.',
+      mode: 'coach',
+      channel: 'voice',
+      callId: CALL_ID,
+    });
+    expect(outcome.status).toBe('completed');
+    const turn = completed(events);
+    expect(turn.validator?.narrowed).toBe(true);
+    const said = speechUnits(events).map((u) => u.text);
+    expect(said[0]).toMatch(/^Great, that's a big step\./);
+    expect(said.join(' ')).not.toMatch(/general advice|records show|limited evidence/i);
+    expect(turn.response?.spoken).toBe(reply);
+    expect(turn.response?.answer).toBe(reply);
+    expect(turn.response?.uncertainty[0]?.item).toMatch(/^Only 0 of 2 factual statements/);
   });
 
   it('a call’s first reply written as JSON is still said sentence by sentence before the annotations', async () => {

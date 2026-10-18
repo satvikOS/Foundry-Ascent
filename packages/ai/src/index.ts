@@ -162,7 +162,6 @@ export {
   EMPTY_ANSWER_FALLBACK,
   INVALID_RESPONSE_ANSWER,
   NARROWING_NOTE_PREFIX,
-  SPOKEN_NARROWING_CAVEAT,
   containsOtherVenture,
   forcedEscalationFor,
   responseStrings,

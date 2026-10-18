@@ -10,7 +10,6 @@ import {
   EMPTY_ANSWER_FALLBACK,
   INVALID_RESPONSE_ANSWER,
   NARROWING_NOTE_PREFIX,
-  SPOKEN_NARROWING_CAVEAT,
   cutStructuredLeak,
   forcedEscalationFor,
   responseStrings,
@@ -176,10 +175,12 @@ describe('facts, coverage and narrowing', () => {
       opts(),
     );
     expect(out.results.narrowed).toBe(true);
-    expect(out.response.answer.startsWith(NARROWING_NOTE_PREFIX)).toBe(true);
-    expect(out.response.answer).toContain('only 1 of 3 factual statements');
+    // LAB-M14: the limit of the evidence never leads the reply; Sources & reasoning says it.
+    expect(out.response.answer).not.toContain(NARROWING_NOTE_PREFIX);
+    expect(out.response.answer).not.toMatch(/limited evidence|general advice|records show/i);
+    expect(out.response.answer.startsWith('Your interviews point to scheduling pain')).toBe(true);
     expect(out.response.uncertainty[0]).toEqual({
-      item: 'Several statements in this answer are not backed by evidence from your venture records.',
+      item: 'Only 1 of 3 factual statements in this answer are backed by your venture records: treat the rest as unverified until you can check them.',
       level: 'high',
     });
     expect(out.results.notes).toContain('narrowed');
@@ -900,7 +901,7 @@ describe('spoken text (voice channel)', () => {
     expect(out.results.notes).toContain('spoken_truncated');
   });
 
-  it('says a short caveat first when the answer was narrowed', () => {
+  it('never says a caveat on a call when the answer was narrowed (LAB-M14), and never on news', () => {
     const out = validateCoachResponse(
       base({
         claims: [
@@ -913,18 +914,29 @@ describe('spoken text (voice channel)', () => {
       voice(),
     );
     expect(out.results.narrowed).toBe(true);
-    expect(out.response.spoken).toBe(`${SPOKEN_NARROWING_CAVEAT} Run the pilot first.`);
+    expect(out.response.spoken).toBe('Run the pilot first.');
     // The call's transcript is what was said: no "Limited evidence" block quote and no evidence keys in it; the
     // uncertainty item (Sources & reasoning) and `narrowed` carry it.
     expect(out.response.answer).toBe('Your interviews point to scheduling pain. Consider a concierge test.');
     expect(out.response.answer).not.toContain(NARROWING_NOTE_PREFIX);
     expect(out.response.uncertainty[0]?.level).toBe('high');
     expect(out.results.notes).toEqual(expect.arrayContaining(['narrowed', 'transcript_citations_removed']));
-    // Said in plain words, not caveat boilerplate read out (production spoke "A quick caveat: …"), and still
-    // honest that part of the answer is not from the venture's records.
-    expect(SPOKEN_NARROWING_CAVEAT).not.toMatch(/caveat|disclaimer|limited evidence|note:/i);
-    expect(SPOKEN_NARROWING_CAVEAT).toMatch(/not something your records show/);
     expect(out.results.identityViolation).toBe(false);
+    // The lab's case: news, on a call, with a narrowed answer: the reply is the reaction, nothing before it.
+    const news = validateCoachResponse(
+      base({
+        answer: "Great, that's a big step. What did Hartwell commit to?",
+        spoken: "Great, that's a big step. What did Hartwell commit to?",
+        claims: [
+          { text: 'a', kind: 'fact', evidence_ids: [] },
+          { text: 'b', kind: 'fact', evidence_ids: [] },
+        ],
+      }),
+      { ...voice(), founderText: 'Big news. We just signed a letter of intent with Hartwell.' },
+    );
+    expect(news.results.narrowed).toBe(true);
+    expect(news.response.spoken).toBe("Great, that's a big step. What did Hartwell commit to?");
+    expect(news.response.answer).toBe("Great, that's a big step. What did Hartwell commit to?");
   });
 
   it('rewrites identity violations in the spoken reply and blocks EIR impersonation', () => {

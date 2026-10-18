@@ -2,7 +2,6 @@ import {
   CRISIS_SPOKEN_MESSAGE,
   CRISIS_SUPPORT_MESSAGE,
   POLICY_VERSION,
-  SPOKEN_NARROWING_CAVEAT,
   buildCrisisResponse,
   buildRetrievalQuery,
   classifyRisk,
@@ -831,9 +830,9 @@ export function createOrchestrator(
             }),
           ]
         : [];
-    // A call ends a streamed reply with its last unit (and a caveat when the answer was narrowed). A reply
-    // written whole (streaming off, or a stream that broke, was empty or was not prose) is said as its
-    // validated spoken form. A blocked turn says nothing more.
+    // A call ends a streamed reply with its last unit; a narrowed answer adds nothing aloud (Sources & reasoning
+    // says it: LAB-M14). A reply written whole (streaming off, or a stream that broke, was empty or was not prose)
+    // is said as its validated spoken form. A blocked turn says nothing more.
     const stream = generation.stream;
     const speech =
       stream?.speech ??
@@ -847,7 +846,7 @@ export function createOrchestrator(
       else if (writtenWhole) {
         await speech.queue(checked.response.spoken ?? deriveSpoken(checked.response.answer));
         await speech.finish();
-      } else await speech.finish(checked.results.narrowed ? SPOKEN_NARROWING_CAVEAT : undefined);
+      } else await speech.finish();
     }
     // Ephemeral sessions are never shared with the assigned EIR (RLS turns_read enforces it as well).
     const sampled =

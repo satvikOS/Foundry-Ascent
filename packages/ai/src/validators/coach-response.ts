@@ -173,12 +173,12 @@ const NO_ESCALATION: EscalationProposal = {
   requested_role: null,
 };
 
-export const NARROWING_NOTE_PREFIX = '> **Limited evidence:**';
 /**
- * Said on a call when the answer was narrowed (the transcript carries the full note): the uncertainty in plain
- * words, not caveat boilerplate read out ("A quick caveat: …" was spoken in production).
+ * The block quote narrowed answers used to open with. Never added any more (LAB-M14): the limit of the evidence is
+ * said under Sources & reasoning (the uncertainty item and the validator's `narrowed` result), never as a reply's
+ * first words and never aloud on a call; answers stored before still carry it, and the app hides it.
  */
-export const SPOKEN_NARROWING_CAVEAT = 'Some of that is general advice, not something your records show yet.';
+export const NARROWING_NOTE_PREFIX = '> **Limited evidence:**';
 export const EMPTY_ANSWER_FALLBACK =
   "I don't have enough to give you a reliable answer yet. Could you share a bit more detail about what you've observed so far?";
 /**
@@ -302,8 +302,8 @@ export function forcedEscalationFor(preRisk: { categories: readonly RiskCategory
  *    `meta_narration_blocked`), and a spoken reply that opens with it is derived from the answer instead;
  * 4. unknown evidence ids removed (claims, memory candidates, inline `[E#]` citations);
  * 5. `fact` claims without valid evidence downgraded to `inference`; grounding coverage computed;
- *    answer narrowed (explicit uncertainty note + uncertainty item) when coverage < threshold
- *    with ≥ 2 facts;
+ *    narrowed when coverage < threshold with ≥ 2 facts: an uncertainty item first (Sources & reasoning), never
+ *    a note in the reply or its spoken form (LAB-M14);
  * 6. identity: sentences claiming to be human, the EIR, or approving/endorsing are replaced;
  *    EIR impersonation blocks the turn by default. Each field is checked cut to its limit (plus a
  *    sentence of margin), so an over-long output cannot make the check expensive;
@@ -628,8 +628,7 @@ export function validateCoachResponse(
   // The answer's identity check comes before a spoken reply is derived from it, so a call never says a
   // sentence the transcript replaced (step 6 checks the rest).
   r.answer = fixIdentity(r.answer, limits.answerMaxChars, { disclaimers: 'reply' });
-  // A call needs something to say: the model's spoken reply, or else the answer made speakable (before
-  // the limited-evidence note below is added to the answer).
+  // A call needs something to say: the model's spoken reply, or else the answer made speakable.
   if (channel === 'voice' && (r.spoken ?? '') === '') {
     const derived = deriveSpoken(r.answer, limits.spokenMaxWords);
     r.spoken = derived === '' ? null : derived;
@@ -653,18 +652,16 @@ export function validateCoachResponse(
     if (results.groundingCoverage < threshold && factsBefore >= 2) {
       results.narrowed = true;
       notes.push('narrowed');
-      const note = `${NARROWING_NOTE_PREFIX} only ${grounded} of ${factsBefore} factual statements in this answer are backed by your venture records. Treat the rest as unverified until you can check them.`;
-      // A typed answer opens with the note. A call's transcript is what was said, so it carries no note: the
-      // uncertainty below (Sources & reasoning) and the validator's `narrowed` result say it instead.
-      if (channel !== 'voice') r.answer = r.answer === '' ? note : `${note}\n\n${r.answer}`;
+      // Said under Sources & reasoning only (LAB-M14: "Some of that is general advice, not something your records
+      // show yet." opened a call's reply to "Big news, we signed a letter of intent"): never the reply's first words,
+      // never aloud, typed or spoken.
       r.uncertainty = [
         {
-          item: 'Several statements in this answer are not backed by evidence from your venture records.',
+          item: `Only ${grounded} of ${factsBefore} factual statements in this answer are backed by your venture records: treat the rest as unverified until you can check them.`,
           level: 'high' as const,
         },
         ...r.uncertainty,
       ];
-      if (r.spoken) r.spoken = `${SPOKEN_NARROWING_CAVEAT} ${r.spoken}`;
     }
   }
 
