@@ -85,6 +85,16 @@ def test_kms_and_secrets_use_seven_day_windows() -> None:
     assert sm.mutations == [("delete_secret", {"SecretId": "arn:old", "RecoveryWindowInDays": 7})]
 
 
+def test_digital_twin_vendor_keys_are_never_deleted() -> None:
+    # The API keys the vEIR's face and cloned voice read (packages/core/media-vendors.json) live under the
+    # platform's protected prefix: a legacy cleanup run never deletes them.
+    names = ["foundry-ascent/media/heygen", "foundry-ascent/media/elevenlabs", "legacy-key"]
+    sm = Recorder(pages={"list_secrets": [{"SecretList": [{"Name": n, "ARN": f"arn:{n}-AbCdEf"} for n in names]}]})
+    cleaner = make_cleaner("apply", {"secretsmanager": sm})
+    cleaner.secrets("us-east-1")
+    assert sm.mutations == [("delete_secret", {"SecretId": "arn:legacy-key-AbCdEf", "RecoveryWindowInDays": 7})]
+
+
 def test_aws_managed_and_protected_keys_untouched() -> None:
     def describe(KeyId: str) -> dict[str, Any]:  # boto3 parameter name
         manager = "AWS" if KeyId == "aws-key" else "CUSTOMER"

@@ -6,7 +6,7 @@ import { ApiError } from '../api/errors';
 import type { HeartbeatResult, StartCallResult } from './call-api';
 import { CallEngine, type CallAudioContext, type CallEngineApi } from './call-engine';
 import { decodeMessage } from './event-stream';
-import type { SpeechFetchResult, SpeechUnitToPlay } from './playback';
+import type { FaceRenderer, FaceRenderHandlers, SpeechFetchResult, SpeechUnitToPlay } from './playback';
 import {
   FakeAudioContext,
   fakeMicStream,
@@ -1155,6 +1155,82 @@ describe('CallEngine · barge-in', () => {
   });
 });
 
+describe('CallEngine · a face that renders the call’s audio', () => {
+  /** A vendor face (voicing `audio`) the test drives step by step. */
+  function scriptedFace() {
+    const renders: { handlers: FaceRenderHandlers; stopped: boolean }[] = [];
+    const face: FaceRenderer = {
+      ready: () => true,
+      render: (_buffer, _output, handlers) => {
+        const entry = { handlers, stopped: false };
+        renders.push(entry);
+        return () => {
+          entry.stopped = true;
+        };
+      },
+    };
+    return { face, renders };
+  }
+
+  it('hands the validated reply to the face, follows its timing, and reports what was heard on barge-in', async () => {
+    const h = setup();
+    const { face, renders } = scriptedFace();
+    // Attached before the call starts: the call's player takes it over.
+    h.engine.attachFace(face);
+    await startLive(h);
+    const socket = FakeWebSocket.last();
+    socket.serverOpen();
+    h.engine.sendText('How should we price it?');
+    await flush();
+    h.script.push(
+      { event: 'turn.accepted', turnId: TURN_ID, ordinal: 1 },
+      speech(0, 'Start with what they pay today.'),
+      speech(1, 'Then test a pilot price.'),
+    );
+    await flush(20);
+    // Only signed units are fetched from /speech, and their audio goes to the face, not the speakers.
+    expect(h.speechRequests.map((u) => u.sig)).toEqual([SIG, SIG]);
+    expect(renders).toHaveLength(1);
+    expect(h.context.sources).toHaveLength(0);
+    // Not heard yet: the caption waits for the face's first sound.
+    expect(h.state().captions.veir).toBeNull();
+
+    renders[0]?.handlers.onStart();
+    expect(h.state()).toMatchObject({ activity: 'speaking', voice: 'server' });
+    expect(h.state().captions.veir).toBe('Start with what they pay today.');
+    renders[0]?.handlers.onEnd('ended');
+    await flush(10);
+    renders[1]?.handlers.onStart();
+    expect(h.state().captions.veir).toBe('Then test a pilot price.');
+
+    h.frame(0.2);
+    h.frame(0.2);
+    socket.serverSend(transcriptEvent('r10', 'wait actually', { partial: true }));
+    await flush();
+    expect(h.state().activity).toBe('listening');
+    expect(renders[1]?.stopped).toBe(true);
+    expect(h.api.interruptTurn).toHaveBeenCalledWith(TURN_ID, {
+      callId: CALL_ID,
+      heardSeq: 0,
+      heard: [{ seq: 0, text: 'Start with what they pay today.', sig: SIG }],
+    });
+  });
+
+  it('plays through the speakers again once the face is detached', async () => {
+    const h = setup();
+    const { face, renders } = scriptedFace();
+    await startLive(h);
+    h.engine.attachFace(face);
+    h.engine.attachFace(null);
+    h.engine.sendText('Hello');
+    await flush();
+    h.script.push(speech(0, 'Hello Maya.'));
+    await flush(20);
+    expect(renders).toHaveLength(0);
+    expect(h.context.sources[0]?.started).toBe(true);
+  });
+});
+
 describe('CallEngine · resilience', () => {
   it('continues by typing at once when the browser refuses the speech-to-text host', async () => {
     const h = setup({ socketThrows: 'SecurityError' });
@@ -1328,6 +1404,50 @@ describe('CallEngine · limits and ending', () => {
     expect(h.state().phase).toBe('ended');
     expect(h.state().ended?.summary?.memoryProposalIds).toEqual([IDS.memory]);
     expect(h.context.closed).toBe(true);
+  });
+
+  it('reports whether the face is shown, and passes the server’s stop on to the face', async () => {
+    const h = setup({ grant: null });
+    await startLive(h);
+    const stops = vi.fn();
+    const off = h.engine.onFaceStop(stops);
+    h.engine.setFaceShown(true);
+    h.api.heartbeat.mockResolvedValueOnce({
+      remainingSeconds: 900,
+      action: 'continue',
+      reason: null,
+      face: 'stop',
+    });
+    await vi.advanceTimersByTimeAsync(15_000);
+    await flush(10);
+    expect(h.api.heartbeat).toHaveBeenLastCalledWith(CALL_ID, {
+      state: 'listening',
+      micOpenSeconds: 0,
+      face: 'live',
+    });
+    expect(stops).toHaveBeenCalledTimes(1);
+    // The call goes on.
+    expect(h.state().phase).toBe('live');
+    h.engine.setFaceShown(false);
+    await vi.advanceTimersByTimeAsync(15_000);
+    await flush(10);
+    expect(h.api.heartbeat).toHaveBeenLastCalledWith(CALL_ID, {
+      state: 'listening',
+      micOpenSeconds: 0,
+      face: 'off',
+    });
+    off();
+    h.engine.setFaceShown(null);
+    h.api.heartbeat.mockResolvedValueOnce({
+      remainingSeconds: 900,
+      action: 'continue',
+      reason: null,
+      face: 'stop',
+    });
+    await vi.advanceTimersByTimeAsync(15_000);
+    await flush(10);
+    expect(h.api.heartbeat).toHaveBeenLastCalledWith(CALL_ID, { state: 'listening', micOpenSeconds: 0 });
+    expect(stops).toHaveBeenCalledTimes(1);
   });
 
   it('warns near the limit and ends at it', async () => {

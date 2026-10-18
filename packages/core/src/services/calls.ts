@@ -23,6 +23,7 @@ import {
   sessionsRepo,
   settingsRepo,
   turnsRepo,
+  twinRepo,
   usageRepo,
   venturesRepo,
   type SqlExecutor,
@@ -59,6 +60,7 @@ import {
   type CallConditions,
   type CallStopCause,
 } from './call-usage.js';
+import { type FaceHooks, type FaceStopCause, faceStopCause } from './face.js';
 import { speakableRun, speakableText } from './spoken-text.js';
 import { DEFAULT_SPEECH_VOICE } from './voices.js';
 
@@ -113,6 +115,32 @@ export function callVoiceFor(persona: PersonaVoiceFacts, consentAssets: readonly
   const own = persona.embodiment.voiceId;
   if (own === null) return DEFAULT_SPEECH_VOICE;
   return persona.kind === 'neutral_guide' || consentAssets.includes('voice') ? own : null;
+}
+
+/**
+ * The cloned voice a new call speaks with, or `polly` (the persona's stock voice): the EIR's clone at the vendor
+ * the API is wired to, only while cloned voices are on and the persona's voice is ready under voice consent.
+ */
+export function callVoiceVendor(args: {
+  readonly clonedVoiceEnabled: boolean;
+  readonly provider: { readonly id: 'elevenlabs' | 'fake' } | undefined;
+  readonly twinVoice: { readonly ref: string } | null;
+}): callsRepo.CallVoiceVendor {
+  if (!args.clonedVoiceEnabled || args.provider === undefined || args.twinVoice === null) return 'polly';
+  return args.provider.id;
+}
+
+/**
+ * Whether a live call may still speak: its stock voice is approved, or it started with the EIR's cloned voice,
+ * which falls back to the platform voice when the clone is withdrawn (the call goes on, never in another
+ * person's voice).
+ */
+export function callCanSpeak(
+  call: Pick<callsRepo.CallRecord, 'voiceId' | 'voiceVendor'>,
+  persona: PersonaVoiceFacts,
+  consentAssets: readonly string[],
+): boolean {
+  return call.voiceVendor !== 'polly' || voiceApproved(call.voiceId, persona, consentAssets);
 }
 
 /** Whether a call's voice is still approved: the platform voice always; an EIR's own voice under consent. */
@@ -480,6 +508,7 @@ export function createCallsService(
   directory: DirectoryCache,
   keys: PlatformKeyCache,
   distill: Pick<DistillService, 'afterCallEnd'>,
+  face: FaceHooks,
 ): CallsService {
   const { logger } = kit.deps;
 
@@ -490,6 +519,12 @@ export function createCallsService(
    */
   function settleAfterCommit(scope: RequestScope, sessionId: string): void {
     scope.afterCommit(() => distill.afterCallEnd(scope.ctx, sessionId));
+  }
+
+  /** A call that ended (any path) ends its face: the database did at once; the vendor session ends after commit. */
+  function closeFaceAfterCommit(scope: RequestScope, call: callsRepo.CallRecord): void {
+    if (kit.deps.embodiment === undefined) return;
+    scope.afterCommit(() => face.afterCallEnded(scope.ctx, { id: call.id, ventureId: call.ventureId }));
   }
 
   /** The caller's own call; anyone else's (or none) is reported as not found. */
@@ -534,7 +569,7 @@ export function createCallsService(
         !(assignment instanceof DomainError) &&
         assignment.persona.id === call.personaId &&
         assignment.assignment.id === session?.assignmentId,
-      voiceApproved: persona !== null && voiceApproved(call.voiceId, persona, assets),
+      voiceApproved: persona !== null && callCanSpeak(call, persona, assets),
       idleSeconds: call.idleSeconds,
       spendCapReached: spendCap !== null,
       timeLeft: callTimeLeft({
@@ -566,6 +601,7 @@ export function createCallsService(
     });
     if (ended === null) return (await callsRepo.getCall(scope.tx, call.id)) ?? call;
     if (settle) settleAfterCommit(scope, call.sessionId);
+    closeFaceAfterCommit(scope, call);
     await audit(scope, {
       action: cause === 'replaced' ? 'call.ended' : 'call.terminated',
       outcome: cause === 'replaced' ? 'succeeded' : 'blocked',
@@ -914,6 +950,15 @@ export function createCallsService(
           input.inputMode === 'transcribe' &&
           kit.deps.sttGrants !== undefined &&
           (await callsRepo.sttGrantsToday(tx, ctx.principalId)) < CALL_LIMITS.sttGrantsPerDay;
+        // The EIR's cloned voice when it is on and ready under voice consent; the stock voice is its fallback.
+        const voiceVendor = callVoiceVendor({
+          clonedVoiceEnabled: settings.clonedVoiceEnabled,
+          provider: kit.deps.clonedVoice,
+          twinVoice:
+            kit.deps.clonedVoice === undefined || !settings.clonedVoiceEnabled
+              ? null
+              : (await twinRepo.personaTwin(tx, persona.id)).voice,
+        });
         const inserted = await callsRepo.startCall(tx, {
           tenantId: ctx.tenantId,
           ventureId,
@@ -923,6 +968,7 @@ export function createCallsService(
           provider: persona.embodiment.provider,
           inputMode: transcribe ? 'transcribe' : 'typed',
           voiceId,
+          voiceVendor,
           maxSeconds,
         });
         const call = transcribe
@@ -941,6 +987,7 @@ export function createCallsService(
             sessionId,
             provider: call.provider,
             inputMode: call.inputMode,
+            voiceVendor: call.voiceVendor,
             maxSeconds,
             replacedCallId: replaced,
           },
@@ -1037,7 +1084,15 @@ export function createCallsService(
         ctx,
         async (
           scope,
-        ): Promise<{ response: CallHeartbeatResponse; micSeconds: number; ventureId: string }> => {
+        ): Promise<{
+          response: CallHeartbeatResponse;
+          micSeconds: number;
+          ventureId: string;
+          /** Whether the face (if any) has to stop, and why; undefined when no face is wired. */
+          faceStop?: FaceStopCause | null;
+          /** The video minutes a person may use a month (checked once the transaction is done). */
+          faceMonthMinutes?: number;
+        }> => {
           const call = await ownCall(scope, callId);
           const over = (reason: CallEndReason | null): typeof beat => ({
             response: { remainingSeconds: 0, action: 'terminate', reason },
@@ -1054,16 +1109,47 @@ export function createCallsService(
             micOpenSeconds: input.micOpenSeconds,
           });
           if (recorded === null) return over('user');
-          return {
+          const result: typeof beat = {
             response: { remainingSeconds: state.timeLeft.seconds, action: 'continue', reason: null },
             // Only a call that was granted speech-to-text streams audio to Transcribe.
             micSeconds: recorded.call.inputMode === 'transcribe' ? recorded.micSecondsAdded : 0,
             ventureId: call.ventureId,
           };
+          if (kit.deps.embodiment === undefined) return result;
+          // The face's own switches: read here, applied (and metered) once this transaction is done.
+          const settings = await settingsRepo.getPlatformSettings(scope.tx);
+          const faceSettings = {
+            facesEnabled: settings.facesEnabled,
+            faceMinutesPerPrincipalMonth: settings.faceMinutesPerPrincipalMonth,
+            faceMinutesPerCall: settings.faceMinutesPerCall,
+          };
+          const { twinFace } = await face.stopInputs(scope, call, faceSettings);
+          return {
+            ...result,
+            // The platform's spend cap ends the whole call (above); the month's video minutes are read below.
+            faceStop: faceStopCause({
+              settings: faceSettings,
+              provider: kit.deps.embodiment,
+              twinFace,
+              monthSecondsUsed: 0,
+              spendCapReached: false,
+              clientOff: input.face === 'off',
+            }),
+            faceMonthMinutes: settings.faceMinutesPerPrincipalMonth,
+          };
         },
       );
       if (beat.micSeconds > 0) {
         await meterTranscription(ctx, { callId, ventureId: beat.ventureId, seconds: beat.micSeconds });
+      }
+      if (beat.faceStop !== undefined && beat.response.action === 'continue') {
+        // The face's video minutes (the call's limit, the month's, read with the owner role) decide there too.
+        const faceAction = await face.heartbeat(
+          ctx,
+          { id: callId, ventureId: beat.ventureId },
+          { stopCause: beat.faceStop, monthMinutes: beat.faceMonthMinutes ?? 0 },
+        );
+        if (faceAction !== undefined) return { ...beat.response, face: faceAction };
       }
       return beat.response;
     },
@@ -1090,6 +1176,7 @@ export function createCallsService(
             });
             if (ended !== null) {
               settleAfterCommit(scope, call.sessionId);
+              closeFaceAfterCommit(scope, call);
               await audit(scope, {
                 action: 'call.ended',
                 outcome: 'succeeded',

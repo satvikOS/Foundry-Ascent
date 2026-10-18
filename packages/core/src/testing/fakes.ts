@@ -8,6 +8,14 @@ import {
   type Clock,
   type CoreLogFields,
   type CoreLogger,
+  EmbodimentSessionError,
+  type EmbodimentProvider,
+  type FaceSessionHandle,
+  type FaceSessionRequest,
+  type StartedFaceSession,
+  type VerifiedFaceAudio,
+  type VoiceProvider,
+  type VoiceSynthesisInput,
   type EnqueueOptions,
   type ExtractedText,
   type JobMessage,
@@ -138,14 +146,19 @@ export class FakeSpeechSynthesizer implements SpeechSynthesizer {
     }
     const engine = input.engines.find((e) => !this.unsupported.includes(e));
     if (engine === undefined) throw new SpeechSynthesisError('no supported engine');
+    if (input.format === 'pcm_16000') {
+      return {
+        audio: streamOf(fakePcm(input.text, 16_000)),
+        contentType: 'audio/pcm',
+        sampleRateHertz: 16_000,
+        characters: input.text.length,
+        engine,
+        voiceId: input.voiceId,
+      };
+    }
     const bytes = new TextEncoder().encode(`MP3:${input.text}`);
     return {
-      audio: new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(bytes);
-          controller.close();
-        },
-      }),
+      audio: streamOf(bytes),
       contentType: 'audio/mpeg',
       characters: input.text.length,
       engine,
@@ -173,6 +186,137 @@ export class FakeSttGrantIssuer implements SttGrantIssuer {
       url: `wss://stt.test.invalid:8443/stream-transcription-websocket?language-code=${request.languageCode}&sample-rate=${String(request.sampleRateHertz)}&grant=${n}`,
       expiresAt: new Date(Date.now() + request.expiresInSeconds * 1000).toISOString(),
     });
+  }
+}
+
+/** A stream of one chunk. */
+function streamOf(bytes: Uint8Array): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(bytes);
+      controller.close();
+    },
+  });
+}
+
+/** Deterministic 16-bit PCM for `text`: 40 ms per character of a quiet ramp (never silence, never content). */
+export function fakePcm(text: string, sampleRate: number): Uint8Array {
+  const samples = Math.max(1, Math.round(text.length * 0.04 * sampleRate));
+  const out = new Uint8Array(samples * 2);
+  const view = new DataView(out.buffer);
+  for (let i = 0; i < samples; i += 1) view.setInt16(i * 2, (i % 200) - 100, true);
+  return out;
+}
+
+/**
+ * Test vendor faces (the `EmbodimentProvider` port): sessions carry a counter (no credentials), and every call
+ * is recorded. `id` and `likeness` say which face it stands for; `failNext` makes the next session fail like a
+ * vendor outage, `failSpeak` every speak.
+ */
+export class FakeEmbodimentProvider implements EmbodimentProvider {
+  readonly sessions: FaceSessionRequest[] = [];
+  readonly spoken: { readonly handle: FaceSessionHandle; readonly audio: VerifiedFaceAudio }[] = [];
+  readonly interrupts: FaceSessionHandle[] = [];
+  readonly keepAlives: FaceSessionHandle[] = [];
+  readonly ended: { readonly handle: FaceSessionHandle; readonly reason: string }[] = [];
+  readonly voicing = 'audio' as const;
+  failNext = false;
+  failSpeak = false;
+  /** How many of the next `end` calls fail (after being recorded), like a vendor 5xx. */
+  failEnds = 0;
+  /** A vendor sandbox (offered to platform admins only). */
+  sandbox = false;
+  /** The control channel each session gets (a credential at a real vendor). */
+  control: string | null = 'wss://face.test.invalid/control';
+
+  constructor(
+    readonly id: EmbodimentProvider['id'] = 'fake',
+    readonly likeness = false,
+    readonly usdPerMinute = 0.093,
+  ) {}
+
+  createSession(request: FaceSessionRequest): Promise<StartedFaceSession> {
+    this.sessions.push(request);
+    if (this.failNext) {
+      this.failNext = false;
+      return Promise.reject(new EmbodimentSessionError('vendor unavailable'));
+    }
+    const n = String(this.sessions.length);
+    return Promise.resolve({
+      browser: {
+        token: `${this.id}.session-${n}`,
+        url: this.id === 'fake' ? null : `wss://room-${n}.test.invalid`,
+        expiresAt: new Date(Date.now() + Math.min(request.maxSeconds, 60) * 1000).toISOString(),
+      },
+      sessionRef: `sess-${n}`,
+      control: this.control === null ? null : `${this.control}/${n}`,
+    });
+  }
+
+  speak(handle: FaceSessionHandle, audio: VerifiedFaceAudio): Promise<void> {
+    this.spoken.push({ handle, audio });
+    return this.failSpeak ? Promise.reject(new EmbodimentSessionError('vendor dropped')) : Promise.resolve();
+  }
+
+  interrupt(handle: FaceSessionHandle): Promise<void> {
+    this.interrupts.push(handle);
+    return Promise.resolve();
+  }
+
+  keepAlive(handle: FaceSessionHandle): Promise<void> {
+    this.keepAlives.push(handle);
+    return Promise.resolve();
+  }
+
+  end(handle: FaceSessionHandle, reason: string): Promise<void> {
+    this.ended.push({ handle, reason });
+    if (this.failEnds > 0) {
+      this.failEnds -= 1;
+      return Promise.reject(new EmbodimentSessionError('vendor unavailable'));
+    }
+    return Promise.resolve();
+  }
+}
+
+/**
+ * Test cloned voice (the `VoiceProvider` port): records every unit it was handed; MP3 is the text prefixed with
+ * `CLONE:`, PCM is {@link fakePcm} at 24 kHz. `failNext` makes the next call fail like a vendor outage.
+ */
+export class FakeVoiceProvider implements VoiceProvider {
+  readonly calls: VoiceSynthesisInput[] = [];
+  readonly model = 'test_model';
+  failNext = false;
+
+  constructor(
+    readonly id: VoiceProvider['id'] = 'elevenlabs',
+    readonly usdPer1kCharacters = 0.04,
+  ) {}
+
+  synthesize(input: VoiceSynthesisInput): Promise<SynthesizedSpeech> {
+    this.calls.push(input);
+    if (this.failNext) {
+      this.failNext = false;
+      return Promise.reject(new SpeechSynthesisError('voice vendor unavailable'));
+    }
+    const text = input.unit.text;
+    return Promise.resolve(
+      input.format === 'pcm_24000'
+        ? {
+            audio: streamOf(fakePcm(text, 24_000)),
+            contentType: 'audio/pcm',
+            sampleRateHertz: 24_000,
+            characters: text.length,
+            engine: 'clone',
+            voiceId: input.voiceRef,
+          }
+        : {
+            audio: streamOf(new TextEncoder().encode(`CLONE:${text}`)),
+            contentType: 'audio/mpeg',
+            characters: text.length,
+            engine: 'clone',
+            voiceId: input.voiceRef,
+          },
+    );
   }
 }
 

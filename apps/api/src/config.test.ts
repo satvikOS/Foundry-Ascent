@@ -11,6 +11,34 @@ const prod = {
 };
 
 describe('loadApiConfig', () => {
+  it('reads the digital-twin vendors, refusing anything it does not know', () => {
+    expect(
+      loadApiConfig(
+        {
+          ...prod,
+          MEDIA_FACE_PROVIDER: 'heygen-liveavatar',
+          MEDIA_FACE_SANDBOX: 'true',
+          MEDIA_VOICE_PROVIDER: 'elevenlabs',
+          MEDIA_VOICE_MODEL: 'eleven_turbo_v2_5',
+          MEDIA_VOICE_ZERO_RETENTION: 'true',
+        },
+        'api',
+      ).media,
+    ).toEqual({
+      face: 'heygen-liveavatar',
+      faceSandbox: true,
+      voice: 'elevenlabs',
+      voiceModel: 'eleven_turbo_v2_5',
+      voiceZeroRetention: true,
+    });
+    expect(() => loadApiConfig({ ...prod, MEDIA_FACE_PROVIDER: 'tavus' }, 'api')).toThrow(
+      /MEDIA_FACE_PROVIDER/,
+    );
+    expect(() => loadApiConfig({ ...prod, MEDIA_VOICE_MODEL: 'Bad Model!' }, 'api')).toThrow(
+      /MEDIA_VOICE_MODEL/,
+    );
+  });
+
   it('reads the runtime contract with defaults', () => {
     expect(loadApiConfig(prod, 'api')).toEqual({
       appEnv: 'production',
@@ -22,6 +50,14 @@ describe('loadApiConfig', () => {
       jobsMaxReceiveCount: 3,
       siteOrigin: null,
       speech: { enabled: true, engine: 'neural' },
+      // The digital twin is off unless configured.
+      media: {
+        face: 'none',
+        faceSandbox: false,
+        voice: 'polly',
+        voiceModel: 'eleven_flash_v2_5',
+        voiceZeroRetention: false,
+      },
     });
     expect(
       loadApiConfig({ LOG_LEVEL: 'DEBUG', SITE_ORIGIN: 'https://foundry.example.edu/' }, 'migrate'),

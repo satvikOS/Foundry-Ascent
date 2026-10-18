@@ -41,6 +41,8 @@ export const PUBLIC_PROBLEM_REASONS = [
   'speech_already_played',
   /** POST /speech, 409 `conflict`: the crisis support line already played as often as it may. */
   'crisis_speech_limit',
+  /** POST /calls/:id/face/*, 409 `conflict`: the call's face has ended (the call goes on with the presence). */
+  'face_not_active',
 ] as const;
 export type PublicProblemReason = (typeof PUBLIC_PROBLEM_REASONS)[number];
 

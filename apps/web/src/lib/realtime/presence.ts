@@ -24,6 +24,7 @@ function follow(current: number, target: number): number {
 export class PresenceAvatar implements AvatarProvider {
   readonly id = 'builtin' as const;
   readonly drawsFace = false;
+  readonly voicing = 'engine' as const;
   private root: HTMLDivElement | null = null;
   private reducedMotion = false;
   private veir = 0;

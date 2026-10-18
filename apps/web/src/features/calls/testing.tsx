@@ -87,9 +87,26 @@ export const LIVE: CallSnapshot = {
   error: null,
 };
 
-/** The engine methods the call UI uses, as spies. */
-export function fakeEngine() {
+/** The engine methods the call UI uses, as spies. `setSnapshot` and `stopFace` drive what the engine reports. */
+export function fakeEngine(initial: CallSnapshot = LIVE) {
+  let snapshot = initial;
+  const listeners = new Set<() => void>();
+  const faceStops = new Set<() => void>();
   const engine = {
+    subscribe: vi.fn((listener: () => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    }),
+    getSnapshot: vi.fn(() => snapshot),
+    setFaceShown: vi.fn(),
+    onFaceStop: vi.fn((listener: () => void) => {
+      faceStops.add(listener);
+      return () => {
+        faceStops.delete(listener);
+      };
+    }),
     setMuted: vi.fn(),
     setTalkMode: vi.fn(),
     pushToTalk: vi.fn(),
@@ -102,6 +119,17 @@ export function fakeEngine() {
     avatarState: vi.fn(() => 'listening' as const),
     levels: vi.fn(() => ({ veir: 0, founder: 0 })),
     onSpeak: vi.fn(() => () => undefined),
+    attachFace: vi.fn(),
   };
-  return { engine, asEngine: engine as unknown as CallEngine };
+  return {
+    engine,
+    asEngine: engine as unknown as CallEngine,
+    setSnapshot: (next: CallSnapshot) => {
+      snapshot = next;
+      for (const listener of [...listeners]) listener();
+    },
+    stopFace: () => {
+      for (const listener of [...faceStops]) listener();
+    },
+  };
 }

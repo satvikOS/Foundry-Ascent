@@ -28,7 +28,11 @@ export interface SpeechUnitToPlay {
 export type VoiceRoute = 'server' | 'browser' | 'captions';
 
 export type SpeechFetchResult =
-  | { readonly kind: 'audio'; readonly data: ArrayBuffer }
+  /**
+   * The unit's audio. For a call with a live face the server sends PCM in a WAV with its face-audio manifest:
+   * the face may render exactly those bytes (docs/architecture/calls.md §4).
+   */
+  | { readonly kind: 'audio'; readonly data: ArrayBuffer; readonly faceManifest?: string }
   /** The server has no speech synthesis here (501); the browser may read validated text itself. */
   | { readonly kind: 'unavailable' }
   /** The server refused speech for this call (AI paused, caps reached, voice consent withdrawn). */
@@ -54,6 +58,68 @@ export interface PlayerAudio {
   now(): number;
 }
 
+/** Where a face plays the call's audio: the player's own input, so ducking and loudness work unchanged. */
+export interface FaceRendererOutput {
+  readonly context: PlayerAudio['context'];
+  /** The player's gain (→ analyser → speakers). */
+  readonly destination: AudioNode;
+}
+
+/**
+ * A unit's audio as a face may render it: the PCM the server synthesized (the WAV's payload, 16-bit mono 24 kHz)
+ * and the server's manifest of it. The face hands both back to the server, which relays them only if they match.
+ */
+export interface FaceUnitAudio {
+  readonly pcm: Uint8Array;
+  readonly manifest: string;
+}
+
+/** The PCM payload of a WAV (its `data` chunk), or null when the bytes are not a PCM WAV. */
+export function wavPayload(data: ArrayBuffer): Uint8Array | null {
+  const bytes = new Uint8Array(data);
+  const text = (offset: number) => String.fromCharCode(...bytes.subarray(offset, offset + 4));
+  if (bytes.byteLength < 12 || text(0) !== 'RIFF' || text(8) !== 'WAVE') return null;
+  const view = new DataView(data);
+  for (let offset = 12; offset + 8 <= bytes.byteLength;) {
+    const size = view.getUint32(offset + 4, true);
+    if (text(offset) === 'data') {
+      return bytes.slice(offset + 8, Math.min(bytes.byteLength, offset + 8 + size));
+    }
+    offset += 8 + size + (size % 2);
+  }
+  return null;
+}
+
+export interface FaceRenderHandlers {
+  /** The unit's first sound is heard (captions and the first-audio timing follow this, not the hand-over). */
+  onStart(): void;
+  /**
+   * Heard to its end (`ended`), or the face could not make it heard (`failed`). A unit that failed before its
+   * start is played by the call itself, so the founder never loses a sentence to the face.
+   */
+  onEnd(outcome: 'ended' | 'failed'): void;
+}
+
+/**
+ * A face that makes the call's validated audio heard itself, lip-synced (voicing `audio`, docs/architecture/
+ * calls.md §4): a vendor's speech-to-video over WebRTC, or the development stand-in. It only ever receives
+ * audio this call already fetched from `POST /speech` (signed, validated units), never text to voice.
+ */
+export interface FaceRenderer {
+  /** Whether it can take a unit now (connected, video flowing). Otherwise the call plays the unit itself. */
+  ready(): boolean;
+  /**
+   * Makes one decoded unit heard; returns the function that stops it at once (barge-in, end). `audio` is what
+   * the face may render (null for a unit the server did not give the face: it is played by the call itself).
+   */
+  render(
+    buffer: AudioBuffer,
+    output: FaceRendererOutput,
+    handlers: FaceRenderHandlers,
+    audio: FaceUnitAudio | null,
+  ): () => void;
+}
+
 export interface PlayerEvents {
   /** A unit starts being heard (captions follow this), and how it is heard. */
   onUnitStart(unit: SpeechUnitToPlay, route: VoiceRoute): void;
@@ -66,7 +132,7 @@ export interface PlayerEvents {
 }
 
 type Prepared = (
-  | { readonly kind: 'buffer'; readonly buffer: AudioBuffer }
+  | { readonly kind: 'buffer'; readonly buffer: AudioBuffer; readonly face?: FaceUnitAudio }
   | { readonly kind: 'browser' }
   | { readonly kind: 'captions' }
 ) & {
@@ -86,6 +152,8 @@ interface Entry {
 
 /** Units being fetched ahead of the one playing. */
 const PREFETCH = 2;
+/** Beyond a unit's own length, how long a face may take before the call counts the unit as heard. */
+const FACE_GUARD_MS = 4_000;
 /** Duck level while the founder may be barging in. */
 const DUCK_GAIN = 0.2;
 
@@ -117,6 +185,7 @@ export class SpeechPlayer {
   private readonly samples: Float32Array<ArrayBuffer>;
   private disposed = false;
   private generation = 0;
+  private face: FaceRenderer | null = null;
 
   constructor(
     private readonly audio: PlayerAudio,
@@ -165,6 +234,14 @@ export class SpeechPlayer {
     playing?.entry.controller.abort();
     playing?.stop();
     this.unduck();
+  }
+
+  /**
+   * The face that renders the call's audio from now on (null: the speakers). A unit already playing finishes
+   * where it started.
+   */
+  setFace(face: FaceRenderer | null): void {
+    this.face = face;
   }
 
   /** Turns the vEIR down while a possible barge-in is confirmed. */
@@ -217,12 +294,18 @@ export class SpeechPlayer {
       case 'failed':
         // This unit only: the next one asks for the voice again.
         return { kind: 'captions' };
-      case 'audio':
+      case 'audio': {
+        // Copied before decoding (decodeAudioData takes the bytes): the face may render exactly these.
+        const pcm = result.faceManifest === undefined ? null : wavPayload(result.data);
+        const face =
+          pcm === null || result.faceManifest === undefined ? null : { pcm, manifest: result.faceManifest };
         try {
-          return { kind: 'buffer', buffer: await this.audio.context.decodeAudioData(result.data) };
+          const buffer = await this.audio.context.decodeAudioData(result.data);
+          return face === null ? { kind: 'buffer', buffer } : { kind: 'buffer', buffer, face };
         } catch {
           return { kind: 'captions' };
         }
+      }
     }
   }
 
@@ -250,13 +333,25 @@ export class SpeechPlayer {
     // A route change applies to everything after this unit too.
     this.prefetch();
 
+    const route: VoiceRoute =
+      prepared.kind === 'buffer' ? 'server' : prepared.quiet === true ? this.route : prepared.kind;
     const completed = await new Promise<boolean>((resolve) => {
-      const finish = this.start(prepared, entry.unit, resolve);
-      this.playing = { entry, stop: finish };
-      this.events.onUnitStart(
-        entry.unit,
-        prepared.kind === 'buffer' ? 'server' : prepared.quiet === true ? this.route : prepared.kind,
-      );
+      // A unit is announced when it starts being heard: at once here, or when a face reports its first sound
+      // (never before `playing` is set, and never after it was stopped).
+      // Set from `announce`, which the start may call before it returns.
+      let announced = false;
+      let wanted = false as boolean;
+      let registered = false;
+      const announce = () => {
+        wanted = true;
+        if (announced || !registered || generation !== this.generation) return;
+        announced = true;
+        this.events.onUnitStart(entry.unit, route);
+      };
+      const { stop, deferred } = this.start(prepared, entry.unit, resolve, announce);
+      this.playing = { entry, stop };
+      registered = true;
+      if (!deferred || wanted) announce();
     });
     if (generation !== this.generation) {
       this.events.onUnitEnd(entry.unit, false);
@@ -268,8 +363,16 @@ export class SpeechPlayer {
     else this.events.onIdle();
   }
 
-  /** Starts making one unit heard; returns the function that stops it early. */
-  private start(prepared: Prepared, unit: SpeechUnitToPlay, done: (completed: boolean) => void): () => void {
+  /**
+   * Starts making one unit heard; returns the function that stops it early, and whether the start is
+   * `deferred` (a face announces its first sound through `started`).
+   */
+  private start(
+    prepared: Prepared,
+    unit: SpeechUnitToPlay,
+    done: (completed: boolean) => void,
+    started: () => void,
+  ): { stop: () => void; deferred: boolean } {
     let settled = false;
     const settle = (completed: boolean) => {
       if (settled) return;
@@ -278,34 +381,109 @@ export class SpeechPlayer {
     };
 
     if (prepared.kind === 'buffer') {
-      const source = this.audio.context.createBufferSource();
-      source.buffer = prepared.buffer;
-      source.connect(this.gain);
-      // A suspended context never ends its sources; the guard keeps the call from waiting forever.
-      const guard = this.audio.setTimeout(
-        () => {
-          settle(true);
-        },
-        prepared.buffer.duration * 1000 + 1500,
-      );
-      source.onended = () => {
-        this.audio.clearTimeout(guard);
-        settle(true);
-      };
-      source.start();
-      return () => {
-        this.audio.clearTimeout(guard);
-        source.onended = null;
-        try {
-          source.stop();
-        } catch {
-          /* not started */
-        }
-        source.disconnect();
-        settle(false);
-      };
+      const face = this.face;
+      if (face?.ready() === true) {
+        return {
+          stop: this.renderOnFace(face, prepared.buffer, prepared.face ?? null, settle, started),
+          deferred: true,
+        };
+      }
+      return { stop: this.playBuffer(prepared.buffer, settle), deferred: false };
     }
+    return { stop: this.startWithoutAudio(prepared, unit, settle), deferred: false };
+  }
 
+  /** Plays decoded audio through the call's own path (gain → analyser → speakers). */
+  private playBuffer(buffer: AudioBuffer, settle: (completed: boolean) => void): () => void {
+    const source = this.audio.context.createBufferSource();
+    source.buffer = buffer;
+    source.connect(this.gain);
+    // A suspended context never ends its sources; the guard keeps the call from waiting forever.
+    const guard = this.audio.setTimeout(
+      () => {
+        settle(true);
+      },
+      buffer.duration * 1000 + 1500,
+    );
+    source.onended = () => {
+      this.audio.clearTimeout(guard);
+      settle(true);
+    };
+    source.start();
+    return () => {
+      this.audio.clearTimeout(guard);
+      source.onended = null;
+      try {
+        source.stop();
+      } catch {
+        /* not started */
+      }
+      source.disconnect();
+      settle(false);
+    };
+  }
+
+  /**
+   * Hands decoded audio to the face, which plays it into the player's gain in step with its video. A face that
+   * fails before the unit's first sound gives it back: the call plays it itself, so no sentence is lost.
+   */
+  private renderOnFace(
+    face: FaceRenderer,
+    buffer: AudioBuffer,
+    audio: FaceUnitAudio | null,
+    settle: (completed: boolean) => void,
+    started: () => void,
+  ): () => void {
+    let finished = false;
+    let began = false;
+    let fallback: (() => void) | null = null;
+    const guard = this.audio.setTimeout(
+      () => {
+        finished = true;
+        settle(true);
+      },
+      buffer.duration * 1000 + FACE_GUARD_MS,
+    );
+    const stopFace = face.render(
+      buffer,
+      { context: this.audio.context, destination: this.gain },
+      {
+        onStart: () => {
+          if (finished || began) return;
+          began = true;
+          started();
+        },
+        onEnd: (outcome) => {
+          if (finished) return;
+          finished = true;
+          this.audio.clearTimeout(guard);
+          if (outcome === 'failed' && !began) {
+            started();
+            fallback = this.playBuffer(buffer, settle);
+            return;
+          }
+          // A face that never reported the start still made the unit heard: announce it before its end.
+          if (!began) started();
+          settle(outcome === 'ended');
+        },
+      },
+      audio,
+    );
+    return () => {
+      finished = true;
+      this.audio.clearTimeout(guard);
+      stopFace();
+      if (fallback) fallback();
+      else settle(false);
+    };
+  }
+
+  /** The browser's voice or captions only. */
+  private startWithoutAudio(
+    prepared: Prepared,
+    unit: SpeechUnitToPlay,
+    settle: (completed: boolean) => void,
+  ): () => void {
     // Browser voice or captions only: a timer guards against a speech engine that never reports the end.
     const guard = this.audio.setTimeout(
       () => {

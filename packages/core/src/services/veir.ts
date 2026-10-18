@@ -1,5 +1,5 @@
 import {
-  AvatarSessionRequest,
+  type AvatarSessionRequest,
   type AvatarSessionResponse,
   type CallConfigResponse,
   type PersonaEmbodiment,
@@ -8,14 +8,20 @@ import {
 import { assignmentsRepo, personasRepo, principalsRepo, settingsRepo, type SqlExecutor } from '@foundry/db';
 import { type z } from 'zod';
 
-import { requireAssignmentActive, requireVentureAccess } from '../authz/venture-access.js';
+import { loadPrincipalRoles } from '../authz/roles.js';
+import { requireVentureAccess } from '../authz/venture-access.js';
 import { type RequestContext } from '../context.js';
-import { DomainError, parseInput } from '../errors.js';
+import { DomainError } from '../errors.js';
 import { veirEirName } from '../internal/eir-names.js';
-import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
-import { secondsUntilUtcMidnight } from '../orchestrator/sampling.js';
-import { CALL_LIMITS, callSecondsToday, remainingDailyMinutes, remainingDailySeconds } from './call-usage.js';
-import { callVoiceFor } from './calls.js';
+import { requireId, type Kit, type RequestScope } from '../internal/kit.js';
+import { callSecondsToday, remainingDailyMinutes } from './call-usage.js';
+import {
+  type FaceService,
+  MIN_FACE_SECONDS,
+  faceOfferedTo,
+  faceSecondsThisMonth,
+  twinFaceFor,
+} from './face.js';
 
 /**
  * Who a founder talks to (the venture's vEIR as shown in chat and calls) and what a call may use: the
@@ -28,8 +34,10 @@ export interface VeirService {
   /** Everything the call screen needs before the first word (founder/team). */
   callConfig(ctx: RequestContext, ventureId: string): Promise<CallConfigResponse>;
   /**
-   * Starts a call's avatar session (founder/team). Vendor providers would mint a single-use token here; the
-   * built-in provider needs none. Refused when AI is off, the coach is unavailable or no minutes are left.
+   * The face of a call (founder/team). A vendor face (or the development stand-in) gets a single-use session
+   * token bound to the caller's live call `callId` and its time left; the built-in presence needs none, and a
+   * face that is unavailable (no likeness consent, no live call named, the vendor down) leaves the call on the
+   * presence. Refused when AI or calls are off, the coach is unavailable or no minutes are left.
    */
   avatarSession(
     ctx: RequestContext,
@@ -100,7 +108,7 @@ export async function resolveVeir(ex: SqlExecutor, ventureId: string): Promise<R
   };
 }
 
-export function createVeirService(kit: Kit): VeirService {
+export function createVeirService(kit: Kit, face: FaceService): VeirService {
   async function requireVeir(scope: RequestScope, ventureId: string): Promise<ResolvedVeir> {
     const veir = await resolveVeir(scope.tx, ventureId);
     if (veir === null) {
@@ -122,12 +130,21 @@ export function createVeirService(kit: Kit): VeirService {
 
     callConfig: async (ctx, rawVentureId) => {
       const ventureId = requireId(rawVentureId, 'Venture');
-      return await kit.inRequest(ctx, async (scope) => {
+      const provider = kit.deps.embodiment;
+      const config = await kit.inRequest(ctx, async (scope) => {
         await requireVentureAccess(scope, ventureId, 'write', { objectType: 'call' });
         const { identity } = await requireVeir(scope, ventureId);
         const settings = await settingsRepo.getPlatformSettings(scope.tx);
         const used = await callSecondsToday(scope.tx, ctx.principalId);
-        return {
+        // A vendor face for this vEIR: faces on, a provider wired (a sandbox one for platform admins only), and
+        // (for a real likeness) its face ready under likeness consent. The video minutes left are read below
+        // (owner role).
+        const faceOn =
+          provider !== undefined &&
+          settings.facesEnabled &&
+          (provider.sandbox !== true || faceOfferedTo(provider, await loadPrincipalRoles(scope.tx, ctx))) &&
+          (!provider.likeness || (await twinFaceFor(scope.tx, provider, identity.personaId)) !== null);
+        const response: CallConfigResponse = {
           veir: identity,
           provider: identity.embodiment.provider,
           maxMinutes: settings.maxCallMinutes,
@@ -137,72 +154,18 @@ export function createVeirService(kit: Kit): VeirService {
           // The caller's own acknowledgement of the first-call privacy notice (per person, not per browser).
           callNoticeAcknowledgedAt: await principalsRepo.callNoticeAcknowledgedAt(scope.tx),
         };
+        return { response, faceOn, monthMinutes: settings.faceMinutesPerPrincipalMonth };
       });
+      if (!config.faceOn || provider === undefined) return config.response;
+      const left = Math.max(0, config.monthMinutes * 60 - (await faceSecondsThisMonth(kit, ctx.principalId)));
+      if (left < MIN_FACE_SECONDS) return config.response;
+      return {
+        ...config.response,
+        provider: provider.id,
+        faceMinutesLeft: Math.floor(left / 6) / 10,
+      };
     },
 
-    avatarSession: async (ctx, rawInput) => {
-      const input = parseInput(AvatarSessionRequest, rawInput);
-      const ventureId = requireId(input.ventureId, 'Venture');
-      return await kit.inRequest(ctx, async (scope) => {
-        await requireVentureAccess(scope, ventureId, 'write', { objectType: 'call' });
-        const settings = await settingsRepo.getPlatformSettings(scope.tx);
-        if (!settings.aiEnabled) {
-          throw new DomainError(
-            'ai_disabled',
-            'AI coaching is paused by the program. Please try again later.',
-            {
-              reason: 'kill_switch',
-            },
-          );
-        }
-        if (!settings.callsEnabled) {
-          throw new DomainError('ai_disabled', 'Calls are paused by the program. You can keep chatting.', {
-            reason: 'calls_disabled',
-          });
-        }
-        const active = await requireAssignmentActive(scope, ventureId);
-        const { identity } = await requireVeir(scope, ventureId);
-        const persona = await personasRepo.getPersona(scope.tx, active.persona.id);
-        // The same voice rule as calls: an EIR's own voice only under voice consent, never another voice.
-        const voiceId =
-          persona === null
-            ? null
-            : callVoiceFor(persona, await personasRepo.personaConsentAssets(scope.tx, persona.id));
-        if (voiceId === null) {
-          throw new DomainError(
-            'persona_suspended',
-            'This vEIR’s voice consent is not in force, so calls are paused.',
-            { reason: 'voice_consent' },
-          );
-        }
-        const used = await callSecondsToday(scope.tx, ctx.principalId);
-        if (
-          remainingDailySeconds(used, settings.dailyCallMinutesPerPrincipal) < CALL_LIMITS.minStartSeconds
-        ) {
-          throw new DomainError(
-            'rate_limited',
-            'You have used today’s call minutes. Calls reset at midnight UTC.',
-            {
-              reason: 'daily_call_minutes',
-              retryAfterSeconds: secondsUntilUtcMidnight(kit.now()),
-            },
-          );
-        }
-        await audit(scope, {
-          action: 'call.avatar_session',
-          outcome: 'succeeded',
-          ventureId,
-          objectType: 'persona',
-          objectId: identity.personaId,
-          metadata: { provider: identity.embodiment.provider },
-        });
-        return {
-          provider: identity.embodiment.provider,
-          token: null,
-          expiresAt: null,
-          voiceId,
-        };
-      });
-    },
+    avatarSession: (ctx, input) => face.session(ctx, input),
   };
 }

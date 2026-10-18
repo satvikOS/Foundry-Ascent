@@ -147,6 +147,23 @@ export const AvatarProviderId = z.enum(['builtin', 'heygen', 'tavus', 'simli']);
 export type AvatarProviderId = z.infer<typeof AvatarProviderId>;
 
 /**
+ * Who draws the face of a call, as the call screen sees it: the persona's provider, or `fake`, the development
+ * stand-in (a canvas face, no one's likeness) that the local API serves with `EMBODIMENT_PROVIDER=fake` and
+ * nothing else does. Never stored on a persona (`AvatarProviderId` is).
+ */
+export const EmbodimentProviderId = z.enum([...AvatarProviderId.options, 'fake']);
+export type EmbodimentProviderId = z.infer<typeof EmbodimentProviderId>;
+
+/**
+ * How the vEIR is heard when a provider draws its face (docs/architecture/calls.md §4):
+ * - `engine`: the call plays its own synthesized audio and the face follows its loudness (the presence);
+ * - `audio`: the face renders the call's own validated audio itself, lip-synced (a vendor's speech-to-video);
+ * - `text`: the vendor voices the validated text with its own voice (reserved: needs the unit receipt route).
+ */
+export const AvatarVoicing = z.enum(['engine', 'audio', 'text']);
+export type AvatarVoicing = z.infer<typeof AvatarVoicing>;
+
+/**
  * Voices a persona may speak with on calls (Amazon Polly, adult US English), in the order of
  * `packages/core/speech-voices.json` (the catalog core and infra/cdk read). The speech service refuses any
  * other; a core test keeps this list and the catalog naming exactly the same voices.
@@ -208,7 +225,8 @@ export type VeirIdentity = z.infer<typeof VeirIdentity>;
 /** `GET /ventures/:id/call-config` — everything the call screen needs before the first word. */
 export const CallConfigResponse = z.object({
   veir: VeirIdentity,
-  provider: AvatarProviderId,
+  /** Who draws the call's face (the persona's provider, or the development stand-in). */
+  provider: EmbodimentProviderId,
   /** Hard cap per call in minutes. */
   maxMinutes: z.number().int().min(1),
   /** Minutes this person may still use today. */
@@ -221,6 +239,11 @@ export const CallConfigResponse = z.object({
    * then, and the call screen shows the notice. Additive: older payloads parse as null.
    */
   callNoticeAcknowledgedAt: Timestamp.nullable().default(null),
+  /**
+   * Video minutes this person may still use this month with the vEIR's face (sent only while a vendor face is
+   * on for this vEIR). Additive.
+   */
+  faceMinutesLeft: z.number().min(0).optional(),
 });
 export type CallConfigResponse = z.infer<typeof CallConfigResponse>;
 
@@ -417,7 +440,7 @@ export const ConsentListResponse = z.object({ items: z.array(ConsentView) });
  * `doctrine` is required before a release can be approved; `voice` / `likeness` before a voice or portrait.
  */
 export const CreateConsentRequest = z.object({
-  assetTypes: z.array(ConsentAssetType).min(1).max(5),
+  assetTypes: z.array(ConsentAssetType).min(1).max(ConsentAssetType.options.length),
   approvedUses: z.array(z.string().trim().min(1).max(80)).max(10).default([]),
   audiences: z.array(z.string().trim().min(1).max(80)).max(10).default([]),
   /** Where the signed consent lives (form id, document reference). */
@@ -425,6 +448,85 @@ export const CreateConsentRequest = z.object({
   expiresAt: Timestamp.nullable().default(null),
 });
 export type CreateConsentRequest = z.infer<typeof CreateConsentRequest>;
+
+/**
+ * `POST /consents/:id/withdraw-scope` — withdraws one scope of a consent in force (the EIR's own act, or a program
+ * lead's for a synthetic EIR) without revoking the rest: the record is replaced by a copy without that scope,
+ * which the personas that relied on it use from then on (none is suspended). Withdrawing `likeness` ends the
+ * vEIR's face, `voice` its cloned voice (calls fall back to the platform voice), `first_person` its first-name
+ * presence; each at once, on the server.
+ */
+export const WithdrawableScope = z.enum(['likeness', 'voice', 'first_person']);
+export type WithdrawableScope = z.infer<typeof WithdrawableScope>;
+export const WithdrawConsentScopeRequest = z.object({ assetType: WithdrawableScope });
+export type WithdrawConsentScopeRequest = z.infer<typeof WithdrawConsentScopeRequest>;
+export const WithdrawConsentScopeResponse = z.object({
+  /** The record now in force (the copy without the scope). */
+  consent: ConsentView,
+  /** The record it replaced, now revoked. */
+  previousConsentId: Id,
+});
+export type WithdrawConsentScopeResponse = z.infer<typeof WithdrawConsentScopeResponse>;
+
+// Digital twin ---------------------------------------------------------------------------------------
+
+/**
+ * A persona's media at a vendor: its realtime face (`face`: a HeyGen LiveAvatar avatar id, LITE mode, which
+ * renders audio we synthesized) or its cloned voice (`voice`: an ElevenLabs voice id, synthesized only on the
+ * server from validated words). Identifiers, never credentials.
+ */
+export const TwinMediaKind = z.enum(['face', 'voice']);
+export type TwinMediaKind = z.infer<typeof TwinMediaKind>;
+export const TwinMediaVendor = z.enum(['heygen', 'elevenlabs']);
+export type TwinMediaVendor = z.infer<typeof TwinMediaVendor>;
+/** `pending`: recorded at the vendor, not usable yet; `ready`: in use (under its consent scope); `withdrawn`. */
+export const TwinMediaStatus = z.enum(['pending', 'ready', 'withdrawn']);
+export type TwinMediaStatus = z.infer<typeof TwinMediaStatus>;
+/** The vendor of each kind. */
+export const TWIN_MEDIA_VENDOR = { face: 'heygen', voice: 'elevenlabs' } as const satisfies Record<
+  TwinMediaKind,
+  TwinMediaVendor
+>;
+/** A vendor id: letters, digits, `-` and `_` (HeyGen avatar ids are UUIDs, ElevenLabs voice ids 20 characters). */
+export const TwinVendorRef = z
+  .string()
+  .trim()
+  .regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/, 'Use the id exactly as the vendor shows it');
+
+export const TwinMediaView = z.object({
+  kind: TwinMediaKind,
+  vendor: TwinMediaVendor,
+  vendorRef: z.string(),
+  status: TwinMediaStatus,
+  updatedAt: Timestamp,
+});
+export type TwinMediaView = z.infer<typeof TwinMediaView>;
+
+/**
+ * `GET /personas/:id/twin` — the persona's digital twin for its curators: the scopes its consent in force covers,
+ * the vendor face and cloned voice, and whether the platform has faces and cloned voices on.
+ */
+export const DigitalTwinView = z.object({
+  personaId: Id,
+  /** The consent the persona relies on while it is in force; null otherwise. */
+  consentId: Id.nullable(),
+  scopes: z.object({ likeness: z.boolean(), voice: z.boolean(), firstPerson: z.boolean() }),
+  face: TwinMediaView.nullable(),
+  voice: TwinMediaView.nullable(),
+  facesEnabled: z.boolean(),
+  clonedVoiceEnabled: z.boolean(),
+});
+export type DigitalTwinView = z.infer<typeof DigitalTwinView>;
+
+/**
+ * `PATCH /personas/:id/twin/:kind` — records the vendor id of the persona's face or voice (program lead or the
+ * persona's EIR). `ready` needs the consent in force to cover the scope (`likeness`, `voice`); null withdraws it.
+ */
+export const UpdateTwinMediaRequest = z.object({
+  vendorRef: TwinVendorRef.nullable(),
+  status: z.enum(['pending', 'ready']).default('ready'),
+});
+export type UpdateTwinMediaRequest = z.infer<typeof UpdateTwinMediaRequest>;
 
 /** `POST /consents/:id/revoke` 200 body: every persona that relied on the consent is suspended. */
 export const RevokeConsentResponse = z.object({
@@ -434,16 +536,29 @@ export const RevokeConsentResponse = z.object({
 export type RevokeConsentResponse = z.infer<typeof RevokeConsentResponse>;
 
 /**
- * `POST /calls/avatar-session` — reserved for vendor avatar session tokens (HeyGen, Tavus, Simli). The
- * built-in provider needs no token, so today the response carries the provider and voice only.
+ * `POST /calls/avatar-session` — the face of a live call. A vendor face (or the development stand-in) gets a
+ * single-use session token for the browser SDK, bound to the caller's live call `callId` and ending with its
+ * time limit; the built-in presence needs none, and so does a call whose face is unavailable (no likeness
+ * consent, the vendor down): it keeps the presence.
  */
-export const AvatarSessionRequest = z.object({ ventureId: Id });
+export const AvatarSessionRequest = z.object({
+  ventureId: Id,
+  /** The caller's live call in that venture; a vendor session is only minted for one. */
+  callId: Id.optional(),
+});
 export type AvatarSessionRequest = z.infer<typeof AvatarSessionRequest>;
 export const AvatarSessionResponse = z.object({
-  provider: AvatarProviderId,
-  /** Single-use vendor session token; never stored or replayed. Null for `builtin`. */
+  provider: EmbodimentProviderId,
+  /**
+   * Short-lived token the browser joins the face's video with (a vendor's room token, which can only watch:
+   * the face's speak channel stays on the server). Never stored or replayed. Null for `builtin`.
+   */
   token: z.string().nullable(),
   expiresAt: Timestamp.nullable(),
   voiceId: z.string().nullable(),
+  /** How the vEIR is heard with this face. Additive: older payloads parse as `engine`. */
+  voicing: AvatarVoicing.default('engine'),
+  /** The vendor room the token joins (a LiveKit `wss://` URL); null for `builtin` and the stand-in. Additive. */
+  url: z.string().max(500).nullable().default(null),
 });
 export type AvatarSessionResponse = z.infer<typeof AvatarSessionResponse>;

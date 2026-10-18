@@ -22,7 +22,13 @@ import {
   type TrackChange,
 } from './capture';
 import { BARGE_SUSTAIN_MS, BARGE_WORD_SUSTAIN_MS, Endpointer, VoiceRun, floorWords } from './endpointing';
-import { SpeechPlayer, type PlayerAudio, type SpeechFetchResult, type SpeechUnitToPlay } from './playback';
+import {
+  SpeechPlayer,
+  type FaceRenderer,
+  type PlayerAudio,
+  type SpeechFetchResult,
+  type SpeechUnitToPlay,
+} from './playback';
 import { IDLE_CALL, type CallEnded, type CallSnapshot, type TalkMode, type TypedReason } from './call-state';
 import { openingText, speakableSentences } from './spoken-text';
 import { TranscribeStream, type TranscribeHandlers, type WebSocketFactory } from './transcribe';
@@ -201,6 +207,11 @@ export class CallEngine {
 
   private context: CallAudioContext | null = null;
   private player: SpeechPlayer | null = null;
+  /** The face that renders the call's audio (voicing `audio`), or null: the speakers. */
+  private face: FaceRenderer | null = null;
+  /** Whether the call's vendor face is shown (reported in heartbeats, so a dropped face stops billing). */
+  private faceShown: boolean | null = null;
+  private readonly faceStopListeners = new Set<() => void>();
   private capture: MicCapture | null = null;
   private stt: TranscribeStream | null = null;
   private grant: SttGrant | null = null;
@@ -268,6 +279,32 @@ export class CallEngine {
     this.speakListeners.add(listener);
     return () => {
       this.speakListeners.delete(listener);
+    };
+  }
+
+  /**
+   * A vendor face that renders the call's validated audio itself, lip-synced (voicing `audio`), or null to play
+   * through the speakers again (the face dropped, the stage closed). The call's own checks, signatures,
+   * barge-in and heard-units accounting are unchanged: the face only receives audio this call fetched.
+   */
+  attachFace(face: FaceRenderer | null): void {
+    this.face = face;
+    this.player?.setFace(face);
+  }
+
+  /**
+   * Whether the call's vendor face is on screen (`null`: the call has none). Heartbeats report it, so the server
+   * ends a face the founder no longer sees.
+   */
+  setFaceShown(shown: boolean | null): void {
+    this.faceShown = shown;
+  }
+
+  /** The server said the face has to go (faces switched off, likeness withdrawn, minutes used up). */
+  onFaceStop(listener: () => void): () => void {
+    this.faceStopListeners.add(listener);
+    return () => {
+      this.faceStopListeners.delete(listener);
     };
   }
 
@@ -1208,6 +1245,7 @@ export class CallEngine {
         },
       },
     );
+    player.setFace(this.face);
     return player;
   }
 
@@ -1229,10 +1267,12 @@ export class CallEngine {
       const result = await this.deps.api.heartbeat(call.id, {
         state: this.callState(),
         micOpenSeconds: this.micOpenSeconds(),
+        ...(this.faceShown === null ? {} : { face: this.faceShown ? 'live' : 'off' }),
       });
       if (epoch !== this.epoch) return;
       this.missedHeartbeats = 0;
       this.set({ remaining: { seconds: result.remainingSeconds, at: this.deps.clock.now() } });
+      if (result.face === 'stop') for (const listener of [...this.faceStopListeners]) listener();
       if (result.action === 'terminate') void this.end(result.reason ?? 'disabled');
     } catch {
       if (epoch !== this.epoch) return;

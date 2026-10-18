@@ -22,7 +22,9 @@ import {
   UpdateEmbodimentRequest,
   UpdatePersonaKnowledgeRequest,
   UpdateSettingsRequest,
+  UpdateTwinMediaRequest,
   UpsertResourceRequest,
+  WithdrawConsentScopeRequest,
 } from '@foundry/contracts';
 import { type Core, ResourceFilter, UpdateResourceRequest } from '@foundry/core';
 
@@ -113,6 +115,22 @@ export function registerStudioRoutes(r: RouteBuilder, core: Core, options: Studi
   // Revoking suspends every persona that relies on the consent.
   r.post('/consents/:id/revoke', async (c, ctx) =>
     c.json(await core.personas.revokeConsent(ctx, pathParam(c, 'id'))),
+  );
+  // Withdrawing one scope (likeness, voice, first person) moves its personas to a narrower copy; none is suspended.
+  r.post('/consents/:id/withdraw-scope', async (c, ctx) =>
+    c.json(await core.twin.withdrawScope(ctx, pathParam(c, 'id'), jsonBody(c, WithdrawConsentScopeRequest))),
+  );
+  // The digital twin: the persona's vendor face and cloned voice, each under its consent scope.
+  r.get('/personas/:id/twin', async (c, ctx) => c.json(await core.twin.get(ctx, pathParam(c, 'id'))));
+  r.patch('/personas/:id/twin/:kind', async (c, ctx) =>
+    c.json(
+      await core.twin.setMedia(
+        ctx,
+        pathParam(c, 'id'),
+        pathParam(c, 'kind'),
+        jsonBody(c, UpdateTwinMediaRequest),
+      ),
+    ),
   );
   r.get('/personas/:id/embodiment', async (c, ctx) =>
     c.json(await core.personas.getEmbodiment(ctx, pathParam(c, 'id'))),

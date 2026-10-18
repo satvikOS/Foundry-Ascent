@@ -19,8 +19,8 @@ export const CONSENT_ASSETS: readonly {
   },
   { value: 'style', label: 'Style', description: 'How the EIR talks.' },
   { value: 'cases', label: 'Cases', description: 'Examples from the EIR’s own experience.' },
-  { value: 'voice', label: 'Voice', description: 'A synthetic voice on calls.' },
-  { value: 'likeness', label: 'Likeness', description: 'A portrait as the vEIR’s face.' },
+  { value: 'voice', label: 'Voice', description: 'Their voice on calls, including a cloned voice.' },
+  { value: 'likeness', label: 'Likeness', description: 'Their face: a portrait, and a video face on calls.' },
   {
     value: 'first_person',
     label: 'First-person twin',

@@ -781,6 +781,20 @@ export const PlatformSettingsView = z.object({
   streamingEnabled: z.boolean().optional(),
   /** Kill switch for voice calls (new calls refused, live calls end at the next heartbeat). Additive. */
   callsEnabled: z.boolean().optional(),
+  /**
+   * The vEIR's video face on calls (a vendor avatar of the EIR, under likeness consent). Off: every call shows
+   * the presence, and a live face ends at the next heartbeat. Additive (absent: off).
+   */
+  facesEnabled: z.boolean().optional(),
+  /**
+   * The EIR's cloned voice on calls (under voice consent). Off: calls speak with the persona's stock voice.
+   * Additive (absent: off).
+   */
+  clonedVoiceEnabled: z.boolean().optional(),
+  /** Video minutes (a face on calls) one person may use per calendar month (UTC). Additive. */
+  faceMinutesPerPrincipalMonth: z.number().int().min(0).max(10_000).optional(),
+  /** Video minutes one call may use (the vendor session's own limit). Additive. */
+  faceMinutesPerCall: z.number().int().min(1).max(240).optional(),
 });
 export type PlatformSettingsView = z.infer<typeof PlatformSettingsView>;
 export const UpdateSettingsRequest = PlatformSettingsView.partial();

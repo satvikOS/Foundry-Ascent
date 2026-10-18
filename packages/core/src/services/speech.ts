@@ -1,6 +1,6 @@
 import { CRISIS_SPOKEN_MESSAGE } from '@foundry/ai';
 import { type PlatformSettingsView, SpeechRequest } from '@foundry/contracts';
-import { auditRepo, callsRepo, personasRepo, sessionsRepo, settingsRepo } from '@foundry/db';
+import { auditRepo, callsRepo, personasRepo, sessionsRepo, settingsRepo, twinRepo } from '@foundry/db';
 import { type z } from 'zod';
 
 import { type PlatformKeyCache } from '../auth/keys.js';
@@ -10,14 +10,106 @@ import { DomainError, fail, parseInput } from '../errors.js';
 import { requireId, type AuditEvent, type Kit, type RequestScope } from '../internal/kit.js';
 import { enforceSpendCaps, readSpendState } from '../orchestrator/guards.js';
 import { secondsUntilUtcMidnight } from '../orchestrator/sampling.js';
-import { verifySpeechUnit } from '../orchestrator/speech-units.js';
-import { SpeechSynthesisError, type SynthesizedSpeech } from '../ports.js';
+import {
+  FACE_SAMPLE_RATE,
+  pcmToWav,
+  readAll,
+  resamplePcm16,
+  signFaceAudio,
+  wholeSamples,
+} from '../orchestrator/face-audio.js';
+import { verifiedSpeechUnit, verifySpeechUnit } from '../orchestrator/speech-units.js';
+import {
+  SpeechSynthesisError,
+  type SynthesizedSpeech,
+  type VerifiedSpeechUnit,
+  type VoiceProvider,
+} from '../ports.js';
 import { refusalError, timeLimitRefusal } from './call-admission.js';
 import { CALL_LIMITS, type CallCaps, callSecondsToday, callTimeLeft, speechBudget } from './call-usage.js';
-import { voiceApproved } from './calls.js';
+import { callCanSpeak, voiceApproved } from './calls.js';
+import { voiceCostUsd } from './media-vendors.js';
 import { isCrisisMessage, speakableRunSpan, speakableText } from './spoken-text.js';
 import { observedAudio } from './speech-audio.js';
 import { DEFAULT_SPEECH_VOICE, speechCostUsd, speechEngines } from './voices.js';
+
+/**
+ * How one unit is voiced: the EIR's cloned voice (a signed unit of a call that started with it, while cloned
+ * voices are on and the voice is ready under voice consent) or an Amazon Polly voice.
+ */
+export type SpokenVoice =
+  | { readonly kind: 'clone'; readonly provider: VoiceProvider; readonly ref: string }
+  | { readonly kind: 'polly'; readonly voiceId: string };
+
+/**
+ * The voice of a planned unit (pure). The clone speaks only validated, signed words (`verified`), never the crisis
+ * line, and only in a call that started with it; otherwise the call's stock voice, or the platform voice when that
+ * call's clone was withdrawn and its stock voice is the EIR's own (no consent left): never someone else's voice.
+ */
+export function chooseVoice(args: {
+  readonly call: Pick<callsRepo.CallRecord, 'voiceId' | 'voiceVendor'>;
+  readonly persona: Parameters<typeof voiceApproved>[1];
+  readonly assets: readonly string[];
+  readonly clonedVoiceEnabled: boolean;
+  readonly provider: VoiceProvider | undefined;
+  readonly twinVoice: { readonly ref: string } | null;
+  readonly verified: boolean;
+  readonly crisis: boolean;
+}): SpokenVoice {
+  const { call, provider } = args;
+  if (
+    !args.crisis &&
+    args.verified &&
+    args.clonedVoiceEnabled &&
+    provider?.id === call.voiceVendor &&
+    args.twinVoice !== null
+  ) {
+    return { kind: 'clone', provider, ref: args.twinVoice.ref };
+  }
+  return {
+    kind: 'polly',
+    voiceId: voiceApproved(call.voiceId, args.persona, args.assets) ? call.voiceId : DEFAULT_SPEECH_VOICE,
+  };
+}
+
+/** The most raw PCM a unit may come back as (45 s at 24 kHz with room to spare). */
+const MAX_FACE_PCM_BYTES = 4 * 1024 * 1024;
+
+/** How long a cloned voice that failed is left alone: its units take the stock voice meanwhile. */
+export const CLONE_REST_MS = 60_000;
+
+/**
+ * Cloned voices that failed recently (in this container), so that during a vendor outage every unit does not
+ * wait for the clone to fail again (up to its timeout) before the stock voice speaks it. Keyed by vendor and
+ * voice; times are epoch milliseconds.
+ */
+export class CloneRest {
+  readonly #until = new Map<string, number>();
+
+  constructor(private readonly restMs: number = CLONE_REST_MS) {}
+
+  /** Whether `key` failed less than the rest period ago. */
+  resting(key: string, now: number): boolean {
+    const until = this.#until.get(key);
+    if (until === undefined) return false;
+    if (now < until) return true;
+    this.#until.delete(key);
+    return false;
+  }
+
+  /** Records a failure of `key` at `now`. */
+  failed(key: string, now: number): void {
+    if (this.#until.size >= 1_000) this.#until.clear();
+    this.#until.set(key, now + this.restMs);
+  }
+}
+
+/** What spoke a unit: the audio, the voice that made it, and its whole PCM when it was read for the face. */
+interface Voiced {
+  readonly speech: SynthesizedSpeech;
+  readonly voice: SpokenVoice;
+  readonly pcm: Uint8Array | null;
+}
 
 /**
  * Text-to-speech for calls (`POST /speech`). Calls speak only validated text:
@@ -69,6 +161,17 @@ interface SpeechPlan {
   readonly objectType: 'turn' | 'call';
   readonly objectId: string;
   readonly crisis: boolean;
+  /** How it is voiced (crisis support: always a Polly voice). */
+  readonly voice: SpokenVoice;
+  /**
+   * The stock voice that speaks instead when the cloned voice fails or is resting: the call's own while its voice
+   * is approved, else the platform voice (never someone else's).
+   */
+  readonly stockVoiceId: string;
+  /** The signed unit (or intro) whose signature verified; null for stored-reply runs and crisis support. */
+  readonly verified: VerifiedSpeechUnit | null;
+  /** The call's live face, when this unit may be shown on it (a verified unit; faces on; likeness in force). */
+  readonly face: { readonly sessionRef: string } | null;
 }
 
 type SpeechRefusal = Exclude<callsRepo.SpeechReservation, { ok: true }>['reason'];
@@ -105,8 +208,140 @@ export function speechRefusal(reason: SpeechRefusal, crisis: boolean, now: Date)
   }
 }
 
+const NO_TWIN: twinRepo.PersonaTwin = { face: null, voice: null };
+
+function streamOf(bytes: Uint8Array): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(bytes);
+      controller.close();
+    },
+  });
+}
+
 export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechService {
   const { logger } = kit.deps;
+
+  /** Whether something can voice the plan here (the clone, or Amazon Polly). */
+  function voiceAvailable(plan: SpeechPlan): boolean {
+    return plan.voice.kind === 'clone' || kit.deps.speech !== undefined;
+  }
+
+  /**
+   * The call's live face, when a unit may be shown on it now: faces on, the provider that started it still wired,
+   * and (for a real likeness) the persona's face ready under likeness consent.
+   */
+  async function liveFaceFor(
+    callId: string,
+    now: { readonly facesEnabled: boolean; readonly twinFace: { readonly ref: string } | null },
+  ): Promise<{ readonly sessionRef: string } | null> {
+    const provider = kit.deps.embodiment;
+    if (provider === undefined || !now.facesEnabled || (provider.likeness && now.twinFace === null))
+      return null;
+    const face = await kit.system((sx) => twinRepo.getCallFace(sx, callId), { transaction: false });
+    return face?.endedAt === null && face.vendor === provider.id ? { sessionRef: face.sessionRef } : null;
+  }
+
+  const cloneRest = new CloneRest();
+
+  /** Synthesizes the plan's words with `voice`; for the face, reads the PCM whole (a clone's failure included). */
+  async function synthesizeWith(
+    ctx: RequestContext,
+    plan: SpeechPlan,
+    voice: SpokenVoice,
+    signal: AbortSignal | undefined,
+  ): Promise<Voiced> {
+    const forFace = plan.face !== null;
+    if (voice.kind === 'clone') {
+      // The clone is handed only a unit this request verified (chooseVoice never picks it otherwise).
+      if (plan.verified === null)
+        throw new SpeechSynthesisError('the cloned voice speaks only verified units');
+      const speech = await voice.provider.synthesize({
+        unit: plan.verified,
+        voiceRef: voice.ref,
+        format: forFace ? 'pcm_24000' : 'mp3',
+        requestId: ctx.requestId,
+        ...(signal === undefined ? {} : { signal }),
+      });
+      if (!forFace || speech.contentType !== 'audio/pcm') return { speech, voice, pcm: null };
+      try {
+        return { speech, voice, pcm: wholeSamples(await readAll(speech.audio, MAX_FACE_PCM_BYTES)) };
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') throw err;
+        throw new SpeechSynthesisError('cloned voice audio interrupted');
+      }
+    }
+    const synthesizer = kit.deps.speech;
+    if (synthesizer === undefined) throw speechUnavailable();
+    const speech = await synthesizer.synthesize({
+      text: plan.text,
+      voiceId: voice.voiceId,
+      engines: speechEngines(voice.voiceId),
+      requestId: ctx.requestId,
+      format: forFace ? 'pcm_16000' : 'mp3',
+      ...(signal === undefined ? {} : { signal }),
+    });
+    if (!forFace || speech.contentType !== 'audio/pcm') return { speech, voice, pcm: null };
+    return { speech, voice, pcm: wholeSamples(await readAll(speech.audio, MAX_FACE_PCM_BYTES)) };
+  }
+
+  /**
+   * Synthesizes a plan with its voice. A cloned voice that fails (vendor error, timeout, missing key) is not the
+   * end of the unit: the same validated words are spoken in the stock voice within the same reservation, and that
+   * clone rests for {@link CLONE_REST_MS} (its next units go straight to the stock voice). For a unit the face may
+   * show, the audio is 24 kHz PCM in a WAV container, with its face-audio manifest (the browser plays the WAV
+   * itself whenever the face cannot render it). Returns the voice that actually spoke, which is what is billed.
+   */
+  async function synthesizePlan(
+    ctx: RequestContext,
+    plan: SpeechPlan,
+    signal: AbortSignal | undefined,
+  ): Promise<{ readonly speech: SynthesizedSpeech; readonly voice: SpokenVoice }> {
+    const stock: SpokenVoice = { kind: 'polly', voiceId: plan.stockVoiceId };
+    const canFallBack = kit.deps.speech !== undefined;
+    const restKey = (voice: SpokenVoice) =>
+      voice.kind === 'clone' ? `${voice.provider.id}:${voice.ref}` : '';
+    let voice = plan.voice;
+    if (voice.kind === 'clone' && canFallBack && cloneRest.resting(restKey(voice), kit.now().getTime())) {
+      voice = stock;
+    }
+    let voiced: Voiced;
+    try {
+      voiced = await synthesizeWith(ctx, plan, voice, signal);
+    } catch (err) {
+      if (voice.kind !== 'clone' || !canFallBack || !(err instanceof SpeechSynthesisError)) throw err;
+      cloneRest.failed(restKey(voice), kit.now().getTime());
+      logger.warn('speech.clone_failed', {
+        requestId: ctx.requestId,
+        callId: plan.callId,
+        provider: voice.provider.id,
+        error: err.name,
+      });
+      voiced = await synthesizeWith(ctx, plan, stock, signal);
+    }
+    const { speech } = voiced;
+    if (plan.face === null || voiced.pcm === null) return { speech, voice: voiced.voice };
+    const pcm = resamplePcm16(
+      voiced.pcm,
+      speech.sampleRateHertz ?? (voiced.voice.kind === 'clone' ? FACE_SAMPLE_RATE : 16_000),
+      FACE_SAMPLE_RATE,
+    );
+    const manifest = signFaceAudio(
+      await keys.signingKey(),
+      { callId: plan.callId, sessionRef: plan.face.sessionRef, unit: callsRepo.speechUnitKey(plan.unit) },
+      pcm,
+    );
+    return {
+      voice: voiced.voice,
+      speech: {
+        ...speech,
+        audio: streamOf(pcmToWav(pcm, FACE_SAMPLE_RATE)),
+        contentType: 'audio/wav',
+        sampleRateHertz: FACE_SAMPLE_RATE,
+        ...(manifest === null ? {} : { faceManifest: manifest }),
+      },
+    };
+  }
 
   /** The validation error for text that is not this call's validated words. */
   function notValidatedText(reason: string): DomainError {
@@ -181,10 +416,10 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
           if (!reservation.ok) refused = reservation.reason;
         }
         // Thrown inside the transaction, so nothing stays reserved for a synthesis that will not happen.
-        if (refused === null && kit.deps.speech === undefined) throw speechUnavailable();
+        if (refused === null && !voiceAvailable(plan)) throw speechUnavailable();
         return refused;
       },
-      kit.deps.speech === undefined ? {} : { transaction: false },
+      voiceAvailable(plan) ? { transaction: false } : {},
     );
     if (refusal === null) return;
     const error = speechRefusal(refusal, plan.crisis, kit.now());
@@ -258,6 +493,7 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
       call !== null && persona !== null && voiceApproved(call.voiceId, persona, assets)
         ? call.voiceId
         : DEFAULT_SPEECH_VOICE;
+    // Never the cloned voice and never the face: crisis resources come in a stock voice, from no human-looking face.
     return {
       ventureId: turn.ventureId,
       callId: turn.callId,
@@ -268,6 +504,10 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
       objectType: 'turn',
       objectId: turn.turnId,
       crisis: true,
+      voice: { kind: 'polly', voiceId },
+      stockVoiceId: voiceId,
+      verified: null,
+      face: null,
     };
   }
 
@@ -293,13 +533,9 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
         ]);
       }
       const signed = input.sig !== undefined;
-      const signatureValid =
-        input.sig !== undefined &&
-        verifySpeechUnit(
-          await keys.verificationKeys(),
-          { sessionId, turnId, seq: input.seq ?? 0, text: input.text },
-          input.sig,
-        );
+      const verificationKeys = await keys.verificationKeys();
+      const claims = { sessionId, turnId, seq: input.seq ?? 0, text: input.text };
+      const signatureValid = input.sig !== undefined && verifySpeechUnit(verificationKeys, claims, input.sig);
       stage('verifiedMs');
 
       // The platform's spend today is read alongside the checks below (it needs none of them), and compared
@@ -311,12 +547,15 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
       // while the conversation's checks run in another (neither waits for the other: a Data API transaction
       // runs one statement at a time). Every check is then applied in the order it always had, so a refused
       // request is refused for the same reason as before.
+      const twinWired = kit.deps.clonedVoice !== undefined || kit.deps.embodiment !== undefined;
       const callSide = kit.inRequest(ctx, async ({ tx }) => {
         const call = await callsRepo.getLiveCallOf(tx, ctx.principalId);
         if (call === null) return null;
         const persona = await personasRepo.getPersona(tx, call.personaId);
         const assets = persona === null ? [] : await personasRepo.personaConsentAssets(tx, persona.id);
-        return { call, persona, assets, usedSecondsToday: await callSecondsToday(tx, ctx.principalId) };
+        // The persona's face and cloned voice, ready under their consent scopes right now (withdrawn: gone).
+        const twin = twinWired && persona !== null ? await twinRepo.personaTwin(tx, persona.id) : NO_TWIN;
+        return { call, persona, assets, twin, usedSecondsToday: await callSecondsToday(tx, ctx.principalId) };
       });
       callSide.catch(() => undefined); // awaited below unless a check refuses first
 
@@ -365,7 +604,7 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
         if (
           persona === null ||
           active.persona.id !== call.personaId ||
-          !voiceApproved(call.voiceId, persona, assets)
+          !callCanSpeak(call, persona, assets)
         ) {
           throw new DomainError('persona_suspended', 'This vEIR cannot speak right now.', {
             reason: 'voice_not_approved',
@@ -401,16 +640,39 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
           }
         }
         if (signed && !signatureValid) return refuseText(ctx, session.ventureId, turnId, 'signature_invalid');
+        // Only a signed unit whose signature verified (the validators approved its words) may reach the cloned
+        // voice or the face; a passage of a stored reply is spoken in the stock voice, on the call's speakers.
+        const verified = signed ? verifiedSpeechUnit(verificationKeys, claims, input.sig) : null;
+        const voice = chooseVoice({
+          call,
+          persona,
+          assets,
+          clonedVoiceEnabled: settings.clonedVoiceEnabled,
+          provider: kit.deps.clonedVoice,
+          twinVoice: side.twin.voice,
+          verified: verified !== null,
+          crisis: false,
+        });
         plan = {
           ventureId: session.ventureId,
           callId: call.id,
-          voiceId: call.voiceId,
+          voiceId: voice.kind === 'polly' ? voice.voiceId : call.voiceId,
           text,
           unit,
           settings,
           objectType: turnId === null ? 'call' : 'turn',
           objectId: turnId ?? call.id,
           crisis: false,
+          voice,
+          stockVoiceId: voiceApproved(call.voiceId, persona, assets) ? call.voiceId : DEFAULT_SPEECH_VOICE,
+          verified,
+          face:
+            verified === null
+              ? null
+              : await liveFaceFor(call.id, {
+                  facesEnabled: settings.facesEnabled,
+                  twinFace: side.twin.face,
+                }),
         };
       }
 
@@ -430,28 +692,22 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
       const reserved = plan.text.length;
       await reserve(ctx, plan, reserved);
       stage('reservedMs');
-      const synthesizer = kit.deps.speech;
-      if (synthesizer === undefined) throw speechUnavailable();
-
       let speech: SynthesizedSpeech;
+      let spokeWith: SpokenVoice;
       try {
-        speech = await synthesizer.synthesize({
-          text: plan.text,
-          voiceId: plan.voiceId,
-          engines: speechEngines(plan.voiceId),
-          requestId: ctx.requestId,
-          ...(options.signal === undefined ? {} : { signal: options.signal }),
-        });
+        ({ speech, voice: spokeWith } = await synthesizePlan(ctx, plan, options.signal));
         stage('synthesizedMs');
       } catch (err) {
         logger.warn('speech.synthesis_failed', {
           requestId: ctx.requestId,
           callId: plan.callId,
+          voice: plan.voice.kind,
           error: err instanceof Error ? err.name : 'unknown',
         });
         // Nothing was billed (the service bills nothing for a request it refused): the play and the characters
         // go back, so the client may ask again.
         await settle(ctx, plan, reserved, null);
+        if (err instanceof DomainError) throw err;
         if (err instanceof SpeechSynthesisError || (err instanceof Error && err.name === 'AbortError')) {
           throw new DomainError(
             'model_unavailable',
@@ -478,11 +734,20 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
           ventureId: plan.ventureId,
           purpose: 'speech',
           attempts: [
-            {
-              modelId: `polly:${billed.engine}:${billed.voiceId}`,
-              usage: { inputTokens: billed.characters, outputTokens: 0 },
-              costUsd: speechCostUsd(billed.characters, billed.engine),
-            },
+            spokeWith.kind === 'clone'
+              ? {
+                  modelId: `${spokeWith.provider.id}:${spokeWith.provider.model}`,
+                  usage: { inputTokens: billed.characters, outputTokens: 0 },
+                  costUsd: voiceCostUsd(billed.characters, spokeWith.provider.usdPer1kCharacters),
+                }
+              : {
+                  modelId: `polly:${billed.engine}:${billed.voiceId}`,
+                  usage: { inputTokens: billed.characters, outputTokens: 0 },
+                  costUsd: speechCostUsd(
+                    billed.characters,
+                    billed.engine === 'clone' ? 'neural' : billed.engine,
+                  ),
+                },
           ],
         }),
         settle(ctx, plan, reserved, billed.characters),
@@ -503,8 +768,10 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
                   callId: plan.callId,
                   characters: billed.characters,
                   engine: billed.engine,
-                  voiceId: billed.voiceId,
+                  // A cloned voice is named by its vendor (its id at the vendor is the EIR's, not needed here).
+                  voiceId: spokeWith.kind === 'clone' ? `${spokeWith.provider.id}:clone` : billed.voiceId,
                   signed,
+                  face: billed.faceManifest !== undefined,
                 },
               }),
             { transaction: false },

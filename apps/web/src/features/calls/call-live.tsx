@@ -12,6 +12,7 @@ import { CallCaptions } from './call-captions';
 import { CallDock, HoldToTalk } from './call-dock';
 import { CallNameTag, CallStage } from './call-stage';
 import { storeTalkMode, useAnnounceCaptions, useCaptionSize, useCaptionsPreference } from './preferences';
+import type { CallFaceController } from './use-call-face';
 import type { CallVeir } from './use-call-veir';
 
 /** The words under the presence: what the call is doing, as text (never colour or motion alone). */
@@ -68,6 +69,8 @@ interface CallLiveProps {
   snapshot: CallSnapshot;
   veir: CallVeir;
   onSwitchToChat: () => void;
+  /** The call's face (null: the presence only). */
+  face?: CallFaceController | null;
 }
 
 /**
@@ -76,7 +79,7 @@ interface CallLiveProps {
  * line and the controls. No disclaimer line: the person read what a vEIR is once, and the badge keeps it a tap
  * away.
  */
-export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: CallLiveProps) {
+export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat, face = null }: CallLiveProps) {
   const [captions, setCaptions] = useCaptionsPreference();
   const [captionSize] = useCaptionSize();
   const [announceCaptions] = useAnnounceCaptions();
@@ -185,6 +188,9 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat }: Cal
             engine={engine}
             state={engine.avatarState()}
             nameTag={<CallNameTag veir={veir} speaking={speaking} headingRef={nameRef} />}
+            ventureId={snapshot.ventureId}
+            callId={live ? (snapshot.call?.id ?? null) : null}
+            face={face}
             className="h-[min(20rem,34dvh)] sm:h-[min(24rem,40dvh)]"
           />
         )}

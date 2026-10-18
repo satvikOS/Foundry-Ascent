@@ -7,13 +7,19 @@ import {
   type MockGenerateContext,
   type MockModelGatewayOptions,
 } from '@foundry/ai';
-import { notebooksRepo, p, principalsRepo, type SeedResult, type SeededVenture } from '@foundry/db';
+import { type Db, notebooksRepo, p, principalsRepo, type SeedResult, type SeededVenture } from '@foundry/db';
 import { createTestDatabase, type TestDatabase } from '@foundry/db/testing';
 
 import { coreConfig, type CoreConfig } from '../config.js';
 import { createRequestContext, type RequestContext } from '../context.js';
 import { createCore, type Core } from '../core.js';
-import { type Clock, type SpeechSynthesizer, type SttGrantIssuer } from '../ports.js';
+import {
+  type Clock,
+  type EmbodimentProvider,
+  type SpeechSynthesizer,
+  type SttGrantIssuer,
+  type VoiceProvider,
+} from '../ports.js';
 import { MemoryJobQueue, MemoryObjectStore, RecordingLogger, Utf8TextExtractor } from './fakes.js';
 
 type ConfigOverrides = Parameters<typeof coreConfig>[0];
@@ -27,6 +33,10 @@ export interface CoreHarnessOptions {
   readonly speech?: SpeechSynthesizer;
   /** Speech-to-text grants for calls (absent: calls start without one). */
   readonly sttGrants?: SttGrantIssuer;
+  /** Vendor faces for calls (absent: every call keeps the built-in presence). */
+  readonly embodiment?: EmbodimentProvider;
+  /** The EIRs' cloned voices (absent: calls speak with stock voices). */
+  readonly clonedVoice?: VoiceProvider;
 }
 
 /**
@@ -122,6 +132,14 @@ export interface CoreHarness {
   ctxFor(principalId: string, tenantId?: string): Promise<RequestContext>;
   /** A second core over the same database with different config (e.g. tight limits). */
   withConfig(overrides: ConfigOverrides): Core;
+  /**
+   * A second core over the same database with other call ports (speech, face, cloned voice); `db` wraps the
+   * database it uses (e.g. to make one query fail).
+   */
+  withPorts(
+    ports: Pick<CoreHarnessOptions, 'speech' | 'sttGrants' | 'embodiment' | 'clonedVoice'>,
+    options?: { readonly db?: (db: Db) => Db },
+  ): Core;
   cleanup(): Promise<void>;
 }
 
@@ -143,9 +161,9 @@ export async function createCoreHarness(options: CoreHarnessOptions = {}): Promi
   const objectStore = new MemoryObjectStore();
   const jobQueue = new MemoryJobQueue();
   const logger = new RecordingLogger();
-  const build = (cfg: CoreConfig): Core =>
+  const build = (cfg: CoreConfig, ports: CoreHarnessOptions = options, db: Db = t.db): Core =>
     createCore({
-      db: t.db,
+      db,
       gateway,
       config: cfg,
       objectStore,
@@ -154,8 +172,10 @@ export async function createCoreHarness(options: CoreHarnessOptions = {}): Promi
       logger,
       ...(options.random ? { random: options.random } : {}),
       ...(options.clock ? { clock: options.clock } : {}),
-      ...(options.speech ? { speech: options.speech } : {}),
-      ...(options.sttGrants ? { sttGrants: options.sttGrants } : {}),
+      ...(ports.speech ? { speech: ports.speech } : {}),
+      ...(ports.sttGrants ? { sttGrants: ports.sttGrants } : {}),
+      ...(ports.embodiment ? { embodiment: ports.embodiment } : {}),
+      ...(ports.clonedVoice ? { clonedVoice: ports.clonedVoice } : {}),
     });
   const core = build(config);
   const venture = (key: string): SeededVenture =>
@@ -203,6 +223,7 @@ export async function createCoreHarness(options: CoreHarnessOptions = {}): Promi
       });
     },
     withConfig: (overrides) => build(coreConfig({ appEnv: 'test', ...options.config, ...overrides })),
+    withPorts: (ports, wrap) => build(config, ports, wrap?.db ? wrap.db(t.db) : t.db),
     cleanup: () => t.cleanup(),
   };
 }

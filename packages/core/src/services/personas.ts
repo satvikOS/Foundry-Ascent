@@ -73,6 +73,27 @@ function veirNameFor(eirDisplayName: string): string {
   return `${eirDisplayName.trim().split(/\s+/)[0] ?? eirDisplayName}'s vEIR`;
 }
 
+/** Program lead of the tenant, or the EIR whose profile the persona is built from (audited when refused). */
+export async function requirePersonaCurator(
+  scope: RequestScope,
+  persona: personasRepo.PersonaRecord,
+): Promise<'program_lead' | 'linked_eir'> {
+  const roles = await loadPrincipalRoles(scope.tx, scope.ctx);
+  if (hasAnyRole(roles, ['program_lead'])) return 'program_lead';
+  if (persona.eirProfileId !== null && hasAnyRole(roles, ['eir'])) {
+    const profile = await eirRepo.getEirProfile(scope.tx, persona.eirProfileId);
+    if (profile?.principalId === scope.ctx.principalId) return 'linked_eir';
+  }
+  scope.deferAudit({
+    action: 'authz.denied',
+    outcome: 'denied',
+    objectType: 'persona',
+    objectId: persona.id,
+    policyReason: 'requires_program_lead_or_linked_eir',
+  });
+  throw fail.forbidden('requires_program_lead_or_linked_eir');
+}
+
 export function createPersonaManagementService(
   kit: Kit,
   directory: DirectoryCache,
@@ -83,26 +104,7 @@ export function createPersonaManagementService(
     return persona;
   }
 
-  /** Program lead of the tenant, or the EIR whose profile the persona is built from. */
-  async function requireCurator(
-    scope: RequestScope,
-    persona: personasRepo.PersonaRecord,
-  ): Promise<'program_lead' | 'linked_eir'> {
-    const roles = await loadPrincipalRoles(scope.tx, scope.ctx);
-    if (hasAnyRole(roles, ['program_lead'])) return 'program_lead';
-    if (persona.eirProfileId !== null && hasAnyRole(roles, ['eir'])) {
-      const profile = await eirRepo.getEirProfile(scope.tx, persona.eirProfileId);
-      if (profile?.principalId === scope.ctx.principalId) return 'linked_eir';
-    }
-    scope.deferAudit({
-      action: 'authz.denied',
-      outcome: 'denied',
-      objectType: 'persona',
-      objectId: persona.id,
-      policyReason: 'requires_program_lead_or_linked_eir',
-    });
-    throw fail.forbidden('requires_program_lead_or_linked_eir');
-  }
+  const requireCurator = requirePersonaCurator;
 
   async function personaView(scope: RequestScope, personaId: string): Promise<PersonaView> {
     const view = await personasRepo.getPersonaView(scope.tx, personaId);

@@ -110,6 +110,9 @@ Region `us-east-1`, account taken from the deploying credentials. Every IAM role
     `media-src … blob:` lets the call screen play the speech it fetched from `/api/v1/speech`. The
     microphone's AudioWorklet is a same-origin static file, which `script-src 'self'` covers.
     `'unsafe-inline'` in `style-src` is only for a `<style>` element Radix injects (`src/constructs/edge.ts`).
+    While `media.face.provider` is `heygen-liveavatar`, `connect-src` (and `media-src`) also name exactly the
+    origins in `media.face.csp` (the vendor room's LiveKit host); with no face wired the policy is unchanged and
+    the config refuses any such origin.
   - Lambda permissions for the distribution: `lambda:InvokeFunctionUrl` and (required since October 2025)
     `lambda:InvokeFunction` with `InvokedViaFunctionUrl: true`.
 - EventBridge Scheduler schedules that send a fixed message (from `lambda-contract.json`) to the jobs
@@ -208,6 +211,24 @@ an absent section means off.
 Changing any of them is a config change plus a normal deploy. The kill switch in the database
 (`ai_enabled`, plus `calls_enabled` for calls) is what stops calls and distillation at runtime; these keys
 are the infrastructure-level off switches (no permission, no schedule).
+
+### The vEIR's digital twin
+
+`config/production.json` → `media` (the face and cloned voice,
+[docs/runbooks/avatars.md](../../docs/runbooks/avatars.md)). Optional; absent means off, and it ships off.
+
+| Key                         | Production               | Effect                                                                                                                                       |
+| --------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `media.face.provider`       | `none`                   | `MEDIA_FACE_PROVIDER`; `heygen-liveavatar` wires the vendor face and lets the API role read `foundry-ascent/media/heygen` (only that secret) |
+| `media.face.sandbox`        | `false`                  | `MEDIA_FACE_SANDBOX`: LiveAvatar sandbox sessions (free, about a minute, the sandbox avatar) for the first live test                         |
+| `media.face.csp`            | `connect: [], media: []` | exact `wss://`/`https://` origins added to the CSP while a face is wired (no wildcard; empty with `none`; both schemes required when wired)  |
+| `media.voice.provider`      | `polly`                  | `MEDIA_VOICE_PROVIDER`; `elevenlabs` wires the cloned voices and lets the API role read `foundry-ascent/media/elevenlabs` (only that secret) |
+| `media.voice.model`         | `eleven_flash_v2_5`      | `MEDIA_VOICE_MODEL`                                                                                                                          |
+| `media.voice.zeroRetention` | `false`                  | `MEDIA_VOICE_ZERO_RETENTION`: asks ElevenLabs to keep nothing (Enterprise accounts only)                                                     |
+
+The secret names come from `packages/core/media-vendors.json` (`src/lib/media-vendors.ts`), the file the API
+reads them from. Wiring a vendor is a config change plus a normal deploy; using it still needs Admin › Settings
+(`faces_enabled`, `cloned_voice_enabled`, both off) and the persona's consent and media in the studio.
 
 ## Prerequisites
 

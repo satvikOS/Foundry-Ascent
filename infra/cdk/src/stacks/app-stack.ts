@@ -55,6 +55,7 @@ import {
   WORKER_TIMEOUT_SECONDS,
 } from '../lib/constants.js';
 import { environmentNames, LAMBDA_CONTRACT, type LambdaRole } from '../lib/lambda-contract.js';
+import { loadMediaVendorSecrets, secretArnPattern } from '../lib/media-vendors.js';
 import { migrationsChecksum } from '../lib/migrations.js';
 import { retentionDays } from '../lib/logs.js';
 import { SPEECH_VOICES } from '../lib/speech-voices.js';
@@ -158,6 +159,11 @@ export class AppStack extends Stack {
       HOME_TENANT_NAME: config.homeTenant.name,
       SPEECH_ENABLED: String(config.speech.enabled),
       SPEECH_ENGINE: config.speech.engine,
+      MEDIA_FACE_PROVIDER: config.media.face.provider,
+      MEDIA_FACE_SANDBOX: String(config.media.face.sandbox),
+      MEDIA_VOICE_PROVIDER: config.media.voice.provider,
+      MEDIA_VOICE_MODEL: config.media.voice.model,
+      MEDIA_VOICE_ZERO_RETENTION: String(config.media.voice.zeroRetention),
     };
     const environmentFor = (role: LambdaRole): Record<string, string> =>
       Object.fromEntries(
@@ -343,6 +349,24 @@ export class AppStack extends Stack {
       );
     }
 
+    // The vEIR's digital twin (docs/runbooks/avatars.md), API role only: read exactly the API key of each vendor the
+    // deployment wires (packages/core/media-vendors.json), nothing while none is. The secrets use the AWS managed
+    // key, so no KMS grant is needed; `-??????` is Secrets Manager's suffix of that one secret.
+    const mediaSecrets = loadMediaVendorSecrets();
+    const mediaSecretArns = [
+      ...(config.media.face.provider === 'heygen-liveavatar' ? [mediaSecrets.face] : []),
+      ...(config.media.voice.provider === 'elevenlabs' ? [mediaSecrets.voice] : []),
+    ].map((name) => secretArnPattern(Aws.PARTITION, config.region, Aws.ACCOUNT_ID, name));
+    if (mediaSecretArns.length > 0) {
+      this.api.role.addToPolicy(
+        new iam.PolicyStatement({
+          sid: 'MediaVendorKeys',
+          actions: ['secretsmanager:GetSecretValue'],
+          resources: mediaSecretArns,
+        }),
+      );
+    }
+
     const foundationModelAcks = (resourceArns: readonly string[]): NagAcknowledgment[] =>
       resourceArns
         .filter((arn) => arn.includes(':bedrock:*::foundation-model/'))
@@ -480,6 +504,7 @@ export class AppStack extends Stack {
     const securityHeaders = createSecurityHeadersPolicy(this, 'SecurityHeaders', {
       uploadOrigin: documentsUploadOrigin(props.documentsBucket.bucketName, this.region),
       speechToTextOrigin: speechToTextOrigin(config.region),
+      ...(config.media.face.provider === 'none' ? {} : { face: config.media.face.csp }),
     });
     const spaRewrite = createViewerRequestFunction(
       this,

@@ -78,6 +78,11 @@ export interface ContentSecurityPolicyOrigins {
   readonly uploadOrigin: string;
   /** Amazon Transcribe streaming (`speechToTextOrigin`). */
   readonly speechToTextOrigin: string;
+  /**
+   * The vEIR's video face (config `media.face.csp`): the exact origins of the vendor's room, only while a face
+   * provider is wired. Absent or empty: the policy is exactly as without faces.
+   */
+  readonly face?: { readonly connect: readonly string[]; readonly media: readonly string[] };
 }
 
 /**
@@ -95,19 +100,30 @@ export interface ContentSecurityPolicyOrigins {
  *   `/worklets/<name>.js` loads, while `blob:` and cross-origin modules are refused. Verified on
  *   2026-10-16 in Chromium 153, Firefox 155 and WebKit 26.6; no `worker-src` is needed.
  *
+ * The vEIR's video face (docs/runbooks/avatars.md), when a deployment wires one, adds exactly the vendor room's
+ * origins it is configured with (`media.face.csp`) and nothing while it does not. Its video arrives over WebRTC
+ * as a `MediaStream` (`srcObject`), which needs no `media-src` host; the speak channel never reaches the browser.
+ *
  * `style-src` keeps `'unsafe-inline'`: Radix's scroll lock injects a `<style>` element at runtime. The SPA
  * already ships that rule and sonner's styles in its own stylesheet, so removing `'unsafe-inline'` is a
  * one-line change once a browser pass over every page shows no violation.
  */
 export function contentSecurityPolicy(origins: ContentSecurityPolicyOrigins): string {
+  const faceConnect = origins.face?.connect ?? [];
+  const faceMedia = origins.face?.media ?? [];
+  for (const origin of [...faceConnect, ...faceMedia]) {
+    if (origin.includes('*') || !/^(wss|https):\/\/[^/\s;]+$/.test(origin)) {
+      throw new Error(`CSP face origins must be exact origins, not ${origin}`);
+    }
+  }
   return [
     "default-src 'self'",
     "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
-    "media-src 'self' blob:",
+    ['media-src', "'self'", 'blob:', ...faceMedia].join(' '),
     "font-src 'self' data:",
-    `connect-src 'self' ${origins.uploadOrigin} ${origins.speechToTextOrigin}`,
+    ['connect-src', "'self'", origins.uploadOrigin, origins.speechToTextOrigin, ...faceConnect].join(' '),
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",

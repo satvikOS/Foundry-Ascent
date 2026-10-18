@@ -304,6 +304,11 @@ describe('usage, idempotency, settings (system executor)', () => {
       // Seeded by migration 0006 (kill switches for streamed replies and calls).
       streamingEnabled: true,
       callsEnabled: true,
+      // Seeded by migration 0017 (the digital twin: off, 60 video minutes a month, 20 a call).
+      facesEnabled: false,
+      clonedVoiceEnabled: false,
+      faceMinutesPerPrincipalMonth: 60,
+      faceMinutesPerCall: 20,
     });
     const updated = await t.db.system((sx) =>
       settingsRepo.updatePlatformSettings(sx, { aiEnabled: false, dailyUsdCapGlobal: 3.5 }, seed.ownerId),

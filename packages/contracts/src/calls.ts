@@ -96,11 +96,21 @@ export const CallHeartbeatRequest = z.object({
     .int()
     .min(0)
     .max(24 * 3600),
+  /**
+   * The call's vendor face as the browser sees it: `live` (its video shows) or `off` (it dropped, or there is
+   * none). A face the browser no longer shows is ended on the server, so the vendor stops billing. Additive.
+   */
+  face: z.enum(['live', 'off']).optional(),
 });
 export const CallHeartbeatResponse = z.object({
   remainingSeconds: z.number().int().min(0),
   action: z.enum(['continue', 'terminate']),
   reason: CallEndReason.nullable(),
+  /**
+   * `stop`: the face has to go (faces switched off, likeness consent withdrawn, video minutes used up): the call
+   * goes on with the presence. Sent while the call has a face. Additive.
+   */
+  face: z.enum(['continue', 'stop']).optional(),
 });
 export type CallHeartbeatResponse = z.infer<typeof CallHeartbeatResponse>;
 

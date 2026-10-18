@@ -43,6 +43,21 @@ function fakeClient(outcomes: Record<string, Error | string>): {
 const input = { text: 'Rerun the map in exam weeks.', voiceId: 'Ruth', requestId: 'req-1' } as const;
 
 describe('PollySpeechSynthesizer', () => {
+  it('synthesizes 16 kHz PCM for a face', async () => {
+    const { client, sent } = fakeClient({ neural: 'pcm-bytes' });
+    const speech = await new PollySpeechSynthesizer({
+      region: 'us-east-1',
+      engine: 'neural',
+      client,
+    }).synthesize({
+      ...input,
+      engines: ['neural'],
+      format: 'pcm_16000',
+    });
+    expect(speech).toMatchObject({ contentType: 'audio/pcm', sampleRateHertz: 16_000, engine: 'neural' });
+    expect(sent[0]).toMatchObject({ OutputFormat: 'pcm', SampleRate: '16000' });
+  });
+
   it('synthesizes MP3 with the deployment engine first', async () => {
     const { client, sent } = fakeClient({ neural: 'neural-audio', generative: 'never-reached' });
     const speech = await new PollySpeechSynthesizer({

@@ -48,6 +48,7 @@ import {
   type ConsentFormValues,
 } from './consent-form';
 import { ConsentIndicator } from './consent-indicator';
+import { DigitalTwinSection } from './digital-twin-section';
 
 const STATUS_BADGE = {
   in_force: { label: 'In force', variant: 'success' },
@@ -372,6 +373,8 @@ export function ConsentTab({ persona }: { persona: PersonaView }) {
           </ul>
         </>
       )}
+
+      {persona.kind === 'eir_persona' ? <DigitalTwinSection persona={persona} /> : null}
 
       {canManage ? (
         <RecordConsentDialog

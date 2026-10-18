@@ -26,6 +26,10 @@ export const SETTING_KEYS = {
   dailyCallMinutesPerPrincipal: 'daily_call_minutes_per_principal',
   streamingEnabled: 'streaming_enabled',
   callsEnabled: 'calls_enabled',
+  facesEnabled: 'faces_enabled',
+  clonedVoiceEnabled: 'cloned_voice_enabled',
+  faceMinutesPerPrincipalMonth: 'face_minutes_per_principal_month',
+  faceMinutesPerCall: 'face_minutes_per_call',
 } as const satisfies Record<keyof PlatformSettingsValue, string>;
 
 /** Settings with every optional (additive) field present: what {@link getPlatformSettings} returns. */
@@ -36,6 +40,8 @@ export type ResolvedPlatformSettings = Required<PlatformSettingsValue>;
  * switch; AI spend is capped at $15 per UTC day for the platform and $1 per person; the upload quota defaults
  * are 20 documents and 50 MB per person per UTC day; calls last at most 30 minutes and one person may talk 60
  * minutes per UTC day. Streaming and calls are on unless switched off (the AI kill switch still stops both).
+ * The vEIR's video face and cloned voice (0017) are off until the program turns them on (fail closed), with 60
+ * video minutes per person per month and 20 per call.
  */
 export const DEFAULT_SETTINGS: ResolvedPlatformSettings = {
   aiEnabled: false,
@@ -50,6 +56,10 @@ export const DEFAULT_SETTINGS: ResolvedPlatformSettings = {
   dailyCallMinutesPerPrincipal: 60,
   streamingEnabled: true,
   callsEnabled: true,
+  facesEnabled: false,
+  clonedVoiceEnabled: false,
+  faceMinutesPerPrincipalMonth: 60,
+  faceMinutesPerCall: 20,
 };
 
 const Coerced = z.object({
@@ -65,6 +75,10 @@ const Coerced = z.object({
   dailyCallMinutesPerPrincipal: z.coerce.number().int(),
   streamingEnabled: z.union([z.boolean(), z.enum(['true', 'false']).transform((v) => v === 'true')]),
   callsEnabled: z.union([z.boolean(), z.enum(['true', 'false']).transform((v) => v === 'true')]),
+  facesEnabled: z.union([z.boolean(), z.enum(['true', 'false']).transform((v) => v === 'true')]),
+  clonedVoiceEnabled: z.union([z.boolean(), z.enum(['true', 'false']).transform((v) => v === 'true')]),
+  faceMinutesPerPrincipalMonth: z.coerce.number().int(),
+  faceMinutesPerCall: z.coerce.number().int(),
 });
 
 /** Current settings as the contract view (missing or malformed keys fall back to {@link DEFAULT_SETTINGS}). */

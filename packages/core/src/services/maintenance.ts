@@ -1,8 +1,9 @@
-import { auditRepo, callsRepo, documentsRepo, sessionsRepo } from '@foundry/db';
+import { auditRepo, callsRepo, documentsRepo, sessionsRepo, twinRepo } from '@foundry/db';
 
 import { type Kit } from '../internal/kit.js';
 import { CALL_LIMITS } from './call-usage.js';
 import { type DistillBackstopReport, type DistillService } from './distill.js';
+import { meterFace } from './face.js';
 import { settlePendingAiProposals, type PendingSettleResult } from './memory.js';
 
 export interface MaintenanceReport {
@@ -36,6 +37,39 @@ export interface MaintenanceService {
    * erasure first, so a later step failing never undoes it. One audit event per step, with counts. Idempotent.
    */
   runDaily(options: { readonly requestId: string; readonly deadline?: number }): Promise<MaintenanceReport>;
+}
+
+/** Faces billed per maintenance run at most (each in its own transaction). */
+const FACE_BILLING_BATCH = 500;
+
+/** Bills every ended face whose seconds are not all in the usage ledger yet; audited with counts. */
+async function billEndedFaces(kit: Kit, requestId: string): Promise<void> {
+  const callIds = await kit.system((sx) => twinRepo.unbilledEndedFaces(sx, { limit: FACE_BILLING_BATCH }), {
+    transaction: false,
+  });
+  let seconds = 0;
+  let failed = 0;
+  for (const callId of callIds) {
+    try {
+      seconds += await meterFace(kit, callId, requestId);
+    } catch (err) {
+      failed += 1;
+      kit.deps.logger.error('maintenance.face_billing_failed', {
+        requestId,
+        callId,
+        error: err instanceof Error ? err.name : 'unknown',
+      });
+    }
+  }
+  await kit.system((sx) =>
+    auditRepo.appendAudit(sx, {
+      action: 'maintenance.call_faces',
+      outcome: failed === 0 ? 'succeeded' : 'failed',
+      requestId,
+      objectType: 'call',
+      metadata: { billed: callIds.length - failed, seconds, failed },
+    }),
+  );
 }
 
 /**
@@ -86,6 +120,10 @@ export function createMaintenanceService(
         return calls;
       });
       const staleCalls = reaped.length;
+      // The faces of those calls (and any face whose end was not billed) go into the usage ledger now, each
+      // second once: the platform's daily cap reads the ledger. Their vendor sessions ended long ago at the
+      // vendor's idle timeout (no keep-alive comes after the last heartbeat).
+      await billEndedFaces(kit, requestId);
       // A call that ends is distilled however it ends, the ones closed here too (inline: the worker never
       // enqueues), before the backstop takes the rest.
       const endedCalls = await distill.distillSettled(

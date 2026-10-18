@@ -181,3 +181,67 @@ describe('calls and streaming switches', () => {
     expect(patches).toEqual([{ callsEnabled: false }, { streamingEnabled: false }]);
   });
 });
+
+describe('the digital twin switches', () => {
+  it('ships faces and cloned voices off, turns each on only after saying what it costs, and off at once', async () => {
+    const fetchMock = stubFetch();
+    let current: PlatformSettingsView = { ...SETTINGS, facesEnabled: false, clonedVoiceEnabled: false };
+    fetchMock.mockImplementation((_input, init) => {
+      if (init?.method === 'PATCH') {
+        current = { ...current, ...(sentJson(init) as Partial<PlatformSettingsView>) };
+      }
+      return Promise.resolve(jsonResponse(current));
+    });
+    const user = userEvent.setup();
+    renderWithProviders(<SettingsPage />);
+
+    const faces = await screen.findByRole('switch', { name: 'Video faces' });
+    expect(faces).not.toBeChecked();
+    expect(screen.getByRole('switch', { name: 'Cloned voices' })).not.toBeChecked();
+    await user.click(faces);
+    const dialog = screen.getByRole('alertdialog', { name: 'Turn on video faces?' });
+    expect(within(dialog).getByText(/\$0\.09 a minute/)).toBeVisible();
+    await user.click(within(dialog).getByRole('button', { name: 'Not now' }));
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(false);
+
+    await user.click(screen.getByRole('switch', { name: 'Video faces' }));
+    await user.click(
+      within(screen.getByRole('alertdialog', { name: 'Turn on video faces?' })).getByRole('button', {
+        name: 'Turn on faces',
+      }),
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('switch', { name: 'Video faces' })).toBeChecked();
+    });
+    await user.click(screen.getByRole('switch', { name: 'Cloned voices' }));
+    await user.click(
+      within(screen.getByRole('alertdialog', { name: 'Turn on cloned voices?' })).getByRole('button', {
+        name: 'Turn on voices',
+      }),
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('switch', { name: 'Cloned voices' })).toBeChecked();
+    });
+    // Off is immediate: no dialog stands between the program and a kill switch.
+    await user.click(screen.getByRole('switch', { name: 'Video faces' }));
+    await waitFor(() => {
+      expect(screen.getByRole('switch', { name: 'Video faces' })).not.toBeChecked();
+    });
+    const patches = fetchMock.mock.calls
+      .filter(([, init]) => init?.method === 'PATCH')
+      .map(([, init]) => sentJson(init));
+    expect(patches).toEqual([{ facesEnabled: true }, { clonedVoiceEnabled: true }, { facesEnabled: false }]);
+  });
+
+  it('edits the video minute limits with the other limits', () => {
+    const values = toLimitsFormValues(SETTINGS);
+    // An API that sends none shows the defaults: 60 a month, 20 a call.
+    expect(values).toMatchObject({ faceMinutesPerPrincipalMonth: 60, faceMinutesPerCall: 20 });
+    expect(
+      limitsPatch(SETTINGS, { ...values, faceMinutesPerPrincipalMonth: 120, faceMinutesPerCall: 15 }),
+    ).toEqual({
+      faceMinutesPerPrincipalMonth: 120,
+      faceMinutesPerCall: 15,
+    });
+  });
+});

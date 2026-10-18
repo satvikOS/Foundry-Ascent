@@ -87,8 +87,38 @@ export interface PlatformConfig {
     readonly sweepEnabled: boolean;
     readonly sweepIntervalMinutes: number;
   };
+  /**
+   * The vEIR's digital twin (docs/runbooks/avatars.md): the vendor that draws the face (HeyGen LiveAvatar, LITE
+   * mode) and the one that voices the EIRs' clones (ElevenLabs). Optional in the file; absent means off. Even
+   * wired, a face or a clone is used only once Admin › Settings turns it on and the persona's consent covers it.
+   */
+  readonly media: {
+    readonly face: {
+      readonly provider: 'none' | 'heygen-liveavatar';
+      /** LiveAvatar sandbox sessions (free, about a minute, the sandbox avatar only). */
+      readonly sandbox: boolean;
+      /**
+       * Exact origins the browser needs for the face's video (the vendor's LiveKit project host, `wss://` and
+       * `https://`), added to the CSP's `connect-src` / `media-src` only while a face provider is wired. Empty
+       * otherwise; never a wildcard.
+       */
+      readonly csp: { readonly connect: readonly string[]; readonly media: readonly string[] };
+    };
+    readonly voice: {
+      readonly provider: 'polly' | 'elevenlabs';
+      readonly model: string;
+      /** ElevenLabs zero-retention mode (Enterprise accounts only). */
+      readonly zeroRetention: boolean;
+    };
+  };
   readonly logRetentionDays: number;
 }
+
+/** Used when `media` is absent from the file: no face, stock voices only. */
+const MEDIA_OFF: PlatformConfig['media'] = {
+  face: { provider: 'none', sandbox: false, csp: { connect: [], media: [] } },
+  voice: { provider: 'polly', model: 'eleven_flash_v2_5', zeroRetention: false },
+};
 
 /** Used when `speech` is absent from the file: speech off; the engine and alarm are then never used. */
 const SPEECH_OFF = { enabled: false, engine: 'neural', dailyAlarmUsd: 15 } as const;
@@ -229,6 +259,71 @@ function parseDistillation(raw: unknown): PlatformConfig['distillation'] {
   };
 }
 
+/** An exact `wss://` or `https://` origin: a host (no wildcard, no path), optionally a port. */
+const EXACT_ORIGIN =
+  /^(wss|https):\/\/[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+(:[0-9]{1,5})?$/;
+
+function origins(parent: Json, key: string, path: string): string[] {
+  const value = parent[key];
+  if (!Array.isArray(value) || value.length > 4) {
+    throw new ConfigError(`${path}.${key}`, 'must be a list of at most 4 origins');
+  }
+  return value.map((origin, i) => {
+    if (typeof origin !== 'string' || !EXACT_ORIGIN.test(origin)) {
+      throw new ConfigError(
+        `${path}.${key}[${String(i)}]`,
+        'must be an exact wss:// or https:// origin (no wildcard)',
+      );
+    }
+    return origin;
+  });
+}
+
+function parseMedia(raw: unknown): PlatformConfig['media'] {
+  if (raw === undefined) return MEDIA_OFF;
+  const media = obj(raw, '$.media');
+  const face = obj(media.face, '$.media.face');
+  const voice = obj(media.voice, '$.media.voice');
+  const faceProvider = str(face, 'provider', '$.media.face');
+  if (faceProvider !== 'none' && faceProvider !== 'heygen-liveavatar') {
+    throw new ConfigError('$.media.face.provider', 'must be one of none, heygen-liveavatar');
+  }
+  const voiceProvider = str(voice, 'provider', '$.media.voice');
+  if (voiceProvider !== 'polly' && voiceProvider !== 'elevenlabs') {
+    throw new ConfigError('$.media.voice.provider', 'must be one of polly, elevenlabs');
+  }
+  const csp = obj(face.csp, '$.media.face.csp');
+  const connect = origins(csp, 'connect', '$.media.face.csp');
+  const mediaOrigins = origins(csp, 'media', '$.media.face.csp');
+  // The CSP stays exactly as strict as before while no face is wired.
+  if (faceProvider === 'none' && (connect.length > 0 || mediaOrigins.length > 0)) {
+    throw new ConfigError('$.media.face.csp', 'must be empty while media.face.provider is none');
+  }
+  // A wired face whose room the CSP blocks would silently never show (livekit-client signals over wss:// and
+  // asks the same host over https:// for its regions), so the first deploy already names both.
+  if (
+    faceProvider !== 'none' &&
+    !(connect.some((o) => o.startsWith('wss://')) && connect.some((o) => o.startsWith('https://')))
+  ) {
+    throw new ConfigError(
+      '$.media.face.csp.connect',
+      'must name the vendor room’s wss:// and https:// origins while a face is wired (docs/runbooks/avatars.md §5)',
+    );
+  }
+  return {
+    face: {
+      provider: faceProvider,
+      sandbox: bool(face, 'sandbox', '$.media.face'),
+      csp: { connect, media: mediaOrigins },
+    },
+    voice: {
+      provider: voiceProvider,
+      model: str(voice, 'model', '$.media.voice', /^[a-z0-9_]{1,64}$/),
+      zeroRetention: bool(voice, 'zeroRetention', '$.media.voice'),
+    },
+  };
+}
+
 export function parseConfig(raw: unknown): PlatformConfig {
   const root = obj(raw, '$');
   const region = str(root, 'region', '$');
@@ -292,6 +387,7 @@ export function parseConfig(raw: unknown): PlatformConfig {
     },
     speech: parseSpeech(root.speech),
     distillation: parseDistillation(root.distillation),
+    media: parseMedia(root.media),
     logRetentionDays,
   };
 }

@@ -4,12 +4,15 @@ import { PersonaAvatar } from '@/components/faces/persona-avatar';
 import { VeirName } from '@/components/faces/veir-name';
 import { Button } from '@/components/ui/button';
 import { SimpleTooltip } from '@/components/ui/tooltip';
+import { useMediaQuery } from '@/lib/hooks/use-media-query';
 import { budgetEndLine, CALL_END_LINES } from '@/lib/realtime/call-api';
 import type { CallSnapshot } from '@/lib/realtime/call-state';
 import { cn } from '@/lib/utils';
 
 import { useCall } from './call-context';
+import { CallFaceThumbnail } from './call-video-tile';
 import { formatClock, spokenDuration, useCallClock } from './use-call-clock';
+import { useCallFace } from './use-call-face';
 import { useCallVeir } from './use-call-veir';
 
 /**
@@ -38,9 +41,11 @@ function barAnnouncement(snapshot: CallSnapshot): string {
  * call to show; while shown, the page's sticky headers sit below it (`--mini-call-height`).
  */
 export function MiniCallBarView() {
-  const { engine, snapshot, showCall } = useCall();
+  const { engine, face, snapshot, showCall } = useCall();
   const veir = useCallVeir(snapshot.ventureId);
   const clock = useCallClock(snapshot);
+  const current = useCallFace(face);
+  const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const ended = snapshot.phase === 'ended';
   if (!engine || !veir) return null;
 
@@ -64,13 +69,17 @@ export function MiniCallBarView() {
       <span role="status" className="sr-only">
         {barAnnouncement(snapshot)}
       </span>
-      <PersonaAvatar
-        name={veir.name}
-        portraitUrl={veir.portraitUrl}
-        size="sm"
-        speaking={speaking}
-        decorative
-      />
+      {current.status === 'live' && !ended && !reducedMotion ? (
+        <CallFaceThumbnail stream={current.stream} speaking={speaking} />
+      ) : (
+        <PersonaAvatar
+          name={veir.name}
+          portraitUrl={veir.portraitUrl}
+          size="sm"
+          speaking={speaking}
+          decorative
+        />
+      )}
       <div className="flex min-w-0 flex-1 items-center gap-2 text-small">
         <p className="min-w-0 truncate">
           <span className="font-medium">

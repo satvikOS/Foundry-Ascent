@@ -9,7 +9,7 @@ import { createJsonLogger, type Logger } from '../logging.js';
 
 export interface RequestOptions {
   readonly method?: 'GET' | 'POST' | 'PATCH' | 'DELETE' | 'PUT';
-  /** JSON-serialised when not a string. */
+  /** JSON-serialised unless a string or bytes (sent as `application/octet-stream`). */
   readonly body?: unknown;
   /** `fa_session` token or a full `fa_session=...` cookie. */
   readonly cookie?: string;
@@ -63,8 +63,11 @@ export function buildRequest(path: string, options: RequestOptions = {}): Reques
   if (method !== 'GET' && options.csrf !== false && !headers.has(CSRF_HEADER))
     headers.set(CSRF_HEADER, CSRF_HEADER_VALUE);
   if (options.idempotencyKey !== undefined) headers.set(IDEMPOTENCY_HEADER, options.idempotencyKey);
-  let body: string | undefined;
-  if (options.body !== undefined) {
+  let body: string | Uint8Array<ArrayBuffer> | undefined;
+  if (options.body instanceof Uint8Array) {
+    body = new Uint8Array(options.body);
+    if (!headers.has('content-type')) headers.set('content-type', 'application/octet-stream');
+  } else if (options.body !== undefined) {
     body = typeof options.body === 'string' ? options.body : JSON.stringify(options.body);
     if (!headers.has('content-type')) headers.set('content-type', 'application/json');
   }

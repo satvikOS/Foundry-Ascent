@@ -1,0 +1,57 @@
+{
+  "$comment": "LiveAvatar API responses in the shapes of the vendor's API reference (docs.liveavatar.com/api-reference, checked 2026-10-17) and of its web SDK 0.0.19 (code 1000 = success). Identifiers and tokens are made up; replace with sanitised recordings from the first sandbox session (docs/runbooks/avatars.md).",
+  "token": {
+    "status": 200,
+    "body": {
+      "code": 1000,
+      "data": {
+        "session_id": "6f9c1a2e-3b4d-4e5f-8a9b-0c1d2e3f4a5b",
+        "session_token": "eyJhbGciOiJIUzI1NiJ9.session.token"
+      },
+      "message": "success"
+    }
+  },
+  "tokenLimitRefused": {
+    "status": 422,
+    "body": {
+      "detail": [
+        {
+          "loc": ["body", "max_session_duration"],
+          "msg": "Value exceeds the session duration allowed by the subscription",
+          "type": "value_error"
+        }
+      ]
+    }
+  },
+  "tokenBadKey": {
+    "status": 401,
+    "body": { "code": 4010, "data": null, "message": "Invalid API key" }
+  },
+  "start": {
+    "status": 201,
+    "body": {
+      "code": 1000,
+      "data": {
+        "session_id": "6f9c1a2e-3b4d-4e5f-8a9b-0c1d2e3f4a5b",
+        "livekit_url": "wss://heygen-feapbkvq.livekit.cloud",
+        "livekit_client_token": "eyJhbGciOiJIUzI1NiJ9.client.token",
+        "livekit_agent_token": "eyJhbGciOiJIUzI1NiJ9.agent.token",
+        "max_session_duration": 1200,
+        "ws_url": "wss://webrtc-signaling.liveavatar.com/v1/ws?session=6f9c1a2e&token=secret-control"
+      },
+      "message": "success"
+    }
+  },
+  "startNoCredits": {
+    "status": 402,
+    "body": { "code": 4020, "data": null, "message": "Insufficient credits" }
+  },
+  "ok": {
+    "status": 200,
+    "body": { "code": 1000, "data": null, "message": "success" }
+  },
+  "stopGone": {
+    "status": 404,
+    "body": { "code": 4040, "data": null, "message": "Session not found" }
+  }
+}

@@ -1,5 +1,16 @@
-import { createCore, type EnvLike, type SpeechSynthesizer, type SttGrantIssuer } from '@foundry/core';
+import {
+  createCore,
+  MEDIA_VENDORS,
+  type EmbodimentProvider,
+  type EnvLike,
+  type SpeechSynthesizer,
+  type SttGrantIssuer,
+  type VoiceProvider,
+} from '@foundry/core';
 
+import { ElevenLabsVoice } from '../adapters/elevenlabs-voice.js';
+import { HeygenLiveAvatarFace } from '../adapters/heygen-liveavatar.js';
+import { MediaSecrets } from '../adapters/media-secrets.js';
 import { PollySpeechSynthesizer } from '../adapters/polly-speech.js';
 import { S3ObjectStore } from '../adapters/s3-object-store.js';
 import { SqsJobQueue } from '../adapters/sqs-job-queue.js';
@@ -53,6 +64,45 @@ export function sttGrantsFor(env: EnvLike, config: ApiConfig): { sttGrants?: Stt
 }
 
 /**
+ * The vEIR's digital twin (docs/runbooks/avatars.md): the vendor face (`MEDIA_FACE_PROVIDER=heygen-liveavatar`) and
+ * the EIRs' cloned voices (`MEDIA_VOICE_PROVIDER=elevenlabs`), each only when configured (infra `media`, off in
+ * production.json). Their API keys come from Secrets Manager on first use (the names are
+ * packages/core/media-vendors.json), never at construction and never to the browser. Even wired, a face or a
+ * clone is used only once the platform settings turn it on (`faces_enabled`, `cloned_voice_enabled`) and the
+ * persona's consent covers it.
+ */
+export function mediaFor(
+  config: ApiConfig,
+  secrets: MediaSecrets = new MediaSecrets({ region: config.awsRegion }),
+): { embodiment?: EmbodimentProvider; clonedVoice?: VoiceProvider } {
+  const face = MEDIA_VENDORS.face.heygen;
+  const voice = MEDIA_VENDORS.voice.elevenlabs;
+  return {
+    ...(config.media.face === 'heygen-liveavatar'
+      ? {
+          embodiment: new HeygenLiveAvatarFace({
+            apiKey: secrets.apiKey(face.secretName),
+            apiOrigin: face.apiOrigin,
+            sandbox: config.media.faceSandbox,
+            usdPerMinute: face.usdPerMinute,
+          }),
+        }
+      : {}),
+    ...(config.media.voice === 'elevenlabs'
+      ? {
+          clonedVoice: new ElevenLabsVoice({
+            apiKey: secrets.apiKey(voice.secretName),
+            apiOrigin: voice.apiOrigin,
+            model: config.media.voiceModel,
+            usdPer1kCharacters: voice.usdPer1kCharacters,
+            zeroRetention: config.media.voiceZeroRetention,
+          }),
+        }
+      : {}),
+  };
+}
+
+/**
  * Everything the API Lambda needs, built once per container (cold start): config, logger, Data API
  * database, model gateway, S3/SQS/Polly adapters, core and the Hono app. No network I/O happens here.
  */
@@ -86,6 +136,7 @@ export function createApiRuntime(env: EnvLike): ApiRuntime {
     },
     ...speechFor(env, config),
     ...sttGrantsFor(env, config),
+    ...mediaFor(config),
   });
   const app = createApp({
     core,

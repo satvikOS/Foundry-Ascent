@@ -16,11 +16,20 @@ import type { UpdateSettingsInput } from '@/lib/api/hooks/admin';
 
 import { MutationErrorAlert } from '../shared/form';
 
+export type FeatureSwitchPatch = Pick<
+  UpdateSettingsInput,
+  'callsEnabled' | 'streamingEnabled' | 'facesEnabled' | 'clonedVoiceEnabled'
+>;
+
 interface FeatureSwitchesProps {
   callsEnabled: boolean;
   streamingEnabled: boolean;
+  /** The vEIR's video face on calls (off by default). */
+  facesEnabled: boolean;
+  /** The EIRs' cloned voices on calls (off by default). */
+  clonedVoiceEnabled: boolean;
   /** Sends one switch change; the switches always show the server's value. */
-  onChange: (patch: Pick<UpdateSettingsInput, 'callsEnabled' | 'streamingEnabled'>) => void;
+  onChange: (patch: FeatureSwitchPatch) => void;
   pending?: boolean;
   error?: unknown;
 }
@@ -61,18 +70,39 @@ function SwitchRow({
   );
 }
 
+/** What turning on the face or the cloned voice means, said before it happens (they cost money per use). */
+const TURN_ON: Record<
+  'facesEnabled' | 'clonedVoiceEnabled',
+  { title: string; description: string; action: string }
+> = {
+  facesEnabled: {
+    title: 'Turn on video faces?',
+    description: 'Faces show where ready. About $0.09 a minute, within the video limits.',
+    action: 'Turn on faces',
+  },
+  clonedVoiceEnabled: {
+    title: 'Turn on cloned voices?',
+    description: 'Cloned voices speak where ready. About $0.04 per 1,000 characters.',
+    action: 'Turn on voices',
+  },
+};
+
 /**
  * Kill switches narrower than the AI switch: voice calls (new calls refused, live calls end at their next
- * heartbeat) and streamed replies (off: replies appear whole, once validated). Both apply platform-wide.
+ * heartbeat), streamed replies (off: replies appear whole, once validated), the vEIR's video face and the EIRs'
+ * cloned voices (off by default; off again stops them on live calls within seconds). All apply platform-wide.
  */
 export function FeatureSwitches({
   callsEnabled,
   streamingEnabled,
+  facesEnabled,
+  clonedVoiceEnabled,
   onChange,
   pending = false,
   error,
 }: FeatureSwitchesProps) {
   const [confirmCallsOff, setConfirmCallsOff] = useState(false);
+  const [confirmOn, setConfirmOn] = useState<'facesEnabled' | 'clonedVoiceEnabled' | null>(null);
   return (
     <SectionCard title="Calls and streaming">
       <div className="grid gap-4">
@@ -100,6 +130,26 @@ export function FeatureSwitches({
               onChange({ streamingEnabled: next });
             }}
           />
+          <SwitchRow
+            label="Video faces"
+            description={facesEnabled ? 'On where a face is ready.' : 'Off.'}
+            checked={facesEnabled}
+            disabled={pending}
+            onCheckedChange={(next) => {
+              if (next) setConfirmOn('facesEnabled');
+              else onChange({ facesEnabled: false });
+            }}
+          />
+          <SwitchRow
+            label="Cloned voices"
+            description={clonedVoiceEnabled ? 'On where a voice is ready.' : 'Off.'}
+            checked={clonedVoiceEnabled}
+            disabled={pending}
+            onCheckedChange={(next) => {
+              if (next) setConfirmOn('clonedVoiceEnabled');
+              else onChange({ clonedVoiceEnabled: false });
+            }}
+          />
         </div>
         <MutationErrorAlert error={error} title="The setting wasn’t changed" />
       </div>
@@ -121,6 +171,30 @@ export function FeatureSwitches({
               }}
             >
               Turn off calls
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={confirmOn !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirmOn(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmOn ? TURN_ON[confirmOn].title : ''}</AlertDialogTitle>
+            <AlertDialogDescription>{confirmOn ? TURN_ON[confirmOn].description : ''}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Not now</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (confirmOn) onChange({ [confirmOn]: true });
+                setConfirmOn(null);
+              }}
+            >
+              {confirmOn ? TURN_ON[confirmOn].action : ''}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -18,7 +18,12 @@ const number = (message = 'Enter a number.') => z.number({ error: message });
 const MB = 1024 * 1024;
 
 /** Defaults the API applies when a setting was never changed (packages/db settings repository). */
-const CALL_DEFAULTS = { maxCallMinutes: 30, dailyCallMinutesPerPrincipal: 60 } as const;
+const CALL_DEFAULTS = {
+  maxCallMinutes: 30,
+  dailyCallMinutesPerPrincipal: 60,
+  faceMinutesPerPrincipalMonth: 60,
+  faceMinutesPerCall: 20,
+} as const;
 
 const LimitsForm = z
   .object({
@@ -53,6 +58,14 @@ const LimitsForm = z
       .int('Enter a whole number.')
       .min(0, 'Can’t be negative.')
       .max(1440, 'At most 1,440 minutes.'),
+    faceMinutesPerPrincipalMonth: number('Enter a whole number.')
+      .int('Enter a whole number.')
+      .min(0, 'Can’t be negative.')
+      .max(10_000, 'At most 10,000 minutes.'),
+    faceMinutesPerCall: number('Enter a whole number.')
+      .int('Enter a whole number.')
+      .min(1, 'At least 1 minute.')
+      .max(240, 'At most 240 minutes.'),
   })
   .refine((v) => v.dailyUsdCapPerPrincipal <= v.dailyUsdCapGlobal, {
     path: ['dailyUsdCapPerPrincipal'],
@@ -74,6 +87,9 @@ export function toLimitsFormValues(settings: PlatformSettingsView): LimitsFormVa
     maxCallMinutes: settings.maxCallMinutes ?? CALL_DEFAULTS.maxCallMinutes,
     dailyCallMinutesPerPrincipal:
       settings.dailyCallMinutesPerPrincipal ?? CALL_DEFAULTS.dailyCallMinutesPerPrincipal,
+    faceMinutesPerPrincipalMonth:
+      settings.faceMinutesPerPrincipalMonth ?? CALL_DEFAULTS.faceMinutesPerPrincipalMonth,
+    faceMinutesPerCall: settings.faceMinutesPerCall ?? CALL_DEFAULTS.faceMinutesPerCall,
   };
 }
 
@@ -104,6 +120,11 @@ export function limitsPatch(settings: PlatformSettingsView, values: LimitsFormVa
   if (values.dailyCallMinutesPerPrincipal !== saved.dailyCallMinutesPerPrincipal) {
     patch.dailyCallMinutesPerPrincipal = values.dailyCallMinutesPerPrincipal;
   }
+  if (values.faceMinutesPerPrincipalMonth !== saved.faceMinutesPerPrincipalMonth) {
+    patch.faceMinutesPerPrincipalMonth = values.faceMinutesPerPrincipalMonth;
+  }
+  if (values.faceMinutesPerCall !== saved.faceMinutesPerCall)
+    patch.faceMinutesPerCall = values.faceMinutesPerCall;
   return patch;
 }
 
@@ -117,6 +138,8 @@ const FIELD_FOR_API: Record<string, LimitKey> = {
   dailyUploadBytesPerPrincipal: 'dailyUploadMegabytesPerPrincipal',
   maxCallMinutes: 'maxCallMinutes',
   dailyCallMinutesPerPrincipal: 'dailyCallMinutesPerPrincipal',
+  faceMinutesPerPrincipalMonth: 'faceMinutesPerPrincipalMonth',
+  faceMinutesPerCall: 'faceMinutesPerCall',
 };
 
 interface LimitsCardProps {
@@ -208,6 +231,25 @@ export function LimitsCard({ settings, onSave, pending, error }: LimitsCardProps
             error={errors.dailyCallMinutesPerPrincipal?.message}
           >
             {numberInput('dailyCallMinutesPerPrincipal', { step: '1', min: 0, max: 1440 })}
+          </Field>
+        </fieldset>
+        <fieldset className="grid gap-4 sm:grid-cols-2">
+          <legend className="mb-2 text-sm font-semibold">Video face</legend>
+          <Field
+            subgrid
+            label="Video minutes per person per month"
+            description="Then the usual tile."
+            error={errors.faceMinutesPerPrincipalMonth?.message}
+          >
+            {numberInput('faceMinutesPerPrincipalMonth', { step: '1', min: 0, max: 10_000 })}
+          </Field>
+          <Field
+            subgrid
+            label="Video minutes per call"
+            description="Then the usual tile."
+            error={errors.faceMinutesPerCall?.message}
+          >
+            {numberInput('faceMinutesPerCall', { step: '1', min: 1, max: 240 })}
           </Field>
         </fieldset>
         <fieldset className="grid gap-4 sm:grid-cols-2">

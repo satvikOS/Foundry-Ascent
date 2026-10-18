@@ -16,7 +16,7 @@
     ]
   },
   "environment": {
-    "$comment": "Variables each function receives (infra sets exactly these; the bundle import-check runs each handler with exactly these). SITE_ORIGIN is added to the api only with a custom domain. SPEECH_ENABLED and SPEECH_ENGINE come from infra/cdk/config/production.json `speech` (voice calls: whether the API may use Amazon Polly and Transcribe, and the Polly engine). insights (the operator's read-only insights function) needs only the common variables.",
+    "$comment": "Variables each function receives (infra sets exactly these; the bundle import-check runs each handler with exactly these). SITE_ORIGIN is added to the api only with a custom domain. SPEECH_ENABLED and SPEECH_ENGINE come from infra/cdk/config/production.json `speech` (voice calls: whether the API may use Amazon Polly and Transcribe, and the Polly engine). The MEDIA_* variables come from its `media` (the vEIR's digital twin: the face and cloned-voice vendors, off by default; docs/runbooks/avatars.md). insights (the operator's read-only insights function) needs only the common variables.",
     "common": [
       "APP_ENV",
       "APP_VERSION",
@@ -32,7 +32,18 @@
       "BEDROCK_REGION",
       "HOME_TENANT_SLUG"
     ],
-    "api": ["DOCUMENTS_BUCKET", "JOBS_QUEUE_URL", "DB_RESUME_BUDGET_MS", "SPEECH_ENABLED", "SPEECH_ENGINE"],
+    "api": [
+      "DOCUMENTS_BUCKET",
+      "JOBS_QUEUE_URL",
+      "DB_RESUME_BUDGET_MS",
+      "SPEECH_ENABLED",
+      "SPEECH_ENGINE",
+      "MEDIA_FACE_PROVIDER",
+      "MEDIA_FACE_SANDBOX",
+      "MEDIA_VOICE_PROVIDER",
+      "MEDIA_VOICE_MODEL",
+      "MEDIA_VOICE_ZERO_RETENTION"
+    ],
     "worker": ["DOCUMENTS_BUCKET", "JOBS_MAX_RECEIVE_COUNT"],
     "migrate": [
       "OWNER_ACCESS_CODE_PREFIX",

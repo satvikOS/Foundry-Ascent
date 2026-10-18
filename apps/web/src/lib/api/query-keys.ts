@@ -74,6 +74,7 @@ export const queryKeys = {
     lessonsToReview: () => [ROOT, 'personas', 'lessons-to-review'] as const,
     consents: (personaId: string) => [ROOT, 'personas', 'consents', personaId] as const,
     embodiment: (personaId: string) => [ROOT, 'personas', 'embodiment', personaId] as const,
+    twin: (personaId: string) => [ROOT, 'personas', 'twin', personaId] as const,
   },
   eir: {
     reviews: () => [ROOT, 'eir', 'reviews'] as const,

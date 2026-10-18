@@ -10,12 +10,14 @@ import {
   systemClock,
   type Clock,
   type CoreLogger,
+  type EmbodimentProvider,
   type IdGenerator,
   type JobQueue,
   type ObjectStore,
   type SpeechSynthesizer,
   type SttGrantIssuer,
   type TextExtractor,
+  type VoiceProvider,
 } from './ports.js';
 
 /** Everything core needs from its host (apps/api handlers or tests). Create once per container. */
@@ -32,6 +34,10 @@ export interface CoreDeps {
   readonly speech?: SpeechSynthesizer;
   /** Speech-to-text grants for calls (API only). Absent: calls start without one and the founder types. */
   readonly sttGrants?: SttGrantIssuer;
+  /** Vendor faces for calls (API only). Absent: every call keeps the built-in presence. */
+  readonly embodiment?: EmbodimentProvider;
+  /** The EIRs' cloned voices for calls (API only). Absent: calls speak with stock voices (Amazon Polly). */
+  readonly clonedVoice?: VoiceProvider;
   readonly clock?: Clock;
   readonly ids?: IdGenerator;
   readonly logger?: CoreLogger;
