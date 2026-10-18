@@ -202,9 +202,29 @@ test.describe('founder journey', () => {
       await expect(answer.getByRole('button', { name: /^(Keep|Not now)/ })).toHaveCount(0);
       await expect(answer.getByText(/would like to remember/)).toHaveCount(0);
       await expect(answer.getByRole('list', { name: 'Memory suggestions' })).toHaveCount(0);
-      const href = (await saved.getByRole('link').getAttribute('href')) ?? '';
-      const memoryId = /[?&]m=([0-9a-f-]{36})/.exec(href)?.[1];
-      expect(memoryId, 'the saved line links the item in Knowledge').toBeTruthy();
+      const listed = await page.request.get(
+        `/api/v1/ventures/${ventureId}/memory?status=confirmed&limit=100`,
+      );
+      expect(listed.status()).toBe(200);
+      const { items } = (await listed.json()) as {
+        items: { id: string; keptAutomatically?: boolean; sourceRefs: { kind: string; id: string }[] }[];
+      };
+      const learned = items.filter(
+        (m) =>
+          m.keptAutomatically === true &&
+          m.sourceRefs.some((r) => r.kind === 'session' && r.id === conversationId),
+      );
+      // One item: the line names it and links it in Knowledge. Several (a real model may keep the decision and
+      // the fact apart): the line counts them and links Knowledge itself.
+      const link = saved.getByRole('link');
+      const href = (await link.getAttribute('href')) ?? '';
+      const linked = /[?&]m=([0-9a-f-]{36})/.exec(href)?.[1];
+      if (linked === undefined) {
+        await expect(link, 'several saved items are counted').toHaveText(/^\d+ items$/);
+        expect(href, 'several saved items link Knowledge').toMatch(/\/knowledge(?:$|\?)/);
+        expect(learned.length).toBeGreaterThan(1);
+      }
+      const memoryId = linked ?? learned[0]?.id;
       // It is in the venture's memory already, kept by the vEIR itself: confirmed, kept automatically, learned
       // from this conversation, and never a proposal waiting for anyone.
       const item = await page.request.get(`/api/v1/memory/${memoryId ?? ''}`);
@@ -219,18 +239,6 @@ test.describe('founder journey', () => {
       });
       // Leave the venture's memory as the next run finds it: forget everything this conversation taught (the
       // vEIR would not save a known fact again).
-      const listed = await page.request.get(
-        `/api/v1/ventures/${ventureId}/memory?status=confirmed&limit=100`,
-      );
-      expect(listed.status()).toBe(200);
-      const { items } = (await listed.json()) as {
-        items: { id: string; keptAutomatically?: boolean; sourceRefs: { kind: string; id: string }[] }[];
-      };
-      const learned = items.filter(
-        (m) =>
-          m.keptAutomatically === true &&
-          m.sourceRefs.some((r) => r.kind === 'session' && r.id === conversationId),
-      );
       expect(learned.map((m) => m.id)).toContain(memoryId);
       for (const { id } of learned) {
         const removed = await page.request.patch(`/api/v1/memory/${id}`, {
