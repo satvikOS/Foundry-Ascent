@@ -183,6 +183,8 @@ class FakeFoundryApi:
         self.model_id = model_id
         # Barge-ins: (turn id, call id, units heard).
         self.interrupts: list[tuple[str, str, list[str]]] = []
+        # Call heartbeats, by call id, in order.
+        self.heartbeats: list[str] = []
         # The vEIR notebook of each venture (one persona each): what distillation writes and deletion erases.
         self.notebooks: dict[str, dict[str, Any]] = {}
         # Calls: a refusal code for every start (calls switched off, no voice consent), and the intro text.
@@ -574,6 +576,29 @@ class FakeFoundryApi:
                 return self._problem(400, "validation_failed")
             self.interrupts.append((parts[1], body["callId"], heard))
             return httpx.Response(204)
+        if parts[0] == "calls" and len(parts) == 3 and parts[2] == "heartbeat" and method == "POST":
+            call = self.calls.get(parts[1])
+            if call is None or call["by"] != p.id:
+                return self._problem(404, "not_found")
+            if body.get("state") not in (
+                "listening",
+                "thinking",
+                "speaking",
+                "idle",
+                "muted",
+                "reconnecting",
+            ):
+                return self._problem(400, "validation_failed")
+            self.heartbeats.append(call["id"])
+            live = call["status"] == "live"
+            return httpx.Response(
+                200,
+                json={
+                    "remainingSeconds": 1200 if live else 0,
+                    "action": "continue" if live else "terminate",
+                    "reason": None if live else "user",
+                },
+            )
         if parts[0] == "calls" and len(parts) == 3 and parts[2] == "end" and method == "POST":
             call = self.calls.get(parts[1])
             if call is None or call["by"] != p.id:
@@ -826,6 +851,10 @@ class FakeFoundryApi:
         # Responders that hold a conversation read the session being answered.
         self.current_session = s
         result = self.responder(self, venture, body["text"], mode)
+        if "refuse" in result:
+            # Refused before streaming (problem+json): (status, code, retry after seconds).
+            status_code, code, retry_after = result["refuse"]
+            return self._problem(status_code, code, retry_after=retry_after)
         turn_id = _id()
         evidence = [
             {

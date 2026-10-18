@@ -212,6 +212,53 @@ class TestLlmSimulator:
             assert sim.render(s, turn_of(s, intent), [], VALUES).source == "template"
         assert model.calls == []
 
+    @pytest.mark.parametrize(
+        ("intent", "values"),
+        [
+            ("continuity:recall_probe", {"continuity": "recall_minutes"}),
+            ("continuity:recall_probe_later", {"continuity": "recall_days"}),
+            ("continuity:cross_channel_probe", {"continuity": "cross_channel"}),
+            ("continuity:commitment_probe", {"continuity": "commitment_followup"}),
+            ("dynamic:parked_topic:return", {"topic_dynamic": "parked_topic"}),
+            ("dynamic:tangent_and_return:return", {"topic_dynamic": "tangent_and_return"}),
+            ("dynamic:where_were_we", {"topic_dynamic": "where_were_we"}),
+            ("question:recall", {"question_type": "recall"}),
+        ],
+    )
+    def test_memory_probes_are_never_rewritten(
+        self,
+        taxonomy: Taxonomy,
+        templates: Templates,
+        scenarios: list[Scenario],
+        intent: str,
+        values: dict[str, str],
+    ) -> None:
+        """A model writing "Do you remember what we said about the rowing club ambassadors?" hands the vEIR the
+        answer, and continuity.recall (G12) would pass on any echo."""
+        s = find(scenarios, **values)
+        model = FakeModel("Do you remember the rowing club ambassadors?")
+        message = LlmSimulator(model, TemplateSimulator(taxonomy, templates)).render(
+            s, turn_of(s, intent), [], VALUES
+        )
+        assert message.source == "template"
+        assert model.calls == []
+
+    def test_a_message_that_names_what_the_veir_should_remember_falls_back(
+        self, taxonomy: Taxonomy, templates: Templates, scenarios: list[Scenario]
+    ) -> None:
+        s = find(scenarios, continuity="commitment_followup", relational_move="none")
+        hello = s.sessions[1].turns[0]
+        assert hello.intent == "continuity:hello"
+        assert hello.must_not_say
+        topic = templates.topics[s.topic_a]
+        leak = f"Hey! Quick update on the {topic.commitment_terms[0].rstrip('*')} thing."
+        model = FakeModel(leak)
+        message = LlmSimulator(model, TemplateSimulator(taxonomy, templates)).render(s, hello, [], VALUES)
+        assert message.source == "llm_fallback"
+        assert "Do not mention any of these" in model.calls[0]["user"]
+        assert not LlmSimulator.acceptable(leak, hello)
+        assert LlmSimulator.acceptable("Hey, good to be back!", hello)
+
     def test_the_prompt_describes_the_turn(
         self, taxonomy: Taxonomy, templates: Templates, scenarios: list[Scenario]
     ) -> None:
@@ -243,6 +290,28 @@ class TestBedrock:
         assert price_for("us.anthropic.claude-haiku-4-5-20251001-v1:0") == (1.0, 5.0)
         assert price_for("global.amazon.nova-micro-v1:0") == (0.035, 0.14)
         assert price_for("someone.unknown-model") == FALLBACK_PRICE
+
+    @pytest.mark.parametrize(
+        ("model_id", "price"),
+        [
+            ("anthropic.claude-opus-4-1-20250805-v1:0", (15.0, 75.0)),
+            ("us.anthropic.claude-opus-4-20250514-v1:0", (15.0, 75.0)),
+            ("global.anthropic.claude-opus-4-5-20251101-v1:0", (5.0, 25.0)),
+            ("anthropic.claude-opus-4-8", (5.0, 25.0)),
+            ("anthropic.claude-opus-5-5", (4.0, 20.0)),
+            ("anthropic.claude-opus-5", (5.0, 25.0)),
+            ("anthropic.claude-sonnet-5-5", (2.0, 10.0)),
+            ("anthropic.claude-sonnet-4-5-20250929-v1:0", (3.0, 15.0)),
+            ("anthropic.claude-fable-5-1", (10.0, 50.0)),
+        ],
+    )
+    def test_opus_and_newer_models_are_priced(self, model_id: str, price: tuple[float, float]) -> None:
+        assert price_for(model_id) == price
+
+    def test_an_unknown_model_is_never_cheaper_than_any_known_one(self) -> None:
+        from foundry_evals.matrix.bedrock import PRICES
+
+        assert all(FALLBACK_PRICE[0] >= inp and FALLBACK_PRICE[1] >= out for _, inp, out in PRICES)
 
     def test_a_call_and_its_cost(self) -> None:
         client = FakeBedrockClient(

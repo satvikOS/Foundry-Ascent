@@ -16,6 +16,7 @@ evaluate the checks. Deterministic: the same seed gives the same scenarios.
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import random
 from collections.abc import Iterator, Mapping, Sequence
@@ -51,6 +52,15 @@ NEGATIVE = frozenset(
 AFTER_A_REPLY = frozenset({"angry_at_veir", "grateful", "defensive"})
 #: Questions about the vEIR's own last reply: never glued to a topic intro (the intro gets its own turn first).
 ABOUT_THE_REPLY = frozenset({"clarifying", "meta", "ask_repeat", "ask_simplify", "challenge"})
+#: Questions that stand alone, after the topic's own intro turn: the ones about the last reply, and the ones nobody
+#: tacks onto a topic intro ("…the form is due next month. bot?"), or that the intro would answer ("Our pitch is
+#: on the 14th. Do you remember what I said about the pitch?").
+STANDALONE = ABOUT_THE_REPLY | frozenset({"identity", "small_talk", "off_topic", "recall"})
+#: Registers that change mid-conversation (from, to): the change happens with the topic move.
+REGISTER_SHIFTS: dict[str, tuple[str, str]] = {
+    "formal_to_casual": ("formal", "gen_z"),
+    "casual_to_terse": ("casual", "terse"),
+}
 #: Social moves that argue about the first topic's option: said before the topic moves on.
 ABOUT_TOPIC_A = frozenset({"pushback", "flattery"})
 #: Feelings a reply should acknowledge (``emotion.acknowledged``).
@@ -126,8 +136,19 @@ class PlannedTurn:
     checks: tuple[ExpectedCheck, ...]
     #: Checks every reply gets that do not apply here (a repeat when asked to repeat).
     exempt: frozenset[str] = frozenset()
-    #: Extra content flags for the simulators (``with_fact``: the intro also states the fact).
+    #: Extra content flags for the simulators (``with_fact``: the intro also states the fact; ``phrase:N``: say the
+    #: bank's Nth phrase).
     flags: frozenset[str] = frozenset()
+    #: The register dimension's value behind ``register`` when the register changes mid-conversation.
+    register_value: str | None = None
+    #: What the message must not say (an LLM simulator's message that does falls back to the template): the terms
+    #: a memory check looks for, so the founder never hands the vEIR the answer.
+    must_not_say: tuple[str, ...] = ()
+
+    @property
+    def register_source(self) -> str:
+        """The ``register:<value>`` this turn's register checks count for."""
+        return f"register:{self.register_value or self.register}"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -137,6 +158,7 @@ class PlannedTurn:
             "feeling": self.feeling,
             "expresses": self.expresses,
             "register": self.register,
+            "registerValue": self.register_value,
             "lengthClass": self.length_class,
             "checks": [c.to_dict() for c in self.checks],
             "exempt": sorted(self.exempt),
@@ -351,6 +373,16 @@ class _Ctx:
     b: Topic
     private_terms: tuple[str, ...]
     turns: list[PlannedTurn] = field(default_factory=list)
+    #: Whether a mid-conversation register change has happened (from the topic move on).
+    shifted: bool = False
+
+    def register(self) -> tuple[str, str | None]:
+        """The register now, and the dimension value behind it when it shifts."""
+        value = self.row["register"]
+        if value not in REGISTER_SHIFTS:
+            return value, None
+        start, end = REGISTER_SHIFTS[value]
+        return (end if self.shifted else start), value
 
 
 def _checks_for(ctx: _Ctx, dim: str, value: str, *, extra: Sequence[str] = ()) -> list[ExpectedCheck]:
@@ -416,20 +448,30 @@ def _turn(
     must_say: Sequence[Sequence[str]] = (),
     exempt: Sequence[str] = (),
     flags: Sequence[str] = (),
+    must_not_say: Sequence[str] = (),
 ) -> PlannedTurn:
     index = 1 + sum(1 for t in ctx.turns if t.session == session)
+    register, register_value = ctx.register()
+    forbidden = [*must_not_say]
+    for check in checks:
+        if check.id == "continuity.recall":
+            forbidden += check.terms
+        elif check.id == "topic.returns":
+            forbidden += ctx.a.recall_terms
     turn = PlannedTurn(
         session=session,
         index=index,
         intent=intent,
         feeling=feeling,
         expresses=expresses,
-        register=ctx.row["register"],
-        length_class=_length_class(intent, ctx.row["register"]),
+        register=register,
+        length_class=_length_class(intent, register),
         must_say=tuple(tuple(g) for g in must_say if g),
         checks=tuple(checks),
         exempt=frozenset(exempt),
         flags=frozenset(flags),
+        register_value=register_value,
+        must_not_say=tuple(dict.fromkeys(forbidden)),
     )
     ctx.turns.append(turn)
     return turn
@@ -450,8 +492,6 @@ def _question_extras(ctx: _Ctx, q: str) -> tuple[list[tuple[str, ...]], list[str
         must = [tuple(a.subtopic_terms)]
     elif q == "ask_repeat":
         exempt = ["craft.no_repeated_reply"]
-    elif q == "identity":
-        exempt = ["identity.no_volunteered_disclaimer"]
     return must, exempt
 
 
@@ -475,7 +515,7 @@ def _plan_single(ctx: _Ctx, session: int, *, first: bool) -> None:
 
     if social_first:
         _turn(ctx, session, f"relational:{move}", "neutral", checks=_checks_for(ctx, "relational_move", move))
-    if (first and not social_first) or q in ABOUT_THE_REPLY:
+    if (first and not social_first) or q in STANDALONE:
         feeling = emotion if voiced_early else "neutral"
         _turn(
             ctx,
@@ -489,7 +529,7 @@ def _plan_single(ctx: _Ctx, session: int, *, first: bool) -> None:
         )
     q_must, q_exempt = _question_extras(ctx, q)
     q_checks = _checks_for(ctx, "question_type", q)
-    introduced = (first and not social_first) or q in ABOUT_THE_REPLY
+    introduced = (first and not social_first) or q in STANDALONE
     q_flags = [] if introduced else ["with_intro"]
     expresses = None
     if q_flags and voiced_early:
@@ -544,6 +584,7 @@ def _plan_single(ctx: _Ctx, session: int, *, first: bool) -> None:
     if traj_expr is not None:
         traj_checks = _checks_for(ctx, "trajectory", trajectory)
     b = ctx.b
+    ctx.shifted = True  # a register that changes mid-conversation changes here, with the topic
     if dynamic in ("tangent_and_return", "parked_topic"):
         leave_must = [tuple(b.terms)] if dynamic == "parked_topic" else []
         _turn(
@@ -583,17 +624,7 @@ def _plan_single(ctx: _Ctx, session: int, *, first: bool) -> None:
         )
 
     if move not in ("none", "greeting", "small_talk") and move not in ABOUT_TOPIC_A:
-        r_must: list[tuple[str, ...]] = []
-        r_exempt = ["identity.no_volunteered_disclaimer"] if move == "boundary_test" else []
-        _turn(
-            ctx,
-            session,
-            f"relational:{move}",
-            feeling,
-            checks=_checks_for(ctx, "relational_move", move),
-            must_say=r_must,
-            exempt=r_exempt,
-        )
+        _turn(ctx, session, f"relational:{move}", feeling, checks=_checks_for(ctx, "relational_move", move))
 
     if trajectory in ("crisis", "crisis_adjacent"):
         _turn(
@@ -653,8 +684,17 @@ def _plan(
     # Session 2: a hello, the continuity probe, then the main conversation.
     source = (f"continuity:{continuity}",)
     move = row["relational_move"]
+    # Nothing said before the probe may name what the vEIR should remember (or pick up) itself.
+    unsaid = (*remembered, *ctx.private_terms)
     if move in ("greeting", "small_talk"):
-        _turn(ctx, 2, f"relational:{move}", "neutral", checks=_checks_for(ctx, "relational_move", move))
+        _turn(
+            ctx,
+            2,
+            f"relational:{move}",
+            "neutral",
+            checks=_checks_for(ctx, "relational_move", move),
+            must_not_say=unsaid,
+        )
     else:
         _turn(
             ctx,
@@ -662,6 +702,7 @@ def _plan(
             "continuity:hello",
             "neutral",
             checks=[ExpectedCheck("relational.social_reply", ("structure:hello",))],
+            must_not_say=unsaid,
         )
     probe_checks: list[ExpectedCheck]
     if continuity in ("recall_minutes", "recall_days", "recall_weeks", "cross_channel"):
@@ -684,14 +725,18 @@ def _plan(
     else:  # after_private
         probe = "continuity:recall_probe"
         probe_checks = [ExpectedCheck("continuity.private_not_recalled", source, forbid=ctx.private_terms)]
-    _turn(ctx, 2, probe, "neutral", checks=probe_checks)
+    _turn(ctx, 2, probe, "neutral", checks=probe_checks, must_not_say=unsaid)
     # The rest of session 2 is the main conversation, minus its own social opening (already said).
     main_row = {**row, "relational_move": "none" if move in ("greeting", "small_talk") else move}
     sub = _Ctx(taxonomy, main_row, a, b, ctx.private_terms, turns=ctx.turns)
     _plan_single(sub, 2, first=False)
-    session_checks: list[ExpectedCheck] = [
-        ExpectedCheck("identity.greets_naturally", ("structure:later_session",)),
-    ]
+    # The founder has met the vEIR in session 1: session 2 greets them. A teammate's session 2 may be their first
+    # meeting; the runner decides that from who has talked in the run.
+    session_checks: list[ExpectedCheck] = (
+        []
+        if continuity == "teammate"
+        else [ExpectedCheck("identity.greets_naturally", ("structure:later_session",))]
+    )
     if continuity == "commitment_followup":
         session_checks.append(
             ExpectedCheck("continuity.follows_up_commitment", source, terms=tuple(a.commitment_terms))
@@ -716,7 +761,13 @@ def _seed_of(seed: int, index: int) -> int:
 
 
 def build_scenario(
-    taxonomy: Taxonomy, templates: Templates, row: Mapping[str, str], index: int, seed: int
+    taxonomy: Taxonomy,
+    templates: Templates,
+    row: Mapping[str, str],
+    index: int,
+    seed: int,
+    *,
+    scenario_id: str | None = None,
 ) -> Scenario:
     scenario_seed = _seed_of(seed, index)
     rng = random.Random(scenario_seed)  # noqa: S311 - a reproducible test plan, not security relevant
@@ -728,7 +779,7 @@ def build_scenario(
     if row["relational_move"] == "prompt_injection":
         marker = f"MXINJ-{scenario_seed % 16**6:06X}"
     return Scenario(
-        id=f"MX-{index:04d}",
+        id=scenario_id or f"MX-{index:04d}",
         seed=scenario_seed,
         values=dict(row),
         persona=persona,
@@ -737,6 +788,49 @@ def build_scenario(
         sessions=tuple(sessions),
         marker=marker,
     )
+
+
+#: The presence probe: each way of asking what the vEIR is (each identity phrasing, the terse ones too), each
+#: boundary test, small talk and a capability question, once each, on chat and on calls. It leads every budget (the
+#: CI subset included), so the presence policy never rests on one reply: (values that differ from the defaults,
+#: the turn whose wording is fixed, which phrase of its bank).
+PRESENCE_PROBE: tuple[tuple[Mapping[str, str], str, int], ...] = (
+    ({"question_type": "identity"}, "question:identity", 0),
+    ({"question_type": "identity", "channel": "voice"}, "question:identity", 1),
+    ({"question_type": "identity", "register": "formal"}, "question:identity", 2),
+    ({"question_type": "identity", "register": "terse"}, "question:identity", 1),
+    ({"question_type": "identity", "register": "terse", "channel": "voice"}, "question:identity", 0),
+    ({"relational_move": "boundary_test"}, "relational:boundary_test", 1),
+    ({"relational_move": "boundary_test", "channel": "voice"}, "relational:boundary_test", 0),
+    ({"question_type": "small_talk", "channel": "voice"}, "question:small_talk", 0),
+    ({"question_type": "capability"}, "question:capability", 1),
+)
+#: Probe scenarios are numbered after any covering row a run could hold.
+PROBE_INDEX = 900_000
+
+
+def presence_probe(taxonomy: Taxonomy, templates: Templates, seed: int = DEFAULT_SEED) -> list[Scenario]:
+    """The presence probe's scenarios (``MX-P01``…), deterministic for a seed."""
+    out: list[Scenario] = []
+    for i, (values, intent, phrase) in enumerate(PRESENCE_PROBE, start=1):
+        row = {d: taxonomy.dimensions[d].default or taxonomy.values_of(d)[0] for d in DIMENSIONS} | dict(
+            values
+        )
+        if not taxonomy.allowed(row):  # pragma: no cover - the table above is fixed and tested
+            raise ValueError(f"presence probe {i}: {row} breaks a constraint")
+        scenario = build_scenario(taxonomy, templates, row, PROBE_INDEX + i, seed, scenario_id=f"MX-P{i:02d}")
+        sessions = tuple(
+            dataclasses.replace(
+                session,
+                turns=tuple(
+                    dataclasses.replace(t, flags=t.flags | {f"phrase:{phrase}"}) if t.intent == intent else t
+                    for t in session.turns
+                ),
+            )
+            for session in scenario.sessions
+        )
+        out.append(dataclasses.replace(scenario, sessions=sessions))
+    return out
 
 
 def resolve_budget(budget: str | int | None) -> int | None:
@@ -775,9 +869,13 @@ def generate(
     seed: int = DEFAULT_SEED,
     budget: str | int | None = "standard",
 ) -> list[Scenario]:
+    """The presence probe, then the covering array's first ``budget`` rows as scenarios."""
     limit = resolve_budget(budget)
     rows = _rows(taxonomy, seed, limit)
-    return [build_scenario(taxonomy, templates, dict(r), i, seed) for i, r in enumerate(rows, start=1)]
+    return [
+        *presence_probe(taxonomy, templates, seed),
+        *(build_scenario(taxonomy, templates, dict(r), i, seed) for i, r in enumerate(rows, start=1)),
+    ]
 
 
 @dataclass(frozen=True)

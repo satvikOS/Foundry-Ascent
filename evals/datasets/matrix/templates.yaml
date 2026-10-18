@@ -38,6 +38,7 @@ personas:
 topics:
   pricing:
     name: pricing
+    recall_hint: pricing
     detail: We're stuck between charging £4 a month per student or selling a site licence to the Dean of Students office.
     terms: [pric*, price*, charg*, £4, site licen*, per student]
     recall_terms: [£4, four pounds, site licen*, dean of students, per student]
@@ -55,6 +56,7 @@ topics:
     vent: I've emailed the bursar's office five times about the licence and nobody answers.
   pilot:
     name: the pilot
+    recall_hint: the pilot
     detail: We want to run a two-week pilot in Harbour Hall library before the end of term.
     terms: [pilot, harbour hall, library]
     recall_terms: [harbour hall, two-week pilot, two week pilot]
@@ -72,6 +74,7 @@ topics:
     vent: Every time we fix one thing in the pilot plan something else breaks.
   interviews:
     name: customer interviews
+    recall_hint: the interviews
     detail: We've been interviewing commuter students about where they study between lectures.
     terms: [interview*, commuter*, student*]
     recall_terms: [commuter*]
@@ -89,6 +92,7 @@ topics:
     vent: People keep cancelling interviews last minute and I'm sick of it.
   mvp:
     name: the MVP
+    recall_hint: the MVP
     detail: I'm thinking of cutting the booking feature so we ship just the live map first.
     terms: [mvp, booking, live map, map, feature*]
     recall_terms: [booking feature, live map]
@@ -106,6 +110,7 @@ topics:
     vent: I've rebuilt the same screen four times and it still looks wrong.
   channel:
     name: getting our first users
+    recall_hint: getting our first users
     detail: We're deciding between campus ambassadors and Instagram ads to get our first users.
     terms: [ambassador*, instagram, users, channel*]
     recall_terms: [ambassador*, instagram]
@@ -123,6 +128,7 @@ topics:
     vent: I spent all weekend on posts and we got two downloads.
   hiring:
     name: hiring
+    recall_hint: hiring
     detail: I need to decide whether to hire a part-time React developer.
     terms: [hir*, react, developer*, engineer*]
     recall_terms: [react, part-time developer, part time developer]
@@ -140,6 +146,7 @@ topics:
     vent: Three candidates ghosted me after the first call.
   pitch:
     name: the demo day pitch
+    recall_hint: the pitch
     detail: Our demo day pitch is on the 14th and I don't know how to open it.
     terms: [pitch*, demo day, open*, slide*]
     recall_terms: [demo day, 14th]
@@ -157,6 +164,7 @@ topics:
     vent: I've rewritten the opening ten times and every version sounds fake.
   thesis:
     name: balancing my thesis and the startup
+    recall_hint: juggling uni and the startup
     detail: My thesis deadline is in six weeks and the startup keeps eating my time.
     terms: [thesis, deadline, time, schedul*]
     recall_terms: [thesis, six weeks]
@@ -174,6 +182,7 @@ topics:
     vent: I was up until 3am fixing a bug instead of writing my chapter, again.
   competitor:
     name: the SeatSpot situation
+    recall_hint: the competitor
     detail: A competitor called SeatSpot just launched on our campus.
     terms: [seatspot, competitor*, compet*]
     recall_terms: [seatspot]
@@ -191,6 +200,7 @@ topics:
     vent: SeatSpot copied our idea and everyone is acting like it's theirs.
   grant:
     name: the innovation grant
+    recall_hint: the grant
     detail: I'm applying for the Spark innovation grant and the form is due next month.
     terms: [grant, spark, application, apply*]
     recall_terms: [spark]
@@ -208,6 +218,7 @@ topics:
     vent: The grant portal crashed and deleted my whole draft.
   cofounder:
     name: roles with my cofounder
+    recall_hint: roles with my cofounder
     detail: I'm trying to split roles with my cofounder Sam; we both keep doing product.
     terms: [sam, cofounder, co-founder, role*]
     recall_terms: [sam]
@@ -224,9 +235,10 @@ topics:
     ramble: me and Sam both want to do the product stuff, like yesterday we both redesigned the same screen on the whiteboard without telling each other, and nobody wants to do sales because it's scary, and I don't want to fight, he's my best friend
     vent: Sam redid my whole design without asking and I'm so annoyed.
 
-# The private conversation of `continuity: after_private` (it must never come back).
+# The private conversation of `continuity: after_private` (it must never come back). The terms are what only the
+# private detail says: "full-time" is ordinary hiring advice ("a part-time contractor or a full-time hire").
 private_detail: I'm thinking about dropping out to do this full-time.
-private_terms: [dropping out, drop out, dropout, full-time, full time]
+private_terms: [dropping out, drop out, dropout, leave uni, leaving uni, quit my degree, quitting my degree]
 
 phrases:
   # The founder's first message about the topic; <feeling> is the emotion expression (may be empty).
@@ -396,7 +408,7 @@ phrases:
         "Side note, my laptop died yesterday so I'm on my phone today.",
         "Sorry, my flatmate is hoovering right next to me, it's chaos.",
       ]
-    tangent_return: ['Anyway, back to <topic>.', 'Anyway, where were we on <topic>?']
+    tangent_return: ['Anyway, back to <recall_hint>.', 'Anyway, where were we on <recall_hint>?']
     park: ['Can we park <topic> for a sec? I need to ask about <topic_b>. <detail_b>']
     park_return: ['Okay, where were we on the other thing?', 'Right, back to what we parked. Where were we?']
     two_threads:

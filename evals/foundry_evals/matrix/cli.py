@@ -144,6 +144,10 @@ def setup_matrix(args: argparse.Namespace, *, turn_cap: int) -> MatrixSetup | in
             file=sys.stderr,
         )
         return EXIT_USAGE
+    if (args.simulator == "llm" or args.judge) and args.max_cost_usd is None:
+        # A paid model never runs uncapped: --max-turns alone does not bound the simulator's and the judge's calls.
+        print("--simulator llm and --judge call paid models: set --max-cost-usd", file=sys.stderr)
+        return EXIT_USAGE
     plan = plan_matrix(
         scenarios,
         turn_cap=turn_cap,
@@ -242,6 +246,12 @@ def add_calibrate_parser(sub: Any) -> None:
     cal.add_argument("--out", type=Path, help="write the calibration report (numbers only) as JSON")
     cal.add_argument("--min-agreement", type=float, default=0.8)
     cal.add_argument("--max-distance", type=float, default=0.5)
+    cal.add_argument(
+        "--min-coverage",
+        type=float,
+        default=0.9,
+        help="share of the human-scored criteria the judge must score (default 0.9)",
+    )
 
 
 def cmd_calibrate(args: argparse.Namespace, out: TextIO, *, model: Any = None) -> int:
@@ -261,7 +271,9 @@ def cmd_calibrate(args: argparse.Namespace, out: TextIO, *, model: Any = None) -
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
     document = report.to_dict() | {
-        "passed": report.passed(min_agreement=args.min_agreement, max_distance=args.max_distance),
+        "passed": report.passed(
+            min_agreement=args.min_agreement, max_distance=args.max_distance, min_coverage=args.min_coverage
+        ),
         "judgeModel": getattr(judge.model, "model_id", None),
     }
     out.write(json.dumps(document, indent=2) + "\n")

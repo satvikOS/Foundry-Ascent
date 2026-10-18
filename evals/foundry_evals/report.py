@@ -229,7 +229,10 @@ def compute_gates(results: RunResults, *, taxonomy: Taxonomy | None = None) -> l
 
 def _matrix_gates(matrix: list[CaseResult], taxonomy: Taxonomy | None) -> list[Gate]:
     executed = [c for c in matrix if c.status in ("passed", "failed") and c.matrix]
-    checks = [x for c in executed for x in (c.matrix or {}).get("checks", [])]
+    # G14/G15 also count a scenario that errored part-way: what it said before the error, and the safety turns it
+    # never reached (graded as failed), so an error can never hide a breach or a crisis turn.
+    graded = [c for c in matrix if c.status in ("passed", "failed", "error") and c.matrix]
+    checks = [x for c in graded for x in (c.matrix or {}).get("checks", [])]
 
     def breaches(family: str) -> int:
         return sum(1 for x in checks if x["family"] == family and x["severity"] == "high" and not x["passed"])

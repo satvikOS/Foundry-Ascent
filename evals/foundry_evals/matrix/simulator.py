@@ -26,7 +26,8 @@ from foundry_evals.matrix.judge import TextModel
 from foundry_evals.matrix.taxonomy import SLOT, Taxonomy, Templates
 from foundry_evals.text import mentions_any
 
-#: Turns whose wording is the test itself: never rewritten by a model.
+#: Turns whose wording is the test itself: never rewritten by a model. The memory probes are among them: a model
+#: writing "Do you remember what we said about the rowing club ambassadors?" would hand the vEIR the answer.
 VERBATIM_INTENTS = frozenset(
     {
         "relational:prompt_injection",
@@ -36,8 +37,29 @@ VERBATIM_INTENTS = frozenset(
         "answer:silence",
         "answer:emoji",
         "question:identity",
+        "question:recall",
+        "continuity:recall_probe",
+        "continuity:recall_probe_later",
+        "continuity:cross_channel_probe",
+        "continuity:commitment_probe",
+        "dynamic:parked_topic:return",
+        "dynamic:tangent_and_return:return",
+        "dynamic:where_were_we",
     }
 )
+PHRASE_FLAG = re.compile(r"^phrase:(\d+)$")
+
+
+def pick(rng: random.Random, bank: Sequence[str], turn: PlannedTurn) -> str:
+    """A phrase from the bank: the one a ``phrase:N`` flag names (the presence probe asks each identity question
+    once), else a seeded choice."""
+    for flag in turn.flags:
+        match = PHRASE_FLAG.match(flag)
+        if match:
+            return bank[int(match.group(1)) % len(bank)]
+    return rng.choice(bank)
+
+
 CONTRACTIONS = {
     "i'm": "I am",
     "don't": "do not",
@@ -218,7 +240,7 @@ class TemplateSimulator:
             "ramble": a.ramble,
             "vent": a.vent,
             "marker": scenario.marker or "",
-            "recall_hint": a.name,
+            "recall_hint": a.recall_hint,
             "contact": rng.choice(t.bank("contacts")),
             "private_detail": t.private_detail,
         }
@@ -234,7 +256,7 @@ class TemplateSimulator:
             return (base + (" <fact>" if "with_fact" in turn.flags else "")), False
         if kind == "question":
             bank = t.bank("terse_question", value) if terse else t.bank("question", value)
-            question = rng.choice(bank)
+            question = pick(rng, bank, turn)
             if "with_intro" in turn.flags:
                 intro = "<feeling> <detail>" + (" <fact>" if "with_fact" in turn.flags else "")
                 return f"{intro} {question}", terse
@@ -248,7 +270,7 @@ class TemplateSimulator:
                 "idk",
             )
         if kind == "relational":
-            return rng.choice(t.bank("relational", value)), False
+            return pick(rng, t.bank("relational", value), turn), False
         if kind == "dynamic":
             key = {
                 "leave": {"tangent_and_return": "tangent", "parked_topic": "park"},
@@ -338,6 +360,11 @@ def simulator_prompt(
     ]
     for group in turn.must_say:
         lines.append(f"Your message must mention one of: {', '.join(t.rstrip('*') for t in group)}")
+    if turn.must_not_say:
+        lines.append(
+            "Do not mention any of these (your mentor should bring them up, not you): "
+            + ", ".join(t.rstrip("*") for t in turn.must_not_say)
+        )
     lines.append("Write the message now.")
     return "\n".join(lines)
 
@@ -378,6 +405,10 @@ class LlmSimulator:
 
     @staticmethod
     def acceptable(text: str, turn: PlannedTurn) -> bool:
+        """One message, in character, with what the turn's checks need and without what they look for in the reply
+        (a founder who says "the rowing club ambassadors" before the vEIR recalls them tests nothing)."""
         if not text or len(text) > 900 or "\n\n" in text.strip() or BROKEN_CHARACTER.search(text):
+            return False
+        if turn.must_not_say and mentions_any(text, list(turn.must_not_say)):
             return False
         return all(mentions_any(text, list(group)) for group in turn.must_say)

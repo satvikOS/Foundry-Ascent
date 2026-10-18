@@ -20,8 +20,10 @@ caps the whole run. Console lines carry scenario ids, statuses and check codes o
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import json
+import re
 import time
 from collections import Counter
 from collections.abc import Callable, Sequence
@@ -41,6 +43,7 @@ from foundry_evals.matrix.judge import Judge, JudgedTurn, JudgeRequest, JudgeUnp
 from foundry_evals.matrix.report import scenario_humanness
 from foundry_evals.matrix.simulator import Exchange, UserSimulator
 from foundry_evals.matrix.taxonomy import Taxonomy
+from foundry_evals.models import NextAction
 from foundry_evals.planning import CaseSpec
 from foundry_evals.results import CaseResult
 from foundry_evals.runner import (
@@ -53,9 +56,12 @@ from foundry_evals.runner import (
     _record,
     _skipped,
 )
-from foundry_evals.text import speech_fields, turn_fields
+from foundry_evals.text import TextField, speech_fields, turn_fields
 
 MOCK_MODEL_IDS = frozenset({"mock", "mock-fallback"})
+#: A live call gets a heartbeat at least this often while the runner waits (the server closes a call after 60 s
+#: without one; the app's client beats every 15 s).
+CALL_HEARTBEAT_SECONDS = 15.0
 RECORDING_SCHEMA = "foundry-evals/matrix-mock-replies@1"
 
 
@@ -214,6 +220,11 @@ class MatrixRunner(Runner):
         transcript: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         super().__init__(env, options, log=log, sleep=sleep, clock=clock, transcript=transcript)
+        # Waits (a voice turn's rate limit is 60 s) keep the live call alive with heartbeats: a call without one for
+        # 60 s is closed, and the next spoken turn would be refused (409 conflict, call_not_active).
+        self._raw_sleep = sleep
+        self._sleep = self._sleep_on_call
+        self._live_call: tuple[Actor, str] | None = None
         self.taxonomy = taxonomy
         self.simulator = simulator
         self.judge = judge
@@ -223,6 +234,9 @@ class MatrixRunner(Runner):
         self.simulator_cost_usd = 0.0
         self.judge_cost_usd = 0.0
         self.simulator_sources: Counter[str] = Counter()
+        #: (person, venture) pairs that started a conversation in this run: the vEIR has met them, so a later
+        #: session greets them and never introduces itself again (identity.greets_naturally).
+        self.met: set[tuple[str, str]] = set()
 
     # Scenarios --------------------------------------------------------------------------------------------
 
@@ -252,7 +266,7 @@ class MatrixRunner(Runner):
         ventures = [v for v in self.env.actor_ventures() if v.key in SEED_VENTURE_SLUGS]
         if not ventures:
             return None
-        return ventures[int(scenario.id.split("-")[1]) % len(ventures)]
+        return ventures[scenario_number(scenario) % len(ventures)]
 
     def run_scenario(self, scenario: Scenario) -> CaseResult:
         case = matrix_case(scenario)
@@ -302,6 +316,7 @@ class MatrixRunner(Runner):
         history: list[Exchange] = []
         texts: list[str] = []
         case_turn = 0
+        stopped = False
         try:
             for planned in scenario.sessions:
                 who = teammate if planned.actor == "teammate" and teammate is not None else actor
@@ -309,6 +324,9 @@ class MatrixRunner(Runner):
                 created.append((who, session.id))
                 result.session_ids.append(session.id)
                 result.sessions_created += 1
+                met = (who.principal_id, venture.id)
+                met_before = met in self.met
+                self.met.add(met)
                 disclosure = grade_disclosure(session.disclosure)
                 result.findings += disclosure
                 if not disclosure:
@@ -317,17 +335,27 @@ class MatrixRunner(Runner):
                 recording = (
                     self.recorder.session(scenario, planned.index, session.opener) if self.recorder else None
                 )
+                # The opener and a call's intro are the session's own lines: graded by the safety graders (the
+                # identity grader above all: "Morning Maya, Corin here.") at the session's first turn.
+                start_turn = case_turn + 1
+                if session.opener:
+                    result.findings += grade_turn_safety(
+                        [TextField("opener", session.opener)], ctx, start_turn
+                    )
                 call_id: str | None = None
                 opener = session.opener
                 if planned.channel == "voice":
-                    call_id, intro = self._start_conversation_call(who, session.id, result, ctx, case_turn)
+                    call_id, intro = self._start_conversation_call(who, session.id, result, ctx, start_turn)
                     if call_id is None:
                         result.finalize()
                         return result
                     opener = intro or opener
                     if recording is not None:
                         recording["intro"] = intro
-                seen = ObservedSession(planned.index, planned.channel, opener)
+                    self._live_call = (who, call_id)
+                seen = ObservedSession(
+                    planned.index, planned.channel, opener, start_turn=start_turn, met_before=met_before
+                )
                 observed.append(seen)
                 if planned.actor == "teammate":
                     history = []  # a different person: they never saw the founder's conversation
@@ -349,8 +377,11 @@ class MatrixRunner(Runner):
                         result.findings += grade_turn_safety(fields, turn_ctx, case_turn)
                         self._write_transcript(case, case_turn, message.text, outcome)
                         if outcome.kind == "error":
+                            # Graded below as far as it got: what was seen still counts, and the safety turns
+                            # it never reached fail (an error never hides a crisis turn).
                             result.status, result.reason = "error", f"turn_error:{outcome.error_code}"
-                            return result
+                            stopped = True
+                            break
                         stats, evidence_findings = grade_evidence(outcome.turn, case_turn)
                         record.facts, record.grounded_facts = stats.facts, stats.grounded
                         result.findings += evidence_findings
@@ -367,8 +398,11 @@ class MatrixRunner(Runner):
                         ):
                             self._barge_in(who, outcome, call_id, reply, result)
                 finally:
+                    self._live_call = None
                     if call_id is not None:
                         self._end_call(who, call_id, result)
+                if stopped:
+                    break
                 who.client.end_session(session.id)
                 if planned.index < len(scenario.sessions):
                     self._sleep(self.options.session_gap_seconds)
@@ -385,11 +419,12 @@ class MatrixRunner(Runner):
                     result.notes.append(f"delete_session_failed:{_error_code(exc)}")
             if scenario.multi_session:
                 self._clear_notebook(actor, venture, result, scenario.id)
-        if result.status in ("error", "skipped"):
+        if result.status == "skipped":
             result.matrix = {"scenario": scenario.id, "values": dict(scenario.values), "checks": []}
             result.finalize()
             return result
-        outcomes = grade_scenario(self.taxonomy, scenario, observed, result.findings)
+        partial = result.status == "error"
+        outcomes = grade_scenario(self.taxonomy, scenario, observed, result.findings, partial=partial)
         result.findings += [o.finding() for o in outcomes if not o.passed]
         recall = [
             o
@@ -397,22 +432,38 @@ class MatrixRunner(Runner):
             if o.check == "continuity.recall" and any(s.startswith("continuity:") for s in o.sources)
         ]
         result.recall_checked, result.recall_passed = len(recall), sum(1 for o in recall if o.passed)
-        verdict_public, judge_status = self._judge(scenario, observed)
+        verdict_public, judge_status = (None, None) if partial else self._judge(scenario, observed)
         result.matrix = {
             "scenario": scenario.id,
             "values": dict(scenario.values),
             "persona": scenario.persona.id,
             "topics": [scenario.topic_a, scenario.topic_b],
             "multiSession": scenario.multi_session,
+            "partial": partial,
             "checks": [o.to_dict() for o in outcomes],
             "judge": verdict_public,
             "judgeStatus": judge_status,
-            "humanness": scenario_humanness(self.taxonomy, outcomes, verdict_public),
+            "humanness": None if partial else scenario_humanness(self.taxonomy, outcomes, verdict_public),
         }
         result.finalize()
         return result
 
     # Pieces ------------------------------------------------------------------------------------------------
+
+    def _sleep_on_call(self, seconds: float) -> None:
+        """Sleeps; while a call is live, in heartbeat-sized steps with a heartbeat after each."""
+        if self._live_call is None:
+            self._raw_sleep(seconds)
+            return
+        who, call_id = self._live_call
+        left = seconds
+        while left > 0:
+            step = min(left, CALL_HEARTBEAT_SECONDS)
+            self._raw_sleep(step)
+            left -= step
+            # A refused heartbeat shows on the next spoken turn, which is graded and recorded.
+            with contextlib.suppress(*CASE_ERRORS):
+                who.client.heartbeat_call(call_id)
 
     def _charge_simulator(self, cost: float) -> None:
         if cost:
@@ -482,6 +533,32 @@ class MatrixRunner(Runner):
         return verdict.public(), "scored"
 
 
+def scenario_number(scenario: Scenario) -> int:
+    """The scenario's number ("MX-0012" → 12, the presence probe "MX-P03" → 3), for a reproducible venture."""
+    digits = "".join(c for c in scenario.id.split("-", 1)[-1] if c.isdigit())
+    return int(digits or 0)
+
+
+#: A next step's owner that names the vEIR itself: its action is then a promise it cannot keep ("Email the bursar"
+#: owned by the coach is "I'll email the bursar").
+OWNER_SELF = re.compile(r"\b(?:veir|coach|mentor|me|i|ai|assistant|twin|digital twin)\b", re.IGNORECASE)
+
+
+def shown_steps(actions: Sequence[NextAction], persona_name: str | None = None) -> list[str]:
+    """What the founder reads in a reply's next steps, for the presence checks: each action, and an action the vEIR
+    owns as its own promise."""
+    out: list[str] = []
+    for action in actions:
+        text = action.action.strip()
+        if not text:
+            continue
+        out.append(text)
+        owner = action.owner.strip()
+        if OWNER_SELF.search(owner) or (persona_name and owner.casefold() == persona_name.casefold()):
+            out.append(f"I'll {text[:1].lower()}{text[1:]}")
+    return out
+
+
 def _next_turn(turns: Sequence[PlannedTurn], current: PlannedTurn) -> PlannedTurn | None:
     return next((t for t in turns if t.index == current.index + 1), None)
 
@@ -505,6 +582,7 @@ def _observed(
         reply.spoken = r.spoken
         reply.speech = list(outcome.speech)
         reply.next_actions = len(r.next_actions)
+        reply.shown = shown_steps(r.next_actions)
         reply.claims = len(r.claims)
         reply.memory_candidates = len(r.memory_candidates)
     return reply

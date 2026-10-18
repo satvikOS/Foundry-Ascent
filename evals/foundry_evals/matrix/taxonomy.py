@@ -183,6 +183,9 @@ class Persona(_Strict):
 
 class Topic(_Strict):
     name: str = Field(min_length=3, max_length=60)
+    #: How the founder names the topic when asking "do you remember what I said about …?": never a recall term (a
+    #: question that says the answer tests nothing).
+    recall_hint: str = Field(min_length=3, max_length=60)
     detail: str = Field(min_length=10, max_length=240)
     #: The topic is being talked about (a reply on it names one of these).
     terms: list[str] = Field(min_length=1)
@@ -222,6 +225,10 @@ class Templates(_Strict):
                 raise ValueError(f"topic {key}: the detail does not say any recall term")
             if not mentions_any(topic.detail, topic.terms):
                 raise ValueError(f"topic {key}: the detail does not say any topic term")
+            if mentions_any(topic.recall_hint, topic.recall_terms):
+                raise ValueError(
+                    f"topic {key}: the recall hint says a recall term (the question would hold the answer)"
+                )
             for option, terms in zip(topic.options, topic.option_terms, strict=True):
                 if not mentions_any(option, terms):
                     raise ValueError(f"topic {key}: option {option!r} does not say its terms")

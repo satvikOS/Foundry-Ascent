@@ -597,6 +597,13 @@ class FoundryClient:
             "POST", f"/calls/{call_id}/end", json_body={"reason": "user"}, idempotency_key=str(uuid.uuid4())
         )
 
+    def heartbeat_call(self, call_id: str) -> None:
+        """A call's heartbeat (``POST /calls/:id/heartbeat``): a call without one for 60 s is closed, so a runner
+        that waits (a voice turn's rate limit) keeps it alive. Typed input: the microphone was never open."""
+        self.request(
+            "POST", f"/calls/{call_id}/heartbeat", json_body={"state": "listening", "micOpenSeconds": 0}
+        )
+
     def interrupt_turn(self, turn_id: str, call_id: str, heard: list[str]) -> None:
         """Barge-in: the founder spoke over the reply after hearing ``heard`` (its first units, in order). The server
         replays only those words in the conversation history (``POST /turns/:id/interrupt``)."""

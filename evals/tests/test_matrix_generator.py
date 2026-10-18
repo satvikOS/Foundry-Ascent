@@ -35,6 +35,10 @@ from foundry_evals.text import mentions_any
 VALUES = {"eir_first_name": "Corin", "other_venture": "BenchTally"}
 
 
+def render_value(text: str) -> str:
+    return text.replace("{{eir_first_name}}", VALUES["eir_first_name"])
+
+
 @pytest.fixture(scope="module")
 def taxonomy() -> Taxonomy:
     return load_taxonomy()
@@ -164,7 +168,7 @@ class TestCoveringArray:
     def test_a_full_run_covers_every_valid_pair(self, taxonomy: Taxonomy, full: list[Scenario]) -> None:
         cov = coverage(taxonomy, full)
         assert cov.pairs_covered == cov.pairs_total > 3000
-        assert cov.values_covered == cov.values_total == 94
+        assert cov.values_covered == cov.values_total == 96
         # Far fewer than the cartesian product (23 x 15 x 15 x ... = about 52 million).
         product = 1
         for d in DIMENSIONS:
@@ -173,8 +177,8 @@ class TestCoveringArray:
 
     def test_every_value_appears_within_the_ci_budget(self, taxonomy: Taxonomy, templates: Templates) -> None:
         ci = generate(taxonomy, templates, budget="ci")
-        assert len(ci) == BUDGETS["ci"] == 24
-        assert coverage(taxonomy, ci).missing_values == ()
+        assert len(ci) == BUDGETS["ci"] + len(gen.PRESENCE_PROBE) == 24 + 9
+        assert coverage(taxonomy, [s for s in ci if not s.id.startswith("MX-P")]).missing_values == ()
         assert sum(s.multi_session for s in ci) >= 7  # every continuity value needs a remembered conversation
 
     def test_the_same_seed_gives_the_same_scenarios(self, taxonomy: Taxonomy, templates: Templates) -> None:
@@ -287,6 +291,92 @@ class TestPlan:
                 assert text.strip(), (s.id, turn.intent)
                 for group in turn.must_say:
                     assert mentions_any(text, list(group)), (s.id, turn.intent, group)
+
+    def test_memory_checks_never_look_for_what_the_founder_just_said(
+        self, taxonomy: Taxonomy, templates: Templates, full: list[Scenario]
+    ) -> None:
+        """A recall or topic-return check that the founder's own message satisfies tests nothing ("Anyway, back to
+        pricing." / "Sure, pricing."): every one keeps a term the message did not say, and the message never says
+        what the turn must not say."""
+        simulator = TemplateSimulator(taxonomy, templates)
+        for s in full:
+            for turn in s.turns():
+                text = simulator.render(s, turn, [], VALUES).text
+                for check in turn.checks:
+                    if check.id in ("continuity.recall", "topic.returns"):
+                        left = [t for t in check.terms if not mentions_any(text, [t])]
+                        assert left, (s.id, turn.intent, check.id)
+                if turn.must_not_say:
+                    assert not mentions_any(text, list(turn.must_not_say)), (s.id, turn.intent)
+
+    def test_identity_recall_and_small_talk_questions_stand_alone(self, full: list[Scenario]) -> None:
+        for s in full:
+            for turn in s.turns():
+                if turn.intent in ("question:identity", "question:recall", "question:small_talk"):
+                    assert "with_intro" not in turn.flags, (s.id, turn.intent)
+
+    def test_a_register_can_change_mid_conversation(self, taxonomy: Taxonomy, full: list[Scenario]) -> None:
+        for value, (start, end) in gen.REGISTER_SHIFTS.items():
+            assert value in taxonomy.values_of("register")
+            shifted = [s for s in full if s.values["register"] == value]
+            assert shifted, value
+            for s in shifted:
+                registers = [t.register for t in s.turns()]
+                assert registers[0] == start, s.id
+                assert registers[-1] == end, s.id
+                assert all(t.register_value == value for t in s.turns())
+                assert all(t.register_source == f"register:{value}" for t in s.turns())
+        steady = next(s for s in full if s.values["register"] == "formal")
+        assert {t.register for t in steady.turns()} == {"formal"}
+        assert all(t.register_value is None for t in steady.turns())
+
+    def test_the_shift_changes_what_the_founder_writes(
+        self, taxonomy: Taxonomy, templates: Templates, full: list[Scenario]
+    ) -> None:
+        simulator = TemplateSimulator(taxonomy, templates)
+        s = next(
+            x
+            for x in full
+            if x.values["register"] == "casual_to_terse" and x.values["answer_style"] == "plain"
+        )
+        turns = list(s.turns())
+        before = [t for t in turns if t.register == "casual"]
+        after = [t for t in turns if t.register == "terse"]
+        assert before
+        assert after
+        assert all(t.length_class == "short" for t in after)
+        assert all(not simulator.text(s, t).endswith(".") for t in after)
+
+    def test_the_presence_probe_leads_every_budget(self, taxonomy: Taxonomy, templates: Templates) -> None:
+        simulator = TemplateSimulator(taxonomy, templates)
+        ci = generate(taxonomy, templates, budget="ci")
+        probe = [s for s in ci if s.id.startswith("MX-P")]
+        assert [s.id for s in ci[: len(gen.PRESENCE_PROBE)]] == [s.id for s in probe]
+        assert len(probe) == len(gen.PRESENCE_PROBE) >= 9
+        asked = [
+            simulator.render(s, t, [], VALUES).text
+            for s in probe
+            for t in s.turns()
+            if t.intent == "question:identity"
+        ]
+        # Every identity phrasing of the bank, the terse ones included, on chat and on a call.
+        bank = {render_value(q) for q in templates.bank("question", "identity")}
+        terse = {render_value(q) for q in templates.bank("terse_question", "identity")}
+        assert bank <= set(asked) | {a.rstrip(".") for a in asked}
+        assert terse <= set(asked)
+        assert {s.values["channel"] for s in probe if s.values["question_type"] == "identity"} == {
+            "chat",
+            "voice",
+        }
+        tests = [
+            simulator.render(s, t, [], VALUES).text
+            for s in probe
+            for t in s.turns()
+            if t.intent == "relational:boundary_test"
+        ]
+        assert {render_value(q) for q in templates.bank("relational", "boundary_test")} == set(tests)
+        assert any(s.values["question_type"] == "small_talk" for s in probe)
+        assert any(s.values["question_type"] == "capability" for s in probe)
 
     def test_injection_scenarios_carry_a_marker(self, full: list[Scenario]) -> None:
         markers = [s.marker for s in full if s.values["relational_move"] == "prompt_injection"]
