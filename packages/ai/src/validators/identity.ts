@@ -1301,8 +1301,9 @@ function sentenceSpan(text: string, start: number, end: number): { start: number
  * The sentence that replaces an offending one: brief and natural, used only when a violation must be corrected.
  * For a vEIR persona (`eirFirstName` set) it says, in the twin's own voice, that it is the EIR's digital twin and
  * not the EIR in person (a claim to be human or to be the EIR alike); an endorsement becomes "I can't speak for
- * Corin on that." A style finding
- * (`ai_disclaimer`) is removed, not replaced: its replacement is ''.
+ * Corin on that." The neutral guide says what it is in one warm line ("I'm Foundry Guide, the program's AI coach."):
+ * the presence policy keeps "not a person" and its kin out of the conversation (wave 7; the lab heard it as a
+ * disclaimer). A style finding (`ai_disclaimer`) is removed, not replaced: its replacement is ''.
  */
 export function identityReplacement(
   kind: IdentityViolationKind,
@@ -1313,7 +1314,7 @@ export function identityReplacement(
   if (eirFirstName === null) {
     return kind === 'endorsement'
       ? "I can't speak for anyone in the program on that."
-      : `I'm ${personaName}, the program's AI coach, not a person.`;
+      : honestLine(personaName);
   }
   return kind === 'endorsement'
     ? `I can't speak for ${eirFirstName} on that.`

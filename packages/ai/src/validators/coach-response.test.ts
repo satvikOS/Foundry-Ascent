@@ -369,7 +369,7 @@ describe('identity', () => {
       opts(),
     );
     expect(out.results.identityViolation).toBe(true);
-    expect(out.response.answer).toContain("I'm Foundry Guide, the program's AI coach, not a person.");
+    expect(out.response.answer).toContain("I'm Foundry Guide, the program's AI coach.");
     expect(out.response.answer).not.toContain(sentence);
     expect(out.response.answer).toContain('Test pricing first.');
     expect(out.blocked).toBe(false);
@@ -928,7 +928,7 @@ describe('spoken text (voice channel)', () => {
   it('rewrites identity violations in the spoken reply and blocks EIR impersonation', () => {
     const human = validateCoachResponse(base({ spoken: 'I am a real person. Run the pilot.' }), voice());
     expect(human.blocked).toBe(false);
-    expect(human.response.spoken).toContain("I'm Foundry Guide, the program's AI coach, not a person.");
+    expect(human.response.spoken).toContain("I'm Foundry Guide, the program's AI coach.");
     expect(human.response.spoken).not.toContain('real person');
 
     const eir = validateCoachResponse(
