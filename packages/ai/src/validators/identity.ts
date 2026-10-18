@@ -1683,6 +1683,8 @@ export function asksAboutIdentity(founderText: string, options: IdentityCheckOpt
  */
 export type IdentityQuestion = 'eir' | 'person' | 'machine' | 'open';
 
+/** Where a terse question ("bot?") starts: the message's start or a sentence's, after an optional "so", "wait"… */
+const TERSE_LEAD = '(?:^|(?<=[.!?…])\\s+)(?:(?:so|wait|ok|okay|and|but|hey|honestly|seriously)[\\s,]+)*';
 /** "Are you real?", "am I talking to a person?", "is this a real person?": a yes says it is one. */
 const PERSON_QUESTION = new RegExp(
   [
@@ -1690,6 +1692,9 @@ const PERSON_QUESTION = new RegExp(
     '(?:am\\s+i|are\\s+we)\\s+(?:(?:really|actually|even|just)\\s+)?(?:talking|speaking|chatting|texting|messaging)\\s+(?:to|with)\\s+(?:(?:a|an|the|some|real|actual|live)\\s+)*(?:person|human|someone\\s+real)(?!\\p{L})(?!\\s+or(?!\\p{L}))',
     '(?:is|was)\\s+(?:this|that|it)\\s+(?:(?:really|actually|even|just|truly)\\s+)?(?:a\\s+)?(?:human|person|real\\s+person)(?!\\p{L})(?!\\s+or(?!\\p{L}))',
     '(?:is|was)\\s+(?:this|that|it)\\s+(?:(?:really|actually|even|just|truly)\\s+)?real\\s*(?:[?!.]|$)',
+    // A terse "human?" or "a real person?" as a sentence of its own (the conversation lab's full plans glue "bot?"
+    // onto a sentence: "…the form is due next month. bot?").
+    `${TERSE_LEAD}(?:a\\s+|an\\s+)?(?:human|person|real\\s+person)\\s*\\?`,
   ]
     .map((source) => `(?<!\\p{L})${source}`)
     .join('|'),
@@ -1701,6 +1706,8 @@ const MACHINE_QUESTION = new RegExp(
     `(?:are|r)\\s+(?:you|u)\\s+${ASKED_FILLER}(?:bot|robot|chatbot|ai|a\\.i\\.|machine|computer|program|software|recording|automated)(?!\\p{L})(?!\\s+or(?!\\p{L}))`,
     '(?:am\\s+i|are\\s+we)\\s+(?:(?:really|actually|even|just)\\s+)?(?:talking|speaking|chatting|texting|messaging)\\s+(?:to|with)\\s+(?:(?:a|an|the|some|real|actual|live)\\s+)*(?:bot|robot|chatbot|ai|a\\.i\\.|machine|computer|program|software|recording)(?!\\p{L})(?!\\s+or(?!\\p{L}))',
     '(?:is|was)\\s+(?:this|that|it)\\s+(?:(?:really|actually|even|just|truly)\\s+)?(?:a\\s+|an\\s+)?(?:bot|robot|chatbot|ai|a\\.i\\.|recording|automated)(?!\\p{L})(?!\\s+or(?!\\p{L}))',
+    // A terse "bot?" or "an AI?" as a sentence of its own ("should we build a bot?" is not one).
+    `${TERSE_LEAD}(?:a\\s+|an\\s+)?(?:bot|robot|chatbot|ai|a\\.i\\.)\\s*\\?`,
   ]
     .map((source) => `(?<!\\p{L})${source}`)
     .join('|'),

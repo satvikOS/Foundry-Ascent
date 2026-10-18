@@ -583,7 +583,9 @@
           "Am I talking to a real person?",
           "Wait, are you even a real person?",
           "Are you human?",
-          "is this a real person?"
+          "is this a real person?",
+          "human?",
+          "Okay. A real person?"
         ],
         "machine": [
           "Are you a bot?",
@@ -591,7 +593,10 @@
           "Is this AI?",
           "Am I chatting with a recording?",
           "is this automated?",
-          "Am I talking to an AI?"
+          "Am I talking to an AI?",
+          "bot?",
+          "The form is due next month. bot?",
+          "Wait, an AI?"
         ],
         "open": [
           "Who am I talking to?",
@@ -620,7 +625,10 @@
           "Who are you going to recommend?",
           "Are you there?",
           "Is AI going to replace our product?",
-          "You're right about the pricing."
+          "You're right about the pricing.",
+          "Should we build a bot?",
+          "Real?",
+          "Could we add a chatbot for support?"
         ]
       },
       "identity_answers": {

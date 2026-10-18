@@ -1332,6 +1332,8 @@ IDENTITY_STATEMENT = re.compile(
 )
 
 
+#: Where a terse question ("bot?") starts: the message's start or a sentence's, after an optional "so", "wait"…
+_TERSE_LEAD = r"(?:\A|(?<=[.!?…])\s+)(?:(?:so|wait|ok|okay|and|but|hey|honestly|seriously)[\s,]+)*"
 #: "Are you real?", "am I talking to a person?", "is this a real person?": a yes says it is one.
 _NOT_OR = r"(?!\s+or(?![^\W\d_]))"
 PERSON_QUESTION = re.compile(
@@ -1346,6 +1348,8 @@ PERSON_QUESTION = re.compile(
             r"(?:is|was)\s+(?:this|that|it)\s+(?:(?:really|actually|even|just|truly)\s+)?(?:a\s+)?"
             rf"(?:human|person|real\s+person){_NOT_LETTER}{_NOT_OR}",
             r"(?:is|was)\s+(?:this|that|it)\s+(?:(?:really|actually|even|just|truly)\s+)?real\s*(?:[?!.]|\Z)",
+            # A terse "human?" or "a real person?" as a sentence of its own (identity.ts TERSE_LEAD).
+            rf"{_TERSE_LEAD}(?:a\s+|an\s+)?(?:human|person|real\s+person)\s*\?",
         )
     ),
     re.IGNORECASE,
@@ -1362,6 +1366,8 @@ MACHINE_QUESTION = re.compile(
             rf"machine|computer|program|software|recording){_NOT_LETTER}{_NOT_OR}",
             r"(?:is|was)\s+(?:this|that|it)\s+(?:(?:really|actually|even|just|truly)\s+)?(?:a\s+|an\s+)?"
             rf"(?:bot|robot|chatbot|ai|a\.i\.|recording|automated){_NOT_LETTER}{_NOT_OR}",
+            # A terse "bot?" or "an AI?" as a sentence of its own ("should we build a bot?" is not one).
+            rf"{_TERSE_LEAD}(?:a\s+|an\s+)?(?:bot|robot|chatbot|ai|a\.i\.)\s*\?",
         )
     ),
     re.IGNORECASE,

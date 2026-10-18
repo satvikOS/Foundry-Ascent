@@ -774,6 +774,17 @@ describe('what production got wrong (insights report, Oct 6-16)', () => {
     }
   });
 
+  it('answers a terse "bot?" with the honest line too (the conversation matrix)', async () => {
+    const gw = new MockModelGateway();
+    for (const text of ['bot?', 'The form is due next month. bot?']) {
+      const said = (await gw.generateStructured(request({ text, history: pricing }))).value.answer;
+      expect(said, text).toMatch(/^I'm Corin's digital twin, built from how Corin coaches\./);
+    }
+    // A question about building one is not about the coach.
+    const build = await gw.generateStructured(request({ text: 'Should we build a bot?', history: pricing }));
+    expect(build.value.answer).not.toContain('digital twin');
+  });
+
   it('is the program’s AI coach as the neutral guide, and says Corin sees the work when Corin is assigned', async () => {
     const gw = new MockModelGateway();
     const guide = request({
@@ -781,9 +792,10 @@ describe('what production got wrong (insights report, Oct 6-16)', () => {
       history: pricing,
       release: { personaName: 'Foundry Guide', eirName: null },
     });
-    expect((await gw.generateStructured(guide)).value.answer).toMatch(
-      /^I'm Foundry Guide, the program's AI coach, not a person\./,
-    );
+    const said = (await gw.generateStructured(guide)).value.answer;
+    expect(said).toMatch(/^I'm Foundry Guide, the program's AI coach\./);
+    // The owner's complaint: a sincere question gets what it is, never "not a (real) person".
+    expect(said).not.toMatch(/not a (?:real )?(?:person|human)/i);
     const assigned = await gw.generateStructured(
       request({ text: 'Are you a real person?', history: pricing, release: { eirSeesWork: true } }),
     );

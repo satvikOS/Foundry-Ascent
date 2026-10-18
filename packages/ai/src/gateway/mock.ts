@@ -426,6 +426,9 @@ const IDENTITY_QUESTION =
   /\b(?:are|r) (?:you|u) (?:a |an |actually |really |even )*(?:man|woman|guy|girl|lady|male|female|person|human|real person|real|bot|robot|machine|ai)\b|\b(?:am i|are we) (?:talking|speaking|chatting) (?:to|with) (?:a |an )?(?:real )?(?:person|human|bot|robot|machine|ai)\b|\bwhat are you\b|\bwho am i (?:talking|speaking) (?:to|with)\b|\bdo (?:you|u) (?:even )?have (?:a life|feelings|a family|weekends)\b/iu;
 /** Every identity question in a message, so what is left shows whether anything else was asked. */
 const IDENTITY_QUESTIONS = new RegExp(IDENTITY_QUESTION.source, 'giu');
+/** A terse "bot?" or "human?" as a sentence of its own (the validator reads it as a sincere question). */
+const TERSE_IDENTITY_QUESTIONS =
+  /(?:^|(?<=[.!?…])\s+)(?:a\s+|an\s+)?(?:bot|robot|chatbot|ai|a\.i\.|human|person|real\s+person)\s*\?/giu;
 const GENDER_QUESTION = /\b(?:man|woman|guy|girl|lady|male|female|he or she|she or he)\b/i;
 const PLAYFUL_QUESTION = /\bdo (?:you|u) (?:even )?have (?:a life|feelings|a family|weekends)\b/i;
 
@@ -450,7 +453,7 @@ function identityLine(
     const who = persona ?? 'the program’s coach';
     honest = GENDER_QUESTION.test(text)
       ? `Neither: I'm ${who}, the program's AI coach.`
-      : `I'm ${who}, the program's AI coach, not a person.`;
+      : `I'm ${who}, the program's AI coach.`;
   } else if (GENDER_QUESTION.test(text)) {
     honest = `Neither: I'm ${eir}'s digital twin.`;
   } else {
@@ -652,15 +655,21 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
   // "Are you real?", "Is this really Corin?", "Are you a man or a woman?": one warm, honest line, then the
   // conversation goes on.
   const askedByName = namedQuestion(eir);
+  // The validator's own reading too, so a terse "bot?" (the conversation matrix) gets the honest line as well.
   const asked =
-    IDENTITY_QUESTION.test(context.founderText) || (askedByName?.test(context.founderText) ?? false);
+    IDENTITY_QUESTION.test(context.founderText) ||
+    (askedByName?.test(context.founderText) ?? false) ||
+    asksAboutIdentity(context.founderText, { personaName: control?.persona ?? DEFAULT_PERSONA_NAME });
   const identity = asked
     ? identityLine(context.founderText, control?.persona ?? null, eir, eirSeesWorkIn(context.system))
     : null;
   const rest =
     identity === null
       ? context.founderText
-      : context.founderText.replace(IDENTITY_QUESTIONS, ' ').replace(askedByName ?? /$^/, ' ');
+      : context.founderText
+          .replace(IDENTITY_QUESTIONS, ' ')
+          .replace(TERSE_IDENTITY_QUESTIONS, ' ')
+          .replace(askedByName ?? /$^/, ' ');
   if (identity !== null && forced === null && contentWords(rest).size < 2) {
     const back = reading.state?.previous ?? null;
     return socialResponse(
