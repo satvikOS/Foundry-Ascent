@@ -1,4 +1,4 @@
-import { CoreConfig, loadConfig, type EnvLike } from '@foundry/core';
+import { CoreConfig, MEDIA_VENDORS, loadConfig, type EnvLike } from '@foundry/core';
 import { z } from 'zod';
 
 /**
@@ -55,6 +55,22 @@ const EnvSchema = z.object({
   SPEECH_ENABLED: z.preprocess(emptyToUndefined, z.enum(['true', 'false']).default('true')),
   /** infra `speech.engine`: the Polly engine tried first (ADR-0010). */
   SPEECH_ENGINE: z.preprocess(emptyToUndefined, SpeechEngine.default('neural')),
+  /** infra `media.face.provider`: the vEIR's video face (docs/runbooks/avatars.md). Off: `none`. */
+  MEDIA_FACE_PROVIDER: z.preprocess(emptyToUndefined, z.enum(['none', 'heygen-liveavatar']).default('none')),
+  /** infra `media.face.sandbox`: LiveAvatar sandbox sessions (free, a minute long, the sandbox avatar). */
+  MEDIA_FACE_SANDBOX: z.preprocess(emptyToUndefined, z.enum(['true', 'false']).default('false')),
+  /** infra `media.voice.provider`: the EIRs' cloned voices. Off: `polly` (stock voices only). */
+  MEDIA_VOICE_PROVIDER: z.preprocess(emptyToUndefined, z.enum(['polly', 'elevenlabs']).default('polly')),
+  /** infra `media.voice.model`: the ElevenLabs model. */
+  MEDIA_VOICE_MODEL: z.preprocess(
+    emptyToUndefined,
+    z
+      .string()
+      .regex(/^[a-z0-9_]{1,64}$/)
+      .default(MEDIA_VENDORS.voice.elevenlabs.defaultModel),
+  ),
+  /** infra `media.voice.zeroRetention`: ask ElevenLabs to keep nothing (Enterprise accounts only). */
+  MEDIA_VOICE_ZERO_RETENTION: z.preprocess(emptyToUndefined, z.enum(['true', 'false']).default('false')),
 });
 
 export interface ApiConfig {
@@ -70,6 +86,17 @@ export interface ApiConfig {
   readonly siteOrigin: string | null;
   /** Voice calls (ADR-0010): whether Polly and Transcribe may be used, and the Polly engine to try first. */
   readonly speech: { readonly enabled: boolean; readonly engine: SpeechEngine };
+  /**
+   * The vEIR's digital twin (docs/runbooks/avatars.md): which vendor draws the face and voices the EIRs' clones,
+   * each off unless configured (and then still off until the platform settings turn them on).
+   */
+  readonly media: {
+    readonly face: 'none' | 'heygen-liveavatar';
+    readonly faceSandbox: boolean;
+    readonly voice: 'polly' | 'elevenlabs';
+    readonly voiceModel: string;
+    readonly voiceZeroRetention: boolean;
+  };
 }
 
 export class ConfigError extends Error {
@@ -102,6 +129,13 @@ export function loadApiConfig(env: EnvLike, role: ApiRole): ApiConfig {
     jobsMaxReceiveCount: e.JOBS_MAX_RECEIVE_COUNT,
     siteOrigin: e.SITE_ORIGIN?.replace(/\/+$/, '') ?? null,
     speech: { enabled: e.SPEECH_ENABLED === 'true', engine: e.SPEECH_ENGINE },
+    media: {
+      face: e.MEDIA_FACE_PROVIDER,
+      faceSandbox: e.MEDIA_FACE_SANDBOX === 'true',
+      voice: e.MEDIA_VOICE_PROVIDER,
+      voiceModel: e.MEDIA_VOICE_MODEL,
+      voiceZeroRetention: e.MEDIA_VOICE_ZERO_RETENTION === 'true',
+    },
   };
 }
 

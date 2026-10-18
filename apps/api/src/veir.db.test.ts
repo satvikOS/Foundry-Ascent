@@ -232,6 +232,7 @@ describe('vEIR identity and call configuration', () => {
       expiresAt: null,
       voiceId: 'Matthew',
       voicing: 'engine',
+      url: null,
     });
   });
 

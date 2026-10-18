@@ -11,6 +11,7 @@ const SESSION: AvatarSessionResponse = {
   expiresAt: '2026-10-17T12:01:00.000Z',
   voiceId: 'Matthew',
   voicing: 'audio',
+  url: null,
 };
 
 function setup() {

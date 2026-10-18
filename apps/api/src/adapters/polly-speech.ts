@@ -27,8 +27,8 @@ export function preferEngine(
 }
 
 /**
- * Text-to-speech for calls (core `SpeechSynthesizer` port) through Amazon Polly `SynthesizeSpeech`: MP3,
- * streamed to the caller as Polly produces it. Of the engines core gives for the voice, the deployment's
+ * Text-to-speech for calls (core `SpeechSynthesizer` port) through Amazon Polly `SynthesizeSpeech`: MP3 (or
+ * 16 kHz PCM for a face), streamed to the caller as Polly produces it. Of the engines core gives for the voice, the deployment's
  * engine is tried first, then the others in core's order; the text is validated reply text only, and is
  * never logged. Needs `polly:SynthesizeSpeech` on the API role.
  */
@@ -46,10 +46,13 @@ export class PollySpeechSynthesizer implements SpeechSynthesizer {
     let lastError: unknown = null;
     for (const engine of preferEngine(input.engines, this.engine)) {
       try {
+        // A face renders raw PCM (Polly's PCM is 16-bit mono little-endian, at most 16 kHz; core resamples it).
+        const pcm = input.format === 'pcm_16000';
         const output = await this.#client.send(
           new SynthesizeSpeechCommand({
             Engine: engine,
-            OutputFormat: 'mp3',
+            OutputFormat: pcm ? 'pcm' : 'mp3',
+            ...(pcm ? { SampleRate: '16000' } : {}),
             Text: input.text,
             TextType: 'text',
             VoiceId: input.voiceId as VoiceId,
@@ -61,7 +64,8 @@ export class PollySpeechSynthesizer implements SpeechSynthesizer {
         const audio: ReadableStream<Uint8Array> = stream.transformToWebStream() as ReadableStream<Uint8Array>;
         return {
           audio,
-          contentType: 'audio/mpeg',
+          contentType: pcm ? 'audio/pcm' : 'audio/mpeg',
+          ...(pcm ? { sampleRateHertz: 16_000 } : {}),
           characters: output.RequestCharacters ?? input.text.length,
           engine,
           voiceId: input.voiceId,
