@@ -17,7 +17,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "pytest>=9,<10",
-  "ruff>=0.16,<0.17",
+  "ruff>=0.16,<0.18",
 ]
 # The conversation lab only: the matrix's LLM simulator and judge call Amazon Bedrock (foundry_evals/matrix/bedrock.py).
 lab = [
