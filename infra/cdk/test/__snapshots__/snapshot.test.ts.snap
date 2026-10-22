@@ -298,38 +298,6 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
       },
       "Type": "AWS::Lambda::Function",
     },
-    "ApiFunctionCloudFrontInvokeViaFunctionUrlB061CC01": {
-      "DependsOn": [
-        "Migrations",
-      ],
-      "Properties": {
-        "Action": "lambda:InvokeFunction",
-        "FunctionName": {
-          "Fn::GetAtt": [
-            "ApiFunction6BF808ED",
-            "Arn",
-          ],
-        },
-        "InvokedViaFunctionUrl": true,
-        "Principal": "cloudfront.amazonaws.com",
-        "SourceArn": {
-          "Fn::Join": [
-            "",
-            [
-              "arn:aws:cloudfront::",
-              {
-                "Ref": "AWS::AccountId",
-              },
-              ":distribution/",
-              {
-                "Ref": "Distribution830FAC52",
-              },
-            ],
-          ],
-        },
-      },
-      "Type": "AWS::Lambda::Permission",
-    },
     "ApiFunctionFunctionUrlFF5ECAE6": {
       "DependsOn": [
         "Migrations",
@@ -883,6 +851,7 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
         "DistributionOrigin1S3OriginAccessControlEB606076",
         "DistributionOrigin2FunctionUrlOriginAccessControlAC8EE0B1",
         "DistributionOrigin2InvokeFromApiForFoundryAscentAppDistributionOrigin2824E45B15BE08013",
+        "DistributionOrigin2InvokeFunctionFromCloudFrontForFoundryAscentAppDistributionOrigin2824E45B1F75B135E",
         "Distribution830FAC52",
         "Migrations",
       ],
@@ -903,6 +872,7 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
         "DistributionOrigin1S3OriginAccessControlEB606076",
         "DistributionOrigin2FunctionUrlOriginAccessControlAC8EE0B1",
         "DistributionOrigin2InvokeFromApiForFoundryAscentAppDistributionOrigin2824E45B15BE08013",
+        "DistributionOrigin2InvokeFunctionFromCloudFrontForFoundryAscentAppDistributionOrigin2824E45B1F75B135E",
         "Distribution830FAC52",
         "Migrations",
       ],
@@ -947,6 +917,7 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
         "DistributionOrigin1S3OriginAccessControlEB606076",
         "DistributionOrigin2FunctionUrlOriginAccessControlAC8EE0B1",
         "DistributionOrigin2InvokeFromApiForFoundryAscentAppDistributionOrigin2824E45B15BE08013",
+        "DistributionOrigin2InvokeFunctionFromCloudFrontForFoundryAscentAppDistributionOrigin2824E45B1F75B135E",
         "Distribution830FAC52",
       ],
       "Properties": {
@@ -968,6 +939,7 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
         "DistributionOrigin1S3OriginAccessControlEB606076",
         "DistributionOrigin2FunctionUrlOriginAccessControlAC8EE0B1",
         "DistributionOrigin2InvokeFromApiForFoundryAscentAppDistributionOrigin2824E45B15BE08013",
+        "DistributionOrigin2InvokeFunctionFromCloudFrontForFoundryAscentAppDistributionOrigin2824E45B1F75B135E",
         "Distribution830FAC52",
       ],
       "Properties": {
@@ -1197,6 +1169,39 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
             "FunctionArn",
           ],
         },
+        "Principal": "cloudfront.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":cloudfront::",
+              {
+                "Ref": "AWS::AccountId",
+              },
+              ":distribution/",
+              {
+                "Ref": "Distribution830FAC52",
+              },
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
+    "DistributionOrigin2InvokeFunctionFromCloudFrontForFoundryAscentAppDistributionOrigin2824E45B1F75B135E": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "ApiFunctionFunctionUrlFF5ECAE6",
+            "FunctionArn",
+          ],
+        },
+        "InvokedViaFunctionUrl": true,
         "Principal": "cloudfront.amazonaws.com",
         "SourceArn": {
           "Fn::Join": [

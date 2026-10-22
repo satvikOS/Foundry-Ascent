@@ -569,15 +569,9 @@ export class AppStack extends Stack {
       },
     });
 
-    // Since October 2025 a Function URL call also needs lambda:InvokeFunction. FunctionUrlOrigin only
-    // grants lambda:InvokeFunctionUrl, so add the second permission, limited to Function URL invocations
-    // from this distribution.
-    this.api.function.addPermission('CloudFrontInvokeViaFunctionUrl', {
-      principal: new iam.ServicePrincipal('cloudfront.amazonaws.com'),
-      action: 'lambda:InvokeFunction',
-      sourceArn: this.distribution.distributionArn,
-      invokedViaFunctionUrl: true,
-    });
+    // Since October 2025 a Function URL call needs lambda:InvokeFunction as well as lambda:InvokeFunctionUrl.
+    // FunctionUrlOrigin.withOriginAccessControl grants both (aws-cdk-lib >= 2.273.0), each limited to this
+    // distribution, and the InvokeFunction one to Function URL invocations (InvokedViaFunctionUrl).
 
     acknowledge(
       this.distribution,
