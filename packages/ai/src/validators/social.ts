@@ -1,4 +1,5 @@
 import { contentWords, founderMoves, socialTurnOf, type SocialTurn } from '../prompts/conversation-state.js';
+import { identityQuestionOf, type IdentityCheckOptions } from './identity.js';
 import { sentenceSpans } from './meta-narration.js';
 
 /**
@@ -129,6 +130,51 @@ export function reasksQuestion(sentence: string, asked: readonly ReadonlySet<str
     for (const w of words) if (question.has(w)) shared += 1;
     return shared >= 3 && shared / Math.min(words.size, question.size) >= 0.6;
   });
+}
+
+/**
+ * The questions the vEIR asked in `earlier` (its replies and its opener in this conversation; see {@link questionsOf}):
+ * never asked again in other words, however long ago (voice suite, 2026-10-22: "Who signs the cheque for each library
+ * branch, and who can block it?" was asked in five replies of one call, the gate knowing only the previous reply's).
+ */
+export function questionsAskedIn(earlier: readonly (string | null | undefined)[]): ReadonlySet<string>[] {
+  return earlier.flatMap((text) => (text === null || text === undefined ? [] : questionsOf(text)));
+}
+
+/**
+ * Whether a reply to `founderText` is checked against what the conversation already said (repeats, questions asked
+ * again): not when the founder asks to hear it again ({@link asksToRepeat}), or sincerely asks who or what the coach
+ * is (its honest answer is said however recently it was said; the presence policy).
+ */
+export function checksForRepeats(founderText: string, identity: IdentityCheckOptions): boolean {
+  return !asksToRepeat(founderText) && identityQuestionOf(founderText, identity) === null;
+}
+
+/**
+ * `text` without its question sentences that ask one of `asked` again in other words ({@link reasksQuestion});
+ * `dropped` counts them, and `text` is '' when nothing else was said.
+ */
+export function withoutReasks(
+  text: string,
+  asked: readonly ReadonlySet<string>[],
+): { readonly text: string; readonly dropped: number } {
+  if (asked.length === 0) return { text, dropped: 0 };
+  const spans = sentenceSpans(text).filter((s) => reasksQuestion(text.slice(s.start, s.end), asked));
+  if (spans.length === 0) return { text, dropped: 0 };
+  let out = '';
+  let from = 0;
+  for (const span of spans) {
+    out += text.slice(from, span.start);
+    from = span.end;
+  }
+  out += text.slice(from);
+  return {
+    text: out
+      .replace(/[ \t]{2,}/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim(),
+    dropped: spans.length,
+  };
 }
 
 /** What a reply says when every sentence of it was the previous reply again. */

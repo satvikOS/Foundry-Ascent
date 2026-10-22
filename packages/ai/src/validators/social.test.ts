@@ -7,14 +7,17 @@ import {
   STRESSED_HAND_BACK,
   STRESSED_HAND_BACKS,
   asksToRepeat,
+  checksForRepeats,
   NEWS_FALLBACK,
   endsWithHandBack,
   parksTheirNews,
+  questionsAskedIn,
   questionsOf,
   reasksQuestion,
   spokenHandBackFor,
   withoutAgendaPush,
   withinSocialBudget,
+  withoutReasks,
   withoutRepeats,
 } from './social.js';
 
@@ -232,5 +235,43 @@ describe('a question is never asked again in the next reply, in other words (ite
       text: "That's a real risk: SSO can stall a library pilot for months. Ask their IT lead now what SSO they need.",
       dropped: 1,
     });
+  });
+});
+
+describe('a question is never asked again later in the conversation either (voice suite, 2026-10-22)', () => {
+  const question = 'Who signs the cheque for each library branch, and who can block it?';
+  const earlier = [
+    'Hi Maya, good to see you. How did the library staff interviews go?',
+    `Good start. ${question}`,
+    null,
+    'That is a real signal. Get her to name a date for a trial.',
+  ];
+
+  it('reads the questions of every earlier message, the opener included', () => {
+    const asked = questionsAskedIn(earlier);
+    expect(asked).toHaveLength(2);
+    expect(reasksQuestion(question, asked)).toBe(true);
+    expect(reasksQuestion('Who at each branch signs the cheque, and who could block it?', asked)).toBe(true);
+    expect(reasksQuestion('Who signs off at the student union?', asked)).toBe(false);
+  });
+
+  it('leaves the re-asked question out of a reply, and keeps a reply that is nothing else', () => {
+    const asked = questionsAskedIn(earlier);
+    expect(
+      withoutReasks(`Nice progress with the trial date. ${question} Then we can price the pilot.`, asked),
+    ).toEqual({ text: 'Nice progress with the trial date. Then we can price the pilot.', dropped: 1 });
+    expect(withoutReasks(question, asked)).toEqual({ text: '', dropped: 1 });
+    expect(withoutReasks('Then we can price the pilot.', asked)).toEqual({
+      text: 'Then we can price the pilot.',
+      dropped: 0,
+    });
+  });
+
+  it('is checked unless the founder asks to hear it again or sincerely asks what the coach is', () => {
+    const identity = { personaName: "Corin's vEIR", personaEirName: 'Corin Halvorsen' };
+    expect(checksForRepeats('She said the trial can start in November.', identity)).toBe(true);
+    expect(checksForRepeats('Sorry, can you say that again?', identity)).toBe(false);
+    expect(checksForRepeats('Wait, am I talking to a bot?', identity)).toBe(false);
+    expect(checksForRepeats('Is this really Corin?', identity)).toBe(false);
   });
 });

@@ -1,19 +1,28 @@
 import {
   AUTO_MODE,
   CROSS_VENTURE_BLOCK_ANSWER,
+  INJECTION_DECLINE,
   INVALID_RESPONSE_ANSWER,
   buildSystemPromptParts,
+  checksForRepeats,
+  classifyRisk,
   deriveSpoken,
+  echoesInjection,
   founderMoves,
+  injectionPayloadsOf,
   isModelGatewayError,
   openerSaidHello,
+  questionsAskedIn,
+  responseStrings,
   SOCIAL_BUDGETS,
   socialTurnOf,
   spokenHandBackFor,
   validateCoachResponse,
+  withoutReasks,
   type CoachResponseValidation,
   type GateBlockReason,
   type HistoryTurn,
+  type InjectionPayloads,
   type ModelAttempt,
   type PromptContinuity,
   type PromptRelease,
@@ -38,6 +47,7 @@ import { assembleContext, type AssembledContext } from './context-budget.js';
 import { type KeyedEvidence } from './evidence.js';
 import {
   GenerationFailure,
+  INJECTION_ECHO_NOTE,
   generateStreamed,
   generateWhole,
   type Generation,
@@ -168,6 +178,77 @@ export function enforceGateBlock(
   };
 }
 
+/**
+ * Whether the deterministic classifier flagged the founder's message: prompt injection, a cross-venture request or a
+ * crisis. Such a turn's reply is never continued or written anew (generate.ts, evals MX-0004).
+ */
+export function flaggedTurn(
+  risk: Pick<RiskClassification, 'injection' | 'crossVentureRequest' | 'crisis'>,
+): boolean {
+  return risk.injection || risk.crossVentureRequest || risk.crisis;
+}
+
+/**
+ * The validated response of a turn whose reply carried out an injected instruction (evals MX-0004): the reply is the
+ * fixed decline, said as written on a call, and nothing the model wrote is kept (no claims, actions, memory or
+ * follow-ups; an escalation reason that reproduces the instruction is cleared). Blocked stays blocked.
+ */
+export function declineInjectionEcho(
+  checked: CoachResponseValidation,
+  channel: TurnChannel,
+  payloads: InjectionPayloads | null,
+): CoachResponseValidation {
+  const escalation = checked.response.escalation;
+  return {
+    ...checked,
+    response: {
+      ...checked.response,
+      answer: INJECTION_DECLINE,
+      spoken: channel === 'voice' ? INJECTION_DECLINE : null,
+      claims: [],
+      uncertainty: [],
+      challenge: null,
+      next_actions: [],
+      memory_candidates: [],
+      follow_up_questions: [],
+      rehearsal: null,
+      escalation:
+        escalation.reason !== null && echoesInjection(escalation.reason, payloads)
+          ? { ...escalation, reason: null }
+          : escalation,
+    },
+    results: {
+      ...checked.results,
+      notes: checked.results.notes.includes(INJECTION_ECHO_NOTE)
+        ? checked.results.notes
+        : [...checked.results.notes, INJECTION_ECHO_NOTE],
+    },
+  };
+}
+
+/**
+ * A generation's reply (`answer`, and `spoken` on a call) without the questions the vEIR already asked earlier in the
+ * conversation (`asked`, {@link questionsAskedIn}): the sentence gate never showed or said them, and a reply written
+ * whole never asks them either. A reply that would be left with nothing keeps them.
+ */
+function withoutEarlierQuestions(
+  raw: unknown,
+  asked: readonly ReadonlySet<string>[],
+): { readonly raw: unknown; readonly dropped: number } {
+  if (asked.length === 0 || typeof raw !== 'object' || raw === null) return { raw, dropped: 0 };
+  const out: Record<string, unknown> = { ...(raw as Record<string, unknown>) };
+  let dropped = 0;
+  for (const field of ['answer', 'spoken'] as const) {
+    const value = out[field];
+    if (typeof value !== 'string') continue;
+    const kept = withoutReasks(value, asked);
+    if (kept.dropped === 0 || kept.text === '') continue;
+    out[field] = kept.text;
+    if (field === 'answer') dropped = kept.dropped;
+  }
+  return { raw: out, dropped };
+}
+
 /** What a failed generation is reported as: the model being unavailable, or the domain error it carried. */
 export function generationError(cause: unknown): DomainError {
   if (isModelGatewayError(cause)) {
@@ -260,6 +341,26 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
       : null;
 
   const introduced = alreadyIntroduced(spec);
+  // Every message of the vEIR's in this conversation: a question any of them asked is never asked again (voice suite:
+  // one question in five replies of a call), unless the founder asks to hear it again or asks what the coach is.
+  const earlier = [spec.opener, ...spec.history.map((t) => t.answer)].filter(
+    (t): t is string => t !== null && t.trim() !== '',
+  );
+  const askedEarlier = checksForRepeats(spec.founderText, {
+    personaName: spec.personaName,
+    eirNames: guards.eirNames,
+    personaEirName: spec.personaEirName,
+    addressees: guards.addressees,
+  })
+    ? questionsAskedIn(earlier)
+    : [];
+  // A flagged message is never answered by a continuation; an injected instruction is never carried out (MX-0004),
+  // on its turn or later (the lab: declined on its turn, then carried out when the next message was "…").
+  const flagged = flaggedTurn(risk);
+  const payloads = injectionPayloadsOf([
+    ...(risk.injection ? [spec.founderText] : []),
+    ...spec.history.map((t) => t.founderText).filter((text) => classifyRisk(text).injection),
+  ]);
 
   // Step 5: generate (streamed through the sentence gate, or whole when streaming is switched off).
   await emit({ event: 'turn.status', phase: 'reasoning', detail: null, evidenceCount: shown.length });
@@ -283,6 +384,7 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
     startedAt: spec.startedAt,
     narration: { founder: spec.continuity.founderFirstName ?? null, people: guards.addressees },
     handBack,
+    flagged,
   };
   let generation: Generation;
   try {
@@ -300,6 +402,8 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
             greeted,
             replyBudget: social === null ? null : SOCIAL_BUDGETS[social],
             previousReply,
+            askedBefore: earlier,
+            injectionPayloads: payloads,
             founderText: spec.founderText,
             introduced,
             otherVentureNames: guards.others.names,
@@ -319,7 +423,8 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
 
   // Step 6: deterministic validation of the whole response (authoritative over any streamed unit).
   await emit({ event: 'turn.status', phase: 'validating', detail: null, evidenceCount: shown.length });
-  const validated = validateCoachResponse(generation.raw, {
+  const unasked = withoutEarlierQuestions(generation.raw, askedEarlier);
+  const validated = validateCoachResponse(unasked.raw, {
     evidenceKeys,
     preRisk: risk,
     otherVentureNames: guards.others.names,
@@ -342,9 +447,15 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
     channel: spec.channel,
   });
   validated.results.notes.push(...generation.notes);
-  const checked =
+  if (unasked.dropped > 0) validated.results.notes.push(`earlier_questions_removed:${unasked.dropped}`);
+  const enforced =
     generation.gateBlocked === null
       ? validated
       : enforceGateBlock(validated, generation.gateBlocked, spec.channel);
+  // An injected instruction carried out is never shown or said, whichever path wrote the reply (MX-0004).
+  const echoed =
+    generation.notes.includes(INJECTION_ECHO_NOTE) ||
+    responseStrings(enforced.response).some((text) => echoesInjection(text, payloads));
+  const checked = echoed ? declineInjectionEcho(enforced, spec.channel, payloads) : enforced;
   return { kind: 'answered', context, shown, generation, checked };
 }

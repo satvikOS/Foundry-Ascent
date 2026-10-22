@@ -227,14 +227,23 @@ export {
   STRESSED_HAND_BACK,
   STRESSED_HAND_BACKS,
   asksToRepeat,
+  checksForRepeats,
   endsWithHandBack,
   isOnlyLeadIn,
   fourGramsOf,
+  questionsAskedIn,
   repeatsPrevious,
   spokenHandBackFor,
   withinSocialBudget,
+  withoutReasks,
   withoutRepeats,
 } from './validators/social.js';
+export {
+  INJECTION_DECLINE,
+  echoesInjection,
+  injectionPayloadsOf,
+  type InjectionPayloads,
+} from './validators/injection-echo.js';
 export {
   SentenceGate,
   findUnitEnd,

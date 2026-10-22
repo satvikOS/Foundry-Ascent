@@ -16,6 +16,7 @@ import {
 } from './identity.js';
 import { sanitizeMarkdown } from './markdown.js';
 import { REPEATED_GREETING_FALLBACK, withoutRepeatedGreeting } from './greeting.js';
+import { echoesInjection, type InjectionPayloads } from './injection-echo.js';
 import { findMetaNarration, isThinkingAloudOpener, type NarrationNames } from './meta-narration.js';
 import {
   NEWS_FALLBACK,
@@ -23,6 +24,7 @@ import {
   asksToRepeat,
   fourGramsOf,
   parksTheirNews,
+  questionsAskedIn,
   questionsOf,
   reasksQuestion,
   repeatsPrevious,
@@ -64,6 +66,9 @@ import { clampWords, toSpeakable } from './speech.js';
  *    reply that opens with a thinking-aloud sentence ("Okay, let's see.") is held until the next unit shows whether
  *    narration follows. After units were released, the reply ends before the unit (`cut`), and nothing more is
  *    released: what follows a narrated sentence is more of the same.
+ * 6. an injected instruction carried out, on a turn the classifier flags as prompt injection (`injectionPayloads`): a
+ *    unit that reproduces the code or phrase the founder's message dictates is never released, and the reply ends
+ *    (`cut: 'injection_echo'`); the caller says the fixed decline in its place (evals MX-0004).
  *
  * A lead-in of at most {@link LEAD_IN_MAX_WORDS} words that ends a sentence ("Got it.", "Talk soon.", "That's the
  * right question.") is released the moment it ends (LAB-P1: the gate held every first sentence 383–526 ms, and 8 of
@@ -92,8 +97,12 @@ export type GateBlockReason = 'cross_venture' | 'identity';
 /** Why the stream cannot be shown at all and the reply must be written whole instead. */
 export type GateFallbackReason = 'structured_output' | 'meta_narration';
 
-/** Why the reply ends early: what was released stands, and nothing more is. */
-export type GateCutReason = 'meta_narration';
+/**
+ * Why the reply ends early: what was released stands, and nothing more is (`meta_narration`). `injection_echo`: the unit
+ * reproduced what an injected instruction dictated (`injectionPayloads`); it is never released, and the caller says the
+ * fixed decline instead of the reply (validators/injection-echo.ts).
+ */
+export type GateCutReason = 'meta_narration' | 'injection_echo';
 
 export interface SentenceGateOptions {
   /** Persona display name ("Corin's vEIR"). */
@@ -130,11 +139,24 @@ export interface SentenceGateOptions {
    */
   callerContinues?: boolean;
   /**
-   * The vEIR's previous reply in this conversation: a unit that mostly says it again is never released (unless the
-   * founder asked to hear it again, or sincerely asks who or what the coach is: the honest answer is never dropped).
-   * A reply that was nothing but repeats becomes a short line instead.
+   * The vEIR's previous reply in this conversation: a unit that mostly says it again, or asks one of its questions
+   * again, is never released (unless the founder asked to hear it again, or sincerely asks who or what the coach is:
+   * the honest answer is never dropped). A reply that was nothing but repeats becomes a short line instead (unless
+   * `callerContinues`).
    */
   previousReply?: string | null;
+  /**
+   * The vEIR's earlier messages in this conversation (its replies and its opener, the previous reply among them or
+   * not): a question any of them asked is never asked again in other words (`reask`), however long ago, with the same
+   * exceptions as `previousReply` (voice suite: one question asked in five replies of a call).
+   */
+  askedBefore?: readonly (string | null | undefined)[];
+  /**
+   * What the founder's message dictates when the classifier flags it as prompt injection (`injectionPayloadsOf`): a
+   * unit that reproduces it (shown or said) is never released and the gate ends the reply (`cut: 'injection_echo'`;
+   * evals MX-0004). Null or absent: no such check.
+   */
+  injectionPayloads?: InjectionPayloads | null;
   /**
    * The founder's message this reply answers. When it sincerely asks who or what the coach is ("are you real?"),
    * the reply's honest answer stands as written: no disclaimer is rewritten out of it.
@@ -405,8 +427,8 @@ export class SentenceGate {
   readonly #dropped: DroppedUnit[] = [];
   /** The previous reply's four-word sequences (null: no repeat check). */
   readonly #previousGrams: ReadonlySet<string> | null;
-  /** The previous reply's questions, as content words: never asked again in other words. */
-  readonly #previousQuestions: readonly ReadonlySet<string>[];
+  /** The questions of the previous reply and of the vEIR's earlier messages, as content words: never asked again. */
+  readonly #askedQuestions: readonly ReadonlySet<string>[];
   /** Units left out because they said the previous reply again. */
   #repeatsDropped = 0;
   /** The founder's message brings news: a unit that parks it for the vEIR's agenda is left out (LAB-R8). */
@@ -451,14 +473,12 @@ export class SentenceGate {
     const previous = options.previousReply ?? null;
     // No repeat check for a sincere question about the coach: its honest answer is said however recently it was
     // said (the intro of a first meeting, or the last reply when they ask again; the presence policy).
+    const checked = !asksToRepeat(options.founderText ?? '') && this.#question === null;
     this.#previousGrams =
-      previous === null ||
-      previous.trim() === '' ||
-      asksToRepeat(options.founderText ?? '') ||
-      this.#question !== null
-        ? null
-        : fourGramsOf(previous);
-    this.#previousQuestions = this.#previousGrams === null || previous === null ? [] : questionsOf(previous);
+      previous === null || previous.trim() === '' || !checked ? null : fourGramsOf(previous);
+    this.#askedQuestions = checked
+      ? [...(previous === null ? [] : questionsOf(previous)), ...questionsAskedIn(options.askedBefore ?? [])]
+      : [];
   }
 
   /** Everything received so far (unvalidated). */
@@ -641,10 +661,10 @@ export class SentenceGate {
         this.#cut = 'meta_narration';
         return { units, blocked: null, fallback: null, cut: this.#cut };
       }
-      if (this.#previousGrams !== null) {
-        const repeat = repeatsPrevious(rawUnit, this.#previousGrams);
-        if (repeat || reasksQuestion(rawUnit.trim(), this.#previousQuestions)) {
-          // The previous reply again: never said twice.
+      if (this.#previousGrams !== null || this.#askedQuestions.length > 0) {
+        const repeat = this.#previousGrams !== null && repeatsPrevious(rawUnit, this.#previousGrams);
+        if (repeat || reasksQuestion(rawUnit.trim(), this.#askedQuestions)) {
+          // The previous reply again, or a question already asked in this conversation: never said twice.
           this.#cursor = end;
           this.#repeatsDropped += 1;
           if (!repeat) this.#reasksDropped += 1;
@@ -674,6 +694,11 @@ export class SentenceGate {
       if (this.#leaks([this.#shown.slice(-CUMULATIVE_WINDOW_CHARS) + unit.text])) {
         return this.#block('cross_venture', units);
       }
+      if (this.#echoesInjection(unit)) {
+        // An injected instruction carried out (evals MX-0004): never shown or said; the caller declines instead.
+        this.#cut = 'injection_echo';
+        return { units, blocked: null, fallback: null, cut: this.#cut };
+      }
       this.#show(unit, units);
       this.#released.units += 1;
       this.#released.words += words(unit.text);
@@ -693,6 +718,19 @@ export class SentenceGate {
       if (unit !== null && typeof unit !== 'string') this.#show(unit, units);
     }
     return { units, blocked: null, fallback: null, cut: null };
+  }
+
+  /**
+   * Whether a unit reproduces what an injected instruction dictated (`injectionPayloads`), as shown after the end of
+   * what was shown before it, or as said after the end of what was said (a code or phrase split across units).
+   */
+  #echoesInjection(unit: GateUnit): boolean {
+    const payloads = this.#options.injectionPayloads ?? null;
+    if (payloads === null) return false;
+    return (
+      echoesInjection(this.#shown.slice(-CUMULATIVE_WINDOW_CHARS) + unit.text, payloads) ||
+      (unit.spoken !== '' && echoesInjection(this.#said, payloads))
+    );
   }
 
   /** Shows a checked unit, or withholds it from the preview (still said on a call). */
