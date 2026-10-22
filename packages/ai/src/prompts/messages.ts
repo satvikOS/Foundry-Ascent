@@ -8,8 +8,8 @@ import {
   deriveConversationState,
   founderMoves,
   renderConversationState,
+  reportFit,
   reportOf,
-  reportOverlap,
 } from './conversation-state.js';
 import { escapeData, truncate } from './escape.js';
 
@@ -85,6 +85,8 @@ function likelyCommitments(
   founderText: string,
 ): string[] {
   if (!continuity) return [];
+  // What the report says was done ("Done! Interviewed all five library staff." says the interviews).
+  const says = reportOf(founderText)?.says ?? new Set<string>();
   const notebook = continuity.notebook?.commitments ?? [];
   const newestFirst = (a: { at: string; index: number }, b: { at: string; index: number }): number =>
     b.at.localeCompare(a.at) || a.index - b.index;
@@ -95,7 +97,7 @@ function likelyCommitments(
       .filter((d) => d.otherCoach !== true && d.digest.commitments.length > 0)
       .sort((a, b) => b.date.localeCompare(a.date))[0];
     return (newest?.digest.commitments ?? [])
-      .map((c, index) => ({ text: c.text, index, words: reportOverlap(founderText, c.text) }))
+      .map((c, index) => ({ text: c.text, index, words: reportFit(says, c.text) }))
       .filter((c) => !raisedIn(c.text, closed))
       .sort((a, b) => b.words - a.words || a.index - b.index)
       .slice(0, MAX_REPORTED)
@@ -106,7 +108,7 @@ function likelyCommitments(
     text: c.text,
     at: noted.get(c.text) ?? '',
     index,
-    words: reportOverlap(founderText, c.text),
+    words: reportFit(says, c.text),
   }));
   const about = ranked.filter((c) => c.words > 0);
   if (about.length > 0) {
@@ -190,9 +192,10 @@ function conversationStateBlock(
  * of the notes is about ("Help me prepare for the pitch next week"): then the notes leave their agenda out of this turn
  * (`ownSubject`). A short reply, "you tell me", a question about what the vEIR remembers or a report on something they
  * said they would do ("I did the thing I said I'd do", "I finished the interviews I said I would", "Done!") is about the
- * conversation so far or the notes, and keeps it (evals G12: the reply has to name the commitment); a step done inside
- * a longer sentence ("I posted it on the staff noticeboard") keeps it when an open commitment is about it, and "We
- * launched it last week, 20 signups so far" with none is their news.
+ * conversation so far or the notes, and keeps it (evals G12: the reply has to name the commitment); a report that says
+ * what was done keeps it when an open commitment is about that ("I posted it on the staff noticeboard", "Done!
+ * Interviewed all five library staff."), and with none it is their news ("We launched it last week, 20 signups so
+ * far", "We did it! We got into the accelerator!!").
  */
 export function bringsOwnSubject(
   founderText: string,
@@ -202,13 +205,11 @@ export function bringsOwnSubject(
   const moves = founderMoves(founderText);
   if (moves.some((m) => m === 'recall' || m === 'resume' || m === 'short_reply')) return false;
   const report = reportOf(founderText);
-  if (report !== null && report.strength !== 'step') return false;
+  if (report !== null && !report.mustFit) return false;
   const commitments = continuity ? openCommitmentsOf(continuity).map((c) => c.text) : [];
-  // "I finally did it last night" says nothing of what: any commitment may be it.
-  if (
-    report !== null &&
-    (report.says.size === 0 || commitments.some((c) => reportOverlap(founderText, c) > 0))
-  )
+  // "I finally did it last night" says nothing of what: any commitment may be it. "We did it! We got into the
+  // accelerator!!" says what, and no commitment is about it: their news.
+  if (report !== null && (report.says.size === 0 || commitments.some((c) => reportFit(report.says, c) > 0)))
     return false;
   const open = [...commitments, ...(continuity?.notebook?.openQuestions ?? []).map((q) => q.text)];
   return !open.some((item) => raisedIn(item, [founderText]));

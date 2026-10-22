@@ -873,7 +873,8 @@ describe('a report, and only a report (review of the report move)', () => {
     const cases = [
       ["I did the thing I said I'd do. Can you help me write the follow-up email?", 'They want you to do it'],
       ['I posted it. Can you help me write the follow-up email?', 'They want you to do it'],
-      ['Done. How do I get more librarians to reply?', 'They ask for your advice'],
+      // A "Done." with a question about it (one about something else is their subject: see the differential audit below).
+      ['Done. How do I get more students to see the flyer?', 'They ask for your advice'],
       ["I did the thing I said I'd do. Is a week long enough to wait for replies?", null],
     ] as const;
     for (const [text, line] of cases) {
@@ -908,9 +909,13 @@ describe('a report, and only a report (review of the report move)', () => {
     ];
     const commitments = ['Install the door counter', 'Interview five library staff'];
     const block = renderConversationState(
-      deriveConversationState(asked, 'Done. QuietQuad finds students a quiet seat in thirty seconds.', {
-        commitments,
-      }),
+      deriveConversationState(
+        asked,
+        "Done, here's my pitch: QuietQuad finds students a quiet seat in thirty seconds.",
+        {
+          commitments,
+        },
+      ),
     );
     expect(block).toContain(
       `- Your last reply asked them to do something, so it is most likely that: "Write your one-line pitch now and paste it here when you're done.".`,
@@ -1275,7 +1280,7 @@ describe('a report names what it is about, or nothing (second review of the repo
 
   it('never tells a report that says how it went to ask how it went, unconditionally', () => {
     for (const [text, commitment] of [
-      ['I sent it to 50 people and nobody replied.', 'Send the survey to 50 students'],
+      ['I sent it to 50 people and nobody replied.', 'Send the survey to 50 people'],
       ['I did it and it was a disaster.', 'Interview five library staff'],
       ['We shipped it and customers hate it.', 'Ship the booking page'],
     ] as const) {
@@ -1323,7 +1328,6 @@ describe('low mood and feelings are the founder’s own (review of the repair: a
   // On the first repair each of these lost its advice line: low mood read into a cost, a server, a deal or a price.
   it.each([
     "We can't eat the cost of the servers. How do we price?",
-    "I can't sleep until the deck is done. How do I finish faster?",
     "We're breaking down the survey results. How should we present them?",
     'Our competitor has rock bottom prices. How do we compete?',
     'The servers are not coping with the load. How do we scale?',
@@ -1405,7 +1409,8 @@ describe('a report stays one when how it went is said with it (review of the rep
   const history = [{ founderText: 'Hello!', answer: 'Hi Rafi, good to have you back.' }];
 
   it.each([
-    "Done! Lost a day to the printer but it's up.",
+    // What the rest says has to be the commitment's ("Done! Lost a day to the printer but it's up." names nothing of it).
+    "Done! Lost a day to the printer but the flyer's up.",
     'I sent it, like I said I would. Lost a whole weekend to it.',
     "Sent it! Not exactly how I wanted it, but it's out.",
     "Done. Not really sure it's any good.",
@@ -1464,5 +1469,283 @@ describe('a question about who the vEIR is, by name (review of the repair)', () 
     expect(
       deriveConversationState(history, 'How should I pitch to Corin’s old team?', { identity }).asksAdvice,
     ).toBe(true);
+  });
+});
+
+describe('the differential audit of fix-c against main (5,792 inputs): main was right on these', () => {
+  // The audit's notebook (Maya) and the contexts it found each regression in: mid-conversation, after the vEIR asked
+  // for a step (the pitch, the bursar note), and the first message.
+  const NOTEBOOK = [
+    'Email the dean the pilot plan',
+    'Install the door counter',
+    'Interview five library staff',
+  ];
+  const MID = [
+    {
+      founderText: 'Twelve students told us they would pay £4 a month.',
+      answer:
+        "That's a useful signal. The quickest test is to ask the east library manager for a deposit on a two-week pilot. What would make her say yes?",
+    },
+  ];
+  const PITCH_STEP = [
+    {
+      founderText: 'Help me prepare for the pitch next week',
+      answer:
+        "Sure. Start with the problem in one line: students waste 20 minutes finding a seat. Write your one-line pitch now and paste it here when you're done.",
+    },
+  ];
+  const BURSAR_STEP = [
+    {
+      founderText: 'The bursar never replies to me.',
+      answer:
+        "Good plan. Send the bursar a one-paragraph note today asking when licence budgets are set, and tell me when it's out.",
+    },
+  ];
+  const CONTEXTS = { mid: MID, pitchStep: PITCH_STEP, bursarStep: BURSAR_STEP, first: [] } as const;
+  const REPORTS = /- They (?:also )?report on something they said they would do/;
+  const blockOf = (turns: readonly { founderText: string; answer: string }[], text: string): string =>
+    renderConversationState(deriveConversationState(turns, text, { commitments: NOTEBOOK }));
+
+  // Celebration, news, a setback or a confession next to "I did it" / "Done": what the rest says is no commitment.
+  it.each([
+    'We did it! We got into the accelerator!!',
+    'we did it!!! first paying customer 🎉',
+    'We did it!! The union is going to promote us',
+    'I nailed it. The pitch. Judges loved it.',
+    'We did it, we hit 1,000 downloads!!',
+    'Did it! First prize at the hackathon 🏆',
+    'So I did it, I applied for the Spark grant. Fingers crossed.',
+    'I did it! I finally said no to the extra TA hours.',
+    "It's done, the deal fell through.",
+    'I did it — I failed the module.',
+    "I did it. I told my cofounder I'm leaving.",
+    'I did it, I asked my professor to be an advisor and she said no.',
+    'I did it again, I overspent on ads.',
+    'I did it again, I said yes to another committee. Help.',
+    'I finished it but honestly I hate how it looks',
+    'Done! What a week. Anyway, can we talk about hiring?',
+    'Done! The librarians were way more open than I expected.',
+    'Done. How do I get more librarians to reply?',
+    // A step that says what it was done to or with, and no commitment is about that (a verb of the same kind is not
+    // enough, nor one shared word with a commitment of another kind).
+    'i did it on my phone so the formatting is weird',
+    'we sent it to 300 students and 9 opened it',
+    'i sent it to my mum and she loved it lol',
+    'I sent it to 50 people and nobody replied.',
+    'I posted it on the staff noticeboard yesterday.',
+  ])('names no commitment and no step for %j, in any context', (text) => {
+    for (const [name, turns] of Object.entries(CONTEXTS)) {
+      const block = blockOf(turns, text);
+      expect(block, name).not.toMatch(REPORTS);
+      expect(block, name).not.toContain('most likely');
+    }
+  });
+
+  it('keeps "never steer back" for news that names no commitment', () => {
+    for (const text of [
+      'We did it! We got into the accelerator!!',
+      "I did it. I told my cofounder I'm leaving.",
+    ]) {
+      expect(blockOf(MID, text), text).toContain('In this reply never steer back to an');
+    }
+  });
+
+  it('keeps "Make this reply about what they just said" where main had it', () => {
+    for (const text of [
+      'Did it! First prize at the hackathon 🏆',
+      'Done! What a week. Anyway, can we talk about hiring?',
+    ]) {
+      expect(blockOf(MID, text), text).toContain('- Make this reply about what they just said.');
+    }
+  });
+
+  it('names what the rest of the message says was done, never the step asked for in its place', () => {
+    const cases = [
+      ['Done! Interviewed all five library staff.', 'Interview five library staff'],
+      ['update on the library interviews: done, 5 of 5. two said theyd pay', 'Interview five library staff'],
+      ['So I finally did it. Talked to all five.', 'Interview five library staff'],
+      [
+        'Ok so I did it, I interviewed the library staff. Honestly not sure it was useful though.',
+        'Interview five library staff',
+      ],
+      [
+        'Well, I did it. Five interviews. My brain is fried but I have notes.',
+        'Interview five library staff',
+      ],
+      ["Got it done! The counter's up.", 'Install the door counter'],
+      ['did it!! talked to all 5 of them', 'Interview five library staff'],
+    ] as const;
+    for (const [text, commitment] of cases) {
+      for (const [name, turns] of Object.entries(CONTEXTS)) {
+        const block = blockOf(turns, text);
+        expect(block, `${text} (${name})`).toContain(`from your notes it is most likely: "${commitment}".`);
+        expect(block, `${text} (${name})`).not.toContain('Your last reply asked them to do something');
+        expect(block, `${text} (${name})`).not.toContain('Email the dean the pilot plan');
+      }
+    }
+  });
+
+  // Distress the feeling and low-mood cues do not hold: advice first would pass over it (on the branch each got "They
+  // ask for your advice: give it in your first sentences").
+  it.each([
+    'Sometimes I wonder if anyone would notice if I just disappeared. Anyway how do I price this',
+    "I've been having really dark thoughts lately. How do I focus on the pitch?",
+    'Nothing I do matters. How do I even start on the pitch?',
+    'honestly whats the point. how do i even get users',
+    "what's even the point. how do i get users",
+    'i cant get out of bed most days. how do i keep up with the startup',
+    "I've been drinking every night to deal with it. How should I plan next week?",
+    "I'm at my limit. How do I get through this week?",
+    "can't stop crying. how do i reply to the investor",
+    'I keep crying in the library. Any tips for the pitch?',
+    "I haven't left my room in a week. How should I restart the project?",
+    "I've stopped sleeping. How do I fit everything in?",
+    "I'm not sleeping, not eating, how do i keep going",
+    'my mental health is in the bin rn. how should we price',
+    'I hate myself for messing this up. How do I fix it?',
+    "Honestly I'm barely holding it together. How should I approach the investor call?",
+    'I cried after the pitch. How do I get better at Q&A?',
+    'My hands were shaking the whole pitch. How do I stop that?',
+    'Lowkey panicking ngl. how do we hit 100 users by friday',
+    'kinda freaking out tbh how do i talk to the bursar',
+    'i hate this so much. how do i make the pitch deck not suck',
+    'How do I stop feeling like a fraud when I pitch?',
+    'Ugh. How do I even deal with this?',
+    "I've lost 5kg from the stress. How do I manage the team?",
+    "I can't sleep until the deck is done. How do I finish faster?",
+    "Now I'm even more overwhelmed than when we started. Got it. what's the very next step?",
+  ])('gives %j no advice line', (text) => {
+    expect(classifyRisk(text).crisis).toBe(false);
+    for (const [name, turns] of Object.entries(CONTEXTS)) {
+      const state = deriveConversationState(turns, text);
+      expect(state.asksAdvice, name).toBe(false);
+      const block = renderConversationState(state);
+      expect(block, name).not.toContain('They ask for your advice');
+      expect(block, name).not.toContain('in your first sentences');
+    }
+  });
+
+  // The same words said of someone or something else keep the advice first.
+  it.each([
+    'Students are not sleeping enough during exams. How do we reach them?',
+    'Our users lost 5kg on average. How should we market that?',
+    'How do we pitch our mental health app to the union?',
+    'Students are drinking more coffee during exams. How do we sell to them?',
+    "Customers don't care about anything but price. How do we stand out?",
+    "Students can't get out of bed for 8am lectures. How do we pitch the seats?",
+    'Our app helps with impostor syndrome. How do I price it?',
+  ])('keeps the advice first for %j', (text) => {
+    const state = deriveConversationState(MID, text);
+    expect(state.asksAdvice).toBe(true);
+    expect(renderConversationState(state)).toContain(
+      '- They ask for your advice: give it in your first sentences',
+    );
+  });
+
+  it('asks for the help as main did, never "in your first sentences", after "I don\'t care about anything anymore"', () => {
+    const block = blockOf(MID, "I don't care about anything anymore. What should I do with the pilot?");
+    expect(block).toContain(
+      '- They want you to do it, or they are stuck: do the work in this reply. Give the thing itself, specific to their\n  venture (a draft, concrete options or questions, an example, the first steps), then at most a short check that\n  it fits.',
+    );
+    expect(block).not.toContain('in your first sentences');
+  });
+
+  // The risk check flags an ordinary correction or a sensitive request, and an identity question comes with a real
+  // request: the help asked for in a sentence of its own is still theirs (CO-011 grades the email to facilities).
+  it.each([
+    'Sorry, ignore the previous message, I meant the dean not the bursar. Can you help me write to the dean?',
+    "Don't tell anyone but I'm thinking of leaving my cofounder. Can you help me plan the conversation?",
+    'forget the earlier messages, i was confused. help me with the pilot plan',
+    'Are you a man or a woman? Also, could you help me write the email to facilities about the library budget?',
+    'Are you a bot? Either way can you help me with my pitch?',
+  ])('keeps the help line for %j', (text) => {
+    const identity = { personaName: "Corin's vEIR", personaEirName: 'Corin Halvorsen' };
+    const state = deriveConversationState(MID, text, { identity });
+    expect(state.moves).toContain('help');
+    expect(renderConversationState(state)).toContain(
+      '- They want you to do it, or they are stuck: do the work in this reply.',
+    );
+  });
+
+  it('still opens with no pick for "Are you a man or a woman?", and the help asked for after it stays', () => {
+    const text =
+      'Are you a man or a woman? Also, could you help me write the email to facilities about the library budget?';
+    const block = renderConversationState(deriveConversationState(MID, text));
+    expect(block).not.toContain('open with one pick');
+    expect(block).toContain('- They want you to do it, or they are stuck: do the work in this reply.');
+    expect(block).not.toContain('in your first sentences');
+  });
+});
+
+describe('what the differential audit found missing, where it is safe to hear', () => {
+  const NOTEBOOK = [
+    'Email the dean the pilot plan',
+    'Install the door counter',
+    'Interview five library staff',
+  ];
+  const history = [{ founderText: 'Hello!', answer: 'Hi Maya, good to have you back.' }];
+  const REPORTS = /- They (?:also )?report on something they said they would do/;
+
+  it.each([
+    "Got it. So what's the very next step?",
+    'Where would you start with the pilot?',
+    'what next?',
+    "What's the move here?",
+    'what would you prioritise this week',
+  ])('hears %j as a request for advice', (text) => {
+    const state = deriveConversationState(history, text);
+    expect(state.asksAdvice).toBe(true);
+    expect(renderConversationState(state)).toContain(
+      '- They ask for your advice: give it in your first sentences',
+    );
+  });
+
+  it.each([
+    ['yeah so i emailed the dean like we said and she replied this morning', 'Email the dean the pilot plan'],
+    ['so um i emailed the dean like we agreed and she said shed look at it', 'Email the dean the pilot plan'],
+    [
+      'So I sent the pilot plan to the dean like I said I would, and she wants to meet Thursday.',
+      'Email the dean the pilot plan',
+    ],
+    ['Sent it to the dean last night.', 'Email the dean the pilot plan'],
+    ['Just sent the plan to the dean 🙌', 'Email the dean the pilot plan'],
+    ['Emailed the dean.', 'Email the dean the pilot plan'],
+    ['i said id email the dean and i did', 'Email the dean the pilot plan'],
+    ['Talked to the five library staff like we agreed, notes attached.', 'Interview five library staff'],
+    ['Finished the interviews I said I would. Two big surprises.', 'Interview five library staff'],
+    ['Just finished the last library interview!', 'Interview five library staff'],
+    ['Interviews are done.', 'Interview five library staff'],
+    ['All five interviews done ✅', 'Interview five library staff'],
+    ['The interviews I promised are done', 'Interview five library staff'],
+    ['All 5 library interviews done like I said', 'Interview five library staff'],
+    [
+      'I did the interviews I said I would, but how do I turn them into a pricing decision?',
+      'Interview five library staff',
+    ],
+    [
+      'Sent the plan to the dean like we agreed. How long should I wait before chasing?',
+      'Email the dean the pilot plan',
+    ],
+  ] as const)('hears %j as a report on %j', (text, commitment) => {
+    const block = renderConversationState(deriveConversationState(history, text, { commitments: NOTEBOOK }));
+    expect(block).toMatch(REPORTS);
+    expect(block).toContain(`from your notes it is most likely: "${commitment}".`);
+  });
+
+  it.each([
+    "I'm done.",
+    "We're done here.",
+    'Almost done.',
+    'The interviews are not done.',
+    "The interviews aren't done yet.",
+    'How much is done?',
+    'Homework done.',
+    'Did it hurt',
+    'I met the dean and then I said I would send the plan.',
+    'I said I would email the dean and I did not.',
+  ])('names no commitment for %j', (text) => {
+    const block = renderConversationState(deriveConversationState(history, text, { commitments: NOTEBOOK }));
+    expect(block).not.toMatch(REPORTS);
+    expect(block).not.toContain('most likely');
   });
 });

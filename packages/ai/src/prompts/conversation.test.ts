@@ -833,8 +833,8 @@ describe('a report on what the founder said they would do (evals G12: MX-0003, M
     for (const report of [
       "So, I did the thing I said I'd do.",
       "not gonna lie so, i did teh thing i said i'd do tbh",
-      'I posted it on the staff noticeboard yesterday.',
-      'Done! The librarians were way more open than I expected.',
+      // What it says is a commitment's ("Interview five library staff").
+      'Done! Talked to all five library staff, way more open than I expected.',
     ]) {
       expect(bringsOwnSubject(report, CONTINUITY), report).toBe(false);
       const last = lastOf(report, CONTINUITY);
@@ -935,7 +935,10 @@ describe('a report keeps the agenda, and nothing else does (review of the report
           "Try this shape: who it's for, the pain, the result. Write your one-line pitch now and paste it here when you're done.",
       },
     ];
-    const last = lastOf('Done. QuietQuad finds students a quiet seat in thirty seconds.', asked);
+    const last = lastOf(
+      "Done, here's my pitch: QuietQuad finds students a quiet seat in thirty seconds.",
+      asked,
+    );
     expect(last).toContain(
       `- Your last reply asked them to do something, so it is most likely that: "Write your one-line pitch now and paste it here when you're done.".`,
     );
@@ -1006,6 +1009,64 @@ describe('the commitment a report names (second review of the report move)', () 
 
   it('a step said in a longer sentence that no commitment is about is a subject of their own', () => {
     expect(bringsOwnSubject('We launched it last week, 20 signups so far.', CONTINUITY)).toBe(true);
-    expect(bringsOwnSubject('I posted it on the staff noticeboard yesterday.', CONTINUITY)).toBe(false);
+    // "staff" is in "Interview five library staff", but posting is no interviewing (the differential audit of fix-c).
+    expect(bringsOwnSubject('I posted it on the staff noticeboard yesterday.', CONTINUITY)).toBe(true);
+    const flyer: PromptContinuity = {
+      ...CONTINUITY,
+      notebook: {
+        ...NOTEBOOK,
+        commitments: [commitment('Post the study-seat flyer on the staff noticeboard', null)],
+      },
+    };
+    expect(bringsOwnSubject('I posted it on the staff noticeboard yesterday.', flyer)).toBe(false);
+  });
+});
+
+describe('news, a setback or a confession next to "I did it" leaves the agenda out, as on main (differential audit of fix-c)', () => {
+  const history = [{ founderText: 'Hello!', answer: 'Hi Maya, good to have you back.' }];
+  const lastOf = (text: string): string =>
+    buildMessages(history, text, { continuity: CONTINUITY, today: '2026-10-16' }).at(-1)?.content ?? '';
+
+  it.each([
+    'we did it!!! first paying customer 🎉',
+    'We did it!! The union is going to promote us',
+    'I nailed it. The pitch. Judges loved it.',
+    'We did it, we hit 1,000 downloads!!',
+    'Did it! First prize at the hackathon 🏆',
+    'So I did it, I applied for the Spark grant. Fingers crossed.',
+    'I did it! I finally said no to the extra TA hours.',
+    "It's done, the deal fell through.",
+    'I did it — I failed the module.',
+    "I did it. I told my cofounder I'm leaving.",
+    'I did it, I asked my professor to be an advisor and she said no.',
+    'I did it again, I overspent on ads.',
+    'I did it again, I said yes to another committee. Help.',
+    'I finished it but honestly I hate how it looks',
+    'Done! What a week. Anyway, can we talk about hiring?',
+    'Done! The librarians were way more open than I expected.',
+    'i did it on my phone so the formatting is weird',
+    'we sent it to 300 students and 9 opened it',
+    'i sent it to my mum and she loved it lol',
+    'I sent it to 50 people and nobody replied.',
+    'I posted it on the staff noticeboard yesterday.',
+  ])('%j is a subject of their own: no commitment named, the notes’ agenda left out', (text) => {
+    expect(bringsOwnSubject(text, CONTINUITY)).toBe(true);
+    const last = lastOf(text);
+    expect(last).not.toContain('<open_commitments>');
+    expect(last).not.toContain('most likely');
+    expect(last).not.toContain('reports on something they said they would do');
+  });
+
+  it('a report that says what it was keeps the agenda and names that commitment', () => {
+    for (const [text, commitment] of [
+      ['Done! Interviewed all five library staff.', 'Interview five library staff'],
+      ["Got it done! The counter's up.", 'Install the door counter'],
+      ['So I finally did it. Talked to all five.', 'Interview five library staff'],
+    ] as const) {
+      expect(bringsOwnSubject(text, CONTINUITY), text).toBe(false);
+      const last = lastOf(text);
+      expect(last, text).toContain('<open_commitments>');
+      expect(last, text).toContain(`from your notes it is most likely: "${commitment}".`);
+    }
   });
 });
