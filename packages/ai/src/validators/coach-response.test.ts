@@ -537,6 +537,32 @@ describe('identity', () => {
     ).toBe(coaching);
   });
 
+  it('never leaves a bare "You?" where the made-up life was, and keeps the founder\'s own week, typed and on a call', () => {
+    const veir = opts({ personaName: "Corin's vEIR", eirNames: ['Corin Halvorsen'] });
+    const both = (answer: string, founderText: string): [string, string | null | undefined] => {
+      const typed = validateCoachResponse(base({ answer }), { ...veir, founderText }).response.answer;
+      const call = validateCoachResponse(base({ answer, spoken: answer }), {
+        ...veir,
+        channel: 'voice',
+        founderText,
+      }).response.spoken;
+      return [typed, call];
+    };
+    const turned = 'Thanks for asking! How was yours?';
+    // The life goes and the turn-back is said in full, with a thanks.
+    expect(both('Slept in and read a bit. You?', 'how was your weekend?')).toEqual([turned, turned]);
+    expect(both('A lazy one. Yours?', 'how was your weekend?')).toEqual([turned, turned]);
+    expect(both('Hiking, mostly! You?', 'what did you get up to this weekend?')).toEqual([turned, turned]);
+    // "The week" may be the founder's own: their numbers stay.
+    const numbers = 'It was busy, you sold 120 units.';
+    expect(both(numbers, 'how did the weekend market go?')).toEqual([numbers, numbers]);
+    const slow = 'It was slow, signups fell 20%.';
+    expect(both(slow, 'how did the week go?')).toEqual([slow, slow]);
+    // Thanks for something else is not banter.
+    const update = 'Productive week — thanks for the update. Ship the pricing page next.';
+    expect(both(update, 'we shipped v2')).toEqual([update, update]);
+  });
+
   it('drops a field that was only a disclaimer instead of writing a line meant for the founder into it', () => {
     const out = validateCoachResponse(
       base({

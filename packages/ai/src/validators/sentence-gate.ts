@@ -796,18 +796,25 @@ export class SentenceGate {
     return identityReplacementFor(gravest.kind, options);
   }
 
-  /** How a unit's volunteered disclaimers are rewritten out (one sentence of a reply that keeps its honest answer). */
+  /**
+   * How a unit's volunteered disclaimers are rewritten out (one sentence of a reply that keeps its honest answer), and
+   * the founder's message it answers: "Weekend was good!" to "how was your weekend?" is a made-up life, taken out
+   * before it is said (evals MX-0032). Only the unit's own rewrite reads it (a life is read within its sentence), never
+   * `#splitClaim`'s.
+   */
   get #disclaimers(): {
     disclaimers: 'unit';
     identityAsked: boolean;
     identified: boolean;
     introduced: boolean;
+    founderText?: string;
   } {
     return {
       disclaimers: 'unit',
       identityAsked: this.#question !== null,
       identified: this.#identified,
       introduced: this.#options.introduced === true,
+      ...(this.#options.founderText === undefined ? {} : { founderText: this.#options.founderText }),
     };
   }
 

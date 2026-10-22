@@ -1632,9 +1632,11 @@ describe('rewriteIdentity agrees with the evals identity grader', () => {
       for (const spoken of [false, true]) {
         for (const { asked, text, rewritten } of suite.personal_life?.flagged ?? []) {
           const out = rewriteIdentity(text, reply(asked, spoken));
-          expect(out.findings, `${asked} → ${text}`).toEqual([
-            { kind: 'claims_human', rule: 'personal_life' },
-          ]);
+          // Each made-up life is a finding of its own ("Lovely, thanks! I spent Saturday at the market." has two).
+          expect(out.findings.length, `${asked} → ${text}`).toBeGreaterThan(0);
+          expect(new Set(out.findings.map((f) => `${f.kind}:${f.rule}`)), `${asked} → ${text}`).toEqual(
+            new Set(['claims_human:personal_life']),
+          );
           expect(out.text, `${asked} → ${text}`).toBe(rewritten);
           // Banter gets no identity talk.
           expect(identifiesHonestly(out.text, options), text).toBe(false);
