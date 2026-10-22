@@ -46,6 +46,12 @@ describe('config', () => {
     expect(() => loadConfig({ CORE_TURN_RATE_LIMIT: 'many' })).toThrow();
   });
 
+  it('traces the streamed reply’s text for the conversation lab only, never in production', () => {
+    expect(loadConfig({}).turns.traceStreamText).toBe(false);
+    expect(loadConfig({ LAB_TRACE_STREAM: '1' }).turns.traceStreamText).toBe(true);
+    expect(loadConfig({ APP_ENV: 'production', LAB_TRACE_STREAM: '1' }).turns.traceStreamText).toBe(false);
+  });
+
   it('merges nested overrides', () => {
     const cfg = coreConfig({ turns: { rateLimit: 2 } });
     expect(cfg.turns).toMatchObject({ rateLimit: 2, rateWindowSeconds: 600 });

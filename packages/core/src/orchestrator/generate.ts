@@ -242,6 +242,10 @@ const ANSWER_MAX_TOKENS = { text: 1_500, voice: 400 } as const;
 export const ANNOTATION_MAX_TOKENS = 2_000;
 const SPOKEN_UNIT_CHARS = 280;
 
+function wordCount(text: string): number {
+  return text.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+}
+
 function sum(attempts: readonly ModelAttempt[], pick: (a: ModelAttempt) => number): number {
   return attempts.reduce((acc, a) => acc + pick(a), 0);
 }
@@ -348,9 +352,11 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
   const voice = a.channel === 'voice';
   // A call's reply leaves room for its hand-back within the spoken budget (it is said after the reply).
   const spokenBudget = SPOKEN_MAX_WORDS - (voice && a.handBack ? a.handBack.split(/\s+/).length : 0);
+  const traceText = a.kit.config.turns.traceStreamText;
   const gate = new SentenceGate({
     ...a.gate,
     ...(voice ? { maxUnitChars: SPOKEN_UNIT_CHARS, spokenWordBudget: spokenBudget, spoken: true } : {}),
+    ...(traceText ? { keepDropped: true } : {}),
   });
   const speech =
     voice && a.speechKey
@@ -568,6 +574,33 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
   else if (gate.full) notes.push('stream_reply_budget_cut');
   else if (said.cut) notes.push('stream_spoken_cut');
   let replyText = said.cut ? said.shown.trim() : reply.text;
+  // How the streamed reply ended and what the gate left out (2026-10-22 lab: call replies of 19 to 90 streamed tokens
+  // were said as "Got it." or a sentence and a question, and nothing recorded why). Counts only, except in the lab.
+  const trace = gate.trace;
+  logger.info('turn.phase_a', {
+    requestId: a.ctx.requestId,
+    turnId: a.turnId,
+    channel: a.channel,
+    stopReason: streamed.stopReason,
+    replyShape: reply.shape ?? null,
+    replyDone: reply.isDone(),
+    gateCut: gate.cut,
+    gateFull: gate.full,
+    spokenFull: said.full,
+    units: gate.stats.units,
+    withheld: gate.stats.withheld,
+    repeatsDropped: trace.repeatsDropped,
+    reasksDropped: trace.reasksDropped,
+    agendaDropped: trace.agendaDropped,
+    greetingDropped: trace.greetingDropped,
+    replyWords: wordCount(reply.text),
+    shownWords: wordCount(said.shown),
+    spokenWords: said.words,
+    spokenBudget: voice ? spokenBudget : null,
+    ...(traceText
+      ? { replyText: reply.text, shownText: said.shown, dropped: JSON.stringify(trace.dropped) }
+      : {}),
+  });
   // A call's reply that ended on a statement hands the turn back now, not after the annotations.
   const handBack = voice ? (a.handBack ?? null) : null;
   if (

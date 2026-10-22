@@ -240,7 +240,9 @@ export {
   type GateCutReason,
   type GateFallbackReason,
   type GateResult,
+  type DroppedUnit,
   type GateStats,
+  type GateTrace,
   type GateUnit,
   type SentenceGateOptions,
 } from './validators/sentence-gate.js';

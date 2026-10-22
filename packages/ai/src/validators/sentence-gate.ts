@@ -121,6 +121,8 @@ export interface SentenceGateOptions {
    * reply is what was shown). The first unit is always released.
    */
   replyBudget?: { readonly sentences: number; readonly words: number } | null;
+  /** Keep the text of every unit left out in `trace.dropped` (the conversation lab's stream trace only). */
+  keepDropped?: boolean;
   /**
    * The vEIR's previous reply in this conversation: a unit that mostly says it again is never released (unless the
    * founder asked to hear it again, or sincerely asks who or what the coach is: the honest answer is never dropped).
@@ -176,6 +178,29 @@ export interface GateResult {
   readonly fallback: GateFallbackReason | null;
   /** Set when the reply ends before the rest of the stream (after units were released): stop the stream. */
   readonly cut: GateCutReason | null;
+}
+
+/** A unit the gate left out, and why (kept only with `keepDropped`, for the conversation lab's stream trace). */
+export interface DroppedUnit {
+  readonly reason: 'repeat' | 'reask' | 'agenda' | 'greeting';
+  readonly text: string;
+}
+
+/**
+ * What the gate left out of the reply (production, 2026-10-22 lab: call replies of 19 to 90 streamed tokens were said
+ * as "Got it." or one sentence and a question, and nothing recorded which check took the rest).
+ */
+export interface GateTrace {
+  /** Units left out as the previous reply again (four-word sequences) or a question already asked. */
+  readonly repeatsDropped: number;
+  /** Of `repeatsDropped`, the questions already asked. */
+  readonly reasksDropped: number;
+  /** Units left out as parking the founder's news. */
+  readonly agendaDropped: number;
+  /** A greeting the opening line already gave was left out. */
+  readonly greetingDropped: boolean;
+  /** The units left out, in order (only with `keepDropped`; empty otherwise). */
+  readonly dropped: readonly DroppedUnit[];
 }
 
 export interface GateStats {
@@ -370,6 +395,8 @@ export class SentenceGate {
   #afterDroppedDisclaimer = false;
   /** A greeting the opening line already gave was left out of the reply's start (`greeted`). */
   #droppedGreeting = false;
+  #reasksDropped = 0;
+  readonly #dropped: DroppedUnit[] = [];
   /** The previous reply's four-word sequences (null: no repeat check). */
   readonly #previousGrams: ReadonlySet<string> | null;
   /** The previous reply's questions, as content words: never asked again in other words. */
@@ -453,6 +480,21 @@ export class SentenceGate {
   /** Counts for audit metadata (no content). */
   get stats(): GateStats {
     return { ...this.#stats };
+  }
+
+  /** What the gate left out of the reply ({@link GateTrace}). */
+  get trace(): GateTrace {
+    return {
+      repeatsDropped: this.#repeatsDropped,
+      reasksDropped: this.#reasksDropped,
+      agendaDropped: this.#agendaDropped,
+      greetingDropped: this.#droppedGreeting,
+      dropped: [...this.#dropped],
+    };
+  }
+
+  #keepDropped(reason: DroppedUnit['reason'], text: string): void {
+    if (this.#options.keepDropped === true) this.#dropped.push({ reason, text: text.trim() });
   }
 
   /** Adds a chunk and returns the units it completes. */
@@ -560,6 +602,7 @@ export class SentenceGate {
         const greeting = withoutRepeatedGreeting(rawUnit, this.#greetingNames);
         if (greeting.removed) {
           this.#droppedGreeting = true;
+          this.#keepDropped('greeting', rawUnit);
           if (greeting.text.trim() === '') {
             this.#cursor = end;
             continue;
@@ -592,20 +635,22 @@ export class SentenceGate {
         this.#cut = 'meta_narration';
         return { units, blocked: null, fallback: null, cut: this.#cut };
       }
-      if (
-        this.#previousGrams !== null &&
-        (repeatsPrevious(rawUnit, this.#previousGrams) ||
-          reasksQuestion(rawUnit.trim(), this.#previousQuestions))
-      ) {
-        // The previous reply again: never said twice.
-        this.#cursor = end;
-        this.#repeatsDropped += 1;
-        continue;
+      if (this.#previousGrams !== null) {
+        const repeat = repeatsPrevious(rawUnit, this.#previousGrams);
+        if (repeat || reasksQuestion(rawUnit.trim(), this.#previousQuestions)) {
+          // The previous reply again: never said twice.
+          this.#cursor = end;
+          this.#repeatsDropped += 1;
+          if (!repeat) this.#reasksDropped += 1;
+          this.#keepDropped(repeat ? 'repeat' : 'reask', rawUnit);
+          continue;
+        }
       }
       if (this.#news && parksTheirNews(rawUnit.trim())) {
         // Their news parked for the vEIR's own question ("Before we talk about that, let's finish…"): never said.
         this.#cursor = end;
         this.#agendaDropped += 1;
+        this.#keepDropped('agenda', rawUnit);
         continue;
       }
       const budget = this.#options.replyBudget ?? null;

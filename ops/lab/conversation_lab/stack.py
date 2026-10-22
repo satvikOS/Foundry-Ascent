@@ -63,6 +63,9 @@ def api_env(
             "LOCAL_AWS_SPEECH": "true" if speech else "false",
             "SPEECH_ENABLED": "true",
             "SPEECH_ENGINE": "neural",
+            # The streamed reply's text and what the sentence gate left out, in the (sealed) API log: synthetic data
+            # only, and the API ignores it in production.
+            "LAB_TRACE_STREAM": "1",
         }
     )
     if mock:

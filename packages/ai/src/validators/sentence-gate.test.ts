@@ -418,6 +418,24 @@ describe('SentenceGate', () => {
       ).toBe(previous);
     });
 
+    it('reports what it left out: counts always, the units themselves only when asked (the lab stream trace)', () => {
+      const previous =
+        "Ask three students what they'd give up to skip the group chat and the walking. That's the price signal you need before the pilot starts.";
+      const plain = gate({ previousReply: previous, founderText: 'any tips?' });
+      run(plain, [`${previous} Then run the pilot in two libraries.`]);
+      expect(plain.trace).toEqual({
+        repeatsDropped: 2,
+        reasksDropped: 0,
+        agendaDropped: 0,
+        greetingDropped: false,
+        dropped: [],
+      });
+      const kept = gate({ previousReply: previous, founderText: 'any tips?', keepDropped: true });
+      run(kept, [`${previous} Then run the pilot in two libraries.`]);
+      expect(kept.trace.dropped.map((d) => d.reason)).toEqual(['repeat', 'repeat']);
+      expect(kept.trace.dropped[0]?.text).toContain('Ask three students');
+    });
+
     it('never asks the previous reply’s question again in other words (item 20), typed or spoken', () => {
       const previous =
         "That's a real step. Do you have a written agreement on what success looks like and what happens if the pilot doesn't hit it?";

@@ -62,6 +62,11 @@ export const CoreConfig = z.object({
     historyTurns: z.number().int().min(0).max(50),
     /** Turn generation budget for the primary model (the gateway adds the fallback budget). */
     modelTimeoutMs: z.number().int().min(1_000).max(60_000),
+    /**
+     * Log the streamed reply's raw text and the units the gate left out (`turn.phase_a`). The conversation lab only
+     * (`LAB_TRACE_STREAM=1`, synthetic data, sealed logs); never in production, whatever the environment says.
+     */
+    traceStreamText: z.boolean(),
   }),
   retrieval: z.object({
     memory: z.number().int().min(0).max(50),
@@ -150,6 +155,7 @@ export const DEFAULT_CORE_CONFIG: CoreConfig = {
     maxInputTokens: 16_000,
     historyTurns: 8,
     modelTimeoutMs: 25_000,
+    traceStreamText: false,
   },
   retrieval: { memory: 8, chunks: 6, doctrine: 4, resources: 4, patterns: 2 },
   ingestion: { chunkTokens: 800, overlapRatio: 0.15, embedBatchSize: 16, maxChunks: 2_000 },
@@ -219,6 +225,7 @@ export function loadConfig(env: EnvLike): CoreConfig {
       rateLimit: intFrom(env, 'CORE_TURN_RATE_LIMIT', DEFAULT_CORE_CONFIG.turns.rateLimit),
       reviewSampleRate:
         intFrom(env, 'CORE_REVIEW_SAMPLE_RATE_PCT', DEFAULT_CORE_CONFIG.turns.reviewSampleRate * 100) / 100,
+      traceStreamText: env.LAB_TRACE_STREAM === '1' && appEnv !== 'production',
     },
     distillation: {
       turnDelaySeconds: intFrom(
