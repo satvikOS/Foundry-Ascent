@@ -17,13 +17,16 @@ PRODUCTION_CONFIG = REPO / "infra" / "cdk" / "config" / "production.json"
 SPEECH_VOICES = REPO / "packages" / "core" / "speech-voices.json"
 
 SUITES: tuple[str, ...] = ("recall", "voice", "matrix", "ui")
+#: Regression suites run on their own, never as part of ``all``: ``agenda`` (one dominant past-dated notebook
+#: commitment; conversation_lab/agenda.py).
+EXTRA_SUITES: tuple[str, ...] = ("agenda",)
 
 #: Share of a suite's budget the app itself may spend (its own metering, hard-capped by the app's daily cap); the
 #: rest is for the lab's own calls (judge, simulator, the founder's synthesized voice). The UI suite makes none.
-APP_SHARE: dict[str, float] = {"recall": 0.85, "voice": 0.85, "matrix": 0.55, "ui": 1.0}
+APP_SHARE: dict[str, float] = {"recall": 0.85, "voice": 0.85, "matrix": 0.55, "ui": 1.0, "agenda": 0.85}
 
 #: How a run's budget is split when several suites run (suite=all), by expected spend.
-SUITE_WEIGHT: dict[str, int] = {"recall": 1, "voice": 1, "matrix": 2, "ui": 2}
+SUITE_WEIGHT: dict[str, int] = {"recall": 1, "voice": 1, "matrix": 2, "ui": 2, "agenda": 1}
 
 #: Largest budget the workflow accepts for one run, in USD (the app's daily cap allows at most 100).
 MAX_BUDGET_USD = 50.0
@@ -88,8 +91,8 @@ def polly_usd_per_million_characters(engine: str = "neural", path: Path = SPEECH
 def suites_for(choice: str) -> list[str]:
     if choice == "all":
         return list(SUITES)
-    if choice not in SUITES:
-        raise ValueError(f"suite must be one of {', '.join((*SUITES, 'all'))}")
+    if choice not in (*SUITES, *EXTRA_SUITES):
+        raise ValueError(f"suite must be one of {', '.join((*SUITES, *EXTRA_SUITES, 'all'))}")
     return [choice]
 
 

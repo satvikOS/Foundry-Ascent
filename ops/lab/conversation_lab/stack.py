@@ -173,6 +173,27 @@ def run_backfill(env: dict[str, str], log_dir: Path) -> str:
     return f"failed (exit {done.returncode})"
 
 
+def run_agenda_ventures(env: dict[str, str], log_dir: Path) -> dict[str, str]:
+    """Adds the agenda suite's two synthetic ventures (apps/api lab-agenda-ventures.ts, local Postgres only).
+    Returns {channel: founder's display name} for each venture it reported."""
+    log_dir.mkdir(parents=True, exist_ok=True)
+    done = subprocess.run(  # noqa: S603 - fixed argument list
+        [PNPM, "--filter", "@foundry/api", "exec", "tsx", "src/scripts/lab-agenda-ventures.ts"],
+        cwd=REPO,
+        env=env,
+        capture_output=True,
+        timeout=120,
+        check=False,
+    )
+    (log_dir / "agenda-ventures.log").write_bytes(done.stdout + done.stderr)
+    out: dict[str, str] = {}
+    for line in done.stdout.decode("utf-8", "replace").splitlines():
+        found = re.match(r"^lab-agenda-ventures: venture=(\w+) channel=(chat|call) founder=(.+)$", line)
+        if found:
+            out[found.group(2)] = found.group(3).strip()
+    return out
+
+
 def run_memory_venture(env: dict[str, str], log_dir: Path) -> str | None:
     """Adds the dedicated synthetic venture for evals' remembered conversations to the lab's database (apps/api
     lab-memory-venture.ts, which refuses anything but a local Postgres). Returns the venture key, or None."""

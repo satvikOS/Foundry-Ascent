@@ -166,6 +166,25 @@ def compare(current: Mapping[str, Any], baseline: Mapping[str, Any]) -> dict[str
             greet_c.get("call_to_turn_ms"),
             0,
         )
+    agenda_b, agenda_c = (
+        (base.get("agenda") or {}).get("all") or {},
+        (cur.get("agenda") or {}).get("all") or {},
+    )
+    for key in (
+        "substanceOnRequest",
+        "questionBackOnly",
+        "fragmentsOnRequest",
+        "steerBack",
+        "reasks",
+        "staleMentions",
+        "openersReopeningCommitment",
+        "soOpenings",
+        "judgeAnswersTheRequest",
+        "judgeFollowsTopic",
+        "judgeFeltHeard",
+    ):
+        if isinstance(agenda_b.get(key), int | float) or isinstance(agenda_c.get(key), int | float):
+            row(f"agenda: {key}", agenda_b.get(key), agenda_c.get(key), 2)
     if base.get("openers") is not None or cur.get("openers") is not None:
         row("openers flagged", _flagged(base.get("openers")), _flagged(cur.get("openers")), 0)
     row(
