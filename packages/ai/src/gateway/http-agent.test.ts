@@ -1,35 +1,35 @@
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { request, createServer } from 'node:https';
 import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { CountingAgent, KEEP_ALIVE_MSECS, awsConnectionStats, sharedAwsAgent } from './http-agent.js';
 
-/** A self-signed certificate for localhost, for this test only (no secret: it guards nothing). */
-const KEY = [
-  '-----BEGIN PRIVATE KEY-----',
-  'MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgiq68fBMbIdn4JRKG',
-  '8auwC5dQM55Pb7XkonT3VHStMpWhRANCAAT07EzTzCSyCQEgrWG4+H9w/MPS1lfH',
-  'edDxON6bkKUuJDzj53SxKwA/5+5dEtCYWAwL7RBqcu1iM/oL6+XU6Vdm',
-  '-----END PRIVATE KEY-----',
-].join('\n');
-const CERT = [
-  '-----BEGIN CERTIFICATE-----',
-  'MIIBnDCCAUGgAwIBAgIUQUgDQFI8ErjnGLKecq4Sw5C23d4wCgYIKoZIzj0EAwIw',
-  'FDESMBAGA1UEAwwJbG9jYWxob3N0MCAXDTI2MTAxODA1NTAxMFoYDzIxMjYwOTI0',
-  'MDU1MDEwWjAUMRIwEAYDVQQDDAlsb2NhbGhvc3QwWTATBgcqhkjOPQIBBggqhkjO',
-  'PQMBBwNCAAT07EzTzCSyCQEgrWG4+H9w/MPS1lfHedDxON6bkKUuJDzj53SxKwA/',
-  '5+5dEtCYWAwL7RBqcu1iM/oL6+XU6Vdmo28wbTAdBgNVHQ4EFgQUuwFVAdsbHwJC',
-  'crDEnH7kOsPAopswHwYDVR0jBBgwFoAUuwFVAdsbHwJCcrDEnH7kOsPAopswDwYD',
-  'VR0TAQH/BAUwAwEB/zAaBgNVHREEEzARgglsb2NhbGhvc3SHBH8AAAEwCgYIKoZI',
-  'zj0EAwIDSQAwRgIhAIBBOgSgDlFZUu/vxMBgjzgJSgp+frqWSbRGZ69M5HNLAiEA',
-  'ubsdKRCidOk5WEDawlqoc5diU3pWTtbMvuTaS66mTvM=',
-  '-----END CERTIFICATE-----',
-].join('\n');
-
-const server = createServer({ key: KEY, cert: CERT }, (_req, res) => {
-  res.end('ok');
-});
+/**
+ * A throwaway self-signed certificate for localhost, made by `openssl` when the test starts and deleted after it:
+ * no key is ever committed (the secret scan reads every commit of this public repository).
+ */
+const dir = mkdtempSync(join(tmpdir(), 'fa-http-agent-'));
+execFileSync(
+  'openssl',
+  ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1', '-subj', '/CN=localhost'].concat([
+    '-keyout',
+    join(dir, 'key.pem'),
+    '-out',
+    join(dir, 'cert.pem'),
+  ]),
+  { stdio: 'ignore' },
+);
+const server = createServer(
+  { key: readFileSync(join(dir, 'key.pem')), cert: readFileSync(join(dir, 'cert.pem')) },
+  (_req, res) => {
+    res.end('ok');
+  },
+);
 let port = 0;
 
 beforeAll(async () => {
@@ -42,6 +42,7 @@ afterAll(async () => {
       resolve();
     }),
   );
+  rmSync(dir, { recursive: true, force: true });
 });
 
 function get(agent: CountingAgent): Promise<string> {

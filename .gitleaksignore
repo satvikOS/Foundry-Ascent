@@ -1,0 +1,5 @@
+# Findings reviewed and accepted (gitleaks fingerprint: commit:file:rule:line).
+# 82dfa4c: a throwaway self-signed certificate for localhost, committed inside a test (2026-10-18). It guards
+# nothing (the test's own local TLS server) and was removed in the next commit; the test now creates its key with
+# openssl at run time. The key in history must never be used for anything.
+82dfa4c0b93821621ad1e6cddbdbd19722d78d89:packages/ai/src/gateway/http-agent.test.ts:private-key:10
