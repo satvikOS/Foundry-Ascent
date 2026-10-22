@@ -621,7 +621,7 @@ function SizeControls({
       <Button
         variant="ghost"
         size="icon-sm"
-        aria-label={pdf ? 'Zoom out' : 'Smaller text'}
+        aria-label={pdf ? 'Zoom out' : 'A− Smaller text'}
         disabled={smallerDisabled}
         onClick={onSmaller}
         className="font-serif text-[13px]"
@@ -634,7 +634,7 @@ function SizeControls({
       <Button
         variant="ghost"
         size="icon-sm"
-        aria-label={pdf ? 'Zoom in' : 'Larger text'}
+        aria-label={pdf ? 'Zoom in' : 'A+ Larger text'}
         disabled={largerDisabled}
         onClick={onLarger}
         className="font-serif text-[15px]"

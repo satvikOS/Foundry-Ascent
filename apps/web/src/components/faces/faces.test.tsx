@@ -35,15 +35,19 @@ describe('PersonaAvatar', () => {
 });
 
 describe('UserAvatar and VentureMark', () => {
-  it('render initials only', () => {
+  it('render initials only, drawn rather than written (never part of a control’s visible label)', () => {
     render(
       <>
         <UserAvatar name="Maya Okafor-Lindqvist" />
         <VentureMark name="QuietQuad" decorative={false} />
       </>,
     );
-    expect(screen.getByRole('img', { name: 'Maya Okafor-Lindqvist' })).toHaveTextContent('MO');
-    expect(screen.getByRole('img', { name: 'QuietQuad' })).toHaveTextContent('Q');
+    const person = screen.getByRole('img', { name: 'Maya Okafor-Lindqvist' });
+    const venture = screen.getByRole('img', { name: 'QuietQuad' });
+    expect(person).toHaveAttribute('data-initials', 'MO');
+    expect(venture).toHaveAttribute('data-initials', 'Q');
+    expect(person).toBeEmptyDOMElement();
+    expect(venture).toBeEmptyDOMElement();
   });
 });
 

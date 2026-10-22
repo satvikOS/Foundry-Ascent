@@ -86,7 +86,7 @@ export function AccountMenu({
 
   const trigger = (
     <DropdownMenuTrigger
-      aria-label={`Account menu for ${name}`}
+      aria-label={`Account menu for ${name}, ${roles}`}
       className={cn(
         'group flex min-w-0 items-center gap-2.5 rounded-lg text-left transition-colors',
         'hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sidebar-ring',
@@ -97,8 +97,9 @@ export function AccountMenu({
       <UserAvatar name={name} size="md" decorative />
       {compact ? null : (
         <>
+          {/* The space keeps the two lines two words of the visible label, which the name contains. */}
           <span className="min-w-0 flex-1 leading-tight">
-            <span className="block truncate text-small font-medium text-sidebar-foreground">{name}</span>
+            <span className="block truncate text-small font-medium text-sidebar-foreground">{name}</span>{' '}
             <span className="block truncate text-caption text-sidebar-muted">{roles}</span>
           </span>
           <ChevronsUpDown aria-hidden className="size-4 shrink-0 text-sidebar-muted" />
