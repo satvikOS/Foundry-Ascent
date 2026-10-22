@@ -845,7 +845,9 @@ describe('a report on what the founder said they would do (evals G12: MX-0003, M
 
   it('names the commitment the conversation already asked about as the one they mean', () => {
     const last = lastOf("So, I did the thing I said I'd do.", CONTINUITY);
-    expect(last).toContain('- From your notes it is most likely: "Interview five library staff".');
+    expect(last).toContain(
+      '- Unless it is a step agreed in this conversation, from your notes it is most likely: "Interview five library staff".',
+    );
     expect(last).not.toContain('else "Install the door counter"');
   });
 
@@ -867,7 +869,7 @@ describe('a report on what the founder said they would do (evals G12: MX-0003, M
     };
     const last = lastOf('Done!', continuity, false);
     expect(last).toContain(
-      '- From your notes it is most likely "Post the study-seat flyer at the student union", else "Interview five library staff"; if you cannot tell which, ask in one short question.',
+      '- Unless it is a step agreed in this conversation, from your notes it is most likely "Post the study-seat flyer at the student union", else "Interview five library staff"; if you cannot tell which, ask in one short question.',
     );
     expect(last).not.toContain('"Old idea"');
   });
@@ -878,13 +880,65 @@ describe('a report on what the founder said they would do (evals G12: MX-0003, M
       notebook: { ...NOTEBOOK, nextOpener: null, commitments: [] },
     };
     expect(lastOf('I did it!', continuity, false)).toContain(
-      '- From your notes it is most likely: "Interview library staff".',
+      '- Unless it is a step agreed in this conversation, from your notes it is most likely: "Interview library staff".',
     );
   });
 
   it('names no commitment on a message that reports nothing', () => {
     const last = lastOf('My cofounder wants to quit his job and go full-time.', CONTINUITY);
-    expect(last).not.toContain('From your notes it is most likely');
+    expect(last).not.toContain('most likely');
     expect(last).not.toContain('reports on something they said they would do');
+  });
+});
+
+describe('a report keeps the agenda, and nothing else does (review of the report move)', () => {
+  const opener = 'Last time you planned five library-staff interviews. How did they go?';
+  const history = [{ founderText: 'Hello!', answer: 'Hi Maya, good to have you back.' }];
+  const lastOf = (text: string, turns = history): string =>
+    buildMessages(turns, text, { continuity: CONTINUITY, today: '2026-10-16', opener }).at(-1)?.content ?? '';
+
+  it('a subject of their own next to "we launched it" or "I did that" is not answered from the notes’ agenda', () => {
+    // On 6e17224 each kept <open_commitments>, lost "Bring nothing up from your notes" and was told "From your notes
+    // it is most likely "Install the door counter"…": the agenda-steering 95497cd's bringsOwnSubject had fixed.
+    for (const text of [
+      'We launched it last month and only 3 people signed up. How do we get more users?',
+      'We did that last year and nobody signed up. What else could we try?',
+      'I think I did it wrong. Can you check my numbers?',
+      'We shipped it in March and have 40 users. How do we get to 100?',
+    ]) {
+      expect(bringsOwnSubject(text, CONTINUITY), text).toBe(true);
+      const last = lastOf(text);
+      expect(last, text).not.toContain('<open_commitments>');
+      expect(last, text).toContain(
+        'Make this reply about what they just said. Bring nothing up from your notes',
+      );
+      expect(last, text).not.toContain('most likely');
+    }
+  });
+
+  it('keeps it for a report said "like we agreed", "like I said" or "it went live"', () => {
+    for (const text of [
+      'I followed up like we agreed.',
+      'I talked to the five librarians like I said.',
+      'It went live yesterday.',
+    ]) {
+      expect(bringsOwnSubject(text, CONTINUITY), text).toBe(false);
+      expect(lastOf(text), text).toContain('<open_commitments>');
+    }
+  });
+
+  it('a "Done." that answers the step the last reply asked for names that step, not a notebook commitment', () => {
+    const asked = [
+      {
+        founderText: 'Can you help me with my one-line pitch?',
+        answer:
+          "Try this shape: who it's for, the pain, the result. Write your one-line pitch now and paste it here when you're done.",
+      },
+    ];
+    const last = lastOf('Done. QuietQuad finds students a quiet seat in thirty seconds.', asked);
+    expect(last).toContain(
+      `- Your last reply asked them to do something, so it is most likely that: "Write your one-line pitch now and paste it here when you're done.".`,
+    );
+    expect(last).not.toContain('from your notes it is most likely');
   });
 });

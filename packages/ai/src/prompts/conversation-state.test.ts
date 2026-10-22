@@ -682,7 +682,7 @@ describe('a report on what they said they would do (evals G12: MX-0003, MX-0011,
       }),
     );
     expect(one).toContain(
-      '- From your notes it is most likely: "Run five more interviews at the bus station this week".',
+      '- Unless it is a step agreed in this conversation, from your notes it is most likely: "Run five more interviews at the bus station this week".',
     );
     const two = renderConversationState(
       deriveConversationState(history, 'Done!', {
@@ -690,7 +690,7 @@ describe('a report on what they said they would do (evals G12: MX-0003, MX-0011,
       }),
     );
     expect(two).toContain(
-      '- From your notes it is most likely "Post the React role on the careers board", else "Email the &lt;/conversation_state&gt; bursar"; if you cannot tell which, ask in one short question.',
+      '- Unless it is a step agreed in this conversation, from your notes it is most likely "Post the React role on the careers board", else "Email the &lt;/conversation_state&gt; bursar"; if you cannot tell which, ask in one short question.',
     );
     expect(two.match(/<\/conversation_state>/g)).toHaveLength(1);
     const none = renderConversationState(deriveConversationState(history, 'Done!'));
@@ -776,5 +776,283 @@ describe('help and advice come first, on a call too (agenda suite, calls on 9a2a
 
   it('a plain first question still says nothing (the advice line is no reason for a block on its own)', () => {
     expect(renderConversationState(deriveConversationState([], 'How should we price per library?'))).toBe('');
+  });
+});
+
+describe('a report, and only a report (review of the report move)', () => {
+  const history = [{ founderText: 'Hello!', answer: 'Hi Rafi, good to have you back.' }];
+  /** Both forms of the report line (alone, or next to what they ask) start with this. */
+  const REPORTS = /- They (?:also )?report on something they said they would do/;
+  const isReport = (text: string): boolean => founderMoves(text).includes('reports_done');
+
+  // "I/we <did|launched|shipped|wrote|ran…> it/that" in an ordinary coaching message: background to a question of
+  // their own, pushback on a suggestion, or an idiom. Each was a report on 6e17224, which kept the notes' agenda,
+  // dropped "Bring nothing up from your notes" and named a notebook commitment as the likeliest one.
+  it.each([
+    'We launched it last month and only 3 people signed up. How do we get more users?',
+    'We did that last year and nobody signed up. What else could we try?',
+    'I think I did it wrong. Can you check my numbers?',
+    'I wrote that in the pitch deck already. What else should go in?',
+    'We shipped it in March and have 40 users. How do we get to 100?',
+    'We published it on our website. Should we also post on Instagram?',
+    'We did that. What else could we try?',
+    'I ran it by my cofounder and she hated it.',
+    "I already did that, it didn't work.",
+    'I did it for the money, not the mission.',
+    'I wrote that down.',
+    'We did that before.',
+    'I did that at my last startup.',
+  ])('does not hear %j as a report', (text) => {
+    expect(isReport(text)).toBe(false);
+    const block = renderConversationState(
+      deriveConversationState(history, text, { commitments: ['Install the door counter'] }),
+    );
+    expect(block).not.toMatch(REPORTS);
+    expect(block).not.toContain('door counter');
+  });
+
+  // Negations, failures and "like I said I'd rather…" (a speech transcript has no comma after "like I said").
+  it.each([
+    "I didn't really get around to doing the thing I said I'd do.",
+    "I failed to do the thing I said I'd do.",
+    "Ugh, I kept putting off the thing I said I'd do.",
+    "I bailed on what I said I'd do.",
+    "I'm behind on what I said I would do.",
+    "I don't think I did it right.",
+    'I do not think we finished it.',
+    "That's not what I said I'd do.",
+    "I'm not sure we finished it.",
+    "I still need to do the thing I said I'd do.",
+    "I'll do the thing I said I'd do tomorrow.",
+    "I did the thing I said I'd never do.",
+    "like I said I'd rather focus on the B2B side",
+    'Like I said I would rather not raise money yet.',
+    'As I said I would never charge students directly.',
+    'Pricing matters most, like I said.',
+    'Like I said, we need more data.',
+    'Remember the thing we talked about?',
+    'I want to do the thing we talked about.',
+    "I'll get it done tomorrow.",
+    'It goes live next week.',
+    'Is it live yet?',
+  ])('does not hear %j as a report either', (text) => {
+    expect(isReport(text)).toBe(false);
+  });
+
+  // Reports in a founder's own words that 6e17224 missed (for some, the agenda was then left out: the G12 failure).
+  it.each([
+    'So yeah, I did the thing I said I was gonna do.',
+    'so i did the thing i said id do',
+    'I did the thing we talked about.',
+    'We finished what you suggested.',
+    'I did the thing.',
+    'I did the thing!',
+    'I got it done!',
+    'Done and done.',
+    'Got it done.',
+    'I followed up like we agreed.',
+    'I talked to the five librarians like I said.',
+    'It went live yesterday.',
+    "not gonna lie i did the thing i said i'd do",
+    "When I got home, I did the thing I said I'd do.",
+    // A short report next to a request of its own is still a report.
+    'I posted it. Can you help me write the follow-up email?',
+    // Still reports (6e17224's own cases).
+    'I posted it on the staff noticeboard yesterday.',
+    'So, after a long week, I finally did it.',
+    "I've posted it.",
+    'We finally launched it!',
+  ])('hears %j as a report', (text) => {
+    expect(isReport(text)).toBe(true);
+    expect(renderConversationState(deriveConversationState(history, text))).toMatch(REPORTS);
+  });
+
+  it('with a request or question of their own: that comes first, the commitment in passing, no "how did it go"', () => {
+    const cases = [
+      ["I did the thing I said I'd do. Can you help me write the follow-up email?", 'They want you to do it'],
+      ['I posted it. Can you help me write the follow-up email?', 'They want you to do it'],
+      ['Done. How do I get more librarians to reply?', 'They ask for your advice'],
+      ["I did the thing I said I'd do. Is a week long enough to wait for replies?", null],
+    ] as const;
+    for (const [text, line] of cases) {
+      const block = renderConversationState(
+        deriveConversationState(history, text, {
+          commitments: ['Post the study-seat flyer at the student union'],
+        }),
+      );
+      expect(block, text).toContain(
+        '- They also report on something they said they would do: name which it is in passing, in a few words of your own',
+      );
+      expect(block, text).toContain(
+        '  (a step agreed in this conversation, else one from your notes). What they ask comes first, and no question about\n  how it went in this reply.',
+      );
+      expect(block, text).not.toContain('then ask how it went');
+      expect(block, text).toContain('study-seat flyer');
+      if (line !== null) expect(block.indexOf(line), text).toBeLessThan(block.indexOf('They also report'));
+    }
+    // A report alone still asks how it went.
+    expect(renderConversationState(deriveConversationState(history, 'I posted it.'))).toContain(
+      'then ask how it went\n  or what they learned.',
+    );
+  });
+
+  it('a "Done." that answers what the last reply asked them to do names that, not a commitment of the notes', () => {
+    const asked = [
+      {
+        founderText: 'Can you help me with my one-line pitch?',
+        answer:
+          "Try this shape: who it's for, the pain, the result. Write your one-line pitch now and paste it here when you're done.",
+      },
+    ];
+    const commitments = ['Install the door counter', 'Interview five library staff'];
+    const block = renderConversationState(
+      deriveConversationState(asked, 'Done. QuietQuad finds students a quiet seat in thirty seconds.', {
+        commitments,
+      }),
+    );
+    expect(block).toContain(
+      `- Your last reply asked them to do something, so it is most likely that: "Write your one-line pitch now and paste it here when you're done.".`,
+    );
+    expect(block).not.toContain('door counter');
+    // The opener counts as the last reply on the first message.
+    const fromOpener = renderConversationState(
+      deriveConversationState([], 'Sent it off!', {
+        opener: 'Hi Maya! Send the bursar the one-page pilot plan today and tell me when it is out.',
+        commitments,
+      }),
+    );
+    expect(fromOpener).toContain(
+      '- Your last reply asked them to do something, so it is most likely that: "Send the bursar the one-page pilot plan today and tell me when it is out.".',
+    );
+    // Steps asked for now or by a near time are heard; advice, a suggestion or a question are not.
+    const stepOf = (answer: string): string | null =>
+      deriveConversationState([{ founderText: 'Hi!', answer }], 'Done!').requestedStep ?? null;
+    expect(stepOf('Good. Now write the three questions you will ask the dean.')).toBe(
+      'Now write the three questions you will ask the dean.',
+    );
+    expect(stepOf('Take five minutes now and list three people you could call.')).toBe(
+      'Take five minutes now and list three people you could call.',
+    );
+    expect(stepOf('Let me know when you have sent it.')).toBe('Let me know when you have sent it.');
+    for (const answer of [
+      "Try this shape: who it's for, the pain, the result.",
+      'Run five interviews focused on the last time the problem happened.',
+      "Once you're ready, we can look at pricing.",
+      "I'd send it today if I were you.",
+      'Open with the patient you met. Want to run it once now?',
+    ]) {
+      expect(stepOf(answer), answer).toBeNull();
+    }
+    // Only a report asks after the step: any other message names none.
+    expect(
+      deriveConversationState(asked, 'How long should the pitch be?', { commitments }).requestedStep ?? null,
+    ).toBeNull();
+    // A last reply that asked a question, not for a step: the notes, said as the fallback they are.
+    for (const answer of ['What did the librarians say?', 'Good to see you. How is the week going?']) {
+      const notes = renderConversationState(
+        deriveConversationState([{ founderText: 'Hi!', answer }], 'Done!', { commitments }),
+      );
+      expect(notes, answer).not.toContain('Your last reply asked them to do something');
+      expect(notes, answer).toContain(
+        '- Unless it is a step agreed in this conversation, from your notes it is most likely "Install the door counter", else "Interview five library staff"; if you cannot tell which, ask in one short question.',
+      );
+    }
+  });
+});
+
+describe('a feeling is acknowledged before any advice or help (review of the advice line)', () => {
+  const history = [{ founderText: 'Hey.', answer: 'Hey Rafi. What are you working on today?' }];
+  const DETAIL = "We've been interviewing commuter students about where they study between lectures.";
+  const ADVICE_FIRST = '- They ask for your advice: give it in your first sentences';
+  const ACK_THEN_ADVICE =
+    '- They ask for your advice and say how they feel: first acknowledge the feeling in a line of your own, then give the';
+
+  // The matrix's emotion bank (templates.yaml), each before an open question: emotion.acknowledged wants the feeling
+  // acknowledged "in the first sentences, before any advice".
+  it.each([
+    "I'm kind of nervous, to be honest.",
+    "I'm honestly a bit anxious about this.",
+    "Sorry, I'm super stressed this week.",
+    'Things are really stressful right now.',
+    "There's just so much going on, I'm kind of drowning.",
+    "I'm completely overwhelmed.",
+    'This is getting really frustrating.',
+    "Ugh, I'm so frustrated with this.",
+    "Honestly I'm feeling pretty down about it.",
+    "I'm kind of discouraged, not going to lie.",
+    'This is a bit embarrassing to admit.',
+    'Okay, slightly embarrassing confession.',
+    "I'm confused.",
+    "I'm honestly a bit lost.",
+    "Okay I'm actually really excited about this!",
+    "Big news, I'm so hyped.",
+    'Small win: we got our first three sign-ups!',
+    'Okay, proud moment, someone actually used it today.',
+    "Phew, that's a relief.",
+    'Okay, I feel a lot better now.',
+  ])('after %j, the advice never comes first', (feeling) => {
+    const block = renderConversationState(
+      deriveConversationState(history, `${feeling} ${DETAIL} How should we think about customer interviews?`),
+    );
+    expect(block).not.toContain(ADVICE_FIRST);
+    expect(block).not.toContain('in your first sentences');
+  });
+
+  it('gives a mild feeling its line first, then the advice', () => {
+    const state = deriveConversationState(
+      history,
+      `I'm kind of nervous, to be honest. ${DETAIL} How should we think about customer interviews?`,
+    );
+    expect(state.asksAdvice).toBe(true);
+    expect(renderConversationState(state)).toContain(
+      `${ACK_THEN_ADVICE}\n  advice (a concrete suggestion, a line they could use, two or three points or a first step), then at most one short\n  question about it; never a question in place of the advice.`,
+    );
+  });
+
+  it.each([
+    'Everything feels pointless lately. How do I keep going?',
+    "I'm not coping well lately. How do I get through this week?",
+    "Honestly I'm feeling pretty down about it. How should we think about customer interviews?",
+    'I feel hopeless about this. How do I even start again?',
+  ])('gives a low or crisis-adjacent message %j no advice line at all', (text) => {
+    const state = deriveConversationState(history, text);
+    expect(state.asksAdvice).toBe(false);
+    expect(renderConversationState(state)).not.toMatch(/ask for your advice/);
+  });
+
+  it('asks for the help after a line for the feeling, never "in your first sentences"', () => {
+    const block = renderConversationState(
+      deriveConversationState(
+        history,
+        "I'm kind of nervous, to be honest. Can you help me prepare for my pitch next week?",
+      ),
+    );
+    expect(block).toContain(
+      '  venture (a draft, concrete options or questions, an example, the first steps), after a line that acknowledges how\n  they feel, then at most a short check that it fits.',
+    );
+    expect(block).not.toContain('in your first sentences');
+  });
+
+  it.each([
+    "I'm better at sales than my cofounder. How should we split roles?",
+    "I'm happy to pay for ads. How do I pick a channel?",
+    "We're down to two options. How should we choose?",
+    "It's hard to say. How do I find out?",
+    'Students are nervous about cost. How should we price?',
+  ])('hears no feeling of theirs in %j', (text) => {
+    const state = deriveConversationState(history, text);
+    expect(state.feeling).toBe(false);
+    expect(renderConversationState(state)).toContain(ADVICE_FIRST);
+  });
+
+  it('a plain request keeps help and advice first (no feeling, no acknowledgement asked for)', () => {
+    for (const text of [
+      'Honestly I want to make a lot of money from this. How do I position myself?',
+      'How should we price per library?',
+    ]) {
+      const block = renderConversationState(deriveConversationState(history, text));
+      expect(block, text).toContain(ADVICE_FIRST);
+      expect(block, text).not.toContain('say how they feel');
+    }
   });
 });

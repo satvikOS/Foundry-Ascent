@@ -102,4 +102,21 @@ describe('a call’s streamed reply gives the help first (agenda suite, calls on
     expect(thanks).toContain('- A thanks and nothing more: a short, warm reply only.');
     expect(thanks).not.toMatch(/do the work|ask for your advice|first sentences/);
   });
+
+  it('lets a feeling they name come before the help on a call (the matrix’s emotion.acknowledged)', () => {
+    // "your first sentence or two are the help itself" and "give it in your first sentences" left no room for the
+    // feeling, which the matrix wants acknowledged before any advice.
+    expect(voice).toContain(
+      'a first step; a feeling they name gets a word first) and the hand-back comes after it',
+    );
+    const last =
+      buildMessages(
+        [{ founderText: 'Hey.', answer: 'Hey Idris. What are we working on?' }],
+        "I'm kind of nervous, to be honest. How should I open the pitch?",
+      ).at(-1)?.content ?? '';
+    expect(last).toContain(
+      '- They ask for your advice and say how they feel: first acknowledge the feeling in a line of your own, then give the',
+    );
+    expect(last).not.toContain('first sentences');
+  });
 });

@@ -112,11 +112,13 @@ export function conversationCraftRules(channel: TurnChannel): string {
  * How the reply sounds on a call (the streamed spoken reply of phase A, and `spoken`). The agenda suite on calls
  * (9a2a41f): asked to help prepare a pitch, the call said "tell me the one thing you want the judges to walk away
  * believing…", and "How do I position myself?" got a question, where typed replies gave the substance: the hand-back
- * every spoken reply ends with had taken the place of the help.
+ * every spoken reply ends with had taken the place of the help. A feeling they name still comes first (the matrix's
+ * emotion.acknowledged: "before any advice").
  */
 export const SPOKEN_REGISTER =
   'Write it as speech, not cut from a longer answer: short sentences with contractions, the answer first (when they ' +
   'asked for something, most of the reply is that thing), ending by handing the turn back with one short question or ' +
   'a clear invitation (unless they are wrapping up). Asked for help or advice ("help me…", "how do I…?"), your first ' +
   'sentence or two are the help itself (a concrete suggestion, a line they could say, two or three points or a first ' +
-  'step) and the hand-back comes after it, about it: a question or an invitation never takes its place.';
+  'step; a feeling they name gets a word first) and the hand-back comes after it, about it: a question or an ' +
+  'invitation never takes its place.';

@@ -285,7 +285,7 @@ describe('help and advice first, on a call too (agenda suite, calls on 9a2a41f)'
       'Asked for help or advice ("help me…", "how do I…?"), your first sentence or two are the help itself (a concrete',
     );
     expect(SPOKEN_REGISTER).toContain(
-      'suggestion, a line they could say, two or three points or a first step) and the hand-back comes after it, about it:',
+      'suggestion, a line they could say, two or three points or a first step; a feeling they name gets a word first) and the hand-back comes after it, about it:',
     );
     expect(SPOKEN_REGISTER).toContain('a question or an invitation never takes its place.');
     expect(section(voice, 'Voice call')).toContain(SPOKEN_REGISTER);
@@ -293,6 +293,14 @@ describe('help and advice first, on a call too (agenda suite, calls on 9a2a41f)'
     expect(SPOKEN_REGISTER).toContain('(when they asked for something, most of the reply is that thing)');
     expect(SPOKEN_REGISTER).not.toMatch(/every reply (?:gives|has) (?:two|three)/);
     expect(text).not.toContain(SPOKEN_REGISTER);
+  });
+
+  it('lets a feeling they name be acknowledged before the help (the matrix’s emotion.acknowledged)', () => {
+    // "I'm kind of nervous… How should we think about customer interviews?" on a call: "your first sentence or two are
+    // the help itself" left no room for the feeling, which the matrix wants acknowledged before any advice.
+    expect(SPOKEN_REGISTER).toContain(
+      'two or three points or a first step; a feeling they name gets a word first) and the hand-back comes after it',
+    );
   });
 
   it('asks before prescribing only when they did not ask for help (rule 4)', () => {
