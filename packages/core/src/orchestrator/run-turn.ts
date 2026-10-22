@@ -70,7 +70,7 @@ import { candidateVisibility } from './evidence.js';
 import { generationTotals, SpeechStream } from './generate.js';
 import { assertWithinSpendCaps } from './guards.js';
 import { embedRetrievalQuery, privateRetrievalOwner, retrieveEvidence } from './retrieval.js';
-import { screenIndirectIdeation } from './safety-screen.js';
+import { safetyScreenDue, screenIndirectIdeation } from './safety-screen.js';
 import { secondsUntilUtcMidnight, shouldSampleForReview } from './sampling.js';
 
 export { enforceGateBlock } from './answer.js';
@@ -507,24 +507,6 @@ export function createOrchestrator(
     });
   }
 
-  /**
-   * The channel of a message the safety screen found a crisis in. Preflight read it as an ordinary message, which
-   * leaves a spoken one to call admission; a crisis skips that admission, so, as preflight decides for a crisis rule, a
-   * spoken crisis message is recorded as spoken only when it names the caller's live call (otherwise it is a typed
-   * one: nothing is said on a call that is not there).
-   */
-  async function crisisChannel(
-    ctx: RequestContext,
-    pre: Proceed,
-    callId: string | undefined,
-  ): Promise<Proceed> {
-    if (pre.channel !== 'voice') return pre;
-    const live = await kit.inRequest(ctx, (scope) =>
-      isLiveCallOf(scope, { sessionId: pre.session.id, callId }),
-    );
-    return live ? pre : { ...pre, channel: 'text' };
-  }
-
   async function replay(
     ctx: RequestContext,
     emit: (e: TurnStreamEvent) => Promise<void>,
@@ -659,6 +641,9 @@ export function createOrchestrator(
         turnId: turn.id,
         status: 'blocked',
         response,
+        // A screened crisis was admitted under the rules' label: the turn keeps the final one.
+        riskLabel: riskLabel(risk),
+        riskCategories: risk.categories,
         validatorResults: validator,
         sampledForReview: false,
         mode: pre.turnMode,
@@ -713,6 +698,7 @@ export function createOrchestrator(
     readonly turn: turnsRepo.TurnRecord;
     readonly pre: Proceed;
     readonly input: z.output<typeof RunTurnInput>;
+    /** The deterministic rules' classification the turn was admitted with (accepted() adds the safety screen's). */
     readonly risk: RiskClassification;
     /** Whether the admission treated the message as a crisis (no limits, no coach, no model call). */
     readonly crisis: boolean;
@@ -731,9 +717,21 @@ export function createOrchestrator(
   }
 
   async function accepted(a: Accepted): Promise<RunTurnOutcome> {
-    const { ctx, turn, pre, input, risk, others, eirNames, addressees, emit, signal } = a;
-    const label = riskLabel(risk);
+    const { ctx, turn, pre, input, others, eirNames, addressees, emit, signal } = a;
     const ventureId = pre.session.ventureId;
+    // Indirect ideation the crisis rules do not flag ("I'm thinking about ending it", "this is my last message"): a
+    // prefilter hit asks the safety screen, which can only add a flag (safety-screen.ts). It runs only here, once the
+    // turn is admitted: every gate (the message and in-flight limits, call admission, the spend caps) has refused a
+    // request before it buys a call, as on main. Rare, so the common path pays nothing.
+    const screen = await screenIndirectIdeation(kit, {
+      meter: { ctx, ventureId, purpose: 'classification' },
+      founderText: input.text,
+      previousReply: previousReplyOf(pre.coach),
+      crisis: a.crisis || a.risk.crisis,
+      ...(signal ? { signal } : {}),
+    });
+    const risk = withSafetyScreen(a.risk, screen ?? 'clear');
+    const label = riskLabel(risk);
     // The detail is a participant-safe label: which names the cross-venture guard knows is never revealed.
     await emit({
       event: 'turn.status',
@@ -913,6 +911,9 @@ export function createOrchestrator(
         turnId: turn.id,
         status,
         response: recorded,
+        // The safety screen's wellbeing flag came after admission: the turn keeps the final classification.
+        riskLabel: label,
+        riskCategories: risk.categories,
         validatorResults: checked.results,
         modelId: generation.modelId,
         fallbackUsed: generation.fallbackUsed,
@@ -1182,21 +1183,6 @@ export function createOrchestrator(
         const checked = await preflight(ctx, sessionId, input, crisis);
         if (checked.kind === 'replay') return await replay(ctx, emit, checked);
         pre = checked;
-        // Indirect ideation the crisis rules do not flag ("I'm thinking about ending it", "this is my last message"):
-        // a prefilter hit asks the safety screen, which can only add a flag (safety-screen.ts). Rare, so the common
-        // path pays nothing. It runs after the gates above (authorization, the kill switch, the message limit, which
-        // bounds the calls) and before the spend caps, which never stand between a founder in crisis and support.
-        const screen = await screenIndirectIdeation(kit, {
-          meter: { ctx, ventureId: pre.session.ventureId, purpose: 'classification' },
-          founderText: input.text,
-          previousReply: previousReplyOf(pre.coach),
-          crisis,
-          ...(options.signal ? { signal: options.signal } : {}),
-        });
-        if (screen === 'crisis') {
-          crisis = true;
-          pre = await crisisChannel(ctx, pre, input.callId);
-        }
         if (!crisis) {
           await assertWithinSpendCaps(kit, ctx, pre.settings, {
             ventureId: pre.session.ventureId,
@@ -1206,13 +1192,10 @@ export function createOrchestrator(
         others = await directory.others(ctx.tenantId, pre.session.ventureId);
         eirNames = (await directory.get(ctx.tenantId)).eirNames;
         addressees = await directory.addressees(ctx.tenantId, pre.session.ventureId);
-        risk = withSafetyScreen(
-          classifyRisk(input.text, {
-            otherVentureNames: others.names,
-            otherVentureMemberNames: others.memberNames,
-          }),
-          screen ?? 'clear',
-        );
+        risk = classifyRisk(input.text, {
+          otherVentureNames: others.names,
+          otherVentureMemberNames: others.memberNames,
+        });
         const label = riskLabel(risk);
         const parsed = input;
         const settings = pre.settings;
@@ -1284,8 +1267,9 @@ export function createOrchestrator(
           speechKey = null;
         }
         // The query embedding starts once the turn is admitted (a refused request buys no model call) and
-        // overlaps the accepted and classifying events.
-        if (!crisis && !risk.crisis) {
+        // overlaps the accepted and classifying events. A message the safety screen will read waits for its verdict
+        // (accepted() embeds it then): a screened crisis makes no retrieval call.
+        if (!crisis && !risk.crisis && !safetyScreenDue(input.text)) {
           embedding = embedRetrievalQuery(
             kit,
             ctx,

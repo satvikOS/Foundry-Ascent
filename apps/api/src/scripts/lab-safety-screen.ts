@@ -51,6 +51,8 @@ export const CorpusRow = z.object({
   main: z.boolean(),
   group: z.string().nullable(),
   source: z.string(),
+  /** The vEIR's reply the founder answered (closing rows: "goodbye" after a coaching reply), sent as a turn sends it. */
+  previousReply: z.string().nullable().optional(),
 });
 export type CorpusRow = z.infer<typeof CorpusRow>;
 const Corpus = z.object({ version: z.literal(1), rows: z.array(CorpusRow) });
@@ -61,6 +63,8 @@ export type Path = 'rules' | 'prefilter_miss' | 'screened' | 'not_screened';
 export interface RowResult {
   readonly id: string;
   readonly expect: CorpusRow['expect'];
+  /** Whether the screen read the row with the vEIR's previous reply. */
+  readonly withReply: boolean;
   readonly path: Path;
   /** The screen's outcome (null when it was not called). */
   readonly screen: SafetyScreenOutcome | null;
@@ -89,6 +93,7 @@ export interface EvaluateOptions {
 async function screenOnce(
   gateway: ModelGateway,
   text: string,
+  previousReply: string | null,
 ): Promise<
   Pick<
     RowResult,
@@ -101,7 +106,7 @@ async function screenOnce(
     const result = await gateway.generateStructured({
       purpose: 'eval',
       system: SAFETY_SCREEN_SYSTEM_PROMPT,
-      messages: buildSafetyScreenMessages({ founderText: text, previousReply: null }),
+      messages: buildSafetyScreenMessages({ founderText: text, previousReply }),
       schemaName: SAFETY_SCREEN_SCHEMA_NAME,
       zodSchema: SafetyScreenVerdict,
       maxOutputTokens: SAFETY_SCREEN_MAX_OUTPUT_TOKENS,
@@ -171,11 +176,13 @@ export async function evaluateSafetyScreen(
       };
       const call = path === 'screened' || path === 'not_screened';
       if (call && spent >= options.budgetUsd) budgetReached = true;
-      const screened = call && !budgetReached ? await screenOnce(gateway, row.text) : empty;
+      const previousReply = row.previousReply ?? null;
+      const screened = call && !budgetReached ? await screenOnce(gateway, row.text, previousReply) : empty;
       spent += screened.costUsd;
       results[index] = {
         id: row.id,
         expect: row.expect,
+        withReply: previousReply !== null,
         path,
         ...screened,
         // Only a prefilter hit reaches the screen in a turn; `not_screened` rows are measured, never acted on.
@@ -261,6 +268,15 @@ export function summarize(results: readonly RowResult[]) {
       none: byExpect('none'),
       wellbeing: byExpect('wellbeing'),
       debatable: byExpect('debatable'),
+    },
+    /**
+     * Rows read with the vEIR's previous reply (sign-offs after a coaching reply, a goodbye after distress): the
+     * screen's most frequent production input, where the reply decides.
+     */
+    withReply: {
+      screened: read.filter((r) => r.withReply).length,
+      falseCrisis: idList(readNegatives.filter((r) => r.withReply && r.screen === 'crisis')),
+      missedCrisis: idList(readPositives.filter((r) => r.withReply && r.screen !== 'crisis')),
     },
     /** Wellbeing flags on ordinary lines: each forces a P1 escalation, so they count against precision too. */
     wellbeingOnOrdinary: idList(negatives.filter((r) => r.wellbeing)),

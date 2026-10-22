@@ -1,8 +1,8 @@
 /**
- * The crisis pipeline on the whole E-crisis corpus (ops/lab/scenarios/safety-screen.json, synthetic): 1,227 lines from
- * the 2026-10-22 differential audit of the crisis classifier: handwritten crisis lines, hard negatives that share their
- * words (venture talk, sign-offs, frustration, jokes, product context), and every line of the evals datasets, tests and
- * lab scenarios that the deterministic rules flag as a crisis.
+ * The crisis pipeline on the whole E-crisis corpus (ops/lab/scenarios/safety-screen.json, synthetic): 1,244 lines from
+ * the 2026-10-22 differential audits of the crisis classifier: handwritten crisis lines, hard negatives that share their
+ * words (venture talk, sign-offs, frustration, jokes, product context), every line of the evals datasets, tests and
+ * lab scenarios that the deterministic rules flag as a crisis, and closings read with the vEIR's previous reply.
  *
  * The design these tests hold (risk/safety-screen.ts): the deterministic rules are origin/main's, unchanged, so nothing
  * they catch is lost; a broad prefilter sends the indirect phrasings they miss to the model-based screen; whatever the
@@ -23,6 +23,9 @@ interface CorpusRow {
   readonly expect: 'crisis' | 'wellbeing' | 'none' | 'debatable' | 'unlabeled';
   /** Whether origin/main's deterministic rules (93a7822) flag a crisis. */
   readonly main: boolean;
+  readonly group: string | null;
+  /** The vEIR's reply the founder answered (closing-context rows). */
+  readonly previousReply?: string | null;
 }
 
 const CORPUS: readonly CorpusRow[] = (
@@ -38,14 +41,23 @@ const OUTCOMES: readonly SafetyScreenOutcome[] = ['crisis', 'wellbeing', 'clear'
 
 describe('the E-crisis corpus', () => {
   it('is the corpus the audit measured', () => {
-    expect(CORPUS.length).toBe(1227);
+    expect(CORPUS.length).toBe(1244);
     const count = (expectValue: CorpusRow['expect'], main: boolean): number =>
       CORPUS.filter((r) => r.expect === expectValue && r.main === main).length;
     expect(count('crisis', true)).toBe(194);
-    expect(count('crisis', false)).toBe(183);
-    expect(count('none', false)).toBe(691);
+    expect(count('crisis', false)).toBe(186);
+    expect(count('none', false)).toBe(705);
     expect(count('none', true)).toBe(65);
     expect(count('unlabeled', true)).toBe(74);
+  });
+
+  it('reads its closings with the reply they answer, as a turn sends them to the screen', () => {
+    const closings = CORPUS.filter((r) => r.group === 'closing-context');
+    expect(closings).toHaveLength(17);
+    expect(closings.every((r) => typeof r.previousReply === 'string' && r.previousReply.length > 0)).toBe(
+      true,
+    );
+    expect(CORPUS.filter((r) => r.previousReply !== undefined && r.group !== 'closing-context')).toEqual([]);
   });
 
   it("keeps every one of main's deterministic decisions: the rules are unchanged", () => {

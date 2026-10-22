@@ -280,7 +280,8 @@ export function createTestBench(kit: Kit, directory: DirectoryCache): TestBench 
     }
   }
 
-  function crisisResponse(admitted: Admitted, risk: RiskClassification): TestTurnResponse {
+  /** The crisis support a founder would get; `screened`: found by the safety screen, not by a crisis rule. */
+  function crisisResponse(admitted: Admitted, risk: RiskClassification, screened = false): TestTurnResponse {
     return {
       release: {
         id: admitted.release.id,
@@ -299,7 +300,10 @@ export function createTestBench(kit: Kit, directory: DirectoryCache): TestBench 
         identityViolation: false,
         crossVentureViolation: false,
         riskCategories: risk.categories,
-        notes: ['crisis_support', 'no_model_call'],
+        // As the founder's turn records it (run-turn.ts crisisPath), so a curator can tell the two apart.
+        notes: screened
+          ? ['crisis_support', 'no_model_call', 'safety_screen']
+          : ['crisis_support', 'no_model_call'],
       }),
       blocked: { reason: 'crisis_support', supportMessage: CRISIS_SUPPORT_MESSAGE },
     };
@@ -353,7 +357,7 @@ export function createTestBench(kit: Kit, directory: DirectoryCache): TestBench 
             modelCalled: false,
             ...(screen === 'crisis' ? { safetyScreen: true } : {}),
           };
-          return crisisResponse(admitted, risk);
+          return crisisResponse(admitted, risk, screen === 'crisis');
         }
         const history: HistoryTurn[] = input.history
           .slice(-cfg.turns.historyTurns)

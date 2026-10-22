@@ -1,9 +1,10 @@
 /**
- * The safety screen in the turn pipeline, end to end with the mock model (whose screen is a deterministic rule:
- * packages/ai gateway/mock.ts). A message the ideation prefilter flags and the crisis rules do not is read by one
- * metered `SafetyScreen` call: a crisis takes the crisis path exactly as a rule's would (the fixed support message, no
- * coaching call, a P1 safety escalation), wellbeing adds the wellbeing flag, and an error or a slow model leaves the
- * turn as the rules decided. Every other message never calls it.
+ * The safety screen in the turn pipeline, end to end with the mock model (whose screen is a narrow deterministic rule:
+ * packages/ai gateway/mock-safety-screen.ts). A message the ideation prefilter flags and the crisis rules do not is
+ * read by one metered `SafetyScreen` call once the turn is admitted: a crisis takes the crisis path exactly as a rule's
+ * would (the fixed support message, no coaching call, a P1 safety escalation), wellbeing adds the wellbeing flag, and
+ * an error or a slow model leaves the turn as the rules decided. A request a gate refuses (call admission, the message
+ * limit, the spend caps) never buys a screen call, and every other message never calls it.
  */
 import { randomUUID } from 'node:crypto';
 
@@ -17,7 +18,7 @@ import {
   type GenerateStructuredResult,
 } from '@foundry/ai';
 import { CoachResponse, TestTurnResponse, TurnStreamEvent, type TurnView } from '@foundry/contracts';
-import { p, personasRepo } from '@foundry/db';
+import { p, personasRepo, settingsRepo } from '@foundry/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { type RequestContext } from '../context.js';
@@ -32,6 +33,8 @@ let maya: RequestContext;
 const INDIRECT = "I keep thinking about ending it. Nobody would even notice if I wasn't here.";
 /** A bare "can't do this anymore": the mock screen's wellbeing case. */
 const STRAIN = "I can't do this anymore.";
+/** A prefilter hit ("end it") the mock screen reads as a wrap-up. */
+const CLEAR_HIT = "Ok I'll end it here for today, thanks!";
 
 beforeAll(async () => {
   h = await createCoreHarness({ random: () => 0.99, gatewayOptions: { streamDelayMs: 0 } });
@@ -75,6 +78,28 @@ function screenLogs(requestId: string): { level: string; event: string; fields: 
   return h.logger.records
     .filter((r) => r.event.startsWith('turn.safety_screen') && r.fields.requestId === requestId)
     .map((r) => ({ level: r.level, event: r.event, fields: { ...r.fields } }));
+}
+
+/** Runs `body` with platform settings changed, then restores them. */
+async function withSettings(
+  patch: Parameters<typeof settingsRepo.updatePlatformSettings>[1],
+  body: () => Promise<void>,
+): Promise<void> {
+  const before = await h.t.db.system((sx) => settingsRepo.getPlatformSettings(sx));
+  await h.t.db.system((sx) => settingsRepo.updatePlatformSettings(sx, patch, h.people.owner));
+  try {
+    await body();
+  } finally {
+    const restore = Object.fromEntries(
+      Object.keys(patch).map((k) => [k, before[k as keyof typeof before]]),
+    ) as typeof patch;
+    await h.t.db.system((sx) => settingsRepo.updatePlatformSettings(sx, restore, h.people.owner));
+  }
+}
+
+/** The safety screen calls among the mock gateway's calls since `from`. */
+function screenCallsSince(gateway: MockModelGateway, from: number): number {
+  return gateway.calls.slice(from).filter((c) => c.schemaName === SAFETY_SCREEN_SCHEMA_NAME).length;
 }
 
 async function ledgerPurposes(requestId: string): Promise<string[]> {
@@ -160,9 +185,10 @@ describe('the safety screen in a turn', () => {
       modelCalled: false,
       safetyScreen: true,
     });
+    // Admitted as an ordinary message (every gate applied), then screened: the turn keeps the final label.
     expect(await auditMetadata(last.turnId, 'turn.accepted')).toMatchObject({
-      riskLabel: 'crisis',
-      riskRules: ['safety_wellbeing:safety_screen'],
+      riskLabel: 'none',
+      riskRules: [],
     });
     const logs = screenLogs(ctx.requestId);
     expect(logs).toHaveLength(1);
@@ -270,13 +296,33 @@ describe('the safety screen in a turn', () => {
     const ctx = await fresh();
     const session = await h.core.sessions.create(ctx, h.ventures.quietquad.id, { mode: 'coach' });
     // "end it" reaches the screen; the mock reads "for today, thanks" as a wrap-up.
-    const text = "Ok I'll end it here for today, thanks!";
-    const { events, outcome } = await runTurn(h.core, ctx, session.id, { text });
+    const { events, outcome } = await runTurn(h.core, ctx, session.id, { text: CLEAR_HIT });
     expect(outcome.status).toBe('completed');
-    expect(await turnRow(completedTurn(events).id)).toMatchObject({ riskLabel: 'none', riskCategories: [] });
+    const turn = completedTurn(events);
+    expect(await turnRow(turn.id)).toMatchObject({ riskLabel: 'none', riskCategories: [] });
     const logs = screenLogs(ctx.requestId);
     expect(logs).toHaveLength(1);
     expect(logs[0]).toMatchObject({ event: 'turn.safety_screen', fields: { outcome: 'clear' } });
+  });
+
+  it('a sign-off is answered as one in mock mode: "goodbye" and "ok let\'s end it there" get no crisis message', async () => {
+    for (const text of ['goodbye', "ok let's end it there", 'ok goodbye', "i think i'm done"]) {
+      const ctx = await fresh();
+      const session = await h.core.sessions.create(ctx, h.ventures.quietquad.id, { mode: 'coach' });
+      await runTurn(h.core, await fresh(), session.id, {
+        text: 'How should we price the two-library pilot?',
+      });
+      const { events, outcome } = await runTurn(h.core, ctx, session.id, { text });
+      expect(outcome.status, text).toBe('completed');
+      const turn = completedTurn(events);
+      expect(await turnRow(turn.id), text).toMatchObject({ riskLabel: 'none', riskCategories: [] });
+      expect(CoachResponse.parse(turn.response).escalation.required, text).toBe(false);
+      const escalations = await h.core.escalations.list(ctx, h.ventures.quietquad.id);
+      expect(
+        escalations.filter((e) => e.turnId === turn.id),
+        text,
+      ).toEqual([]);
+    }
   });
 
   it('never calls the screen for a message the prefilter does not flag, or one the rules already flag', async () => {
@@ -298,18 +344,78 @@ describe('the safety screen in a turn', () => {
     expect(h.gateway.calls.slice(from).filter((c) => c.schemaName === SAFETY_SCREEN_SCHEMA_NAME)).toEqual([]);
   });
 
-  it('a spoken message the screen flags, sent outside a live call, is answered as a typed one', async () => {
+  it('a spoken message outside a live call is refused before it buys a screen call, as on main', async () => {
+    // The audit's case: a voice turn with no call (a client loop, a crafted request) bought a billed screen call
+    // before call admission refused it. With no call id, and with a stale one.
+    const loose = h.withConfig({ turns: { rateLimit: 500 } });
+    for (const text of [CLEAR_HIT, 'um yeah so i keep thinking about ending it like for real']) {
+      for (const callId of [undefined, randomUUID()]) {
+        const ctx = await fresh();
+        const session = await loose.sessions.create(ctx, h.ventures.quietquad.id, {});
+        const from = h.gateway.calls.length;
+        const { outcome } = await runTurn(loose, ctx, session.id, {
+          text,
+          channel: 'voice',
+          ...(callId === undefined ? {} : { callId }),
+        });
+        expect(outcome.status, text).toBe('rejected');
+        if (callId === undefined) expect(outcome.error?.reason, text).toBe('call_required');
+        expect(callsSince(h.gateway, from), text).toEqual([]);
+        expect(await ledgerPurposes(ctx.requestId), text).toEqual([]);
+      }
+    }
+  });
+
+  it('on a live call, a spoken message the screen flags takes the crisis path and says the support message', async () => {
+    await h.core.calls.acknowledgeNotice(maya);
     const ctx = await fresh();
     const session = await h.core.sessions.create(ctx, h.ventures.quietquad.id, {});
-    const { events, outcome } = await runTurn(h.core, ctx, session.id, {
-      text: 'um yeah so i keep thinking about ending it like for real',
-      channel: 'voice',
-      callId: randomUUID(),
+    const { call } = await h.core.calls.start(ctx, session.id, { inputMode: 'typed' });
+    try {
+      const from = h.gateway.calls.length;
+      const { events, outcome } = await runTurn(h.core, await fresh(), session.id, {
+        text: 'um yeah so i keep thinking about ending it like for real',
+        channel: 'voice',
+        callId: call.id,
+      });
+      expect(outcome.status).toBe('blocked');
+      expect(callsSince(h.gateway, from)).toEqual([`generate:${SAFETY_SCREEN_SCHEMA_NAME}:classification`]);
+      expect(events.filter((e) => e.event === 'turn.speech').length).toBeGreaterThan(0);
+      expect(events.at(-1)).toMatchObject({ event: 'turn.blocked', reason: 'crisis_support' });
+      if (outcome.turnId === null) throw new Error('expected a turn');
+      expect(await turnRow(outcome.turnId)).toMatchObject({ riskLabel: 'crisis', channel: 'voice' });
+    } finally {
+      await h.core.calls.end(ctx, call.id, { reason: 'user' });
+    }
+  });
+
+  it('a founder past the spend cap is refused before the screen, as on main', async () => {
+    const loose = h.withConfig({ turns: { rateLimit: 500 } });
+    const session = await loose.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+    await withSettings({ dailyUsdCapPerPrincipal: 0 }, async () => {
+      for (const text of [CLEAR_HIT, INDIRECT]) {
+        const ctx = await fresh();
+        const from = h.gateway.calls.length;
+        const { outcome } = await runTurn(loose, ctx, session.id, { text });
+        expect(outcome.error?.code, text).toBe('spend_cap_reached');
+        expect(screenCallsSince(h.gateway, from), text).toBe(0);
+        expect(await ledgerPurposes(ctx.requestId), text).toEqual([]);
+      }
     });
-    expect(outcome.status).toBe('blocked');
-    expect(events.some((e) => e.event === 'turn.speech')).toBe(false);
-    if (outcome.turnId === null) throw new Error('expected a turn');
-    expect(await turnRow(outcome.turnId)).toMatchObject({ riskLabel: 'crisis', channel: 'text' });
+  });
+
+  it('a burst over the message limit buys a screen call only for the messages admitted', async () => {
+    const tight = h.withConfig({ turns: { rateLimit: 3 } });
+    const ctxP = (): Promise<RequestContext> => h.ctxFor(h.people.devin);
+    const session = await tight.sessions.create(await ctxP(), h.ventures.quietquad.id, { mode: 'coach' });
+    const from = h.gateway.calls.length;
+    const outcomes = await Promise.all(
+      Array.from({ length: 8 }, async () => runTurn(tight, await ctxP(), session.id, { text: CLEAR_HIT })),
+    );
+    const admitted = outcomes.filter((r) => r.outcome.status !== 'rejected').length;
+    expect(admitted).toBeLessThanOrEqual(3);
+    expect(outcomes.filter((r) => r.outcome.status === 'rejected').length).toBeGreaterThanOrEqual(5);
+    expect(screenCallsSince(h.gateway, from)).toBe(admitted);
   });
 });
 
@@ -329,6 +435,8 @@ describe('the safety screen on the EIR studio test bench', () => {
       blocked: { reason: 'crisis_support', supportMessage: CRISIS_SUPPORT_MESSAGE },
       validator: { riskCategories: ['safety_wellbeing'], escalationForced: true },
     });
+    // The same note as the founder's turn: a curator can tell a screened crisis from a rule's.
+    expect(response.validator.notes).toEqual(['crisis_support', 'no_model_call', 'safety_screen']);
     expect(callsSince(h.gateway, from)).toEqual([`generate:${SAFETY_SCREEN_SCHEMA_NAME}:test_bench`]);
     expect(await ledgerPurposes(corin.requestId)).toEqual(['test_bench']);
   });

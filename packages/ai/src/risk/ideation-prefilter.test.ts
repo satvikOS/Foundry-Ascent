@@ -71,6 +71,43 @@ const HELD_OUT: readonly string[] = [
 ];
 
 /**
+ * Crisis lines the 2026-10-22 differential audit of this prefilter found it letting pass (the rules miss them too):
+ * dropped prepositions, preparatory acts, means without a place, texting shorthand and doubled-letter typos.
+ */
+const AUDIT_MISSES: readonly string[] = [
+  'no point going on',
+  "i know how i'd do it",
+  'i want to endd it all',
+  'dont wanna b here anymore',
+  'nobdy would miss me',
+  'whats the pointt anymore',
+  'i cnt do this anymore',
+  "i'm thinking of jumping",
+  'i want to jump',
+  "i'm going to jump",
+  'i have the pills ready',
+  'i bought pills today',
+  'how many pills would it take',
+  'i feel like dying',
+  'planning my exit',
+  'goodnight forever',
+  "i've been looking up ways to die",
+  'i want to cut again',
+  'relapsed and cut last night',
+  "i don't wanna do life anymore",
+  'i want to be gone',
+  "i'd be better off gone",
+  "i've written letters to everyone",
+  'my affairs are in order',
+  'i deleted all my accounts and said my goodbyes',
+  'i want to fall asleep and never wake',
+  'i just want to rest forever',
+  'no reason 2 live',
+  'i want to stop living',
+  "i don't think i'll make it through the night",
+];
+
+/**
  * Ordinary lines that must stay on the common path (no screen call, no latency): words a founder or the vEIR uses
  * every day that share vocabulary with the families.
  */
@@ -111,6 +148,17 @@ const ORDINARY: readonly string[] = [
   'Nobody would notice if we changed the logo.',
   'Who would miss the old pricing page?',
   'I want out of this lease.',
+  // Wrap-ups and sign-offs (an audit found them sending about one turn per conversation to the screen).
+  "ok let's end it there",
+  'can we end it here',
+  "let's end it for today",
+  'Let’s end it here and pick up Thursday.',
+  'farewell for now',
+  'ok i gotta go, goodbye',
+  "i'll let you go, goodbye",
+  // Typo folding reads words back, never into a family: "will", "good", "feel", "meeting", "too", "off".
+  'We will need good feedback from the meeting too, then we are off.',
+  'Plan b is a two-week pilot.',
 ];
 
 function familiesOf(text: string): readonly IdeationFamily[] {
@@ -121,6 +169,19 @@ describe('ideationPrefilter', () => {
   it('flags every held-out phrasing the deterministic rules do not already catch', () => {
     const missed = HELD_OUT.filter((t) => !classifyRisk(t).crisis && !ideationPrefilter(t).hit);
     expect(missed).toEqual([]);
+  });
+
+  it("flags the audit's missed crisis lines: shorthand, typos, acts and means", () => {
+    expect(AUDIT_MISSES.filter((t) => classifyRisk(t).crisis)).toEqual([]);
+    expect(AUDIT_MISSES.filter((t) => !ideationPrefilter(t).hit)).toEqual([]);
+  });
+
+  it('exempts only a first-person-plural wrap-up from the ending family', () => {
+    expect(ideationPrefilter("ok let's end it there").hit).toBe(false);
+    expect(familiesOf("let's end it all")).toEqual(['ending']);
+    expect(familiesOf("ok let's end it there. honestly i want to end it all")).toEqual(['ending']);
+    expect(familiesOf("i'll end it here tonight")).toEqual(['ending']);
+    expect(familiesOf('i want to end it now')).toEqual(['ending']);
   });
 
   it('leaves ordinary lines on the common path', () => {

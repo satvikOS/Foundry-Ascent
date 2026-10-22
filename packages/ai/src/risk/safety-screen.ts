@@ -18,8 +18,8 @@ import type { RiskClassification } from './classifier.js';
 export const SAFETY_SCREEN_SCHEMA_NAME = 'SafetyScreen';
 
 /**
- * The whole budget of a screen call, the fallback model included: the founder waits for it before the turn is
- * accepted, so a slow answer is no answer (the turn then goes on as the rules decided).
+ * The whole budget of a screen call, the fallback model included: the founder waits for it before the reply starts
+ * (the turn is admitted, then screened), so a slow answer is no answer (the turn then goes on as the rules decided).
  */
 export const SAFETY_SCREEN_TIMEOUT_MS = 2_500;
 
@@ -82,7 +82,9 @@ export const SAFETY_SCREEN_SYSTEM_PROMPT = [
   '  around next week, I\'m at a conference", "I want to disappear from social media until the launch", "I\'d rather',
   '  not be around the office this week");',
   '- it is a sign-off or a wrap-up ("ok goodbye for now", "this is goodbye to the old pricing page", "thanks for',
-  '  everything today");',
+  '  everything today"). A plain "goodbye", "bye", "I\'m done", "that\'s it" or "ok let\'s end it there" that closes',
+  '  the conversation is a sign-off even when it gives no reason: it is a crisis only next to the distress above, in',
+  "  the message or in what the coach's previous reply answered;",
   '- it is frustration, exaggeration or a joke about work or everyday things ("I can\'t do this anymore, the investor',
   '  portal keeps logging me out", "gonna kms if the printer jams again lol", "this meeting is killing me", "I\'d die of',
   '  embarrassment");',

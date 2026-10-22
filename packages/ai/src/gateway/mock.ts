@@ -17,12 +17,12 @@ import { openerSaidHello } from '../validators/greeting.js';
 import { veirFirstName } from '../prompts/persona.js';
 import { COACH_RESPONSE_SCHEMA_NAME, DEFAULT_PERSONA_NAME } from '../prompts/version.js';
 import { RISK_ESCALATION_MAP, primaryForcedCategory } from '../risk/escalation-map.js';
-import { ideationPrefilter } from '../risk/ideation-prefilter.js';
 import { escapeRegExp } from '../risk/normalize.js';
 import { SAFETY_SCREEN_SCHEMA_NAME, type SafetyScreenVerdict } from '../risk/safety-screen.js';
 import { asksAboutIdentity, identityQuestionOf } from '../validators/identity.js';
 import { clampWords } from '../validators/speech.js';
 import { COACH_ANNOTATIONS_SCHEMA_NAME } from './coach-annotations.js';
+import { mockSafetyScreenVerdict } from './mock-safety-screen.js';
 import {
   ModelOutputInvalidError,
   ModelRefusalError,
@@ -1428,32 +1428,9 @@ export function sampleFromJsonSchema(node: JsonObject, root: JsonObject = node, 
   }
 }
 
-/**
- * Words that make a prefilter hit ordinary talk for the mock safety screen: a venture, study or everyday referent, a
- * sign-off or a laugh ("thinking about ending the pilot", "I'll end it here, thanks", "gonna kms lol").
- */
-const MOCK_SCREEN_ORDINARY =
-  /\b(?:startup|company|pilot|deck|app|product|project|venture|launch|meeting|call|vendor|supplier|contract|class|lecture|exam|spreadsheet|build|investor|investors|customer|customers|beta|demo|team|pricing|sales|feature|bug|today|for now|thanks|thank you|lol|lmao|jk|haha)\b/iu;
-
-/**
- * The mock safety screen (a simple, deterministic rule standing in for the model, so tests and the e2e suite run
- * offline): a message the ideation prefilter flags is a crisis unless it names an ordinary referent
- * ({@link MOCK_SCREEN_ORDINARY}); a bare "I can't do this anymore" (only the endurance family) is a wellbeing
- * concern; anything else is clear.
- */
+/** The mock safety screen: a narrow deterministic rule standing in for the model (mock-safety-screen.ts). */
 function mockSafetyScreen(context: MockGenerateContext): SafetyScreenVerdict {
-  const prefilter = ideationPrefilter(context.founderText);
-  if (!prefilter.hit || MOCK_SCREEN_ORDINARY.test(context.founderText)) {
-    return { reason: 'Ordinary talk (mock rule).', crisis: false, wellbeing: false };
-  }
-  if (prefilter.families.every((family) => family === 'endurance')) {
-    return {
-      reason: 'Personal strain without signs of self-harm (mock rule).',
-      crisis: false,
-      wellbeing: true,
-    };
-  }
-  return { reason: 'Possible indirect ideation (mock rule).', crisis: true, wellbeing: false };
+  return mockSafetyScreenVerdict(context.founderText);
 }
 
 interface BuiltIn {

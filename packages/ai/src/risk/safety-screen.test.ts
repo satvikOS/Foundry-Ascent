@@ -119,8 +119,11 @@ describe('the mock gateway screen (offline tests and e2e)', () => {
     return result.value;
   }
 
-  it('is deterministic: a crisis without an ordinary referent, wellbeing for a bare "can\'t do this", else clear', async () => {
+  it('is deterministic and narrow: unmistakable ideation is a crisis, a bare "can\'t do this" wellbeing, else clear', async () => {
     expect(await screen("I'm thinking about ending it.")).toMatchObject({ crisis: true, wellbeing: false });
+    // Sign-offs and wrap-ups are ordinary (mock-safety-screen.test.ts holds the audit's whole list).
+    expect(await screen('goodbye')).toMatchObject({ crisis: false, wellbeing: false });
+    expect(await screen("ok let's end it there")).toMatchObject({ crisis: false, wellbeing: false });
     expect(await screen('i wont be around much longer')).toMatchObject({ crisis: true });
     expect(await screen("I can't do this anymore.")).toMatchObject({ crisis: false, wellbeing: true });
     expect(await screen("I'm thinking about ending the pilot, thanks")).toMatchObject({

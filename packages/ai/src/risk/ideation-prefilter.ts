@@ -52,7 +52,13 @@ const TAIL =
  * "goodbye forever", "thank you for everything", "my last message").
  */
 const SIGN_OFF =
-  '\\b(?:thanks|thank you|thx|ty|see you|see ya|talk (?:soon|later|tomorrow|to you)|for now|for today|tomorrow|next (?:week|time|call|session)|later|have a (?:good|great|nice|lovely)|bye bye|cheers|catch you)\\b';
+  '\\b(?:thanks|thank you|thx|ty|see you|see ya|talk (?:soon|later|tomorrow|to you)|for now|for today|tomorrow|next (?:week|time|call|session)|later|have a (?:good|great|nice|lovely)|bye bye|cheers|catch you|gotta go|got to go|gotta run|let you go)\\b';
+
+/**
+ * A wrap-up of the conversation in the first person plural ("ok let's end it there", "can we end it here", "let's end
+ * it for today"): "end it" with this subject and this continuation is no ending family hit ("let's end it all" is).
+ */
+const WRAP_UP = `(?<=\\b(?:lets|let us|we|can we|shall we|should we|could we)(?: just)? )end(?:ing)? (?:it|things) (?:here|there|for (?:today|now|the day|this week|tonight)|at that|now)\\b`;
 
 /**
  * A family's pattern: a regex source, or one that does not count when the whole message (flattened) matches
@@ -67,7 +73,7 @@ type FamilyPattern = string | { readonly pattern: string; readonly unlessMessage
 const IDEATION_FAMILIES: Readonly<Record<IdeationFamily, readonly FamilyPattern[]>> = {
   // "ending it", "end it all", "end things", "I want it all to be over", "I want the pain to stop".
   ending: [
-    `\\bend(?:ing|in|ed|s)? (?:it|things|everything|my life|my own life|myself|this life|it all|all of (?:it|this))\\b`,
+    `\\b(?!${WRAP_UP})end(?:ing|in|ed|s)? (?:it|things|everything|my life|my own life|myself|this life|it all|all of (?:it|this))\\b`,
     `\\b(?:it all|all of (?:this|it)|all this|everything|this life|my life|life|the pain|the hurting|the hurt|the suffering|the thoughts|the voices)${G(1)} (?:to|would|will|could) (?:just )?(?:end|stop|be over|go away|finish)\\b`,
     `\\b(?:want|need|wish|wanna)${G(2)} (?:it|this|that)${G(1)} (?:to )?(?:end|stop|be over|go away)${TAIL}$`,
     `\\b(?:it|itll|this|it all|everything|all this|all of this)(?: (?:will|would|is|ll|might|should|all|just|finally|soon))*(?: be)? (?:all )?over (?:for me|soon|tonight|forever)\\b`,
@@ -86,6 +92,11 @@ const IDEATION_FAMILIES: Readonly<Record<IdeationFamily, readonly FamilyPattern[
     `\\bwhen (?:${I} )?(?:(?:m|am|is|was) )?(?:gone|dead|no longer here|no longer around)\\b`,
     `\\b(?:never|not) (?:been |be |being )?born\\b`,
     `\\bwish (?:${I} )?(?:was|were|wasnt|werent|had|d|could|would)${G(3)} (?:dead|alive|born|gone|here|around|exist|disappear|vanish|die|died)\\b`,
+    // "i want to be gone", "i dont wanna do life anymore", "i want to stop living", "make it through the night".
+    `\\b${I}${G(2)} (?:want|wanna|wish|rather|would rather)(?: to)? be gone\\b`,
+    `\\b(?:dont|do not|no longer) (?:want to|wanna) do (?:life|this life|living)\\b`,
+    `\\bstop (?:living|existing)\\b`,
+    `\\bmake it through (?:the night|tonight)\\b`,
   ],
   // "I want to disappear", "nobody would notice if I disappeared", "stop existing".
   disappear: [
@@ -102,6 +113,7 @@ const IDEATION_FAMILIES: Readonly<Record<IdeationFamily, readonly FamilyPattern[
     `\\b(?:not|isnt|is not|aint|wasnt) worth (?:living|it anymore|it any more|going on|staying)\\b`,
     `\\b(?:lost|lose|losing) (?:the |my |all )?(?:will|reason|desire|want) to (?:live|go on|keep going|be alive)\\b`,
     `\\b(?:no|any) point (?:anymore|any more|any longer)\\b`,
+    `\\b(?:no|any) (?:real )?(?:point|reason) (?:going on|carrying on|living|being alive|existing|waking up|getting up|keeping going)\\b`,
     `\\b(?:no|any|what|the) (?:real )?(?:reason|point|purpose) (?:for me )?(?:to|in|of) (?:be|being|stay|staying|live|living|exist|existing|go on|going on|keep going|wake up|get up|carry on)\\b`,
     `\\b(?:its all|it all|everything|life|living|existence|my life|its|it|all of this|this all)(?: (?:just|all|so|kinda|really))? (?:is |feels |seems )?(?:so |completely |totally |just )?(?:pointless|meaningless)${TAIL}$`,
     `\\b(?:im|i am|i feel)(?: so| just| completely| totally)? (?:pointless|meaningless|worthless)\\b`,
@@ -109,7 +121,7 @@ const IDEATION_FAMILIES: Readonly<Record<IdeationFamily, readonly FamilyPattern[
   ],
   // "everyone would be better off without me", "nobody would miss me", "a burden", "you won't have to worry about me".
   burden: [
-    `\\bbetter off (?:without me|if ${I}|dead|with me gone|when ${I}|without my)`,
+    `\\bbetter off (?:without me|if ${I}|dead|gone|with me gone|when ${I}|without my)`,
     `\\b(?:happier|better|easier|lighter|simpler|fine) (?:off )?(?:without me|if (?:${I} )?(?:was|were|wasnt|werent|d|had|never|didnt|disappeared|died|left|was not|were not|am not|m not)\\b)`,
     `\\bwithout me in (?:it|the picture|their lives|the world)\\b`,
     `\\b(?:miss|missed|notice|noticed|care|cared|matter|mattered|mourn)\\w* if ${I}\\b`,
@@ -132,7 +144,8 @@ const IDEATION_FAMILIES: Readonly<Record<IdeationFamily, readonly FamilyPattern[
   // "this is goodbye", "my last message", "thank you for everything", "you won't hear from me again".
   farewell: [
     { pattern: `\\bgood ?bye\\b`, unlessMessage: SIGN_OFF },
-    `\\b(?:farewell|bye forever)\\b`,
+    { pattern: `\\bfarewell\\b`, unlessMessage: SIGN_OFF },
+    `\\b(?:bye forever|good ?bye (?:forever|for ever|for good|everyone|everybody|world))\\b`,
     `\\b(?:last|final) (?:message|goodbye|words|note|letter|thing (?:i|youll))\\b`,
     `\\blast time (?:youll|you will|anyone will|anyone|you are going to|youre going to)${G(1)} (?:hear|see|talk)\\b`,
     `\\bthis is (?:it for me|goodbye|the end|my goodbye|my last)\\b`,
@@ -140,6 +153,11 @@ const IDEATION_FAMILIES: Readonly<Record<IdeationFamily, readonly FamilyPattern[
     `\\b(?:wont|will not|never)${G(1)} (?:see|talk to|hear from|speak to|bother) (?:me|you) again\\b`,
     `\\b(?:tell|let) (?:my|them|everyone|her|him)${G(3)} (?:i love|im sorry|sorry|i loved)\\b`,
     `\\bsorry for everything\\b`,
+    // Preparatory acts: "i said my goodbyes", "my affairs are in order", "i've written letters to everyone".
+    `\\bsaid (?:my|all my|our) goodbyes\\b`,
+    `\\baffairs (?:are )?in order\\b`,
+    `\\b(?:wrote|written|writing|left) (?:letters?|notes?) (?:to|for) (?:everyone|my family|my parents|my mom|my dad|them all|all of you)\\b`,
+    `\\bgood ?night forever\\b`,
   ],
   // "go to sleep and never wake up", "I hope I don't wake up tomorrow", "not waking up".
   sleep: [
@@ -147,6 +165,9 @@ const IDEATION_FAMILIES: Readonly<Record<IdeationFamily, readonly FamilyPattern[
     `\\bsleep (?:forever|for ever|and (?:never|not|dont))\\b`,
     `\\b(?:go|went|going) to sleep and\\b`,
     `\\beternal (?:sleep|rest)\\b`,
+    // "fall asleep and never wake", "i just want to rest forever".
+    `\\b(?:never|not|dont|wont)${G(2)} wake${TAIL}$`,
+    `\\brest (?:forever|for ever|for good)\\b`,
   ],
   // Self-harm and dying in the speaker's words, slang, algospeak and misspellings.
   self_harm: [
@@ -160,6 +181,11 @@ const IDEATION_FAMILIES: Readonly<Record<IdeationFamily, readonly FamilyPattern[
     `\\b(?:think|thinking|thinkin|thought|thoughts|dream|dreaming|fantasi[sz]e|fantasi[sz]ing)\\w* (?:about|of|bout) (?:dying|death|being dead|killing|hurting|my death|my funeral|suicide)\\b`,
     `\\b(?:dying|die) (?:every day|soon|tonight|alone)\\b`,
     `\\bbe dead\\b`,
+    // "i feel like dying", "i want to cut again", "relapsed and cut last night", "looking up ways to die".
+    `\\bfeel(?:s|ing)? like (?:dying|death|im dying)\\b`,
+    `\\b(?:cut|cutting|cuts) (?:again|last night|tonight|myself|my (?:arm|arms|wrist|wrists|leg|legs|thigh|thighs))\\b`,
+    `\\brelapsed\\b`,
+    `\\bways to (?:die|kill myself|end it|end my life|do it|overdose)\\b`,
   ],
   // Means and acts: pills, jumping, a rope, a gun; the subject is often dropped ("took a bottle of pills").
   means: [
@@ -173,7 +199,12 @@ const IDEATION_FAMILIES: Readonly<Record<IdeationFamily, readonly FamilyPattern[
     `\\bnoose\\b`,
     `\\bwrote (?:a |my )?(?:note|letter|will) (?:for|to) (?:my|everyone|them)\\b`,
     `\\b(?:gave|giving|give|given) away (?:all )?(?:my|of my)${G(1)} (?:stuff|things|belongings|possessions|clothes|books)\\b`,
-    `\\b(?:made up my mind|my mind is made up|planning how to do it|plan how to do it|how (?:i|im|ill) (?:would |will |am going to |going to |gonna )?do it)\\b`,
+    `\\b(?:made up my mind|my mind is made up|planning how to do it|plan how to do it|how (?:i|im|ill|id) (?:would |will |am going to |going to |gonna )?do it)\\b`,
+    // "i'm thinking of jumping", "i want to jump", "i have the pills ready", "how many pills would it take".
+    `\\b(?:thinking (?:of|about)|think about|want(?:ing)? to|wanna|going to|gonna|about to|ready to|plan(?:ning)? to|might|could just) jump(?:ing)?${TAIL}$`,
+    `\\b(?:bought|got|have|stockpiled|saved|collected|counted|ordered)${G(2)} pills\\b(?! for)`,
+    `\\bpills (?:are )?ready\\b`,
+    `\\bhow many (?:pills|tablets|sleeping pills)\\b`,
     `\\bmy (?:own )?funeral\\b`,
   ],
   // "I'm done with life / with it all / with everything", "give up on everything", "I just want out", "no way out".
@@ -184,6 +215,7 @@ const IDEATION_FAMILIES: Readonly<Record<IdeationFamily, readonly FamilyPattern[
     `^(?:[\\p{L}\\p{N}]+ ){0,3}${I} (?:just |so |really |honestly )?done(?: (?:now|honestly|tbh|for good|man|anymore))?$`,
     `\\b(?:just |really |all i )?want(?:s|ed)? out(?:${TAIL}$| of (?:this life|life|here|it all|everything|this world|existence|my life)\\b)`,
     `\\b(?:no|any|the only|a)${G(1)} way out\\b`,
+    `\\bplan(?:ning|ned)? my exit\\b`,
     `\\b(?:hate|hating|despise|loathe) (?:my ?self|my life|who i am|being alive|being me|living|existing|this life)\\b`,
   ],
   // "dark thoughts", "intrusive thoughts", "I'm not okay".
@@ -204,6 +236,101 @@ const IDEATION_FAMILIES: Readonly<Record<IdeationFamily, readonly FamilyPattern[
     `\\b(?:non ce la faccio piu|sparire|meglio senza di me|farla finita)\\b`,
   ],
 };
+
+/**
+ * Texting shorthand and common misspellings of the families' words ("dont wanna b here", "no reason 2 live", "i cnt
+ * do this", "nobdy would miss me"), read as the words they stand for. Only whole tokens are replaced.
+ */
+const TYPO_WORDS: ReadonlyMap<string, string> = new Map(
+  Object.entries({
+    '2': 'to',
+    b: 'be',
+    u: 'you',
+    ur: 'your',
+    r: 'are',
+    cnt: 'cant',
+    cnat: 'cant',
+    dnt: 'dont',
+    wnt: 'want',
+    wnat: 'want',
+    wnna: 'wanna',
+    wana: 'wanna',
+    nobdy: 'nobody',
+    nobdoy: 'nobody',
+    noboby: 'nobody',
+    nobidy: 'nobody',
+    anymor: 'anymore',
+    anymre: 'anymore',
+    anymoe: 'anymore',
+    nymore: 'anymore',
+    pont: 'point',
+    piont: 'point',
+    whts: 'whats',
+    wats: 'whats',
+    mysef: 'myself',
+    myslef: 'myself',
+    mysel: 'myself',
+    goodby: 'goodbye',
+    gudbye: 'goodbye',
+    livng: 'living',
+    alvie: 'alive',
+  }),
+);
+
+/** A word as runs of one letter: `goodbye` → `g1 o2 d1 b1 y1 e1` (letters `godbye`, counts 1 2 1 1 1 1). */
+function runsOf(word: string): { readonly letters: string; readonly counts: readonly number[] } {
+  let letters = '';
+  const counts: number[] = [];
+  for (const ch of word) {
+    if (letters.endsWith(ch)) counts[counts.length - 1] = (counts.at(-1) ?? 0) + 1;
+    else {
+      letters += ch;
+      counts.push(1);
+    }
+  }
+  return { letters, counts };
+}
+
+/**
+ * Words a doubled-letter typo is read back to ("endd" → "end", "pointt" → "point", "alll" → "all", "anymoreee" →
+ * "anymore"): the families' own vocabulary, keyed by their letters with runs collapsed.
+ */
+const TYPO_TARGETS: ReadonlyMap<
+  string,
+  readonly { readonly word: string; readonly counts: readonly number[] }[]
+> = (() => {
+  const byLetters = new Map<string, { word: string; counts: readonly number[] }[]>();
+  const words = (
+    'end ending it all point die dying kill myself me here be want wanna anymore nobody miss alive live living ' +
+    'goodbye bye done over gone disappear hurt sleep wake forever better off without tired cant dont please ' +
+    'life pills everything everyone exist around this do go on out'
+  ).split(' ');
+  for (const word of words) {
+    const { letters, counts } = runsOf(word);
+    byLetters.set(letters, [...(byLetters.get(letters) ?? []), { word, counts }]);
+  }
+  return byLetters;
+})();
+
+/**
+ * A doubled-letter typo of a {@link TYPO_TARGETS} word, read back to it: the same letters, each run at least as long
+ * as the word's, at most three letters more. Linear in the token's length.
+ */
+function undoubled(token: string): string | null {
+  if (token.length > 24) return null;
+  const { letters, counts } = runsOf(token);
+  for (const target of TYPO_TARGETS.get(letters) ?? []) {
+    const fits = target.counts.every((count, i) => (counts[i] ?? 0) >= count);
+    const extra = token.length - target.word.length;
+    if (fits && extra > 0 && extra <= 3) return target.word;
+  }
+  return null;
+}
+
+/** The message with texting shorthand and doubled-letter typos read as the words they stand for. */
+function foldTypos(lower: string): string {
+  return lower.replace(/[\p{L}\p{N}]+/gu, (token) => TYPO_WORDS.get(token) ?? undoubled(token) ?? token);
+}
 
 interface CompiledFamily {
   readonly family: IdeationFamily;
@@ -251,14 +378,15 @@ function sentencesOf(lower: string): string[] {
 
 /**
  * Whether a founder message uses language that may be indirect suicidal ideation or self-harm, which the deterministic
- * rules do not flag (see the module comment). Read with accents removed and again with leetspeak folded.
+ * rules do not flag (see the module comment). Read with accents removed, again with leetspeak folded, and again with
+ * texting shorthand and typos read back ({@link foldTypos}).
  */
 export function ideationPrefilter(text: string): IdeationPrefilterResult {
   if (typeof text !== 'string' || text.trim() === '') return { hit: false, families: [] };
   const bounded = text.length > MAX_ANALYSED_CHARS ? text.slice(0, MAX_ANALYSED_CHARS) : text;
   const lower = foldDiacritics(normalizeForMatching(bounded));
   const leet = foldLeetspeak(lower);
-  const variants = leet === lower ? [lower] : [lower, leet];
+  const variants = [...new Set([lower, leet, foldTypos(lower), foldTypos(leet)])];
   const sentences = variants.flatMap(sentencesOf);
   const wholes = variants.map(flatten);
   const families = COMPILED.filter(

@@ -212,8 +212,9 @@ gh workflow run ops-conversation-lab.yml -f suite=matrix -f matrix_source=evals 
 The safety screen (packages/ai README, "Indirect ideation") is evaluated on its own, outside the suites: a script
 runs the crisis pipeline (the deterministic rules, the ideation prefilter, then the screen exactly as a turn calls it:
 same prompt, schema, output bound and 2.5 s budget) over the E-crisis corpus (`ops/lab/scenarios/safety-screen.json`,
-1,227 synthetic lines: crisis lines, hard negatives that share their words, and every line of the evals datasets,
-tests and lab scenarios that the rules flag) and prints precision, recall, latency and cost. It needs credentials
+1,244 synthetic lines: crisis lines, hard negatives that share their words, every line of the evals datasets, tests
+and lab scenarios that the rules flag, and 17 closings sent with the vEIR's previous reply, as a turn sends them) and
+prints precision, recall, latency and cost. It needs credentials
 allowed to invoke the app's models (the lab role grants exactly those; an operator's own credentials work as well):
 
 ```bash
@@ -240,16 +241,26 @@ Read it as follows:
   crisis response, so a false crisis on a sign-off, venture frustration or a joke is the number to drive down
   (change the prompt in `src/risk/safety-screen.ts` with `POLICY_VERSION`), while a missed crisis is one the rules
   never caught either.
+- `withReply`: the closings read with the reply they answer ("goodbye" after "Anything else before we stop?", and
+  after "Are you safe right now?"). Sign-offs are the screen's most frequent production input, so a false crisis
+  there is the first thing to check.
 - `wellbeingOnOrdinary`: ordinary lines given the wellbeing flag (each forces a P1 escalation): also false
   positives.
-- `latencyMs` and `costUsd`: the latency a prefilter hit adds before the turn is accepted, and the cost per call and
-  per 1,000 founder turns at a given share of prefilter hits.
+- `latencyMs` and `costUsd`: the latency a prefilter hit adds to a turn, and the cost per call and per 1,000 founder
+  turns at a given share of prefilter hits.
 
-A run of the whole corpus screens about 680 lines: about USD 0.35 on Nova 2 Lite (≈ 1,000 input and ≈ 50 output
-tokens a call at the `us.` profile's USD 0.33 and 2.75 per million: ≈ USD 0.0005 a call), within the default budget
-of USD 1. In production the prefilter fires on about 0.2 % of the lab's and evals' ordinary lines, so the screen adds
-about USD 0.001 per 1,000 turns at that rate and USD 0.005 at 1 % (a coaching turn costs about USD 0.006 on its own),
-and about 0.5–1.5 s (never more than 2.5 s) before a flagged message is accepted; every other message pays nothing.
+A run of the whole corpus screens 669 lines: about USD 0.33 on Nova 2 Lite (≈ 1,100 input and ≈ 50 output tokens a
+call at the `us.` profile's USD 0.33 and 2.75 per million: ≈ USD 0.0005 a call), within the default budget of USD 1.
+
+What it costs in production. The prefilter fires on about 0.1 % of the lab's, evals' and e2e suites' ordinary lines
+(2 of 1,627), but also on bare closings: 14 of 33 everyday sign-offs ("goodbye", "ok goodbye", "i think i'm done",
+"thank you for everything") reach the screen, so a conversation that ends with one pays for one call. At ≈ USD 0.0005
+a call that is about USD 0.0005 per 1,000 turns at a 0.1 % hit rate, USD 0.025 at 5 % and USD 0.05 at 10 % (one
+sign-off in every ten turns), against about USD 6 for the 1,000 coaching turns themselves: under 1 %. Latency: the screen runs once the turn
+is admitted (the founder already sees it accepted, at "Understanding"), typically 0.5–1.5 s and never more than 2.5 s,
+and the retrieval embedding waits for its verdict (≈ 0.1–0.2 s more) so that a screened crisis makes no retrieval
+call. Every other message pays nothing, and a request a gate refuses (call admission, the message limit, the spend
+caps) never buys a screen call.
 
 ## Locally
 
