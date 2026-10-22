@@ -1,16 +1,20 @@
 import { normalizeForMatching } from '../risk/normalize.js';
 import { textsContainOtherVenture } from './coach-response.js';
 import {
+  DRAFT_SCAN_CHARS,
   identifiesHonestly,
   identityQuestionOf,
   identityFindingsAdded,
   identityReplacementFor,
   isAnswerPreface,
+  isOnlyThanks,
   isStyleFinding,
+  lifeUnitAfterRemoval,
   rewriteIdentity,
   withoutLeaningConnector,
   type IdentityCheckOptions,
   type IdentityFinding,
+  type IdentityRewriteOptions,
   type IdentityQuestion,
   type IdentityViolationKind,
 } from './identity.js';
@@ -262,6 +266,11 @@ const MARKDOWN_WINDOW_CHARS = 2_048;
 /** How much of the previous unit a unit's identity check reads before it (cut at a word boundary). */
 const IDENTITY_TAIL_CHARS = 300;
 
+/** What was released before `tail` (its end): the draft a claim split across units may sit in. */
+function before(released: string, tail: string): string {
+  return released.endsWith(tail) ? released.slice(0, released.length - tail.length) : released;
+}
+
 /** The end of a released unit that the next unit's identity check reads first. */
 function identityTail(text: string): string {
   if (text.length <= IDENTITY_TAIL_CHARS) return text;
@@ -399,6 +408,16 @@ export class SentenceGate {
   #said = '';
   /** The last unit was only a volunteered disclaimer and was dropped: the next one loses a leaning "But". */
   #afterDroppedDisclaimer = false;
+  /**
+   * A unit lost a made-up life (evals MX-0032), and what was released since is at most thanks: a turn-back that follows
+   * ("You?") is said in full, as the whole reply says it once validated ("Thanks for asking! How was yours?").
+   */
+  #afterLife = false;
+  /**
+   * The end of what the reply released (typed): a unit is read after it, for the draft it may sit in ("Reply with
+   * this:") and for what a turn-back follows.
+   */
+  #releasedTail = '';
   /** A greeting the opening line already gave was left out of the reply's start (`greeted`). */
   #droppedGreeting = false;
   #reasksDropped = 0;
@@ -756,24 +775,42 @@ export class SentenceGate {
     // as the answer too.
     this.#answerLead = answers === null ? '' : `${this.#answerLead}${text}`;
     this.#opening = answers !== null && isAnswerPreface(this.#answerLead);
-    const identity = rewriteIdentity(text, { ...this.#identity, ...this.#disclaimers, answers });
+    const identity = rewriteIdentity(text, {
+      ...this.#identity,
+      ...this.#disclaimers,
+      answers,
+      draftContext: this.#releasedTail,
+    });
     if (identity.findings.some((f) => this.#blockOn.has(f.kind))) return 'identity';
     this.#stats.identityRewrites += identity.findings.length;
     text = identity.text.trim();
+    const life = identity.findings.some((f) => f.rule === 'personal_life');
     if (text === '') {
       this.#afterDroppedDisclaimer = identity.findings.length > 0 && identity.findings.every(isStyleFinding);
+      if (life) this.#afterLife = true;
       return null;
     }
+    if (this.#afterLife && this.#options.founderText !== undefined) {
+      const after = lifeUnitAfterRemoval(text, this.#releasedTail, this.#options.founderText);
+      // A terse turn-back to a sign-off goes with the plan it asked after ("You too! You?").
+      if (after === '') return null;
+      if (after !== null) text = after;
+    }
+    this.#afterLife = (life || this.#afterLife) && isOnlyThanks(text);
     if (this.#afterDroppedDisclaimer) {
       this.#afterDroppedDisclaimer = false;
       text = withoutLeaningConnector(text);
     }
-    const split = this.#splitClaim(this.#tail, lead === '' ? ' ' : lead, text, this.#identity);
+    const split = this.#splitClaim(this.#tail, lead === '' ? ' ' : lead, text, {
+      ...this.#identity,
+      draftContext: before(this.#releasedTail, this.#tail),
+    });
     if (split === null) return 'identity';
     text = split;
     const spoken = this.#speak(text);
     if ('blocked' in spoken) return spoken.blocked;
     this.#tail = identityTail(text);
+    this.#releasedTail = `${this.#releasedTail}${lead}${text}`.slice(-DRAFT_SCAN_CHARS);
     if (!this.#identified && identifiesHonestly(text, this.#identity)) this.#identified = true;
     return { text: `${lead}${text}`, spoken: spoken.said };
   }
@@ -783,7 +820,7 @@ export class SentenceGate {
    * make a blocking claim neither makes alone, or the disclosure sentence when they make another one. A unit
    * without letters cannot complete a claim (every rule needs a name or a word), so it is not read again.
    */
-  #splitClaim(tail: string, gap: string, unit: string, options: IdentityCheckOptions): string | null {
+  #splitClaim(tail: string, gap: string, unit: string, options: IdentityRewriteOptions): string | null {
     if (tail === '' || !/\p{L}/u.test(unit)) return unit;
     // A disclaimer is judged within its own sentence (the unit itself, above); the whole answer is checked again.
     const added = identityFindingsAdded(tail, `${tail}${gap}${unit}`, options).filter(
@@ -845,12 +882,19 @@ export class SentenceGate {
       // Heard, not read: the spoken form is checked as speech before it is said, alone and after the end of
       // the unit said before it.
       const options = { ...this.#identity, spoken: true };
-      const heard = rewriteIdentity(speakable, { ...options, ...this.#disclaimers });
+      const heard = rewriteIdentity(speakable, {
+        ...options,
+        ...this.#disclaimers,
+        draftContext: this.#said,
+      });
       if (heard.findings.some((f) => this.#blockOn.has(f.kind))) return { blocked: 'identity' };
       this.#stats.identityRewrites += heard.findings.length;
       speakable = heard.text.trim();
       if (speakable !== '') {
-        const split = this.#splitClaim(this.#spokenTail, ' ', speakable, options);
+        const split = this.#splitClaim(this.#spokenTail, ' ', speakable, {
+          ...options,
+          draftContext: before(this.#said, this.#spokenTail),
+        });
         if (split === null) return { blocked: 'identity' };
         speakable = split;
         this.#spokenTail = identityTail(speakable);

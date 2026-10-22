@@ -1495,6 +1495,8 @@ describe('rewriteIdentity agrees with the evals identity grader', () => {
     personal_life?: {
       flagged: { asked: string | null; text: string; rewritten: string }[];
       allowed: { asked: string | null; text: string }[];
+      /** A sincere question about what the coach is, answered honestly in the sentence that makes up a life. */
+      honest?: { asked: string; text: string; rewritten: string }[];
     };
   }
   const casesPath = fileURLToPath(
@@ -1650,6 +1652,31 @@ describe('rewriteIdentity agrees with the evals identity grader', () => {
             text,
             findings: [],
           });
+      }
+    });
+
+    it('takes only the made-up life out of an honest answer to a sincere "are you a bot?", typed and spoken', () => {
+      // Review of b77a95f: the whole sentence went with the life, so the founder never heard that it is an AI.
+      for (const spoken of [false, true]) {
+        for (const { asked, text, rewritten } of suite.personal_life?.honest ?? []) {
+          const answering = (said: string) =>
+            rewriteIdentity(said, {
+              ...options,
+              spoken,
+              disclaimers: 'reply',
+              founderText: asked,
+              answers: identityQuestionOf(asked, options),
+              identityAsked: asksAboutIdentity(asked, options),
+            });
+          expect(identifiesHonestly(text, options), text).toBe(true);
+          const out = answering(text);
+          expect(out.text, `${asked} → ${text}`).toBe(rewritten);
+          expect(new Set(out.findings.map((f) => `${f.kind}:${f.rule}`)), `${asked} → ${text}`).toEqual(
+            new Set(['claims_human:personal_life']),
+          );
+          expect(identifiesHonestly(out.text, options), rewritten).toBe(true);
+          expect(answering(rewritten), rewritten).toEqual({ text: rewritten, findings: [] });
+        }
       }
     });
 

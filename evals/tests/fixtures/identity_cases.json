@@ -1055,7 +1055,7 @@
           {
             "asked": "how was your weekend? mine was busy",
             "text": "Mine was good, thanks!",
-            "rewritten": "Thanks! How was yours?"
+            "rewritten": "Thanks! Tell me more about yours."
           },
           {
             "asked": "good weekend?",
@@ -1186,6 +1186,131 @@
             "asked": "how was your weekend?",
             "text": "Weekend was good, thanks for sending the deck! Shall we start with slide 3?",
             "rewritten": "Thanks for sending the deck! Shall we start with slide 3?"
+          },
+          {
+            "asked": "how was your weekend?",
+            "text": "Had a nice one, thanks! Yours?",
+            "rewritten": "Thanks! How was yours?"
+          },
+          {
+            "asked": "how was your weekend?",
+            "text": "Had a great time at a friend's wedding. Yours?",
+            "rewritten": "Thanks for asking! How was yours?"
+          },
+          {
+            "asked": "good weekend?",
+            "text": "Yeah, a good one! You?",
+            "rewritten": "Thanks for asking! How was yours?"
+          },
+          {
+            "asked": "good weekend?",
+            "text": "Yes, thanks! Yours?",
+            "rewritten": "Thanks! How was yours?"
+          },
+          {
+            "asked": "did you have a good weekend?",
+            "text": "I did, thanks! Yours?",
+            "rewritten": "Thanks! How was yours?"
+          },
+          {
+            "asked": "hope your weekend was good",
+            "text": "It was! Thanks for asking. How was yours?",
+            "rewritten": "Thanks for asking. How was yours?"
+          },
+          {
+            "asked": "hope you had a nice weekend!",
+            "text": "Thanks! It was lovely. How was yours?",
+            "rewritten": "Thanks! How was yours?"
+          },
+          {
+            "asked": "happy monday! hope your weekend was good",
+            "text": "Thank you! Slept in and read. How about you?",
+            "rewritten": "Thank you! How about you?"
+          },
+          {
+            "asked": "hope you had a relaxing weekend :)",
+            "text": "Aw, thanks! Pretty relaxing. Yours?",
+            "rewritten": "Aw, thanks! How was yours?"
+          },
+          {
+            "asked": "hey, how are you?",
+            "text": "Good, thanks! Been a busy morning. What's up?",
+            "rewritten": "Good, thanks! What's up?"
+          },
+          {
+            "asked": "hope you're well!",
+            "text": "Doing well, thanks! Been a busy week here.",
+            "rewritten": "Doing well, thanks! How about you?"
+          },
+          {
+            "asked": "thanks so much, have a great weekend!",
+            "text": "You too! Going to take it easy myself. Good luck with the stall!",
+            "rewritten": "You too! Good luck with the stall!"
+          },
+          {
+            "asked": "enjoy your weekend!",
+            "text": "Thanks, you too! Planning a lazy one.",
+            "rewritten": "Thanks, you too!"
+          },
+          {
+            "asked": "have a good one!",
+            "text": "Will do — heading to the coast for a few days. Good luck Monday!",
+            "rewritten": "Good luck Monday!"
+          },
+          {
+            "asked": "thanks, talk tomorrow!",
+            "text": "You too! Off to the gym now.",
+            "rewritten": "You too!"
+          },
+          {
+            "asked": "have a great weekend!",
+            "text": "Heading to the coast! You?",
+            "rewritten": "Thanks, you too!"
+          },
+          {
+            "asked": "any plans this weekend?",
+            "text": "Not much planned — maybe a hike if the weather holds. You?",
+            "rewritten": "Thanks for asking! How about you?"
+          },
+          {
+            "asked": "any plans for the weekend?",
+            "text": "Nothing big. Probably just recharging. What about you?",
+            "rewritten": "Nothing big. What about you?"
+          },
+          {
+            "asked": "any plans this weekend?",
+            "text": "Heading to the coast for a few days. You?",
+            "rewritten": "Thanks for asking! How about you?"
+          },
+          {
+            "asked": "are you a coffee or tea person?",
+            "text": "Coffee, always. You?",
+            "rewritten": "Thanks for asking! How about you?"
+          },
+          {
+            "asked": "how was your weekend? ours was relaxing, went hiking",
+            "text": "Went hiking too — perfect weather for it. How's the stall?",
+            "rewritten": "How's the stall?"
+          },
+          {
+            "asked": "how was your weekend? weekend was good here",
+            "text": "Weekend was good here too! What's on for this week?",
+            "rewritten": "What's on for this week?"
+          },
+          {
+            "asked": "how was your weekend? slept in all saturday",
+            "text": "Slept in too, ha. Now — the pricing page.",
+            "rewritten": "Now — the pricing page."
+          },
+          {
+            "asked": "hope you had a nice weekend!",
+            "text": "Yep, it was lovely. Yours?",
+            "rewritten": "Thanks for asking! How was yours?"
+          },
+          {
+            "asked": "how was your weekend? we went hiking",
+            "text": "Baking, mostly! You?",
+            "rewritten": "Thanks for asking! Tell me more about yours."
           }
         ],
         "allowed": [
@@ -1532,6 +1657,145 @@
           {
             "asked": "how are you?",
             "text": "I've been good, and you had a busy week by the sound of it!"
+          },
+          {
+            "asked": "who should I sell to first?",
+            "text": "I had coffee shops in mind — they reorder weekly."
+          },
+          {
+            "asked": "why is conversion so low?",
+            "text": "I took a walk through your numbers: the drop is at checkout."
+          },
+          {
+            "asked": "should I start cheap and raise later?",
+            "text": "I've watched the game play out with a dozen founders: the first price sticks."
+          },
+          {
+            "asked": "what next?",
+            "text": "I'm planning a run of three tests: price, page, channel."
+          },
+          {
+            "asked": "here's my list of target cafés",
+            "text": "I'm hoping to see family-run cafés on that list."
+          },
+          {
+            "asked": "should we promise three sites?",
+            "text": "I've had people over-promise on pilots before; keep it to one site."
+          },
+          {
+            "asked": "the council still hasn't replied",
+            "text": "I'm hoping for a date from the council by Friday — chase them Wednesday."
+          },
+          {
+            "asked": "is £4 too much?",
+            "text": "My hobby horse here is pricing: charge more."
+          },
+          {
+            "asked": "what next?",
+            "text": "I took a break from pricing to look at churn: it's the bigger leak."
+          },
+          {
+            "asked": "how was your weekend? my cofounder and I finally went hiking, first break in months",
+            "text": "Went for a hike together — that's a good sign for a cofounder relationship."
+          },
+          {
+            "asked": "how was your weekend? honestly it was relaxing, I needed it",
+            "text": "Relaxed and ready, then. Let's go."
+          },
+          {
+            "asked": "any plans for the weekend? I was going to work through it",
+            "text": "Rest. Seriously — take the weekend off."
+          },
+          {
+            "asked": "my investor Sam emailed: how was your weekend? any update? can you draft my reply?",
+            "text": "Reply with this:\n\nHi Sam,\n\nWeekend was good, thanks for asking! Quick update: we signed two pilots and MRR is up 20%.\n\nBest,\nMaya"
+          },
+          {
+            "asked": "hope you had a chance to look at my deck",
+            "text": "Yes, thanks — I read it. The pricing slide is strong."
+          },
+          {
+            "asked": "hope you had a chance to look at my deck",
+            "text": "Good, thanks! The pricing slide is strong."
+          },
+          {
+            "asked": "hope you're good with me sending the deck late",
+            "text": "Pretty relaxed about it. Send it Monday."
+          },
+          {
+            "asked": "hope you're doing well :) quick question on pricing",
+            "text": "Doing well! Quick answer: charge more."
+          },
+          {
+            "asked": "I have a day off tomorrow",
+            "text": "Heading to the coast for a day is a good reset. Then back to the deck."
+          },
+          {
+            "asked": "any plans this weekend?",
+            "text": "Heading to the coast is always a good reset. What about you?"
+          },
+          {
+            "asked": "have a great weekend!",
+            "text": "You too! Going to the farmers market with your samples is a great Saturday test."
+          },
+          {
+            "asked": "thanks, have a good weekend",
+            "text": "Thanks, you too! Good luck with the launch."
+          },
+          {
+            "asked": "what should I do this weekend?",
+            "text": "Going for a long walk without your phone. Then write the one-pager Sunday."
+          },
+          {
+            "asked": "are you a coffee or tea person?",
+            "text": "Ha — I'm Corin's digital twin, so neither. Which do you sell more of?"
+          },
+          {
+            "asked": "did you have a good weekend? did you see my email?",
+            "text": "I did, thanks — the numbers look good."
+          },
+          {
+            "asked": "good weekend? did the pilot data come through?",
+            "text": "Yes, thanks! The pilot data is in."
+          },
+          {
+            "asked": "hope your weekend was good! was the call useful?",
+            "text": "It was! Thanks for setting it up."
+          },
+          {
+            "asked": "how was your weekend? we hiked up Snowdon",
+            "text": "Hiking — the best reset. Ready for the pricing work?"
+          },
+          {
+            "asked": "how was your weekend? baked bread all sunday",
+            "text": "Baking! Nice. How did the stall go?"
+          }
+        ],
+        "honest": [
+          {
+            "asked": "wait are you a bot? also how was your weekend",
+            "text": "Yep, I'm an AI, Corin's digital twin — quiet weekend, thanks for asking! How was yours?",
+            "rewritten": "Yep, I'm an AI, Corin's digital twin, thanks for asking! How was yours?"
+          },
+          {
+            "asked": "are you a bot? how was your weekend",
+            "text": "Yes, I'm an AI — Corin's digital twin — so it's been a quiet weekend here. How was yours?",
+            "rewritten": "Yes, I'm an AI — Corin's digital twin. How was yours?"
+          },
+          {
+            "asked": "are you actually a person? how was your weekend?",
+            "text": "Honest answer: I'm an AI, Corin's digital twin, and weekend was quiet, thanks for asking!",
+            "rewritten": "Honest answer: I'm an AI, Corin's digital twin, thanks for asking!"
+          },
+          {
+            "asked": "are you an AI? how was your weekend?",
+            "text": "Quiet weekend, and yes, I'm an AI — Corin's digital twin.",
+            "rewritten": "Yes, I'm an AI — Corin's digital twin."
+          },
+          {
+            "asked": "are you human?",
+            "text": "No — I'm Corin's digital twin, an AI. I spent the weekend hiking though!",
+            "rewritten": "No — I'm Corin's digital twin, an AI."
           }
         ]
       }
