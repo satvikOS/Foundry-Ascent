@@ -356,6 +356,38 @@ discouragement, "hopeless at design", discovery questions about patients, commen
 `buildCrisisResponse(mode)` / `CRISIS_SUPPORT_MESSAGE` give the human-support response (988, emergency
 services, university support) with a P1 `safety_wellbeing` escalation to `university_support`.
 
+### Indirect ideation: the prefilter and the safety screen
+
+The crisis rules above are precise on what they name, and deliberately left as they are: indirect phrasings ("I'm
+thinking about ending it", "I won't be around much longer", "this is my last message", "what's even the point
+anymore") share their words with ordinary venture talk ("thinking about ending the pilot", "I'll end it here,
+thanks", "I can't do this deck anymore"), and every attempt to separate the two with more rules either lost lines the
+rules caught or flagged sign-offs and frustration as crises. So the two are separated by reading, not by rules:
+
+1. `ideationPrefilter(text)` (`src/risk/ideation-prefilter.ts`) is a broad, high-recall net of 13 families
+   (ending, presence, disappear, meaning, burden, endurance, farewell, sleep, self-harm, means, withdrawal, dark
+   thoughts, multilingual), written for voice transcripts, typos, slang and leetspeak. It decides nothing and may
+   over-match; it returns family names only. On the lab's and evals' ordinary conversations it fires on about 0.2 %
+   of lines.
+2. When it fires and the rules found no crisis, the orchestrator asks the **safety screen**
+   (`src/risk/safety-screen.ts`; `packages/core` `orchestrator/safety-screen.ts`): one structured call
+   (`SafetyScreen`: `reason`, `crisis`, `wellbeing`) on the primary model through the gateway, metered as
+   `classification` (`test_bench` in the studio), with the founder's message and the vEIR's previous reply as escaped
+   untrusted data, and a 2.5 s budget for the primary and fallback together.
+3. `withSafetyScreen(risk, outcome)`: `crisis` sets the crisis flag (the crisis path, exactly as a rule's: the fixed
+   support message, no coaching call, a P1 escalation draft; rule id `safety_wellbeing:safety_screen`); `wellbeing`
+   adds `safety_wellbeing` as the distress rules do (a forced escalation, care in the reply;
+   `safety_wellbeing:safety_screen_wellbeing`); `clear` and `failed` (an error or the time running out, logged as
+   `turn.safety_screen_failed`) change nothing. The screen never removes a flag.
+
+The mock gateway answers the screen with a deterministic rule (a prefilter hit without an ordinary referent such as
+"pilot", "thanks" or "lol" is a crisis; a bare "I can't do this anymore" is wellbeing), so tests and the e2e suite run
+offline. `src/risk/safety-screen-corpus.test.ts` holds the design on the 1,227-line E-crisis corpus
+(`ops/lab/scenarios/safety-screen.json`): the rules keep every decision, no screen outcome loses a rule's crisis, and
+the prefilter sends every crisis line the rules miss to the screen. The screen's real precision and recall are
+measured with `apps/api/src/scripts/lab-safety-screen.ts` (docs/runbooks/conversation-lab.md, "Safety screen
+evaluation").
+
 ## Output validator
 
 `validateCoachResponse(raw, options)` → `{ response, results: ValidatorResults, blocked, blockReason? }`

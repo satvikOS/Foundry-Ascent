@@ -207,6 +207,50 @@ gh workflow run ops-conversation-lab.yml -f suite=matrix -f matrix_source=evals 
   -f max_scenarios=40 -f public_key="$(cat "$dir/public.b64")"
 ```
 
+## Safety screen evaluation
+
+The safety screen (packages/ai README, "Indirect ideation") is evaluated on its own, outside the suites: a script
+runs the crisis pipeline (the deterministic rules, the ideation prefilter, then the screen exactly as a turn calls it:
+same prompt, schema, output bound and 2.5 s budget) over the E-crisis corpus (`ops/lab/scenarios/safety-screen.json`,
+1,227 synthetic lines: crisis lines, hard negatives that share their words, and every line of the evals datasets,
+tests and lab scenarios that the rules flag) and prints precision, recall, latency and cost. It needs credentials
+allowed to invoke the app's models (the lab role grants exactly those; an operator's own credentials work as well):
+
+```bash
+MODEL_PROVIDER=bedrock BEDROCK_REGION=us-east-1 \
+MODEL_PRIMARY_ID=us.amazon.nova-2-lite-v1:0 MODEL_FALLBACK_ID=global.amazon.nova-2-lite-v1:0 \
+MODEL_EMBEDDINGS_ID=amazon.titan-embed-text-v2:0 \
+pnpm --filter @foundry/api exec tsx src/scripts/lab-safety-screen.ts --budget-usd 1 --out /tmp/safety-screen
+```
+
+(copy the model ids from `infra/cdk/config/production.json`). `--scope all` also screens the lines the prefilter
+lets pass (the screen's recall without the prefilter, when deciding to widen or narrow it); `--limit N` and
+`--concurrency N` (default 4) bound a run. Without `MODEL_PROVIDER=bedrock` it runs on the mock gateway's rule (a
+free plumbing check). The output is public-safe: counts, rates, row ids, model ids, milliseconds and dollars. With
+`--out`, every row's outcome and the model's one-sentence reason, with the corpus text, go to
+`<out>/private/safety-screen.json`, for the operator only.
+
+Read it as follows:
+
+- `rulesOnly` and `pipeline`: confusion counts, precision and recall on the lines labelled `crisis` and `none`, for
+  the rules alone (origin/main's behaviour) and for rules + screen. The pipeline's true positives can only grow:
+  the screen never removes a rule's crisis.
+- `screenAlone`: precision and recall on the lines the screen read, with the first ids of its false crises (ordinary
+  lines answered with the crisis message) and missed crises. The product rule: ordinary coaching must not get the
+  crisis response, so a false crisis on a sign-off, venture frustration or a joke is the number to drive down
+  (change the prompt in `src/risk/safety-screen.ts` with `POLICY_VERSION`), while a missed crisis is one the rules
+  never caught either.
+- `wellbeingOnOrdinary`: ordinary lines given the wellbeing flag (each forces a P1 escalation): also false
+  positives.
+- `latencyMs` and `costUsd`: the latency a prefilter hit adds before the turn is accepted, and the cost per call and
+  per 1,000 founder turns at a given share of prefilter hits.
+
+A run of the whole corpus screens about 680 lines: about USD 0.35 on Nova 2 Lite (≈ 1,000 input and ≈ 50 output
+tokens a call at the `us.` profile's USD 0.33 and 2.75 per million: ≈ USD 0.0005 a call), within the default budget
+of USD 1. In production the prefilter fires on about 0.2 % of the lab's and evals' ordinary lines, so the screen adds
+about USD 0.001 per 1,000 turns at that rate and USD 0.005 at 1 % (a coaching turn costs about USD 0.006 on its own),
+and about 0.5–1.5 s (never more than 2.5 s) before a flagged message is accepted; every other message pays nothing.
+
 ## Locally
 
 The harness has a dry run that needs no AWS (the app on the mock model; no probes, no backfill, no voice):

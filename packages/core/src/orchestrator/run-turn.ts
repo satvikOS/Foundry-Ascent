@@ -2,11 +2,13 @@ import {
   CRISIS_SPOKEN_MESSAGE,
   CRISIS_SUPPORT_MESSAGE,
   POLICY_VERSION,
+  SAFETY_SCREEN_CRISIS_RULE,
   buildCrisisResponse,
   buildRetrievalQuery,
   classifyRisk,
   deriveSpoken,
   riskLabel,
+  withSafetyScreen,
   type HistoryTurn,
   type ModelAttempt,
   type RiskClassification,
@@ -68,6 +70,7 @@ import { candidateVisibility } from './evidence.js';
 import { generationTotals, SpeechStream } from './generate.js';
 import { assertWithinSpendCaps } from './guards.js';
 import { embedRetrievalQuery, privateRetrievalOwner, retrieveEvidence } from './retrieval.js';
+import { screenIndirectIdeation } from './safety-screen.js';
 import { secondsUntilUtcMidnight, shouldSampleForReview } from './sampling.js';
 
 export { enforceGateBlock } from './answer.js';
@@ -193,6 +196,12 @@ interface Coach {
   /** The stored opener, when the history reaches back to the start of the conversation. */
   readonly opener: string | null;
   readonly memory: LoadedContinuity;
+}
+
+/** The vEIR's last message as the founder heard it: the previous answer, or the opener on the first turn. */
+function previousReplyOf(coach: Coach | null): string | null {
+  if (coach === null) return null;
+  return coach.heardHistory.length > 0 ? (coach.heardHistory.at(-1)?.answer ?? null) : coach.opener;
 }
 
 interface Replay {
@@ -498,6 +507,24 @@ export function createOrchestrator(
     });
   }
 
+  /**
+   * The channel of a message the safety screen found a crisis in. Preflight read it as an ordinary message, which
+   * leaves a spoken one to call admission; a crisis skips that admission, so, as preflight decides for a crisis rule, a
+   * spoken crisis message is recorded as spoken only when it names the caller's live call (otherwise it is a typed
+   * one: nothing is said on a call that is not there).
+   */
+  async function crisisChannel(
+    ctx: RequestContext,
+    pre: Proceed,
+    callId: string | undefined,
+  ): Promise<Proceed> {
+    if (pre.channel !== 'voice') return pre;
+    const live = await kit.inRequest(ctx, (scope) =>
+      isLiveCallOf(scope, { sessionId: pre.session.id, callId }),
+    );
+    return live ? pre : { ...pre, channel: 'text' };
+  }
+
   async function replay(
     ctx: RequestContext,
     emit: (e: TurnStreamEvent) => Promise<void>,
@@ -612,6 +639,8 @@ export function createOrchestrator(
     speechKey: Promise<SessionSigningKey> | null,
   ): Promise<RunTurnOutcome> {
     const response = buildCrisisResponse(pre.turnMode, pre.channel);
+    // Found by the safety screen (indirect ideation the rules do not flag), not by a crisis rule.
+    const screened = risk.matchedRules.includes(SAFETY_SCREEN_CRISIS_RULE);
     const validator: ValidatorResults = {
       unknownEvidenceIdsRemoved: 0,
       factsDowngraded: 0,
@@ -621,7 +650,9 @@ export function createOrchestrator(
       identityViolation: false,
       crossVentureViolation: false,
       riskCategories: risk.categories,
-      notes: ['crisis_support', 'no_model_call'],
+      notes: screened
+        ? ['crisis_support', 'no_model_call', 'safety_screen']
+        : ['crisis_support', 'no_model_call'],
     };
     const escalationId = await kit.inRequest(ctx, async (scope) => {
       const finished = await turnsRepo.finishTurn(scope.tx, {
@@ -652,7 +683,12 @@ export function createOrchestrator(
         objectType: 'turn',
         objectId: turn.id,
         policyReason: 'crisis',
-        metadata: { escalationId: escalation.id, modelCalled: false, channel: pre.channel },
+        metadata: {
+          escalationId: escalation.id,
+          modelCalled: false,
+          channel: pre.channel,
+          ...(screened ? { safetyScreen: true } : {}),
+        },
       });
       return escalation.id;
     });
@@ -1146,6 +1182,21 @@ export function createOrchestrator(
         const checked = await preflight(ctx, sessionId, input, crisis);
         if (checked.kind === 'replay') return await replay(ctx, emit, checked);
         pre = checked;
+        // Indirect ideation the crisis rules do not flag ("I'm thinking about ending it", "this is my last message"):
+        // a prefilter hit asks the safety screen, which can only add a flag (safety-screen.ts). Rare, so the common
+        // path pays nothing. It runs after the gates above (authorization, the kill switch, the message limit, which
+        // bounds the calls) and before the spend caps, which never stand between a founder in crisis and support.
+        const screen = await screenIndirectIdeation(kit, {
+          meter: { ctx, ventureId: pre.session.ventureId, purpose: 'classification' },
+          founderText: input.text,
+          previousReply: previousReplyOf(pre.coach),
+          crisis,
+          ...(options.signal ? { signal: options.signal } : {}),
+        });
+        if (screen === 'crisis') {
+          crisis = true;
+          pre = await crisisChannel(ctx, pre, input.callId);
+        }
         if (!crisis) {
           await assertWithinSpendCaps(kit, ctx, pre.settings, {
             ventureId: pre.session.ventureId,
@@ -1155,25 +1206,22 @@ export function createOrchestrator(
         others = await directory.others(ctx.tenantId, pre.session.ventureId);
         eirNames = (await directory.get(ctx.tenantId)).eirNames;
         addressees = await directory.addressees(ctx.tenantId, pre.session.ventureId);
-        risk = classifyRisk(input.text, {
-          otherVentureNames: others.names,
-          otherVentureMemberNames: others.memberNames,
-        });
+        risk = withSafetyScreen(
+          classifyRisk(input.text, {
+            otherVentureNames: others.names,
+            otherVentureMemberNames: others.memberNames,
+          }),
+          screen ?? 'clear',
+        );
         const label = riskLabel(risk);
         const parsed = input;
         const settings = pre.settings;
         const session = pre.session;
         // A short reply answers the vEIR's last message: the previous answer as the founder heard it, or the
         // opener on the first turn.
-        const coach = pre.coach;
         query = buildRetrievalQuery({
           founderText: parsed.text,
-          previousAnswer:
-            coach === null
-              ? null
-              : coach.heardHistory.length > 0
-                ? (coach.heardHistory.at(-1)?.answer ?? null)
-                : coach.opener,
+          previousAnswer: previousReplyOf(pre.coach),
           currentGoal: session.goal ?? pre.venture.currentGoal,
         });
         // Latency: the speech key loads while the turn is admitted.

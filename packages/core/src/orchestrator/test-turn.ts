@@ -5,6 +5,7 @@ import {
   buildRetrievalQuery,
   classifyRisk,
   riskLabel,
+  withSafetyScreen,
   type HistoryTurn,
   type RiskClassification,
 } from '@foundry/ai';
@@ -26,6 +27,7 @@ import { answerTurn, generationError } from './answer.js';
 import { participantBlockReason, supportMessageFor } from './blocked.js';
 import { generationTotals, type GenerationMeter } from './generate.js';
 import { embedRetrievalQuery, retrieveEvidence } from './retrieval.js';
+import { screenIndirectIdeation } from './safety-screen.js';
 import { secondsUntilUtcMidnight } from './sampling.js';
 
 export type RunTestTurnInput = z.input<typeof TestTurnRequest>;
@@ -327,14 +329,30 @@ export function createTestBench(kit: Kit, directory: DirectoryCache): TestBench 
         // No venture: every venture of the tenant (its name, canary and members) is another venture here.
         const others = await directory.others(ctx.tenantId, null);
         const { eirNames } = await directory.get(ctx.tenantId);
-        const risk = classifyRisk(input.text, {
-          otherVentureNames: others.names,
-          otherVentureMemberNames: others.memberNames,
+        // The founder pipeline's safety screen, on the same terms (run-turn.ts): a curator trying a release sees
+        // what a founder would.
+        const screen = await screenIndirectIdeation(kit, {
+          meter: { ctx, ...METER },
+          founderText: input.text,
+          previousReply: input.history.at(-1)?.answer ?? null,
+          crisis: firstRisk.crisis,
+          ...(options.signal ? { signal: options.signal } : {}),
         });
+        const risk = withSafetyScreen(
+          classifyRisk(input.text, {
+            otherVentureNames: others.names,
+            otherVentureMemberNames: others.memberNames,
+          }),
+          screen ?? 'clear',
+        );
         if (risk.crisis) {
           outcome = 'blocked';
           policyReason = 'crisis';
-          metadata = { ...metadata, modelCalled: false };
+          metadata = {
+            ...metadata,
+            modelCalled: false,
+            ...(screen === 'crisis' ? { safetyScreen: true } : {}),
+          };
           return crisisResponse(admitted, risk);
         }
         const history: HistoryTurn[] = input.history

@@ -209,7 +209,9 @@ type TurnEmitter = (event: TurnStreamEvent) => void | Promise<void>;
   or body field) makes retries idempotent: an existing turn with the same ordinal, author and text is
   replayed from storage (no model call); a different text → `idempotency_conflict`; a gap → `conflict`.
 - Pipeline: authorize (membership, session, kill switch, assignment + approved release, mode, turn limit,
-  20 turns / 10 min per principal, daily spend caps) → deterministic risk pre-classifier → crisis path
+  20 turns / 10 min per principal, daily spend caps) → deterministic risk pre-classifier (and, for the rare
+  message the ideation prefilter flags and the rules do not, the 2.5 s model-based safety screen, which can only add
+  the crisis or wellbeing flag and runs before the spend caps: `orchestrator/safety-screen.ts`) → crisis path
   (fixed support message, **no model call**, P1 `safety_wellbeing` escalation draft; it bypasses the AI
   gates: kill switch, spend caps, persona status, and every limit: the message rate limit, the in-flight
   limit, call admission and the session turn limit; crisis turns still count towards the message limit, and
