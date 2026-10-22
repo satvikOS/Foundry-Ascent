@@ -919,7 +919,8 @@ describe('a report keeps the agenda, and nothing else does (review of the report
   it('keeps it for a report said "like we agreed", "like I said" or "it went live"', () => {
     for (const text of [
       'I followed up like we agreed.',
-      'I talked to the five librarians like I said.',
+      // A report that says what it was keeps it when a commitment is about that ("Interview five library staff").
+      'I talked to the five library staff like I said.',
       'It went live yesterday.',
     ]) {
       expect(bringsOwnSubject(text, CONTINUITY), text).toBe(false);
@@ -1068,5 +1069,64 @@ describe('news, a setback or a confession next to "I did it" leaves the agenda o
       expect(last, text).toContain('<open_commitments>');
       expect(last, text).toContain(`from your notes it is most likely: "${commitment}".`);
     }
+  });
+});
+
+describe('the notes’ agenda as main had it (differential audit of fix-c, round 2)', () => {
+  const WITH_DEAN: PromptContinuity = {
+    ...CONTINUITY,
+    notebook: {
+      ...NOTEBOOK,
+      commitments: [...NOTEBOOK.commitments, commitment('Email the dean the pilot plan', '2026-10-20')],
+    },
+  };
+  const history = [{ founderText: 'Hello!', answer: 'Hi Maya, good to have you back.' }];
+  const lastOf = (text: string): string =>
+    buildMessages(history, text, { continuity: WITH_DEAN, today: '2026-10-16' }).at(-1)?.content ?? '';
+
+  // Each was named as a commitment kept (one shared word, a number or a verb kind), and the agenda came back.
+  it.each([
+    'We did it — 5 libraries signed!',
+    'I did it, five of us signed up for the hackathon',
+    "It's done, the library said no to the pilot.",
+    "Did it! Got my driver's licence",
+    'Sent the dean a thank-you note for the reference letter',
+    'Sent the plan to my cofounder for feedback first',
+    'Called five investors today, none picked up',
+    'Talked to five students at the bus stop about the app',
+    'I did it, I talked to the library about my overdue fine',
+    "I said I'd quit sugar and I did",
+    'Just finished the door hanger designs for the flyer drop',
+    'Booked! Flights to the conference are sorted.',
+    'Launched it! Well, soft launched. To my mum.',
+    'I already sent it, should have waited for your feedback',
+    'Sent it. Regretted it immediately lol',
+  ])('%j is a subject of their own: the agenda left out, no commitment named', (text) => {
+    expect(bringsOwnSubject(text, WITH_DEAN)).toBe(true);
+    const last = lastOf(text);
+    expect(last).not.toContain('<open_commitments>');
+    expect(last).not.toContain('most likely');
+    expect(last).not.toContain('reports on something they said they would do');
+  });
+
+  // Main kept the agenda for these (each shares words with an open commitment); the state now names none of them.
+  it.each([
+    'We did it! Five new paying libraries this week',
+    'We did it. Library staff voted us best new society.',
+    'Interviewed five candidates for the dev role today',
+    'Emailed the dean about my extension request',
+    'Emailed the dean to ask about graduation dates.',
+    'I did it, I emailed the plan to my mum',
+    'Texted my mum the pilot plan, she says it looks great',
+    'sent the pilot plan to my tutor for feedback',
+    'Installed the new door on my wardrobe lol',
+    'Installed the counter app on my phone to track my habits',
+    'Emailed five libraries about the pilot',
+    'Met five people from the library at the pub quiz',
+  ])('%j keeps the agenda, as on main, and names no commitment', (text) => {
+    expect(bringsOwnSubject(text, WITH_DEAN)).toBe(false);
+    const last = lastOf(text);
+    expect(last).not.toContain('most likely');
+    expect(last).not.toContain('reports on something they said they would do');
   });
 });
