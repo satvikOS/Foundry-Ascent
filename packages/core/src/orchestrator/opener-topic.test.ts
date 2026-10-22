@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addressFounder,
   isTopicLine,
+  isVenting,
   properNounsIn,
   readsAsSubject,
   topicOf,
@@ -789,6 +790,282 @@ describe('the adversarial review of e9e49fb: no venting as a plan, nothing the f
       ['your plan to book the room', 'your plan to book the room'],
     ] as const) {
       expect(addressFounder(subject, people), subject).toBe(said);
+    }
+  });
+});
+
+describe('the differential review of 6656c33 (2,426 inputs, main against the branch): never worse than main', () => {
+  it('never says a particle after the founder’s own verb: withdrawing and distress dangle, as on main', () => {
+    // Before: "your plan to give up", "whether you are burning out" and "your plan to cash out" read as subjects.
+    for (const subject of [
+      'your plan to give up',
+      'whether to give up',
+      'whether you want to give up',
+      'your plan to drop out',
+      'whether to drop out',
+      'your plan to burn out',
+      'whether you are burning out',
+      'your plan to back out',
+      'your plan to pull out',
+      'whether to shut it down',
+      'your plan to shut down',
+      'whether to shut down',
+      'your plan to calm down',
+      'how to calm down',
+      'how to cheer up',
+      'whether to break down',
+      'your plan to wind down',
+      'whether to wind down',
+      'your plan to bow out',
+      'your plan to check out',
+      'your plan to freak out',
+      'your plan to step down',
+      'whether to step down',
+      'your plan to give up?',
+      'whether to give up?',
+      'your plan to break up',
+      'your plan to sign off',
+      'your plan to opt out',
+      'your plan to cash out',
+      'your plan to log off',
+      'your plan to set up',
+      'whether the team is burning out',
+      'whether the company will shut down',
+      "your plan to tell Sam you're out",
+    ]) {
+      expect(readsAsSubject(subject), subject).toBe(false);
+    }
+    // A question asked of a thing, or a phrasal verb whole without its object, still ends on its particle.
+    for (const subject of [
+      'whether the numbers add up',
+      'what to focus on before the clinic study reads out',
+      'your plan to follow up',
+      'whether to follow up',
+      'your plan to sign up',
+      'whether to sign up',
+      'your plan to wrap up',
+      'your plan to scale up',
+    ]) {
+      expect(readsAsSubject(subject), subject).toBe(true);
+    }
+    expect(topicOf("I'm going to tell Sam I'm out.")).toBeNull();
+    // The founder's "I'm" is said "you're", never "you'm".
+    expect(topicOf("I'm going to tell Sam I'm ready to sign.")?.text).toBe(
+      "your plan to tell Sam you're ready to sign",
+    );
+  });
+
+  it.each([
+    // Talking to someone at a place or about the venture is a plan, never distress.
+    ['We need to talk to someone at procurement.', 'your plan to talk to someone at procurement'],
+    ['I need to speak to someone in IT about SSO.', 'your plan to speak to someone in IT about SSO'],
+    [
+      'I want to talk to someone at the bank about a loan.',
+      'your plan to talk to someone at the bank about a loan',
+    ],
+    [
+      'I need to talk to somebody in legal about the contract.',
+      'your plan to talk to somebody in legal about the contract',
+    ],
+    ['We need to talk to anyone who runs a library.', 'your plan to talk to anyone who runs a library'],
+    [
+      'I want to speak with someone at Hartwell about the pilot.',
+      'your plan to speak with someone at Hartwell about the pilot',
+    ],
+    ['I want to talk to someone about the pricing.', 'your plan to talk to someone about the pricing'],
+    [
+      'I really need to talk to someone at the union about the budget.',
+      'your plan to talk to someone at the union about the budget',
+    ],
+    // A carer of no one's, with what the venture does after it, is research (a medical-device venture: SoleSignal).
+    [
+      'I need to call a doctor at Mercy Clinic about the insole pilot.',
+      'your plan to call a doctor at Mercy Clinic about the insole pilot',
+    ],
+    [
+      'We need to call a doctor at each clinic before the pilot.',
+      'your plan to call a doctor at each clinic before the pilot',
+    ],
+    [
+      'I am going to see a physician at the clinic to test the insole.',
+      'your plan to see a physician at the clinic to test the insole',
+    ],
+    [
+      "We're seeing a doctor at St Mary's to validate the sensor readings.",
+      "seeing a doctor at St Mary's to validate the sensor readings",
+    ],
+    ['I need to see a doctor about the insole sensor readings for the pilot.', 'the insole sensor readings'],
+    [
+      'I visited a psychologist at the university clinic for user research.',
+      'visiting a psychologist at the university clinic for user research',
+    ],
+    ['We visited a GP practice to demo the insole.', 'visiting a GP practice to demo the insole'],
+    [
+      'We need to call a psychiatrist for the clinical advisory board.',
+      'your plan to call a psychiatrist for the clinical advisory board',
+    ],
+    [
+      'We talked to a doctor who wants to prescribe the insole.',
+      'talking to a doctor who wants to prescribe the insole',
+    ],
+    // A mental-health venture's research and its products.
+    [
+      'I need to talk to a psychologist about the survey questions for our mental health app.',
+      'your mental health app',
+    ],
+    [
+      'We want to talk to a therapist about how they triage students.',
+      'your plan to talk to a therapist about how they triage students',
+    ],
+    ['I want to talk to a counsellor at the wellbeing centre about our app.', 'the wellbeing centre'],
+    ["I'm going to a therapist conference to pitch our app.", 'a therapist conference'],
+    ['Our anxiety tracking feature is getting traction.', 'your anxiety tracking feature'],
+    ['My mental health startup got into the accelerator!', 'your mental health startup'],
+    ['My therapy app needs a clinical lead.', 'your therapy app'],
+    ['Our therapy chatbot got 200 users in a week.', 'your therapy chatbot'],
+    ['Our depression screening tool needs clinical validation.', 'your depression screening tool'],
+    ['My therapy startup won the pitch competition!', 'your therapy startup'],
+    ['Our medication reminder feature is the most used.', 'your medication reminder feature'],
+    ['Our mental health platform is launching at three universities.', 'your mental health platform'],
+    ['My meds tracker app needs a pharmacist advisor.', 'your meds tracker app'],
+    ['Our diagnosis feature needs FDA clearance.', 'your diagnosis feature'],
+    [
+      'Should we pitch our mental health app to the student union?',
+      'whether to pitch your mental health app to the student union',
+    ],
+    ['We are going into therapy clinics next month with the pilot.', 'therapy clinics'],
+    ['We sell into therapy practices.', 'therapy practices'],
+    ['Our app helps with your anxiety before exams.', 'your app'],
+    // The timing a question or a plan is about.
+    ['Should we end the free pilot early?', 'whether to end the free pilot early'],
+    ['Should we sign the contract early?', 'whether to sign the contract early'],
+    ['Should we close the round early?', 'whether to close the round early'],
+    ['Should we start fundraising early?', 'whether to start fundraising early'],
+    ['Should we hire a designer early?', 'whether to hire a designer early'],
+    [
+      'We need to ship the map first and the booking later.',
+      'your plan to ship the map first and the booking later',
+    ],
+    [
+      'We want to pilot in Merrow first and the science library later.',
+      'your plan to pilot in Merrow first and the science library later',
+    ],
+    ['Should we raise first and hire later?', 'whether to raise first and hire later'],
+    [
+      'We plan to sell to libraries now and to students later.',
+      'your plan to sell to libraries now and to students later',
+    ],
+    // "early" after a noun alone is no part of it.
+    ["Let's end the free trial early.", 'the free trial'],
+    // A name keeps its capital and is no splice with its verb.
+    ["Sam's text literally said 'I think I'm out'.", "Sam's text"],
+    ['Devin heard back from the student union.', 'Devin'],
+    ["Everyone's feedback on the pilot was great.", "everyone's feedback"],
+  ])('topicOf(%j) is %j, as on main or closer to the founder', (line, text) => {
+    expect(topicOf(line)?.text ?? null).toBe(text);
+  });
+
+  it('names nothing in a clause the line’s "yet" or "anyway" was cut from, nor a name spliced with its verb', () => {
+    for (const line of [
+      "nobody's paying yet",
+      "nobody's using it yet",
+      "nothing's working anyway",
+      "Sam redid my whole design without asking and I'm so annoyed.",
+      'Sam redid my whole design without asking.',
+    ]) {
+      expect(topicOf(line)?.text ?? null, line).toBeNull();
+    }
+    for (const phrase of ["nobody's paying", "nothing's working", 'everything’s broken']) {
+      expect(readsAsSubject(phrase), phrase).toBe(false);
+    }
+  });
+
+  it('never names the founder’s private health, their family’s, or withdrawing from the venture', () => {
+    for (const line of [
+      'My dad has cancer and I need to be with him.',
+      'My grandma passed away last week.',
+      'I got diagnosed with ADHD.',
+      'My mum is in hospital so I have to go home this week.',
+      'My mum is sick so I have to go home for a bit.',
+      'I have a doctor appointment on Friday.',
+      'I need to see a doctor.',
+      'I need to see a doctor tomorrow.',
+      'I need to see a doctor about my back.',
+      "I need to talk to someone about how I'm feeling.",
+      'My anxiety is getting worse.',
+      "I'm in therapy now.",
+      "I'm thinking of leaving the startup to join Google.",
+      'I need to take a break from the startup to focus on exams.',
+      "I'm going to shut it down after the summer.",
+      'I want to quit and get a normal job.',
+      'I want to sell my shares and leave.',
+      'Will the team burn out?',
+    ]) {
+      expect(topicOf(line)?.text ?? null, line).toBeNull();
+    }
+    // What a relative does is no health of theirs, and a venture's patients are no founder's.
+    for (const [line, text] of [
+      ['My sister works at the hospital and can introduce us.', 'your sister'],
+      ['My dad is a doctor and wants to invest.', 'your dad'],
+      ['Our insole helps patients who have diabetes.', 'your insole'],
+      ['I want to stop and think about pricing.', 'your plan to stop and think about pricing'],
+    ] as const) {
+      expect(topicOf(line)?.text ?? null, line).toBe(text);
+    }
+  });
+
+  it('isVenting: a subject said to the founder that vents, withdraws or speaks of their private health', () => {
+    for (const subject of [
+      'your plan to see your therapist',
+      'your plan to talk to your therapist',
+      'your plan to see a counselor',
+      'your anxiety',
+      'your burnout',
+      'quitting the startup',
+      'taking a break from the startup',
+      'your plan to quit',
+      'your plan to step back',
+      'your plan to take a break',
+      'your plan to talk to someone',
+      'your plan to talk to someone about it',
+      'your plan to give up on your startup',
+      'whether to give up',
+      'whether to see a doctor',
+      "your dad's cancer",
+      'falling apart',
+      'losing hope',
+      'tired of this',
+    ]) {
+      expect(isVenting(subject), subject).toBe(true);
+    }
+    expect(isVenting("the founder's anxiety")).toBe(true);
+    expect(isVenting("Maya's burnout", 'Maya')).toBe(true);
+    for (const subject of [
+      'your mental health app',
+      'your anxiety tracking feature',
+      'your plan to talk to someone at procurement',
+      'your plan to see a doctor at Mercy Clinic',
+      'failing the security audit',
+      "your cofounder's plan to quit",
+      'whether the numbers add up',
+      'your plan to give up the office lease',
+    ]) {
+      expect(isVenting(subject), subject).toBe(false);
+    }
+  });
+
+  it('keeps the timing a question asks about, whoever asks it', () => {
+    for (const subject of [
+      'whether we should raise now',
+      'whether you should raise now',
+      'whether the team should hire now',
+      'whether we should hire later',
+      'whether to end the free pilot early',
+      'raising first and hiring later',
+      'your plan to ship the map first and the booking later',
+    ]) {
+      expect(withoutDiscourseWords(subject), subject).toBe(subject);
+      expect(readsAsSubject(subject), subject).toBe(true);
     }
   });
 });

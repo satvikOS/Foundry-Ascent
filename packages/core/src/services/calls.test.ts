@@ -794,9 +794,9 @@ describe('the next call’s greeting after a founder line (the voice suite on 9a
     /\b(?:instead|too|also|anyway|though|then|again|either|yet|already|now|later|first|really|maybe|probably|just|actually|basically|honestly|well|something)\?$/i;
   const DAYS_AND_MONTHS =
     /^(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|January|February|March|April|May|June|July|August|September|October|November|December|Thanksgiving)$/;
-  /** Ends of a greeting where a discourse word is what the founder meant. */
+  /** Ends of a greeting where a discourse word is what the founder meant (a sequence: "first and … later"). */
   const KEPT_TAIL =
-    /\b(?:or|than|vs|versus) \S+\?$|\b(\S+) or \S+ \1\?$|\bbreak even\?$|\bpay later\?$|\bput(?:ting)? (?:\S+ ){1,3}first\?$|\bto \S+ (?:now|later|first|again|already|yet)\?$|\bAPI first\?$|\byour (?:plan|decision) to .+ again\?$/;
+    /\b(?:or|than|vs|versus) \S+\?$|\b(\S+) or \S+ \1\?$|\bbreak even\?$|\bpay later\?$|\bput(?:ting)? (?:\S+ ){1,3}first\?$|\bto \S+ (?:now|later|first|again|already|yet)\?$|\bAPI first\?$|\byour (?:plan|decision) to .+ again\?$|\b(?:first|now) and (?:\S+ ){1,4}(?:later|now|first)\?$/;
   /** Names of the table's lines that are everyday words or end in -ing ("Sterling Capital", "Viking Global"). */
   const NAMES = new Set(['Sterling', 'Pershing', 'Redding', 'Viking', 'Kipling', 'Boeing', 'Beijing']);
 
@@ -1157,6 +1157,178 @@ describe('the next call’s greeting after a founder line (the voice suite on 9a
       expect(stored).toBe(chosen);
       expect(said === null ? chosen === INVITATION : chosen.endsWith(` ${said}?`), chosen).toBe(true);
     }
+  });
+
+  it.each([
+    // The differential review of 6656c33 (each greeting as on main, or closer to what the founder meant): withdrawing
+    // and distress never said back, a venture in health keeps its lines, the timing a plan or a question is about kept.
+    ["I'm going to tell Sam I'm out.", INVITATION],
+    [
+      'We need to talk to someone at procurement.',
+      'Hi Maya, shall we pick up your plan to talk to someone at procurement?',
+    ],
+    [
+      'I need to speak to someone in IT about SSO.',
+      'Hi Maya, shall we pick up your plan to speak to someone in IT about SSO?',
+    ],
+    [
+      'I want to talk to someone at the bank about a loan.',
+      'Hi Maya, shall we pick up your plan to talk to someone at the bank about a loan?',
+    ],
+    [
+      'I want to speak with someone at Hartwell about the pilot.',
+      'Hi Maya, shall we pick up your plan to speak with someone at Hartwell about the pilot?',
+    ],
+    [
+      'I want to talk to someone about the pricing.',
+      'Hi Maya, shall we pick up your plan to talk to someone about the pricing?',
+    ],
+    [
+      'I need to call a doctor at Mercy Clinic about the insole pilot.',
+      'Hi Maya, shall we pick up your plan to call a doctor at Mercy Clinic?',
+    ],
+    [
+      'I am going to see a physician at the clinic to test the insole.',
+      'Hi Maya, shall we pick up your plan to see a physician at the clinic to test the insole?',
+    ],
+    [
+      'We need to call a psychiatrist for the clinical advisory board.',
+      'Hi Maya, shall we pick up your plan to call a psychiatrist?',
+    ],
+    [
+      'I need to talk to a psychologist about the survey questions for our mental health app.',
+      'Hi Maya, shall we pick up your mental health app?',
+    ],
+    [
+      'Our anxiety tracking feature is getting traction.',
+      'Hi Maya, shall we pick up your anxiety tracking feature?',
+    ],
+    [
+      'My mental health startup got into the accelerator!',
+      'Hi Maya, shall we pick up your mental health startup?',
+    ],
+    ['Our therapy chatbot got 200 users in a week.', 'Hi Maya, shall we pick up your therapy chatbot?'],
+    ['Our diagnosis feature needs FDA clearance.', 'Hi Maya, shall we pick up your diagnosis feature?'],
+    [
+      'We are going into therapy clinics next month with the pilot.',
+      'Hi Maya, shall we pick up therapy clinics?',
+    ],
+    ['We sell into therapy practices.', 'Hi Maya, shall we pick up therapy practices?'],
+    [
+      'Should we end the free pilot early?',
+      'Hi Maya, where did you land on whether to end the free pilot early?',
+    ],
+    ['Should we hire a designer early?', 'Hi Maya, where did you land on whether to hire a designer early?'],
+    [
+      'We need to ship the map first and the booking later.',
+      'Hi Maya, shall we pick up your plan to ship the map first and the booking later?',
+    ],
+    [
+      'Should we raise first and hire later?',
+      'Hi Maya, where did you land on whether to raise first and hire later?',
+    ],
+    ["nobody's paying yet", INVITATION],
+    ["nothing's working anyway", INVITATION],
+    ['Sam redid my whole design without asking.', INVITATION],
+    ["Sam redid my whole design without asking and I'm so annoyed.", INVITATION],
+    // Their own health, their family's, withdrawing from the venture: never said back.
+    ['My dad has cancer and I need to be with him.', INVITATION],
+    ['My grandma passed away last week.', INVITATION],
+    ['I got diagnosed with ADHD.', INVITATION],
+    ['My mum is in hospital so I have to go home this week.', INVITATION],
+    ['I have a doctor appointment on Friday.', INVITATION],
+    ["I'm thinking of leaving the startup to join Google.", INVITATION],
+    ['I need to take a break from the startup to focus on exams.', INVITATION],
+    ["I'm going to shut it down after the summer.", INVITATION],
+    ['I want to quit and get a normal job.', INVITATION],
+    ['I want to sell my shares and leave.', INVITATION],
+  ])('the differential review of 6656c33: %s', (line, expected) => {
+    expect(nextGreeting(line, 'a').chosen).toBe(expected);
+    const said = /^Hi Maya, (?:shall we pick up|where did you land on) (.+)\?$/.exec(expected)?.[1] ?? null;
+    for (const seed of SEEDS) {
+      const { chosen, stored } = nextGreeting(line, seed);
+      expectNatural(chosen);
+      expect(stored).toBe(chosen);
+      expect(said === null ? chosen === INVITATION : chosen.endsWith(` ${said}?`), chosen).toBe(true);
+    }
+  });
+
+  it('keeps a name’s capital and splices no name with its verb (the differential review of 6656c33)', () => {
+    // Before: "sam's text", "sam redid", said on the stored path as well.
+    expect(nextGreeting("Sam's text literally said 'I think I'm out'.", 'a').chosen).toBe(
+      "Hi Maya, shall we pick up Sam's text?",
+    );
+    expect(nextGreeting('Devin heard back from the student union.', 'a').chosen).not.toMatch(/heard/);
+  });
+
+  it('never greets around a stored opener or a subject that vents, withdraws or is private (the differential review of 6656c33)', () => {
+    const greet = (opener: string, subject?: OpenerSubject) =>
+      repeatGreetingOf({
+        firstName: 'Maya',
+        opener,
+        ...(subject === undefined ? {} : { subject }),
+        conversationStarted: false,
+        seed: 'a',
+      }).text;
+    for (const opener of [
+      'Welcome back. Last time, we talked about whether to give up. Where did you land on it?',
+      'Welcome back. Last time, we talked about whether you are burning out. Where did you land on it?',
+      "Welcome back. Last time you said you'd give up. How did it go?",
+      'Good to talk again. Last time you were going to drop out. Any news?',
+      'Welcome back. Last time, we left off on your plan to back out. Where are things now?',
+      "Welcome back. Last time you said you'd see your therapist. How did it go?",
+      "Welcome back. Last time you said you'd quit. How did it go?",
+      "Welcome back. Last time you said you'd talk to someone. How did it go?",
+      "Welcome back. Last time you said you'd take a break. How did it go?",
+      "Welcome back. Last time you said you'd step back. How did it go?",
+    ]) {
+      expect(greet(opener), opener).toBe('Hi Maya, what would you like to work on?');
+    }
+    // A subject chosen with the opener: never said, and neither is the opener built around it.
+    for (const [kind, text] of [
+      ['topics', 'your plan to give up'],
+      ['question', 'whether to drop out'],
+      ['question', 'whether you are burning out'],
+      ['topics', 'your plan to sign off'],
+      ['topics', 'your plan to cash out'],
+      ['thread', 'your plan to see your therapist'],
+      ['topics', "the founder's anxiety"],
+      ['topics', "Maya's burnout"],
+      ['topics', 'quitting the startup'],
+    ] as const) {
+      const opener = `Good to talk again. Last time (yesterday), we talked about ${text}. How has it gone since?`;
+      expect(greet(opener, { kind, text }), text).toBe('Hi Maya, what would you like to work on?');
+    }
+    // The timing or the manner a stored plan is about stays.
+    for (const [opener, expected] of [
+      [
+        "Good to talk again. Last time you said you'd hire later. Still the plan?",
+        'Hi Maya, did you get to hire later?',
+      ],
+      [
+        'Good to talk again. Last time you were going to hire slowly. Any news?',
+        'Hi Maya, did you get to hire slowly?',
+      ],
+      [
+        "Welcome back. Last time you said you'd sign the contract early. How did it go?",
+        'Hi Maya, did you get to sign the contract early?',
+      ],
+      [
+        "Welcome back. Last time you said you'd follow up. How did it go?",
+        'Hi Maya, did you get to follow up?',
+      ],
+    ] as const) {
+      expect(greet(opener), opener).toBe(expected);
+    }
+    expect(
+      greet(
+        'Good to talk again. Last time (yesterday), we talked about whether we should raise now. Where did you land on it?',
+        {
+          kind: 'question',
+          text: 'whether you should raise now',
+        },
+      ),
+    ).toBe('Hi Maya, where did you land on whether you should raise now?');
   });
 
   it('greets around "pric…" after "We are weighing per-library pricing for the pilot." (e2e calls.spec.ts:518)', () => {

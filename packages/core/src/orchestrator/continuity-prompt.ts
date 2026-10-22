@@ -11,6 +11,7 @@ import {
   addressFounder,
   isClauseFragment,
   isTopicLine,
+  isVenting,
   readsAsSubject,
   topicOf,
   topicWords,
@@ -400,10 +401,11 @@ const ASKED = /^(?:whether\s|(?:how|what|which|when|where|who)\s+to\s)/i;
  * tell my cofounder"): said by the vEIR, it would be its own job and its own life (the presence policy; the review of
  * e9e49fb heard "Hi Maya, where did you land on whether I should quit my job?"). `topicOf` says a question to the
  * founder ("whether you should…", "your cofounder"), so one in the first person quotes their line: a fragment. Case
- * matters for "us": "the US market" is no one.
+ * matters for "us": "the US market" is no one; nor is a numeral after a name ("a Phase I trial", "a Class I device",
+ * "I-9 forms": the differential review of 6656c33).
  */
 const FIRST_PERSON =
-  /(?<![\p{L}'’])(?:[Ii](?:['’](?:m|ve|ll|d))?|[Mm](?:e|y|ine|yself)|[Ww]e(?:['’](?:re|ve|ll|d))?|us|[Oo]urs?)(?![\p{L}'’])/u;
+  /(?<![\p{L}'’])(?:(?<!\b(?:Phase|Class|Type|Stage|Tier|Grade|Part|Level|Series|Schedule|Category|Title|Chapter|Section|Article|Volume|Act)\s)[Ii](?:['’](?:m|ve|ll|d))?(?!-)|[Mm](?:e|y|ine|yself)|[Ww]e(?:['’](?:re|ve|ll|d))?|us|[Oo]urs?)(?![\p{L}'’])/u;
 
 /** Longest phrase read from a stored opener (a greeting shortens it to fit; see calls.ts `repeatGreeting`). */
 const OPENER_PHRASE_CHARS = 120;
@@ -413,12 +415,17 @@ const OPENER_PHRASE_CHARS = 120;
  * `fragment` when it has one of those shapes around a clause cut from the founder's line, or around words that do not
  * read as a subject (`readsAsSubject`: "we talked about January"), never said again; null for any other sentence.
  * "Said you'd X", "were going to X" and "planned to X" are a plan: `your plan to X`. The phrase is read without the
- * adverbs at its ends ("we talked about a short pilot instead" is about "a short pilot": the voice suite on 9a2a41f)
- * and with its numbers whole ("$1.5M", "$1,200").
+ * adverbs at its ends ("we talked about a short pilot instead" is about "a short pilot": the voice suite on 9a2a41f),
+ * a plan's with the timing or the manner that is all its verb has ("you said you'd hire later" is "your plan to hire
+ * later", never "your plan to hire": the differential review of 6656c33), and with its numbers whole ("$1.5M",
+ * "$1,200"). A subject that vents, withdraws from the venture or speaks of the founder's private health ("you said
+ * you'd see your therapist", "we talked about whether to give up": `isVenting`) is a fragment, never said again.
  */
 export function readOpener(text: string): OpenerSubject | 'fragment' | null {
   const read = readOpenerShape(text);
-  return read === null || read === 'fragment' || readsAsSubject(read.text) ? read : 'fragment';
+  return read === null || read === 'fragment' || (readsAsSubject(read.text) && !isVenting(read.text))
+    ? read
+    : 'fragment';
 }
 
 /** {@link readOpener} before its subject is checked. */
@@ -428,9 +435,11 @@ function readOpenerShape(text: string): OpenerSubject | 'fragment' | null {
   const phrase = (
     raw: string | undefined,
     question = false,
+    verbPhrase = false,
   ): { readonly cut: string } | 'fragment' | null => {
     const cut = withoutDiscourseWords(
       (raw ?? '').split(/(?<!\d)[.:]|[.:](?!\d)|[!?;]|,\s|\s—\s|\s-\s/)[0]?.trim() ?? '',
+      verbPhrase,
     );
     if (cut === '' || cut.length > OPENER_PHRASE_CHARS || topicWords(cut).length === 0) return null;
     const asked = question && ASKED.test(cut);
@@ -443,10 +452,11 @@ function readOpenerShape(text: string): OpenerSubject | 'fragment' | null {
       flat,
     );
   if (planned !== null) {
-    const what = phrase(planned[3]);
-    if (what === null || what === 'fragment') return what;
     // "said you'd email the dean": a plan, never a noun phrase ("how did email the dean go?").
-    if (planned[2] !== undefined || /^said/i.test(planned[1] ?? '')) {
+    const plan = planned[2] !== undefined || /^said/i.test(planned[1] ?? '');
+    const what = phrase(planned[3], false, plan);
+    if (what === null || what === 'fragment') return what;
+    if (plan) {
       return { kind: 'thread', text: `your plan to ${what.cut}` };
     }
     if (!/^planned$/i.test(planned[1] ?? '')) return null;
@@ -542,7 +552,11 @@ export function subjectOf(
   if (options.foundersOwn !== true) {
     const topics = (c.digest?.topics ?? [])
       .map((t) => addressFounder(withoutDiscourseWords(midSentence(t).replace(/[.!?]+$/, '')), people))
-      .filter((t): t is string => t !== null && t !== '' && t.length <= 60 && options.avoid?.(t) !== true);
+      // Never the founder venting or their private health, distilled as a topic ("your burnout").
+      .filter(
+        (t): t is string =>
+          t !== null && t !== '' && t.length <= 60 && !isVenting(t) && options.avoid?.(t) !== true,
+      );
     const joined = topics.slice(0, 2).join(' and ');
     if (topics.length > 0 && readsAsSubject(joined)) return { kind: 'topics', text: joined };
   }
@@ -653,9 +667,12 @@ export function continuityOpener(
  */
 export function threadSubject(topic: string, people: OpenerPeople = { founder: null }): string | null {
   // Distilled about the founder ("the facility budget numbers maya will get"): said to them, or not at all (LAB-U2);
-  // without an adverb at its ends ("the short pilot instead").
+  // without an adverb at its ends ("the short pilot instead"); never the founder venting, withdrawing or their private
+  // health ("your plan to see your therapist", "quitting the startup": the differential review of 6656c33).
   const thread = addressFounder(withoutDiscourseWords(midSentence(topic).replace(/[.!?]+$/, '')), people);
-  return thread === null || !readsAsSubject(thread) || thread.length > 120 ? null : thread;
+  return thread === null || !readsAsSubject(thread) || isVenting(thread) || thread.length > 120
+    ? null
+    : thread;
 }
 
 /**

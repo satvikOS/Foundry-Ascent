@@ -43,6 +43,7 @@ import { type DirectoryCache } from '../internal/directory.js';
 import { readOpener, type OpenerSubject } from '../orchestrator/continuity-prompt.js';
 import {
   endsOnItsVerb,
+  isVenting,
   readsAsSubject,
   topicWords,
   withoutDiscourseWords,
@@ -305,7 +306,9 @@ export function repeatGreetingOf(args: {
     line.length <= REPEAT_GREETING_MAX_CHARS && sentencesOf(line).length === 1;
   const read = args.opener === null ? null : readOpener(args.opener);
   const subject = args.subject !== undefined ? args.subject : read === 'fragment' ? null : read;
-  const forms = subject === null ? [] : shorterSubjects(subject.text);
+  // A subject that vents or speaks of the founder's private health is never said, nor the opener built around it.
+  const forms =
+    subject === null || isVenting(subject.text, args.firstName) ? [] : shorterSubjects(subject.text);
   // An opener chosen around words that are no subject was built around a fragment: neither is said.
   const fragment = read === 'fragment' || (subject !== null && forms.length === 0);
   const candidates: string[] = [];

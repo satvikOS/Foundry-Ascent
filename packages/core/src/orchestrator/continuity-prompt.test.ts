@@ -596,3 +596,157 @@ describe('the frame of every opener raises no thread of its own (kept in step wi
     }
   });
 });
+
+describe('the differential review of 6656c33: a stored opener, a thread or a digest topic never vents', () => {
+  const PEOPLE = { founder: 'Maya Patel', team: ['Maya Patel', 'Noor Haddad', 'Devin Okafor'] };
+
+  it('reads a stored opener about withdrawing, distress or the founder’s private health as a fragment', () => {
+    for (const text of [
+      // Before: "where did you land on whether to give up?", "did you get to drop out?".
+      'Welcome back. Last time, we talked about whether to give up. Where did you land on it?',
+      'Welcome back. Last time, we talked about whether to drop out. Where did you land on it?',
+      'Welcome back. Last time, we talked about whether you want to give up. Where did you land on it?',
+      'Welcome back. Last time, we talked about whether to step down. Where did you land on it?',
+      'Welcome back. Last time, we talked about whether to shut it down. Where did you land on it?',
+      'Welcome back. Last time, we talked about whether you are burning out. Where did you land on it?',
+      'Good to have you back. When we last spoke (last week), we talked about whether to give up. How has it gone since?',
+      "Welcome back. Last time you said you'd give up. How did it go?",
+      'Good to talk again. Last time you were going to give up. Any news?',
+      'Welcome back. Last time you planned to give up. How did it go?',
+      "Welcome back. Last time you said you'd drop out. How did it go?",
+      'Good to talk again. Last time you were going to drop out. Any news?',
+      'Welcome back. Last time you planned to drop out. How did it go?',
+      'Welcome back. I wanted to come back to your plan to give up. How is it going?',
+      'Welcome back. I wanted to come back to your plan to drop out. How is it going?',
+      'Welcome back. Last time, we left off on your plan to back out. Where are things now?',
+      // Never said on this path before either: "did you get to see your therapist?", "did you get to quit?".
+      "Welcome back. Last time you said you'd see your therapist. How did it go?",
+      "Welcome back. Last time you said you'd quit. How did it go?",
+      "Welcome back. Last time you said you'd talk to someone. How did it go?",
+      "Welcome back. Last time you said you'd take a break. How did it go?",
+      "Welcome back. Last time you said you'd step back. How did it go?",
+      'Good to talk again. Last time (yesterday), we talked about your plan to talk to your therapist. Where did you land on it?',
+      'Good to talk again. Last time (yesterday), we talked about giving up on your startup. Where did you land on it?',
+      "Welcome back. Last time, we talked about nobody's paying. How has it gone since?",
+    ]) {
+      expect(readOpener(text), text).toBe('fragment');
+    }
+    // Something of the venture, a health venture's product included, is still said.
+    expect(
+      readOpener('Welcome back. Last time, we talked about your mental health app. How has it gone since?'),
+    ).toEqual({ kind: 'topics', text: 'your mental health app' });
+    expect(
+      readOpener(
+        'Welcome back. Last time, we talked about failing the security audit. How has it gone since?',
+      ),
+    ).toEqual({ kind: 'topics', text: 'failing the security audit' }); // A numeral after a name is no founder's "I" (a medical-device venture's "Phase I trial", "Class I device"); the
+    // founder's own "I" still is.
+    for (const question of [
+      'whether to run a Phase I trial',
+      'whether the insole is a Class I device',
+      'whether to file the I-9 forms',
+    ]) {
+      expect(
+        readOpener(`Welcome back. Last time, we talked about ${question}. Where did you land on it?`),
+        question,
+      ).toEqual({ kind: 'question', text: question });
+    }
+    expect(
+      readOpener(
+        'Welcome back. Last time, we talked about how to tell Sam I want to lead product. Where did you land on it?',
+      ),
+    ).toBe('fragment');
+  });
+
+  it('reads a stored plan with the timing or the manner that is all its verb has', () => {
+    // Before: "did you get to hire?" for a plan to hire later, "did you get to sign the contract?".
+    for (const [text, plan] of [
+      ["Good to talk again. Last time you said you'd hire later. Still the plan?", 'your plan to hire later'],
+      ['Good to talk again. Last time you were going to hire later. Any news?', 'your plan to hire later'],
+      ['Welcome back. Last time you planned to hire later. How did it go?', 'your plan to hire later'],
+      ["Welcome back. Last time you said you'd hire slowly. How did it go?", 'your plan to hire slowly'],
+      ['Good to talk again. Last time you were going to hire slowly. Any news?', 'your plan to hire slowly'],
+      [
+        "Welcome back. Last time you said you'd sign the contract early. How did it go?",
+        'your plan to sign the contract early',
+      ],
+      [
+        'Welcome back. Last time you planned to sign the contract early. How did it go?',
+        'your plan to sign the contract early',
+      ],
+      [
+        "Welcome back. Last time you said you'd ship the map first and the booking later. How did it go?",
+        'your plan to ship the map first and the booking later',
+      ],
+      ['Good to talk again. Last time you were hoping to launch now. Did you?', 'your plan to launch now'],
+      [
+        'Welcome back. Last time you planned to run the pilot remotely. How did it go?',
+        'your plan to run the pilot remotely',
+      ],
+    ] as const) {
+      expect(readOpener(text), text).toEqual({ kind: 'thread', text: plan });
+    }
+  });
+
+  it('never makes a thread or a digest topic of venting, withdrawing or private health', () => {
+    for (const topic of [
+      'your plan to give up',
+      'whether to give up',
+      'whether you want to give up',
+      'your plan to drop out',
+      'whether you are burning out',
+      'whether to shut it down',
+      'how to calm down',
+      'your plan to freak out',
+      'your plan to step down',
+      'your plan to break up',
+      'your plan to sign off',
+      'your plan to cash out',
+      'your plan to see your therapist',
+      "the founder's anxiety",
+      "Maya's burnout",
+      'quitting the startup',
+      'your plan to quit',
+      'falling apart',
+      'tired of this',
+    ]) {
+      expect(threadSubject(topic, PEOPLE), topic).toBeNull();
+      expect(threadOpener(topic, { seed: 'a', when: 'yesterday', people: PEOPLE }), topic).toBeNull();
+      const c = conversation({
+        exchanges: [],
+        title: null,
+        digest: { summary: '', topics: [topic], commitments: [], openQuestions: [] },
+      });
+      expect(subjectOf(c, PEOPLE), topic).toBeNull();
+      expect(continuityOpener(c, { now: NOW, seed: 'a', people: PEOPLE }).withTopic, topic).toBeNull();
+    }
+  });
+
+  it('keeps the timing a digest topic or a thread asks about', () => {
+    for (const [topic, said] of [
+      ['whether we should raise now', 'whether we should raise now'],
+      ['whether you should raise now', 'whether you should raise now'],
+      ['whether the team should hire now', 'whether the team should hire now'],
+      ['whether Maya should launch now', 'whether you should launch now'],
+      ['whether we should hire later', 'whether we should hire later'],
+      ['whether to end the free pilot early', 'whether to end the free pilot early'],
+      ['raising first and hiring later', 'raising first and hiring later'],
+      [
+        'your plan to ship the map first and the booking later',
+        'your plan to ship the map first and the booking later',
+      ],
+      ['whether the numbers add up', 'whether the numbers add up'],
+      ['your plan to follow up', 'your plan to follow up'],
+    ] as const) {
+      expect(threadSubject(topic, PEOPLE), topic).toBe(said);
+      const c = conversation({
+        exchanges: [],
+        title: null,
+        digest: { summary: '', topics: [topic], commitments: [], openQuestions: [] },
+      });
+      expect(continuityOpener(c, { now: NOW, seed: 'a', people: PEOPLE }).withTopic, topic).toContain(
+        `we talked about ${said}.`,
+      );
+    }
+  });
+});
