@@ -1,12 +1,16 @@
 import {
   MAX_PROMPT_DIGESTS,
   firstNameOf,
+  isAboutThread,
   isNearDuplicate,
   lastQuestionOf,
+  mentions,
   rewriteIdentity,
   sanitizePlainText,
   textsContainOtherVenture,
+  threadWords,
   truncate,
+  untakenThread,
   type PromptContinuity,
 } from '@foundry/ai';
 import { notebooksRepo, personasRepo, principalsRepo, sessionsRepo, type AppExecutor } from '@foundry/db';
@@ -25,6 +29,7 @@ import {
   type LeftOffData,
   type LeftOffThreads,
   type OpenerSubject,
+  type SubjectOptions,
 } from './continuity-prompt.js';
 import { addressFounder, properNounsIn, topicWords, type OpenerPeople } from './opener-topic.js';
 
@@ -249,6 +254,7 @@ export async function loadLeftOff(
         .filter((x) => x.sessionId === c.id && c.completedTurns - x.fromEnd + 1 > c.distillVersion)
         .map((x) => ({ founder: x.founderText, answer: x.answer })),
       said: exchanges.filter((x) => x.sessionId === c.id).map((x) => x.founderText),
+      opener: c.opener,
     })),
   };
 }
@@ -279,6 +285,8 @@ export interface ChosenOpener {
 
 /** Exchanges read to tell whether a stored opener only repeats a question the vEIR already asked. */
 const OPENER_ECHO_EXCHANGES = 3;
+/** Founder messages read to tell whether they took up what their latest conversation opened with. */
+const TAKE_UP_EXCHANGES = 20;
 
 /**
  * The vEIR's opening line for a new standard conversation of `principalId` (its first bubble, and what a call says
@@ -295,6 +303,12 @@ const OPENER_ECHO_EXCHANGES = 3;
  *    what about), built without a model call from what was said, so it is right even before distillation ran
  *    (orchestrator/continuity-prompt.ts);
  * 4. an older notebook opener.
+ * A thread the person's latest conversation opened on and they never took up there (none of their messages holds two
+ * of its words, nor did they answer it with a short yes: `@foundry/ai` `untakenThread`) is never opened on again,
+ * whether it comes back as the notebook's opener, its next topic or that conversation's own subject: the line picks
+ * up what they brought there instead (their news, else their latest topic), or else invites them plainly (lab run
+ * 39780304879, and production 2026-10-16…20: three openers in a row came back to the advisor session the founder
+ * never took up). A line a person wrote stays theirs (step 1).
  * Every distilled line is said to the person (`addressFounder`: "maya will get" becomes "you will get"; a line still
  * in the third person is not said), with the team's names in their real case (`team`; LAB-U2). A notebook opener
  * drawn from a teammate's conversation is never said to the person as theirs ("Last time you planned…" was a
@@ -372,6 +386,20 @@ export async function chooseOpener(
       ).personEdits.includes(notebooksRepo.OPENER_EDIT));
   if (stored !== null && chosen && !fromSomeoneElse)
     return found({ text: stored, sourceSessionId: source ?? null, byPerson: source === null });
+  // What the latest conversation opened on, when the founder never took it up there: not opened on again.
+  const names = [
+    principal?.displayName ?? null,
+    args.persona.name,
+    guards.personaEirName,
+    ...guards.eirNames,
+  ].filter((n): n is string => n !== null && n !== '');
+  const heard = latest === null ? null : await founderLinesOf(tx, latest.sessionId);
+  const untaken = latest === null || heard === null ? null : untakenOpening(latest, heard, names);
+  const reopens = (text: string | null | undefined): boolean =>
+    untaken !== null && text !== null && text !== undefined && isAboutThread(text, untaken, names);
+  const topic = notebook?.content.nextTopic ?? null;
+  // The founder's news or latest topic in their own words, never the thread they left aside.
+  const pickUp: SubjectOptions = untaken === null ? {} : { avoid: reopens, foundersOwn: true };
   // Conversations the person opened since the latest one without saying anything: each opens differently, and
   // the stored line, once said in one of them, is not said again word for word.
   const since =
@@ -391,10 +419,15 @@ export async function chooseOpener(
   // not distilled, however late the older one's distillation finished (LAB-R6c: a call right after a chat opened with
   // the earlier call's topic, because the call's distillation wrote the notebook after the chat's last turn).
   const latestDistilled = latest !== null && latest.digest !== null && latest.exchanges.length === 0;
+  // Kept by the latest conversation's distillation only when the founder spoke of that thread there: one an older
+  // conversation left that the latest never touched is stale, however recently it was written back (lab run
+  // 39780304879: a chat's distillation copied the previous opener, and the next chat opened on it again).
+  const kept = threadWords(topic ?? next ?? '', names);
+  const keptByLatest = kept.size === 0 || mentions(kept, heard?.lines ?? []);
   const current =
     latest === null ||
     source === latest.sessionId ||
-    ((source === undefined || latestDistilled) &&
+    ((source === undefined || (latestDistilled && keptByLatest)) &&
       latest.withThisVeir &&
       notebook?.updatedAt != null &&
       Date.parse(notebook.updatedAt) > Date.parse(latest.lastActivityAt));
@@ -407,14 +440,13 @@ export async function chooseOpener(
   });
   // The founder's news in their latest conversation comes first: a stored line that does not name it (the coach's
   // framing, "anchoring the pilot price") gives way to a line around the news (LAB-R6b).
-  const news = latest === null ? null : newsSubjectOf(latest, people);
+  const news = latest === null ? null : newsSubjectOf(latest, people, pickUp);
   const namesNews =
     news === null ||
-    topicWords(`${stored ?? ''} ${notebook?.content.nextTopic ?? ''}`).some((w) =>
-      topicWords(news.text).includes(w),
-    );
-  if (stored !== null && current && !fromSomeoneElse && namesNews) {
-    const topic = notebook?.content.nextTopic ?? null;
+    topicWords(`${stored ?? ''} ${topic ?? ''}`).some((w) => topicWords(news.text).includes(w));
+  // The notebook's line or thread comes back to what the founder left aside: neither is said.
+  const leftAside = reopens(next) || reopens(topic);
+  if (stored !== null && current && !fromSomeoneElse && namesNews && !leftAside) {
     const around =
       topic === null
         ? null
@@ -437,8 +469,8 @@ export async function chooseOpener(
     }
   }
   if (latest !== null) {
-    const lines = continuityOpener(latest, { now: args.now, seed, people });
-    const subject = latest.withThisVeir ? subjectOf(latest, people) : null;
+    const lines = continuityOpener(latest, { now: args.now, seed, people, subject: pickUp });
+    const subject = latest.withThisVeir ? subjectOf(latest, people, pickUp) : null;
     for (const [candidate, about] of [
       [lines.withTopic, subject],
       [lines.generic, null],
@@ -448,7 +480,38 @@ export async function chooseOpener(
         return found({ text, sourceSessionId: latest.sessionId, byPerson: false, subject: about });
     }
   }
-  return found(stored === null || fromSomeoneElse ? null : drawn(stored));
+  return found(stored === null || fromSomeoneElse || leftAside ? null : drawn(stored));
+}
+
+/** The founder's messages in a conversation, oldest first, and whether that is all of them. */
+interface FounderLines {
+  readonly lines: readonly string[];
+  readonly complete: boolean;
+}
+
+/** The founder's last {@link TAKE_UP_EXCHANGES} messages in `sessionId` (one indexed statement). */
+async function founderLinesOf(tx: AppExecutor, sessionId: string): Promise<FounderLines> {
+  const exchanges = await sessionsRepo.listLastExchanges(tx, {
+    sessionIds: [sessionId],
+    perSession: TAKE_UP_EXCHANGES,
+  });
+  return { lines: exchanges.map((x) => x.founderText), complete: exchanges.length < TAKE_UP_EXCHANGES };
+}
+
+/**
+ * The thread `latest` opened on (its stored opener: the first bubble, or what a call's greeting said) when the founder
+ * took it up in none of their messages there (`untakenThread`), as its words; null when it opened with nothing, with
+ * a plain invitation, or they took it up. A short yes counts only as the reply right after the opener, so it is not
+ * counted when the first messages were not read.
+ */
+function untakenOpening(
+  latest: LeftOffConversationData,
+  heard: FounderLines,
+  names: readonly string[],
+): Set<string> | null {
+  const opener = latest.opener ?? null;
+  if (opener === null) return null;
+  return untakenThread(opener, heard.complete ? heard.lines : ['', ...heard.lines], names);
 }
 
 /** Whether `opener` repeats a question the vEIR asked in one of the last answers of the conversation. */

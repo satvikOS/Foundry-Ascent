@@ -9,7 +9,9 @@ import {
 
 import {
   addressFounder,
+  isClauseFragment,
   isTopicLine,
+  readsAsSubject,
   topicOf,
   topicWords,
   type LineTopic,
@@ -94,6 +96,11 @@ export interface LeftOffConversationData {
    * names, worries) comes first in a recall and an opener, before the coach's framing (LAB-R6b, RC-01).
    */
   readonly said?: readonly string[];
+  /**
+   * What it opened with (its first bubble, or what a call's greeting said); null or absent when nothing. A new
+   * conversation never opens again on a thread the founder did not take up there (continuity.ts `chooseOpener`).
+   */
+  readonly opener?: string | null;
 }
 
 export interface LeftOffData {
@@ -380,35 +387,25 @@ export interface OpenerSubject {
   readonly text: string;
 }
 
-/** Words a clause opens with, never a noun phrase said mid-sentence: subject pronouns and their contractions. */
-const CLAUSE_START =
-  /^(?:i|i'm|i've|i'll|i'd|we|we're|we've|we'll|we'd|you|you're|you've|you'll|you'd|they|they're|they've|they'll|they'd|he|he's|he'll|he'd|she|she's|she'll|she'd|it|it's|it'll|it'd|that's|there's|let's)(?![\p{L}'])/iu;
 /** Question words: a phrase opening with one is a clause ("where we left off yesterday"), unless it is the question. */
 const WH_START = /^(?:where|what|when|who|whom|why|how|which|whether)(?![\p{L}'])/iu;
-/** A subject pronoun with its verb anywhere ("the union said they'll promote us"): a clause, not a phrase. */
-const PRONOUN_CLAUSE =
-  /(?<![\p{L}'])(?:i|we|you|they|he|she|it)(?:'(?:ll|re|ve|d|m|s)|\s+(?:will|would|are|were|have|had|is|was|am|can|could|should|did|do|does|said|say|says))(?![\p{L}'])/iu;
-
-/**
- * Whether `phrase` (the words an opener says it was about) is a clause cut from a sentence rather than something to
- * name mid-sentence (LAB-R3b, "we left off on They'll promote QuietQuad"): it opens with a pronoun or a capitalised
- * everyday word (a sentence's first word), or a pronoun and its verb sit in it.
- */
-function isClauseFragment(phrase: string): boolean {
-  if (CLAUSE_START.test(phrase) || PRONOUN_CLAUSE.test(phrase)) return true;
-  const first = /^\p{Lu}[\p{Ll}'’-]+(?![\p{L}])/u.exec(phrase)?.[0];
-  return first !== undefined && isEverydayWord(first.replace(/['’]s$/, ''));
-}
 
 /** Longest phrase read from a stored opener (a greeting shortens it to fit; see calls.ts `repeatGreeting`). */
 const OPENER_PHRASE_CHARS = 120;
 
 /**
  * What a stored opening sentence is about, read from the shapes openers take, or why it cannot be said: a subject;
- * `fragment` when it has one of those shapes around a clause cut from the founder's line (never said again); null
- * for any other sentence. "Said you'd X", "were going to X" and "planned to X" are a plan: `your plan to X`.
+ * `fragment` when it has one of those shapes around a clause cut from the founder's line, or around words that do not
+ * read as a subject (`readsAsSubject`: "we talked about January"), never said again; null for any other sentence.
+ * "Said you'd X", "were going to X" and "planned to X" are a plan: `your plan to X`.
  */
 export function readOpener(text: string): OpenerSubject | 'fragment' | null {
+  const read = readOpenerShape(text);
+  return read === null || read === 'fragment' || readsAsSubject(read.text) ? read : 'fragment';
+}
+
+/** {@link readOpener} before its subject is checked. */
+function readOpenerShape(text: string): OpenerSubject | 'fragment' | null {
   const flat = text.replace(/[‘’ʼ]/g, "'").replace(/\s+/g, ' ').trim();
   /** The phrase a shape names (`{ cut }`), `fragment`, or null when it names nothing sayable. */
   const phrase = (
@@ -466,21 +463,42 @@ export function subjectOfOpener(text: string): OpenerSubject | null {
 /** What the last conversation was about (never a thread: see {@link OpenerSubject}). */
 type Subject = OpenerSubject & { readonly kind: 'topics' | 'question' };
 
+/** How a subject is chosen from a conversation. */
+export interface SubjectOptions {
+  /**
+   * A subject this returns true for is never chosen: the thread the conversation opened on that the founder never
+   * took up (orchestrator/continuity.ts `chooseOpener`).
+   */
+  readonly avoid?: (text: string) => boolean;
+  /**
+   * Only what the founder brought in their own words (their news, else their latest topic), never the digest's
+   * topics (which can be the vEIR's framing of the thread they left aside).
+   */
+  readonly foundersOwn?: boolean;
+}
+
+/** A subject an opener can say: it reads as one (`readsAsSubject`) and is not one to avoid. */
+function sayable(text: string | null, options: SubjectOptions): text is string {
+  return text !== null && text !== '' && readsAsSubject(text) && options.avoid?.(text) !== true;
+}
+
 /**
  * The founder's latest news in a conversation, as a subject ("signing a letter of intent with Hartwell"), or null:
  * news comes first in an opener (LAB-R6b: the opener named the coach's "anchoring the pilot price" over "we signed a
- * letter of intent with Hartwell").
+ * letter of intent with Hartwell"). Only words that read as a subject: "My cofounder wants to quit his job and go
+ * full-time in January" is "your cofounder's plan to go full-time in January", never "January" (lab run 39780304879).
  */
 export function newsSubjectOf(
   c: Pick<LeftOffConversationData, 'exchanges' | 'said'>,
   people: OpenerPeople,
+  options: SubjectOptions = {},
 ): Subject | null {
   const said = c.said ?? c.exchanges.map((x) => x.founder);
   for (const raw of [...said].reverse()) {
     if (!founderMoves(raw).includes('news') || !isTopicLine(raw)) continue;
     const topic = topicOf(raw);
     const text = topic === null ? null : addressFounder(topic.text, people);
-    if (text !== null && text.length <= 70)
+    if (sayable(text, options) && text.length <= 70)
       return { kind: topic?.question === true ? 'question' : 'topics', text };
   }
   return null;
@@ -490,30 +508,42 @@ export function newsSubjectOf(
  * What the last conversation was about: the founder's news first ({@link newsSubjectOf}), then the digest's topics (one or two, said mid-sentence, addressed to the
  * founder), else a summary of the most telling thing the founder brought (opener-topic.ts `topicOf`), from its
  * last messages or its first one (the title). Greetings, checks, recall and memory questions, questions about the
- * vEIR, thanks and wrap-ups are never a subject, and nothing the founder said is quoted back (LAB-R3). Null when
- * nothing names a topic.
+ * vEIR, thanks and wrap-ups are never a subject, and nothing the founder said is quoted back (LAB-R3). Only what reads
+ * as a subject (`readsAsSubject`), and nothing `options.avoid` rules out; with `options.foundersOwn`, only the
+ * founder's news or their latest topic. Null when nothing names a topic.
  */
 export function subjectOf(
   c: Pick<LeftOffConversationData, 'digest' | 'title' | 'exchanges' | 'said'>,
   people: OpenerPeople,
+  options: SubjectOptions = {},
 ): Subject | null {
-  const news = newsSubjectOf(c, people);
+  const news = newsSubjectOf(c, people, options);
   if (news !== null) return news;
-  const topics = (c.digest?.topics ?? [])
-    .map((t) => addressFounder(midSentence(t).replace(/[.!?]+$/, ''), people))
-    .filter((t): t is string => t !== null && t !== '' && t.length <= 60);
-  if (topics.length > 0) return { kind: 'topics', text: topics.slice(0, 2).join(' and ') };
-  // The newest messages first: they are where the conversation left off.
-  const lines = [...[...c.exchanges].reverse().map((x) => x.founder), ...(c.title === null ? [] : [c.title])];
-  let best: LineTopic | null = null;
+  if (options.foundersOwn !== true) {
+    const topics = (c.digest?.topics ?? [])
+      .map((t) => addressFounder(midSentence(t).replace(/[.!?]+$/, ''), people))
+      .filter((t): t is string => t !== null && t !== '' && t.length <= 60 && options.avoid?.(t) !== true);
+    const joined = topics.slice(0, 2).join(' and ');
+    if (topics.length > 0 && readsAsSubject(joined)) return { kind: 'topics', text: joined };
+  }
+  // The newest messages first: they are where the conversation left off (with `foundersOwn`, everything they said
+  // in its last exchanges, distilled or not; else what the digest does not cover yet).
+  const founderLines =
+    options.foundersOwn === true
+      ? (c.said ?? c.exchanges.map((x) => x.founder))
+      : c.exchanges.map((x) => x.founder);
+  const lines = [...[...founderLines].reverse(), ...(c.title === null ? [] : [c.title])];
+  let best: (LineTopic & { readonly said: string }) | null = null;
   for (const line of lines) {
     if (!isTopicLine(line)) continue;
     const topic = topicOf(line);
-    if (topic !== null && (best === null || topic.score > best.score)) best = topic;
+    const said = topic === null ? null : addressFounder(topic.text, people);
+    if (topic === null || !sayable(said, options)) continue;
+    if (best === null || topic.score > best.score) best = { ...topic, said };
+    // Their latest topic, when only what they brought is said.
+    if (options.foundersOwn === true) break;
   }
-  if (best === null) return null;
-  const text = addressFounder(best.text, people);
-  return text === null ? null : { kind: best.question ? 'question' : 'topics', text };
+  return best === null ? null : { kind: best.question ? 'question' : 'topics', text: best.said };
 }
 
 /**
@@ -561,12 +591,18 @@ const OPEN_ENDINGS = [
 export function continuityOpener(
   last: Pick<LeftOffConversationData, 'digest' | 'title' | 'channel' | 'lastActivityAt' | 'withThisVeir'> &
     Partial<Pick<LeftOffConversationData, 'exchanges' | 'said'>>,
-  options: { readonly now: Date; readonly seed: string; readonly people?: OpenerPeople },
+  options: {
+    readonly now: Date;
+    readonly seed: string;
+    readonly people?: OpenerPeople;
+    /** How its subject is chosen ({@link subjectOf}). */
+    readonly subject?: SubjectOptions;
+  },
 ): { readonly withTopic: string | null; readonly generic: string } {
   const seed = seedOf(options.seed);
   const when = relativeWhen(last.lastActivityAt, options.now);
   const onCall = last.channel === 'call' ? ', on a call' : '';
-  const subject = subjectOf({ exchanges: [], ...last }, options.people ?? { founder: null });
+  const subject = subjectOf({ exchanges: [], ...last }, options.people ?? { founder: null }, options.subject);
   const greeting = GREETINGS[seed % GREETINGS.length] ?? GREETINGS[0];
   if (!last.withThisVeir) {
     // Another coach had it: the founder's history, never "we".
@@ -598,7 +634,7 @@ export function continuityOpener(
 export function threadSubject(topic: string, people: OpenerPeople = { founder: null }): string | null {
   // Distilled about the founder ("the facility budget numbers maya will get"): said to them, or not at all (LAB-U2).
   const thread = addressFounder(midSentence(topic).replace(/[.!?]+$/, ''), people);
-  return thread === null || topicWords(thread).length === 0 || thread.length > 120 ? null : thread;
+  return thread === null || !readsAsSubject(thread) || thread.length > 120 ? null : thread;
 }
 
 /**

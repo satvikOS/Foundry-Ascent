@@ -1209,7 +1209,7 @@ export function mockDistillDraft(context: MockGenerateContext): DistillDraft {
   const prevAdvice = entriesIn(sectionIn(previous, 'last_advice'));
   const prevCommitments = [
     ...sectionIn(previous, 'commitments').matchAll(
-      /<commitment id="([^"]+)" status="(open|done|dropped)" due="([^"]+)">([\s\S]*?)<\/commitment>/g,
+      /<commitment id="([^"]+)" status="(open|done|dropped)" due="([^"]+)"[^>]*>([\s\S]*?)<\/commitment>/g,
     ),
   ].map((m) => ({
     id: unescapeData(m[1] ?? ''),

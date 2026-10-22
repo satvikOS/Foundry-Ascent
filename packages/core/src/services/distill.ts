@@ -441,6 +441,22 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
       eirNames: source.directory.eirNames,
       personaEirName: source.eirName,
       previousNotebook: notebook,
+      // Where the thread the model started from came from: one kept from an earlier conversation that this one
+      // never took up is stale (lab run 39780304879: a chat's distillation copied the previous opener word for word).
+      previousOpenerSource: notebook?.nextOpenerSource,
+      // What the conversation raised (its opener) and what the founder said in it: the next opener is never a thread
+      // they did not take up when it was raised.
+      conversation: {
+        opener: state.opener,
+        founderTurns: source.turns.map((t) => t.founderText),
+        answers: source.turns.map((t) => t.response?.answer ?? null),
+        names: [
+          source.founderFirstName,
+          source.persona.name,
+          source.eirName,
+          ...source.directory.eirNames,
+        ].filter((n): n is string => n !== null && n !== ''),
+      },
       suppressed: removed,
       pinnedEntryIds: pins.map(pinKey),
       evidenceKeys: source.evidence.keys(),
@@ -595,6 +611,8 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
         currentGoal: source.venture.currentGoal,
       },
       sessionGoal: state.goal,
+      // What the conversation opened with: the model sees the thread it raised and whether it was taken up.
+      opener: state.opener,
       turns: part.map((t) => ({
         founderText: t.founderText,
         answer: t.response?.answer ?? null,

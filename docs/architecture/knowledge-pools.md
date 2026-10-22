@@ -129,20 +129,28 @@ generated time), with `distilled_at` and `distill_version` (the number of comple
 
 `veir_notebooks`, one row per venture × persona: "What Corin knows about you and QuietQuad".
 
-| Field            | Content                                                                                |
-| ---------------- | -------------------------------------------------------------------------------------- |
-| `summary`        | ≤ 1200 characters                                                                      |
-| `founderProfile` | preferences and communication style the founder showed                                 |
-| `commitments`    | text, due date, status (`open`, `done`, `dropped`), source conversation                |
-| `openQuestions`  | questions still open                                                                   |
-| `lastAdvice`     | the latest advice given                                                                |
-| `nextOpener`     | one sentence the vEIR may open the next conversation with                              |
-| `version`        | bumped by every write; edits and distillation both write against the version they read |
-| `suppressed`     | fingerprints (SHA-256 of the normalised words) of lines a person removed or corrected  |
+| Field            | Content                                                                                 |
+| ---------------- | --------------------------------------------------------------------------------------- |
+| `summary`        | ≤ 1200 characters                                                                       |
+| `founderProfile` | preferences and communication style the founder showed                                  |
+| `commitments`    | text, due date, status (`open`, `done`, `dropped`), source conversation                 |
+| `openQuestions`  | questions still open                                                                    |
+| `lastAdvice`     | the latest advice given                                                                 |
+| `nextOpener`     | one sentence the vEIR may open the next conversation with (and `nextTopic`, its thread) |
+| `version`        | bumped by every write; edits and distillation both write against the version they read  |
+| `suppressed`     | fingerprints (SHA-256 of the normalised words) of lines a person removed or corrected   |
 
 - **Visibility** mirrors the conversations it is distilled from: the founder/team and the assigned EIR read
   it; advisors and program leads do not. Only the founder/team edit it (`PATCH /ventures/:id/notebook`
   with `expectedVersion`; 409 on a stale edit). The database validates the document's shape.
+- **Threads the founder took up.** The distillation sees what the conversation opened with (`<opened_with>`)
+  and closes a commitment the founder reports done in any words ("I met the advisor last week" closes "book the
+  advisor session…"; a past due date alone closes nothing), or rewrites one they re-plan. `sanitizeDistill` drops
+  the next opener with its thread when it is about a thread the founder did not take up when it was raised (the
+  conversation's opener, a question the vEIR asked) or one an earlier conversation left that this one never took
+  up, unless the founder spoke of it themselves (`@foundry/ai` `distill/threads.ts`: two shared content words, or
+  a short yes right after the opener). Lab run 39780304879: an advisor session the founder ignored was the opener
+  three times, and a chat's distillation copied the previous opener word for word.
 - **Corrections stick.** Editing or removing a line, or clearing the notebook, records the old line's
   fingerprint (never its text) in `suppressed`. Distillation must skip any line whose fingerprint is
   suppressed (`isSuppressed`) and writes with the version it read (`saveNotebook` returns null on a
@@ -293,7 +301,8 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
   conversation reads nothing. The notes' earlier digests leave out the conversations this section shows (each is
   sent once) and mark one with a previous coach as that coach's. A new standard conversation opens with the
   notebook's next opener when a person wrote or rewrote it; when it is current (drawn from the person's latest
-  conversation, or nothing was said since it was written), with a greeting phrased afresh around the thread the
+  conversation, or nothing was said since it was written; one kept from an older conversation only when the founder
+  spoke of its thread in the latest), with a greeting phrased afresh around the thread the
   distillation noted to come back to (`nextTopic`, a short phrase: "Welcome back. I wanted to come back to the five
   library-staff interviews you planned. How is it going?"), or the stored sentence when there is no thread (never
   when it only repeats the question that conversation ended on, or already opened a conversation since); otherwise
@@ -301,7 +310,11 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
   call), we talked about whether to price per library or per seat."): its digest's topics said mid-sentence, else
   a summary of what the founder brought, never their words quoted back ("whether to …", "how to …", "your plan to
   …", "booking the auditorium", or its most telling noun phrase; never a greeting, a check, a recall or memory
-  question, a question about the vEIR, thanks or a wrap-up), else a generic line. Every distilled line it uses (the
+  question, a question about the vEIR, thanks or a wrap-up), else a generic line. A thread the latest conversation
+  opened on that the founder took up in none of their messages there is never opened on again, as the notebook's
+  opener, its thread or that conversation's subject: the line picks up their news, else their latest topic, else
+  invites them plainly. A subject must read as one (`readsAsSubject`: never a lone date or month, a single word that
+  is not a name, a plan without its verb, or a phrase cut mid-clause). Every distilled line it uses (the
   thread, the stored sentence, the topics) is said to the founder: their name or "the founder" becomes "you", team
   names keep their real case, and a line still in the third person is left out. Phrasing varies with how many
   conversations the person opened since, so two never open alike. The line is validated like any opener and

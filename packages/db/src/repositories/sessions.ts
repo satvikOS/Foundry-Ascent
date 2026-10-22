@@ -645,6 +645,11 @@ export interface LeftOffConversation {
   /** Completed turns the digest covers. */
   readonly distillVersion: number;
   readonly completedTurns: number;
+  /**
+   * What it opened with (its first bubble, or what a call's greeting said), null when nothing: a new conversation's
+   * opener never comes back to a thread the founder did not take up there. Founder-facing words: never log it.
+   */
+  readonly opener: string | null;
 }
 
 /**
@@ -677,7 +682,7 @@ export function listLeftOffConversations(
        ORDER BY s.last_activity_at DESC, s.id DESC
        LIMIT 1)
      SELECT s.id, r.persona_id, s.started_by, st.display_name AS started_by_name, ${memberOnly('s.title')} AS title,
-            s.started_at, s.last_activity_at, s.status, s.has_calls, s.digest, s.distill_version,
+            s.started_at, s.last_activity_at, s.status, s.has_calls, s.digest, s.distill_version, s.opener,
             (SELECT count(*) FROM turns t WHERE t.session_id = s.id AND t.status = 'completed') AS completed_turns
      FROM coaching_sessions s
      JOIN persona_releases r ON r.id = s.persona_release_id
@@ -703,6 +708,7 @@ export function listLeftOffConversations(
       digest: decodeDigest(r.digest),
       distillVersion: col.int.decode(r.distill_version, 'distill_version'),
       completedTurns: col.int.decode(r.completed_turns, 'completed_turns'),
+      opener: col.text.nullable.decode(r.opener, 'opener'),
     }),
   );
 }

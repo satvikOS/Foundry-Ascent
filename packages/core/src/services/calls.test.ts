@@ -3,7 +3,7 @@
  * call may use, the intro and the names it may say, the summary's actions, what unsigned speech requests may
  * say, the crisis message, and the history as the founder heard it.
  */
-import { CRISIS_SPOKEN_MESSAGE, rewriteIdentity } from '@foundry/ai';
+import { CRISIS_SPOKEN_MESSAGE, rewriteIdentity, threadWords } from '@foundry/ai';
 import { describe, expect, it } from 'vitest';
 
 import { refusalError, timeLimitRefusal, voiceTurnRefusal, type VoiceTurnFacts } from './call-admission.js';
@@ -26,6 +26,8 @@ import {
   callIntroText,
   openerKept,
   repeatGreeting,
+  repeatGreetingOf,
+  shorterSubjects,
   callVoiceFor,
   distinctActions,
   greetingName,
@@ -361,6 +363,81 @@ describe('the call intro', () => {
       'Last time, we left off on Where to run the pilot. How is it going?',
     ]) {
       expect(subjectOfOpener(opener), opener).toBeNull();
+    }
+  });
+
+  it('never greets around a fragment: a month, a lone word, a plan without a verb (lab run 39780304879, acc50c6)', () => {
+    const seeds = ['a', 'b', 'c', 'd', 'e', 'f'];
+    const greet = (firstName: string, opener: string, subject?: OpenerSubject | null) =>
+      seeds.map((seed) =>
+        repeatGreetingOf({
+          firstName,
+          opener,
+          ...(subject === undefined ? {} : { subject }),
+          conversationStarted: false,
+          seed,
+        }),
+      );
+    // The AG-3 call: chosen around the subject "January" (the cofounder's news, cut to its capitalised word).
+    const january =
+      'Nice to hear from you again. Last time (a moment ago), we talked about January. Shall we carry on from there, or start somewhere new?';
+    for (const subject of [{ kind: 'topics', text: 'January' } as const, undefined]) {
+      for (const greeting of greet('Idris', january, subject)) {
+        expect(greeting.text).not.toMatch(/January/);
+        expect(greeting).toEqual({ text: 'Hi Idris, what would you like to work on?', carriesOpener: false });
+      }
+    }
+    // The voice suite on acc50c6: "I have a few minutes before my next class" read as a plan.
+    const minutes = {
+      kind: 'topics',
+      text: 'your plan to a few minutes before your next class',
+    } as const;
+    for (const greeting of greet(
+      'Maya',
+      'Good to talk again. Last time (yesterday), we talked about your plan to a few minutes before your next class. How has it gone since?',
+      minutes,
+    )) {
+      expect(greeting.text).not.toMatch(/your plan to a few|few minutes/);
+      expect(greeting.carriesOpener).toBe(false);
+    }
+    expect(shorterSubjects('January')).toEqual([]);
+    expect(shorterSubjects('full-time')).toEqual([]);
+    expect(shorterSubjects('your plan to a few minutes before your next class')).toEqual([]);
+    expect(shorterSubjects('your plan to call facilities on Monday')).toEqual([
+      'your plan to call facilities on Monday',
+      'your plan to call facilities',
+    ]);
+    // The cofounder's plan, as AG-3 now opens: said whole, within the length of one greeting.
+    for (const greeting of greet('Idris', 'x', {
+      kind: 'topics',
+      text: "your cofounder's plan to go full-time in January",
+    })) {
+      expect(greeting.text).toMatch(/^Hi Idris, .*your cofounder's plan to go full-time in January\?$/);
+      expect(greeting.text.length).toBeLessThanOrEqual(REPEAT_GREETING_MAX_CHARS);
+    }
+  });
+
+  it('frames a greeting with words that raise no thread of their own (kept in step with @foundry/ai threads.ts)', () => {
+    for (const subject of [
+      { kind: 'thread', text: 'the advisor session and your three questions' },
+      { kind: 'thread', text: 'your plan to call facilities' },
+      { kind: 'topics', text: 'per-library pricing' },
+      { kind: 'question', text: 'whether to price per library or per seat' },
+    ] as const) {
+      for (const seed of ['a', 'b', 'c', 'd', 'e', 'f']) {
+        const text = repeatGreeting({
+          firstName: 'Idris',
+          opener: 'x',
+          subject,
+          conversationStarted: false,
+          seed,
+        });
+        expect([...threadWords(text, ['Idris'])].sort(), text).toEqual([...threadWords(subject.text)].sort());
+      }
+    }
+    for (const conversationStarted of [true, false]) {
+      const invitation = repeatGreeting({ firstName: 'Idris', opener: null, conversationStarted });
+      expect([...threadWords(invitation, ['Idris'])]).toEqual([]);
     }
   });
 

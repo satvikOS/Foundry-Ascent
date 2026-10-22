@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { addressFounder, isTopicLine, properNounsIn, topicOf } from './opener-topic.js';
+import { addressFounder, isTopicLine, properNounsIn, readsAsSubject, topicOf } from './opener-topic.js';
 
 const PEOPLE = { founder: 'Maya Patel', team: ['Maya Patel', 'Noor Haddad'] };
 
@@ -97,6 +97,89 @@ describe('topicOf: summarised, never quoted', () => {
     expect(topicOf('Big news! The union will promote us if we add group booking.')?.text).toBe(
       'group booking',
     );
+  });
+});
+
+describe('readsAsSubject: only what an opener can say it was about (lab run 39780304879, voice suite on acc50c6)', () => {
+  it('accepts noun phrases, activities, questions, names and plans with their verb', () => {
+    for (const subject of [
+      'the Hartwell pilot',
+      'per-library pricing',
+      'pricing and pilot design',
+      'Noor',
+      'FDA clearance',
+      'booking the auditorium for demo day',
+      'whether to price per library or per seat',
+      'how to position yourself',
+      'your plan to call facilities about your budget tomorrow',
+      "your cofounder's plan to go full-time in January",
+      'your goal of ten paying libraries by June',
+      'the five library-staff interviews you planned',
+      'the facility budget numbers you will get',
+      "the cofounder's full-time commitment requirements",
+      'the advisor session and your three questions',
+    ]) {
+      expect(readsAsSubject(subject), subject).toBe(true);
+    }
+  });
+
+  it('rejects a lone date or month, a word that is no name, a plan without a verb and other fragments', () => {
+    for (const fragment of [
+      'January',
+      'May',
+      'next week',
+      'the end of the month',
+      'a few minutes',
+      '$900',
+      'full-time',
+      'pricing',
+      'you',
+      'your plan to a few minutes before your next class',
+      'your plan to the pilot',
+      'to a few minutes before your next class',
+      'in January',
+      'and the pitch',
+      'the study room for',
+      'your plan to',
+      'the advisor last',
+      "they'll promote QuietQuad",
+      '',
+    ]) {
+      expect(readsAsSubject(fragment), fragment).toBe(false);
+    }
+  });
+});
+
+describe('topicOf: never a fragment (lab run 39780304879, voice suite on acc50c6)', () => {
+  it('reads "My cofounder wants to quit his job and go full-time in January." as their plan, never "January"', () => {
+    // Before: the most telling noun phrase was the capitalised "January" (a month is no everyday word), and the
+    // next call said "Hi Idris, want to carry on with January?".
+    expect(topicOf('My cofounder wants to quit his job and go full-time in January.')).toMatchObject({
+      text: "your cofounder's plan to go full-time in January",
+      question: false,
+    });
+  });
+
+  it('never reads how much time the founder has as a plan ("your plan to a few minutes…")', () => {
+    for (const line of [
+      "Hi, it's Maya. I have a few minutes before my next class, so let's be quick.",
+      'I have a few minutes before my next class.',
+      "Hey. I've got a bit of time today.",
+      "I've only got a few minutes, can we be quick?",
+    ]) {
+      expect(topicOf(line)?.text ?? '', line).not.toMatch(/your plan to|minutes|time today/);
+    }
+    // A plan still is one.
+    expect(topicOf('I have to call facilities about the budget.')?.text).toBe(
+      'your plan to call facilities about the budget',
+    );
+    expect(topicOf('I want to make a lot of money from this.')?.text).toBe(
+      'your plan to make a lot of money from this',
+    );
+  });
+
+  it('never ends a phrase on the start of a time ("the advisor last")', () => {
+    expect(topicOf('I met the advisor last week, actually.')?.text ?? '').not.toMatch(/\blast$/);
   });
 });
 

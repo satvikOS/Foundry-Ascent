@@ -1,3 +1,4 @@
+import { isAboutThread, threadWords } from '@foundry/ai';
 import { describe, expect, it } from 'vitest';
 
 import { withLeftOff } from './context-budget.js';
@@ -7,9 +8,13 @@ import {
   continuityOpener,
   leftOffTopic,
   midSentence,
+  newsSubjectOf,
+  readOpener,
   relativeWhen,
   renderLeftOffSection,
+  subjectOf,
   threadOpener,
+  threadSubject,
   type LeftOffConversationData,
 } from './continuity-prompt.js';
 import { validatedOpener } from './continuity.js';
@@ -438,5 +443,156 @@ describe('withLeftOff', () => {
     expect(placed.slice(0, 2)).toEqual(messages.slice(0, 2));
     expect(placed.at(-1)?.content.startsWith(LEFT_OFF_HEADING)).toBe(true);
     expect(placed.at(-1)?.content.endsWith('<founder_message>\nAgain\n</founder_message>')).toBe(true);
+  });
+});
+
+/** The founder's lines of the lab's agenda suite, AG-2 (ops/lab/scenarios/agenda.json; synthetic). */
+const AG2 = [
+  "Can you help me prepare for my pitch next week? It's a five-minute slot at the health innovation competition.",
+  'Honestly I want to make a lot of money from this. How do I position myself?',
+  'My cofounder wants to quit his job and go full-time in January.',
+];
+const IDRIS = { founder: 'Idris Okafor' };
+
+describe('never a fragment for a subject (lab run 39780304879: "Hi Idris, want to carry on with January?")', () => {
+  const ag2 = conversation({
+    title: AG2[0] ?? null,
+    exchanges: AG2.map((founder) => ({ founder, answer: 'Sure.' })),
+    said: AG2,
+  });
+
+  it('reads the founder’s news as their cofounder’s plan, never "January"', () => {
+    // Before: news "My cofounder wants to quit his job…" → topicOf's best noun phrase "January" → the AG-3 call greeted
+    // "Hi Idris, want to carry on with January?", and the chat "Last time (a moment ago), we talked about January."
+    expect(newsSubjectOf(ag2, IDRIS)).toEqual({
+      kind: 'topics',
+      text: "your cofounder's plan to go full-time in January",
+    });
+    for (const seed of ['a', 'b', 'c', 'd', 'e', 'f']) {
+      const line = continuityOpener(ag2, { now: NOW, seed, people: IDRIS }).withTopic ?? '';
+      expect(line).not.toMatch(/about January\b/);
+      expect(line).toContain("we talked about your cofounder's plan to go full-time in January.");
+    }
+    // A digest's single-word topic, a month, is no subject either.
+    const months = conversation({
+      exchanges: [],
+      digest: { summary: 's', topics: ['January'], commitments: [], openQuestions: [] },
+    });
+    expect(subjectOf(months, IDRIS)?.text ?? null).not.toBe('January');
+  });
+
+  it('never says a stored opener built around a fragment, nor a thread that is none', () => {
+    expect(
+      readOpener(
+        'Nice to hear from you again. Last time (a moment ago), we talked about January. Shall we carry on from there, or start somewhere new?',
+      ),
+    ).toBe('fragment');
+    expect(readOpener('Good to talk again. Last time, we left off on full-time. Where are things now?')).toBe(
+      'fragment',
+    );
+    expect(readOpener('Last time, you planned to a few minutes before your next class. How did it go?')).toBe(
+      'fragment',
+    );
+    expect(
+      readOpener(
+        'Good to talk again. Last time, we talked about per-library pricing. How has it gone since?',
+      ),
+    ).toEqual({
+      kind: 'topics',
+      text: 'per-library pricing',
+    });
+    expect(threadSubject('January')).toBeNull();
+    expect(threadOpener('next week', { seed: 'x' })).toBeNull();
+    expect(threadSubject("the cofounder's full-time commitment requirements")).toBe(
+      "the cofounder's full-time commitment requirements",
+    );
+  });
+});
+
+describe('picking up what the founder brought after a thread they left aside', () => {
+  const opened = threadWords('Hi Idris, shall we pick up booking the advisor session?', ['Idris Okafor']);
+  const avoid = (text: string): boolean => isAboutThread(text, opened);
+
+  it('only their news or latest topic, never the digest’s framing of the thread they left aside', () => {
+    const ag1 = conversation({
+      title: "Hey. I've got a bit of time today.",
+      exchanges: [],
+      said: [
+        "Hey. I've got a bit of time today.",
+        "I don't know. You tell me.",
+        "That's the thing, I don't know. You tell me what I should ask.",
+        "idk I'm blank, help me get started, I'm writing it all down.",
+      ],
+      digest: {
+        summary: 'Idris asked for help drafting questions for the advisor session.',
+        topics: ['Advisor session', 'Regulatory pathway'],
+        commitments: [],
+        openQuestions: [],
+      },
+    });
+    // The founder brought nothing to name: the invitation, never the advisor session or its framing.
+    expect(subjectOf(ag1, IDRIS, { avoid, foundersOwn: true })).toBeNull();
+    const lines = continuityOpener(ag1, {
+      now: NOW,
+      seed: 's',
+      people: IDRIS,
+      subject: { avoid, foundersOwn: true },
+    });
+    expect(lines.withTopic).toBeNull();
+    expect(lines.generic).not.toMatch(/advisor|regulatory/i);
+    // Without the rule, the digest's topics are said (what the vEIR noted).
+    expect(subjectOf(ag1, IDRIS)?.text).toBe('advisor session and regulatory pathway');
+  });
+
+  it('their latest topic when they brought no news', () => {
+    const asked = conversation({
+      exchanges: [],
+      said: ['Should we price per library or per seat?', 'How do I position myself for investors?'],
+      digest: { summary: 's', topics: ['Booking the advisor session'], commitments: [], openQuestions: [] },
+    });
+    expect(subjectOf(asked, IDRIS, { avoid, foundersOwn: true })).toEqual({
+      kind: 'question',
+      text: 'how to position yourself for investors',
+    });
+  });
+});
+
+describe('the frame of every opener raises no thread of its own (kept in step with @foundry/ai threads.ts)', () => {
+  it('a line phrased around a thread raises exactly that thread', () => {
+    for (const topic of [
+      'the five library-staff interviews you planned',
+      'booking the advisor session',
+      "the cofounder's full-time commitment requirements",
+    ]) {
+      for (const seed of ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']) {
+        for (const when of [
+          null,
+          'a moment ago',
+          'about 20 minutes ago',
+          'yesterday',
+          'last week',
+          'on 2 September',
+        ]) {
+          const line = threadOpener(topic, { seed, when }) ?? '';
+          expect([...threadWords(line)].sort(), line).toEqual([...threadWords(topic)].sort());
+        }
+      }
+    }
+  });
+
+  it('a line about the last conversation raises its subject, and the invitation raises nothing', () => {
+    for (const seed of ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']) {
+      for (const minutes of [1, 20, 70, 300, 60 * 30, 60 * 24 * 4, 60 * 24 * 9, 60 * 24 * 40]) {
+        for (const withThisVeir of [true, false]) {
+          const c = conversation({ lastActivityAt: ago(minutes), withThisVeir });
+          const lines = continuityOpener(c, { now: NOW, seed });
+          expect([...threadWords(lines.generic)], lines.generic).toEqual([]);
+          const subject = subjectOf(c, { founder: null })?.text ?? '';
+          expect([...threadWords(lines.withTopic ?? '')].sort(), lines.withTopic ?? '').toEqual(
+            [...threadWords(subject)].sort(),
+          );
+        }
+      }
+    }
   });
 });

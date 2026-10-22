@@ -8,6 +8,7 @@ import {
 } from '@foundry/contracts';
 
 import { fnv1a } from '../gateway/hash-embedding.js';
+import { lastQuestionOf } from '../prompts/continuity.js';
 import { truncate } from '../prompts/escape.js';
 import { COMMON_WORDS } from '../risk/common-words.js';
 import { textsContainOtherVenture } from '../validators/coach-response.js';
@@ -22,6 +23,7 @@ import {
   type LessonCandidate,
 } from './schema.js';
 import { isNearDuplicate, repeatsNote, textKey } from './similarity.js';
+import { isAboutThread, mentions, threadWords, tookUp, untakenThread } from './threads.js';
 
 /** Text kept past a field's limit for the identity check, so a sentence that crosses the limit is judged whole. */
 
@@ -47,6 +49,17 @@ export interface DistillSanitizeContext {
   /** The notebook the model started from (null for the first conversation). */
   previousNotebook?: PreviousNotebook | null;
   /**
+   * The conversation the previous notebook's opener (and its thread) was drawn from: null when a person wrote it,
+   * undefined when unknown. A thread drawn from an earlier conversation that this one never took up is stale.
+   */
+  previousOpenerSource?: string | null;
+  /**
+   * The conversation as it was said, so the next opener is never a thread the founder did not take up: what it
+   * opened with (its first bubble, or what a call's greeting said), and every completed turn so far, oldest first
+   * (all of them, not only the part distilled now). Absent: not checked.
+   */
+  conversation?: DistillConversation;
+  /**
    * Texts the founder's team removed from the notebook or replaced with a correction. Anything that
    * repeats one of them (near-duplicates included) is never written back.
    */
@@ -70,6 +83,18 @@ export interface DistillSanitizeContext {
    * and sponsors.
    */
   lessons: LessonDeidentifyContext;
+}
+
+/** What a conversation raised and what the founder said (see `DistillSanitizeContext.conversation`). */
+export interface DistillConversation {
+  /** What it opened with: the first bubble, or a call's greeting; null when it opened with nothing. */
+  readonly opener: string | null;
+  /** The founder's words of each completed turn, oldest first. */
+  readonly founderTurns: readonly string[];
+  /** The vEIR's answer of each of those turns (null when none): a question it asked raises a thread too. */
+  readonly answers?: readonly (string | null)[];
+  /** Names said in it that are no thread (the founder's, the persona's, the EIR's): "Hi Idris, …". */
+  readonly names?: readonly string[];
 }
 
 /** The next notebook content (the full sections, merged with the previous notebook). */
@@ -99,6 +124,11 @@ export interface DistillStats {
   lessonCandidatesDropped: number;
   lessonDropReasons: DeidentifyReason[];
   identityRewrites: number;
+  /**
+   * 1 when the proposed next opener (with its thread) was dropped: a thread the founder did not take up when it was
+   * raised, or a thread kept from an earlier conversation that this one never took up.
+   */
+  untakenOpenerDropped: number;
 }
 
 export interface SanitizedDistill {
@@ -171,6 +201,46 @@ function byCommitmentOrder(a: NotebookCommitment, b: NotebookCommitment): number
 }
 
 /**
+ * The threads a conversation raised that the founder did not take up ({@link untakenThread}): what it opened with;
+ * each question the vEIR asked that no later founder message took up (the last answer's question had no reply yet,
+ * so it is not counted); and the previous notebook's thread when it was drawn from an earlier conversation (or a
+ * person, or nobody knows) and this conversation never took it up: a thread that survived a newer conversation
+ * untouched is stale.
+ */
+function untakenThreads(
+  conversation: DistillConversation,
+  previous: PreviousNotebook | null,
+  previousSource: string | null | undefined,
+  sessionId: string,
+): Set<string>[] {
+  const names = conversation.names ?? [];
+  const said = conversation.founderTurns;
+  const out: Set<string>[] = [];
+  const add = (thread: Set<string> | null): void => {
+    if (thread !== null) out.push(thread);
+  };
+  add(untakenThread(conversation.opener, said, names));
+  const answers = conversation.answers ?? [];
+  for (let i = 0; i < answers.length - 1 && i < said.length - 1; i += 1) {
+    const answer = answers[i];
+    const question = answer === null || answer === undefined ? null : lastQuestionOf(answer);
+    add(untakenThread(question, said.slice(i + 1), names));
+  }
+  if (previous !== null && previousSource !== sessionId) {
+    const opener = conversation.opener;
+    for (const thread of [previous.nextTopic ?? null, previous.nextOpener]) {
+      if (thread === null) continue;
+      const words = threadWords(thread, names);
+      if (words.size === 0) continue;
+      // Raised as the opener, a short yes takes it up; otherwise the founder has to speak of it.
+      const raised = opener !== null && isAboutThread(opener, words, names);
+      if (raised ? !tookUp(words, said) : !mentions(words, said)) out.push(words);
+    }
+  }
+  return out;
+}
+
+/**
  * Deterministic checks on a distillation (the same guards as recaps, plus the notebook merge):
  *
  * - every text is plain (HTML and control characters removed), identity-rewritten (never the EIR, never
@@ -181,7 +251,10 @@ function byCommitmentOrder(a: NotebookCommitment, b: NotebookCommitment): number
  *   note or each other;
  * - at most 2 lesson candidates, each passing `checkDeidentified` (anything doubtful is dropped);
  * - when any newly written text names another venture, one of its members or a canary, the whole
- *   distillation is dropped (null), like a recap.
+ *   distillation is dropped (null), like a recap;
+ * - the next opener and its thread are dropped (null) when they are about a thread the founder did not take up
+ *   when it was raised (the conversation's opener, a question the vEIR asked) or a thread kept from an earlier
+ *   conversation that this one never took up, unless the founder spoke of it themselves (`conversation`).
  *
  * Notebook merge semantics: the model returns the full proposed notebook, starting from the previous one.
  * Entries a person edited (`pinnedEntryIds`) are kept as the person left them, and a proposal with a
@@ -211,6 +284,7 @@ export function sanitizeDistill(draft: DistillDraft, ctx: DistillSanitizeContext
     lessonCandidatesDropped: 0,
     lessonDropReasons: [],
     identityRewrites: 0,
+    untakenOpenerDropped: 0,
   };
   const identity = {
     personaName: ctx.personaName,
@@ -454,7 +528,6 @@ export function sanitizeDistill(draft: DistillDraft, ctx: DistillSanitizeContext
       draft.notebook.next_opener === null ? '' : clean(draft.notebook.next_opener, L.nextOpenerMaxChars);
     if (opener !== '' && mentionsSuppressed(opener)) stats.suppressedDropped += 1;
     nextOpener = opener === '' || mentionsSuppressed(opener) ? null : opener;
-    if (nextOpener !== null && nextOpener !== previous?.nextOpener) fresh.push(nextOpener);
     // The thread goes with the opener: a phrase on one line, never a question, never what a person removed.
     const raw = draft.notebook.next_topic ?? null;
     const topic =
@@ -465,6 +538,25 @@ export function sanitizeDistill(draft: DistillDraft, ctx: DistillSanitizeContext
             .trim();
     if (topic !== '' && mentionsSuppressed(topic)) stats.suppressedDropped += 1;
     nextTopic = topic === '' || topic.endsWith('?') || mentionsSuppressed(topic) ? null : topic;
+    // Never a thread the founder did not take up when it was raised, nor one kept from an earlier conversation that
+    // this one never took up (lab run 39780304879: the opener re-opened the advisor session the founder ignored, and
+    // a chat's distillation copied the previous opener word for word). The opener then picks up what the founder
+    // brought instead (orchestrator/continuity.ts `chooseOpener`).
+    if (nextOpener !== null && ctx.conversation !== undefined) {
+      const untaken = untakenThreads(ctx.conversation, previous, ctx.previousOpenerSource, ctx.sessionId);
+      const names = ctx.conversation.names ?? [];
+      const said = ctx.conversation.founderTurns;
+      const stale = (text: string | null): boolean =>
+        text !== null &&
+        untaken.some((thread) => isAboutThread(text, thread, names)) &&
+        !mentions(threadWords(text, names), said);
+      if (stale(nextTopic) || stale(nextOpener)) {
+        nextOpener = null;
+        nextTopic = null;
+        stats.untakenOpenerDropped = 1;
+      }
+    }
+    if (nextOpener !== null && nextOpener !== previous?.nextOpener) fresh.push(nextOpener);
     if (nextTopic !== null && nextTopic !== previous?.nextTopic) fresh.push(nextTopic);
   }
 

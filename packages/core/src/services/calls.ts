@@ -41,7 +41,7 @@ import { type RequestContext } from '../context.js';
 import { DomainError, fail, parseInput } from '../errors.js';
 import { type DirectoryCache } from '../internal/directory.js';
 import { readOpener, type OpenerSubject } from '../orchestrator/continuity-prompt.js';
-import { topicWords } from '../orchestrator/opener-topic.js';
+import { readsAsSubject, topicWords } from '../orchestrator/opener-topic.js';
 import { chooseOpener } from '../orchestrator/continuity.js';
 import { type DistillService } from './distill.js';
 import { mentionsEir, personaNameClaimsEir, veirEirName } from '../internal/eir-names.js';
@@ -226,9 +226,16 @@ const CUT_BEFORE =
  * Shorter forms of what an opener is about that still name it, longest first: itself, without a time at its end
  * ("… on Monday"), then cut before each later preposition ("book the Harbour Hall study room for the pilot kickoff" →
  * "book the Harbour Hall study room"), while what is left names something. A greeting too long with the whole
- * phrase says a shorter form instead of dropping it (MX-0022, MX-0024).
+ * phrase says a shorter form instead of dropping it (MX-0022, MX-0024). Only forms that read as a subject
+ * (`readsAsSubject`): a lone date, month or single word, or a plan without its verb, is none ("Hi Idris, want to carry
+ * on with January?", lab run 39780304879); empty when no form does.
  */
 export function shorterSubjects(text: string): string[] {
+  return candidateSubjects(text).filter(readsAsSubject);
+}
+
+/** {@link shorterSubjects} before each form is checked. */
+function candidateSubjects(text: string): string[] {
   const out = [text.trim()];
   let current = text.trim();
   for (let i = 0; i < 3; i += 1) {
@@ -282,9 +289,12 @@ export function repeatGreetingOf(args: {
     line.length <= REPEAT_GREETING_MAX_CHARS && sentencesOf(line).length === 1;
   const read = args.opener === null ? null : readOpener(args.opener);
   const subject = args.subject !== undefined ? args.subject : read === 'fragment' ? null : read;
+  const forms = subject === null ? [] : shorterSubjects(subject.text);
+  // An opener chosen around words that are no subject was built around a fragment: neither is said.
+  const fragment = read === 'fragment' || (subject !== null && forms.length === 0);
   const candidates: string[] = [];
   if (subject !== null) {
-    for (const t of shorterSubjects(subject.text)) {
+    for (const t of forms) {
       // "your plan to call facilities": "did you get to call facilities?"
       const plan = /^your plan to (.+)$/i.exec(t)?.[1];
       if (subject.kind === 'thread' && plan !== undefined) candidates.push(`${hi}, did you get to ${plan}?`);
@@ -304,7 +314,7 @@ export function repeatGreetingOf(args: {
     }
   }
   // The opener's own words, without the greeting the call's "Hi" already gives.
-  let parts = args.opener === null || read === 'fragment' ? [] : sentencesOf(args.opener);
+  let parts = args.opener === null || fragment ? [] : sentencesOf(args.opener);
   while (parts.length > 1 && OPENER_GREETING.test(parts[0] ?? '')) parts = parts.slice(1);
   const [first, second] = parts;
   const openerLines: string[] = [];

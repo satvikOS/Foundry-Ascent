@@ -158,6 +158,150 @@ export function topicWords(text: string): string[] {
   return [...contentTokens(text)].filter((w) => !FILLER.has(w));
 }
 
+/** Words a clause opens with, never a noun phrase said mid-sentence: subject pronouns and their contractions. */
+const CLAUSE_START =
+  /^(?:i|i'm|i've|i'll|i'd|we|we're|we've|we'll|we'd|you|you're|you've|you'll|you'd|they|they're|they've|they'll|they'd|he|he's|he'll|he'd|she|she's|she'll|she'd|it|it's|it'll|it'd|that's|there's|let's)(?![\p{L}'])/iu;
+/** A subject pronoun with its verb anywhere ("the union said they'll promote us"): a clause, not a phrase. */
+const PRONOUN_CLAUSE =
+  /(?<![\p{L}'])(?:i|we|you|they|he|she|it)(?:'(?:ll|re|ve|d|m|s)|\s+(?:will|would|are|were|have|had|is|was|am|can|could|should|did|do|does|said|say|says))(?![\p{L}'])/iu;
+
+/**
+ * Whether `phrase` (the words an opener says it was about) is a clause cut from a sentence rather than something to
+ * name mid-sentence (LAB-R3b, "we left off on They'll promote QuietQuad"): it opens with a pronoun or a capitalised
+ * everyday word (a sentence's first word), or a pronoun and its verb sit in it.
+ */
+export function isClauseFragment(phrase: string): boolean {
+  if (CLAUSE_START.test(phrase) || PRONOUN_CLAUSE.test(phrase)) return true;
+  const first = /^\p{Lu}[\p{Ll}'’-]+(?![\p{L}])/u.exec(phrase)?.[0];
+  return first !== undefined && isEverydayWord(first.replace(/['’]s$/, ''));
+}
+
+/** Words that say when, how long or how many: never what a subject names ("January", "next week", "a few minutes"). */
+const TIME_WORDS = new Set(
+  (
+    'january february march april may june july august september october november december jan feb mar apr jun ' +
+    'jul aug sep sept oct nov dec monday tuesday wednesday thursday friday saturday sunday mon tue tues wed thu ' +
+    'thur thurs fri sat sun today tomorrow tonight yesterday morning afternoon evening night weekend weekends week ' +
+    'weeks month months year years day days hour hours minute minutes min mins second seconds moment moments time ' +
+    'times quarter semester term now soon later earlier ago next last this coming past end beginning middle early ' +
+    'late few couple bit little while q1 q2 q3 q4'
+  ).split(' '),
+);
+const NUMBER_WORDS = new Set(
+  (
+    'one two three four five six seven eight nine ten eleven twelve fifteen twenty thirty forty fifty hundred ' +
+    'thousand million first second third half dozen'
+  ).split(' '),
+);
+/** Function words: a subject never opens with one of {@link BAD_START} nor ends with one of these. */
+const FUNCTION_WORDS = new Set(
+  (
+    'a an the this that these those my your our their his her its some any no every each all both either neither ' +
+    'another other such of to in on at for with from by about into onto over under after before during between ' +
+    'through without within per via as than since until till toward towards against among around across behind ' +
+    'beyond near off out up down upon and or but nor so yet if because while although though whether unless i me ' +
+    'we us you they them he him she it is are was were be been am will would can could should shall may might ' +
+    'must do does did have has had not'
+  ).split(' '),
+);
+/** Words a subject never opens with: prepositions, conjunctions, "to", auxiliaries and pronouns. */
+const BAD_START = new Set(
+  (
+    'of to in on at for with from by about into onto over under after before during between through without ' +
+    'within per via as than since until till toward towards against among around across behind beyond near off ' +
+    'out up down upon and or but nor so yet if because while although though unless is are was were be been am ' +
+    'will would can could should shall may might must do does did have has had not i me we us you they them he ' +
+    'him she it'
+  ).split(' '),
+);
+/**
+ * Words a subject never ends with: function words that need what follows ("the study room for", "your plan to"; an
+ * object pronoun ends a phrase well: "your plan to call them", "money from this"), and a modifier left without its
+ * noun ("the advisor last").
+ */
+const UNFINISHED = new Set(
+  'last next coming past few couple very really just also still even more most less much many'.split(' '),
+);
+const DANGLING = new Set([
+  ...[...FUNCTION_WORDS].filter(
+    (w) => !['this', 'that', 'these', 'those', 'it', 'them', 'us', 'me', 'you', 'him'].includes(w),
+  ),
+  ...UNFINISHED,
+]);
+const WH_SUBJECT = /^(?:whether|how|what|which|when|where|who|why)(?![\p{L}'])/iu;
+/** "your plan to X", "your cofounder's plan to X", "your goal of X". */
+const PLAN_SUBJECT =
+  /^(?:(?:your|the|their|our|a|an|this|that)\s+)?(?:[\p{L}'’-]+['’]s\s+)?(?:plans?|decision|goal|aim|idea|promise|offer|commitment|intention|hope|wish|attempt)\s+(to|of)\s+(\S+)/iu;
+
+/** A word as compared with the lists above: lower case, without the punctuation around it. */
+function bare(word: string): string {
+  return word
+    .toLowerCase()
+    .replace(/[‘’ʼ]/g, "'")
+    .replace(/^[^\p{L}\p{N}$]+|[^\p{L}\p{N}%']+$/gu, '');
+}
+
+/** A word that can be the verb of a plan ("to call", "to book"): lower case, no function, time or number word. */
+function looksLikeVerb(word: string): boolean {
+  const w = bare(word);
+  return (
+    /^\p{Ll}[\p{Ll}'-]*$/u.test(word.replace(/[,.;:!?]+$/, '')) &&
+    !FUNCTION_WORDS.has(w) &&
+    !TIME_WORDS.has(w) &&
+    !NUMBER_WORDS.has(w)
+  );
+}
+
+/** A word that names nothing by itself: a function, time or number word, or a number. */
+function namesNothing(word: string): boolean {
+  const w = bare(word);
+  return (
+    w === '' ||
+    FUNCTION_WORDS.has(w) ||
+    TIME_WORDS.has(w) ||
+    NUMBER_WORDS.has(w) ||
+    WH_SUBJECT.test(w) ||
+    /^\$?\d[\d.,:/%-]*(?:st|nd|rd|th|s|k|m)?$/.test(w)
+  );
+}
+
+/**
+ * Whether `text` reads as what an opener can say a conversation was about, mid-sentence ("shall we pick up …?",
+ * "want to carry on with …?"): a noun phrase ("the Hartwell pilot", "per-library pricing", "Noor"), an activity
+ * ("booking the auditorium"), a question ("whether to price per seat") or a plan with its verb ("your plan to call
+ * facilities"). Never a lone date, month or time ("January": lab run 39780304879, "Hi Idris, want to carry on with
+ * January?"), a single word that is not a name ("full-time", "pricing"), a plan without a verb ("your plan to a few
+ * minutes before your next class": the voice suite on acc50c6), a phrase that opens with a preposition, a
+ * conjunction, an auxiliary or a pronoun, or one left dangling ("the study room for", "the advisor last").
+ */
+export function readsAsSubject(text: string): boolean {
+  const flat = text
+    .replace(/[‘’ʼ]/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[.!?,;:…]+$/, '');
+  if (flat === '' || topicWords(flat).length === 0) return false;
+  const words = flat.split(' ');
+  const first = bare(words[0] ?? '');
+  const last = bare(words.at(-1) ?? '');
+  if (DANGLING.has(last)) return false;
+  const plan = PLAN_SUBJECT.exec(flat);
+  if (plan !== null) {
+    // A plan says what will be done: "your plan to call facilities", never "your plan to a few minutes".
+    if (plan[1]?.toLowerCase() === 'to' && !looksLikeVerb(plan[2] ?? '')) return false;
+  } else if (!WH_SUBJECT.test(flat)) {
+    if (BAD_START.has(first) || CLAUSE_START.test(flat)) return false;
+  }
+  const naming = words.filter((w) => !namesNothing(w));
+  if (naming.length === 0) return false;
+  // One word alone is a name ("Noor", "Hartwell", "FDA"), never a word that names nothing on its own.
+  if (words.length === 1) {
+    const word = words[0] ?? '';
+    return /^\p{Lu}/u.test(word) && !isEverydayWord(word.replace(/['’]s$/, ''));
+  }
+  return true;
+}
+
 /** Recall and memory questions the conversation-state cues do not cover ("What did I tell you in our chat…?"). */
 const RECALL =
   /\b(?:remember|recall|remind me|last time|(?:we|you and i) (?:talked|spoke|discussed|chatted|covered)|did i (?:tell|say|mention|ask)|i (?:told|asked|said to|mentioned to) you|what did (?:i|we) (?:say|tell|talk|discuss|decide|agree|ask)|(?:in|from|during) our (?:last |previous |earlier |first )?(?:chat|call|conversation|session|talk)|you (?:said|told me|mentioned)|(?:forgot|forget)\b)/i;
@@ -283,6 +427,8 @@ function nounPhrase(sentence: string): Phrase | null {
       const word = token.replace(/^[^\p{L}\p{N}$]+|[^\p{L}\p{N}%']+$/gu, '');
       const lower = word.toLowerCase();
       if (word === '' || BREAKERS.has(lower) || S_VERBS.has(lower) || DETERMINERS.has(lower)) break;
+      // "the advisor last week": "last" starts a time, not part of the phrase.
+      if (content > 0 && UNFINISHED.has(lower)) break;
       if (/^(?:her|his|him|she|he)$/.test(lower)) {
         rejected = true;
         break;
@@ -305,7 +451,9 @@ function nounPhrase(sentence: string): Phrase | null {
       const proper = words.some((w) => /^\p{Lu}/u.test(w) && !isEverydayWord(w));
       // Two words that name something ("the Hartwell pilot", "a two-week test"), or a name ("Noor").
       const enough = proper || topicWords(words.join(' ')).length >= 2;
-      if (enough && (best === null || score > best.score)) best = { text: yourWords(words.join(' ')), score };
+      const text = yourWords(words.join(' '));
+      // A month or a lone word is no subject ("January": lab run 39780304879): the next phrase is tried.
+      if (enough && readsAsSubject(text) && (best === null || score > best.score)) best = { text, score };
     }
     i = Math.max(j, i + 1);
   }
@@ -381,6 +529,37 @@ export interface LineTopic {
   readonly score: number;
 }
 
+/**
+ * A sentence that only says how much time the founder has ("I have a few minutes before my next class, so let's be
+ * quick", "I've got a bit of time today"): it names nothing to pick up (the voice suite on acc50c6 opened with "want to
+ * carry on with your plan to a few minutes before your next class?").
+ */
+const TIME_BUDGET =
+  /^(?:(?:i|we)(?:'ve| have)?\s+(?:only\s+|just\s+)?(?:got|have)|(?:i'm|i am|we're|we are)\s+(?:only\s+)?(?:free|around|here)(?:\s+for)?)\s+(?:(?:a|an|about|maybe|like|only|just|more)\s+)*(?:few|couple(?:\s+of)?|bit(?:\s+of)?|little(?:\s+bit(?:\s+of)?)?|some|\d+|ten|five|fifteen|twenty|thirty|half an?)?\s*(?:more\s+)?(?:minutes?|mins?|time|moment|hour|hours|seconds?)\b/i;
+
+/** Someone of the founder's ("My cofounder wants to go full-time in January") and their plan. */
+const THEIR_PLAN =
+  /^(?:my|our)\s+([\p{L}-]+(?:\s+[\p{L}-]+)?)\s+(?:wants|plans|is going|is planning|hopes|intends|has decided|decided|agreed|is about|needs)\s+to\s+(.+)$/iu;
+const THIRD_PERSON_WORD = /\b(?:he|she|him|his|her|hers|himself|herself)\b/i;
+
+/**
+ * Their plan as a topic ("your cofounder's plan to go full-time in January"): the clause after "wants to", or its last
+ * part when the first speaks of them ("quit his job and go full-time…": an opener never says "his").
+ */
+function theirPlan(sentence: string): LineTopic | null {
+  const match = THEIR_PLAN.exec(sentence);
+  if (match?.[1] === undefined || match[2] === undefined) return null;
+  let rest = clause(match[2]);
+  if (rest !== null && THIRD_PERSON_WORD.test(rest)) {
+    const lastPart = rest.split(/\s+and\s+/).at(-1) ?? '';
+    rest = lastPart === rest || THIRD_PERSON_WORD.test(lastPart) ? null : lastPart;
+  }
+  if (rest === null || rest === '') return null;
+  const who = match[1].toLowerCase();
+  const text = `your ${who}'s plan to ${rest}`;
+  return readsAsSubject(text) ? { text, question: false, score: 3 + topicWords(rest).length } : null;
+}
+
 const LEAD_IN =
   /^(?:(?:so|and|but|ok|okay|hey|hi|hello|well|also|actually|quick one|quick question|one more thing)\b[\s,.!:;-]*)+/i;
 
@@ -398,7 +577,7 @@ export function topicOf(line: string): LineTopic | null {
   let best: LineTopic | null = null;
   for (const raw of sentences) {
     const sentence = raw.replace(LEAD_IN, '').trim();
-    if (topicWords(sentence).length === 0) continue;
+    if (topicWords(sentence).length === 0 || TIME_BUDGET.test(sentence)) continue;
     let found: LineTopic | null = null;
     const yesNo = /^(should|shall|can|could|do|would)\s+(?:we|i)\s+(.+?)\??$/i.exec(sentence);
     const wh =
@@ -409,7 +588,9 @@ export function topicOf(line: string): LineTopic | null {
     const planned =
       /^(?:we|i)(?:'re| are|'m| am)?\s+(?:planning|going|hoping|trying|aiming|about)\s+to\s+(.+)$/i.exec(
         sentence,
-      ) ?? /^(?:we|i)\s+(?:plan|want|need|have|hope|intend|will|'ll)\s+(?:to\s+)?(.+)$/i.exec(sentence);
+      ) ??
+      // "I have to call", "I will call"; never "I have a few minutes" (a possession is no plan).
+      /^(?:we|i)\s+(?:(?:plan|want|need|have|hope|intend)\s+to|will|'ll)\s+(.+)$/i.exec(sentence);
     const inverted = invertedQuestion(sentence);
     if (inverted !== null) {
       found = { text: inverted, question: true, score: 4 + topicWords(inverted).length };
@@ -442,8 +623,10 @@ export function topicOf(line: string): LineTopic | null {
       if (rest !== null)
         found = { text: `your plan to ${rest}`, question: false, score: 3 + topicWords(rest).length };
     } else {
-      found = doing(sentence);
+      found = theirPlan(sentence) ?? doing(sentence);
     }
+    // What does not read as a subject is not one ("your plan to a few minutes…"): the sentence's phrases are tried.
+    if (found !== null && !readsAsSubject(found.text)) found = null;
     if (found === null) {
       const phrase = nounPhrase(sentence);
       if (phrase !== null) found = { text: phrase.text, question: false, score: phrase.score };

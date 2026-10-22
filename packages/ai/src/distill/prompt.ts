@@ -32,6 +32,11 @@ export interface DistillPromptInput {
   /** The goal of the conversation, when set. */
   sessionGoal?: string | null;
   /**
+   * What the conversation opened with (its first bubble, or what a call's greeting said), when it opened with
+   * something: the model sees what it raised, so it can tell whether the founder took that thread up.
+   */
+  opener?: string | null;
+  /**
    * The turns to distil now, oldest first: the ones earlier distillations did not cover. At most
    * {@link MAX_DISTILL_TURNS} are sent (the earliest); `turnsShown` says how many.
    */
@@ -119,27 +124,29 @@ function entryLines(tag: string, entries: readonly NotebookEntry[]): string[] {
   ];
 }
 
-function commitmentLines(commitments: readonly NotebookCommitment[]): string[] {
+function commitmentLines(commitments: readonly NotebookCommitment[], today: string): string[] {
   if (commitments.length === 0) return ['<commitments>(none)</commitments>'];
   return [
     '<commitments>',
-    ...commitments.map(
-      (c) =>
-        `<commitment id="${escapeInline(c.id, 64)}" status="${c.status}" due="${c.due ? escapeInline(c.due, 10) : 'none'}">${escapeData(
-          truncate(c.text, 300),
-        )}</commitment>`,
-    ),
+    ...commitments.map((c) => {
+      // An open commitment whose date has passed may well have happened: the founder's words decide (production,
+      // 2026-10-20: an advisor session due 10-13 stayed "open" after "I met the advisor last week").
+      const past = c.status === 'open' && c.due !== null && c.due < today ? ' past_due="true"' : '';
+      return `<commitment id="${escapeInline(c.id, 64)}" status="${c.status}" due="${c.due ? escapeInline(c.due, 10) : 'none'}"${past}>${escapeData(
+        truncate(c.text, 300),
+      )}</commitment>`;
+    }),
     '</commitments>',
   ];
 }
 
-function renderPreviousNotebook(notebook: PromptNotebook | null | undefined): string {
+function renderPreviousNotebook(notebook: PromptNotebook | null | undefined, today: string): string {
   if (!notebook) return '<previous_notebook>(empty: this is the first conversation)</previous_notebook>';
   return [
     '<previous_notebook>',
     `<summary>${notebook.summary.trim() === '' ? '(none)' : escapeData(truncate(notebook.summary, 1_200))}</summary>`,
     ...entryLines('founder_profile', notebook.founderProfile),
-    ...commitmentLines(notebook.commitments),
+    ...commitmentLines(notebook.commitments, today),
     ...entryLines('open_questions', notebook.openQuestions),
     ...entryLines('last_advice', notebook.lastAdvice),
     `<next_opener>${notebook.nextOpener ? escapeData(truncate(notebook.nextOpener, 300)) : '(none)'}</next_opener>`,
@@ -189,16 +196,22 @@ export function buildDistillPrompt(input: DistillPromptInput): {
     '  - summary: at most 6 sentences on where the venture and the founder stand now.',
     '  - founder_profile: up to 8 short notes on how the founder likes to work and talk (for example "Prefers short',
     '    answers with numbers"). Only what the founder showed; never health, family, finances, beliefs or identity.',
-    '  - commitments: every open commitment as {id, text, due, status}. Keep earlier ones with their id; mark one',
-    '    "done" only when the founder said it is done, "dropped" only when they said they will not do it.',
+    '  - commitments: every open commitment as {id, text, due, status}. Keep earlier ones with their id. Mark one',
+    '    "done" when the founder says, in any words, that it happened or that what it was for is behind them ("I met',
+    '    the advisor last week" closes "book the advisor session and prepare three questions"; "we sent the terms"',
+    '    closes "send the pilot terms"), and "dropped" when they say they will not do it. When they take one up with',
+    '    a new plan (a new date, a changed step), keep its id and rewrite its text and due to that plan. A date that',
+    '    passed (past_due) closes nothing by itself: only what the founder said does.',
     '  - open_questions: up to 6 unknowns the venture still has to settle, or questions the founder asked that are',
     '    still open. Never a question you asked that they did not take up (drop any such entry), never one twice.',
     '  - last_advice: up to 5 short notes of advice you gave that the founder may act on.',
     '  - next_opener: one fresh sentence that names the most important thread to come back to, a plan or a topic',
     '    from what the founder said in THIS conversation (their news, decision or plan before your own advice), or',
-    '    null. Help they asked for and did not fully get (preparing for a pitch, drafting questions) comes first. Never',
-    '    a thread they did not take up when you raised it, never copy a question you asked in the transcript, and',
-    '    never repeat the previous next_opener.',
+    '    null. Help they asked for in this conversation and did not fully get (preparing for a pitch, drafting',
+    '    questions) comes first. Never a thread they did not take up when you raised it (what <opened_with> raised',
+    '    when they talked about something else, a question of yours they left aside), never copy a question you',
+    '    asked in the transcript, and never keep the previous next_opener or its next_topic unless they took that',
+    '    thread up in this conversation.',
     '  - next_topic: that same thread as a short phrase of at most 12 words that reads after "we left off on", in',
     '    lower case except names (for example "the five library-staff interviews you planned"), or null with a',
     '    null next_opener. The greeting is phrased around it afresh each time, so it is a topic, never a question.',
@@ -227,6 +240,12 @@ export function buildDistillPrompt(input: DistillPromptInput): {
 
   // The earliest turns not yet distilled: a later part never skips over an earlier one.
   const turns = input.turns.slice(0, MAX_DISTILL_TURNS);
+  const opened =
+    input.opener && input.opener.trim() !== ''
+      ? [
+          `<opened_with note="what you said first in this conversation, before turn 1">${escapeData(truncate(input.opener, 600))}</opened_with>`,
+        ]
+      : [];
   const transcript = turns
     .map((t, i) => {
       const channel = t.channel === 'voice' ? ' channel="voice"' : '';
@@ -250,10 +269,10 @@ export function buildDistillPrompt(input: DistillPromptInput): {
   const previousDigest = renderPreviousDigest(earlier, input.previousDigest);
   const user = [
     context,
-    renderPreviousNotebook(input.previousNotebook),
+    renderPreviousNotebook(input.previousNotebook, input.today),
     ...(previousDigest === null ? [] : [previousDigest]),
     buildEvidenceBlock(input.evidence ?? [], { maxTotalChars: 8_000 }),
-    `<session_transcript>\n${transcript}\n</session_transcript>`,
+    `<session_transcript>\n${[...opened, transcript].join('\n')}\n</session_transcript>`,
     `Today: ${input.today}. Write the notes now.`,
   ].join('\n\n');
   return { system, messages: [{ role: 'user', content: user }], turnsShown: turns.length };
