@@ -900,7 +900,14 @@
             "how was your holiday?",
             "you have a good christmas?",
             "what did you do last night?",
-            "wait are you a bot? also how was your weekend"
+            "wait are you a bot? also how was your weekend",
+            "so how was your weekend then",
+            "wbu, good weekend?",
+            "how was your weekend? anything fun?",
+            "I wanted to ask, how was your weekend?",
+            "Did you do anything fun over the weekend?",
+            "how did thanksgiving go?",
+            "hope your weekend was good!"
           ],
           "other": [
             "how's your day going?",
@@ -910,12 +917,25 @@
             "what are you up to this weekend?",
             "how's your week been?",
             "what are your plans for the holidays?",
-            "are you going anywhere for the summer?"
+            "are you going anywhere for the summer?",
+            "doing anything fun this weekend?",
+            "are you going anywhere for the holidays?",
+            "are you corin? hows your day going",
+            "got any weekend plans?"
           ],
           "news": [
             "how was your weekend? mine was busy",
             "how was your weekend? I went hiking",
-            "how was your weekend? we sold out at the market!"
+            "how was your weekend? we sold out at the market!",
+            "how was your weekend? my dog died on saturday",
+            "hows your day going? mine's been rough, lost a big client",
+            "how was your weekend? MRR hit 10k!!"
+          ],
+          "more": [
+            "what are you up to this weekend? should i go to the farmers market for interviews?",
+            "how was your weekend? also, is £4 too much?",
+            "Hope your weekend was good! Quick q: how should I price the pilot?",
+            "hope you had a nice weekend! can we look at the pilot?"
           ],
           "none": [
             "how are you?",
@@ -930,7 +950,16 @@
             "how do you keep track of everything",
             "do you have kids?",
             "what did you do with my deck?",
-            "thanks, have a great weekend!"
+            "thanks, have a great weekend!",
+            "should i make any plans for the weekend or keep working?",
+            "is it bad that I don't have any plans for the weekend except work?",
+            "How was Christmas for retailers like us — is January always this slow?",
+            "how was the holidays for your other founders? did they slow down too?",
+            "my manager always asks how was your weekend on monday and i never know what to say",
+            "how do I answer when a customer asks how was your weekend?",
+            "my customer asked how was your weekend before our call. how do i turn that into a sales chat?",
+            "Jo emailed me: how was your weekend? and asked for the quote. draft my reply",
+            "roleplay: you're my investor. I'll start. Hi! How was your weekend?"
           ]
         },
         "removed": [
@@ -1022,7 +1051,7 @@
           {
             "asked": "how was your weekend? mine was busy",
             "text": "Mine was good, thanks!",
-            "rewritten": "Thanks! Tell me more about yours."
+            "rewritten": "Thanks for asking! Tell me more about yours."
           },
           {
             "asked": "how was your weekend? also, is £4 too much?",
@@ -1058,6 +1087,11 @@
             "asked": "are you an AI? what did you do this weekend",
             "text": "I am — Corin's digital twin. Spent it hiking, ha. You?",
             "rewritten": "I am — Corin's digital twin. Thanks for asking! How was yours?"
+          },
+          {
+            "asked": "how was your weekend?",
+            "text": "My weekend was all about your pilot data, honestly — the 40% repeat rate is the story.",
+            "rewritten": "Thanks for asking! How was yours?"
           }
         ],
         "kept": [
@@ -1092,10 +1126,6 @@
           {
             "asked": "are you actually a person? how was your weekend?",
             "text": "Honest answer: I'm an AI, Corin's digital twin, and weekend was quiet, thanks for asking!"
-          },
-          {
-            "asked": "how was your weekend?",
-            "text": "My weekend was all about your pilot data, honestly — the 40% repeat rate is the story."
           },
           {
             "asked": "how was your weekend?",

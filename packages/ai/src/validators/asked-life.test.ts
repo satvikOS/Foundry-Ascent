@@ -3,7 +3,16 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { askedLifeOf, finishLifeReply, lifeClosing, lifeUnitAfterRemoval } from './asked-life.js';
+import {
+  askedLifeOf,
+  finishLifeReply,
+  gerundSubject,
+  inSingleQuotes,
+  lifeClosing,
+  lifeRest,
+  lifeUnitAfterRemoval,
+  onlyLifeTail,
+} from './asked-life.js';
 import { identityQuestionOf, rewriteIdentity, type IdentityRewriteOptions } from './identity.js';
 import { SentenceGate, type GateUnit, type SentenceGateOptions } from './sentence-gate.js';
 
@@ -84,7 +93,7 @@ function stream(text: string, founder: string | null, spoken: boolean): { shown:
 }
 
 interface AskedLifeSuite {
-  questions: Record<'past' | 'other' | 'news' | 'none', string[]>;
+  questions: Record<'past' | 'other' | 'news' | 'more' | 'none', string[]>;
   removed: { asked: string; text: string; rewritten: string }[];
   kept: { asked: string; text: string }[];
 }
@@ -103,7 +112,7 @@ describe('a life of its own told when the founder asks about it (shared with the
     for (const [kind, messages] of Object.entries(suite?.questions ?? {})) {
       for (const message of messages) {
         const life = askedLifeOf(message);
-        const read = life === null ? 'none' : life.news ? 'news' : life.asked;
+        const read = life === null ? 'none' : life.news ? 'news' : life.more ? 'more' : life.asked;
         expect(read, message).toBe(kind);
       }
     }
@@ -213,6 +222,103 @@ describe('the founder’s own story, bio, quote and draft stay as main left them
   });
 });
 
+interface AskedLifeRegression {
+  audit: string;
+  founder: string;
+  reply: string;
+  small_talk: boolean;
+  g14: boolean;
+  rewritten?: string;
+}
+
+const askedRegressions =
+  (fixture('asked_life_regressions.json') as { cases: AskedLifeRegression[] } | null)?.cases ?? null;
+
+describe('what the asked-life rule once cut stays as main left it, or loses the made-up life as intended (audit diff2-B2)', () => {
+  it('reads every regression of the audit (they live in this repository)', () => {
+    expect(askedRegressions?.length ?? 0).toBe(38);
+  });
+
+  it('rewrites each reply with the founder’s message as main did, or takes out the made-up life, typed and spoken', () => {
+    for (const c of askedRegressions ?? []) {
+      for (const spoken of [false, true]) {
+        const withFounder = reply(c.reply, c.founder, spoken);
+        if (c.rewritten === undefined) {
+          expect(withFounder, `${c.audit}: ${c.reply}`).toEqual(reply(c.reply, c.founder, spoken, false));
+        } else {
+          expect(withFounder.text, `${c.audit}: ${c.reply}`).toBe(
+            spoken ? reply(c.rewritten, c.founder, true).text : c.rewritten,
+          );
+          expect(withFounder.findings, c.audit).toContainEqual({
+            kind: 'claims_human',
+            rule: 'personal_life',
+          });
+          // What is left tells no made-up life, and never opens or ends on a bare "You?".
+          expect(reply(c.rewritten, c.founder, spoken).text, c.audit).toBe(c.rewritten);
+          expect(c.rewritten).not.toMatch(/(?:^|[.!?]\s+)(?:and\s+)?(?:you|yours)\?(?:\s|$)/iu);
+        }
+      }
+    }
+  });
+
+  it('streams each reply as the whole one reads, shown and said', () => {
+    for (const c of askedRegressions ?? []) {
+      for (const spoken of [false, true]) {
+        const streamed = stream(c.reply, c.founder, spoken);
+        if (c.rewritten === undefined) {
+          expect(streamed, `${c.audit}: ${c.reply}`).toEqual(stream(c.reply, null, spoken));
+        } else {
+          expect(streamed.shown, `${c.audit}: ${c.reply}`).toBe(c.rewritten);
+          if (spoken) expect(streamed.said, `${c.audit}: ${c.reply}`).toBe(c.rewritten);
+        }
+      }
+    }
+  });
+});
+
+describe('where a life is not the coach’s own', () => {
+  it('keeps what else a sentence says when it answers the founder, and only that', () => {
+    expect(lifeRest("thanks — but I'm really sorry about the accelerator.", false)).toEqual({
+      kept: "I'm really sorry about the accelerator.",
+    });
+    expect(lifeRest('but 10k MRR is huge.', false)).toEqual({ kept: '10k MRR is huge.' });
+    expect(lifeRest("thanks — sorry yours hasn't.", false)).toBe('leans');
+    expect(lifeRest('hope you had fun too.', false)).toBe('leans');
+    expect(lifeRest('thanks for asking!', true)).toBeNull();
+    expect(lifeRest('how about you?', true)).toBeNull();
+    // Not plainly something else: more of the same life, which goes with its sentence.
+    expect(lifeRest('thanks — lots of calls.', false)).toBeNull();
+    expect(lifeRest('a week by the sea.', false)).toBeNull();
+    // After a thanks, the answer to the founder's own question ("…also, is £4 too much?").
+    expect(lifeRest('thanks — £4 is fine.', true)).toEqual({ kept: '£4 is fine.' });
+  });
+
+  it('reads a verbless life only as all its sentence says', () => {
+    expect(onlyLifeTail(', mostly')).toBe(true);
+    expect(onlyLifeTail(', mostly reading and a bit of gardening')).toBe(true);
+    expect(onlyLifeTail(' if the weather holds')).toBe(true);
+    expect(onlyLifeTail(', thanks for asking! How about you')).toBe(true);
+    expect(onlyLifeTail(', reading, whatever recharges you — do that this weekend')).toBe(false);
+    expect(onlyLifeTail(', a long lunch, no laptop')).toBe(false);
+    expect(onlyLifeTail(' if you can get away')).toBe(false);
+  });
+
+  it('reads an "-ing" that is the subject of its clause as advice', () => {
+    expect(gerundSubject('Going to the farmers market', ' this weekend is a great idea ')).toBe(true);
+    expect(gerundSubject('Going hiking', ' on Sunday beats another sprint')).toBe(true);
+    expect(gerundSubject('Heading up to the lake', ' with friends')).toBe(false);
+    expect(gerundSubject('Slept in', ' and read')).toBe(false);
+  });
+
+  it('reads a line in straight single quotes as one the founder will say', () => {
+    const line = "Pick one true detail: 'Good, thanks — went climbing on Saturday.' Then ask about theirs.";
+    expect(inSingleQuotes(line, line.indexOf('went'))).toBe(true);
+    expect(inSingleQuotes(line, line.indexOf('Then'))).toBe(false);
+    const apostrophes = "It's been a quiet one, the kids' party aside — went climbing.";
+    expect(inSingleQuotes(apostrophes, apostrophes.indexOf('went'))).toBe(false);
+  });
+});
+
 describe('reading a made-up life stays linear', () => {
   it('rewrites 1,200 sentences of banter in linear time', () => {
     const text = (count: number): string =>
@@ -263,8 +369,8 @@ describe('reading a made-up life stays linear', () => {
 });
 
 describe('the reply still turns to the founder once its made-up life is out', () => {
-  const past = { asked: 'past', news: false } as const;
-  const other = { asked: 'other', news: false } as const;
+  const past = { asked: 'past', news: false, more: false } as const;
+  const other = { asked: 'other', news: false, more: false } as const;
 
   it.each([
     ['', past, 'Thanks for asking! How was yours?'],
@@ -280,9 +386,34 @@ describe('the reply still turns to the founder once its made-up life is out', ()
       "I am — Corin's digital twin. Thanks for asking! How was yours?",
     ],
     ['Thanks! What did I miss?', past, 'Thanks! What did I miss?'],
+    [
+      'You? Also, did the survey go out?',
+      past,
+      'Thanks for asking! How was yours? Also, did the survey go out?',
+    ],
+    [
+      'Thanks! You? Also, did the survey go out?',
+      past,
+      'Thanks! How was yours? Also, did the survey go out?',
+    ],
     ['Now, where are we on pricing?', past, 'Now, where are we on pricing?'],
   ] as const)('finishes %j', (text, life, finished) => {
     expect(finishLifeReply(text, life)).toBe(finished);
+  });
+
+  it('drops an "Anyway —" that leaned on the life that opened the reply, and only that one', () => {
+    expect(finishLifeReply('Anyway — how did the pilot calls go?', past, true)).toBe(
+      'How did the pilot calls go?',
+    );
+    expect(finishLifeReply('Anyway — how did the pilot calls go?', past, false)).toBe(
+      'Anyway — how did the pilot calls go?',
+    );
+    expect(lifeUnitAfterRemoval('', 'Anyway — how did the pilot calls go?', past)).toBe(
+      'How did the pilot calls go?',
+    );
+    expect(lifeUnitAfterRemoval(' Thanks!', 'Anyway — how did the pilot calls go?', past)).toBe(
+      'Anyway — how did the pilot calls go?',
+    );
   });
 
   it('turns back in the stream as the whole reply does', () => {
@@ -301,7 +432,7 @@ describe('the reply still turns to the founder once its made-up life is out', ()
   });
 
   it('asks after the founder’s own when they told it already', () => {
-    expect(finishLifeReply('Thanks!', { asked: 'past', news: true })).toBe(
+    expect(finishLifeReply('Thanks!', { asked: 'past', news: true, more: false })).toBe(
       'Thanks! Tell me more about yours.',
     );
   });

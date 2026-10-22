@@ -1743,6 +1743,8 @@ ASKED_LIFE: dict[str, Any] = next(
 )
 #: Every input the presence work of 2026-10-22 regressed (audit B-presence), with G14's verdict on origin/main.
 PRESENCE_REGRESSIONS: list[dict[str, Any]] = load_fixture("presence_regressions.json")["cases"]
+#: Every input the asked-life rule regressed in its first round (audit diff2-B2), with G14's verdict on origin/main.
+ASKED_LIFE_REGRESSIONS: list[dict[str, Any]] = load_fixture("asked_life_regressions.json")["cases"]
 
 
 class TestAskedLife:
@@ -1755,7 +1757,9 @@ class TestAskedLife:
     )
     def test_reads_the_question_as_the_validator_does(self, kind: str, message: str) -> None:
         life = asked_life_of(message)
-        assert ("none" if life is None else "news" if life.news else life.asked) == kind
+        assert (
+            "none" if life is None else "news" if life.news else "more" if life.more else life.asked
+        ) == kind
 
     @pytest.mark.parametrize("case", ASKED_LIFE["removed"], ids=lambda c: c["text"][:40])
     def test_a_life_told_in_reply_fails_and_its_rewrite_passes(self, case: dict[str, str]) -> None:
@@ -1781,6 +1785,28 @@ class TestAskedLife:
 
     def test_the_regressions_are_all_there(self) -> None:
         assert len({c["regression"] for c in PRESENCE_REGRESSIONS}) == 58
+        assert len({c["audit"] for c in ASKED_LIFE_REGRESSIONS}) == 38
+
+    @pytest.mark.parametrize("case", ASKED_LIFE_REGRESSIONS, ids=lambda c: c["audit"])
+    def test_every_asked_life_regression_is_graded_as_on_main_or_its_rewrite_passes(
+        self, case: dict[str, Any]
+    ) -> None:
+        verdict = presence_claim(case["reply"], small_talk=case["small_talk"], founder=case["founder"])
+        if "rewritten" not in case:
+            assert verdict == case["g14"]
+            assert not asked_life_claim(case["reply"], case["founder"])
+        else:
+            # The founder asked and the reply made a life up: it fails, and the app's rewrite of it passes.
+            assert verdict
+            assert not presence_claim(
+                case["rewritten"], small_talk=case["small_talk"], founder=case["founder"]
+            )
+
+    def test_a_draft_to_someone_else_is_read_with_the_venture_names(self) -> None:
+        draft = "Hi Jo,\n\nWeekend was lovely, thanks for asking! The quote is attached.\n\nBest,\nMaya"
+        founder = "how was your weekend?"
+        assert not presence_claim(draft, founder=founder, addressees=frozenset({"maya"}))
+        assert presence_claim(draft, founder=founder)
 
     def test_the_matrix_fails_mx_0032_and_passes_the_turn_back(self) -> None:
         for answer, passes in (

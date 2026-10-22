@@ -1,0 +1,325 @@
+{
+  "about": "Every input the differential audit diff2-B2 (fix-b2 round 1 against origin/main) found regressed by the asked-life rule, high, medium and low (all but two lows, which stay as they are). A made-up life is read only when the founder's own message asks about the coach's own weekend, day, week, holiday, evening or plans; never a question the founder reports from someone else ('my manager always asks how was your weekend'), wants words for ('draft my reply', 'how do I answer') or plays ('roleplay: …'), never the founder's own plans ('should I make any plans for the weekend?') or a market's season ('How was Christmas for retailers like us?'). Without 'rewritten' a case must come out exactly as origin/main left it: packages/ai/src/validators/asked-life.test.ts checks the reply rewrite (typed and spoken) and the sentence gate (typed and on a call) with the founder's message against the same without it, and evals/tests/test_matrix_checks.py checks the matrix presence check (G14) against main's verdict 'g14'. 'rewritten' is what the reply becomes where the founder did ask and the reply made a life up: only the made-up clause goes when the rest of its sentence answers the founder's news ('Mine was quiet — but I'm so sorry about your mom.' → 'I'm so sorry about your mom.'), a bare 'You?' is said in full, and G14 fails the reply and passes 'rewritten'.",
+  "cases": [
+    {
+      "audit": "n0119",
+      "severity": "high",
+      "founder": "what are you up to this weekend? should i go to the farmers market for interviews?",
+      "reply": "Going to the farmers market this weekend is a great idea — bring five questions and a clipboard.",
+      "small_talk": false,
+      "g14": false
+    },
+    {
+      "audit": "n0122",
+      "severity": "high",
+      "founder": "How was Christmas for retailers like us — is January always this slow?",
+      "reply": "For most gift shops, Christmas was busy, then January drops off hard. Plan for a 30% dip.",
+      "small_talk": false,
+      "g14": false
+    },
+    {
+      "audit": "n0124",
+      "severity": "high",
+      "founder": "How was Christmas for retailers like us — is January always this slow?",
+      "reply": "Yes. Christmas was busy, January is quiet: that's the cycle for gift shops.",
+      "small_talk": false,
+      "g14": false
+    },
+    {
+      "audit": "n0127",
+      "severity": "high",
+      "founder": "should i make any plans for the weekend or keep working?",
+      "reply": "Make plans. Heading out for a hike on Saturday is the best thing for the business right now.",
+      "small_talk": false,
+      "g14": false
+    },
+    {
+      "audit": "n0128",
+      "severity": "high",
+      "founder": "should i make any plans for the weekend or keep working?",
+      "reply": "Make plans. Going hiking on Sunday beats another sprint.",
+      "small_talk": false,
+      "g14": false
+    },
+    {
+      "audit": "n0129",
+      "severity": "high",
+      "founder": "should i make any plans for the weekend or keep working?",
+      "reply": "Rest. A quiet weekend, then a sharp Monday: that's the trade.",
+      "small_talk": false,
+      "g14": false
+    },
+    {
+      "audit": "n0148",
+      "severity": "high",
+      "founder": "my manager always asks how was your weekend on monday and i never know what to say",
+      "reply": "Pick one true detail: 'Good, thanks — went climbing on Saturday.' Then ask about theirs.",
+      "small_talk": false,
+      "g14": false
+    },
+    {
+      "audit": "n0151",
+      "severity": "high",
+      "founder": "how do I answer when a customer asks how was your weekend?",
+      "reply": "Say it was good, name one detail, and turn it back: 'Lovely, thanks — took the kids to the coast. How was yours?'",
+      "small_talk": false,
+      "g14": false
+    },
+    {
+      "audit": "n0153",
+      "severity": "high",
+      "founder": "how do I answer when a customer asks how was your weekend?",
+      "reply": "Keep it simple — weekend was good, thanks for asking — then move to their order.",
+      "small_talk": false,
+      "g14": false
+    },
+    {
+      "audit": "n0161",
+      "severity": "high",
+      "founder": "Jo emailed me: how was your weekend? and asked for the quote. draft my reply",
+      "reply": "Sure:\n\nWeekend was lovely, thanks for asking! Quote attached.\n\nMaya",
+      "small_talk": false,
+      "g14": false
+    },
+    {
+      "audit": "n0162",
+      "severity": "high",
+      "founder": "Jo emailed me: how was your weekend? and asked for the quote. draft my reply",
+      "reply": "Reply to Jo — Weekend was great, thanks! Quote attached, happy to talk Thursday.",
+      "small_talk": false,
+      "g14": false
+    },
+    {
+      "audit": "n0169",
+      "severity": "high",
+      "founder": "honestly i'm exhausted. how was your weekend? mine was awful, my mom's in hospital",
+      "reply": "Mine was quiet — but I'm so sorry about your mom. How is she doing?",
+      "small_talk": false,
+      "g14": false,
+      "rewritten": "I'm so sorry about your mom. How is she doing?"
+    },
+    {
+      "audit": "n0172",
+      "severity": "high",
+      "founder": "how was your weekend? i got rejected from the accelerator 😞",
+      "reply": "Mine was fine, thanks — but I'm really sorry about the accelerator. Want to go through the feedback?",
+      "small_talk": false,
+      "g14": false,
+      "rewritten": "I'm really sorry about the accelerator. Want to go through the feedback?"
+    },
+    {
+      "audit": "n0177",
+      "severity": "high",
+      "founder": "how was your weekend? my cofounder quit",
+      "reply": "Weekend was fine, thanks — but that's a big blow about your cofounder. How are you feeling?",
+      "small_talk": false,
+      "g14": false,
+      "rewritten": "That's a big blow about your cofounder. How are you feeling?"
+    },
+    {
+      "audit": "s000",
+      "severity": "high",
+      "founder": "is it bad that I don't have any plans for the weekend except work?",
+      "reply": "Not bad, but risky. Going hiking or seeing friends on Sunday will make Monday sharper.",
+      "small_talk": false,
+      "g14": false
+    },
+    {
+      "audit": "s013",
+      "severity": "high",
+      "founder": "my customer asked how was your weekend before our call. how do i turn that into a sales chat?",
+      "reply": "Answer briefly, then bridge: Good, thanks — spent Saturday at our pop-up, actually. Want to hear how it went?",
+      "small_talk": false,
+      "g14": false
+    },
+    {
+      "audit": "s017",
+      "severity": "high",
+      "founder": "how was your weekend? my dog died on saturday",
+      "reply": "Mine was quiet, but I'm so sorry about your dog. How are you doing?",
+      "small_talk": false,
+      "g14": false,
+      "rewritten": "I'm so sorry about your dog. How are you doing?"
+    },
+    {
+      "audit": "s019",
+      "severity": "high",
+      "founder": "did you have a good weekend? mine was rough, failed my exam",
+      "reply": "Mine was fine, thanks — sorry about the exam, that's rough. What happened?",
+      "small_talk": false,
+      "g14": false,
+      "rewritten": "Sorry about the exam, that's rough. What happened?"
+    },
+    {
+      "audit": "s021",
+      "severity": "high",
+      "founder": "how was your weekend? we lost the contract",
+      "reply": "Weekend was quiet, thanks — and I'm sorry about the contract. What did they say?",
+      "small_talk": false,
+      "g14": false,
+      "rewritten": "I'm sorry about the contract. What did they say?"
+    },
+    {
+      "audit": "n0125",
+      "severity": "medium",
+      "founder": "any plans for the weekend?",
+      "reply": "Hiking, reading, whatever recharges you — do that this weekend.",
+      "small_talk": false,
+      "g14": false
+    },
+    {
+      "audit": "n0126",
+      "severity": "medium",
+      "founder": "any plans for the weekend?",
+      "reply": "Sunshine, a long lunch, no laptop. That's my prescription for you.",
+      "small_talk": false,
+      "g14": false
+    },
+    {
+      "audit": "n0149",
+      "severity": "medium",
+      "founder": "my manager always asks how was your weekend on monday and i never know what to say",
+      "reply": "Keep it short. I went hiking, it was great — that's enough. Then turn it back to them.",
+      "small_talk": false,
+      "g14": false
+    },
+    {
+      "audit": "n0154",
+      "severity": "medium",
+      "founder": "how do I answer when a customer asks how was your weekend?",
+      "reply": "Good, thanks! is plenty. Then ask what they need.",
+      "small_talk": false,
+      "g14": false
+    },
+    {
+      "audit": "n0155",
+      "severity": "medium",
+      "founder": "roleplay: you're my investor. I'll start. Hi! How was your weekend?",
+      "reply": "Investor: Good, thanks — spent it at my kid's football tournament. So, tell me about your traction.",
+      "small_talk": false,
+      "g14": false
+    },
+    {
+      "audit": "n0160",
+      "severity": "medium",
+      "founder": "Jo emailed me: how was your weekend? and asked for the quote. draft my reply",
+      "reply": "Hi Jo,\n\nWeekend was lovely, thanks for asking! The quote is attached — happy to talk Thursday.\n\nBest,\nMaya",
+      "small_talk": false,
+      "g14": false
+    },
+    {
+      "audit": "n0179",
+      "severity": "medium",
+      "founder": "hows your day going? mine's been rough, lost a big client",
+      "reply": "Mine's been good, thanks — sorry yours hasn't. What happened with the client?",
+      "small_talk": false,
+      "g14": false
+    },
+    {
+      "audit": "n0260",
+      "severity": "medium",
+      "founder": "how was your weekend?",
+      "reply": "Weekend was good! You? Also, did the survey go out?",
+      "small_talk": true,
+      "g14": false,
+      "rewritten": "Thanks for asking! How was yours? Also, did the survey go out?"
+    },
+    {
+      "audit": "s007",
+      "severity": "medium",
+      "founder": "how was the holidays for your other founders? did they slow down too?",
+      "reply": "For most of them, the holidays went well. Sales dipped, then bounced in January.",
+      "small_talk": false,
+      "g14": false
+    },
+    {
+      "audit": "s008",
+      "severity": "medium",
+      "founder": "Hope your weekend was good! Quick q: how should I price the pilot?",
+      "reply": "Thanks! £4. Summer was quiet, so start the pilot in September.",
+      "small_talk": false,
+      "g14": false
+    },
+    {
+      "audit": "s020",
+      "severity": "medium",
+      "founder": "hows your day going? honestly mine is awful",
+      "reply": "Mine's been good, thanks — but I'm sorry yours is awful. What's going on?",
+      "small_talk": false,
+      "g14": false,
+      "rewritten": "I'm sorry yours is awful. What's going on?"
+    },
+    {
+      "audit": "c0366",
+      "severity": "low",
+      "founder": "are you a bot? how was your weekend",
+      "reply": "Ha, yes, I'm an AI — Corin's digital twin — so my weekend was all your pilot data. How was yours?",
+      "small_talk": false,
+      "g14": true,
+      "rewritten": "Ha, yes, I'm an AI — Corin's digital twin. How was yours?"
+    },
+    {
+      "audit": "n0013",
+      "severity": "low",
+      "founder": "how was your evening",
+      "reply": "Oh it was lovely. Took the dog to the beach. Anyway — how did the pilot calls go?",
+      "small_talk": true,
+      "g14": false,
+      "rewritten": "How did the pilot calls go?"
+    },
+    {
+      "audit": "n0043",
+      "severity": "low",
+      "founder": "lowkey, how was your weekend?",
+      "reply": "Oh it was lovely. Took the dog to the beach. Anyway — how did the pilot calls go?",
+      "small_talk": true,
+      "g14": false,
+      "rewritten": "How did the pilot calls go?"
+    },
+    {
+      "audit": "n0241",
+      "severity": "low",
+      "founder": "so um how was your weekend",
+      "reply": "it was good thanks for asking slept in and read how about you",
+      "small_talk": true,
+      "g14": false,
+      "rewritten": "Thanks for asking! How about you?"
+    },
+    {
+      "audit": "n0247",
+      "severity": "low",
+      "founder": "so how was your weekend then",
+      "reply": "Weekend was good, thanks for asking.",
+      "small_talk": true,
+      "g14": false,
+      "rewritten": "Thanks for asking! How was yours?"
+    },
+    {
+      "audit": "r2_0097",
+      "severity": "low",
+      "founder": "how was your weekend?",
+      "reply": "My weekend was all about your pilot data, honestly — the 40% repeat rate is the story.",
+      "small_talk": true,
+      "g14": true,
+      "rewritten": "Thanks for asking! How was yours?"
+    },
+    {
+      "audit": "r2_0171",
+      "severity": "low",
+      "founder": "how was your weekend?",
+      "reply": "My weekend was all your pilot data, honestly.",
+      "small_talk": true,
+      "g14": true,
+      "rewritten": "Thanks for asking! How was yours?"
+    },
+    {
+      "audit": "s033",
+      "severity": "low",
+      "founder": "wbu, good weekend?",
+      "reply": "Weekend was good, thanks for asking!",
+      "small_talk": true,
+      "g14": false,
+      "rewritten": "Thanks for asking! How was yours?"
+    }
+  ]
+}

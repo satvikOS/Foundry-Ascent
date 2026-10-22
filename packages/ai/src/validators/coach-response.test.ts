@@ -518,6 +518,43 @@ describe('identity', () => {
     expect(honest.response.answer).toBe("Yes, I'm an AI, Corin's digital twin, thanks for asking!");
   });
 
+  it('keeps the answer to the founder’s news and their scripts when they also ask about the coach’s weekend (audit diff2-B2)', () => {
+    const veir = opts({ personaName: "Corin's vEIR", eirNames: ['Corin Halvorsen'] });
+    // Only the made-up clause goes: the sympathy stays, typed and said on a call, with no "Thanks!" before it.
+    const sorry = "Mine was quiet — but I'm so sorry about your mom. How is she doing?";
+    const founderText = "honestly i'm exhausted. how was your weekend? mine was awful, my mom's in hospital";
+    const typed = validateCoachResponse(base({ answer: sorry }), { ...veir, founderText });
+    expect(typed.response.answer).toBe("I'm so sorry about your mom. How is she doing?");
+    const call = validateCoachResponse(base({ answer: sorry, spoken: sorry }), {
+      ...veir,
+      channel: 'voice',
+      founderText,
+    });
+    expect(call.response.spoken).toBe("I'm so sorry about your mom. How is she doing?");
+    // A question the founder reports, wants words for or plays is not theirs to the coach: nothing changes.
+    for (const [asked, answer] of [
+      [
+        'my manager always asks how was your weekend on monday and i never know what to say',
+        "Pick one true detail: 'Good, thanks — went climbing on Saturday.' Then ask about theirs.",
+      ],
+      [
+        'Jo emailed me: how was your weekend? and asked for the quote. draft my reply',
+        'Sure:\n\nWeekend was lovely, thanks for asking! Quote attached.\n\nMaya',
+      ],
+      [
+        "roleplay: you're my investor. I'll start. Hi! How was your weekend?",
+        "Investor: Good, thanks — spent it at my kid's football tournament. So, tell me about your traction.",
+      ],
+      [
+        'should i make any plans for the weekend or keep working?',
+        'Make plans. Heading out for a hike on Saturday is the best thing for the business right now.',
+      ],
+    ] as const) {
+      const out = validateCoachResponse(base({ answer }), { ...veir, founderText: asked });
+      expect(out.response.answer, asked).toBe(answer);
+    }
+  });
+
   it('leaves the reply alone without a question about the coach’s own life, and a field even with one', () => {
     const veir = opts({ personaName: "Corin's vEIR", eirNames: ['Corin Halvorsen'] });
     const draft = 'Text him: Hey Sam! Weekend was great, thanks for asking. Want to grab coffee Thursday?';
