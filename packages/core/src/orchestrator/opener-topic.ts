@@ -724,6 +724,48 @@ const BREAKERS = new Set(
   ).split(' '),
 );
 /**
+ * Irregular past participles that also describe a noun ("our rebuilt onboarding", "the built environment faculty", "our
+ * won deals"): as a regular one in -ed, part of a phrase right after its determiner (the differential review of cc29cad
+ * heard "environment faculty" and the invitation), unless that is a demonstrative, the sentence's subject ("That built
+ * trust with the dean").
+ */
+const DESCRIBING_PARTICIPLES = new Set('built rebuilt won sold bought spent taught'.split(' '));
+/** Determiners that are also a sentence's subject ("That built trust with the dean", "This won us the deal"). */
+const DEMONSTRATIVES = new Set(['this', 'that', 'these', 'those']);
+/**
+ * Words a participle makes a compound adjective with ("custom built", "purpose built", "hand built", "home made"), as an
+ * adverb in -ly does ("newly built", "specially made"): {@link compoundParticiple}.
+ */
+const BEFORE_A_PARTICIPLE = new Set('custom purpose hand home self tailor'.split(' '));
+
+/**
+ * Whether `token` (a participle at `raw[j]`, after `before`, the one word of a phrase after its determiner or at the
+ * sentence's start) is the second half of a compound adjective, the noun it describes after it ("our custom built CRM",
+ * "a purpose built CRM", "the newly built map": the differential review of cc29cad heard "shall we pick up your
+ * custom?"); never the verb after a phrase's noun ("the team built a prototype", "Noor recently hired engineers").
+ */
+function compoundParticiple(raw: readonly string[], j: number, before: string): boolean {
+  const token = raw[j] ?? '';
+  const lower = bare(token);
+  const prior = bare(before);
+  if (!(DESCRIBING_PARTICIPLES.has(lower) || lower === 'made' || /^[a-z]{3,}ed$/.test(lower))) return false;
+  if (!(BEFORE_A_PARTICIPLE.has(prior) || (/^[a-z]{3,}ly$/.test(prior) && !LY_WORDS.has(prior))))
+    return false;
+  // Its noun follows, in the same clause.
+  const next = raw[j + 1];
+  if (next === undefined || /[,.;:!?)]$/.test(token)) return false;
+  const word = bare(next);
+  return !(
+    word === '' ||
+    namesNothing(next) ||
+    BREAKERS.has(word) ||
+    S_VERBS.has(word) ||
+    DETERMINERS.has(word) ||
+    DISCOURSE_WORDS.has(word) ||
+    UNFINISHED.has(word)
+  );
+}
+/**
  * Words after which the next word is a verb, not the start of a noun phrase (a subject pronoun, a modal, "to"):
  * "they'll promote QuietQuad" and "if we add group booking" name no "promote QuietQuad" or "add group booking"
  * (LAB-R3b: "we talked about They'll promote QuietQuad").
@@ -881,7 +923,16 @@ function nounPhrase(sentence: string): Phrase | null {
       const token = raw[j] ?? '';
       const word = token.replace(/^[^\p{L}\p{N}$]+|[^\p{L}\p{N}%']+$/gu, '');
       const lower = word.toLowerCase();
-      if (word === '' || BREAKERS.has(lower) || S_VERBS.has(lower) || DETERMINERS.has(lower)) break;
+      // A participle that describes the noun after it: right after the determiner ("the built environment"), or the
+      // second half of a compound adjective ("your custom built CRM", "a purpose built CRM").
+      const describing =
+        (determiner !== null &&
+          !DEMONSTRATIVES.has(determiner) &&
+          content === 0 &&
+          DESCRIBING_PARTICIPLES.has(lower)) ||
+        (content === 1 && (determiner !== null || i === 0) && compoundParticiple(raw, j, words.at(-1) ?? ''));
+      if (!describing && (word === '' || BREAKERS.has(lower) || S_VERBS.has(lower) || DETERMINERS.has(lower)))
+        break;
       // "the advisor last week": "last" starts a time, not part of the phrase; "a short pilot instead": an adverb of
       // the line ends it (the voice suite on 9a2a41f).
       if (content > 0 && (UNFINISHED.has(lower) || DISCOURSE_WORDS.has(lower) || ENDS_A_PHRASE.has(lower)))
@@ -896,7 +947,13 @@ function nounPhrase(sentence: string): Phrase | null {
         content >= 2 &&
         j === raw.length - 1 &&
         /^\p{Ll}+ing$/u.test(words[determiner === null ? 0 : 1] ?? '');
-      if (lower.endsWith('ed') && lower.length > 4 && !(determiner !== null && content === 0) && !complement)
+      if (
+        lower.endsWith('ed') &&
+        lower.length > 4 &&
+        !(determiner !== null && content === 0) &&
+        !complement &&
+        !describing
+      )
         break;
       words.push(word);
       content += 1;
@@ -1289,6 +1346,8 @@ const FAMILY_HEALTH =
   /(?<![\p{L}'])(?:my|your)\s+(?:mum|mom|mother|dad|father|parents?|grandma|grandmother|grandpa|grandfather|gran|granny|nan|nana|brother|sister|son|daughter|kids?|child|children|baby|wife|husband|partner|fianc[eé]e?|boyfriend|girlfriend|aunt|uncle|family)(?:['’]s)?\s+(?:(?:just|has|had|have|was|were|is|are|got|been|recently|suddenly|now|still|being)\s+){0,3}(?:cancer|terminally\s+ill|(?:sick|ill|unwell)(?!\s+of)|dying|died|passed\s+away|diagnosed|hospitali[sz]ed|in\s+(?:the\s+)?(?:hospital|icu|a&e)|(?:rushed|admitted|taken)\s+(?:in)?to\s+(?:the\s+)?hospital|surgery|chemo(?:therapy)?|a\s+(?:stroke|heart\s+attack)|funeral)(?![\p{L}'’-])/giu;
 /** What a clause runs to before it joins another or ends ("about my back and I need…" → "about my back"). */
 const CLAUSE_END = /[.,;:!?…]|\s(?:and|but|so|then|because|or)\s/iu;
+/** "Right now", "at the moment", "atm": when, never what ("I need to talk to someone atm"). */
+const RIGHT_NOW = /(?<![\p{L}'])(?:right\s+now|at\s+the\s+moment|atm)(?![\p{L}'])/giu;
 /** Words after a carer or a state of mind that say what is theirs ("my therapist appointment", "your meds"). */
 const PERSONAL_HEADS = new Set(
   (
@@ -1338,10 +1397,14 @@ function privateHealth(text: string, speaker: Speaker): boolean {
   const theirOwn = (opening: string): boolean =>
     speaker === 'veir' || !/^(?:your|you)(?![\p{L}])/iu.test(opening);
   const after = (m: RegExpMatchArray): string => text.slice((m.index ?? 0) + m[0].length);
-  /** The rest of the clause names nothing, or it is about themselves. */
+  /**
+   * The rest of the clause names nothing, or it is about themselves. Chat words name nothing ("I just need to talk to
+   * someone tbh", "… ngl", "… rn", "… atm": the differential review of cc29cad heard "we talked about your plan to talk
+   * to someone"): the clause is read as it would be written ({@link tidyFounderWords}).
+   */
   const aboutThem = (tail: string): boolean => {
-    const rest = tail.split(CLAUSE_END)[0] ?? '';
-    return ABOUT_THEMSELVES.test(rest) || !namesSomething(rest.replace(/\bright\s+now\b/giu, ''));
+    const rest = tidyFounderWords(tail.split(CLAUSE_END)[0] ?? '');
+    return ABOUT_THEMSELVES.test(rest) || !namesSomething(rest.replace(RIGHT_NOW, ''));
   };
   for (const pattern of [OWN_APPOINTMENT, DIAGNOSED, FAMILY_HEALTH])
     for (const m of text.matchAll(pattern)) if (theirOwn(m[0])) return true;
@@ -1408,9 +1471,48 @@ function fallsApart(sentence: string): boolean {
  */
 const WITHDRAWING =
   /^(?:(?:giv(?:e|es|ing)|gave)\s+up|quit(?:s|ting)?|stop(?:s|ped|ping)?|end(?:s|ed|ing)?|leav(?:e|es|ing)|kill(?:s|ed|ing)?|step(?:s|ped|ping)?\s+(?:back|away|down|aside)|(?:run(?:s|ning)?|ran|get(?:s|ting)?|got|walk(?:s|ing|ed)?)\s+away|shut(?:s|ting)?\s+(?:it\s+|everything\s+)?down|wind(?:s|ing)?\s+(?:it\s+|everything\s+)?down|drop(?:s|ped|ping)?\s+out|abandon(?:s|ed|ing)?|mov(?:e|es|ed|ing)\s+on|clos(?:e|es|ed|ing)(?:\s+(?:it\s+)?(?:up|down))?|pull(?:s|ed|ing)?\s+the\s+plug|keep(?:s|ing)?\s+going|kept\s+going|tak(?:e|es|ing)\s+a\s+break|disappear(?:s|ed|ing)?|hid(?:e|es|ing))(?![\p{L}'])\s*(.*)$/iu;
-/** Quitting or leaving, joined to what comes after ("quit and get a normal job", "leave and travel"). */
+/**
+ * Quitting or leaving, joined to what comes after ("quit and get a normal job", "leave and travel"): withdrawal, unless
+ * what comes after commits them to the venture ({@link intoTheVenture}).
+ */
 const QUITS_AND =
-  /^(?:quit(?:s|ting)?|(?:giv(?:e|es|ing)|gave)\s+up|leav(?:e|es|ing)|(?:walk(?:s|ing|ed)?|run(?:s|ning)?|ran)\s+away|drop(?:s|ped|ping)?\s+out)\s+(?:and|so|then)\s/iu;
+  /^(?:quit(?:s|ting)?|(?:giv(?:e|es|ing)|gave)\s+up|leav(?:e|es|ing)|(?:walk(?:s|ing|ed)?|run(?:s|ning)?|ran)\s+away|drop(?:s|ped|ping)?\s+out)\s+(?:and|so|then)\s+(?:then\s+)?(.*)$/iu;
+/**
+ * Going full time ("go full time on the startup", "work on QuietQuad full time", "do this full time"), never a
+ * full-time job elsewhere ("get a full-time job", "work full time at a bank").
+ */
+const FULL_TIME =
+  /(?<![\p{L}'])full[\s-]?time(?![\p{L}'-])(?!\s+(?:job|jobs|role|roles|position|work|gig|employment|contract|offer|at|for|with|in)(?![\p{L}'-]))/iu;
+/**
+ * A move of the venture's or a start of the founder's own: starting their own, building or rebuilding, launching,
+ * rebranding, shipping, pivoting, raising a round, going all in, doubling down, joining an accelerator ("leave and
+ * start my own thing", "quit and pivot to B2B", "quit and rebuild the app", "leave and join the other accelerator").
+ */
+const VENTURE_MOVE =
+  /^(?:start(?:s|ed|ing)?\s+(?:my|your|our|their)\s+own|(?:re)?build(?:s|ing)?|(?:re)?launch(?:es|ed|ing)?|rebrand(?:s|ed|ing)?|ship(?:s|ped|ping)?|pivot(?:s|ed|ing)?|fundrais(?:e|es|ed|ing)|rais(?:e|es|ed|ing)\s+(?:(?:a|an|the|our|your|my|some|more)\s+)?(?:(?:pre-?)?seed\s+)?(?:money|funding|funds|capital|round|seed|investment)|go(?:es|ing)?\s+all[\s-]in|double(?:s|d)?\s+down|join(?:s|ed|ing)?\s+(?:(?:the|an?|another|our|your)\s+)?(?:other\s+|different\s+|new\s+)?(?:accelerator|incubator|cohort|startup\s+(?:program(?:me)?|studio))s?)(?![\p{L}'-])/iu;
+/** Focusing on something: the venture, unless it is the founder's own life ("focus on my exams", "focus on myself"). */
+const FOCUS_ON =
+  /^(?:focus(?:es|ed|ing)?|concentrat(?:e|es|ed|ing))\s+(?:(?:fully|only|solely|entirely)\s+)?on\s+(.+)$/iu;
+const OWN_LIFE =
+  /^(?:my|your|myself|yourself|me|exams?|studies|studying|school|uni|university|college|family|health|kids|life|wellbeing|well-being|sleep|recovery|recovering)(?![\p{L}'-])/iu;
+/** A job, a course or a career elsewhere: what quitting to do is withdrawal ("quit and get a full-time job"). */
+const ELSEWHERE =
+  /(?<![\p{L}'])(?:jobs?|employment|employer|career|salary|degree|masters|master's|phd|mba|grad\s+scheme|graduate\s+scheme|internship|corporate)(?![\p{L}'-])/iu;
+
+/**
+ * Whether what follows quitting or leaving and an "and" (`after`) commits the founder to the venture (the differential
+ * review of cc29cad: "Should I quit and go full time on the startup?", "I want to quit and focus on the startup",
+ * "Should we quit and pivot to B2B?", "I want to leave and start my own thing" were all dropped as withdrawal): going
+ * full time, a move of the venture's, or focusing on it, never a job, a course or a career elsewhere. What they leave
+ * is then their job, their course or an approach, as in "quit my job to go full-time".
+ */
+function intoTheVenture(after: string): boolean {
+  const clause = after.split(CLAUSE_END)[0]?.trim() ?? '';
+  if (ELSEWHERE.test(clause)) return false;
+  if (FULL_TIME.test(clause) || VENTURE_MOVE.test(clause)) return true;
+  const focus = FOCUS_ON.exec(clause)?.[1];
+  return focus !== undefined && (fromTheVenture(focus) || !OWN_LIFE.test(focus.trim()));
+}
 /** What ends on quitting or leaving, nothing after it ("sell your shares and leave", "finish the term and quit"). */
 const AND_QUITS = /\s(?:and|then)\s+(?:then\s+)?(?:quit|leave|walk\s+away|drop\s+out|give\s+up)[.!?]*$/iu;
 /** When a withdrawal is to happen, said after it ("after the summer", "by the end of the year", "in January"). */
@@ -1533,8 +1635,10 @@ function vents(text: string): 'line' | 'topic' | null {
     return namesSomething(rest) && !NO_OBJECT.test(rest) ? null : 'line';
   }
   // Quitting, then something else ("quit and get a normal job", "sell your shares and leave"): nothing of the venture
-  // is what is left behind (the differential review of 6656c33).
-  if (QUITS_AND.test(done) || AND_QUITS.test(done)) return 'line';
+  // is what is left behind (the differential review of 6656c33), unless what follows commits them to it ("quit and go
+  // full time", "leave and start your own thing": the differential review of cc29cad).
+  const quitsAnd = QUITS_AND.exec(done);
+  if ((quitsAnd !== null && !intoTheVenture(quitsAnd[1] ?? '')) || AND_QUITS.test(done)) return 'line';
   const withdrawing = WITHDRAWING.exec(done);
   if (withdrawing !== null) {
     // When it ends is no part of what is left ("shut it down after the summer").
@@ -1649,7 +1753,9 @@ export function topicOf(line: string): LineTopic | null {
       best = found;
   }
   if (best === null) return null;
-  // Tidied ("idk" is said "maybe"), then without the discourse words that leaves at its ends.
+  // Tidied ("idk" is said "maybe"), then without the discourse words that leaves at its ends. What it then says is
+  // read for venting again: a chat word was all it named besides ("your plan to talk to someone tbh" is "your plan to
+  // talk to someone": the differential review of cc29cad).
   const text = withoutDiscourseWords(tidyFounderWords(best.text));
-  return text === '' ? null : { ...best, text };
+  return text === '' || vents(text) === 'line' ? null : { ...best, text };
 }

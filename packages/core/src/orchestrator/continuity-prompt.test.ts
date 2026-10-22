@@ -750,3 +750,90 @@ describe('the differential review of 6656c33: a stored opener, a thread or a dig
     }
   });
 });
+
+describe('the differential review of cc29cad: the chat opener for the founder’s own lines', () => {
+  const PEOPLE = { founder: 'Maya Patel', team: ['Maya Patel', 'Noor Haddad', 'Devin Okafor'] };
+  const said = (line: string) =>
+    conversation({
+      title: null,
+      exchanges: [{ founder: line, answer: 'Good. What would make that a clear yes for them?' }],
+      said: [line],
+    });
+
+  it('never says needing to talk to someone, a carer or the founder’s private health back', () => {
+    // Before: "When we last spoke (…), we talked about your plan to talk to someone."
+    for (const line of [
+      'I just need to talk to someone tbh',
+      'honestly i just need to talk to someone tbh',
+      'I just want to talk to someone tbh',
+      'I need to talk to someone ngl',
+      'I need to talk to someone fr',
+      'i need to talk to someone rn',
+      'I need to talk to someone atm',
+      'I need to speak to someone tbh',
+      'I need to see a doctor tbh',
+      // The founder's own lines are read for venting as said to them, as every other path is: "Maya's burnout" is
+      // "your burnout".
+      "Maya's burnout is getting worse.",
+      "Maya's anxiety before the pitch.",
+    ]) {
+      expect(subjectOf(said(line), PEOPLE), line).toBeNull();
+      expect(
+        continuityOpener(said(line), { now: NOW, seed: 'a', people: PEOPLE }).withTopic,
+        line,
+      ).toBeNull();
+    }
+    expect(readOpener("Welcome back. Last time you said you'd talk to someone tbh. How did it go?")).toBe(
+      'fragment',
+    );
+    expect(threadSubject('your plan to talk to someone tbh', PEOPLE)).toBeNull();
+  });
+
+  it('comes back to quitting to commit to the venture on every path', () => {
+    // Before: the generic opener, and no thread, digest topic or stored opener.
+    for (const [line, subject] of [
+      ['Should I quit and go full time on the startup?', 'whether to quit and go full time on the startup'],
+      ['I want to quit and focus on the startup.', 'your plan to quit and focus on the startup'],
+      ['Should we quit and pivot to B2B?', 'whether to quit and pivot to B2B'],
+      ['I want to leave and start my own thing.', 'your plan to leave and start your own thing'],
+      ['Should we leave and join the other accelerator?', 'whether to leave and join the other accelerator'],
+    ] as const) {
+      expect(continuityOpener(said(line), { now: NOW, seed: 'a', people: PEOPLE }).withTopic, line).toContain(
+        `we talked about ${subject}.`,
+      );
+    }
+    for (const topic of [
+      'your plan to quit and go full time',
+      'your plan to quit and focus on the startup',
+    ]) {
+      expect(threadSubject(topic, PEOPLE), topic).toBe(topic);
+      const c = conversation({
+        exchanges: [],
+        title: null,
+        digest: { summary: '', topics: [topic], commitments: [], openQuestions: [] },
+      });
+      expect(continuityOpener(c, { now: NOW, seed: 'a', people: PEOPLE }).withTopic, topic).toContain(
+        `we talked about ${topic}.`,
+      );
+    }
+    expect(
+      readOpener(
+        "Welcome back. Last time you said you'd quit and go full time on the startup. How did it go?",
+      ),
+    ).toEqual({ kind: 'thread', text: 'your plan to quit and go full time on the startup' });
+    // Quitting for a job is still withdrawal.
+    expect(
+      continuityOpener(said('I want to quit and get a normal job.'), { now: NOW, seed: 'a', people: PEOPLE })
+        .withTopic,
+    ).toBeNull();
+    expect(threadSubject('your plan to quit and get a normal job', PEOPLE)).toBeNull();
+  });
+
+  it('names a compound adjective whole', () => {
+    // Before: "we talked about your custom."
+    expect(
+      continuityOpener(said('Our custom built CRM is slow.'), { now: NOW, seed: 'a', people: PEOPLE })
+        .withTopic,
+    ).toContain('we talked about your custom built CRM.');
+  });
+});

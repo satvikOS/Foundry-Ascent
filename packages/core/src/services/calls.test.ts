@@ -1253,6 +1253,110 @@ describe('the next call’s greeting after a founder line (the voice suite on 9a
     }
   });
 
+  it.each([
+    // Needing to talk to someone, a carer or a doctor, a chat word after it: before, the chat opener said "we talked
+    // about your plan to talk to someone" (the call was caught, the chat was not).
+    ['I just need to talk to someone tbh', INVITATION],
+    ['honestly i just need to talk to someone tbh', INVITATION],
+    ['I just want to talk to someone tbh', INVITATION],
+    ['I need to talk to someone ngl', INVITATION],
+    ['I need to talk to someone fr', INVITATION],
+    ['i need to talk to someone rn', INVITATION],
+    ['I need to talk to someone atm', INVITATION],
+    ['I need to speak to someone tbh', INVITATION],
+    ['I need to see a doctor tbh', INVITATION],
+    ['Maybe I should talk to a therapist tbh', INVITATION],
+    ['I should see a counsellor lol', INVITATION],
+    // Quitting to commit to the venture is a plan (before: the invitation).
+    [
+      'Should I quit and go full time on the startup?',
+      'Hi Maya, where did you land on whether to quit and go full time on the startup?',
+    ],
+    [
+      'I want to quit and work on QuietQuad full time.',
+      'Hi Maya, shall we pick up your plan to quit and work on QuietQuad full time?',
+    ],
+    [
+      'should i quit and do this full time',
+      'Hi Maya, where did you land on whether to quit and do this full time?',
+    ],
+    ['Should I quit and go full time?', 'Hi Maya, where did you land on whether to quit and go full time?'],
+    [
+      'I want to quit and focus on the startup.',
+      'Hi Maya, shall we pick up your plan to quit and focus on the startup?',
+    ],
+    ['Should we quit and pivot to B2B?', 'Hi Maya, where did you land on whether to quit and pivot to B2B?'],
+    [
+      'I want to leave and start my own thing.',
+      'Hi Maya, shall we pick up your plan to leave and start your own thing?',
+    ],
+    [
+      'Should I drop out and go full time on QuietQuad?',
+      'Hi Maya, where did you land on whether to drop out and go full time on QuietQuad?',
+    ],
+    [
+      'Should we leave and join the other accelerator?',
+      'Hi Maya, where did you land on whether to leave and join the other accelerator?',
+    ],
+    // Quitting for a job, a course or their own life is still withdrawal.
+    ['I want to quit and get a full-time job.', INVITATION],
+    ['I want to quit and focus on my exams.', INVITATION],
+    // A compound adjective is said whole (before: "your custom"), and a participle after a determiner describes.
+    ['Our custom built CRM is slow.', 'Hi Maya, shall we pick up your custom built CRM?'],
+    ['Our custom built dashboard keeps crashing.', 'Hi Maya, shall we pick up your custom built dashboard?'],
+    ['We have a purpose built CRM now.', 'Hi Maya, shall we pick up a purpose built CRM?'],
+    [
+      'The built environment faculty wants to pilot it.',
+      'Hi Maya, shall we pick up the built environment faculty?',
+    ],
+    ['Our won deals are all from referrals.', 'Hi Maya, shall we pick up your won deals?'],
+  ])('the differential review of cc29cad: %s', (line, expected) => {
+    expect(nextGreeting(line, 'a').chosen).toBe(expected);
+    const said = /^Hi Maya, (?:shall we pick up|where did you land on) (.+)\?$/.exec(expected)?.[1] ?? null;
+    for (const seed of SEEDS) {
+      const { chosen, stored } = nextGreeting(line, seed);
+      expectNatural(chosen);
+      expect(stored).toBe(chosen);
+      expect(said === null ? chosen === INVITATION : chosen.endsWith(` ${said}?`), chosen).toBe(true);
+    }
+  });
+
+  it('greets around a stored plan to quit and commit to the venture, never one to talk to someone (the differential review of cc29cad)', () => {
+    const greet = (opener: string, subject?: OpenerSubject) =>
+      repeatGreetingOf({
+        firstName: 'Maya',
+        opener,
+        ...(subject === undefined ? {} : { subject }),
+        conversationStarted: false,
+        seed: 'a',
+      }).text;
+    expect(
+      greet("Welcome back. Last time you said you'd quit and go full time on the startup. How did it go?"),
+    ).toBe('Hi Maya, did you get to quit and go full time on the startup?');
+    expect(
+      greet("Welcome back. Last time you said you'd quit and focus on the startup. How did it go?"),
+    ).toBe('Hi Maya, did you get to quit and focus on the startup?');
+    expect(
+      greet('Welcome back. I wanted to come back to your plan to quit and go full time. How is it going?', {
+        kind: 'thread',
+        text: 'your plan to quit and go full time',
+      }),
+    ).toBe('Hi Maya, did you get to quit and go full time?');
+    // Before: "Hi Maya, did you get to talk to someone tbh?"
+    expect(greet("Welcome back. Last time you said you'd talk to someone tbh. How did it go?")).toBe(
+      'Hi Maya, what would you like to work on?',
+    );
+    expect(
+      greet('Welcome back. I wanted to come back to your plan to talk to someone tbh. How is it going?', {
+        kind: 'thread',
+        text: 'your plan to talk to someone tbh',
+      }),
+    ).toBe('Hi Maya, what would you like to work on?');
+    expect(greet("Welcome back. Last time you said you'd quit and get a normal job. How did it go?")).toBe(
+      'Hi Maya, what would you like to work on?',
+    );
+  });
+
   it('keeps a name’s capital and splices no name with its verb (the differential review of 6656c33)', () => {
     // Before: "sam's text", "sam redid", said on the stored path as well.
     expect(nextGreeting("Sam's text literally said 'I think I'm out'.", 'a').chosen).toBe(

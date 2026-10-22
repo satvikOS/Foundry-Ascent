@@ -507,9 +507,15 @@ export interface SubjectOptions {
   readonly foundersOwn?: boolean;
 }
 
-/** A subject an opener can say: it reads as one (`readsAsSubject`) and is not one to avoid. */
+/**
+ * A subject an opener can say: it reads as one (`readsAsSubject`), it is not the founder venting, withdrawing or
+ * speaking of their private health (`isVenting`, as on every other path: the differential review of cc29cad heard
+ * "we talked about your plan to talk to someone" for "I just need to talk to someone tbh"), and it is not one to avoid.
+ */
 function sayable(text: string | null, options: SubjectOptions): text is string {
-  return text !== null && text !== '' && readsAsSubject(text) && options.avoid?.(text) !== true;
+  return (
+    text !== null && text !== '' && readsAsSubject(text) && !isVenting(text) && options.avoid?.(text) !== true
+  );
 }
 
 /**

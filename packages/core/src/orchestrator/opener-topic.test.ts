@@ -1069,3 +1069,111 @@ describe('the differential review of 6656c33 (2,426 inputs, main against the bra
     }
   });
 });
+
+describe('the differential review of cc29cad', () => {
+  it('never makes a topic of needing to talk to someone, a carer or a doctor when a chat word ends the line', () => {
+    // Before: "your plan to talk to someone" (the "tbh" was all that named anything, then the tidying dropped it),
+    // "a therapist", "your plan to see a doctor".
+    for (const line of [
+      'I just need to talk to someone tbh',
+      'honestly i just need to talk to someone tbh',
+      'I just want to talk to someone tbh',
+      'I need to talk to someone ngl',
+      'I need to talk to someone fr',
+      'i need to talk to someone rn',
+      'I need to talk to someone atm',
+      'I need to speak to someone tbh',
+      'I need to see a doctor tbh',
+      'Maybe I should talk to a therapist tbh',
+      'I should see a counsellor lol',
+    ]) {
+      expect(topicOf(line)?.text ?? null, line).toBeNull();
+    }
+    expect(isVenting('your plan to talk to someone tbh')).toBe(true);
+    // Someone the venture needs is still named.
+    expect(topicOf('I need to talk to someone at procurement tbh')?.text).toBe(
+      'your plan to talk to someone at procurement',
+    );
+  });
+
+  it('reads quitting to commit to the venture as a plan, and quitting for a job or a course as withdrawal', () => {
+    // Before: every one of these was dropped as withdrawal, on every path.
+    for (const [line, text] of [
+      ['Should I quit and go full time on the startup?', 'whether to quit and go full time on the startup'],
+      [
+        'I want to quit and work on QuietQuad full time.',
+        'your plan to quit and work on QuietQuad full time',
+      ],
+      ['should i quit and do this full time', 'whether to quit and do this full time'],
+      ['Should I quit and go full time?', 'whether to quit and go full time'],
+      ['I want to quit and focus on the startup.', 'your plan to quit and focus on the startup'],
+      ['Should we quit and pivot to B2B?', 'whether to quit and pivot to B2B'],
+      ['I want to leave and start my own thing.', 'your plan to leave and start your own thing'],
+      [
+        'Should I drop out and go full time on QuietQuad?',
+        'whether to drop out and go full time on QuietQuad',
+      ],
+      ['Should we leave and join the other accelerator?', 'whether to leave and join the other accelerator'],
+      ['We need to quit and rebuild the app.', 'your plan to quit and rebuild the app'],
+    ] as const) {
+      expect(topicOf(line)?.text ?? null, line).toBe(text);
+      expect(isVenting(text), text).toBe(false);
+    }
+    for (const subject of [
+      'your plan to quit and go full time',
+      'your plan to quit and focus on the startup',
+      'whether to drop out and go full time',
+    ]) {
+      expect(isVenting(subject), subject).toBe(false);
+    }
+    // A job, a course or the founder's own life after it is still withdrawal.
+    for (const line of [
+      'I want to quit and get a normal job.',
+      'I want to quit and get a full-time job.',
+      'I want to quit and work full time at a bank.',
+      'I want to quit and focus on my exams.',
+      'I want to give up and go back to uni.',
+      'I want to quit and raise my kids.',
+      'I want to sell my shares and leave.',
+    ]) {
+      expect(topicOf(line)?.text ?? null, line).toBeNull();
+    }
+    for (const subject of [
+      'your plan to quit and get a normal job',
+      'whether to quit and focus on your exams',
+    ]) {
+      expect(isVenting(subject), subject).toBe(true);
+    }
+  });
+
+  it('keeps a participle that describes the noun after it, and still ends a phrase at one that is its verb', () => {
+    // Before: "your custom", "environment faculty", the invitation.
+    for (const [line, text] of [
+      ['Our custom built CRM is slow.', 'your custom built CRM'],
+      ['Our custom built dashboard keeps crashing.', 'your custom built dashboard'],
+      ['We have a purpose built CRM now.', 'a purpose built CRM'],
+      ['Our hand built prototype impressed Hartwell.', 'your hand built prototype'],
+      ['The newly built map is faster.', 'the newly built map'],
+      ['Our rebuilt onboarding is live.', 'your rebuilt onboarding'],
+      ['The built environment faculty wants to pilot it.', 'the built environment faculty'],
+      ['Our won deals are all from referrals.', 'your won deals'],
+      ['Our newly hired designer starts Monday.', 'your newly hired designer'],
+      // A name's or a noun's verb still ends the phrase (LAB-R3b; the differential review of 6656c33).
+      ['Bloomberg wrote about our pilot.', 'Bloomberg'],
+      ['Devin heard back from the student union.', 'Devin'],
+      ['The team built a prototype for Hartwell.', 'Hartwell'],
+      ['Noor recently hired engineers.', 'Noor'],
+    ] as const) {
+      expect(topicOf(line)?.text ?? null, line).toBe(text);
+    }
+    // A demonstrative is the sentence's subject, its participle the verb.
+    for (const line of ['That built trust with the dean.', 'This won us the deal.']) {
+      expect(topicOf(line)?.text ?? null, line).toBeNull();
+    }
+    for (const [line, text] of [
+      ['That custom built CRM keeps crashing.', 'that custom built CRM'],
+    ] as const) {
+      expect(topicOf(line)?.text ?? null, line).toBe(text);
+    }
+  });
+});
