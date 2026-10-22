@@ -44,11 +44,13 @@ function claude(inputPerMillionUsd: number, outputPerMillionUsd: number): ModelP
  */
 export const DEFAULT_MODEL_PRICES: PricingTable = {
   'openai.gpt-6-luna': { inputPerMillionUsd: 0.1, outputPerMillionUsd: 0.5, premium: 0.1 },
+  // Global rates; the `us.` profile production uses is listed 10 % higher ($0.33 / $2.75, cache reads $0.0825).
   'amazon.nova-2-lite-v1:0': {
     inputPerMillionUsd: 0.3,
     outputPerMillionUsd: 2.5,
     cacheReadPerMillionUsd: 0.075,
     cacheWritePerMillionUsd: 0,
+    regionalPremium: 0.1,
   },
   'amazon.titan-embed-text-v2:0': { inputPerMillionUsd: 0.02, outputPerMillionUsd: 0 },
   'anthropic.claude-opus-4-6-v1': claude(5, 25),

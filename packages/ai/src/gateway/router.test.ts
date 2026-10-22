@@ -274,8 +274,8 @@ describe('model router — primary/fallback policy', () => {
       cacheReadInputTokens: 3_000,
       cacheWriteInputTokens: 0,
     });
-    // Priced at Nova 2 Lite's cache-read rate: a quarter of the input rate.
-    expect(result.costUsd).toBeCloseTo((100 * 0.3 + 3_000 * 0.075 + 40 * 2.5) / 1_000_000, 6);
+    // Priced at Nova 2 Lite's cache-read rate: a quarter of the input rate (a regional id: 10 % over global).
+    expect(result.costUsd).toBeCloseTo(((100 * 0.3 + 3_000 * 0.075 + 40 * 2.5) * 1.1) / 1_000_000, 6);
     const line = logger.events.find((e) => e.event === 'ai.model.attempt');
     expect(line?.fields).toMatchObject({
       inputTokens: 3_100,

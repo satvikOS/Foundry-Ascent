@@ -229,8 +229,9 @@ describe('the turn’s usage', () => {
       cacheReadInputTokens: 6_000,
       cacheWriteInputTokens: 6_100,
     });
-    // 1,900 + 2,200 + 50 uncached tokens at $0.30, 6,000 read at $0.075, 6,100 written at $0, output at $2.50.
-    expect(totals.costUsd).toBeCloseTo((4_150 * 0.3 + 6_000 * 0.075 + 461 * 2.5) / 1_000_000, 5);
+    // 1,900 + 2,200 + 50 uncached tokens at $0.30, 6,000 read at $0.075, 6,100 written at $0, output at $2.50; the
+    // `us.` profile is listed 10 % over those global rates.
+    expect(totals.costUsd).toBeCloseTo(((4_150 * 0.3 + 6_000 * 0.075 + 461 * 2.5) * 1.1) / 1_000_000, 5);
     expect(totals.costUsd).toBeLessThan(costFor(model, { inputTokens: 16_250, outputTokens: 461 }));
   });
 });

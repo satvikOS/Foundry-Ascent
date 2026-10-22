@@ -327,7 +327,8 @@ describe('cache usage and its price', () => {
     };
     // 100,000 uncached tokens at $0.30, 600,000 read at $0.075, 300,000 written at $0.
     expect(costFor(NOVA_GLOBAL, usage)).toBeCloseTo((100_000 * 0.3 + 600_000 * 0.075) / M, 9);
-    expect(costFor(NOVA_US, usage)).toBeCloseTo(costFor(NOVA_GLOBAL, usage), 9);
+    // The `us.` profile is listed 10 % higher, cache reads too ($0.0825).
+    expect(costFor(NOVA_US, usage)).toBeCloseTo(costFor(NOVA_GLOBAL, usage) * 1.1, 9);
     expect(costFor(NOVA_GLOBAL, { inputTokens: M, outputTokens: 0 })).toBeCloseTo(0.3, 9);
     // Never below zero, never more cached tokens than input tokens.
     expect(
@@ -430,14 +431,15 @@ describe('MODEL_PROMPT_CACHE', () => {
         on ? [{ text: STABLE }, CACHE_POINT, { text: TURN }] : [{ text: SYSTEM }],
       );
       expect(pointsIn(inputs[0]?.messages)).toEqual(on ? ['2:1', '4:1'] : []);
-      // The turn's usage carries the cache counts, and its cost prices them (900 + 6,000 read + 1,000 written).
+      // The turn's usage carries the cache counts, and its cost prices them (900 + 6,000 read + 1,000 written), at the
+      // `us.` profile's rates (10 % over global).
       expect(result.usage).toEqual({
         inputTokens: 7_900,
         outputTokens: 40,
         cacheReadInputTokens: 6_000,
         cacheWriteInputTokens: 1_000,
       });
-      expect(result.costUsd).toBeCloseTo((900 * 0.3 + 6_000 * 0.075 + 40 * 2.5) / 1_000_000, 6);
+      expect(result.costUsd).toBeCloseTo(((900 * 0.3 + 6_000 * 0.075 + 40 * 2.5) * 1.1) / 1_000_000, 6);
     }
   });
 
