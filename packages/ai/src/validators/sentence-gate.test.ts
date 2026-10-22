@@ -953,6 +953,53 @@ describe('a question an earlier message asked (askedBefore; voice suite)', () =>
     }
   });
 
+  it('stands after a short line of the reply’s own, which says nothing without it (differential audit R3)', () => {
+    for (const lead of [
+      'That helps.',
+      'Good to know.',
+      "Good, that's progress.",
+      'Love that.',
+      'Back to the branches, then.',
+      'No problem.',
+    ]) {
+      const reply = `${lead} ${asked}`;
+      for (const callerContinues of [true, false]) {
+        for (const chunks of chunkings(reply)) {
+          const g = gate({ ...options, callerContinues });
+          expect(joined(run(g, chunks).units), reply).toBe(reply);
+          expect(g.trace.earlierReasksDropped, reply).toBe(0);
+        }
+      }
+    }
+  });
+
+  it('after nothing but a lead-in, is left out only when the caller goes on from there', () => {
+    const reply = `Okay, Idris. ${asked}`;
+    const g = gate({ ...options, callerContinues: true });
+    expect(joined(run(g, [reply]).units)).toBe('Okay, Idris.');
+    expect(g.trace.earlierReasksDropped).toBe(1);
+    for (const kept of [
+      gate({ ...options, callerContinues: false }),
+      gate({ ...options, callerContinues: true, replyBudget: { sentences: 2, words: 30 } }),
+    ]) {
+      expect(joined(run(kept, [reply]).units)).toBe(reply);
+    }
+  });
+
+  it('stands when the founder asks to hear the question again in so many words (differential audit R2)', () => {
+    const again = `Sure. ${asked}`;
+    for (const founderText of [
+      'sorry, what was the question?',
+      'you broke up, what did you ask?',
+      'huh?',
+      'can you ask me that again',
+      'remind me of your question',
+    ]) {
+      const g = gate({ ...options, callerContinues: true, founderText });
+      expect(joined(run(g, [again]).units), founderText).toBe(again);
+    }
+  });
+
   it('stands when it asks something else, when the founder asks to hear it again, or asks what the coach is', () => {
     const other = 'Two libraries is a real signal. Who signs off on that budget at the west branch?';
     expect(joined(run(gate(options), [other]).units)).toBe(other);

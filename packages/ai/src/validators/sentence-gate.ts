@@ -22,8 +22,10 @@ import {
   NEWS_FALLBACK,
   REPEAT_FALLBACK,
   asksAgain,
+  asksForTheQuestion,
   asksToRepeat,
   fourGramsOf,
+  isOnlyLeadIn,
   parksTheirNews,
   questionsAskedIn,
   questionsOf,
@@ -91,6 +93,11 @@ import { clampWords, toSpeakable } from './speech.js';
 
 /** Most words of a lead-in released as soon as its sentence ends (see the module comment). */
 export const LEAD_IN_MAX_WORDS = 4;
+/**
+ * Fewest words a reply must already say of its own before a question an earlier message asked is left out at its end
+ * (`askedBefore`); a shorter line keeps it, unless it is only a lead-in the caller goes on from.
+ */
+export const EARLIER_REASK_KEPT_WORDS = 6;
 
 /** An acknowledgement said to the founder, not a thinking-aloud opener: it never waits for the next unit. */
 const ACKNOWLEDGEMENT =
@@ -149,9 +156,11 @@ export interface SentenceGateOptions {
   previousReply?: string | null;
   /**
    * The vEIR's earlier messages in this conversation (its replies and its opener): a question one of them asked is never
-   * asked again ({@link asksAgain}: the same words), however long ago, with the same exceptions as `previousReply`; only
-   * when it is the reply's last sentence, so no sentence after it is left pointing at nothing ("Who signs off on that
-   * budget? Once you know, send that person the privacy paragraph.").
+   * asked again ({@link asksAgain}: the same words in the same order), however long ago, with the same exceptions as
+   * `previousReply`, and never when the founder asks to hear a question again or did not catch it
+   * ({@link asksForTheQuestion}); only when it is the reply's last sentence, so no sentence after it is left pointing at
+   * nothing ("Who signs off on that budget? Once you know, send that person the privacy paragraph."), and only when the
+   * reply says something without it (see {@link EARLIER_REASK_KEPT_WORDS}).
    */
   askedBefore?: readonly (string | null | undefined)[];
   /**
@@ -490,7 +499,11 @@ export class SentenceGate {
     this.#previousGrams =
       previous === null || previous.trim() === '' || !checked ? null : fourGramsOf(previous);
     this.#previousQuestions = this.#previousGrams === null || previous === null ? [] : questionsOf(previous);
-    this.#earlierQuestions = checked ? questionsAskedIn(options.askedBefore ?? []) : [];
+    // Nor when they ask to hear a question again, or did not catch it ("you broke up, what did you ask?").
+    this.#earlierQuestions =
+      checked && !asksForTheQuestion(options.founderText ?? '')
+        ? questionsAskedIn(options.askedBefore ?? [])
+        : [];
     const dictation = (options.injectionDictation ?? []).filter((words) => words.length > 0);
     this.#dictation = dictation.length > 0 ? dictation : null;
   }
@@ -579,6 +592,24 @@ export class SentenceGate {
   #leadInAt(from: number): boolean {
     const end = findUnitEnd(this.#raw, from, this.#maxUnitChars);
     return end !== null && this.#isLeadIn(this.#raw.slice(from, end));
+  }
+
+  /**
+   * Whether a question an earlier message asked may be left out at the reply's end (`askedBefore`): the reply already
+   * says something of its own ({@link EARLIER_REASK_KEPT_WORDS} words or more), or nothing but a lead-in, which the
+   * caller goes on from (`callerContinues`, no reply budget, nothing withheld from the preview). A short line of its own
+   * keeps the question (differential audit, 2026-10-22: "That helps. What would make her say no?" became "That helps.",
+   * and on a call "Good to know. What do you think?").
+   */
+  #mayLeaveOutEarlierQuestion(): boolean {
+    const said = this.#shown + this.#heldText();
+    if (words(said) >= EARLIER_REASK_KEPT_WORDS) return true;
+    return (
+      this.#options.callerContinues === true &&
+      (this.#options.replyBudget ?? null) === null &&
+      this.#stats.withheld === 0 &&
+      isOnlyLeadIn(said)
+    );
   }
 
   /** Nothing of the reply was released yet (shown, withheld from the preview and said, or held: 6. above). */
@@ -694,7 +725,8 @@ export class SentenceGate {
           !repeat &&
           !reask &&
           this.#raw.slice(end).trim() === '' &&
-          asksAgain(rawUnit.trim(), this.#earlierQuestions);
+          asksAgain(rawUnit.trim(), this.#earlierQuestions) &&
+          this.#mayLeaveOutEarlierQuestion();
         if (repeat || reask || earlier) {
           // The previous reply again, or a question already asked: never said twice.
           this.#cursor = end;

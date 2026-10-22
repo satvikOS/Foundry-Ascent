@@ -228,6 +228,7 @@ export {
   STRESSED_HAND_BACK,
   STRESSED_HAND_BACKS,
   asksAgain,
+  asksForTheQuestion,
   asksToRepeat,
   endsWithHandBack,
   isOnlyLeadIn,

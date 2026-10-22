@@ -7,6 +7,7 @@ import {
   STRESSED_HAND_BACK,
   STRESSED_HAND_BACKS,
   asksAgain,
+  asksForTheQuestion,
   asksToRepeat,
   NEWS_FALLBACK,
   endsWithHandBack,
@@ -280,9 +281,63 @@ describe('a question an earlier message asked is never asked again (voice suite:
     }
   });
 
+  it('the same words in another order ask something else (differential audit R5, 2026-10-22)', () => {
+    const report = questionsAskedIn(['Good. Who at the library will you report to each week?']);
+    expect(asksAgain('Who at the library will report to you each week?', report)).toBe(false);
+    expect(asksAgain('So who at the library will you report to each week?', report)).toBe(true);
+  });
+
   it('only questions count, and short ones never do', () => {
     expect(asksAgain('Who signs off on that budget at each branch.', asked)).toBe(false);
     expect(questionsAskedIn(['Why?', 'And then?', 'What now?'])).toEqual([]);
     expect(asksAgain('So who then?', questionsAskedIn(['So who then?']))).toBe(false);
+  });
+});
+
+describe('the founder asks to hear the question again, or did not catch it (differential audit R2, 2026-10-22)', () => {
+  it('in the ways a bad line makes people ask', () => {
+    for (const text of [
+      'sorry, what was the question?',
+      'you broke up, what did you ask?',
+      'huh?',
+      'what was your question again',
+      'can you repeat the question',
+      'repeat the question please',
+      'wait what did you ask me',
+      'can you ask me that again',
+      'sorry you cut out, what was the question?',
+      'what did you ask?',
+      'hang on, ask me that again',
+      'pardon? what was your question',
+      'say the question again pls',
+      'remind me of your question',
+      'sorry I was distracted, ask again?',
+      'sorry what?',
+      'i missed what you asked, say it again?',
+      'remind me what you asked earlier',
+      'Sorry, can you say that again?',
+      'sorry, I lost you for a second',
+      'the call froze, what was that?',
+      'hello?',
+    ]) {
+      expect(asksForTheQuestion(text), text).toBe(true);
+    }
+  });
+
+  it('never for an ordinary message', () => {
+    for (const text of [
+      'what next?',
+      'the west library emailed back too!',
+      "We've got two weeks before exams start.",
+      'the DPO is called Hannah',
+      'ok what else should i be thinking about',
+      'Sam said yes to the weekly update!',
+      'She said the trial can start in November.',
+      'what do you mean by unit economics?',
+      'I missed that meeting with the dean, what now?',
+      'we cut out the second tier of pricing',
+    ]) {
+      expect(asksForTheQuestion(text), text).toBe(false);
+    }
   });
 });

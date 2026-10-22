@@ -182,11 +182,11 @@ export function enforceGateBlock(
  */
 export function dictationOf(
   founderText: string,
-  risk: Pick<RiskClassification, 'injection'>,
+  risk: Pick<RiskClassification, 'injection' | 'matchedRules'>,
   identity: IdentityCheckOptions,
 ): string[][] {
   if (!risk.injection || identityQuestionOf(founderText, identity) !== null) return [];
-  return dictatedPayloadsOf(founderText);
+  return dictatedPayloadsOf(founderText, risk.matchedRules);
 }
 
 /**

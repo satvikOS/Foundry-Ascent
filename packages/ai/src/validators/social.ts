@@ -161,18 +161,24 @@ const QUESTION_FILLERS = new Set([
   'oh',
 ]);
 
-/** The words of a question that say what it asks (lower case, apostrophes out, {@link QUESTION_FILLERS} out). */
-function questionKeyWords(sentence: string): ReadonlySet<string> {
+/**
+ * The words of a question that say what it asks, in order (lower case, apostrophes out, {@link QUESTION_FILLERS} out):
+ * the order counts, so "who will you report to" and "who will report to you" ask different things.
+ */
+function questionKeyWords(sentence: string): readonly string[] {
   const words =
     sentence
       .toLowerCase()
       .replace(/[‘’ʼ']/g, '')
       .match(/[\p{L}\p{N}]+/gu) ?? [];
-  return new Set(words.filter((w) => !QUESTION_FILLERS.has(w)));
+  return words.filter((w) => !QUESTION_FILLERS.has(w));
 }
 
-/** A question the vEIR asked earlier in the conversation ({@link questionsAskedIn}): the words that say what it asks. */
-export type AskedQuestion = ReadonlySet<string>;
+/**
+ * A question the vEIR asked earlier in the conversation ({@link questionsAskedIn}): the words that say what it asks, in
+ * order, joined by single spaces.
+ */
+export type AskedQuestion = string;
 
 /** Fewest words (beyond {@link QUESTION_FILLERS}) a question needs before it counts as asked again. */
 export const ASKED_AGAIN_MIN_WORDS = 3;
@@ -191,23 +197,68 @@ export function questionsAskedIn(earlier: readonly (string | null | undefined)[]
           .map((s) => text.slice(s.start, s.end))
           .filter((sentence) => /\?["'”’)\]*_]*$/.test(sentence))
           .map(questionKeyWords)
-          .filter((words) => words.size >= ASKED_AGAIN_MIN_WORDS),
+          .filter((words) => words.length >= ASKED_AGAIN_MIN_WORDS)
+          .map((words) => words.join(' ')),
   );
 }
 
 /**
- * Whether `sentence` asks one of `asked` ({@link questionsAskedIn}) again: a question with exactly the same words,
- * {@link QUESTION_FILLERS} aside ("So who signs off on the budget at each branch?" after "Who signs off on that budget
- * at each branch?"). Strict on purpose, unlike {@link reasksQuestion} for the previous reply: a question that differs by
- * one word asks something else ("…the west library…" after "…the east library…", "per year" after "per term", "during
- * finals" after "before finals"; differential audit, 2026-10-22: 104 new questions were left out as asked again when
- * three quarters of their words matched).
+ * Whether `sentence` asks one of `asked` ({@link questionsAskedIn}) again: a question with exactly the same words in the
+ * same order, {@link QUESTION_FILLERS} aside ("So who signs off on the budget at each branch?" after "Who signs off on
+ * that budget at each branch?"). Strict on purpose, unlike {@link reasksQuestion} for the previous reply: a question
+ * that differs by one word asks something else ("…the west library…" after "…the east library…", "per year" after "per
+ * term", "during finals" after "before finals"; differential audit, 2026-10-22: 104 new questions were left out as
+ * asked again when three quarters of their words matched), and so does one with its words in another order ("Who at
+ * the library will report to you each week?" after "Who at the library will you report to each week?").
  */
 export function asksAgain(sentence: string, asked: readonly AskedQuestion[]): boolean {
   if (asked.length === 0 || !/\?["'”’)\]*_]*\s*$/.test(sentence)) return false;
   const words = questionKeyWords(sentence);
-  if (words.size < ASKED_AGAIN_MIN_WORDS) return false;
-  return asked.some((question) => question.size === words.size && [...words].every((w) => question.has(w)));
+  if (words.length < ASKED_AGAIN_MIN_WORDS) return false;
+  const key = words.join(' ');
+  return asked.includes(key);
+}
+
+/**
+ * The founder asks to hear the vEIR's question again, or did not catch it (differential audit, 2026-10-22, very
+ * common on calls with a bad line: "sorry, what was the question?", "you broke up, what did you ask?", "huh?", "can you
+ * ask me that again", "remind me of your question", "sorry I was distracted, ask again?").
+ */
+const QUESTION_AGAIN = new RegExp(
+  `(?<![\\p{L}\\p{N}])(?:${[
+    // "what was the question", "what was your question again", "which was your last question"
+    "(?:what|which)(?:\\s+was|\\s+is|\\s*'s)\\s+(?:the|your|that)\\s+(?:last\\s+|first\\s+|other\\s+)?question",
+    // "what did you ask", "what did you just say", "sorry, what was that?"
+    'what\\s+did\\s+you\\s+(?:just\\s+)?(?:ask|say)',
+    'what\\s+was\\s+that(?=[\\s?.!]*$)',
+    // "repeat the question", "say the question again", "ask me that again", "ask again"
+    '(?:repeat|say|ask|read)\\s+(?:me\\s+)?(?:the|your|that)\\s+(?:last\\s+)?question',
+    '(?:ask|say|repeat)\\s+(?:me\\s+)?(?:(?:that|it|this|the\\s+question)\\s+)?again',
+    '(?:the|your|that)\\s+question\\s+again',
+    '(?:can|could|would)\\s+you\\s+repeat',
+    // "remind me of your question", "remind me what you asked"
+    'remind\\s+me\\s+(?:of\\s+)?(?:what\\s+you\\s+(?:asked|said)|(?:the|your|that)\\s+question)',
+    // a bad line: "you broke up", "you cut out", "the call froze", "I lost you", "I missed that", "didn't catch it"
+    '(?:you|it|the\\s+(?:line|call|connection|audio|sound))\\s+(?:broke|breaking|cut|cutting)\\s+(?:up|out)',
+    '(?:you|the\\s+(?:line|call|connection|audio|sound))\\s+(?:froze|glitched|dropped)',
+    '(?:lost|losing)\\s+you',
+    "(?:missed|didn'?t\\s+(?:catch|hear|get))\\s+(?:what\\s+you|the\\s+question|your\\s+question|(?:that|it|you)(?=[\\s,.!?;]*(?:$|[,.!?;])))",
+    'come\\s+again',
+  ].join('|')})(?![\\p{L}\\p{N}])`,
+  'iu',
+);
+/** A message that is only "huh?", "what?", "sorry?", "pardon?", "sorry, what?" (with fillers). */
+const ONLY_HUH =
+  /^(?:(?:huh|what|sorry|pardon|eh|hm+|wait|um+|uh+|er+|excuse\s+me|pardon\s+me|hello|you\s+there)[\s,.!?…]*)+$/iu;
+
+/**
+ * Whether the founder asks to hear a question the vEIR asked, or did not catch what it said ({@link QUESTION_AGAIN}, or
+ * only "huh?"): a question asked earlier may then be asked again (the sentence gate's `askedBefore`). Wider than
+ * {@link asksToRepeat}, which also lets the whole previous reply be said again.
+ */
+export function asksForTheQuestion(founderText: string): boolean {
+  const text = founderText.replace(/[‘’ʼ]/g, "'").trim();
+  return QUESTION_AGAIN.test(text) || ONLY_HUH.test(text) || asksToRepeat(text);
 }
 
 /** What a reply says when every sentence of it was the previous reply again. */
