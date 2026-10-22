@@ -4,6 +4,7 @@ import {
   evidenceIdsInBlock,
   type ChatMessage,
   type HistoryTurn,
+  type IdentityCheckOptions,
   type PromptContinuity,
 } from '@foundry/ai';
 import { type EvidenceItem } from '@foundry/contracts';
@@ -60,6 +61,8 @@ export function assembleContext(args: {
   readonly today?: string;
   /** The conversation's opener, when the history reaches back to the start of the conversation. */
   readonly opener?: string | null;
+  /** Who the vEIR is: a sincere "Is this really Corin?" is a question about it, not advice to give. */
+  readonly identity?: IdentityCheckOptions;
 }): AssembledContext {
   const systemTokens = estimateTokens(args.system);
   const answered = args.history.filter(
@@ -83,6 +86,7 @@ export function assembleContext(args: {
             ...(args.today !== undefined ? { today: args.today } : {}),
             // The founder's first message answers the replayed opener (<conversation_state> says so).
             opener: replayOpener ? (args.opener ?? null) : null,
+            ...(args.identity !== undefined ? { identity: args.identity } : {}),
           }),
         ],
         args.leftOff ?? '',

@@ -1811,6 +1811,15 @@ const IDENTITY_STATEMENT = new RegExp(
   `(?<!\\p{L})you(?:${APOS}re|\\s+are)\\s+(?:(?:not|just|only|really|actually|obviously|clearly|definitely)\\s+)*(?:a\\s+|an\\s+)?(?:bot|robot|chatbot|ai|a\\.i\\.|machine|computer|program|software|real|human|person|recording)(?!\\p{L})`,
   'iu',
 );
+/**
+ * Who the founder says they are talking to, asked back ("How do I know I'm talking to a real person?", "How can I tell
+ * whether I'm talking to Corin or a bot?"): only with a question mark in the message, and only when what they name ends
+ * the phrase ("I'm talking to a person from the bank tomorrow, what should I ask?" is not about the coach).
+ */
+const TALKING_TO_STATEMENT = new RegExp(
+  `(?<!\\p{L})(?:i${APOS}m|i\\s+am|im|we${APOS}re|we\\s+are)\\s+(?:(?:really|actually|even|just)\\s+)?(?:talking|speaking|chatting|texting|messaging)\\s+(?:to|with)\\s+(?:[\\p{L}'’-]+\\s+or\\s+)?(?:(?:a|an|the|some|real|actual|live)\\s+)*(?:person|human(?:\\s+being)?|bot|robot|chatbot|ai|a\\.i\\.|machine|computer|program|software|recording|someone\\s+real)(?!\\p{L})(?=\\s*(?:[?!.,;]|$|(?:or|right|here|now|at\\s+all|for\\s+real)(?!\\p{L})))`,
+  'iu',
+);
 const NAMED_QUESTIONS = new Map<string, RegExp>();
 
 /**
@@ -1873,7 +1882,12 @@ export function identityQuestionOf(
   if (person !== machine) return person ? 'person' : 'machine';
   if (person || IDENTITY_QUESTION.test(founderText) || TERSE_IDENTITY_QUESTION.test(founderText))
     return 'open';
-  if (founderText.includes('?') && IDENTITY_STATEMENT.test(founderText)) return 'open';
+  if (
+    founderText.includes('?') &&
+    (IDENTITY_STATEMENT.test(founderText) || TALKING_TO_STATEMENT.test(founderText))
+  ) {
+    return 'open';
+  }
   return eir !== null && namedQuestions(eir).test(founderText) ? 'open' : null;
 }
 
@@ -1910,6 +1924,9 @@ function namedQuestions(eir: string): RegExp {
         `(?:is|was)\\s+(?:this|that|it)\\s+(?:(?:really|actually|truly|even|the\\s+real)\\s+)*${name}`,
         `(?:am\\s+i|are\\s+we)\\s+(?:(?:really|actually|even)\\s+)?(?:talking|speaking|chatting|texting)\\s+(?:to|with)\\s+(?:the\\s+real\\s+)?${name}`,
         `you(?:${APOS}re|\\s+are)\\s+(?:(?:not|really|actually|truly)\\s+)*${name}(?=[^?]*\\?)`,
+        // Asked inside a question of theirs, the name ending the phrase: "How can I tell if this is really Corin?",
+        // "…sure it's the real Corin?"; not "It's really Corin who set the deadline?".
+        `(?:this|it)(?:${APOS}s|\\s+is)\\s+(?:(?:really|actually|truly|even|the\\s+real)\\s+)+${name}(?=\\s*(?:[?!.,;]|$|(?:or|and|right|though|for\\s+real|talking|speaking|typing|writing|here|now)(?!\\p{L})))(?=[^?]*\\?)`,
         `is\\s+${name}\\s+(?:(?:really|actually|even)\\s+)?(?:here|reading\\s+(?:this|these)|on\\s+(?:the|this)\\s+(?:call|line)|listening|watching|typing|behind\\s+(?:this|these)|real)`,
         `(?:can|does|will)\\s+${name}\\s+(?:(?:really|actually|even)\\s+)?(?:see|read|hear)\\s+(?:this|these|me|us|what)`,
       ]

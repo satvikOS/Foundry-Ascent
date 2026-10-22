@@ -45,7 +45,7 @@ const phaseA = (channel: 'text' | 'voice'): string =>
 
 /** The phase-A line that spends a call's words on the help asked for. */
 const HELP_FIRST_ON_A_CALL =
-  '- Asked for help or advice, spend those words on the help itself: a question the doctrine or your notes suggest';
+  '- Asked for help or advice with their venture, spend those words on the help itself: a question the doctrine or';
 
 describe('a call’s streamed reply gives the help first (agenda suite, calls on 9a2a41f)', () => {
   // "Help me prepare for my pitch next week" got "tell me the one thing you want the judges to walk away believing…";
@@ -58,7 +58,7 @@ describe('a call’s streamed reply gives the help first (agenda suite, calls on
     expect(voice).toContain('your first sentence or two are the help itself');
     expect(voice).toContain('a question or an invitation never takes its place.');
     expect(voice).toContain(HELP_FIRST_ON_A_CALL);
-    expect(voice).toContain('  comes after it, one at most.');
+    expect(voice).toContain('  your notes suggest comes after it, one at most.');
     // The rule sits after the doctrine it qualifies, in the reply's own instructions.
     expect(voice.indexOf(HELP_FIRST_ON_A_CALL)).toBeGreaterThan(
       voice.indexOf('Ask one sharp question at a time and wait for the answer.'),

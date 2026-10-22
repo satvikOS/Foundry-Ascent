@@ -1,5 +1,6 @@
 import type { ChatMessage } from '../gateway/types.js';
 import { classifyRisk } from '../risk/classifier.js';
+import type { IdentityCheckOptions } from '../validators/identity.js';
 import { buildContinuityBlock, openCommitmentsOf, raisedIn, type PromptContinuity } from './continuity.js';
 import {
   MAX_REPORTED,
@@ -7,6 +8,8 @@ import {
   deriveConversationState,
   founderMoves,
   renderConversationState,
+  reportOf,
+  reportOverlap,
 } from './conversation-state.js';
 import { escapeData, truncate } from './escape.js';
 
@@ -43,6 +46,11 @@ export interface BuildMessagesOptions {
    * founder's first message is read as the reply to it in `<conversation_state>`.
    */
   opener?: string | null;
+  /**
+   * Who the vEIR is (persona name, the EIR it is built from, every EIR's name): `<conversation_state>` hears a sincere
+   * "Is this really Corin?" as a question about it, which the identity rules answer, not advice to give.
+   */
+  identity?: IdentityCheckOptions;
 }
 
 function wrapFounder(text: string): string {
@@ -64,32 +72,56 @@ function historyFounder(text: string, maxChars: number): string {
 
 /**
  * The open commitments a report on one ("I did the thing I said I'd do", "Done!") most likely means, likeliest first
- * (evals G12: such a report was answered without naming the commitment). One the vEIR raised in this conversation (its
- * opener asked how it went) is the one, alone (the one raised last when there are several); otherwise the newest noted,
- * then the next. With no open commitment in the notebook, the newest earlier conversation's commitments.
+ * (evals G12: such a report was answered without naming the commitment). Those the report says something of come first
+ * ("We finally launched it!" means "Launch the waitlist page", whatever was noted since), most words first, then the
+ * newest. Without one, the one the vEIR raised in this conversation (its opener asked how it went) is the one, alone
+ * (the one raised last when there are several); otherwise the newest noted, then the next. With no open commitment in
+ * the notebook, the newest earlier conversation's commitments that the notebook has not marked done or dropped.
  */
 function likelyCommitments(
   continuity: PromptContinuity | null | undefined,
   /** What the vEIR said in this conversation, oldest first (its opener, then its replies). */
   said: readonly (string | null | undefined)[],
+  founderText: string,
 ): string[] {
   if (!continuity) return [];
+  const notebook = continuity.notebook?.commitments ?? [];
+  const newestFirst = (a: { at: string; index: number }, b: { at: string; index: number }): number =>
+    b.at.localeCompare(a.at) || a.index - b.index;
   const open = openCommitmentsOf(continuity);
   if (open.length === 0) {
+    const closed = notebook.filter((c) => c.status !== 'open').map((c) => c.text);
     const newest = [...(continuity.recentDigests ?? [])]
       .filter((d) => d.otherCoach !== true && d.digest.commitments.length > 0)
       .sort((a, b) => b.date.localeCompare(a.date))[0];
-    return (newest?.digest.commitments ?? []).slice(0, MAX_REPORTED).map((c) => c.text);
+    return (newest?.digest.commitments ?? [])
+      .map((c, index) => ({ text: c.text, index, words: reportOverlap(founderText, c.text) }))
+      .filter((c) => !raisedIn(c.text, closed))
+      .sort((a, b) => b.words - a.words || a.index - b.index)
+      .slice(0, MAX_REPORTED)
+      .map((c) => c.text);
+  }
+  const noted = new Map(notebook.map((c) => [c.text, c.createdAt]));
+  const ranked = open.map((c, index) => ({
+    text: c.text,
+    at: noted.get(c.text) ?? '',
+    index,
+    words: reportOverlap(founderText, c.text),
+  }));
+  const about = ranked.filter((c) => c.words > 0);
+  if (about.length > 0) {
+    return about
+      .sort((a, b) => b.words - a.words || newestFirst(a, b))
+      .slice(0, MAX_REPORTED)
+      .map((c) => c.text);
   }
   // What was said last first (`said` is oldest first: the opener, then the replies).
   for (const text of [...said].reverse()) {
     const raised = open.find((c) => raisedIn(c.text, [text]));
     if (raised !== undefined) return [raised.text];
   }
-  const noted = new Map((continuity.notebook?.commitments ?? []).map((c) => [c.text, c.createdAt]));
-  return open
-    .map((c, index) => ({ text: c.text, at: noted.get(c.text) ?? '', index }))
-    .sort((a, b) => b.at.localeCompare(a.at) || a.index - b.index)
+  return ranked
+    .sort(newestFirst)
     .slice(0, MAX_REPORTED)
     .map((c) => c.text);
 }
@@ -105,6 +137,7 @@ const stateBlocks = new WeakMap<
     readonly founderText: string;
     readonly opener: string | null;
     readonly continuity: PromptContinuity | null;
+    readonly identity: IdentityCheckOptions | null;
     readonly block: string;
   }
 >();
@@ -115,13 +148,15 @@ function conversationStateBlock(
   founderText: string,
   opener: string | null,
   continuity: PromptContinuity | null,
+  identity: IdentityCheckOptions | null,
 ): string {
   const cached = stateBlocks.get(history);
   if (
     cached?.length === history.length &&
     cached.founderText === founderText &&
     cached.opener === opener &&
-    cached.continuity === continuity
+    cached.continuity === continuity &&
+    cached.identity === identity
   ) {
     return cached.block;
   }
@@ -132,14 +167,21 @@ function conversationStateBlock(
       founderText,
       {
         opener,
+        ...(identity !== null ? { identity } : {}),
         // Only a report on what they said they would do names a commitment; nothing is looked up otherwise.
         ...(founderMoves(founderText).includes('reports_done')
-          ? { commitments: likelyCommitments(continuity, [opener, ...completed.map((t) => t.answer)]) }
+          ? {
+              commitments: likelyCommitments(
+                continuity,
+                [opener, ...completed.map((t) => t.answer)],
+                founderText,
+              ),
+            }
           : {}),
       },
     ),
   );
-  stateBlocks.set(history, { length: history.length, founderText, opener, continuity, block });
+  stateBlocks.set(history, { length: history.length, founderText, opener, continuity, identity, block });
   return block;
 }
 
@@ -147,8 +189,10 @@ function conversationStateBlock(
  * Whether the founder's message, once the conversation is under way, brings a subject of their own that no open item
  * of the notes is about ("Help me prepare for the pitch next week"): then the notes leave their agenda out of this turn
  * (`ownSubject`). A short reply, "you tell me", a question about what the vEIR remembers or a report on something they
- * said they would do ("I did the thing I said I'd do", "I posted it on the noticeboard") is about the conversation so
- * far or the notes, and keeps it (evals G12: the reply has to name the commitment).
+ * said they would do ("I did the thing I said I'd do", "I finished the interviews I said I would", "Done!") is about the
+ * conversation so far or the notes, and keeps it (evals G12: the reply has to name the commitment); a step done inside
+ * a longer sentence ("I posted it on the staff noticeboard") keeps it when an open commitment is about it, and "We
+ * launched it last week, 20 signups so far" with none is their news.
  */
 export function bringsOwnSubject(
   founderText: string,
@@ -156,12 +200,17 @@ export function bringsOwnSubject(
 ): boolean {
   if (contentWords(founderText).size < 2) return false;
   const moves = founderMoves(founderText);
-  if (moves.some((m) => m === 'recall' || m === 'resume' || m === 'short_reply' || m === 'reports_done'))
+  if (moves.some((m) => m === 'recall' || m === 'resume' || m === 'short_reply')) return false;
+  const report = reportOf(founderText);
+  if (report !== null && report.strength !== 'step') return false;
+  const commitments = continuity ? openCommitmentsOf(continuity).map((c) => c.text) : [];
+  // "I finally did it last night" says nothing of what: any commitment may be it.
+  if (
+    report !== null &&
+    (report.says.size === 0 || commitments.some((c) => reportOverlap(founderText, c) > 0))
+  )
     return false;
-  const open = [
-    ...(continuity ? openCommitmentsOf(continuity).map((c) => c.text) : []),
-    ...(continuity?.notebook?.openQuestions ?? []).map((q) => q.text),
-  ];
+  const open = [...commitments, ...(continuity?.notebook?.openQuestions ?? []).map((q) => q.text)];
   return !open.some((item) => raisedIn(item, [founderText]));
 }
 
@@ -208,6 +257,7 @@ export function buildMessages(
           founderText,
           options.opener ?? null,
           options.continuity ?? null,
+          options.identity ?? null,
         );
   const parts = [notes, options.evidenceBlock, state, wrapFounder(founderText)].filter(
     (p): p is string => p !== undefined && p !== '',

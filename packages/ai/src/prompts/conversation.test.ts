@@ -942,3 +942,70 @@ describe('a report keeps the agenda, and nothing else does (review of the report
     expect(last).not.toContain('from your notes it is most likely');
   });
 });
+
+describe('the commitment a report names (second review of the report move)', () => {
+  const history = [{ founderText: 'Hello!', answer: 'Hi Maya, good to have you back.' }];
+  const lastOf = (text: string, continuity: PromptContinuity): string =>
+    buildMessages(history, text, { continuity, today: '2026-10-16' }).at(-1)?.content ?? '';
+
+  it('names the commitment the report says something of, before a newer one', () => {
+    // On bc8b693: 'most likely "Interview five library staff", else "Launch the waitlist page"'.
+    const continuity: PromptContinuity = {
+      ...CONTINUITY,
+      notebook: {
+        ...NOTEBOOK,
+        nextOpener: null,
+        commitments: [
+          commitment('Launch the waitlist page', null),
+          { ...commitment('Interview five library staff', null), createdAt: '2026-10-05T00:00:00.000Z' },
+        ],
+      },
+    };
+    expect(lastOf('We finally launched it! 20 signups so far.', continuity)).toContain(
+      'from your notes it is most likely: "Launch the waitlist page".',
+    );
+    // A report that says nothing of what was done still means the newest first.
+    expect(lastOf('Done!', continuity)).toContain(
+      'from your notes it is most likely "Interview five library staff", else "Launch the waitlist page"',
+    );
+  });
+
+  it('never names, from the last conversation, a commitment the notebook marks done or dropped', () => {
+    // On bc8b693: the newest digest still listed it, and "Done!" was told it most likely meant it.
+    const continuity: PromptContinuity = {
+      ...CONTINUITY,
+      notebook: {
+        ...NOTEBOOK,
+        nextOpener: null,
+        commitments: [commitment('Interview five library staff', null, 'done')],
+      },
+    };
+    const last = lastOf('Done!', continuity);
+    expect(last).not.toContain('most likely');
+    expect(last).toContain('- If neither this conversation nor your notes say what it was, ask what it was');
+    // One the notebook does not close is still named.
+    const open: PromptContinuity = {
+      ...continuity,
+      notebook: {
+        ...NOTEBOOK,
+        nextOpener: null,
+        commitments: [commitment('Install the door counter', null, 'done')],
+      },
+    };
+    expect(lastOf('Done!', open)).toContain('from your notes it is most likely: "Interview library staff".');
+  });
+
+  it('keeps the notes’ agenda for a report that names its step in its own words', () => {
+    // On bc8b693 bringsOwnSubject was true and <open_commitments> was left out.
+    const text = 'I finished the interviews I said I would.';
+    expect(bringsOwnSubject(text, CONTINUITY)).toBe(false);
+    const last = lastOf(text, CONTINUITY);
+    expect(last).toContain('<open_commitments>');
+    expect(last).toContain('from your notes it is most likely: "Interview five library staff".');
+  });
+
+  it('a step said in a longer sentence that no commitment is about is a subject of their own', () => {
+    expect(bringsOwnSubject('We launched it last week, 20 signups so far.', CONTINUITY)).toBe(true);
+    expect(bringsOwnSubject('I posted it on the staff noticeboard yesterday.', CONTINUITY)).toBe(false);
+  });
+});

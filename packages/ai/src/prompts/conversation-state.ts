@@ -1,5 +1,8 @@
+import { classifyRisk } from '../risk/classifier.js';
+import { asksAboutIdentity, type IdentityCheckOptions } from '../validators/identity.js';
 import { CONVERSATION_STATE_TAG, OVERUSED_PHRASES } from './craft.js';
 import { escapeData, truncate } from './escape.js';
+import { DEFAULT_PERSONA_NAME } from './version.js';
 
 /**
  * Where the conversation stands, derived deterministically from the turns already in the prompt (no model call,
@@ -63,6 +66,16 @@ export interface ConversationState {
    */
   readonly asksAdvice?: boolean;
   /**
+   * The message sincerely asks whether the vEIR is a person or an AI ("How can I tell if you are an AI?"): the identity
+   * rules decide the reply, so no help, advice or pick is asked for in its first sentences.
+   */
+  readonly asksWhoYouAre?: boolean;
+  /**
+   * The risk check flags the message as an instruction to change the vEIR's rules or a request about another venture
+   * (by its text alone): the turn's rules decline it, so no help, advice, pick or number is asked for.
+   */
+  readonly declined?: boolean;
+  /**
    * The message says how they feel (the `stress` move, or nervous, frustrated, embarrassed, confused, excited, proud,
    * relieved…): any help or advice comes after a line that acknowledges it.
    */
@@ -74,7 +87,8 @@ export interface ConversationState {
   readonly asksToo?: boolean;
   /**
    * When the message reports on something the founder said they would do (`reports_done`): the commitments of the
-   * notes it most likely means, likeliest first (at most {@link MAX_REPORTED}), one line each, unescaped.
+   * notes it most likely means, likeliest first (at most {@link MAX_REPORTED}), one line each, unescaped. None when the
+   * report says what was done ("Sent!") and no commitment is about it.
    */
   readonly reportedCommitments?: readonly string[];
   /**
@@ -259,6 +273,9 @@ const DONE_VERBS =
 /** The same as participles, after "I've" or "we have" ("I've posted it"). */
 const DONE_PARTICIPLES =
   'done|finished|completed|sent|posted|submitted|booked|emailed|shipped|published|launched|written|run|nailed|uploaded|delivered|scheduled';
+/** Participles that are a whole report on their own ("Sent!", "Posted.", "Just booked."). */
+const BARE_DONE =
+  'sent|posted|submitted|booked|emailed|shipped|published|launched|uploaded|delivered|scheduled';
 /** Between the subject and a verb of a step done ("I finally did it"). */
 const DONE_ADVERBS = 'just|finally|already|actually|totally|literally|officially|now';
 /** The end of a clause, on a sentence without its final stop. */
@@ -273,20 +290,29 @@ const SAID_THEY_WOULD = String.raw`(?:i|we) (?:said|told you|promised|agreed) (?
  * tried or planned ("I wanted it done like I said").
  */
 const DID_SOMETHING = String.raw`\b(?:i|we) (?:[\w']+ ){0,2}?(?!(?:wanted|needed|hoped|tried|planned|intended|expected|wished|liked|loved|hated|preferred|seemed|looked)\b)(?:[a-z]{2,}(?<!e)ed|agreed|did|sent|wrote|ran|went|met|spoke|made|got|took|built|put|set|found|gave|held|paid|rang|saw|told|brought|bought|sold|left|began|drew|chose)\b`;
+/** A step done, by what they did with it ("I finished the interviews…", "we booked the room…"). */
+const DID_A_STEP = String.raw`\b(?:i|we)(?: (?:${DONE_ADVERBS}))? (?:${DONE_VERBS}|called|interviewed|met|made|built|tested|surveyed|visited|contacted|texted|messaged|pitched|filed|got|had|set up|sorted|wrapped up|knocked out|handed in)`;
 
 /** "Like I said", "as we agreed", "as planned". */
 const AS_AGREED = String.raw`(?:(?:like|as) (?:i|we) (?:said|agreed|promised|planned)|as (?:agreed|planned))`;
+
+/** Lead-ins before a report that opens its sentence ("So, did the thing we discussed", "Okay update: done"). */
+const REPORT_LEAD = String.raw`(?:(?:ok|okay|so|so yeah|well|yes|yep|yeah|update|good news|guess what|and|alright|right|anyway|phew|woo+|woohoo|yay)[,.!: ]+)*`;
 
 /**
  * A report on something the founder said they would do, named as such (evals G12, MX-0003, MX-0011, MX-0031: "So, I
  * did the thing I said I'd do." was answered without naming the commitment): "the thing I said I'd do", "update on
  * what I said I'd do", "I did the thing we talked about", "I did what you suggested", "like I said I would", "like we
- * agreed". Heard in any statement, next to a question of their own too.
+ * agreed", "I finished the interviews I said I would", "Did the thing we discussed". Heard in any statement, next to a
+ * question of their own too.
  */
 const REPORT_NAMED = new RegExp(
   [
     String.raw`\b(?:(?:the|teh|that|this|one) things?|what|everything|the stuff|the task)(?: that)? ${SAID_THEY_WOULD}`,
     String.raw`\b(?:(?:the|teh|that|this|one) things?|what|everything)(?: that)? (?:i|we) (?:promised|committed to)\b`,
+    // "I finished the interviews I said I would", "we booked the room we said we'd book": the step, then the promise,
+    // in one clause ("We had a call where I said I'd send the deck" tells of a promise, not of a step done).
+    String.raw`${DID_A_STEP} (?:(?!(?:where|when|while|and|but|so|because|after|before|then|which|that|if|until|since|as)\b)[\w'-]+ ){1,4}?(?:that )?${SAID_THEY_WOULD}`,
     // "…like I said I would." or "…like I said I'd do", never "like I said I'd rather focus on…".
     String.raw`\b(?:like|as) (?:i|we) (?:said|promised|told you) (?:(?:i|we)(?:'d| would)|id)(?=(?: do| it| that)\b|\s*$|\s*[,;:—–])|\b(?:as promised|like i promised)\b`,
     // "…like I said", "like we agreed", "as planned" with something they did, after it ("I called the dean, like we
@@ -294,9 +320,10 @@ const REPORT_NAMED = new RegExp(
     // point, and "Like we agreed, pricing comes first" only recalls an agreement.
     String.raw`${DID_SOMETHING}[^;:—–]*?\b${AS_AGREED}${CLAUSE_END}`,
     String.raw`\b${AS_AGREED}\s*[,;:—–]?\s*${DID_SOMETHING}`,
-    String.raw`\b(?:i|we)(?: (?:${DONE_ADVERBS}))? (?:${DONE_VERBS}) (?:what|the thing|that thing|the stuff|everything) (?:you|we|i) (?:said|suggested|told me|recommended|agreed(?: on)?|discussed|planned|talked about|mentioned)\b(?! (?:i|we)(?:'d| would) (?:rather|sooner|never|not|prefer|like|love|hate)\b)`,
+    // "I did what you suggested", or with no subject at the start of the sentence: "Did the thing we discussed."
+    String.raw`(?:^${REPORT_LEAD}|\b(?:i|we) )(?:(?:${DONE_ADVERBS}) )?(?:${DONE_VERBS}) (?:what|the thing|that thing|the stuff|everything) (?:you|we|i) (?:said|suggested|told me|recommended|agreed(?: on)?|discussed|planned|talked about|mentioned)\b(?! (?:i|we)(?:'d| would) (?:rather|sooner|never|not|prefer|like|love|hate)\b)`,
     String.raw`\b(?:i|we) (?:took|followed|tried) your (?:advice|suggestion)\b`,
-    String.raw`\b(?:i|we) followed through\b|\bmission accomplished\b|\bdone and dusted\b|\b(?:ticked|checked|crossed) (?:it|that) off\b`,
+    String.raw`\b(?:i|we) followed through\b|\bmission (?:accomplished|complete(?:d)?)\b|\bdone and dusted\b|\b(?:ticked|checked|crossed) (?:it|that) off\b`,
   ].join('|'),
 );
 
@@ -306,18 +333,19 @@ const REPORT_NAMED = new RegExp(
 const REPORT_TAIL = String.raw`(?: (?:off|out|over|in|up|already|finally|now|too|at last|yesterday|today|tonight|last night|this (?:morning|afternoon|evening|week|weekend)|on (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|like (?:i|we) (?:said|agreed|promised)|as (?:promised|planned|agreed)))*`;
 
 /**
- * A clause that is the whole report ("Done!", "All done.", "I posted it.", "Finished it last night.", "Got it done.",
- * "I did the thing.", "It went live yesterday.").
+ * A clause that is the whole report ("Done!", "Finally done!", "All done.", "Sent!", "I posted it.", "Finished it last
+ * night.", "Got it done.", "I've done the thing.", "Mission complete.", "It went live yesterday.").
  */
 const REPORT_CLAUSE = new RegExp(
-  String.raw`^(?:(?:ok|okay|so|so yeah|well|yes|yep|yeah|update|good news|guess what|and|alright|right|anyway|phew|woo+|woohoo|yay)[,.!: ]+)*(?:` +
+  String.raw`^${REPORT_LEAD}(?:` +
     [
-      String.raw`(?:all |it's |its |that's |it is |that is )?(?:done|finished|complete|completed)(?: and (?:dusted|done))?`,
-      String.raw`mission accomplished`,
+      String.raw`(?:(?:all|it's|its|that's|it is|that is|finally|just|now|officially|totally) )*(?:done|finished|complete|completed)(?: and (?:dusted|done))?`,
+      String.raw`mission (?:accomplished|complete(?:d)?)`,
       String.raw`(?:(?:i|we) )?(?:(?:${DONE_ADVERBS}) )?(?:${DONE_VERBS}) (?:it|that)${REPORT_TAIL}`,
       String.raw`(?:i|we)(?:'ve| have) (?:(?:${DONE_ADVERBS}) )?(?:${DONE_PARTICIPLES}) (?:it|that)${REPORT_TAIL}`,
+      String.raw`(?:(?:${DONE_ADVERBS}) )?(?:${BARE_DONE})${REPORT_TAIL}`,
       String.raw`(?:(?:i|we) )?(?:(?:${DONE_ADVERBS}) )?got (?:it|that|it all|everything) done${REPORT_TAIL}`,
-      String.raw`(?:(?:i|we) )?(?:(?:${DONE_ADVERBS}) )?did (?:the|teh) thing`,
+      String.raw`(?:(?:i|we)(?:'ve| have)? )?(?:(?:${DONE_ADVERBS}) )?(?:did|done) (?:the|teh) thing`,
       String.raw`(?:it|that)(?:'s| is| went)(?: (?:finally|now|officially))? live${REPORT_TAIL}`,
     ].join('|') +
     ')$',
@@ -326,7 +354,8 @@ const REPORT_CLAUSE = new RegExp(
 /**
  * A step done with "it" or "that" inside a longer sentence ("I posted it on the staff noticeboard yesterday"): weak on
  * its own ("We launched it last month… How do we get more users?" is background to a question of their own), so it
- * counts only on the terms of {@link reportsDone}.
+ * counts only on the terms of {@link reportOf}, and only as a report on something the notes or the conversation hold
+ * (`deriveConversationState`).
  */
 const STEP_DONE = new RegExp(
   [
@@ -358,10 +387,10 @@ const FILLERS = /\b(?:not (?:gonna|going to) lie|not to lie|ngl|tbh|to be honest
 /**
  * Before a report's words, in the same clause (at most six words between, none of them a conjunction), what says the
  * step is not done: a negation or a failure ("I didn't really get around to…", "I kept putting off…", "I'm behind on
- * …", "I'm not sure we finished it") or what is still to come ("I still need to…", "I'll…").
+ * …", "I'm not sure we finished it", "I thought I sent it") or what is still to come ("I still need to…", "I'll…").
  */
 const NOT_DONE = new RegExp(
-  String.raw`(?:\b(?:didn't|did not|didnt|don't|do not|dont|doesn't|does not|haven't|have not|havent|hasn't|has not|hadn't|had not|never|not|no|couldn't|could not|can't|cannot|cant|wasn't|was not|weren't|were not|won't|wouldn't|failed|fail|forgot|forget|forgetting|putting off|put off|putting it off|procrastinat\w*|bailed on|bail on|behind on|skipped|missed|gave up on|give up on|ran out of time|yet to|tried to|meant to|wanted to|attempted to|almost|nearly|wish|wished|started|starting|began|need to|needs to|have to|has to|gotta|going to|gonna|want to|wanna|plan to|planning to|about to|trying to|try to|hope to|hoping to|will|should|shall|must|might)|'ll)\s+(?:(?!(?:but|and|so|then|yet|though|although|because|now)\s)[\w']+\s+){0,6}$`,
+  String.raw`(?:\b(?:didn't|did not|didnt|don't|do not|dont|doesn't|does not|haven't|have not|havent|hasn't|has not|hadn't|had not|never|not|no|couldn't|could not|can't|cannot|cant|wasn't|was not|weren't|were not|won't|wouldn't|failed|fail|forgot|forget|forgetting|putting off|put off|putting it off|procrastinat\w*|bailed on|bail on|behind on|skipped|missed|gave up on|give up on|ran out of time|yet to|tried to|meant to|wanted to|attempted to|almost|nearly|wish|wished|thought|assumed|started|starting|began|need to|needs to|have to|has to|gotta|going to|gonna|want to|wanna|plan to|planning to|about to|trying to|try to|hope to|hoping to|will|should|shall|must|might)|'ll)\s+(?:(?!(?:but|and|so|then|yet|though|although|because|now)\s)[\w']+\s+){0,6}$`,
 );
 
 /**
@@ -377,40 +406,134 @@ function notDone(before: string): boolean {
   return NOT_DONE.test(words) || CONDITIONAL.test(words);
 }
 
+/**
+ * After a report's words, what takes it back: "…but I didn't." (the verb left out, so it is the same step: "but I
+ * haven't heard back" is how it went), "Not really.", "jk", "or so I thought", each a clause of its own ("Not really
+ * sure it's any good" or "Not exactly how I wanted it" is how it went).
+ */
+const RETRACTED = new RegExp(
+  [
+    String.raw`\b(?:but|though|except|only|actually)[,]? (?:i|we) (?:(?:really|actually|still) )?(?:didn't|did not|didnt|haven't|have not|havent|hadn't|had not|never did|never|couldn't|could not|wasn't|was not|weren't|were not|forgot(?: to)?)(?: (?:really|actually|yet|in the end|after all|though|it|that))*\s*(?:$|[.!,;…])`,
+    String.raw`(?:^|[.!?;,…]\s*)(?:(?:well|ok|okay|haha|lol|ha|hmm)[,.!]?\s+)*(?:not really|not quite|not exactly|nope|jk|j/k|just kidding|kidding|or so i thought|not yet|lol no)(?: (?:tho|though|lol|haha|honestly))?(?=\s*(?:$|[.!?;,…]))`,
+  ].join('|'),
+);
+
+/**
+ * What says the founder walked away from it or lost it ("I'm quitting the startup", "I gave up, like I said I would",
+ * "We lost the client, as I said we would", "I told my parents I am dropping out"): no commitment kept. Said before a
+ * report's words, it is what they did "like I said"; said next to a report that names nothing ("Done. I'm quitting the
+ * startup.", "I finally did it. I quit."), it is what the report is about. Time lost on the way ("Done! Lost a day to
+ * the printer but it's up.") is no setback.
+ */
+const SETBACK =
+  /\b(?:quit|quitting|resign(?:ed|ing)?|gave up|give up|giving up|drop(?:ping|ped)? out|walk(?:ed|ing)? away|shut(?:ting)? (?:it |us |the [\w-]+ )?down|pull(?:ed|ing)? the plug|bailed|lost (?:the|a|an|our|my|it|them|him|her|that|this|everything)(?! (?:whole |full |few |couple of )?(?:days?|weeks?|hours?|nights?|morning|afternoon|evening|weekend|bit|time|sleep)\b)|losing (?:the|a|an|our|my)|got (?:fired|kicked out))\b/;
+
 /** Most content words a message may hold besides a step done in it ({@link STEP_DONE}) and still be a report. */
 const REPORT_EXTRA_WORDS = 5;
 
+/** A report on something the founder said they would do, as {@link reportOf} reads it. */
+export interface ReportCue {
+  /**
+   * `named`: the commitment named as such ("the thing I said I'd do", "like we agreed"); `clause`: a clause that is the
+   * whole report ("Done!", "I posted it."); `step`: a step done inside a longer sentence ("I posted it on the staff
+   * noticeboard yesterday"), a report only when the notes or the conversation hold that step.
+   */
+  readonly strength: 'named' | 'clause' | 'step';
+  /**
+   * What the report itself says was done, as content words ("posted", "the interviews"); empty for one that says
+   * nothing of it ("Done!", "I did the thing I said I'd do"), which any commitment may be.
+   */
+  readonly says: ReadonlySet<string>;
+}
+
+interface ReportInSentence extends ReportCue {
+  /** Where the report's words end, in the sentence. */
+  readonly end: number;
+  /** A setback ({@link SETBACK}) in the sentence before the report's words. */
+  readonly setbackBefore: boolean;
+}
+
+const CLAUSE_SEPARATOR = /\s*(?:[,;:]|—|–|\s-\s)\s*/;
+
 /**
- * Whether `text` (normalised) reports on something the founder said they would do: a statement, never a question, a
- * negation ("I didn't do the thing I said I'd do"), a condition ("when we've finished it") or pushback ("I already
- * did that"). The commitment named as such counts anywhere ({@link REPORT_NAMED}); a clause that is the whole report
- * counts next to a question too ("I posted it. Can you help me write the follow-up email?"), unless it says "that"
- * ("We did that. What else could we try?" is pushback); a step done inside a longer sentence counts only in a message
- * that asks nothing, is no background ("last month", "in March") or idiom ("ran it by"), and says little else.
+ * What a report in `sentence` says was done: its words up to `end`, and on to the end of their clause ("I posted it on
+ * the staff noticeboard"), not how it went ("I did it and it was a disaster").
  */
-function reportsDone(text: string): boolean {
-  const asks = text.includes('?');
-  return text.split(/(?<=[.!?])\s+/).some((raw) => {
-    const sentence = raw.replace(/[.!…]+$/, '').trim();
-    if (sentence === '' || sentence.endsWith('?') || PUSHBACK.test(sentence)) return false;
-    const named = REPORT_NAMED.exec(sentence);
-    if (named !== null && !notDone(sentence.slice(0, named.index))) return true;
-    const whole = sentence
-      .split(/\s*(?:[,;:]|—|–|\s-\s)\s*/)
-      .some((clause) => REPORT_CLAUSE.test(clause.trim()) && !(asks && /\bthat\b/.test(clause)));
-    if (whole) return true;
-    if (asks) return false;
-    const step = STEP_DONE.exec(sentence);
-    if (step === null || notDone(sentence.slice(0, step.index))) return false;
-    if (
-      NOT_A_STEP.test(sentence.slice(step.index)) ||
-      BACKGROUND.test(sentence.slice(step.index + step[0].length))
-    ) {
-      return false;
-    }
-    const cue = contentWords(step[0]);
-    return [...contentWords(text)].filter((w) => !cue.has(w)).length <= REPORT_EXTRA_WORDS;
-  });
+function saysOf(sentence: string, end: number): Set<string> {
+  const rest = /^.*?(?=\s+(?:and|but|so|though|yet|because|which)\b|\s*(?:[,;:—–]|\s-\s)|$)/.exec(
+    sentence.slice(end),
+  );
+  return reportWords(sentence.slice(0, end) + (rest?.[0] ?? ''));
+}
+
+/** The report in one sentence of a normalised message (`asks`: the message asks something), or null. */
+function reportIn(raw: string, text: string, asks: boolean): ReportInSentence | null {
+  const sentence = raw.replace(/[.!…]+$/, '').trim();
+  if (sentence === '' || sentence.endsWith('?') || PUSHBACK.test(sentence)) return null;
+  const named = REPORT_NAMED.exec(sentence);
+  if (named !== null && !notDone(sentence.slice(0, named.index))) {
+    return {
+      strength: 'named',
+      says: saysOf(sentence, named.index + named[0].length),
+      end: named.index + named[0].length,
+      setbackBefore: SETBACK.test(sentence.slice(0, named.index)),
+    };
+  }
+  let from = 0;
+  for (const clause of sentence.split(CLAUSE_SEPARATOR)) {
+    const at = sentence.indexOf(clause, from);
+    from = at + clause.length;
+    if (!REPORT_CLAUSE.test(clause.trim()) || (asks && /\bthat\b/.test(clause))) continue;
+    return {
+      strength: 'clause',
+      says: reportWords(clause),
+      end: at + clause.length,
+      setbackBefore: SETBACK.test(sentence.slice(0, at)),
+    };
+  }
+  if (asks) return null;
+  const step = STEP_DONE.exec(sentence);
+  if (step === null || notDone(sentence.slice(0, step.index))) return null;
+  if (
+    NOT_A_STEP.test(sentence.slice(step.index)) ||
+    BACKGROUND.test(sentence.slice(step.index + step[0].length))
+  ) {
+    return null;
+  }
+  const cue = contentWords(step[0]);
+  if ([...contentWords(text)].filter((w) => !cue.has(w)).length > REPORT_EXTRA_WORDS) return null;
+  return {
+    strength: 'step',
+    says: saysOf(sentence, step.index + step[0].length),
+    end: step.index + step[0].length,
+    setbackBefore: SETBACK.test(sentence.slice(0, step.index)),
+  };
+}
+
+/**
+ * Whether `text` reports on something the founder said they would do, and how ({@link ReportCue}): a statement, never
+ * a question, a negation ("I didn't do the thing I said I'd do", "I thought I sent it but I didn't"), a condition
+ * ("when we've finished it"), pushback ("I already did that") or a setback ("I gave up, like I said I would", "Done.
+ * I'm quitting the startup."). The commitment named as such counts anywhere ({@link REPORT_NAMED}); a clause that is
+ * the whole report counts next to a question too ("I posted it. Can you help me write the follow-up email?"), unless
+ * it says "that" ("We did that. What else could we try?" is pushback); a step done inside a longer sentence counts only
+ * in a message that asks nothing, is no background ("last month", "in March") or idiom ("ran it by"), and says little
+ * else.
+ */
+export function reportOf(text: string): ReportCue | null {
+  const t = normalize(text);
+  const asks = t.includes('?');
+  let from = 0;
+  for (const raw of t.split(/(?<=[.!?])\s+/)) {
+    const at = t.indexOf(raw, from);
+    from = at + raw.length;
+    const report = reportIn(raw, t, asks);
+    if (report === null) continue;
+    if (report.setbackBefore || RETRACTED.test(t.slice(at + report.end))) return null;
+    if (report.says.size === 0 && SETBACK.test(t)) return null;
+    return { strength: report.strength, says: report.says };
+  }
+  return null;
 }
 
 /**
@@ -419,7 +542,7 @@ function reportsDone(text: string): boolean {
  */
 const ADVICE_REQUEST = new RegExp(
   [
-    String.raw`\bhow (?:do|should|can|could|would|might|shall) (?:i|we)\b(?! know (?:if |whether |that )?(?:you|this|it's you)\b)`,
+    String.raw`\bhow(?: else)? (?:do|should|can|could|would|might|shall) (?:i|we)\b(?! know (?:if |whether |that )?(?:you|this|it's you)\b)`,
     String.raw`\bhow (?:would|do|should) you (?:approach|handle|tackle|go about|start|pitch|frame|position|price|structure|deal with|answer|respond)\b`,
     String.raw`\bwhat(?:'s| is| would be) (?:the |a )?(?:best|right|smartest|simplest|fastest|easiest|good) way (?:to|of)\b`,
     String.raw`\b(?:any|got any|have any|some|need|want) (?:advice|tips|pointers|suggestions)\b|\bwhat(?:'s| is| would be) your (?:advice|recommendation|suggestion|take)\b`,
@@ -449,26 +572,75 @@ export function asksForAdvice(text: string): boolean {
 const FEELING_DEGREE = String.raw`(?:(?:so|really|very|pretty|quite|super|totally|completely|kind of|kinda|a (?:bit|little)(?: bit)?|honestly|actually|just|getting|more and more|a lot|slightly|incredibly|seriously|also|still|all)\s+)*`;
 
 /**
+ * Who feels it: "I feel", "we've been feeling", "I'm feeling", or no one named at the start of a sentence ("Feeling
+ * hopeless.", "Exhausted and feeling hopeless."); never someone or something else ("make students feel better", "the
+ * price feels low", "students are tired and feeling lost").
+ */
+const SELF_FEEL = String.raw`(?:(?:(?:^|[.!?;,…]\s*)(?:[\w']+ (?:[\w']+ )?and )?|\b(?:i|we)(?:'ve been|'ve| have been| have| do| did| still| just| really| honestly| actually| genuinely| truly| seriously| definitely| totally| now| already| kind of| kinda| sometimes| often| always| keep| also)* )(?:feel|felt|feeling)|\b(?:i'm|i am|im|we're|we are)(?: (?:just|really|still|also|honestly))? feeling)`;
+
+/** The end of what is said of themselves ("I'm not okay.", "I'm not coping well lately"), not "not ok with the price". */
+const SAID_OF_THEMSELVES = String.raw`(?=\s*(?:$|[.!?,;:…—–]|(?:at all|lately|right now|today|these days|this week|anymore|any more|honestly|tbh|to be honest|and|but)\b))`;
+
+/**
+ * How the founder says they are ("I'm", "I feel", "we've been feeling"…, or "Feeling…" at the start of a sentence), before
+ * how they feel; never someone else ("students feeling lost on the signup page").
+ */
+const SELF_STATE = String.raw`(?:\b(?:(?:i'm|i am|im|we're|we are|i've been|i have been|we've been)(?: feeling)?|(?:i|we)(?: just| still| really)? (?:feel|felt)|i was|we were|i get|i got|we get|we got|i'm getting|we're getting)|(?:^|[.!?;,…]\s*)feeling)`;
+
+/** How they feel, said of themselves ("I'm devastated", "we were so frustrated"). */
+const FELT = [
+  'nervous|anxious|worried|scared|afraid|terrified|stressed|stressing(?: out)?|overwhelmed|panicking|panicked|freaking out|freaked out',
+  'frustrated|annoyed|irritated|upset|angry|mad|furious|livid|pissed(?: off)?|bitter|jealous',
+  'sad|unhappy|miserable|bummed(?: out)?|heartbroken|devastated|crushed|gutted|shattered|hurt|betrayed|lonely|isolated',
+  // "Hopeless" is low mood (LOW_MOOD), never "I'm hopeless at maths".
+  'disappointed|discouraged|deflated|defeated|demotivated|demoralis(?:ed)|demoraliz(?:ed)|helpless|powerless',
+  'embarrassed|humiliated|mortified|ashamed|guilty|insecure|confused|lost|numb',
+  'tired|exhausted|drained|worn out|drowning|burn(?:ed|t) out|fed up|sick of|in tears|crying|close to tears|beside myself',
+  'excited|hyped|thrilled|stoked|pumped|proud|relieved|grateful',
+].join('|');
+
+/**
  * The founder says how they feel, beyond the `stress` move: the matrix's emotion bank (templates.yaml: nervous,
  * "so much going on, I'm kind of drowning", "this is getting really frustrating", "a bit embarrassing to admit",
- * confused, excited, a proud moment, relief). The matrix's emotion.acknowledged wants the feeling acknowledged "in the
- * first sentences, before any advice", so help and advice come after a line that does that.
+ * confused, excited, a proud moment, relief) and the feelings a setback brings ("I'm heartbroken, my cofounder left",
+ * "I feel like an idiot", "That was so embarrassing", "I'm so tired of this"). The matrix's emotion.acknowledged wants
+ * the feeling acknowledged "in the first sentences, before any advice", so help and advice come after a line that does
+ * that. A plan judged ("It's pointless to build before the interviews") is no feeling.
  */
 const FEELING = new RegExp(
   [
-    String.raw`\b(?:i'm|i am|im|i feel|i felt|i'm feeling|i am feeling|feeling|i've been|i have been|we're|we are|we feel|we've been|i was|we were|i get|i got)\s+${FEELING_DEGREE}(?:nervous|anxious|worried|scared|afraid|stressed|overwhelmed|frustrated|annoyed|upset|angry|sad|discouraged|deflated|gutted|embarrassed|ashamed|confused|lost|insecure|excited|hyped|thrilled|stoked|pumped|proud|relieved|grateful|exhausted|drained|drowning|burn(?:ed|t) out|hopeless|lonely|demoralis(?:ed)|demoraliz(?:ed))\b`,
-    String.raw`\b(?:i |we )?(?:feel|felt|feeling)\s+${FEELING_DEGREE}(?:better|down|low|awful|terrible|bad|stupid|silly|empty|numb)\b`,
-    String.raw`\b(?:this|it|that|things|everything|life)(?:'s| is| are| has been|'s been| have been| feels| feel)\s+${FEELING_DEGREE}(?:frustrating|stressful|overwhelming|exhausting|embarrassing|confusing|scary|terrifying|nerve-?wracking|discouraging|depressing|exciting|rough|awful|brutal|pointless|hopeless|a mess|too much|a relief)\b`,
-    String.raw`\bso much going on\b|\bdrowning\b|\bembarrassing (?:to admit|confession)\b|\bproud moment\b|\bsmall win\b|\bphew\b|\bwhat a relief\b|\bnot coping\b|\bcan't cope\b|\bcannot cope\b|\byou're not listening\b`,
+    String.raw`${SELF_STATE}\s+${FEELING_DEGREE}(?:${FELT})\b`,
+    // "I'm so down", "I'm feeling low"; not "I'm down to two options", "I'm down for that".
+    String.raw`\b(?:i'm|i am|im|we're|we are|i've been|i have been)\s+(?:(?:so|really|very|pretty|quite|kind of|kinda|a (?:bit|little)|super|totally|feeling)\s+)+(?:down|low)${SAID_OF_THEMSELVES}`,
+    String.raw`${SELF_FEEL}\s+${FEELING_DEGREE}(?:better|down|low|awful|terrible|horrible|bad|stupid|silly|dumb|useless|small|sick|empty|numb|like (?:(?:such )?an? (?:idiot|fraud|failure|fake|imposter|impostor|joke|loser|mess|wreck)|crap|garbage|giving up|quitting|crying|screaming|(?:i'm|i am|we're|we are) (?:failing|drowning|losing it)|nothing (?:works|matters)))\b`,
+    String.raw`\b(?:this|it|that|things|everything|life)(?:'s| is| are| was| were| has been|'s been| have been| feels| feel| felt)\s+${FEELING_DEGREE}(?:frustrating|stressful|overwhelming|exhausting|embarrassing|humiliating|devastating|heartbreaking|crushing|demoralising|demoralizing|confusing|scary|terrifying|nerve-?wracking|discouraging|depressing|disappointing|painful|exciting|rough|awful|horrible|terrible|brutal|a (?:mess|disaster|nightmare|relief)|too much)\b`,
+    String.raw`\b(?:i|we) (?:(?:totally|completely|kind of|kinda|just|really) )?(?:freaked out|panicked)\b|\bso much going on\b|\bdrowning\b|\bembarrassing (?:to admit|confession)\b|\bproud moment\b|\bsmall win\b|\bphew\b|\bwhat a relief\b|\byou're not listening\b`,
   ].join('|'),
 );
 
 /**
- * Low mood or worse, without a crisis statement ("Everything feels pointless lately", "I'm not coping well", "feeling
- * pretty down"): like `stress`, heard first (Conversation craft), never handed advice at once.
+ * Low mood or worse, without a crisis statement ("Everything feels pointless lately", "I'm not coping well", "I'm at
+ * rock bottom", "I can't take this anymore", "I haven't eaten in days"): like `stress`, heard first (Conversation
+ * craft), never handed advice at once. Said of themselves (a first-person subject, or none at the start of a sentence)
+ * or of everything, never of a plan, a product or someone else: "It's pointless to build an app before the
+ * interviews", "There's no point charging students", "a depressed market", "Our free tier feels pointless", "The
+ * servers are not coping", "We can't eat the cost of the servers", "breaking down the costs", "We're about to give up
+ * 10% equity".
  */
 const LOW_MOOD = new RegExp(
-  String.raw`\b(?:pointless|hopeless|no point|not coping|can't cope|cannot cope|can't go on|can't do this anymore|falling apart|worthless|depressed|(?:feel|felt|feeling)\s+${FEELING_DEGREE}(?:down|low|empty|numb)|(?:i'm|i am|im|we're|we are)\s+${FEELING_DEGREE}down about)\b`,
+  [
+    String.raw`${SELF_FEEL}\s+${FEELING_DEGREE}(?:pointless|hopeless|meaningless|worthless|useless|down|low|empty|numb|broken|dead inside)\b`,
+    String.raw`\b(?:everything|it all|all of (?:this|it)|life|my life|nothing)(?:'s|\s+(?:is|seems|feels|has been|'s been|looks))\s+${FEELING_DEGREE}(?:pointless|hopeless|meaningless|worthless|(?:dark|empty)${SAID_OF_THEMSELVES})\b|\b(?:it|this|that)(?:'s| is) all\s+${FEELING_DEGREE}(?:pointless|hopeless|meaningless)\b|\b(?:everything|it all|my life|my world)(?:'s| is| keeps)? falling apart\b`,
+    String.raw`\b(?:i'm|i am|im|i've been|i have been|we're|we are|i was|we were)\s+${FEELING_DEGREE}(?:depressed|(?:hopeless|worthless|useless)(?! (?:at|with)\b)|broken${SAID_OF_THEMSELVES}|(?:in (?:a|such a) )?(?:really |very |pretty )?dark (?:place|space)|at rock bottom|at (?:the )?end of my (?:rope|tether)|(?:not (?:okay|ok|coping(?: (?:well|very well|at all))?|doing (?:well|ok|okay|great|so well|too well))|a (?:mess|wreck)|done with (?:everything|it all|all of (?:this|it)|life))${SAID_OF_THEMSELVES}|falling apart|(?:down|low) about)\b`,
+    String.raw`\b(?:what's|what is) the point(?: (?:of|in) (?:any of (?:this|it)|it all|anything|trying|going on|even trying))?\s*(?:[?.!,]|$)|\b(?:i|we) (?:don't|do not|dont|can't|cannot) see (?:the|any) point(?: (?:anymore|any more|(?:of|in) (?:anything|any of (?:this|it)|it all|trying|going on)))?\s*(?:[?.!,]|$)|\bno point (?:in )?(?:(?:trying|going on|in anything)(?: any ?more)?|any ?more)\s*(?:[?.!,;]|$)`,
+    // Said of themselves: "I can't take this anymore", "we can't go on like this", "I haven't eaten in days".
+    String.raw`(?:\b(?:i|we)(?: (?:just|really|honestly|seriously|literally|simply|genuinely))? |(?:^|[.!?;,…]\s*))(?:can't|cannot|can not|cant) (?:take (?:this|it)(?: any ?more)?|take any ?more|go on(?: like this)?|keep going|cope(?: with (?:this|it|all (?:of )?(?:this|it)|everything))?|do (?:this|it) any ?more|handle (?:this|it)(?: any ?more)?|get out of bed|eat|sleep)${SAID_OF_THEMSELVES}`,
+    String.raw`(?:\b(?:i|we)(?: (?:just|really|honestly|literally))? |(?:^|[.!?;,…]\s*))(?:haven't|have not|havent|hadn't|had not) (?:eaten|slept|been (?:eating|sleeping))\b|(?:^|[.!?;,…]\s*)not coping\b`,
+    String.raw`\b(?:i|i've|i have|we|we've)(?: (?:just|finally|really))? (?:hit|reached) rock bottom\b|\b(?:i|i'm|i am|im|i keep|i've been|i have been|we're|we are)(?: (?:just|totally|completely|kind of|kinda))? break(?:ing)? down(?=\s*(?:$|[.!?,;…]|(?:in tears|crying|again|all the time|every)\b))`,
+    String.raw`\b(?:i|i'm|i am|im|i was|i've|i have|i've been|i have been|i just|we)\s+(?:[\w']+\s+)?(?:having|had) (?:a |another )?(?:breakdown|break down|meltdown)\b(?! (?:of|in|on)\b)|\bpanic attacks?\b`,
+    String.raw`\bend of my (?:rope|tether)\b|\bi (?:just |really |kind of |kinda )?(?:want to|wanna) disappear\b|\bi(?:'m| am) going to disappear\b|\bhate my life\b|\bnothing matters(?: (?:any ?more|to me))?\s*(?:[.!?,;…]|$)|\bgive up on everything\b`,
+    String.raw`\b(?:(?:i|we) (?:just |really |honestly )?(?:want to|wanna|feel like)|(?:i'm|i am|im|we're|we are) (?:just |really )?(?:ready|about) to) giv(?:e|ing) up(?=\s*(?:$|[.!?,;…]|on (?:this|it|everything|myself|the (?:startup|venture|company|idea|business))\b))`,
+  ].join('|'),
 );
 
 /** Verbs the vEIR asks a step with ("Write your one-line pitch now…"). */
@@ -484,8 +656,9 @@ const STEP_REQUEST = new RegExp(
   [
     String.raw`\b(?:when|once) you(?:'re| are|'ve| have)? (?:done|finished|through)\b`,
     String.raw`\b(?:let me know|tell me) (?:when|once)\b|\b(?:paste|drop|send) (?:it|that|them) (?:here|over|back|to me)\b`,
-    // An imperative for now or a near time: "Now write the three questions…", "Send the email today."
-    String.raw`^(?:(?:so|okay|ok|then|right|first|next|and)[,:]? )*(?:(?:now|right now|today|tonight)[,:]? (?:${STEP_VERBS})\b|(?:go ahead and )?(?:${STEP_VERBS})\b.*\b(?:now|today|tonight|right now|this week|before (?:we|you|our|tomorrow|the end)|by (?:tomorrow|tonight|the end|friday|monday))\b)`,
+    // An imperative for now or a near time, in one clause: "Now write the three questions…", "Send the email today.";
+    // not a tip with "now" after a break ("Make the pitch about her, not the app; you have the story now.").
+    String.raw`^(?:(?:so|okay|ok|then|right|first|next|and)[,:]? )*(?:(?:now|right now|today|tonight)[,:]? (?:${STEP_VERBS})\b|(?:go ahead and )?(?:${STEP_VERBS})\b[^,;:—–]*\b(?:now|today|tonight|right now|this week|before (?:we|you|our|tomorrow|the end)|by (?:tomorrow|tonight|the end|friday|monday))\b)`,
   ].join('|'),
 );
 
@@ -530,10 +703,13 @@ export function founderMoves(text: string): FounderMove[] {
   const moves: FounderMove[] = MOVE_CUES.filter(([, cue]) => cue.test(t)).map(([move]) => move);
   if (bringsNews(t)) moves.push('news');
   if (asksForHelp(t)) moves.push('help');
-  if (reportsDone(t)) moves.push('reports_done');
+  const reports = reportOf(t) !== null;
+  if (reports) moves.push('reports_done');
   const words = wordCount(t);
   if (words <= 5 && SHORT_REPLY.test(t) && !moves.includes('thanks')) moves.push('short_reply');
-  if (t.endsWith('?') || (QUESTION_START.test(t) && words > 2)) moves.push('question');
+  // "Did the thing we discussed." starts like a question, and without a question mark it is a report.
+  const startsAsking = QUESTION_START.test(t) && words > 2 && !(reports && !t.includes('?'));
+  if (t.endsWith('?') || startsAsking) moves.push('question');
   return moves;
 }
 
@@ -698,6 +874,50 @@ function shared(a: ReadonlySet<string>, b: ReadonlySet<string>): number {
   return n;
 }
 
+// What a report says was done ---------------------------------------------------------------------------------
+
+/** Words of a report that say nothing of what was done ("Finally done!", "mission complete", "like we agreed"). */
+const GENERIC_REPORT_WORDS = contentWords(
+  'done finished finish complete completed finally officially literally totally agreed promised committed planned ' +
+    'suggested discussed mentioned recommended followed advice suggestion update news guess mission accomplished ' +
+    'dusted ticked checked crossed nailed task tonight night morning afternoon evening weekend monday tuesday ' +
+    'wednesday thursday friday saturday sunday woo woohoo yay phew alright teh frfr lol haha omg',
+);
+
+/** Verbs of one kind of step ("sent" and "emailed", "launched" and "went live"): a report meets the commitment it is on. */
+const STEP_KINDS: ReadonlyMap<string, string> = new Map(
+  [
+    'send sent email emailed mail mailed message messaged text texted forward forwarded',
+    'post posted publish published share shared upload uploaded',
+    'launch launched ship shipped release released live',
+    'call called phone phoned ring rang spoke speak meet met interview interviewed chat chatted',
+    'book booked schedule scheduled arrange arranged',
+    'write wrote written writing draft drafted',
+    'submit submitted apply applied',
+    'build built prototype prototyped',
+  ].flatMap((kind, i) => [...contentWords(kind)].map((w): [string, string] => [w, `#${i}`])),
+);
+
+/**
+ * What `text` says was done, as content words, without the words any report says ({@link GENERIC_REPORT_WORDS}) or how
+ * the founder talks ("ngl", "tbh", "lowkey", "no cap": {@link FILLERS}).
+ */
+function reportWords(text: string): Set<string> {
+  const said = normalize(text).replace(FILLERS, ' ');
+  return new Set([...contentWords(said)].filter((w) => !GENERIC_REPORT_WORDS.has(w)));
+}
+
+/**
+ * How many words a report and a commitment (or a step asked for) share, a verb of the same kind counting as the same
+ * word ("We finally launched it!" and "Launch the waitlist page", "Sent!" and "Email the dean the plan"): 0 when they
+ * are about different things.
+ */
+export function reportOverlap(report: string, commitment: string): number {
+  const kinds = (text: string): Set<string> =>
+    new Set([...reportWords(text)].map((w) => STEP_KINDS.get(w) ?? w));
+  return shared(kinds(report), kinds(commitment));
+}
+
 // Plain text helpers -------------------------------------------------------------------------------------
 
 /** For each position, the index of the first of `stops` at or after it (`text.length` when none). */
@@ -832,6 +1052,42 @@ function median(values: readonly number[]): number | null {
     : Math.round(((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2);
 }
 
+/** A question asking whether they did something ("Have you checked what the library already offers?"). */
+const DID_YOU =
+  /^(?:(?:so|and|but|also|ok|okay|quick question|one thing)[,:]? )*(?:have|has|had|did) (?:you|u)\b/;
+
+/**
+ * What a report on something the founder said they would do is about, or null when it is no such report after all:
+ * - "Yeah I did that." after the vEIR asked "Have you checked what the campus library already offers?" answers that
+ *   question (a report that names the commitment as such, "I did the thing I said I'd do", is still one);
+ * - a step done inside a longer sentence that says what it was ("We launched it last week, 20 signups so far") and
+ *   that no step asked for and no commitment of the notes is about is news, not a report.
+ * The step the last reply asked for is named when the report could be it; the notes' commitments when it could be one
+ * of them (those it says something of first, see `buildMessages`), next to a step asked for only when the commitment
+ * is named as such ("the thing I said I'd do" may be one of the notes, where a "Done." answers the step).
+ */
+function readReport(
+  report: ReportCue,
+  founderText: string,
+  lastReply: string,
+  commitments: readonly string[],
+): { readonly commitments: string[]; readonly step: string | null } | null {
+  if (report.strength !== 'named' && endsWithQuestion(lastReply)) {
+    const question = lastQuestionOf(lastReply);
+    if (question !== null && DID_YOU.test(normalize(question))) return null;
+  }
+  // "Sent!" is about something sent; "Done!" may be about anything.
+  const fits = (text: string): boolean => report.says.size === 0 || reportOverlap(founderText, text) > 0;
+  const asked = requestedStepOf(lastReply);
+  const step = asked !== null && fits(asked) ? asked : null;
+  const noted = commitments
+    .map((c) => c.replace(/\s+/g, ' ').trim())
+    .filter((c) => c !== '' && fits(c))
+    .slice(0, MAX_REPORTED);
+  if (report.strength === 'step' && report.says.size > 0 && step === null && noted.length === 0) return null;
+  return { step, commitments: step === null || report.strength === 'named' ? noted : [] };
+}
+
 /**
  * The state of the conversation for the new founder message: `history` holds the completed earlier exchanges in
  * view (oldest first; turns without an answer are skipped).
@@ -850,6 +1106,11 @@ export function deriveConversationState(
      * `buildMessages`): named in the state only when the new message reports on something they said they would do.
      */
     readonly commitments?: readonly string[];
+    /**
+     * Who the vEIR is (its persona and the EIR it is built from), so a sincere "Is this really Corin?" is heard as a
+     * question about it. Default: the default persona's name alone.
+     */
+    readonly identity?: IdentityCheckOptions;
   } = {},
 ): ConversationState {
   const turns = history.filter(
@@ -934,8 +1195,24 @@ export function deriveConversationState(
     const opening = openingOf(opener);
     if (opening !== '') openings.push(opening);
   }
-  const lastAsked = lastQuestionOf(afterOpener ? opener : (turns.at(-1)?.answer ?? ''));
-  const moves = founderMoves(founderText);
+  const lastReply = afterOpener ? opener : (turns.at(-1)?.answer ?? '');
+  const lastAsked = lastQuestionOf(lastReply);
+  // A sincere "are you a bot?" is answered by the identity rules, and what the risk check flags (an instruction to
+  // change the rules, another venture) is declined: neither is help, advice or a pick to give in the first sentences.
+  // The check here is the text's own, without the tenant's venture names, so it says nothing about who is on the
+  // platform.
+  const asksWhoYouAre = asksAboutIdentity(
+    founderText,
+    options.identity ?? { personaName: DEFAULT_PERSONA_NAME },
+  );
+  const risk = classifyRisk(founderText);
+  const declined = risk.injection || risk.crossVentureRequest;
+  const report = reportOf(founderText);
+  const reading =
+    report === null ? null : readReport(report, founderText, lastReply, options.commitments ?? []);
+  const moves = founderMoves(founderText).filter(
+    (m) => !(m === 'help' && (asksWhoYouAre || declined)) && !(m === 'reports_done' && reading === null),
+  );
 
   const prev: Thread | null = previous;
   const open = parked.filter((p) => p !== current).slice(0, MAX_PARKED);
@@ -944,23 +1221,20 @@ export function deriveConversationState(
   const normalised = normalize(founderText);
   const low = moves.includes('stress') || LOW_MOOD.test(normalised);
   // Help has its own line; someone stressed or low is heard first (Conversation craft), never handed a plan at once.
-  const asksAdvice = !moves.includes('help') && !low && asksForAdvice(founderText);
-  const reports = moves.includes('reports_done');
+  const asksAdvice =
+    !moves.includes('help') && !low && !asksWhoYouAre && !declined && asksForAdvice(founderText);
   return {
     moves,
     social: socialTurnOf(founderText),
-    directChoice: directChoiceOf(founderText),
-    asksForNumber: asksForNumber(founderText),
+    directChoice: !asksWhoYouAre && !declined && directChoiceOf(founderText),
+    asksForNumber: !declined && asksForNumber(founderText),
     asksAdvice,
+    asksWhoYouAre,
+    declined,
     feeling: low || FEELING.test(normalised),
     asksToo: moves.includes('help') || asksAdvice || normalised.includes('?'),
-    reportedCommitments: reports
-      ? (options.commitments ?? [])
-          .map((c) => c.replace(/\s+/g, ' ').trim())
-          .filter((c) => c !== '')
-          .slice(0, MAX_REPORTED)
-      : [],
-    requestedStep: reports ? requestedStepOf(afterOpener ? opener : (turns.at(-1)?.answer ?? '')) : null,
+    reportedCommitments: reading?.commitments ?? [],
+    requestedStep: reading?.step ?? null,
     usedPhrases,
     openerGreeted: afterOpener && /^(?:hi|hello|hey|hiya)\b/i.test(opener),
     words: wordCount(founderText),
@@ -1078,17 +1352,24 @@ export function renderConversationState(state: ConversationState): string {
             '  how it went in this reply.',
           ]
         : [
+            // "I sent it to 50 people and nobody replied" already says how it went.
             '- They report on something they said they would do: say which it is, specifically (what, and where or with whom),',
-            '  in a sentence of your own (a step agreed in this conversation, else one from your notes), then ask how it went',
-            '  or what they learned. Never a reply that would fit any founder.',
+            '  in a sentence of your own (a step agreed in this conversation, else one from your notes), then take up what they',
+            '  say of how it went, or ask how it went or what they learned if they say nothing of it. Never a reply that would',
+            '  fit any founder.',
           ]),
     );
     const [likeliest, other] = (state.reportedCommitments ?? []).map((c) =>
       quoted(truncate(c, COMMITMENT_CHARS)),
     );
-    // A "Done." right after the vEIR asked for a step answers that step, whatever the notes hold.
+    // A "Done." right after the vEIR asked for a step answers that step, whatever the notes hold; "the thing I said I'd
+    // do" may be the step or a commitment of the notes.
     const requested = state.requestedStep ?? null;
-    if (requested !== null) {
+    if (requested !== null && likeliest !== undefined) {
+      reportLines.push(
+        `- It is the step your last reply asked them to do, ${quoted(truncate(requested, COMMITMENT_CHARS))}, or from your notes most likely ${likeliest}; if you cannot tell which, ask in one short question.`,
+      );
+    } else if (requested !== null) {
       reportLines.push(
         `- Your last reply asked them to do something, so it is most likely that: ${quoted(truncate(requested, COMMITMENT_CHARS))}.`,
       );

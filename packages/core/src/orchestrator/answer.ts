@@ -233,6 +233,12 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
     leftOff: spec.leftOff,
     today,
     opener: spec.opener,
+    // One object for every variant the budget builds: the conversation state is computed once per turn.
+    identity: {
+      personaName: spec.personaName,
+      eirNames: guards.eirNames,
+      personaEirName: spec.personaEirName,
+    },
   });
   const shown: KeyedEvidence[] = spec.evidence.filter((k) => context.shownKeys.has(k.item.key));
   const evidenceKeys = new Set(shown.map((k) => k.item.key));

@@ -1167,6 +1167,15 @@ describe('asksAboutIdentity — a sincere question about what the coach is', () 
     'Is Corin reading this?',
     'Can Corin see this?',
     "You're not really Corin, are you?",
+    // Who they say they are talking to, asked back (the second review of the advice line: read as "How do I…?" advice).
+    "How do I know I'm talking to a real person?",
+    "How can I tell whether I'm talking to Corin or a bot?",
+    'How can I tell if I am talking to a human?',
+    // The EIR named inside a question of theirs (review of the repair: read as advice to give).
+    'How can I tell if this is really Corin?',
+    "How can I be sure it's the real Corin?",
+    'This is really Corin talking?',
+    'How do I know this is really Corin and not a bot?',
   ])('asks: %j', (text) => {
     expect(asksAboutIdentity(text, CORIN)).toBe(true);
   });
@@ -1180,6 +1189,11 @@ describe('asksAboutIdentity — a sincere question about what the coach is', () 
     'Should I ask Corin about pricing?',
     'Should we build a bot or a human service?',
     "You're right about the pricing.",
+    "I'm talking to a person from the bank tomorrow, what should I ask?",
+    "I'm talking to the AI team at the library on Friday. Any tips?",
+    "I'm talking to a real person at the bursar's office.",
+    "How can I tell if this is really Corin's handwriting?",
+    "It's really Corin who set the deadline?",
   ])('does not ask: %j', (text) => {
     expect(asksAboutIdentity(text, CORIN)).toBe(false);
   });

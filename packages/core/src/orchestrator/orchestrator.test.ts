@@ -266,6 +266,27 @@ describe('context budget', () => {
     const sent = ctx.messages.reduce((acc, m) => acc + estimateTokens(m.content), 0);
     expect(sent + estimateTokens('s'.repeat(8_000))).toBe(ctx.estimatedInputTokens);
   });
+
+  it('hears a question about who the vEIR is by its own EIR’s name, given who it is', () => {
+    // Without the persona, "Is this really Corin?" asked inside a "How can I…?" got the advice line first.
+    const args = {
+      system: 'sys',
+      evidence: [],
+      history: [{ founderText: 'Hey.', answer: 'Hey Rafi. What are you working on today?' }],
+      founderText: 'How can I tell if this is really Corin?',
+      maxInputTokens: 12_000,
+      maxHistoryTurns: 8,
+    };
+    const identity = {
+      personaName: "Corin's vEIR",
+      personaEirName: 'Corin Halvorsen',
+      eirNames: ['Corin Halvorsen'],
+    };
+    expect(assembleContext({ ...args, identity }).messages.at(-1)?.content).not.toContain(
+      'They ask for your advice',
+    );
+    expect(assembleContext(args).messages.at(-1)?.content).toContain('They ask for your advice');
+  });
 });
 
 describe('sampling and caps', () => {
