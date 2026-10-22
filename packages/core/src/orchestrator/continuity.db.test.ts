@@ -290,6 +290,29 @@ describe('a second call minutes after the first', () => {
   });
 });
 
+describe('a second call after the first was distilled at once (the local server; e2e calls.spec.ts:518)', () => {
+  it('greets around what the first call was about, a one-word subject included', async () => {
+    const first = await h.core.sessions.create(maya, quietquad(), {});
+    const call1 = await startCall(maya, first.id);
+    await talk(maya, first.id, 'We are weighing per-library pricing for the pilot.', call1.call.id);
+    await h.core.calls.end(maya, call1.call.id, { reason: 'user' });
+    h.jobQueue.drain();
+    // The mock notes "Last time we talked about pricing. Where did you land?": "pricing" is a subject.
+    const outcome = await h.core.distill.distillSession({
+      sessionId: first.id,
+      requestId: 'distill-e2e-518',
+      settled: true,
+    });
+    expect(outcome.status).toBe('distilled');
+    const second = await h.core.sessions.create(maya, quietquad(), {});
+    const call2 = await startCall(maya, second.id);
+    expect(call2.intro?.text).toMatch(/^Hi Maya, .*pric/i);
+    expect(call2.intro?.text).not.toContain('what would you like to work on?');
+    await h.core.calls.end(maya, call2.call.id, { reason: 'user' });
+    h.jobQueue.drain();
+  });
+});
+
 describe('every way a call ends distils its conversation now', () => {
   it('a server stop, a replacement elsewhere and the daily reaper; never a reload in the same conversation', async () => {
     const a = await h.core.sessions.create(maya, quietquad(), {});

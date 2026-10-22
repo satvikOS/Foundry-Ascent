@@ -314,7 +314,7 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
   opened on that the founder took up in none of their messages there is never opened on again, as the notebook's
   opener, its thread or that conversation's subject: the line picks up their news, else their latest topic, else
   invites them plainly. A subject must read as one (`readsAsSubject`: never a lone date or month, a single word that
-  is not a name, a plan without its verb, or a phrase cut mid-clause). Every distilled line it uses (the
+  only describes ("full-time"), a plan without its verb, or a phrase cut mid-clause). Every distilled line it uses (the
   thread, the stored sentence, the topics) is said to the founder: their name or "the founder" becomes "you", team
   names keep their real case, and a line still in the third person is left out. Phrasing varies with how many
   conversations the person opened since, so two never open alike. The line is validated like any opener and

@@ -101,13 +101,19 @@ describe('topicOf: summarised, never quoted', () => {
 });
 
 describe('readsAsSubject: only what an opener can say it was about (lab run 39780304879, voice suite on acc50c6)', () => {
-  it('accepts noun phrases, activities, questions, names and plans with their verb', () => {
+  it('accepts noun phrases, single nouns and names, activities, questions and plans with their verb', () => {
     for (const subject of [
       'the Hartwell pilot',
       'per-library pricing',
       'pricing and pilot design',
       'Noor',
+      'Hartwell',
       'FDA clearance',
+      // A single common noun is a subject (the mock's "Last time we talked about pricing", e2e calls.spec.ts:518).
+      'pricing',
+      'hiring',
+      'fundraising',
+      'follow-up',
       'booking the auditorium for demo day',
       'whether to price per library or per seat',
       'how to position yourself',
@@ -123,7 +129,7 @@ describe('readsAsSubject: only what an opener can say it was about (lab run 3978
     }
   });
 
-  it('rejects a lone date or month, a word that is no name, a plan without a verb and other fragments', () => {
+  it('rejects a lone date or time, a word that only describes, a plan without a verb and other fragments', () => {
     for (const fragment of [
       'January',
       'May',
@@ -132,8 +138,13 @@ describe('readsAsSubject: only what an opener can say it was about (lab run 3978
       'a few minutes',
       '$900',
       'full-time',
-      'pricing',
+      'long-term',
+      'two-week',
+      'ready',
+      'quickly',
+      'Monday',
       'you',
+      'yourself',
       'your plan to a few minutes before your next class',
       'your plan to the pilot',
       'to a few minutes before your next class',

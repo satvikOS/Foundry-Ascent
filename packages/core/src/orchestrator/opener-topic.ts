@@ -201,7 +201,15 @@ const FUNCTION_WORDS = new Set(
     'through without within per via as than since until till toward towards against among around across behind ' +
     'beyond near off out up down upon and or but nor so yet if because while although though whether unless i me ' +
     'we us you they them he him she it is are was were be been am will would can could should shall may might ' +
-    'must do does did have has had not'
+    'must do does did have has had not myself yourself himself herself itself ourselves yourselves themselves ' +
+    'mine yours ours theirs'
+  ).split(' '),
+);
+/** Pronouns that end a phrase well, as its object ("your plan to call them", "money from this"). */
+const OBJECT_PRONOUNS = new Set(
+  (
+    'this that these those it them us me you him myself yourself himself herself itself ourselves yourselves ' +
+    'themselves mine yours ours theirs'
   ).split(' '),
 );
 /** Words a subject never opens with: prepositions, conjunctions, "to", auxiliaries and pronouns. */
@@ -222,12 +230,7 @@ const BAD_START = new Set(
 const UNFINISHED = new Set(
   'last next coming past few couple very really just also still even more most less much many'.split(' '),
 );
-const DANGLING = new Set([
-  ...[...FUNCTION_WORDS].filter(
-    (w) => !['this', 'that', 'these', 'those', 'it', 'them', 'us', 'me', 'you', 'him'].includes(w),
-  ),
-  ...UNFINISHED,
-]);
+const DANGLING = new Set([...[...FUNCTION_WORDS].filter((w) => !OBJECT_PRONOUNS.has(w)), ...UNFINISHED]);
 const WH_SUBJECT = /^(?:whether|how|what|which|when|where|who|why)(?![\p{L}'])/iu;
 /** "your plan to X", "your cofounder's plan to X", "your goal of X". */
 const PLAN_SUBJECT =
@@ -239,6 +242,26 @@ function bare(word: string): string {
     .toLowerCase()
     .replace(/[‘’ʼ]/g, "'")
     .replace(/^[^\p{L}\p{N}$]+|[^\p{L}\p{N}%']+$/gu, '');
+}
+
+/** Hyphenated words that describe, never name: "full-time", "long-term", "high-level", "early-stage", "two-week". */
+const DESCRIBING_COMPOUND =
+  /^[\p{L}\d]+-(?:time|term|level|stage|scale|based|sized|size|facing|only|free|ready|friendly|related|focused|wide|year|month|week|day)$/u;
+/** Everyday words that describe, never name (an opener never asks "shall we pick up ready?"). */
+const DESCRIBING = new Set(
+  (
+    'ready new old good bad big small great fine sure clear full free busy late early quick fast slow hard easy ' +
+    'better best worse worst real true false cheap expensive important interested happy sad possible impossible ' +
+    'available done finished open closed fixed stuck lost blank okay ok right wrong high low long short paid unpaid ' +
+    'quickly slowly actually honestly probably basically definitely finally recently'
+  ).split(' '),
+);
+
+/** A word that only describes (an adjective or an adverb), never something to talk about on its own; never a name. */
+function describesOnly(word: string): boolean {
+  if (/^\p{Lu}/u.test(word) && !isEverydayWord(word.replace(/['’]s$/, ''))) return false;
+  const w = bare(word);
+  return DESCRIBING.has(w) || DESCRIBING_COMPOUND.test(w);
 }
 
 /** A word that can be the verb of a plan ("to call", "to book"): lower case, no function, time or number word. */
@@ -267,10 +290,10 @@ function namesNothing(word: string): boolean {
 
 /**
  * Whether `text` reads as what an opener can say a conversation was about, mid-sentence ("shall we pick up …?",
- * "want to carry on with …?"): a noun phrase ("the Hartwell pilot", "per-library pricing", "Noor"), an activity
+ * "want to carry on with …?"): a noun phrase ("the Hartwell pilot", "per-library pricing", "Noor", "pricing"), an activity
  * ("booking the auditorium"), a question ("whether to price per seat") or a plan with its verb ("your plan to call
  * facilities"). Never a lone date, month or time ("January": lab run 39780304879, "Hi Idris, want to carry on with
- * January?"), a single word that is not a name ("full-time", "pricing"), a plan without a verb ("your plan to a few
+ * January?"), a single word that only describes ("full-time", "ready"), a plan without a verb ("your plan to a few
  * minutes before your next class": the voice suite on acc50c6), a phrase that opens with a preposition, a
  * conjunction, an auxiliary or a pronoun, or one left dangling ("the study room for", "the advisor last").
  */
@@ -294,11 +317,9 @@ export function readsAsSubject(text: string): boolean {
   }
   const naming = words.filter((w) => !namesNothing(w));
   if (naming.length === 0) return false;
-  // One word alone is a name ("Noor", "Hartwell", "FDA"), never a word that names nothing on its own.
-  if (words.length === 1) {
-    const word = words[0] ?? '';
-    return /^\p{Lu}/u.test(word) && !isEverydayWord(word.replace(/['’]s$/, ''));
-  }
+  // One word alone is a name or a noun ("Noor", "FDA", "pricing", "fundraising"), never a word that only describes
+  // ("full-time", "ready", "quickly").
+  if (words.length === 1) return !describesOnly(words[0] ?? '');
   return true;
 }
 
