@@ -1,5 +1,12 @@
-import { MockModelGateway } from '@foundry/ai';
+import {
+  MockModelGateway,
+  ModelUnavailableError,
+  type ModelAttempt,
+  type ModelGateway,
+  type ModelUsage,
+} from '@foundry/ai';
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 
 import { observeGateway } from './observed-gateway.js';
 import {
@@ -69,6 +76,81 @@ describe('request metrics', () => {
     // Calls outside a request pass through untouched.
     await gateway.embed(['x'], { purpose: 'embedding' });
     expect(metrics.embed.calls).toBe(1);
+  });
+});
+
+describe('the prompt cache share of a request’s model calls', () => {
+  const attempt = (usage: ModelUsage): ModelAttempt => ({
+    provider: 'nova',
+    modelId: 'us.amazon.nova-2-lite-v1:0',
+    kind: 'initial',
+    outcome: 'ok',
+    latencyMs: 10,
+    usage,
+    errorName: null,
+    costUsd: 0.001,
+  });
+  /** A gateway whose calls report Bedrock's prompt-cache usage (the second streamed call fails after one attempt). */
+  const reporting = (mock: MockModelGateway): ModelGateway => {
+    let streams = 0;
+    return {
+      info: mock.info,
+      embed: (texts, options) => mock.embed(texts, options),
+      async streamText(request, onText) {
+        streams += 1;
+        if (streams > 1) {
+          const error = new ModelUnavailableError('timeout', 'us.amazon.nova-2-lite-v1:0');
+          error.attempts = [attempt({ inputTokens: 5_000, outputTokens: 0, cacheReadInputTokens: 4_000 })];
+          throw error;
+        }
+        const result = await mock.streamText(request, onText);
+        const usage = {
+          inputTokens: 7_900,
+          outputTokens: 40,
+          cacheReadInputTokens: 6_000,
+          cacheWriteInputTokens: 1_000,
+        };
+        return { ...result, attempts: [attempt(usage)] };
+      },
+      async generateStructured(request) {
+        const result = await mock.generateStructured(request);
+        return {
+          ...result,
+          attempts: [attempt({ inputTokens: 8_200, outputTokens: 90, cacheReadInputTokens: 7_000 })],
+        };
+      },
+    };
+  };
+
+  it('counts every call’s input tokens and cache reads and writes, and the first streamed call’s apart', async () => {
+    const mock = new MockModelGateway({ streamDelayMs: 0 });
+    const gateway = observeGateway(reporting(mock));
+    const metrics = new RequestMetrics();
+    const request = {
+      purpose: 'turn' as const,
+      system: 'You are a coach.',
+      messages: [{ role: 'user' as const, content: 'Hello there. How are you?' }],
+      requestId: 'r1',
+    };
+    await withRequestMetrics(metrics, async () => {
+      await gateway.streamText(request, () => undefined);
+      await gateway.generateStructured({
+        ...request,
+        schemaName: 'Fields',
+        zodSchema: z.object({ ok: z.boolean() }),
+      });
+      // A failed call's attempts are billed, so they count too; it is not the first streamed call.
+      await expect(gateway.streamText(request, () => undefined)).rejects.toBeInstanceOf(
+        ModelUnavailableError,
+      );
+    });
+    expect(metrics.tokenFields()).toEqual({
+      inputTokens: 21_100,
+      cacheReadInputTokens: 17_000,
+      cacheWriteInputTokens: 1_000,
+      streamInputTokens: 7_900,
+      streamCacheReadInputTokens: 6_000,
+    });
   });
 });
 

@@ -16,6 +16,7 @@ import {
   type ModelAttempt,
   type ModelPurpose,
   type NarrationNames,
+  type PromptCacheHint,
   type SentenceGateOptions,
   type StreamStopReason,
 } from '@foundry/ai';
@@ -205,6 +206,11 @@ export interface GenerateArgs {
   /** The turn's system prompt (whole-reply path and phase B). */
   readonly system: string;
   readonly messages: readonly ChatMessage[];
+  /**
+   * Where `system`'s unchanging prefix and the earlier exchanges in `messages` end (Bedrock prompt caching). Every
+   * call of the turn sends it; phase A keeps that prefix of `system` byte for byte.
+   */
+  readonly promptCache?: PromptCacheHint;
   readonly channel: TurnChannel;
   /** The fixed mode, or null in auto mode. */
   readonly mode: CoachMode | null;
@@ -293,6 +299,7 @@ export async function generateWhole(
         zodSchema: CoachResponse,
         requestId: a.ctx.requestId,
         timeoutMs: a.kit.config.turns.modelTimeoutMs,
+        ...(a.promptCache ? { promptCache: a.promptCache } : {}),
         ...(a.signal ? { signal: a.signal } : {}),
       });
       await record(a, result.attempts);
@@ -484,8 +491,10 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
           channel: a.channel,
           mode: a.mode,
           allowedModes: a.allowedModes,
+          stableChars: a.promptCache?.systemChars ?? 0,
         }),
         messages: a.messages,
+        ...(a.promptCache ? { promptCache: a.promptCache } : {}),
         maxOutputTokens: ANSWER_MAX_TOKENS[a.channel],
         timeoutMs: a.kit.config.turns.modelTimeoutMs,
         requestId: a.ctx.requestId,
@@ -630,6 +639,7 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
       purpose: a.meter.purpose,
       system: a.system,
       messages: annotationMessages(a.messages, replyText),
+      ...(a.promptCache ? { promptCache: a.promptCache } : {}),
       schemaName: COACH_ANNOTATIONS_SCHEMA_NAME,
       zodSchema: CoachAnnotations,
       requestId: a.ctx.requestId,
@@ -680,15 +690,22 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
   };
 }
 
-/** Token and cost totals of a generation, for the turn record. */
+/**
+ * Token and cost totals of a generation, for the turn record. Of the input tokens: those read from and written to
+ * Bedrock's prompt cache (0 when no call reported any); the cost already prices them at the model's cache rates.
+ */
 export function generationTotals(g: Generation): {
   inputTokens: number;
   outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheWriteInputTokens: number;
   costUsd: number;
 } {
   return {
     inputTokens: sum(g.attempts, (a) => a.usage.inputTokens),
     outputTokens: sum(g.attempts, (a) => a.usage.outputTokens),
+    cacheReadInputTokens: sum(g.attempts, (a) => a.usage.cacheReadInputTokens ?? 0),
+    cacheWriteInputTokens: sum(g.attempts, (a) => a.usage.cacheWriteInputTokens ?? 0),
     costUsd: sum(g.attempts, (a) => a.costUsd),
   };
 }

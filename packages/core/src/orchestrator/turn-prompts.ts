@@ -18,6 +18,10 @@ import { type CoachMode, type TurnChannel } from '@foundry/contracts';
  *
  * Every rule above the output section (identity, non-negotiables, claims, escalation, mode, doctrine, notes)
  * governs both phases.
+ *
+ * Both phases start with the same characters: the system prompt's stable part (`buildSystemPromptParts`), which is
+ * also the same on every turn of the conversation. Phase A edits only what follows it, so Bedrock's prompt cache can
+ * serve that prefix (docs/runbooks/latency.md).
  */
 
 /**
@@ -28,6 +32,11 @@ export const OUTPUT_SECTION_MARKER = '\nOutput:';
 
 export interface AnswerPromptOptions {
   readonly channel: TurnChannel;
+  /**
+   * Characters at the start of the system prompt that are the same on every turn (`buildSystemPromptParts`'s
+   * `stable`): kept byte for byte, and the edits below apply only to what follows. Default 0 (the whole prompt).
+   */
+  readonly stableChars?: number;
   /** The fixed mode, or null in auto mode. */
   readonly mode: CoachMode | null;
   /** Modes the model may choose from in auto mode. */
@@ -36,10 +45,11 @@ export interface AnswerPromptOptions {
 
 /**
  * The call's section of the turn system prompt (`# Voice call`): the reply's output contract as two fields, `spoken`
- * (at most 70 words) and `answer` (its transcript). It sits just before the output section, so cutting at that section
- * kept it in a call's phase A, which then asked for two fields and, a few lines later, for the text itself with no
- * field names. Nova 2 Lite reconciled that by reasoning in the open, and the call said it (LAB-M1: 5 of 14 call turns,
- * 0 of about 98 typed ones). Phase A leaves the section out and says its one rule that is not about fields itself.
+ * (at most 70 words) and `answer` (its transcript). It sits before the turn policy and the output section, so cutting
+ * at the output section kept it in a call's phase A, which then asked for two fields and, a few lines later, for the
+ * text itself with no field names. Nova 2 Lite reconciled that by reasoning in the open, and the call said it (LAB-M1:
+ * 5 of 14 call turns, 0 of about 98 typed ones). Phase A leaves the section out and says its one rule that is not about
+ * fields itself.
  */
 export const VOICE_SECTION_MARKER = '\n# Voice call\n';
 
@@ -55,7 +65,8 @@ function phaseARules(system: string): string {
 
 /** Phase A system prompt: the turn's rules, then how to write the reply as plain text. */
 export function answerSystemPrompt(system: string, options: AnswerPromptOptions): string {
-  const rules = phaseARules(system);
+  const kept = Math.min(Math.max(0, options.stableChars ?? 0), system.length);
+  const rules = `${system.slice(0, kept)}${phaseARules(system.slice(kept))}`;
   const lines = [
     '',
     'Output: write your reply to the founder now, as the text itself. No JSON, no field names, no preamble.',

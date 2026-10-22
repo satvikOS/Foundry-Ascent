@@ -163,9 +163,17 @@ tuples are rejected because strict mode cannot express them. Our contracts use `
 
 `modelGatewayConfigFromEnv(env)` reads `APP_ENV`, `MODEL_PROVIDER` (`bedrock` | `mock`; defaults to
 `mock` outside production, required in production), `MODEL_PRIMARY_ID`, `MODEL_FALLBACK_ID`,
-`MODEL_EMBEDDINGS_ID` and `BEDROCK_REGION` (default `us-east-1`). `BedrockGatewayConfig` additionally
-accepts `primaryTimeoutMs`, `fallbackTimeoutMs`, `pricing` overrides, `logger`, `credentials`,
-`embeddingConcurrency`, `lunaReasoningEffort` and test seams (`transports`, `providers`).
+`MODEL_EMBEDDINGS_ID` and `BEDROCK_REGION` (default `us-east-1`), and the optional `MODEL_PROMPT_CACHE`
+(`on` by default: Converse requests to an Amazon Nova model carry Bedrock cache checkpoints where a request's
+`promptCache` hint says its unchanging prefix ends; `off` sends none; the mock ignores it). `BedrockGatewayConfig`
+additionally accepts `primaryTimeoutMs`, `fallbackTimeoutMs`, `pricing` overrides, `logger`, `credentials`,
+`embeddingConcurrency`, `lunaReasoningEffort`, `promptCache` and test seams (`transports`, `providers`).
+
+Prompt caching (docs/runbooks/latency.md §3): a request's `promptCache: { systemChars, historyMessages }` names the
+characters at the start of `system` that are the same on every turn of the conversation and the leading messages
+that are its earlier exchanges. Nova then gets a checkpoint after that system prefix and after the history's last
+two founder messages (Nova caches `system` and `messages`, never `tools`; at most 4 checkpoints). Usage carries
+`cacheReadInputTokens` / `cacheWriteInputTokens` (part of `inputTokens`), priced at the model's cache rates.
 
 IAM needed by the runtime role: `bedrock:InvokeModel` + `bedrock:InvokeModelWithResponseStream`
 (Converse authorizes through them) on both Nova inference profiles, the Nova foundation model in every
@@ -195,7 +203,9 @@ cosine similarity and retrieval tests are stable. `scriptNext(…)` queues `unav
 ## Pricing
 
 `costFor(modelId, usage, table?)` returns USD rounded **up** to the micro-dollar (`numeric(10, 6)`).
-Defaults (`DEFAULT_MODEL_PRICES`, per 1M tokens): Luna $0.10 in / $0.50 out with a +10 % in-region
+Input tokens read from or written to a prompt cache are priced at the model's `cacheReadPerMillionUsd` /
+`cacheWritePerMillionUsd` (Nova 2 Lite: $0.075 and $0, from the AWS price list), or at its input rate when it has
+none. Defaults (`DEFAULT_MODEL_PRICES`, per 1M tokens): Luna $0.10 in / $0.50 out with a +10 % in-region
 premium, Nova 2 Lite $0.30 / $2.50, Titan V2 $0.02 in; mock models are free. Inference-profile ids and
 ARNs resolve to their base model. Unknown ids are priced at the most expensive known rate so spend caps
 cannot be bypassed by a typo. Override with `createPricingTable(overrides)` or the gateway's `pricing`.
@@ -231,8 +241,10 @@ continuity?, conversationGoal? })` — trusted instructions: identity (Foundry G
   any), the voice-call rules (`channel: 'voice'`: `spoken` is ≤ 70 words of plain sentences, no
   Markdown, lists or citation keys; `answer` stays the full transcript text) and the per-turn policy
   derived from the pre-classifier. Claims, uncertainty and the challenge stay structured fields; the
-  answer carries inline `[E#]` citations. A machine-readable `[control]` block at the top carries mode,
-  flags, channel, persona and founder first name.
+  answer carries inline `[E#]` citations. A machine-readable `[control]` block carries mode, flags, channel,
+  persona and founder first name. `buildSystemPromptParts` returns the same prompt as `{ stable, turn }`:
+  `stable` (identity to notes) is the same on every turn of a conversation, `turn` opens with the control block,
+  then the voice-call rules, the turn policy and the output section (Bedrock prompt caching).
 - `buildEvidenceBlock(items, { maxExcerptChars?, maxTotalChars? })` — `<evidence>` with one escaped
   `<item id="E1" kind status freshness score>` per item; content can never close the element.
 - `buildMessages(history, founderText, { evidenceBlock?, continuity?, today?, maxHistoryTurns = 8,

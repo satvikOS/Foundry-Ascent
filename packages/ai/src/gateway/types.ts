@@ -34,8 +34,34 @@ export interface ChatMessage {
 }
 
 export interface ModelUsage {
+  /** Every input token of the call, read from the provider's prompt cache or not (what the spend caps count). */
   inputTokens: number;
   outputTokens: number;
+  /**
+   * Of `inputTokens`, those read from the provider's prompt cache (priced at the model's cache-read rate), when the
+   * provider reports them (Bedrock Converse `cacheReadInputTokens`).
+   */
+  cacheReadInputTokens?: number;
+  /**
+   * Of `inputTokens`, those written to the provider's prompt cache (priced at the model's cache-write rate), when the
+   * provider reports them (Bedrock Converse `cacheWriteInputTokens`).
+   */
+  cacheWriteInputTokens?: number;
+}
+
+/**
+ * Where a request's prompt stops being the same as on the conversation's previous turn (Bedrock prompt caching,
+ * docs/runbooks/latency.md). A provider with explicit cache checkpoints that has prompt caching on marks these
+ * places; every other provider (and the mock) ignores the hint. The text sent to the model is the same either way.
+ */
+export interface PromptCacheHint {
+  /** Characters at the start of `system` that are the same on every turn of the conversation (0: none). */
+  readonly systemChars: number;
+  /**
+   * Leading `messages` that are the conversation's earlier exchanges (the rest is this turn's): the conversation so far
+   * is cached up to its last founder message, where the next turn reads it back (0: none).
+   */
+  readonly historyMessages: number;
 }
 
 /**
@@ -54,8 +80,11 @@ export type AttemptOutcome =
   | 'network'
   | 'aborted';
 
-/** `initial` = first call; `repair` = re-ask after invalid output; `profile_retry` = Nova inference-profile retry. */
-export type AttemptKind = 'initial' | 'repair' | 'profile_retry';
+/**
+ * `initial` = first call; `repair` = re-ask after invalid output; `profile_retry` = Nova inference-profile retry;
+ * `cache_retry` = Nova retry without prompt-cache checkpoints after Bedrock refused a request that carried them.
+ */
+export type AttemptKind = 'initial' | 'repair' | 'profile_retry' | 'cache_retry';
 
 /** One network call to a model as reported by a provider (before pricing is applied). */
 export interface RawModelAttempt {
@@ -65,11 +94,8 @@ export interface RawModelAttempt {
   outcome: AttemptOutcome;
   latencyMs: number;
   usage: ModelUsage;
-  /**
-   * Input tokens the provider read from its prompt cache (already counted in `usage.inputTokens`), when it
-   * reports them: shows in the logs how much of a prompt was served from the cache (docs/runbooks/latency.md).
-   */
-  cachedInputTokens?: number;
+  /** Prompt-cache checkpoints the request carried (absent: none). */
+  cachePoints?: number;
   /** Provider error class name (e.g. `ThrottlingException`), never the error message. */
   errorName: string | null;
   /**
@@ -98,6 +124,8 @@ export interface GenerateStructuredRequest<T> {
   zodSchema: z.ZodType<T>;
   /** Upper bound on generated tokens per attempt. Default 4096. */
   maxOutputTokens?: number;
+  /** Where the prompt's unchanging prefix ends, for the provider's prompt cache (see {@link PromptCacheHint}). */
+  promptCache?: PromptCacheHint;
   /** Budget for the primary model including its repair retry. Default 25 000 ms. */
   timeoutMs?: number;
   /** Correlates log lines and ledger rows. */
@@ -135,6 +163,8 @@ export interface StreamTextRequest {
   messages: readonly ChatMessage[];
   /** Upper bound on generated tokens. Default 1 500. */
   maxOutputTokens?: number;
+  /** Where the prompt's unchanging prefix ends, for the provider's prompt cache (see {@link PromptCacheHint}). */
+  promptCache?: PromptCacheHint;
   /** Budget for the primary model. Default 25 000 ms. */
   timeoutMs?: number;
   /** Correlates log lines and ledger rows. */

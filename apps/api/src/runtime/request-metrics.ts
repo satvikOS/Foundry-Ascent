@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
-import { awsConnectionStats, type ConnectionStats } from '@foundry/ai';
+import { awsConnectionStats, type ConnectionStats, type ModelUsage } from '@foundry/ai';
 import { type DbCallEvent } from '@foundry/db';
 
 import { type LogFields } from '../logging.js';
@@ -34,6 +34,17 @@ export class RequestMetrics {
   };
   /** Structured (whole-object) model calls: count and total time. */
   structured = { calls: 0, ms: 0 };
+  /**
+   * Input tokens of the request's model calls (every attempt), and of them those read from and written to Bedrock's
+   * prompt cache; `firstStream…`: the first streamed call's, whose time to first text `stream` holds.
+   */
+  tokens = {
+    input: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    firstStreamInput: null as number | null,
+    firstStreamCacheRead: null as number | null,
+  };
   /**
    * Other requests this process was serving alongside: when this one started, and the most at any time while it
    * ran (LAB-P2: the browser's concurrent requests during a turn). Counted while the request is open (`open`).
@@ -77,6 +88,34 @@ export class RequestMetrics {
       this.db.transactions += 1;
       this.lastTransaction = { endedAt: this.elapsed(), spanMs: event.spanMs ?? event.ms };
     }
+  }
+
+  /** Counts the input tokens of a model call's attempts (`firstStream`: the request's first streamed call). */
+  recordModelUsage(usages: readonly ModelUsage[], firstStream = false): void {
+    let input = 0;
+    let cacheRead = 0;
+    for (const usage of usages) {
+      input += usage.inputTokens;
+      cacheRead += usage.cacheReadInputTokens ?? 0;
+      this.tokens.cacheWrite += usage.cacheWriteInputTokens ?? 0;
+    }
+    this.tokens.input += input;
+    this.tokens.cacheRead += cacheRead;
+    if (firstStream) {
+      this.tokens.firstStreamInput = input;
+      this.tokens.firstStreamCacheRead = cacheRead;
+    }
+  }
+
+  /** Prompt-cache fields for a log line (numbers only). */
+  tokenFields(): LogFields {
+    return {
+      inputTokens: this.tokens.input,
+      cacheReadInputTokens: this.tokens.cacheRead,
+      cacheWriteInputTokens: this.tokens.cacheWrite,
+      streamInputTokens: this.tokens.firstStreamInput,
+      streamCacheReadInputTokens: this.tokens.firstStreamCacheRead,
+    };
   }
 
   /** Database fields for a log line. */

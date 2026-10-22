@@ -6,9 +6,11 @@ export const AUTO_MODE = 'auto';
 export type PromptMode = CoachMode | typeof AUTO_MODE;
 
 /**
- * Machine-readable control block at the top of every system prompt. It tells the model the turn's
- * mode, flags and channel, and lets deterministic components (the mock gateway, evals) read the same
- * settings without re-deriving them. Values are escaped single-line strings.
+ * Machine-readable control block of every system prompt. It tells the model the turn's mode, flags and
+ * channel, and lets deterministic components (the mock gateway, evals) read the same settings without
+ * re-deriving them. Values are escaped single-line strings. It opens the turn's part of the prompt, after the
+ * rules that stay the same on every turn (`buildSystemPromptParts`): its risk and crisis flags change from turn
+ * to turn, and Bedrock's prompt cache serves only an unchanged prefix.
  */
 export interface PromptControl {
   policyVersion: string;
@@ -72,9 +74,13 @@ function list<T>(
     });
 }
 
-/** Parses the control block from a system prompt; returns null when absent or malformed. */
+/**
+ * Parses the control block from a system prompt; returns null when absent or malformed. The prompt's own block is
+ * its last one: it comes after every piece of untrusted data the system prompt holds (the venture's name and goals),
+ * and only trusted rules follow it, so a "[control]" written into the data is never read as the block.
+ */
 export function parseControlBlock(system: string): PromptControl | null {
-  const start = system.indexOf(BEGIN);
+  const start = system.lastIndexOf(BEGIN);
   const end = system.indexOf(END, start + BEGIN.length);
   if (start < 0 || end < 0) return null;
   const fields = new Map<string, string>();

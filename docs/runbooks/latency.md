@@ -55,12 +55,12 @@ re-run the insights workflow after this work deploys.
 
 The API writes these lines (numbers and identifiers only, never content):
 
-| Event              | Fields                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `http.request`     | `latencyMs` (to the response headers), `authMs` (session check), `dbRoundTrips`, `dbTransactions`, `dbWaitMs` (until the headers), `inflightAtStart` / `inflightMax` (other requests the process served alongside), `awsConnectionsOpened` / `awsConnectionsReused` (AWS HTTPS connections, process-wide deltas)                                                                                                                                                              |
-| `turn.timing`      | ms since the request arrived: `acceptedMs`, `modelStartMs`, `firstDeltaMs` (first sentence), `firstSpeechMs` (first spoken unit), `totalMs`; stage durations: `authMs`, `admissionMs`, `retrievalMs` (embedding wait + queries), `embedMs`, `promptMs`, `modelFirstTokenMs`, `generationMs`, `structuredMs`, `finishMs`; the whole turn's `dbRoundTrips`, `dbWaitMs`, `voice`; `embedCalls`, `inflightAtStart`, `inflightMax`, `awsConnectionsOpened`, `awsConnectionsReused` |
-| `speech.timing`    | ms since the speech request reached the service, cumulative: `verifiedMs`, `plannedMs` (checks), `capsCheckedMs`, `reservedMs`, `synthesizedMs` (Polly answered), `firstAudioMs` (first bytes handed to the response); `characters`. The bookkeeping (ledger, counters, audit) runs while the audio streams                                                                                                                                                                   |
-| `ai.model.attempt` | per model call: `latencyMs`, `inputTokens`, `cachedInputTokens` (read from Bedrock's prompt cache, included in `inputTokens`), `outputTokens`, `outcome`                                                                                                                                                                                                                                                                                                                      |
+| Event              | Fields                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `http.request`     | `latencyMs` (to the response headers), `authMs` (session check), `dbRoundTrips`, `dbTransactions`, `dbWaitMs` (until the headers), `inflightAtStart` / `inflightMax` (other requests the process served alongside), `awsConnectionsOpened` / `awsConnectionsReused` (AWS HTTPS connections, process-wide deltas)                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `turn.timing`      | ms since the request arrived: `acceptedMs`, `modelStartMs`, `firstDeltaMs` (first sentence), `firstSpeechMs` (first spoken unit), `totalMs`; stage durations: `authMs`, `admissionMs`, `retrievalMs` (embedding wait + queries), `embedMs`, `promptMs`, `modelFirstTokenMs`, `generationMs`, `structuredMs`, `finishMs`; the whole turn's `dbRoundTrips`, `dbWaitMs`, `voice`; `embedCalls`, `inflightAtStart`, `inflightMax`, `awsConnectionsOpened`, `awsConnectionsReused`; the turn's model calls: `inputTokens`, `cacheReadInputTokens`, `cacheWriteInputTokens` (Bedrock's prompt cache), and the streamed reply's call (the one `modelFirstTokenMs` measures): `streamInputTokens`, `streamCacheReadInputTokens` |
+| `speech.timing`    | ms since the speech request reached the service, cumulative: `verifiedMs`, `plannedMs` (checks), `capsCheckedMs`, `reservedMs`, `synthesizedMs` (Polly answered), `firstAudioMs` (first bytes handed to the response); `characters`. The bookkeeping (ledger, counters, audit) runs while the audio streams                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `ai.model.attempt` | per model call: `latencyMs`, `inputTokens`, `cachedInputTokens` and `cacheWriteInputTokens` (read from and written to Bedrock's prompt cache, included in `inputTokens`), `cachePoints` (cache checkpoints the request carried), `outputTokens`, `outcome`                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 CloudWatch Logs Insights, log group `/aws/lambda/<api function>`:
 
@@ -85,6 +85,15 @@ filter event = "ai.model.attempt" and outcome = "ok"
 filter event = "http.request" and route like "/api/v1/" | stats pct(latencyMs, 50), pct(dbRoundTrips, 50) by route
 ```
 
+Prompt caching (below): the streamed reply's time to first token with and without a cache read.
+
+```text
+filter event = "turn.timing" and outcome = "completed"
+| stats count(*) as turns, pct(modelFirstTokenMs, 50) as ttftP50, pct(modelFirstTokenMs, 95) as ttftP95,
+        avg(streamCacheReadInputTokens / streamInputTokens) as cachedShare
+  by voice, streamCacheReadInputTokens > 0
+```
+
 `dbWaitMs / dbRoundTrips` is the measured Data API round trip: put it into the harness (§4) with
 `--set dbRoundTripMs=…` to replace the calibrated figure there.
 
@@ -99,6 +108,30 @@ filter event = "turn.timing" and outcome = "completed"
 | stats pct(embedMs, 50), pct(modelFirstTokenMs, 50), avg(awsConnectionsOpened), avg(embedCalls), avg(inflightMax)
   by voice, awsConnectionsOpened > 0
 ```
+
+### Prompt caching (Bedrock, Nova 2 Lite)
+
+Converse and ConverseStream requests to Nova carry cache checkpoints (`cachePoint`) where the prompt stops being the
+same as on the conversation's previous turn (`MODEL_PROMPT_CACHE`, on by default; `off` sends none; the mock and
+Luna ignore it). What AWS documents for Nova 2 Lite (prompt-caching user guide and the model card, checked
+2026-10-22): explicit caching on Converse and ConverseStream; checkpoints in `system` and `messages` only (not
+`tools`); at least 1K tokens before a checkpoint, counted over everything before it; at most 4 checkpoints; at most
+20K cached tokens; a 5-minute TTL that every hit resets; usage reports `cacheReadInputTokens` and
+`cacheWriteInputTokens` apart from `inputTokens`. The AWS price list bills reads at a quarter of the input rate and
+writes at $0 (`pricing.ts`). Nova also caches repeated prefixes on its own (implicit caching, best effort).
+
+- The system prompt opens with what is the same on every turn and in both calls of a turn
+  (`buildSystemPromptParts().stable`: identity to notes, ≈ 20,500 characters, ≈ 5.1 k tokens of the seeded voice
+  turn's ≈ 8 k); the control block (this turn's risk and crisis flags), the call's field contract, the turn policy
+  and the output section follow it. Only the control block moved (policy `fa-coach-policy/2026-10-22.2`); phase A
+  edits only what follows the prefix (`answerSystemPrompt`'s `stableChars`). Checkpoint 1 follows the prefix.
+- The conversation so far is cached up to its last two founder messages (checkpoints 2 and 3): the earlier one is
+  where the previous turn wrote, so the next turn reads its history back up to there.
+- Phase B carries its submit tool before the system prompt (Bedrock reads `tools`, then `system`, then `messages`),
+  so the two calls of a turn cache separately: each reads what the same call of the previous turn wrote. The first
+  turn of a conversation only writes.
+- A request Bedrock refuses with its checkpoints (`ValidationException`) is sent once more without them, and that
+  process sends none after it (`ai.model.attempt` `kind = cache_retry`): a turn never fails for the cache.
 
 ## 4. Measuring locally (the harness)
 
@@ -256,7 +289,8 @@ React moved into a chunk it preloads). Landing page, signed out: ready at about 
 - How much a 1 k-token smaller prompt shortens Nova 2 Lite's time to first token on a call
   (`modelFirstTokenMs` by `voice`).
 - The Data API round trip (`dbWaitMs / dbRoundTrips`), and so the real weight of every round trip saved above.
-- Nova 2 Lite's time to first token and the prompt cache's share (`modelFirstTokenMs`, `cachedInputTokens`).
+- Nova 2 Lite's time to first token with and without a cache read, and the cache's share of the streamed reply's
+  prompt (`modelFirstTokenMs`, `streamCacheReadInputTokens`, `streamInputTokens`; the query in §3).
 - Cold starts at 1,769 MB, and how often a founder meets one.
 - The web app over CloudFront (HTTP/2 and HTTP/3, immutable assets): the local preview is HTTP/1.1 with six
   connections, so it penalises extra chunks that production does not.

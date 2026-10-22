@@ -5,6 +5,8 @@ import type {
   InferenceConfiguration,
   Message,
   StopReason,
+  SystemContentBlock,
+  TokenUsage,
   ToolChoice,
 } from '@aws-sdk/client-bedrock-runtime';
 
@@ -29,7 +31,7 @@ import {
 import { ReasoningFilter } from './reasoning-filter.js';
 import { extractJsonValue } from './structured-repair.js';
 import type { AwsCredentialProvider, AwsCredentials } from './sigv4-fetch.js';
-import type { ChatMessage, RawModelAttempt, StreamStopReason } from './types.js';
+import type { ChatMessage, ModelUsage, PromptCacheHint, RawModelAttempt, StreamStopReason } from './types.js';
 
 export const SUBMIT_TOOL_NAME = 'submit_response';
 /** Most output tokens a repair after a cut-off answer asks for (it doubles the request's bound up to this). */
@@ -48,6 +50,11 @@ export interface NovaProviderOptions {
   temperature?: number;
   /** Repair re-asks after invalid tool input. Default 1. */
   maxRepairAttempts?: number;
+  /**
+   * Bedrock prompt caching: mark the unchanging prefix a request names (`promptCache`) with cache checkpoints, for an
+   * Amazon Nova model ({@link usesCachePoints}). Default false: requests are sent without checkpoints.
+   */
+  promptCache?: boolean;
 }
 
 const GEO_PREFIX = /^(?:us|eu|apac|jp|au|ca|us-gov|global)\./;
@@ -61,6 +68,20 @@ const PROFILE_REQUIRED = /on-demand throughput|inference profile/i;
 export function isClaudeModelId(modelId: string): boolean {
   return /^(?:[a-z-]+\.)?anthropic\./.test(modelId);
 }
+
+/**
+ * Model ids whose Converse requests carry prompt-cache checkpoints when prompt caching is on: Amazon Nova (Nova 2 Lite
+ * and the Nova 1 models, also behind `us.`/`global.` inference profiles). Bedrock caches their `system` and
+ * `messages` fields (not `tools`), at least 1K tokens before a checkpoint, at most 4 checkpoints, 5 minutes after the
+ * last hit, and bills cache writes at $0 and reads at a quarter of the input rate (pricing.ts). Claude also takes
+ * checkpoints through Converse, but bills writes above the input rate, which the pricing table does not model: not yet.
+ */
+export function usesCachePoints(modelId: string): boolean {
+  return /^(?:[a-z-]+\.)?amazon\.nova-/.test(modelId);
+}
+
+/** Bedrock's cache checkpoint (the default 5-minute TTL; Nova accepts no other). */
+const CACHE_POINT = { cachePoint: { type: 'default' } } as const;
 
 /** Converse stream events that carry a modelled service exception. */
 const STREAM_EXCEPTIONS = [
@@ -88,15 +109,43 @@ function streamStopReason(reason: StopReason | undefined): StreamStopReason {
 }
 
 /**
- * The input tokens a Converse call billed. With prompt caching (Nova caches repeated prompt prefixes on its
- * own, with or without cache points), `inputTokens` counts only the tokens neither read from nor written to
- * the cache; the cached ones are reported apart and billed too (reads at a discount). All three are counted at
- * the input rate, so the spend caps never under-count a call; the bill can only be lower.
+ * Every input token of a Converse call. With prompt caching (Nova also caches repeated prompt prefixes on its own,
+ * with or without checkpoints), `inputTokens` counts only the tokens neither read from nor written to the cache;
+ * the cached ones are reported apart: total = inputTokens + cacheReadInputTokens + cacheWriteInputTokens.
  */
 export function billedInputTokens(
   usage: { inputTokens?: number; cacheReadInputTokens?: number; cacheWriteInputTokens?: number } | undefined,
 ): number {
   return (usage?.inputTokens ?? 0) + (usage?.cacheReadInputTokens ?? 0) + (usage?.cacheWriteInputTokens ?? 0);
+}
+
+/**
+ * A Converse call's usage: every input token, of which those read from and written to the prompt cache (when
+ * reported), which pricing.ts prices at the model's cache rates.
+ */
+export function converseUsage(usage: TokenUsage | undefined): ModelUsage {
+  const read = usage?.cacheReadInputTokens;
+  const write = usage?.cacheWriteInputTokens;
+  return {
+    inputTokens: billedInputTokens(usage),
+    outputTokens: usage?.outputTokens ?? 0,
+    ...(typeof read === 'number' ? { cacheReadInputTokens: read } : {}),
+    ...(typeof write === 'number' ? { cacheWriteInputTokens: write } : {}),
+  };
+}
+
+/**
+ * The `system` field of a Converse request: the prompt, with a cache checkpoint after its first `systemChars`
+ * characters (the conversation's unchanging prefix) when there are any. The text is the same either way, in two
+ * blocks around the checkpoint.
+ */
+export function converseSystem(system: string, systemChars: number): SystemContentBlock[] {
+  const cut = Math.min(Math.max(0, Math.floor(systemChars)), system.length);
+  const prefix = system.slice(0, cut);
+  const rest = system.slice(cut);
+  if (prefix.trim() === '') return [{ text: system }];
+  if (rest.trim() === '') return [{ text: system }, CACHE_POINT];
+  return [{ text: prefix }, CACHE_POINT, { text: rest }];
 }
 
 /** Geographic inference-profile prefix for a region (`us-east-1` → `us.`). */
@@ -107,20 +156,48 @@ export function inferenceProfilePrefix(region: string): string {
   return 'us.';
 }
 
-/** Converse requires alternating roles starting (and, for a reply, ending) with `user`. */
-export function toConverseMessages(messages: readonly ChatMessage[]): Message[] {
-  const merged: { role: 'user' | 'assistant'; text: string }[] = [];
-  for (const message of messages) {
-    if (message.content.trim() === '') continue;
+/**
+ * Converse requires alternating roles starting (and, for a reply, ending) with `user`.
+ *
+ * With `historyMessages` (prompt caching), the conversation so far is marked for the cache at the end of its last two
+ * founder messages: the earlier one is where the previous turn marked it (its prefix is read back from the cache),
+ * the later one is written for the next turn. A checkpoint goes only at the end of a message made of earlier
+ * exchanges alone, never in this turn's message.
+ */
+export function toConverseMessages(messages: readonly ChatMessage[], historyMessages = 0): Message[] {
+  /** `last`: index in `messages` of the last message merged into this one. */
+  const merged: { role: 'user' | 'assistant'; text: string; last: number }[] = [];
+  messages.forEach((message, index) => {
+    if (message.content.trim() === '') return;
     const last = merged.at(-1);
-    if (last?.role === message.role) last.text = `${last.text}\n\n${message.content}`;
-    else merged.push({ role: message.role, text: message.content });
-  }
+    if (last?.role === message.role) {
+      last.text = `${last.text}\n\n${message.content}`;
+      last.last = index;
+    } else merged.push({ role: message.role, text: message.content, last: index });
+  });
   while (merged[0]?.role === 'assistant') merged.shift();
   if (merged.length === 0 || merged.at(-1)?.role !== 'user') {
     throw new TypeError('Converse conversation must contain at least one user message and end with one');
   }
-  return merged.map((m) => ({ role: m.role, content: [{ text: m.text }] }));
+  const marked = new Set(
+    merged
+      .slice(0, -1)
+      .flatMap((m, i) => (m.role === 'user' && m.last < historyMessages ? [i] : []))
+      .slice(-2),
+  );
+  return merged.map((m, i) => ({
+    role: m.role,
+    content: marked.has(i) ? [{ text: m.text }, CACHE_POINT] : [{ text: m.text }],
+  }));
+}
+
+/** Cache checkpoints in a Converse request's system prompt and messages. */
+function cachePointsIn(system: readonly SystemContentBlock[], messages: readonly Message[]): number {
+  const isPoint = (block: object): boolean => 'cachePoint' in block && block.cachePoint !== undefined;
+  return (
+    system.filter(isPoint).length +
+    messages.reduce((acc, m) => acc + (m.content ?? []).filter(isPoint).length, 0)
+  );
 }
 
 /** The text blocks of a Converse answer (what the model wrote instead of, or before, a tool call). */
@@ -159,6 +236,9 @@ export class NovaProvider implements StructuredProvider {
   readonly #profileId: string | null;
   readonly #temperature: number;
   readonly #maxRepairAttempts: number;
+  readonly #promptCache: boolean;
+  /** Bedrock refused a request with cache checkpoints: this instance sends none from then on. */
+  #cacheRefused = false;
   #useProfile = false;
 
   constructor(options: NovaProviderOptions) {
@@ -176,6 +256,7 @@ export class NovaProvider implements StructuredProvider {
       : `${inferenceProfilePrefix(options.region)}${options.modelId}`;
     this.#temperature = options.temperature ?? 0.2;
     this.#maxRepairAttempts = Math.max(0, options.maxRepairAttempts ?? 1);
+    this.#promptCache = options.promptCache === true && usesCachePoints(options.modelId);
   }
 
   /** The id currently used for calls (the inference profile after a profile retry). */
@@ -187,8 +268,38 @@ export class NovaProvider implements StructuredProvider {
     return isClaudeModelId(modelId) ? { maxTokens } : { maxTokens, temperature: this.#temperature };
   }
 
+  /**
+   * The request's system prompt and messages, with cache checkpoints where its unchanging prefix ends when prompt
+   * caching is on (the text is the same either way).
+   */
+  #prompt(
+    system: string,
+    messages: readonly ChatMessage[],
+    hint: PromptCacheHint | undefined,
+  ): { system: SystemContentBlock[]; messages: Message[]; cachePoints: number } {
+    const cache = this.#promptCache && !this.#cacheRefused && hint !== undefined ? hint : null;
+    const blocks = cache === null ? [{ text: system }] : converseSystem(system, cache.systemChars);
+    const converse = toConverseMessages(messages, cache?.historyMessages ?? 0);
+    return { system: blocks, messages: converse, cachePoints: cachePointsIn(blocks, converse) };
+  }
+
   #toolChoice(modelId: string): ToolChoice {
     return isClaudeModelId(modelId) ? { auto: {} } : { tool: { name: SUBMIT_TOOL_NAME } };
+  }
+
+  /**
+   * Whether a failed call should be retried once without its cache checkpoints: Bedrock refused the request
+   * (ValidationException) before the model ran, so a turn never fails for the cache. Not for a repair, whose messages
+   * were built from the first ones.
+   */
+  #cacheRetry(error: unknown, cachePoints: number, kind: RawModelAttempt['kind']): boolean {
+    return (
+      cachePoints > 0 &&
+      kind !== 'repair' &&
+      error instanceof Error &&
+      error.name === 'ValidationException' &&
+      !isProfileRequiredError(error)
+    );
   }
 
   /** Whether a failed call should be retried once with the geographic inference profile. */
@@ -212,7 +323,7 @@ export class NovaProvider implements StructuredProvider {
   async streamText(request: ProviderStreamRequest): Promise<ProviderStreamResult> {
     const { deadline } = request;
     const rawAttempts: RawModelAttempt[] = [];
-    const messages = toConverseMessages(request.messages);
+    let prompt = this.#prompt(request.system, request.messages, request.promptCache);
     let kind: RawModelAttempt['kind'] = 'initial';
 
     for (;;) {
@@ -224,8 +335,7 @@ export class NovaProvider implements StructuredProvider {
       let generated = '';
       const reasoning = new ReasoningFilter();
       let stopReason: StopReason | undefined;
-      let usage: { inputTokens: number; outputTokens: number } | null = null;
-      let cached: number | undefined;
+      let usage: ModelUsage | null = null;
       let opened = false;
       const cancelledBeforeSend = deadline.aborted;
       const record = (outcome: RawModelAttempt['outcome'], errorName: string | null): void => {
@@ -243,7 +353,7 @@ export class NovaProvider implements StructuredProvider {
               cancelledBeforeSend,
               reasoning: false,
             }),
-          ...(cached === undefined ? {} : { cachedInputTokens: cached }),
+          ...(prompt.cachePoints > 0 ? { cachePoints: prompt.cachePoints } : {}),
           errorName,
         });
       };
@@ -251,8 +361,8 @@ export class NovaProvider implements StructuredProvider {
         const events = await this.#converseStream(
           {
             modelId,
-            system: [{ text: request.system }],
-            messages,
+            system: prompt.system,
+            messages: prompt.messages,
             inferenceConfig: this.#inferenceConfig(modelId, request.maxOutputTokens),
           },
           deadline.signal,
@@ -276,11 +386,7 @@ export class NovaProvider implements StructuredProvider {
           } else if (event.messageStop) {
             stopReason = event.messageStop.stopReason;
           } else if (event.metadata?.usage) {
-            usage = {
-              inputTokens: billedInputTokens(event.metadata.usage),
-              outputTokens: event.metadata.usage.outputTokens ?? 0,
-            };
-            cached = event.metadata.usage.cacheReadInputTokens;
+            usage = converseUsage(event.metadata.usage);
           }
         }
       } catch (error) {
@@ -289,6 +395,12 @@ export class NovaProvider implements StructuredProvider {
         if (text === '' && this.#profileRetry(error, kind)) {
           this.#useProfile = true; // cached for every later call on this instance
           kind = 'profile_retry';
+          continue;
+        }
+        if (text === '' && this.#cacheRetry(error, prompt.cachePoints, kind)) {
+          this.#cacheRefused = true; // for every later call on this instance
+          prompt = this.#prompt(request.system, request.messages, request.promptCache);
+          kind = 'cache_retry';
           continue;
         }
         mapped.rawAttempts = rawAttempts;
@@ -322,7 +434,8 @@ export class NovaProvider implements StructuredProvider {
       throw error;
     };
 
-    const baseMessages = toConverseMessages(request.messages);
+    let prompt = this.#prompt(request.system, request.messages, request.promptCache);
+    let baseMessages = prompt.messages;
     let messages = baseMessages;
     let lastIssues: string[];
     let repairs = 0;
@@ -337,7 +450,7 @@ export class NovaProvider implements StructuredProvider {
         output = await this.#converse(
           {
             modelId,
-            system: [{ text: request.system }],
+            system: prompt.system,
             messages,
             inferenceConfig: this.#inferenceConfig(modelId, maxTokens),
             toolConfig: {
@@ -364,6 +477,7 @@ export class NovaProvider implements StructuredProvider {
           outcome: mapped.reason === 'config' ? 'client_error' : mapped.reason,
           latencyMs: Math.round(performance.now() - started),
           usage: { inputTokens: 0, outputTokens: 0 },
+          ...(prompt.cachePoints > 0 ? { cachePoints: prompt.cachePoints } : {}),
           errorName: mapped.errorName,
         });
         if (this.#profileRetry(error, kind)) {
@@ -371,15 +485,19 @@ export class NovaProvider implements StructuredProvider {
           kind = 'profile_retry';
           continue;
         }
+        if (this.#cacheRetry(error, prompt.cachePoints, kind)) {
+          this.#cacheRefused = true; // for every later call on this instance
+          prompt = this.#prompt(request.system, request.messages, request.promptCache);
+          baseMessages = prompt.messages;
+          messages = baseMessages;
+          kind = 'cache_retry';
+          continue;
+        }
         return fail(mapped);
       }
 
       const latencyMs = Math.round(performance.now() - started);
-      const usage = {
-        inputTokens: billedInputTokens(output.usage),
-        outputTokens: output.usage?.outputTokens ?? 0,
-      };
-      const cached = output.usage?.cacheReadInputTokens;
+      const usage = converseUsage(output.usage);
       const record = (outcome: RawModelAttempt['outcome'], issues: readonly string[] = []): void => {
         rawAttempts.push({
           provider: 'nova',
@@ -388,7 +506,7 @@ export class NovaProvider implements StructuredProvider {
           outcome,
           latencyMs,
           usage,
-          ...(cached === undefined ? {} : { cachedInputTokens: cached }),
+          ...(prompt.cachePoints > 0 ? { cachePoints: prompt.cachePoints } : {}),
           errorName: null,
           ...(issues.length > 0 ? { issues } : {}),
         });

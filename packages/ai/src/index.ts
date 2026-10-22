@@ -21,6 +21,7 @@ export {
   type ModelProviderName,
   type ModelPurpose,
   type ModelUsage,
+  type PromptCacheHint,
   type RawModelAttempt,
   type StreamStopReason,
   type StreamTextRequest,
@@ -77,6 +78,7 @@ export {
   SUBMIT_TOOL_NAME,
   inferenceProfilePrefix,
   isClaudeModelId,
+  usesCachePoints,
   type NovaProviderOptions,
 } from './gateway/nova.js';
 export { TitanEmbedder, TITAN_MAX_INPUT_CHARS, type TitanEmbedderOptions } from './gateway/titan.js';

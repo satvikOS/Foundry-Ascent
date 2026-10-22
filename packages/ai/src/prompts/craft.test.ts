@@ -43,12 +43,13 @@ const INPUT: SystemPromptInput = {
   continuity: { founderFirstName: 'Maya' },
 };
 
-/** The text of one `# Section` of a system prompt. */
+/** The text of one `# Section` of a system prompt (the first one, `# Identity`, opens it). */
 function section(prompt: string, heading: string): string {
-  const start = prompt.indexOf(`\n# ${heading}\n`);
+  const text = `\n${prompt}`;
+  const start = text.indexOf(`\n# ${heading}\n`);
   if (start < 0) return '';
-  const end = prompt.indexOf('\n# ', start + heading.length + 3);
-  return prompt.slice(start, end < 0 ? undefined : end);
+  const end = text.indexOf('\n# ', start + heading.length + 3);
+  return text.slice(start, end < 0 ? undefined : end);
 }
 
 /** The prompt's own token estimate (core `estimateTokens`: 3.6 characters per token). */
@@ -262,6 +263,7 @@ describe('conversation craft in the system prompt', () => {
 
   it('is part of the versioned policy', () => {
     // 2026-10-22.1: help first, notes as background (production calls, 2026-10-16 to 10-20).
-    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-10-22.1');
+    // 2026-10-22.2: the control block moved after the rules that stay the same on every turn (prompt caching).
+    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-10-22.2');
   });
 });

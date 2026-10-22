@@ -1,5 +1,11 @@
-export { buildSystemPrompt } from './system.js';
-export type { PromptPolicy, PromptRelease, PromptVentureContext, SystemPromptInput } from './system.js';
+export { buildSystemPrompt, buildSystemPromptParts } from './system.js';
+export type {
+  PromptPolicy,
+  PromptRelease,
+  PromptVentureContext,
+  SystemPromptInput,
+  SystemPromptParts,
+} from './system.js';
 export { buildEvidenceBlock, evidenceIdsInBlock } from './evidence.js';
 export type { EvidenceBlockOptions } from './evidence.js';
 export { buildMessages } from './messages.js';

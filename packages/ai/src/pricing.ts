@@ -4,6 +4,10 @@ import type { ModelAttempt, ModelUsage } from './gateway/types.js';
 export interface ModelPrice {
   inputPerMillionUsd: number;
   outputPerMillionUsd: number;
+  /** Input tokens read from the prompt cache (`ModelUsage.cacheReadInputTokens`). Default: the input rate. */
+  cacheReadPerMillionUsd?: number;
+  /** Input tokens written to the prompt cache (`ModelUsage.cacheWriteInputTokens`). Default: the input rate. */
+  cacheWritePerMillionUsd?: number;
   /** Fractional surcharge applied to the whole call (0.10 = +10 %), e.g. in-region Mantle premium. */
   premium?: number;
   /**
@@ -26,15 +30,26 @@ function claude(inputPerMillionUsd: number, outputPerMillionUsd: number): ModelP
  * gateway configuration; do not edit code to change a price.
  *
  * Claude rows are Anthropic's list prices (platform.claude.com pricing, checked 2026-10-16), which Bedrock's
- * global endpoints charge; regional endpoints add 10 %. Prompt-cache rates are not modelled: the gateway sends
- * no cache breakpoints, and the tokens a model reads from or writes to its own cache are counted at the input
- * rate (`billedInputTokens`), so the caps never under-count; and Claude Haiku 5.5 is priced at its rate for prompts up to 100,000 tokens
- * (turn prompts stay far below). Bedrock serves Opus 4.6, Sonnet 4.6 and Haiku 4.5 through Converse with
- * the ARN-versioned ids; later models use the short `anthropic.claude-…` ids.
+ * global endpoints charge; regional endpoints add 10 %; and Claude Haiku 5.5 is priced at its rate for prompts up to
+ * 100,000 tokens (turn prompts stay far below).
+ *
+ * Prompt cache: Nova 2 Lite reads from the cache at a quarter of its input rate ($0.075 per million against $0.30)
+ * and writes to it for $0 (the AWS Price List API for AmazonBedrock, us-east-1, published 2026-10-16:
+ * `Nova2.0Lite-cache-read-input-token-count-cross-region-global` $0.000075 and `…-cache-write-…` $0.00 per 1K tokens;
+ * the gateway sends Nova its cache checkpoints, nova.ts). A model without cache rates counts every cached token at
+ * its input rate, so the caps never under-count it.
+ *
+ * Bedrock serves Opus 4.6, Sonnet 4.6 and Haiku 4.5 through Converse with the ARN-versioned ids; later models use the
+ * short `anthropic.claude-…` ids.
  */
 export const DEFAULT_MODEL_PRICES: PricingTable = {
   'openai.gpt-6-luna': { inputPerMillionUsd: 0.1, outputPerMillionUsd: 0.5, premium: 0.1 },
-  'amazon.nova-2-lite-v1:0': { inputPerMillionUsd: 0.3, outputPerMillionUsd: 2.5 },
+  'amazon.nova-2-lite-v1:0': {
+    inputPerMillionUsd: 0.3,
+    outputPerMillionUsd: 2.5,
+    cacheReadPerMillionUsd: 0.075,
+    cacheWritePerMillionUsd: 0,
+  },
   'amazon.titan-embed-text-v2:0': { inputPerMillionUsd: 0.02, outputPerMillionUsd: 0 },
   'anthropic.claude-opus-4-6-v1': claude(5, 25),
   'anthropic.claude-sonnet-4-6': claude(3, 15),
@@ -75,6 +90,8 @@ export function createPricingTable(overrides?: Readonly<Record<string, ModelPric
     if (!(
       price.inputPerMillionUsd >= 0 &&
       price.outputPerMillionUsd >= 0 &&
+      (price.cacheReadPerMillionUsd ?? 0) >= 0 &&
+      (price.cacheWritePerMillionUsd ?? 0) >= 0 &&
       (price.premium ?? 0) >= 0 &&
       (price.regionalPremium ?? 0) >= 0
     )) {
@@ -85,9 +102,21 @@ export function createPricingTable(overrides?: Readonly<Record<string, ModelPric
   return table;
 }
 
-function effective(price: ModelPrice, regional: boolean): { input: number; output: number } {
+interface EffectivePrice {
+  readonly input: number;
+  readonly output: number;
+  readonly cacheRead: number;
+  readonly cacheWrite: number;
+}
+
+function effective(price: ModelPrice, regional: boolean): EffectivePrice {
   const factor = 1 + (price.premium ?? 0) + (regional ? (price.regionalPremium ?? 0) : 0);
-  return { input: price.inputPerMillionUsd * factor, output: price.outputPerMillionUsd * factor };
+  return {
+    input: price.inputPerMillionUsd * factor,
+    output: price.outputPerMillionUsd * factor,
+    cacheRead: (price.cacheReadPerMillionUsd ?? price.inputPerMillionUsd) * factor,
+    cacheWrite: (price.cacheWritePerMillionUsd ?? price.inputPerMillionUsd) * factor,
+  };
 }
 
 /**
@@ -115,7 +144,8 @@ export function priceFor(
 
 /**
  * Cost in USD of one call, rounded **up** to the micro-dollar (the `numeric(10, 6)` ledger columns),
- * so many tiny calls never round to zero.
+ * so many tiny calls never round to zero. Input tokens read from or written to the prompt cache (part of
+ * `inputTokens`) are priced at the model's cache rates.
  */
 export function costFor(
   modelId: string,
@@ -125,8 +155,12 @@ export function costFor(
   const { price } = priceFor(modelId, table);
   const e = effective(price, isRegionalModelId(modelId));
   const input = Math.max(0, usage.inputTokens);
+  const read = Math.min(input, Math.max(0, usage.cacheReadInputTokens ?? 0));
+  const write = Math.min(input - read, Math.max(0, usage.cacheWriteInputTokens ?? 0));
   const output = Math.max(0, usage.outputTokens);
-  const raw = (input * e.input + output * e.output) / 1_000_000;
+  const raw =
+    ((input - read - write) * e.input + read * e.cacheRead + write * e.cacheWrite + output * e.output) /
+    1_000_000;
   if (raw <= 0) return 0;
   return Math.ceil(raw * 1_000_000 - 1e-6) / 1_000_000;
 }
