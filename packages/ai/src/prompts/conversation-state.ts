@@ -29,7 +29,8 @@ export type FounderMove =
   | 'news'
   | 'short_reply'
   | 'question'
-  | 'help';
+  | 'help'
+  | 'reports_done';
 
 /** A completed earlier exchange (the shape of `HistoryTurn`). */
 export interface StateTurn {
@@ -56,6 +57,16 @@ export interface ConversationState {
   readonly directChoice?: boolean;
   /** The message asks for a number ("give me a number", "how much should we charge?"): a reasoned range first. */
   readonly asksForNumber?: boolean;
+  /**
+   * The message asks for the vEIR's advice or how to do something ("How do I position myself?"), without handing the
+   * work over (that is the `help` move): the advice comes first, in the reply's first sentences.
+   */
+  readonly asksAdvice?: boolean;
+  /**
+   * When the message reports on something the founder said they would do (`reports_done`): the commitments of the
+   * notes it most likely means, likeliest first (at most {@link MAX_REPORTED}), one line each, unescaped.
+   */
+  readonly reportedCommitments?: readonly string[];
   /**
    * Overused phrases ({@link OVERUSED_PHRASES}) the vEIR already said in this conversation (in the replies in view or
    * its opener), so it never says them again.
@@ -101,6 +112,10 @@ export const MAX_OPENINGS = 3;
 export const MAX_ASKED = 2;
 /** Longest question reported. */
 export const QUESTION_CHARS = 110;
+/** Most commitments named as the one a report ("I did the thing I said I'd do") most likely means. */
+export const MAX_REPORTED = 2;
+/** Longest commitment named. */
+export const COMMITMENT_CHARS = 120;
 const OPENING_WORDS = 6;
 
 const APOSTROPHES = /[‘’ʼ]/g;
@@ -220,6 +235,93 @@ function asksForHelp(text: string): boolean {
     .some((sentence) => DONT_KNOW.test(sentence.replace(/[.!?…]+$/, '').trim()));
 }
 
+/**
+ * Verbs of a step done, said with "it" or "that" ("I posted it", "we finally did it"). Not "tried": "we tried that" is
+ * pushback on a suggestion more often than a report.
+ */
+const DONE_VERBS =
+  'did|finished|completed|sent|posted|submitted|booked|emailed|shipped|published|launched|wrote|ran|nailed|uploaded|delivered|scheduled';
+/** The same as participles, after "I've" or "we have" ("I've posted it"). */
+const DONE_PARTICIPLES =
+  'done|finished|completed|sent|posted|submitted|booked|emailed|shipped|published|launched|written|run|nailed|uploaded|delivered|scheduled';
+
+/**
+ * A report on something the founder said they would do, inside a sentence (evals G12, MX-0003, MX-0011, MX-0031: "So,
+ * I did the thing I said I'd do." was answered without naming the commitment): the commitment named generically
+ * ("the thing I said I'd do", "update on what I said I'd do"), "like I said I would", "I did what you suggested",
+ * or a step done with "it" or "that" ("I posted it", "I've sent it", "we finally did it").
+ */
+const REPORT_IN_SENTENCE = new RegExp(
+  [
+    String.raw`\b(?:(?:the|teh|that|this|one) things?|what|everything|the stuff|the task)(?: that)? (?:i|we) (?:said|told you|promised|agreed) (?:i|we)(?:'d| would| was going to| were going to| will| had to| should)\b`,
+    String.raw`\b(?:(?:the|teh|that|this|one) things?|what|everything)(?: that)? (?:i|we) (?:promised|committed to)\b`,
+    String.raw`\b(?:like|as) (?:i|we) (?:said|promised|told you) (?:i|we)(?:'d| would)\b|\b(?:as promised|like i promised)\b`,
+    String.raw`\b(?:i|we) did what (?:you|we|i) (?:said|suggested|told me|recommended|agreed|discussed|planned)\b|\b(?:i|we) (?:took|followed|tried) your (?:advice|suggestion)\b`,
+    String.raw`\b(?:i|we)(?: (?:just|finally|already|actually|totally|literally|officially))? (?:${DONE_VERBS}) (?:it|that)\b`,
+    String.raw`\b(?:i|we)(?:'ve| have)(?: (?:just|finally|already|actually|now))? (?:${DONE_PARTICIPLES}) (?:it|that)\b`,
+    String.raw`\b(?:i|we) followed through\b|\bmission accomplished\b|\bdone and dusted\b|\b(?:ticked|checked|crossed) (?:it|that) off\b`,
+  ].join('|'),
+);
+
+/**
+ * Just before a report's words (at most three words between), what makes it no report: a negation ("I didn't do the
+ * thing…"), a condition ("when we've finished it") or a question about the notes ("remind me what I said I'd do").
+ */
+const NOT_A_REPORT =
+  /\b(?:didn't|did not|didnt|haven't|have not|havent|hasn't|has not|never|not yet|couldn't|could not|wasn't|weren't|won't|if|when|once|after|until|before|whether|unless|remind me|remember|recall|forgot|forget)\s+(?:[\w']+\s+){0,3}$/;
+
+/** A clause that is the whole report ("Done!", "All done.", "Finished it last night.", "Sent it off!"). */
+const REPORT_CLAUSE = new RegExp(
+  String.raw`^(?:(?:ok|okay|so|well|yes|yep|yeah|update|good news|guess what|and|alright|right)[,.!: ]+)*(?:(?:all |it's |its |that's |it is |that is )?(?:done|finished|complete|completed)(?: and dusted)?|(?:just |finally |already )?(?:${DONE_VERBS}) (?:it|that)(?: (?:off|out|over|in|up|already|finally|yesterday|today|tonight|last night|this morning|this week|too))*|mission accomplished)$`,
+);
+
+/**
+ * Whether `text` (normalised) reports on something the founder said they would do: a statement, never a question, a
+ * negation ("I didn't do the thing I said I'd do") or a condition ("when we've finished it").
+ */
+function reportsDone(text: string): boolean {
+  return text.split(/(?<=[.!?])\s+/).some((raw) => {
+    const sentence = raw.replace(/[.!…]+$/, '').trim();
+    if (sentence === '' || sentence.endsWith('?')) return false;
+    const match = REPORT_IN_SENTENCE.exec(sentence);
+    if (match !== null && !NOT_A_REPORT.test(sentence.slice(0, match.index))) return true;
+    return sentence.split(/\s*(?:[,;:]|—|–|\s-\s)\s*/).some((clause) => REPORT_CLAUSE.test(clause.trim()));
+  });
+}
+
+/**
+ * A request for the vEIR's advice or for how to do something (the agenda suite on calls, 9a2a41f: "How do I position
+ * myself?" got a question back). "How do I know you're not a bot?" is about the vEIR, not advice.
+ */
+const ADVICE_REQUEST = new RegExp(
+  [
+    String.raw`\bhow (?:do|should|can|could|would|might|shall) (?:i|we)\b(?! know (?:if |whether |that )?(?:you|this|it's you)\b)`,
+    String.raw`\bhow (?:would|do|should) you (?:approach|handle|tackle|go about|start|pitch|frame|position|price|structure|deal with|answer|respond)\b`,
+    String.raw`\bwhat(?:'s| is| would be) (?:the |a )?(?:best|right|smartest|simplest|fastest|easiest|good) way (?:to|of)\b`,
+    String.raw`\b(?:any|got any|have any|some|need|want) (?:advice|tips|pointers|suggestions)\b|\bwhat(?:'s| is| would be) your (?:advice|recommendation|suggestion|take)\b`,
+    String.raw`\b(?:can|could|would) you (?:advise|recommend)\b|\badvi[sc]e (?:me|us)\b`,
+  ].join('|'),
+);
+
+/**
+ * Just before an advice cue (at most two words between), what turns it down ("I don't want advice right now, I just
+ * need to vent").
+ */
+const NO_ADVICE = /\b(?:don't|do not|dont|not|no|never|without)\s+(?:[\w']+\s+){0,2}$/;
+
+/**
+ * Whether the message asks for the vEIR's advice or how to do something ({@link ADVICE_REQUEST}), in a sentence that
+ * does not turn it down.
+ */
+export function asksForAdvice(text: string): boolean {
+  return normalize(text)
+    .split(/(?<=[.!?])\s+/)
+    .some((sentence) => {
+      const match = ADVICE_REQUEST.exec(sentence);
+      return match !== null && !NO_ADVICE.test(sentence.slice(0, match.index));
+    });
+}
+
 /** Whether `text` brings news: a statement with a news cue (a question about the same thing is no news). */
 function bringsNews(text: string): boolean {
   return text
@@ -248,6 +350,7 @@ export function founderMoves(text: string): FounderMove[] {
   const moves: FounderMove[] = MOVE_CUES.filter(([, cue]) => cue.test(t)).map(([move]) => move);
   if (bringsNews(t)) moves.push('news');
   if (asksForHelp(t)) moves.push('help');
+  if (reportsDone(t)) moves.push('reports_done');
   const words = wordCount(t);
   if (words <= 5 && SHORT_REPLY.test(t) && !moves.includes('thanks')) moves.push('short_reply');
   if (t.endsWith('?') || (QUESTION_START.test(t) && words > 2)) moves.push('question');
@@ -562,6 +665,11 @@ export function deriveConversationState(
      * message it counts as the vEIR's last reply (its question, how it opened).
      */
     readonly opener?: string | null;
+    /**
+     * The open commitments of the vEIR's notes a report on one would most likely mean, likeliest first (see
+     * `buildMessages`): named in the state only when the new message reports on something they said they would do.
+     */
+    readonly commitments?: readonly string[];
   } = {},
 ): ConversationState {
   const turns = history.filter(
@@ -658,6 +766,14 @@ export function deriveConversationState(
     social: socialTurnOf(founderText),
     directChoice: directChoiceOf(founderText),
     asksForNumber: asksForNumber(founderText),
+    // Help has its own line; someone stressed is heard first (Conversation craft), never handed a plan at once.
+    asksAdvice: !moves.includes('help') && !moves.includes('stress') && asksForAdvice(founderText),
+    reportedCommitments: moves.includes('reports_done')
+      ? (options.commitments ?? [])
+          .map((c) => c.replace(/\s+/g, ' ').trim())
+          .filter((c) => c !== '')
+          .slice(0, MAX_REPORTED)
+      : [],
     usedPhrases,
     openerGreeted: afterOpener && /^(?:hi|hello|hey|hiya)\b/i.test(opener),
     words: wordCount(founderText),
@@ -689,6 +805,7 @@ const MOVE_LABELS: Readonly<Record<FounderMove, string>> = {
   short_reply: 'is a short reply to your last message',
   question: 'asks a question',
   help: 'asks you to do it, or says they are stuck',
+  reports_done: 'reports on something they said they would do',
 };
 
 /** Moves worth reporting even on the first message of a conversation. */
@@ -705,6 +822,7 @@ const NOTABLE: ReadonlySet<FounderMove> = new Set([
   'sarcasm',
   'news',
   'help',
+  'reports_done',
 ]);
 
 function quoted(text: string): string {
@@ -747,17 +865,48 @@ export function renderConversationState(state: ConversationState): string {
   } else if (state.social === 'greeting' && state.earlierTurns > 0) {
     lines.push('- A hello and nothing more: a few warm words, no advice.');
   }
+  const reports = state.moves.includes('reports_done');
   if (state.moves.includes('news')) {
     lines.push(
-      '- They bring news: react to it and ask about it first, in your own words. In this reply never steer back to an',
-      '  earlier question, plan or parked thread.',
+      // News that reports what they said they would do is about that commitment: naming it is no steering back.
+      ...(reports
+        ? ['- They bring news: react to it and ask about it first, in your own words.']
+        : [
+            '- They bring news: react to it and ask about it first, in your own words. In this reply never steer back to an',
+            '  earlier question, plan or parked thread.',
+          ]),
     );
   }
+  if (reports) {
+    // Evals G12 (MX-0003, MX-0011, MX-0031): "I did the thing I said I'd do" got "what surprised you from those commuter
+    // insights?" and "Tell me the story of the last time…", never which commitment.
+    lines.push(
+      '- They report on something they said they would do: say which it is, specifically (what, and where or with whom),',
+      '  in a sentence of your own (a step agreed in this conversation, else one from your notes), then ask how it went',
+      '  or what they learned. Never a reply that would fit any founder.',
+    );
+    const [likeliest, other] = (state.reportedCommitments ?? []).map((c) =>
+      quoted(truncate(c, COMMITMENT_CHARS)),
+    );
+    if (likeliest === undefined) {
+      lines.push(
+        '- If neither this conversation nor your notes say what it was, ask what it was in one short question.',
+      );
+    } else if (other === undefined) {
+      lines.push(`- From your notes it is most likely: ${likeliest}.`);
+    } else {
+      lines.push(
+        `- From your notes it is most likely ${likeliest}, else ${other}; if you cannot tell which, ask in one short question.`,
+      );
+    }
+  }
   if (state.moves.includes('help')) {
+    // The agenda suite on calls (9a2a41f): a pitch to prepare got "tell me the one thing you want the judges to walk away
+    // believing…": the help comes first, a check after it.
     lines.push(
       '- They want you to do it, or they are stuck: do the work in this reply. Give the thing itself, specific to their',
-      '  venture (a draft, concrete options or questions, an example, the first steps), then at most a short check that',
-      '  it fits. Never hand the question back or ask them for what they just said they cannot give.',
+      '  venture (a draft, concrete options or questions, an example, the first steps), in your first sentences, then',
+      '  at most a short check that it fits. Never hand the question back or ask them for what they just said they cannot give.',
     );
     const handedBack = state.openQuestion ? (state.askedQuestions[0] ?? null) : null;
     // Lab run 39780304879: "I don't know. You tell me." after "Where are things with the advisor session and your three
@@ -768,8 +917,15 @@ export function renderConversationState(state: ConversationState): string {
       );
     }
   }
+  if (state.asksAdvice === true) {
+    lines.push(
+      '- They ask for your advice: give it in your first sentences (a concrete suggestion, a line they could use, two or',
+      '  three points or a first step), then at most one short question about it; never a question in its place.',
+    );
+  }
   const asks = state.moves.includes('help') || state.moves.includes('question');
-  const aboutNotes = state.moves.includes('recall') || state.moves.includes('resume');
+  // Asked what the vEIR remembers, to go back, or told what they did of what they said they would: the notes serve it.
+  const aboutNotes = state.moves.some((m) => m === 'recall' || m === 'resume' || m === 'reports_done');
   if ((state.social ?? null) === null && asks && !aboutNotes) {
     lines.push(
       '- Make this reply about what they just said. Bring nothing up from your notes (commitments, open questions,',

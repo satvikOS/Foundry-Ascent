@@ -816,3 +816,75 @@ describe('evals system-prompt leak markers', () => {
     for (const marker of markers) expect(all, marker).toContain(marker.replace(/\\"/g, '"'));
   });
 });
+
+describe('a report on what the founder said they would do (evals G12: MX-0003, MX-0011, MX-0031)', () => {
+  const opener = 'Last time you planned five library-staff interviews. How did they go?';
+  const history = [{ founderText: 'Hello!', answer: 'Hi Maya, good to have you back.' }];
+  const lastOf = (text: string, continuity: PromptContinuity, withOpener = true): string =>
+    buildMessages(history, text, {
+      continuity,
+      today: '2026-10-16',
+      ...(withOpener ? { opener } : {}),
+    }).at(-1)?.content ?? '';
+
+  it('keeps the notes’ agenda for it, whatever else the message says', () => {
+    // bringsOwnSubject read the register's fillers ("not gonna lie", "teh", "tbh") or a detail of what they did as a
+    // subject of their own, and left out the open commitments the reply had to name.
+    for (const report of [
+      "So, I did the thing I said I'd do.",
+      "not gonna lie so, i did teh thing i said i'd do tbh",
+      'I posted it on the staff noticeboard yesterday.',
+      'Done! The librarians were way more open than I expected.',
+    ]) {
+      expect(bringsOwnSubject(report, CONTINUITY), report).toBe(false);
+      const last = lastOf(report, CONTINUITY);
+      expect(last, report).toContain('<open_commitments>');
+      expect(last, report).toContain('reports on something they said they would do');
+    }
+  });
+
+  it('names the commitment the conversation already asked about as the one they mean', () => {
+    const last = lastOf("So, I did the thing I said I'd do.", CONTINUITY);
+    expect(last).toContain('- From your notes it is most likely: "Interview five library staff".');
+    expect(last).not.toContain('else "Install the door counter"');
+  });
+
+  it('without one asked about, the newest commitment first and the next as the alternative', () => {
+    const continuity: PromptContinuity = {
+      ...CONTINUITY,
+      notebook: {
+        ...NOTEBOOK,
+        nextOpener: null,
+        commitments: [
+          commitment('Interview five library staff', '2026-10-10'),
+          {
+            ...commitment('Post the study-seat flyer at the student union', '2026-10-20'),
+            createdAt: '2026-10-08T00:00:00.000Z',
+          },
+          commitment('Old idea', null, 'dropped'),
+        ],
+      },
+    };
+    const last = lastOf('Done!', continuity, false);
+    expect(last).toContain(
+      '- From your notes it is most likely "Post the study-seat flyer at the student union", else "Interview five library staff"; if you cannot tell which, ask in one short question.',
+    );
+    expect(last).not.toContain('"Old idea"');
+  });
+
+  it('falls back to the newest conversation’s commitments when the notebook has none open', () => {
+    const continuity: PromptContinuity = {
+      ...CONTINUITY,
+      notebook: { ...NOTEBOOK, nextOpener: null, commitments: [] },
+    };
+    expect(lastOf('I did it!', continuity, false)).toContain(
+      '- From your notes it is most likely: "Interview library staff".',
+    );
+  });
+
+  it('names no commitment on a message that reports nothing', () => {
+    const last = lastOf('My cofounder wants to quit his job and go full-time.', CONTINUITY);
+    expect(last).not.toContain('From your notes it is most likely');
+    expect(last).not.toContain('reports on something they said they would do');
+  });
+});

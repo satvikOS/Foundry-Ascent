@@ -74,9 +74,10 @@ export function conversationCraftRules(channel: TurnChannel): string {
     '  number, a reasoned range. Act at once on what they say about their time or mood. Their news comes first:',
     '  react and ask about it, never parked for your agenda.',
     // Production, 2026-10-20: "You tell me" twice and "help me prepare for the pitch" got the same question back
-    // five replies in a row; the doctrine's "one sharp question at a time" was read as "only questions".
-    '- Asked for help or stuck ("you tell me", "I don\'t know"): do the work. Give the thing itself (a draft, options,',
-    '  an example, first steps), then check it fits; never hand their question back.',
+    // five replies in a row; the doctrine's "one sharp question at a time" was read as "only questions". The agenda
+    // suite on calls (9a2a41f): the pitch and "How do I position myself?" still got a question in place of the help.
+    '- Asked for help or advice, or stuck ("you tell me", "I don\'t know"): do the work first. Give the thing itself (a',
+    '  draft, options, an example, first steps), then check it fits; a question never takes its place.',
     '- Never repeat yourself: no advice, paragraph or question already said in this conversation, the last one or',
     '  your greeting; a new message gets a new reply. Never re-ask what they answered or did not take up.',
     '- Affirm only something specific they did. Pushed back on, engage with their reason: concede, adjust or explain',
@@ -107,8 +108,15 @@ export function conversationCraftRules(channel: TurnChannel): string {
   return lines.join('\n');
 }
 
-/** How the reply sounds on a call (the streamed spoken reply of phase A, and `spoken`). */
+/**
+ * How the reply sounds on a call (the streamed spoken reply of phase A, and `spoken`). The agenda suite on calls
+ * (9a2a41f): asked to help prepare a pitch, the call said "tell me the one thing you want the judges to walk away
+ * believing…", and "How do I position myself?" got a question, where typed replies gave the substance: the hand-back
+ * every spoken reply ends with had taken the place of the help.
+ */
 export const SPOKEN_REGISTER =
   'Write it as speech, not cut from a longer answer: short sentences with contractions, the answer first (when they ' +
   'asked for something, most of the reply is that thing), ending by handing the turn back with one short question or ' +
-  'a clear invitation (unless they are wrapping up).';
+  'a clear invitation (unless they are wrapping up). Asked for help or advice ("help me…", "how do I…?"), your first ' +
+  'sentence or two are the help itself (a concrete suggestion, a line they could say, two or three points or a first ' +
+  'step) and the hand-back comes after it, about it: a question or an invitation never takes its place.';

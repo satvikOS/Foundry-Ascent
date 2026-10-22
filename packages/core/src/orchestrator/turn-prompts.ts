@@ -92,6 +92,10 @@ export function answerSystemPrompt(system: string, options: AnswerPromptOptions)
       "- The founder's message is a speech transcript and may contain recognition errors: read it charitably, and ask",
       '  when something important is unclear.',
       `- ${SPOKEN_REGISTER}`,
+      // The agenda suite on calls (9a2a41f): with 70 words, a doctrine that asks "one sharp question at a time" and a
+      // hand-back to end on, a pitch to prepare and "How do I position myself?" got a question in place of the help.
+      '- Asked for help or advice, spend those words on the help itself: a question the doctrine or your notes suggest',
+      '  comes after it, one at most.',
       '- Follow "Conversation craft": a social turn gets a short, natural reply, not advice.',
     );
   } else {

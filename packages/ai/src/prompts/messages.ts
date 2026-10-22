@@ -2,6 +2,7 @@ import type { ChatMessage } from '../gateway/types.js';
 import { classifyRisk } from '../risk/classifier.js';
 import { buildContinuityBlock, openCommitmentsOf, raisedIn, type PromptContinuity } from './continuity.js';
 import {
+  MAX_REPORTED,
   contentWords,
   deriveConversationState,
   founderMoves,
@@ -62,6 +63,38 @@ function historyFounder(text: string, maxChars: number): string {
 }
 
 /**
+ * The open commitments a report on one ("I did the thing I said I'd do", "Done!") most likely means, likeliest first
+ * (evals G12: such a report was answered without naming the commitment). One the vEIR raised in this conversation (its
+ * opener asked how it went) is the one, alone (the one raised last when there are several); otherwise the newest noted,
+ * then the next. With no open commitment in the notebook, the newest earlier conversation's commitments.
+ */
+function likelyCommitments(
+  continuity: PromptContinuity | null | undefined,
+  /** What the vEIR said in this conversation, oldest first (its opener, then its replies). */
+  said: readonly (string | null | undefined)[],
+): string[] {
+  if (!continuity) return [];
+  const open = openCommitmentsOf(continuity);
+  if (open.length === 0) {
+    const newest = [...(continuity.recentDigests ?? [])]
+      .filter((d) => d.otherCoach !== true && d.digest.commitments.length > 0)
+      .sort((a, b) => b.date.localeCompare(a.date))[0];
+    return (newest?.digest.commitments ?? []).slice(0, MAX_REPORTED).map((c) => c.text);
+  }
+  // What was said last first (`said` is oldest first: the opener, then the replies).
+  for (const text of [...said].reverse()) {
+    const raised = open.find((c) => raisedIn(c.text, [text]));
+    if (raised !== undefined) return [raised.text];
+  }
+  const noted = new Map((continuity.notebook?.commitments ?? []).map((c) => [c.text, c.createdAt]));
+  return open
+    .map((c, index) => ({ text: c.text, at: noted.get(c.text) ?? '', index }))
+    .sort((a, b) => b.at.localeCompare(a.at) || a.index - b.index)
+    .slice(0, MAX_REPORTED)
+    .map((c) => c.text);
+}
+
+/**
  * The rendered `<conversation_state>` of a history and a new message, kept per history array: it does not depend
  * on how much of the history is kept, and the context budget builds the same turn's messages up to ~50 times.
  */
@@ -71,6 +104,7 @@ const stateBlocks = new WeakMap<
     readonly length: number;
     readonly founderText: string;
     readonly opener: string | null;
+    readonly continuity: PromptContinuity | null;
     readonly block: string;
   }
 >();
@@ -80,9 +114,15 @@ function conversationStateBlock(
   completed: readonly HistoryTurn[],
   founderText: string,
   opener: string | null,
+  continuity: PromptContinuity | null,
 ): string {
   const cached = stateBlocks.get(history);
-  if (cached?.length === history.length && cached.founderText === founderText && cached.opener === opener) {
+  if (
+    cached?.length === history.length &&
+    cached.founderText === founderText &&
+    cached.opener === opener &&
+    cached.continuity === continuity
+  ) {
     return cached.block;
   }
   // A declined instruction is no thread of the conversation (it would be quoted back as one, parked).
@@ -90,18 +130,25 @@ function conversationStateBlock(
     deriveConversationState(
       completed.filter((t) => !classifyRisk(t.founderText).injection),
       founderText,
-      { opener },
+      {
+        opener,
+        // Only a report on what they said they would do names a commitment; nothing is looked up otherwise.
+        ...(founderMoves(founderText).includes('reports_done')
+          ? { commitments: likelyCommitments(continuity, [opener, ...completed.map((t) => t.answer)]) }
+          : {}),
+      },
     ),
   );
-  stateBlocks.set(history, { length: history.length, founderText, opener, block });
+  stateBlocks.set(history, { length: history.length, founderText, opener, continuity, block });
   return block;
 }
 
 /**
  * Whether the founder's message, once the conversation is under way, brings a subject of their own that no open item
  * of the notes is about ("Help me prepare for the pitch next week"): then the notes leave their agenda out of this turn
- * (`ownSubject`). A short reply, "you tell me" or a question about what the vEIR remembers is about the conversation so
- * far, and keeps it.
+ * (`ownSubject`). A short reply, "you tell me", a question about what the vEIR remembers or a report on something they
+ * said they would do ("I did the thing I said I'd do", "I posted it on the noticeboard") is about the conversation so
+ * far or the notes, and keeps it (evals G12: the reply has to name the commitment).
  */
 export function bringsOwnSubject(
   founderText: string,
@@ -109,7 +156,8 @@ export function bringsOwnSubject(
 ): boolean {
   if (contentWords(founderText).size < 2) return false;
   const moves = founderMoves(founderText);
-  if (moves.some((m) => m === 'recall' || m === 'resume' || m === 'short_reply')) return false;
+  if (moves.some((m) => m === 'recall' || m === 'resume' || m === 'short_reply' || m === 'reports_done'))
+    return false;
   const open = [
     ...(continuity ? openCommitmentsOf(continuity).map((c) => c.text) : []),
     ...(continuity?.notebook?.openQuestions ?? []).map((q) => q.text),
@@ -154,7 +202,13 @@ export function buildMessages(
   const state =
     options.conversationState === false
       ? ''
-      : conversationStateBlock(history, completed, founderText, options.opener ?? null);
+      : conversationStateBlock(
+          history,
+          completed,
+          founderText,
+          options.opener ?? null,
+          options.continuity ?? null,
+        );
   const parts = [notes, options.evidenceBlock, state, wrapFounder(founderText)].filter(
     (p): p is string => p !== undefined && p !== '',
   );
