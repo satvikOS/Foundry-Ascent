@@ -13,7 +13,6 @@ import {
   isModelGatewayError,
   openerSaidHello,
   questionsAskedIn,
-  responseStrings,
   SOCIAL_BUDGETS,
   socialTurnOf,
   spokenHandBackFor,
@@ -179,12 +178,17 @@ export function enforceGateBlock(
 }
 
 /**
- * Whether the deterministic classifier flagged the founder's message: prompt injection, a cross-venture request or a
- * crisis. Such a turn's reply is never continued or written anew (generate.ts, evals MX-0004).
+ * Whether the deterministic classifier flags the founder's message by what it says: prompt injection, a request for
+ * other ventures' data or a crisis. Such a turn's reply is never continued or written anew (generate.ts, evals MX-0004).
+ *
+ * Read without the program's venture and member names, on purpose: the turn's own classification also flags a message
+ * that merely names a real venture of the program or one of its people, and a flagged turn's reply ends differently
+ * (no continuation, the gate's own short line). With the names, the same model output would give one reply for a real
+ * venture's name and another for an unknown one, which tells the founder who is in the program (the membership oracle
+ * the prompt's policy already avoids; review, 2026-10-22).
  */
-export function flaggedTurn(
-  risk: Pick<RiskClassification, 'injection' | 'crossVentureRequest' | 'crisis'>,
-): boolean {
+export function flaggedTurn(founderText: string): boolean {
+  const risk = classifyRisk(founderText);
   return risk.injection || risk.crossVentureRequest || risk.crisis;
 }
 
@@ -222,6 +226,60 @@ export function declineInjectionEcho(
       notes: checked.results.notes.includes(INJECTION_ECHO_NOTE)
         ? checked.results.notes
         : [...checked.results.notes, INJECTION_ECHO_NOTE],
+    },
+  };
+}
+
+/**
+ * The validated response of a turn whose reply stands clean while some of its annotations reproduce the injected
+ * instruction (phase B reads the founder's message: "Founder asked for code MXINJ-B515F2" as a memory candidate, a
+ * follow-up "Did you want MXINJ-B515F2?"). The reply was shown and said as it is, so it stays; only the annotations
+ * that echo are dropped (claims, uncertainty, the challenge, actions, memory, follow-ups, the rehearsal; an escalation
+ * reason that echoes is cleared). Unchanged when none echoes.
+ */
+export function withoutInjectionEchoes(
+  checked: CoachResponseValidation,
+  payloads: InjectionPayloads | null,
+): CoachResponseValidation {
+  if (payloads === null) return checked;
+  const r = checked.response;
+  let removed = 0;
+  const keep = (...texts: readonly string[]): boolean => {
+    const echoes = texts.some((text) => echoesInjection(text, payloads));
+    if (echoes) removed += 1;
+    return !echoes;
+  };
+  const rehearsal =
+    r.rehearsal === null ||
+    keep(
+      r.rehearsal.counterpart,
+      r.rehearsal.line,
+      r.rehearsal.critique,
+      ...r.rehearsal.scores.flatMap((s) => [s.criterion, s.note]),
+    )
+      ? r.rehearsal
+      : null;
+  const response = {
+    ...r,
+    claims: r.claims.filter((c) => keep(c.text)),
+    uncertainty: r.uncertainty.filter((u) => keep(u.item)),
+    challenge: r.challenge === null || keep(r.challenge) ? r.challenge : null,
+    next_actions: r.next_actions.filter((a) => keep(a.owner, a.action)),
+    memory_candidates: r.memory_candidates.filter((m) => keep(m.title, m.content)),
+    follow_up_questions: r.follow_up_questions.filter((q) => keep(q)),
+    rehearsal,
+    escalation:
+      r.escalation.reason === null || keep(r.escalation.reason)
+        ? r.escalation
+        : { ...r.escalation, reason: null },
+  };
+  if (removed === 0) return checked;
+  return {
+    ...checked,
+    response,
+    results: {
+      ...checked.results,
+      notes: [...checked.results.notes, `injection_echo_fields_removed:${removed}`],
     },
   };
 }
@@ -331,14 +389,14 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
   // A hello that opens the conversation (nothing said before it) is answered with the pick-up of last time.
   const read = socialTurnOf(spec.founderText);
   const social = read === 'greeting' && previousReply === null ? null : read;
-  // Never a hand-back the conversation already heard (the replies in view, and the opener).
-  const handBack =
-    spec.channel === 'voice'
-      ? spokenHandBackFor(spec.founderText, spec.ids.turnId, [
-          ...spec.history.map((t) => t.answer),
-          spec.opener ?? null,
-        ])
-      : null;
+  // Never a hand-back the conversation already heard (the replies in view, and the opener). A call says it after a
+  // reply that ends on a statement; on either channel it is the whole reply when the model, asked twice, said nothing
+  // new (generate.ts: never the stock line, and no third model call).
+  const turnBack = spokenHandBackFor(spec.founderText, spec.ids.turnId, [
+    ...spec.history.map((t) => t.answer),
+    spec.opener ?? null,
+  ]);
+  const handBack = spec.channel === 'voice' ? turnBack : null;
 
   const introduced = alreadyIntroduced(spec);
   // Every message of the vEIR's in this conversation: a question any of them asked is never asked again (voice suite:
@@ -355,12 +413,14 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
     ? questionsAskedIn(earlier)
     : [];
   // A flagged message is never answered by a continuation; an injected instruction is never carried out (MX-0004),
-  // on its turn or later (the lab: declined on its turn, then carried out when the next message was "…").
-  const flagged = flaggedTurn(risk);
-  const payloads = injectionPayloadsOf([
-    ...(risk.injection ? [spec.founderText] : []),
-    ...spec.history.map((t) => t.founderText).filter((text) => classifyRisk(text).injection),
-  ]);
+  // on its turn, nor what it dictated outright later (the lab: declined on its turn, then carried out when the next
+  // message was "…"). The venture's own name is never a payload.
+  const flagged = flaggedTurn(spec.founderText);
+  const payloads = injectionPayloadsOf({
+    turn: risk.injection ? spec.founderText : null,
+    earlier: spec.history.map((t) => t.founderText).filter((text) => classifyRisk(text).injection),
+    ordinary: spec.venture === null ? [] : [spec.venture.name],
+  });
 
   // Step 5: generate (streamed through the sentence gate, or whole when streaming is switched off).
   await emit({ event: 'turn.status', phase: 'reasoning', detail: null, evidenceCount: shown.length });
@@ -384,6 +444,7 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
     startedAt: spec.startedAt,
     narration: { founder: spec.continuity.founderFirstName ?? null, people: guards.addressees },
     handBack,
+    turnBack,
     flagged,
   };
   let generation: Generation;
@@ -452,10 +513,15 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
     generation.gateBlocked === null
       ? validated
       : enforceGateBlock(validated, generation.gateBlocked, spec.channel);
-  // An injected instruction carried out is never shown or said, whichever path wrote the reply (MX-0004).
+  // An injected instruction carried out is never shown or said, whichever path wrote the reply (MX-0004). Only the
+  // reply itself decides: a clean reply that was already shown and said stands, without the annotations that echo.
   const echoed =
     generation.notes.includes(INJECTION_ECHO_NOTE) ||
-    responseStrings(enforced.response).some((text) => echoesInjection(text, payloads));
-  const checked = echoed ? declineInjectionEcho(enforced, spec.channel, payloads) : enforced;
+    [enforced.response.answer, enforced.response.spoken ?? ''].some((text) =>
+      echoesInjection(text, payloads),
+    );
+  const checked = echoed
+    ? declineInjectionEcho(enforced, spec.channel, payloads)
+    : withoutInjectionEchoes(enforced, payloads);
   return { kind: 'answered', context, shown, generation, checked };
 }
