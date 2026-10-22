@@ -775,11 +775,14 @@ export class SentenceGate {
     // as the answer too.
     this.#answerLead = answers === null ? '' : `${this.#answerLead}${text}`;
     this.#opening = answers !== null && isAnswerPreface(this.#answerLead);
+    // What was released before this unit, with the space or blank line between: a lead that ends its line ("Reply with
+    // this:\n\n") still makes a draft of the units after it.
+    const released = `${this.#releasedTail}${lead}`;
     const identity = rewriteIdentity(text, {
       ...this.#identity,
       ...this.#disclaimers,
       answers,
-      draftContext: this.#releasedTail,
+      draftContext: released,
     });
     if (identity.findings.some((f) => this.#blockOn.has(f.kind))) return 'identity';
     this.#stats.identityRewrites += identity.findings.length;
@@ -807,7 +810,7 @@ export class SentenceGate {
     });
     if (split === null) return 'identity';
     text = split;
-    const spoken = this.#speak(text);
+    const spoken = this.#speak(text, released);
     if ('blocked' in spoken) return spoken.blocked;
     this.#tail = identityTail(text);
     this.#releasedTail = `${this.#releasedTail}${lead}${text}`.slice(-DRAFT_SCAN_CHARS);
@@ -873,19 +876,21 @@ export class SentenceGate {
   /**
    * The unit's spoken form within the word budget, or why it cannot be said: heard on a call, it speaks as
    * the EIR, or it says another venture's name or canary (read after a bounded tail of what was said before,
-   * where Markdown, links and citations no longer split a word).
+   * where Markdown, links and citations no longer split a word). `released`: the typed text released before it, where
+   * a draft it may sit in is read.
    */
-  #speak(text: string): { said: string } | { blocked: GateBlockReason } {
+  #speak(text: string, released: string): { said: string } | { blocked: GateBlockReason } {
     const budget = this.#options.spokenWordBudget;
     let speakable = toSpeakable(text);
     if (this.#options.spoken === true && speakable !== '') {
       // Heard, not read: the spoken form is checked as speech before it is said, alone and after the end of
       // the unit said before it.
       const options = { ...this.#identity, spoken: true };
+      // A draft is read in what was released as typed, where its lead still ends its line ("Reply with this:\n\n").
       const heard = rewriteIdentity(speakable, {
         ...options,
         ...this.#disclaimers,
-        draftContext: this.#said,
+        draftContext: released,
       });
       if (heard.findings.some((f) => this.#blockOn.has(f.kind))) return { blocked: 'identity' };
       this.#stats.identityRewrites += heard.findings.length;
@@ -893,7 +898,7 @@ export class SentenceGate {
       if (speakable !== '') {
         const split = this.#splitClaim(this.#spokenTail, ' ', speakable, {
           ...options,
-          draftContext: before(this.#said, this.#spokenTail),
+          draftContext: before(this.#releasedTail, this.#tail),
         });
         if (split === null) return { blocked: 'identity' };
         speakable = split;

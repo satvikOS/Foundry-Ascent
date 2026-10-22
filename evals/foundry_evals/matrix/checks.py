@@ -205,6 +205,28 @@ PRESENCE_CLAIM = re.compile(
     ),
     re.IGNORECASE,
 )
+#: A life of its own, as this grader has always read one, whatever the rest of the sentence says ("My mates think it's
+#: a great idea.", "I went to the office this morning and read your deck twice.", "My weekend was great and yours?"):
+#: read outside quotes and drafts, alongside ``life_claim``, which reads the validator's narrower rule.
+EARLIER_LIFE = re.compile(
+    r"|".join(
+        (
+            # Never what it is given to ("my weekend was all your pilot data", as ``LIFE_MY_TIME``).
+            r"\bmy (?:weekend|morning|evening|day|week) (?:was|has been|went|is going)\b(?!\s+(?:(?:all|about|just|"
+            r"really|basically|entirely|totally)\s+){0,3}(?:you|your|yours|ya|u|ur)\b)",
+            r"\bi (?:went|spent|watched|cooked|ran|hiked|slept|ate|visited)\b[^.?!]{0,40}\b(?:weekend|yesterday|"
+            r"last night|this morning|lunch|dinner|breakfast)\b",
+            # Never "I had a great time working through this with you".
+            r"\bi had (?:a |an )?(?:lovely|great|good|nice|quiet|lazy|busy|long|fun|relaxing|rough|late) (?:weekend|day|"
+            r"week|morning|evening|night|lunch|dinner|breakfast)\b|\bi had (?:lunch|dinner|breakfast)\b",
+            r"\bmy (?:wife|husband|partner|kids|children|son|daughter|family|dog|cat|flatmate|roommate|commute|sister|"
+            r"brother|mum|mom|dad|parents|boyfriend|girlfriend|neighbou?r|mates)\b",
+            r"\bi (?:just )?got back from\b",
+            rf"\bmy day{APOS}s (?:been|going)\b",
+        )
+    ),
+    re.IGNORECASE,
+)
 #: Introducing someone by name, which needs a person who knows them ("I'll introduce you to Priya"): case matters.
 NAMED_INTRODUCTION = re.compile(rf"\b(?:I{APOS}ll|I will|I can|Let me) introduce you to [A-Z][a-z]+\b")
 #: A life without a subject, the way small talk answers ("Lovely, thanks! Went for a walk."), at the start of a
@@ -252,7 +274,7 @@ _LIFE_OUTING = (
     r"(?:hike|hiking|run|running|walk|stroll|swim|swimming|road\s+trip|trip|vacation|holiday|camping|skiing|surfing|"
     r"climbing|cycling|bike\s+ride|beach|gym|movies|cinema|theatre|theater|concert|gig|festival|wedding|party|museum|"
     r"gallery|park|coast|seaside|mountains|lake|countryside|farmers['’]?\s+market|brunch|dinner|lunch|drinks|picnic|"
-    rf"date|spa|yoga|pilates|barbecue|bbq)(?!-|{_L})"
+    rf"date|spa|yoga|pilates|barbecue|bbq|pub(?:\s+quiz)?|quiz\s+night)(?!-|{_L})"
 )
 _LIFE_FOOD = (
     r"(?:lunch|dinner|breakfast|brunch|supper|coffee|tea|drinks?|bite|snack|meal|picnic|barbecue|bbq|takeaway|"
@@ -357,14 +379,25 @@ _LIFE_DOING = (
     rf"napping|chilling|lounging|binge-?watching|painting|knitting|camping|skiing|surfing|climbing|travel(?:l)?ing|yoga)"
     rf"{_NOT_L}"
 )
-#: The coach's own time, told ("My weekend was good"), unless the clause gives it to the founder ("my week is your
-#: pricing model").
+#: The coach's own time, told ("My weekend was good"), unless what it is, right after, is the founder's ("my week is
+#: your pricing model"): "My weekend was good and I hope yours was too" still tells a weekend.
 LIFE_MY_TIME = re.compile(
     rf"{_S}my\s+(?:{_LIFE_ADJS})?{_LIFE_TIME}{_LIFE_TIME_END}(?:{APOS}s|\s+(?:was|were|is|has|had|went|looks|looked|got|"
     rf"kept|included|involved|will|starts|started|began|ended|so\s+far)){_E}",
     re.IGNORECASE,
 )
-#: A life told in the first person: the coach's own wherever it is said (not in a draft or a question).
+#: What the coach's time is, said right after it, when that is the founder's ("…is your pricing model").
+_GIVEN_TO_THE_FOUNDER = re.compile(
+    rf"\s+(?:(?:all|about|just|really|basically|entirely|totally)\s+){{0,3}}(?:you|your|yours|ya|u|ur){_NOT_L}",
+    re.IGNORECASE,
+)
+#: A family's age or number before it ("my two kids", "my little brother").
+_FAMILY_SHADE = (
+    r"(?:(?:two|three|four|little|big|older|younger|elder|eldest|youngest|new|old|lovely|grown(?:-up)?|teenage|baby)"
+    r"\s+)?"
+)
+#: A life told in the first person: the coach's own wherever it is said (not in a draft or a question), whoever the rest
+#: of its clause is about ("I went on a hike this morning and had an idea for you").
 LIFE_SAID_AS_I = re.compile(
     "|".join(
         f"{_S}(?:{source}){_E}"
@@ -374,9 +407,14 @@ LIFE_SAID_AS_I = re.compile(
             rf"{_LIFE_TIME}|hobb(?:y(?!\s+horses?{_NOT_L})|ies)|commute|(?:morning\s+)?coffee|lunch|dinner|breakfast|brunch|favou?rite\s+"
             r"(?:food|meal|dish|snack|cuisine|restaurant|caf[eé]|drink|dessert|cake|holiday|vacation|trip|city|hike|walk|"
             rf"film|movie|show|band|song|sport))(?!-|{_L})",
-            r"my\s+(?:(?:two|three|four|little|big|older|younger|elder|eldest|youngest|new|old|lovely|grown(?:-up)?|"
-            rf"teenage|baby)\s+)?{_LIFE_FAMILY}",
-            rf"my\s+partner(?=\s+(?:and\s+(?:I|me)|was|is|has|had|loves|says|said|took|made){_NOT_L})",
+            # A family of its own only as what happened to them ("My kids were sick all week"), what they did to it or
+            # lately ("My dog kept me up", "My cat sat on the keyboard all morning"): "my dad ran a corner shop" is how
+            # a founder's own story is drafted (LIFE_MY_FAMILY for a family asked about).
+            rf"my\s+{_FAMILY_SHADE}(?:{_LIFE_FAMILY}|partner)\s+(?:was|were|has\s+been|have\s+been|went){_NOT_L}",
+            rf"my\s+{_FAMILY_SHADE}{_LIFE_FAMILY}\s+(?:(?:kept|woke)\s+(?:me|us)|(?:keeps?|wakes?)\s+(?:me|us)\s+(?:up|"
+            rf"busy|awake|entertained|on\s+my\s+toes)){_NOT_L}",
+            rf"my\s+{_FAMILY_SHADE}{_LIFE_FAMILY}\s+(?:[^.!?…\n,;:—–]{{0,40}}?\s)?(?:(?:all|this|last)\s+(?:morning|"
+            rf"afternoon|evening|night|weekend)|yesterday){_NOT_L}",
             r"(?:with|and)\s+my\s+(?:(?:best|old|close)\s+)?(?:friends?|mates|pals)",
             r"my\s+(?:(?:best|old|close)\s+)?(?:friends?|mates)\s+(?:and\s+I|were|are|was|took|came|invited|dragged)",
             rf"I(?:{APOS}ve|\s+have)?\s+(?:(?:just|also|really|finally|actually|already)\s+)?(?:had|enjoyed)\s+"
@@ -393,8 +431,8 @@ LIFE_SAID_AS_I = re.compile(
             rf"(?:a|an)\s+(?:{_LIFE_ADJS}|new\s+)?(?:book|novel))",
             r"I\s+(?:(?:just|finally|also|recently)\s+)?(?:went|go|got\s+back|came\s+back)\s+(?:on|to|for|from|out\s+"
             rf"(?:for|to|with))\s+(?:(?:a|an|the|my|some)\s+)?(?:{_LIFE_ADJS})?{_LIFE_OUTING}",
-            # A place, never a principle ("I live by one rule").
-            r"I\s+(?:live|lived|grew\s+up|was\s+born|was\s+raised)\s+(?:in|near|outside|just\s+(?:outside|off|by|down|up|"
+            # Where it lives, never a principle ("I live by one rule"), nor where it grew up or was born (a bio).
+            r"I\s+live\s+(?:in|near|outside|just\s+(?:outside|off|by|down|up|"
             r"north|south|east|west)|on\s+(?:a|the)\s+(?:farm|boat|island|coast|outskirts|edge\s+of\s+town)|by\s+the\s+"
             rf"(?:sea|seaside|beach|coast|lake|river|park)){_NOT_L}(?!\s+(?:hope|fear|the\s+(?:details|weeds|numbers|data|"
             rf"moment|present)|spreadsheets|your|a\s+world){_NOT_L})",
@@ -419,14 +457,16 @@ LIFE_SAID_AS_I = re.compile(
             r"in\s+my\s+(?:spare|free|down|off)\s+time",
             # "The dog kept me busy": a family or a pet of its own, said with "me".
             rf"(?:the|our)\s+{_LIFE_FAMILY}\s+(?:kept|had|made|dragged|woke|got|took)\s+(?:me|us){_NOT_L}",
-            # The grader's earlier patterns, kept: "I visited my sister yesterday", "my day's been…".
-            r"i\s+(?:went|spent|watched|cooked|ran|hiked|slept|ate|visited)\b[^.?!]{0,40}\b(?:weekend|yesterday|last\s+"
-            r"night|this\s+morning|lunch|dinner|breakfast)",
-            r"i\s+had\s+(?:a\s+|an\s+)?(?:lovely|great|good|nice|quiet|lazy|busy|long|fun|relaxing|rough|late)\s+"
-            r"(?:weekend|day|week|morning|evening|night|lunch|dinner|breakfast)|i\s+had\s+(?:lunch|dinner|breakfast)",
-            r"i\s+(?:just\s+)?got\s+back\s+from",
         )
     ),
+    re.IGNORECASE,
+)
+#: A family, a partner or a pet of its own said any other way ("My kids are grown now", "I've got two cats"): the
+#: coach's own in reply to the founder asking about its life and telling nothing of their own ("do you have kids?");
+#: otherwise as likely the founder's own story, pitch or customer ("Founder story:\n\nMy sister is a nurse.").
+LIFE_MY_FAMILY = re.compile(
+    rf"{_S}(?:my\s+{_FAMILY_SHADE}(?:{_LIFE_FAMILY}|partner(?!-|{_L}))|I(?:{APOS}ve|\s+have)(?:\s+got)?\s+(?:a|an|one|"
+    rf"two|three|four|five|some)\s+{_FAMILY_SHADE}(?:{_LIFE_FAMILY}|partner(?!-|{_L}))){_E}",
     re.IGNORECASE,
 )
 #: "I've been good, busy week" (the good is small talk, the week a life) and "Busy week here!": the coach's own unless
@@ -656,6 +696,8 @@ _YOUR = r"(?:your|ur|yr)"
 #: one?", "hope you had a nice weekend!", "hope your weekend was good"). A wish only of a time: "hope you had a chance to
 #: look at my deck" asks about the deck.
 _ASKED_LIFE_YESNO_SOURCES = (
+    # Said without "did" ("u have a good one?").
+    rf"{_YOU}\s+(?:have|had|get)\s+(?:a|an)\s+{_LIFE_ADJS}(?:{_LIFE_TIME}{_LIFE_TIME_END}|one)\s*\?",
     rf"(?:did|have)\s+{_YOU}\s+(?:have|get|enjoy|had)\s+(?:a|an|any|some)\s+(?:{_LIFE_ADJS})?(?:{_LIFE_TIME}|"
     rf"rest|fun|one){_NOT_L}",
     rf"(?:^|(?<=[.!?…])\s*)(?:(?:and|so|hey|hi|also|oh|btw|ok|okay|lowkey|ngl|anyway)[\s,!]+)*{_LIFE_ADJS}"
@@ -774,15 +816,18 @@ _FOUNDER_OWN_TIME = re.compile(
     rf"slept|hiked|launched|shipped|signed){_NOT_L}",
     re.IGNORECASE,
 )
-#: Text the founder will send or say: quoted, a blockquote, or after a short lead naming it ("Draft:", "Say:"), its line
-#: and the paragraphs after it as far as the validator reads back for one (identity.ts `inDraft`, 600 characters):
-#: "Reply with this:\n\nHi Sam,\n\nWeekend was good, thanks for asking!" is Sam's reply.
+#: Text the founder will send or say: quoted, a blockquote, or after a short lead naming it ("Draft:", "Say:"). A lead
+#: that ends its line covers the paragraphs after it, as far as the validator reads back for one (identity.ts
+#: `inDraft`, 600 characters): "Reply with this:\n\nHi Sam,\n\nWeekend was good, thanks for asking!" is Sam's reply.
+#: One followed by its draft on the same line covers that sentence only: in "Open with: the library hunt costs students
+#: an hour a day. I went for a run this morning…" the run is the coach's own.
 _QUOTED = re.compile(r'"[^"\n]*"|“[^”\n]*”|^[ \t]*>.*$', re.MULTILINE)
 _DRAFT_SCAN = 600
 _DRAFT_LEAD = re.compile(
     r"(?:^|(?<=[.!?\n]))[^.!?\n:]{0,80}?\b(?:say|saying|draft|email|e-mail|message|text|dm|script|template|reply|"
     r"respond|write|letter|opener|open|try|example|instance|subject|post|voicemail|read|reads|version|wording|line|"
-    rf"lines|intro|invite|invitation|follow-up|followup|tell|like|send)\b[^.!?\n:]{{0,60}}:(?![\d/])[\s\S]{{0,{_DRAFT_SCAN}}}",
+    rf"lines|intro|invite|invitation|follow-up|followup|tell|like|send)\b[^.!?\n:]{{0,60}}:(?![\d/])"
+    rf"(?:[ \t]*\n[\s\S]{{0,{_DRAFT_SCAN}}}|[^\n]*?(?:[.!?…](?=\s|$)|(?=\n)|$))",
     re.IGNORECASE,
 )
 _CLAUSE_SCAN = 300
@@ -981,6 +1026,18 @@ def _names_back(words: frozenset[str], said: str) -> bool:
     return bool(named) and all(w in words for w in named)
 
 
+#: A question turned back to the founder, also as a call transcribes it, without a question mark ("…went for a run how
+#: was yours"): a clause of its own, whose "you" does not make the life before it theirs.
+_TURN_BACK_SAID = re.compile(
+    rf"(?<!{_L})(?:(?:so|and)\s+)?(?:(?:how|what)\s+about\s+(?:you|yours|yourself|u)|how\s*(?:{APOS}s|\s+is|\s+was|"
+    rf"\s+were|\s+did|\s+has)\s+(?:yours|your\s+(?:{_LIFE_ADJS})?{_LIFE_TIME})|how\s+(?:are|r)\s+(?:you|u)(?:\s+"
+    rf"doing)?|what{APOS}?s\s+on\s+your\s+mind|what\s+did\s+you\s+get\s+up\s+to|hbu|wbu){_NOT_L}",
+    re.IGNORECASE,
+)
+#: A thanks to the founder as a word ("thanks", "thank you", "cheers").
+_THANKS_WORD = re.compile(rf"(?<!{_L})(?:thanks|thank\s+you|cheers){_NOT_L}", re.IGNORECASE)
+
+
 def _life_elliptical(text: str, match: re.Match[str], life: _LifeAsked, form: str) -> bool:
     """A life told without "I" is the coach's own when it opens its clause (a bare answer, a yes or a fragment opens its
     sentence), says nothing of the founder ("It was busy, you sold 120 units", "You're doing great — a productive
@@ -1005,15 +1062,24 @@ def _life_elliptical(text: str, match: re.Match[str], life: _LifeAsked, form: st
     s, e = _clause(text, start, end)
     sentence = _sentence_span(text, start, end)
     # A bare answer, a yes or a fragment opens its sentence, after at most a thanks or a bare answer ("Lovely, thanks
-    # — a long walk."): "a source, a date, a strength" lists what an entry has.
-    lead = text[sentence[0] if form in ("bare", "yes", "fragment") else s : start]
+    # — a long walk."): "a source, a date, a strength" lists what an entry has. Said without commas, as a call is
+    # transcribed, a thanks ends what leads the clause ("it was good thanks went for a run"), and a question turned
+    # back opens a clause of its own ("…on sunday how was yours").
+    if form in ("bare", "yes", "fragment"):
+        lead = text[sentence[0] : start]
+    else:
+        lead = text[s:start]
+        thanks = list(_THANKS_WORD.finditer(lead))
+        if thanks:
+            lead = lead[thanks[-1].end() :]
     if not all(
         w in _LIFE_LEAD_WORDS or (form == "fragment" and _FRAGMENT_LEAD.match(w)) for w in _clause_words(lead)
     ):
         return False
+    turn_back = _TURN_BACK_SAID.search(text, end, e)
     if (
-        _ABOUT_THE_FOUNDER.search(text[s:e])
-        or _ABOUT_THE_FOUNDER_NEXT.search(text[e : e + 40])
+        _ABOUT_THE_FOUNDER.search(text[s : turn_back.start() if turn_back else e])
+        or (turn_back is None and _ABOUT_THE_FOUNDER_NEXT.search(text[e : e + 40]))
         or _ABOUT_THE_FOUNDER_LEAD.search(text[sentence[0] : start])
     ):
         return False
@@ -1057,15 +1123,29 @@ def life_claim(text: str, *, founder: str | None = None, small_talk: bool = Fals
     anywhere, or without "I" in reply to the founder asking about it (a small-talk turn counts as asking) or with a
     thanks for asking. Drafts and quotes are the founder's; a question is not a claim."""
     plain = _without_drafts(text)
-    for pattern in (LIFE_SAID_AS_I, LIFE_MY_TIME, LIFE_WELL_AND_TIME):
-        for m in pattern.finditer(plain):
-            # Its own unless the rest of the clause is the founder's ("I took a walk through your numbers").
-            _, clause_end = _clause(plain, m.start(), m.end())
-            if not _ABOUT_THE_FOUNDER.search(plain[m.end() : clause_end]) and _asserted(
-                plain, m.start(), m.end()
-            ):
-                return True
+    if any(_asserted(plain, m.start(), m.end()) for m in LIFE_SAID_AS_I.finditer(plain)):
+        return True
+    for m in LIFE_MY_TIME.finditer(plain):
+        if not _GIVEN_TO_THE_FOUNDER.match(plain[m.end() : m.end() + 40]) and _asserted(
+            plain, m.start(), m.end()
+        ):
+            return True
+    for m in LIFE_WELL_AND_TIME.finditer(plain):
+        # Its own unless the rest of the clause is the founder's ("I'm good, busy week for you though").
+        _, clause_end = _clause(plain, m.start(), m.end())
+        if not _ABOUT_THE_FOUNDER.search(plain[m.end() : clause_end]) and _asserted(
+            plain, m.start(), m.end()
+        ):
+            return True
     life = _life_asked(founder, small_talk)
+    # A family of its own said any other way, in reply to the founder asking about the coach and telling nothing of
+    # their own ("do you have kids?" → "My kids are grown now").
+    if (
+        life.asked in ("past", "other")
+        and not life.news
+        and any(_asserted(plain, m.start(), m.end()) for m in LIFE_MY_FAMILY.finditer(plain))
+    ):
+        return True
     return any(
         _life_elliptical(plain, m, life, form)
         for form, pattern in (
@@ -1106,6 +1186,8 @@ def presence_claim(text: str, *, small_talk: bool = False, founder: str | None =
     good, thanks for asking."), on a small-talk turn or in reply to the founder's message (``founder``) asking about
     the coach's own time."""
     if PRESENCE_CLAIM.search(text) or NAMED_INTRODUCTION.search(text):
+        return True
+    if EARLIER_LIFE.search(_without_drafts(text)):
         return True
     if life_claim(text, founder=founder, small_talk=small_talk):
         return True

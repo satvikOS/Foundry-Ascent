@@ -922,6 +922,142 @@ describe('rewriteIdentity — presence: the twin speaks as itself and never apol
     }
   });
 
+  // A differential audit of b32345c against main (2,029 inputs): the founder's own story, bio, pitch or customer,
+  // drafted under a label the draft leads do not name ("Founder story:", "Bio:", "Hero copy:") or quoted in straight
+  // single quotes, was read as the coach's family or childhood: the draft was gutted or the reply became the fallback.
+  const WRITE = 'can you help me write this?';
+  const STORY = 'can you help me with my founder story?';
+  it.each([
+    [
+      WRITE,
+      "Something like 'my parents run a café and I watched them lose money on every latte' is a strong opening line.",
+    ],
+    [
+      WRITE,
+      "For the about page:\n\nI grew up in Leeds, where my dad ran a corner shop. That's where this started.",
+    ],
+    [
+      WRITE,
+      'Your founder story, first person:\n\nWhen my mum got sick, I saw how hard it was to find a carer. So I built one.',
+    ],
+    [
+      WRITE,
+      'Pitch opening:\n\nMy grandmother ran a bakery for 40 years and never once knew her margins. We fix that.',
+    ],
+    [
+      WRITE,
+      'Founder story v2:\n\nMy little brother has dyslexia. Watching him study is why we built StudySpot.',
+    ],
+    [
+      WRITE,
+      "Elevator pitch:\n\nI'm Maya. My flatmates and I kept fighting over desk space, so we built a live map of free seats.",
+    ],
+    [WRITE, "When she said 'my husband does all the shopping', that's your buyer, not her."],
+    [WRITE, 'Landing page hero copy:\n\nMy kids eat better, and I save an hour a day.'],
+    [
+      WRITE,
+      "Testimonial you could ask for:\n\n'My dog loves the walks and I finally have my evenings back.'",
+    ],
+    [
+      WRITE,
+      'Use this for the grant form:\n\nI grew up on a farm in Wales, and my parents still struggle with water costs.',
+    ],
+    [
+      WRITE,
+      "'My dad thinks it's a waste of time' — that's a lot to carry. Does his opinion change what you'd do?",
+    ],
+    [
+      WRITE,
+      'In the interview, let them talk. If someone says my family always orders takeaway on Fridays, ask why Friday.',
+    ],
+    [
+      "my dad thinks it's a waste of time",
+      "'My dad thinks it's a waste of time' is a heavy thing to hear. What do you think?",
+    ],
+    [null, "Maya: 'my parents think I should get a real job.'"],
+    [STORY, 'About page:\n\nMy parents ran a corner shop for 20 years, and I grew up stacking shelves.'],
+    [STORY, 'Bio: I grew up in Lagos and moved to Leeds for uni. My mum still runs her shop there.'],
+    [
+      STORY,
+      'Founder story:\n\nMy sister is a nurse. Her breaks are 20 minutes, and she spends half of them looking for food.',
+    ],
+    [STORY, 'Hero copy: My kids finally have somewhere quiet to study.'],
+    [STORY, 'Headline: My dog walks himself now.'],
+    [
+      STORY,
+      'Personal statement, paragraph one:\n\nI grew up on a farm, and my father taught me to fix anything.',
+    ],
+    [STORY, "Q: Why you?\nA: My dad has diabetes, and I've watched him struggle with every app."],
+    [STORY, 'Story slide:\n\nMy little brother has dyslexia. Watching him study is why we built this.'],
+    [STORY, 'Speech for the awards night:\n\nI want to thank my mum, who drove me to every market at 5am.'],
+    [STORY, 'Picture a parent at 7am thinking, my kids need to be out the door in ten minutes.'],
+    [STORY, 'If a customer tells you my family only orders on Fridays, ask what happens on Fridays.'],
+    [STORY, "Your user is someone who'd say 'my evenings are for my kids, not for admin'."],
+    [STORY, "Write it as 'my roommates and I kept losing our seats', not 'students lack seating'."],
+    [STORY, "Lead with the line 'my grandma ran a bakery for forty years' and stop there."],
+    [STORY, "The judges remember stories like 'I grew up above my parents' shop'."],
+    [STORY, "Your answer to 'why this?' could be: my mum ran a café for 20 years."],
+    [STORY, 'Opening: My grandmother ran a bakery for 40 years and never knew her margins.'],
+  ])(
+    'leaves a founder’s own story, draft or customer’s words alone, in every scope: %j → %j',
+    (asked, text) => {
+      for (const spoken of [false, true]) {
+        for (const options of [
+          {
+            ...CORIN,
+            spoken,
+            disclaimers: 'reply' as const,
+            ...(asked === null ? {} : { founderText: asked }),
+          },
+          { ...CORIN, spoken, disclaimers: 'reply' as const },
+          {
+            ...CORIN,
+            spoken,
+            disclaimers: 'unit' as const,
+            ...(asked === null ? {} : { founderText: asked }),
+          },
+          { ...CORIN, spoken },
+        ])
+          expect(rewriteIdentity(text, options), `${JSON.stringify(options)} → ${text}`).toEqual({
+            text,
+            findings: [],
+          });
+      }
+    },
+  );
+
+  it('tells a family of its own only as what happened to it, lately, or when the founder asked', () => {
+    const reply = (text: string, founderText?: string) =>
+      rewriteIdentity(text, {
+        ...CORIN,
+        disclaimers: 'reply',
+        ...(founderText === undefined ? {} : { founderText }),
+      });
+    // "My partner went …" (main's "went", "were", "has been") counts anywhere (audit of b32345c).
+    expect(reply('My partner went to that conference last year.').findings).toEqual([
+      { kind: 'claims_human', rule: 'personal_life' },
+    ]);
+    expect(reply('My cat sat on the keyboard all morning, ha.').findings).toHaveLength(1);
+    const human = 'are you human';
+    const honest = rewriteIdentity("No, I'm an AI, Corin's digital twin, and my kids keep me busy!", {
+      ...CORIN,
+      disclaimers: 'reply',
+      founderText: human,
+      answers: identityQuestionOf(human, CORIN),
+      identityAsked: true,
+    });
+    expect(honest.text).toBe("No, I'm an AI, Corin's digital twin!");
+    // Any other way only when asked: "My sister is a nurse." is a founder's story as often as a made-up sister.
+    expect(reply('My sister is a nurse.')).toEqual({ text: 'My sister is a nurse.', findings: [] });
+    expect(reply('My kids are grown now.', 'do you have kids?').text).toBe(
+      'Thanks for asking! How about you?',
+    );
+    // …never when the founder told their own ("how are you? my dad thinks it's a waste of time").
+    expect(
+      reply('My dad worries too. What do you think?', "how are you? my dad thinks it's a waste of time"),
+    ).toEqual({ text: 'My dad worries too. What do you think?', findings: [] });
+  });
+
   it('leaves a next action, the founder’s own words, alone', () => {
     for (const action of [
       'Call my sister about the loan before Friday.',

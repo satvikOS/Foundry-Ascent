@@ -140,7 +140,7 @@ const LIFE_SHADE =
 const LIFE_ADJS = `(?:${LIFE_SHADE}${LIFE_ADJ}(?:\\s*,\\s*|\\s+and\\s+|\\s+)){1,4}`;
 /** Somewhere one goes, or something one goes out to. */
 const LIFE_OUTING =
-  "(?:hike|hiking|run|running|walk|stroll|swim|swimming|road\\s+trip|trip|vacation|holiday|camping|skiing|surfing|climbing|cycling|bike\\s+ride|beach|gym|movies|cinema|theatre|theater|concert|gig|festival|wedding|party|museum|gallery|park|coast|seaside|mountains|lake|countryside|farmers['’]?\\s+market|brunch|dinner|lunch|drinks|picnic|date|spa|yoga|pilates|barbecue|bbq)(?![-\\p{L}])";
+  "(?:hike|hiking|run|running|walk|stroll|swim|swimming|road\\s+trip|trip|vacation|holiday|camping|skiing|surfing|climbing|cycling|bike\\s+ride|beach|gym|movies|cinema|theatre|theater|concert|gig|festival|wedding|party|museum|gallery|park|coast|seaside|mountains|lake|countryside|farmers['’]?\\s+market|brunch|dinner|lunch|drinks|picnic|date|spa|yoga|pilates|barbecue|bbq|pub(?:\\s+quiz)?|quiz\\s+night)(?![-\\p{L}])";
 /** Something one eats or drinks. */
 const LIFE_FOOD =
   '(?:lunch|dinner|breakfast|brunch|supper|coffee|tea|drinks?|bite|snack|meal|picnic|barbecue|bbq|takeaway|takeout|pizza|pasta|salad|soup|sandwich|curry|sushi|tacos?|burrito|burger|noodles|ramen|toast|eggs|pancakes|waffles|cereal|porridge|oatmeal|smoothie|roast|cake|cookies?|ice\\s+cream|chocolate|wine|beer|cocktails?)(?![-\\p{L}])';
@@ -212,15 +212,31 @@ const LIFE_DOING =
   '(?:hiking|reading|cooking|baking|gardening|running|swimming|cycling|walking|resting|relaxing|sleeping(?:\\s+in)?|napping|chilling|lounging|binge-?watching|painting|knitting|camping|skiing|surfing|climbing|travel(?:l)?ing|yoga)(?![\\p{L}])';
 
 /**
- * The coach's own time, told ("My weekend was good", "my day's been busy"): its own unless the clause gives it to the
- * founder ("my week is your pricing model", the warm deflection).
+ * The coach's own time, told ("My weekend was good", "my day's been busy"): its own unless what it is, right after,
+ * is the founder's ("my week is your pricing model", the warm deflection). The founder further on in the clause does
+ * not give it to them: "My weekend was good and I hope yours was too" still tells a weekend.
  */
 const LIFE_MY_TIME = `my\\s+(?:${LIFE_ADJS})?${LIFE_TIME}${LIFE_TIME_END}(?:${APOS}s|\\s+(?:was|were|is|has|had|went|looks|looked|got|kept|included|involved|will|starts|started|began|ended|so\\s+far))`;
-/** A life told in the first person: it is the coach's own wherever it is said (not in a draft or a question). */
+/** What the coach's time is, said right after it, when that is the founder's ("…is your pricing model"). */
+const GIVEN_TO_THE_FOUNDER =
+  /^\s+(?:(?:all|about|just|really|basically|entirely|totally)\s+){0,3}(?:you|your|yours|ya|u|ur)(?![\p{L}])/iu;
+/** A family's age or number before it ("my two kids", "my little brother"). */
+const FAMILY_SHADE =
+  '(?:(?:two|three|four|little|big|older|younger|elder|eldest|youngest|new|old|lovely|grown(?:-up)?|teenage|baby)\\s+)?';
+/**
+ * A life told in the first person: it is the coach's own wherever it is said (not in a draft or a question), whoever
+ * the rest of its clause is about ("I went on a hike this morning and had an idea for you").
+ */
 const LIFE_SAID_AS_I = [
   `my\\s+(?:(?:morning|evening|night|bedtime|weekend|daily|workout|exercise|running|skincare)\\s+routine|(?:weekend|holiday|vacation|summer|travel|evening|christmas)\\s+plans|plans\\s+(?:for|this)\\s+(?:the\\s+)?${LIFE_TIME}|hobb(?:y(?!\\s+horses?(?![\\p{L}]))|ies)|commute|(?:morning\\s+)?coffee|lunch|dinner|breakfast|brunch|favou?rite\\s+(?:food|meal|dish|snack|cuisine|restaurant|caf[eé]|drink|dessert|cake|holiday|vacation|trip|city|hike|walk|film|movie|show|band|song|sport))(?![-\\p{L}])`,
-  `my\\s+(?:(?:two|three|four|little|big|older|younger|elder|eldest|youngest|new|old|lovely|grown(?:-up)?|teenage|baby)\\s+)?${LIFE_FAMILY}`,
-  'my\\s+partner(?=\\s+(?:and\\s+(?:I|me)|was|is|has|had|loves|says|said|took|made)(?![\\p{L}]))',
+  // A family of its own only as what happened to them ("My kids were sick all week", "My partner went to that
+  // conference"): "my dad ran a corner shop", "my mum still runs her shop" and "my kids eat better" are how a founder's
+  // own story, pitch or customer is drafted (see LIFE_MY_FAMILY for a family asked about).
+  `my\\s+${FAMILY_SHADE}(?:${LIFE_FAMILY}|partner)\\s+(?:was|were|has\\s+been|have\\s+been|went)(?![\\p{L}])`,
+  // …or as what they do to it, or did lately ("My dog kept me up", "my kids keep me busy", "My cat sat on the keyboard
+  // all morning").
+  `my\\s+${FAMILY_SHADE}${LIFE_FAMILY}\\s+(?:(?:kept|woke)\\s+(?:me|us)|(?:keeps?|wakes?)\\s+(?:me|us)\\s+(?:up|busy|awake|entertained|on\\s+my\\s+toes))(?![\\p{L}])`,
+  `my\\s+${FAMILY_SHADE}${LIFE_FAMILY}\\s+(?:[^.!?…\\n,;:—–]{0,40}?\\s)?(?:(?:all|this|last)\\s+(?:morning|afternoon|evening|night|weekend)|yesterday)(?![\\p{L}])`,
   '(?:with|and)\\s+my\\s+(?:(?:best|old|close)\\s+)?(?:friends?|mates|pals)',
   'my\\s+(?:(?:best|old|close)\\s+)?(?:friends?|mates)\\s+(?:and\\s+I|were|are|was|took|came|invited|dragged)',
   `I(?:${APOS}ve|\\s+have)?\\s+(?:(?:just|also|really|finally|actually|already)\\s+)?(?:had|enjoyed)\\s+(?:a|an|my|the|this|such\\s+a|one\\s+of\\s+those)\\s+(?:${LIFE_ADJS})?(?:${LIFE_TIME}${LIFE_TIME_END}|night\\s+out|day\\s+out|lie-in)`,
@@ -228,8 +244,9 @@ const LIFE_SAID_AS_I = [
   `I(?:${APOS}ve|\\s+have)?\\s+(?:(?:just|also|finally)\\s+)?spent\\s+(?:(?:a|an|my|the|this|last|all|most\\s+of\\s+the)\\s+(?:${LIFE_ADJS})?(?:weekend|holidays?|vacation|trip|break|summer|evening|night|time\\s+off|days?\\s+off)${LIFE_TIME_END}|(?:(?:the|my|all|most\\s+of\\s+the)\\s+(?:day|morning|afternoon)|(?:mon|tues|wednes|thurs|fri|satur|sun)day(?:\\s+(?:morning|afternoon|evening|night))?)\\s+(?:at|with|in|outside|outdoors|by\\s+the|on\\s+the|\\p{L}+ing(?![\\p{L}])))`,
   `I(?:${APOS}ve|\\s+have)?\\s+(?:(?:just|also|finally|mostly|really|actually|recently)\\s+)?(?:${LIFE_DONE}|read\\s+(?:a|an)\\s+(?:${LIFE_ADJS}|new\\s+)?(?:book|novel))`,
   `I\\s+(?:(?:just|finally|also|recently)\\s+)?(?:went|go|got\\s+back|came\\s+back)\\s+(?:on|to|for|from|out\\s+(?:for|to|with))\\s+(?:(?:a|an|the|my|some)\\s+)?(?:${LIFE_ADJS})?${LIFE_OUTING}`,
-  // A place, never a principle ("I live by one rule").
-  'I\\s+(?:live|lived|grew\\s+up|was\\s+born|was\\s+raised)\\s+(?:in|near|outside|just\\s+(?:outside|off|by|down|up|north|south|east|west)|on\\s+(?:a|the)\\s+(?:farm|boat|island|coast|outskirts|edge\\s+of\\s+town)|by\\s+the\\s+(?:sea|seaside|beach|coast|lake|river|park))(?![\\p{L}])(?!\\s+(?:hope|fear|the\\s+(?:details|weeds|numbers|data|moment|present)|spreadsheets|your|a\\s+world)(?![\\p{L}]))',
+  // Where it lives, never a principle ("I live by one rule"); never where it grew up or was born, which is how a
+  // founder's own bio or story is drafted ("I grew up in Leeds, where my dad ran a corner shop").
+  'I\\s+live\\s+(?:in|near|outside|just\\s+(?:outside|off|by|down|up|north|south|east|west)|on\\s+(?:a|the)\\s+(?:farm|boat|island|coast|outskirts|edge\\s+of\\s+town)|by\\s+the\\s+(?:sea|seaside|beach|coast|lake|river|park))(?![\\p{L}])(?!\\s+(?:hope|fear|the\\s+(?:details|weeds|numbers|data|moment|present)|spreadsheets|your|a\\s+world)(?![\\p{L}]))',
   `I(?:${APOS}m|\\s+am)\\s+based\\s+(?:in|near|out\\s+of)`,
   `I(?:${APOS}ve|\\s+have)?\\s+(?:just\\s+)?(?:(?:flew|flown|travel(?:l)?ed)\\s+(?:to|back|home|in|up|down|over|from|out)|drove\\s+(?:to|back\\s+from|up\\s+to|down\\s+to|over\\s+to))`,
   `I(?:${APOS}m|\\s+am)\\s+(?:just\\s+)?back\\s+from\\s+(?:a|an|my|the)\\s+(?:${LIFE_ADJS})?(?:${LIFE_TIME}${LIFE_TIME_END}|${LIFE_OUTING})`,
@@ -244,6 +261,13 @@ const LIFE_SAID_AS_I = [
   // "The dog kept me busy": a family or a pet of its own, said with "me".
   `(?:the|our)\\s+${LIFE_FAMILY}\\s+(?:kept|had|made|dragged|woke|got|took)\\s+(?:me|us)(?![\\p{L}])`,
 ].join('|');
+/**
+ * A family, a partner or a pet of its own said any other way ("My kids are grown now", "I've got two cats"): the
+ * coach's own in reply to the founder asking about its life and telling nothing of their own ("do you have kids?",
+ * "how was your weekend?"). Otherwise it is as likely the founder's own story, pitch or customer, drafted or quoted
+ * ("Founder story:\n\nMy sister is a nurse.", "if someone says my family always orders on Fridays").
+ */
+const LIFE_MY_FAMILY = `my\\s+${FAMILY_SHADE}(?:${LIFE_FAMILY}|partner(?![-\\p{L}]))|I(?:${APOS}ve|\\s+have)(?:\\s+got)?\\s+(?:a|an|one|two|three|four|five|some)\\s+${FAMILY_SHADE}(?:${LIFE_FAMILY}|partner(?![-\\p{L}]))`;
 /**
  * "I've been good, busy week" (the good is small talk, the week a life) and "Busy week here!": the coach's own, unless
  * the rest of the clause gives the time to the founder ("I'm good, busy week for you though").
@@ -465,9 +489,8 @@ const BASE_PATTERNS: readonly IdentityPattern[] = [
     ...p('claims_human', 'personal_life', LIFE_MY_TIME),
     acceptIn: (text, m, ctx) => {
       const end = m.index + m[0].length;
-      const clause = clauseOf(text, m.index, end);
       return (
-        !ABOUT_THE_FOUNDER.test(text.slice(end, clause.end)) &&
+        !GIVEN_TO_THE_FOUNDER.test(text.slice(end, end + 40)) &&
         assertive(text, m.index, end) &&
         !drafted(text, m.index, ctx)
       );
@@ -476,15 +499,18 @@ const BASE_PATTERNS: readonly IdentityPattern[] = [
   },
   {
     ...p('claims_human', 'personal_life', LIFE_SAID_AS_I),
-    // Its own unless the rest of the clause is the founder's ("I took a walk through your numbers").
-    acceptIn: (text, m, ctx) => {
-      const end = m.index + m[0].length;
-      return (
-        !ABOUT_THE_FOUNDER.test(text.slice(end, clauseOf(text, m.index, end).end)) &&
-        assertive(text, m.index, end) &&
-        !drafted(text, m.index, ctx)
-      );
-    },
+    acceptIn: (text, m, ctx) =>
+      assertive(text, m.index, m.index + m[0].length) && !drafted(text, m.index, ctx),
+    replacement: '',
+  },
+  {
+    ...p('claims_human', 'personal_life', LIFE_MY_FAMILY),
+    acceptIn: (text, m, ctx) =>
+      ctx.life !== null &&
+      (ctx.life.asked === 'past' || ctx.life.asked === 'other') &&
+      !ctx.life.news &&
+      assertive(text, m.index, m.index + m[0].length) &&
+      !drafted(text, m.index, ctx),
     replacement: '',
   },
   {
@@ -1129,6 +1155,8 @@ const DRAFT_LEAD_WORDS = new Set([
   'like',
   'send',
 ]);
+/** A lead's colon that ends its line: the draft follows below it ("Here's a draft:\n\nHi Dana,"). */
+const LEAD_ENDS_LINE = /[ \t]*\n/uy;
 /** A line that opens a letter or a message to someone: "Hi Dana,", "Dear Dr. Okafor,", "Good morning Sam —". */
 const SALUTATION =
   /(?:^|\n)[ \t]*(?:[Hh]i|[Hh]ello|[Hh]ey|[Dd]ear|[Gg]ood[ \t]+(?:[Mm]orning|[Aa]fternoon|[Ee]vening))[ \t]+(\p{Lu}[\p{L}'’.-]*)(?:[ \t]+\p{Lu}[\p{L}'’-]*)?[ \t]*[,!:—–]/gu;
@@ -1137,9 +1165,10 @@ const SALUTATION =
  * Whether `index` sits in a draft or a script the founder will send or say, not in the coach's own voice: inside
  * quotes or a blockquote, after a short lead naming one ("Here's a draft:", "Say:", "Email Dana:", "It could
  * read:"), or after a salutation to someone the reply does not address ("Hi Dana," in a reply to Maya). Read
- * within a bounded window before `index`.
+ * within a bounded window before `index`. A lead before `leadFrom` counts only where it ends its line and the draft
+ * follows ("Here's a draft:\n\n…"): one with its draft on its own line ("Try this: ask for a deposit.") is over.
  */
-function inDraft(text: string, index: number, addressees: ReadonlySet<string>): boolean {
+function inDraft(text: string, index: number, addressees: ReadonlySet<string>, leadFrom = 0): boolean {
   const from = Math.max(0, index - DRAFT_SCAN_CHARS);
   // Every search stays inside the window, so many claims in a long text stay linear.
   const before = text.slice(from, index);
@@ -1160,6 +1189,10 @@ function inDraft(text: string, index: number, addressees: ReadonlySet<string>): 
   if (quoted || single >= 0) return true;
   for (let colon = before.indexOf(':'); colon >= 0; colon = before.indexOf(':', colon + 1)) {
     if (/\d/u.test(before.charAt(colon + 1)) || before.charAt(colon + 1) === '/') continue; // "3:30", "https:"
+    if (from + colon < leadFrom) {
+      LEAD_ENDS_LINE.lastIndex = colon + 1;
+      if (!LEAD_ENDS_LINE.test(before)) continue;
+    }
     let start = colon;
     while (start > 0 && !/[.!?\n]/u.test(before.charAt(start - 1))) start -= 1;
     const words = wordsOf(before.slice(start, colon));
@@ -1176,11 +1209,13 @@ function inDraft(text: string, index: number, addressees: ReadonlySet<string>): 
 /**
  * `inDraft` for a match of a pattern: read after what the reply said before this text, when it is one streamed unit of
  * it (`IdentityRewriteOptions.draftContext`): "Weekend was good, thanks for asking!" is Sam's reply after "Reply with
- * this:\n\nHi Sam,".
+ * this:\n\nHi Sam,", and "I'll call you Thursday." Dana's after "Here's a draft:\n\nHi Dana, thanks for meeting.".
+ * An earlier unit's lead with its draft on its own line is over: after "Try this: ask for a deposit." or "Say: we'd
+ * love a pilot.", "I'll call you tomorrow." is the coach's own again, as each unit was read before.
  */
 function drafted(text: string, index: number, ctx: PatternContext): boolean {
   if (ctx.before === '') return inDraft(text, index, ctx.addressees);
-  return inDraft(`${ctx.before}${text}`, ctx.before.length + index, ctx.addressees);
+  return inDraft(`${ctx.before}${text}`, ctx.before.length + index, ctx.addressees, ctx.before.length);
 }
 
 /**
@@ -1217,6 +1252,8 @@ const YOUR = '(?:your|ur|yr)';
  * look at my deck" asks about the deck.
  */
 const ASKED_LIFE_YESNO_SOURCES = [
+  // Said without "did" ("u have a good one?", "you have a nice weekend?").
+  `${YOU}\\s+(?:have|had|get)\\s+(?:a|an)\\s+${LIFE_ADJS}(?:${LIFE_TIME}${LIFE_TIME_END}|one)\\s*\\?`,
   `(?:did|have)\\s+${YOU}\\s+(?:have|get|enjoy|had)\\s+(?:a|an|any|some)\\s+(?:${LIFE_ADJS})?(?:${LIFE_TIME}|rest|fun|one)(?![\\p{L}])`,
   `(?:^|(?<=[.!?…])\\s*)(?:(?:and|so|hey|hi|also|oh|btw|ok|okay|lowkey|ngl|anyway)[\\s,!]+)*${LIFE_ADJS}${LIFE_TIME}\\s*\\?`,
   `(?:did|have)\\s+${YOU}\\s+(?:do|get\\s+up\\s+to|been\\s+up\\s+to|done)\\s+(?:anything|something)\\s+(?:fun|nice|good|exciting|interesting|cool)`,
@@ -1461,6 +1498,26 @@ function clauseOf(text: string, start: number, end: number): { start: number; en
 }
 
 /**
+ * A question turned back to the founder, also as a call transcribes it, without a question mark ("…went for a run how
+ * was yours", "…what about you"): a clause of its own, whose "you" does not make the life before it theirs.
+ */
+const TURN_BACK_SAID = new RegExp(
+  `(?<![\\p{L}])(?:(?:so|and)\\s+)?(?:(?:how|what)\\s+about\\s+(?:you|yours|yourself|u)|how\\s*(?:${APOS}s|\\s+is|\\s+was|\\s+were|\\s+did|\\s+has)\\s+(?:yours|your\\s+(?:${LIFE_ADJS})?${LIFE_TIME})|how\\s+(?:are|r)\\s+(?:you|u)(?:\\s+doing)?|what${APOS}?s\\s+on\\s+your\\s+mind|what\\s+did\\s+you\\s+get\\s+up\\s+to|hbu|wbu)(?![\\p{L}])`,
+  'iu',
+);
+
+/** A thanks to the founder as a word ("thanks", "thank you", "cheers"). */
+const THANKS_WORD = /(?<![\p{L}])(?:thanks|thank\s+you|cheers)(?![\p{L}])/giu;
+
+/** What follows the last thanks in `lead` ("it was good thanks " → " "), or all of it. */
+function afterThanks(lead: string): string {
+  let end = 0;
+  THANKS_WORD.lastIndex = 0;
+  for (const m of lead.matchAll(THANKS_WORD)) end = m.index + m[0].length;
+  return lead.slice(end);
+}
+
+/**
  * How a life told without "I" is said (see `lifeElliptical`): a report ("Weekend was good", "Spent it hiking"), a plan
  * ("Heading to the coast"), a verbless reaction ("Quiet weekend", "It was great"), a bare answer ("Good, thanks!"), a
  * yes ("Yes, thanks!" to "good weekend?") or a fragment ("Hiking, mostly").
@@ -1504,13 +1561,18 @@ function lifeElliptical(form: LifeForm): NonNullable<IdentityPattern['acceptIn']
     // A bare answer, a yes or a fragment opens its sentence, after at most a thanks or a bare answer ("Lovely, thanks —
     // a long walk."): "a source, a date, a strength" lists what an entry has.
     const opens = form === 'bare' || form === 'yes' || form === 'fragment';
-    const lead = text.slice(opens ? sentence.start : clause.start, m.index);
+    // Said without commas, the way a call is transcribed, a thanks ends what leads the clause ("it was good thanks went
+    // for a run"), and a question turned back opens a clause of its own ("…on sunday how was yours").
+    const lead = opens ? text.slice(sentence.start, m.index) : afterThanks(text.slice(clause.start, m.index));
     const leads = form === 'fragment' ? FRAGMENT_LEAD : null;
     if (!wordsOf(lead).every((w) => LIFE_LEAD_WORDS.has(w.toLowerCase()) || (leads?.test(w) ?? false)))
       return false;
+    const turnBack = TURN_BACK_SAID.exec(text.slice(end, clause.end));
     if (
-      ABOUT_THE_FOUNDER.test(text.slice(clause.start, clause.end)) ||
-      ABOUT_THE_FOUNDER_NEXT.test(text.slice(clause.end, clause.end + 40)) ||
+      ABOUT_THE_FOUNDER.test(
+        text.slice(clause.start, turnBack === null ? clause.end : end + turnBack.index),
+      ) ||
+      (turnBack === null && ABOUT_THE_FOUNDER_NEXT.test(text.slice(clause.end, clause.end + 40))) ||
       ABOUT_THE_FOUNDER_LEAD.test(text.slice(sentence.start, m.index))
     )
       return false;
@@ -1570,7 +1632,11 @@ function lifeLeftover(
   const headEnd = well === null ? 0 : well[0].length;
   const head =
     headText === null || (claim.start <= headEnd - headText.length && claim.end <= headEnd) ? null : headText;
-  const said = thanks ? (THANKS_WRITTEN.exec(sentence)?.[0] ?? null) : null;
+  let said = thanks ? (THANKS_WRITTEN.exec(sentence)?.[0] ?? null) : null;
+  // Said without commas, the thanks ends where the question turned back begins ("thanks for asking how was yours").
+  const turnBack = said === null ? null : TURN_BACK_SAID.exec(said);
+  if (said !== null && turnBack !== null && turnBack.index > 0)
+    said = said.slice(0, turnBack.index).trimEnd();
   const stop = /!["”’*_)\s]*$/u.test(sentence) ? '!' : '.';
   if (head !== null && said !== null)
     return { text: `${upperFirst(head)}, ${said.charAt(0).toLowerCase()}${said.slice(1)}!`, thanked: true };
@@ -2788,9 +2854,10 @@ export interface IdentityRewriteOptions extends IdentityCheckOptions {
   founderText?: string;
   /**
    * What the reply said before this text, when it is one streamed unit of it (the sentence gate passes the end of what
-   * it released): read only to tell whether a claim of presence or a life sits in a draft the founder will send, as the
-   * whole reply would be ("Reply with this:\n\nHi Sam,\n\n" then "Weekend was good, thanks for asking!" is Sam's
-   * reply, not the coach's weekend).
+   * it released, with the space or blank line before this text): read only to tell whether a claim of presence or a
+   * life sits in a draft the founder will send ("Reply with this:\n\nHi Sam,\n\n" then "Weekend was good, thanks for
+   * asking!" is Sam's reply, not the coach's weekend). A lead in it counts only where it ends its line: after "Try
+   * this: ask for a deposit." the draft is over, and "I'll call you tomorrow." is the coach's own again.
    */
   draftContext?: string;
 }

@@ -185,3 +185,71 @@ describe('SentenceGate: a made-up life answering banter about the coach', () => 
     }
   });
 });
+
+// A differential audit of b32345c against main: what the stream showed and said on a call that main's gate did not.
+describe('SentenceGate: a presence claim or a life after an earlier draft is never said aloud', () => {
+  /** A model-like stream: two words, and the space or blank line after them, per chunk. */
+  const twoWords = (text: string): string[] => text.match(/\S+\s+\S+\s*|\S+\s*$/gu) ?? [];
+  const twin = "I'm Corin's digital twin, not Corin in person.";
+
+  it.each([
+    [
+      "Try this: ask the library for a deposit.\n\nI'll call you tomorrow to see how it went.",
+      'Try this: ask the library for a deposit.\n\n',
+    ],
+    [
+      "Say: we'd love a two-week pilot. I'm at my desk all afternoon if you want to practise.",
+      "Say: we'd love a two-week pilot. ",
+    ],
+    [
+      "Here's a line for the email: we can start Monday. And I'll see you at demo day!",
+      "Here's a line for the email: we can start Monday. ",
+    ],
+    [
+      'Example: "We sold 40 cups." Then stop. I\'ll be there in person to cheer you on.',
+      'Example: "We sold 40 cups." Then stop. ',
+    ],
+  ])('replaces the claim after a lead whose draft ended on its own line: %j', (text, kept) => {
+    // Its draft was the rest of the lead's line: the next unit is the coach's own again, as main's gate read it.
+    for (const spoken of [false, true]) {
+      const units = run(gate({ spoken, founderText: 'what should I say to the library?' }), twoWords(text));
+      expect(shown(units)).toBe(`${kept}${twin}`);
+      if (spoken) {
+        expect(said(units)).toContain(twin);
+        expect(said(units)).not.toMatch(/I'll call you|at my desk|see you at demo day|there in person/u);
+      }
+    }
+  });
+
+  it('keeps a draft whose lead ends its line whole, across units', () => {
+    const text =
+      "Here's a draft:\n\nHi Dana, thanks for meeting. I'll call you Thursday to confirm the pilot.";
+    for (const spoken of [false, true]) {
+      const units = run(gate({ spoken, founderName: 'Maya' }), twoWords(text));
+      expect(shown(units)).toBe(text);
+      if (spoken) expect(said(units)).toContain("I'll call you Thursday");
+    }
+  });
+
+  it.each([
+    [undefined, 'I went on a hike this morning and had an idea for you.'],
+    [undefined, 'I spent the weekend going through your deck.'],
+    [undefined, "My kids were sick all week so I totally get what you're going through."],
+    [undefined, "My partner went to that conference and said you'd love it."],
+    ['how was your weekend?', 'My weekend was good and I hope yours was too.'],
+    ['how was your weekend', 'My weekend was great thanks for asking how was yours'],
+    ['how was your weekend', 'it was lovely thanks I went to the coast with my family how was yours'],
+  ])(
+    'never says a made-up life because the founder comes later in its clause: %j → %j',
+    (founderText, text) => {
+      for (const spoken of [false, true]) {
+        const units = run(
+          gate({ spoken, ...(founderText === undefined ? {} : { founderText }) }),
+          twoWords(text),
+        );
+        expect(shown(units)).not.toMatch(/hike|weekend was|deck|kids|partner|coast/u);
+        if (spoken) expect(said(units)).not.toMatch(/hike|weekend was|deck|kids|partner|coast/u);
+      }
+    },
+  );
+});
