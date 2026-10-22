@@ -37,5 +37,11 @@ export default tseslint.config(
     files: ['**/*.js', '**/*.mjs', '**/*.cjs'],
     ...tseslint.configs.disableTypeChecked,
   },
+  {
+    // AudioWorklet processors run in the AudioWorkletGlobalScope (AudioWorkletProcessor, registerProcessor,
+    // sampleRate), which globals 17 no longer folds into `browser`.
+    files: ['apps/web/public/worklets/**/*.js'],
+    languageOptions: { globals: globals.audioWorklet },
+  },
   prettier,
 );
