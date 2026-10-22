@@ -418,6 +418,10 @@ describe('asking the vEIR to do it (production, 2026-10-20)', () => {
     expect(block).toContain(
       '- They did not take up your last question: answer what they said, and do not ask it again.',
     );
+    // The question they handed back is named, so the reply answers it.
+    expect(block).toContain(
+      '- They handed your question back ("What three questions do you want answered in that meeting?"): answer it yourself now, concretely.',
+    );
   });
 
   it.each([

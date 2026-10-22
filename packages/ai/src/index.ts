@@ -228,6 +228,7 @@ export {
   STRESSED_HAND_BACKS,
   asksToRepeat,
   endsWithHandBack,
+  isOnlyLeadIn,
   fourGramsOf,
   repeatsPrevious,
   spokenHandBackFor,

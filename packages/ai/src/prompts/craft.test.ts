@@ -264,6 +264,7 @@ describe('conversation craft in the system prompt', () => {
   it('is part of the versioned policy', () => {
     // 2026-10-22.1: help first, notes as background (production calls, 2026-10-16 to 10-20).
     // 2026-10-22.2: the control block moved after the rules that stay the same on every turn (prompt caching).
-    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-10-22.2');
+    // 2026-10-22.3: a turn with the founder's own subject leaves the notes' agenda out; a handed-back question is named.
+    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-10-22.3');
   });
 });

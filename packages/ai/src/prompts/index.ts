@@ -8,7 +8,7 @@ export type {
 } from './system.js';
 export { buildEvidenceBlock, evidenceIdsInBlock } from './evidence.js';
 export type { EvidenceBlockOptions } from './evidence.js';
-export { buildMessages } from './messages.js';
+export { bringsOwnSubject, buildMessages } from './messages.js';
 export type { BuildMessagesOptions, HistoryTurn } from './messages.js';
 export {
   MAX_PROMPT_DIGESTS,

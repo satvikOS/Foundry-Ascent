@@ -1303,6 +1303,51 @@ describe('conversation craft the lab still heard (wave 7)', () => {
     ).toBe('Book both chats for Thursday.');
   });
 
+  it('a reply the gate left at its lead-in goes on once with something new, typed and spoken (lab run 39780304879)', async () => {
+    const repeat =
+      "Ask three students what they'd give up to skip the group chat and the walking. That's the price signal you need before the pilot starts.";
+    for (const channel of ['text', 'voice'] as const) {
+      const continued: string[] = [];
+      const gateway = new MockModelGateway({
+        streamDelayMs: 0,
+        streamFixture: (context) => {
+          const last = context.messages.at(-1)?.content ?? '';
+          if (last.includes('<continue_request>')) {
+            continued.push(last);
+            return 'Then book both chats for Thursday. Does that work?';
+          }
+          return context.founderText.startsWith('Help me') ? `Okay, Maya. ${repeat}` : repeat;
+        },
+      });
+      const { core, orchestrator } = coreWith(gateway);
+      const session = await core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+      await run(orchestrator, session.id, { text: 'How do we find the price signal?', mode: 'coach' });
+      const { events } = await run(orchestrator, session.id, {
+        text: 'Help me get started, I am writing it all down.',
+        mode: 'coach',
+        ...(channel === 'voice' ? { channel, callId: CALL_ID } : {}),
+      });
+      const expected = 'Okay, Maya. Then book both chats for Thursday. Does that work?';
+      expect(
+        deltas(events)
+          .map((d) => d.text)
+          .join('')
+          .trim(),
+      ).toBe(expected);
+      expect(completed(events).response?.answer).toBe(expected);
+      if (channel === 'voice') {
+        expect(speechUnits(events).map((u) => u.text)).toEqual([
+          'Okay, Maya.',
+          'Then book both chats for Thursday.',
+          'Does that work?',
+        ]);
+      }
+      // Asked once, told what it said and what was left out as already said.
+      expect(continued).toHaveLength(1);
+      expect(continued[0]).toContain('Left out as already said: Ask three students');
+    }
+  });
+
   it('a call’s reply that ends on a statement hands the turn back as it is said', async () => {
     for (const [text, expected] of [
       ['How do we get the first ten users?', SPOKEN_HAND_BACKS as readonly string[]],

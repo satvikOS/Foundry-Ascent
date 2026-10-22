@@ -17,7 +17,7 @@ import {
 import { parseControlBlock } from './control.js';
 import { MODE_INSTRUCTIONS, autoModeInstructions, autoModes } from './modes.js';
 import { buildEvidenceBlock } from './evidence.js';
-import { buildMessages } from './messages.js';
+import { bringsOwnSubject, buildMessages } from './messages.js';
 import { buildVeirDisclosure, resolvePersonaIdentity, veirFirstName } from './persona.js';
 import { buildSystemPrompt, type SystemPromptInput } from './system.js';
 
@@ -429,16 +429,29 @@ describe('continuity', () => {
 
   it('marks an open commitment already raised in this conversation, so it is not pushed again (LAB-R8)', () => {
     const asked = 'Before we talk about Noor: what did you learn from the five library staff interviews?';
-    const messages = buildMessages(
-      [{ founderText: 'We got the union on board.', answer: asked }],
-      "We're hiring Noor as a designer.",
-      { continuity: CONTINUITY, today: '2026-10-16' },
-    );
+    // A short reply keeps the notes' agenda (it answers the conversation so far), with what was raised marked.
+    const messages = buildMessages([{ founderText: 'We got the union on board.', answer: asked }], 'Sure.', {
+      continuity: CONTINUITY,
+      today: '2026-10-16',
+    });
     const notes = messages.at(-1)?.content ?? '';
     expect(notes).toContain(
       `- Interview five library staff (due 2026-10-10, ${PAST_DUE_NOTE}) [${RAISED_NOTE}]`,
     );
     expect(notes).toContain('- Install the door counter (due 2026-10-30)\n');
+    // Their news, a subject of their own: the agenda is left out of that turn altogether.
+    const news =
+      buildMessages(
+        [{ founderText: 'We got the union on board.', answer: asked }],
+        "We're hiring Noor as a designer.",
+        {
+          continuity: CONTINUITY,
+          today: '2026-10-16',
+        },
+      ).at(-1)?.content ?? '';
+    expect(news).not.toContain('<open_commitments>');
+    expect(news).not.toContain('Interview five library staff');
+    expect(news).toContain('<summary>Maya is testing exam-week demand');
     // Raised by the opener too; never marked when nothing in the conversation raised it.
     const opened = buildMessages([], 'Hi!', {
       continuity: CONTINUITY,
@@ -481,6 +494,42 @@ describe('continuity', () => {
     expect(notes).toContain(
       `<open_questions>\n- What three questions do you want answered in the advisor session? [${RAISED_NOTE}]\n</open_questions>`,
     );
+  });
+
+  it('leaves the agenda out of a turn with a subject of the founder’s own, never one about an open item (lab run 39780304879)', () => {
+    const history = [{ founderText: 'Hi.', answer: 'Hi Maya. Where are things with the interviews?' }];
+    const notesFor = (text: string): string =>
+      buildMessages(history, text, { continuity: CONTINUITY, today: '2026-10-16' }).at(-1)?.content ?? '';
+    for (const own of [
+      'Help me prepare for my pitch next week.',
+      'I want to make a lot of money from this. How do I position myself?',
+      'My cofounder wants to quit his job and go full-time.',
+    ]) {
+      expect(bringsOwnSubject(own, CONTINUITY)).toBe(true);
+      const notes = notesFor(own);
+      expect(notes).not.toContain('<open_commitments>');
+      expect(notes).not.toContain('<last_advice>');
+      expect(notes).not.toContain('<commitments>');
+      expect(notes).toContain('<founder_profile>');
+      expect(notes).toContain('<previous_conversations>');
+    }
+    // About an open item, a short reply, "you tell me", or what the vEIR remembers: the agenda stays.
+    for (const about of [
+      'The library staff interviews went badly.',
+      'Sure.',
+      "I don't know. You tell me.",
+      'Do you remember what we said last time?',
+    ]) {
+      expect(bringsOwnSubject(about, CONTINUITY)).toBe(false);
+      expect(notesFor(about)).toContain('<open_commitments>');
+    }
+    // Before the conversation is under way, the notes are whole.
+    expect(
+      buildMessages([], 'Help me prepare for my pitch next week.', {
+        continuity: CONTINUITY,
+        today: '2026-10-16',
+      }).at(-1)?.content,
+    ).toContain('<open_commitments>');
   });
 
   it('leaves the notebook opener out once the conversation is under way', () => {

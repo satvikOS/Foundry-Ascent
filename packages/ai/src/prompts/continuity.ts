@@ -81,6 +81,13 @@ export interface ContinuityBlockOptions {
    * 2026-10-16 to 10-20: five calls in a row came back to the same opener thread whatever the founder raised).
    */
   conversationStarted?: boolean;
+  /**
+   * The founder's message brings a subject of their own that none of the open items is about: the notes' agenda (open
+   * commitments, open questions, last advice, and the digests' commitments and open questions) is left out of this
+   * turn; who they are and what happened stay. Lab run 39780304879 (help first already live): a question about a pitch
+   * and one about making money were still answered with the notebook's open commitment, from the notes alone.
+   */
+  ownSubject?: boolean;
 }
 
 /** A note that an open commitment or open question was already raised in this conversation. */
@@ -205,7 +212,8 @@ export function hasContinuity(continuity: PromptContinuity): boolean {
 /** How a conversation with a coach the venture had before is marked (the same words as "Where you left off"). */
 const OTHER_COACH = 'another coach of this venture';
 
-function renderDigest(d: PromptDigest): string[] {
+/** `agenda`: with its commitments and open questions (false on a turn with the founder's own subject). */
+function renderDigest(d: PromptDigest, agenda = true): string[] {
   const attrs = [`date="${isoDate(d.date) ?? 'unknown'}"`];
   if (d.channel === 'voice') attrs.push('kind="call"');
   if (d.otherCoach === true) attrs.push(`coach="${OTHER_COACH}"`);
@@ -220,13 +228,15 @@ function renderDigest(d: PromptDigest): string[] {
     ...(topics.length > 0 ? [`<topics>${escapeData(topics.join('; '))}</topics>`] : []),
     ...section(
       'commitments',
-      d.digest.commitments.slice(0, 5).map((c) => commitmentLine(c, null)),
+      agenda ? d.digest.commitments.slice(0, 5).map((c) => commitmentLine(c, null)) : [],
     ),
     ...section(
       'open_questions',
-      d.digest.openQuestions
-        .slice(0, 4)
-        .map((q) => `- ${escapeData(truncate(q.replace(/\s+/g, ' ').trim(), MAX_ENTRY_CHARS))}`),
+      agenda
+        ? d.digest.openQuestions
+            .slice(0, 4)
+            .map((q) => `- ${escapeData(truncate(q.replace(/\s+/g, ' ').trim(), MAX_ENTRY_CHARS))}`)
+        : [],
     ),
     '</conversation>',
   ];
@@ -254,18 +264,21 @@ export function buildContinuityBlock(
     core.push(`<summary>${escapeData(truncate(summary.replace(/\s+/g, ' '), 1_200))}</summary>`);
   if (opener !== '') core.push(`<next_opener>${escapeData(truncate(opener, MAX_ENTRY_CHARS))}</next_opener>`);
   const said = options.saidInConversation ?? [];
-  const commitments = openCommitmentsOf(continuity)
+  const agenda = options.ownSubject !== true;
+  const commitments = (agenda ? openCommitmentsOf(continuity) : [])
     .slice(0, MAX_ENTRIES.commitments)
     .map((c) => commitmentLine(c, today, said.length > 0 && raisedIn(c.text, said)));
 
   // Optional parts in the order they are given up when the block is too long (last dropped first).
   const profile = section('founder_profile', entries(nb?.founderProfile, MAX_ENTRIES.founderProfile));
-  const questions = section('open_questions', entries(nb?.openQuestions, MAX_ENTRIES.openQuestions, said));
-  const advice = section('last_advice', entries(nb?.lastAdvice, MAX_ENTRIES.lastAdvice));
+  const questions = agenda
+    ? section('open_questions', entries(nb?.openQuestions, MAX_ENTRIES.openQuestions, said))
+    : [];
+  const advice = agenda ? section('last_advice', entries(nb?.lastAdvice, MAX_ENTRIES.lastAdvice)) : [];
   const sortedDigests = [...(continuity.recentDigests ?? [])]
     .sort((a, b) => (isoDate(b.date) ?? '').localeCompare(isoDate(a.date) ?? ''))
     .slice(0, MAX_PROMPT_DIGESTS);
-  const digests = sortedDigests.map(renderDigest);
+  const digests = sortedDigests.map((d) => renderDigest(d, agenda));
 
   const render = (parts: {
     profile: boolean;

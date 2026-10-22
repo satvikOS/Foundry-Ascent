@@ -759,6 +759,14 @@ export function renderConversationState(state: ConversationState): string {
       '  venture (a draft, concrete options or questions, an example, the first steps), then at most a short check that',
       '  it fits. Never hand the question back or ask them for what they just said they cannot give.',
     );
+    const handedBack = state.openQuestion ? (state.askedQuestions[0] ?? null) : null;
+    // Lab run 39780304879: "I don't know. You tell me." after "Where are things with the advisor session and your three
+    // questions?" got "What are the three questions you want to ask?" back.
+    if (handedBack !== null) {
+      lines.push(
+        `- They handed your question back (${quoted(handedBack)}): answer it yourself now, concretely.`,
+      );
+    }
   }
   const asks = state.moves.includes('help') || state.moves.includes('question');
   const aboutNotes = state.moves.includes('recall') || state.moves.includes('resume');

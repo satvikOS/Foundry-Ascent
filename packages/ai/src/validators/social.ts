@@ -183,6 +183,18 @@ export function parksTheirNews(sentence: string): boolean {
   return AGENDA_PUSH.test(sentence.replace(/[‘’ʼ]/g, "'").replace(/^[\s*_>"“]+/, ''));
 }
 
+/** A sentence that only acknowledges ("Okay, Idris.", "Got it.", "Thanks for that.", "Great, Maya!"). */
+const LEAD_IN =
+  /^(?:okay|ok|alright|all right|got it|right|sure|understood|of course|fair enough|great|good|nice|cool|perfect|i see|i get (?:that|it|you)|thanks(?: for (?:that|sharing(?: that)?|telling me))?|thank you(?: for (?:that|sharing(?: that)?|telling me))?|makes sense|yes|yeah|so|well|hmm|ah|oh)(?:[\s,]+\p{Lu}[\p{L}'’-]*)?[\s.!…]*$/iu;
+
+/**
+ * Whether `text` says nothing but acknowledgements (or nothing at all): what is left of a reply when the gate left out
+ * everything after its lead-in as already said (lab run 39780304879: "Okay, Idris." was a whole call reply).
+ */
+export function isOnlyLeadIn(text: string): boolean {
+  return sentencesOf(text.trim()).every((sentence) => LEAD_IN.test(sentence.replace(/[‘’ʼ]/g, "'").trim()));
+}
+
 /** What a reply to news says when every sentence of it parked the news. */
 export const NEWS_FALLBACK = 'That’s real news. How did it come about?';
 

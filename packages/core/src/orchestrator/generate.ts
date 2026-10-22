@@ -8,6 +8,7 @@ import {
   clampWords,
   cutMetaNarration,
   endsWithHandBack,
+  isOnlyLeadIn,
   isModelGatewayError,
   type ChatMessage,
   type GateBlockReason,
@@ -27,7 +28,12 @@ import { type RequestContext } from '../context.js';
 import { type Kit } from '../internal/kit.js';
 import { signSpeechUnit } from './speech-units.js';
 import { ReplyExtractor } from './reply-extract.js';
-import { annotationMessages, answerSystemPrompt, emptyAnnotations } from './turn-prompts.js';
+import {
+  annotationMessages,
+  answerSystemPrompt,
+  continuationMessages,
+  emptyAnnotations,
+} from './turn-prompts.js';
 
 /** What a turn's generation produced, before the deterministic validation (`validateCoachResponse`). */
 export interface Generation {
@@ -360,10 +366,11 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
   // A call's reply leaves room for its hand-back within the spoken budget (it is said after the reply).
   const spokenBudget = SPOKEN_MAX_WORDS - (voice && a.handBack ? a.handBack.split(/\s+/).length : 0);
   const traceText = a.kit.config.turns.traceStreamText;
+  // What the gate left out is kept for the continuation request; its text is logged only in the lab.
   const gate = new SentenceGate({
     ...a.gate,
     ...(voice ? { maxUnitChars: SPOKEN_UNIT_CHARS, spokenWordBudget: spokenBudget, spoken: true } : {}),
-    ...(traceText ? { keepDropped: true } : {}),
+    keepDropped: true,
   });
   const speech =
     voice && a.speechKey
@@ -471,6 +478,103 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
       notes: [`stream_${fallback}`, ...whole.notes],
       stream: { ...details(phaseAMs, 0, null), fallback },
     } satisfies Generation;
+  };
+
+  /**
+   * Goes on with a reply the gate left at its lead-in (see {@link continuationMessages}): streamed through a gate of its
+   * own, shown and said after what was, within what is left of the spoken budget. Returns what it added ('' when
+   * nothing passed, or the call failed: the reply then stands as it was).
+   */
+  const goOn = async (soFar: string, leftOut: readonly string[]): Promise<string> => {
+    const more = new SentenceGate({
+      ...a.gate,
+      greeted: true,
+      ...(voice
+        ? {
+            maxUnitChars: SPOKEN_UNIT_CHARS,
+            spokenWordBudget: Math.max(0, spokenBudget - said.words),
+            spoken: true,
+          }
+        : {}),
+      keepDropped: true,
+    });
+    const extractor = new ReplyExtractor();
+    const halt = new AbortController();
+    const until = a.signal ? AbortSignal.any([a.signal, halt.signal]) : halt.signal;
+    let added = '';
+    const show = async (result: GateResult): Promise<void> => {
+      for (const unit of result.units) {
+        if (unit.text !== '') {
+          // The first added unit is a new sentence of the same reply.
+          const text = added === '' && !/\s$/.test(said.shown) ? ` ${unit.text.trimStart()}` : unit.text;
+          await a.emit({ event: 'turn.delta', turnId: a.turnId, seq: timing.deltas, text });
+          timing.deltas += 1;
+          said.shown += text;
+          added += text;
+        }
+        if (unit.spoken !== '') said.words += unit.spoken.split(/\s+/).filter((w) => w !== '').length;
+        if (unit.spoken !== '') said.spoken += ` ${unit.spoken}`;
+        if (speech && unit.spoken !== '') await speech.queue(unit.spoken);
+      }
+      if (result.blocked !== null || result.fallback !== null || result.cut !== null || more.full)
+        halt.abort();
+    };
+    try {
+      const answer = await gateway.streamText(
+        {
+          purpose: a.meter.purpose,
+          system: answerSystemPrompt(a.system, {
+            channel: a.channel,
+            mode: a.mode,
+            allowedModes: a.allowedModes,
+            stableChars: a.promptCache?.systemChars ?? 0,
+          }),
+          messages: continuationMessages(a.messages, soFar, leftOut),
+          // The conversation so far is the same prefix: the continuation reads it back from the cache.
+          ...(a.promptCache ? { promptCache: a.promptCache } : {}),
+          maxOutputTokens: ANSWER_MAX_TOKENS[a.channel],
+          timeoutMs: a.kit.config.turns.modelTimeoutMs,
+          requestId: a.ctx.requestId,
+          signal: until,
+        },
+        async (chunk) => {
+          if (more.blocked !== null || more.fallback !== null || more.cut !== null || more.full) return;
+          if (extractor.isDone()) return;
+          const text = extractor.push(chunk);
+          if (text !== '') await show(more.push(text));
+          if (extractor.isDone()) halt.abort();
+        },
+      );
+      attempts.push(...answer.attempts);
+      await record(a, answer.attempts);
+    } catch (err) {
+      const failed = attemptsOf(err);
+      attempts.push(...failed);
+      await record(a, failed);
+      if (!halt.signal.aborted || a.signal?.aborted === true) {
+        logger.warn('turn.continuation_failed', {
+          requestId: a.ctx.requestId,
+          turnId: a.turnId,
+          code: isModelGatewayError(err) ? err.code : 'unknown',
+        });
+        return added;
+      }
+    }
+    if (more.blocked === null && more.fallback === null && more.cut === null && !more.full) {
+      const rest = extractor.end();
+      if (rest !== '') await show(more.push(rest));
+      await show(more.end());
+    }
+    logger.info('turn.continued', {
+      requestId: a.ctx.requestId,
+      turnId: a.turnId,
+      channel: a.channel,
+      addedWords: wordCount(added),
+      repeatsDropped: more.trace.repeatsDropped,
+      agendaDropped: more.trace.agendaDropped,
+      ...(traceText ? { addedText: added } : {}),
+    });
+    return added;
   };
 
   // Phase A: the reply, streamed through the gate. The reply extractor reads the stream first: it hands on
@@ -610,6 +714,28 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
       ? { replyText: reply.text, shownText: said.shown, dropped: JSON.stringify(trace.dropped) }
       : {}),
   });
+  // The gate left out what repeated the conversation and only the lead-in is left ("Okay, Idris."): the reply goes on
+  // once, from what was said, with something new. Never for a short reply that is meant to be short (a thanks), a
+  // reply whose preview was withheld, or once the founder spoke over it.
+  if (
+    a.signal?.aborted !== true &&
+    !said.full &&
+    !gate.full &&
+    (a.gate.replyBudget ?? null) === null &&
+    gate.stats.withheld === 0 &&
+    trace.repeatsDropped + trace.agendaDropped > 0 &&
+    said.shown.trim() !== '' &&
+    isOnlyLeadIn(said.shown)
+  ) {
+    const added = await goOn(
+      said.shown.trim(),
+      trace.dropped.map((d) => d.text),
+    );
+    if (added !== '') {
+      replyText = said.shown.trim();
+      notes.push('stream_continued');
+    }
+  }
   // A call's reply that ended on a statement hands the turn back now, not after the annotations.
   const handBack = voice ? (a.handBack ?? null) : null;
   if (
